@@ -44,7 +44,10 @@ func prepareRuntimeDir(runtimeDir string) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return errors.New("runtime path is not a real directory")
 	}
-	return applyCurrentUserACL(runtimeDir, true)
+	if err := applyCurrentUserACL(runtimeDir, true); err != nil {
+		return err
+	}
+	return validateCurrentUserACL(runtimeDir)
 }
 
 func acquireBrokerLock(runtimeDir string) (brokerLock, error) {
@@ -145,6 +148,9 @@ func applyCurrentUserACL(path string, inherit bool) error {
 	if err != nil {
 		return err
 	}
+	if err := validateCurrentUserOwner(path, sid); err != nil {
+		return err
+	}
 	var pinner runtime.Pinner
 	pinner.Pin(sid)
 	defer pinner.Unpin()
@@ -177,12 +183,47 @@ func validateCurrentUserACL(path string) error {
 	if err != nil {
 		return err
 	}
+	// GetNamedSecurityInfo in x/sys v0.47.0 copies the native descriptor onto
+	// the Go heap and calls LocalFree before returning. Callers must not free
+	// this returned descriptor a second time.
 	descriptor, err := windows.GetNamedSecurityInfo(
 		path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
 	)
 	if err != nil {
 		return err
+	}
+	return validateCurrentUserSecurityDescriptor(descriptor, sid, true)
+}
+
+func validateCurrentUserOwner(path string, sid *windows.SID) error {
+	// The x/sys wrapper returns a Go-owned copy; see validateCurrentUserACL.
+	descriptor, err := windows.GetNamedSecurityInfo(
+		path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
+	)
+	if err != nil {
+		return err
+	}
+	return validateCurrentUserSecurityDescriptor(descriptor, sid, false)
+}
+
+func validateCurrentUserSecurityDescriptor(
+	descriptor *windows.SECURITY_DESCRIPTOR,
+	sid *windows.SID,
+	requireACL bool,
+) error {
+	if descriptor == nil {
+		return errors.New("file has no security descriptor")
+	}
+	owner, _, err := descriptor.Owner()
+	if err != nil {
+		return fmt.Errorf("read file owner: %w", err)
+	}
+	if owner == nil || !owner.Equals(sid) {
+		return errors.New("file owner is not the current user")
+	}
+	if !requireACL {
+		return nil
 	}
 	acl, _, err := descriptor.DACL()
 	if err != nil {

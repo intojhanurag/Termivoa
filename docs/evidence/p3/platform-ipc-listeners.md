@@ -15,7 +15,10 @@ yet connect the listener to broker request dispatch or prove gateway restart.
   returned to the broker.
 - A Windows named pipe created through `go-winio` with a protected DACL that
   grants access only to the current process-token SID. The runtime directory,
-  lock and descriptor also receive protected current-user-only DACLs.
+  lock and descriptor also receive protected current-user-only DACLs. Before
+  changing an existing filesystem object's DACL, the implementation verifies
+  that its owner SID is the current user; validation checks both ownership and
+  the final DACL so a foreign owner cannot retain permission-reset authority.
 - A non-blocking OS file lock held for the broker-listener lifetime. A second
   broker receives a typed ownership error; no PID scanning or process killing
   is used.
@@ -49,7 +52,8 @@ GOTOOLCHAIN=go1.27.1 go test -race ./internal/ipc -count=50
 passed
 
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/ipc -count=20
-passed after the intermediate-symlink retarget fix
+passed after the intermediate-symlink retarget fix, and passed again after the
+Windows owner-SID validation fix
 
 PATH="$NVM_DIR/versions/node/v24.11.0/bin:$PATH" ./scripts/check
 passed after installing the frozen pnpm lockfile dependencies in this isolated
@@ -78,7 +82,9 @@ The native macOS race suite covers endpoint publication, same-user peer
 acceptance, private modes, handshake/generation validation, single ownership,
 live-endpoint refusal, stale recovery, cancellation safety and lock reuse.
 Shared Windows-compatible tests and an ACL-specific Windows test compile into
-the Windows test binary.
+the Windows test binary. The latter constructs current-user and foreign-owner
+security descriptors and proves ownership is enforced independently from a
+current-user-only DACL. Native execution remains pending.
 
 An independent source review found that the original Unix permission repair
 could follow a symlink at the runtime-directory or persistent-lock path before
@@ -93,6 +99,15 @@ processes acquired different lock inodes. Runtime paths are now canonicalized
 through trusted system aliases, unsafe intermediate components are rejected,
 and a regression starts broker A, replaces an intermediate directory with a
 symlink, then proves broker B cannot create a second lock or endpoint.
+
+Greptile then identified that a Windows object with a current-user-only DACL
+could still be owned by another SID, allowing that owner to restore access.
+The Windows implementation now requires current-user ownership before changing
+an ACL and validates both owner and DACL afterward. Its other report that
+`GetNamedSecurityInfo` leaked the returned descriptor was rejected after
+source inspection: pinned `golang.org/x/sys/windows` v0.47.0 copies the native
+descriptor onto the Go heap and invokes `LocalFree` inside the wrapper before
+returning it. Calling `LocalFree` again would be incorrect.
 
 One repository-wide `go test ./...` run initially timed out waiting for the
 pre-existing PTY fixture's `READY` marker in
