@@ -118,6 +118,46 @@ func TestDecodeClientRejectsMalformedUTF8BeforeReplacement(t *testing.T) {
 	}
 }
 
+func TestDecodeClientRejectsUnpairedSurrogateEscapes(t *testing.T) {
+	for _, messageType := range []MessageType{InputText, InputPaste} {
+		for _, text := range []string{`\ud800`, `\udfff`, `\ud800x`, `\ud800\ud800`, `\ud800\u0041`, `\ud800\\udc00`, `\ud83d\udc69\udfff`} {
+			t.Run(string(messageType)+"/"+text, func(t *testing.T) {
+				valid := encodeTestMessage(t, messageType, InputTextPayload{
+					Lease: strings.Repeat("A", 43), InputSequence: "1", Text: "PLACEHOLDER",
+				}, true)
+				message := bytes.Replace(valid, []byte("PLACEHOLDER"), []byte(text), 1)
+				if _, err := DecodeClient(message); err == nil {
+					t.Fatal("unpaired surrogate was accepted and replaced by encoding/json")
+				}
+			})
+		}
+	}
+}
+
+func TestDecodeClientPreservesPairedAndLiteralUnicodeEscapes(t *testing.T) {
+	for _, test := range []struct{ encoded, decoded string }{
+		{`\ud83d\udc69\u200d\ud83d\udcbb`, "👩‍💻"},
+		{`\uD83D\uDC69`, "👩"},
+		{`\ufffd`, "\ufffd"},
+		{`\\ud800`, `\ud800`},
+		{`\\\"\ud83d\udc69`, "\\\"👩"},
+		{`\ud7ff\ue000`, "\ud7ff\ue000"},
+	} {
+		valid := encodeTestMessage(t, InputText, InputTextPayload{
+			Lease: strings.Repeat("A", 43), InputSequence: "1", Text: "PLACEHOLDER",
+		}, true)
+		message := bytes.Replace(valid, []byte("PLACEHOLDER"), []byte(test.encoded), 1)
+		envelope, err := DecodeClient(message)
+		if err != nil {
+			t.Fatalf("valid Unicode %q: %v", test.encoded, err)
+		}
+		payload, err := DecodePayload[InputTextPayload](envelope)
+		if err != nil || payload.Text != test.decoded {
+			t.Fatalf("decoded %q = %q, error %v; want %q", test.encoded, payload.Text, err, test.decoded)
+		}
+	}
+}
+
 func TestDecimalCounterCanonicalBoundaries(t *testing.T) {
 	for _, counter := range []string{"0", "1", "9007199254740993", "18446744073709551615"} {
 		if _, err := parseCounter(counter); err != nil {

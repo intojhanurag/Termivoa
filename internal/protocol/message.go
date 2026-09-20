@@ -428,6 +428,9 @@ func strictDecode(data []byte, destination any) error {
 	if !utf8.Valid(data) {
 		return errors.New("protocol: message must be valid UTF-8")
 	}
+	if err := validateJSONUnicodeEscapes(data); err != nil {
+		return err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
@@ -440,6 +443,67 @@ func strictDecode(data []byte, destination any) error {
 		return err
 	}
 	return validateExactJSONFields(data, destination)
+}
+
+// validateJSONUnicodeEscapes rejects lone UTF-16 surrogates before encoding/json
+// can replace them. Ordinary JSON syntax remains the decoder's responsibility;
+// this scan only distinguishes escaped backslashes from actual Unicode escapes.
+func validateJSONUnicodeEscapes(data []byte) error {
+	inString := false
+	for index := 0; index < len(data); index++ {
+		if data[index] == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString || data[index] != '\\' {
+			continue
+		}
+		index++
+		if index >= len(data) || data[index] != 'u' {
+			continue
+		}
+		value, ok := jsonHexQuad(data, index+1)
+		if !ok {
+			return errors.New("protocol: invalid JSON Unicode escape")
+		}
+		index += 4
+		if value >= 0xdc00 && value <= 0xdfff {
+			return errors.New("protocol: unpaired JSON Unicode surrogate")
+		}
+		if value < 0xd800 || value > 0xdbff {
+			continue
+		}
+		if index+2 >= len(data) || data[index+1] != '\\' || data[index+2] != 'u' {
+			return errors.New("protocol: unpaired JSON Unicode surrogate")
+		}
+		low, ok := jsonHexQuad(data, index+3)
+		if !ok || low < 0xdc00 || low > 0xdfff {
+			return errors.New("protocol: unpaired JSON Unicode surrogate")
+		}
+		index += 6
+	}
+	return nil
+}
+
+func jsonHexQuad(data []byte, start int) (uint16, bool) {
+	if start+4 > len(data) {
+		return 0, false
+	}
+	var value uint16
+	for _, digit := range data[start : start+4] {
+		value <<= 4
+		switch {
+		case digit >= '0' && digit <= '9':
+			value |= uint16(digit - '0')
+		case digit >= 'a' && digit <= 'f':
+			value |= uint16(digit-'a') + 10
+		case digit >= 'A' && digit <= 'F':
+			value |= uint16(digit-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return value, true
 }
 
 // validateExactJSONFields closes encoding/json's case-insensitive struct-field
