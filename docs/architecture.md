@@ -71,6 +71,19 @@ paths, arguments, working directories, and environment values cannot cross the
 gateway/CLI-to-broker protocol boundary. Protocol UUIDs use lowercase canonical
 spelling so deduplication keys have one representation.
 
+The broker dispatches these requests serially within each accepted connection;
+different current-user connections may proceed concurrently. Every successful
+response retains the exact request ID, result type, session identity, and
+mutation operation ID required by its request. Operational failures use bounded
+stable error codes without paths or internal details. A malformed,
+oversized, or wrong-direction frame closes only that connection because it has
+no validated correlation identity. Gateway disconnect and listener shutdown
+close IPC connections but do not close the broker registry, database, or child
+sessions. Session creation resolves enabled project and shell-profile records
+inside the broker, verifies the profile belongs to the host platform, and only
+then builds an argument-array process specification with the fixed terminal
+capability environment.
+
 Screen/input counters travel as decimal strings. Session and broker generations distinguish a reconnect from a dead/replaced process. Full snapshots are transactional: chunks are validated and painted as one state before later patches become visible.
 
 ## Authentication and network
