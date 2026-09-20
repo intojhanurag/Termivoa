@@ -413,9 +413,30 @@ func TestBrokerRestartMarksOnlyPriorNonterminalSessionsLost(t *testing.T) {
 		if session.State != want {
 			t.Fatalf("session %s state = %s, want %s", id, session.State, want)
 		}
-		if index < 3 && (session.EndedAt == nil || session.EndedAt.Before(testTime.Add(2*time.Second))) {
-			t.Fatalf("session %s recovery time regressed: %+v", id, session.EndedAt)
+		if index < 3 && session.EndedAt == nil {
+			t.Fatalf("session %s recovery time is missing", id)
 		}
+	}
+	starting, err := second.GetSession(context.Background(), ids[0])
+	if err != nil {
+		t.Fatalf("get recovered starting session: %v", err)
+	}
+	running, err := second.GetSession(context.Background(), ids[1])
+	if err != nil {
+		t.Fatalf("get recovered running session: %v", err)
+	}
+	exiting, err := second.GetSession(context.Background(), ids[2])
+	if err != nil {
+		t.Fatalf("get recovered exiting session: %v", err)
+	}
+	if !starting.EndedAt.Equal(testTime) {
+		t.Fatalf("starting recovery time = %v, want %v", starting.EndedAt, testTime)
+	}
+	if !running.EndedAt.Equal(testTime.Add(time.Second)) {
+		t.Fatalf("running recovery time = %v, want %v", running.EndedAt, testTime.Add(time.Second))
+	}
+	if !exiting.EndedAt.Equal(testTime.Add(2 * time.Second)) {
+		t.Fatalf("exiting recovery time = %v, want %v", exiting.EndedAt, testTime.Add(2*time.Second))
 	}
 
 	current := fixtureSession("30000000-0000-4000-8000-000000000006", testBrokerB, "current")

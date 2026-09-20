@@ -194,30 +194,38 @@ func (store *Store) BeginBrokerGeneration(ctx context.Context, generation string
 	if err != nil {
 		return nil, err
 	}
-	when := millis(now)
-	for _, session := range lost {
-		when = max(when, millis(session.CreatedAt), millis(session.UpdatedAt))
+	requestedWhen := millis(now)
+	for index := range lost {
+		session := &lost[index]
+		when := max(requestedWhen, millis(session.CreatedAt), millis(session.UpdatedAt))
 		if session.StartedAt != nil {
 			when = max(when, millis(*session.StartedAt))
 		}
-	}
-	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata
-        SET state = 'lost', updated_at_ms = ?, ended_at_ms = ?, exit_code = NULL
-        WHERE broker_generation <> ? AND state IN ('starting', 'running', 'exiting')`, when, when, generation); err != nil {
-		return nil, fmt.Errorf("store: mark prior sessions lost: %w", err)
+		result, err := transaction.ExecContext(ctx, `UPDATE session_metadata
+            SET state = 'lost', updated_at_ms = ?, ended_at_ms = ?, exit_code = NULL
+            WHERE id = ? AND broker_generation <> ? AND state IN ('starting', 'running', 'exiting')`,
+			when, when, session.ID, generation)
+		if err != nil {
+			return nil, fmt.Errorf("store: mark prior session %s lost: %w", session.ID, err)
+		}
+		updated, err := result.RowsAffected()
+		if err != nil {
+			return nil, fmt.Errorf("store: confirm prior session %s recovery: %w", session.ID, err)
+		}
+		if updated != 1 {
+			return nil, fmt.Errorf("store: prior session %s changed during recovery", session.ID)
+		}
+		ended := fromMillis(when)
+		session.State = SessionLost
+		session.UpdatedAt = ended
+		session.EndedAt = timePointer(ended)
+		session.ExitCode = nil
 	}
 	if err := store.pruneTerminalSessions(ctx, transaction); err != nil {
 		return nil, err
 	}
 	if err := transaction.Commit(); err != nil {
 		return nil, fmt.Errorf("store: commit broker recovery: %w", err)
-	}
-	ended := fromMillis(when)
-	for index := range lost {
-		lost[index].State = SessionLost
-		lost[index].UpdatedAt = ended
-		lost[index].EndedAt = timePointer(ended)
-		lost[index].ExitCode = nil
 	}
 	store.broker = generation
 	return lost, nil
