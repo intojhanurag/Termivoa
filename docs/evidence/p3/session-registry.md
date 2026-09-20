@@ -67,5 +67,9 @@ non-idempotent shutdown, blocking capacity inspection, unbounded completed
 runtimes, and missing create-operation deduplication. A second pass found that
 temporary cleanup failures needed a definitive resource-completion signal and
 that operation history must not retain closed runtimes. These paths now have
-targeted race tests. The final review found no remaining merge blocker after
-20 repeated broker race-test runs.
+targeted race tests. PR review then exposed three more shutdown/listing races:
+normal shutdown could lose its final status, failed shutdown could finish
+before definitive cleanup, and List could race retirement. Final status is now
+published outside the closing actor, registry shutdown waits for definitive
+resource cleanup, and List falls back to the immutable final state. Each case
+has deterministic regression coverage.

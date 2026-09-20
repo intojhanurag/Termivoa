@@ -413,6 +413,12 @@ func TestRegistryShutdownReportsLateStartCleanupFailure(t *testing.T) {
 	if err := <-created; !errors.Is(err, ErrRegistryClosed) {
 		t.Fatalf("racing create error = %v", err)
 	}
+	select {
+	case err := <-closed:
+		t.Fatalf("registry closed before definitive cleanup: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	session.doneOnce.Do(func() { close(session.done) })
 	if err := <-closed; !errors.Is(err, cleanupErr) {
 		t.Fatalf("registry close error = %v", err)
 	}
@@ -421,11 +427,13 @@ func TestRegistryShutdownReportsLateStartCleanupFailure(t *testing.T) {
 func TestRegistryConcurrentCloseWaitsForSameResult(t *testing.T) {
 	gate := make(chan struct{})
 	cleanupErr := errors.New("blocked cleanup failure")
+	var managed *fakeManagedSession
 	registry := newFakeRegistry(t, RegistryConfig{
 		start: func(_ context.Context, config SessionConfig) (registrySession, error) {
 			session := newFakeManagedSession(config.ID, config.Generation, SessionRunning)
 			session.closeGate = gate
 			session.closeErr = cleanupErr
+			managed = session
 			return session, nil
 		},
 	})
@@ -441,10 +449,69 @@ func TestRegistryConcurrentCloseWaitsForSameResult(t *testing.T) {
 	case <-time.After(20 * time.Millisecond):
 	}
 	close(gate)
+	managed.doneOnce.Do(func() { close(managed.done) })
 	for range 2 {
 		if err := <-results; !errors.Is(err, cleanupErr) {
 			t.Fatalf("concurrent Close error = %v", err)
 		}
+	}
+}
+
+func TestRegistryCloseRunningRealSessionSucceeds(t *testing.T) {
+	fixture := buildSessionFixture(t)
+	registry, err := NewRegistry(context.Background(), RegistryConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{
+		OperationID: "shutdown-running",
+		Process: ptyhost.Spec{
+			Executable: fixture,
+			Env:        []string{"PTERM_PTY_FIXTURE_MODE=sleep"},
+			Columns:    80,
+			Rows:       24,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Close(); err != nil {
+		t.Fatalf("normal running-session shutdown: %v", err)
+	}
+}
+
+func TestRegistryListSurvivesConcurrentRetirement(t *testing.T) {
+	var managed *fakeManagedSession
+	registry := newFakeRegistry(t, RegistryConfig{
+		start: func(_ context.Context, config SessionConfig) (registrySession, error) {
+			managed = newFakeManagedSession(config.ID, config.Generation, SessionRunning)
+			return managed, nil
+		},
+	})
+	defer registry.Close()
+	created, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "list-race"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed.statusStarted = make(chan struct{})
+	managed.statusRelease = make(chan struct{})
+	managed.statusErr = ErrSessionClosed
+	listed := make(chan []SessionStatus, 1)
+	listErr := make(chan error, 1)
+	go func() {
+		statuses, err := registry.List(context.Background())
+		listed <- statuses
+		listErr <- err
+	}()
+	<-managed.statusStarted
+	managed.setState(SessionExited)
+	waitForRetiredRegistrySession(t, registry, created.ID)
+	close(managed.statusRelease)
+	if err := <-listErr; err != nil {
+		t.Fatal(err)
+	}
+	statuses := <-listed
+	if len(statuses) != 1 || statuses[0].ID != created.ID || statuses[0].State != SessionExited {
+		t.Fatalf("list during retirement = %#v", statuses)
 	}
 }
 
@@ -578,15 +645,19 @@ func waitForRetiredRegistrySession(t *testing.T, registry *Registry, id string) 
 }
 
 type fakeManagedSession struct {
-	mu        sync.Mutex
-	status    SessionStatus
-	closed    atomic.Bool
-	ended     chan struct{}
-	endedOnce sync.Once
-	done      chan struct{}
-	doneOnce  sync.Once
-	closeGate <-chan struct{}
-	closeErr  error
+	mu            sync.Mutex
+	status        SessionStatus
+	closed        atomic.Bool
+	ended         chan struct{}
+	endedOnce     sync.Once
+	done          chan struct{}
+	doneOnce      sync.Once
+	closeGate     <-chan struct{}
+	closeErr      error
+	statusStarted chan struct{}
+	statusRelease chan struct{}
+	statusOnce    sync.Once
+	statusErr     error
 }
 
 func newFakeManagedSession(id, generation string, state SessionState) *fakeManagedSession {
@@ -612,6 +683,14 @@ func (session *fakeManagedSession) setState(state SessionState) {
 
 func (session *fakeManagedSession) Ended() <-chan struct{} { return session.ended }
 func (session *fakeManagedSession) Done() <-chan struct{}  { return session.done }
+func (session *fakeManagedSession) FinalStatus() (SessionStatus, bool) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.status.State != SessionExited && session.status.State != SessionLost {
+		return SessionStatus{}, false
+	}
+	return cloneSessionStatus(session.status), true
+}
 
 func (session *fakeManagedSession) AcquireControl(context.Context, string, string, string) (ControlGrant, error) {
 	return ControlGrant{}, nil
@@ -633,6 +712,13 @@ func (session *fakeManagedSession) Snapshot(context.Context) (terminal.Frame, er
 	return terminal.Frame{}, nil
 }
 func (session *fakeManagedSession) Status(context.Context) (SessionStatus, error) {
+	if session.statusStarted != nil {
+		session.statusOnce.Do(func() { close(session.statusStarted) })
+		<-session.statusRelease
+	}
+	if session.statusErr != nil {
+		return SessionStatus{}, session.statusErr
+	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	return cloneSessionStatus(session.status), nil

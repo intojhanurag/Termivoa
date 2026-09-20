@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
@@ -24,7 +23,6 @@ const (
 	DefaultCreateOperationHistory = 1024
 	MaxCreateOperationHistory     = 16384
 	MaxOperationIDBytes           = 128
-	registryCleanupTimeout        = 3 * time.Second
 )
 
 var (
@@ -55,6 +53,7 @@ type registrySession interface {
 	ManagedSession
 	Ended() <-chan struct{}
 	Done() <-chan struct{}
+	FinalStatus() (SessionStatus, bool)
 	Close() error
 }
 
@@ -114,7 +113,6 @@ type Registry struct {
 	starts         sync.WaitGroup
 	cleanups       sync.WaitGroup
 	closeDone      chan struct{}
-	closing        chan struct{}
 	closeErr       error
 	lifecycleErrs  []error
 }
@@ -157,7 +155,7 @@ func NewRegistry(ctx context.Context, config RegistryConfig) (*Registry, error) 
 		ctx: registryContext, cancel: cancel, config: config,
 		sessions: make(map[string]*registryEntry), reserved: make(map[string]struct{}),
 		retired: make(map[string]SessionStatus), operations: make(map[string]*createOperation),
-		closeDone: make(chan struct{}), closing: make(chan struct{}),
+		closeDone: make(chan struct{}),
 	}, nil
 }
 
@@ -291,7 +289,14 @@ func (registry *Registry) List(ctx context.Context) ([]SessionStatus, error) {
 		}
 		status, err := entry.session.Status(ctx)
 		if err != nil {
-			return nil, err
+			registry.mu.Lock()
+			final = entry.final
+			registry.mu.Unlock()
+			if final == nil {
+				return nil, err
+			}
+			statuses = append(statuses, cloneSessionStatus(*final))
+			continue
 		}
 		statuses = append(statuses, status)
 	}
@@ -319,7 +324,6 @@ func (registry *Registry) Close() error {
 	}
 	registry.closed = true
 	registry.cancel()
-	close(registry.closing)
 	registry.mu.Unlock()
 
 	registry.starts.Wait()
@@ -362,26 +366,21 @@ func (registry *Registry) Close() error {
 func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 	defer registry.cleanups.Done()
 	<-entry.session.Ended()
-	statusContext, cancel := context.WithTimeout(context.Background(), registryCleanupTimeout)
-	status, statusErr := entry.session.Status(statusContext)
-	cancel()
-	if statusErr == nil {
+	status, hasStatus := entry.session.FinalStatus()
+	if hasStatus {
 		registry.mu.Lock()
 		entry.final = &status
 		registry.mu.Unlock()
 	}
 	closeErr := entry.session.Close()
 	if closeErr != nil {
-		select {
-		case <-entry.session.Done():
-			closeErr = nil
-		case <-registry.closing:
-		}
+		<-entry.session.Done()
+		closeErr = nil
 	}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	if statusErr != nil {
-		registry.lifecycleErrs = append(registry.lifecycleErrs, fmt.Errorf("session %s final status: %w", id, statusErr))
+	if !hasStatus {
+		registry.lifecycleErrs = append(registry.lifecycleErrs, fmt.Errorf("session %s final status unavailable", id))
 	}
 	if closeErr != nil {
 		registry.lifecycleErrs = append(registry.lifecycleErrs, fmt.Errorf("session %s cleanup: %w", id, closeErr))
@@ -391,7 +390,7 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 		return
 	}
 	delete(registry.sessions, id)
-	if statusErr == nil {
+	if hasStatus {
 		registry.retired[id] = cloneSessionStatus(status)
 		registry.retiredOrder = append(registry.retiredOrder, id)
 		for len(registry.retiredOrder) > registry.config.RetainedSessionRecords {

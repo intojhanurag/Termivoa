@@ -119,6 +119,9 @@ type Session struct {
 	closeOnce          sync.Once
 	endedOnce          sync.Once
 	shutdownReportOnce sync.Once
+	finalMu            sync.Mutex
+	finalStatus        SessionStatus
+	hasFinalStatus     bool
 	pumpWG             sync.WaitGroup
 	shutdownErr        error
 }
@@ -283,6 +286,17 @@ func (session *Session) Done() <-chan struct{} {
 	return session.done
 }
 
+// FinalStatus returns the immutable terminal lifecycle state after Ended has
+// closed. It does not enqueue work on an actor that may already be shutting down.
+func (session *Session) FinalStatus() (SessionStatus, bool) {
+	session.finalMu.Lock()
+	defer session.finalMu.Unlock()
+	if !session.hasFinalStatus {
+		return SessionStatus{}, false
+	}
+	return cloneSessionStatus(session.finalStatus), true
+}
+
 // AcquireControl explicitly replaces the current controller. Pending input
 // from the replaced connection is removed before the new lease is returned.
 func (session *Session) AcquireControl(ctx context.Context, generation, connectionID, deviceID string) (ControlGrant, error) {
@@ -441,7 +455,7 @@ func (session *Session) run(columns, rows int) {
 		if status.State == SessionRunning {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
-			session.markEnded()
+			session.markEnded(status)
 			session.clearControl()
 		}
 		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -483,7 +497,7 @@ func (session *Session) run(columns, rows int) {
 				status.EndedAt = time.Now()
 				code := processExitCode(waitErr)
 				status.ExitCode = &code
-				session.markEnded()
+				session.markEnded(status)
 				session.clearControl()
 			}
 			if shuttingDown {
@@ -683,7 +697,7 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		if response.err != nil {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
-			session.markEnded()
+			session.markEnded(*status)
 			session.clearControl()
 		}
 	case requestRevokeDevice:
@@ -723,15 +737,21 @@ func (session *Session) markLost(status *SessionStatus) {
 	}
 	status.State = SessionLost
 	status.EndedAt = time.Now()
-	session.markEnded()
+	session.markEnded(*status)
 	session.clearControl()
 	terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	_ = session.process.Terminate(terminateContext)
 	cancel()
 }
 
-func (session *Session) markEnded() {
-	session.endedOnce.Do(func() { close(session.ended) })
+func (session *Session) markEnded(status SessionStatus) {
+	session.endedOnce.Do(func() {
+		session.finalMu.Lock()
+		session.finalStatus = cloneSessionStatus(status)
+		session.hasFinalStatus = true
+		session.finalMu.Unlock()
+		close(session.ended)
+	})
 }
 
 func (session *Session) clearControl() {
