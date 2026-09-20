@@ -17,10 +17,14 @@ All notable changes will be documented here. The project intends to follow [Keep
   structured input, final-screen retention, and ordered lifecycle shutdown.
 - Broker-local session registry with random process generations, create-operation
   deduplication, bounded live/retired resources, and coordinated shutdown.
+- Broker-owned SQLite migrations and validated project, shell-profile, and
+  session metadata, including restart recovery that marks prior live sessions
+  lost without replaying commands.
 
 ### Not yet implemented
 
-- SQLite recovery, platform IPC listeners, and separate gateway process.
+- Durable mutation receipts, authentication/settings persistence, platform IPC
+  listeners, and separate gateway process.
 - Connected desktop attachment and complete phone interface.
 - Pairing, private network setup, installers, signing, and release artifacts.
 
