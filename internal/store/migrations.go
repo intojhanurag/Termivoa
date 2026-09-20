@@ -19,6 +19,7 @@ type migration struct {
 	version int64
 	name    string
 	sql     string
+	apply   func(context.Context, *sql.Tx) error
 }
 
 func bundledMigrations() ([]migration, error) {
@@ -41,7 +42,11 @@ func bundledMigrations() ([]migration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("store: read migration %q: %w", entry.Name(), err)
 		}
-		migrations = append(migrations, migration{version: version, name: filename, sql: string(contents)})
+		candidate := migration{version: version, name: filename, sql: string(contents)}
+		if version == 3 {
+			candidate.apply = backfillMutationReceiptSnapshots
+		}
+		migrations = append(migrations, candidate)
 	}
 	sort.Slice(migrations, func(left, right int) bool { return migrations[left].version < migrations[right].version })
 	for index, candidate := range migrations {
@@ -111,6 +116,11 @@ func applyMigrations(ctx context.Context, database *sql.DB, migrations []migrati
 		}
 		if _, err := transaction.ExecContext(ctx, candidate.sql); err != nil {
 			return fmt.Errorf("store: apply migration %d: %w", candidate.version, err)
+		}
+		if candidate.apply != nil {
+			if err := candidate.apply(ctx, transaction); err != nil {
+				return fmt.Errorf("store: migrate data for version %d: %w", candidate.version, err)
+			}
 		}
 		if _, err := transaction.ExecContext(ctx,
 			`INSERT INTO schema_migrations(version, name, checksum, applied_at_ms) VALUES (?, ?, ?, ?)`,

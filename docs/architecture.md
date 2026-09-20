@@ -71,6 +71,19 @@ paths, arguments, working directories, and environment values cannot cross the
 gateway/CLI-to-broker protocol boundary. Protocol UUIDs use lowercase canonical
 spelling so deduplication keys have one representation.
 
+The broker dispatches these requests serially within each accepted connection;
+different current-user connections may proceed concurrently. Every successful
+response retains the exact request ID, result type, session identity, and
+mutation operation ID required by its request. Operational failures use bounded
+stable error codes without paths or internal details. A malformed,
+oversized, or wrong-direction frame closes only that connection because it has
+no validated correlation identity. Gateway disconnect and listener shutdown
+close IPC connections but do not close the broker registry, database, or child
+sessions. Session creation resolves enabled project and shell-profile records
+inside the broker, verifies the profile belongs to the host platform, and only
+then builds an argument-array process specification with the fixed terminal
+capability environment.
+
 Screen/input counters travel as decimal strings. Session and broker generations distinguish a reconnect from a dead/replaced process. Full snapshots are transactional: chunks are validated and painted as one state before later patches become visible.
 
 ## Authentication and network
@@ -83,7 +96,7 @@ The trust boundary excludes malware already running as the same OS user. The pro
 
 ## Persistence
 
-The broker is the sole SQLite owner. Persistent tables cover migrations, paired devices, browser sessions, pairing state, projects, shell profiles, session metadata, bounded mutation receipts, and settings. Session create, rename, and terminate requests use canonical UUID operation IDs and request fingerprints. Their metadata change and result receipt commit in one transaction; a retry returns that original result, while reuse for different request content is a conflict. Broker shutdown closes the mutation admission gate before receipt lookup, waits for already-admitted rename and terminate operations, and retains process-termination and cleanup failures as lifecycle diagnostics. A terminal event may precede the latest metadata mutation timestamp, so persistence keeps `updated_at` monotonic while recording the actual `ended_at`. Receipts for active sessions are never evicted. Terminal-session receipt history is pruned first, and the broker rejects a new unique mutation if active receipts alone reach the hard cap. WAL, foreign keys, transactions, prepared statements, and a bounded busy timeout are required. Raw terminal data, provider credentials, active process handles, and controller leases are not persisted.
+The broker is the sole SQLite owner. Persistent tables cover migrations, paired devices, browser sessions, pairing state, projects, shell profiles, session metadata, bounded mutation receipts, and settings. Session create, rename, and terminate requests use canonical UUID operation IDs and request fingerprints. A create fingerprint contains only the saved project and shell-profile IDs supplied by the client; mutable broker-resolved titles, paths, executables, arguments, and environment cannot change the identity of a retry. Each new metadata change and an immutable bounded session-result snapshot commit in one transaction, so a retry returns the original acknowledgement rather than rereading current session or saved-configuration state. Reuse for different request content is a conflict. Schema-v2 receipts predate those snapshots. Migration 003 rewrites their create fingerprints to the saved-ID identity, reconstructs only legacy rename results whose response fields are durably known, and marks legacy create/terminate results explicitly unavailable. A matching unavailable receipt produces a deterministic error before any process side effect; it is never filled with mutable current metadata or rerun. Broker shutdown closes the mutation admission gate before receipt lookup, waits for already-admitted mutations, and retains process-termination and cleanup failures as lifecycle diagnostics. A terminal event may precede the latest metadata mutation timestamp, so persistence keeps `updated_at` monotonic while recording the actual `ended_at`. Receipts for active sessions are never evicted. Terminal-session receipt history is pruned first, and the broker rejects a new unique mutation if active receipts alone reach the hard cap. WAL, foreign keys, transactions, prepared statements, and a bounded busy timeout are required. Raw terminal data, provider credentials, active process handles, and controller leases are not persisted.
 
 Migration failure must prevent startup without damaging the prior database. Release updates retain a previous signed version and must test schema backup/rollback compatibility.
 

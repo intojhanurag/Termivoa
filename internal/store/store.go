@@ -17,17 +17,18 @@ import (
 const busyTimeoutMillis = 5000
 
 var (
-	ErrSessionMissing        = errors.New("store: session does not exist")
-	ErrProjectMissing        = errors.New("store: project does not exist")
-	ErrShellProfileMissing   = errors.New("store: shell profile does not exist")
-	ErrMetadataConflict      = errors.New("store: immutable metadata changed")
-	ErrGenerationChanged     = errors.New("store: session generation changed")
-	ErrInvalidTransition     = errors.New("store: invalid session lifecycle transition")
-	ErrTimestampRegression   = errors.New("store: timestamp moved backward")
-	ErrBrokerNotStarted      = errors.New("store: broker generation has not started")
-	ErrBrokerAlreadyStarted  = errors.New("store: broker generation already started")
-	ErrOperationConflict     = errors.New("store: operation ID was already used for a different request")
-	ErrOperationReceiptLimit = errors.New("store: operation receipt capacity reached")
+	ErrSessionMissing            = errors.New("store: session does not exist")
+	ErrProjectMissing            = errors.New("store: project does not exist")
+	ErrShellProfileMissing       = errors.New("store: shell profile does not exist")
+	ErrMetadataConflict          = errors.New("store: immutable metadata changed")
+	ErrGenerationChanged         = errors.New("store: session generation changed")
+	ErrInvalidTransition         = errors.New("store: invalid session lifecycle transition")
+	ErrTimestampRegression       = errors.New("store: timestamp moved backward")
+	ErrBrokerNotStarted          = errors.New("store: broker generation has not started")
+	ErrBrokerAlreadyStarted      = errors.New("store: broker generation already started")
+	ErrOperationConflict         = errors.New("store: operation ID was already used for a different request")
+	ErrOperationReceiptLimit     = errors.New("store: operation receipt capacity reached")
+	ErrMutationResultUnavailable = errors.New("store: exact legacy mutation result is unavailable")
 )
 
 type Store struct {

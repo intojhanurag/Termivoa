@@ -35,6 +35,8 @@ shutdown admission barriers, clock-rollback-safe monotonic persistence, and
 retained runtime/cleanup diagnostics.
 Broker-management RPC merged from private PR #20 as
 `e14cc5722066f714db2c3a71a4d5442b11df4089`.
+Immutable history paging merged from private PR #21 as
+`f74f7620746ba1646e7a056886558f23dbbc795a`.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
@@ -47,23 +49,27 @@ The broker-management RPC checkpoint defines and validates bounded local IPC
 requests/results for session list, create, rename, terminate, and status.
 Mutation operation IDs are distinct from request correlation IDs, and create
 requests can reference only saved project and shell-profile IDs. Request
-dispatch remains a separate pending checkpoint. Validation evidence is
-recorded in `docs/evidence/p3/broker-management-rpc.md`.
+dispatch is now integrated with the durable registry/store checkpoint on
+`feat/p3-broker-rpc-dispatch`: accepted current-user connections complete the
+handshake, execute sequential correlated RPC, resolve process configuration
+inside the broker, return typed bounded errors, and survive gateway reconnects
+without starting a second process. Validation evidence is recorded in
+`docs/evidence/p3/broker-management-rpc.md` and
+`docs/evidence/p3/broker-management-dispatch.md`.
 The protocol audit then tightened exact case-sensitive JSON field matching,
 lowercase UUID canonicalization, schema-level session identity invariants, and
-consistent UTF-8 title semantics while preserving stored legacy titles;
-stateful response correlation remains part of the pending dispatcher/client.
-Process separation, broker dispatch, gateway integration/restart, history
-paging, and native Windows evidence remain pending.
+consistent UTF-8 title semantics while preserving stored legacy titles. The
+dispatcher now enforces response correlation. The gateway HTTP/WebSocket
+bridge, live-session frame/input dispatch, process separation, and native
+Windows evidence remain pending.
 
-The `feat/p3-history-paging` checkpoint now provides actor-owned normal-history
+The history-paging checkpoint provides actor-owned normal-history
 epochs/revisions, immutable pages of at most 200 rows, stale-token
 `history.changed` results, viewer-relative history-reset signaling, and strict
 5,000-row/32 MiB normalized retention applied to the emulator scrollback
 itself. Alternate-screen state has no hidden scrollback. Focused race tests
 pass; full repository and Windows cross-compile evidence is recorded in
-`docs/evidence/p3/history-paging.md`. This is local checkpoint evidence until
-the branch is reviewed and merged.
+`docs/evidence/p3/history-paging.md`.
 
 The follow-up boundary audit found and fixed a retained-wide-cell resize
 blocker: shrinking a history row with a width-2 grapheme in the new final
@@ -78,6 +84,21 @@ four fields, canonical wire patches read the token from that patch, and the
 reset signal remains derived from each viewer's applied base epoch. Actor-backed
 append/reset regression tests, the full Node 24 check, race tests, and Windows
 amd64 compile-only checks pass.
+
+An independent dispatch audit found that initial mutation responses were being
+rebuilt from mutable saved configuration or current session metadata. The
+checkpoint now persists the exact bounded response snapshot with every receipt,
+checks create receipts before resolving saved configuration, and returns
+rename/terminate receipt snapshots without rereading current state. Regression
+tests cover disabled create configuration, rename A/B/replay A, and terminal
+state change before terminate replay. Migration 003 rewrites old create
+fingerprints to the stable project/profile-ID identity. A later PR review found
+that v2 create receipts could not prove an original title after a later rename;
+the migration now marks unprovable legacy create/terminate results unavailable
+instead of manufacturing a hybrid response, and retries fail deterministically
+without rerunning the operation. Store, Registry, and RPC regressions cover the
+boundary. Final validation and the follow-up independent audit are recorded in
+`docs/evidence/p3/broker-management-dispatch.md`.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
@@ -144,7 +165,7 @@ These questions must be resolved before their dependent gates; they do not block
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging has local checkpoint evidence; broker dispatch and gateway integration remain pending; evidence under `docs/evidence/p3/` |
+| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging merged through PR #21; broker-management dispatch is implemented on `feat/p3-broker-rpc-dispatch`; gateway integration remains pending; evidence under `docs/evidence/p3/` |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
 | P6 — Install and update | Not started | None |

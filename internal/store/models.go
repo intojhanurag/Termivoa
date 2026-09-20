@@ -76,4 +76,28 @@ type MutationResult struct {
 	Title       string
 	State       SessionState
 	CommittedAt time.Time
+	Session     MutationSessionSnapshot
+}
+
+// MutationSessionSnapshot is the exact bounded session view returned when a
+// mutation commits. Nullable lifecycle fields use explicit presence bits so
+// receipts remain comparable in tests and deterministic across SQLite reopen.
+type MutationSessionSnapshot struct {
+	ID               string       `json:"id"`
+	Generation       string       `json:"generation"`
+	BrokerGeneration string       `json:"brokerGeneration"`
+	Title            string       `json:"title"`
+	ProjectID        string       `json:"projectId"`
+	ShellProfileID   string       `json:"shellProfileId"`
+	State            SessionState `json:"state"`
+	Columns          int          `json:"columns"`
+	Rows             int          `json:"rows"`
+	CreatedAt        time.Time    `json:"createdAt"`
+	UpdatedAt        time.Time    `json:"updatedAt"`
+	StartedAt        time.Time    `json:"startedAt"`
+	HasStartedAt     bool         `json:"hasStartedAt"`
+	EndedAt          time.Time    `json:"endedAt"`
+	HasEndedAt       bool         `json:"hasEndedAt"`
+	ExitCode         int32        `json:"exitCode"`
+	HasExitCode      bool         `json:"hasExitCode"`
 }
