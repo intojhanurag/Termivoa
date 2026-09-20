@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -98,6 +99,33 @@ func TestMigrationFailureRollsBackWithoutDamagingPriorSchema(t *testing.T) {
 	}
 }
 
+func TestPendingMigrationSetIsAtomic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "atomic-migrations.sqlite")
+	database, err := openDatabase(context.Background(), path)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer database.Close()
+	migrations := []migration{
+		{version: 1, name: "001_first.sql", sql: `CREATE TABLE first_pending (id INTEGER PRIMARY KEY) STRICT;`},
+		{version: 2, name: "002_broken.sql", sql: `
+			CREATE TABLE second_pending (id INTEGER PRIMARY KEY) STRICT;
+			INSERT INTO missing_table(id) VALUES (1);`},
+	}
+	if err := applyMigrations(context.Background(), database, migrations, testTime.UnixMilli()); err == nil {
+		t.Fatal("partially failing migration set unexpectedly succeeded")
+	}
+	for _, table := range []string{"schema_migrations", "first_pending", "second_pending"} {
+		var count int
+		if err := database.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
+			t.Fatalf("inspect table %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("failed migration set left table %s behind", table)
+		}
+	}
+}
+
 func TestMigrationChecksumAndFutureVersionAreRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "drift.sqlite")
 	database, err := openDatabase(context.Background(), path)
@@ -189,6 +217,107 @@ func TestSessionForeignKeysUnicodeRoundTripAndLifecycle(t *testing.T) {
 	}
 	if got.Title != "renamed ✓" || got.State != SessionExited || got.StartedAt == nil || got.EndedAt == nil || got.ExitCode == nil || *got.ExitCode != 7 {
 		t.Fatalf("exited session = %+v", got)
+	}
+}
+
+func TestProjectAndShellProfileRejectStaleOrRecreatedMetadata(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "metadata-order.sqlite"))
+	defer store.Close()
+	seedParents(t, store)
+
+	newerProject := Project{
+		ID: testProject, DisplayName: "new project", CanonicalPath: "/tmp/new project",
+		CreatedAt: testTime, UpdatedAt: testTime.Add(10 * time.Second),
+	}
+	if err := store.PutProject(context.Background(), newerProject); err != nil {
+		t.Fatalf("put newer project: %v", err)
+	}
+	staleProject := newerProject
+	staleProject.DisplayName = "stale project"
+	staleProject.UpdatedAt = testTime.Add(5 * time.Second)
+	if err := store.PutProject(context.Background(), staleProject); !errors.Is(err, ErrTimestampRegression) {
+		t.Fatalf("stale project error = %v", err)
+	}
+	recreatedProject := newerProject
+	recreatedProject.CreatedAt = testTime.Add(time.Second)
+	recreatedProject.UpdatedAt = testTime.Add(11 * time.Second)
+	if err := store.PutProject(context.Background(), recreatedProject); !errors.Is(err, ErrMetadataConflict) {
+		t.Fatalf("recreated project error = %v", err)
+	}
+	project, err := store.GetProject(context.Background(), testProject)
+	if err != nil || project.DisplayName != newerProject.DisplayName || !project.UpdatedAt.Equal(newerProject.UpdatedAt) {
+		t.Fatalf("project after rejected writes = %+v, %v", project, err)
+	}
+
+	newerProfile := ShellProfile{
+		ID: testProfile, DisplayName: "new shell", Platform: PlatformDarwin,
+		ExecutablePath: "/bin/zsh", Arguments: []string{"-l", "new"},
+		CreatedAt: testTime, UpdatedAt: testTime.Add(10 * time.Second),
+	}
+	if err := store.PutShellProfile(context.Background(), newerProfile); err != nil {
+		t.Fatalf("put newer shell profile: %v", err)
+	}
+	staleProfile := newerProfile
+	staleProfile.DisplayName = "stale shell"
+	staleProfile.Arguments = []string{"stale"}
+	staleProfile.UpdatedAt = testTime.Add(5 * time.Second)
+	if err := store.PutShellProfile(context.Background(), staleProfile); !errors.Is(err, ErrTimestampRegression) {
+		t.Fatalf("stale shell profile error = %v", err)
+	}
+	recreatedProfile := newerProfile
+	recreatedProfile.CreatedAt = testTime.Add(time.Second)
+	recreatedProfile.UpdatedAt = testTime.Add(11 * time.Second)
+	if err := store.PutShellProfile(context.Background(), recreatedProfile); !errors.Is(err, ErrMetadataConflict) {
+		t.Fatalf("recreated shell profile error = %v", err)
+	}
+	profile, err := store.GetShellProfile(context.Background(), testProfile)
+	if err != nil || profile.DisplayName != newerProfile.DisplayName || len(profile.Arguments) != 2 || profile.Arguments[1] != "new" {
+		t.Fatalf("shell profile after rejected writes = %+v, %v", profile, err)
+	}
+}
+
+func TestTerminalSessionRetentionAndListingAreBounded(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "session-retention.sqlite"))
+	defer store.Close()
+	store.retainedTerminalSessions = 2
+	store.sessionListLimit = 3
+	beginBroker(t, store, testBrokerA)
+	seedParents(t, store)
+
+	active := fixtureSession("35555555-5555-4555-8555-555555555550", testBrokerA, "active")
+	if err := store.CreateSession(context.Background(), active); err != nil {
+		t.Fatalf("create active session: %v", err)
+	}
+	terminalIDs := []string{
+		"35555555-5555-4555-8555-555555555551",
+		"35555555-5555-4555-8555-555555555552",
+		"35555555-5555-4555-8555-555555555553",
+	}
+	for index, id := range terminalIDs {
+		session := fixtureSession(id, testBrokerA, fmt.Sprintf("terminal-%d", index))
+		if err := store.CreateSession(context.Background(), session); err != nil {
+			t.Fatalf("create terminal session %d: %v", index, err)
+		}
+		mustTransition(t, store, session, SessionRunning, nil, index*2+1)
+		code := int32(index)
+		mustTransition(t, store, session, SessionExited, &code, index*2+2)
+	}
+	if _, err := store.GetSession(context.Background(), terminalIDs[0]); !errors.Is(err, ErrSessionMissing) {
+		t.Fatalf("oldest retained session error = %v", err)
+	}
+	listed, err := store.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list bounded sessions: %v", err)
+	}
+	if len(listed) != 3 {
+		t.Fatalf("listed sessions = %d, want active plus two terminal", len(listed))
+	}
+	foundActive := false
+	for _, session := range listed {
+		foundActive = foundActive || session.ID == active.ID
+	}
+	if !foundActive {
+		t.Fatal("bounded listing omitted the live session")
 	}
 }
 

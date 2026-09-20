@@ -53,7 +53,13 @@ func bundledMigrations() ([]migration, error) {
 }
 
 func applyMigrations(ctx context.Context, database *sql.DB, migrations []migration, nowMillis int64) error {
-	if _, err := database.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+	transaction, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin migration set: %w", err)
+	}
+	defer transaction.Rollback() //nolint:errcheck
+
+	if _, err := transaction.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY CHECK (version > 0),
         name TEXT NOT NULL UNIQUE CHECK (length(name) BETWEEN 1 AND 128),
         checksum BLOB NOT NULL CHECK (length(checksum) = 32),
@@ -66,7 +72,7 @@ func applyMigrations(ctx context.Context, database *sql.DB, migrations []migrati
 		name     string
 		checksum []byte
 	})
-	rows, err := database.QueryContext(ctx, `SELECT version, name, checksum FROM schema_migrations ORDER BY version`)
+	rows, err := transaction.QueryContext(ctx, `SELECT version, name, checksum FROM schema_migrations ORDER BY version`)
 	if err != nil {
 		return fmt.Errorf("store: read migration ledger: %w", err)
 	}
@@ -103,24 +109,18 @@ func applyMigrations(ctx context.Context, database *sql.DB, migrations []migrati
 			}
 			continue
 		}
-		transaction, err := database.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("store: begin migration %d: %w", candidate.version, err)
-		}
 		if _, err := transaction.ExecContext(ctx, candidate.sql); err != nil {
-			_ = transaction.Rollback()
 			return fmt.Errorf("store: apply migration %d: %w", candidate.version, err)
 		}
 		if _, err := transaction.ExecContext(ctx,
 			`INSERT INTO schema_migrations(version, name, checksum, applied_at_ms) VALUES (?, ?, ?, ?)`,
 			candidate.version, candidate.name, digest[:], nowMillis,
 		); err != nil {
-			_ = transaction.Rollback()
 			return fmt.Errorf("store: record migration %d: %w", candidate.version, err)
 		}
-		if err := transaction.Commit(); err != nil {
-			return fmt.Errorf("store: commit migration %d: %w", candidate.version, err)
-		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("store: commit migration set: %w", err)
 	}
 	return nil
 }

@@ -20,9 +20,10 @@ var (
 	ErrSessionMissing       = errors.New("store: session does not exist")
 	ErrProjectMissing       = errors.New("store: project does not exist")
 	ErrShellProfileMissing  = errors.New("store: shell profile does not exist")
+	ErrMetadataConflict     = errors.New("store: immutable metadata changed")
 	ErrGenerationChanged    = errors.New("store: session generation changed")
 	ErrInvalidTransition    = errors.New("store: invalid session lifecycle transition")
-	ErrTimestampRegression  = errors.New("store: session timestamp moved backward")
+	ErrTimestampRegression  = errors.New("store: timestamp moved backward")
 	ErrBrokerNotStarted     = errors.New("store: broker generation has not started")
 	ErrBrokerAlreadyStarted = errors.New("store: broker generation already started")
 )
@@ -31,6 +32,9 @@ type Store struct {
 	database *sql.DB
 	mu       sync.RWMutex
 	broker   string
+
+	retainedTerminalSessions int
+	sessionListLimit         int
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -72,7 +76,11 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = database.Close()
 		return nil, err
 	}
-	return &Store{database: database}, nil
+	return &Store{
+		database:                 database,
+		retainedTerminalSessions: defaultRetainedTerminalSessions,
+		sessionListLimit:         defaultSessionListLimit,
+	}, nil
 }
 
 func openDatabase(ctx context.Context, absolutePath string) (*sql.DB, error) {

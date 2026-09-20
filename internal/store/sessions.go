@@ -11,26 +11,50 @@ import (
 	"time"
 )
 
-const sessionColumns = `id, generation, broker_generation, title, project_id, shell_profile_id,
+const (
+	defaultRetainedTerminalSessions = 4096
+	defaultSessionListLimit         = defaultRetainedTerminalSessions + 64
+	sessionColumns                  = `id, generation, broker_generation, title, project_id, shell_profile_id,
 state, columns_count, rows_count, created_at_ms, updated_at_ms, started_at_ms, ended_at_ms, exit_code`
+)
 
 func (store *Store) PutProject(ctx context.Context, project Project) error {
 	if err := validateProject(project); err != nil {
 		return err
 	}
-	_, err := store.database.ExecContext(ctx, `INSERT INTO projects(
-        id, display_name, canonical_path, created_at_ms, updated_at_ms, disabled_at_ms
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-        display_name = excluded.display_name,
-        canonical_path = excluded.canonical_path,
-        updated_at_ms = excluded.updated_at_ms,
-        disabled_at_ms = excluded.disabled_at_ms`,
-		project.ID, project.DisplayName, project.CanonicalPath,
-		millis(project.CreatedAt), millis(project.UpdatedAt), nullableMillis(project.DisabledAt),
-	)
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin project write: %w", err)
+	}
+	defer transaction.Rollback() //nolint:errcheck
+	created, updated := millis(project.CreatedAt), millis(project.UpdatedAt)
+	var storedCreated, storedUpdated int64
+	err = transaction.QueryRowContext(ctx,
+		`SELECT created_at_ms, updated_at_ms FROM projects WHERE id = ?`, project.ID,
+	).Scan(&storedCreated, &storedUpdated)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = transaction.ExecContext(ctx, `INSERT INTO projects(
+			id, display_name, canonical_path, created_at_ms, updated_at_ms, disabled_at_ms
+		) VALUES (?, ?, ?, ?, ?, ?)`, project.ID, project.DisplayName, project.CanonicalPath,
+			created, updated, nullableMillis(project.DisabledAt))
+	case err != nil:
+		return fmt.Errorf("store: read project timeline: %w", err)
+	case created != storedCreated:
+		return fmt.Errorf("%w: project %s creation time", ErrMetadataConflict, project.ID)
+	case updated < storedUpdated:
+		return fmt.Errorf("%w: project %s", ErrTimestampRegression, project.ID)
+	default:
+		_, err = transaction.ExecContext(ctx, `UPDATE projects SET
+			display_name = ?, canonical_path = ?, updated_at_ms = ?, disabled_at_ms = ?
+			WHERE id = ?`, project.DisplayName, project.CanonicalPath, updated,
+			nullableMillis(project.DisabledAt), project.ID)
+	}
 	if err != nil {
 		return fmt.Errorf("store: put project: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("store: commit project write: %w", err)
 	}
 	return nil
 }
@@ -69,22 +93,41 @@ func (store *Store) PutShellProfile(ctx context.Context, profile ShellProfile) e
 	if err != nil {
 		return fmt.Errorf("store: encode shell arguments: %w", err)
 	}
-	_, err = store.database.ExecContext(ctx, `INSERT INTO shell_profiles(
-        id, display_name, platform, executable_path, arguments_json,
-        created_at_ms, updated_at_ms, disabled_at_ms
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-        display_name = excluded.display_name,
-        platform = excluded.platform,
-        executable_path = excluded.executable_path,
-        arguments_json = excluded.arguments_json,
-        updated_at_ms = excluded.updated_at_ms,
-        disabled_at_ms = excluded.disabled_at_ms`,
-		profile.ID, profile.DisplayName, profile.Platform, profile.ExecutablePath, string(arguments),
-		millis(profile.CreatedAt), millis(profile.UpdatedAt), nullableMillis(profile.DisabledAt),
-	)
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin shell profile write: %w", err)
+	}
+	defer transaction.Rollback() //nolint:errcheck
+	created, updated := millis(profile.CreatedAt), millis(profile.UpdatedAt)
+	var storedCreated, storedUpdated int64
+	err = transaction.QueryRowContext(ctx,
+		`SELECT created_at_ms, updated_at_ms FROM shell_profiles WHERE id = ?`, profile.ID,
+	).Scan(&storedCreated, &storedUpdated)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = transaction.ExecContext(ctx, `INSERT INTO shell_profiles(
+			id, display_name, platform, executable_path, arguments_json,
+			created_at_ms, updated_at_ms, disabled_at_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, profile.ID, profile.DisplayName, profile.Platform,
+			profile.ExecutablePath, string(arguments), created, updated, nullableMillis(profile.DisabledAt))
+	case err != nil:
+		return fmt.Errorf("store: read shell profile timeline: %w", err)
+	case created != storedCreated:
+		return fmt.Errorf("%w: shell profile %s creation time", ErrMetadataConflict, profile.ID)
+	case updated < storedUpdated:
+		return fmt.Errorf("%w: shell profile %s", ErrTimestampRegression, profile.ID)
+	default:
+		_, err = transaction.ExecContext(ctx, `UPDATE shell_profiles SET
+			display_name = ?, platform = ?, executable_path = ?, arguments_json = ?,
+			updated_at_ms = ?, disabled_at_ms = ? WHERE id = ?`, profile.DisplayName,
+			profile.Platform, profile.ExecutablePath, string(arguments), updated,
+			nullableMillis(profile.DisabledAt), profile.ID)
+	}
 	if err != nil {
 		return fmt.Errorf("store: put shell profile: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("store: commit shell profile write: %w", err)
 	}
 	return nil
 }
@@ -163,6 +206,9 @@ func (store *Store) BeginBrokerGeneration(ctx context.Context, generation string
         WHERE broker_generation <> ? AND state IN ('starting', 'running', 'exiting')`, when, when, generation); err != nil {
 		return nil, fmt.Errorf("store: mark prior sessions lost: %w", err)
 	}
+	if err := store.pruneTerminalSessions(ctx, transaction); err != nil {
+		return nil, err
+	}
 	if err := transaction.Commit(); err != nil {
 		return nil, fmt.Errorf("store: commit broker recovery: %w", err)
 	}
@@ -223,7 +269,11 @@ func (store *Store) GetSession(ctx context.Context, id string) (SessionMetadata,
 }
 
 func (store *Store) ListSessions(ctx context.Context) ([]SessionMetadata, error) {
-	rows, err := store.database.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session_metadata ORDER BY created_at_ms DESC, id`)
+	if store.sessionListLimit < 1 {
+		return nil, errors.New("store: session list limit must be positive")
+	}
+	rows, err := store.database.QueryContext(ctx, `SELECT `+sessionColumns+`
+		FROM session_metadata ORDER BY created_at_ms DESC, id LIMIT ?`, store.sessionListLimit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list session metadata: %w", err)
 	}
@@ -346,8 +396,28 @@ func (store *Store) TransitionSession(ctx context.Context, id, generation string
 	); err != nil {
 		return fmt.Errorf("store: update session transition: %w", err)
 	}
+	if (to == SessionExited || to == SessionLost) && store.retainedTerminalSessions >= 0 {
+		if err := store.pruneTerminalSessions(ctx, transaction); err != nil {
+			return err
+		}
+	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("store: commit session transition: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) pruneTerminalSessions(ctx context.Context, transaction *sql.Tx) error {
+	if store.retainedTerminalSessions < 0 {
+		return errors.New("store: retained terminal session limit must not be negative")
+	}
+	_, err := transaction.ExecContext(ctx, `DELETE FROM session_metadata
+		WHERE state IN ('exited', 'lost') AND id NOT IN (
+			SELECT id FROM session_metadata WHERE state IN ('exited', 'lost')
+			ORDER BY updated_at_ms DESC, id DESC LIMIT ?
+		)`, store.retainedTerminalSessions)
+	if err != nil {
+		return fmt.Errorf("store: prune terminal session metadata: %w", err)
 	}
 	return nil
 }

@@ -12,15 +12,18 @@ pending.
 - `modernc.org/sqlite` runs in the shipped Go process with no Node runtime or
   CGO requirement.
 - Embedded, ordered migrations are recorded with names and SHA-256 checksums.
-  A changed or future migration stops startup, and a failed migration rolls
-  back without modifying the preceding schema.
+  A changed or future migration stops startup. The ledger creation and every
+  migration pending for one startup commit as one transaction, so a later
+  failure rolls the entire pending set back to the preceding schema.
 - The connection enables foreign keys, WAL, a five-second busy timeout, and a
   single database connection. The database file is restricted to the current
   user on Unix; the enclosing Windows data-directory ACL remains part of the
   platform integration checkpoint.
 - Projects and shell profiles persist validated display metadata, canonical
   absolute paths, argument arrays, timestamps, and disabled state. Argument
-  arrays are encoded as JSON and are never concatenated into commands.
+  arrays are encoded as JSON and are never concatenated into commands. Updates
+  must preserve the original creation timestamp and cannot replace newer
+  metadata with an older write.
 - Session metadata records opaque session, process-generation, and broker-
   generation UUIDs; project/profile IDs; dimensions; timestamps; lifecycle;
   and exit code. Terminal output, history, input, environment variables,
@@ -31,6 +34,9 @@ pending.
 - Starting a fresh broker generation transactionally changes earlier
   `starting`, `running`, and `exiting` rows to `lost`. It never reruns their
   commands or describes them as live sessions.
+- Terminal metadata retains at most 4,096 rows, oldest-first eviction occurs
+  in the same terminal-state transaction, and listing is capped at 4,160 rows
+  so the persistent database and one read cannot grow without a local bound.
 
 ## Verification
 
@@ -60,7 +66,8 @@ signal to monitor rather than being reported as a new passing guarantee.
 The cross-compile confirms the pure-Go build boundary only; it is not native
 Windows 11 execution or ACL evidence.
 
-The focused store suite covers reopen behavior, migration rollback and drift,
+The focused store suite covers reopen behavior, atomic multi-migration rollback
+and drift, stale metadata rejection, bounded terminal-record retention,
 foreign-key enforcement, Unicode round trips, field-bound validation,
 lifecycle transitions, broker-restart recovery, and schema inspection for
 forbidden terminal or credential material.
