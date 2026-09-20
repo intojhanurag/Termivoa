@@ -117,4 +117,8 @@ record and removal criteria are in `docs/dependency-patches.md`.
 
 Native Windows 11 lifecycle execution is still blocked on machine/VM access;
 cross-compilation is not a platform pass. Missing implementation and unexecuted
-gates are not counted as passing behavior.
+gates are not counted as passing behavior. Native Windows Server 2025 CI also
+demonstrated that ConPTY consumes child DSR/CPR queries before they reach the Go
+emulator and supplies the response itself. That conflicts with the plan's
+strict single Go-emulator responder requirement and remains an explicit P1
+architecture gate; it is not concealed by a passing end-to-end fixture.

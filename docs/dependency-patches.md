@@ -29,6 +29,8 @@ The local patch:
 - adds byte-budget enforcement to the existing line-bounded scrollback;
 - exposes the active cursor state so save/restore and alternate-buffer frames
   cannot drift from callback shadows;
+- returns the ANSI ready response `CSI 0 n` to an ANSI operating-status query
+  instead of incorrectly adding the DEC-private marker;
 - bounds parser sequence data and retained OSC 8 URLs while discarding unused
   hyperlink parameters.
 

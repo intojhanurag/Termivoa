@@ -64,7 +64,7 @@ func queryTerminal() {
 		response []byte
 	}{
 		{request: []byte("\x1b[3;7H\x1b[6n"), response: []byte("\x1b[3;7R")},
-		{request: []byte("\x1b[5n"), response: []byte("\x1b[?0n")},
+		{request: []byte("\x1b[5n"), response: []byte("\x1b[0n")},
 	}
 	for index, query := range queries {
 		if _, err := os.Stdout.Write(query.request); err != nil {

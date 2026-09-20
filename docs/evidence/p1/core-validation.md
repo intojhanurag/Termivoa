@@ -33,7 +33,25 @@ binary was compiled, but that is not native execution evidence.
   history, hyperlink, and parser-sequence data.
 - The deterministic PTY child sends two terminal status queries and validates
   exactly one ordered response to each through the complete PTY → emulator →
-  single writer path with no viewer.
+  single writer path with no viewer on macOS.
+
+## Windows CI observation
+
+GitHub's native `windows-2025` runner exposed two real portability defects in
+the first P1 checkpoint: ConPTY line input requires carriage return for Enter,
+and ConPTY emits legitimate startup control sequences before child output.
+Both fixtures now model those platform behaviors.
+
+The same run showed that Windows ConPTY consumes child DSR/CPR queries and
+returns its own console-state response before those query bytes reach the Go
+emulator. The captured ConPTY output contained the cursor movement but not the
+following query, while the Go terminal response stream remained empty. This is
+incompatible with the plan's stricter statement that the Go emulator is the
+only query responder on every host. The end-to-end no-viewer fixture still
+checks that the Windows child gets one valid response, but that does not prove
+the Go emulator generated it. P1 remains incomplete until the owner approves a
+documented Windows exception or an implementation route that preserves the
+single-responder requirement is demonstrated.
 
 ## Commands and outcomes
 
@@ -71,5 +89,7 @@ PASS; quicktype printed its existing empty-payload inference warning
 - Run the full P1 parser, query, resize, Unicode, alternate-buffer, and
   no-viewer fixture matrix through the private macOS and Windows CI jobs; native
   Windows 11 evidence remains a distinct target-host requirement.
+- Resolve the demonstrated ConPTY query-responder mismatch with the plan before
+  claiming the server-authoritative model complete on Windows.
 
 These items are pending, not passed.

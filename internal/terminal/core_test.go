@@ -157,6 +157,20 @@ func TestQueryHasOneReplyWithoutViewers(t *testing.T) {
 	assertNoOutput(t, core.Output())
 }
 
+func TestOperatingStatusQueryUsesANSIReplyOnce(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	ctx := context.Background()
+
+	if err := core.WriteOutput(ctx, []byte("\x1b[5n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := readOutput(t, core.Output()); got != "\x1b[0n" {
+		t.Fatalf("operating status reply = %q, want one ANSI ready response", got)
+	}
+	assertNoOutput(t, core.Output())
+}
+
 func TestUserInputAndRepliesShareOrderedOutput(t *testing.T) {
 	t.Parallel()
 	core := newTestCore(t, 20, 5)

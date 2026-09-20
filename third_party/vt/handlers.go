@@ -803,7 +803,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		case 5: // Operating Status
 			// We're always ready ;)
 			// See: https://vt100.net/docs/vt510-rm/DSR-OS.html
-			_, _ = io.WriteString(e.pw, ansi.DeviceStatusReport(ansi.DECStatusReport(0)))
+			_, _ = io.WriteString(e.pw, ansi.DeviceStatusReport(ansi.ANSIStatusReport(0)))
 		case 6: // Cursor Position Report [ansi.CPR]
 			x, y := e.scr.CursorPosition()
 			_, _ = io.WriteString(e.pw, ansi.CursorPositionReport(y+1, x+1))
