@@ -68,7 +68,8 @@ the canonical bounded broker-management RPC. Request IDs correlate replies;
 unique operation IDs separately deduplicate create, rename, and terminate.
 Create requests carry saved project and shell-profile IDs only. Executable
 paths, arguments, working directories, and environment values cannot cross the
-gateway/CLI-to-broker protocol boundary.
+gateway/CLI-to-broker protocol boundary. Protocol UUIDs use lowercase canonical
+spelling so deduplication keys have one representation.
 
 Screen/input counters travel as decimal strings. Session and broker generations distinguish a reconnect from a dead/replaced process. Full snapshots are transactional: chunks are validated and painted as one state before later patches become visible.
 

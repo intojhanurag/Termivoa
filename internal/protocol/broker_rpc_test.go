@@ -54,7 +54,7 @@ func TestDecodeBrokerRPCResponses(t *testing.T) {
 		payload     any
 	}{
 		{SessionListResult, false, BrokerRPCSessionListResultPayload{Sessions: []BrokerRPCSessionRecord{record}}},
-		{SessionCreateResult, true, BrokerRPCSessionMutationResultPayload{OperationID: brokerRPCOperation, Session: record}},
+		{SessionCreateResult, false, BrokerRPCSessionMutationResultPayload{OperationID: brokerRPCOperation, Session: record}},
 		{SessionRenameResult, true, BrokerRPCSessionMutationResultPayload{OperationID: brokerRPCOperation, Session: record}},
 		{SessionTerminateResult, true, BrokerRPCSessionMutationResultPayload{OperationID: brokerRPCOperation, Session: record}},
 		{SessionStatusResult, true, BrokerRPCSessionResultPayload{Session: record}},
@@ -131,6 +131,20 @@ func TestBrokerRPCRejectsMalformedAndUnknownFields(t *testing.T) {
 	}
 }
 
+func TestBrokerRPCRejectsCaseVariantOperationIDShadow(t *testing.T) {
+	message := []byte(`{"version":1,"type":"session.create.request","requestId":"` + brokerRPCRequestID + `","payload":{"operationId":"` + brokerRPCOperation + `","OperationID":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","projectId":"` + brokerRPCProject + `","shellProfileId":"` + brokerRPCProfile + `"}}`)
+	if _, err := DecodeBrokerRPCRequest(message); err == nil || !strings.Contains(err.Error(), `unknown field "OperationID"`) {
+		t.Fatalf("case-variant operation ID shadow error = %v", err)
+	}
+}
+
+func TestBrokerRPCRejectsUppercaseUUIDs(t *testing.T) {
+	message := []byte(`{"version":1,"type":"session.create.request","requestId":"` + brokerRPCRequestID + `","payload":{"operationId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaA","projectId":"` + brokerRPCProject + `","shellProfileId":"` + brokerRPCProfile + `"}}`)
+	if _, err := DecodeBrokerRPCRequest(message); err == nil || !strings.Contains(err.Error(), "operationId") {
+		t.Fatalf("uppercase operation UUID error = %v", err)
+	}
+}
+
 func TestBrokerRPCEnforcesIdentityAndMutationOperationIDs(t *testing.T) {
 	missingIdentity := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
 		Version: Version, Type: SessionRenameRequest, RequestID: brokerRPCRequestID,
@@ -140,6 +154,14 @@ func TestBrokerRPCEnforcesIdentityAndMutationOperationIDs(t *testing.T) {
 	}
 
 	sessionID, generation := brokerRPCSessionID, brokerRPCGeneration
+	createWithIdentity := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
+		Version: Version, Type: SessionCreateResult, RequestID: brokerRPCRequestID,
+		SessionID: &sessionID, Generation: &generation,
+	}, BrokerRPCSessionMutationResultPayload{OperationID: brokerRPCOperation, Session: validBrokerRPCSessionRecord()})
+	if _, err := DecodeBrokerRPCResponse(createWithIdentity); err == nil || !strings.Contains(err.Error(), "must not carry session identity") {
+		t.Fatalf("create result identity error = %v", err)
+	}
+
 	for _, test := range []struct {
 		messageType BrokerRPCMessageType
 		payload     any
@@ -159,7 +181,6 @@ func TestBrokerRPCEnforcesIdentityAndMutationOperationIDs(t *testing.T) {
 
 	badResult := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
 		Version: Version, Type: SessionCreateResult, RequestID: brokerRPCRequestID,
-		SessionID: &sessionID, Generation: &generation,
 	}, BrokerRPCSessionMutationResultPayload{OperationID: "retry-me", Session: validBrokerRPCSessionRecord()})
 	if _, err := DecodeBrokerRPCResponse(badResult); err == nil || !strings.Contains(err.Error(), "operationId") {
 		t.Fatalf("mutation result invalid operation ID error = %v", err)

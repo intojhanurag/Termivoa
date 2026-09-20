@@ -63,6 +63,25 @@ func TestDecodeRejectsDuplicateKeysAtAnyDepth(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsCaseVariantShadowFields(t *testing.T) {
+	shadowedEnvelope := []byte(`{"version":1,"type":"hello","requestId":"11111111-1111-4111-8111-111111111111","RequestID":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","payload":{"clientBuild":"web","clientKind":"browser","supportedVersions":[1],"capabilityProfile":"phone-terminal-v1"}}`)
+	if _, err := DecodeClient(shadowedEnvelope); err == nil || !strings.Contains(err.Error(), `unknown field "RequestID"`) {
+		t.Fatalf("case-variant envelope shadow error = %v", err)
+	}
+
+	shadowedPayload := []byte(`{"version":1,"type":"hello","requestId":"11111111-1111-4111-8111-111111111111","payload":{"clientBuild":"web","ClientBuild":"shadow","clientKind":"browser","supportedVersions":[1],"capabilityProfile":"phone-terminal-v1"}}`)
+	if _, err := DecodeClient(shadowedPayload); err == nil || !strings.Contains(err.Error(), `unknown field "ClientBuild"`) {
+		t.Fatalf("case-variant payload shadow error = %v", err)
+	}
+}
+
+func TestDecodeRejectsUppercaseUUIDs(t *testing.T) {
+	message := []byte(`{"version":1,"type":"hello","requestId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaA","payload":{"clientBuild":"web","clientKind":"browser","supportedVersions":[1],"capabilityProfile":"phone-terminal-v1"}}`)
+	if _, err := DecodeClient(message); err == nil || !strings.Contains(err.Error(), "canonical UUID") {
+		t.Fatalf("uppercase request UUID error = %v", err)
+	}
+}
+
 func TestSessionMessagesRequireIdentity(t *testing.T) {
 	message := encodeTestMessage(t, SessionAttach, EmptyPayload{}, false)
 	if _, err := DecodeClient(message); err == nil || !strings.Contains(err.Error(), "requires sessionId and generation") {

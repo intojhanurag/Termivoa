@@ -47,6 +47,9 @@ requests can reference only saved project and shell-profile IDs. Request
 dispatch and durable mutation receipts remain separate pending checkpoints.
 Validation evidence is recorded in
 `docs/evidence/p3/broker-management-rpc.md`.
+The protocol audit then tightened exact case-sensitive JSON field matching,
+lowercase UUID canonicalization, and schema-level session identity invariants;
+stateful response correlation remains part of the pending dispatcher/client.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been

@@ -30,7 +30,29 @@
   "$defs": {
     "uuid": {
       "type": "string",
-      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sessionIdentity": {
+      "type": "object",
+      "required": ["sessionId", "generation"],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "generation": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "noSessionIdentity": {
+      "type": "object",
+      "properties": {
+        "sessionId": false,
+        "generation": false
+      }
+    },
+    "optionalSessionIdentity": {
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/sessionIdentity" },
+        { "$ref": "#/$defs/noSessionIdentity" }
+      ]
     },
     "messageType": {
       "title": "BrokerRPCMessageType",
@@ -152,16 +174,16 @@
         "message": { "type": "string", "minLength": 1, "maxLength": 512 }
       }
     },
-    "sessionListRequestMessage": { "type": "object", "properties": { "type": { "const": "session.list.request" }, "payload": { "$ref": "#/$defs/sessionListRequestPayload" } } },
-    "sessionCreateRequestMessage": { "type": "object", "properties": { "type": { "const": "session.create.request" }, "payload": { "$ref": "#/$defs/sessionCreateRequestPayload" } } },
-    "sessionRenameRequestMessage": { "type": "object", "properties": { "type": { "const": "session.rename.request" }, "payload": { "$ref": "#/$defs/sessionRenameRequestPayload" } } },
-    "sessionTerminateRequestMessage": { "type": "object", "properties": { "type": { "const": "session.terminate.request" }, "payload": { "$ref": "#/$defs/sessionTerminateRequestPayload" } } },
-    "sessionStatusRequestMessage": { "type": "object", "properties": { "type": { "const": "session.status.request" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
-    "sessionListResultMessage": { "type": "object", "properties": { "type": { "const": "session.list.result" }, "payload": { "$ref": "#/$defs/sessionListResultPayload" } } },
-    "sessionCreateResultMessage": { "type": "object", "properties": { "type": { "const": "session.create.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
-    "sessionRenameResultMessage": { "type": "object", "properties": { "type": { "const": "session.rename.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
-    "sessionTerminateResultMessage": { "type": "object", "properties": { "type": { "const": "session.terminate.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
-    "sessionStatusResultMessage": { "type": "object", "properties": { "type": { "const": "session.status.result" }, "payload": { "$ref": "#/$defs/sessionResultPayload" } } },
-    "errorMessage": { "type": "object", "properties": { "type": { "const": "broker.error" }, "payload": { "$ref": "#/$defs/errorPayload" } } }
+    "sessionListRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.list.request" }, "payload": { "$ref": "#/$defs/sessionListRequestPayload" } } },
+    "sessionCreateRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.create.request" }, "payload": { "$ref": "#/$defs/sessionCreateRequestPayload" } } },
+    "sessionRenameRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.rename.request" }, "payload": { "$ref": "#/$defs/sessionRenameRequestPayload" } } },
+    "sessionTerminateRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.terminate.request" }, "payload": { "$ref": "#/$defs/sessionTerminateRequestPayload" } } },
+    "sessionStatusRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.status.request" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "sessionListResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.list.result" }, "payload": { "$ref": "#/$defs/sessionListResultPayload" } } },
+    "sessionCreateResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.create.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
+    "sessionRenameResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.rename.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
+    "sessionTerminateResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.terminate.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
+    "sessionStatusResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.status.result" }, "payload": { "$ref": "#/$defs/sessionResultPayload" } } },
+    "errorMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/optionalSessionIdentity" }], "properties": { "type": { "const": "broker.error" }, "payload": { "$ref": "#/$defs/errorPayload" } } }
   }
 }

@@ -2,6 +2,8 @@
 
 Date: 2026-09-20
 
+Audit remediation: 2026-09-21
+
 Scope: canonical schema, generated Go/TypeScript types, strict Go validation,
 and documentation for local session-management RPC after the IPC handshake.
 This checkpoint does not implement broker dispatch, HTTP routes, durable
@@ -26,12 +28,19 @@ operation receipts, registry/store integration, or any session/viewer runtime.
   codes for invalid requests, operation conflicts, and missing saved project or
   shell-profile records.
 - Generated Go and strict readonly TypeScript shapes are checked for drift.
+- Exact case-sensitive key validation prevents `RequestID`/`requestId` and
+  `OperationID`/`operationId` shadowing across all Go protocol decoders.
+- Every schema and Go validator accepts only lowercase canonical UUID spelling.
+- The canonical RPC schema itself encodes forbidden, required, and optional
+  session-identity pairs; Ajv tests cover every request and result type.
 
 Tests cover every request/result direction, wrong-direction and unknown types,
 unknown/duplicate/malformed/trailing JSON, invalid UTF-8, required session
 identity, mutation operation IDs, forbidden process-launch fields, message and
 field bounds, duplicate list identities, lifecycle/timestamp consistency,
 result/envelope identity agreement, and every stable management error code.
+They also cover case-variant key shadows, uppercase UUIDs, and every
+schema-level session identity branch.
 
 ## Commands and results
 
@@ -52,7 +61,7 @@ passed
 PATH="<Node 24>/bin:$PATH" GOTOOLCHAIN=go1.27.1 ./scripts/check
 Go formatting, vet, repository tests, and patched dependency tests: passed
 TypeScript checking: passed
-Web tests: 32 passed
+Web tests: 45 passed, including the Ajv identity matrix
 Production web build: passed
 
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 \

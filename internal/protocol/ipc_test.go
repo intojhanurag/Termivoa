@@ -87,4 +87,8 @@ func TestDecodeIPCEnforcesSizeAndIdentityBounds(t *testing.T) {
 	if _, err := DecodeIPCClient(badID); err == nil {
 		t.Fatal("invalid IPC request ID was accepted")
 	}
+	uppercaseGeneration := []byte(`{"version":1,"type":"ipc.welcome","requestId":"` + ipcRequestID + `","payload":{"brokerGeneration":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaA","hostBuild":"dev","negotiatedVersion":1}}`)
+	if _, err := DecodeIPCHost(uppercaseGeneration); err == nil {
+		t.Fatal("uppercase broker generation was accepted")
+	}
 }

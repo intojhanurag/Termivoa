@@ -61,8 +61,7 @@ var brokerRPCResponseTypes = map[BrokerRPCMessageType]bool{
 
 var brokerRPCSessionTypes = map[BrokerRPCMessageType]bool{
 	SessionRenameRequest: true, SessionTerminateRequest: true, SessionStatusRequest: true,
-	SessionCreateResult: true, SessionRenameResult: true, SessionTerminateResult: true,
-	SessionStatusResult: true,
+	SessionRenameResult: true, SessionTerminateResult: true, SessionStatusResult: true,
 }
 
 func decodeBrokerRPC(data []byte, request bool) (BrokerRPCEnvelope, error) {
@@ -191,7 +190,16 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 			seen[key] = struct{}{}
 		}
 		return nil
-	case SessionCreateResult, SessionRenameResult, SessionTerminateResult:
+	case SessionCreateResult:
+		payload, err := brokerRPCPayload[BrokerRPCSessionMutationResultPayload](envelope)
+		if err != nil {
+			return err
+		}
+		if !validUUID(payload.OperationID) {
+			return errors.New("operationId must be a canonical UUID")
+		}
+		return validateBrokerRPCSessionRecord(payload.Session)
+	case SessionRenameResult, SessionTerminateResult:
 		payload, err := brokerRPCPayload[BrokerRPCSessionMutationResultPayload](envelope)
 		if err != nil {
 			return err

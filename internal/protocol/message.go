@@ -423,10 +423,14 @@ func strictDecode(data []byte, destination any) error {
 		}
 		return err
 	}
-	return validateRequiredFields(data, destination)
+	return validateExactJSONFields(data, destination)
 }
 
-func validateRequiredFields(data []byte, destination any) error {
+// validateExactJSONFields closes encoding/json's case-insensitive struct-field
+// matching gap while also enforcing required and non-null fields recursively.
+// Protocol keys are case-sensitive: RequestID is not requestId, even when the
+// standard decoder would otherwise bind it to the same Go field.
+func validateExactJSONFields(data []byte, destination any) error {
 	var value any
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -437,10 +441,10 @@ func validateRequiredFields(data []byte, destination any) error {
 	if target == nil || target.Kind() != reflect.Pointer {
 		return errors.New("protocol: required-field target must be a pointer")
 	}
-	return requiredFieldsPresent(value, target.Elem(), "")
+	return exactJSONFieldsPresent(value, target.Elem(), "")
 }
 
-func requiredFieldsPresent(value any, target reflect.Type, path string) error {
+func exactJSONFieldsPresent(value any, target reflect.Type, path string) error {
 	for target.Kind() == reflect.Pointer {
 		if value == nil {
 			return nil
@@ -456,8 +460,31 @@ func requiredFieldsPresent(value any, target reflect.Type, path string) error {
 		if !ok {
 			return fmt.Errorf("protocol: %s must be an object", displayPath(path))
 		}
+		allowed := make(map[string]struct{}, target.NumField())
 		for index := 0; index < target.NumField(); index++ {
 			field := target.Field(index)
+			if field.PkgPath != "" {
+				continue
+			}
+			name, _, ignored := jsonField(field)
+			if !ignored && name != "" {
+				allowed[name] = struct{}{}
+			}
+		}
+		for name := range object {
+			if _, ok := allowed[name]; !ok {
+				fieldPath := name
+				if path != "" {
+					fieldPath = path + "." + name
+				}
+				return fmt.Errorf("protocol: unknown field %q", fieldPath)
+			}
+		}
+		for index := 0; index < target.NumField(); index++ {
+			field := target.Field(index)
+			if field.PkgPath != "" {
+				continue
+			}
 			name, optional, ignored := jsonField(field)
 			if ignored || name == "" {
 				continue
@@ -476,7 +503,7 @@ func requiredFieldsPresent(value any, target reflect.Type, path string) error {
 			if fieldValue == nil && (optional || field.Type.Kind() != reflect.Pointer) {
 				return fmt.Errorf("protocol: field %s must not be null", fieldPath)
 			}
-			if err := requiredFieldsPresent(fieldValue, field.Type, fieldPath); err != nil {
+			if err := exactJSONFieldsPresent(fieldValue, field.Type, fieldPath); err != nil {
 				return err
 			}
 		}
@@ -486,7 +513,7 @@ func requiredFieldsPresent(value any, target reflect.Type, path string) error {
 			return nil
 		}
 		for index, item := range items {
-			if err := requiredFieldsPresent(item, target.Elem(), fmt.Sprintf("%s[%d]", path, index)); err != nil {
+			if err := exactJSONFieldsPresent(item, target.Elem(), fmt.Sprintf("%s[%d]", path, index)); err != nil {
 				return err
 			}
 		}
@@ -751,22 +778,22 @@ func validLink(raw string) bool {
 
 func validUUID(value string) bool {
 	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
-		value[14] < '1' || value[14] > '8' || !containsByte("89aAbB", value[19]) {
+		value[14] < '1' || value[14] > '8' || !containsByte("89ab", value[19]) {
 		return false
 	}
 	for index := range value {
 		if index == 8 || index == 13 || index == 18 || index == 23 {
 			continue
 		}
-		if !isHex(value[index]) {
+		if !isLowerHex(value[index]) {
 			return false
 		}
 	}
 	return true
 }
 
-func isHex(value byte) bool {
-	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f' || value >= 'A' && value <= 'F'
+func isLowerHex(value byte) bool {
+	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f'
 }
 
 func containsByte(values string, value byte) bool {
