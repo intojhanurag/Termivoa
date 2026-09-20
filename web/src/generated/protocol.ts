@@ -20,6 +20,11 @@ export type ProtocolTypes = {
     readonly inputPaste:      InputPastePayload;
     readonly inputRejected:   InputRejectedPayload;
     readonly inputText:       InputTextPayload;
+    readonly ipcClientKind:   IPCClientKind;
+    readonly ipcError:        IPCErrorClass;
+    readonly ipcHello:        IPCHelloClass;
+    readonly ipcMessageType:  IPCMessageTypeEnum;
+    readonly ipcWelcome:      IPCWelcomeClass;
     readonly lease:           LeasePayload;
     readonly messageType:     MessageType;
     readonly screenMetadata:  ScreenMetadata;
@@ -185,6 +190,27 @@ export type InputTextPayload = {
     readonly inputSequence: string;
     readonly lease:         string;
     readonly text:          string;
+}
+
+export type IPCClientKind = "cli" | "gateway";
+
+export type IPCErrorClass = {
+    readonly code:    ErrorCode;
+    readonly message: string;
+}
+
+export type IPCHelloClass = {
+    readonly clientBuild:       string;
+    readonly clientKind:        IPCClientKind;
+    readonly supportedVersions: [number, ...number[]];
+}
+
+export type IPCMessageTypeEnum = "ipc.hello" | "ipc.welcome" | "ipc.error";
+
+export type IPCWelcomeClass = {
+    readonly brokerGeneration:  string;
+    readonly hostBuild:         string;
+    readonly negotiatedVersion: number;
 }
 
 export type LeasePayload = {

@@ -11,7 +11,8 @@
     "historyRead", "welcome", "snapshotBegin", "snapshotRows", "snapshotEnd",
     "screenPatch", "historyPage", "historyChanged", "controlChanged",
     "inputAccepted", "inputRejected", "sessionState", "accessRevoked", "error",
-    "empty", "terminalRow", "screenMetadata", "messageType", "errorCode"
+    "empty", "terminalRow", "screenMetadata", "messageType", "errorCode",
+    "ipcHello", "ipcWelcome", "ipcError", "ipcMessageType", "ipcClientKind"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -42,6 +43,11 @@
     "terminalRow": { "$ref": "envelope.schema.json#/$defs/terminalRow" },
     "screenMetadata": { "$ref": "envelope.schema.json#/$defs/screenMetadata" },
     "messageType": { "$ref": "envelope.schema.json#/$defs/messageType" },
-    "errorCode": { "$ref": "envelope.schema.json#/$defs/errorCode" }
+    "errorCode": { "$ref": "envelope.schema.json#/$defs/errorCode" },
+    "ipcHello": { "$ref": "ipc.schema.json#/$defs/helloPayload" },
+    "ipcWelcome": { "$ref": "ipc.schema.json#/$defs/welcomePayload" },
+    "ipcError": { "$ref": "ipc.schema.json#/$defs/errorPayload" },
+    "ipcMessageType": { "$ref": "ipc.schema.json#/$defs/messageType" },
+    "ipcClientKind": { "$ref": "ipc.schema.json#/$defs/clientKind" }
   }
 }

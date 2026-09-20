@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phone-terminal.invalid/protocol/v1/ipc.schema.json",
+  "title": "IPCMessage",
+  "description": "Versioned local broker IPC handshake. Subsequent request payloads use the canonical v1 message envelope inside the same length-prefixed transport.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type", "requestId", "payload"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "type": { "$ref": "#/$defs/messageType" },
+    "requestId": { "$ref": "#/$defs/uuid" },
+    "payload": { "type": "object" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/helloMessage" },
+    { "$ref": "#/$defs/welcomeMessage" },
+    { "$ref": "#/$defs/errorMessage" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "messageType": {
+      "type": "string",
+      "enum": ["ipc.hello", "ipc.welcome", "ipc.error"]
+    },
+    "clientKind": {
+      "type": "string",
+      "enum": ["cli", "gateway"]
+    },
+    "helloPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientKind", "clientBuild", "supportedVersions"],
+      "properties": {
+        "clientKind": { "$ref": "#/$defs/clientKind" },
+        "clientBuild": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "supportedVersions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "const": 1 }
+        }
+      }
+    },
+    "welcomePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brokerGeneration", "hostBuild", "negotiatedVersion"],
+      "properties": {
+        "brokerGeneration": { "$ref": "#/$defs/uuid" },
+        "hostBuild": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "negotiatedVersion": { "type": "integer", "const": 1 }
+      }
+    },
+    "errorPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "envelope.schema.json#/$defs/errorCode" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "helloMessage": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "const": "ipc.hello" },
+        "payload": { "$ref": "#/$defs/helloPayload" }
+      }
+    },
+    "welcomeMessage": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "const": "ipc.welcome" },
+        "payload": { "$ref": "#/$defs/welcomePayload" }
+      }
+    },
+    "errorMessage": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "const": "ipc.error" },
+        "payload": { "$ref": "#/$defs/errorPayload" }
+      }
+    }
+  }
+}
