@@ -12,7 +12,11 @@ boundaries on 2026-09-20; native Windows 11 validation remains pending.
 
 P2 — Frame and input protocol: **implementation started** on
 `feat/p2-frame-protocol` at the owner's direction while the owner-dependent
-Windows 11 P1 evidence remains pending. P1 is not represented as complete.
+Windows 11 P1 evidence remains pending. The canonical protocol, normalized
+frame/patch model, browser renderer/input foundation, and minimal desktop
+client are implemented as a reviewable checkpoint. P1 is not represented as
+complete, and P2 remains in progress until its live connection acceptance
+tests are integrated.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
@@ -78,7 +82,7 @@ These questions must be resolved before their dependent gates; they do not block
 | --- | --- | --- |
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
-| P2 — Frame and input protocol | In progress | Branch `feat/p2-frame-protocol`; implementation may proceed, but its gate cannot erase the pending native Windows 11 P1 evidence |
+| P2 — Frame and input protocol | In progress | Private issue #9 and branch `feat/p2-frame-protocol`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
 | P3 — Persistent broker | Not started | None |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
@@ -133,3 +137,11 @@ responses. The owner also approved the macOS PTY process group as the managed
 termination boundary; a descendant that deliberately creates a new session is
 outside that boundary. These boundaries are resolved design decisions, not
 claims that native Windows 11 validation has passed.
+
+P2 exposed a width mismatch in the unmodified pinned
+`@xterm/addon-unicode-graphemes` provider for required Extended Pictographic
+ZWJ fixtures. The implemented server-cell adapter retains that provider,
+repairs its GB11 classification, and applies each validated canonical cell's
+explicit width while painting. Automated xterm-buffer fixtures pass; physical
+Safari and Chrome font/layout agreement is still pending and is not inferred
+from these tests.
