@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -57,7 +58,7 @@ func TestCanonicalSchemaListsEveryMessageExactlyOnce(t *testing.T) {
 	}
 }
 
-func TestGenerationIndexReferencesCanonicalEnvelopeSchema(t *testing.T) {
+func TestGenerationIndexReferencesCanonicalSchemas(t *testing.T) {
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate schema test")
@@ -79,8 +80,51 @@ func TestGenerationIndexReferencesCanonicalEnvelopeSchema(t *testing.T) {
 		t.Fatal("generation index has no properties")
 	}
 	for name, property := range index.Properties {
-		if len(property.Ref) < len("envelope.schema.json#/$defs/") || property.Ref[:len("envelope.schema.json#/$defs/")] != "envelope.schema.json#/$defs/" {
+		if !strings.HasPrefix(property.Ref, "envelope.schema.json#/$defs/") &&
+			!strings.HasPrefix(property.Ref, "ipc.schema.json#/$defs/") {
 			t.Fatalf("generation type %q does not reference canonical schema: %q", name, property.Ref)
 		}
+	}
+}
+
+func TestCanonicalIPCSchemaListsHandshakeMessagesExactlyOnce(t *testing.T) {
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate IPC schema test")
+	}
+	schemaPath := filepath.Join(filepath.Dir(source), "..", "..", "protocol", "v1", "ipc.schema.json")
+	data, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Schema string `json:"$schema"`
+		OneOf  []struct {
+			Ref string `json:"$ref"`
+		} `json:"oneOf"`
+		Defs struct {
+			MessageType struct {
+				Enum []string `json:"enum"`
+			} `json:"messageType"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Schema != "https://json-schema.org/draft/2020-12/schema" {
+		t.Fatalf("IPC schema draft = %q", schema.Schema)
+	}
+	want := []string{"ipc.error", "ipc.hello", "ipc.welcome"}
+	got := append([]string(nil), schema.Defs.MessageType.Enum...)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) || len(schema.OneOf) != len(want) {
+		t.Fatalf("IPC schema messages = %q, oneOf = %d", got, len(schema.OneOf))
+	}
+	seen := make(map[string]bool, len(schema.OneOf))
+	for _, entry := range schema.OneOf {
+		if entry.Ref == "" || seen[entry.Ref] {
+			t.Fatalf("IPC schema has missing or duplicate message ref %q", entry.Ref)
+		}
+		seen[entry.Ref] = true
 	}
 }

@@ -20,6 +20,11 @@ type ProtocolTypes struct {
 	InputPaste      InputPastePayload      `json:"inputPaste"`
 	InputRejected   InputRejectedPayload   `json:"inputRejected"`
 	InputText       InputTextPayload       `json:"inputText"`
+	IPCClientKind   IPCClientKind          `json:"ipcClientKind"`
+	IPCError        IPCErrorClass          `json:"ipcError"`
+	IPCHello        IPCHelloClass          `json:"ipcHello"`
+	IPCMessageType  IPCMessageTypeEnum     `json:"ipcMessageType"`
+	IPCWelcome      IPCWelcomeClass        `json:"ipcWelcome"`
 	Lease           LeasePayload           `json:"lease"`
 	MessageType     MessageType            `json:"messageType"`
 	ScreenMetadata  ScreenMetadata         `json:"screenMetadata"`
@@ -124,6 +129,23 @@ type HistoryReadPayload struct {
 	HistoryRevision string `json:"historyRevision"`
 	Limit           int64  `json:"limit"`
 	Offset          int64  `json:"offset"`
+}
+
+type IPCErrorClass struct {
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+}
+
+type IPCHelloClass struct {
+	ClientBuild       string        `json:"clientBuild"`
+	ClientKind        IPCClientKind `json:"clientKind"`
+	SupportedVersions []int64       `json:"supportedVersions"`
+}
+
+type IPCWelcomeClass struct {
+	BrokerGeneration  string `json:"brokerGeneration"`
+	HostBuild         string `json:"hostBuild"`
+	NegotiatedVersion int64  `json:"negotiatedVersion"`
 }
 
 type InputAcceptedPayload struct {
@@ -316,6 +338,21 @@ const (
 	Double        UnderlineEnum = "double"
 	Single        UnderlineEnum = "single"
 	UnderlineNone UnderlineEnum = "none"
+)
+
+type IPCClientKind string
+
+const (
+	CLI     IPCClientKind = "cli"
+	Gateway IPCClientKind = "gateway"
+)
+
+type IPCMessageTypeEnum string
+
+const (
+	IPCError   IPCMessageTypeEnum = "ipc.error"
+	IPCHello   IPCMessageTypeEnum = "ipc.hello"
+	IPCWelcome IPCMessageTypeEnum = "ipc.welcome"
 )
 
 type KeyName string
