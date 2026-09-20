@@ -113,9 +113,10 @@ func Snapshot(frame terminal.Frame, historyEpoch, historyRevision uint64) (Scree
 }
 
 // PatchPayload converts a canonical whole-row patch into its v1 wire shape.
+// historyReset is viewer-relative and therefore remains separate from the
+// target frame metadata carried by patch.
 func PatchPayload(
 	patch terminal.Patch,
-	historyEpoch, historyRevision uint64,
 	historyReset bool,
 ) (ScreenPatchPayload, error) {
 	if patch.Revision <= patch.BaseRevision {
@@ -124,7 +125,7 @@ func PatchPayload(
 	metadata, err := screenMetadata(
 		patch.Columns, patch.Rows, patch.Alternate, patch.WidthMethod,
 		patch.Foreground, patch.Background, patch.CursorColor, patch.Cursor,
-		patch.ContentClipped, historyEpoch, historyRevision,
+		patch.ContentClipped, patch.HistoryEpoch, patch.HistoryRevision,
 	)
 	if err != nil {
 		return ScreenPatchPayload{}, err

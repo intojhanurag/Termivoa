@@ -295,8 +295,7 @@ func (subscription *ViewerSubscription) stream(ctx context.Context, plan viewerD
 				return subscription.streamSnapshot(ctx, plan)
 			}
 			payload, payloadErr := protocol.PatchPayload(
-				patch, plan.target.historyEpoch, plan.target.historyRevision,
-				plan.base.historyEpoch != plan.target.historyEpoch,
+				patch, plan.base.frame.HistoryEpoch != patch.HistoryEpoch,
 			)
 			if payloadErr != nil {
 				return viewerDeliveryPatch, "", nil, payloadErr
@@ -410,8 +409,7 @@ func snapshotCatchupExceedsLimit(base, latest *publishedFrame, subscription *Vie
 		return true
 	}
 	payload, err := protocol.PatchPayload(
-		patch, latest.historyEpoch, latest.historyRevision,
-		base.historyEpoch != latest.historyEpoch,
+		patch, base.frame.HistoryEpoch != patch.HistoryEpoch,
 	)
 	if err != nil {
 		return true

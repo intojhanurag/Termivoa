@@ -130,18 +130,21 @@ func TestPatchPayloadUsesDecimalStringRevisions(t *testing.T) {
 		row.Cells[index] = cell
 	}
 	patch, err := PatchPayload(terminal.Patch{
-		BaseRevision: 9007199254740993,
-		Revision:     9007199254740994,
-		Columns:      20,
-		Rows:         5,
-		WidthMethod:  "wcwidth",
-		Cursor:       terminal.Cursor{Style: terminal.CursorBlock},
-		ChangedRows:  []terminal.ChangedRow{{Index: 4, Row: row}},
-	}, 1, 2, true)
+		BaseRevision:    9007199254740993,
+		Revision:        9007199254740994,
+		Columns:         20,
+		Rows:            5,
+		WidthMethod:     "wcwidth",
+		Cursor:          terminal.Cursor{Style: terminal.CursorBlock},
+		HistoryEpoch:    1,
+		HistoryRevision: 2,
+		ChangedRows:     []terminal.ChangedRow{{Index: 4, Row: row}},
+	}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if patch.BaseRevision != "9007199254740993" || patch.Revision != "9007199254740994" || !patch.HistoryReset {
+	if patch.BaseRevision != "9007199254740993" || patch.Revision != "9007199254740994" ||
+		patch.Screen.HistoryEpoch != "1" || patch.Screen.HistoryRevision != "2" || !patch.HistoryReset {
 		t.Fatalf("unexpected patch counters: %#v", patch)
 	}
 }
@@ -158,7 +161,7 @@ func TestSnapshotRejectsInvalidCanonicalState(t *testing.T) {
 }
 
 func TestPatchPayloadRejectsNonAdvancingRevision(t *testing.T) {
-	_, err := PatchPayload(terminal.Patch{BaseRevision: 4, Revision: 4}, 0, 0, false)
+	_, err := PatchPayload(terminal.Patch{BaseRevision: 4, Revision: 4}, false)
 	if err == nil {
 		t.Fatal("expected non-advancing patch revision to be rejected")
 	}

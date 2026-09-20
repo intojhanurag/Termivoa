@@ -59,6 +59,11 @@ Branch under review: `feat/p3-history-paging` (private local checkpoint)
   from the unchanged retained row after expansion. Repeated 21/20/22/20/21
   changes, alternate-screen output, and a three-row retention boundary all
   produce canonical screen and history transport at every width.
+- Actor-backed append and `ED 3` fixtures prove that `Diff` copies history row
+  count, byte count, epoch, and revision into each patch and that `ApplyPatch`
+  reconstructs the exact next frame. Protocol patches source their token from
+  that canonical patch, while `historyReset` remains relative to the epoch of
+  the frame already applied by each viewer.
 
 ## Commands and actual results
 
@@ -87,6 +92,23 @@ GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go test -c ./internal/terminal
 GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go test -c ./internal/protocol
 GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go build ./cmd/pterm
 PASS
+
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/terminal ./internal/protocol ./internal/broker -run 'TestPatchRoundTripPreservesHistoryChanges|TestPatchPayloadUsesDecimalStringRevisions|TestHistoryResetSignalFollowsViewerBaseEpoch' -count=50
+PASS
+
+PATH=<pinned Node 24.11.0>/bin:$PATH ./scripts/check
+PASS: protocol generation drift, plan synchronization, Go format/vet/tests,
+patched dependency suites, TypeScript typecheck, 47 web tests, and production
+Vite build at the final patch-metadata head
+
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/terminal ./internal/protocol ./internal/broker -count=1
+PASS
+
+GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go test -c -o <temporary directory>/broker.test.exe ./internal/broker
+GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go test -c -o <temporary directory>/terminal.test.exe ./internal/terminal
+GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go test -c -o <temporary directory>/protocol.test.exe ./internal/protocol
+GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go build -o <temporary directory>/pterm.exe ./cmd/pterm
+PASS: compile-only Windows amd64 verification at the final patch-metadata head
 ```
 
 The first full-check attempt exposed a test-fixture mistake: the strict
@@ -111,6 +133,13 @@ validation to reject the page. The regression now fails on the old code and
 passes with boundary normalization: the impossible fragment becomes a styled,
 unlinked `U+FFFD` width-1 cell marked `contentClipped`; the retained emulator
 row remains unchanged and the original grapheme returns after expansion.
+
+The final review audit found that screen patches reconstructed live frames
+without copying the newly added history metadata. `Patch` now carries all four
+retention/token fields, `Diff` copies them from the target frame, and
+`ApplyPatch` restores them. Wire patch metadata is derived from this same
+canonical patch; only the reset boolean is computed separately because reset
+is relative to a particular viewer's applied base epoch.
 
 ## Remaining integration work
 

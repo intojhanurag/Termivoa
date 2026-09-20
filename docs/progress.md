@@ -72,6 +72,13 @@ now transports a clipped single-column replacement at that width and restores
 the original grapheme if a later width can represent it. Repeated resize,
 alternate-screen, retention, race, and transport fixtures cover the boundary.
 
+The final review audit also found that internal screen patches omitted the
+frame's history row/byte/token metadata. Patch diff/apply now round-trips all
+four fields, canonical wire patches read the token from that patch, and the
+reset signal remains derived from each viewer's applied base epoch. Actor-backed
+append/reset regression tests, the full Node 24 check, race tests, and Windows
+amd64 compile-only checks pass.
+
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
 completed. Unexecuted later-milestone gates remain pending.
