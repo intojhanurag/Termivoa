@@ -37,8 +37,8 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	if err := store.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 1 {
-		t.Fatalf("migration count = %d, want 1", migrations)
+	if migrations != 2 {
+		t.Fatalf("migration count = %d, want 2", migrations)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("close store: %v", err)
@@ -49,8 +49,8 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	if err := reopened.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after reopen: %v", err)
 	}
-	if migrations != 1 {
-		t.Fatalf("migration count after reopen = %d, want 1", migrations)
+	if migrations != 2 {
+		t.Fatalf("migration count after reopen = %d, want 2", migrations)
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(path)
@@ -60,6 +60,45 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 		if got := info.Mode().Perm(); got != 0o600 {
 			t.Fatalf("database permissions = %o, want 600", got)
 		}
+	}
+}
+
+func TestOpenUpgradesExistingSessionSchemaWithReceiptMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "upgrade.sqlite")
+	database, err := openDatabase(context.Background(), path)
+	if err != nil {
+		t.Fatalf("open old database: %v", err)
+	}
+	migrations, err := bundledMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if len(migrations) != 2 {
+		t.Fatalf("bundled migrations = %d, want 2", len(migrations))
+	}
+	if err := applyMigrations(context.Background(), database, migrations[:1], testTime.UnixMilli()); err != nil {
+		t.Fatalf("apply old schema: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close old database: %v", err)
+	}
+
+	upgraded := openTestStore(t, path)
+	defer upgraded.Close()
+	var applied int
+	if err := upgraded.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil {
+		t.Fatalf("count upgraded migrations: %v", err)
+	}
+	if applied != 2 {
+		t.Fatalf("upgraded migration count = %d, want 2", applied)
+	}
+	var receiptsTable int
+	if err := upgraded.database.QueryRow(`SELECT count(*) FROM sqlite_master
+		WHERE type = 'table' AND name = 'mutation_receipts'`).Scan(&receiptsTable); err != nil {
+		t.Fatalf("inspect receipt table: %v", err)
+	}
+	if receiptsTable != 1 {
+		t.Fatalf("receipt table count = %d, want 1", receiptsTable)
 	}
 }
 
