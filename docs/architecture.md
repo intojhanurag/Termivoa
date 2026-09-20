@@ -25,7 +25,21 @@ phone browser ── gateway ──────────────── br
 - **Gateway:** loopback HTTP/WebSocket and embedded static assets. It authenticates browser traffic and translates requests to IPC, but does not spawn a shell or own process lifetime.
 - **CLI/desktop attachment:** uses restricted local IPC. Its terminal UI consumes normalized frames and emits the same structured input model as the web client.
 
-macOS will use a user-owned Unix-domain socket and separate LaunchAgents. Windows will use a current-user-ACL named pipe and separate per-user Scheduled Tasks. Runtime descriptors are separate from persistent application data, and broker liveness is established through a handshake rather than a PID file alone.
+Local broker IPC uses a user-owned Unix-domain socket on macOS and a named
+pipe protected by an explicit current-user SID ACL on Windows. A mode-0700
+runtime directory contains a restricted endpoint descriptor and persistent
+lock file; an OS lock on that file admits one broker without scanning or
+killing processes. The descriptor's PID is diagnostic only. Clients must
+complete the versioned handshake and confirm its broker generation before the
+endpoint is considered live. A lock owner may replace an endpoint only after
+that handshake probe fails. Separate LaunchAgents and per-user Scheduled Tasks
+remain packaging work.
+
+On Unix, the runtime path is canonicalized once through trusted root-owned
+system aliases. User-controlled symlink components, foreign-owned ancestors
+and unsafe writable ancestors are rejected before the lock, socket or
+descriptor is touched, preventing one configured path from resolving to two
+independent broker locks.
 
 ## Terminal data flow
 

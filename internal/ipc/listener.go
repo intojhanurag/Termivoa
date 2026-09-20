@@ -1,0 +1,447 @@
+package ipc
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
+)
+
+const (
+	EndpointDescriptorVersion = 1
+	endpointDescriptorName    = "broker-endpoint.json"
+	maxEndpointDescriptorSize = 16 * 1024
+	staleProbeTimeout         = 750 * time.Millisecond
+)
+
+var (
+	ErrBrokerAlreadyRunning       = errors.New("ipc: broker already owns the runtime endpoint")
+	ErrEndpointMissing            = errors.New("ipc: broker endpoint descriptor is missing")
+	ErrEndpointInvalid            = errors.New("ipc: broker endpoint descriptor is invalid")
+	ErrEndpointGenerationMismatch = errors.New("ipc: endpoint broker generation does not match live broker")
+	ErrPeerUnauthorized           = errors.New("ipc: local peer is not the current user")
+)
+
+// EndpointDescriptor locates one broker generation. ProcessID is diagnostic;
+// callers must establish liveness with ClientHandshake rather than trusting it.
+type EndpointDescriptor struct {
+	Version          int    `json:"version"`
+	Transport        string `json:"transport"`
+	Address          string `json:"address"`
+	BrokerGeneration string `json:"brokerGeneration"`
+	ProcessID        int    `json:"processId"`
+}
+
+// ListenerConfig identifies the private runtime directory and the broker
+// generation that owns the endpoint.
+type ListenerConfig struct {
+	RuntimeDir       string
+	BrokerGeneration string
+}
+
+// BrokerListener owns the platform listener, endpoint descriptor, and
+// single-broker OS lock as one lifetime.
+type BrokerListener struct {
+	listener   net.Listener
+	descriptor EndpointDescriptor
+	runtimeDir string
+	lock       brokerLock
+	closeOnce  sync.Once
+	closeErr   error
+}
+
+// ListenBroker acquires exclusive broker ownership, recovers a stale endpoint,
+// binds the current-user-only transport, and atomically publishes its descriptor.
+func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, error) {
+	if ctx == nil {
+		return nil, errors.New("ipc: listener context must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	runtimeDir, err := checkedRuntimeDir(config.RuntimeDir)
+	if err != nil {
+		return nil, err
+	}
+	if !validUUID(config.BrokerGeneration) {
+		return nil, errors.New("ipc: broker generation must be a UUID")
+	}
+	if err := prepareRuntimeDir(runtimeDir); err != nil {
+		return nil, fmt.Errorf("ipc: prepare runtime directory: %w", err)
+	}
+	lock, err := acquireBrokerLock(runtimeDir)
+	if err != nil {
+		return nil, err
+	}
+	releaseLock := true
+	defer func() {
+		if releaseLock {
+			_ = lock.Close()
+		}
+	}()
+
+	if err := recoverStaleEndpoint(ctx, runtimeDir); err != nil {
+		return nil, err
+	}
+	transport, address, err := platformEndpoint(runtimeDir)
+	if err != nil {
+		return nil, err
+	}
+	listener, err := listenPlatform(address)
+	if err != nil {
+		return nil, fmt.Errorf("ipc: listen on %s endpoint: %w", transport, err)
+	}
+	if err := securePlatformEndpoint(address); err != nil {
+		_ = listener.Close()
+		_ = removePlatformEndpoint(address)
+		return nil, fmt.Errorf("ipc: restrict local endpoint: %w", err)
+	}
+	descriptor := EndpointDescriptor{
+		Version: EndpointDescriptorVersion, Transport: transport, Address: address,
+		BrokerGeneration: config.BrokerGeneration, ProcessID: os.Getpid(),
+	}
+	if err := writeEndpointDescriptor(runtimeDir, descriptor); err != nil {
+		_ = listener.Close()
+		_ = removePlatformEndpoint(address)
+		return nil, err
+	}
+
+	releaseLock = false
+	return &BrokerListener{
+		listener: listener, descriptor: descriptor, runtimeDir: runtimeDir, lock: lock,
+	}, nil
+}
+
+// Accept returns only connections whose OS peer identity belongs to the
+// current user. The pipe DACL supplies this boundary on Windows.
+func (listener *BrokerListener) Accept() (net.Conn, error) {
+	for {
+		connection, err := listener.listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		if err := verifyPlatformPeer(connection); err != nil {
+			_ = connection.Close()
+			if errors.Is(err, ErrPeerUnauthorized) {
+				continue
+			}
+			return nil, fmt.Errorf("ipc: verify local peer: %w", err)
+		}
+		return connection, nil
+	}
+}
+
+func (listener *BrokerListener) Addr() net.Addr {
+	return listener.listener.Addr()
+}
+
+func (listener *BrokerListener) Descriptor() EndpointDescriptor {
+	return listener.descriptor
+}
+
+// Close removes only this generation's descriptor and endpoint before
+// releasing the single-broker lock. It never scans for or kills processes.
+func (listener *BrokerListener) Close() error {
+	listener.closeOnce.Do(func() {
+		listenerErr := listener.listener.Close()
+		descriptorErr := removeOwnedDescriptor(listener.runtimeDir, listener.descriptor)
+		endpointErr := removePlatformEndpoint(listener.descriptor.Address)
+		lockErr := listener.lock.Close()
+		listener.closeErr = errors.Join(listenerErr, descriptorErr, endpointErr, lockErr)
+	})
+	return listener.closeErr
+}
+
+// DialBroker reads the restricted endpoint descriptor, connects, performs the
+// protocol handshake, and rejects a stale descriptor generation.
+func DialBroker(
+	ctx context.Context,
+	runtimeDir string,
+	clientKind protocol.IPCClientKind,
+	clientBuild string,
+) (net.Conn, EndpointDescriptor, protocol.IPCWelcomeClass, error) {
+	if ctx == nil {
+		return nil, EndpointDescriptor{}, protocol.IPCWelcomeClass{}, errors.New("ipc: dial context must not be nil")
+	}
+	runtimeDir, err := checkedRuntimeDir(runtimeDir)
+	if err != nil {
+		return nil, EndpointDescriptor{}, protocol.IPCWelcomeClass{}, err
+	}
+	descriptor, err := ReadEndpointDescriptor(runtimeDir)
+	if err != nil {
+		return nil, EndpointDescriptor{}, protocol.IPCWelcomeClass{}, err
+	}
+	connection, welcome, err := dialDescriptor(ctx, runtimeDir, descriptor, clientKind, clientBuild)
+	if err != nil {
+		return nil, descriptor, protocol.IPCWelcomeClass{}, err
+	}
+	return connection, descriptor, welcome, nil
+}
+
+// ValidateBrokerEndpoint proves that the descriptor reaches the matching live
+// broker generation. It does not rely on the recorded process ID.
+func ValidateBrokerEndpoint(
+	ctx context.Context,
+	runtimeDir string,
+	clientKind protocol.IPCClientKind,
+	clientBuild string,
+) (EndpointDescriptor, protocol.IPCWelcomeClass, error) {
+	connection, descriptor, welcome, err := DialBroker(ctx, runtimeDir, clientKind, clientBuild)
+	if connection != nil {
+		_ = connection.Close()
+	}
+	return descriptor, welcome, err
+}
+
+func dialDescriptor(
+	ctx context.Context,
+	runtimeDir string,
+	descriptor EndpointDescriptor,
+	clientKind protocol.IPCClientKind,
+	clientBuild string,
+) (net.Conn, protocol.IPCWelcomeClass, error) {
+	if err := validateEndpointDescriptor(runtimeDir, descriptor); err != nil {
+		return nil, protocol.IPCWelcomeClass{}, err
+	}
+	connection, err := dialPlatform(ctx, descriptor.Address)
+	if err != nil {
+		return nil, protocol.IPCWelcomeClass{}, fmt.Errorf("ipc: dial broker endpoint: %w", err)
+	}
+	welcome, err := ClientHandshake(ctx, connection, clientKind, clientBuild)
+	if err != nil {
+		_ = connection.Close()
+		return nil, protocol.IPCWelcomeClass{}, err
+	}
+	if welcome.BrokerGeneration != descriptor.BrokerGeneration {
+		_ = connection.Close()
+		return nil, protocol.IPCWelcomeClass{}, ErrEndpointGenerationMismatch
+	}
+	return connection, welcome, nil
+}
+
+func recoverStaleEndpoint(ctx context.Context, runtimeDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	descriptor, err := ReadEndpointDescriptor(runtimeDir)
+	if err == nil {
+		probeContext, cancel := context.WithTimeout(ctx, staleProbeTimeout)
+		connection, _, probeErr := dialDescriptor(probeContext, runtimeDir, descriptor, protocol.CLI, "endpoint-probe")
+		cancel()
+		if connection != nil {
+			_ = connection.Close()
+		}
+		if probeErr == nil {
+			return ErrBrokerAlreadyRunning
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, ErrEndpointMissing) && !errors.Is(err, ErrEndpointInvalid) {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	_, address, endpointErr := platformEndpoint(runtimeDir)
+	if endpointErr != nil {
+		return endpointErr
+	}
+	if err := removeStaleDescriptor(runtimeDir); err != nil {
+		return err
+	}
+	if err := removePlatformEndpoint(address); err != nil {
+		return fmt.Errorf("ipc: remove stale local endpoint: %w", err)
+	}
+	return nil
+}
+
+func EndpointDescriptorPath(runtimeDir string) (string, error) {
+	runtimeDir, err := checkedRuntimeDir(runtimeDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(runtimeDir, endpointDescriptorName), nil
+}
+
+func ReadEndpointDescriptor(runtimeDir string) (EndpointDescriptor, error) {
+	path, err := EndpointDescriptorPath(runtimeDir)
+	if err != nil {
+		return EndpointDescriptor{}, err
+	}
+	if err := validatePrivateFile(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return EndpointDescriptor{}, ErrEndpointMissing
+		}
+		return EndpointDescriptor{}, fmt.Errorf("%w: %v", ErrEndpointInvalid, err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return EndpointDescriptor{}, ErrEndpointMissing
+		}
+		return EndpointDescriptor{}, fmt.Errorf("ipc: open endpoint descriptor: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxEndpointDescriptorSize+1))
+	if err != nil {
+		return EndpointDescriptor{}, fmt.Errorf("ipc: read endpoint descriptor: %w", err)
+	}
+	if len(data) > maxEndpointDescriptorSize {
+		return EndpointDescriptor{}, fmt.Errorf("%w: descriptor exceeds %d bytes", ErrEndpointInvalid, maxEndpointDescriptorSize)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var descriptor EndpointDescriptor
+	if err := decoder.Decode(&descriptor); err != nil {
+		return EndpointDescriptor{}, fmt.Errorf("%w: decode descriptor: %v", ErrEndpointInvalid, err)
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return EndpointDescriptor{}, err
+	}
+	if err := validateEndpointDescriptor(runtimeDir, descriptor); err != nil {
+		return EndpointDescriptor{}, err
+	}
+	return descriptor, nil
+}
+
+func writeEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) error {
+	if err := validateEndpointDescriptor(runtimeDir, descriptor); err != nil {
+		return err
+	}
+	path := filepath.Join(runtimeDir, endpointDescriptorName)
+	payload, err := json.Marshal(descriptor)
+	if err != nil {
+		return fmt.Errorf("ipc: encode endpoint descriptor: %w", err)
+	}
+	temporary, err := os.CreateTemp(runtimeDir, ".broker-endpoint-*")
+	if err != nil {
+		return fmt.Errorf("ipc: create endpoint descriptor: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	removeTemporary := true
+	defer func() {
+		_ = temporary.Close()
+		if removeTemporary {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		return fmt.Errorf("ipc: restrict endpoint descriptor: %w", err)
+	}
+	if _, err := temporary.Write(payload); err != nil {
+		return fmt.Errorf("ipc: write endpoint descriptor: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		return fmt.Errorf("ipc: sync endpoint descriptor: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("ipc: close endpoint descriptor: %w", err)
+	}
+	if err := securePrivateFile(temporaryPath); err != nil {
+		return fmt.Errorf("ipc: apply endpoint descriptor ACL: %w", err)
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return fmt.Errorf("ipc: publish endpoint descriptor: %w", err)
+	}
+	removeTemporary = false
+	return syncRuntimeDir(runtimeDir)
+}
+
+func removeOwnedDescriptor(runtimeDir string, owned EndpointDescriptor) error {
+	descriptor, err := ReadEndpointDescriptor(runtimeDir)
+	if errors.Is(err, ErrEndpointMissing) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if descriptor.BrokerGeneration != owned.BrokerGeneration || descriptor.Address != owned.Address {
+		return nil
+	}
+	return removeStaleDescriptor(runtimeDir)
+}
+
+func removeStaleDescriptor(runtimeDir string) error {
+	path := filepath.Join(runtimeDir, endpointDescriptorName)
+	if err := validatePrivateFile(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("ipc: refuse unsafe endpoint descriptor removal: %w", err)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("ipc: remove endpoint descriptor: %w", err)
+	}
+	return syncRuntimeDir(runtimeDir)
+}
+
+func validateEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) error {
+	transport, address, err := platformEndpoint(runtimeDir)
+	if err != nil {
+		return err
+	}
+	if descriptor.Version != EndpointDescriptorVersion || descriptor.Transport != transport || descriptor.Address != address ||
+		!validUUID(descriptor.BrokerGeneration) || descriptor.ProcessID <= 0 {
+		return ErrEndpointInvalid
+	}
+	return nil
+}
+
+func checkedRuntimeDir(runtimeDir string) (string, error) {
+	if runtimeDir == "" {
+		return "", errors.New("ipc: runtime directory must not be empty")
+	}
+	absolute, err := filepath.Abs(runtimeDir)
+	if err != nil {
+		return "", fmt.Errorf("ipc: resolve runtime directory: %w", err)
+	}
+	if filepath.Clean(runtimeDir) != absolute {
+		return "", errors.New("ipc: runtime directory must be an absolute clean path")
+	}
+	canonical, err := canonicalRuntimeDir(absolute)
+	if err != nil {
+		return "", fmt.Errorf("ipc: canonicalize runtime directory: %w", err)
+	}
+	return canonical, nil
+}
+
+func ensureJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("%w: descriptor contains trailing JSON", ErrEndpointInvalid)
+		}
+		return fmt.Errorf("%w: descriptor trailing data: %v", ErrEndpointInvalid, err)
+	}
+	return nil
+}
+
+func validUUID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+type brokerLock interface {
+	Close() error
+}
