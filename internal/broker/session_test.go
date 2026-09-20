@@ -56,7 +56,9 @@ func TestManagedSessionRuntime(t *testing.T) {
 		defer session.Close()
 		waitForFrameText(t, session, "READY")
 
-		grant := acquireFixtureControl(t, session)
+		viewer := attachFixtureViewer(t, session)
+		defer viewer.Close()
+		grant := acquireFixtureControl(t, session, viewer)
 		identity := fixtureIdentity(grant)
 		if accepted, err := session.SubmitInput(context.Background(), identity, 1, InputAction{Kind: InputKindText, Text: "hello"}); err != nil || accepted.Duplicate {
 			t.Fatalf("text acceptance = %#v, %v", accepted, err)
@@ -71,7 +73,7 @@ func TestManagedSessionRuntime(t *testing.T) {
 		waitForSessionState(t, session, SessionExited)
 	})
 
-	t.Run("disconnect releases control but preserves process", func(t *testing.T) {
+	t.Run("viewer close releases control but preserves process", func(t *testing.T) {
 		session := startFixtureSession(t, fixture, "sleep")
 		defer session.Close()
 		waitForFrameText(t, session, "READY")
@@ -79,8 +81,15 @@ func TestManagedSessionRuntime(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		grant := acquireFixtureControl(t, session)
-		if err := session.Disconnect(context.Background(), grant.ConnectionID); err != nil {
+		viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
+			ConnectionID: "connection", DeviceID: "device", Generation: testGeneration,
+			Sink: newRecordingViewerSink(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		grant := acquireFixtureControl(t, session, viewer)
+		if err := viewer.Close(); err != nil {
 			t.Fatal(err)
 		}
 		after, err := session.Status(context.Background())
@@ -88,7 +97,7 @@ func TestManagedSessionRuntime(t *testing.T) {
 			t.Fatal(err)
 		}
 		if after.State != SessionRunning || after.PID != before.PID || after.Generation != before.Generation {
-			t.Fatalf("disconnect changed process identity: before %#v, after %#v", before, after)
+			t.Fatalf("viewer close changed process identity: before %#v, after %#v", before, after)
 		}
 		if _, err := session.SubmitInput(context.Background(), fixtureIdentity(grant), 1, InputAction{Kind: InputKindText, Text: "stale"}); !errors.Is(err, ErrNotController) {
 			t.Fatalf("detached input error = %v", err)
@@ -102,7 +111,9 @@ func TestManagedSessionRuntime(t *testing.T) {
 	t.Run("only current controller can resize", func(t *testing.T) {
 		session := startFixtureSession(t, fixture, "sleep")
 		defer session.Close()
-		grant := acquireFixtureControl(t, session)
+		viewer := attachFixtureViewer(t, session)
+		defer viewer.Close()
+		grant := acquireFixtureControl(t, session, viewer)
 		identity := fixtureIdentity(grant)
 		stale := identity
 		stale.Lease = "not-the-current-lease"
@@ -369,9 +380,21 @@ func startFixtureSession(t *testing.T, fixture, mode string) *Session {
 	return session
 }
 
-func acquireFixtureControl(t *testing.T, session *Session) ControlGrant {
+func attachFixtureViewer(t *testing.T, session *Session) *ViewerSubscription {
 	t.Helper()
-	grant, err := session.AcquireControl(context.Background(), testGeneration, "connection", "device")
+	viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
+		ConnectionID: "connection", DeviceID: "device", Generation: testGeneration,
+		Sink: newRecordingViewerSink(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return viewer
+}
+
+func acquireFixtureControl(t *testing.T, session *Session, viewer *ViewerSubscription) ControlGrant {
+	t.Helper()
+	grant, err := session.AcquireControl(context.Background(), viewer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,6 +548,9 @@ func (terminalCore *stubTerminal) Snapshot(context.Context) (terminal.Frame, err
 		<-terminalCore.snapshotRelease
 	}
 	return terminal.Frame{Columns: 80, Rows: 24}, nil
+}
+func (terminalCore *stubTerminal) ScreenSnapshot(ctx context.Context) (terminal.Frame, error) {
+	return terminalCore.Snapshot(ctx)
 }
 func (terminalCore *stubTerminal) Output() <-chan []byte { return terminalCore.output }
 func (terminalCore *stubTerminal) Close() error {

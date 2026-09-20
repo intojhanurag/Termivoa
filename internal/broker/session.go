@@ -76,6 +76,7 @@ type terminalRuntime interface {
 	WriteOutput(context.Context, []byte) error
 	Resize(context.Context, int, int) error
 	Snapshot(context.Context) (terminal.Frame, error)
+	ScreenSnapshot(context.Context) (terminal.Frame, error)
 	SendText(context.Context, string) error
 	Paste(context.Context, string) error
 	SendKey(context.Context, uv.KeyEvent) error
@@ -110,20 +111,29 @@ type Session struct {
 	shutdown            chan struct{}
 	shutdownAttemptDone chan struct{}
 	requests            chan sessionRequest
+	viewerEvents        chan viewerDetachEvent
 	pty                 chan ptyEvent
 	waited              chan error
 	wrote               chan error
 	done                chan struct{}
 	ended               chan struct{}
+	retirementReady     chan struct{}
 
 	closeOnce          sync.Once
 	endedOnce          sync.Once
+	retirementOnce     sync.Once
 	shutdownReportOnce sync.Once
 	finalMu            sync.Mutex
 	finalStatus        SessionStatus
 	hasFinalStatus     bool
 	pumpWG             sync.WaitGroup
 	shutdownErr        error
+	viewers            map[string]*viewerActorState
+	published          *publishedFrame
+	historyEpoch       uint64
+	historyRevision    uint64
+	retiring           bool
+	retirementRevision uint64
 }
 
 type sessionRequestKind uint8
@@ -132,25 +142,38 @@ const (
 	requestAcquire sessionRequestKind = iota
 	requestHeartbeat
 	requestRelease
-	requestDisconnect
 	requestSubmit
 	requestResize
 	requestSnapshot
 	requestStatus
 	requestTerminate
 	requestRevokeDevice
+	requestAttachViewer
+	requestReserveViewerDelivery
+	requestCompleteViewerDelivery
+	requestViewerSnapshotApplied
+	requestViewerResync
+	requestRestartViewerSnapshot
+	requestLatestViewerFrame
 )
 
 type sessionRequest struct {
-	kind       sessionRequestKind
-	identity   MutationIdentity
-	connection string
-	device     string
-	action     InputAction
-	sequence   uint64
-	columns    int
-	rows       int
-	reply      chan sessionResponse
+	kind          sessionRequestKind
+	identity      MutationIdentity
+	connection    string
+	device        string
+	action        InputAction
+	sequence      uint64
+	columns       int
+	rows          int
+	viewer        *ViewerSubscription
+	deliveryKind  viewerDeliveryKind
+	deliveryEpoch uint64
+	snapshotID    string
+	revision      uint64
+	deliveryErr   error
+	clippedRows   []bool
+	reply         chan sessionResponse
 }
 
 type sessionResponse struct {
@@ -160,6 +183,8 @@ type sessionResponse struct {
 	frame      terminal.Frame
 	status     SessionStatus
 	dropped    int
+	delivery   viewerDeliveryPlan
+	published  *publishedFrame
 	err        error
 }
 
@@ -250,11 +275,14 @@ func startSessionRuntime(
 		shutdown:            make(chan struct{}),
 		shutdownAttemptDone: make(chan struct{}),
 		requests:            make(chan sessionRequest, defaultRequestQueue),
+		viewerEvents:        make(chan viewerDetachEvent, MaxViewersPerSession),
 		pty:                 make(chan ptyEvent, config.PTYOutputQueue),
 		waited:              make(chan error, 1),
 		wrote:               make(chan error, 1),
 		done:                make(chan struct{}),
 		ended:               make(chan struct{}),
+		retirementReady:     make(chan struct{}),
+		viewers:             make(map[string]*viewerActorState),
 	}
 
 	session.pumpWG.Add(3)
@@ -286,6 +314,13 @@ func (session *Session) Done() <-chan struct{} {
 	return session.done
 }
 
+// RetirementReady closes after Ended and after every attached viewer has
+// either acknowledged the final published frame or detached. The registry
+// waits for this barrier before closing the session runtime.
+func (session *Session) RetirementReady() <-chan struct{} {
+	return session.retirementReady
+}
+
 // FinalStatus returns the immutable terminal lifecycle state after Ended has
 // closed. It does not enqueue work on an actor that may already be shutting down.
 func (session *Session) FinalStatus() (SessionStatus, bool) {
@@ -297,12 +332,16 @@ func (session *Session) FinalStatus() (SessionStatus, bool) {
 	return cloneSessionStatus(session.finalStatus), true
 }
 
-// AcquireControl explicitly replaces the current controller. Pending input
-// from the replaced connection is removed before the new lease is returned.
-func (session *Session) AcquireControl(ctx context.Context, generation, connectionID, deviceID string) (ControlGrant, error) {
+// AcquireControl explicitly replaces the current controller with an attached
+// viewer incarnation. Pending input from the replaced connection is removed
+// before the new lease is returned.
+func (session *Session) AcquireControl(ctx context.Context, viewer *ViewerSubscription) (ControlGrant, error) {
+	if viewer == nil {
+		return ControlGrant{}, ErrViewerMissing
+	}
 	response, err := session.call(ctx, sessionRequest{
-		kind: requestAcquire, identity: MutationIdentity{Generation: generation},
-		connection: connectionID, device: deviceID,
+		kind: requestAcquire, connection: viewer.connectionID,
+		device: viewer.deviceID, viewer: viewer,
 	})
 	return response.grant, err
 }
@@ -314,12 +353,6 @@ func (session *Session) Heartbeat(ctx context.Context, identity MutationIdentity
 
 func (session *Session) ReleaseControl(ctx context.Context, identity MutationIdentity) error {
 	_, err := session.call(ctx, sessionRequest{kind: requestRelease, identity: identity})
-	return err
-}
-
-// Disconnect detaches one connection. It never ends the managed process.
-func (session *Session) Disconnect(ctx context.Context, connectionID string) error {
-	_, err := session.call(ctx, sessionRequest{kind: requestDisconnect, connection: connectionID})
 	return err
 }
 
@@ -444,6 +477,49 @@ func (session *Session) run(columns, rows int) {
 	var counterpartDeadline <-chan time.Time
 	var shutdownTimer *time.Timer
 	var shutdownDeadline <-chan time.Time
+	var publishTimer *time.Timer
+	var publishDeadline <-chan time.Time
+	var viewerAckTimer *time.Timer
+	var viewerAckDeadline <-chan time.Time
+	var viewerAckAt time.Time
+	refreshViewerAckTimer := func() {
+		next, ok := session.nextViewerAckDeadline()
+		if !ok {
+			if viewerAckTimer != nil {
+				viewerAckTimer.Stop()
+			}
+			viewerAckDeadline = nil
+			viewerAckAt = time.Time{}
+			return
+		}
+		if next.Equal(viewerAckAt) {
+			return
+		}
+		delay := time.Until(next)
+		if delay < 0 {
+			delay = 0
+		}
+		if viewerAckTimer == nil {
+			viewerAckTimer = time.NewTimer(delay)
+		} else {
+			if !viewerAckTimer.Stop() {
+				select {
+				case <-viewerAckTimer.C:
+				default:
+				}
+			}
+			viewerAckTimer.Reset(delay)
+		}
+		viewerAckDeadline = viewerAckTimer.C
+		viewerAckAt = next
+	}
+	schedulePublish := func() {
+		if len(session.viewers) == 0 || publishDeadline != nil {
+			return
+		}
+		publishTimer = time.NewTimer(framePublishInterval)
+		publishDeadline = publishTimer.C
+	}
 	beginShutdown := func() {
 		if shuttingDown {
 			return
@@ -455,8 +531,12 @@ func (session *Session) run(columns, rows int) {
 		if status.State == SessionRunning {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
+			session.startRetirement()
 			session.markEnded(status)
 			session.clearControl()
+		}
+		for connectionID := range session.viewers {
+			session.detachViewer(connectionID, ErrSessionClosed)
 		}
 		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		err := session.process.Terminate(shutdownContext)
@@ -475,6 +555,16 @@ func (session *Session) run(columns, rows int) {
 		if shutdownTimer != nil {
 			shutdownTimer.Stop()
 		}
+		if publishTimer != nil {
+			publishTimer.Stop()
+		}
+		if viewerAckTimer != nil {
+			viewerAckTimer.Stop()
+		}
+		for connectionID := range session.viewers {
+			session.detachViewer(connectionID, ErrSessionClosed)
+		}
+		session.checkRetirementReady()
 		session.inbox.Close()
 		if !waitSeen {
 			shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -491,12 +581,25 @@ func (session *Session) run(columns, rows int) {
 	}()
 
 	for {
+		refreshViewerAckTimer()
 		if waitSeen && readDone {
 			if status.State != SessionLost && status.State != SessionExited {
+				if publishTimer != nil {
+					publishTimer.Stop()
+					publishTimer = nil
+					publishDeadline = nil
+				}
+				if len(session.viewers) > 0 {
+					if err := session.capturePublished(); err != nil {
+						session.markLost(&status)
+						continue
+					}
+				}
 				status.State = SessionExited
 				status.EndedAt = time.Now()
 				code := processExitCode(waitErr)
 				status.ExitCode = &code
+				session.startRetirement()
 				session.markEnded(status)
 				session.clearControl()
 			}
@@ -518,6 +621,20 @@ func (session *Session) run(columns, rows int) {
 				continue
 			default:
 			}
+		}
+
+		// Viewer lifecycle events bypass the public request queue. A saturated
+		// client queue cannot suppress acknowledgement expiry or detach cleanup.
+		select {
+		case <-viewerAckDeadline:
+			viewerAckDeadline = nil
+			viewerAckAt = time.Time{}
+			session.expireViewerAckDeadlines(time.Now())
+			continue
+		case event := <-session.viewerEvents:
+			session.handleViewerDetach(event)
+			continue
+		default:
 		}
 
 		// Prefer control requests so a sustained child-output stream cannot
@@ -542,10 +659,18 @@ func (session *Session) run(columns, rows int) {
 			} else {
 				session.handleRequest(&status, request)
 			}
+		case <-viewerAckDeadline:
+			viewerAckDeadline = nil
+			viewerAckAt = time.Time{}
+			session.expireViewerAckDeadlines(time.Now())
+		case event := <-session.viewerEvents:
+			session.handleViewerDetach(event)
 		case event := <-session.pty:
 			if len(event.data) > 0 {
 				if err := session.terminal.WriteOutput(session.ctx, event.data); err != nil {
 					session.markLost(&status)
+				} else {
+					schedulePublish()
 				}
 			}
 			if event.err != nil {
@@ -613,6 +738,12 @@ func (session *Session) run(columns, rows int) {
 			if !(waitSeen && readDone) {
 				session.reportShutdownError(ErrSessionShutdown)
 			}
+		case <-publishDeadline:
+			publishDeadline = nil
+			publishTimer = nil
+			if err := session.capturePublished(); err != nil {
+				session.markLost(&status)
+			}
 		}
 	}
 }
@@ -625,8 +756,13 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = ErrSessionNotRunning
 			break
 		}
+		viewer, err := session.viewerForRequest(request.connection, request.viewer)
+		if err != nil {
+			response.err = err
+			break
+		}
 		response.grant, response.err = session.controller.Acquire(
-			request.identity.Generation, request.connection, request.device,
+			session.generation, viewer.subscription.connectionID, viewer.subscription.deviceID,
 		)
 		if response.err == nil {
 			session.inbox.DropBeforeLeaseEpoch(response.grant.Epoch)
@@ -648,9 +784,6 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		if response.err == nil {
 			session.inbox.DropConnection(request.identity.ConnectionID)
 		}
-	case requestDisconnect:
-		session.controller.Disconnect(request.connection)
-		session.inbox.DropConnection(request.connection)
 	case requestSubmit:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning
@@ -680,6 +813,7 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		response.err = session.terminal.Resize(session.ctx, request.columns, request.rows)
 		if response.err == nil {
 			status.Columns, status.Rows = request.columns, request.rows
+			response.err = session.capturePublished()
 		}
 	case requestSnapshot:
 		response.frame, response.err = session.terminal.Snapshot(session.ctx)
@@ -697,11 +831,35 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		if response.err != nil {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
+			session.startRetirement()
 			session.markEnded(*status)
 			session.clearControl()
 		}
 	case requestRevokeDevice:
 		response.dropped = session.inbox.RevokeDevice(request.device)
+		for connectionID, viewer := range session.viewers {
+			if viewer.subscription.deviceID == request.device {
+				session.detachViewer(connectionID, nil)
+			}
+		}
+	case requestAttachViewer:
+		response.err = session.attachViewer(request)
+	case requestReserveViewerDelivery:
+		response.delivery, response.err = session.reserveViewerDelivery(request.connection, request.viewer)
+	case requestCompleteViewerDelivery:
+		response.err = session.completeViewerDelivery(request)
+	case requestViewerSnapshotApplied:
+		response.err = session.applyViewerSnapshot(
+			request.connection, request.viewer, request.snapshotID, request.revision,
+		)
+	case requestViewerResync:
+		response.err = session.resyncViewer(request.connection, request.viewer)
+	case requestRestartViewerSnapshot:
+		response.err = session.restartViewerSnapshot(request.connection, request.viewer, request.deliveryEpoch)
+	case requestLatestViewerFrame:
+		response.published, response.err = session.latestViewerFrame(
+			request.connection, request.viewer, request.deliveryEpoch,
+		)
 	default:
 		response.err = errors.New("broker: unknown session request")
 	}
@@ -737,6 +895,7 @@ func (session *Session) markLost(status *SessionStatus) {
 	}
 	status.State = SessionLost
 	status.EndedAt = time.Now()
+	session.startRetirement()
 	session.markEnded(*status)
 	session.clearControl()
 	terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -752,6 +911,33 @@ func (session *Session) markEnded(status SessionStatus) {
 		session.finalMu.Unlock()
 		close(session.ended)
 	})
+}
+
+func (session *Session) startRetirement() {
+	if session.retiring {
+		return
+	}
+	session.retiring = true
+	if session.published != nil {
+		session.retirementRevision = session.published.frame.Revision
+	}
+	for _, viewer := range session.viewers {
+		signalViewer(viewer.subscription)
+	}
+	session.checkRetirementReady()
+}
+
+func (session *Session) checkRetirementReady() {
+	if !session.retiring {
+		return
+	}
+	for _, viewer := range session.viewers {
+		if viewer.inFlight != nil || viewer.awaiting != nil || viewer.base == nil ||
+			viewer.base.frame.Revision < session.retirementRevision {
+			return
+		}
+	}
+	session.retirementOnce.Do(func() { close(session.retirementReady) })
 }
 
 func (session *Session) clearControl() {

@@ -20,17 +20,23 @@ tests are integrated.
 P3 — Persistent broker: **in progress**, tracked by private issue #11. The
 controller/input-ingress checkpoint was merged from private PR #12 as
 `1ac199dfea8a2e5aa6d86bcab70cce80183679e9`. Work continues on
-`feat/p3-platform-ipc` after the bounded local handshake checkpoint merged
+`feat/p3-viewer-delivery` after the bounded local handshake checkpoint merged
 from private PR #13 as `a92d1ca1836df29c4f3a72bc772bed8b6d354b54` and the
 broker-owned live-session runtime merged from private PR #14 as `d3ff4fd`. The
 session registry merged from private PR #15 as
 `400f48460ea7546cb815f631439b1f1933a2c645`, followed by SQLite persistence
-from private PR #16 as `bc361141995f1bbf1d5a273ac38835fa9ee7cc3d`.
-The current branch adds restricted macOS/Windows IPC listeners, endpoint
-descriptors, handshake-based liveness, stale-endpoint recovery, and
-single-broker OS locking. Durable mutation receipts, native Windows execution,
-viewer delivery, process separation, and gateway-restart evidence remain
-pending.
+from private PR #16 as `bc361141995f1bbf1d5a273ac38835fa9ee7cc3d`, and secure
+platform IPC merged from private PR #17 as `9ab4a3e99e7f15d8634315e2e1e22eda059354d0`.
+Durable mutation receipts, viewer delivery, process separation, native Windows
+execution, and gateway-restart evidence remain pending on main.
+
+The `feat/p3-viewer-delivery` checkpoint now provides broker-owned
+bounded viewer subscriptions, exact snapshot/patch revision boundaries,
+slow-viewer isolation, actor-owned acknowledgement expiry, reliable bounded
+detach delivery, screen-only live capture, and a conservative encoded-row
+transport limit. Focused race/vet and the complete repository check pass;
+evidence is in `docs/evidence/p3/viewer-delivery.md`. This is not merged
+evidence, and gateway/IPC end-to-end integration remains pending.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
@@ -97,7 +103,7 @@ These questions must be resolved before their dependent gates; they do not block
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local framing merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC listener work is in progress on `feat/p3-platform-ipc`; evidence under `docs/evidence/p3/` |
+| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local framing merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; bounded viewer delivery is locally verified on `feat/p3-viewer-delivery`; durable receipts and gateway integration remain pending; evidence under `docs/evidence/p3/` |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
 | P6 — Install and update | Not started | None |
@@ -162,10 +168,11 @@ from these tests.
 
 The P3 viewer-delivery design audit found that a maximally escaped normalized
 row can exceed the 1 MiB outbound-message limit even though snapshot chunks
-cannot split a row. The viewer checkpoint must add a conservative encoded-row
-budget, clipping marker and boundary fixture before it can be considered wire
-safe. No viewer transport currently ships, so this remains required work rather
-than a released vulnerability.
+cannot split a row. The uncommitted viewer checkpoint now applies a
+conservative encoded-row budget, clipping marker, persistent per-row clipping
+state, and boundary fixtures. The gateway adapter is still unimplemented and
+must honor the viewer sink's 2 MiB drain-accounting contract before this can be
+claimed end to end.
 
 The P3 session-registry checkpoint uses bounded in-memory create-operation
 deduplication and completed-session metadata. SQLite now durably records

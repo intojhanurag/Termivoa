@@ -68,6 +68,7 @@ const (
 	commandOutput commandKind = iota
 	commandResize
 	commandSnapshot
+	commandScreenSnapshot
 	commandText
 	commandPaste
 	commandKey
@@ -176,6 +177,14 @@ func (core *Core) Snapshot(ctx context.Context) (Frame, error) {
 	return result.frame, err
 }
 
+// ScreenSnapshot captures only the live canonical grid. It is intended for
+// frequent viewer publication and deliberately avoids copying retained
+// history, which is paged independently by the broker.
+func (core *Core) ScreenSnapshot(ctx context.Context) (Frame, error) {
+	result, err := core.request(ctx, command{kind: commandScreenSnapshot})
+	return result.frame, err
+}
+
 // SendText encodes committed printable UTF-8 through the authoritative
 // emulator. Control actions must use SendKey.
 func (core *Core) SendText(ctx context.Context, text string) error {
@@ -281,7 +290,10 @@ func (core *Core) run(ctx context.Context, emulator *vt.Emulator, maxCellBytes, 
 				revision++
 			case commandSnapshot:
 				emulator.Flush()
-				response.frame = captureFrame(emulator, revision, maxCellBytes, maxHistoryBytes)
+				response.frame = captureFrame(emulator, revision, maxCellBytes, maxHistoryBytes, true)
+			case commandScreenSnapshot:
+				emulator.Flush()
+				response.frame = captureFrame(emulator, revision, maxCellBytes, maxHistoryBytes, false)
 			case commandText:
 				emulator.SendText(cmd.text)
 			case commandPaste:

@@ -519,6 +519,31 @@ func TestHistoryPayloadIsByteBounded(t *testing.T) {
 	}
 }
 
+func TestScreenSnapshotDoesNotCopyRetainedHistory(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	for line := range 20 {
+		mustWrite(t, core, fmt.Sprintf("screen-only-%02d\r\n", line))
+	}
+	full, err := core.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full.History) == 0 {
+		t.Fatal("fixture did not produce retained history")
+	}
+	live, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(live.History) != 0 || live.HistoryBytes != 0 {
+		t.Fatalf("screen-only snapshot copied history: rows=%d bytes=%d", len(live.History), live.HistoryBytes)
+	}
+	if live.Revision != full.Revision || len(live.Screen) != live.Rows {
+		t.Fatalf("screen-only snapshot lost live state: revision=%d/%d rows=%d/%d", live.Revision, full.Revision, len(live.Screen), live.Rows)
+	}
+}
+
 func TestSnapshotIsImmutable(t *testing.T) {
 	t.Parallel()
 	core := newTestCore(t, 20, 5)

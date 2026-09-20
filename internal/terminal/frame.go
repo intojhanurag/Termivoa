@@ -83,7 +83,7 @@ type RGBA struct {
 	A uint8
 }
 
-func captureFrame(emulator *vt.Emulator, revision uint64, maxCellBytes, maxHistoryBytes int) Frame {
+func captureFrame(emulator *vt.Emulator, revision uint64, maxCellBytes, maxHistoryBytes int, includeHistory bool) Frame {
 	foreground := rgba(emulator.ForegroundColor())
 	background := rgba(emulator.BackgroundColor())
 	activeCursor := emulator.ActiveCursor()
@@ -115,6 +115,10 @@ func captureFrame(emulator *vt.Emulator, revision uint64, maxCellBytes, maxHisto
 			maxCellBytes,
 			frame.ContentClipped,
 		)
+	}
+
+	if !includeHistory {
+		return frame
 	}
 
 	historyLen := min(emulator.ScrollbackLen(), MaxHistoryRows)

@@ -681,8 +681,9 @@ func (session *fakeManagedSession) setState(state SessionState) {
 	}
 }
 
-func (session *fakeManagedSession) Ended() <-chan struct{} { return session.ended }
-func (session *fakeManagedSession) Done() <-chan struct{}  { return session.done }
+func (session *fakeManagedSession) Ended() <-chan struct{}           { return session.ended }
+func (session *fakeManagedSession) RetirementReady() <-chan struct{} { return session.ended }
+func (session *fakeManagedSession) Done() <-chan struct{}            { return session.done }
 func (session *fakeManagedSession) FinalStatus() (SessionStatus, bool) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
@@ -692,8 +693,11 @@ func (session *fakeManagedSession) FinalStatus() (SessionStatus, bool) {
 	return cloneSessionStatus(session.status), true
 }
 
-func (session *fakeManagedSession) AcquireControl(context.Context, string, string, string) (ControlGrant, error) {
+func (session *fakeManagedSession) AcquireControl(context.Context, *ViewerSubscription) (ControlGrant, error) {
 	return ControlGrant{}, nil
+}
+func (session *fakeManagedSession) AttachViewer(context.Context, ViewerConfig) (*ViewerSubscription, error) {
+	return nil, errors.New("fake viewer transport is not implemented")
 }
 func (session *fakeManagedSession) Heartbeat(context.Context, MutationIdentity) (ControlState, error) {
 	return ControlState{}, nil
@@ -701,7 +705,6 @@ func (session *fakeManagedSession) Heartbeat(context.Context, MutationIdentity) 
 func (session *fakeManagedSession) ReleaseControl(context.Context, MutationIdentity) error {
 	return nil
 }
-func (session *fakeManagedSession) Disconnect(context.Context, string) error { return nil }
 func (session *fakeManagedSession) SubmitInput(context.Context, MutationIdentity, uint64, InputAction) (InputAcceptance, error) {
 	return InputAcceptance{}, nil
 }
