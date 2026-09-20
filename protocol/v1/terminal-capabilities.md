@@ -73,3 +73,10 @@ recalculate that estimate before another page is exposed. Alternate-screen
 state is limited to its live grid and has no hidden emulator scrollback.
 History pages may contain fewer than the requested row limit when the encoded
 payload must stay inside the 1 MiB outbound-message limit.
+
+When a width shrink leaves a retained width-2 grapheme lead in the new final
+column without room for its continuation, normalization emits one `U+FFFD`
+cell with width 1 and `contentClipped=true`. It does not serialize an orphaned
+wide lead or invent a continuation outside the grid. The emulator's retained
+row is not mutated, so expanding the grid can expose the original grapheme
+again in the new history revision.

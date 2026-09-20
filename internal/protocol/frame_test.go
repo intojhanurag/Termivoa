@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -282,4 +283,99 @@ func TestHistoryPageFromTrimsRowsToOutboundMessageBudget(t *testing.T) {
 	if _, err := DecodeHost(message); err != nil {
 		t.Fatalf("bounded history message failed validation: %v", err)
 	}
+}
+
+func TestHistoryPageCanonicalAfterWideBoundaryResize(t *testing.T) {
+	core, err := terminal.New(context.Background(), terminal.Config{
+		Columns: 21, Rows: 5, ScrollbackRows: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = core.Close() })
+	line := strings.Repeat("a", 19) + "界\r\n"
+	if err := core.WriteOutput(context.Background(), []byte(strings.Repeat(line, 12))); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCanonical := func(width int, wantClipped bool) {
+		t.Helper()
+		if err := core.Resize(context.Background(), width, 5); err != nil {
+			t.Fatal(err)
+		}
+		frame, err := core.ScreenSnapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		metadata, screenRows, err := Snapshot(frame, frame.HistoryEpoch, frame.HistoryRevision)
+		if err != nil {
+			t.Fatalf("screen transport at width %d: %v", width, err)
+		}
+		if metadata.Columns != int64(width) || len(screenRows) != frame.Rows {
+			t.Fatalf("screen transport at width %d = columns %d rows %d",
+				width, metadata.Columns, len(screenRows))
+		}
+		for _, row := range screenRows {
+			if err := validateRow(row, int64(width)); err != nil {
+				t.Fatalf("screen row at width %d: %v", width, err)
+			}
+		}
+		page, err := core.ReadHistory(context.Background(), terminal.HistoryReadRequest{
+			Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision,
+			Limit: terminal.MaxHistoryPageRows,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Changed || len(page.Rows) != 3 || page.Columns != width {
+			t.Fatalf("history at width %d = changed %t rows %d columns %d",
+				width, page.Changed, len(page.Rows), page.Columns)
+		}
+		payload, err := HistoryPageFrom(page)
+		if err != nil {
+			t.Fatalf("history transport at width %d: %v", width, err)
+		}
+		clipped := false
+		for _, row := range payload.Rows {
+			if err := validateRow(row, int64(width)); err != nil {
+				t.Fatalf("history row at width %d: %v", width, err)
+			}
+			cells := make([]Cell, 0, width)
+			for _, run := range row.Runs {
+				cells = append(cells, run.Cells...)
+				for _, cell := range run.Cells {
+					clipped = clipped || cell.ContentClipped
+				}
+			}
+			if wantClipped {
+				last := cells[len(cells)-1]
+				if last.Text != "\uFFFD" || last.Width != 1 || last.Continuation ||
+					!last.ContentClipped || last.Link != nil {
+					t.Fatalf("repaired boundary cell at width %d = %#v", width, last)
+				}
+			} else if cells[19].Text != "界" || cells[19].Width != 2 ||
+				!cells[20].Continuation || cells[20].Width != 0 {
+				t.Fatalf("restored wide boundary at width %d = %#v %#v",
+					width, cells[19], cells[20])
+			}
+		}
+		if clipped != wantClipped {
+			t.Fatalf("history clipping at width %d = %t, want %t", width, clipped, wantClipped)
+		}
+	}
+
+	assertCanonical(21, false)
+	assertCanonical(20, true)
+	assertCanonical(22, false)
+
+	if err := core.WriteOutput(context.Background(), []byte("\x1b[?1049h"+strings.Repeat(line, 20))); err != nil {
+		t.Fatal(err)
+	}
+	assertCanonical(20, true)
+	assertCanonical(21, false)
+	if err := core.WriteOutput(context.Background(), []byte("\x1b[?1049l")); err != nil {
+		t.Fatal(err)
+	}
+	assertCanonical(20, true)
+	assertCanonical(21, false)
 }

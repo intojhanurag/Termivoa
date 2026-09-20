@@ -155,6 +155,21 @@ func normalizeRow(
 			continue
 		}
 		text, contentClipped := safeCellText(cell.Content, maxCellBytes)
+		cellWidth := cell.Width
+		boundaryClipped := cellWidth < 1 || cellWidth > 2 || x+cellWidth > width
+		if boundaryClipped {
+			// Resize can leave a retained wide leading cell at the new final
+			// column after its continuation was truncated. Never expose that
+			// impossible shape: use one explicit replacement column instead.
+			text = "\uFFFD"
+			cellWidth = 1
+			contentClipped = true
+		} else if text == "" {
+			// A styled empty dependency cell is a blank display column, not a
+			// protocol continuation. Continuations are synthesized below only
+			// from a valid wide leading cell.
+			text = " "
+		}
 		clipped = clipped || contentClipped
 		fg := defaultForeground
 		if cell.Style.Fg != nil {
@@ -166,7 +181,7 @@ func normalizeRow(
 		}
 		normalized := Cell{
 			Text:           text,
-			Width:          cell.Width,
+			Width:          cellWidth,
 			Foreground:     fg,
 			Background:     bg,
 			UnderlineColor: rgba(cell.Style.UnderlineColor),
@@ -181,9 +196,12 @@ func normalizeRow(
 			Link:           safeLink(cell.Link.URL),
 			ContentClipped: contentClipped,
 		}
+		if boundaryClipped {
+			normalized.Link = ""
+		}
 		row.Cells[x] = normalized
-		if cell.Width > 1 {
-			continuationUntil = min(width, x+cell.Width)
+		if cellWidth > 1 {
+			continuationUntil = x + cellWidth
 			for continuation := x + 1; continuation < continuationUntil; continuation++ {
 				inherited := normalized
 				inherited.Text = ""

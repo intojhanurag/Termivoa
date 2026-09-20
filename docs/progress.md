@@ -52,6 +52,13 @@ pass; full repository and Windows cross-compile evidence is recorded in
 `docs/evidence/p3/history-paging.md`. This is local checkpoint evidence until
 the branch is reviewed and merged.
 
+The follow-up boundary audit found and fixed a retained-wide-cell resize
+blocker: shrinking a history row with a width-2 grapheme in the new final
+column previously produced an invalid row without a continuation. The adapter
+now transports a clipped single-column replacement at that width and restores
+the original grapheme if a later width can represent it. Repeated resize,
+alternate-screen, retention, race, and transport fixtures cover the boundary.
+
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
 completed. Unexecuted later-milestone gates remain pending.

@@ -54,6 +54,11 @@ Branch under review: `feat/p3-history-paging` (private local checkpoint)
 - Pathological maximum-width rows force page trimming while remaining within
   the outbound payload budget.
 - Session generation is checked inside the broker actor before history access.
+- The exact 21-column retained row `19 * "a" + "界"` is transported at width
+  21, repaired to a clipped single-column replacement at width 20, and restored
+  from the unchanged retained row after expansion. Repeated 21/20/22/20/21
+  changes, alternate-screen output, and a three-row retention boundary all
+  produce canonical screen and history transport at every width.
 
 ## Commands and actual results
 
@@ -72,6 +77,9 @@ PASS
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/terminal -run 'TestHistory|TestSnapshotsExposeHistoryMetadataWithoutRows' -count=50
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/protocol -run 'TestHistory' -count=50
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/broker -run 'TestHistoryResetSignalFollowsViewerBaseEpoch|TestSessionHistoryReadChecksGenerationInsideActor' -count=50
+PASS
+
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/protocol -run '^TestHistoryPageCanonicalAfterWideBoundaryResize$' -count=50
 PASS
 
 GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go test -c ./internal/broker
@@ -95,6 +103,14 @@ isolated race repetitions, the complete affected-package race run passed, and
 all history-specific race tests passed 50 repetitions. No race report was
 emitted. The timing flake is recorded rather than counted as a history-paging
 failure or concealed as a clean broad repetition.
+
+An independent audit after the first checkpoint demonstrated that shrinking a
+21-column retained line ending in `界` to 20 columns left the width-2 leading
+cell at column 19 without its continuation, causing canonical protocol
+validation to reject the page. The regression now fails on the old code and
+passes with boundary normalization: the impossible fragment becomes a styled,
+unlinked `U+FFFD` width-1 cell marked `contentClipped`; the retained emulator
+row remains unchanged and the original grapheme returns after expansion.
 
 ## Remaining integration work
 
