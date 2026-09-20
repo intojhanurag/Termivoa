@@ -172,6 +172,11 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 	if err != nil || statusAfterSecondBroker.State != broker.SessionRunning {
 		t.Fatalf("second broker attempt changed live session: %#v, %v", statusAfterSecondBroker, err)
 	}
+	persistedAfterSecondBroker, err := state.Store.GetSession(context.Background(), created.Session.ID)
+	if err != nil || persistedAfterSecondBroker.State != store.SessionRunning ||
+		persistedAfterSecondBroker.BrokerGeneration != state.Generation {
+		t.Fatalf("second broker attempt changed live metadata: %#v, %v", persistedAfterSecondBroker, err)
+	}
 
 	gatewayTwoCtx, cancelGatewayTwo := context.WithCancel(context.Background())
 	gatewayTwoReady := make(chan gateway.ReadyState, 1)
