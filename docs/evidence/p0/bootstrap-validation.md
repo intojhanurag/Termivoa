@@ -66,3 +66,12 @@ to review this project. The screenshot supplied by the owner showed confidence
 threshold 0, described by Greptile as never failing on confidence. A GitHub API
 check confirmed that branch protection requires only the ten repository-owned
 contexts; Greptile is not a required merge check.
+
+## P0 completion
+
+Final PR head `9f58b380b2e637ace820a14655aba969462566fa` passed all ten
+required checks in Actions run `35509425646`. Greptile's corrected thread was
+outdated and resolved. PR #5 was squash-merged on 2026-09-20 as main commit
+`6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`, closing private issue #6. A
+post-merge API check confirmed that the repository remains private and that
+`main` is still the default protected branch.
