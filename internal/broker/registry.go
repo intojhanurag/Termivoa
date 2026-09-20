@@ -38,10 +38,9 @@ var (
 // intentionally omits Close so a viewer cannot end the broker-owned lifetime.
 type ManagedSession interface {
 	AttachViewer(context.Context, ViewerConfig) (*ViewerSubscription, error)
-	AcquireControl(context.Context, string, string, string) (ControlGrant, error)
+	AcquireControl(context.Context, *ViewerSubscription) (ControlGrant, error)
 	Heartbeat(context.Context, MutationIdentity) (ControlState, error)
 	ReleaseControl(context.Context, MutationIdentity) error
-	Disconnect(context.Context, string) error
 	SubmitInput(context.Context, MutationIdentity, uint64, InputAction) (InputAcceptance, error)
 	Resize(context.Context, MutationIdentity, int, int) error
 	Snapshot(context.Context) (terminal.Frame, error)

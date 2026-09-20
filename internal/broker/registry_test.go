@@ -693,7 +693,7 @@ func (session *fakeManagedSession) FinalStatus() (SessionStatus, bool) {
 	return cloneSessionStatus(session.status), true
 }
 
-func (session *fakeManagedSession) AcquireControl(context.Context, string, string, string) (ControlGrant, error) {
+func (session *fakeManagedSession) AcquireControl(context.Context, *ViewerSubscription) (ControlGrant, error) {
 	return ControlGrant{}, nil
 }
 func (session *fakeManagedSession) AttachViewer(context.Context, ViewerConfig) (*ViewerSubscription, error) {
@@ -705,7 +705,6 @@ func (session *fakeManagedSession) Heartbeat(context.Context, MutationIdentity) 
 func (session *fakeManagedSession) ReleaseControl(context.Context, MutationIdentity) error {
 	return nil
 }
-func (session *fakeManagedSession) Disconnect(context.Context, string) error { return nil }
 func (session *fakeManagedSession) SubmitInput(context.Context, MutationIdentity, uint64, InputAction) (InputAcceptance, error) {
 	return InputAcceptance{}, nil
 }

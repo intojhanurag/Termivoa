@@ -51,6 +51,18 @@ Branch under review: `feat/p3-viewer-delivery` (private checkpoint)
   viewers. Each subscription emits at most one detach event and waits for the
   actor's acknowledgement. A blocked actor and saturated public request queue
   therefore delay cleanup without dropping it or creating unbounded goroutines.
+- Every viewer-specific actor request carries the exact subscription instance
+  as its incarnation. Reusing a connection ID cannot let a detached handle or
+  late worker completion acknowledge, resync, reserve, complete, restart, or
+  query delivery state belonging to the replacement viewer.
+- The broker exposes no ID-only session disconnect capability. Gateway teardown
+  closes the exact `ViewerSubscription`; its actor-acknowledged detach releases
+  the matching controller lease without ending the managed process.
+- Control acquisition also requires the exact currently attached
+  `ViewerSubscription`. The actor derives connection/device identity from that
+  capability after incarnation validation; callers cannot present reusable
+  string IDs to acquire control. A current viewer may still explicitly take
+  control from another current viewer, preserving the single-controller rule.
 
 The gateway remains outside this ownership boundary. Its eventual connection
 adapter must implement the cancellation-aware `ViewerSink` drain callback over
@@ -80,6 +92,16 @@ lifetime.
   window. Both acknowledgement expiry and failed-sink detach still run through
   the internal lifecycle path after the actor resumes; the former unblocks
   retirement and the latter releases its connection slot.
+- A detached handle is followed by a replacement using the same connection ID.
+  Both stale `snapshot.applied` and resync calls return `ErrViewerMissing`; the
+  replacement remains on its acknowledged revision and receives the next
+  update as an exact-base patch rather than a forced snapshot. A delayed old
+  detach event and stale reserve/complete/restart/latest-frame actor requests
+  are also rejected without detaching or mutating that replacement. Stale,
+  unattached, and nil viewer capabilities cannot acquire control, while the
+  replacement capability can acquire and retain its lease.
+- Two concurrently attached current viewers explicitly take control in turn;
+  the second grant invalidates the first lease and remains heartbeat-valid.
 - A child that emits `FINAL` and exits inside the 60 Hz coalescing window
   delivers a patch containing `FINAL` before the session retirement barrier
   permits runtime closure.
@@ -102,6 +124,9 @@ GOTOOLCHAIN=go1.27.1 go test ./internal/broker -count=20
 PASS
 
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/broker -run 'Test(SnapshotTimeoutSurvives|FailedViewerDetachSurvives|SnapshotAcknowledgement|FinalPublishedFrame)' -count=20
+PASS
+
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/broker -run 'TestDetachedViewerHandleCannotMutateReplacementWithReusedConnectionID|TestCurrentViewerCanExplicitlyTakeControl|TestManagedSessionRuntime/(structured_input|viewer_close|only_current)' -count=50
 PASS
 
 PATH=/Users/anuragojha/.nvm/versions/node/v24.11.0/bin:$PATH ./scripts/check

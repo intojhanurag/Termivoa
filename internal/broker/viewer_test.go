@@ -59,7 +59,7 @@ func TestViewerSnapshotBoundaryAndExactPatchBase(t *testing.T) {
 		t.Fatalf("patch revisions = %s -> %s, want 0 -> 1", patch.BaseRevision, patch.Revision)
 	}
 
-	grant, err := session.AcquireControl(context.Background(), testGeneration, testViewerConnection, testViewerDevice)
+	grant, err := session.AcquireControl(context.Background(), viewer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestSnapshotTimeoutSurvivesSaturatedPublicRequestQueue(t *testing.T) {
 	// Let the worker's completion request establish the actor-owned deadline
 	// before deliberately blocking the next actor operation.
 	time.Sleep(20 * time.Millisecond)
-	grant, err := session.AcquireControl(context.Background(), testGeneration, testViewerConnection, testViewerDevice)
+	grant, err := session.AcquireControl(context.Background(), viewer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,15 +299,15 @@ func TestSnapshotTimeoutSurvivesSaturatedPublicRequestQueue(t *testing.T) {
 func TestFailedViewerDetachSurvivesSaturatedPublicRequestQueue(t *testing.T) {
 	session, process := startViewerSession(t)
 	defer session.Close()
-	grant, err := session.AcquireControl(context.Background(), testGeneration, testViewerConnection, testViewerDevice)
-	if err != nil {
-		t.Fatal(err)
-	}
 	sink := newFailGateViewerSink()
 	viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
 		ConnectionID: testViewerConnection, DeviceID: testViewerDevice,
 		Generation: testGeneration, Sink: sink, SendTimeout: 5 * time.Second,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := session.AcquireControl(context.Background(), viewer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestViewerCloseReleasesMatchingControllerLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant, err := session.AcquireControl(context.Background(), testGeneration, testViewerConnection, testViewerDevice)
+	grant, err := session.AcquireControl(context.Background(), viewer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,6 +510,150 @@ func TestViewerCloseReleasesMatchingControllerLease(t *testing.T) {
 	}, 1, InputAction{Kind: InputKindText, Text: "stale"})
 	if !errors.Is(err, ErrNotController) {
 		t.Fatalf("input after viewer close error = %v", err)
+	}
+}
+
+func TestDetachedViewerHandleCannotMutateReplacementWithReusedConnectionID(t *testing.T) {
+	session, process := startViewerSession(t)
+	defer session.Close()
+	oldSink := newRecordingViewerSink()
+	oldViewer, err := session.AttachViewer(context.Background(), ViewerConfig{
+		ConnectionID: testViewerConnection, DeviceID: testViewerDevice,
+		Generation: testGeneration, Sink: oldSink,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldBeginEnvelope := waitForHostMessage(t, oldSink, protocol.SnapshotBegin, 1)
+	oldBegin, err := protocol.DecodePayload[protocol.SnapshotBeginPayload](oldBeginEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForHostMessage(t, oldSink, protocol.SnapshotEnd, 1)
+	if err := oldViewer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	replacementSink := newRecordingViewerSink()
+	replacement, err := session.AttachViewer(context.Background(), ViewerConfig{
+		ConnectionID: testViewerConnection, DeviceID: testViewerDevice,
+		Generation: testGeneration, Sink: replacementSink,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replacement.Close()
+	replacementBeginEnvelope := waitForHostMessage(t, replacementSink, protocol.SnapshotBegin, 1)
+	replacementBegin, err := protocol.DecodePayload[protocol.SnapshotBeginPayload](replacementBeginEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForHostMessage(t, replacementSink, protocol.SnapshotEnd, 1)
+	if err := replacement.SnapshotApplied(context.Background(), replacementBegin.SnapshotID, 0); err != nil {
+		t.Fatal(err)
+	}
+	replacementGrant, err := session.AcquireControl(context.Background(), replacement)
+	if err != nil {
+		t.Fatalf("replacement acquire control: %v", err)
+	}
+	if _, err := session.AcquireControl(context.Background(), oldViewer); !errors.Is(err, ErrViewerMissing) {
+		t.Fatalf("stale viewer acquire error = %v, want %v", err, ErrViewerMissing)
+	}
+	unattached := &ViewerSubscription{
+		session: session, connectionID: testViewerConnection, deviceID: testViewerDevice,
+	}
+	if _, err := session.AcquireControl(context.Background(), unattached); !errors.Is(err, ErrViewerMissing) {
+		t.Fatalf("unattached viewer acquire error = %v, want %v", err, ErrViewerMissing)
+	}
+	if _, err := session.AcquireControl(context.Background(), nil); !errors.Is(err, ErrViewerMissing) {
+		t.Fatalf("nil viewer acquire error = %v, want %v", err, ErrViewerMissing)
+	}
+	if _, err := session.Heartbeat(context.Background(), MutationIdentity{
+		Generation: testGeneration, ConnectionID: replacement.connectionID,
+		DeviceID: replacement.deviceID, Lease: replacementGrant.Lease,
+	}); err != nil {
+		t.Fatalf("stale acquire disturbed replacement control: %v", err)
+	}
+
+	// Model a delayed duplicate teardown event from the old worker after the
+	// connection ID has already been reused. The subscription incarnation, not
+	// the display ID, decides which viewer can be detached.
+	session.queueViewerDetach(oldViewer)
+	if _, err := session.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := oldViewer.SnapshotApplied(context.Background(), oldBegin.SnapshotID, 0); !errors.Is(err, ErrViewerMissing) {
+		t.Fatalf("stale snapshot acknowledgement error = %v, want %v", err, ErrViewerMissing)
+	}
+	if err := oldViewer.Resync(context.Background()); !errors.Is(err, ErrViewerMissing) {
+		t.Fatalf("stale resync error = %v, want %v", err, ErrViewerMissing)
+	}
+	for _, request := range []sessionRequest{
+		{kind: requestReserveViewerDelivery, connection: testViewerConnection, viewer: oldViewer},
+		{kind: requestCompleteViewerDelivery, connection: testViewerConnection, viewer: oldViewer},
+		{kind: requestRestartViewerSnapshot, connection: testViewerConnection, viewer: oldViewer},
+		{kind: requestLatestViewerFrame, connection: testViewerConnection, viewer: oldViewer},
+	} {
+		if _, err := session.call(context.Background(), request); !errors.Is(err, ErrViewerMissing) {
+			t.Fatalf("stale internal request %d error = %v, want %v", request.kind, err, ErrViewerMissing)
+		}
+	}
+
+	process.Emit([]byte("replacement-still-patched"))
+	waitForTerminalRevision(t, session, 1)
+	patchEnvelope := waitForHostMessage(t, replacementSink, protocol.ScreenPatch, 1)
+	patch, err := protocol.DecodePayload[protocol.ScreenPatchPayload](patchEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.BaseRevision != "0" || patch.Revision != "1" {
+		t.Fatalf("replacement patch revisions = %s -> %s, want 0 -> 1", patch.BaseRevision, patch.Revision)
+	}
+	time.Sleep(3 * framePublishInterval)
+	if snapshots := countHostMessages(t, replacementSink, protocol.SnapshotBegin); snapshots != 1 {
+		t.Fatalf("stale handle forced %d replacement snapshots, want 1", snapshots)
+	}
+}
+
+func TestCurrentViewerCanExplicitlyTakeControl(t *testing.T) {
+	session, _ := startViewerSession(t)
+	defer session.Close()
+	first, err := session.AttachViewer(context.Background(), ViewerConfig{
+		ConnectionID: testViewerConnection, DeviceID: testViewerDevice,
+		Generation: testGeneration, Sink: newRecordingViewerSink(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := session.AttachViewer(context.Background(), ViewerConfig{
+		ConnectionID: "66666666-6666-4666-8666-666666666666",
+		DeviceID:     "77777777-7777-4777-8777-777777777777",
+		Generation:   testGeneration, Sink: newRecordingViewerSink(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	firstGrant, err := session.AcquireControl(context.Background(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondGrant, err := session.AcquireControl(context.Background(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Heartbeat(context.Background(), MutationIdentity{
+		Generation: testGeneration, ConnectionID: first.connectionID,
+		DeviceID: first.deviceID, Lease: firstGrant.Lease,
+	}); !errors.Is(err, ErrNotController) {
+		t.Fatalf("replaced viewer heartbeat error = %v, want %v", err, ErrNotController)
+	}
+	if _, err := session.Heartbeat(context.Background(), MutationIdentity{
+		Generation: testGeneration, ConnectionID: second.connectionID,
+		DeviceID: second.deviceID, Lease: secondGrant.Lease,
+	}); err != nil {
+		t.Fatalf("current viewer heartbeat: %v", err)
 	}
 }
 

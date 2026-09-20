@@ -177,7 +177,7 @@ func (subscription *ViewerSubscription) Err() error {
 func (subscription *ViewerSubscription) SnapshotApplied(ctx context.Context, snapshotID string, revision uint64) error {
 	_, err := subscription.session.call(ctx, sessionRequest{
 		kind: requestViewerSnapshotApplied, connection: subscription.connectionID,
-		snapshotID: snapshotID, revision: revision,
+		viewer: subscription, snapshotID: snapshotID, revision: revision,
 	})
 	if errors.Is(err, ErrViewerSnapshotMismatch) {
 		subscription.cancelDelivery()
@@ -188,7 +188,7 @@ func (subscription *ViewerSubscription) SnapshotApplied(ctx context.Context, sna
 // Resync invalidates an in-progress delivery and schedules a fresh snapshot.
 func (subscription *ViewerSubscription) Resync(ctx context.Context) error {
 	_, err := subscription.session.call(ctx, sessionRequest{
-		kind: requestViewerResync, connection: subscription.connectionID,
+		kind: requestViewerResync, connection: subscription.connectionID, viewer: subscription,
 	})
 	if err == nil {
 		subscription.cancelDelivery()
@@ -227,7 +227,7 @@ func (subscription *ViewerSubscription) run() {
 		}
 
 		response, err := subscription.session.call(subscription.ctx, sessionRequest{
-			kind: requestReserveViewerDelivery, connection: subscription.connectionID,
+			kind: requestReserveViewerDelivery, connection: subscription.connectionID, viewer: subscription,
 		})
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrSessionClosed) {
@@ -250,7 +250,7 @@ func (subscription *ViewerSubscription) run() {
 			supersededSnapshots++
 			_, restartErr := subscription.session.call(subscription.ctx, sessionRequest{
 				kind: requestRestartViewerSnapshot, connection: subscription.connectionID,
-				deliveryEpoch: plan.epoch,
+				viewer: subscription, deliveryEpoch: plan.epoch,
 			})
 			if restartErr != nil && !errors.Is(restartErr, errViewerDeliveryStale) {
 				subscription.stop(restartErr)
@@ -265,7 +265,7 @@ func (subscription *ViewerSubscription) run() {
 
 		response, completeErr := subscription.session.call(subscription.ctx, sessionRequest{
 			kind: requestCompleteViewerDelivery, connection: subscription.connectionID,
-			deliveryEpoch: plan.epoch, deliveryKind: kind, snapshotID: snapshotID,
+			viewer: subscription, deliveryEpoch: plan.epoch, deliveryKind: kind, snapshotID: snapshotID,
 			clippedRows: clippedRows, deliveryErr: deliveryErr,
 		})
 		_ = response
@@ -374,7 +374,7 @@ func (subscription *ViewerSubscription) streamSnapshot(ctx context.Context, plan
 
 	latestResponse, err := subscription.session.call(ctx, sessionRequest{
 		kind: requestLatestViewerFrame, connection: subscription.connectionID,
-		deliveryEpoch: plan.epoch,
+		viewer: subscription, deliveryEpoch: plan.epoch,
 	})
 	if err != nil {
 		return viewerDeliverySnapshot, snapshotID, nil, err
@@ -639,10 +639,10 @@ func (session *Session) attachViewer(request sessionRequest) error {
 	return nil
 }
 
-func (session *Session) reserveViewerDelivery(connectionID string) (viewerDeliveryPlan, error) {
-	viewer, ok := session.viewers[connectionID]
-	if !ok {
-		return viewerDeliveryPlan{}, ErrViewerMissing
+func (session *Session) reserveViewerDelivery(connectionID string, subscription *ViewerSubscription) (viewerDeliveryPlan, error) {
+	viewer, err := session.viewerForRequest(connectionID, subscription)
+	if err != nil {
+		return viewerDeliveryPlan{}, err
 	}
 	if viewer.inFlight != nil || viewer.awaiting != nil || session.published == nil {
 		return viewerDeliveryPlan{}, nil
@@ -667,9 +667,9 @@ func (session *Session) reserveViewerDelivery(connectionID string) (viewerDelive
 }
 
 func (session *Session) completeViewerDelivery(request sessionRequest) error {
-	viewer, ok := session.viewers[request.connection]
-	if !ok {
-		return ErrViewerMissing
+	viewer, err := session.viewerForRequest(request.connection, request.viewer)
+	if err != nil {
+		return err
 	}
 	if viewer.inFlight == nil || viewer.inFlightEpoch != request.deliveryEpoch {
 		return errViewerDeliveryStale
@@ -707,10 +707,15 @@ func (session *Session) completeViewerDelivery(request sessionRequest) error {
 	return nil
 }
 
-func (session *Session) applyViewerSnapshot(connectionID, snapshotID string, revision uint64) error {
-	viewer, ok := session.viewers[connectionID]
-	if !ok {
-		return ErrViewerMissing
+func (session *Session) applyViewerSnapshot(
+	connectionID string,
+	subscription *ViewerSubscription,
+	snapshotID string,
+	revision uint64,
+) error {
+	viewer, err := session.viewerForRequest(connectionID, subscription)
+	if err != nil {
+		return err
 	}
 	if viewer.awaiting == nil || viewer.awaiting.id != snapshotID || viewer.awaiting.target.frame.Revision != revision {
 		session.resetViewer(viewer)
@@ -727,10 +732,10 @@ func (session *Session) applyViewerSnapshot(connectionID, snapshotID string, rev
 	return nil
 }
 
-func (session *Session) resyncViewer(connectionID string) error {
-	viewer, ok := session.viewers[connectionID]
-	if !ok {
-		return ErrViewerMissing
+func (session *Session) resyncViewer(connectionID string, subscription *ViewerSubscription) error {
+	viewer, err := session.viewerForRequest(connectionID, subscription)
+	if err != nil {
+		return err
 	}
 	session.resetViewer(viewer)
 	return nil
@@ -747,10 +752,14 @@ func (session *Session) resetViewer(viewer *viewerActorState) {
 	signalViewer(viewer.subscription)
 }
 
-func (session *Session) restartViewerSnapshot(connectionID string, epoch uint64) error {
-	viewer, ok := session.viewers[connectionID]
-	if !ok {
-		return ErrViewerMissing
+func (session *Session) restartViewerSnapshot(
+	connectionID string,
+	subscription *ViewerSubscription,
+	epoch uint64,
+) error {
+	viewer, err := session.viewerForRequest(connectionID, subscription)
+	if err != nil {
+		return err
 	}
 	if viewer.inFlight == nil || viewer.inFlightEpoch != epoch {
 		return errViewerDeliveryStale
@@ -766,15 +775,30 @@ func (session *Session) restartViewerSnapshot(connectionID string, epoch uint64)
 	return nil
 }
 
-func (session *Session) latestViewerFrame(connectionID string, epoch uint64) (*publishedFrame, error) {
-	viewer, ok := session.viewers[connectionID]
-	if !ok {
-		return nil, ErrViewerMissing
+func (session *Session) latestViewerFrame(
+	connectionID string,
+	subscription *ViewerSubscription,
+	epoch uint64,
+) (*publishedFrame, error) {
+	viewer, err := session.viewerForRequest(connectionID, subscription)
+	if err != nil {
+		return nil, err
 	}
 	if viewer.inFlight == nil || viewer.inFlightEpoch != epoch {
 		return nil, errViewerDeliveryStale
 	}
 	return session.published, nil
+}
+
+func (session *Session) viewerForRequest(
+	connectionID string,
+	subscription *ViewerSubscription,
+) (*viewerActorState, error) {
+	viewer, ok := session.viewers[connectionID]
+	if !ok || subscription == nil || viewer.subscription != subscription {
+		return nil, ErrViewerMissing
+	}
+	return viewer, nil
 }
 
 func (session *Session) detachViewer(connectionID string, err error) {

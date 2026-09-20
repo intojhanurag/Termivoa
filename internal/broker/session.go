@@ -142,7 +142,6 @@ const (
 	requestAcquire sessionRequestKind = iota
 	requestHeartbeat
 	requestRelease
-	requestDisconnect
 	requestSubmit
 	requestResize
 	requestSnapshot
@@ -333,12 +332,16 @@ func (session *Session) FinalStatus() (SessionStatus, bool) {
 	return cloneSessionStatus(session.finalStatus), true
 }
 
-// AcquireControl explicitly replaces the current controller. Pending input
-// from the replaced connection is removed before the new lease is returned.
-func (session *Session) AcquireControl(ctx context.Context, generation, connectionID, deviceID string) (ControlGrant, error) {
+// AcquireControl explicitly replaces the current controller with an attached
+// viewer incarnation. Pending input from the replaced connection is removed
+// before the new lease is returned.
+func (session *Session) AcquireControl(ctx context.Context, viewer *ViewerSubscription) (ControlGrant, error) {
+	if viewer == nil {
+		return ControlGrant{}, ErrViewerMissing
+	}
 	response, err := session.call(ctx, sessionRequest{
-		kind: requestAcquire, identity: MutationIdentity{Generation: generation},
-		connection: connectionID, device: deviceID,
+		kind: requestAcquire, connection: viewer.connectionID,
+		device: viewer.deviceID, viewer: viewer,
 	})
 	return response.grant, err
 }
@@ -350,12 +353,6 @@ func (session *Session) Heartbeat(ctx context.Context, identity MutationIdentity
 
 func (session *Session) ReleaseControl(ctx context.Context, identity MutationIdentity) error {
 	_, err := session.call(ctx, sessionRequest{kind: requestRelease, identity: identity})
-	return err
-}
-
-// Disconnect detaches one connection. It never ends the managed process.
-func (session *Session) Disconnect(ctx context.Context, connectionID string) error {
-	_, err := session.call(ctx, sessionRequest{kind: requestDisconnect, connection: connectionID})
 	return err
 }
 
@@ -759,8 +756,13 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = ErrSessionNotRunning
 			break
 		}
+		viewer, err := session.viewerForRequest(request.connection, request.viewer)
+		if err != nil {
+			response.err = err
+			break
+		}
 		response.grant, response.err = session.controller.Acquire(
-			request.identity.Generation, request.connection, request.device,
+			session.generation, viewer.subscription.connectionID, viewer.subscription.deviceID,
 		)
 		if response.err == nil {
 			session.inbox.DropBeforeLeaseEpoch(response.grant.Epoch)
@@ -782,10 +784,6 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		if response.err == nil {
 			session.inbox.DropConnection(request.identity.ConnectionID)
 		}
-	case requestDisconnect:
-		session.controller.Disconnect(request.connection)
-		session.inbox.DropConnection(request.connection)
-		session.detachViewer(request.connection, nil)
 	case requestSubmit:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning
@@ -847,17 +845,21 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 	case requestAttachViewer:
 		response.err = session.attachViewer(request)
 	case requestReserveViewerDelivery:
-		response.delivery, response.err = session.reserveViewerDelivery(request.connection)
+		response.delivery, response.err = session.reserveViewerDelivery(request.connection, request.viewer)
 	case requestCompleteViewerDelivery:
 		response.err = session.completeViewerDelivery(request)
 	case requestViewerSnapshotApplied:
-		response.err = session.applyViewerSnapshot(request.connection, request.snapshotID, request.revision)
+		response.err = session.applyViewerSnapshot(
+			request.connection, request.viewer, request.snapshotID, request.revision,
+		)
 	case requestViewerResync:
-		response.err = session.resyncViewer(request.connection)
+		response.err = session.resyncViewer(request.connection, request.viewer)
 	case requestRestartViewerSnapshot:
-		response.err = session.restartViewerSnapshot(request.connection, request.deliveryEpoch)
+		response.err = session.restartViewerSnapshot(request.connection, request.viewer, request.deliveryEpoch)
 	case requestLatestViewerFrame:
-		response.published, response.err = session.latestViewerFrame(request.connection, request.deliveryEpoch)
+		response.published, response.err = session.latestViewerFrame(
+			request.connection, request.viewer, request.deliveryEpoch,
+		)
 	default:
 		response.err = errors.New("broker: unknown session request")
 	}
