@@ -37,6 +37,19 @@ Broker-management RPC merged from private PR #20 as
 `e14cc5722066f714db2c3a71a4d5442b11df4089`.
 Immutable history paging merged from private PR #21 as
 `f74f7620746ba1646e7a056886558f23dbbc795a`.
+Broker-management dispatch merged from private PR #22 as
+`9d212651efe331f35fdbb66038905e705125072f`. A local management-client
+checkpoint is now implemented on `feat/p3-management-cli`: it authenticates as
+the local CLI, enforces bounded and exactly correlated management RPC, exposes
+only saved configuration IDs for create, and distinguishes a typed rejection
+from uncertain mutation delivery without retrying. The user-facing command
+layer implements bounded `list` and exact-ID, explicitly confirmed `terminate`
+orchestration, including safe rendering of legacy control characters and
+honest already-exiting/exited/lost output. Thin `cmd/pterm` routing is pending
+the coordinated process-mode checkpoint; `new` and `attach` remain pending the
+canonical live-session stream. Focused race, full repository, and Windows
+cross-build evidence is recorded in
+`docs/evidence/p3/management-cli.md`.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
