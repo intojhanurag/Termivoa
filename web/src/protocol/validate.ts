@@ -1,4 +1,3 @@
-import Ajv2020 from 'ajv/dist/2020';
 import envelopeSchema from '../../../protocol/v1/envelope.schema.json';
 import type {
   AccessRevokedPayload,
@@ -15,6 +14,7 @@ import type {
   SnapshotRowsPayload,
   WelcomePayload,
 } from '../generated/protocol';
+import { createProtocolAjv } from './ajv';
 
 const MAX_HOST_MESSAGE_BYTES = 1024 * 1024;
 
@@ -61,7 +61,7 @@ const hostTypes = new Set<keyof HostPayloads>([
   'error',
 ]);
 
-const ajv = new Ajv2020({ allErrors: true, strict: true });
+const ajv = createProtocolAjv();
 const validateEnvelope = ajv.compile(envelopeSchema);
 const encoder = new TextEncoder();
 

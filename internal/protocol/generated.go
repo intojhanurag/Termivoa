@@ -2,46 +2,117 @@
 
 package protocol
 
-// Generation index for the named types in the canonical v1 envelope schema.
+// Generation index for named types in the canonical v1 protocol schemas.
 type ProtocolTypes struct {
-	AccessRevoked   AccessRevokedPayload   `json:"accessRevoked"`
-	ControlChanged  ControlChangedPayload  `json:"controlChanged"`
-	Empty           EmptyPayload           `json:"empty"`
-	Error           ErrorPayload           `json:"error"`
-	ErrorCode       ErrorCode              `json:"errorCode"`
-	Heartbeat       HeartbeatPayload       `json:"heartbeat"`
-	Hello           HelloPayload           `json:"hello"`
-	HistoryChanged  HistoryChangedPayload  `json:"historyChanged"`
-	HistoryPage     HistoryPagePayload     `json:"historyPage"`
-	HistoryRead     HistoryReadPayload     `json:"historyRead"`
-	InputAccepted   InputAcceptedPayload   `json:"inputAccepted"`
-	InputKey        InputKeyPayload        `json:"inputKey"`
-	InputMouse      InputMousePayload      `json:"inputMouse"`
-	InputPaste      InputPastePayload      `json:"inputPaste"`
-	InputRejected   InputRejectedPayload   `json:"inputRejected"`
-	InputText       InputTextPayload       `json:"inputText"`
-	IPCClientKind   IPCClientKind          `json:"ipcClientKind"`
-	IPCError        IPCErrorClass          `json:"ipcError"`
-	IPCHello        IPCHelloClass          `json:"ipcHello"`
-	IPCMessageType  IPCMessageTypeEnum     `json:"ipcMessageType"`
-	IPCWelcome      IPCWelcomeClass        `json:"ipcWelcome"`
-	Lease           LeasePayload           `json:"lease"`
-	MessageType     MessageType            `json:"messageType"`
-	ScreenMetadata  ScreenMetadata         `json:"screenMetadata"`
-	ScreenPatch     ScreenPatchPayload     `json:"screenPatch"`
-	ScreenResync    ScreenResyncPayload    `json:"screenResync"`
-	SessionState    SessionStatePayload    `json:"sessionState"`
-	SnapshotApplied SnapshotAppliedPayload `json:"snapshotApplied"`
-	SnapshotBegin   SnapshotBeginPayload   `json:"snapshotBegin"`
-	SnapshotEnd     SnapshotEndPayload     `json:"snapshotEnd"`
-	SnapshotRows    SnapshotRowsPayload    `json:"snapshotRows"`
-	TerminalResize  TerminalResizePayload  `json:"terminalResize"`
-	TerminalRow     TerminalRow            `json:"terminalRow"`
-	Welcome         WelcomePayload         `json:"welcome"`
+	AccessRevoked                    AccessRevokedPayload                    `json:"accessRevoked"`
+	BrokerRPCEmpty                   BrokerRPCEmptyPayload                   `json:"brokerRPCEmpty"`
+	BrokerRPCError                   BrokerRPCErrorPayload                   `json:"brokerRPCError"`
+	BrokerRPCMessageType             BrokerRPCMessageType                    `json:"brokerRPCMessageType"`
+	BrokerRPCSessionCreateRequest    BrokerRPCSessionCreateRequestPayload    `json:"brokerRPCSessionCreateRequest"`
+	BrokerRPCSessionListRequest      BrokerRPCSessionListRequestPayload      `json:"brokerRPCSessionListRequest"`
+	BrokerRPCSessionListResult       BrokerRPCSessionListResultPayload       `json:"brokerRPCSessionListResult"`
+	BrokerRPCSessionMutationResult   BrokerRPCSessionMutationResultPayload   `json:"brokerRPCSessionMutationResult"`
+	BrokerRPCSessionRecord           BrokerRPCSessionRecord                  `json:"brokerRPCSessionRecord"`
+	BrokerRPCSessionRenameRequest    BrokerRPCSessionRenameRequestPayload    `json:"brokerRPCSessionRenameRequest"`
+	BrokerRPCSessionResult           BrokerRPCSessionResultPayload           `json:"brokerRPCSessionResult"`
+	BrokerRPCSessionTerminateRequest BrokerRPCSessionTerminateRequestPayload `json:"brokerRPCSessionTerminateRequest"`
+	ControlChanged                   ControlChangedPayload                   `json:"controlChanged"`
+	Empty                            EmptyPayload                            `json:"empty"`
+	Error                            ErrorPayload                            `json:"error"`
+	ErrorCode                        ErrorCode                               `json:"errorCode"`
+	Heartbeat                        HeartbeatPayload                        `json:"heartbeat"`
+	Hello                            HelloPayload                            `json:"hello"`
+	HistoryChanged                   HistoryChangedPayload                   `json:"historyChanged"`
+	HistoryPage                      HistoryPagePayload                      `json:"historyPage"`
+	HistoryRead                      HistoryReadPayload                      `json:"historyRead"`
+	InputAccepted                    InputAcceptedPayload                    `json:"inputAccepted"`
+	InputKey                         InputKeyPayload                         `json:"inputKey"`
+	InputMouse                       InputMousePayload                       `json:"inputMouse"`
+	InputPaste                       InputPastePayload                       `json:"inputPaste"`
+	InputRejected                    InputRejectedPayload                    `json:"inputRejected"`
+	InputText                        InputTextPayload                        `json:"inputText"`
+	IPCClientKind                    IPCClientKind                           `json:"ipcClientKind"`
+	IPCError                         IPCErrorClass                           `json:"ipcError"`
+	IPCHello                         IPCHelloClass                           `json:"ipcHello"`
+	IPCMessageType                   IPCMessageTypeEnum                      `json:"ipcMessageType"`
+	IPCWelcome                       IPCWelcomeClass                         `json:"ipcWelcome"`
+	Lease                            LeasePayload                            `json:"lease"`
+	MessageType                      MessageType                             `json:"messageType"`
+	ScreenMetadata                   ScreenMetadata                          `json:"screenMetadata"`
+	ScreenPatch                      ScreenPatchPayload                      `json:"screenPatch"`
+	ScreenResync                     ScreenResyncPayload                     `json:"screenResync"`
+	SessionState                     SessionStatePayload                     `json:"sessionState"`
+	SnapshotApplied                  SnapshotAppliedPayload                  `json:"snapshotApplied"`
+	SnapshotBegin                    SnapshotBeginPayload                    `json:"snapshotBegin"`
+	SnapshotEnd                      SnapshotEndPayload                      `json:"snapshotEnd"`
+	SnapshotRows                     SnapshotRowsPayload                     `json:"snapshotRows"`
+	TerminalResize                   TerminalResizePayload                   `json:"terminalResize"`
+	TerminalRow                      TerminalRow                             `json:"terminalRow"`
+	Welcome                          WelcomePayload                          `json:"welcome"`
 }
 
 type AccessRevokedPayload struct {
 	Message string `json:"message"`
+}
+
+type BrokerRPCEmptyPayload struct {
+}
+
+type BrokerRPCErrorPayload struct {
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+}
+
+// References broker-saved configuration only. Executable paths, arguments, workdirs and
+// environment values are deliberately absent.
+type BrokerRPCSessionCreateRequestPayload struct {
+	OperationID    string `json:"operationId"`
+	ProjectID      string `json:"projectId"`
+	ShellProfileID string `json:"shellProfileId"`
+}
+
+type BrokerRPCSessionListRequestPayload struct {
+	Cursor *string `json:"cursor,omitempty"`
+	Limit  int64   `json:"limit"`
+}
+
+type BrokerRPCSessionListResultPayload struct {
+	NextCursor *string                  `json:"nextCursor,omitempty"`
+	Sessions   []BrokerRPCSessionRecord `json:"sessions"`
+}
+
+type BrokerRPCSessionRecord struct {
+	Columns        int64   `json:"columns"`
+	CreatedAt      string  `json:"createdAt"`
+	EndedAt        *string `json:"endedAt,omitempty"`
+	ExitCode       *int64  `json:"exitCode,omitempty"`
+	Generation     string  `json:"generation"`
+	ID             string  `json:"id"`
+	ProjectID      string  `json:"projectId"`
+	Rows           int64   `json:"rows"`
+	ShellProfileID string  `json:"shellProfileId"`
+	StartedAt      *string `json:"startedAt,omitempty"`
+	State          State   `json:"state"`
+	Title          string  `json:"title"`
+	UpdatedAt      string  `json:"updatedAt"`
+}
+
+type BrokerRPCSessionMutationResultPayload struct {
+	OperationID string                 `json:"operationId"`
+	Session     BrokerRPCSessionRecord `json:"session"`
+}
+
+type BrokerRPCSessionRenameRequestPayload struct {
+	OperationID string `json:"operationId"`
+	Title       string `json:"title"`
+}
+
+type BrokerRPCSessionResultPayload struct {
+	Session BrokerRPCSessionRecord `json:"session"`
+}
+
+type BrokerRPCSessionTerminateRequestPayload struct {
+	OperationID string `json:"operationId"`
 }
 
 type ControlChangedPayload struct {
@@ -298,22 +369,52 @@ type ProtocolLimits struct {
 type ErrorCode string
 
 const (
-	GenerationChanged ErrorCode = "generation_changed"
-	HistoryChanged    ErrorCode = "history_changed"
-	HostUnavailable   ErrorCode = "host_unavailable"
-	InputGap          ErrorCode = "input_gap"
-	InternalError     ErrorCode = "internal_error"
-	LimitExceeded     ErrorCode = "limit_exceeded"
-	NotController     ErrorCode = "not_controller"
-	PairingExpired    ErrorCode = "pairing_expired"
-	PairingPending    ErrorCode = "pairing_pending"
-	ProtocolMismatch  ErrorCode = "protocol_mismatch"
-	ResyncRequired    ErrorCode = "resync_required"
-	Revoked           ErrorCode = "revoked"
-	SessionLost       ErrorCode = "session_lost"
-	SessionMissing    ErrorCode = "session_missing"
-	StaleLease        ErrorCode = "stale_lease"
-	Unauthorized      ErrorCode = "unauthorized"
+	GenerationChanged   ErrorCode = "generation_changed"
+	HistoryChanged      ErrorCode = "history_changed"
+	HostUnavailable     ErrorCode = "host_unavailable"
+	InputGap            ErrorCode = "input_gap"
+	InternalError       ErrorCode = "internal_error"
+	InvalidRequest      ErrorCode = "invalid_request"
+	LimitExceeded       ErrorCode = "limit_exceeded"
+	NotController       ErrorCode = "not_controller"
+	OperationConflict   ErrorCode = "operation_conflict"
+	PairingExpired      ErrorCode = "pairing_expired"
+	PairingPending      ErrorCode = "pairing_pending"
+	ProjectMissing      ErrorCode = "project_missing"
+	ProtocolMismatch    ErrorCode = "protocol_mismatch"
+	ResyncRequired      ErrorCode = "resync_required"
+	Revoked             ErrorCode = "revoked"
+	SessionLost         ErrorCode = "session_lost"
+	SessionMissing      ErrorCode = "session_missing"
+	ShellProfileMissing ErrorCode = "shell_profile_missing"
+	StaleLease          ErrorCode = "stale_lease"
+	Unauthorized        ErrorCode = "unauthorized"
+)
+
+type BrokerRPCMessageType string
+
+const (
+	BrokerError             BrokerRPCMessageType = "broker.error"
+	SessionCreateRequest    BrokerRPCMessageType = "session.create.request"
+	SessionCreateResult     BrokerRPCMessageType = "session.create.result"
+	SessionListRequest      BrokerRPCMessageType = "session.list.request"
+	SessionListResult       BrokerRPCMessageType = "session.list.result"
+	SessionRenameRequest    BrokerRPCMessageType = "session.rename.request"
+	SessionRenameResult     BrokerRPCMessageType = "session.rename.result"
+	SessionStatusRequest    BrokerRPCMessageType = "session.status.request"
+	SessionStatusResult     BrokerRPCMessageType = "session.status.result"
+	SessionTerminateRequest BrokerRPCMessageType = "session.terminate.request"
+	SessionTerminateResult  BrokerRPCMessageType = "session.terminate.result"
+)
+
+type State string
+
+const (
+	Exited   State = "exited"
+	Exiting  State = "exiting"
+	Lost     State = "lost"
+	Running  State = "running"
+	Starting State = "starting"
 )
 
 type CapabilityProfile string
@@ -491,14 +592,4 @@ const (
 	Initial             Reason = "initial"
 	InterruptedSnapshot Reason = "interrupted-snapshot"
 	InvalidState        Reason = "invalid-state"
-)
-
-type State string
-
-const (
-	Exited   State = "exited"
-	Exiting  State = "exiting"
-	Lost     State = "lost"
-	Running  State = "running"
-	Starting State = "starting"
 )

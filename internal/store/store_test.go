@@ -259,6 +259,23 @@ func TestSessionForeignKeysUnicodeRoundTripAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestSessionTitleLegacyBoundaryRoundTrip(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "legacy-title.sqlite"))
+	defer store.Close()
+	beginBroker(t, store, testBrokerA)
+	seedParents(t, store)
+
+	title := strings.Repeat("x", 255) + "\n"
+	session := fixtureSession("33333333-3333-4333-8333-333333333333", testBrokerA, title)
+	if err := store.CreateSession(context.Background(), session); err != nil {
+		t.Fatalf("create session with legacy title: %v", err)
+	}
+	got, err := store.GetSession(context.Background(), session.ID)
+	if err != nil || got.Title != title {
+		t.Fatalf("legacy title round trip bytes = %d, %v; want 256", len(got.Title), err)
+	}
+}
+
 func TestProjectAndShellProfileRejectStaleOrRecreatedMetadata(t *testing.T) {
 	store := openTestStore(t, filepath.Join(t.TempDir(), "metadata-order.sqlite"))
 	defer store.Close()

@@ -56,6 +56,13 @@ describe('parseHostMessage', () => {
       .toThrow(InvalidProtocolMessageError);
   });
 
+  it('rejects non-lowercase canonical UUID spelling', () => {
+    expect(() => parseHostMessage(JSON.stringify({
+      ...welcome(),
+      requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaA',
+    }))).toThrow(InvalidProtocolMessageError);
+  });
+
   it('rejects messages beyond the host byte limit before parsing', () => {
     expect(() => parseHostMessage(`{"padding":"${'x'.repeat(1024 * 1024)}"}`))
       .toThrow('outside');
