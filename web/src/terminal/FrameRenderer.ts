@@ -14,6 +14,7 @@ import { ServerUnicodeAddon } from './ServerUnicodeAddon';
 const CONTROL_TEXT = /[\u0000-\u001f\u007f-\u009f]/u;
 const DECIMAL_COUNTER = /^(0|[1-9][0-9]{0,19})$/u;
 const MAX_CELL_BYTES = 1024;
+const MAX_PENDING_PAINTS = 2;
 
 export type Color = ProtocolColor;
 export type CellStyle = ProtocolCellStyle;
@@ -68,6 +69,7 @@ export class ResyncRequiredError extends Error {
  */
 export class FrameRenderer {
   private queue: Promise<void> = Promise.resolve();
+  private pendingPaints = 0;
   private generation: string | undefined;
   private revision: string | undefined;
   private columns: number | undefined;
@@ -139,7 +141,17 @@ export class FrameRenderer {
   }
 
   private enqueue(work: () => Promise<void>): Promise<void> {
-    const next = this.queue.then(work);
+    if (this.pendingPaints >= MAX_PENDING_PAINTS) {
+      return Promise.reject(new ResyncRequiredError('Display is lagging; request a fresh snapshot'));
+    }
+    this.pendingPaints++;
+    const next = this.queue.then(async () => {
+      try {
+        await work();
+      } finally {
+        this.pendingPaints--;
+      }
+    });
     this.queue = next.catch(() => undefined);
     return next;
   }

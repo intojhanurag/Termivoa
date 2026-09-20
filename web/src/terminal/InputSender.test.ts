@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DeliveryUncertainError, InputSender } from './InputSender';
+import { DeliveryUncertainError, InputBackpressureError, InputSender } from './InputSender';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
 const generation = '00000000-0000-4000-8000-000000000002';
@@ -82,5 +82,25 @@ describe('InputSender', () => {
     expect(() => input.sendMouse('press', 'left', 400, 0, modifiers)).toThrow('outside');
     expect(() => input.sendMouse('wheel', 'left', 0, 0, modifiers)).toThrow('incompatible');
     expect(() => input.sendMouse('press', 'none', 0, 0, modifiers)).toThrow('incompatible');
+  });
+
+  it('stops and closes a transport whose acknowledgements stall', () => {
+    let sent = 0;
+    const closes: string[] = [];
+    let request = 0;
+    const input = new InputSender(
+      { send: () => { sent++; }, close: (reason) => closes.push(reason) },
+      sessionId,
+      generation,
+      lease,
+      () => `00000000-0000-4000-8000-${String(++request).padStart(12, '0')}`,
+    );
+    for (let index = 0; index < 256; index++) {
+      input.sendText('x');
+    }
+    expect(() => input.sendText('not sent')).toThrow(InputBackpressureError);
+    expect(sent).toBe(256);
+    expect(closes).toEqual(['input acknowledgements stalled']);
+    expect(() => input.sendText('still stopped')).toThrow('new connection');
   });
 });

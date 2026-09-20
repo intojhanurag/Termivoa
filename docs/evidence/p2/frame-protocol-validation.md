@@ -21,7 +21,11 @@ pnpm 10.33.0
   variation selectors, rainbow flag, woman-technologist, and family ZWJ
   fixtures.
 - Structured browser input sequencing that does not queue offline input or
-  retransmit after disconnect.
+  retransmit after disconnect. Pending acknowledgements are bounded by count
+  and bytes; a stalled acknowledgement path stops input and closes its
+  transport rather than retaining unbounded state.
+- Browser paint work retains at most one active and one queued update. Further
+  updates return `resync_required` behavior instead of growing a promise chain.
 - Minimal Go desktop renderer and Ultraviolet input decoder. Outer-terminal
   replies are ignored; Ctrl+] detaches and Ctrl+V then Ctrl+] sends the literal
   chord. Its frame client buffers snapshot chunks and enforces generation and
@@ -46,7 +50,7 @@ pnpm typecheck
 PASS
 
 pnpm test:web
-PASS: 5 files, 30 tests
+PASS: 5 files, 32 tests
 
 pnpm build:web
 PASS

@@ -115,7 +115,7 @@ describe('FrameRenderer', () => {
   it('serializes a snapshot and consecutive patches without caller-side awaiting', async () => {
     const { terminal, renderer } = harness();
     const generation = '00000000-0000-4000-8000-000000000001';
-    const snapshot = renderer.paintSnapshot({
+    await renderer.paintSnapshot({
       generation,
       revision: '1',
       screen: metadata(),
@@ -136,7 +136,7 @@ describe('FrameRenderer', () => {
       rows: [{ index: 0, row: row('c') }],
     });
 
-    await Promise.all([snapshot, first, second]);
+    await Promise.all([first, second]);
     expect(renderer.displayedRevision()).toBe('3');
     expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getChars()).toBe('c');
     terminal.dispose();
@@ -168,6 +168,48 @@ describe('FrameRenderer', () => {
 
     await first;
     await expect(stale).rejects.toThrow(ResyncRequiredError);
+    expect(renderer.displayedRevision()).toBe('2');
+    terminal.dispose();
+  });
+
+  it('bounds retained paint work when xterm stalls', async () => {
+    const { terminal, renderer } = harness();
+    const generation = '00000000-0000-4000-8000-000000000001';
+    const originalWrite = terminal.write.bind(terminal);
+    let release: (() => void) | undefined;
+    terminal.write = ((_data: string | Uint8Array, callback?: () => void) => {
+      release = callback;
+    }) as typeof terminal.write;
+
+    const snapshot = renderer.paintSnapshot({
+      generation,
+      revision: '1',
+      screen: metadata(),
+      rows: [row('a'), row(), row(), row(), row()],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(release).toBeTypeOf('function');
+
+    const queued = renderer.applyPatch({
+      generation,
+      baseRevision: '1',
+      revision: '2',
+      screen: metadata(),
+      rows: [{ index: 0, row: row('b') }],
+    });
+    const overflow = renderer.applyPatch({
+      generation,
+      baseRevision: '2',
+      revision: '3',
+      screen: metadata(),
+      rows: [{ index: 0, row: row('c') }],
+    });
+    await expect(overflow).rejects.toThrow('Display is lagging');
+
+    terminal.write = originalWrite;
+    release?.();
+    await Promise.all([snapshot, queued]);
     expect(renderer.displayedRevision()).toBe('2');
     terminal.dispose();
   });

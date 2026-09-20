@@ -5,6 +5,8 @@ import type {
 } from '../generated/protocol';
 
 const MAX_INPUT_BYTES = 64 * 1024;
+const MAX_PENDING_INPUTS = 256;
+const MAX_PENDING_INPUT_BYTES = 256 * 1024;
 const TEXT_CONTROLS = /[\u0000-\u001f\u007f-\u009f]/u;
 const PASTE_CONTROLS = /[\u0000\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
 const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
@@ -18,10 +20,12 @@ export interface DeliveryUncertain {
 
 export interface InputTransport {
   readonly send: (message: string) => void;
+  readonly close?: (reason: string) => void;
 }
 
 interface PendingInput extends DeliveryUncertain {
   readonly requestId: string;
+  readonly bytes: number;
 }
 
 /**
@@ -31,6 +35,7 @@ interface PendingInput extends DeliveryUncertain {
 export class InputSender {
   private nextSequence = 1n;
   private readonly pending = new Map<string, PendingInput>();
+  private pendingBytes = 0;
   private active = true;
 
   constructor(
@@ -93,12 +98,12 @@ export class InputSender {
   }
 
   accepted(sequence: string): void {
-    this.pending.delete(sequence);
+    this.removePending(sequence);
   }
 
   rejected(sequence: string | undefined): void {
     if (sequence !== undefined) {
-      this.pending.delete(sequence);
+      this.removePending(sequence);
     }
   }
 
@@ -112,11 +117,7 @@ export class InputSender {
       throw new Error('Input is disabled; take control with a new connection before sending');
     }
     const inputSequence = this.nextSequence.toString(10);
-    this.nextSequence++;
     const requestId = this.requestId();
-    const pending: PendingInput = { inputSequence, type, requestId };
-    this.pending.set(inputSequence, pending);
-
     const message = JSON.stringify({
       version: 1,
       type,
@@ -125,15 +126,37 @@ export class InputSender {
       generation: this.generation,
       payload: { ...fields, lease: this.lease, inputSequence },
     });
+    const bytes = new TextEncoder().encode(message).byteLength;
+    if (this.pending.size >= MAX_PENDING_INPUTS || this.pendingBytes + bytes > MAX_PENDING_INPUT_BYTES) {
+      this.active = false;
+      this.transport.close?.('input acknowledgements stalled');
+      throw new InputBackpressureError(this.uncertainInputs());
+    }
+
+    this.nextSequence++;
+    const pending: PendingInput = { inputSequence, type, requestId, bytes };
+    this.pending.set(inputSequence, pending);
+    this.pendingBytes += bytes;
     try {
       this.transport.send(message);
     } catch (error) {
       this.active = false;
-      const uncertain = [...this.pending.values()]
-        .map(({ inputSequence: sequence, type: inputType }) => ({ inputSequence: sequence, type: inputType }));
-      throw new DeliveryUncertainError(uncertain, error);
+      throw new DeliveryUncertainError(this.uncertainInputs(), error);
     }
     return inputSequence;
+  }
+
+  private removePending(sequence: string): void {
+    const pending = this.pending.get(sequence);
+    if (pending !== undefined) {
+      this.pendingBytes -= pending.bytes;
+      this.pending.delete(sequence);
+    }
+  }
+
+  private uncertainInputs(): ReadonlyArray<DeliveryUncertain> {
+    return [...this.pending.values()]
+      .map(({ inputSequence, type }) => ({ inputSequence, type }));
   }
 }
 
@@ -144,6 +167,14 @@ export class DeliveryUncertainError extends Error {
     super('Delivery uncertain—check the terminal before sending again.', { cause: options });
     this.name = 'DeliveryUncertainError';
     this.inputs = inputs;
+  }
+}
+
+export class InputBackpressureError extends DeliveryUncertainError {
+  constructor(inputs: ReadonlyArray<DeliveryUncertain>) {
+    super(inputs);
+    this.name = 'InputBackpressureError';
+    this.message = 'Input paused because acknowledgements stopped; check the terminal before reconnecting.';
   }
 }
 
