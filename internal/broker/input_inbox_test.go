@@ -217,3 +217,80 @@ func TestInputInboxEnforcesAggregateByteBudget(t *testing.T) {
 		t.Fatalf("retry after freeing byte budget: %v", err)
 	}
 }
+
+func TestInputInboxReadyAndTryNextDoNotMissWakeup(t *testing.T) {
+	now := time.Unix(1500, 0)
+	controller, _ := testController(t, now)
+	grant, _ := controller.Acquire(testGeneration, "connection", "device")
+	inbox, _ := NewInputInbox(controller, 2)
+	defer inbox.Close()
+
+	wakeup := inbox.Ready()
+	select {
+	case <-wakeup:
+		t.Fatal("empty inbox reported ready")
+	default:
+	}
+	if _, err := inbox.Submit(testGeneration, "connection", "device", grant.Lease, 1, InputAction{Kind: InputKindText, Text: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-wakeup:
+	case <-time.After(time.Second):
+		t.Fatal("input submission did not wake waiter")
+	}
+	input, ok, err := inbox.TryNext()
+	if err != nil || !ok || input.Action.Text != "ready" {
+		t.Fatalf("try next = %#v, %v, %v", input, ok, err)
+	}
+	if _, ok, err := inbox.TryNext(); err != nil || ok {
+		t.Fatalf("empty try next = ok %v, err %v", ok, err)
+	}
+}
+
+func TestInputInboxDropsOnlyMatchingConnection(t *testing.T) {
+	now := time.Unix(1600, 0)
+	controller, _ := testController(t, now)
+	first, _ := controller.Acquire(testGeneration, "connection-a", "device-a")
+	inbox, _ := NewInputInbox(controller, 4)
+	defer inbox.Close()
+	if _, err := inbox.Submit(testGeneration, "connection-a", "device-a", first.Lease, 1, InputAction{Kind: InputKindText, Text: "drop"}); err != nil {
+		t.Fatal(err)
+	}
+	second, _ := controller.Acquire(testGeneration, "connection-b", "device-a")
+	if _, err := inbox.Submit(testGeneration, "connection-b", "device-a", second.Lease, 1, InputAction{Kind: InputKindText, Text: "keep"}); err != nil {
+		t.Fatal(err)
+	}
+	if dropped := inbox.DropConnection("connection-a"); dropped != 1 {
+		t.Fatalf("dropped inputs = %d", dropped)
+	}
+	input, ok, err := inbox.TryNext()
+	if err != nil || !ok || input.ConnectionID != "connection-b" || input.Action.Text != "keep" {
+		t.Fatalf("preserved input = %#v, %v, %v", input, ok, err)
+	}
+}
+
+func TestInputInboxDropsExpiredLeaseEpochOnTakeover(t *testing.T) {
+	now := time.Unix(1700, 0)
+	controller, clock := testController(t, now)
+	first, _ := controller.Acquire(testGeneration, "connection-a", "device-a")
+	inbox, _ := NewInputInbox(controller, 2)
+	defer inbox.Close()
+	if _, err := inbox.Submit(testGeneration, "connection-a", "device-a", first.Lease, 1, InputAction{Kind: InputKindText, Text: "expired"}); err != nil {
+		t.Fatal(err)
+	}
+	clock.Set(first.ExpiresAt)
+	if state := controller.State(); state.ConnectionID != "" {
+		t.Fatalf("expired controller state = %#v", state)
+	}
+	second, err := controller.Acquire(testGeneration, "connection-b", "device-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dropped := inbox.DropBeforeLeaseEpoch(second.Epoch); dropped != 1 {
+		t.Fatalf("dropped expired inputs = %d", dropped)
+	}
+	if _, ok, err := inbox.TryNext(); err != nil || ok {
+		t.Fatalf("expired input survived takeover: ok=%v err=%v", ok, err)
+	}
+}

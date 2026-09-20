@@ -153,6 +153,24 @@ func TestControllerChecksExpiryAfterEnteringCriticalSection(t *testing.T) {
 	}
 }
 
+func TestControllerAuthorizeDoesNotRenewLease(t *testing.T) {
+	now := time.Unix(475, 0)
+	controller, clock := testController(t, now)
+	grant, _ := controller.Acquire(testGeneration, "connection", "device")
+	clock.Set(now.Add(10 * time.Second))
+	state, err := controller.Authorize(testGeneration, "connection", "device", grant.Lease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.ExpiresAt.Equal(grant.ExpiresAt) {
+		t.Fatalf("authorize renewed lease from %v to %v", grant.ExpiresAt, state.ExpiresAt)
+	}
+	clock.Set(grant.ExpiresAt)
+	if _, err := controller.Authorize(testGeneration, "connection", "device", grant.Lease); !errors.Is(err, ErrNotController) {
+		t.Fatalf("expired authorize error = %v", err)
+	}
+}
+
 func TestControllerSerializesConcurrentTakeover(t *testing.T) {
 	now := time.Unix(500, 0)
 	controller, err := newControllerForTest(testGeneration, bytes.NewReader(testSecrets(32)), func() time.Time { return now })

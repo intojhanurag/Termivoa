@@ -1,8 +1,8 @@
 # Phone Terminal
 
-Phone Terminal is a planned self-hosted phone interface for terminal sessions running on an owner's Mac or Windows computer. The host-side runtime will be written in Go, and the phone interface will be a bundled React application. The server-authoritative terminal model is intended to let a phone and a desktop attachment observe the same managed session while keeping the shell alive across viewer disconnects.
+Phone Terminal is a self-hosted phone interface under active development for terminal sessions running on an owner's Mac or Windows computer. The host-side runtime is written in Go, and the phone interface is a bundled React application. Its server-authoritative terminal model is designed to let a phone and desktop attachment observe the same managed session while keeping the shell alive across viewer disconnects.
 
-> **Private development status:** this repository is private and at P0 (preflight and scaffold). No application runtime, terminal session management, phone UI, installer, or release artifact exists yet. Nothing here should be treated as a supported release.
+> **Private development status:** this repository is private and currently in P3. The terminal core, normalized protocol, controller input ingress, local IPC framing, and broker-owned live-session runtime have automated checkpoints. The connected gateway, authentication, complete phone experience, installers, and release artifacts do not exist yet. Nothing here should be treated as a supported release.
 
 ## Intended v0 experience
 
@@ -14,8 +14,8 @@ The planned host platforms are Apple Silicon macOS and Windows 11 x64. The plann
 
 | Surface | v0 target | Current evidence |
 | --- | --- | --- |
-| Host | Apple Silicon macOS | Development host identified; application tests not started |
-| Host | Windows 11 x64 | Access and native test arrangement not established |
+| Host | Apple Silicon macOS | Automated PTY, terminal, protocol, desktop-foundation, IPC, and live-session runtime tests pass on macOS 26.5.2 |
+| Host | Windows 11 x64 | Cross-build and hosted CI are supplemental; physical native validation remains pending |
 | Phone | iPhone Safari and Home Screen mode | Physical-device arrangement not established |
 | Phone | Android Chrome | Physical-device arrangement not established |
 | Shell | zsh | Not tested |
@@ -37,7 +37,7 @@ See [docs/architecture.md](docs/architecture.md), the versioned decision records
 
 ## Repository layout
 
-The P0 scaffold contains `cmd/pterm`, the planned `internal/*` ownership boundaries, `web`, `protocol/v1`, `tests`, `packaging`, and `docs/evidence`. Most packages contain only boundary documentation; they are not functional implementations yet.
+The repository contains `cmd/pterm`, the `internal/*` runtime ownership boundaries, `web`, `protocol/v1`, `tests`, `packaging`, and milestone evidence under `docs/evidence`. Implemented packages remain internal while their milestone contracts are completed.
 
 ## Development prerequisites
 
@@ -63,7 +63,7 @@ Phone Terminal will handle terminal control, so terminal output, input, tokens, 
 
 ## Current limitations
 
-- Only a non-functional scaffold executable and placeholder web page exist; no terminal application has been implemented or benchmarked.
+- The Go terminal/session foundations work under automated tests, but they are not yet connected through a complete broker/gateway/phone product flow.
 - No target-platform, browser, phone, pairing, reconnect, performance, packaging, signing, installation, or uninstall claim has passed its acceptance gate.
 - Tailscale is not configured by this repository, and no public tunnel is supported.
 - A future live session will require the host to stay awake, logged in, and running the broker. Host reboot, logout, or broker failure will not preserve a live process.

@@ -218,6 +218,22 @@ func TestUserInputAndRepliesShareOrderedOutput(t *testing.T) {
 	}
 }
 
+func TestStructuredMouseUsesAuthoritativeTerminalMode(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	ctx := context.Background()
+
+	if err := core.WriteOutput(ctx, []byte("\x1b[?1000h\x1b[?1006h")); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.SendMouse(ctx, uv.MouseClickEvent(uv.Mouse{X: 1, Y: 2, Button: uv.MouseLeft})); err != nil {
+		t.Fatal(err)
+	}
+	if got := readOutput(t, core.Output()); got != "\x1b[<0;2;3M" {
+		t.Fatalf("mouse output = %q", got)
+	}
+}
+
 func TestAlternateScreenPreservesNormalState(t *testing.T) {
 	t.Parallel()
 	core := newTestCore(t, 20, 5)
