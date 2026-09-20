@@ -17,7 +17,11 @@ import (
 )
 
 func main() {
-	switch os.Getenv("PTERM_PTY_FIXTURE_MODE") {
+	mode := os.Getenv("PTERM_PTY_FIXTURE_MODE")
+	if mode == "" && len(os.Args) == 2 && os.Args[1] == "counter" {
+		mode = "counter"
+	}
+	switch mode {
 	case "echo":
 		echo()
 	case "args":
@@ -37,6 +41,8 @@ func main() {
 	case "sleep":
 		fmt.Println("READY")
 		time.Sleep(time.Minute)
+	case "counter":
+		counter()
 	case "tree":
 		spawnDescendant(true)
 	case "orphan":
@@ -48,6 +54,15 @@ func main() {
 	default:
 		fmt.Fprintln(os.Stderr, "unknown PTERM_PTY_FIXTURE_MODE")
 		os.Exit(2)
+	}
+}
+
+func counter() {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for value := 1; ; value++ {
+		fmt.Printf("COUNTER pid=%d value=%08d\n", os.Getpid(), value)
+		<-ticker.C
 	}
 }
 

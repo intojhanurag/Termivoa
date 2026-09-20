@@ -59,6 +59,40 @@ type BrokerListener struct {
 	closeErr   error
 }
 
+// EnsurePrivateDirectory prepares an absolute current-user-only directory and
+// returns its canonical path. Broker process setup uses the same platform ACL
+// boundary for persistent application data as the runtime endpoint uses.
+func EnsurePrivateDirectory(path string) (string, error) {
+	directory, err := checkedRuntimeDir(path)
+	if err != nil {
+		return "", err
+	}
+	if err := prepareRuntimeDir(directory); err != nil {
+		return "", fmt.Errorf("ipc: prepare private directory: %w", err)
+	}
+	return directory, nil
+}
+
+// EnsurePrivateFile reapplies and verifies the platform current-user-only
+// boundary on an existing regular file. SQLite sidecar files remain protected
+// by the containing private directory.
+func EnsurePrivateFile(path string) error {
+	if path == "" {
+		return errors.New("ipc: private file path must not be empty")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("ipc: resolve private file: %w", err)
+	}
+	if filepath.Clean(path) != absolute {
+		return errors.New("ipc: private file path must be an absolute clean path")
+	}
+	if err := securePrivateFile(absolute); err != nil {
+		return fmt.Errorf("ipc: secure private file: %w", err)
+	}
+	return nil
+}
+
 // ListenBroker acquires exclusive broker ownership, recovers a stale endpoint,
 // binds the current-user-only transport, and atomically publishes its descriptor.
 func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, error) {
