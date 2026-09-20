@@ -42,6 +42,30 @@ func (PasteAction) desktopInputAction() {}
 func (KeyAction) desktopInputAction()   {}
 func (MouseAction) desktopInputAction() {}
 
+func sendValidated(ctx context.Context, transport Transport, action InputAction) error {
+	var err error
+	switch action := action.(type) {
+	case TextAction:
+		err = protocol.ValidateTextInput(action.Text)
+	case PasteAction:
+		err = protocol.ValidatePasteInput(action.Text)
+	case KeyAction:
+		var character *string
+		if action.Character != "" {
+			character = &action.Character
+		}
+		err = protocol.ValidateKeyInput(action.Key, character, action.Modifiers)
+	case MouseAction:
+		err = protocol.ValidateMouseInput(action.Kind, action.Button, action.Column, action.Row)
+	default:
+		err = errors.New("unsupported desktop input action")
+	}
+	if err != nil {
+		return fmt.Errorf("desktop: invalid input: %w", err)
+	}
+	return transport.Send(ctx, action)
+}
+
 // InputController maps Ultraviolet events into shared protocol input actions.
 // Ctrl+] detaches locally. Ctrl+V quotes the next Ctrl+] so the child can
 // receive a literal detach character.
@@ -68,7 +92,7 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 				return true, nil
 			}
 			controller.quoteNext = false
-			return false, transport.Send(ctx, KeyAction{
+			return false, sendValidated(ctx, transport, KeyAction{
 				Key:       protocol.Character,
 				Character: "]",
 				Modifiers: protocol.Modifiers{Ctrl: true},
@@ -78,7 +102,7 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 			// Ctrl+V is only a local quote action for the reserved detach key.
 			// For any other key, preserve both user actions in order.
 			controller.quoteNext = false
-			if err := transport.Send(ctx, KeyAction{
+			if err := sendValidated(ctx, transport, KeyAction{
 				Key:       protocol.Character,
 				Character: "v",
 				Modifiers: protocol.Modifiers{Ctrl: true},
@@ -90,15 +114,15 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 		if !ok {
 			return false, nil
 		}
-		return false, transport.Send(ctx, action)
+		return false, sendValidated(ctx, transport, action)
 	case uv.PasteEvent:
-		return false, transport.Send(ctx, PasteAction{Text: event.Content})
+		return false, sendValidated(ctx, transport, PasteAction{Text: event.Content})
 	case uv.MouseEvent:
 		action, ok := mouseAction(event)
 		if !ok {
 			return false, nil
 		}
-		return false, transport.Send(ctx, action)
+		return false, sendValidated(ctx, transport, action)
 	default:
 		// Outer-terminal query replies, capability reports, focus events, and
 		// unknown sequences are intentionally never relayed to the child.

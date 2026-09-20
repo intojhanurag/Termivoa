@@ -45,7 +45,7 @@ export class InputSender {
     if (key === 'character') {
       if (
         character === undefined
-        || !/^[\u0020-\u007e]$/u.test(character)
+        || !/^[\u0021-\u007e]$/u.test(character)
         || (!modifiers.ctrl && !modifiers.alt && !modifiers.meta)
       ) {
         throw new Error('Character keys require one printable ASCII character and a control modifier');
@@ -76,6 +76,18 @@ export class InputSender {
   ): string {
     if (!Number.isInteger(column) || column < 0 || column >= 400 || !Number.isInteger(row) || row < 0 || row >= 200) {
       throw new Error('Mouse coordinates are outside terminal bounds');
+    }
+    const wheel = button === 'wheel-up' || button === 'wheel-down'
+      || button === 'wheel-left' || button === 'wheel-right';
+    const validPair = kind === 'wheel'
+      ? wheel
+      : kind === 'move'
+        ? !wheel
+        : kind === 'press'
+          ? button !== 'none' && !wheel
+          : !wheel;
+    if (!validPair) {
+      throw new Error('Mouse event kind and button are incompatible');
     }
     return this.send('input.mouse', { kind, button, column, row, modifiers });
   }
@@ -117,7 +129,9 @@ export class InputSender {
       this.transport.send(message);
     } catch (error) {
       this.active = false;
-      throw new DeliveryUncertainError([pending], error);
+      const uncertain = [...this.pending.values()]
+        .map(({ inputSequence: sequence, type: inputType }) => ({ inputSequence: sequence, type: inputType }));
+      throw new DeliveryUncertainError(uncertain, error);
     }
     return inputSequence;
   }

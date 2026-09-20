@@ -104,3 +104,22 @@ func TestInputControllerReturnsTransportError(t *testing.T) {
 		t.Fatalf("transport error = %v", err)
 	}
 }
+
+func TestInputControllerRejectsInvalidLocalInput(t *testing.T) {
+	t.Parallel()
+	controller := &InputController{}
+	transport := &recordingTransport{}
+
+	_, err := controller.Handle(context.Background(), uv.PasteEvent{Content: "\x1bunsafe"}, transport)
+	if err == nil {
+		t.Fatal("control paste unexpectedly accepted")
+	}
+	if len(transport.actions) != 0 {
+		t.Fatalf("invalid action reached transport: %#v", transport.actions)
+	}
+
+	_, err = controller.Handle(context.Background(), uv.KeyPressEvent{Code: '界', Mod: uv.ModCtrl}, transport)
+	if err == nil {
+		t.Fatal("non-ASCII character key unexpectedly accepted")
+	}
+}

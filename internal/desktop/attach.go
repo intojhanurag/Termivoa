@@ -28,12 +28,13 @@ var systemTTYOperations = ttyOperations{
 
 // OuterTTY owns reversible changes made to the user's desktop terminal.
 type OuterTTY struct {
-	fd      uintptr
-	output  io.Writer
-	ops     ttyOperations
-	state   *term.State
-	mu      sync.Mutex
-	entered bool
+	fd            uintptr
+	output        io.Writer
+	ops           ttyOperations
+	state         *term.State
+	mu            sync.Mutex
+	rawActive     bool
+	displayActive bool
 }
 
 // NewOuterTTY creates a terminal-mode guard for an attachment.
@@ -48,7 +49,7 @@ func NewOuterTTY(fd uintptr, output io.Writer) (*OuterTTY, error) {
 func (tty *OuterTTY) Enter() error {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
-	if tty.entered {
+	if tty.rawActive || tty.displayActive {
 		return errors.New("desktop outer terminal is already entered")
 	}
 	state, err := tty.ops.makeRaw(tty.fd)
@@ -56,12 +57,12 @@ func (tty *OuterTTY) Enter() error {
 		return fmt.Errorf("desktop: enter raw mode: %w", err)
 	}
 	tty.state = state
+	tty.rawActive = true
+	tty.displayActive = true
 	if _, err := io.WriteString(tty.output, enterOuterTerminal); err != nil {
-		restoreErr := tty.ops.restore(tty.fd, state)
-		_, sequenceErr := io.WriteString(tty.output, restoreOuterTerminal)
-		return errors.Join(fmt.Errorf("desktop: initialize outer terminal: %w", err), restoreErr, sequenceErr)
+		restoreErr := tty.restoreLocked()
+		return errors.Join(fmt.Errorf("desktop: initialize outer terminal: %w", err), restoreErr)
 	}
-	tty.entered = true
 	return nil
 }
 
@@ -69,17 +70,31 @@ func (tty *OuterTTY) Enter() error {
 func (tty *OuterTTY) Restore() error {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
-	if !tty.entered {
+	return tty.restoreLocked()
+}
+
+func (tty *OuterTTY) restoreLocked() error {
+	if !tty.rawActive && !tty.displayActive {
 		return nil
 	}
-	tty.entered = false
-	_, sequenceErr := io.WriteString(tty.output, restoreOuterTerminal)
-	restoreErr := tty.ops.restore(tty.fd, tty.state)
-	if sequenceErr != nil {
-		sequenceErr = fmt.Errorf("desktop: restore outer terminal sequences: %w", sequenceErr)
+	var sequenceErr error
+	if tty.displayActive {
+		_, sequenceErr = io.WriteString(tty.output, restoreOuterTerminal)
+		if sequenceErr == nil {
+			tty.displayActive = false
+		} else {
+			sequenceErr = fmt.Errorf("desktop: restore outer terminal sequences: %w", sequenceErr)
+		}
 	}
-	if restoreErr != nil {
-		restoreErr = fmt.Errorf("desktop: restore raw mode: %w", restoreErr)
+	var restoreErr error
+	if tty.rawActive {
+		restoreErr = tty.ops.restore(tty.fd, tty.state)
+		if restoreErr == nil {
+			tty.rawActive = false
+			tty.state = nil
+		} else {
+			restoreErr = fmt.Errorf("desktop: restore raw mode: %w", restoreErr)
+		}
 	}
 	return errors.Join(sequenceErr, restoreErr)
 }
@@ -102,7 +117,7 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 		return errors.New("desktop attachment requires TTY, event streamer, and transport")
 	}
 	if err := attachment.TTY.Enter(); err != nil {
-		return err
+		return errors.Join(err, attachment.TTY.Restore())
 	}
 	defer func() {
 		returnErr = errors.Join(returnErr, attachment.TTY.Restore())

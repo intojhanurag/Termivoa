@@ -39,8 +39,23 @@ describe('InputSender', () => {
   });
 
   it('reports uncertain delivery and stops after a transport failure', () => {
-    const input = sender(() => { throw new Error('closed'); });
-    expect(() => input.sendText('maybe')).toThrow(DeliveryUncertainError);
+    let calls = 0;
+    const input = sender(() => {
+      calls++;
+      if (calls === 2) throw new Error('closed');
+    });
+    input.sendText('first pending');
+    let failure: DeliveryUncertainError | undefined;
+    try {
+      input.sendText('maybe');
+    } catch (error) {
+      failure = error as DeliveryUncertainError;
+    }
+    expect(failure).toBeInstanceOf(DeliveryUncertainError);
+    expect(failure?.inputs).toEqual([
+      { inputSequence: '1', type: 'input.text' },
+      { inputSequence: '2', type: 'input.text' },
+    ]);
     expect(() => input.sendText('never queued')).toThrow('new connection');
   });
 
@@ -62,7 +77,10 @@ describe('InputSender', () => {
   it('rejects malformed character keys and mouse coordinates locally', () => {
     const input = sender(() => undefined);
     expect(() => input.sendKey('character', modifiers, 'c')).toThrow('control modifier');
+    expect(() => input.sendKey('character', { ...modifiers, ctrl: true }, ' ')).toThrow('printable ASCII');
     expect(() => input.sendKey('enter', modifiers, 'x')).toThrow('Only a character');
     expect(() => input.sendMouse('press', 'left', 400, 0, modifiers)).toThrow('outside');
+    expect(() => input.sendMouse('wheel', 'left', 0, 0, modifiers)).toThrow('incompatible');
+    expect(() => input.sendMouse('press', 'none', 0, 0, modifiers)).toThrow('incompatible');
   });
 });

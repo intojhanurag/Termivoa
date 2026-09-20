@@ -106,6 +106,23 @@ func TestDecodeRejectsMissingRequiredNestedFields(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsNullWhereSchemaRequiresAValue(t *testing.T) {
+	nullOptional := []byte(`{"version":1,"type":"screen.resync","requestId":"11111111-1111-4111-8111-111111111111","sessionId":"22222222-2222-4222-8222-222222222222","generation":"33333333-3333-4333-8333-333333333333","payload":{"reason":"initial","lastRevision":null}}`)
+	if _, err := DecodeClient(nullOptional); err == nil || !strings.Contains(err.Error(), "lastRevision must not be null") {
+		t.Fatalf("null optional field error = %v", err)
+	}
+
+	nullRows := []byte(`{"version":1,"type":"screen.patch","requestId":"11111111-1111-4111-8111-111111111111","sessionId":"22222222-2222-4222-8222-222222222222","generation":"33333333-3333-4333-8333-333333333333","payload":{"baseRevision":"1","revision":"2","historyReset":false,"screen":{"columns":20,"rows":5,"buffer":"normal","cursor":{"column":0,"row":0,"style":"block","visible":true,"blink":false},"foreground":{"r":255,"g":255,"b":255,"a":255},"background":{"r":0,"g":0,"b":0,"a":255},"cursorColor":{"r":255,"g":255,"b":255,"a":255},"widthMethod":"wcwidth","historyEpoch":"0","historyRevision":"0","contentClipped":false},"rows":null}}`)
+	if _, err := DecodeHost(nullRows); err == nil || !strings.Contains(err.Error(), "rows must not be null") {
+		t.Fatalf("null rows error = %v", err)
+	}
+
+	nullController := []byte(`{"version":1,"type":"control.changed","requestId":"11111111-1111-4111-8111-111111111111","sessionId":"22222222-2222-4222-8222-222222222222","generation":"33333333-3333-4333-8333-333333333333","payload":{"controllerConnectionId":null,"leaseEpoch":"1"}}`)
+	if _, err := DecodeHost(nullController); err != nil {
+		t.Fatalf("required nullable controller id: %v", err)
+	}
+}
+
 func TestInputValidationUsesByteAndControlBounds(t *testing.T) {
 	valid := InputTextPayload{
 		Lease: strings.Repeat("A", 43), InputSequence: "1", Text: "hello 世界",

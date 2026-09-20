@@ -108,16 +108,6 @@ export class FrameRenderer {
     if (BigInt(patch.revision) <= BigInt(patch.baseRevision)) {
       throw new ResyncRequiredError('Patch revision does not advance');
     }
-    if (patch.generation !== this.generation) {
-      throw new ResyncRequiredError('Patch generation does not match the displayed session');
-    }
-    if (patch.baseRevision !== this.revision) {
-      throw new ResyncRequiredError('Patch base revision does not match the displayed revision');
-    }
-    if (patch.screen.columns !== this.columns || patch.screen.rows !== this.rows) {
-      throw new ResyncRequiredError('A resize requires a full snapshot');
-    }
-
     const seen = new Set<number>();
     const rows = patch.rows.map(({ index, row }) => {
       if (!Number.isInteger(index) || index < 0 || index >= patch.screen.rows || seen.has(index)) {
@@ -130,6 +120,15 @@ export class FrameRenderer {
     const screen = copyMetadata(patch.screen);
 
     return this.enqueue(async () => {
+      if (patch.generation !== this.generation) {
+        throw new ResyncRequiredError('Patch generation does not match the displayed session');
+      }
+      if (patch.baseRevision !== this.revision) {
+        throw new ResyncRequiredError('Patch base revision does not match the displayed revision');
+      }
+      if (patch.screen.columns !== this.columns || patch.screen.rows !== this.rows) {
+        throw new ResyncRequiredError('A resize requires a full snapshot');
+      }
       await this.paint(rows, screen);
       this.revision = revision;
     });

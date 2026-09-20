@@ -119,6 +119,37 @@ func TestOuterTTYRestoresRawModeWhenSetupWriteFails(t *testing.T) {
 	}
 }
 
+func TestOuterTTYRetriesFailedRawRestore(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	restoreCalls := 0
+	tty := &OuterTTY{
+		output: &output,
+		ops: ttyOperations{
+			makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+			restore: func(uintptr, *term.State) error {
+				restoreCalls++
+				if restoreCalls == 1 {
+					return errors.New("temporary restore failure")
+				}
+				return nil
+			},
+		},
+	}
+	if err := tty.Enter(); err != nil {
+		t.Fatal(err)
+	}
+	if err := tty.Restore(); err == nil {
+		t.Fatal("first raw restore unexpectedly succeeded")
+	}
+	if err := tty.Restore(); err != nil {
+		t.Fatalf("retry raw restore: %v", err)
+	}
+	if restoreCalls != 2 {
+		t.Fatalf("raw restore calls = %d, want 2", restoreCalls)
+	}
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {

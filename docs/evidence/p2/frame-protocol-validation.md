@@ -24,7 +24,8 @@ pnpm 10.33.0
   retransmit after disconnect.
 - Minimal Go desktop renderer and Ultraviolet input decoder. Outer-terminal
   replies are ignored; Ctrl+] detaches and Ctrl+V then Ctrl+] sends the literal
-  chord.
+  chord. Its frame client buffers snapshot chunks and enforces generation and
+  exact-base revision checks before painting patches.
 
 ## Commands and actual results
 
@@ -45,7 +46,7 @@ pnpm typecheck
 PASS
 
 pnpm test:web
-PASS: 5 files, 28 tests
+PASS: 5 files, 30 tests
 
 pnpm build:web
 PASS

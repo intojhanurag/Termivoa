@@ -190,17 +190,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err := validateInputIdentity(payload.Lease, payload.InputSequence); err != nil {
 			return err
 		}
-		if !validKey(payload.Key) {
-			return errors.New("invalid key")
-		}
-		if payload.Key == Character {
-			if payload.Character == nil || !singlePrintableASCII(*payload.Character) ||
-				(!payload.Modifiers.Ctrl && !payload.Modifiers.Alt && !payload.Modifiers.Meta) {
-				return errors.New("character key requires one printable ASCII character and a control modifier")
-			}
-		} else if payload.Character != nil {
-			return errors.New("character is only valid for the character key")
-		}
+		return ValidateKeyInput(payload.Key, payload.Character, payload.Modifiers)
 	case InputText:
 		payload, err := strictPayload[InputTextPayload](envelope)
 		if err != nil {
@@ -209,9 +199,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err := validateInputIdentity(payload.Lease, payload.InputSequence); err != nil {
 			return err
 		}
-		if len(payload.Text) == 0 || len(payload.Text) > MaxTextBytes || !validText(payload.Text) {
-			return errors.New("text must be non-empty printable UTF-8 within the byte limit")
-		}
+		return ValidateTextInput(payload.Text)
 	case InputPaste:
 		payload, err := strictPayload[InputPastePayload](envelope)
 		if err != nil {
@@ -220,9 +208,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err := validateInputIdentity(payload.Lease, payload.InputSequence); err != nil {
 			return err
 		}
-		if len(payload.Text) == 0 || len(payload.Text) > MaxPasteBytes || !validPaste(payload.Text) {
-			return errors.New("paste must be non-empty allowed UTF-8 within the byte limit")
-		}
+		return ValidatePasteInput(payload.Text)
 	case InputMouse:
 		payload, err := strictPayload[InputMousePayload](envelope)
 		if err != nil {
@@ -231,9 +217,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err := validateInputIdentity(payload.Lease, payload.InputSequence); err != nil {
 			return err
 		}
-		if payload.Column < 0 || payload.Column >= MaxColumns || payload.Row < 0 || payload.Row >= MaxRows || !validMouse(payload.Kind, payload.Button) {
-			return errors.New("invalid mouse event")
-		}
+		return ValidateMouseInput(payload.Kind, payload.Button, payload.Column, payload.Row)
 	case TerminalResize:
 		payload, err := strictPayload[TerminalResizePayload](envelope)
 		if err != nil {
@@ -488,6 +472,9 @@ func requiredFieldsPresent(value any, target reflect.Type, path string) error {
 					return fmt.Errorf("protocol: required field %s is missing", fieldPath)
 				}
 				continue
+			}
+			if fieldValue == nil && (optional || field.Type.Kind() != reflect.Pointer) {
+				return fmt.Errorf("protocol: field %s must not be null", fieldPath)
 			}
 			if err := requiredFieldsPresent(fieldValue, field.Type, fieldPath); err != nil {
 				return err

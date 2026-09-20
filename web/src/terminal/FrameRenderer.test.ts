@@ -112,6 +112,66 @@ describe('FrameRenderer', () => {
     terminal.dispose();
   });
 
+  it('serializes a snapshot and consecutive patches without caller-side awaiting', async () => {
+    const { terminal, renderer } = harness();
+    const generation = '00000000-0000-4000-8000-000000000001';
+    const snapshot = renderer.paintSnapshot({
+      generation,
+      revision: '1',
+      screen: metadata(),
+      rows: [row('a'), row(), row(), row(), row()],
+    });
+    const first = renderer.applyPatch({
+      generation,
+      baseRevision: '1',
+      revision: '2',
+      screen: metadata(),
+      rows: [{ index: 0, row: row('b') }],
+    });
+    const second = renderer.applyPatch({
+      generation,
+      baseRevision: '2',
+      revision: '3',
+      screen: metadata(),
+      rows: [{ index: 0, row: row('c') }],
+    });
+
+    await Promise.all([snapshot, first, second]);
+    expect(renderer.displayedRevision()).toBe('3');
+    expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getChars()).toBe('c');
+    terminal.dispose();
+  });
+
+  it('rechecks a queued patch base after prior work advances the display', async () => {
+    const { terminal, renderer } = harness();
+    const generation = '00000000-0000-4000-8000-000000000001';
+    await renderer.paintSnapshot({
+      generation,
+      revision: '1',
+      screen: metadata(),
+      rows: [row('a'), row(), row(), row(), row()],
+    });
+    const first = renderer.applyPatch({
+      generation,
+      baseRevision: '1',
+      revision: '2',
+      screen: metadata(),
+      rows: [{ index: 0, row: row('b') }],
+    });
+    const stale = renderer.applyPatch({
+      generation,
+      baseRevision: '1',
+      revision: '3',
+      screen: metadata(),
+      rows: [{ index: 0, row: row('c') }],
+    });
+
+    await first;
+    await expect(stale).rejects.toThrow(ResyncRequiredError);
+    expect(renderer.displayedRevision()).toBe('2');
+    terminal.dispose();
+  });
+
   it('requires resync for a wrong base revision without painting', async () => {
     const { terminal, renderer } = harness();
     const generation = '00000000-0000-4000-8000-000000000001';
@@ -122,13 +182,13 @@ describe('FrameRenderer', () => {
       rows: [row('a'), row(), row(), row(), row()],
     });
 
-    expect(() => renderer.applyPatch({
+    await expect(renderer.applyPatch({
       generation,
       baseRevision: '6',
       revision: '8',
       screen: metadata(),
       rows: [{ index: 0, row: row('b') }],
-    })).toThrow(ResyncRequiredError);
+    })).rejects.toThrow(ResyncRequiredError);
     expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getChars()).toBe('a');
     terminal.dispose();
   });
