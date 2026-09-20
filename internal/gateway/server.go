@@ -13,21 +13,25 @@ import (
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
 const (
-	ProductionListenAddress = "127.0.0.1:8787"
-	defaultProbeInterval    = time.Second
-	probeTimeout            = 750 * time.Millisecond
-	shutdownTimeout         = 3 * time.Second
+	ProductionListenAddress  = "127.0.0.1:8787"
+	DevelopmentListenAddress = "127.0.0.1:0"
+	defaultProbeInterval     = time.Second
+	probeTimeout             = 750 * time.Millisecond
+	shutdownTimeout          = 3 * time.Second
 )
 
 type Config struct {
-	RuntimeDir    string
-	HostBuild     string
-	ListenAddress string
-	ProbeInterval time.Duration
+	RuntimeDir      string
+	HostBuild       string
+	ListenAddress   string
+	Profile         platform.Profile
+	ProbeInterval   time.Duration
+	ShutdownTimeout time.Duration
 
 	// AllowedHosts adds exact private hostnames after they are deliberately
 	// configured. The bound loopback address and its localhost spelling are
@@ -65,20 +69,28 @@ func Run(ctx context.Context, config Config) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if config.RuntimeDir == "" {
-		return errors.New("gateway: runtime directory is required")
+	runtimeDir, err := platform.ValidateRuntimeDir(config.Profile, config.RuntimeDir)
+	if err != nil {
+		return err
 	}
+	config.RuntimeDir = runtimeDir
 	if len(config.HostBuild) == 0 || len(config.HostBuild) > 128 {
 		return errors.New("gateway: build must be 1..128 bytes")
 	}
-	if config.ListenAddress == "" {
-		config.ListenAddress = ProductionListenAddress
+	if err := ValidateListenAddress(config.Profile, config.ListenAddress); err != nil {
+		return err
 	}
 	if config.ProbeInterval == 0 {
 		config.ProbeInterval = defaultProbeInterval
 	}
 	if config.ProbeInterval < 25*time.Millisecond || config.ProbeInterval > time.Minute {
 		return errors.New("gateway: broker probe interval must be between 25ms and 1m")
+	}
+	if config.ShutdownTimeout == 0 {
+		config.ShutdownTimeout = shutdownTimeout
+	}
+	if config.ShutdownTimeout < 25*time.Millisecond || config.ShutdownTimeout > time.Minute {
+		return errors.New("gateway: shutdown timeout must be between 25ms and 1m")
 	}
 
 	initial, err := probeBroker(ctx, config.RuntimeDir, config.HostBuild)
@@ -126,19 +138,53 @@ func Run(ctx context.Context, config Config) error {
 	var serveErr error
 	select {
 	case <-ctx.Done():
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		serveErr = errors.Join(server.Shutdown(shutdownCtx), <-serveDone)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
+		shutdownErr := server.Shutdown(shutdownCtx)
 		shutdownCancel()
+		if shutdownErr != nil {
+			shutdownErr = errors.Join(shutdownErr, server.Close())
+		}
+		serveErr = errors.Join(shutdownErr, filterServeError(<-serveDone))
 	case serveErr = <-serveDone:
+		serveErr = filterServeError(serveErr)
 		cancel()
 		_ = listener.Close()
 	}
 	cancel()
 	<-monitorDone
-	if errors.Is(serveErr, http.ErrServerClosed) {
-		serveErr = nil
-	}
 	return serveErr
+}
+
+func ValidateListenAddress(profile platform.Profile, address string) error {
+	if profile != platform.ProductionProfile && profile != platform.DevelopmentProfile {
+		return errors.New("gateway: profile must be production or development")
+	}
+	if profile == platform.ProductionProfile && address != ProductionListenAddress {
+		return errors.New("gateway: production listener is fixed")
+	}
+	if profile == platform.DevelopmentProfile && address == ProductionListenAddress {
+		return errors.New("gateway: development listener must not reuse the production address")
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return errors.New("gateway: listener must be a literal IPv4 loopback address and port")
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil || !ip.Is4() || !ip.IsLoopback() || port == "" {
+		return errors.New("gateway: listener must be a literal IPv4 loopback address and port")
+	}
+	parsed, err := netip.ParseAddrPort(address)
+	if err != nil || parsed.Addr() != ip {
+		return errors.New("gateway: listener must be a literal IPv4 loopback address and port")
+	}
+	return nil
+}
+
+func filterServeError(err error) error {
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
 }
 
 func probeBroker(ctx context.Context, runtimeDir, build string) (protocol.IPCWelcomeClass, error) {

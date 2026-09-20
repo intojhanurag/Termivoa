@@ -54,47 +54,97 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 }
 
 func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
-	paths, err := host.DefaultPaths()
+	production, err := host.DefaultPaths()
+	if err != nil {
+		return host.BrokerConfig{}, err
+	}
+	development, err := host.DevelopmentPaths()
 	if err != nil {
 		return host.BrokerConfig{}, err
 	}
 	flags := flag.NewFlagSet(brokerMode, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	dev := flags.Bool("dev", false, "use an isolated development profile")
-	dataDir := flags.String("data-dir", paths.DataDir, "broker data directory")
-	runtimeDir := flags.String("runtime-dir", paths.RuntimeDir, "broker runtime directory")
+	dataDir := flags.String("data-dir", "", "broker data directory")
+	runtimeDir := flags.String("runtime-dir", "", "broker runtime directory")
 	if err := flags.Parse(args); err != nil {
 		return host.BrokerConfig{}, fmt.Errorf("broker options: %w", err)
 	}
 	if flags.NArg() != 0 {
 		return host.BrokerConfig{}, errors.New("broker mode does not accept positional arguments")
 	}
-	if !*dev && (*dataDir != paths.DataDir || *runtimeDir != paths.RuntimeDir) {
-		return host.BrokerConfig{}, errors.New("broker path overrides require explicit --dev")
+	profile := host.ProductionProfile
+	defaults := production
+	if *dev {
+		profile = host.DevelopmentProfile
+		defaults = development
 	}
-	return host.BrokerConfig{DataDir: *dataDir, RuntimeDir: *runtimeDir, HostBuild: buildID}, nil
+	if *dataDir == "" {
+		*dataDir = defaults.DataDir
+	}
+	if *runtimeDir == "" {
+		*runtimeDir = defaults.RuntimeDir
+	}
+	paths, err := host.ValidatePaths(profile, host.Paths{DataDir: *dataDir, RuntimeDir: *runtimeDir})
+	if err != nil {
+		if !*dev {
+			return host.BrokerConfig{}, fmt.Errorf("broker path overrides require explicit --dev: %w", err)
+		}
+		return host.BrokerConfig{}, err
+	}
+	return host.BrokerConfig{
+		DataDir: paths.DataDir, RuntimeDir: paths.RuntimeDir, HostBuild: buildID, Profile: profile,
+	}, nil
 }
 
 func parseGatewayConfig(args []string) (gateway.Config, error) {
-	paths, err := host.DefaultPaths()
+	production, err := host.DefaultPaths()
+	if err != nil {
+		return gateway.Config{}, err
+	}
+	development, err := host.DevelopmentPaths()
 	if err != nil {
 		return gateway.Config{}, err
 	}
 	flags := flag.NewFlagSet(gatewayMode, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	dev := flags.Bool("dev", false, "use an isolated development profile")
-	runtimeDir := flags.String("runtime-dir", paths.RuntimeDir, "broker runtime directory")
-	listen := flags.String("listen", gateway.ProductionListenAddress, "gateway loopback address")
+	runtimeDir := flags.String("runtime-dir", "", "broker runtime directory")
+	listen := flags.String("listen", "", "gateway loopback address")
 	if err := flags.Parse(args); err != nil {
 		return gateway.Config{}, fmt.Errorf("gateway options: %w", err)
 	}
 	if flags.NArg() != 0 {
 		return gateway.Config{}, errors.New("gateway mode does not accept positional arguments")
 	}
-	if !*dev && (*runtimeDir != paths.RuntimeDir || *listen != gateway.ProductionListenAddress) {
-		return gateway.Config{}, errors.New("gateway path or listener overrides require explicit --dev")
+	profile := host.ProductionProfile
+	defaultRuntime := production.RuntimeDir
+	defaultListen := gateway.ProductionListenAddress
+	if *dev {
+		profile = host.DevelopmentProfile
+		defaultRuntime = development.RuntimeDir
+		defaultListen = gateway.DevelopmentListenAddress
+	}
+	if *runtimeDir == "" {
+		*runtimeDir = defaultRuntime
+	}
+	if *listen == "" {
+		*listen = defaultListen
+	}
+	validatedRuntime, err := host.ValidateRuntimeDir(profile, *runtimeDir)
+	if err != nil {
+		if !*dev {
+			return gateway.Config{}, fmt.Errorf("gateway path overrides require explicit --dev: %w", err)
+		}
+		return gateway.Config{}, err
+	}
+	if err := gateway.ValidateListenAddress(profile, *listen); err != nil {
+		if !*dev {
+			return gateway.Config{}, fmt.Errorf("gateway listener overrides require explicit --dev: %w", err)
+		}
+		return gateway.Config{}, err
 	}
 	return gateway.Config{
-		RuntimeDir: *runtimeDir, HostBuild: buildID, ListenAddress: *listen,
+		RuntimeDir: validatedRuntime, HostBuild: buildID, ListenAddress: *listen, Profile: profile,
 	}, nil
 }

@@ -105,7 +105,8 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 	brokerDone := make(chan error, 1)
 	brokerConfig := host.BrokerConfig{
 		DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "process-integration",
-		Ready: func(state host.BrokerReady) { brokerReady <- state },
+		Profile: host.DevelopmentProfile,
+		Ready:   func(state host.BrokerReady) { brokerReady <- state },
 	}
 	go func() { brokerDone <- host.RunBroker(brokerCtx, brokerConfig) }()
 	state := waitBrokerReady(t, brokerReady)
@@ -120,6 +121,7 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 	go func() {
 		gatewayOneDone <- gateway.Run(gatewayOneCtx, gateway.Config{
 			RuntimeDir: runtimeDir, HostBuild: "gateway-integration", ListenAddress: "127.0.0.1:0",
+			Profile:       host.DevelopmentProfile,
 			ProbeInterval: 25 * time.Millisecond,
 			Ready:         func(state gateway.ReadyState) { gatewayOneReady <- state },
 		})
@@ -165,7 +167,10 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 
 	secondBrokerCtx, cancelSecondBroker := context.WithTimeout(context.Background(), time.Second)
 	defer cancelSecondBroker()
-	if err := host.RunBroker(secondBrokerCtx, brokerConfig); !errors.Is(err, ipc.ErrBrokerAlreadyRunning) {
+	secondBrokerConfig := brokerConfig
+	secondBrokerConfig.RuntimeDir = filepath.Join(root, "second-runtime")
+	secondBrokerConfig.Ready = nil
+	if err := host.RunBroker(secondBrokerCtx, secondBrokerConfig); !errors.Is(err, ipc.ErrBrokerAlreadyRunning) {
 		t.Fatalf("second broker error = %v", err)
 	}
 	statusAfterSecondBroker, err := managed.Status(context.Background())
@@ -184,6 +189,7 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 	go func() {
 		gatewayTwoDone <- gateway.Run(gatewayTwoCtx, gateway.Config{
 			RuntimeDir: runtimeDir, HostBuild: "gateway-integration", ListenAddress: "127.0.0.1:0",
+			Profile:       host.DevelopmentProfile,
 			ProbeInterval: 25 * time.Millisecond,
 			Ready:         func(state gateway.ReadyState) { gatewayTwoReady <- state },
 		})
@@ -225,7 +231,8 @@ func TestBrokerStartupMarksPriorLiveMetadataLostWithoutRerun(t *testing.T) {
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
 			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "recovery-integration",
-			Ready: func(state host.BrokerReady) { ready <- state },
+			Profile: host.DevelopmentProfile,
+			Ready:   func(state host.BrokerReady) { ready <- state },
 		})
 	}()
 	state := waitBrokerReady(t, ready)

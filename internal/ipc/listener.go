@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	ErrBrokerAlreadyRunning       = errors.New("ipc: broker already owns the runtime endpoint")
+	ErrBrokerAlreadyRunning       = errors.New("ipc: broker already owns the selected data or runtime location")
 	ErrEndpointMissing            = errors.New("ipc: broker endpoint descriptor is missing")
 	ErrEndpointInvalid            = errors.New("ipc: broker endpoint descriptor is invalid")
 	ErrEndpointGenerationMismatch = errors.New("ipc: endpoint broker generation does not match live broker")
@@ -57,6 +57,16 @@ type BrokerListener struct {
 	lock       brokerLock
 	closeOnce  sync.Once
 	closeErr   error
+}
+
+// BrokerDataLock owns the process-wide right to open and mutate one broker
+// data directory. It is separate from the runtime endpoint lock because
+// callers may configure different runtime directories that still point at the
+// same SQLite database.
+type BrokerDataLock struct {
+	lock      brokerLock
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // EnsurePrivateDirectory prepares an absolute current-user-only directory and
@@ -93,6 +103,30 @@ func EnsurePrivateFile(path string) error {
 	return nil
 }
 
+// LockBrokerDataDirectory prepares and canonically resolves a private data
+// directory, then takes a nonblocking current-user OS lock inside it. The
+// returned canonical path must be used for every later database operation.
+func LockBrokerDataDirectory(path string) (string, *BrokerDataLock, error) {
+	directory, err := EnsurePrivateDirectory(path)
+	if err != nil {
+		return "", nil, err
+	}
+	lock, err := acquireBrokerLock(directory, "broker-data.lock")
+	if err != nil {
+		return "", nil, err
+	}
+	return directory, &BrokerDataLock{lock: lock}, nil
+}
+
+// Close releases broker ownership of the data directory.
+func (lock *BrokerDataLock) Close() error {
+	if lock == nil {
+		return nil
+	}
+	lock.closeOnce.Do(func() { lock.closeErr = lock.lock.Close() })
+	return lock.closeErr
+}
+
 // ListenBroker acquires exclusive broker ownership, recovers a stale endpoint,
 // binds the current-user-only transport, and atomically publishes its descriptor.
 func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, error) {
@@ -112,7 +146,7 @@ func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, 
 	if err := prepareRuntimeDir(runtimeDir); err != nil {
 		return nil, fmt.Errorf("ipc: prepare runtime directory: %w", err)
 	}
-	lock, err := acquireBrokerLock(runtimeDir)
+	lock, err := acquireBrokerLock(runtimeDir, "broker.lock")
 	if err != nil {
 		return nil, err
 	}

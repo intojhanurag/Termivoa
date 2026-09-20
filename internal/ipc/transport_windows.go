@@ -50,8 +50,8 @@ func prepareRuntimeDir(runtimeDir string) error {
 	return validateCurrentUserACL(runtimeDir)
 }
 
-func acquireBrokerLock(runtimeDir string) (brokerLock, error) {
-	path := filepath.Join(runtimeDir, "broker.lock")
+func acquireBrokerLock(directory, filename string) (brokerLock, error) {
+	path := filepath.Join(directory, filename)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("ipc: open broker lock: %w", err)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 const gatewayTestGeneration = "91111111-1111-4111-8111-111111111111"
@@ -39,6 +40,7 @@ func TestRunServesRestrictedHealthAndStopsIndependently(t *testing.T) {
 	go func() {
 		done <- Run(gatewayCtx, Config{
 			RuntimeDir: runtimeDir, HostBuild: "gateway-test", ListenAddress: "127.0.0.1:0",
+			Profile:       platform.DevelopmentProfile,
 			ProbeInterval: 25 * time.Millisecond, Ready: func(state ReadyState) { ready <- state },
 		})
 	}()
@@ -117,9 +119,82 @@ func TestRunRejectsNonLoopbackListener(t *testing.T) {
 	}()
 	err = Run(context.Background(), Config{
 		RuntimeDir: runtimeDir, HostBuild: "gateway-test", ListenAddress: "0.0.0.0:0",
+		Profile: platform.DevelopmentProfile,
 	})
-	if err == nil || err.Error() != "gateway: listener must bind an IPv4 loopback address" {
+	if err == nil || err.Error() != "gateway: listener must be a literal IPv4 loopback address and port" {
 		t.Fatalf("non-loopback error = %v", err)
+	}
+}
+
+func TestRunRejectsNonLiteralLoopbackBeforeBrokerProbe(t *testing.T) {
+	for _, address := range []string{"localhost:0", "0.0.0.0:0", "[::1]:0"} {
+		t.Run(address, func(t *testing.T) {
+			err := Run(context.Background(), Config{
+				RuntimeDir: filepath.Join(t.TempDir(), "missing-runtime"),
+				HostBuild:  "gateway-test", ListenAddress: address,
+				Profile: platform.DevelopmentProfile,
+			})
+			if err == nil || err.Error() != "gateway: listener must be a literal IPv4 loopback address and port" {
+				t.Fatalf("listener validation error = %v", err)
+			}
+		})
+	}
+}
+
+func TestShutdownTimeoutClosesIncompleteHTTPConnectionAndReturnsTimeout(t *testing.T) {
+	runtimeDir := shortGatewayRuntimeDir(t)
+	brokerCtx, cancelBroker := context.WithCancel(context.Background())
+	listener, err := ipc.ListenBroker(brokerCtx, ipc.ListenerConfig{
+		RuntimeDir: runtimeDir, BrokerGeneration: gatewayTestGeneration,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokerDone := serveHandshakes(brokerCtx, listener)
+	t.Cleanup(func() {
+		cancelBroker()
+		_ = listener.Close()
+		<-brokerDone
+	})
+
+	gatewayCtx, cancelGateway := context.WithCancel(context.Background())
+	ready := make(chan ReadyState, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(gatewayCtx, Config{
+			RuntimeDir: runtimeDir, HostBuild: "gateway-test", ListenAddress: "127.0.0.1:0",
+			Profile: platform.DevelopmentProfile, ProbeInterval: 25 * time.Millisecond,
+			ShutdownTimeout: 50 * time.Millisecond,
+			Ready:           func(state ReadyState) { ready <- state },
+		})
+	}()
+	state := waitReady(t, ready)
+	connection, err := net.DialTimeout("tcp", state.Address, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if _, err := connection.Write([]byte("GET /healthz HTTP/1.1\r\nHost: " + state.Address + "\r\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	cancelGateway()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("gateway shutdown error = %v, want deadline exceeded", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("gateway did not force-close after shutdown timeout")
+	}
+	if err := connection.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 1)
+	if _, err := connection.Read(buffer); err == nil {
+		t.Fatal("incomplete HTTP connection remained open after forced close")
+	} else if networkError, ok := err.(net.Error); ok && networkError.Timeout() {
+		t.Fatal("incomplete HTTP connection timed out instead of being closed")
 	}
 }
 

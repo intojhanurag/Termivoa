@@ -74,6 +74,33 @@ func TestBrokerListenerEnforcesSingleOwner(t *testing.T) {
 	}
 }
 
+func TestBrokerDataDirectoryLockIsExclusiveAndReusable(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "data")
+	canonical, first, err := LockBrokerDataDirectory(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonical == "" || first == nil {
+		t.Fatalf("data lock = %q, %#v", canonical, first)
+	}
+	if _, second, err := LockBrokerDataDirectory(dataDir); !errors.Is(err, ErrBrokerAlreadyRunning) || second != nil {
+		t.Fatalf("second data lock = %#v, %v", second, err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	canonicalAgain, replacement, err := LockBrokerDataDirectory(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonicalAgain != canonical {
+		t.Fatalf("replacement canonical path = %q, want %q", canonicalAgain, canonical)
+	}
+	if err := replacement.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBrokerListenerRejectsDescriptorGenerationMismatch(t *testing.T) {
 	runtimeDir := shortRuntimeDir(t)
 	if err := prepareRuntimeDir(runtimeDir); err != nil {

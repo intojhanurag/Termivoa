@@ -21,11 +21,16 @@ type BrokerConfig struct {
 	DataDir    string
 	RuntimeDir string
 	HostBuild  string
+	Profile    Profile
 
 	// Ready is an internal integration-test observation point. It receives no
 	// ownership: the broker remains solely responsible for every value and the
 	// callback must return promptly.
 	Ready func(BrokerReady)
+
+	// beforeRegistryClose is a package-test synchronization point. Production
+	// callers cannot set it.
+	beforeRegistryClose func()
 }
 
 type BrokerReady struct {
@@ -37,9 +42,10 @@ type BrokerReady struct {
 }
 
 // RunBroker owns the complete persistent broker lifetime. The restricted IPC
-// lock is acquired before SQLite is opened or a generation is begun, so a
-// second process cannot mark live metadata lost while the current broker is
-// still running.
+// data-directory and runtime locks are acquired before SQLite is opened or a
+// generation is begun. The data lock remains held through Registry and Store
+// cleanup, so a differently configured runtime cannot overlap ownership or
+// mark live metadata lost.
 func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	if ctx == nil {
 		return errors.New("host: broker context must not be nil")
@@ -57,10 +63,26 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 		return fmt.Errorf("host: broker platform %q is not a supported v0 host", runtime.GOOS)
 	}
 
+	validated, err := ValidatePaths(config.Profile, Paths{
+		DataDir: config.DataDir, RuntimeDir: config.RuntimeDir,
+	})
+	if err != nil {
+		return err
+	}
+	config.DataDir = validated.DataDir
+	config.RuntimeDir = validated.RuntimeDir
+
 	generation, err := newUUID()
 	if err != nil {
 		return err
 	}
+	dataDir, dataLock, err := ipc.LockBrokerDataDirectory(config.DataDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		returnErr = errors.Join(returnErr, dataLock.Close())
+	}()
 	listener, err := ipc.ListenBroker(ctx, ipc.ListenerConfig{
 		RuntimeDir: config.RuntimeDir, BrokerGeneration: generation,
 	})
@@ -71,10 +93,6 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 		returnErr = errors.Join(returnErr, listener.Close())
 	}()
 
-	dataDir, err := ipc.EnsurePrivateDirectory(config.DataDir)
-	if err != nil {
-		return err
-	}
 	databasePath := filepath.Join(dataDir, databaseFilename)
 	persistence, err := store.Open(ctx, databasePath)
 	if err != nil {
@@ -121,6 +139,9 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	}
 
 	serveErr := server.Serve(ctx, listener)
+	if config.beforeRegistryClose != nil {
+		config.beforeRegistryClose()
+	}
 	registryOwned = false
 	registryErr := registry.Close()
 	storeOwned = false
