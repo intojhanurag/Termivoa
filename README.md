@@ -2,7 +2,7 @@
 
 Phone Terminal is a self-hosted phone interface under active development for terminal sessions running on an owner's Mac or Windows computer. The host-side runtime is written in Go, and the phone interface is a bundled React application. Its server-authoritative terminal model is designed to let a phone and desktop attachment observe the same managed session while keeping the shell alive across viewer disconnects.
 
-> **Private development status:** this repository is private and currently in P3. The terminal core, normalized protocol, controller input ingress, local IPC framing, broker-owned live-session runtime, and bounded session registry have automated checkpoints. The connected gateway, authentication, complete phone experience, installers, and release artifacts do not exist yet. Nothing here should be treated as a supported release.
+> **Private development status:** this repository is private and currently in P3. The terminal core, normalized protocol, controller input ingress, local IPC framing, broker-owned live-session runtime, bounded session registry, and SQLite session-metadata recovery have automated checkpoints. The connected gateway, authentication, complete phone experience, installers, and release artifacts do not exist yet. Nothing here should be treated as a supported release.
 
 ## Intended v0 experience
 

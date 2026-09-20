@@ -20,13 +20,15 @@ tests are integrated.
 P3 — Persistent broker: **in progress**, tracked by private issue #11. The
 controller/input-ingress checkpoint was merged from private PR #12 as
 `1ac199dfea8a2e5aa6d86bcab70cce80183679e9`. Work continues on
-`feat/p3-session-registry` after the bounded local handshake checkpoint merged
+`feat/p3-sqlite-store` after the bounded local handshake checkpoint merged
 from private PR #13 as `a92d1ca1836df29c4f3a72bc772bed8b6d354b54` and the
 broker-owned live-session runtime merged from private PR #14 as `d3ff4fd`.
-The current branch adds broker-local registry ownership, bounded resource
-retirement, random identifiers, the eight-live-session limit, and create
-operation deduplication. SQLite persistence, platform listeners, viewer
-delivery, process separation and gateway-restart evidence remain pending.
+The bounded registry then merged from private PR #15 as
+`400f48460ea7546cb815f631439b1f1933a2c645`. The current branch adds
+checksummed SQLite migrations, saved project/shell metadata, session lifecycle
+persistence, and explicit restart-to-lost recovery. Durable mutation receipts,
+platform listeners, viewer delivery, process separation, and gateway-restart
+evidence remain pending.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
@@ -93,7 +95,7 @@ These questions must be resolved before their dependent gates; they do not block
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime merged through PR #14; session registry is in progress on `feat/p3-session-registry`; evidence under `docs/evidence/p3/` |
+| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence is in progress on `feat/p3-sqlite-store`; evidence under `docs/evidence/p3/` |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
 | P6 — Install and update | Not started | None |
@@ -164,7 +166,9 @@ safe. No viewer transport currently ships, so this remains required work rather
 than a released vulnerability.
 
 The P3 session-registry checkpoint uses bounded in-memory create-operation
-deduplication and completed-session metadata. Durable operation results and
-broker-restart recovery remain pending on SQLite; the current bounds prevent
-these interim maps from growing without limit and are not presented as reboot
-persistence.
+deduplication and completed-session metadata. SQLite now durably records
+project, shell-profile, and lifecycle metadata and marks prior live rows lost
+when a new broker generation begins. It does not restore dead processes or
+terminal contents. Durable mutation receipts remain pending before network
+mutation routes are exposed; the current in-memory operation map remains a
+bounded checkpoint rather than a reboot-persistent guarantee.
