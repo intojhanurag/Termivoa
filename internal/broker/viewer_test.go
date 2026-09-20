@@ -144,7 +144,7 @@ func TestSessionHistoryReadChecksGenerationInsideActor(t *testing.T) {
 func TestViewerResyncInterruptsSnapshotAndWrongAckForcesFreshSnapshot(t *testing.T) {
 	session, _ := startViewerSession(t)
 	defer session.Close()
-	sink := newGateViewerSink(2)
+	sink := newGateViewerSink(protocol.SnapshotRows)
 	viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
 		ConnectionID: testViewerConnection, DeviceID: testViewerDevice,
 		Generation: testGeneration, Sink: sink, SendTimeout: time.Second,
@@ -328,6 +328,7 @@ func TestSnapshotTimeoutSurvivesSaturatedPublicRequestQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	resizeStarted, releaseResize := process.blockResize()
+	defer releaseResize()
 	resizeDone := make(chan error, 1)
 	go func() {
 		resizeDone <- session.Resize(context.Background(), MutationIdentity{
@@ -375,6 +376,7 @@ func TestFailedViewerDetachSurvivesSaturatedPublicRequestQueue(t *testing.T) {
 	}
 	<-sink.started
 	resizeStarted, releaseResize := process.blockResize()
+	defer releaseResize()
 	resizeDone := make(chan error, 1)
 	go func() {
 		resizeDone <- session.Resize(context.Background(), MutationIdentity{
@@ -756,14 +758,14 @@ func (sink *recordingViewerSink) snapshot() [][]byte {
 
 type gateViewerSink struct {
 	recordingViewerSink
-	blockAt int
-	blocked chan struct{}
-	once    sync.Once
+	blockType protocol.MessageType
+	blocked   chan struct{}
+	once      sync.Once
 }
 
-func newGateViewerSink(blockAt int) *gateViewerSink {
+func newGateViewerSink(blockType protocol.MessageType) *gateViewerSink {
 	return &gateViewerSink{
-		recordingViewerSink: *newRecordingViewerSink(), blockAt: blockAt, blocked: make(chan struct{}),
+		recordingViewerSink: *newRecordingViewerSink(), blockType: blockType, blocked: make(chan struct{}),
 	}
 }
 
@@ -773,17 +775,26 @@ func (sink *gateViewerSink) Send(ctx context.Context, message []byte, drained fu
 	}
 	sink.mu.Lock()
 	sink.messages = append(sink.messages, append([]byte(nil), message...))
-	messageCount := len(sink.messages)
 	sink.mu.Unlock()
 	select {
 	case sink.changed <- struct{}{}:
 	default:
 	}
-	if messageCount != sink.blockAt {
+	envelope, err := protocol.DecodeHost(message)
+	if err != nil {
+		return err
+	}
+	block := false
+	if envelope.Type == sink.blockType {
+		sink.once.Do(func() {
+			block = true
+			close(sink.blocked)
+		})
+	}
+	if !block {
 		drained()
 		return nil
 	}
-	sink.once.Do(func() { close(sink.blocked) })
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -899,7 +910,9 @@ func fillPublicRequestQueue(t *testing.T, session *Session) {
 		select {
 		case session.requests <- request:
 		default:
-			t.Fatalf("public request queue filled after %d of %d requests", index, cap(session.requests))
+			// Viewer delivery completion may already occupy a slot. The test
+			// needs a saturated queue, not an initially empty one.
+			return
 		}
 	}
 }

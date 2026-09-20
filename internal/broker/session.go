@@ -133,6 +133,8 @@ type Session struct {
 	published          *publishedFrame
 	retiring           bool
 	retirementRevision uint64
+	publishedControl   ControlState
+	publishedStatus    SessionStatus
 }
 
 type sessionRequestKind uint8
@@ -155,6 +157,8 @@ const (
 	requestViewerResync
 	requestRestartViewerSnapshot
 	requestLatestViewerFrame
+	requestCompleteViewerNotice
+	requestPrepareViewerSnapshot
 )
 
 type sessionRequest struct {
@@ -174,6 +178,8 @@ type sessionRequest struct {
 	deliveryErr   error
 	clippedRows   []bool
 	history       terminal.HistoryReadRequest
+	requestID     string
+	notice        *viewerNotice
 	reply         chan sessionResponse
 }
 
@@ -317,8 +323,9 @@ func (session *Session) Done() <-chan struct{} {
 }
 
 // RetirementReady closes after Ended and after every attached viewer has
-// either acknowledged the final published frame or detached. The registry
-// waits for this barrier before closing the session runtime.
+// either acknowledged the final published frame and drained lifecycle/control
+// notices or detached. The registry waits for this barrier before closing the
+// session runtime.
 func (session *Session) RetirementReady() <-chan struct{} {
 	return session.retirementReady
 }
@@ -344,6 +351,23 @@ func (session *Session) AcquireControl(ctx context.Context, viewer *ViewerSubscr
 	response, err := session.call(ctx, sessionRequest{
 		kind: requestAcquire, connection: viewer.connectionID,
 		device: viewer.deviceID, viewer: viewer,
+	})
+	return response.grant, err
+}
+
+// AcquireControlForRequest serializes the holder's secret grant with every
+// observer notification in the session actor. The caller must not send another
+// successful grant reply: it is already queued on the viewer sink using requestID.
+func (session *Session) AcquireControlForRequest(ctx context.Context, viewer *ViewerSubscription, requestID string) (ControlGrant, error) {
+	if viewer == nil {
+		return ControlGrant{}, ErrViewerMissing
+	}
+	if !validOperationUUID(requestID) {
+		return ControlGrant{}, errors.New("broker: control request must have a canonical UUID")
+	}
+	response, err := session.call(ctx, sessionRequest{
+		kind: requestAcquire, connection: viewer.connectionID,
+		device: viewer.deviceID, viewer: viewer, requestID: requestID,
 	})
 	return response.grant, err
 }
@@ -498,6 +522,32 @@ func (session *Session) run(columns, rows int) {
 	var viewerAckTimer *time.Timer
 	var viewerAckDeadline <-chan time.Time
 	var viewerAckAt time.Time
+	var controllerTimer *time.Timer
+	var controllerDeadline <-chan time.Time
+	var controllerAt time.Time
+	refreshControllerTimer := func() {
+		// Use the same state capture that published observer notices. A second
+		// State call could expire the lease between publication and timer setup,
+		// leaving idle observers with neither a notice nor another wake-up.
+		state := session.publishedControl
+		if state.ConnectionID == "" {
+			if controllerTimer != nil {
+				controllerTimer.Stop()
+			}
+			controllerDeadline = nil
+			controllerAt = time.Time{}
+			return
+		}
+		if state.ExpiresAt.Equal(controllerAt) {
+			return
+		}
+		if controllerTimer != nil {
+			controllerTimer.Stop()
+		}
+		controllerTimer = time.NewTimer(max(time.Until(state.ExpiresAt), 0))
+		controllerDeadline = controllerTimer.C
+		controllerAt = state.ExpiresAt
+	}
 	refreshViewerAckTimer := func() {
 		next, ok := session.nextViewerAckDeadline()
 		if !ok {
@@ -547,7 +597,7 @@ func (session *Session) run(columns, rows int) {
 		if status.State == SessionRunning {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
-			session.startRetirement()
+			session.startRetirement(status)
 			session.markEnded(status)
 			session.clearControl()
 		}
@@ -577,6 +627,9 @@ func (session *Session) run(columns, rows int) {
 		if viewerAckTimer != nil {
 			viewerAckTimer.Stop()
 		}
+		if controllerTimer != nil {
+			controllerTimer.Stop()
+		}
 		for connectionID := range session.viewers {
 			session.detachViewer(connectionID, ErrSessionClosed)
 		}
@@ -597,6 +650,8 @@ func (session *Session) run(columns, rows int) {
 	}()
 
 	for {
+		session.publishViewerEvents(status)
+		refreshControllerTimer()
 		refreshViewerAckTimer()
 		if waitSeen && readDone {
 			if status.State != SessionLost && status.State != SessionExited {
@@ -615,7 +670,7 @@ func (session *Session) run(columns, rows int) {
 				status.EndedAt = time.Now()
 				code := processExitCode(waitErr)
 				status.ExitCode = &code
-				session.startRetirement()
+				session.startRetirement(status)
 				session.markEnded(status)
 				session.clearControl()
 			}
@@ -642,6 +697,11 @@ func (session *Session) run(columns, rows int) {
 		// Viewer lifecycle events bypass the public request queue. A saturated
 		// client queue cannot suppress acknowledgement expiry or detach cleanup.
 		select {
+		case <-controllerDeadline:
+			controllerDeadline = nil
+			controllerAt = time.Time{}
+			session.controller.Expire()
+			continue
 		case <-viewerAckDeadline:
 			viewerAckDeadline = nil
 			viewerAckAt = time.Time{}
@@ -679,6 +739,10 @@ func (session *Session) run(columns, rows int) {
 			viewerAckDeadline = nil
 			viewerAckAt = time.Time{}
 			session.expireViewerAckDeadlines(time.Now())
+		case <-controllerDeadline:
+			controllerDeadline = nil
+			controllerAt = time.Time{}
+			session.controller.Expire()
 		case event := <-session.viewerEvents:
 			session.handleViewerDetach(event)
 		case event := <-session.pty:
@@ -782,6 +846,7 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		)
 		if response.err == nil {
 			session.inbox.DropBeforeLeaseEpoch(response.grant.Epoch)
+			response.err = session.publishControlGrant(response.grant, request.requestID)
 		}
 	case requestHeartbeat:
 		if status.State != SessionRunning {
@@ -853,7 +918,7 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		if response.err != nil {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
-			session.startRetirement()
+			session.startRetirement(*status)
 			session.markEnded(*status)
 			session.clearControl()
 		}
@@ -865,7 +930,11 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			}
 		}
 	case requestAttachViewer:
-		response.err = session.attachViewer(request)
+		response.err = session.attachViewer(request, *status)
+	case requestCompleteViewerNotice:
+		response.err = session.completeViewerNotice(request)
+	case requestPrepareViewerSnapshot:
+		response.err = session.prepareViewerSnapshot(request)
 	case requestReserveViewerDelivery:
 		response.delivery, response.err = session.reserveViewerDelivery(request.connection, request.viewer)
 	case requestCompleteViewerDelivery:
@@ -917,7 +986,7 @@ func (session *Session) markLost(status *SessionStatus) {
 	}
 	status.State = SessionLost
 	status.EndedAt = time.Now()
-	session.startRetirement()
+	session.startRetirement(*status)
 	session.markEnded(*status)
 	session.clearControl()
 	terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -935,11 +1004,12 @@ func (session *Session) markEnded(status SessionStatus) {
 	})
 }
 
-func (session *Session) startRetirement() {
+func (session *Session) startRetirement(status SessionStatus) {
 	if session.retiring {
 		return
 	}
 	session.retiring = true
+	session.publishSessionState(status)
 	if session.published != nil {
 		session.retirementRevision = session.published.frame.Revision
 	}
@@ -954,7 +1024,7 @@ func (session *Session) checkRetirementReady() {
 		return
 	}
 	for _, viewer := range session.viewers {
-		if viewer.inFlight != nil || viewer.awaiting != nil || viewer.base == nil ||
+		if len(viewer.notices) > 0 || viewer.noticeInFlight != nil || viewer.inFlight != nil || viewer.awaiting != nil || viewer.base == nil ||
 			viewer.base.frame.Revision < session.retirementRevision {
 			return
 		}

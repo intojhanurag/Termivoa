@@ -20,6 +20,7 @@ const (
 	DefaultViewerTimeout      = 5 * time.Second
 	DefaultSnapshotAckTimeout = 5 * time.Second
 	framePublishInterval      = time.Second / 60
+	MaxViewerQueuedNotices    = 64
 )
 
 var (
@@ -84,15 +85,19 @@ type publishedFrame struct {
 }
 
 type viewerActorState struct {
-	subscription  *ViewerSubscription
-	base          *publishedFrame
-	inFlight      *publishedFrame
-	inFlightEpoch uint64
-	awaiting      *viewerSnapshot
-	ackDeadline   time.Time
-	clippedRows   []bool
-	forceSnapshot bool
-	epoch         uint64
+	subscription         *ViewerSubscription
+	base                 *publishedFrame
+	inFlight             *publishedFrame
+	inFlightEpoch        uint64
+	awaiting             *viewerSnapshot
+	sendingSnapshot      *viewerSnapshot
+	earlySnapshotApplied bool
+	ackDeadline          time.Time
+	clippedRows          []bool
+	forceSnapshot        bool
+	epoch                uint64
+	notices              []*viewerNotice
+	noticeInFlight       *viewerNotice
 }
 
 type viewerSnapshot struct {
@@ -107,6 +112,7 @@ const (
 	viewerDeliveryNone viewerDeliveryKind = iota
 	viewerDeliverySnapshot
 	viewerDeliveryPatch
+	viewerDeliveryNotice
 )
 
 type viewerDeliveryPlan struct {
@@ -115,6 +121,7 @@ type viewerDeliveryPlan struct {
 	base            *publishedFrame
 	target          *publishedFrame
 	baseClippedRows []bool
+	notice          *viewerNotice
 }
 
 type viewerDetachEvent struct {
@@ -125,8 +132,8 @@ type viewerDetachEvent struct {
 // canonical snapshot inside the session actor. Network transmission runs in a
 // separate worker and cannot block PTY parsing or canonical-state mutation.
 func (session *Session) AttachViewer(ctx context.Context, config ViewerConfig) (*ViewerSubscription, error) {
-	if config.ConnectionID == "" || config.DeviceID == "" || config.Generation == "" {
-		return nil, errors.New("broker: viewer identity must not be empty")
+	if !validOperationUUID(config.ConnectionID) || !validOperationUUID(config.DeviceID) || !validOperationUUID(config.Generation) {
+		return nil, errors.New("broker: viewer identity must contain canonical UUIDs")
 	}
 	if config.Sink == nil {
 		return nil, errors.New("broker: viewer sink must not be nil")
@@ -236,6 +243,13 @@ func (subscription *ViewerSubscription) run() {
 		}
 		plan := response.delivery
 		if plan.kind == viewerDeliveryNone {
+			continue
+		}
+		if plan.kind == viewerDeliveryNotice {
+			if err := subscription.deliverNotice(plan.notice); err != nil {
+				subscription.stop(err)
+				return
+			}
 			continue
 		}
 
@@ -387,6 +401,12 @@ func (subscription *ViewerSubscription) streamSnapshot(ctx context.Context, plan
 	if err != nil {
 		return viewerDeliverySnapshot, snapshotID, nil, err
 	}
+	if _, err := subscription.session.call(ctx, sessionRequest{
+		kind: requestPrepareViewerSnapshot, connection: subscription.connectionID,
+		viewer: subscription, deliveryEpoch: plan.epoch, snapshotID: snapshotID,
+	}); err != nil {
+		return viewerDeliverySnapshot, snapshotID, nil, err
+	}
 	return viewerDeliverySnapshot, snapshotID, clippedRows, subscription.send(ctx, end)
 }
 
@@ -421,13 +441,19 @@ func snapshotCatchupExceedsLimit(base, latest *publishedFrame, subscription *Vie
 var errOutboundMessageTooLarge = errors.New("broker: outbound viewer message exceeds protocol limit")
 
 func (subscription *ViewerSubscription) hostMessage(messageType protocol.MessageType, payload any) ([]byte, error) {
+	return subscription.hostMessageForRequest(messageType, payload, "")
+}
+
+func (subscription *ViewerSubscription) hostMessageForRequest(messageType protocol.MessageType, payload any, requestID string) ([]byte, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("broker: encode %s payload: %w", messageType, err)
 	}
-	requestID, err := randomUUID()
-	if err != nil {
-		return nil, err
+	if requestID == "" {
+		requestID, err = randomUUID()
+		if err != nil {
+			return nil, err
+		}
 	}
 	sessionID, generation := subscription.session.id, subscription.session.generation
 	message, err := json.Marshal(protocol.Envelope{
@@ -453,6 +479,10 @@ func (subscription *ViewerSubscription) send(ctx context.Context, message []byte
 	if err := subscription.reserveBudget(len(message)); err != nil {
 		return err
 	}
+	return subscription.sendReserved(ctx, message)
+}
+
+func (subscription *ViewerSubscription) sendReserved(ctx context.Context, message []byte) error {
 	drained := make(chan struct{})
 	var once sync.Once
 	release := func() {
@@ -570,8 +600,6 @@ func (session *Session) handleViewerDetach(event viewerDetachEvent) {
 	}
 	viewer, ok := session.viewers[subscription.connectionID]
 	if ok && viewer.subscription == subscription {
-		session.controller.Disconnect(subscription.connectionID)
-		session.inbox.DropConnection(subscription.connectionID)
 		session.detachViewer(subscription.connectionID, nil)
 		return
 	}
@@ -600,7 +628,7 @@ func (session *Session) capturePublished() error {
 	return nil
 }
 
-func (session *Session) attachViewer(request sessionRequest) error {
+func (session *Session) attachViewer(request sessionRequest, status SessionStatus) error {
 	if request.identity.Generation != session.generation {
 		return ErrGenerationChanged
 	}
@@ -621,6 +649,14 @@ func (session *Session) attachViewer(request sessionRequest) error {
 	}
 	state := &viewerActorState{subscription: request.viewer, forceSnapshot: true}
 	session.viewers[request.connection] = state
+	if err := session.queueControlNotice(state, session.controller.State(), nil, ""); err != nil {
+		session.detachViewer(request.connection, err)
+		return err
+	}
+	if err := session.queueStateNotice(state, status); err != nil {
+		session.detachViewer(request.connection, err)
+		return err
+	}
 	signalViewer(request.viewer)
 	return nil
 }
@@ -629,6 +665,16 @@ func (session *Session) reserveViewerDelivery(connectionID string, subscription 
 	viewer, err := session.viewerForRequest(connectionID, subscription)
 	if err != nil {
 		return viewerDeliveryPlan{}, err
+	}
+	if viewer.noticeInFlight != nil {
+		return viewerDeliveryPlan{}, nil
+	}
+	if len(viewer.notices) > 0 {
+		notice := viewer.notices[0]
+		viewer.notices[0] = nil
+		viewer.notices = viewer.notices[1:]
+		viewer.noticeInFlight = notice
+		return viewerDeliveryPlan{kind: viewerDeliveryNotice, notice: notice}, nil
 	}
 	if viewer.inFlight != nil || viewer.awaiting != nil || session.published == nil {
 		return viewerDeliveryPlan{}, nil
@@ -662,6 +708,9 @@ func (session *Session) completeViewerDelivery(request sessionRequest) error {
 	}
 	target := viewer.inFlight
 	viewer.inFlight = nil
+	earlyApplied := viewer.earlySnapshotApplied
+	viewer.sendingSnapshot = nil
+	viewer.earlySnapshotApplied = false
 	if request.deliveryErr != nil {
 		return nil
 	}
@@ -670,11 +719,16 @@ func (session *Session) completeViewerDelivery(request sessionRequest) error {
 		if request.snapshotID == "" {
 			return errors.New("broker: completed snapshot has no identity")
 		}
-		viewer.awaiting = &viewerSnapshot{
-			id: request.snapshotID, target: target,
-			clippedRows: slices.Clone(request.clippedRows),
+		if earlyApplied {
+			viewer.base = target
+			viewer.clippedRows = slices.Clone(request.clippedRows)
+		} else {
+			viewer.awaiting = &viewerSnapshot{
+				id: request.snapshotID, target: target,
+				clippedRows: slices.Clone(request.clippedRows),
+			}
+			viewer.ackDeadline = time.Now().Add(viewer.subscription.ackTimeout)
 		}
-		viewer.ackDeadline = time.Now().Add(viewer.subscription.ackTimeout)
 		viewer.forceSnapshot = false
 	case viewerDeliveryPatch:
 		if viewer.base == nil || viewer.base.frame.Revision >= target.frame.Revision {
@@ -703,6 +757,13 @@ func (session *Session) applyViewerSnapshot(
 	if err != nil {
 		return err
 	}
+	if viewer.sendingSnapshot != nil && viewer.sendingSnapshot.id == snapshotID && viewer.sendingSnapshot.target.frame.Revision == revision {
+		// The sink may have delivered snapshot.end before its drained callback
+		// allows the worker to commit delivery. Keep this acknowledgement pending;
+		// it cannot unlock patches until completeViewerDelivery confirms the end.
+		viewer.earlySnapshotApplied = true
+		return nil
+	}
 	if viewer.awaiting == nil || viewer.awaiting.id != snapshotID || viewer.awaiting.target.frame.Revision != revision {
 		session.resetViewer(viewer)
 		return ErrViewerSnapshotMismatch
@@ -711,6 +772,8 @@ func (session *Session) applyViewerSnapshot(
 	viewer.base = viewer.awaiting.target
 	viewer.clippedRows = slices.Clone(viewer.awaiting.clippedRows)
 	viewer.awaiting = nil
+	viewer.sendingSnapshot = nil
+	viewer.earlySnapshotApplied = false
 	if session.published != nil && session.published.frame.Revision != viewer.base.frame.Revision {
 		signalViewer(viewer.subscription)
 	}
@@ -732,6 +795,8 @@ func (session *Session) resetViewer(viewer *viewerActorState) {
 	viewer.epoch++
 	viewer.inFlight = nil
 	viewer.awaiting = nil
+	viewer.sendingSnapshot = nil
+	viewer.earlySnapshotApplied = false
 	viewer.base = nil
 	viewer.clippedRows = nil
 	viewer.forceSnapshot = true
@@ -756,8 +821,23 @@ func (session *Session) restartViewerSnapshot(
 	viewer.base = nil
 	viewer.clippedRows = nil
 	viewer.awaiting = nil
+	viewer.sendingSnapshot = nil
+	viewer.earlySnapshotApplied = false
 	viewer.forceSnapshot = true
 	signalViewer(viewer.subscription)
+	return nil
+}
+
+func (session *Session) prepareViewerSnapshot(request sessionRequest) error {
+	viewer, err := session.viewerForRequest(request.connection, request.viewer)
+	if err != nil {
+		return err
+	}
+	if viewer.inFlight == nil || viewer.inFlightEpoch != request.deliveryEpoch {
+		return errViewerDeliveryStale
+	}
+	viewer.sendingSnapshot = &viewerSnapshot{id: request.snapshotID, target: viewer.inFlight}
+	viewer.earlySnapshotApplied = false
 	return nil
 }
 
@@ -793,6 +873,12 @@ func (session *Session) detachViewer(connectionID string, err error) {
 		return
 	}
 	delete(session.viewers, connectionID)
+	session.controller.Disconnect(connectionID)
+	session.inbox.DropConnection(connectionID)
+	for _, notice := range viewer.notices {
+		viewer.subscription.releaseBudget(len(notice.message))
+	}
+	viewer.notices = nil
 	clearViewerAckDeadline(viewer)
 	viewer.subscription.stop(err)
 	viewer.subscription.detachOnce.Do(func() { close(viewer.subscription.detached) })

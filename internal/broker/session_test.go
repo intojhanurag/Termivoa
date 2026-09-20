@@ -82,7 +82,7 @@ func TestManagedSessionRuntime(t *testing.T) {
 			t.Fatal(err)
 		}
 		viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
-			ConnectionID: "connection", DeviceID: "device", Generation: testGeneration,
+			ConnectionID: testViewerConnection, DeviceID: testViewerDevice, Generation: testGeneration,
 			Sink: newRecordingViewerSink(),
 		})
 		if err != nil {
@@ -383,7 +383,7 @@ func startFixtureSession(t *testing.T, fixture, mode string) *Session {
 func attachFixtureViewer(t *testing.T, session *Session) *ViewerSubscription {
 	t.Helper()
 	viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
-		ConnectionID: "connection", DeviceID: "device", Generation: testGeneration,
+		ConnectionID: testViewerConnection, DeviceID: testViewerDevice, Generation: testGeneration,
 		Sink: newRecordingViewerSink(),
 	})
 	if err != nil {
