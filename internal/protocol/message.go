@@ -423,6 +423,11 @@ func strictPayload[T any](envelope Envelope) (T, error) {
 }
 
 func strictDecode(data []byte, destination any) error {
+	// encoding/json replaces malformed UTF-8 with U+FFFD. Reject the original
+	// bytes before decoding so a received user action is never silently changed.
+	if !utf8.Valid(data) {
+		return errors.New("protocol: message must be valid UTF-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
@@ -862,6 +867,11 @@ func validKey(value KeyName) bool {
 }
 
 func validMouse(kind Kind, button Button) bool {
+	switch button {
+	case ButtonNone, Left, Middle, Right, WheelUp, WheelDown, WheelLeft, WheelRight, Backward, Forward:
+	default:
+		return false
+	}
 	wheelButton := button == WheelUp || button == WheelDown || button == WheelLeft || button == WheelRight
 	switch kind {
 	case Wheel:
