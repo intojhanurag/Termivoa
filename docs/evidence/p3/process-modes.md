@@ -49,8 +49,8 @@ The macOS integration fixture has two complementary layers:
    the same broker generation. No raw-output or diagnostic wire channel was
    introduced for this test.
 2. It builds the actual `pterm` binary, starts `__broker` and `__gateway` as
-   separate OS processes, creates the session through broker RPC, sends the
-   gateway an interrupt, replays/status-checks the same session through the
+   separate OS processes, creates the session through broker RPC, force-kills
+   the gateway, replays/status-checks the same session through the
    still-running broker, starts a second gateway process on the same loopback
    address, and terminates that exact session. The broker process remains the
    child lifetime owner throughout.

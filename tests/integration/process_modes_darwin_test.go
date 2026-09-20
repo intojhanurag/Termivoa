@@ -68,7 +68,7 @@ func TestPtermBrokerAndGatewayExecutableModesRestartIndependently(t *testing.T) 
 	waitGatewayHealth(t, address, welcome.BrokerGeneration)
 	created := createSession(t, runtimeDir, processRequestID)
 
-	stopCommand(t, gatewayOne, "first gateway executable")
+	killCommand(t, gatewayOne, "first gateway executable")
 	replayed := createSession(t, runtimeDir, processReplayRequest)
 	if replayed.Session.ID != created.Session.ID || replayed.Session.Generation != created.Session.Generation {
 		t.Fatalf("gateway-stop replay identity = %#v, want %#v", replayed.Session, created.Session)
@@ -600,6 +600,21 @@ func stopCommand(t *testing.T, running *runningCommand, name string) {
 		_ = running.command.Process.Kill()
 		<-running.finished
 		t.Fatalf("%s did not stop\n%s", name, running.output.String())
+	}
+}
+
+func killCommand(t *testing.T, running *runningCommand, name string) {
+	t.Helper()
+	if err := running.command.Process.Kill(); err != nil {
+		t.Fatalf("kill %s: %v", name, err)
+	}
+	select {
+	case err := <-running.done:
+		if err == nil {
+			t.Fatalf("%s force-kill exited successfully", name)
+		}
+	case <-time.After(7 * time.Second):
+		t.Fatalf("%s did not exit after force-kill\n%s", name, running.output.String())
 	}
 }
 
