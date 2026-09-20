@@ -28,9 +28,10 @@ pending.
   generation UUIDs; project/profile IDs; dimensions; timestamps; lifecycle;
   and exit code. Terminal output, history, input, environment variables,
   controller leases, and credentials are not stored.
-- Rename, lifecycle-transition, and broker-recovery transactions reject a
-  caller time older than the stored session timeline, so a stale event or wall
-  clock rollback cannot create negative lifecycle durations.
+- Rename and lifecycle-transition transactions reject a caller time older than
+  the stored session timeline. Broker restart recovery instead clamps its loss
+  timestamp to the latest stored lifecycle time, so wall-clock rollback cannot
+  create a negative duration or prevent the broker from starting.
 - Starting a fresh broker generation transactionally changes earlier
   `starting`, `running`, and `exiting` rows to `lost`. It never reruns their
   commands or describes them as live sessions.

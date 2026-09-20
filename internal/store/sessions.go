@@ -196,9 +196,9 @@ func (store *Store) BeginBrokerGeneration(ctx context.Context, generation string
 	}
 	when := millis(now)
 	for _, session := range lost {
-		if when < millis(session.CreatedAt) || when < millis(session.UpdatedAt) ||
-			session.StartedAt != nil && when < millis(*session.StartedAt) {
-			return nil, fmt.Errorf("%w: recovery for session %s", ErrTimestampRegression, session.ID)
+		when = max(when, millis(session.CreatedAt), millis(session.UpdatedAt))
+		if session.StartedAt != nil {
+			when = max(when, millis(*session.StartedAt))
 		}
 	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata

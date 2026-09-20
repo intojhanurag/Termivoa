@@ -389,18 +389,9 @@ func TestBrokerRestartMarksOnlyPriorNonterminalSessionsLost(t *testing.T) {
 
 	second := openTestStore(t, path)
 	defer second.Close()
-	if _, err := second.BeginBrokerGeneration(context.Background(), testBrokerB, testTime.Add(-time.Second)); !errors.Is(err, ErrTimestampRegression) {
-		t.Fatalf("backward recovery error = %v", err)
-	}
-	for index, id := range ids[:3] {
-		session, err := second.GetSession(context.Background(), id)
-		if err != nil || session.State != states[index] {
-			t.Fatalf("session %s after rejected recovery = %+v, %v", id, session, err)
-		}
-	}
-	lost, err := second.BeginBrokerGeneration(context.Background(), testBrokerB, testTime.Add(10*time.Second))
+	lost, err := second.BeginBrokerGeneration(context.Background(), testBrokerB, testTime.Add(-time.Second))
 	if err != nil {
-		t.Fatalf("begin replacement broker: %v", err)
+		t.Fatalf("begin replacement broker after clock rollback: %v", err)
 	}
 	if len(lost) != 3 {
 		t.Fatalf("recovered lost count = %d, want 3", len(lost))
@@ -421,6 +412,9 @@ func TestBrokerRestartMarksOnlyPriorNonterminalSessionsLost(t *testing.T) {
 		}
 		if session.State != want {
 			t.Fatalf("session %s state = %s, want %s", id, session.State, want)
+		}
+		if index < 3 && (session.EndedAt == nil || session.EndedAt.Before(testTime.Add(2*time.Second))) {
+			t.Fatalf("session %s recovery time regressed: %+v", id, session.EndedAt)
 		}
 	}
 
