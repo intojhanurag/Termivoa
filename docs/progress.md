@@ -19,15 +19,16 @@ tests are integrated.
 
 P3 — Persistent broker: **in progress**, tracked by private issue #11. The
 controller/input-ingress checkpoint was merged from private PR #12 as
-`1ac199dfea8a2e5aa6d86bcab70cce80183679e9`. Work continues on the bounded
-local handshake checkpoint merged
-from private PR #13 as `a92d1ca1836df29c4f3a72bc772bed8b6d354b54` and the
+`1ac199dfea8a2e5aa6d86bcab70cce80183679e9`. The bounded local handshake
+checkpoint merged from private PR #13 as
+`a92d1ca1836df29c4f3a72bc772bed8b6d354b54` and the
 broker-owned live-session runtime merged from private PR #14 as `d3ff4fd`. The
 session registry merged from private PR #15 as
 `400f48460ea7546cb815f631439b1f1933a2c645`, followed by SQLite persistence
 from private PR #16 as `bc361141995f1bbf1d5a273ac38835fa9ee7cc3d`, and secure
 platform IPC merged from private PR #17 as `9ab4a3e99e7f15d8634315e2e1e22eda059354d0`.
-Viewer delivery is under review in private PR #18 at `a5b64ec`. The current
+Viewer delivery merged from private PR #18 as
+`1ee75ea4717562905ccb79175729b999df072346`. The current
 `feat/p3-operation-receipts` checkpoint adds broker-integrated durable
 deduplication for session create, rename, and terminate mutations, including a
 shutdown admission barrier, monotonic final-state persistence, and retained
@@ -107,7 +108,7 @@ These questions must be resolved before their dependent gates; they do not block
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery is in PR #18; durable operation receipts are implemented on `feat/p3-operation-receipts`; gateway integration remains pending; evidence under `docs/evidence/p3/` |
+| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts are implemented on `feat/p3-operation-receipts`; gateway integration remains pending; evidence under `docs/evidence/p3/` |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
 | P6 — Install and update | Not started | None |
