@@ -5,7 +5,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 type sessionInfo struct {
@@ -16,9 +17,13 @@ type sessionInfo struct {
 }
 
 func currentSessionInfo() (sessionInfo, error) {
-	sessionID, err := syscall.Getsid(0)
+	sessionID, err := unix.Getsid(0)
 	if err != nil {
 		return sessionInfo{}, fmt.Errorf("get session ID: %w", err)
+	}
+	processGroupID, err := unix.Getpgid(0)
+	if err != nil {
+		return sessionInfo{}, fmt.Errorf("get process group ID: %w", err)
 	}
 
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
@@ -32,7 +37,7 @@ func currentSessionInfo() (sessionInfo, error) {
 	return sessionInfo{
 		PID:            os.Getpid(),
 		SessionID:      sessionID,
-		ProcessGroupID: syscall.Getpgrp(),
+		ProcessGroupID: processGroupID,
 		ControllingTTY: true,
 	}, nil
 }

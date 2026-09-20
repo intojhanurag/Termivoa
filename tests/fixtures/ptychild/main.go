@@ -92,7 +92,7 @@ func echo() {
 		os.Exit(3)
 	}
 	encoded, _ := json.Marshal(line)
-	fmt.Printf("ECHO:%s\n", encoded)
+	fmt.Printf("ECHO:%s\nECHO_OK\n", encoded)
 }
 
 func spawnDescendant(wait bool) {

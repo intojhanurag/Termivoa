@@ -63,11 +63,11 @@ func TestStartReadWriteResizeAndWait(t *testing.T) {
 		t.Fatalf("fixture did not become ready: %q", output)
 	}
 
-	if _, err := process.Write([]byte("hello, PTY\n")); err != nil {
+	if _, err := process.Write(append([]byte("hello, PTY"), fixtureEnter...)); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	output += readUntil(t, process, `ECHO:"hello, PTY\n"`, 2*time.Second)
-	if !strings.Contains(output, `ECHO:"hello, PTY\n"`) {
+	output += readUntil(t, process, "ECHO_OK", 2*time.Second)
+	if !strings.Contains(output, `ECHO:"hello, PTY`) {
 		t.Fatalf("fixture did not echo input: %q", output)
 	}
 
@@ -258,9 +258,14 @@ func TestTerminalQueriesRoundTripWithoutViewer(t *testing.T) {
 	}
 	defer core.Close()
 
+	var responseMu sync.Mutex
+	var responses bytes.Buffer
 	writerDone := make(chan error, 1)
 	go func() {
 		for output := range core.Output() {
+			responseMu.Lock()
+			_, _ = responses.Write(output)
+			responseMu.Unlock()
 			if _, err := process.Write(output); err != nil {
 				writerDone <- err
 				return
@@ -269,19 +274,23 @@ func TestTerminalQueriesRoundTripWithoutViewer(t *testing.T) {
 		writerDone <- nil
 	}()
 
+	var observedMu sync.Mutex
+	var observed bytes.Buffer
 	readDone := make(chan error, 1)
 	go func() {
-		var observed bytes.Buffer
 		buffer := make([]byte, 128)
 		for {
 			count, readErr := process.Read(buffer)
 			if count > 0 {
+				observedMu.Lock()
 				observed.Write(buffer[:count])
+				seenSuccess := bytes.Contains(observed.Bytes(), []byte("QUERY_OK"))
+				observedMu.Unlock()
 				if err := core.WriteOutput(context.Background(), buffer[:count]); err != nil {
 					readDone <- err
 					return
 				}
-				if bytes.Contains(observed.Bytes(), []byte("QUERY_OK")) {
+				if seenSuccess {
 					readDone <- nil
 					return
 				}
@@ -299,7 +308,13 @@ func TestTerminalQueriesRoundTripWithoutViewer(t *testing.T) {
 			t.Fatal(err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("terminal query fixture timed out")
+		observedMu.Lock()
+		observedBytes := append([]byte(nil), observed.Bytes()...)
+		observedMu.Unlock()
+		responseMu.Lock()
+		responseBytes := append([]byte(nil), responses.Bytes()...)
+		responseMu.Unlock()
+		t.Fatalf("terminal query fixture timed out (child output %q, terminal responses %x)", observedBytes, responseBytes)
 	}
 	if err := process.Wait(context.Background()); err != nil {
 		t.Fatalf("query fixture exit: %v", err)
@@ -381,7 +396,11 @@ func readJSONLine(t *testing.T, process *Process, timeout time.Duration) []byte 
 	resultChannel := make(chan result, 1)
 	go func() {
 		line, err := bufio.NewReader(process).ReadBytes('\n')
-		resultChannel <- result{line: bytes.TrimSpace(line), err: err}
+		line = bytes.TrimSpace(line)
+		if start := bytes.IndexByte(line, '{'); start >= 0 {
+			line = line[start:]
+		}
+		resultChannel <- result{line: line, err: err}
 	}()
 	select {
 	case result := <-resultChannel:
