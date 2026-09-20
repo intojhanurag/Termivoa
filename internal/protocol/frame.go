@@ -1,24 +1,32 @@
 package protocol
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 )
 
+// MaxEncodedTerminalRowBytes leaves at least half of the outbound-message
+// allowance for the envelope, snapshot identity, screen metadata, and JSON
+// expansion around a row. Snapshot chunking may group smaller rows, but a
+// single row must always remain independently transportable.
+const MaxEncodedTerminalRowBytes = MaxOutboundMessageBytes / 2
+
 // Snapshot converts an immutable canonical frame into wire-ready metadata and
 // style-coalesced rows. Chunking is deliberately left to the connection layer.
 func Snapshot(frame terminal.Frame, historyEpoch, historyRevision uint64) (ScreenMetadata, []TerminalRow, error) {
-	metadata, err := screenMetadata(
-		frame.Columns, frame.Rows, frame.Alternate, frame.WidthMethod,
-		frame.Foreground, frame.Background, frame.CursorColor, frame.Cursor,
-		frame.ContentClipped, historyEpoch, historyRevision,
-	)
+	rows, rowsClipped, err := terminalRows(frame.Screen, frame.Columns)
 	if err != nil {
 		return ScreenMetadata{}, nil, err
 	}
-	rows, err := terminalRows(frame.Screen, frame.Columns)
+	metadata, err := screenMetadata(
+		frame.Columns, frame.Rows, frame.Alternate, frame.WidthMethod,
+		frame.Foreground, frame.Background, frame.CursorColor, frame.Cursor,
+		frame.ContentClipped || rowsClipped, historyEpoch, historyRevision,
+	)
 	if err != nil {
 		return ScreenMetadata{}, nil, err
 	}
@@ -47,6 +55,7 @@ func PatchPayload(
 	}
 
 	changed := make([]ChangedRow, len(patch.ChangedRows))
+	rowsClipped := false
 	seen := make(map[int]struct{}, len(patch.ChangedRows))
 	for index, source := range patch.ChangedRows {
 		if source.Index < 0 || source.Index >= patch.Rows {
@@ -56,12 +65,14 @@ func PatchPayload(
 			return ScreenPatchPayload{}, fmt.Errorf("protocol: patch row index %d is duplicated", source.Index)
 		}
 		seen[source.Index] = struct{}{}
-		row, err := terminalRow(source.Row, patch.Columns)
+		row, clipped, err := terminalRow(source.Row, patch.Columns)
 		if err != nil {
 			return ScreenPatchPayload{}, fmt.Errorf("protocol: patch row %d: %w", source.Index, err)
 		}
+		rowsClipped = rowsClipped || clipped
 		changed[index] = ChangedRow{Index: int64(source.Index), Row: row}
 	}
+	metadata.ContentClipped = metadata.ContentClipped || rowsClipped
 
 	return ScreenPatchPayload{
 		BaseRevision: strconv.FormatUint(patch.BaseRevision, 10),
@@ -118,31 +129,33 @@ func screenMetadata(
 	return metadata, nil
 }
 
-func terminalRows(source []terminal.Row, columns int) ([]TerminalRow, error) {
+func terminalRows(source []terminal.Row, columns int) ([]TerminalRow, bool, error) {
 	rows := make([]TerminalRow, len(source))
+	clipped := false
 	for index, sourceRow := range source {
-		row, err := terminalRow(sourceRow, columns)
+		row, rowClipped, err := terminalRow(sourceRow, columns)
 		if err != nil {
-			return nil, fmt.Errorf("protocol: row %d: %w", index, err)
+			return nil, false, fmt.Errorf("protocol: row %d: %w", index, err)
 		}
 		rows[index] = row
+		clipped = clipped || rowClipped
 	}
-	return rows, nil
+	return rows, clipped, nil
 }
 
-func terminalRow(source terminal.Row, columns int) (TerminalRow, error) {
+func terminalRow(source terminal.Row, columns int) (TerminalRow, bool, error) {
 	if len(source.Cells) != columns {
-		return TerminalRow{}, fmt.Errorf("has %d cells, expected %d", len(source.Cells), columns)
+		return TerminalRow{}, false, fmt.Errorf("has %d cells, expected %d", len(source.Cells), columns)
 	}
 	if columns == 0 {
-		return TerminalRow{}, fmt.Errorf("has no cells")
+		return TerminalRow{}, false, fmt.Errorf("has no cells")
 	}
 
 	runs := make([]CellRun, 0, columns)
 	for column, sourceCell := range source.Cells {
 		style, err := cellStyle(sourceCell)
 		if err != nil {
-			return TerminalRow{}, fmt.Errorf("cell %d: %w", column, err)
+			return TerminalRow{}, false, fmt.Errorf("cell %d: %w", column, err)
 		}
 		cell := Cell{
 			Text:           sourceCell.Text,
@@ -160,10 +173,103 @@ func terminalRow(source terminal.Row, columns int) (TerminalRow, error) {
 		runs[len(runs)-1].Cells = append(runs[len(runs)-1].Cells, cell)
 	}
 	row := TerminalRow{Runs: runs}
-	if err := validateRow(row, int64(columns)); err != nil {
-		return TerminalRow{}, err
+	clipped, err := boundEncodedRow(&row)
+	if err != nil {
+		return TerminalRow{}, false, err
 	}
-	return row, nil
+	if err := validateRow(row, int64(columns)); err != nil {
+		return TerminalRow{}, false, err
+	}
+	return row, clipped, nil
+}
+
+type rowClipCandidate struct {
+	run    int
+	cell   int
+	saving int
+}
+
+// boundEncodedRow preserves the complete column grid while clipping only
+// pathological link/text payloads that would make a row impossible to place
+// in any legal outbound message. Largest reductions are applied first so the
+// common case is allocation-only and ordinary grapheme cells are untouched.
+func boundEncodedRow(row *TerminalRow) (bool, error) {
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		return false, fmt.Errorf("encode normalized row: %w", err)
+	}
+	if len(encoded) <= MaxEncodedTerminalRowBytes {
+		return false, nil
+	}
+
+	clipped := false
+	encodedBytes := len(encoded)
+	for pass, candidates := range [][]rowClipCandidate{
+		rowClipCandidates(row, true),
+		rowClipCandidates(row, false),
+	} {
+		for _, candidate := range candidates {
+			cell := &row.Runs[candidate.run].Cells[candidate.cell]
+			before, marshalErr := json.Marshal(cell)
+			if marshalErr != nil {
+				return false, fmt.Errorf("encode normalized cell before clipping: %w", marshalErr)
+			}
+			if pass == 0 {
+				cell.Link = nil
+			} else {
+				cell.Text = "\uFFFD"
+			}
+			cell.ContentClipped = true
+			clipped = true
+			after, marshalErr := json.Marshal(cell)
+			if marshalErr != nil {
+				return false, fmt.Errorf("encode normalized cell after clipping: %w", marshalErr)
+			}
+			encodedBytes += len(after) - len(before)
+			if encodedBytes <= MaxEncodedTerminalRowBytes {
+				encoded, err = json.Marshal(row)
+				if err != nil {
+					return false, fmt.Errorf("encode clipped normalized row: %w", err)
+				}
+				if len(encoded) <= MaxEncodedTerminalRowBytes {
+					return clipped, nil
+				}
+				encodedBytes = len(encoded)
+			}
+		}
+	}
+	encoded, err = json.Marshal(row)
+	if err != nil {
+		return false, fmt.Errorf("encode fully clipped normalized row: %w", err)
+	}
+	return false, fmt.Errorf("normalized row remains %d bytes after clipping (limit %d)", len(encoded), MaxEncodedTerminalRowBytes)
+}
+
+func rowClipCandidates(row *TerminalRow, links bool) []rowClipCandidate {
+	candidates := make([]rowClipCandidate, 0)
+	for runIndex := range row.Runs {
+		for cellIndex := range row.Runs[runIndex].Cells {
+			cell := row.Runs[runIndex].Cells[cellIndex]
+			if links && cell.Link == nil || !links && len(cell.Text) <= len("\uFFFD") {
+				continue
+			}
+			before, _ := json.Marshal(cell)
+			if links {
+				cell.Link = nil
+			} else {
+				cell.Text = "\uFFFD"
+			}
+			cell.ContentClipped = true
+			after, _ := json.Marshal(cell)
+			if saving := len(before) - len(after); saving > 0 {
+				candidates = append(candidates, rowClipCandidate{run: runIndex, cell: cellIndex, saving: saving})
+			}
+		}
+	}
+	sort.SliceStable(candidates, func(left, right int) bool {
+		return candidates[left].saving > candidates[right].saving
+	})
+	return candidates
 }
 
 func cellStyle(cell terminal.Cell) (CellStyle, error) {

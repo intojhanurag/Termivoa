@@ -526,6 +526,9 @@ func (terminalCore *stubTerminal) Snapshot(context.Context) (terminal.Frame, err
 	}
 	return terminal.Frame{Columns: 80, Rows: 24}, nil
 }
+func (terminalCore *stubTerminal) ScreenSnapshot(ctx context.Context) (terminal.Frame, error) {
+	return terminalCore.Snapshot(ctx)
+}
 func (terminalCore *stubTerminal) Output() <-chan []byte { return terminalCore.output }
 func (terminalCore *stubTerminal) Close() error {
 	terminalCore.closeOnce.Do(func() {

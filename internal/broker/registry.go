@@ -37,6 +37,7 @@ var (
 // ManagedSession is the capability exposed to local IPC and the gateway. It
 // intentionally omits Close so a viewer cannot end the broker-owned lifetime.
 type ManagedSession interface {
+	AttachViewer(context.Context, ViewerConfig) (*ViewerSubscription, error)
 	AcquireControl(context.Context, string, string, string) (ControlGrant, error)
 	Heartbeat(context.Context, MutationIdentity) (ControlState, error)
 	ReleaseControl(context.Context, MutationIdentity) error
@@ -52,6 +53,7 @@ type ManagedSession interface {
 type registrySession interface {
 	ManagedSession
 	Ended() <-chan struct{}
+	RetirementReady() <-chan struct{}
 	Done() <-chan struct{}
 	FinalStatus() (SessionStatus, bool)
 	Close() error
@@ -372,6 +374,7 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 		entry.final = &status
 		registry.mu.Unlock()
 	}
+	<-entry.session.RetirementReady()
 	closeErr := entry.session.Close()
 	if closeErr != nil {
 		<-entry.session.Done()
