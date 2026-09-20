@@ -96,6 +96,7 @@ type CreateSessionResult struct {
 	ID         string
 	Generation string
 	Session    ManagedSession
+	Snapshot   store.MutationSessionSnapshot
 }
 
 type RenameSessionRequest struct {
@@ -110,6 +111,7 @@ type RenameSessionResult struct {
 	Generation  string
 	Title       string
 	CommittedAt time.Time
+	Snapshot    store.MutationSessionSnapshot
 }
 
 type TerminateSessionRequest struct {
@@ -123,6 +125,7 @@ type TerminateSessionResult struct {
 	Generation  string
 	State       SessionState
 	CommittedAt time.Time
+	Snapshot    store.MutationSessionSnapshot
 }
 
 type registryEntry struct {
@@ -246,6 +249,49 @@ func (registry *Registry) Create(ctx context.Context, request CreateSessionReque
 	return result, createErr
 }
 
+// ReplayCreate returns a durable create acknowledgement before the caller
+// resolves mutable saved project or shell-profile configuration. The create
+// request identity is the pair of saved IDs supplied by the client; their
+// broker-resolved paths and executable settings are deliberately not part of
+// a retry because those settings can change after the operation commits.
+func (registry *Registry) ReplayCreate(
+	ctx context.Context,
+	operationID, projectID, shellProfileID string,
+) (CreateSessionResult, bool, error) {
+	if ctx == nil {
+		return CreateSessionResult{}, false, errors.New("broker: create replay context must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return CreateSessionResult{}, false, err
+	}
+	if registry.config.Store == nil {
+		return CreateSessionResult{}, false, ErrPersistenceNeeded
+	}
+	if err := registry.beginMutation(); err != nil {
+		return CreateSessionResult{}, false, err
+	}
+	defer registry.mutations.Done()
+	if err := validateOperationID(operationID); err != nil {
+		return CreateSessionResult{}, false, err
+	}
+	fingerprint, err := createRequestFingerprint(CreateSessionRequest{
+		OperationID: operationID, ProjectID: projectID, ShellProfileID: shellProfileID,
+	})
+	if err != nil {
+		return CreateSessionResult{}, false, err
+	}
+	persisted, found, err := registry.config.Store.LookupMutation(
+		ctx, operationID, store.OperationSessionCreate, fingerprint,
+	)
+	if err != nil {
+		return CreateSessionResult{}, false, mapStoreOperationError(err)
+	}
+	if !found {
+		return CreateSessionResult{}, false, nil
+	}
+	return registry.persistedCreateResult(persisted), true, nil
+}
+
 func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessionResult, error) {
 	if registry.config.Store != nil {
 		fingerprint, err := createRequestFingerprint(request)
@@ -266,6 +312,7 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		}
 	}
 	createdAt := registry.config.now().UTC()
+	var persistedSnapshot store.MutationSessionSnapshot
 	registry.mu.Lock()
 	if registry.closed {
 		registry.mu.Unlock()
@@ -331,6 +378,7 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 			}
 			return registry.persistedCreateResult(persisted), nil
 		}
+		persistedSnapshot = persisted.Session
 	}
 
 	entry := &registryEntry{session: session}
@@ -343,9 +391,9 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 	registry.mu.Unlock()
 	go registry.retireWhenEnded(id, entry)
 	if closed {
-		return CreateSessionResult{ID: id, Generation: generation}, ErrRegistryClosed
+		return CreateSessionResult{ID: id, Generation: generation, Snapshot: persistedSnapshot}, ErrRegistryClosed
 	}
-	return CreateSessionResult{ID: id, Generation: generation, Session: session}, nil
+	return CreateSessionResult{ID: id, Generation: generation, Session: session, Snapshot: persistedSnapshot}, nil
 }
 
 // Rename durably deduplicates a metadata change. The live runtime is not
@@ -380,7 +428,7 @@ func (registry *Registry) Rename(ctx context.Context, request RenameSessionReque
 	}
 	return RenameSessionResult{
 		ID: result.SessionID, Generation: result.Generation,
-		Title: result.Title, CommittedAt: result.CommittedAt,
+		Title: result.Title, CommittedAt: result.CommittedAt, Snapshot: result.Session,
 	}, nil
 }
 
@@ -652,7 +700,7 @@ func (registry *Registry) beginOperation(id string, fingerprint [sha256.Size]byt
 
 func (registry *Registry) finishOperation(id string, operation *createOperation, result CreateSessionResult, err error) {
 	registry.mu.Lock()
-	operation.result = CreateSessionResult{ID: result.ID, Generation: result.Generation}
+	operation.result = CreateSessionResult{ID: result.ID, Generation: result.Generation, Snapshot: result.Snapshot}
 	operation.err = err
 	close(operation.done)
 	registry.operationOrder = append(registry.operationOrder, id)
@@ -675,30 +723,7 @@ func (registry *Registry) operationResult(operation *createOperation) CreateSess
 }
 
 func createRequestFingerprint(request CreateSessionRequest) ([sha256.Size]byte, error) {
-	process := request.Process
-	process.Args = append([]string{}, process.Args...)
-	process.Env = append([]string{}, process.Env...)
-	payload, err := json.Marshal(struct {
-		Title          string   `json:"title"`
-		ProjectID      string   `json:"projectId"`
-		ShellProfileID string   `json:"shellProfileId"`
-		Executable     string   `json:"executable"`
-		Arguments      []string `json:"arguments"`
-		Directory      string   `json:"directory"`
-		Environment    []string `json:"environment"`
-		Columns        int      `json:"columns"`
-		Rows           int      `json:"rows"`
-	}{
-		Title: request.Title, ProjectID: request.ProjectID,
-		ShellProfileID: request.ShellProfileID,
-		Executable:     process.Executable, Arguments: process.Args,
-		Directory: process.Directory, Environment: process.Env,
-		Columns: process.Columns, Rows: process.Rows,
-	})
-	if err != nil {
-		return [sha256.Size]byte{}, fmt.Errorf("broker: fingerprint create request: %w", err)
-	}
-	return sha256.Sum256(payload), nil
+	return store.SessionCreateFingerprint(request.ProjectID, request.ShellProfileID)
 }
 
 func renameRequestFingerprint(request RenameSessionRequest) ([sha256.Size]byte, error) {
@@ -779,7 +804,9 @@ func validOperationUUID(value string) bool {
 }
 
 func (registry *Registry) persistedCreateResult(result store.MutationResult) CreateSessionResult {
-	created := CreateSessionResult{ID: result.SessionID, Generation: result.Generation}
+	created := CreateSessionResult{
+		ID: result.SessionID, Generation: result.Generation, Snapshot: result.Session,
+	}
 	registry.mu.Lock()
 	if entry, ok := registry.sessions[result.SessionID]; ok {
 		created.Session = entry.session
@@ -791,7 +818,7 @@ func (registry *Registry) persistedCreateResult(result store.MutationResult) Cre
 func terminateResult(result store.MutationResult) TerminateSessionResult {
 	return TerminateSessionResult{
 		ID: result.SessionID, Generation: result.Generation,
-		State: SessionState(result.State), CommittedAt: result.CommittedAt,
+		State: SessionState(result.State), CommittedAt: result.CommittedAt, Snapshot: result.Session,
 	}
 }
 

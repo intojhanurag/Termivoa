@@ -32,6 +32,16 @@ Windows 11 execution, and physical-phone gates remain pending.
   resources and waits for handlers, but does not close the Registry, Store, or
   managed sessions. A retry on a new connection reaches the same durable
   operation receipt instead of starting or terminating twice.
+- Mutation receipts include the exact bounded session record returned at
+  commit. Dispatch reads that immutable result before mutable project/profile
+  resolution or current-session lookup: a create still replays after its saved
+  configuration is changed or disabled; rename A still returns A after rename
+  B; and a termination acceptance still returns `exiting` after the process
+  reaches `exited` or `lost`.
+- Create operation identity consists only of the client-supplied saved project
+  and shell-profile IDs. Migration 003 atomically freezes schema-v2 receipt
+  snapshots and rewrites their old resolved-configuration fingerprints to this
+  stable identity before recording the migration as applied.
 - Session-list cursors are opaque fixed-width base64url offsets, validated again
   during dispatch, and pages remain bounded by the protocol's 200-record limit.
 
@@ -42,9 +52,13 @@ Tests exercise:
 - broker-side saved project/profile resolution and the exact generated process
   spec;
 - create replay after closing and replacing the gateway connection, including
-  one process start and a typed conflicting-operation result;
-- rename, status, terminate, and terminate replay with one termination side
-  effect;
+  changed/disabled saved configuration, one process start, an identical
+  original result, and a typed conflicting-operation result;
+- rename A, rename B, then replay A with A's original result;
+- terminate, transition to a final persisted state, then replay the original
+  `exiting` acceptance with one termination side effect;
+- schema-v2 create-receipt migration to the stable fingerprint and frozen
+  result snapshot;
 - missing saved configuration and invalid cursor error mapping;
 - byte-fragmented frames and two coalesced frames on one connection;
 - malformed JSON, host-to-client messages sent in the request direction, and

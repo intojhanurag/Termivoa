@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -233,6 +234,29 @@ func TestManagementDispatchResolvesSavedConfigurationAndReplaysCreate(t *testing
 	case <-time.After(time.Second):
 		t.Fatal("first gateway connection did not stop")
 	}
+	disabledAt := time.Now().UTC()
+	project, err := fixture.persistence.GetProject(context.Background(), rpcProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project.DisplayName = "Changed after create"
+	project.CanonicalPath = "/tmp/changed-after-create"
+	project.UpdatedAt = disabledAt
+	project.DisabledAt = &disabledAt
+	if err := fixture.persistence.PutProject(context.Background(), project); err != nil {
+		t.Fatalf("disable replayed project: %v", err)
+	}
+	profile, err := fixture.persistence.GetShellProfile(context.Background(), rpcProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.ExecutablePath = "/bin/changed-after-create"
+	profile.Arguments = []string{"--changed"}
+	profile.UpdatedAt = disabledAt
+	profile.DisabledAt = &disabledAt
+	if err := fixture.persistence.PutShellProfile(context.Background(), profile); err != nil {
+		t.Fatalf("disable replayed shell profile: %v", err)
+	}
 	client = startManagementClient(t, context.Background(), fixture.server)
 
 	secondRequestID := operationID("rpc-create-request-two")
@@ -245,7 +269,7 @@ func TestManagementDispatchResolvesSavedConfigurationAndReplaysCreate(t *testing
 		t.Fatal(err)
 	}
 	if replay.RequestID != secondRequestID || replayPayload.OperationID != createOperationID ||
-		replayPayload.Session.ID != firstPayload.Session.ID || fixture.starts.Load() != 1 {
+		!reflect.DeepEqual(replayPayload.Session, firstPayload.Session) || fixture.starts.Load() != 1 {
 		t.Fatalf("create replay = envelope %#v payload %#v starts %d", replay, replayPayload, fixture.starts.Load())
 	}
 
@@ -290,6 +314,22 @@ func TestManagementDispatchLifecycleAndTypedErrors(t *testing.T) {
 	if rename.RequestID != renameRequestID || renamed.OperationID != renameOperation || renamed.Session.Title != "Renamed" {
 		t.Fatalf("rename response = %#v %#v", rename, renamed)
 	}
+	secondRenameOperation := operationID("rpc-rename-second")
+	secondRename := client.roundTrip(t, managementRequest(t, operationID("rpc-rename-second-request"),
+		protocol.SessionRenameRequest, &sessionID, &generation,
+		protocol.BrokerRPCSessionRenameRequestPayload{OperationID: secondRenameOperation, Title: "Renamed again"}))
+	secondRenamed, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](secondRename)
+	if err != nil || secondRenamed.Session.Title != "Renamed again" {
+		t.Fatalf("second rename response = %#v %#v, err=%v", secondRename, secondRenamed, err)
+	}
+	replayedRename := client.roundTrip(t, managementRequest(t, operationID("rpc-rename-replay-request"),
+		protocol.SessionRenameRequest, &sessionID, &generation,
+		protocol.BrokerRPCSessionRenameRequestPayload{OperationID: renameOperation, Title: "Renamed"}))
+	replayedRenamed, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](replayedRename)
+	if err != nil || replayedRenamed.OperationID != renameOperation ||
+		!reflect.DeepEqual(replayedRenamed.Session, renamed.Session) {
+		t.Fatalf("rename replay = %#v %#v, err=%v; want session %#v", replayedRename, replayedRenamed, err, renamed.Session)
+	}
 
 	statusRequestID := operationID("rpc-status-request")
 	status := client.roundTrip(t, managementRequest(t, statusRequestID,
@@ -298,26 +338,39 @@ func TestManagementDispatchLifecycleAndTypedErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.RequestID != statusRequestID || statusPayload.Session.Title != "Renamed" {
+	if status.RequestID != statusRequestID || statusPayload.Session.Title != "Renamed again" {
 		t.Fatalf("status response = %#v %#v", status, statusPayload)
 	}
 
 	terminateOperation := operationID("rpc-terminate")
-	for index, requestID := range []string{operationID("rpc-terminate-one"), operationID("rpc-terminate-two")} {
-		response := client.roundTrip(t, managementRequest(t, requestID,
-			protocol.SessionTerminateRequest, &sessionID, &generation,
-			protocol.BrokerRPCSessionTerminateRequestPayload{OperationID: terminateOperation}))
-		terminated, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](response)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if response.RequestID != requestID || terminated.OperationID != terminateOperation ||
-			terminated.Session.State != protocol.Exiting {
-			t.Fatalf("terminate response %d = %#v %#v", index, response, terminated)
-		}
+	firstTerminateRequestID := operationID("rpc-terminate-one")
+	firstTerminate := client.roundTrip(t, managementRequest(t, firstTerminateRequestID,
+		protocol.SessionTerminateRequest, &sessionID, &generation,
+		protocol.BrokerRPCSessionTerminateRequestPayload{OperationID: terminateOperation}))
+	firstTerminated, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](firstTerminate)
+	if err != nil || firstTerminate.RequestID != firstTerminateRequestID ||
+		firstTerminated.OperationID != terminateOperation || firstTerminated.Session.State != protocol.Exiting {
+		t.Fatalf("first terminate response = %#v %#v, err=%v", firstTerminate, firstTerminated, err)
 	}
 	if fixture.terminate.terminateCalls.Load() != 1 {
 		t.Fatalf("terminate calls = %d, want 1", fixture.terminate.terminateCalls.Load())
+	}
+	exitCode := 0
+	fixture.terminate.finish(SessionExited, time.Now().UTC(), &exitCode)
+	waitForPersistedSessionState(t, fixture.persistence, sessionID, store.SessionExited)
+	secondTerminateRequestID := operationID("rpc-terminate-two")
+	replayedTerminate := client.roundTrip(t, managementRequest(t, secondTerminateRequestID,
+		protocol.SessionTerminateRequest, &sessionID, &generation,
+		protocol.BrokerRPCSessionTerminateRequestPayload{OperationID: terminateOperation}))
+	replayedTerminated, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](replayedTerminate)
+	if err != nil || replayedTerminate.RequestID != secondTerminateRequestID ||
+		replayedTerminated.OperationID != terminateOperation ||
+		!reflect.DeepEqual(replayedTerminated.Session, firstTerminated.Session) {
+		t.Fatalf("terminate replay = %#v %#v, err=%v; want session %#v",
+			replayedTerminate, replayedTerminated, err, firstTerminated.Session)
+	}
+	if fixture.terminate.terminateCalls.Load() != 1 {
+		t.Fatalf("terminate calls after terminal replay = %d, want 1", fixture.terminate.terminateCalls.Load())
 	}
 
 	missing := client.roundTrip(t, managementRequest(t, operationID("rpc-missing-request"),

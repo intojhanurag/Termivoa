@@ -35,6 +35,8 @@ shutdown admission barriers, clock-rollback-safe monotonic persistence, and
 retained runtime/cleanup diagnostics.
 Broker-management RPC merged from private PR #20 as
 `e14cc5722066f714db2c3a71a4d5442b11df4089`.
+Immutable history paging merged from private PR #21 as
+`f74f7620746ba1646e7a056886558f23dbbc795a`.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
@@ -58,17 +60,16 @@ The protocol audit then tightened exact case-sensitive JSON field matching,
 lowercase UUID canonicalization, schema-level session identity invariants, and
 consistent UTF-8 title semantics while preserving stored legacy titles. The
 dispatcher now enforces response correlation. The gateway HTTP/WebSocket
-bridge, live-session frame/input dispatch, history paging, process separation,
-and native Windows evidence remain pending.
+bridge, live-session frame/input dispatch, process separation, and native
+Windows evidence remain pending.
 
-The `feat/p3-history-paging` checkpoint now provides actor-owned normal-history
+The history-paging checkpoint provides actor-owned normal-history
 epochs/revisions, immutable pages of at most 200 rows, stale-token
 `history.changed` results, viewer-relative history-reset signaling, and strict
 5,000-row/32 MiB normalized retention applied to the emulator scrollback
 itself. Alternate-screen state has no hidden scrollback. Focused race tests
 pass; full repository and Windows cross-compile evidence is recorded in
-`docs/evidence/p3/history-paging.md`. This is local checkpoint evidence until
-the branch is reviewed and merged.
+`docs/evidence/p3/history-paging.md`.
 
 The follow-up boundary audit found and fixed a retained-wide-cell resize
 blocker: shrinking a history row with a width-2 grapheme in the new final
@@ -83,6 +84,16 @@ four fields, canonical wire patches read the token from that patch, and the
 reset signal remains derived from each viewer's applied base epoch. Actor-backed
 append/reset regression tests, the full Node 24 check, race tests, and Windows
 amd64 compile-only checks pass.
+
+An independent dispatch audit found that initial mutation responses were being
+rebuilt from mutable saved configuration or current session metadata. The
+checkpoint now persists the exact bounded response snapshot with every receipt,
+checks create receipts before resolving saved configuration, and returns
+rename/terminate receipt snapshots without rereading current state. Regression
+tests cover disabled create configuration, rename A/B/replay A, terminal-state
+change before terminate replay, and a real schema-v2 receipt upgrade. Migration
+003 also rewrites old create fingerprints to the stable project/profile-ID
+identity atomically with snapshot backfill.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been

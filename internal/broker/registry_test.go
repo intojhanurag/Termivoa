@@ -504,12 +504,14 @@ func TestRegistryRejectsOperationIDWithDifferentRequest(t *testing.T) {
 	registry := newFakeRegistry(t, RegistryConfig{})
 	defer registry.Close()
 	if _, err := registry.Create(context.Background(), CreateSessionRequest{
-		OperationID: operationID("conflict"), Process: ptyhost.Spec{Executable: "first-shell"},
+		OperationID: operationID("conflict"), ProjectID: "first-project",
+		ShellProfileID: "shell", Process: ptyhost.Spec{Executable: "first-shell"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := registry.Create(context.Background(), CreateSessionRequest{
-		OperationID: operationID("conflict"), Process: ptyhost.Spec{Executable: "different-shell"},
+		OperationID: operationID("conflict"), ProjectID: "different-project",
+		ShellProfileID: "shell", Process: ptyhost.Spec{Executable: "first-shell"},
 	}); !errors.Is(err, ErrOperationConflict) {
 		t.Fatalf("conflicting operation error = %v", err)
 	}
@@ -562,14 +564,15 @@ func TestRegistryDurablyReplaysCreateWithoutStartingAnotherRuntime(t *testing.T)
 	if err != nil {
 		t.Fatalf("replay create: %v", err)
 	}
-	if replayed.ID != created.ID || replayed.Generation != created.Generation || replayed.Session != nil {
+	if replayed.ID != created.ID || replayed.Generation != created.Generation || replayed.Session != nil ||
+		replayed.Snapshot != created.Snapshot {
 		t.Fatalf("replayed create = %+v, original = %+v", replayed, created)
 	}
 	if starts.Load() != 1 {
 		t.Fatalf("durable replay started %d runtimes", starts.Load())
 	}
 	conflict := request
-	conflict.Title = "different title"
+	conflict.ProjectID = "10000000-0000-4000-8000-000000000099"
 	if _, err := second.Create(context.Background(), conflict); !errors.Is(err, ErrOperationConflict) {
 		t.Fatalf("durable create conflict = %v", err)
 	}

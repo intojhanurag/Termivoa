@@ -320,6 +320,17 @@ func (server *ManagementServer) createSession(
 	ctx context.Context,
 	payload protocol.BrokerRPCSessionCreateRequestPayload,
 ) (protocol.BrokerRPCSessionMutationResultPayload, error) {
+	replayed, found, err := server.config.Registry.ReplayCreate(
+		ctx, payload.OperationID, payload.ProjectID, payload.ShellProfileID,
+	)
+	if err != nil {
+		return protocol.BrokerRPCSessionMutationResultPayload{}, err
+	}
+	if found {
+		return protocol.BrokerRPCSessionMutationResultPayload{
+			OperationID: payload.OperationID, Session: managementMutationSessionRecord(replayed.Snapshot),
+		}, nil
+	}
 	project, err := server.config.Store.GetProject(ctx, payload.ProjectID)
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
@@ -353,12 +364,8 @@ func (server *ManagementServer) createSession(
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
-	metadata, err := server.config.Store.GetSession(ctx, created.ID)
-	if err != nil {
-		return protocol.BrokerRPCSessionMutationResultPayload{}, err
-	}
 	return protocol.BrokerRPCSessionMutationResultPayload{
-		OperationID: payload.OperationID, Session: managementSessionRecord(metadata),
+		OperationID: payload.OperationID, Session: managementMutationSessionRecord(created.Snapshot),
 	}, nil
 }
 
@@ -374,12 +381,8 @@ func (server *ManagementServer) renameSession(
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
-	metadata, err := server.config.Store.GetSession(ctx, result.ID)
-	if err != nil {
-		return protocol.BrokerRPCSessionMutationResultPayload{}, err
-	}
 	return protocol.BrokerRPCSessionMutationResultPayload{
-		OperationID: payload.OperationID, Session: managementSessionRecord(metadata),
+		OperationID: payload.OperationID, Session: managementMutationSessionRecord(result.Snapshot),
 	}, nil
 }
 
@@ -395,12 +398,8 @@ func (server *ManagementServer) terminateSession(
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
-	metadata, err := server.config.Store.GetSession(ctx, result.ID)
-	if err != nil {
-		return protocol.BrokerRPCSessionMutationResultPayload{}, err
-	}
 	return protocol.BrokerRPCSessionMutationResultPayload{
-		OperationID: payload.OperationID, Session: managementSessionRecord(metadata),
+		OperationID: payload.OperationID, Session: managementMutationSessionRecord(result.Snapshot),
 	}, nil
 }
 
@@ -443,6 +442,29 @@ func managementSessionRecord(metadata store.SessionMetadata) protocol.BrokerRPCS
 	}
 	if metadata.ExitCode != nil {
 		value := int64(*metadata.ExitCode)
+		record.ExitCode = &value
+	}
+	return record
+}
+
+func managementMutationSessionRecord(snapshot store.MutationSessionSnapshot) protocol.BrokerRPCSessionRecord {
+	record := protocol.BrokerRPCSessionRecord{
+		ID: snapshot.ID, Generation: snapshot.Generation, Title: snapshot.Title,
+		ProjectID: snapshot.ProjectID, ShellProfileID: snapshot.ShellProfileID,
+		State: protocol.State(snapshot.State), Columns: int64(snapshot.Columns), Rows: int64(snapshot.Rows),
+		CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano),
+		UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if snapshot.HasStartedAt {
+		value := snapshot.StartedAt.UTC().Format(time.RFC3339Nano)
+		record.StartedAt = &value
+	}
+	if snapshot.HasEndedAt {
+		value := snapshot.EndedAt.UTC().Format(time.RFC3339Nano)
+		record.EndedAt = &value
+	}
+	if snapshot.HasExitCode {
+		value := int64(snapshot.ExitCode)
 		record.ExitCode = &value
 	}
 	return record
