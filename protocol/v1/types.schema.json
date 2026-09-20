@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://phone-terminal.invalid/protocol/v1/types.schema.json",
   "title": "ProtocolTypes",
-  "description": "Generation index for the named types in the canonical v1 envelope schema.",
+  "description": "Generation index for named types in the canonical v1 protocol schemas.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,7 +12,12 @@
     "screenPatch", "historyPage", "historyChanged", "controlChanged",
     "inputAccepted", "inputRejected", "sessionState", "accessRevoked", "error",
     "empty", "terminalRow", "screenMetadata", "messageType", "errorCode",
-    "ipcHello", "ipcWelcome", "ipcError", "ipcMessageType", "ipcClientKind"
+    "ipcHello", "ipcWelcome", "ipcError", "ipcMessageType", "ipcClientKind",
+    "brokerRPCMessageType", "brokerRPCEmpty", "brokerRPCSessionListRequest", "brokerRPCSessionCreateRequest",
+    "brokerRPCSessionRenameRequest", "brokerRPCSessionTerminateRequest",
+    "brokerRPCSessionRecord", "brokerRPCSessionListResult", "brokerRPCSessionResult",
+    "brokerRPCSessionMutationResult",
+    "brokerRPCError"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -48,6 +53,17 @@
     "ipcWelcome": { "$ref": "ipc.schema.json#/$defs/welcomePayload" },
     "ipcError": { "$ref": "ipc.schema.json#/$defs/errorPayload" },
     "ipcMessageType": { "$ref": "ipc.schema.json#/$defs/messageType" },
-    "ipcClientKind": { "$ref": "ipc.schema.json#/$defs/clientKind" }
+    "ipcClientKind": { "$ref": "ipc.schema.json#/$defs/clientKind" },
+    "brokerRPCMessageType": { "$ref": "broker-rpc.schema.json#/$defs/messageType" },
+    "brokerRPCEmpty": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
+    "brokerRPCSessionListRequest": { "$ref": "broker-rpc.schema.json#/$defs/sessionListRequestPayload" },
+    "brokerRPCSessionCreateRequest": { "$ref": "broker-rpc.schema.json#/$defs/sessionCreateRequestPayload" },
+    "brokerRPCSessionRenameRequest": { "$ref": "broker-rpc.schema.json#/$defs/sessionRenameRequestPayload" },
+    "brokerRPCSessionTerminateRequest": { "$ref": "broker-rpc.schema.json#/$defs/sessionTerminateRequestPayload" },
+    "brokerRPCSessionRecord": { "$ref": "broker-rpc.schema.json#/$defs/sessionRecord" },
+    "brokerRPCSessionListResult": { "$ref": "broker-rpc.schema.json#/$defs/sessionListResultPayload" },
+    "brokerRPCSessionResult": { "$ref": "broker-rpc.schema.json#/$defs/sessionResultPayload" },
+    "brokerRPCSessionMutationResult": { "$ref": "broker-rpc.schema.json#/$defs/sessionMutationResultPayload" },
+    "brokerRPCError": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" }
   }
 }

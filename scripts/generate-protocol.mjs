@@ -7,6 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const schema = path.join(root, 'protocol/v1/types.schema.json');
 const envelopeSchema = path.join(root, 'protocol/v1/envelope.schema.json');
 const ipcSchema = path.join(root, 'protocol/v1/ipc.schema.json');
+const brokerRPCSchema = path.join(root, 'protocol/v1/broker-rpc.schema.json');
 const outputs = [
   [
     'go',
@@ -37,6 +38,8 @@ for (const [language, output, extra] of outputs) {
       envelopeSchema,
       '--additional-schema',
       ipcSchema,
+      '--additional-schema',
+      brokerRPCSchema,
       '--out',
       output,
       '--top-level',

@@ -25,7 +25,8 @@ func TestDecodeIPCErrorMatchesCanonicalErrorCodes(t *testing.T) {
 	codes := []ErrorCode{
 		Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
-		HistoryChanged, ResyncRequired, HostUnavailable, InternalError,
+		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
+		OperationConflict, ProjectMissing, ShellProfileMissing,
 	}
 	for _, code := range codes {
 		payload, err := json.Marshal(IPCErrorClass{Code: code, Message: "safe"})

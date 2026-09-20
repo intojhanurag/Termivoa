@@ -63,6 +63,13 @@ Input is never replayed automatically after disconnect. A lost acknowledgement y
 
 JSON Schema Draft 2020-12 under `protocol/v1` will be canonical. quicktype will generate Go and TypeScript shapes; the browser will validate with Ajv, and Go will apply explicit semantic and bounds checks. WebSocket uses JSON text messages, while local IPC uses length-prefixed JSON with equivalent limits and chunking.
 
+After the local IPC handshake, session list/create/rename/terminate/status use
+the canonical bounded broker-management RPC. Request IDs correlate replies;
+unique operation IDs separately deduplicate create, rename, and terminate.
+Create requests carry saved project and shell-profile IDs only. Executable
+paths, arguments, working directories, and environment values cannot cross the
+gateway/CLI-to-broker protocol boundary.
+
 Screen/input counters travel as decimal strings. Session and broker generations distinguish a reconnect from a dead/replaced process. Full snapshots are transactional: chunks are validated and painted as one state before later patches become visible.
 
 ## Authentication and network

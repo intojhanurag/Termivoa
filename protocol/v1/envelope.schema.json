@@ -80,8 +80,14 @@
         "protocol_mismatch", "session_missing", "generation_changed",
         "session_lost", "not_controller", "stale_lease", "input_gap",
         "limit_exceeded", "history_changed", "resync_required",
-        "host_unavailable", "internal_error"
+        "host_unavailable", "internal_error", "invalid_request",
+        "operation_conflict", "project_missing", "shell_profile_missing"
       ]
+    },
+    "sessionLifecycle": {
+      "title": "State",
+      "type": "string",
+      "enum": ["starting", "running", "exiting", "exited", "lost"]
     },
     "emptyPayload": {
       "title": "EmptyPayload",
@@ -392,7 +398,7 @@
     "sessionStatePayload": {
       "title": "SessionStatePayload",
       "type": "object", "additionalProperties": false, "required": ["state"],
-      "properties": { "state": { "type": "string", "enum": ["starting", "running", "exiting", "exited", "lost"] }, "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 } }
+      "properties": { "state": { "$ref": "#/$defs/sessionLifecycle" }, "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 } }
     },
     "accessRevokedPayload": {
       "title": "AccessRevokedPayload",

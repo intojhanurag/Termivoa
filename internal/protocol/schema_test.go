@@ -81,9 +81,62 @@ func TestGenerationIndexReferencesCanonicalSchemas(t *testing.T) {
 	}
 	for name, property := range index.Properties {
 		if !strings.HasPrefix(property.Ref, "envelope.schema.json#/$defs/") &&
-			!strings.HasPrefix(property.Ref, "ipc.schema.json#/$defs/") {
+			!strings.HasPrefix(property.Ref, "ipc.schema.json#/$defs/") &&
+			!strings.HasPrefix(property.Ref, "broker-rpc.schema.json#/$defs/") {
 			t.Fatalf("generation type %q does not reference canonical schema: %q", name, property.Ref)
 		}
+	}
+}
+
+func TestCanonicalBrokerRPCSchemaListsEveryMessageExactlyOnce(t *testing.T) {
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate broker RPC schema test")
+	}
+	schemaPath := filepath.Join(filepath.Dir(source), "..", "..", "protocol", "v1", "broker-rpc.schema.json")
+	data, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Schema string `json:"$schema"`
+		OneOf  []struct {
+			Ref string `json:"$ref"`
+		} `json:"oneOf"`
+		Defs struct {
+			MessageType struct {
+				Enum []string `json:"enum"`
+			} `json:"messageType"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema.Schema != "https://json-schema.org/draft/2020-12/schema" {
+		t.Fatalf("broker RPC schema draft = %q", schema.Schema)
+	}
+	want := make([]string, 0, len(brokerRPCRequestTypes)+len(brokerRPCResponseTypes))
+	for messageType := range brokerRPCRequestTypes {
+		want = append(want, string(messageType))
+		if brokerRPCResponseTypes[messageType] {
+			t.Fatalf("broker RPC message %q is both request and response", messageType)
+		}
+	}
+	for messageType := range brokerRPCResponseTypes {
+		want = append(want, string(messageType))
+	}
+	sort.Strings(want)
+	got := append([]string(nil), schema.Defs.MessageType.Enum...)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) || len(schema.OneOf) != len(want) {
+		t.Fatalf("broker RPC schema messages = %q, validators = %q, oneOf = %d", got, want, len(schema.OneOf))
+	}
+	seen := make(map[string]bool, len(schema.OneOf))
+	for _, entry := range schema.OneOf {
+		if entry.Ref == "" || seen[entry.Ref] {
+			t.Fatalf("broker RPC schema has missing or duplicate message ref %q", entry.Ref)
+		}
+		seen[entry.Ref] = true
 	}
 }
 

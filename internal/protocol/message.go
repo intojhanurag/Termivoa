@@ -859,7 +859,8 @@ func validErrorCode(value ErrorCode) bool {
 	switch value {
 	case Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
-		HistoryChanged, ResyncRequired, HostUnavailable, InternalError:
+		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
+		OperationConflict, ProjectMissing, ShellProfileMissing:
 		return true
 	default:
 		return false

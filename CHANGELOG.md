@@ -20,6 +20,8 @@ All notable changes will be documented here. The project intends to follow [Keep
 - Broker-owned SQLite migrations and validated project, shell-profile, and
   session metadata, including restart recovery that marks prior live sessions
   lost without replaying commands.
+- Canonical bounded local broker-management RPC for session list, create,
+  rename, terminate, and status, with mutation operation IDs and stable errors.
 
 ### Not yet implemented
 
