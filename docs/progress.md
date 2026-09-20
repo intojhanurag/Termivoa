@@ -6,10 +6,17 @@ Last updated: 2026-09-20
 
 P0 — Private repository, preflight, and scaffold: **complete**.
 
-P1 — Go terminal core: **in progress** on `feat/p1-terminal-core`, tracked by
-private issue #7.
+P1 — Go terminal core: **in progress**, tracked by private issue #7. The owner
+approved the documented ConPTY query-response and macOS process-group
+boundaries on 2026-09-20; native Windows 11 validation remains pending.
 
-No application implementation, benchmark, platform integration, physical-phone test, installer, signing operation, or release has been completed. Later milestones remain pending.
+P2 — Frame and input protocol: **implementation started** on
+`feat/p2-frame-protocol` at the owner's direction while the owner-dependent
+Windows 11 P1 evidence remains pending. P1 is not represented as complete.
+
+The P1 terminal-core checkpoint is implemented and merged. No benchmark,
+physical-phone test, installer, signing operation, or release has been
+completed. Unexecuted later-milestone gates remain pending.
 
 ## Verified preflight facts
 
@@ -53,7 +60,7 @@ These questions must be resolved before their dependent gates; they do not block
 | Need | Current state | Blocked gate |
 | --- | --- | --- |
 | Required toolchains | Go 1.27.1 is available through Go toolchain selection; Node 24.11.0 is available through nvm | No current P0 toolchain blocker; developers must explicitly select Node 24. |
-| Windows 11 x64 access | Not established; physical machine versus VM is unknown | Native P1 lifecycle and P6 installer validation |
+| Windows 11 x64 access | Owner has a physical Windows laptop but cannot make it available during the current implementation session | Native P1 lifecycle and P6 installer validation remain pending; native GitHub Windows CI continues as supplemental evidence |
 | Physical iPhone and Android access | Test arrangement not established | P4 private cellular connection and P5 physical-device acceptance |
 | Tailscale login/configuration | Installed but stopped; no authorization to log in or alter Serve configuration | P4 private HTTPS evidence |
 | Host installation consent | Not requested; no startup/PATH/install changes made | P6 installation and startup evidence |
@@ -70,8 +77,8 @@ These questions must be resolved before their dependent gates; they do not block
 | Milestone | Status | Evidence |
 | --- | --- | --- |
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
-| P1 — Go terminal core | In progress | Private issue #7; macOS implementation evidence in `docs/evidence/p1/core-validation.md`; native Windows 11 execution remains pending |
-| P2 — Frame and input protocol | Not started | None |
+| P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
+| P2 — Frame and input protocol | In progress | Branch `feat/p2-frame-protocol`; implementation may proceed, but its gate cannot erase the pending native Windows 11 P1 evidence |
 | P3 — Persistent broker | Not started | None |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
@@ -119,10 +126,10 @@ Native Windows 11 lifecycle execution is still blocked on machine/VM access;
 cross-compilation is not a platform pass. Missing implementation and unexecuted
 gates are not counted as passing behavior. Native Windows Server 2025 CI also
 demonstrated that ConPTY consumes child DSR/CPR queries before they reach the Go
-emulator and supplies the response itself. That conflicts with the plan's
-strict single Go-emulator responder requirement and remains an explicit P1
-architecture gate; it is not concealed by a passing end-to-end fixture. The
-macOS implementation terminates the isolated PTY process group as required by
-the selected design, but a descendant that deliberately creates a new session
-can escape that group. The scope or containment design for such daemonized
-children is also unresolved and must not be described as verified cleanup.
+emulator and supplies the response itself. On 2026-09-20 the owner approved
+treating broker-owned ConPTY as the Windows platform responder for queries it
+consumes, while retaining the exactly-one-response rule and prohibiting viewer
+responses. The owner also approved the macOS PTY process group as the managed
+termination boundary; a descendant that deliberately creates a new session is
+outside that boundary. These boundaries are resolved design decisions, not
+claims that native Windows 11 validation has passed.
