@@ -90,12 +90,15 @@ rebuilt from mutable saved configuration or current session metadata. The
 checkpoint now persists the exact bounded response snapshot with every receipt,
 checks create receipts before resolving saved configuration, and returns
 rename/terminate receipt snapshots without rereading current state. Regression
-tests cover disabled create configuration, rename A/B/replay A, terminal-state
-change before terminate replay, and a real schema-v2 receipt upgrade. Migration
-003 also rewrites old create fingerprints to the stable project/profile-ID
-identity atomically with snapshot backfill. The independent follow-up audit is
-clean; the full repository check, combined protocol/IPC/store/broker race run,
-and Windows amd64 compile-only checks pass after rebasing onto private PR #21.
+tests cover disabled create configuration, rename A/B/replay A, and terminal
+state change before terminate replay. Migration 003 rewrites old create
+fingerprints to the stable project/profile-ID identity. A later PR review found
+that v2 create receipts could not prove an original title after a later rename;
+the migration now marks unprovable legacy create/terminate results unavailable
+instead of manufacturing a hybrid response, and retries fail deterministically
+without rerunning the operation. Store, Registry, and RPC regressions cover the
+boundary. Final validation and the follow-up independent audit are recorded in
+`docs/evidence/p3/broker-management-dispatch.md`.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been

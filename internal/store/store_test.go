@@ -111,7 +111,7 @@ func TestOpenUpgradesExistingSessionSchemaWithReceiptMigrations(t *testing.T) {
 	}
 }
 
-func TestOpenMigratesV2CreateReceiptToStableFingerprintAndSnapshot(t *testing.T) {
+func TestOpenMarksUnprovableV2ReceiptsUnavailableWithoutRerun(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "receipt-upgrade.sqlite")
 	database, err := openDatabase(context.Background(), path)
 	if err != nil {
@@ -145,12 +145,39 @@ func TestOpenMigratesV2CreateReceiptToStableFingerprintAndSnapshot(t *testing.T)
 		millis(session.UpdatedAt), millis(session.UpdatedAt)); err != nil {
 		t.Fatalf("insert v2 create receipt: %v", err)
 	}
+	if err := legacy.RenameSession(
+		context.Background(), session.ID, session.Generation, "renamed after create", testTime.Add(2*time.Second),
+	); err != nil {
+		t.Fatalf("rename session after v2 create receipt: %v", err)
+	}
+	if err := legacy.TransitionSession(
+		context.Background(), session.ID, session.Generation, SessionExiting, nil, testTime.Add(3*time.Second),
+	); err != nil {
+		t.Fatalf("begin legacy termination: %v", err)
+	}
+	terminateFingerprint := sha256.Sum256([]byte("legacy terminate request"))
+	if _, err := database.ExecContext(context.Background(), `INSERT INTO mutation_receipts(
+		operation_id, operation_kind, request_fingerprint, session_id, session_generation,
+		result_title, result_state, result_at_ms, created_at_ms
+	) VALUES (?, 'session_terminate', ?, ?, ?, NULL, 'exiting', ?, ?)`,
+		testTerminateOperation, terminateFingerprint[:], session.ID, session.Generation,
+		millis(testTime.Add(3*time.Second)), millis(testTime.Add(3*time.Second))); err != nil {
+		t.Fatalf("insert v2 terminate receipt: %v", err)
+	}
+	if err := legacy.RenameSession(
+		context.Background(), session.ID, session.Generation, "renamed after terminate", testTime.Add(4*time.Second),
+	); err != nil {
+		t.Fatalf("rename session after v2 terminate receipt: %v", err)
+	}
 	if err := database.Close(); err != nil {
 		t.Fatalf("close v2 database: %v", err)
 	}
 
 	upgraded := openTestStore(t, path)
 	defer upgraded.Close()
+	if lost, err := upgraded.BeginBrokerGeneration(context.Background(), testBrokerB, testTime.Add(5*time.Second)); err != nil || len(lost) != 1 {
+		t.Fatalf("begin upgraded broker: lost=%d, err=%v; want one prior live session", len(lost), err)
+	}
 	newFingerprint, err := SessionCreateFingerprint(testProject, testProfile)
 	if err != nil {
 		t.Fatal(err)
@@ -158,21 +185,50 @@ func TestOpenMigratesV2CreateReceiptToStableFingerprintAndSnapshot(t *testing.T)
 	result, found, err := upgraded.LookupMutation(
 		context.Background(), testCreateOperation, OperationSessionCreate, newFingerprint,
 	)
-	if err != nil || !found {
+	if !errors.Is(err, ErrMutationResultUnavailable) || found || result != (MutationResult{}) {
 		t.Fatalf("lookup migrated create receipt: found=%t result=%+v err=%v", found, result, err)
+	}
+	if _, found, err := upgraded.LookupMutation(
+		context.Background(), testCreateOperation, OperationSessionCreate, newFingerprint,
+	); !errors.Is(err, ErrMutationResultUnavailable) || found {
+		t.Fatalf("repeat unavailable lookup found=%t, err=%v", found, err)
 	}
 	stored, err := upgraded.GetSession(context.Background(), session.ID)
 	if err != nil {
 		t.Fatalf("get migrated session: %v", err)
 	}
-	if result.Session != mutationSessionSnapshot(stored) || result.SessionID != session.ID ||
-		result.Generation != session.Generation || result.State != SessionRunning {
-		t.Fatalf("migrated create receipt = %+v, stored session = %+v", result, stored)
+	if stored.Title != "renamed after terminate" {
+		t.Fatalf("migrated session title = %q, want later rename", stored.Title)
+	}
+	var unavailableMarkers int
+	if err := upgraded.database.QueryRow(`SELECT count(*) FROM mutation_receipts
+		WHERE result_session_json = ?`, legacyUnavailableSnapshotJSON).Scan(&unavailableMarkers); err != nil {
+		t.Fatalf("count unavailable receipt markers: %v", err)
+	}
+	if unavailableMarkers != 2 {
+		t.Fatalf("unavailable receipt markers = %d, want 2", unavailableMarkers)
 	}
 	if _, found, err := upgraded.LookupMutation(
 		context.Background(), testCreateOperation, OperationSessionCreate, oldFingerprint,
 	); !errors.Is(err, ErrOperationConflict) || found {
 		t.Fatalf("legacy fingerprint lookup found=%t, err=%v; want conflict", found, err)
+	}
+	if _, _, err := upgraded.CreateSessionWithReceipt(
+		context.Background(), testCreateOperation, newFingerprint, runningReceiptSession(
+			"70000000-0000-4000-8000-000000000092", "must not run"),
+	); !errors.Is(err, ErrMutationResultUnavailable) {
+		t.Fatalf("receipt-backed rerun error = %v", err)
+	}
+	if _, err := upgraded.GetSession(
+		context.Background(), "70000000-0000-4000-8000-000000000092",
+	); !errors.Is(err, ErrSessionMissing) {
+		t.Fatalf("unavailable receipt created another session: %v", err)
+	}
+	if _, _, err := upgraded.BeginSessionTerminationWithReceipt(
+		context.Background(), testTerminateOperation, terminateFingerprint,
+		session.ID, session.Generation, testTime.Add(6*time.Second),
+	); !errors.Is(err, ErrMutationResultUnavailable) {
+		t.Fatalf("receipt-backed termination rerun error = %v", err)
 	}
 }
 

@@ -27,14 +27,15 @@ const (
 )
 
 var (
-	ErrRegistryClosed    = errors.New("broker: session registry is closed")
-	ErrSessionLimit      = errors.New("broker: live session limit reached")
-	ErrSessionMissing    = errors.New("broker: session does not exist")
-	ErrOperationID       = errors.New("broker: invalid operation ID")
-	ErrOperationConflict = errors.New("broker: operation ID was already used for a different request")
-	ErrOperationLimit    = errors.New("broker: durable operation receipt capacity reached")
-	ErrSessionRetired    = errors.New("broker: session process is no longer live")
-	ErrPersistenceNeeded = errors.New("broker: durable session mutation store is required")
+	ErrRegistryClosed             = errors.New("broker: session registry is closed")
+	ErrSessionLimit               = errors.New("broker: live session limit reached")
+	ErrSessionMissing             = errors.New("broker: session does not exist")
+	ErrOperationID                = errors.New("broker: invalid operation ID")
+	ErrOperationConflict          = errors.New("broker: operation ID was already used for a different request")
+	ErrOperationLimit             = errors.New("broker: durable operation receipt capacity reached")
+	ErrOperationResultUnavailable = errors.New("broker: exact legacy operation result is unavailable")
+	ErrSessionRetired             = errors.New("broker: session process is no longer live")
+	ErrPersistenceNeeded          = errors.New("broker: durable session mutation store is required")
 )
 
 // ManagedSession is the capability exposed to local IPC and the gateway. It
@@ -828,6 +829,8 @@ func mapStoreOperationError(err error) error {
 		return fmt.Errorf("%w: %v", ErrOperationConflict, err)
 	case errors.Is(err, store.ErrOperationReceiptLimit):
 		return fmt.Errorf("%w: %v", ErrOperationLimit, err)
+	case errors.Is(err, store.ErrMutationResultUnavailable):
+		return fmt.Errorf("%w: %v", ErrOperationResultUnavailable, err)
 	case errors.Is(err, store.ErrSessionMissing):
 		return fmt.Errorf("%w: %v", ErrSessionMissing, err)
 	case errors.Is(err, store.ErrGenerationChanged):

@@ -39,9 +39,11 @@ Windows 11 execution, and physical-phone gates remain pending.
   B; and a termination acceptance still returns `exiting` after the process
   reaches `exited` or `lost`.
 - Create operation identity consists only of the client-supplied saved project
-  and shell-profile IDs. Migration 003 atomically freezes schema-v2 receipt
-  snapshots and rewrites their old resolved-configuration fingerprints to this
-  stable identity before recording the migration as applied.
+  and shell-profile IDs. Migration 003 rewrites schema-v2 create fingerprints
+  to this stable identity. Because v2 did not store the complete response,
+  legacy create/terminate receipts are marked explicitly unavailable instead
+  of combining their old receipt fields with mutable current metadata. A retry
+  receives the same safe error without rerunning the operation.
 - Session-list cursors are opaque fixed-width base64url offsets, validated again
   during dispatch, and pages remain bounded by the protocol's 200-record limit.
 
@@ -57,8 +59,9 @@ Tests exercise:
 - rename A, rename B, then replay A with A's original result;
 - terminate, transition to a final persisted state, then replay the original
   `exiting` acceptance with one termination side effect;
-- schema-v2 create-receipt migration to the stable fingerprint and frozen
-  result snapshot;
+- schema-v2 create receipt, later rename, then migration to the stable
+  fingerprint and explicit unavailable result, including repeated Store,
+  Registry, and RPC retries with no second process start;
 - missing saved configuration and invalid cursor error mapping;
 - byte-fragmented frames and two coalesced frames on one connection;
 - malformed JSON, host-to-client messages sent in the request direction, and
@@ -82,6 +85,11 @@ GOTOOLCHAIN=go1.27.1 go test -race ./internal/store ./internal/broker \
   -run 'Test(OpenMigratesV2CreateReceipt|ManagementDispatchResolvesSavedConfigurationAndReplaysCreate|ManagementDispatchLifecycleAndTypedErrors|RegistryDurablyReplaysCreate)' \
   -count=20
 passed
+
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/store ./internal/broker \
+  -run 'Test(OpenMarksUnprovableV2ReceiptsUnavailableWithoutRerun|RegistryDoesNotRerunCreateWithUnavailableLegacyResult|ManagementDispatchRejectsUnavailableLegacyCreateReplayWithoutStarting)' \
+  -count=20
+passed after the legacy-result correction
 
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/ptyhost \
   -run '^TestStartReadWriteResizeAndWait$' -count=20
@@ -109,7 +117,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 \
 produced a Windows x86-64 PE executable
 
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 \
-  go vet ./internal/broker
+  go vet ./internal/broker ./internal/store
 passed
 
 git diff --check
@@ -126,7 +134,17 @@ An independent sequential replay audit reported no remaining concrete blocker
 after running the focused replay/migration/shutdown race cases twenty times and
 the complete protocol/IPC/store/broker race suites ten times. The audit first
 found the schema-v2 create-fingerprint migration defect; that defect was fixed
-and the audit was repeated before this final validation.
+and the audit was repeated before the initial validation.
+
+Private PR review then demonstrated that a v2 create receipt followed by a
+rename could still produce a hybrid response during migration. The corrected
+migration preserves the operation and stable create fingerprint but marks
+unprovable legacy create/terminate results unavailable; it never copies a
+current title into an old response or reruns the operation. A fresh independent
+audit found no remaining blocker after 100 focused legacy/replay/shutdown race
+runs and ten complete protocol/IPC/store/broker race runs. The repository check,
+local combined race run, and Windows cross-build checks above were rerun after
+the final code change.
 
 ## Honest remaining gates
 

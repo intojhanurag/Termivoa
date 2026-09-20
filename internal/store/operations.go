@@ -14,6 +14,7 @@ import (
 const (
 	defaultRetainedTerminalReceipts = 8192
 	defaultOperationReceiptLimit    = 16384
+	legacyUnavailableSnapshotJSON   = `{"unavailable":"legacy-v2"}`
 )
 
 // SessionCreateFingerprint identifies the immutable client request for a
@@ -33,7 +34,8 @@ func SessionCreateFingerprint(projectID, shellProfileID string) ([sha256.Size]by
 
 // LookupMutation returns a previously committed result. A reused operation ID
 // with a different kind or request fingerprint is always a conflict, including
-// after the original session has changed state.
+// after the original session has changed state. A matching schema-v2 receipt
+// whose exact result was never stored returns ErrMutationResultUnavailable.
 func (store *Store) LookupMutation(
 	ctx context.Context,
 	operationID string,
@@ -44,7 +46,7 @@ func (store *Store) LookupMutation(
 		return MutationResult{}, false, err
 	}
 	result, storedFingerprint, found, err := readMutation(ctx, store.database, operationID)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrMutationResultUnavailable) {
 		return MutationResult{}, false, err
 	}
 	if !found {
@@ -52,6 +54,9 @@ func (store *Store) LookupMutation(
 	}
 	if result.Kind != kind || storedFingerprint != fingerprint {
 		return MutationResult{}, false, ErrOperationConflict
+	}
+	if err != nil {
+		return MutationResult{}, false, err
 	}
 	return result, true, nil
 }
@@ -272,11 +277,17 @@ func matchingMutation(
 	fingerprint [sha256.Size]byte,
 ) (MutationResult, bool, error) {
 	result, storedFingerprint, found, err := readMutation(ctx, querier, operationID)
-	if err != nil || !found {
+	if err != nil && !errors.Is(err, ErrMutationResultUnavailable) {
 		return MutationResult{}, false, err
+	}
+	if !found {
+		return MutationResult{}, false, nil
 	}
 	if result.Kind != kind || storedFingerprint != fingerprint {
 		return MutationResult{}, false, ErrOperationConflict
+	}
+	if err != nil {
+		return MutationResult{}, false, err
 	}
 	return result, true, nil
 }
@@ -316,6 +327,9 @@ func readMutation(
 		return MutationResult{}, [sha256.Size]byte{}, false,
 			errors.New("store: stored mutation session snapshot is missing")
 	}
+	if sessionJSON.String == legacyUnavailableSnapshotJSON {
+		return result, digest, true, ErrMutationResultUnavailable
+	}
 	if err := json.Unmarshal([]byte(sessionJSON.String), &result.Session); err != nil {
 		return MutationResult{}, [sha256.Size]byte{}, false, errors.New("store: stored mutation session snapshot is invalid")
 	}
@@ -336,8 +350,9 @@ type legacyMutationReceipt struct {
 }
 
 // backfillMutationReceiptSnapshots upgrades schema-v2 receipts atomically with
-// migration 003. It also rewrites create fingerprints from the old resolved
-// process configuration to the stable saved-ID request identity.
+// migration 003. It rewrites create fingerprints to the stable saved-ID
+// identity, reconstructs only provable rename results, and marks create and
+// terminate results unavailable rather than synthesizing mutable fields.
 func backfillMutationReceiptSnapshots(ctx context.Context, transaction *sql.Tx) error {
 	rows, err := transaction.QueryContext(ctx, `SELECT operation_id, operation_kind,
 		session_id, session_generation, COALESCE(result_title, ''), result_state, result_at_ms
@@ -373,8 +388,32 @@ func backfillMutationReceiptSnapshots(ctx context.Context, transaction *sql.Tx) 
 			OperationID: receipt.operationID, Kind: receipt.kind,
 			SessionID: receipt.sessionID, Generation: receipt.generation,
 			Title: receipt.title, State: receipt.state, CommittedAt: receipt.committedAt,
-			Session: mutationSessionSnapshot(session),
 		}
+		if result.Kind == OperationSessionCreate {
+			fingerprint, err := SessionCreateFingerprint(session.ProjectID, session.ShellProfileID)
+			if err != nil {
+				return err
+			}
+			if _, err := transaction.ExecContext(ctx, `UPDATE mutation_receipts
+				SET request_fingerprint = ?, result_session_json = ? WHERE operation_id = ?`,
+				fingerprint[:], legacyUnavailableSnapshotJSON, result.OperationID); err != nil {
+				return fmt.Errorf("mark legacy create receipt %s unavailable: %w", result.OperationID, err)
+			}
+			continue
+		}
+		if result.Kind == OperationSessionTerminate {
+			if _, err := transaction.ExecContext(ctx, `UPDATE mutation_receipts
+				SET result_session_json = ? WHERE operation_id = ?`,
+				legacyUnavailableSnapshotJSON, result.OperationID); err != nil {
+				return fmt.Errorf("mark legacy terminate receipt %s unavailable: %w", result.OperationID, err)
+			}
+			continue
+		}
+		// A v2 rename receipt stored its exact resulting title, state, and
+		// commit time. The remaining session identity, dimensions, and start
+		// fields are immutable, so this is the only legacy result that can be
+		// reconstructed without borrowing mutable response data.
+		result.Session = mutationSessionSnapshot(session)
 		result.Session.State = result.State
 		result.Session.UpdatedAt = result.CommittedAt
 		if result.Kind == OperationSessionRename {
@@ -392,18 +431,6 @@ func backfillMutationReceiptSnapshots(ctx context.Context, transaction *sql.Tx) 
 		snapshotJSON, err := json.Marshal(result.Session)
 		if err != nil {
 			return fmt.Errorf("encode legacy mutation receipt %s: %w", receipt.operationID, err)
-		}
-		if result.Kind == OperationSessionCreate {
-			fingerprint, err := SessionCreateFingerprint(result.Session.ProjectID, result.Session.ShellProfileID)
-			if err != nil {
-				return err
-			}
-			if _, err := transaction.ExecContext(ctx, `UPDATE mutation_receipts
-				SET request_fingerprint = ?, result_session_json = ? WHERE operation_id = ?`,
-				fingerprint[:], string(snapshotJSON), result.OperationID); err != nil {
-				return fmt.Errorf("backfill legacy create receipt %s: %w", result.OperationID, err)
-			}
-			continue
 		}
 		if _, err := transaction.ExecContext(ctx, `UPDATE mutation_receipts
 			SET result_session_json = ? WHERE operation_id = ?`, string(snapshotJSON), result.OperationID); err != nil {
