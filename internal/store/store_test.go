@@ -160,8 +160,18 @@ func TestSessionForeignKeysUnicodeRoundTripAndLifecycle(t *testing.T) {
 	if err := store.TransitionSession(context.Background(), session.ID, "44444444-4444-4444-8444-444444444444", SessionExiting, nil, runningAt); !errors.Is(err, ErrGenerationChanged) {
 		t.Fatalf("wrong generation error = %v", err)
 	}
+	if err := store.RenameSession(context.Background(), session.ID, session.Generation, "stale rename", testTime); !errors.Is(err, ErrTimestampRegression) {
+		t.Fatalf("backward rename error = %v", err)
+	}
 	if err := store.RenameSession(context.Background(), session.ID, session.Generation, "renamed ✓", runningAt); err != nil {
 		t.Fatalf("rename session: %v", err)
+	}
+	if err := store.TransitionSession(context.Background(), session.ID, session.Generation, SessionExiting, nil, testTime.Add(500*time.Millisecond)); !errors.Is(err, ErrTimestampRegression) {
+		t.Fatalf("backward transition error = %v", err)
+	}
+	unchanged, err := store.GetSession(context.Background(), session.ID)
+	if err != nil || unchanged.State != SessionRunning || !unchanged.UpdatedAt.Equal(runningAt) {
+		t.Fatalf("session after rejected timestamps = %+v, %v", unchanged, err)
 	}
 	if err := store.TransitionSession(context.Background(), session.ID, session.Generation, SessionExiting, nil, testTime.Add(2*time.Second)); err != nil {
 		t.Fatalf("transition exiting: %v", err)
@@ -250,6 +260,15 @@ func TestBrokerRestartMarksOnlyPriorNonterminalSessionsLost(t *testing.T) {
 
 	second := openTestStore(t, path)
 	defer second.Close()
+	if _, err := second.BeginBrokerGeneration(context.Background(), testBrokerB, testTime.Add(-time.Second)); !errors.Is(err, ErrTimestampRegression) {
+		t.Fatalf("backward recovery error = %v", err)
+	}
+	for index, id := range ids[:3] {
+		session, err := second.GetSession(context.Background(), id)
+		if err != nil || session.State != states[index] {
+			t.Fatalf("session %s after rejected recovery = %+v, %v", id, session, err)
+		}
+	}
 	lost, err := second.BeginBrokerGeneration(context.Background(), testBrokerB, testTime.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("begin replacement broker: %v", err)

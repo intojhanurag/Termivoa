@@ -22,6 +22,7 @@ var (
 	ErrShellProfileMissing  = errors.New("store: shell profile does not exist")
 	ErrGenerationChanged    = errors.New("store: session generation changed")
 	ErrInvalidTransition    = errors.New("store: invalid session lifecycle transition")
+	ErrTimestampRegression  = errors.New("store: session timestamp moved backward")
 	ErrBrokerNotStarted     = errors.New("store: broker generation has not started")
 	ErrBrokerAlreadyStarted = errors.New("store: broker generation already started")
 )

@@ -152,6 +152,12 @@ func (store *Store) BeginBrokerGeneration(ctx context.Context, generation string
 		return nil, err
 	}
 	when := millis(now)
+	for _, session := range lost {
+		if when < millis(session.CreatedAt) || when < millis(session.UpdatedAt) ||
+			session.StartedAt != nil && when < millis(*session.StartedAt) {
+			return nil, fmt.Errorf("%w: recovery for session %s", ErrTimestampRegression, session.ID)
+		}
+	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata
         SET state = 'lost', updated_at_ms = ?, ended_at_ms = ?, exit_code = NULL
         WHERE broker_generation <> ? AND state IN ('starting', 'running', 'exiting')`, when, when, generation); err != nil {
@@ -241,19 +247,37 @@ func (store *Store) RenameSession(ctx context.Context, id, generation, title str
 	if now.IsZero() {
 		return errors.New("store: session rename time must not be zero")
 	}
-	result, err := store.database.ExecContext(ctx, `UPDATE session_metadata SET title = ?, updated_at_ms = ?
-        WHERE id = ? AND generation = ? AND broker_generation = ?`, title, millis(now), id, generation, broker)
+	transaction, err := store.database.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("store: begin session rename: %w", err)
+	}
+	defer transaction.Rollback() //nolint:errcheck
+	var actualGeneration, actualBroker string
+	var updated int64
+	err = transaction.QueryRowContext(ctx,
+		`SELECT generation, broker_generation, updated_at_ms FROM session_metadata WHERE id = ?`, id,
+	).Scan(&actualGeneration, &actualBroker, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrSessionMissing
+	}
+	if err != nil {
+		return fmt.Errorf("store: read session rename state: %w", err)
+	}
+	if actualGeneration != generation || actualBroker != broker {
+		return ErrGenerationChanged
+	}
+	when := millis(now)
+	if when < updated {
+		return fmt.Errorf("%w: rename for session %s", ErrTimestampRegression, id)
+	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata SET title = ?, updated_at_ms = ?
+	        WHERE id = ? AND generation = ? AND broker_generation = ?`, title, when, id, generation, broker); err != nil {
 		return fmt.Errorf("store: rename session: %w", err)
 	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("store: inspect session rename: %w", err)
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("store: commit session rename: %w", err)
 	}
-	if affected == 1 {
-		return nil
-	}
-	return store.classifySessionMiss(ctx, id, generation)
+	return nil
 }
 
 func (store *Store) TransitionSession(ctx context.Context, id, generation string, to SessionState, exitCode *int32, now time.Time) error {
@@ -283,10 +307,12 @@ func (store *Store) TransitionSession(ctx context.Context, id, generation string
 	defer transaction.Rollback() //nolint:errcheck
 	var actualGeneration, actualBroker string
 	var from SessionState
+	var created, updated int64
 	var started sql.NullInt64
 	err = transaction.QueryRowContext(ctx,
-		`SELECT generation, broker_generation, state, started_at_ms FROM session_metadata WHERE id = ?`, id,
-	).Scan(&actualGeneration, &actualBroker, &from, &started)
+		`SELECT generation, broker_generation, state, created_at_ms, updated_at_ms, started_at_ms
+		 FROM session_metadata WHERE id = ?`, id,
+	).Scan(&actualGeneration, &actualBroker, &from, &created, &updated, &started)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrSessionMissing
 	}
@@ -300,6 +326,9 @@ func (store *Store) TransitionSession(ctx context.Context, id, generation string
 		return fmt.Errorf("%w: %s to %s", ErrInvalidTransition, from, to)
 	}
 	when := millis(now)
+	if when < created || when < updated || started.Valid && when < started.Int64 {
+		return fmt.Errorf("%w: transition for session %s", ErrTimestampRegression, id)
+	}
 	var startedValue any
 	if started.Valid {
 		startedValue = started.Int64
@@ -321,22 +350,6 @@ func (store *Store) TransitionSession(ctx context.Context, id, generation string
 		return fmt.Errorf("store: commit session transition: %w", err)
 	}
 	return nil
-}
-
-func (store *Store) classifySessionMiss(ctx context.Context, id, generation string) error {
-	var actual string
-	err := store.database.QueryRowContext(ctx, `SELECT generation FROM session_metadata WHERE id = ?`, id).Scan(&actual)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrSessionMissing
-	}
-	if err != nil {
-		return fmt.Errorf("store: classify session mutation: %w", err)
-	}
-	if actual != generation {
-		return ErrGenerationChanged
-	}
-	return ErrGenerationChanged
-
 }
 
 type rowScanner interface {
