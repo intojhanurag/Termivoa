@@ -3,8 +3,9 @@
 Date: 2026-09-20
 
 Scope: broker-owned deduplication for session create, rename, and terminate
-mutations. This is not the complete P3 exit gate; gateway routes, platform
-listeners, viewer delivery, and gateway-restart evidence remain pending.
+mutations, integrated with the bounded viewer-retirement lifecycle. This is not
+the complete P3 exit gate; gateway routes, executable process separation, and
+gateway-restart evidence remain pending.
 
 ## Implemented behavior
 
@@ -36,10 +37,18 @@ listeners, viewer delivery, and gateway-restart evidence remain pending.
 - Terminal persistence keeps `updated_at` monotonic when a receipt timestamp is
   later than the observed process end while retaining the actual `ended_at`.
   This prevents a clock-ordering edge from leaving durable state at `exiting`.
+- `Ended` immediately persists and publishes immutable final metadata for
+  `List`, while the registry continues to count the runtime as live until every
+  viewer has acknowledged the final revision or detached. Only then does
+  `RetirementReady` permit runtime close and capacity release. Receipt-backed
+  terminate retries remain deterministic across this interval and invoke the
+  runtime termination path exactly once.
 - Registry shutdown closes mutation admission before any receipt replay, waits
   for already-admitted rename and terminate operations, and only then cancels
-  session lifetime. Process cleanup errors remain in lifecycle diagnostics
-  after definitive resource completion instead of being discarded.
+  session lifetime. Closing a runtime detaches pending viewers and releases its
+  retirement barrier, so shutdown cannot deadlock behind final-frame delivery.
+  Process cleanup errors remain in lifecycle diagnostics after definitive
+  resource completion instead of being discarded.
 - The in-memory create-operation map remains a bounded same-process concurrency
   cache. SQLite is authoritative after cache eviction or broker/store reopen.
 
@@ -63,7 +72,7 @@ GOTOOLCHAIN=go1.27.1 go test -race -timeout=180s \
 passed
 
 GOTOOLCHAIN=go1.27.1 go test -race -timeout=180s ./internal/broker \
-  -run 'TestRegistry(CloseWaitsForInFlight|AcceptedTerminate|PersistsFinalState|ReleasesCapacity)' \
+  -run 'TestRegistry(PersistsAndListsFinalStateBeforeViewerRetirement|ViewerBarrierCleanupErrorRemainsObservableOnClose|ReceiptTerminatePersistsFinalStateBeforeViewerRetirement|CloseReleasesPendingViewerRetirementBarrier|PersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd)' \
   -count=20
 passed
 
@@ -102,8 +111,12 @@ termination call. Deterministic audit regressions cover a future-dated receipt
 followed by an earlier actual process end, accepted runtime termination failure,
 retired-session cleanup failure, blocked rename/terminate operations racing
 shutdown, rejection of new mutations after the close gate, and rejection of a
-durable terminate replay after closure. The repeated race run exercises the
-SQLite and registry concurrency paths.
+durable terminate replay after closure. Cross-feature regressions additionally
+hold the final viewer barrier while asserting immediate durable final metadata,
+final-state listing, retained capacity, exactly-once receipt-backed runtime
+termination, delayed cleanup-error reporting, and deadlock-free registry
+shutdown. The repeated race run exercises the SQLite and registry concurrency
+paths.
 
 The Windows cross-compile verifies the pure-Go build boundary only. It is not
 native Windows 11 execution evidence.
@@ -115,6 +128,6 @@ native Windows 11 execution evidence.
   deduplication.
 - The executable entry point does not yet construct the long-running broker,
   open SQLite, or begin a broker generation; process separation and platform
-  listeners are later P3 checkpoints.
+  listener integration into that executable are later P3 checkpoints.
 - Native Windows 11 execution remains owner-blocked. No physical-phone,
   Tailscale, installer, signing, or release claim is made by this checkpoint.

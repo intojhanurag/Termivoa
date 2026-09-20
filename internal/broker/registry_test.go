@@ -662,12 +662,7 @@ func TestRegistryPersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd(t *t
 		t.Fatalf("accept termination: %v", err)
 	}
 	exitCode := 0
-	managed.mu.Lock()
-	managed.status.State = SessionExited
-	managed.status.EndedAt = actualEnd
-	managed.status.ExitCode = &exitCode
-	managed.mu.Unlock()
-	managed.endedOnce.Do(func() { close(managed.ended) })
+	managed.finish(SessionExited, actualEnd, &exitCode)
 	waitForRetiredRegistrySession(t, registry, created.ID)
 	metadata, err := persistence.GetSession(context.Background(), created.ID)
 	if err != nil {
@@ -679,6 +674,213 @@ func TestRegistryPersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd(t *t
 	}
 	if err := registry.Close(); err != nil {
 		t.Fatalf("close registry: %v", err)
+	}
+}
+
+func TestRegistryPersistsAndListsFinalStateBeforeViewerRetirement(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "viewer-retirement.sqlite"))
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000014",
+		"40000000-0000-4000-8000-000000000014",
+		"30000000-0000-4000-8000-000000000015",
+		"40000000-0000-4000-8000-000000000015",
+	})
+	registry.config.MaxLiveSessions = 1
+	created := createPersistentTestSession(t, registry, "viewer-retirement-create")
+	managed := created.Session.(*fakeManagedSession)
+	managed.holdRetirement()
+	t.Cleanup(func() {
+		managed.releaseRetirement()
+		_ = registry.Close()
+		_ = persistence.Close()
+	})
+
+	managed.mu.Lock()
+	actualEnd := managed.status.StartedAt.Add(2 * time.Second).Truncate(time.Millisecond)
+	managed.mu.Unlock()
+	exitCode := 7
+	managed.finish(SessionExited, actualEnd, &exitCode)
+
+	metadata := waitForPersistedSessionState(t, persistence, created.ID, store.SessionExited)
+	if metadata.EndedAt == nil || !metadata.EndedAt.Equal(actualEnd) || metadata.ExitCode == nil || *metadata.ExitCode != int32(exitCode) {
+		t.Fatalf("persisted final metadata = %+v; want ended=%v exit=%d", metadata, actualEnd, exitCode)
+	}
+	final := waitForRegistryFinalStatus(t, registry, created.ID)
+	if final.State != SessionExited || !final.EndedAt.Equal(actualEnd) || final.ExitCode == nil || *final.ExitCode != exitCode {
+		t.Fatalf("registry final status = %+v", final)
+	}
+	listed, err := registry.List(context.Background())
+	if err != nil {
+		t.Fatalf("list while viewer retirement is pending: %v", err)
+	}
+	if len(listed) != 1 || listed[0].State != SessionExited || !listed[0].EndedAt.Equal(actualEnd) {
+		t.Fatalf("listed final status = %+v", listed)
+	}
+	if managed.closed.Load() {
+		t.Fatal("runtime closed before final viewer retirement barrier")
+	}
+	if current, err := registry.Get(created.ID); err != nil || current != managed {
+		t.Fatalf("session retired before viewer barrier: session=%T err=%v", current, err)
+	}
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{
+		OperationID: operationID("viewer-retirement-capacity"), Title: "must wait",
+		ProjectID: registryProjectID, ShellProfileID: registryProfileID,
+		Process: ptyhost.Spec{Executable: "/bin/zsh", Columns: 80, Rows: 24},
+	}); !errors.Is(err, ErrSessionLimit) {
+		t.Fatalf("capacity released before viewer retirement: %v", err)
+	}
+
+	managed.releaseRetirement()
+	waitForRetiredRegistrySession(t, registry, created.ID)
+	if !managed.closed.Load() {
+		t.Fatal("runtime was not closed after final viewer barrier")
+	}
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{
+		OperationID: operationID("viewer-retirement-after"), Title: "after retirement",
+		ProjectID: registryProjectID, ShellProfileID: registryProfileID,
+		Process: ptyhost.Spec{Executable: "/bin/zsh", Columns: 80, Rows: 24},
+	}); err != nil {
+		t.Fatalf("capacity was not released after viewer retirement: %v", err)
+	}
+}
+
+func TestRegistryViewerBarrierCleanupErrorRemainsObservableOnClose(t *testing.T) {
+	registry := newFakeRegistry(t, RegistryConfig{})
+	created, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("viewer-cleanup-error")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed := created.Session.(*fakeManagedSession)
+	managed.holdRetirement()
+	cleanupErr := errors.New("viewer barrier cleanup failure")
+	managed.closeErr = cleanupErr
+	t.Cleanup(func() {
+		managed.releaseRetirement()
+		managed.doneOnce.Do(func() { close(managed.done) })
+		_ = registry.Close()
+	})
+
+	managed.finish(SessionLost, time.Now().UTC(), nil)
+	waitForRegistryFinalStatus(t, registry, created.ID)
+	if managed.closed.Load() {
+		t.Fatal("cleanup started before viewer retirement barrier")
+	}
+	managed.releaseRetirement()
+	waitForFakeSessionClose(t, managed)
+	managed.doneOnce.Do(func() { close(managed.done) })
+	waitForRetiredRegistrySession(t, registry, created.ID)
+	if err := registry.Close(); !errors.Is(err, cleanupErr) {
+		t.Fatalf("registry close error after retirement = %v, want cleanup error", err)
+	}
+}
+
+func TestRegistryReceiptTerminatePersistsFinalStateBeforeViewerRetirement(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "terminate-viewer-retirement.sqlite"))
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000016",
+		"40000000-0000-4000-8000-000000000016",
+	})
+	created := createPersistentTestSession(t, registry, "terminate-viewer-create")
+	managed := created.Session.(*fakeManagedSession)
+	managed.holdRetirement()
+	t.Cleanup(func() {
+		managed.releaseRetirement()
+		_ = registry.Close()
+		_ = persistence.Close()
+	})
+
+	request := TerminateSessionRequest{
+		OperationID: operationID("terminate-viewer"), SessionID: created.ID,
+		Generation: created.Generation,
+	}
+	accepted, err := registry.Terminate(context.Background(), request)
+	if err != nil {
+		t.Fatalf("terminate: %v", err)
+	}
+	if accepted.State != SessionExiting || managed.terminateCalls.Load() != 1 {
+		t.Fatalf("terminate acceptance = %+v, runtime calls=%d", accepted, managed.terminateCalls.Load())
+	}
+	managed.mu.Lock()
+	actualEnd := managed.status.StartedAt.Add(3 * time.Second).Truncate(time.Millisecond)
+	managed.mu.Unlock()
+	exitCode := 0
+	managed.finish(SessionExited, actualEnd, &exitCode)
+	metadata := waitForPersistedSessionState(t, persistence, created.ID, store.SessionExited)
+	if metadata.EndedAt == nil || !metadata.EndedAt.Equal(actualEnd) {
+		t.Fatalf("persisted termination final state = %+v; want ended=%v", metadata, actualEnd)
+	}
+	waitForRegistryFinalStatus(t, registry, created.ID)
+	replayed, err := registry.Terminate(context.Background(), request)
+	if err != nil || replayed != accepted {
+		t.Fatalf("termination replay = %+v, err=%v; want %+v", replayed, err, accepted)
+	}
+	if managed.terminateCalls.Load() != 1 {
+		t.Fatalf("runtime terminate calls after replay = %d, want 1", managed.terminateCalls.Load())
+	}
+	if managed.closed.Load() {
+		t.Fatal("terminated runtime closed before final viewer retirement barrier")
+	}
+	listed, err := registry.List(context.Background())
+	if err != nil || len(listed) != 1 || listed[0].State != SessionExited {
+		t.Fatalf("list after termination final state = %+v, err=%v", listed, err)
+	}
+	managed.releaseRetirement()
+	waitForRetiredRegistrySession(t, registry, created.ID)
+	if !managed.closed.Load() {
+		t.Fatal("terminated runtime was not closed after final viewer barrier")
+	}
+}
+
+func TestRegistryCloseReleasesPendingViewerRetirementBarrier(t *testing.T) {
+	registry := newFakeRegistry(t, RegistryConfig{})
+	created, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("close-viewer-barrier")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed := created.Session.(*fakeManagedSession)
+	managed.holdRetirement()
+	managed.finish(SessionExited, time.Now().UTC(), nil)
+	waitForRegistryFinalStatus(t, registry, created.ID)
+	select {
+	case <-managed.RetirementReady():
+		t.Fatal("viewer retirement barrier was not held")
+	default:
+	}
+
+	closed := make(chan error, 1)
+	go func() { closed <- registry.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("registry close: %v", err)
+		}
+	case <-time.After(time.Second):
+		managed.releaseRetirement()
+		t.Fatal("registry close deadlocked on pending viewer retirement")
+	}
+	if !managed.closed.Load() {
+		t.Fatal("registry close did not close runtime")
+	}
+	select {
+	case <-managed.RetirementReady():
+	default:
+		t.Fatal("runtime close did not release viewer retirement barrier")
+	}
+	select {
+	case <-managed.Done():
+	default:
+		t.Fatal("runtime cleanup did not complete")
+	}
+	registry.mu.Lock()
+	_, stillActive := registry.sessions[created.ID]
+	_, retired := registry.retired[created.ID]
+	registry.mu.Unlock()
+	if stillActive || !retired {
+		t.Fatalf("registry close retirement state: active=%t retired=%t", stillActive, retired)
 	}
 }
 
@@ -1081,25 +1283,81 @@ func waitForRetiredRegistrySession(t *testing.T, registry *Registry, id string) 
 	}
 }
 
+func waitForPersistedSessionState(
+	t *testing.T,
+	persistence *store.Store,
+	id string,
+	state store.SessionState,
+) store.SessionMetadata {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		metadata, err := persistence.GetSession(context.Background(), id)
+		if err == nil && metadata.State == state {
+			return metadata
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("persisted session %s did not reach %s: metadata=%+v err=%v", id, state, metadata, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func waitForRegistryFinalStatus(t *testing.T, registry *Registry, id string) SessionStatus {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		registry.mu.Lock()
+		entry := registry.sessions[id]
+		var final *SessionStatus
+		if entry != nil && entry.final != nil {
+			cloned := cloneSessionStatus(*entry.final)
+			final = &cloned
+		}
+		registry.mu.Unlock()
+		if final != nil {
+			return *final
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("registry session %s did not publish final status", id)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func waitForFakeSessionClose(t *testing.T, session *fakeManagedSession) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for !session.closed.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("fake session close did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 type fakeManagedSession struct {
-	mu               sync.Mutex
-	status           SessionStatus
-	closed           atomic.Bool
-	ended            chan struct{}
-	endedOnce        sync.Once
-	done             chan struct{}
-	doneOnce         sync.Once
-	closeGate        <-chan struct{}
-	closeErr         error
-	statusStarted    chan struct{}
-	statusRelease    chan struct{}
-	statusOnce       sync.Once
-	statusErr        error
-	terminateCalls   atomic.Int32
-	terminateErr     error
-	terminateGate    chan struct{}
-	terminateStarted chan struct{}
-	terminateOnce    sync.Once
+	mu                  sync.Mutex
+	status              SessionStatus
+	closed              atomic.Bool
+	ended               chan struct{}
+	endedOnce           sync.Once
+	retirementReady     chan struct{}
+	retirementOnce      sync.Once
+	automaticRetirement bool
+	done                chan struct{}
+	doneOnce            sync.Once
+	closeGate           <-chan struct{}
+	closeErr            error
+	statusStarted       chan struct{}
+	statusRelease       chan struct{}
+	statusOnce          sync.Once
+	statusErr           error
+	terminateCalls      atomic.Int32
+	terminateErr        error
+	terminateGate       chan struct{}
+	terminateStarted    chan struct{}
+	terminateOnce       sync.Once
 }
 
 func newFakeManagedSession(id, generation string, state SessionState) *fakeManagedSession {
@@ -1108,11 +1366,14 @@ func newFakeManagedSession(id, generation string, state SessionState) *fakeManag
 			ID: id, Generation: generation, State: state,
 			Columns: 80, Rows: 24, StartedAt: time.Now().UTC(),
 		},
-		ended: make(chan struct{}),
-		done:  make(chan struct{}),
+		ended:               make(chan struct{}),
+		retirementReady:     make(chan struct{}),
+		automaticRetirement: true,
+		done:                make(chan struct{}),
 	}
 	if state == SessionExited || state == SessionLost {
 		session.endedOnce.Do(func() { close(session.ended) })
+		session.releaseRetirement()
 	}
 	return session
 }
@@ -1120,15 +1381,49 @@ func newFakeManagedSession(id, generation string, state SessionState) *fakeManag
 func (session *fakeManagedSession) setState(state SessionState) {
 	session.mu.Lock()
 	session.status.State = state
+	automaticRetirement := session.automaticRetirement
 	session.mu.Unlock()
 	if state == SessionExited || state == SessionLost {
 		session.endedOnce.Do(func() { close(session.ended) })
+		if automaticRetirement {
+			session.releaseRetirement()
+		}
 	}
 }
 
-func (session *fakeManagedSession) Ended() <-chan struct{}           { return session.ended }
-func (session *fakeManagedSession) RetirementReady() <-chan struct{} { return session.ended }
-func (session *fakeManagedSession) Done() <-chan struct{}            { return session.done }
+func (session *fakeManagedSession) finish(state SessionState, endedAt time.Time, exitCode *int) {
+	session.mu.Lock()
+	session.status.State = state
+	session.status.EndedAt = endedAt
+	if exitCode == nil {
+		session.status.ExitCode = nil
+	} else {
+		clonedExitCode := *exitCode
+		session.status.ExitCode = &clonedExitCode
+	}
+	automaticRetirement := session.automaticRetirement
+	session.mu.Unlock()
+	session.endedOnce.Do(func() { close(session.ended) })
+	if automaticRetirement {
+		session.releaseRetirement()
+	}
+}
+
+func (session *fakeManagedSession) holdRetirement() {
+	session.mu.Lock()
+	session.automaticRetirement = false
+	session.mu.Unlock()
+}
+
+func (session *fakeManagedSession) releaseRetirement() {
+	session.retirementOnce.Do(func() { close(session.retirementReady) })
+}
+
+func (session *fakeManagedSession) Ended() <-chan struct{} { return session.ended }
+func (session *fakeManagedSession) RetirementReady() <-chan struct{} {
+	return session.retirementReady
+}
+func (session *fakeManagedSession) Done() <-chan struct{} { return session.done }
 func (session *fakeManagedSession) FinalStatus() (SessionStatus, bool) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
@@ -1192,6 +1487,10 @@ func (session *fakeManagedSession) Close() error {
 	if state != SessionExited && state != SessionLost {
 		session.setState(SessionLost)
 	}
+	// Real Session.Close starts shutdown, which detaches pending viewers and
+	// consequently releases RetirementReady. Mirror that contract so registry
+	// shutdown tests cannot manufacture a viewer-barrier deadlock.
+	session.releaseRetirement()
 	if session.closeGate != nil {
 		<-session.closeGate
 	}
