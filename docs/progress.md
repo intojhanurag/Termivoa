@@ -62,12 +62,17 @@ lowercase UUID canonicalization, schema-level session identity invariants, and
 consistent UTF-8 title semantics while preserving stored legacy titles. The
 dispatcher now enforces response correlation. Independent broker/gateway
 process modes are implemented on `feat/p3-process-modes`: the broker acquires
-the single-owner IPC lock before opening SQLite, owns generation recovery and
+canonical data-directory and runtime IPC locks before opening SQLite, retains
+data ownership through Registry/Store cleanup, owns generation recovery and
 the Registry, while the gateway owns only an exact-Host loopback health
 bootstrap and restricted IPC probes. macOS runner and executable-process tests
 prove a gateway restart preserves the same child/session generation and
 advancing canonical output; startup recovery marks prior live metadata lost
-without rerunning it. Evidence is in `docs/evidence/p3/process-modes.md`.
+without rerunning it. Review regressions also prove that a same-data broker with
+a distinct runtime cannot overlap live ownership or shutdown cleanup, bare and
+partial development modes remain isolated from canonical production paths, and
+gateway timeout cleanup force-closes incomplete HTTP connections without
+suppressing the timeout error. Evidence is in `docs/evidence/p3/process-modes.md`.
 Authenticated HTTP/WebSocket-to-live-session dispatch and native Windows 11
 execution remain pending.
 

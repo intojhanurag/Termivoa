@@ -31,28 +31,39 @@ phone browser ── gateway ──────────────── br
 Local broker IPC uses a user-owned Unix-domain socket on macOS and a named
 pipe protected by an explicit current-user SID ACL on Windows. A mode-0700
 runtime directory contains a restricted endpoint descriptor and persistent
-lock file; an OS lock on that file admits one broker without scanning or
-killing processes. The descriptor's PID is diagnostic only. Clients must
+lock file. A second current-user OS lock lives in the canonical data directory.
+Both locks admit one broker without scanning or killing processes, including
+when two launches select different runtime paths for the same SQLite data.
+The descriptor's PID is diagnostic only. Clients must
 complete the versioned handshake and confirm its broker generation before the
 endpoint is considered live. A lock owner may replace an endpoint only after
 that handshake probe fails. Separate LaunchAgents and per-user Scheduled Tasks
 remain packaging work.
 
-The executable process bootstrap acquires that broker lock before it opens the
-per-user SQLite database or begins a generation. It then constructs the Store,
-Registry, and IPC dispatcher as one broker-owned lifetime. Shutdown stops IPC
-acceptance first, waits for Registry mutation/session cleanup, and closes
-SQLite last. The gateway process receives only the runtime endpoint location;
-it can handshake/probe the broker but has no Store, Registry, PTY, or shell
-capability. Its current HTTP bootstrap is an exact-Host, IPv4-loopback
-`/healthz` surface at `127.0.0.1:8787`; authenticated application routes and
-embedded assets are still pending.
+The executable process bootstrap acquires the data lock and runtime lock before
+it opens the per-user SQLite database or begins a generation. It then
+constructs the Store, Registry, and IPC dispatcher as one broker-owned
+lifetime. Shutdown stops IPC acceptance first, waits for Registry
+mutation/session cleanup, and closes SQLite last; the data lock is released
+only after both are closed. The gateway process receives only the runtime
+endpoint location; it can handshake/probe the broker but has no Store,
+Registry, PTY, or shell capability. Its current HTTP bootstrap is an exact-Host,
+IPv4-loopback `/healthz` surface at `127.0.0.1:8787`. The configured listener must be a
+literal IPv4 loopback address before any bind occurs. Graceful shutdown has a
+bounded timeout and force-closes remaining connections while retaining the
+timeout as an operational error. Authenticated application routes and embedded
+assets are still pending.
 
 On Unix, the runtime path is canonicalized once through trusted root-owned
 system aliases. User-controlled symlink components, foreign-owned ancestors
 and unsafe writable ancestors are rejected before the lock, socket or
 descriptor is touched, preventing one configured path from resolving to two
 independent broker locks.
+
+The explicit development profile uses distinct data/runtime directory names
+and an ephemeral loopback listener by default. Bare or partial `--dev`
+invocations never inherit production locations, and canonical aliases or
+parent/child overlaps with the production profile are rejected.
 
 ## Terminal data flow
 
