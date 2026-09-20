@@ -133,6 +133,17 @@ func (controller *Controller) Heartbeat(generation, connectionID, deviceID, leas
 	return controller.state(), nil
 }
 
+// Authorize verifies that a mutating operation still belongs to the active
+// controller lease without renewing its heartbeat deadline.
+func (controller *Controller) Authorize(generation, connectionID, deviceID, lease string) (ControlState, error) {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	if err := controller.authorize(generation, connectionID, deviceID, lease, controller.now()); err != nil {
+		return ControlState{}, err
+	}
+	return controller.state(), nil
+}
+
 // acceptInput applies a bounded-queue decision atomically with sequence
 // acceptance. It is deliberately private: callers must use InputInbox.Submit
 // so no sequence can advance without its corresponding action being queued. A

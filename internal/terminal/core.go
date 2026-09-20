@@ -71,6 +71,7 @@ const (
 	commandText
 	commandPaste
 	commandKey
+	commandMouse
 )
 
 type command struct {
@@ -80,6 +81,7 @@ type command struct {
 	columns int
 	rows    int
 	key     uv.KeyEvent
+	mouse   uv.MouseEvent
 	reply   chan result
 }
 
@@ -206,6 +208,15 @@ func (core *Core) SendKey(ctx context.Context, key uv.KeyEvent) error {
 	return core.execute(ctx, command{kind: commandKey, key: key})
 }
 
+// SendMouse encodes a structured mouse event according to the terminal modes
+// enabled by the child. Coordinates are zero-based terminal cells.
+func (core *Core) SendMouse(ctx context.Context, mouse uv.MouseEvent) error {
+	if mouse == nil {
+		return errors.New("terminal mouse event must not be nil")
+	}
+	return core.execute(ctx, command{kind: commandMouse, mouse: mouse})
+}
+
 // Close stops the actor. It is safe to call more than once.
 func (core *Core) Close() error {
 	core.closeOnce.Do(func() {
@@ -277,6 +288,8 @@ func (core *Core) run(ctx context.Context, emulator *vt.Emulator, maxCellBytes, 
 				emulator.Paste(cmd.text)
 			case commandKey:
 				emulator.SendKey(cmd.key)
+			case commandMouse:
+				emulator.SendMouse(cmd.mouse)
 			default:
 				response.err = fmt.Errorf("unknown terminal command %d", cmd.kind)
 			}

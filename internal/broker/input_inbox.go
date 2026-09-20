@@ -17,6 +17,12 @@ const (
 
 var ErrInputQueueClosed = errors.New("broker: input queue is closed")
 
+var readyInput = func() <-chan struct{} {
+	ready := make(chan struct{})
+	close(ready)
+	return ready
+}()
+
 type InputKind string
 
 const (
@@ -120,27 +126,46 @@ func (inbox *InputInbox) Next(ctx context.Context) (AcceptedInput, error) {
 		if err := ctx.Err(); err != nil {
 			return AcceptedInput{}, err
 		}
-		inbox.mu.Lock()
-		if inbox.closed {
-			inbox.mu.Unlock()
-			return AcceptedInput{}, ErrInputQueueClosed
+		if input, ok, err := inbox.TryNext(); err != nil || ok {
+			return input, err
 		}
-		if len(inbox.queue) > 0 {
-			input := inbox.queue[0]
-			inbox.queuedBytes -= input.byteSize
-			inbox.queue[0] = AcceptedInput{}
-			inbox.queue = inbox.queue[1:]
-			inbox.mu.Unlock()
-			return input, nil
-		}
-		notify := inbox.notify
-		inbox.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			return AcceptedInput{}, ctx.Err()
-		case <-notify:
+		case <-inbox.Ready():
 		}
 	}
+}
+
+// Ready reports when TryNext can make progress. The returned channel is
+// already closed while input is queued or after the inbox is closed, avoiding
+// a missed wakeup between checking the queue and beginning a select.
+func (inbox *InputInbox) Ready() <-chan struct{} {
+	inbox.mu.Lock()
+	defer inbox.mu.Unlock()
+	if inbox.closed || len(inbox.queue) > 0 {
+		return readyInput
+	}
+	return inbox.notify
+}
+
+// TryNext removes one accepted action without blocking. It exists so the
+// session actor can select input alongside PTY output and control requests;
+// it must remain the only consumer for that session's inbox.
+func (inbox *InputInbox) TryNext() (AcceptedInput, bool, error) {
+	inbox.mu.Lock()
+	defer inbox.mu.Unlock()
+	if inbox.closed {
+		return AcceptedInput{}, false, ErrInputQueueClosed
+	}
+	if len(inbox.queue) == 0 {
+		return AcceptedInput{}, false, nil
+	}
+	input := inbox.queue[0]
+	inbox.queuedBytes -= input.byteSize
+	inbox.queue[0] = AcceptedInput{}
+	inbox.queue = inbox.queue[1:]
+	return input, true, nil
 }
 
 // RevokeDevice releases the device's controller lease and removes accepted
@@ -157,6 +182,56 @@ func (inbox *InputInbox) RevokeDevice(deviceID string) int {
 	dropped := 0
 	for _, input := range inbox.queue {
 		if input.DeviceID == deviceID {
+			inbox.queuedBytes -= input.byteSize
+			dropped++
+			continue
+		}
+		kept = append(kept, input)
+	}
+	for index := len(kept); index < len(inbox.queue); index++ {
+		inbox.queue[index] = AcceptedInput{}
+	}
+	inbox.queue = kept
+	return dropped
+}
+
+// DropConnection removes accepted actions that have not entered the session
+// actor. It does not mutate controller state, allowing callers to coordinate a
+// takeover or release without accidentally revoking a newly granted lease for
+// the same device.
+func (inbox *InputInbox) DropConnection(connectionID string) int {
+	if connectionID == "" {
+		return 0
+	}
+	inbox.mu.Lock()
+	defer inbox.mu.Unlock()
+	kept := inbox.queue[:0]
+	dropped := 0
+	for _, input := range inbox.queue {
+		if input.ConnectionID == connectionID {
+			inbox.queuedBytes -= input.byteSize
+			dropped++
+			continue
+		}
+		kept = append(kept, input)
+	}
+	for index := len(kept); index < len(inbox.queue); index++ {
+		inbox.queue[index] = AcceptedInput{}
+	}
+	inbox.queue = kept
+	return dropped
+}
+
+// DropBeforeLeaseEpoch removes input accepted under superseded controller
+// leases. It is used after acquisition even when Controller.State has already
+// cleared an expired controller and no longer exposes its connection ID.
+func (inbox *InputInbox) DropBeforeLeaseEpoch(epoch uint64) int {
+	inbox.mu.Lock()
+	defer inbox.mu.Unlock()
+	kept := inbox.queue[:0]
+	dropped := 0
+	for _, input := range inbox.queue {
+		if input.LeaseEpoch < epoch {
 			inbox.queuedBytes -= input.byteSize
 			dropped++
 			continue
