@@ -826,6 +826,38 @@ func TestRegistryPersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd(t *t
 	}
 }
 
+func TestRegistryTerminationSurvivesClockRollback(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "terminate-clock-rollback.sqlite"))
+	defer persistence.Close()
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000016",
+		"40000000-0000-4000-8000-000000000016",
+	})
+	created := createPersistentTestSession(t, registry, "terminate-clock-rollback-create")
+	managed := created.Session.(*fakeManagedSession)
+	metadataBefore, err := persistence.GetSession(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("get session before clock rollback: %v", err)
+	}
+	registry.config.now = func() time.Time { return metadataBefore.UpdatedAt.Add(-time.Hour) }
+	result, err := registry.Terminate(context.Background(), TerminateSessionRequest{
+		OperationID: operationID("terminate-clock-rollback"), SessionID: created.ID,
+		Generation: created.Generation,
+	})
+	if err != nil || result.State != SessionExiting || managed.terminateCalls.Load() != 1 {
+		t.Fatalf("rollback termination = %+v, calls=%d, err=%v", result, managed.terminateCalls.Load(), err)
+	}
+	metadataAfter, err := persistence.GetSession(context.Background(), created.ID)
+	if err != nil || metadataAfter.State != store.SessionExiting || !metadataAfter.UpdatedAt.Equal(metadataBefore.UpdatedAt) {
+		t.Fatalf("clamped termination metadata = %+v, err=%v; want updated=%v", metadataAfter, err, metadataBefore.UpdatedAt)
+	}
+	if err := registry.Close(); err != nil {
+		t.Fatalf("close registry: %v", err)
+	}
+}
+
 func TestRegistryPersistsAndListsFinalStateBeforeViewerRetirement(t *testing.T) {
 	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "viewer-retirement.sqlite"))
 	seedRegistryStore(t, persistence)

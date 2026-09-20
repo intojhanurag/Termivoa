@@ -37,6 +37,11 @@ gateway-restart evidence remain pending.
 - Terminal persistence keeps `updated_at` monotonic when a receipt timestamp is
   later than the observed process end while retaining the actual `ended_at`.
   This prevents a clock-ordering edge from leaving durable state at `exiting`.
+- Receipt-backed rename and terminate acceptance also clamp a regressed wall
+  clock to the stored `updated_at` instead of blocking the user action. A
+  terminal transition whose clock falls before creation/start clamps the
+  lifecycle event time to the established timeline while still completing the
+  requested process shutdown.
 - `Ended` immediately persists and publishes immutable final metadata for
   `List`, while the registry continues to count the runtime as live until every
   viewer has acknowledged the final revision or detached. Only then does
@@ -82,7 +87,13 @@ GOTOOLCHAIN=go1.27.1 go test -race -timeout=180s ./internal/broker \
 passed
 
 GOTOOLCHAIN=go1.27.1 go test -race -timeout=180s ./internal/store \
-  -run 'TestTerminalTransitionKeepsActualEndTime' -count=20
+  -run 'TestTerminalTransitionKeepsActualEndTime|TestReceiptBackedMutationsClampClockRollback' \
+  -count=50
+passed
+
+GOTOOLCHAIN=go1.27.1 go test -race -timeout=180s ./internal/broker \
+  -run 'TestRegistry(PersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd|TerminationSurvivesClockRollback)' \
+  -count=50
 passed
 
 GOTOOLCHAIN=go1.27.1 go vet ./internal/store ./internal/broker
@@ -124,7 +135,10 @@ shutdown. Create-shutdown regressions block an owner before start admission and
 block a successful durable replay with an already-admitted duplicate; both
 prove that `Close` waits for the callers, rejects later new/replayed calls, and
 establishes a safe boundary for closing the store. The repeated race run
-exercises the SQLite and registry concurrency paths.
+exercises the SQLite and registry concurrency paths. Greptile's clock-rollback
+finding is covered at both store and registry levels: rename remains accepted,
+terminate still invokes the runtime once, timestamps remain monotonic, and
+final cleanup persists instead of leaving the process or record stuck.
 
 The Windows cross-compile verifies the pure-Go build boundary only. It is not
 native Windows 11 execution evidence.

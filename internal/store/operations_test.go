@@ -202,6 +202,39 @@ func TestTerminalTransitionKeepsActualEndTimeAfterFutureDatedReceipt(t *testing.
 	}
 }
 
+func TestReceiptBackedMutationsClampClockRollback(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "mutation-clock-rollback.sqlite"))
+	defer store.Close()
+	beginBroker(t, store, testBrokerA)
+	seedParents(t, store)
+	session := fixtureSession("70000000-0000-4000-8000-000000000008", testBrokerA, "before")
+	if err := store.CreateSession(context.Background(), session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	mustTransition(t, store, session, SessionRunning, nil, 10)
+	storedAt := testTime.Add(10 * time.Second)
+	rolledBackAt := testTime.Add(2 * time.Second)
+
+	renamed, replayed, err := store.RenameSessionWithReceipt(
+		context.Background(), testRenameOperation, sha256.Sum256([]byte("rollback rename")),
+		session.ID, session.Generation, "after", rolledBackAt,
+	)
+	if err != nil || replayed || !renamed.CommittedAt.Equal(storedAt) {
+		t.Fatalf("rollback rename = %+v, replayed=%t, err=%v; want committed=%v", renamed, replayed, err, storedAt)
+	}
+	terminated, replayed, err := store.BeginSessionTerminationWithReceipt(
+		context.Background(), testTerminateOperation, sha256.Sum256([]byte("rollback terminate")),
+		session.ID, session.Generation, rolledBackAt,
+	)
+	if err != nil || replayed || terminated.State != SessionExiting || !terminated.CommittedAt.Equal(storedAt) {
+		t.Fatalf("rollback termination = %+v, replayed=%t, err=%v; want committed=%v", terminated, replayed, err, storedAt)
+	}
+	metadata, err := store.GetSession(context.Background(), session.ID)
+	if err != nil || metadata.Title != "after" || metadata.State != SessionExiting || !metadata.UpdatedAt.Equal(storedAt) {
+		t.Fatalf("clamped metadata = %+v, err=%v", metadata, err)
+	}
+}
+
 func TestReceiptCapacityProtectsActiveSessionsAndPrunesTerminalHistory(t *testing.T) {
 	store := openTestStore(t, filepath.Join(t.TempDir(), "receipt-capacity.sqlite"))
 	defer store.Close()

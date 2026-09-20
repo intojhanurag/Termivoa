@@ -138,7 +138,7 @@ func (store *Store) RenameSessionWithReceipt(
 	}
 	when := millis(now)
 	if when < updated {
-		return MutationResult{}, false, fmt.Errorf("%w: rename for session %s", ErrTimestampRegression, id)
+		when = updated
 	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata SET title = ?, updated_at_ms = ?
 		WHERE id = ? AND generation = ? AND broker_generation = ?`, title, when, id, generation, broker); err != nil {
@@ -205,7 +205,7 @@ func (store *Store) BeginSessionTerminationWithReceipt(
 	}
 	when := millis(now)
 	if when < updated {
-		return MutationResult{}, false, fmt.Errorf("%w: termination for session %s", ErrTimestampRegression, id)
+		when = updated
 	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata
 		SET state = 'exiting', updated_at_ms = ?

@@ -385,12 +385,16 @@ func (store *Store) TransitionSession(ctx context.Context, id, generation string
 	}
 	when := millis(now)
 	terminal := to == SessionExited || to == SessionLost
-	if when < created || started.Valid && when < started.Int64 || !terminal && when < updated {
+	if !terminal && (when < created || started.Valid && when < started.Int64 || when < updated) {
 		return fmt.Errorf("%w: transition for session %s", ErrTimestampRegression, id)
 	}
 	updatedWhen := when
 	if terminal {
-		updatedWhen = max(updatedWhen, updated)
+		when = max(when, created)
+		if started.Valid {
+			when = max(when, started.Int64)
+		}
+		updatedWhen = max(when, updated)
 	}
 	var startedValue any
 	if started.Valid {
