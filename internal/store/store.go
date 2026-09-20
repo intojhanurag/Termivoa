@@ -17,15 +17,17 @@ import (
 const busyTimeoutMillis = 5000
 
 var (
-	ErrSessionMissing       = errors.New("store: session does not exist")
-	ErrProjectMissing       = errors.New("store: project does not exist")
-	ErrShellProfileMissing  = errors.New("store: shell profile does not exist")
-	ErrMetadataConflict     = errors.New("store: immutable metadata changed")
-	ErrGenerationChanged    = errors.New("store: session generation changed")
-	ErrInvalidTransition    = errors.New("store: invalid session lifecycle transition")
-	ErrTimestampRegression  = errors.New("store: timestamp moved backward")
-	ErrBrokerNotStarted     = errors.New("store: broker generation has not started")
-	ErrBrokerAlreadyStarted = errors.New("store: broker generation already started")
+	ErrSessionMissing        = errors.New("store: session does not exist")
+	ErrProjectMissing        = errors.New("store: project does not exist")
+	ErrShellProfileMissing   = errors.New("store: shell profile does not exist")
+	ErrMetadataConflict      = errors.New("store: immutable metadata changed")
+	ErrGenerationChanged     = errors.New("store: session generation changed")
+	ErrInvalidTransition     = errors.New("store: invalid session lifecycle transition")
+	ErrTimestampRegression   = errors.New("store: timestamp moved backward")
+	ErrBrokerNotStarted      = errors.New("store: broker generation has not started")
+	ErrBrokerAlreadyStarted  = errors.New("store: broker generation already started")
+	ErrOperationConflict     = errors.New("store: operation ID was already used for a different request")
+	ErrOperationReceiptLimit = errors.New("store: operation receipt capacity reached")
 )
 
 type Store struct {
@@ -35,6 +37,8 @@ type Store struct {
 
 	retainedTerminalSessions int
 	sessionListLimit         int
+	retainedTerminalReceipts int
+	operationReceiptLimit    int
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -80,6 +84,8 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		database:                 database,
 		retainedTerminalSessions: defaultRetainedTerminalSessions,
 		sessionListLimit:         defaultSessionListLimit,
+		retainedTerminalReceipts: defaultRetainedTerminalReceipts,
+		operationReceiptLimit:    defaultOperationReceiptLimit,
 	}, nil
 }
 

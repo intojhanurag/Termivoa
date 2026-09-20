@@ -384,8 +384,17 @@ func (store *Store) TransitionSession(ctx context.Context, id, generation string
 		return fmt.Errorf("%w: %s to %s", ErrInvalidTransition, from, to)
 	}
 	when := millis(now)
-	if when < created || when < updated || started.Valid && when < started.Int64 {
+	terminal := to == SessionExited || to == SessionLost
+	if !terminal && (when < created || started.Valid && when < started.Int64 || when < updated) {
 		return fmt.Errorf("%w: transition for session %s", ErrTimestampRegression, id)
+	}
+	updatedWhen := when
+	if terminal {
+		when = max(when, created)
+		if started.Valid {
+			when = max(when, started.Int64)
+		}
+		updatedWhen = max(when, updated)
 	}
 	var startedValue any
 	if started.Valid {
@@ -400,12 +409,15 @@ func (store *Store) TransitionSession(ctx context.Context, id, generation string
 	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata
         SET state = ?, updated_at_ms = ?, started_at_ms = ?, ended_at_ms = ?, exit_code = ?
         WHERE id = ? AND generation = ? AND broker_generation = ?`,
-		to, when, startedValue, endedValue, nullableInt32(exitCode), id, generation, broker,
+		to, updatedWhen, startedValue, endedValue, nullableInt32(exitCode), id, generation, broker,
 	); err != nil {
 		return fmt.Errorf("store: update session transition: %w", err)
 	}
-	if (to == SessionExited || to == SessionLost) && store.retainedTerminalSessions >= 0 {
+	if terminal && store.retainedTerminalSessions >= 0 {
 		if err := store.pruneTerminalSessions(ctx, transaction); err != nil {
+			return err
+		}
+		if err := store.pruneTerminalMutationReceipts(ctx, transaction); err != nil {
 			return err
 		}
 	}
@@ -598,7 +610,7 @@ func validUUID(value string) bool {
 			continue
 		}
 		character := value[index]
-		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
 			return false
 		}
 	}
