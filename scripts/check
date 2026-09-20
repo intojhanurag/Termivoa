@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo_dir"
+
+node_major=$(node -p "process.versions.node.split('.')[0]")
+if [ "$node_major" != "24" ]; then
+  echo "Phone Terminal checks require Node 24; run 'nvm use 24.11.0'." >&2
+  exit 1
+fi
+
+pnpm protocol:generate
+git diff --exit-code -- internal/protocol/generated.go web/src/generated/protocol.ts
+
+unformatted=$(find cmd internal tests -name '*.go' -type f -print 2>/dev/null | xargs gofmt -l 2>/dev/null || true)
+if [ -n "$unformatted" ]; then
+  echo "Go files require formatting:" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi
+
+GOTOOLCHAIN=go1.27.1 go vet ./...
+GOTOOLCHAIN=go1.27.1 go test ./...
+pnpm typecheck
+pnpm test:web
+pnpm build:web

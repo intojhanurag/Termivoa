@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible defect using sanitized information
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, pairing links, tokens, environment variables, private code, raw terminal transcripts, personal paths, or sensitive screenshots. Report security issues through the private route in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Build or commit
+      description: Provide the exact version, commit SHA, or artifact identifier.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Sanitized environment
+      description: Host OS, architecture, browser/phone, shell, dimensions, and relevant versions.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use a disposable project and synthetic terminal content where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secrets, private terminal history, personal paths, and confidential code.
+          required: true
+        - label: This report does not disclose a security vulnerability requiring private handling.
+          required: true

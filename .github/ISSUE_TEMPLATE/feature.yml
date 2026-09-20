@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a scoped improvement to Phone Terminal
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem first. Do not include credentials, raw terminal history, personal paths, or confidential code. Future-scope items in the implementation plan are not authorized merely by filing an issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who is affected, and what outcome is currently difficult or unsafe?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe observable behavior and relevant constraints, not only an implementation choice.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      options:
+        - No protocol or persistence change expected
+        - Protocol compatibility may change
+        - Persistence or migration behavior may change
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Suggested acceptance evidence
+      description: List fixtures, platforms, devices, or security cases that should establish completion.

@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: go1.27.1
+  PNPM_VERSION: 10.33.0
+
+jobs:
+  protocol-generation:
+    name: protocol-generation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.11.0
+      - run: corepack enable && corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm protocol:check
+
+  go-quality:
+    name: go-quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+          cache: true
+      - run: test -z "$(gofmt -l ./cmd ./internal ./tests 2>/dev/null)"
+      - run: go vet ./...
+      - run: go test ./...
+
+  go-race:
+    name: go-race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+          cache: true
+      - run: go test -race ./...
+
+  web-quality:
+    name: web-quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.11.0
+      - run: corepack enable && corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test:web
+      - run: pnpm build:web
+
+  macos-integration:
+    name: macos-integration
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+      - run: go test ./tests/integration/... ./internal/ptyhost/... ./internal/platform/...
+
+  windows-integration:
+    name: windows-integration
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+      - run: go test ./tests/integration/... ./internal/ptyhost/... ./internal/platform/...
+
+  release-smoke:
+    name: release-smoke
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: pterm
+          - os: windows-latest
+            artifact: pterm.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+      - name: Build static companion
+        shell: bash
+        run: CGO_ENABLED=0 go build -trimpath -o "${{ matrix.artifact }}" ./cmd/pterm
+
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+      - run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+      - run: gitleaks git --redact --no-banner
+
+  vulnerability-scan:
+    name: vulnerability-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.11.0
+      - run: corepack enable && corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+      - run: pnpm install --frozen-lockfile
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+      - run: govulncheck ./...
+      - run: pnpm audit --audit-level high

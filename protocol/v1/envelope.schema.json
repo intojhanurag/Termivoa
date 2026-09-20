@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phone-terminal.invalid/protocol/v1/envelope.schema.json",
+  "title": "Envelope",
+  "description": "Bootstrap envelope only. P2 defines the complete v1 message union before clients depend on it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type", "requestId", "payload"],
+  "properties": {
+    "version": { "const": 1 },
+    "type": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "requestId": { "type": "string", "format": "uuid" },
+    "sessionId": { "type": "string", "format": "uuid" },
+    "generation": { "type": "string", "format": "uuid" },
+    "payload": { "type": "object" }
+  }
+}

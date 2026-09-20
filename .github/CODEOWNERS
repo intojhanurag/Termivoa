@@ -1,0 +1,9 @@
+# Repository owner and review routing. CODEOWNERS routes review; it does not
+# manufacture an approval or change repository permissions.
+* @intojhanurag
+/protocol/ @intojhanurag
+/internal/auth/ @intojhanurag
+/internal/protocol/ @intojhanurag
+/.github/workflows/ @intojhanurag
+/packaging/ @intojhanurag
+/docs/release-checklist.md @intojhanurag

@@ -1,0 +1,59 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+*.cer
+*.crt
+*.mobileprovision
+secrets/
+signing/
+
+# Local runtime state and private evidence
+.pterm/
+data/
+runtime/
+diagnostics/
+private-test-data/
+terminal-transcripts/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+
+# Go
+bin/
+coverage/
+*.coverprofile
+pterm
+pterm.exe
+
+# Web
+node_modules/
+web/dist/
+*.tsbuildinfo
+
+# Packaging outputs
+dist/
+artifacts/
+*.dmg
+*.pkg
+*.exe
+*.msi
+*.zip
+*.tar.gz
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Temporary files
+tmp/
+*.tmp
+*.swp
