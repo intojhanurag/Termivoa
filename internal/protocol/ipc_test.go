@@ -25,7 +25,8 @@ func TestDecodeIPCErrorMatchesCanonicalErrorCodes(t *testing.T) {
 	codes := []ErrorCode{
 		Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
-		HistoryChanged, ResyncRequired, HostUnavailable, InternalError,
+		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
+		OperationConflict, ProjectMissing, ShellProfileMissing,
 	}
 	for _, code := range codes {
 		payload, err := json.Marshal(IPCErrorClass{Code: code, Message: "safe"})
@@ -85,5 +86,9 @@ func TestDecodeIPCEnforcesSizeAndIdentityBounds(t *testing.T) {
 	badID := []byte(`{"version":1,"type":"ipc.hello","requestId":"not-a-uuid","payload":{"clientKind":"cli","clientBuild":"dev","supportedVersions":[1]}}`)
 	if _, err := DecodeIPCClient(badID); err == nil {
 		t.Fatal("invalid IPC request ID was accepted")
+	}
+	uppercaseGeneration := []byte(`{"version":1,"type":"ipc.welcome","requestId":"` + ipcRequestID + `","payload":{"brokerGeneration":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaA","hostBuild":"dev","negotiatedVersion":1}}`)
+	if _, err := DecodeIPCHost(uppercaseGeneration); err == nil {
+		t.Fatal("uppercase broker generation was accepted")
 	}
 }

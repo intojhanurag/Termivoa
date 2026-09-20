@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phone-terminal.invalid/protocol/v1/broker-rpc.schema.json",
+  "title": "BrokerRPCMessage",
+  "description": "Canonical bounded session-management RPC carried after the local IPC handshake.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type", "requestId", "payload"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "type": { "$ref": "#/$defs/messageType" },
+    "requestId": { "$ref": "#/$defs/uuid" },
+    "sessionId": { "$ref": "#/$defs/uuid" },
+    "generation": { "$ref": "#/$defs/uuid" },
+    "payload": { "type": "object" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/sessionListRequestMessage" },
+    { "$ref": "#/$defs/sessionCreateRequestMessage" },
+    { "$ref": "#/$defs/sessionRenameRequestMessage" },
+    { "$ref": "#/$defs/sessionTerminateRequestMessage" },
+    { "$ref": "#/$defs/sessionStatusRequestMessage" },
+    { "$ref": "#/$defs/sessionListResultMessage" },
+    { "$ref": "#/$defs/sessionCreateResultMessage" },
+    { "$ref": "#/$defs/sessionRenameResultMessage" },
+    { "$ref": "#/$defs/sessionTerminateResultMessage" },
+    { "$ref": "#/$defs/sessionStatusResultMessage" },
+    { "$ref": "#/$defs/errorMessage" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sessionIdentity": {
+      "type": "object",
+      "required": ["sessionId", "generation"],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "generation": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "noSessionIdentity": {
+      "type": "object",
+      "properties": {
+        "sessionId": false,
+        "generation": false
+      }
+    },
+    "optionalSessionIdentity": {
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/sessionIdentity" },
+        { "$ref": "#/$defs/noSessionIdentity" }
+      ]
+    },
+    "messageType": {
+      "title": "BrokerRPCMessageType",
+      "type": "string",
+      "enum": [
+        "session.list.request", "session.create.request", "session.rename.request",
+        "session.terminate.request", "session.status.request", "session.list.result",
+        "session.create.result", "session.rename.result", "session.terminate.result",
+        "session.status.result", "broker.error"
+      ]
+    },
+    "emptyPayload": {
+      "title": "BrokerRPCEmptyPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "sessionListRequestPayload": {
+      "title": "BrokerRPCSessionListRequestPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limit"],
+      "properties": {
+        "cursor": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_-]+$" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+      }
+    },
+    "sessionCreateRequestPayload": {
+      "title": "BrokerRPCSessionCreateRequestPayload",
+      "description": "References broker-saved configuration only. Executable paths, arguments, workdirs and environment values are deliberately absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "projectId", "shellProfileId"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "shellProfileId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "sessionRenameRequestPayload": {
+      "title": "BrokerRPCSessionRenameRequestPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "title"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "title": {
+          "type": "string", "minLength": 1, "maxLength": 128,
+          "maxUtf8Bytes": 128, "safeDisplayText": true
+        }
+      }
+    },
+    "sessionTerminateRequestPayload": {
+      "title": "BrokerRPCSessionTerminateRequestPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "sessionRecord": {
+      "title": "BrokerRPCSessionRecord",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "generation", "title", "projectId", "shellProfileId", "state",
+        "columns", "rows", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "generation": { "$ref": "#/$defs/uuid" },
+        "title": {
+          "type": "string", "minLength": 1, "maxLength": 256,
+          "maxUtf8Bytes": 256, "pattern": "^[^\\u0000]+$"
+        },
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "shellProfileId": { "$ref": "#/$defs/uuid" },
+        "state": { "$ref": "envelope.schema.json#/$defs/sessionLifecycle" },
+        "columns": { "type": "integer", "minimum": 20, "maximum": 400 },
+        "rows": { "type": "integer", "minimum": 5, "maximum": 200 },
+        "createdAt": { "type": "string", "minLength": 20, "maxLength": 35 },
+        "updatedAt": { "type": "string", "minLength": 20, "maxLength": 35 },
+        "startedAt": { "type": "string", "minLength": 20, "maxLength": 35 },
+        "endedAt": { "type": "string", "minLength": 20, "maxLength": 35 },
+        "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 }
+      }
+    },
+    "sessionListResultPayload": {
+      "title": "BrokerRPCSessionListResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessions"],
+      "properties": {
+        "sessions": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/sessionRecord" } },
+        "nextCursor": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_-]+$" }
+      }
+    },
+    "sessionResultPayload": {
+      "title": "BrokerRPCSessionResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session"],
+      "properties": {
+        "session": { "$ref": "#/$defs/sessionRecord" }
+      }
+    },
+    "sessionMutationResultPayload": {
+      "title": "BrokerRPCSessionMutationResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "session"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "session": { "$ref": "#/$defs/sessionRecord" }
+      }
+    },
+    "errorPayload": {
+      "title": "BrokerRPCErrorPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "envelope.schema.json#/$defs/errorCode" },
+        "message": {
+          "type": "string", "minLength": 1, "maxLength": 512,
+          "maxUtf8Bytes": 512, "safeDisplayText": true
+        }
+      }
+    },
+    "sessionListRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.list.request" }, "payload": { "$ref": "#/$defs/sessionListRequestPayload" } } },
+    "sessionCreateRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.create.request" }, "payload": { "$ref": "#/$defs/sessionCreateRequestPayload" } } },
+    "sessionRenameRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.rename.request" }, "payload": { "$ref": "#/$defs/sessionRenameRequestPayload" } } },
+    "sessionTerminateRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.terminate.request" }, "payload": { "$ref": "#/$defs/sessionTerminateRequestPayload" } } },
+    "sessionStatusRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.status.request" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "sessionListResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.list.result" }, "payload": { "$ref": "#/$defs/sessionListResultPayload" } } },
+    "sessionCreateResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.create.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
+    "sessionRenameResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.rename.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
+    "sessionTerminateResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.terminate.result" }, "payload": { "$ref": "#/$defs/sessionMutationResultPayload" } } },
+    "sessionStatusResultMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "const": "session.status.result" }, "payload": { "$ref": "#/$defs/sessionResultPayload" } } },
+    "errorMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/optionalSessionIdentity" }], "properties": { "type": { "const": "broker.error" }, "payload": { "$ref": "#/$defs/errorPayload" } } }
+  }
+}

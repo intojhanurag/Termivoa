@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://phone-terminal.invalid/protocol/v1/ipc.schema.json",
   "title": "IPCMessage",
-  "description": "Versioned local broker IPC handshake. Subsequent request payloads use the canonical v1 message envelope inside the same length-prefixed transport.",
+  "description": "Versioned local broker IPC handshake. Subsequent management RPCs use broker-rpc.schema.json inside the same length-prefixed transport.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "type", "requestId", "payload"],
@@ -20,7 +20,7 @@
   "$defs": {
     "uuid": {
       "type": "string",
-      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "messageType": {
       "type": "string",
