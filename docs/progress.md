@@ -41,9 +41,10 @@ Commands used for this read-only preflight included `gh api user`, `gh repo view
 - [x] Run staged-file and secret review.
 - [x] Create and push the private bootstrap commit; SHA `fbaeaeb382662a83f9498715896e722acf742694`.
 - [x] Verify supported branch/ruleset controls and configure required PR/check/conversation/force-push/deletion rules.
-- [ ] Record final bootstrap CI results after the release-smoke repair is merged.
+- [x] Record final bootstrap CI results after the release-smoke repair is merged.
 
-P1 must not begin until the P0 exit criterion is met: private repository verified, bootstrap commit pushed, permissions/CI recorded, and access blockers identified.
+The P0 exit criterion is met: the private repository, bootstrap push, repository
+controls, final CI run, and access blockers are recorded above.
 
 ## Owner-dependent and external blockers
 
@@ -69,7 +70,7 @@ These questions must be resolved before their dependent gates; they do not block
 | Milestone | Status | Evidence |
 | --- | --- | --- |
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
-| P1 — Go terminal core | In progress | Private issue #7; implementation/evidence pending |
+| P1 — Go terminal core | In progress | Private issue #7; macOS implementation evidence in `docs/evidence/p1/core-validation.md`; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | Not started | None |
 | P3 — Persistent broker | Not started | None |
 | P4 — Authentication and private access | Not started | None |
@@ -108,6 +109,12 @@ repository remained private after merge, and `main` retained its protection.
 
 ## Known defects
 
-The initial release-smoke failure above was fixed and merged. No functional
-application exists, so runtime defects have not otherwise been evaluated. Missing
-implementation and unexecuted gates are not counted as passing behavior.
+The initial release-smoke failure above was fixed and merged. P1 found two
+defects in pinned dependencies and carries narrow reviewed source patches:
+arbitrary `vt.Write` boundaries split grapheme clusters and xpty leaked the
+original Windows process handle after reopening it for `exec.Cmd`. The patch
+record and removal criteria are in `docs/dependency-patches.md`.
+
+Native Windows 11 lifecycle execution is still blocked on machine/VM access;
+cross-compilation is not a platform pass. Missing implementation and unexecuted
+gates are not counted as passing behavior.
