@@ -53,10 +53,10 @@ func TestControllerAcquireRevokesOldConnection(t *testing.T) {
 		t.Fatalf("replacement grant = %#v after %#v", second, first)
 	}
 	clock.Set(now.Add(2 * time.Second))
-	if _, err := controller.AcceptInput(testGeneration, "connection-a", "device-a", first.Lease, 1); !errors.Is(err, ErrNotController) {
+	if _, err := controller.acceptInput(testGeneration, "connection-a", "device-a", first.Lease, 1, true); !errors.Is(err, ErrNotController) {
 		t.Fatalf("old controller input error = %v", err)
 	}
-	if _, err := controller.AcceptInput(testGeneration, "connection-b", "device-b", second.Lease, 1); err != nil {
+	if _, err := controller.acceptInput(testGeneration, "connection-b", "device-b", second.Lease, 1, true); err != nil {
 		t.Fatalf("new controller input: %v", err)
 	}
 }
@@ -68,18 +68,18 @@ func TestControllerInputSequenceDeduplicatesAndRejectsGaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted, err := controller.AcceptInput(testGeneration, "connection", "device", grant.Lease, 1)
+	accepted, err := controller.acceptInput(testGeneration, "connection", "device", grant.Lease, 1, true)
 	if err != nil || accepted.Duplicate {
 		t.Fatalf("first acceptance = %#v, %v", accepted, err)
 	}
-	duplicate, err := controller.AcceptInput(testGeneration, "connection", "device", grant.Lease, 1)
+	duplicate, err := controller.acceptInput(testGeneration, "connection", "device", grant.Lease, 1, true)
 	if err != nil || !duplicate.Duplicate {
 		t.Fatalf("duplicate acceptance = %#v, %v", duplicate, err)
 	}
-	if _, err := controller.AcceptInput(testGeneration, "connection", "device", grant.Lease, 3); !errors.Is(err, ErrInputGap) {
+	if _, err := controller.acceptInput(testGeneration, "connection", "device", grant.Lease, 3, true); !errors.Is(err, ErrInputGap) {
 		t.Fatalf("gap error = %v", err)
 	}
-	if accepted, err := controller.AcceptInput(testGeneration, "connection", "device", grant.Lease, 2); err != nil || accepted.Duplicate {
+	if accepted, err := controller.acceptInput(testGeneration, "connection", "device", grant.Lease, 2, true); err != nil || accepted.Duplicate {
 		t.Fatalf("sequence two acceptance = %#v, %v", accepted, err)
 	}
 }
@@ -101,7 +101,7 @@ func TestControllerHeartbeatExpiryAndRelease(t *testing.T) {
 	if !controller.Expire() {
 		t.Fatal("controller did not expire at its deadline")
 	}
-	if _, err := controller.AcceptInput(testGeneration, "connection", "device", grant.Lease, 1); !errors.Is(err, ErrNotController) {
+	if _, err := controller.acceptInput(testGeneration, "connection", "device", grant.Lease, 1, true); !errors.Is(err, ErrNotController) {
 		t.Fatalf("expired input error = %v", err)
 	}
 
@@ -142,7 +142,7 @@ func TestControllerChecksExpiryAfterEnteringCriticalSection(t *testing.T) {
 	controller.mu.Lock()
 	result := make(chan error, 1)
 	go func() {
-		_, err := controller.AcceptInput(testGeneration, "connection", "device", grant.Lease, 1)
+		_, err := controller.acceptInput(testGeneration, "connection", "device", grant.Lease, 1, true)
 		result <- err
 	}()
 	clock.Set(now.Add(ControllerTTL))

@@ -133,18 +133,11 @@ func (controller *Controller) Heartbeat(generation, connectionID, deviceID, leas
 	return controller.state(), nil
 }
 
-// AcceptInput checks authorization immediately before the broker queues an
-// action and advances the high-water mark before returning accepted.
-func (controller *Controller) AcceptInput(
-	generation, connectionID, deviceID, lease string,
-	sequence uint64,
-) (InputAcceptance, error) {
-	return controller.acceptInput(generation, connectionID, deviceID, lease, sequence, true)
-}
-
 // acceptInput applies a bounded-queue decision atomically with sequence
-// acceptance. A full queue must not advance the high-water mark, otherwise a
-// safe client retry would be misclassified as a duplicate and never execute.
+// acceptance. It is deliberately private: callers must use InputInbox.Submit
+// so no sequence can advance without its corresponding action being queued. A
+// full queue must not advance the high-water mark, otherwise a safe client
+// retry would be misclassified as a duplicate and never execute.
 func (controller *Controller) acceptInput(
 	generation, connectionID, deviceID, lease string,
 	sequence uint64,
