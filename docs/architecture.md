@@ -1,6 +1,9 @@
 # Architecture
 
-Status: planned architecture for private development. No runtime component described here has been implemented yet.
+Status: private implementation in progress. Broker-owned terminal/runtime,
+restricted IPC, persistence, and the independent process-mode checkpoint are
+implemented; authenticated browser access and release installation remain
+incomplete.
 
 ## Product boundary
 
@@ -34,6 +37,16 @@ complete the versioned handshake and confirm its broker generation before the
 endpoint is considered live. A lock owner may replace an endpoint only after
 that handshake probe fails. Separate LaunchAgents and per-user Scheduled Tasks
 remain packaging work.
+
+The executable process bootstrap acquires that broker lock before it opens the
+per-user SQLite database or begins a generation. It then constructs the Store,
+Registry, and IPC dispatcher as one broker-owned lifetime. Shutdown stops IPC
+acceptance first, waits for Registry mutation/session cleanup, and closes
+SQLite last. The gateway process receives only the runtime endpoint location;
+it can handshake/probe the broker but has no Store, Registry, PTY, or shell
+capability. Its current HTTP bootstrap is an exact-Host, IPv4-loopback
+`/healthz` surface at `127.0.0.1:8787`; authenticated application routes and
+embedded assets are still pending.
 
 On Unix, the runtime path is canonicalized once through trusted root-owned
 system aliases. User-controlled symlink components, foreign-owned ancestors
