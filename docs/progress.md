@@ -93,7 +93,9 @@ rename/terminate receipt snapshots without rereading current state. Regression
 tests cover disabled create configuration, rename A/B/replay A, terminal-state
 change before terminate replay, and a real schema-v2 receipt upgrade. Migration
 003 also rewrites old create fingerprints to the stable project/profile-ID
-identity atomically with snapshot backfill.
+identity atomically with snapshot backfill. The independent follow-up audit is
+clean; the full repository check, combined protocol/IPC/store/broker race run,
+and Windows amd64 compile-only checks pass after rebasing onto private PR #21.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been

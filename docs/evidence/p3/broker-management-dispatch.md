@@ -71,10 +71,20 @@ Tests exercise:
 
 Development host: Apple Silicon macOS 26.5.2. Go 1.27.1 was selected through
 the Go toolchain mechanism. Node 24.11.0 and pnpm 10.33.0 are used by the full
-repository check.
+repository check. Final validation was rerun after rebasing the dispatch work
+onto private `main` at `f74f7620746ba1646e7a056886558f23dbbc795a`.
 
 ```text
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/broker -run 'TestManagement' -count=20
+passed
+
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/store ./internal/broker \
+  -run 'Test(OpenMigratesV2CreateReceipt|ManagementDispatchResolvesSavedConfigurationAndReplaysCreate|ManagementDispatchLifecycleAndTypedErrors|RegistryDurablyReplaysCreate)' \
+  -count=20
+passed
+
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/ptyhost \
+  -run '^TestStartReadWriteResizeAndWait$' -count=20
 passed
 
 GOTOOLCHAIN=go1.27.1 go vet ./internal/broker
@@ -106,10 +116,17 @@ git diff --check
 passed
 ```
 
-The first full-check attempt had one unrelated two-second PTY fixture timeout
-waiting for `READY`. The exact failing test passed ten consecutive race-enabled
-runs, and the complete repository check then passed. This checkpoint does not
-turn that transient timeout into a dispatch failure or conceal that it occurred.
+A post-rebase full-check attempt had one unrelated two-second PTY fixture
+timeout waiting for `READY`. The exact failing test passed twenty consecutive
+race-enabled runs, and the complete repository check then passed. This
+checkpoint does not turn that transient timeout into a dispatch failure or
+conceal that it occurred.
+
+An independent sequential replay audit reported no remaining concrete blocker
+after running the focused replay/migration/shutdown race cases twenty times and
+the complete protocol/IPC/store/broker race suites ten times. The audit first
+found the schema-v2 create-fingerprint migration defect; that defect was fixed
+and the audit was repeated before this final validation.
 
 ## Honest remaining gates
 
