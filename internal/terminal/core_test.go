@@ -143,6 +143,24 @@ func TestWideContinuationDoesNotMarkBlankCells(t *testing.T) {
 	}
 }
 
+func TestWideContinuationInheritsLeadingCellStyle(t *testing.T) {
+	t.Parallel()
+	frame := snapshotAfterWrites(t, []byte("\x1b[1;4;31;44m界"))
+	leading := frame.Screen[0].Cells[0]
+	continuation := frame.Screen[0].Cells[1]
+
+	if !continuation.Continuation || continuation.Width != 0 || continuation.Text != "" {
+		t.Fatalf("wide continuation shape = %#v", continuation)
+	}
+	leading.Text = ""
+	leading.Width = 0
+	leading.Continuation = true
+	leading.Link = ""
+	if !reflect.DeepEqual(continuation, leading) {
+		t.Fatalf("wide continuation style = %#v, want inherited %#v", continuation, leading)
+	}
+}
+
 func TestQueryHasOneReplyWithoutViewers(t *testing.T) {
 	t.Parallel()
 	core := newTestCore(t, 20, 5)

@@ -153,11 +153,6 @@ func normalizeRow(
 	continuationUntil := 0
 	for x := range width {
 		if x < continuationUntil {
-			row.Cells[x] = Cell{
-				Continuation: true,
-				Foreground:   defaultForeground,
-				Background:   defaultBackground,
-			}
 			continue
 		}
 		cell := cellAt(x)
@@ -180,7 +175,7 @@ func normalizeRow(
 		if cell.Style.Bg != nil {
 			bg = rgba(cell.Style.Bg)
 		}
-		row.Cells[x] = Cell{
+		normalized := Cell{
 			Text:           text,
 			Width:          cell.Width,
 			Foreground:     fg,
@@ -197,8 +192,17 @@ func normalizeRow(
 			Link:           safeLink(cell.Link.URL),
 			ContentClipped: contentClipped,
 		}
+		row.Cells[x] = normalized
 		if cell.Width > 1 {
 			continuationUntil = min(width, x+cell.Width)
+			for continuation := x + 1; continuation < continuationUntil; continuation++ {
+				inherited := normalized
+				inherited.Text = ""
+				inherited.Width = 0
+				inherited.Continuation = true
+				inherited.Link = ""
+				row.Cells[continuation] = inherited
+			}
 		}
 	}
 	return row, clipped
