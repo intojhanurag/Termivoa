@@ -37,3 +37,15 @@ with admin/push/pull access. No token value was recorded.
 These checks validate the bootstrap, not PTY behavior, protocol completeness,
 platform integration, authentication, phone UX, installation, or release
 readiness. Those gates remain pending.
+
+## First private CI run
+
+GitHub Actions run `35508287671` executed against bootstrap commit
+`fbaeaeb382662a83f9498715896e722acf742694`. Seven named jobs passed. Both
+release-smoke matrix entries failed because `.gitignore` used the unanchored
+pattern `pterm`, which also ignored `cmd/pterm/main.go`; the runners therefore
+could not find the command package. The failure is not treated as a pass.
+
+The repair is isolated on `fix/p0-bootstrap-ci`: anchor binary output patterns at
+the repository root and track the scaffold command. Passing repair CI and merge
+evidence will be recorded before closing P0.

@@ -30,8 +30,8 @@ terminal-transcripts/
 bin/
 coverage/
 *.coverprofile
-pterm
-pterm.exe
+/pterm
+/pterm.exe
 
 # Web
 node_modules/

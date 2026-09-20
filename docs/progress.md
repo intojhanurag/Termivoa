@@ -36,9 +36,9 @@ Commands used for this read-only preflight included `gh api user`, `gh repo view
 - [x] Add repository-owned Unix and Windows check tasks.
 - [x] Add pinned GitHub Actions workflows with required stable check names.
 - [x] Run staged-file and secret review.
-- [ ] Create and push the private bootstrap commit; record its SHA here.
-- [ ] Verify supported branch/ruleset controls and configure required PR/check/conversation/force-push/deletion rules.
-- [ ] Record effective repository permissions and CI results.
+- [x] Create and push the private bootstrap commit; SHA `fbaeaeb382662a83f9498715896e722acf742694`.
+- [x] Verify supported branch/ruleset controls and configure required PR/check/conversation/force-push/deletion rules.
+- [ ] Record final bootstrap CI results after the release-smoke repair is merged.
 
 P1 must not begin until the P0 exit criterion is met: private repository verified, bootstrap commit pushed, permissions/CI recorded, and access blockers identified.
 
@@ -58,7 +58,7 @@ These questions must be resolved before their dependent gates; they do not block
 | Windows code signing | Owner-approved trusted identity and key access not established | Signed Windows P6/P8 artifacts |
 | Public identity | Final product name, package identifiers, publisher identity, and publication permission not confirmed | Public-release P8 handoff |
 | Public contacts | Owner-approved Code of Conduct and vulnerability-reporting routes not provided | Public-readiness documents |
-| Branch enforcement | Private-repository account-plan support has not been checked/configured | P0 hardening completion |
+| Branch enforcement | Supported and configured on private `main`: required PR, strict named checks, resolved conversations, linear history, admin enforcement, no force push, no deletion | No current blocker. Squash is the only enabled merge method. |
 
 ## Milestones
 
@@ -74,6 +74,22 @@ These questions must be resolved before their dependent gates; they do not block
 | P7 — Reliability and review | Not started | None |
 | P8 — Release preparation | Not started | None |
 
+## Repository and CI evidence
+
+The repository API reports private visibility, full owner admin/push/pull permissions,
+`main` as the default branch, and squash-only merging. Branch protection requires
+the nine stable CI contexts defined in `.github/workflows/ci.yml`.
+
+The first bootstrap CI run (`35508287671`) passed protocol generation, Go quality,
+Go race, web quality, macOS/Windows scaffold integration, secret scanning, and
+vulnerability scanning. Both release-smoke matrix entries failed because the
+unanchored `pterm` ignore pattern excluded `cmd/pterm/main.go` from the bootstrap
+commit. Branch `fix/p0-bootstrap-ci` anchors the binary ignore rules at repository
+root and adds the previously excluded scaffold command. P0 remains in progress
+until its PR CI passes and the repair is merged.
+
 ## Known defects
 
-No executable application exists, so no runtime defects have been evaluated. Missing implementation and unexecuted gates are not counted as passing behavior.
+The initial release-smoke failure above is under repair. No functional application
+exists, so runtime defects have not otherwise been evaluated. Missing implementation
+and unexecuted gates are not counted as passing behavior.
