@@ -4,7 +4,10 @@ Last updated: 2026-09-20
 
 ## Current status
 
-P0 — Private repository, preflight, and scaffold: **in progress**.
+P0 — Private repository, preflight, and scaffold: **complete**.
+
+P1 — Go terminal core: **in progress** on `feat/p1-terminal-core`, tracked by
+private issue #7.
 
 No application implementation, benchmark, platform integration, physical-phone test, installer, signing operation, or release has been completed. Later milestones remain pending.
 
@@ -38,9 +41,10 @@ Commands used for this read-only preflight included `gh api user`, `gh repo view
 - [x] Run staged-file and secret review.
 - [x] Create and push the private bootstrap commit; SHA `fbaeaeb382662a83f9498715896e722acf742694`.
 - [x] Verify supported branch/ruleset controls and configure required PR/check/conversation/force-push/deletion rules.
-- [ ] Record final bootstrap CI results after the release-smoke repair is merged.
+- [x] Record final bootstrap CI results after the release-smoke repair is merged.
 
-P1 must not begin until the P0 exit criterion is met: private repository verified, bootstrap commit pushed, permissions/CI recorded, and access blockers identified.
+The P0 exit criterion is met: the private repository, bootstrap push, repository
+controls, final CI run, and access blockers are recorded above.
 
 ## Owner-dependent and external blockers
 
@@ -65,8 +69,8 @@ These questions must be resolved before their dependent gates; they do not block
 
 | Milestone | Status | Evidence |
 | --- | --- | --- |
-| P0 — Private repository, preflight and scaffold | Ready to merge | Private PR #5; ten required checks and independent review passed at the prior head; final-head checks pending |
-| P1 — Go terminal core | Not started | None |
+| P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
+| P1 — Go terminal core | In progress | Private issue #7; macOS implementation evidence in `docs/evidence/p1/core-validation.md`; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | Not started | None |
 | P3 — Persistent broker | Not started | None |
 | P4 — Authentication and private access | Not started | None |
@@ -98,8 +102,27 @@ confirmed that Greptile is intentionally authorized for this project. GitHub
 branch protection requires only the ten repository-owned contexts, so Greptile
 does not gate merging. Its concrete review finding was fixed before resolution.
 
+PR #5 was squash-merged on 2026-09-20 as
+`6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`, automatically closing issue #6.
+Final-head Actions run `35509425646` passed all ten required checks. The
+repository remained private after merge, and `main` retained its protection.
+
 ## Known defects
 
-The initial release-smoke failure above is fixed on PR #5. No functional
-application exists, so runtime defects have not otherwise been evaluated. Missing
-implementation and unexecuted gates are not counted as passing behavior.
+The initial release-smoke failure above was fixed and merged. P1 found two
+defects in pinned dependencies and carries narrow reviewed source patches:
+arbitrary `vt.Write` boundaries split grapheme clusters and xpty leaked the
+original Windows process handle after reopening it for `exec.Cmd`. The patch
+record and removal criteria are in `docs/dependency-patches.md`.
+
+Native Windows 11 lifecycle execution is still blocked on machine/VM access;
+cross-compilation is not a platform pass. Missing implementation and unexecuted
+gates are not counted as passing behavior. Native Windows Server 2025 CI also
+demonstrated that ConPTY consumes child DSR/CPR queries before they reach the Go
+emulator and supplies the response itself. That conflicts with the plan's
+strict single Go-emulator responder requirement and remains an explicit P1
+architecture gate; it is not concealed by a passing end-to-end fixture. The
+macOS implementation terminates the isolated PTY process group as required by
+the selected design, but a descendant that deliberately creates a new session
+can escape that group. The scope or containment design for such daemonized
+children is also unresolved and must not be described as verified cleanup.
