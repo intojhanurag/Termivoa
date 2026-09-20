@@ -10,7 +10,7 @@ These rules apply throughout this repository.
 6. Never change a public protocol silently. Define protocol v1 messages in `protocol/v1`, generate Go and TypeScript types, and check generation drift.
 7. The broker owns PTYs, terminal emulators, authentication state, controller leases, and SQLite. The gateway never owns or spawns a shell.
 8. Send clients normalized terminal frames, never child ANSI output. Keep terminal bytes out of React state. Do not treat emulator rendering output as a serialized checkpoint.
-9. The broker is the only terminal-query responder. Never send browser-, desktop-, or client-generated terminal-query responses to the child.
+9. The broker is the only application-level terminal-query responder. Broker-owned Windows ConPTY may answer DSR/CPR queries it consumes before Go vt sees them, but tests must prove exactly one response. Never send browser-, desktop-, or client-generated terminal-query responses to the child.
 10. Route all PTY input through structured, authorized messages and one broker writer. Never queue offline user input or automatically retransmit it after reconnect.
 11. Preserve strict bounds on dimensions, messages, paste, history, queues, and viewers. A slow viewer must not indefinitely backpressure the child.
 12. Ask before using missing credentials, spending provider credits, installing outside the repository, changing Tailscale or startup configuration, adding collaborators/apps/webhooks, signing, or publishing.

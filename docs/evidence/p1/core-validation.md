@@ -10,7 +10,7 @@ Status: in progress; not a completed milestone gate
 
 - Host: Apple Silicon macOS 26.5.2
 - Go: 1.27.1 selected with `GOTOOLCHAIN=go1.27.1`
-- Branch: `feat/p1-terminal-core`
+- Merged checkpoint: `main`, PR #8 merge `0342a0058e088b4a4970eb23ec2e150aac6f0232`
 - Core implementation commit: `dc7c04b4197252d8e88fce303e06b825f31cc19c`
 
 No Windows 11 host or VM was available for this evidence. A Windows amd64 test
@@ -49,12 +49,14 @@ The same run showed that Windows ConPTY consumes child DSR/CPR queries and
 returns its own console-state response before those query bytes reach the Go
 emulator. The captured ConPTY output contained the cursor movement but not the
 following query, while the Go terminal response stream remained empty. This is
-incompatible with the plan's stricter statement that the Go emulator is the
-only query responder on every host. The end-to-end no-viewer fixture still
-checks that the Windows child gets one valid response, but that does not prove
-the Go emulator generated it. P1 remains incomplete until the owner approves a
-documented Windows exception or an implementation route that preserves the
-single-responder requirement is demonstrated.
+incompatible with the plan's original stricter statement that the Go emulator
+is the only query responder on every host. The end-to-end no-viewer fixture
+still checks that the Windows child gets one valid response, but that does not
+prove the Go emulator generated it. On 2026-09-20, the owner approved the narrow
+platform boundary: broker-owned ConPTY may answer DSR/CPR queries that it
+consumes before Go vt sees them. The application still requires exactly one
+response and never permits a browser or desktop viewer to add another
+responder.
 
 ## Commands and outcomes
 
@@ -92,12 +94,10 @@ PASS; quicktype printed its existing empty-payload inference warning
 - Run the full P1 parser, query, resize, Unicode, alternate-buffer, and
   no-viewer fixture matrix through the private macOS and Windows CI jobs; native
   Windows 11 evidence remains a distinct target-host requirement.
-- Resolve the demonstrated ConPTY query-responder mismatch with the plan before
-  claiming the server-authoritative model complete on Windows.
-- Decide whether intentionally session-escaping macOS descendants are outside
-  the managed terminal boundary or require a different containment design. A
-  process group reliably covers ordinary shell descendants, but a child that
-  deliberately calls `setsid` can leave that group; macOS has no direct Job
-  Object equivalent in the selected xpty design.
+- Preserve the approved ConPTY exception in protocol and compatibility tests:
+  exactly one reply may reach the child and no viewer is a query responder.
+- Preserve the approved macOS boundary: the PTY process group covers the shell
+  and ordinary descendants, while a child deliberately escaping with `setsid`
+  is outside the managed session. Do not scan for or kill unrelated processes.
 
-These items are pending, not passed.
+Native Windows 11 validation is pending, not passed.
