@@ -72,6 +72,10 @@ type RegistryConfig struct {
 	newID func() (string, error)
 	now   func() time.Time
 
+	// afterCreateLookup is a deterministic test seam for the boundary between
+	// a durable receipt lookup and returning its result to an admitted caller.
+	afterCreateLookup func()
+
 	Store            *store.Store
 	BrokerGeneration string
 }
@@ -148,6 +152,7 @@ type Registry struct {
 	operationOrder []string
 	pending        int
 	closed         bool
+	creates        sync.WaitGroup
 	starts         sync.WaitGroup
 	mutations      sync.WaitGroup
 	cleanups       sync.WaitGroup
@@ -227,6 +232,7 @@ func (registry *Registry) Create(ctx context.Context, request CreateSessionReque
 	if err != nil {
 		return CreateSessionResult{}, err
 	}
+	defer registry.creates.Done()
 	if !owner {
 		select {
 		case <-operation.done:
@@ -251,6 +257,9 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		)
 		if err != nil {
 			return CreateSessionResult{}, mapStoreOperationError(err)
+		}
+		if registry.config.afterCreateLookup != nil {
+			registry.config.afterCreateLookup()
 		}
 		if found {
 			return registry.persistedCreateResult(persisted), nil
@@ -508,8 +517,9 @@ func (registry *Registry) List(ctx context.Context) ([]SessionStatus, error) {
 	return statuses, nil
 }
 
-// Close waits for starts and lifecycle cleanup. Every caller observes the same
-// completion and error instead of returning while shutdown is still running.
+// Close waits for admitted mutations, create callers, starts, and lifecycle
+// cleanup. Every caller observes the same completion and error instead of
+// returning while shutdown is still running.
 func (registry *Registry) Close() error {
 	registry.mu.Lock()
 	if registry.closed {
@@ -526,6 +536,7 @@ func (registry *Registry) Close() error {
 
 	registry.mutations.Wait()
 	registry.cancel()
+	registry.creates.Wait()
 	registry.starts.Wait()
 	registry.mu.Lock()
 	sessions := make([]registrySession, 0, len(registry.sessions))
@@ -630,10 +641,12 @@ func (registry *Registry) beginOperation(id string, fingerprint [sha256.Size]byt
 		if operation.fingerprint != fingerprint {
 			return nil, false, ErrOperationConflict
 		}
+		registry.creates.Add(1)
 		return operation, false, nil
 	}
 	operation := &createOperation{done: make(chan struct{}), fingerprint: fingerprint}
 	registry.operations[id] = operation
+	registry.creates.Add(1)
 	return operation, true, nil
 }
 

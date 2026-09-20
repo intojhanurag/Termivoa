@@ -202,6 +202,155 @@ func TestRegistryClosesSessionThatFinishesStartingDuringShutdown(t *testing.T) {
 	}
 }
 
+func TestRegistryCloseWaitsForCreateAdmittedBeforeStart(t *testing.T) {
+	lookupFinished := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	registry := newFakeRegistry(t, RegistryConfig{
+		now: func() time.Time {
+			close(lookupFinished)
+			<-release
+			return time.Now().UTC()
+		},
+	})
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		_ = registry.Close()
+	})
+	request := CreateSessionRequest{OperationID: operationID("create-before-start-close")}
+	created := make(chan error, 1)
+	go func() {
+		_, err := registry.Create(context.Background(), request)
+		created <- err
+	}()
+	<-lookupFinished
+
+	closed := make(chan error, 1)
+	go func() { closed <- registry.Close() }()
+	waitForRegistryClosed(t, registry)
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned before admitted create finished: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	releaseOnce.Do(func() { close(release) })
+	if err := <-created; !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("create racing close error = %v", err)
+	}
+	if err := <-closed; err != nil {
+		t.Fatalf("registry close: %v", err)
+	}
+	if _, err := registry.Create(context.Background(), request); !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("replayed create after close = %v", err)
+	}
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{
+		OperationID: operationID("new-create-after-close"),
+	}); !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("new create after close = %v", err)
+	}
+}
+
+func TestRegistryCloseWaitsForAdmittedDurableCreateReplayAndDuplicate(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "create-replay-close.sqlite"))
+	t.Cleanup(func() { _ = persistence.Close() })
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	first := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000017",
+		"40000000-0000-4000-8000-000000000017",
+	})
+	request := CreateSessionRequest{
+		OperationID: operationID("durable-create-close"), Title: "durable replay",
+		ProjectID: registryProjectID, ShellProfileID: registryProfileID,
+		Process: ptyhost.Spec{Executable: "/bin/zsh", Columns: 80, Rows: 24},
+	}
+	original, err := first.Create(context.Background(), request)
+	if err != nil {
+		t.Fatalf("seed durable create receipt: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("close receipt-seeding registry: %v", err)
+	}
+
+	second := newPersistentFakeRegistry(t, persistence, &starts, nil)
+	lookupFinished := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	second.config.afterCreateLookup = func() {
+		close(lookupFinished)
+		<-release
+	}
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		_ = second.Close()
+	})
+	type createOutcome struct {
+		result CreateSessionResult
+		err    error
+	}
+	ownerResult := make(chan createOutcome, 1)
+	go func() {
+		result, err := second.Create(context.Background(), request)
+		ownerResult <- createOutcome{result: result, err: err}
+	}()
+	<-lookupFinished
+
+	duplicateContext := &doneObservedContext{
+		Context:  context.Background(),
+		observed: make(chan struct{}),
+	}
+	duplicateResult := make(chan createOutcome, 1)
+	go func() {
+		result, err := second.Create(duplicateContext, request)
+		duplicateResult <- createOutcome{result: result, err: err}
+	}()
+	select {
+	case <-duplicateContext.observed:
+	case <-time.After(time.Second):
+		t.Fatal("duplicate create did not reach operation wait")
+	}
+
+	closed := make(chan error, 1)
+	go func() { closed <- second.Close() }()
+	waitForRegistryClosed(t, second)
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned before durable create callers finished: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	releaseOnce.Do(func() { close(release) })
+	if err := <-closed; err != nil {
+		t.Fatalf("close replay registry: %v", err)
+	}
+	// Store ownership may end immediately after Registry.Close because every
+	// admitted owner and duplicate has left Create by this point.
+	if err := persistence.Close(); err != nil {
+		t.Fatalf("close store after registry: %v", err)
+	}
+	for label, outcome := range map[string]<-chan createOutcome{
+		"owner": ownerResult, "duplicate": duplicateResult,
+	} {
+		result := <-outcome
+		if result.err != nil {
+			t.Fatalf("%s durable replay: %v", label, result.err)
+		}
+		if result.result.ID != original.ID || result.result.Generation != original.Generation || result.result.Session != nil {
+			t.Fatalf("%s durable replay = %+v, want identity %+v", label, result.result, original)
+		}
+	}
+	if starts.Load() != 1 {
+		t.Fatalf("durable replay started %d runtimes, want 1", starts.Load())
+	}
+	if _, err := second.Create(context.Background(), request); !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("durable replay after close = %v", err)
+	}
+	newRequest := request
+	newRequest.OperationID = operationID("new-durable-create-after-close")
+	if _, err := second.Create(context.Background(), newRequest); !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("new durable create after close = %v", err)
+	}
+}
+
 func TestRegistryRecoversReservationAfterStartFailure(t *testing.T) {
 	var attempts atomic.Int32
 	registry := newFakeRegistry(t, RegistryConfig{
@@ -1334,6 +1483,17 @@ func waitForFakeSessionClose(t *testing.T, session *fakeManagedSession) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+type doneObservedContext struct {
+	context.Context
+	observed chan struct{}
+	once     sync.Once
+}
+
+func (ctx *doneObservedContext) Done() <-chan struct{} {
+	ctx.once.Do(func() { close(ctx.observed) })
+	return ctx.Context.Done()
 }
 
 type fakeManagedSession struct {

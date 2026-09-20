@@ -44,8 +44,13 @@ gateway-restart evidence remain pending.
   terminate retries remain deterministic across this interval and invoke the
   runtime termination path exactly once.
 - Registry shutdown closes mutation admission before any receipt replay, waits
-  for already-admitted rename and terminate operations, and only then cancels
-  session lifetime. Closing a runtime detaches pending viewers and releases its
+  for already-admitted rename and terminate operations, and then cancels
+  session lifetime. Every accepted create owner and duplicate has separate
+  close admission under the same mutex gate; shutdown cancellation releases
+  owner lookup/start work before `Close` waits for all admitted create callers.
+  Consequently `Close` cannot return while a create can still access SQLite or
+  return a durable replay, while calls reaching the gate after closure are
+  rejected. Closing a runtime detaches pending viewers and releases its
   retirement barrier, so shutdown cannot deadlock behind final-frame delivery.
   Process cleanup errors remain in lifecycle diagnostics after definitive
   resource completion instead of being discarded.
@@ -72,7 +77,7 @@ GOTOOLCHAIN=go1.27.1 go test -race -timeout=180s \
 passed
 
 GOTOOLCHAIN=go1.27.1 go test -race -timeout=180s ./internal/broker \
-  -run 'TestRegistry(PersistsAndListsFinalStateBeforeViewerRetirement|ViewerBarrierCleanupErrorRemainsObservableOnClose|ReceiptTerminatePersistsFinalStateBeforeViewerRetirement|CloseReleasesPendingViewerRetirementBarrier|PersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd)' \
+  -run 'TestRegistry(CloseWaitsFor(CreateAdmittedBeforeStart|AdmittedDurableCreateReplayAndDuplicate)|PersistsAndListsFinalStateBeforeViewerRetirement|ViewerBarrierCleanupErrorRemainsObservableOnClose|ReceiptTerminatePersistsFinalStateBeforeViewerRetirement|CloseReleasesPendingViewerRetirementBarrier|PersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd)' \
   -count=20
 passed
 
@@ -115,8 +120,11 @@ durable terminate replay after closure. Cross-feature regressions additionally
 hold the final viewer barrier while asserting immediate durable final metadata,
 final-state listing, retained capacity, exactly-once receipt-backed runtime
 termination, delayed cleanup-error reporting, and deadlock-free registry
-shutdown. The repeated race run exercises the SQLite and registry concurrency
-paths.
+shutdown. Create-shutdown regressions block an owner before start admission and
+block a successful durable replay with an already-admitted duplicate; both
+prove that `Close` waits for the callers, rejects later new/replayed calls, and
+establishes a safe boundary for closing the store. The repeated race run
+exercises the SQLite and registry concurrency paths.
 
 The Windows cross-compile verifies the pure-Go build boundary only. It is not
 native Windows 11 execution evidence.
