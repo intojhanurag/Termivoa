@@ -10,13 +10,18 @@ P1 — Go terminal core: **in progress**, tracked by private issue #7. The owner
 approved the documented ConPTY query-response and macOS process-group
 boundaries on 2026-09-20; native Windows 11 validation remains pending.
 
-P2 — Frame and input protocol: **implementation started** on
-`feat/p2-frame-protocol` at the owner's direction while the owner-dependent
-Windows 11 P1 evidence remains pending. The canonical protocol, normalized
-frame/patch model, browser renderer/input foundation, and minimal desktop
-client are implemented as a reviewable checkpoint. P1 is not represented as
-complete, and P2 remains in progress until its live connection acceptance
+P2 — Frame and input protocol: **in progress**. The first checkpoint was
+merged from private PR #10 as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`.
+The canonical protocol, normalized frame/patch model, browser renderer/input
+foundation, and minimal desktop client are implemented. P1 is not represented
+as complete, and P2 remains in progress until its live connection acceptance
 tests are integrated.
+
+P3 — Persistent broker: **implementation started** on
+`feat/p3-persistent-broker`, tracked by private issue #11. The first checkpoint
+implements the broker's single-controller lease and bounded ordered input
+ingress. Process separation, local IPC, persistence, session lifecycle and
+gateway-restart evidence remain pending.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
@@ -82,8 +87,8 @@ These questions must be resolved before their dependent gates; they do not block
 | --- | --- | --- |
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
-| P2 — Frame and input protocol | In progress | Private issue #9 and branch `feat/p2-frame-protocol`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | Not started | None |
+| P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
+| P3 — Persistent broker | In progress | Private issue #11 and branch `feat/p3-persistent-broker`; controller/input-ingress checkpoint evidence in `docs/evidence/p3/controller-input-ingress.md` |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
 | P6 — Install and update | Not started | None |
