@@ -15,7 +15,7 @@ No application implementation, benchmark, platform integration, physical-phone t
 | Workspace | Isolated `phone-terminal` checkout; new Git repository on `main`, with no commit at inspection time | Approved workspace is available for P0. The machine-specific absolute path is intentionally not recorded. |
 | GitHub identity | Authenticated `gh` session reports account `intojhanurag` | Intended owner identity verified without printing credentials. |
 | GitHub destination | GitHub API reports `intojhanurag/phone-terminal`, visibility `PRIVATE`, and no default branch before the first push | Private-first target verified. Visibility must remain private. |
-| Git author | User name and email are configured locally; values were not copied into this document | Bootstrap commits can preserve the configured identity. Commit-signing availability still needs verification before commit. |
+| Git author | User name and email are configured locally; values were not copied into this document. No commit-signing requirement is configured. | Bootstrap commits used the configured identity; no signing setting was disabled. |
 | Development host | Apple Silicon (`arm64`) macOS 26.5.2 | Local P0 work and later macOS testing are possible; a complete P1 claim still requires native test evidence. |
 | Go toolchain | System Go is 1.21.13; Go 1.27.1 was fetched and verified through `GOTOOLCHAIN=go1.27.1` without replacing the system installation | Locked P0/P1 toolchain is available per repository command; global Go remains unchanged. |
 | Web toolchain | Default PATH has Node.js 25.8.1; nvm already contains Node.js 24.11.0, selected with pnpm 10.33.0 for repository checks | Locked P0 web toolchain is available without changing the global default. |
@@ -59,12 +59,13 @@ These questions must be resolved before their dependent gates; they do not block
 | Public identity | Final product name, package identifiers, publisher identity, and publication permission not confirmed | Public-release P8 handoff |
 | Public contacts | Owner-approved Code of Conduct and vulnerability-reporting routes not provided | Public-readiness documents |
 | Branch enforcement | Supported and configured on private `main`: required PR, strict named checks, resolved conversations, linear history, admin enforcement, no force push, no deletion | No current blocker. Squash is the only enabled merge method. |
+| Existing GitHub App | `Greptile Review` runs automatically on private PRs; the agent did not install it | Owner confirmed on 2026-09-20 that Greptile is intentionally authorized to review this project. It is not a required branch-protection context and its confidence threshold is configured not to block merging. |
 
 ## Milestones
 
 | Milestone | Status | Evidence |
 | --- | --- | --- |
-| P0 — Private repository, preflight and scaffold | In progress | This document; bootstrap commit/CI evidence pending |
+| P0 — Private repository, preflight and scaffold | Ready to merge | Private PR #5; ten required checks and independent review passed at the prior head; final-head checks pending |
 | P1 — Go terminal core | Not started | None |
 | P2 — Frame and input protocol | Not started | None |
 | P3 — Persistent broker | Not started | None |
@@ -78,18 +79,27 @@ These questions must be resolved before their dependent gates; they do not block
 
 The repository API reports private visibility, full owner admin/push/pull permissions,
 `main` as the default branch, and squash-only merging. Branch protection requires
-the nine stable CI contexts defined in `.github/workflows/ci.yml`.
+the ten stable CI contexts defined in `.github/workflows/ci.yml`.
 
 The first bootstrap CI run (`35508287671`) passed protocol generation, Go quality,
 Go race, web quality, macOS/Windows scaffold integration, secret scanning, and
 vulnerability scanning. Both release-smoke matrix entries failed because the
 unanchored `pterm` ignore pattern excluded `cmd/pterm/main.go` from the bootstrap
 commit. Branch `fix/p0-bootstrap-ci` anchors the binary ignore rules at repository
-root and adds the previously excluded scaffold command. P0 remains in progress
-until its PR CI passes and the repair is merged.
+root and adds the previously excluded scaffold command.
+
+At repair head `b6cffa1c42d12be48229acc78c6b8900dc6714f5`, all ten
+repository-owned CI checks passed in run `35508613947` (runner/check naming was
+also pinned and corrected). An independent self-review found no missing Section
+19 files, direct collaborators, webhooks, releases, tags, or deployments. P0 is
+tracked in private issue #6 and linked from PR #5. The review also identified
+the pre-existing `greptile-apps` check on PR #5. On 2026-09-20, the owner
+confirmed that Greptile is intentionally authorized for this project. GitHub
+branch protection requires only the ten repository-owned contexts, so Greptile
+does not gate merging. Its concrete review finding was fixed before resolution.
 
 ## Known defects
 
-The initial release-smoke failure above is under repair. No functional application
-exists, so runtime defects have not otherwise been evaluated. Missing implementation
-and unexecuted gates are not counted as passing behavior.
+The initial release-smoke failure above is fixed on PR #5. No functional
+application exists, so runtime defects have not otherwise been evaluated. Missing
+implementation and unexecuted gates are not counted as passing behavior.
