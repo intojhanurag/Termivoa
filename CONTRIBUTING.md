@@ -4,9 +4,9 @@ Phone Terminal is in private development. The implementation plan and `AGENTS.md
 
 ## Development setup
 
-The intended toolchain is Go 1.27.1, Node.js 24 LTS, and pnpm. Exact setup commands will be added when the manifests and repository-owned check scripts exist. Do not install application dependencies globally when a repository-local tool is available.
+The locked toolchain is Go 1.27.1, Node.js 24.11.0, and pnpm 10.33.0. Select the version in `.nvmrc`, enable the pinned pnpm version through Corepack, and run `pnpm install --frozen-lockfile`. Go's toolchain selection can obtain Go 1.27.1 without replacing an older system default. Do not install application dependencies globally when a repository-local tool is available.
 
-The planned checks are:
+Run the repository checks with:
 
 ```sh
 ./scripts/check
@@ -18,7 +18,7 @@ and on Windows:
 ./scripts/check.ps1
 ```
 
-Neither script exists yet. Platform integration commands will be documented separately because generic tests do not establish native macOS or Windows lifecycle behavior.
+Both scripts run generation drift, Go formatting/vet/tests, TypeScript checking, frontend unit tests, and the production web build. Platform integration commands remain separate because generic tests do not establish native macOS or Windows lifecycle behavior.
 
 ## Code organization
 
