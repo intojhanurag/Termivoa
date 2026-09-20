@@ -114,9 +114,14 @@ type Session struct {
 	waited              chan error
 	wrote               chan error
 	done                chan struct{}
+	ended               chan struct{}
 
 	closeOnce          sync.Once
+	endedOnce          sync.Once
 	shutdownReportOnce sync.Once
+	finalMu            sync.Mutex
+	finalStatus        SessionStatus
+	hasFinalStatus     bool
 	pumpWG             sync.WaitGroup
 	shutdownErr        error
 }
@@ -249,6 +254,7 @@ func startSessionRuntime(
 		waited:              make(chan error, 1),
 		wrote:               make(chan error, 1),
 		done:                make(chan struct{}),
+		ended:               make(chan struct{}),
 	}
 
 	session.pumpWG.Add(3)
@@ -266,6 +272,29 @@ func startSessionRuntime(
 	}()
 	go session.run(config.Process.Columns, config.Process.Rows)
 	return session, nil
+}
+
+// Ended closes when the process generation reaches exited or lost. It is a
+// broker-internal lifecycle signal; viewers must use Status for state.
+func (session *Session) Ended() <-chan struct{} {
+	return session.ended
+}
+
+// Done closes only after process reaping, PTY/terminal closure, and pump joins.
+// Unlike Ended, it is proof that the runtime no longer owns live resources.
+func (session *Session) Done() <-chan struct{} {
+	return session.done
+}
+
+// FinalStatus returns the immutable terminal lifecycle state after Ended has
+// closed. It does not enqueue work on an actor that may already be shutting down.
+func (session *Session) FinalStatus() (SessionStatus, bool) {
+	session.finalMu.Lock()
+	defer session.finalMu.Unlock()
+	if !session.hasFinalStatus {
+		return SessionStatus{}, false
+	}
+	return cloneSessionStatus(session.finalStatus), true
 }
 
 // AcquireControl explicitly replaces the current controller. Pending input
@@ -426,6 +455,7 @@ func (session *Session) run(columns, rows int) {
 		if status.State == SessionRunning {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
+			session.markEnded(status)
 			session.clearControl()
 		}
 		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -467,6 +497,7 @@ func (session *Session) run(columns, rows int) {
 				status.EndedAt = time.Now()
 				code := processExitCode(waitErr)
 				status.ExitCode = &code
+				session.markEnded(status)
 				session.clearControl()
 			}
 			if shuttingDown {
@@ -666,6 +697,7 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		if response.err != nil {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
+			session.markEnded(*status)
 			session.clearControl()
 		}
 	case requestRevokeDevice:
@@ -705,10 +737,21 @@ func (session *Session) markLost(status *SessionStatus) {
 	}
 	status.State = SessionLost
 	status.EndedAt = time.Now()
+	session.markEnded(*status)
 	session.clearControl()
 	terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	_ = session.process.Terminate(terminateContext)
 	cancel()
+}
+
+func (session *Session) markEnded(status SessionStatus) {
+	session.endedOnce.Do(func() {
+		session.finalMu.Lock()
+		session.finalStatus = cloneSessionStatus(status)
+		session.hasFinalStatus = true
+		session.finalMu.Unlock()
+		close(session.ended)
+	})
 }
 
 func (session *Session) clearControl() {

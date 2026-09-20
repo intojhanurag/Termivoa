@@ -15,11 +15,12 @@ All notable changes will be documented here. The project intends to follow [Keep
   IPC handshake framing.
 - Broker-owned live PTY session runtime with viewer-independent query replies,
   structured input, final-screen retention, and ordered lifecycle shutdown.
+- Broker-local session registry with random process generations, create-operation
+  deduplication, bounded live/retired resources, and coordinated shutdown.
 
 ### Not yet implemented
 
-- Persistent broker registry, SQLite recovery, platform IPC listeners, and
-  separate gateway process.
+- SQLite recovery, platform IPC listeners, and separate gateway process.
 - Connected desktop attachment and complete phone interface.
 - Pairing, private network setup, installers, signing, and release artifacts.
 
