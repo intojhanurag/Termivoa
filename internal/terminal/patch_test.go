@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -51,6 +52,63 @@ func TestPatchCarriesMetadataWithoutChangedRows(t *testing.T) {
 	if !reflect.DeepEqual(got, next) {
 		t.Fatalf("metadata-only patch = %#v, want %#v", got, next)
 	}
+}
+
+func TestPatchRoundTripPreservesHistoryChanges(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	writeNumberedHistory(t, core, 8)
+	base, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mustWrite(t, core, "appended-history\r\n")
+	appended, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appended.HistoryRows <= base.HistoryRows || appended.HistoryBytes <= base.HistoryBytes ||
+		appended.HistoryRevision == base.HistoryRevision {
+		t.Fatalf("history did not advance: base rows/bytes/token = %d/%d/%d:%d, next = %d/%d/%d:%d",
+			base.HistoryRows, base.HistoryBytes, base.HistoryEpoch, base.HistoryRevision,
+			appended.HistoryRows, appended.HistoryBytes, appended.HistoryEpoch, appended.HistoryRevision)
+	}
+	assertPatchRoundTrip(t, base, appended)
+
+	mustWrite(t, core, "\x1b[3J")
+	reset, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.HistoryRows != 0 || reset.HistoryBytes != 0 ||
+		reset.HistoryEpoch == appended.HistoryEpoch || reset.HistoryRevision != 0 {
+		t.Fatalf("history reset metadata = rows/bytes/token %d/%d/%d:%d",
+			reset.HistoryRows, reset.HistoryBytes, reset.HistoryEpoch, reset.HistoryRevision)
+	}
+	assertPatchRoundTrip(t, appended, reset)
+}
+
+func assertPatchRoundTrip(t *testing.T, base, next Frame) Patch {
+	t.Helper()
+	patch, err := Diff(base, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch.HistoryBytes != next.HistoryBytes || patch.HistoryRows != next.HistoryRows ||
+		patch.HistoryEpoch != next.HistoryEpoch || patch.HistoryRevision != next.HistoryRevision {
+		t.Fatalf("patch history metadata = %d/%d/%d:%d, want %d/%d/%d:%d",
+			patch.HistoryRows, patch.HistoryBytes, patch.HistoryEpoch, patch.HistoryRevision,
+			next.HistoryRows, next.HistoryBytes, next.HistoryEpoch, next.HistoryRevision)
+	}
+	got, err := ApplyPatch(base, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, next) {
+		t.Fatalf("patched frame differs from canonical frame\ngot:  %#v\nwant: %#v", got, next)
+	}
+	return patch
 }
 
 func TestPatchRejectsWrongBaseRevision(t *testing.T) {

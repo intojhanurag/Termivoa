@@ -3,7 +3,6 @@ package terminal
 import (
 	"image/color"
 	"net/url"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -25,10 +24,12 @@ type Frame struct {
 	CursorColor RGBA
 	Cursor      Cursor
 	Screen      []Row
-	History     []Row
 	// HistoryBytes is the conservative normalized retained-payload estimate.
-	HistoryBytes   int
-	ContentClipped bool
+	HistoryBytes    int
+	HistoryRows     int
+	HistoryEpoch    uint64
+	HistoryRevision uint64
+	ContentClipped  bool
 }
 
 // Cursor is the canonical cursor state.
@@ -83,7 +84,12 @@ type RGBA struct {
 	A uint8
 }
 
-func captureFrame(emulator *vt.Emulator, revision uint64, maxCellBytes, maxHistoryBytes int, includeHistory bool) Frame {
+func captureFrame(
+	emulator *vt.Emulator,
+	revision uint64,
+	history *historyState,
+	maxCellBytes int,
+) Frame {
 	foreground := rgba(emulator.ForegroundColor())
 	background := rgba(emulator.BackgroundColor())
 	activeCursor := emulator.ActiveCursor()
@@ -103,7 +109,11 @@ func captureFrame(emulator *vt.Emulator, revision uint64, maxCellBytes, maxHisto
 			Visible: !activeCursor.Hidden,
 			Blink:   !activeCursor.Steady,
 		},
-		Screen: make([]Row, emulator.Height()),
+		Screen:          make([]Row, emulator.Height()),
+		HistoryBytes:    emulator.ScrollbackBytes(),
+		HistoryRows:     emulator.ScrollbackLen(),
+		HistoryEpoch:    history.epoch,
+		HistoryRevision: history.revision,
 	}
 
 	for y := range emulator.Height() {
@@ -116,31 +126,6 @@ func captureFrame(emulator *vt.Emulator, revision uint64, maxCellBytes, maxHisto
 			frame.ContentClipped,
 		)
 	}
-
-	if !includeHistory {
-		return frame
-	}
-
-	historyLen := min(emulator.ScrollbackLen(), MaxHistoryRows)
-	frame.History = make([]Row, 0, historyLen)
-	for y := historyLen - 1; y >= 0; y-- {
-		row, clipped := normalizeRow(
-			emulator.Width(),
-			func(x int) *uv.Cell { return emulator.ScrollbackCellAt(x, y) },
-			foreground,
-			background,
-			maxCellBytes,
-			frame.ContentClipped,
-		)
-		rowBytes := normalizedRowBytes(row)
-		if frame.HistoryBytes+rowBytes > maxHistoryBytes {
-			break
-		}
-		frame.ContentClipped = frame.ContentClipped || clipped
-		frame.History = append(frame.History, row)
-		frame.HistoryBytes += rowBytes
-	}
-	slices.Reverse(frame.History)
 
 	return frame
 }
@@ -170,6 +155,21 @@ func normalizeRow(
 			continue
 		}
 		text, contentClipped := safeCellText(cell.Content, maxCellBytes)
+		cellWidth := cell.Width
+		boundaryClipped := cellWidth < 1 || cellWidth > 2 || x+cellWidth > width
+		if boundaryClipped {
+			// Resize can leave a retained wide leading cell at the new final
+			// column after its continuation was truncated. Never expose that
+			// impossible shape: use one explicit replacement column instead.
+			text = "\uFFFD"
+			cellWidth = 1
+			contentClipped = true
+		} else if text == "" {
+			// A styled empty dependency cell is a blank display column, not a
+			// protocol continuation. Continuations are synthesized below only
+			// from a valid wide leading cell.
+			text = " "
+		}
 		clipped = clipped || contentClipped
 		fg := defaultForeground
 		if cell.Style.Fg != nil {
@@ -181,7 +181,7 @@ func normalizeRow(
 		}
 		normalized := Cell{
 			Text:           text,
-			Width:          cell.Width,
+			Width:          cellWidth,
 			Foreground:     fg,
 			Background:     bg,
 			UnderlineColor: rgba(cell.Style.UnderlineColor),
@@ -196,9 +196,12 @@ func normalizeRow(
 			Link:           safeLink(cell.Link.URL),
 			ContentClipped: contentClipped,
 		}
+		if boundaryClipped {
+			normalized.Link = ""
+		}
 		row.Cells[x] = normalized
-		if cell.Width > 1 {
-			continuationUntil = min(width, x+cell.Width)
+		if cellWidth > 1 {
+			continuationUntil = x + cellWidth
 			for continuation := x + 1; continuation < continuationUntil; continuation++ {
 				inherited := normalized
 				inherited.Text = ""
@@ -254,12 +257,4 @@ func widthMethodName(method uv.WidthMethod) string {
 		return "unicode-graphemes"
 	}
 	return "wcwidth"
-}
-
-func normalizedRowBytes(row Row) int {
-	bytes := 0
-	for _, cell := range row.Cells {
-		bytes += len(cell.Text) + len(cell.Link) + 48
-	}
-	return bytes
 }

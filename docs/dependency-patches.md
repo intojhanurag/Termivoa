@@ -26,7 +26,10 @@ The local patch:
   upstream test suite;
 - calculates stored cell widths with the emulator's advertised width method;
 - bounds pending and retained grapheme content per cell;
-- adds byte-budget enforcement to the existing line-bounded scrollback;
+- adds normalized-width byte-budget enforcement to the existing line-bounded
+  normal scrollback, with synchronous mutation/reset notification;
+- disables the otherwise hidden alternate-screen scrollback so alternate
+  applications retain only their bounded live grid;
 - exposes the active cursor state so save/restore and alternate-buffer frames
   cannot drift from callback shadows;
 - returns the ANSI ready response `CSI 0 n` to an ANSI operating-status query

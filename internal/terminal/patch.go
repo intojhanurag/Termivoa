@@ -24,18 +24,22 @@ type ChangedRow struct {
 // Patch contains the changed rows and complete screen metadata required to
 // advance a validated frame from BaseRevision to Revision.
 type Patch struct {
-	BaseRevision   uint64
-	Revision       uint64
-	Columns        int
-	Rows           int
-	Alternate      bool
-	WidthMethod    string
-	Foreground     RGBA
-	Background     RGBA
-	CursorColor    RGBA
-	Cursor         Cursor
-	ChangedRows    []ChangedRow
-	ContentClipped bool
+	BaseRevision    uint64
+	Revision        uint64
+	Columns         int
+	Rows            int
+	Alternate       bool
+	WidthMethod     string
+	Foreground      RGBA
+	Background      RGBA
+	CursorColor     RGBA
+	Cursor          Cursor
+	HistoryBytes    int
+	HistoryRows     int
+	HistoryEpoch    uint64
+	HistoryRevision uint64
+	ChangedRows     []ChangedRow
+	ContentClipped  bool
 }
 
 // Diff produces a patch between two immutable canonical frames. A resize must
@@ -52,17 +56,21 @@ func Diff(base, next Frame) (Patch, error) {
 	}
 
 	patch := Patch{
-		BaseRevision:   base.Revision,
-		Revision:       next.Revision,
-		Columns:        next.Columns,
-		Rows:           next.Rows,
-		Alternate:      next.Alternate,
-		WidthMethod:    next.WidthMethod,
-		Foreground:     next.Foreground,
-		Background:     next.Background,
-		CursorColor:    next.CursorColor,
-		Cursor:         next.Cursor,
-		ContentClipped: next.ContentClipped,
+		BaseRevision:    base.Revision,
+		Revision:        next.Revision,
+		Columns:         next.Columns,
+		Rows:            next.Rows,
+		Alternate:       next.Alternate,
+		WidthMethod:     next.WidthMethod,
+		Foreground:      next.Foreground,
+		Background:      next.Background,
+		CursorColor:     next.CursorColor,
+		Cursor:          next.Cursor,
+		HistoryBytes:    next.HistoryBytes,
+		HistoryRows:     next.HistoryRows,
+		HistoryEpoch:    next.HistoryEpoch,
+		HistoryRevision: next.HistoryRevision,
+		ContentClipped:  next.ContentClipped,
 	}
 	for index := range next.Screen {
 		if !slices.Equal(base.Screen[index].Cells, next.Screen[index].Cells) {
@@ -98,6 +106,10 @@ func ApplyPatch(base Frame, patch Patch) (Frame, error) {
 	next.Background = patch.Background
 	next.CursorColor = patch.CursorColor
 	next.Cursor = patch.Cursor
+	next.HistoryBytes = patch.HistoryBytes
+	next.HistoryRows = patch.HistoryRows
+	next.HistoryEpoch = patch.HistoryEpoch
+	next.HistoryRevision = patch.HistoryRevision
 	next.ContentClipped = patch.ContentClipped
 
 	seen := make([]bool, patch.Rows)
@@ -119,10 +131,6 @@ func cloneFrame(frame Frame) Frame {
 	cloned.Screen = make([]Row, len(frame.Screen))
 	for index, row := range frame.Screen {
 		cloned.Screen[index] = cloneRow(row)
-	}
-	cloned.History = make([]Row, len(frame.History))
-	for index, row := range frame.History {
-		cloned.History[index] = cloneRow(row)
 	}
 	return cloned
 }

@@ -313,19 +313,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if _, err := parseCounter(payload.HistoryEpoch); err != nil {
-			return err
-		}
-		if _, err := parseCounter(payload.HistoryRevision); err != nil {
-			return err
-		}
-		if payload.Columns < MinColumns || payload.Columns > MaxColumns || payload.Offset < 0 || payload.Offset > 4999 || len(payload.Rows) > MaxHistoryPageRows {
-			return errors.New("history page is outside bounds")
-		}
-		if payload.NextOffset != nil && (*payload.NextOffset < payload.Offset || *payload.NextOffset > 5000) {
-			return errors.New("nextOffset is outside bounds")
-		}
-		return validateRows(payload.Rows, payload.Columns)
+		return validateHistoryPage(payload)
 	case MessageTypeHistoryChanged:
 		payload, err := strictPayload[HistoryChangedPayload](envelope)
 		if err != nil {
@@ -401,6 +389,29 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		return errors.New("unknown message type")
 	}
 	return nil
+}
+
+func validateHistoryPage(payload HistoryPagePayload) error {
+	if _, err := parseCounter(payload.HistoryEpoch); err != nil {
+		return err
+	}
+	if _, err := parseCounter(payload.HistoryRevision); err != nil {
+		return err
+	}
+	if payload.Columns < MinColumns || payload.Columns > MaxColumns ||
+		payload.Offset < 0 || payload.Offset > 4999 || payload.Rows == nil ||
+		len(payload.Rows) > MaxHistoryPageRows || payload.Offset+int64(len(payload.Rows)) > 5000 {
+		return errors.New("history page is outside bounds")
+	}
+	expectedNext := payload.Offset + int64(len(payload.Rows))
+	if payload.Complete {
+		if payload.NextOffset != nil {
+			return errors.New("complete history page must not include nextOffset")
+		}
+	} else if payload.NextOffset == nil || *payload.NextOffset != expectedNext || len(payload.Rows) == 0 {
+		return errors.New("incomplete history page must advance nextOffset by its row count")
+	}
+	return validateRows(payload.Rows, payload.Columns)
 }
 
 func strictPayload[T any](envelope Envelope) (T, error) {

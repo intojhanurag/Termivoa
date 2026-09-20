@@ -79,6 +79,68 @@ func TestViewerSnapshotBoundaryAndExactPatchBase(t *testing.T) {
 	}
 }
 
+func TestHistoryResetSignalFollowsViewerBaseEpoch(t *testing.T) {
+	session, process := startViewerSession(t)
+	defer session.Close()
+	sink := newRecordingViewerSink()
+	viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
+		ConnectionID: testViewerConnection, DeviceID: testViewerDevice,
+		Generation: testGeneration, Sink: sink,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	begin := waitForHostMessage(t, sink, protocol.SnapshotBegin, 1)
+	beginPayload, err := protocol.DecodePayload[protocol.SnapshotBeginPayload](begin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForHostMessage(t, sink, protocol.SnapshotEnd, 1)
+	if err := viewer.SnapshotApplied(context.Background(), beginPayload.SnapshotID, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	process.Emit([]byte("HISTORY_RESET"))
+	patchEnvelope := waitForHostMessage(t, sink, protocol.ScreenPatch, 1)
+	patch, err := protocol.DecodePayload[protocol.ScreenPatchPayload](patchEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !patch.HistoryReset || patch.Screen.HistoryEpoch != "1" || patch.Screen.HistoryRevision != "0" {
+		t.Fatalf("reset patch = %#v", patch)
+	}
+
+	process.Emit([]byte("ordinary"))
+	nextEnvelope := waitForHostMessage(t, sink, protocol.ScreenPatch, 2)
+	next, err := protocol.DecodePayload[protocol.ScreenPatchPayload](nextEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.HistoryReset {
+		t.Fatalf("history reset repeated after viewer base advanced: %#v", next)
+	}
+}
+
+func TestSessionHistoryReadChecksGenerationInsideActor(t *testing.T) {
+	session, _ := startViewerSession(t)
+	defer session.Close()
+	result, err := session.ReadHistory(context.Background(), testGeneration, terminal.HistoryReadRequest{
+		Epoch: 0, Revision: 0, Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Changed || !result.Complete || result.Columns != 20 {
+		t.Fatalf("history result = %#v", result)
+	}
+	if _, err := session.ReadHistory(context.Background(), "stale-generation", terminal.HistoryReadRequest{
+		Limit: 1,
+	}); !errors.Is(err, ErrGenerationChanged) {
+		t.Fatalf("stale generation error = %v", err)
+	}
+}
+
 func TestViewerResyncInterruptsSnapshotAndWrongAckForcesFreshSnapshot(t *testing.T) {
 	session, _ := startViewerSession(t)
 	defer session.Close()
@@ -952,6 +1014,11 @@ func newViewerTerminal() *viewerTerminal {
 func (core *viewerTerminal) WriteOutput(_ context.Context, data []byte) error {
 	core.frame.Revision++
 	text := string(data)
+	if text == "HISTORY_RESET" {
+		core.frame.HistoryEpoch++
+		core.frame.HistoryRevision = 0
+		text = "reset"
+	}
 	if text == "" {
 		text = " "
 	}
@@ -966,10 +1033,14 @@ func (core *viewerTerminal) Snapshot(context.Context) (terminal.Frame, error) {
 	return cloneViewerFrame(core.frame), nil
 }
 func (core *viewerTerminal) ScreenSnapshot(context.Context) (terminal.Frame, error) {
-	frame := cloneViewerFrame(core.frame)
-	frame.History = nil
-	frame.HistoryBytes = 0
-	return frame, nil
+	return cloneViewerFrame(core.frame), nil
+}
+func (core *viewerTerminal) ReadHistory(_ context.Context, request terminal.HistoryReadRequest) (terminal.HistoryReadResult, error) {
+	return terminal.HistoryReadResult{
+		Changed: request.Epoch != core.frame.HistoryEpoch || request.Revision != core.frame.HistoryRevision,
+		Epoch:   core.frame.HistoryEpoch, Revision: core.frame.HistoryRevision,
+		Columns: core.frame.Columns, Offset: request.Offset, Complete: true,
+	}, nil
 }
 func (*viewerTerminal) SendText(context.Context, string) error         { return nil }
 func (*viewerTerminal) Paste(context.Context, string) error            { return nil }
@@ -1007,10 +1078,6 @@ func cloneViewerFrame(frame terminal.Frame) terminal.Frame {
 	cloned.Screen = make([]terminal.Row, len(frame.Screen))
 	for index := range frame.Screen {
 		cloned.Screen[index].Cells = append([]terminal.Cell(nil), frame.Screen[index].Cells...)
-	}
-	cloned.History = make([]terminal.Row, len(frame.History))
-	for index := range frame.History {
-		cloned.History[index].Cells = append([]terminal.Cell(nil), frame.History[index].Cells...)
 	}
 	return cloned
 }

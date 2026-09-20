@@ -25,6 +25,7 @@ func NewScreen(w, h int) *Screen {
 		buf:        uv.NewRenderBuffer(w, h),
 		scrollback: NewScrollback(DefaultScrollbackSize),
 	}
+	s.scrollback.SetCellWidth(w)
 	s.scroll = s.buf.Bounds()
 	return &s
 }
@@ -79,6 +80,9 @@ func (s *Screen) Resize(width int, height int) {
 		s.buf.Touched = nil
 	}
 	s.scroll = s.buf.Bounds()
+	if s.scrollback != nil {
+		s.scrollback.SetCellWidth(width)
+	}
 }
 
 // Width returns the width of the screen.

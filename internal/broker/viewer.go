@@ -81,7 +81,6 @@ type publishedFrame struct {
 	frame           terminal.Frame
 	historyEpoch    uint64
 	historyRevision uint64
-	historyReset    bool
 }
 
 type viewerActorState struct {
@@ -296,7 +295,7 @@ func (subscription *ViewerSubscription) stream(ctx context.Context, plan viewerD
 				return subscription.streamSnapshot(ctx, plan)
 			}
 			payload, payloadErr := protocol.PatchPayload(
-				patch, plan.target.historyEpoch, plan.target.historyRevision, plan.target.historyReset,
+				patch, plan.base.frame.HistoryEpoch != patch.HistoryEpoch,
 			)
 			if payloadErr != nil {
 				return viewerDeliveryPatch, "", nil, payloadErr
@@ -409,7 +408,9 @@ func snapshotCatchupExceedsLimit(base, latest *publishedFrame, subscription *Vie
 	if err != nil {
 		return true
 	}
-	payload, err := protocol.PatchPayload(patch, latest.historyEpoch, latest.historyRevision, latest.historyReset)
+	payload, err := protocol.PatchPayload(
+		patch, base.frame.HistoryEpoch != patch.HistoryEpoch,
+	)
 	if err != nil {
 		return true
 	}
@@ -589,29 +590,14 @@ func (session *Session) capturePublished() error {
 	if err != nil {
 		return err
 	}
-	historyReset := false
-	if session.published != nil && !equalHistory(session.published.frame.History, frame.History) {
-		session.historyRevision++
-		if len(session.published.frame.History) > 0 && len(frame.History) == 0 {
-			session.historyEpoch++
-			session.historyRevision = 0
-			historyReset = true
-		}
-	}
 	session.published = &publishedFrame{
-		frame: frame, historyEpoch: session.historyEpoch,
-		historyRevision: session.historyRevision, historyReset: historyReset,
+		frame: frame, historyEpoch: frame.HistoryEpoch,
+		historyRevision: frame.HistoryRevision,
 	}
 	for _, viewer := range session.viewers {
 		signalViewer(viewer.subscription)
 	}
 	return nil
-}
-
-func equalHistory(left, right []terminal.Row) bool {
-	return slices.EqualFunc(left, right, func(a, b terminal.Row) bool {
-		return slices.Equal(a.Cells, b.Cells)
-	})
 }
 
 func (session *Session) attachViewer(request sessionRequest) error {

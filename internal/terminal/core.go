@@ -69,6 +69,7 @@ const (
 	commandResize
 	commandSnapshot
 	commandScreenSnapshot
+	commandHistoryRead
 	commandText
 	commandPaste
 	commandKey
@@ -83,12 +84,14 @@ type command struct {
 	rows    int
 	key     uv.KeyEvent
 	mouse   uv.MouseEvent
+	history HistoryReadRequest
 	reply   chan result
 }
 
 type result struct {
-	frame Frame
-	err   error
+	frame   Frame
+	history HistoryReadResult
+	err     error
 }
 
 // New creates and starts an authoritative emulator. The supplied context owns
@@ -133,13 +136,15 @@ func New(ctx context.Context, config Config) (*Core, error) {
 	emulator.SetMaxGraphemeBytes(config.MaxCellBytes)
 	emulator.SetMaxLinkBytes(MaxLinkBytes)
 	emulator.SetMaxSequenceBytes(MaxSequenceBytes)
+	history := newHistoryState()
+	emulator.SetScrollbackChangeCallback(history.changed)
 
 	go func() {
 		<-actorContext.Done()
 		closeEmulatorInput(emulator)
 	}()
 	go core.pumpOutput(emulator)
-	go core.run(actorContext, emulator, config.MaxCellBytes, config.HistoryBytes)
+	go core.run(actorContext, emulator, history, config.MaxCellBytes)
 	return core, nil
 }
 
@@ -171,7 +176,8 @@ func (core *Core) Resize(ctx context.Context, columns, rows int) error {
 	return core.execute(ctx, command{kind: commandResize, columns: columns, rows: rows})
 }
 
-// Snapshot captures an immutable copy of canonical screen and history state.
+// Snapshot captures an immutable copy of canonical screen and history token
+// metadata. Retained history rows are available only through ReadHistory.
 func (core *Core) Snapshot(ctx context.Context) (Frame, error) {
 	result, err := core.request(ctx, command{kind: commandSnapshot})
 	return result.frame, err
@@ -183,6 +189,16 @@ func (core *Core) Snapshot(ctx context.Context) (Frame, error) {
 func (core *Core) ScreenSnapshot(ctx context.Context) (Frame, error) {
 	result, err := core.request(ctx, command{kind: commandScreenSnapshot})
 	return result.frame, err
+}
+
+// ReadHistory copies at most 200 normalized rows under the terminal actor. A
+// token mismatch returns Changed with the current token and never returns rows.
+func (core *Core) ReadHistory(ctx context.Context, request HistoryReadRequest) (HistoryReadResult, error) {
+	if err := validateHistoryRead(request); err != nil {
+		return HistoryReadResult{}, err
+	}
+	result, err := core.request(ctx, command{kind: commandHistoryRead, history: request})
+	return result.history, err
 }
 
 // SendText encodes committed printable UTF-8 through the authoritative
@@ -264,7 +280,12 @@ func (core *Core) request(ctx context.Context, cmd command) (result, error) {
 	}
 }
 
-func (core *Core) run(ctx context.Context, emulator *vt.Emulator, maxCellBytes, maxHistoryBytes int) {
+func (core *Core) run(
+	ctx context.Context,
+	emulator *vt.Emulator,
+	history *historyState,
+	maxCellBytes int,
+) {
 	revision := uint64(0)
 	defer close(core.done)
 	defer closeEmulatorInput(emulator)
@@ -281,19 +302,36 @@ func (core *Core) run(ctx context.Context, emulator *vt.Emulator, maxCellBytes, 
 			var response result
 			switch cmd.kind {
 			case commandOutput:
+				beforeForeground := rgba(emulator.ForegroundColor())
+				beforeBackground := rgba(emulator.BackgroundColor())
+				beforeHistoryRevision := history.revision
 				_, response.err = emulator.WriteStream(cmd.data)
 				if response.err == nil {
 					revision++
+					if emulator.ScrollbackLen() > 0 && history.revision == beforeHistoryRevision &&
+						(beforeForeground != rgba(emulator.ForegroundColor()) ||
+							beforeBackground != rgba(emulator.BackgroundColor())) {
+						history.changed(false)
+					}
 				}
 			case commandResize:
+				beforeWidth := emulator.Width()
+				beforeHistoryRevision := history.revision
 				emulator.Resize(cmd.columns, cmd.rows)
 				revision++
+				if emulator.ScrollbackLen() > 0 && cmd.columns != beforeWidth &&
+					history.revision == beforeHistoryRevision {
+					history.changed(false)
+				}
 			case commandSnapshot:
 				emulator.Flush()
-				response.frame = captureFrame(emulator, revision, maxCellBytes, maxHistoryBytes, true)
+				response.frame = captureFrame(emulator, revision, history, maxCellBytes)
 			case commandScreenSnapshot:
 				emulator.Flush()
-				response.frame = captureFrame(emulator, revision, maxCellBytes, maxHistoryBytes, false)
+				response.frame = captureFrame(emulator, revision, history, maxCellBytes)
+			case commandHistoryRead:
+				emulator.Flush()
+				response.history = readHistory(emulator, history, cmd.history, maxCellBytes)
 			case commandText:
 				emulator.SendText(cmd.text)
 			case commandPaste:

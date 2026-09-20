@@ -493,7 +493,7 @@ func TestInputAndCellContentBounds(t *testing.T) {
 
 func TestHistoryPayloadIsByteBounded(t *testing.T) {
 	t.Parallel()
-	const historyBudget = 2500
+	const historyBudget = 12000
 	core, err := New(context.Background(), Config{
 		Columns:      20,
 		Rows:         5,
@@ -514,12 +514,21 @@ func TestHistoryPayloadIsByteBounded(t *testing.T) {
 	if frame.HistoryBytes > historyBudget {
 		t.Fatalf("history payload = %d bytes, limit %d", frame.HistoryBytes, historyBudget)
 	}
-	if len(frame.History) == 0 {
+	if frame.HistoryRows == 0 {
 		t.Fatal("history byte limit evicted every row")
+	}
+	page, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision, Limit: MaxHistoryPageRows,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != frame.HistoryRows {
+		t.Fatalf("paged rows = %d, retained metadata = %d", len(page.Rows), frame.HistoryRows)
 	}
 }
 
-func TestScreenSnapshotDoesNotCopyRetainedHistory(t *testing.T) {
+func TestSnapshotsExposeHistoryMetadataWithoutRows(t *testing.T) {
 	t.Parallel()
 	core := newTestCore(t, 20, 5)
 	for line := range 20 {
@@ -529,18 +538,278 @@ func TestScreenSnapshotDoesNotCopyRetainedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(full.History) == 0 {
+	if full.HistoryRows == 0 || full.HistoryBytes == 0 {
 		t.Fatal("fixture did not produce retained history")
 	}
 	live, err := core.ScreenSnapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(live.History) != 0 || live.HistoryBytes != 0 {
-		t.Fatalf("screen-only snapshot copied history: rows=%d bytes=%d", len(live.History), live.HistoryBytes)
+	if live.HistoryRows != full.HistoryRows || live.HistoryBytes != full.HistoryBytes ||
+		live.HistoryEpoch != full.HistoryEpoch || live.HistoryRevision != full.HistoryRevision {
+		t.Fatalf("screen-only history metadata = rows %d token %d/%d, want rows %d token %d/%d",
+			live.HistoryRows, live.HistoryEpoch, live.HistoryRevision,
+			full.HistoryRows, full.HistoryEpoch, full.HistoryRevision)
 	}
 	if live.Revision != full.Revision || len(live.Screen) != live.Rows {
 		t.Fatalf("screen-only snapshot lost live state: revision=%d/%d rows=%d/%d", live.Revision, full.Revision, len(live.Screen), live.Rows)
+	}
+}
+
+func TestHistoryPagesAreImmutableAndBounded(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	writeNumberedHistory(t, core, 210)
+	frame, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision, Limit: MaxHistoryPageRows,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Changed || first.Complete || len(first.Rows) != MaxHistoryPageRows ||
+		first.NextOffset == nil || *first.NextOffset != MaxHistoryPageRows {
+		t.Fatalf("first history page = %#v", first)
+	}
+	original := rowText(first.Rows[0])
+	first.Rows[0].Cells[0].Text = "mutated by caller"
+	again, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision, Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rowText(again.Rows[0]); got != original {
+		t.Fatalf("actor-owned page was mutable: got %q, want %q", got, original)
+	}
+
+	second, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision,
+		Offset: *first.NextOffset, Limit: MaxHistoryPageRows,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.Complete || second.NextOffset != nil ||
+		len(first.Rows)+len(second.Rows) != frame.HistoryRows {
+		t.Fatalf("second history page = %#v; retained rows = %d", second, frame.HistoryRows)
+	}
+}
+
+func TestHistoryReadDetectsConcurrentChange(t *testing.T) {
+	core := newTestCore(t, 20, 5)
+	writeNumberedHistory(t, core, 30)
+	frame, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision, Limit: 10,
+	})
+	if err != nil || first.Changed {
+		t.Fatalf("initial page = %#v, %v", first, err)
+	}
+
+	changed := make(chan error, 1)
+	go func() { changed <- core.WriteOutput(context.Background(), []byte("concurrent-change\r\n")) }()
+	if err := <-changed; err != nil {
+		t.Fatal(err)
+	}
+	stale, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision, Offset: 10, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stale.Changed || len(stale.Rows) != 0 || stale.Revision == frame.HistoryRevision {
+		t.Fatalf("stale history read = %#v", stale)
+	}
+}
+
+func TestHistoryResetAndAlternateScreenIsolation(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	writeNumberedHistory(t, core, 20)
+	before, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mustWrite(t, core, "\x1b[?1049h"+strings.Repeat("alternate\r\n", 40)+"\x1b[3J")
+	alternate, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !alternate.Alternate || alternate.HistoryRows != before.HistoryRows ||
+		alternate.HistoryEpoch != before.HistoryEpoch || alternate.HistoryRevision != before.HistoryRevision {
+		t.Fatalf("alternate screen contaminated normal history: before=%#v alternate=%#v", before, alternate)
+	}
+
+	mustWrite(t, core, "\x1b[?1049l\x1b[3J")
+	after, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Alternate || after.HistoryRows != 0 || after.HistoryEpoch != before.HistoryEpoch+1 || after.HistoryRevision != 0 {
+		t.Fatalf("normal history reset metadata = rows %d token %d/%d", after.HistoryRows, after.HistoryEpoch, after.HistoryRevision)
+	}
+	stale, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: before.HistoryEpoch, Revision: before.HistoryRevision, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stale.Changed || stale.Epoch != after.HistoryEpoch || stale.Revision != after.HistoryRevision {
+		t.Fatalf("reset did not invalidate frozen token: %#v", stale)
+	}
+}
+
+func TestHistoryTokenChangesOnlyWhenResizeChangesPageShape(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	writeNumberedHistory(t, core, 20)
+	before, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := core.Resize(context.Background(), 20, 6); err != nil {
+		t.Fatal(err)
+	}
+	heightOnly, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if heightOnly.HistoryEpoch != before.HistoryEpoch || heightOnly.HistoryRevision != before.HistoryRevision {
+		t.Fatalf("height-only resize invalidated history token: %d/%d -> %d/%d",
+			before.HistoryEpoch, before.HistoryRevision,
+			heightOnly.HistoryEpoch, heightOnly.HistoryRevision)
+	}
+	if err := core.Resize(context.Background(), 21, 6); err != nil {
+		t.Fatal(err)
+	}
+	widthChanged, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if widthChanged.HistoryRevision == heightOnly.HistoryRevision {
+		t.Fatalf("width resize kept history token %d/%d", widthChanged.HistoryEpoch, widthChanged.HistoryRevision)
+	}
+}
+
+func TestHistoryRetentionBoundsEmulatorRowsAndNormalizedBytes(t *testing.T) {
+	t.Parallel()
+	const historyBudget = 12000
+	core, err := New(context.Background(), Config{
+		Columns: 20, Rows: 5, ScrollbackRows: MaxHistoryRows, HistoryBytes: historyBudget,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = core.Close() })
+	writeNumberedHistory(t, core, MaxHistoryRows+100)
+	frame, err := core.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.HistoryRows > MaxHistoryRows || frame.HistoryBytes > historyBudget {
+		t.Fatalf("retained history = rows %d bytes %d; limits %d/%d",
+			frame.HistoryRows, frame.HistoryBytes, MaxHistoryRows, historyBudget)
+	}
+	if frame.HistoryRows == 0 {
+		t.Fatal("small-width fixture unexpectedly evicted every row")
+	}
+
+	if err := core.Resize(context.Background(), MaxColumns, 5); err != nil {
+		t.Fatal(err)
+	}
+	wide, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wide.HistoryRows != 0 {
+		t.Fatalf("emulator kept %d hidden rows after normalized width exceeded byte budget", wide.HistoryRows)
+	}
+	page, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: wide.HistoryEpoch, Revision: wide.HistoryRevision, Limit: MaxHistoryPageRows,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.Complete || len(page.Rows) != 0 || page.RetainedBytes != 0 {
+		t.Fatalf("empty bounded page = %#v", page)
+	}
+}
+
+func TestHistoryRowLimitEvictsOldestCompleteRows(t *testing.T) {
+	t.Parallel()
+	core, err := New(context.Background(), Config{
+		Columns: 20, Rows: 5, ScrollbackRows: 3, HistoryBytes: MaxHistoryBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = core.Close() })
+	writeNumberedHistory(t, core, 20)
+	frame, err := core.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.HistoryRows != 3 {
+		t.Fatalf("retained rows = %d, want 3", frame.HistoryRows)
+	}
+	page, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision, Limit: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 3 {
+		t.Fatalf("paged retained rows = %d, want 3", len(page.Rows))
+	}
+	if got := rowText(page.Rows[0]); got == "line-0000" || got == "" {
+		t.Fatalf("oldest complete rows were not evicted: first retained %q", got)
+	}
+}
+
+func TestHistoryNeverRetainsMoreThanSessionMaximum(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	writeNumberedHistory(t, core, MaxHistoryRows+100)
+	frame, err := core.ScreenSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.HistoryRows != MaxHistoryRows {
+		t.Fatalf("retained rows = %d, want maximum %d", frame.HistoryRows, MaxHistoryRows)
+	}
+	page, err := core.ReadHistory(context.Background(), HistoryReadRequest{
+		Epoch: frame.HistoryEpoch, Revision: frame.HistoryRevision,
+		Offset: MaxHistoryRows - 1, Limit: MaxHistoryPageRows,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.Complete || len(page.Rows) != 1 || page.NextOffset != nil {
+		t.Fatalf("maximum boundary page = %#v", page)
+	}
+}
+
+func TestHistoryReadRejectsBoundaryViolations(t *testing.T) {
+	t.Parallel()
+	core := newTestCore(t, 20, 5)
+	for _, request := range []HistoryReadRequest{
+		{Offset: -1, Limit: 1},
+		{Offset: MaxHistoryRows, Limit: 1},
+		{Offset: 0, Limit: 0},
+		{Offset: 0, Limit: MaxHistoryPageRows + 1},
+	} {
+		if _, err := core.ReadHistory(context.Background(), request); !errors.Is(err, ErrInvalidHistoryRequest) {
+			t.Fatalf("ReadHistory(%#v) error = %v", request, err)
+		}
 	}
 }
 
@@ -688,6 +957,15 @@ func mustWrite(t *testing.T, core *Core, value string) {
 	if err := core.WriteOutput(context.Background(), []byte(value)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeNumberedHistory(t *testing.T, core *Core, lines int) {
+	t.Helper()
+	var output strings.Builder
+	for line := range lines {
+		fmt.Fprintf(&output, "line-%04d\r\n", line)
+	}
+	mustWrite(t, core, output.String())
 }
 
 func rowText(row Row) string {
