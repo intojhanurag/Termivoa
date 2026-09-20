@@ -2,6 +2,14 @@ package store
 
 import "time"
 
+type OperationKind string
+
+const (
+	OperationSessionCreate    OperationKind = "session_create"
+	OperationSessionRename    OperationKind = "session_rename"
+	OperationSessionTerminate OperationKind = "session_terminate"
+)
+
 type Platform string
 
 const (
@@ -55,4 +63,17 @@ type SessionMetadata struct {
 	StartedAt        *time.Time
 	EndedAt          *time.Time
 	ExitCode         *int32
+}
+
+// MutationResult is the durable, deterministic acknowledgement for a
+// broker-owned session mutation. It deliberately contains no terminal data or
+// live runtime capability.
+type MutationResult struct {
+	OperationID string
+	Kind        OperationKind
+	SessionID   string
+	Generation  string
+	Title       string
+	State       SessionState
+	CommittedAt time.Time
 }

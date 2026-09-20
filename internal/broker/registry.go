@@ -10,8 +10,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
+	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 )
 
@@ -22,7 +24,6 @@ const (
 	MaxRetainedSessionRecords     = 4096
 	DefaultCreateOperationHistory = 1024
 	MaxCreateOperationHistory     = 16384
-	MaxOperationIDBytes           = 128
 )
 
 var (
@@ -31,7 +32,9 @@ var (
 	ErrSessionMissing    = errors.New("broker: session does not exist")
 	ErrOperationID       = errors.New("broker: invalid operation ID")
 	ErrOperationConflict = errors.New("broker: operation ID was already used for a different request")
+	ErrOperationLimit    = errors.New("broker: durable operation receipt capacity reached")
 	ErrSessionRetired    = errors.New("broker: session process is no longer live")
+	ErrPersistenceNeeded = errors.New("broker: durable session mutation store is required")
 )
 
 // ManagedSession is the capability exposed to local IPC and the gateway. It
@@ -67,13 +70,20 @@ type RegistryConfig struct {
 
 	start func(context.Context, SessionConfig) (registrySession, error)
 	newID func() (string, error)
+	now   func() time.Time
+
+	Store            *store.Store
+	BrokerGeneration string
 }
 
 // CreateSessionRequest is built only after the broker resolves trusted local
 // project and shell-profile IDs. Network clients must never populate Process.
 type CreateSessionRequest struct {
-	OperationID string
-	Process     ptyhost.Spec
+	OperationID    string
+	Title          string
+	ProjectID      string
+	ShellProfileID string
+	Process        ptyhost.Spec
 }
 
 // CreateSessionResult is safe to retain for operation deduplication. Session
@@ -82,6 +92,33 @@ type CreateSessionResult struct {
 	ID         string
 	Generation string
 	Session    ManagedSession
+}
+
+type RenameSessionRequest struct {
+	OperationID string
+	SessionID   string
+	Generation  string
+	Title       string
+}
+
+type RenameSessionResult struct {
+	ID          string
+	Generation  string
+	Title       string
+	CommittedAt time.Time
+}
+
+type TerminateSessionRequest struct {
+	OperationID string
+	SessionID   string
+	Generation  string
+}
+
+type TerminateSessionResult struct {
+	ID          string
+	Generation  string
+	State       SessionState
+	CommittedAt time.Time
 }
 
 type registryEntry struct {
@@ -112,6 +149,7 @@ type Registry struct {
 	pending        int
 	closed         bool
 	starts         sync.WaitGroup
+	mutations      sync.WaitGroup
 	cleanups       sync.WaitGroup
 	closeDone      chan struct{}
 	closeErr       error
@@ -150,6 +188,15 @@ func NewRegistry(ctx context.Context, config RegistryConfig) (*Registry, error) 
 	}
 	if config.newID == nil {
 		config.newID = randomUUID
+	}
+	if config.now == nil {
+		config.now = time.Now
+	}
+	if (config.Store == nil) != (config.BrokerGeneration == "") {
+		return nil, errors.New("broker: persistence store and broker generation must be configured together")
+	}
+	if config.Store != nil && !validOperationUUID(config.BrokerGeneration) {
+		return nil, errors.New("broker: broker generation must be a canonical UUID")
 	}
 	registryContext, cancel := context.WithCancel(ctx)
 	return &Registry{
@@ -194,6 +241,22 @@ func (registry *Registry) Create(ctx context.Context, request CreateSessionReque
 }
 
 func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessionResult, error) {
+	if registry.config.Store != nil {
+		fingerprint, err := createRequestFingerprint(request)
+		if err != nil {
+			return CreateSessionResult{}, err
+		}
+		persisted, found, err := registry.config.Store.LookupMutation(
+			registry.ctx, request.OperationID, store.OperationSessionCreate, fingerprint,
+		)
+		if err != nil {
+			return CreateSessionResult{}, mapStoreOperationError(err)
+		}
+		if found {
+			return registry.persistedCreateResult(persisted), nil
+		}
+	}
+	createdAt := registry.config.now().UTC()
 	registry.mu.Lock()
 	if registry.closed {
 		registry.mu.Unlock()
@@ -227,6 +290,39 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		registry.releasePending(id)
 		return CreateSessionResult{}, err
 	}
+	if registry.config.Store != nil {
+		status, statusErr := session.Status(context.Background())
+		if statusErr != nil {
+			registry.releasePending(id)
+			return CreateSessionResult{}, errors.Join(statusErr, session.Close())
+		}
+		startedAt := status.StartedAt.UTC()
+		metadata := store.SessionMetadata{
+			ID: id, Generation: generation, BrokerGeneration: registry.config.BrokerGeneration,
+			Title: request.Title, ProjectID: request.ProjectID, ShellProfileID: request.ShellProfileID,
+			State: store.SessionRunning, Columns: status.Columns, Rows: status.Rows,
+			CreatedAt: createdAt, UpdatedAt: startedAt, StartedAt: &startedAt,
+		}
+		fingerprint, fingerprintErr := createRequestFingerprint(request)
+		if fingerprintErr != nil {
+			registry.releasePending(id)
+			return CreateSessionResult{}, errors.Join(fingerprintErr, session.Close())
+		}
+		persisted, replayed, persistErr := registry.config.Store.CreateSessionWithReceipt(
+			registry.ctx, request.OperationID, fingerprint, metadata,
+		)
+		if persistErr != nil {
+			registry.releasePending(id)
+			return CreateSessionResult{}, errors.Join(mapStoreOperationError(persistErr), session.Close())
+		}
+		if replayed {
+			registry.releasePending(id)
+			if closeErr := session.Close(); closeErr != nil {
+				return CreateSessionResult{}, closeErr
+			}
+			return registry.persistedCreateResult(persisted), nil
+		}
+	}
 
 	entry := &registryEntry{session: session}
 	registry.mu.Lock()
@@ -241,6 +337,108 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		return CreateSessionResult{ID: id, Generation: generation}, ErrRegistryClosed
 	}
 	return CreateSessionResult{ID: id, Generation: generation, Session: session}, nil
+}
+
+// Rename durably deduplicates a metadata change. The live runtime is not
+// touched because title is broker-owned metadata, not terminal state.
+func (registry *Registry) Rename(ctx context.Context, request RenameSessionRequest) (RenameSessionResult, error) {
+	if ctx == nil {
+		return RenameSessionResult{}, errors.New("broker: rename context must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return RenameSessionResult{}, err
+	}
+	if registry.config.Store == nil {
+		return RenameSessionResult{}, ErrPersistenceNeeded
+	}
+	if err := registry.beginMutation(); err != nil {
+		return RenameSessionResult{}, err
+	}
+	defer registry.mutations.Done()
+	if err := validateOperationID(request.OperationID); err != nil {
+		return RenameSessionResult{}, err
+	}
+	fingerprint, err := renameRequestFingerprint(request)
+	if err != nil {
+		return RenameSessionResult{}, err
+	}
+	result, _, err := registry.config.Store.RenameSessionWithReceipt(
+		ctx, request.OperationID, fingerprint, request.SessionID, request.Generation,
+		request.Title, registry.config.now().UTC(),
+	)
+	if err != nil {
+		return RenameSessionResult{}, mapStoreOperationError(err)
+	}
+	return RenameSessionResult{
+		ID: result.SessionID, Generation: result.Generation,
+		Title: result.Title, CommittedAt: result.CommittedAt,
+	}, nil
+}
+
+// Terminate persists acceptance before invoking the process-tree side effect.
+// A retry returns the stored acknowledgement and never invokes Terminate twice.
+func (registry *Registry) Terminate(ctx context.Context, request TerminateSessionRequest) (TerminateSessionResult, error) {
+	if ctx == nil {
+		return TerminateSessionResult{}, errors.New("broker: terminate context must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return TerminateSessionResult{}, err
+	}
+	if registry.config.Store == nil {
+		return TerminateSessionResult{}, ErrPersistenceNeeded
+	}
+	if err := registry.beginMutation(); err != nil {
+		return TerminateSessionResult{}, err
+	}
+	defer registry.mutations.Done()
+	if err := validateOperationID(request.OperationID); err != nil {
+		return TerminateSessionResult{}, err
+	}
+	fingerprint, err := terminateRequestFingerprint(request)
+	if err != nil {
+		return TerminateSessionResult{}, err
+	}
+	persisted, found, err := registry.config.Store.LookupMutation(
+		ctx, request.OperationID, store.OperationSessionTerminate, fingerprint,
+	)
+	if err != nil {
+		return TerminateSessionResult{}, mapStoreOperationError(err)
+	}
+	if found {
+		return terminateResult(persisted), nil
+	}
+	registry.mu.Lock()
+	entry, exists := registry.sessions[request.SessionID]
+	registry.mu.Unlock()
+	if !exists {
+		return TerminateSessionResult{}, ErrSessionMissing
+	}
+	status, err := entry.session.Status(ctx)
+	if err != nil {
+		return TerminateSessionResult{}, err
+	}
+	if status.Generation != request.Generation {
+		return TerminateSessionResult{}, ErrGenerationChanged
+	}
+	result, replayed, err := registry.config.Store.BeginSessionTerminationWithReceipt(
+		ctx, request.OperationID, fingerprint, request.SessionID, request.Generation,
+		registry.config.now().UTC(),
+	)
+	if err != nil {
+		return TerminateSessionResult{}, mapStoreOperationError(err)
+	}
+	if !replayed {
+		// Receipt acceptance is the stable client result. Runtime failure changes
+		// the session to lost and is persisted by retireWhenEnded.
+		terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		terminateErr := entry.session.Terminate(terminateContext)
+		cancel()
+		if terminateErr != nil {
+			registry.recordLifecycleError(fmt.Errorf("session %s terminate accepted operation %s: %w",
+				request.SessionID, request.OperationID, terminateErr))
+		}
+	}
+	return terminateResult(result), nil
 }
 
 func (registry *Registry) Get(id string) (ManagedSession, error) {
@@ -324,9 +522,10 @@ func (registry *Registry) Close() error {
 		return err
 	}
 	registry.closed = true
-	registry.cancel()
 	registry.mu.Unlock()
 
+	registry.mutations.Wait()
+	registry.cancel()
 	registry.starts.Wait()
 	registry.mu.Lock()
 	sessions := make([]registrySession, 0, len(registry.sessions))
@@ -369,6 +568,7 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 	<-entry.session.Ended()
 	status, hasStatus := entry.session.FinalStatus()
 	if hasStatus {
+		registry.persistFinalStatus(status)
 		registry.mu.Lock()
 		entry.final = &status
 		registry.mu.Unlock()
@@ -377,7 +577,6 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 	closeErr := entry.session.Close()
 	if closeErr != nil {
 		<-entry.session.Done()
-		closeErr = nil
 	}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
@@ -386,7 +585,6 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 	}
 	if closeErr != nil {
 		registry.lifecycleErrs = append(registry.lifecycleErrs, fmt.Errorf("session %s cleanup: %w", id, closeErr))
-		return
 	}
 	if current, ok := registry.sessions[id]; !ok || current != entry {
 		return
@@ -401,6 +599,25 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 			delete(registry.retired, oldest)
 		}
 	}
+}
+
+func (registry *Registry) beginMutation() error {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if registry.closed {
+		return ErrRegistryClosed
+	}
+	registry.mutations.Add(1)
+	return nil
+}
+
+func (registry *Registry) recordLifecycleError(err error) {
+	if err == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.lifecycleErrs = append(registry.lifecycleErrs, err)
+	registry.mu.Unlock()
 }
 
 func (registry *Registry) beginOperation(id string, fingerprint [sha256.Size]byte) (*createOperation, bool, error) {
@@ -445,9 +662,51 @@ func (registry *Registry) operationResult(operation *createOperation) CreateSess
 }
 
 func createRequestFingerprint(request CreateSessionRequest) ([sha256.Size]byte, error) {
-	payload, err := json.Marshal(request.Process)
+	process := request.Process
+	process.Args = append([]string{}, process.Args...)
+	process.Env = append([]string{}, process.Env...)
+	payload, err := json.Marshal(struct {
+		Title          string   `json:"title"`
+		ProjectID      string   `json:"projectId"`
+		ShellProfileID string   `json:"shellProfileId"`
+		Executable     string   `json:"executable"`
+		Arguments      []string `json:"arguments"`
+		Directory      string   `json:"directory"`
+		Environment    []string `json:"environment"`
+		Columns        int      `json:"columns"`
+		Rows           int      `json:"rows"`
+	}{
+		Title: request.Title, ProjectID: request.ProjectID,
+		ShellProfileID: request.ShellProfileID,
+		Executable:     process.Executable, Arguments: process.Args,
+		Directory: process.Directory, Environment: process.Env,
+		Columns: process.Columns, Rows: process.Rows,
+	})
 	if err != nil {
 		return [sha256.Size]byte{}, fmt.Errorf("broker: fingerprint create request: %w", err)
+	}
+	return sha256.Sum256(payload), nil
+}
+
+func renameRequestFingerprint(request RenameSessionRequest) ([sha256.Size]byte, error) {
+	payload, err := json.Marshal(struct {
+		SessionID  string `json:"sessionId"`
+		Generation string `json:"generation"`
+		Title      string `json:"title"`
+	}{SessionID: request.SessionID, Generation: request.Generation, Title: request.Title})
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("broker: fingerprint rename request: %w", err)
+	}
+	return sha256.Sum256(payload), nil
+}
+
+func terminateRequestFingerprint(request TerminateSessionRequest) ([sha256.Size]byte, error) {
+	payload, err := json.Marshal(struct {
+		SessionID  string `json:"sessionId"`
+		Generation string `json:"generation"`
+	}{SessionID: request.SessionID, Generation: request.Generation})
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("broker: fingerprint terminate request: %w", err)
 	}
 	return sha256.Sum256(payload), nil
 }
@@ -483,15 +742,87 @@ func (registry *Registry) releasePending(id string) {
 }
 
 func validateOperationID(id string) error {
-	if id == "" || strings.TrimSpace(id) != id || len(id) > MaxOperationIDBytes {
+	if strings.TrimSpace(id) != id || !validOperationUUID(id) {
 		return ErrOperationID
 	}
-	for _, character := range id {
-		if character < 0x21 || character > 0x7e {
-			return ErrOperationID
+	return nil
+}
+
+func validOperationUUID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
+		value[14] < '1' || value[14] > '8' || !strings.ContainsRune("89ab", rune(value[19])) {
+		return false
+	}
+	for index := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		character := value[index]
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
+			return false
 		}
 	}
-	return nil
+	return true
+}
+
+func (registry *Registry) persistedCreateResult(result store.MutationResult) CreateSessionResult {
+	created := CreateSessionResult{ID: result.SessionID, Generation: result.Generation}
+	registry.mu.Lock()
+	if entry, ok := registry.sessions[result.SessionID]; ok {
+		created.Session = entry.session
+	}
+	registry.mu.Unlock()
+	return created
+}
+
+func terminateResult(result store.MutationResult) TerminateSessionResult {
+	return TerminateSessionResult{
+		ID: result.SessionID, Generation: result.Generation,
+		State: SessionState(result.State), CommittedAt: result.CommittedAt,
+	}
+}
+
+func mapStoreOperationError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrOperationConflict):
+		return fmt.Errorf("%w: %v", ErrOperationConflict, err)
+	case errors.Is(err, store.ErrOperationReceiptLimit):
+		return fmt.Errorf("%w: %v", ErrOperationLimit, err)
+	case errors.Is(err, store.ErrSessionMissing):
+		return fmt.Errorf("%w: %v", ErrSessionMissing, err)
+	case errors.Is(err, store.ErrGenerationChanged):
+		return fmt.Errorf("%w: %v", ErrGenerationChanged, err)
+	default:
+		return err
+	}
+}
+
+func (registry *Registry) persistFinalStatus(status SessionStatus) {
+	if registry.config.Store == nil {
+		return
+	}
+	state := store.SessionLost
+	var exitCode *int32
+	if status.State == SessionExited {
+		state = store.SessionExited
+		if status.ExitCode != nil {
+			value := int32(*status.ExitCode)
+			if int(value) == *status.ExitCode {
+				exitCode = &value
+			}
+		}
+	}
+	when := status.EndedAt
+	if when.IsZero() {
+		when = registry.config.now().UTC()
+	}
+	if err := registry.config.Store.TransitionSession(
+		context.Background(), status.ID, status.Generation, state, exitCode, when,
+	); err != nil {
+		registry.mu.Lock()
+		registry.lifecycleErrs = append(registry.lifecycleErrs, fmt.Errorf("session %s persist final status: %w", status.ID, err))
+		registry.mu.Unlock()
+	}
 }
 
 func randomUUID() (string, error) {

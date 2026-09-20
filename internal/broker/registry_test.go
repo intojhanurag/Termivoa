@@ -2,7 +2,10 @@ package broker
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -11,7 +14,14 @@ import (
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
+	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
+)
+
+const (
+	registryBrokerGeneration = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	registryProjectID        = "11111111-1111-4111-8111-111111111111"
+	registryProfileID        = "22222222-2222-4222-8222-222222222222"
 )
 
 func TestRegistryCreatesOpaqueGenerationsAndListsSessions(t *testing.T) {
@@ -24,11 +34,11 @@ func TestRegistryCreatesOpaqueGenerationsAndListsSessions(t *testing.T) {
 	})
 	defer registry.Close()
 
-	first, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "create-one", Process: ptyhost.Spec{Executable: "shell-one"}})
+	first, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("create-one"), Process: ptyhost.Spec{Executable: "shell-one"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "create-two", Process: ptyhost.Spec{Executable: "shell-two"}})
+	second, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("create-two"), Process: ptyhost.Spec{Executable: "shell-two"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +86,11 @@ func TestRegistryEnforcesConcurrentLiveLimit(t *testing.T) {
 
 	created := make(chan error, 1)
 	go func() {
-		_, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "first"})
+		_, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("first")})
 		created <- err
 	}()
 	<-started
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "second"}); !errors.Is(err, ErrSessionLimit) {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("second")}); !errors.Is(err, ErrSessionLimit) {
 		t.Fatalf("second create error = %v", err)
 	}
 	close(release)
@@ -93,11 +103,11 @@ func TestRegistryEndedSessionReleasesCapacity(t *testing.T) {
 	registry := newFakeRegistry(t, RegistryConfig{MaxLiveSessions: 1})
 	defer registry.Close()
 
-	first, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "first"})
+	first, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("first")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "blocked"}); !errors.Is(err, ErrSessionLimit) {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("blocked")}); !errors.Is(err, ErrSessionLimit) {
 		t.Fatalf("live limit error = %v", err)
 	}
 	first.Session.(*fakeManagedSession).setState(SessionExited)
@@ -113,7 +123,7 @@ func TestRegistryEndedSessionReleasesCapacity(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "after-exit"}); err != nil {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("after-exit")}); err != nil {
 		t.Fatalf("create after exit: %v", err)
 	}
 }
@@ -135,7 +145,7 @@ func TestRegistryUsesBrokerLifetimeAndClosesEverySession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.Create(requestContext, CreateSessionRequest{OperationID: "request-owned"}); err != nil {
+	if _, err := registry.Create(requestContext, CreateSessionRequest{OperationID: operationID("request-owned")}); err != nil {
 		t.Fatal(err)
 	}
 	cancelRequest()
@@ -144,7 +154,7 @@ func TestRegistryUsesBrokerLifetimeAndClosesEverySession(t *testing.T) {
 		t.Fatal("request cancellation reached the managed session lifetime")
 	default:
 	}
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "second"}); err != nil {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("second")}); err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.Close(); err != nil {
@@ -155,7 +165,7 @@ func TestRegistryUsesBrokerLifetimeAndClosesEverySession(t *testing.T) {
 			t.Fatalf("session %d was not closed", index)
 		}
 	}
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "after-close"}); !errors.Is(err, ErrRegistryClosed) {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("after-close")}); !errors.Is(err, ErrRegistryClosed) {
 		t.Fatalf("create after close error = %v", err)
 	}
 	if _, err := registry.List(context.Background()); !errors.Is(err, ErrRegistryClosed) {
@@ -175,7 +185,7 @@ func TestRegistryClosesSessionThatFinishesStartingDuringShutdown(t *testing.T) {
 	})
 	created := make(chan error, 1)
 	go func() {
-		_, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "late"})
+		_, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("late")})
 		created <- err
 	}()
 	<-started
@@ -204,10 +214,10 @@ func TestRegistryRecoversReservationAfterStartFailure(t *testing.T) {
 		},
 	})
 	defer registry.Close()
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "first-fails"}); err == nil {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("first-fails")}); err == nil {
 		t.Fatal("expected first start to fail")
 	}
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "second-works"}); err != nil {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("second-works")}); err != nil {
 		t.Fatalf("reservation leaked after failure: %v", err)
 	}
 }
@@ -222,11 +232,11 @@ func TestRegistryRetriesSessionIDCollision(t *testing.T) {
 		},
 	})
 	defer registry.Close()
-	first, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "first"})
+	first, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("first")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "second"})
+	second, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("second")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +307,7 @@ func TestRegistryDeduplicatesConcurrentCreateOperation(t *testing.T) {
 	errorsFound := make(chan error, 2)
 	for range 2 {
 		go func() {
-			session, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "same-operation"})
+			session, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("same-operation")})
 			results <- session
 			errorsFound <- err
 		}()
@@ -319,7 +329,7 @@ func TestRegistryDeduplicatesConcurrentCreateOperation(t *testing.T) {
 func TestRegistryDeduplicatesRetiredCreateWithoutRetainingRuntime(t *testing.T) {
 	registry := newFakeRegistry(t, RegistryConfig{})
 	defer registry.Close()
-	request := CreateSessionRequest{OperationID: "retired-retry", Process: ptyhost.Spec{Executable: "shell"}}
+	request := CreateSessionRequest{OperationID: operationID("retired-retry"), Process: ptyhost.Spec{Executable: "shell"}}
 	first, err := registry.Create(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -345,14 +355,330 @@ func TestRegistryRejectsOperationIDWithDifferentRequest(t *testing.T) {
 	registry := newFakeRegistry(t, RegistryConfig{})
 	defer registry.Close()
 	if _, err := registry.Create(context.Background(), CreateSessionRequest{
-		OperationID: "conflict", Process: ptyhost.Spec{Executable: "first-shell"},
+		OperationID: operationID("conflict"), Process: ptyhost.Spec{Executable: "first-shell"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := registry.Create(context.Background(), CreateSessionRequest{
-		OperationID: "conflict", Process: ptyhost.Spec{Executable: "different-shell"},
+		OperationID: operationID("conflict"), Process: ptyhost.Spec{Executable: "different-shell"},
 	}); !errors.Is(err, ErrOperationConflict) {
 		t.Fatalf("conflicting operation error = %v", err)
+	}
+}
+
+func TestRegistryDurablyReplaysCreateWithoutStartingAnotherRuntime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "registry-create.sqlite")
+	persistence := openRegistryStore(t, path)
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	ids := []string{
+		"30000000-0000-4000-8000-000000000001",
+		"40000000-0000-4000-8000-000000000001",
+	}
+	registry := newPersistentFakeRegistry(t, persistence, &starts, ids)
+	request := CreateSessionRequest{
+		OperationID: operationID("durable-create"), Title: "durable session",
+		ProjectID: registryProjectID, ShellProfileID: registryProfileID,
+		Process: ptyhost.Spec{Executable: "/bin/zsh", Columns: 80, Rows: 24},
+	}
+	created, err := registry.Create(context.Background(), request)
+	if err != nil || created.Session == nil {
+		t.Fatalf("create = %+v, err=%v", created, err)
+	}
+	if starts.Load() != 1 {
+		t.Fatalf("starts = %d, want 1", starts.Load())
+	}
+	stored, err := persistence.GetSession(context.Background(), created.ID)
+	if err != nil || stored.Title != request.Title || stored.State != store.SessionRunning {
+		t.Fatalf("stored session = %+v, err=%v", stored, err)
+	}
+	if err := registry.Close(); err != nil {
+		t.Fatalf("close first registry: %v", err)
+	}
+	if err := persistence.Close(); err != nil {
+		t.Fatalf("close first store: %v", err)
+	}
+
+	reopened := openRegistryStore(t, path)
+	defer reopened.Close()
+	if _, err := reopened.BeginBrokerGeneration(context.Background(), registryBrokerGeneration, time.Now().UTC()); err != nil {
+		t.Fatalf("resume broker generation: %v", err)
+	}
+	second := newPersistentFakeRegistry(t, reopened, &starts, []string{
+		"30000000-0000-4000-8000-000000000002",
+		"40000000-0000-4000-8000-000000000002",
+	})
+	defer second.Close()
+	replayed, err := second.Create(context.Background(), request)
+	if err != nil {
+		t.Fatalf("replay create: %v", err)
+	}
+	if replayed.ID != created.ID || replayed.Generation != created.Generation || replayed.Session != nil {
+		t.Fatalf("replayed create = %+v, original = %+v", replayed, created)
+	}
+	if starts.Load() != 1 {
+		t.Fatalf("durable replay started %d runtimes", starts.Load())
+	}
+	conflict := request
+	conflict.Title = "different title"
+	if _, err := second.Create(context.Background(), conflict); !errors.Is(err, ErrOperationConflict) {
+		t.Fatalf("durable create conflict = %v", err)
+	}
+}
+
+func TestRegistryDurablyDeduplicatesRenameAndConcurrentTerminate(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "registry-mutations.sqlite"))
+	defer persistence.Close()
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000003",
+		"40000000-0000-4000-8000-000000000003",
+	})
+	defer registry.Close()
+	created, err := registry.Create(context.Background(), CreateSessionRequest{
+		OperationID: operationID("mutation-create"), Title: "before",
+		ProjectID: registryProjectID, ShellProfileID: registryProfileID,
+		Process: ptyhost.Spec{Executable: "/bin/zsh", Columns: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	rename := RenameSessionRequest{
+		OperationID: operationID("rename"), SessionID: created.ID,
+		Generation: created.Generation, Title: "after",
+	}
+	firstRename, err := registry.Rename(context.Background(), rename)
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	replayedRename, err := registry.Rename(context.Background(), rename)
+	if err != nil || replayedRename != firstRename {
+		t.Fatalf("rename replay = %+v, err=%v; want %+v", replayedRename, err, firstRename)
+	}
+	conflictingRename := rename
+	conflictingRename.Title = "conflict"
+	if _, err := registry.Rename(context.Background(), conflictingRename); !errors.Is(err, ErrOperationConflict) {
+		t.Fatalf("rename conflict = %v", err)
+	}
+	metadata, err := persistence.GetSession(context.Background(), created.ID)
+	if err != nil || metadata.Title != "after" {
+		t.Fatalf("renamed metadata = %+v, err=%v", metadata, err)
+	}
+
+	terminate := TerminateSessionRequest{
+		OperationID: operationID("terminate"), SessionID: created.ID,
+		Generation: created.Generation,
+	}
+	const callers = 16
+	results := make(chan TerminateSessionResult, callers)
+	errorsFound := make(chan error, callers)
+	var ready sync.WaitGroup
+	ready.Add(callers)
+	start := make(chan struct{})
+	for range callers {
+		go func() {
+			ready.Done()
+			<-start
+			result, err := registry.Terminate(context.Background(), terminate)
+			results <- result
+			errorsFound <- err
+		}()
+	}
+	ready.Wait()
+	close(start)
+	var expected TerminateSessionResult
+	for index := range callers {
+		result := <-results
+		if err := <-errorsFound; err != nil {
+			t.Fatalf("terminate caller %d: %v", index, err)
+		}
+		if index == 0 {
+			expected = result
+		} else if result != expected {
+			t.Fatalf("terminate result %d = %+v, want %+v", index, result, expected)
+		}
+	}
+	managed := created.Session.(*fakeManagedSession)
+	if managed.terminateCalls.Load() != 1 {
+		t.Fatalf("runtime terminate calls = %d, want 1", managed.terminateCalls.Load())
+	}
+	metadata, err = persistence.GetSession(context.Background(), created.ID)
+	if err != nil || metadata.State != store.SessionExiting {
+		t.Fatalf("terminating metadata = %+v, err=%v", metadata, err)
+	}
+}
+
+func TestRegistryCloseWaitsForInFlightRenameAndRejectsNewMutation(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "rename-close.sqlite"))
+	defer persistence.Close()
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000010",
+		"40000000-0000-4000-8000-000000000010",
+	})
+	created := createPersistentTestSession(t, registry, "rename-close-create")
+
+	nowStarted := make(chan struct{})
+	nowRelease := make(chan struct{})
+	var blockOnce sync.Once
+	registry.config.now = func() time.Time {
+		blockOnce.Do(func() {
+			close(nowStarted)
+			<-nowRelease
+		})
+		return time.Now().UTC()
+	}
+	renameDone := make(chan error, 1)
+	go func() {
+		_, err := registry.Rename(context.Background(), RenameSessionRequest{
+			OperationID: operationID("rename-close"), SessionID: created.ID,
+			Generation: created.Generation, Title: "renamed before close",
+		})
+		renameDone <- err
+	}()
+	<-nowStarted
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- registry.Close() }()
+	waitForRegistryClosed(t, registry)
+	if _, err := registry.Rename(context.Background(), RenameSessionRequest{
+		OperationID: operationID("rename-after-close"), SessionID: created.ID,
+		Generation: created.Generation, Title: "must reject",
+	}); !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("rename after close gate error = %v", err)
+	}
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned before in-flight rename: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(nowRelease)
+	if err := <-renameDone; err != nil {
+		t.Fatalf("in-flight rename: %v", err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatalf("close after rename: %v", err)
+	}
+}
+
+func TestRegistryCloseWaitsForInFlightTerminateAndClosedGatePrecedesReplay(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "terminate-close.sqlite"))
+	defer persistence.Close()
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000011",
+		"40000000-0000-4000-8000-000000000011",
+	})
+	created := createPersistentTestSession(t, registry, "terminate-close-create")
+	managed := created.Session.(*fakeManagedSession)
+	managed.terminateStarted = make(chan struct{})
+	managed.terminateGate = make(chan struct{})
+	request := TerminateSessionRequest{
+		OperationID: operationID("terminate-close"), SessionID: created.ID,
+		Generation: created.Generation,
+	}
+	terminateDone := make(chan error, 1)
+	go func() {
+		_, err := registry.Terminate(context.Background(), request)
+		terminateDone <- err
+	}()
+	<-managed.terminateStarted
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- registry.Close() }()
+	waitForRegistryClosed(t, registry)
+	if _, err := registry.Terminate(context.Background(), request); !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("durable replay after close gate error = %v", err)
+	}
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned before in-flight terminate: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(managed.terminateGate)
+	if err := <-terminateDone; err != nil {
+		t.Fatalf("in-flight terminate: %v", err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatalf("close after terminate: %v", err)
+	}
+}
+
+func TestRegistryAcceptedTerminateReportsRuntimeFailureOnClose(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "terminate-error.sqlite"))
+	defer persistence.Close()
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000012",
+		"40000000-0000-4000-8000-000000000012",
+	})
+	created := createPersistentTestSession(t, registry, "terminate-error-create")
+	managed := created.Session.(*fakeManagedSession)
+	runtimeErr := errors.New("synthetic runtime termination failure")
+	managed.terminateErr = runtimeErr
+	request := TerminateSessionRequest{
+		OperationID: operationID("terminate-error"), SessionID: created.ID,
+		Generation: created.Generation,
+	}
+	first, err := registry.Terminate(context.Background(), request)
+	if err != nil {
+		t.Fatalf("accepted termination returned runtime failure: %v", err)
+	}
+	replayed, err := registry.Terminate(context.Background(), request)
+	if err != nil || replayed != first {
+		t.Fatalf("accepted termination replay = %+v, err=%v; want %+v", replayed, err, first)
+	}
+	if managed.terminateCalls.Load() != 1 {
+		t.Fatalf("runtime termination calls = %d, want 1", managed.terminateCalls.Load())
+	}
+	if err := registry.Close(); !errors.Is(err, runtimeErr) {
+		t.Fatalf("close diagnostics error = %v, want runtime failure", err)
+	}
+}
+
+func TestRegistryPersistsFinalStateWhenReceiptTimestampIsLaterThanActualEnd(t *testing.T) {
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "terminate-clock.sqlite"))
+	defer persistence.Close()
+	seedRegistryStore(t, persistence)
+	var starts atomic.Int32
+	registry := newPersistentFakeRegistry(t, persistence, &starts, []string{
+		"30000000-0000-4000-8000-000000000013",
+		"40000000-0000-4000-8000-000000000013",
+	})
+	created := createPersistentTestSession(t, registry, "terminate-clock-create")
+	managed := created.Session.(*fakeManagedSession)
+	managed.mu.Lock()
+	startedAt := managed.status.StartedAt
+	managed.mu.Unlock()
+	receiptAt := startedAt.Add(10 * time.Second).Truncate(time.Millisecond)
+	actualEnd := startedAt.Add(2 * time.Second).Truncate(time.Millisecond)
+	registry.config.now = func() time.Time { return receiptAt }
+	if _, err := registry.Terminate(context.Background(), TerminateSessionRequest{
+		OperationID: operationID("terminate-clock"), SessionID: created.ID,
+		Generation: created.Generation,
+	}); err != nil {
+		t.Fatalf("accept termination: %v", err)
+	}
+	exitCode := 0
+	managed.mu.Lock()
+	managed.status.State = SessionExited
+	managed.status.EndedAt = actualEnd
+	managed.status.ExitCode = &exitCode
+	managed.mu.Unlock()
+	managed.endedOnce.Do(func() { close(managed.ended) })
+	waitForRetiredRegistrySession(t, registry, created.ID)
+	metadata, err := persistence.GetSession(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("get persisted final state: %v", err)
+	}
+	if metadata.State != store.SessionExited || !metadata.UpdatedAt.Equal(receiptAt) ||
+		metadata.EndedAt == nil || !metadata.EndedAt.Equal(actualEnd) {
+		t.Fatalf("persisted final timeline = %+v; want updated=%v ended=%v", metadata, receiptAt, actualEnd)
+	}
+	if err := registry.Close(); err != nil {
+		t.Fatalf("close registry: %v", err)
 	}
 }
 
@@ -370,8 +696,7 @@ func TestRegistryReleasesCapacityAfterDelayedCleanupCompletes(t *testing.T) {
 			return session, nil
 		},
 	})
-	defer registry.Close()
-	created, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "first"})
+	created, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("first")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,13 +705,16 @@ func TestRegistryReleasesCapacityAfterDelayedCleanupCompletes(t *testing.T) {
 	for !first.closed.Load() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "still-counted"}); !errors.Is(err, ErrSessionLimit) {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("still-counted")}); !errors.Is(err, ErrSessionLimit) {
 		t.Fatalf("create before definitive cleanup = %v", err)
 	}
 	first.doneOnce.Do(func() { close(first.done) })
 	waitForRetiredRegistrySession(t, registry, created.ID)
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "after-cleanup"}); err != nil {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("after-cleanup")}); err != nil {
 		t.Fatalf("create after definitive cleanup: %v", err)
+	}
+	if err := registry.Close(); !errors.Is(err, cleanupErr) {
+		t.Fatalf("registry close did not preserve cleanup failure: %v", err)
 	}
 }
 
@@ -404,7 +732,7 @@ func TestRegistryShutdownReportsLateStartCleanupFailure(t *testing.T) {
 	})
 	created := make(chan error, 1)
 	go func() {
-		_, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "late-error"})
+		_, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("late-error")})
 		created <- err
 	}()
 	<-started
@@ -437,7 +765,7 @@ func TestRegistryConcurrentCloseWaitsForSameResult(t *testing.T) {
 			return session, nil
 		},
 	})
-	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "close-test"}); err != nil {
+	if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("close-test")}); err != nil {
 		t.Fatal(err)
 	}
 	results := make(chan error, 2)
@@ -464,7 +792,7 @@ func TestRegistryCloseRunningRealSessionSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := registry.Create(context.Background(), CreateSessionRequest{
-		OperationID: "shutdown-running",
+		OperationID: operationID("shutdown-running"),
 		Process: ptyhost.Spec{
 			Executable: fixture,
 			Env:        []string{"PTERM_PTY_FIXTURE_MODE=sleep"},
@@ -488,7 +816,7 @@ func TestRegistryListSurvivesConcurrentRetirement(t *testing.T) {
 		},
 	})
 	defer registry.Close()
-	created, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: "list-race"})
+	created, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID("list-race")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +847,7 @@ func TestRegistryBoundsRetiredSessionRecords(t *testing.T) {
 	registry := newFakeRegistry(t, RegistryConfig{MaxLiveSessions: 1, RetainedSessionRecords: 1})
 	defer registry.Close()
 	for index, operation := range []string{"first", "second"} {
-		session, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operation})
+		session, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: operationID(operation)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -554,7 +882,7 @@ func TestRegistryRetiresRealExitedSession(t *testing.T) {
 	}
 	defer registry.Close()
 	session, err := registry.Create(context.Background(), CreateSessionRequest{
-		OperationID: "real-exit",
+		OperationID: operationID("real-exit"),
 		Process: ptyhost.Spec{
 			Executable: fixture,
 			Env:        []string{"PTERM_PTY_FIXTURE_MODE=query"},
@@ -611,9 +939,27 @@ func TestRegistryConfigurationValidation(t *testing.T) {
 	if _, err := registry.Create(context.Background(), CreateSessionRequest{}); !errors.Is(err, ErrOperationID) {
 		t.Fatalf("empty operation ID error = %v", err)
 	}
+	for _, invalid := range []string{
+		"named-operation",
+		"90000000-0000-4000-8000-00000000000A",
+		"90000000000040008000000000000000",
+		"90000000-0000-0000-8000-000000000001",
+	} {
+		if _, err := registry.Create(context.Background(), CreateSessionRequest{OperationID: invalid}); !errors.Is(err, ErrOperationID) {
+			t.Fatalf("invalid operation ID %q error = %v", invalid, err)
+		}
+	}
 }
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+func operationID(label string) string {
+	value := sha256.Sum256([]byte(label))
+	value[6] = (value[6] & 0x0f) | 0x40
+	value[8] = (value[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
+}
 
 func newFakeRegistry(t *testing.T, config RegistryConfig) *Registry {
 	t.Helper()
@@ -627,6 +973,97 @@ func newFakeRegistry(t *testing.T, config RegistryConfig) *Registry {
 		t.Fatal(err)
 	}
 	return registry
+}
+
+func openRegistryStore(t *testing.T, path string) *store.Store {
+	t.Helper()
+	persistence, err := store.Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("open persistence store: %v", err)
+	}
+	return persistence
+}
+
+func seedRegistryStore(t *testing.T, persistence *store.Store) {
+	t.Helper()
+	now := time.Now().UTC().Add(-time.Minute)
+	if _, err := persistence.BeginBrokerGeneration(context.Background(), registryBrokerGeneration, now); err != nil {
+		t.Fatalf("begin broker generation: %v", err)
+	}
+	if err := persistence.PutProject(context.Background(), store.Project{
+		ID: registryProjectID, DisplayName: "project", CanonicalPath: "/tmp/project",
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("put project: %v", err)
+	}
+	if err := persistence.PutShellProfile(context.Background(), store.ShellProfile{
+		ID: registryProfileID, DisplayName: "shell", Platform: store.PlatformDarwin,
+		ExecutablePath: "/bin/zsh", Arguments: []string{"-l"},
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("put shell profile: %v", err)
+	}
+}
+
+func newPersistentFakeRegistry(
+	t *testing.T,
+	persistence *store.Store,
+	starts *atomic.Int32,
+	ids []string,
+) *Registry {
+	t.Helper()
+	var idMu sync.Mutex
+	registry, err := NewRegistry(context.Background(), RegistryConfig{
+		Store: persistence, BrokerGeneration: registryBrokerGeneration,
+		newID: func() (string, error) {
+			idMu.Lock()
+			defer idMu.Unlock()
+			if len(ids) == 0 {
+				return "", errors.New("test ID sequence exhausted")
+			}
+			id := ids[0]
+			ids = ids[1:]
+			return id, nil
+		},
+		start: func(_ context.Context, config SessionConfig) (registrySession, error) {
+			starts.Add(1)
+			return newFakeManagedSession(config.ID, config.Generation, SessionRunning), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("new persistent registry: %v", err)
+	}
+	return registry
+}
+
+func createPersistentTestSession(t *testing.T, registry *Registry, label string) CreateSessionResult {
+	t.Helper()
+	created, err := registry.Create(context.Background(), CreateSessionRequest{
+		OperationID: operationID(label), Title: label,
+		ProjectID: registryProjectID, ShellProfileID: registryProfileID,
+		Process: ptyhost.Spec{Executable: "/bin/zsh", Columns: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatalf("create persistent session: %v", err)
+	}
+	return created
+}
+
+func waitForRegistryClosed(t *testing.T, registry *Registry) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		registry.mu.Lock()
+		closed := registry.closed
+		registry.mu.Unlock()
+		if closed {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("registry did not enter closed state")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func waitForRetiredRegistrySession(t *testing.T, registry *Registry, id string) {
@@ -645,26 +1082,34 @@ func waitForRetiredRegistrySession(t *testing.T, registry *Registry, id string) 
 }
 
 type fakeManagedSession struct {
-	mu            sync.Mutex
-	status        SessionStatus
-	closed        atomic.Bool
-	ended         chan struct{}
-	endedOnce     sync.Once
-	done          chan struct{}
-	doneOnce      sync.Once
-	closeGate     <-chan struct{}
-	closeErr      error
-	statusStarted chan struct{}
-	statusRelease chan struct{}
-	statusOnce    sync.Once
-	statusErr     error
+	mu               sync.Mutex
+	status           SessionStatus
+	closed           atomic.Bool
+	ended            chan struct{}
+	endedOnce        sync.Once
+	done             chan struct{}
+	doneOnce         sync.Once
+	closeGate        <-chan struct{}
+	closeErr         error
+	statusStarted    chan struct{}
+	statusRelease    chan struct{}
+	statusOnce       sync.Once
+	statusErr        error
+	terminateCalls   atomic.Int32
+	terminateErr     error
+	terminateGate    chan struct{}
+	terminateStarted chan struct{}
+	terminateOnce    sync.Once
 }
 
 func newFakeManagedSession(id, generation string, state SessionState) *fakeManagedSession {
 	session := &fakeManagedSession{
-		status: SessionStatus{ID: id, Generation: generation, State: state, StartedAt: time.Now()},
-		ended:  make(chan struct{}),
-		done:   make(chan struct{}),
+		status: SessionStatus{
+			ID: id, Generation: generation, State: state,
+			Columns: 80, Rows: 24, StartedAt: time.Now().UTC(),
+		},
+		ended: make(chan struct{}),
+		done:  make(chan struct{}),
 	}
 	if state == SessionExited || state == SessionLost {
 		session.endedOnce.Do(func() { close(session.ended) })
@@ -726,7 +1171,16 @@ func (session *fakeManagedSession) Status(context.Context) (SessionStatus, error
 	defer session.mu.Unlock()
 	return cloneSessionStatus(session.status), nil
 }
-func (session *fakeManagedSession) Terminate(context.Context) error { return nil }
+func (session *fakeManagedSession) Terminate(context.Context) error {
+	session.terminateCalls.Add(1)
+	if session.terminateStarted != nil {
+		session.terminateOnce.Do(func() { close(session.terminateStarted) })
+	}
+	if session.terminateGate != nil {
+		<-session.terminateGate
+	}
+	return session.terminateErr
+}
 func (session *fakeManagedSession) RevokeDevice(context.Context, string) (int, error) {
 	return 0, nil
 }
