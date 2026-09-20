@@ -121,4 +121,8 @@ gates are not counted as passing behavior. Native Windows Server 2025 CI also
 demonstrated that ConPTY consumes child DSR/CPR queries before they reach the Go
 emulator and supplies the response itself. That conflicts with the plan's
 strict single Go-emulator responder requirement and remains an explicit P1
-architecture gate; it is not concealed by a passing end-to-end fixture.
+architecture gate; it is not concealed by a passing end-to-end fixture. The
+macOS implementation terminates the isolated PTY process group as required by
+the selected design, but a descendant that deliberately creates a new session
+can escape that group. The scope or containment design for such daemonized
+children is also unresolved and must not be described as verified cleanup.

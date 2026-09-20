@@ -233,13 +233,14 @@ func (core *Core) request(ctx context.Context, cmd command) (result, error) {
 		return result{}, ctx.Err()
 	}
 
+	// Enqueue is the acceptance boundary. After it succeeds, return only the
+	// actor's authoritative result or Core shutdown. Reporting ctx cancellation
+	// here could make a caller retry input that the actor will still execute.
 	select {
 	case response := <-cmd.reply:
 		return response, response.err
 	case <-core.done:
 		return result{}, ErrClosed
-	case <-ctx.Done():
-		return result{}, ctx.Err()
 	}
 }
 

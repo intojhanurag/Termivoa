@@ -214,10 +214,11 @@ func (p *Process) Wait(ctx context.Context) error {
 	}
 }
 
-// Terminate ends the complete managed process tree. It first requests a
-// graceful termination, then forcibly ends remaining descendants after a
-// short grace period or when ctx expires. Reaping continues in the background
-// even if the caller's context expires.
+// Terminate ends the platform-managed process boundary. This is a Job Object
+// on Windows and the isolated PTY process group on Unix. It first requests a
+// graceful termination, then forcibly ends remaining contained processes after
+// a short grace period or when ctx expires. Reaping continues in the
+// background even if the caller's context expires.
 func (p *Process) Terminate(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("ptyhost: nil termination context")

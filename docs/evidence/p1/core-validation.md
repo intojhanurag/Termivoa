@@ -26,7 +26,10 @@ binary was compiled, but that is not native execution evidence.
   kill-on-close Job Object, and resumes it only after enrollment.
 - `internal/terminal` owns vt in one actor, continuously drains terminal replies
   without viewers, serializes encoded input and replies into one bounded stream,
-  and captures immutable normalized screen/history frames.
+  and captures immutable normalized screen/history frames. A command canceled
+  before enqueue is rejected; once enqueued, the caller waits for the actor's
+  authoritative result so input cannot later execute after being reported as
+  canceled.
 - A local vt patch makes grapheme parsing independent of arbitrary PTY read
   and snapshot boundaries, aligns stored widths with the advertised width
   profile, exposes authoritative cursor state, and bounds retained cell,
@@ -91,5 +94,10 @@ PASS; quicktype printed its existing empty-payload inference warning
   Windows 11 evidence remains a distinct target-host requirement.
 - Resolve the demonstrated ConPTY query-responder mismatch with the plan before
   claiming the server-authoritative model complete on Windows.
+- Decide whether intentionally session-escaping macOS descendants are outside
+  the managed terminal boundary or require a different containment design. A
+  process group reliably covers ordinary shell descendants, but a child that
+  deliberately calls `setsid` can leave that group; macOS has no direct Job
+  Object equivalent in the selected xpty design.
 
 These items are pending, not passed.

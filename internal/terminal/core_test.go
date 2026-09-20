@@ -561,6 +561,44 @@ func TestShutdownWithStalledOutputConsumer(t *testing.T) {
 	}
 }
 
+func TestCancellationAfterEnqueueWaitsForAuthoritativeResult(t *testing.T) {
+	commands := make(chan command)
+	done := make(chan struct{})
+	core := &Core{commands: commands, done: done}
+	received := make(chan command, 1)
+	release := make(chan struct{})
+	go func() {
+		cmd := <-commands
+		received <- cmd
+		<-release
+		cmd.reply <- result{}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	returned := make(chan error, 1)
+	go func() {
+		returned <- core.execute(ctx, command{kind: commandText, text: "do not duplicate"})
+	}()
+
+	<-received
+	cancel()
+	select {
+	case err := <-returned:
+		t.Fatalf("accepted command returned before actor result: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatalf("accepted command result = %v, want success", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("accepted command did not return the actor result")
+	}
+}
+
 func newTestCore(t *testing.T, columns, rows int) *Core {
 	t.Helper()
 	core, err := New(context.Background(), Config{Columns: columns, Rows: rows})
