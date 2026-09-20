@@ -37,3 +37,32 @@ with admin/push/pull access. No token value was recorded.
 These checks validate the bootstrap, not PTY behavior, protocol completeness,
 platform integration, authentication, phone UX, installation, or release
 readiness. Those gates remain pending.
+
+## First private CI run
+
+GitHub Actions run `35508287671` executed against bootstrap commit
+`fbaeaeb382662a83f9498715896e722acf742694`. Eight named jobs passed. Both
+release-smoke matrix entries failed because `.gitignore` used the unanchored
+pattern `pterm`, which also ignored `cmd/pterm/main.go`; the runners therefore
+could not find the command package. The failure is not treated as a pass.
+
+The repair is isolated on `fix/p0-bootstrap-ci`: anchor binary output patterns at
+the repository root and track the scaffold command. Passing repair CI and merge
+evidence will be recorded before closing P0.
+
+## Repair CI and independent review
+
+Repair head `b6cffa1c42d12be48229acc78c6b8900dc6714f5` passed all ten
+repository-owned checks in GitHub Actions run `35508613947`, including the two
+separately named static release-smoke builds. Runner image labels and required
+check names were pinned and aligned with branch protection.
+
+The independent P0 review found and prompted fixes for truthful contributor
+instructions, Windows portability of the authoritative plan copy, complete Go
+module checksums, and a linked milestone task. It also found an automatic
+`Greptile Review` check from GitHub App `greptile-apps`. The agent did not add
+the App. On 2026-09-20, the owner confirmed that it is intentionally authorized
+to review this project. The screenshot supplied by the owner showed confidence
+threshold 0, described by Greptile as never failing on confidence. A GitHub API
+check confirmed that branch protection requires only the ten repository-owned
+contexts; Greptile is not a required merge check.
