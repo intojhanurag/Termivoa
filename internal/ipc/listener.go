@@ -409,7 +409,11 @@ func checkedRuntimeDir(runtimeDir string) (string, error) {
 	if filepath.Clean(runtimeDir) != absolute {
 		return "", errors.New("ipc: runtime directory must be an absolute clean path")
 	}
-	return absolute, nil
+	canonical, err := canonicalRuntimeDir(absolute)
+	if err != nil {
+		return "", fmt.Errorf("ipc: canonicalize runtime directory: %w", err)
+	}
+	return canonical, nil
 }
 
 func ensureJSONEOF(decoder *json.Decoder) error {

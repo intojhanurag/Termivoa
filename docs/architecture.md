@@ -35,6 +35,12 @@ endpoint is considered live. A lock owner may replace an endpoint only after
 that handshake probe fails. Separate LaunchAgents and per-user Scheduled Tasks
 remain packaging work.
 
+On Unix, the runtime path is canonicalized once through trusted root-owned
+system aliases. User-controlled symlink components, foreign-owned ancestors
+and unsafe writable ancestors are rejected before the lock, socket or
+descriptor is touched, preventing one configured path from resolving to two
+independent broker locks.
+
 ## Terminal data flow
 
 PTY output is untrusted. The broker feeds it to one Go virtual terminal that remains alive without viewers. One actor per session serializes terminal mutation, resize, accepted input, mode changes, revision assignment, and immutable frame capture. Emulator-generated replies are drained concurrently and join accepted input at one PTY writer.

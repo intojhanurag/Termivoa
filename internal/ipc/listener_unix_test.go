@@ -144,6 +144,75 @@ func TestListenBrokerRejectsUnixSymlinksBeforeChangingTargets(t *testing.T) {
 			t.Fatalf("lock symlink target mode = %04o, want unchanged 0644", info.Mode().Perm())
 		}
 	})
+
+	t.Run("intermediate runtime directory", func(t *testing.T) {
+		parent := shortRuntimeDir(t)
+		target := shortRuntimeDir(t)
+		resolvedRuntime := target + "/runtime"
+		if err := os.Mkdir(resolvedRuntime, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		link := parent + "/redirect"
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ListenBroker(context.Background(), ListenerConfig{
+			RuntimeDir: link + "/runtime", BrokerGeneration: testBrokerGeneration,
+		}); err == nil {
+			t.Fatal("intermediate runtime symlink was accepted")
+		}
+		info, err := os.Stat(resolvedRuntime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o755 {
+			t.Fatalf("intermediate symlink target mode = %04o, want unchanged 0755", info.Mode().Perm())
+		}
+	})
+}
+
+func TestRetargetedIntermediateSymlinkCannotStartSecondBroker(t *testing.T) {
+	parent := shortRuntimeDir(t)
+	anchor := parent + "/anchor"
+	runtimeDir := anchor + "/runtime"
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	first, err := ListenBroker(context.Background(), ListenerConfig{
+		RuntimeDir: runtimeDir, BrokerGeneration: testBrokerGeneration,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalAnchor := parent + "/anchor-original"
+	if err := os.Rename(anchor, originalAnchor); err != nil {
+		_ = first.Close()
+		t.Fatal(err)
+	}
+	target := shortRuntimeDir(t)
+	if err := os.Mkdir(target+"/runtime", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, anchor); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(anchor)
+		_ = os.Rename(originalAnchor, anchor)
+		_ = first.Close()
+	})
+
+	if _, err := ListenBroker(context.Background(), ListenerConfig{
+		RuntimeDir: runtimeDir, BrokerGeneration: secondBrokerGeneration,
+	}); err == nil {
+		t.Fatal("retargeted intermediate symlink started a second broker")
+	}
+	if _, err := os.Lstat(target + "/runtime/broker.lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("rejected broker created a lock through retargeted path: %v", err)
+	}
+	if _, err := os.Lstat(originalAnchor + "/runtime/broker.lock"); err != nil {
+		t.Fatalf("first broker lost its original lock: %v", err)
+	}
 }
 
 func TestEndpointDescriptorRejectsPermissiveUnixMode(t *testing.T) {

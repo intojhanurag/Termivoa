@@ -28,6 +28,11 @@ type windowsBrokerLock struct {
 	overlapped windows.Overlapped
 }
 
+// Windows runtime paths retain their clean absolute spelling. Reparse-point
+// and ownership hardening requires native Windows validation and remains part
+// of the recorded Windows evidence gate.
+func canonicalRuntimeDir(runtimeDir string) (string, error) { return runtimeDir, nil }
+
 func prepareRuntimeDir(runtimeDir string) error {
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
 		return err

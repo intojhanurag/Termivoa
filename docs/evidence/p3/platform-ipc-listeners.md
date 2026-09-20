@@ -29,9 +29,11 @@ yet connect the listener to broker request dispatch or prove gateway restart.
   successfully handshaken recorded endpoint is preserved and reported as
   already running. Cancellation during a probe stops recovery without deleting
   the recorded endpoint.
-- Unix runtime directories and persistent lock files are validated with
-  no-follow semantics before permissions are changed. Symlinked paths are
-  rejected without changing the linked target's mode.
+- Unix runtime paths are canonicalized before any lock, socket or descriptor
+  operation. Root-owned system aliases such as macOS `/var` are resolved once;
+  user-controlled symlink components, foreign-owned ancestors and unsafe
+  writable ancestors are rejected before permissions are changed. The
+  persistent lock itself is also opened with no-follow semantics.
 - Listener close removes only its matching generation descriptor and endpoint,
   then releases the OS lock. The lock file itself remains to avoid inode-lock
   replacement races.
@@ -47,7 +49,7 @@ GOTOOLCHAIN=go1.27.1 go test -race ./internal/ipc -count=50
 passed
 
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/ipc -count=20
-passed after the independent symlink-safety review fix
+passed after the intermediate-symlink retarget fix
 
 PATH="$NVM_DIR/versions/node/v24.11.0/bin:$PATH" ./scripts/check
 passed after installing the frozen pnpm lockfile dependencies in this isolated
@@ -84,6 +86,13 @@ validating ownership. The implementation now validates the directory with
 `Lstat`, opens the lock with `O_NOFOLLOW`, checks the opened file's owner, type
 and link count, and only then tightens permissions. A regression test proves
 that rejected symlinks leave both external target modes unchanged.
+
+A second independent review demonstrated that checking only the final path
+component still allowed an intermediate symlink to be retargeted so two broker
+processes acquired different lock inodes. Runtime paths are now canonicalized
+through trusted system aliases, unsafe intermediate components are rejected,
+and a regression starts broker A, replaces an intermediate directory with a
+symlink, then proves broker B cannot create a second lock or endpoint.
 
 One repository-wide `go test ./...` run initially timed out waiting for the
 pre-existing PTY fixture's `READY` marker in

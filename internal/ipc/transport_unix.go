@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -23,6 +24,108 @@ const unixSocketPathMax = 103
 
 type unixBrokerLock struct {
 	file *os.File
+}
+
+// canonicalRuntimeDir resolves immutable system aliases such as macOS /var,
+// but rejects user-controlled symlink components and unsafe ancestors. All
+// later lock, socket, and descriptor operations use the returned path, so a
+// configured alias is not re-resolved at each operation.
+func canonicalRuntimeDir(runtimeDir string) (string, error) {
+	existing := runtimeDir
+	missing := make([]string, 0, 2)
+	for {
+		if _, err := os.Lstat(existing); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return "", errors.New("no existing runtime-directory ancestor")
+		}
+		missing = append(missing, filepath.Base(existing))
+		existing = parent
+	}
+	if err := rejectUserSymlinkComponents(existing); err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return "", err
+	}
+	resolved, err = filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	if err := validateUnixAncestors(resolved); err != nil {
+		return "", err
+	}
+	for index := len(missing) - 1; index >= 0; index-- {
+		resolved = filepath.Join(resolved, missing[index])
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func rejectUserSymlinkComponents(path string) error {
+	volume := filepath.VolumeName(path)
+	remainder := strings.TrimPrefix(path, volume)
+	current := volume + string(filepath.Separator)
+	for _, component := range strings.Split(strings.TrimPrefix(remainder, string(filepath.Separator)), string(filepath.Separator)) {
+		if component == "" {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || stat.Uid != 0 {
+			return fmt.Errorf("runtime path contains non-system symlink %q", current)
+		}
+	}
+	return nil
+}
+
+func validateUnixAncestors(path string) error {
+	volume := filepath.VolumeName(path)
+	remainder := strings.TrimPrefix(path, volume)
+	current := volume + string(filepath.Separator)
+	currentUID := uint32(os.Geteuid())
+	for _, component := range strings.Split(strings.TrimPrefix(remainder, string(filepath.Separator)), string(filepath.Separator)) {
+		if component == "" {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("runtime ancestor %q is not a directory", current)
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return fmt.Errorf("runtime ancestor %q ownership is unavailable", current)
+		}
+		writableByOthers := info.Mode().Perm()&0o022 != 0
+		switch stat.Uid {
+		case currentUID:
+			if writableByOthers {
+				return fmt.Errorf("runtime ancestor %q is writable by another user", current)
+			}
+		case 0:
+			if writableByOthers && info.Mode()&os.ModeSticky == 0 {
+				return fmt.Errorf("system runtime ancestor %q is writable without the sticky bit", current)
+			}
+		default:
+			return fmt.Errorf("runtime ancestor %q is owned by UID %d", current, stat.Uid)
+		}
+	}
+	return nil
 }
 
 func prepareRuntimeDir(runtimeDir string) error {

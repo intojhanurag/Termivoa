@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -307,7 +308,11 @@ func shortRuntimeDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(directory) })
-	return directory
+	canonical, err := filepath.EvalSymlinks(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return canonical
 }
 
 func mustEndpointDescriptorPath(t *testing.T, runtimeDir string) string {
