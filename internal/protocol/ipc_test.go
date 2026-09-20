@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,33 @@ func TestDecodeIPCHandshake(t *testing.T) {
 	envelope, err = DecodeIPCHost(welcome)
 	if err != nil || envelope.Type != IPCWelcome {
 		t.Fatalf("welcome = %#v, %v", envelope, err)
+	}
+}
+
+func TestDecodeIPCErrorMatchesCanonicalErrorCodes(t *testing.T) {
+	codes := []ErrorCode{
+		Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
+		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
+		HistoryChanged, ResyncRequired, HostUnavailable, InternalError,
+	}
+	for _, code := range codes {
+		payload, err := json.Marshal(IPCErrorClass{Code: code, Message: "safe"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		message, err := json.Marshal(IPCEnvelope{
+			Version: Version, Type: IPCError, RequestID: ipcRequestID, Payload: payload,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := DecodeIPCHost(message); err != nil {
+			t.Errorf("canonical IPC error code %q rejected: %v", code, err)
+		}
+	}
+	invalid := []byte(`{"version":1,"type":"ipc.error","requestId":"` + ipcRequestID + `","payload":{"code":"not_real","message":"safe"}}`)
+	if _, err := DecodeIPCHost(invalid); err == nil {
+		t.Fatal("unknown IPC error code was accepted")
 	}
 }
 

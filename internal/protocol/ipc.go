@@ -79,8 +79,7 @@ func decodeIPC(data []byte, client bool) (IPCEnvelope, error) {
 		if err != nil {
 			return IPCEnvelope{}, err
 		}
-		if (payload.Code != ProtocolMismatch && payload.Code != HostUnavailable && payload.Code != InternalError) ||
-			len(payload.Message) == 0 || len(payload.Message) > 512 {
+		if !validErrorCode(payload.Code) || len(payload.Message) == 0 || len(payload.Message) > 512 {
 			return IPCEnvelope{}, errors.New("protocol: invalid IPC error")
 		}
 	default:
