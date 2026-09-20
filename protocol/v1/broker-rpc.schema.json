@@ -99,7 +99,10 @@
       "required": ["operationId", "title"],
       "properties": {
         "operationId": { "$ref": "#/$defs/uuid" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "title": {
+          "type": "string", "minLength": 1, "maxLength": 128,
+          "maxUtf8Bytes": 128, "safeDisplayText": true
+        }
       }
     },
     "sessionTerminateRequestPayload": {
@@ -122,7 +125,10 @@
       "properties": {
         "id": { "$ref": "#/$defs/uuid" },
         "generation": { "$ref": "#/$defs/uuid" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": {
+          "type": "string", "minLength": 1, "maxLength": 256,
+          "maxUtf8Bytes": 256, "pattern": "^[^\\u0000]+$"
+        },
         "projectId": { "$ref": "#/$defs/uuid" },
         "shellProfileId": { "$ref": "#/$defs/uuid" },
         "state": { "$ref": "envelope.schema.json#/$defs/sessionLifecycle" },
@@ -171,7 +177,10 @@
       "required": ["code", "message"],
       "properties": {
         "code": { "$ref": "envelope.schema.json#/$defs/errorCode" },
-        "message": { "type": "string", "minLength": 1, "maxLength": 512 }
+        "message": {
+          "type": "string", "minLength": 1, "maxLength": 512,
+          "maxUtf8Bytes": 512, "safeDisplayText": true
+        }
       }
     },
     "sessionListRequestMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/noSessionIdentity" }], "properties": { "type": { "const": "session.list.request" }, "payload": { "$ref": "#/$defs/sessionListRequestPayload" } } },

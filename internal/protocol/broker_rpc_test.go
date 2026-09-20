@@ -206,6 +206,14 @@ func TestBrokerRPCEnforcesMessageAndFieldBounds(t *testing.T) {
 	}
 
 	sessionID, generation := brokerRPCSessionID, brokerRPCGeneration
+	boundaryTitle := strings.Repeat("é", 64)
+	validRename := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
+		Version: Version, Type: SessionRenameRequest, RequestID: brokerRPCRequestID,
+		SessionID: &sessionID, Generation: &generation,
+	}, BrokerRPCSessionRenameRequestPayload{OperationID: brokerRPCOperation, Title: boundaryTitle})
+	if _, err := DecodeBrokerRPCRequest(validRename); err != nil {
+		t.Fatalf("128-byte Unicode title rejected: %v", err)
+	}
 	longTitle := strings.Repeat("é", 65)
 	rename := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
 		Version: Version, Type: SessionRenameRequest, RequestID: brokerRPCRequestID,
@@ -213,6 +221,16 @@ func TestBrokerRPCEnforcesMessageAndFieldBounds(t *testing.T) {
 	}, BrokerRPCSessionRenameRequestPayload{OperationID: brokerRPCOperation, Title: longTitle})
 	if _, err := DecodeBrokerRPCRequest(rename); err == nil {
 		t.Fatal("title over the byte bound was accepted")
+	}
+
+	for _, title := range []string{" padded ", "line\nbreak"} {
+		rename = encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
+			Version: Version, Type: SessionRenameRequest, RequestID: brokerRPCRequestID,
+			SessionID: &sessionID, Generation: &generation,
+		}, BrokerRPCSessionRenameRequestPayload{OperationID: brokerRPCOperation, Title: title})
+		if _, err := DecodeBrokerRPCRequest(rename); err == nil {
+			t.Fatalf("unsafe rename title %q was accepted", title)
+		}
 	}
 
 	records := make([]BrokerRPCSessionRecord, MaxBrokerRPCListSessions+1)
@@ -224,6 +242,33 @@ func TestBrokerRPCEnforcesMessageAndFieldBounds(t *testing.T) {
 	}, BrokerRPCSessionListResultPayload{Sessions: records})
 	if _, err := DecodeBrokerRPCResponse(list); err == nil {
 		t.Fatal("oversized session page was accepted")
+	}
+}
+
+func TestBrokerRPCPreservesStoredSessionTitles(t *testing.T) {
+	for _, title := range []string{
+		strings.Repeat("é", 128),
+		strings.Repeat("x", 255) + "\n",
+	} {
+		record := validBrokerRPCSessionRecord()
+		record.Title = title
+		message := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
+			Version: Version, Type: SessionCreateResult, RequestID: brokerRPCRequestID,
+		}, BrokerRPCSessionMutationResultPayload{OperationID: brokerRPCOperation, Session: record})
+		if _, err := DecodeBrokerRPCResponse(message); err != nil {
+			t.Fatalf("store-valid %d-byte title rejected: %v", len(title), err)
+		}
+	}
+
+	for _, title := range []string{strings.Repeat("é", 129), "bad\x00title"} {
+		record := validBrokerRPCSessionRecord()
+		record.Title = title
+		message := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
+			Version: Version, Type: SessionCreateResult, RequestID: brokerRPCRequestID,
+		}, BrokerRPCSessionMutationResultPayload{OperationID: brokerRPCOperation, Session: record})
+		if _, err := DecodeBrokerRPCResponse(message); err == nil {
+			t.Fatalf("store-invalid %d-byte title accepted", len(title))
+		}
 	}
 }
 

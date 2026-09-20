@@ -1,7 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
-import brokerRPCSchema from '../../../protocol/v1/broker-rpc.schema.json';
-import envelopeSchema from '../../../protocol/v1/envelope.schema.json';
+import { validateBrokerRPCMessage as validate } from './brokerRpc';
 
 const requestId = '11111111-1111-4111-8111-11111111111a';
 const sessionId = '22222222-2222-4222-8222-22222222222a';
@@ -9,10 +7,6 @@ const generation = '33333333-3333-4333-8333-33333333333a';
 const operationId = '44444444-4444-4444-8444-44444444444a';
 const projectId = '55555555-5555-4555-8555-55555555555a';
 const shellProfileId = '66666666-6666-4666-8666-66666666666a';
-
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-ajv.addSchema(envelopeSchema);
-const validate = ajv.compile(brokerRPCSchema);
 
 const record = {
   id: sessionId,
@@ -97,6 +91,45 @@ describe('broker RPC identity schema', () => {
     expect(validate({
       ...message('session.list.result', false),
       payload: { sessions: [{ ...record, id: sessionId.toUpperCase() }] },
+    })).toBe(false);
+  });
+
+  it('enforces rename title UTF-8 bytes and safe display text', () => {
+    expect(validate({
+      ...message('session.rename.request', true),
+      payload: { operationId, title: 'é'.repeat(64) },
+    })).toBe(true);
+    expect(validate({
+      ...message('session.rename.request', true),
+      payload: { operationId, title: 'é'.repeat(65) },
+    })).toBe(false);
+    expect(validate({
+      ...message('session.rename.request', true),
+      payload: { operationId, title: ' trailing ' },
+    })).toBe(false);
+    expect(validate({
+      ...message('session.rename.request', true),
+      payload: { operationId, title: 'line\nbreak' },
+    })).toBe(false);
+  });
+
+  it('preserves the stored-title contract in result records', () => {
+    const result = message('session.create.result', false);
+    expect(validate({
+      ...result,
+      payload: { operationId, session: { ...record, title: 'é'.repeat(128) } },
+    })).toBe(true);
+    expect(validate({
+      ...result,
+      payload: { operationId, session: { ...record, title: 'é'.repeat(129) } },
+    })).toBe(false);
+    expect(validate({
+      ...result,
+      payload: { operationId, session: { ...record, title: `${'x'.repeat(255)}\n` } },
+    })).toBe(true);
+    expect(validate({
+      ...result,
+      payload: { operationId, session: { ...record, title: 'bad\u0000title' } },
     })).toBe(false);
   });
 });

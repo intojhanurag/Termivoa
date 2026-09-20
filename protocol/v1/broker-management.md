@@ -17,7 +17,7 @@ so the broker can durably deduplicate a retry after the caller loses a response.
 | --- | --- | --- | --- |
 | `session.list.request` | `session.list.result` | none | Pages contain at most 200 records; cursors are opaque bounded base64url text. |
 | `session.create.request` | `session.create.result` | none | Request contains only `operationId`, saved `projectId`, and saved `shellProfileId`; the result record supplies the new identity. |
-| `session.rename.request` | `session.rename.result` | required | Mutation includes `operationId`; title is non-empty display text up to 128 UTF-8 bytes. |
+| `session.rename.request` | `session.rename.result` | required | Mutation includes `operationId`; a requested title is trimmed, control-free display text up to 128 UTF-8 bytes. Returned records preserve the store's existing 1..256-byte, NUL-free title contract. |
 | `session.terminate.request` | `session.terminate.result` | required | Mutation includes `operationId`; terminate remains distinct from detach and Ctrl+C. |
 | `session.status.request` | `session.status.result` | required | Empty request payload; result returns one bounded lifecycle record. |
 
@@ -42,7 +42,9 @@ identities in one page, non-canonical UUIDs, invalid lifecycle/timestamp
 combinations, mismatched result identities, oversized payloads, and trailing
 JSON values. The canonical schema independently requires both session identity
 fields for rename/terminate/status, forbids them for list/create, and permits a
-broker error to carry either both fields or neither.
+broker error to carry either both fields or neither. The TypeScript Ajv factory
+implements the schema's `maxUtf8Bytes` and `safeDisplayText` annotations so
+non-ASCII request and record titles have the same byte boundaries as Go.
 
 These validators deliberately validate one message at a time. The future IPC
 client/dispatcher must retain in-flight request state and reject a response

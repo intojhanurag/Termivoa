@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	MaxBrokerRPCListSessions = 200
-	MaxBrokerRPCCursorBytes  = 128
-	MaxBrokerRPCTitleBytes   = 128
-	MaxBrokerRPCErrorBytes   = 512
+	MaxBrokerRPCListSessions      = 200
+	MaxBrokerRPCCursorBytes       = 128
+	MaxBrokerRPCRenameTitleBytes  = 128
+	MaxBrokerRPCSessionTitleBytes = 256
+	MaxBrokerRPCErrorBytes        = 512
 )
 
 // BrokerRPCEnvelope is the canonical session-management message carried on a
@@ -153,7 +154,7 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 		if !validUUID(payload.OperationID) {
 			return errors.New("operationId must be a canonical UUID")
 		}
-		return validateBrokerRPCText(payload.Title, MaxBrokerRPCTitleBytes, "title")
+		return validateBrokerRPCText(payload.Title, MaxBrokerRPCRenameTitleBytes, "title")
 	case SessionTerminateRequest:
 		payload, err := brokerRPCPayload[BrokerRPCSessionTerminateRequestPayload](envelope)
 		if err != nil {
@@ -274,11 +275,18 @@ func validateBrokerRPCText(value string, maxBytes int, name string) error {
 	return nil
 }
 
+func validateBrokerRPCSessionTitle(value string) error {
+	if value == "" || len(value) > MaxBrokerRPCSessionTitleBytes || strings.IndexByte(value, 0) >= 0 {
+		return errors.New("session title must be 1..256 bytes without NUL")
+	}
+	return nil
+}
+
 func validateBrokerRPCSessionRecord(record BrokerRPCSessionRecord) error {
 	if !validUUID(record.ID) || !validUUID(record.Generation) || !validUUID(record.ProjectID) || !validUUID(record.ShellProfileID) {
 		return errors.New("session record contains a non-canonical UUID")
 	}
-	if err := validateBrokerRPCText(record.Title, MaxBrokerRPCTitleBytes, "title"); err != nil {
+	if err := validateBrokerRPCSessionTitle(record.Title); err != nil {
 		return err
 	}
 	if record.State != Starting && record.State != Running && record.State != Exiting && record.State != Exited && record.State != Lost {

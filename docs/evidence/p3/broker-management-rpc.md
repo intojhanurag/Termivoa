@@ -33,6 +33,11 @@ operation receipts, registry/store integration, or any session/viewer runtime.
 - Every schema and Go validator accepts only lowercase canonical UUID spelling.
 - The canonical RPC schema itself encodes forbidden, required, and optional
   session-identity pairs; Ajv tests cover every request and result type.
+- Rename requests retain a strict 128-byte, trimmed, control-free title rule,
+  enforced by both Go and the TypeScript Ajv factory at Unicode byte boundaries.
+- Result records preserve the store's existing 1..256-byte, NUL-free title
+  contract, including maximum-length titles with surrounding whitespace or
+  control characters, so existing sessions remain listable and manageable.
 
 Tests cover every request/result direction, wrong-direction and unknown types,
 unknown/duplicate/malformed/trailing JSON, invalid UTF-8, required session
@@ -41,6 +46,8 @@ field bounds, duplicate list identities, lifecycle/timestamp consistency,
 result/envelope identity agreement, and every stable management error code.
 They also cover case-variant key shadows, uppercase UUIDs, and every
 schema-level session identity branch.
+Unicode boundary fixtures cover 128-byte rename requests and 256-byte stored
+records, plus one-code-point-overflow cases and a maximum-length legacy title.
 
 ## Commands and results
 
@@ -55,13 +62,13 @@ passed; reused the pinned local package store
 PATH="<Node 24>/bin:$PATH" pnpm protocol:check
 passed; generated Go and TypeScript files did not drift
 
-GOTOOLCHAIN=go1.27.1 go test -race ./internal/protocol -count=20
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/protocol ./internal/store -count=20
 passed
 
 PATH="<Node 24>/bin:$PATH" GOTOOLCHAIN=go1.27.1 ./scripts/check
 Go formatting, vet, repository tests, and patched dependency tests: passed
 TypeScript checking: passed
-Web tests: 45 passed, including the Ajv identity matrix
+Web tests: 47 passed, including the Ajv identity and Unicode-title matrices
 Production web build: passed
 
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 \
