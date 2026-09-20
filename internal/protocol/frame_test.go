@@ -162,3 +162,124 @@ func TestPatchPayloadRejectsNonAdvancingRevision(t *testing.T) {
 		t.Fatal("expected non-advancing patch revision to be rejected")
 	}
 }
+
+func TestHistoryPageFromPreservesFrozenSnapshotBoundary(t *testing.T) {
+	cell := terminal.Cell{
+		Text: " ", Width: 1,
+		Foreground: terminal.RGBA{A: 255}, Background: terminal.RGBA{A: 255},
+	}
+	row := terminal.Row{Cells: make([]terminal.Cell, 20)}
+	for index := range row.Cells {
+		row.Cells[index] = cell
+	}
+	next := 200
+	result := terminal.HistoryReadResult{
+		Epoch: 7, Revision: 11, Columns: 20, Offset: 0,
+		Rows: make([]terminal.Row, MaxHistoryPageRows), NextOffset: &next,
+	}
+	for index := range result.Rows {
+		result.Rows[index] = row
+	}
+	payload, err := HistoryPageFrom(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.HistoryEpoch != "7" || payload.HistoryRevision != "11" ||
+		payload.NextOffset == nil || *payload.NextOffset != 200 || payload.Complete ||
+		len(payload.Rows) != MaxHistoryPageRows {
+		t.Fatalf("history page payload = %#v", payload)
+	}
+	if err := validateHistoryPage(payload); err != nil {
+		t.Fatalf("canonical history page failed validation: %v", err)
+	}
+
+	result.Changed = true
+	if _, err := HistoryPageFrom(result); err == nil {
+		t.Fatal("changed history was encoded as a page")
+	}
+	result.Rows = nil
+	result.NextOffset = nil
+	changed, err := HistoryChangedFrom(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.HistoryEpoch != "7" || changed.HistoryRevision != "11" {
+		t.Fatalf("history changed payload = %#v", changed)
+	}
+	result.Changed = false
+	if _, err := HistoryChangedFrom(result); err == nil {
+		t.Fatal("unchanged history was encoded as history.changed")
+	}
+}
+
+func TestHistoryPageValidationRejectsSplicedPagination(t *testing.T) {
+	next := int64(199)
+	for name, payload := range map[string]HistoryPagePayload{
+		"null rows": {
+			HistoryEpoch: "1", HistoryRevision: "2", Columns: 20, Complete: true,
+		},
+		"wrong next offset": {
+			HistoryEpoch: "1", HistoryRevision: "2", Columns: 20,
+			Rows: []TerminalRow{}, NextOffset: &next,
+		},
+		"complete with next offset": {
+			HistoryEpoch: "1", HistoryRevision: "2", Columns: 20,
+			Rows: []TerminalRow{}, NextOffset: &next, Complete: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateHistoryPage(payload); err == nil {
+				t.Fatalf("invalid history page accepted: %#v", payload)
+			}
+		})
+	}
+}
+
+func TestHistoryPageFromTrimsRowsToOutboundMessageBudget(t *testing.T) {
+	cell := terminal.Cell{
+		Text: strings.Repeat("<", terminal.MaxCellContentBytes), Width: 1,
+		Link:       "https://example.test/" + strings.Repeat("<", terminal.MaxLinkBytes-len("https://example.test/")),
+		Foreground: terminal.RGBA{A: 255}, Background: terminal.RGBA{A: 255},
+	}
+	row := terminal.Row{Cells: make([]terminal.Cell, terminal.MaxColumns)}
+	for index := range row.Cells {
+		row.Cells[index] = cell
+	}
+	next := 3
+	result := terminal.HistoryReadResult{
+		Epoch: 1, Revision: 2, Columns: terminal.MaxColumns,
+		Rows: []terminal.Row{row, row, row}, NextOffset: &next,
+	}
+	payload, err := HistoryPageFrom(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Rows) == 0 || len(payload.Rows) >= len(result.Rows) || payload.Complete ||
+		payload.NextOffset == nil || *payload.NextOffset != int64(len(payload.Rows)) {
+		t.Fatalf("bounded history payload = rows %d complete %t next %#v",
+			len(payload.Rows), payload.Complete, payload.NextOffset)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > maxEncodedHistoryPagePayloadBytes {
+		t.Fatalf("history payload = %d bytes, budget %d", len(encoded), maxEncodedHistoryPagePayloadBytes)
+	}
+	sessionID := "22222222-2222-4222-8222-222222222222"
+	generation := "33333333-3333-4333-8333-333333333333"
+	message, err := json.Marshal(Envelope{
+		Version: Version, Type: HistoryPage,
+		RequestID: "11111111-1111-4111-8111-111111111111",
+		SessionID: &sessionID, Generation: &generation, Payload: encoded,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(message) > MaxOutboundMessageBytes {
+		t.Fatalf("history message = %d bytes, limit %d", len(message), MaxOutboundMessageBytes)
+	}
+	if _, err := DecodeHost(message); err != nil {
+		t.Fatalf("bounded history message failed validation: %v", err)
+	}
+}

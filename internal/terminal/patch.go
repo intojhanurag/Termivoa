@@ -120,10 +120,6 @@ func cloneFrame(frame Frame) Frame {
 	for index, row := range frame.Screen {
 		cloned.Screen[index] = cloneRow(row)
 	}
-	cloned.History = make([]Row, len(frame.History))
-	for index, row := range frame.History {
-		cloned.History[index] = cloneRow(row)
-	}
 	return cloned
 }
 

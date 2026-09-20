@@ -15,6 +15,82 @@ import (
 // single row must always remain independently transportable.
 const MaxEncodedTerminalRowBytes = MaxOutboundMessageBytes / 2
 
+// Reserve enough room for the fixed envelope/session identity around a
+// history.page payload. UUID and decimal-counter fields are tightly bounded.
+const maxEncodedHistoryPagePayloadBytes = MaxOutboundMessageBytes - 1024
+
+// HistoryPageFrom converts an actor-copied immutable page into the canonical
+// wire payload. Changed results must be sent with HistoryChangedFrom instead.
+func HistoryPageFrom(result terminal.HistoryReadResult) (HistoryPagePayload, error) {
+	if result.Changed {
+		return HistoryPagePayload{}, fmt.Errorf("protocol: changed history cannot be encoded as a page")
+	}
+	if result.Offset < 0 || result.Offset >= terminal.MaxHistoryRows ||
+		len(result.Rows) > terminal.MaxHistoryPageRows ||
+		result.Columns < terminal.MinColumns || result.Columns > terminal.MaxColumns {
+		return HistoryPagePayload{}, fmt.Errorf("protocol: history page is outside bounds")
+	}
+	expectedNext := result.Offset + len(result.Rows)
+	if result.Complete && result.NextOffset != nil || !result.Complete &&
+		(result.NextOffset == nil || *result.NextOffset != expectedNext || len(result.Rows) == 0) {
+		return HistoryPagePayload{}, fmt.Errorf("protocol: inconsistent actor history page boundary")
+	}
+	payload := HistoryPagePayload{
+		HistoryEpoch:    strconv.FormatUint(result.Epoch, 10),
+		HistoryRevision: strconv.FormatUint(result.Revision, 10),
+		Columns:         int64(result.Columns),
+		Offset:          int64(result.Offset),
+		Rows:            make([]TerminalRow, 0, len(result.Rows)),
+	}
+	for index, source := range result.Rows {
+		row, _, err := terminalRow(source, result.Columns)
+		if err != nil {
+			return HistoryPagePayload{}, fmt.Errorf("protocol: history row %d: %w", index, err)
+		}
+		payload.Rows = append(payload.Rows, row)
+		payload.Complete = result.Complete && index == len(result.Rows)-1
+		if !payload.Complete {
+			next := payload.Offset + int64(len(payload.Rows))
+			payload.NextOffset = &next
+		} else {
+			payload.NextOffset = nil
+		}
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return HistoryPagePayload{}, fmt.Errorf("protocol: encode history page: %w", err)
+		}
+		if len(encoded) > maxEncodedHistoryPagePayloadBytes {
+			payload.Rows = payload.Rows[:len(payload.Rows)-1]
+			if len(payload.Rows) == 0 {
+				return HistoryPagePayload{}, fmt.Errorf("protocol: one history row exceeds outbound message budget")
+			}
+			payload.Complete = false
+			next := payload.Offset + int64(len(payload.Rows))
+			payload.NextOffset = &next
+			break
+		}
+	}
+	if len(result.Rows) == 0 {
+		payload.Complete = result.Complete
+	}
+	if err := validateHistoryPage(payload); err != nil {
+		return HistoryPagePayload{}, fmt.Errorf("protocol: invalid history page: %w", err)
+	}
+	return payload, nil
+}
+
+// HistoryChangedFrom identifies the current frozen-snapshot token after a
+// caller presented a stale epoch or revision.
+func HistoryChangedFrom(result terminal.HistoryReadResult) (HistoryChangedPayload, error) {
+	if !result.Changed || len(result.Rows) != 0 {
+		return HistoryChangedPayload{}, fmt.Errorf("protocol: history.changed requires a changed result without rows")
+	}
+	return HistoryChangedPayload{
+		HistoryEpoch:    strconv.FormatUint(result.Epoch, 10),
+		HistoryRevision: strconv.FormatUint(result.Revision, 10),
+	}, nil
+}
+
 // Snapshot converts an immutable canonical frame into wire-ready metadata and
 // style-coalesced rows. Chunking is deliberately left to the connection layer.
 func Snapshot(frame terminal.Frame, historyEpoch, historyRevision uint64) (ScreenMetadata, []TerminalRow, error) {

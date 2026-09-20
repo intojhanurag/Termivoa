@@ -9,12 +9,19 @@ import (
 // DefaultScrollbackSize is the default maximum number of lines in the scrollback buffer.
 const DefaultScrollbackSize = 10000
 
+// normalizedCellBytes conservatively covers the fixed fields and style data
+// in Phone Terminal's normalized cell representation. Variable display/link
+// strings are charged separately below.
+const normalizedCellBytes = 256
+
 // Scrollback represents a scrollback buffer that stores lines scrolled off the screen.
 type Scrollback struct {
-	lines    []uv.Line
-	maxLines int
-	bytes    int
-	maxBytes int
+	lines     []uv.Line
+	maxLines  int
+	bytes     int
+	maxBytes  int
+	cellWidth int
+	onChange  func(reset bool)
 }
 
 // NewScrollback creates a new scrollback buffer with the given maximum number of lines.
@@ -51,12 +58,13 @@ func (s *Scrollback) Push(line uv.Line) {
 
 	if len(s.lines) >= s.maxLines {
 		// Remove oldest line and append new one
-		s.bytes -= normalizedLineBytes(s.lines[0])
+		s.bytes -= s.normalizedLineBytes(s.lines[0])
 		s.lines = slices.Delete(s.lines, 0, 1)
 	}
 	s.lines = append(s.lines, cloned)
-	s.bytes += normalizedLineBytes(cloned)
+	s.bytes += s.normalizedLineBytes(cloned)
 	s.enforceByteLimit()
+	s.changed(false)
 }
 
 // PushN adds n lines from the buffer starting at line y to the scrollback.
@@ -98,7 +106,7 @@ func (s *Scrollback) SetMaxLines(maxLines int) {
 	s.maxLines = maxLines
 	if len(s.lines) > maxLines {
 		for _, line := range s.lines[:len(s.lines)-maxLines] {
-			s.bytes -= normalizedLineBytes(line)
+			s.bytes -= s.normalizedLineBytes(line)
 		}
 		// Remove oldest lines
 		s.lines = s.lines[len(s.lines)-maxLines:]
@@ -115,22 +123,68 @@ func (s *Scrollback) SetMaxBytes(maxBytes int) {
 	s.enforceByteLimit()
 }
 
+// SetCellWidth updates the number of normalized cells charged for every
+// retained line. History readers pad short stored lines to this width, so the
+// scrollback allocation must account for those cells too.
+func (s *Scrollback) SetCellWidth(width int) {
+	if s == nil || width < 0 || width == s.cellWidth {
+		return
+	}
+	s.cellWidth = width
+	s.recalculateBytes()
+	before := len(s.lines)
+	s.enforceByteLimit()
+	if len(s.lines) != before {
+		s.changed(false)
+	}
+}
+
+// SetChangeCallback reports main-screen history mutation. reset is true only
+// for an explicit history clear, not ordinary oldest-row eviction.
+func (s *Scrollback) SetChangeCallback(callback func(reset bool)) {
+	if s == nil {
+		return
+	}
+	s.onChange = callback
+}
+
+// Bytes returns the conservative normalized payload estimate currently held.
+func (s *Scrollback) Bytes() int {
+	if s == nil {
+		return 0
+	}
+	return s.bytes
+}
+
 func (s *Scrollback) enforceByteLimit() {
 	if s == nil || s.maxBytes == 0 {
 		return
 	}
 	for len(s.lines) > 0 && s.bytes > s.maxBytes {
-		s.bytes -= normalizedLineBytes(s.lines[0])
+		s.bytes -= s.normalizedLineBytes(s.lines[0])
 		s.lines = slices.Delete(s.lines, 0, 1)
 	}
 }
 
-func normalizedLineBytes(line uv.Line) int {
-	size := len(line) * 48
+func (s *Scrollback) normalizedLineBytes(line uv.Line) int {
+	size := max(len(line), s.cellWidth) * normalizedCellBytes
 	for i := range line {
 		size += len(line[i].Content) + len(line[i].Link.URL)
 	}
 	return size
+}
+
+func (s *Scrollback) recalculateBytes() {
+	s.bytes = 0
+	for _, line := range s.lines {
+		s.bytes += s.normalizedLineBytes(line)
+	}
+}
+
+func (s *Scrollback) changed(reset bool) {
+	if s.onChange != nil {
+		s.onChange(reset)
+	}
 }
 
 // Line returns the line at the given index.
@@ -159,6 +213,7 @@ func (s *Scrollback) Clear() {
 	}
 	s.lines = s.lines[:0]
 	s.bytes = 0
+	s.changed(true)
 }
 
 // CellAt returns the cell at the given position in the scrollback buffer.

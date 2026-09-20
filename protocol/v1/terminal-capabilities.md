@@ -55,3 +55,21 @@ whole-row erase, resolved SGR, cursor visibility/style, autowrap control, and
 synchronized-output boundaries. Printable cell text is rejected if it contains
 C0, DEL, C1, or escape characters. xterm input is disabled, local scrollback is
 zero, and the adapter never installs an xterm data path to the child.
+
+## Normal history paging
+
+Normal-screen history is oldest-first and is never mixed with alternate-screen
+application output. Each screen snapshot advertises a history epoch and
+revision. A `history.read` request must present that exact token and may request
+at most 200 rows. The broker returns an immutable `history.page` when the token
+still matches; otherwise it returns `history.changed` with the current token
+and no rows. An explicit normal-history clear advances the epoch and live
+patches set `historyReset` whenever the viewer's acknowledged base belongs to
+an older epoch.
+
+The terminal actor retains at most 5,000 complete rows and a conservative
+32 MiB normalized-payload estimate, evicting oldest rows first. Width changes
+recalculate that estimate before another page is exposed. Alternate-screen
+state is limited to its live grid and has no hidden emulator scrollback.
+History pages may contain fewer than the requested row limit when the encoded
+payload must stay inside the 1 MiB outbound-message limit.

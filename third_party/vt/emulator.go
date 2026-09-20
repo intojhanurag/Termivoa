@@ -88,6 +88,10 @@ func NewEmulator(w, h int) *Emulator {
 	t := new(Emulator)
 	t.scrs[0] = *NewScreen(w, h)
 	t.scrs[1] = *NewScreen(w, h)
+	// Alternate-screen applications own only their live grid. Retaining a
+	// second hidden scrollback would contaminate neither normal history nor its
+	// wire pages, but would still be unbounded session memory.
+	t.scrs[1].SetScrollback(nil)
 	t.scr = &t.scrs[0]
 	t.scrs[0].cb = &t.cb
 	t.scrs[1].cb = &t.cb
@@ -523,6 +527,23 @@ func (e *Emulator) SetScrollbackByteLimit(maxBytes int) {
 	if sb := e.Scrollback(); sb != nil {
 		sb.SetMaxBytes(maxBytes)
 	}
+}
+
+// SetScrollbackChangeCallback reports mutations to normal-screen history.
+// The callback runs synchronously with the emulator mutation.
+func (e *Emulator) SetScrollbackChangeCallback(callback func(reset bool)) {
+	if sb := e.Scrollback(); sb != nil {
+		sb.SetChangeCallback(callback)
+	}
+}
+
+// ScrollbackBytes returns the conservative normalized payload estimate held
+// by the normal-screen emulator scrollback.
+func (e *Emulator) ScrollbackBytes() int {
+	if sb := e.Scrollback(); sb != nil {
+		return sb.Bytes()
+	}
+	return 0
 }
 
 // ClearScrollback clears the scrollback buffer.

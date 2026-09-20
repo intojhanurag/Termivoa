@@ -77,6 +77,7 @@ type terminalRuntime interface {
 	Resize(context.Context, int, int) error
 	Snapshot(context.Context) (terminal.Frame, error)
 	ScreenSnapshot(context.Context) (terminal.Frame, error)
+	ReadHistory(context.Context, terminal.HistoryReadRequest) (terminal.HistoryReadResult, error)
 	SendText(context.Context, string) error
 	Paste(context.Context, string) error
 	SendKey(context.Context, uv.KeyEvent) error
@@ -130,8 +131,6 @@ type Session struct {
 	shutdownErr        error
 	viewers            map[string]*viewerActorState
 	published          *publishedFrame
-	historyEpoch       uint64
-	historyRevision    uint64
 	retiring           bool
 	retirementRevision uint64
 }
@@ -145,6 +144,7 @@ const (
 	requestSubmit
 	requestResize
 	requestSnapshot
+	requestHistoryRead
 	requestStatus
 	requestTerminate
 	requestRevokeDevice
@@ -173,6 +173,7 @@ type sessionRequest struct {
 	revision      uint64
 	deliveryErr   error
 	clippedRows   []bool
+	history       terminal.HistoryReadRequest
 	reply         chan sessionResponse
 }
 
@@ -185,6 +186,7 @@ type sessionResponse struct {
 	dropped    int
 	delivery   viewerDeliveryPlan
 	published  *publishedFrame
+	history    terminal.HistoryReadResult
 	err        error
 }
 
@@ -369,6 +371,20 @@ func (session *Session) Resize(ctx context.Context, identity MutationIdentity, c
 func (session *Session) Snapshot(ctx context.Context) (terminal.Frame, error) {
 	response, err := session.call(ctx, sessionRequest{kind: requestSnapshot})
 	return response.frame, err
+}
+
+// ReadHistory returns an actor-copied immutable normal-history page. The
+// generation and history token are checked in the session actor before the
+// result leaves broker ownership for protocol encoding or transmission.
+func (session *Session) ReadHistory(
+	ctx context.Context,
+	generation string,
+	request terminal.HistoryReadRequest,
+) (terminal.HistoryReadResult, error) {
+	response, err := session.call(ctx, sessionRequest{
+		kind: requestHistoryRead, identity: MutationIdentity{Generation: generation}, history: request,
+	})
+	return response.history, err
 }
 
 func (session *Session) Status(ctx context.Context) (SessionStatus, error) {
@@ -817,6 +833,12 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		}
 	case requestSnapshot:
 		response.frame, response.err = session.terminal.Snapshot(session.ctx)
+	case requestHistoryRead:
+		if request.identity.Generation != session.generation {
+			response.err = ErrGenerationChanged
+			break
+		}
+		response.history, response.err = session.terminal.ReadHistory(session.ctx, request.history)
 	case requestStatus:
 		response.status = cloneSessionStatus(*status)
 	case requestTerminate:

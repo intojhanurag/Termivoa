@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-09-20
+Last updated: 2026-09-21
 
 ## Current status
 
@@ -28,11 +28,11 @@ session registry merged from private PR #15 as
 from private PR #16 as `bc361141995f1bbf1d5a273ac38835fa9ee7cc3d`, and secure
 platform IPC merged from private PR #17 as `9ab4a3e99e7f15d8634315e2e1e22eda059354d0`.
 Viewer delivery merged from private PR #18 as
-`1ee75ea4717562905ccb79175729b999df072346`. The current
-`feat/p3-operation-receipts` checkpoint adds broker-integrated durable
-deduplication for session create, rename, and terminate mutations, including a
-shutdown admission barrier, monotonic final-state persistence, and retained
-runtime/cleanup diagnostics.
+`1ee75ea4717562905ccb79175729b999df072346`. Durable operation receipts merged
+from private PR #19 as `fe968ec303e31cd9dd34cf56540733686f1df974`, adding
+broker-integrated deduplication for session create, rename, and terminate,
+shutdown admission barriers, clock-rollback-safe monotonic persistence, and
+retained runtime/cleanup diagnostics.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
@@ -42,6 +42,15 @@ transport limit. Focused race/vet and the complete repository check pass;
 evidence is in `docs/evidence/p3/viewer-delivery.md`. Process separation,
 broker dispatch, gateway integration/restart, history paging, and native
 Windows evidence remain pending.
+
+The `feat/p3-history-paging` checkpoint now provides actor-owned normal-history
+epochs/revisions, immutable pages of at most 200 rows, stale-token
+`history.changed` results, viewer-relative history-reset signaling, and strict
+5,000-row/32 MiB normalized retention applied to the emulator scrollback
+itself. Alternate-screen state has no hidden scrollback. Focused race tests
+pass; full repository and Windows cross-compile evidence is recorded in
+`docs/evidence/p3/history-paging.md`. This is local checkpoint evidence until
+the branch is reviewed and merged.
 
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
@@ -108,7 +117,7 @@ These questions must be resolved before their dependent gates; they do not block
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts are implemented on `feat/p3-operation-receipts`; gateway integration remains pending; evidence under `docs/evidence/p3/` |
+| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; immutable history paging has local checkpoint evidence; broker dispatch and gateway integration remain pending; evidence under `docs/evidence/p3/` |
 | P4 — Authentication and private access | Not started | None |
 | P5 — Phone experience | Not started | None |
 | P6 — Install and update | Not started | None |
@@ -187,3 +196,10 @@ terminal history is bounded, and new unique mutations are rejected if active
 receipts alone fill the hard cap. SQLite also records project, shell-profile,
 and lifecycle metadata and marks prior live rows lost when a new broker
 generation begins. It does not restore dead processes or terminal contents.
+
+The history-paging checkpoint's broad ten-repeat race sweep observed one
+timeout in the existing viewer-resync test while waiting for a third snapshot.
+The test passed 20 isolated race repetitions afterward; the full affected
+race run and 50 history-specific repetitions also passed without a race
+report. This remains recorded as a non-reproduced timing flake in
+`docs/evidence/p3/history-paging.md`, not as native-platform evidence.

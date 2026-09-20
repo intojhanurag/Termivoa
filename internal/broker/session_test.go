@@ -552,6 +552,9 @@ func (terminalCore *stubTerminal) Snapshot(context.Context) (terminal.Frame, err
 func (terminalCore *stubTerminal) ScreenSnapshot(ctx context.Context) (terminal.Frame, error) {
 	return terminalCore.Snapshot(ctx)
 }
+func (*stubTerminal) ReadHistory(context.Context, terminal.HistoryReadRequest) (terminal.HistoryReadResult, error) {
+	return terminal.HistoryReadResult{}, nil
+}
 func (terminalCore *stubTerminal) Output() <-chan []byte { return terminalCore.output }
 func (terminalCore *stubTerminal) Close() error {
 	terminalCore.closeOnce.Do(func() {
