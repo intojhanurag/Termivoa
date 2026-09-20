@@ -1,17 +1,443 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://phone-terminal.invalid/protocol/v1/envelope.schema.json",
-  "title": "Envelope",
-  "description": "Bootstrap envelope only. P2 defines the complete v1 message union before clients depend on it.",
+  "title": "WireMessage",
+  "description": "Canonical Phone Terminal protocol v1 message union.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "type", "requestId", "payload"],
   "properties": {
-    "version": { "const": 1 },
-    "type": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "requestId": { "type": "string", "format": "uuid" },
-    "sessionId": { "type": "string", "format": "uuid" },
-    "generation": { "type": "string", "format": "uuid" },
+    "version": { "type": "integer", "const": 1 },
+    "type": { "$ref": "#/$defs/messageType" },
+    "requestId": { "$ref": "#/$defs/uuid" },
+    "sessionId": { "$ref": "#/$defs/uuid" },
+    "generation": { "$ref": "#/$defs/uuid" },
     "payload": { "type": "object" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/helloMessage" },
+    { "$ref": "#/$defs/sessionAttachMessage" },
+    { "$ref": "#/$defs/screenResyncMessage" },
+    { "$ref": "#/$defs/snapshotAppliedMessage" },
+    { "$ref": "#/$defs/controlAcquireMessage" },
+    { "$ref": "#/$defs/controlReleaseMessage" },
+    { "$ref": "#/$defs/heartbeatMessage" },
+    { "$ref": "#/$defs/inputKeyMessage" },
+    { "$ref": "#/$defs/inputTextMessage" },
+    { "$ref": "#/$defs/inputPasteMessage" },
+    { "$ref": "#/$defs/inputMouseMessage" },
+    { "$ref": "#/$defs/terminalResizeMessage" },
+    { "$ref": "#/$defs/historyReadMessage" },
+    { "$ref": "#/$defs/sessionDetachMessage" },
+    { "$ref": "#/$defs/welcomeMessage" },
+    { "$ref": "#/$defs/snapshotBeginMessage" },
+    { "$ref": "#/$defs/snapshotRowsMessage" },
+    { "$ref": "#/$defs/snapshotEndMessage" },
+    { "$ref": "#/$defs/screenPatchMessage" },
+    { "$ref": "#/$defs/historyPageMessage" },
+    { "$ref": "#/$defs/historyChangedMessage" },
+    { "$ref": "#/$defs/controlChangedMessage" },
+    { "$ref": "#/$defs/inputAcceptedMessage" },
+    { "$ref": "#/$defs/inputRejectedMessage" },
+    { "$ref": "#/$defs/sessionStateMessage" },
+    { "$ref": "#/$defs/accessRevokedMessage" },
+    { "$ref": "#/$defs/errorMessage" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "decimalCounter": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$",
+      "maxLength": 20
+    },
+    "secret": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "messageType": {
+      "title": "MessageType",
+      "type": "string",
+      "enum": [
+        "hello", "session.attach", "screen.resync", "snapshot.applied",
+        "control.acquire", "control.release", "heartbeat", "input.key",
+        "input.text", "input.paste", "input.mouse", "terminal.resize",
+        "history.read", "session.detach", "welcome", "snapshot.begin",
+        "snapshot.rows", "snapshot.end", "screen.patch", "history.page",
+        "history.changed", "control.changed", "input.accepted",
+        "input.rejected", "session.state", "access.revoked", "error"
+      ]
+    },
+    "errorCode": {
+      "title": "ErrorCode",
+      "type": "string",
+      "enum": [
+        "unauthorized", "pairing_expired", "pairing_pending", "revoked",
+        "protocol_mismatch", "session_missing", "generation_changed",
+        "session_lost", "not_controller", "stale_lease", "input_gap",
+        "limit_exceeded", "history_changed", "resync_required",
+        "host_unavailable", "internal_error"
+      ]
+    },
+    "emptyPayload": {
+      "title": "EmptyPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "modifiers": {
+      "title": "Modifiers",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shift", "alt", "ctrl", "meta"],
+      "properties": {
+        "shift": { "type": "boolean" },
+        "alt": { "type": "boolean" },
+        "ctrl": { "type": "boolean" },
+        "meta": { "type": "boolean" }
+      }
+    },
+    "keyName": {
+      "title": "KeyName",
+      "type": "string",
+      "enum": [
+        "character", "space", "enter", "backspace", "escape", "tab",
+        "arrow-up", "arrow-down", "arrow-left", "arrow-right", "home", "end",
+        "insert", "delete", "page-up", "page-down",
+        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+        "keypad-enter", "keypad-equal", "keypad-multiply", "keypad-plus",
+        "keypad-comma", "keypad-minus", "keypad-decimal", "keypad-divide",
+        "keypad-0", "keypad-1", "keypad-2", "keypad-3", "keypad-4",
+        "keypad-5", "keypad-6", "keypad-7", "keypad-8", "keypad-9"
+      ]
+    },
+    "color": {
+      "title": "Color",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["r", "g", "b", "a"],
+      "properties": {
+        "r": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "g": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "b": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "a": { "type": "integer", "minimum": 0, "maximum": 255 }
+      }
+    },
+    "cellStyle": {
+      "title": "CellStyle",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["foreground", "background", "bold", "faint", "italic", "blink", "reverse", "conceal", "strikethrough", "underline"],
+      "properties": {
+        "foreground": { "$ref": "#/$defs/color" },
+        "background": { "$ref": "#/$defs/color" },
+        "underlineColor": { "$ref": "#/$defs/color" },
+        "bold": { "type": "boolean" },
+        "faint": { "type": "boolean" },
+        "italic": { "type": "boolean" },
+        "blink": { "type": "boolean" },
+        "reverse": { "type": "boolean" },
+        "conceal": { "type": "boolean" },
+        "strikethrough": { "type": "boolean" },
+        "underline": { "type": "string", "enum": ["none", "single", "double", "curly", "dotted", "dashed"] }
+      }
+    },
+    "cell": {
+      "title": "Cell",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "width", "continuation", "contentClipped"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 1024 },
+        "width": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "continuation": { "type": "boolean" },
+        "link": { "type": "string", "maxLength": 2048, "pattern": "^https?://" },
+        "contentClipped": { "type": "boolean" }
+      }
+    },
+    "cellRun": {
+      "title": "CellRun",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "style", "cells"],
+      "properties": {
+        "column": { "type": "integer", "minimum": 0, "maximum": 399 },
+        "style": { "$ref": "#/$defs/cellStyle" },
+        "cells": { "type": "array", "minItems": 1, "maxItems": 400, "items": { "$ref": "#/$defs/cell" } }
+      }
+    },
+    "terminalRow": {
+      "title": "TerminalRow",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs"],
+      "properties": {
+        "runs": { "type": "array", "minItems": 1, "maxItems": 400, "items": { "$ref": "#/$defs/cellRun" } }
+      }
+    },
+    "changedRow": {
+      "title": "ChangedRow",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "row"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0, "maximum": 199 },
+        "row": { "$ref": "#/$defs/terminalRow" }
+      }
+    },
+    "cursor": {
+      "title": "Cursor",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "row", "style", "visible", "blink"],
+      "properties": {
+        "column": { "type": "integer", "minimum": 0, "maximum": 399 },
+        "row": { "type": "integer", "minimum": 0, "maximum": 199 },
+        "style": { "type": "string", "enum": ["block", "underline", "bar"] },
+        "visible": { "type": "boolean" },
+        "blink": { "type": "boolean" }
+      }
+    },
+    "screenMetadata": {
+      "title": "ScreenMetadata",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["columns", "rows", "buffer", "cursor", "foreground", "background", "cursorColor", "widthMethod", "historyEpoch", "historyRevision", "contentClipped"],
+      "properties": {
+        "columns": { "type": "integer", "minimum": 20, "maximum": 400 },
+        "rows": { "type": "integer", "minimum": 5, "maximum": 200 },
+        "buffer": { "type": "string", "enum": ["normal", "alternate"] },
+        "cursor": { "$ref": "#/$defs/cursor" },
+        "foreground": { "$ref": "#/$defs/color" },
+        "background": { "$ref": "#/$defs/color" },
+        "cursorColor": { "$ref": "#/$defs/color" },
+        "widthMethod": { "type": "string", "enum": ["wcwidth", "unicode-graphemes"] },
+        "historyEpoch": { "$ref": "#/$defs/decimalCounter" },
+        "historyRevision": { "$ref": "#/$defs/decimalCounter" },
+        "contentClipped": { "type": "boolean" }
+      }
+    },
+    "limits": {
+      "title": "ProtocolLimits",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inboundMessageBytes", "outboundMessageBytes", "outgoingQueueBytes", "maxTextBytes", "maxPasteBytes", "minColumns", "maxColumns", "minRows", "maxRows", "maxHistoryPageRows"],
+      "properties": {
+        "inboundMessageBytes": { "type": "integer", "const": 262144 },
+        "outboundMessageBytes": { "type": "integer", "const": 1048576 },
+        "outgoingQueueBytes": { "type": "integer", "const": 2097152 },
+        "maxTextBytes": { "type": "integer", "const": 65536 },
+        "maxPasteBytes": { "type": "integer", "const": 65536 },
+        "minColumns": { "type": "integer", "const": 20 },
+        "maxColumns": { "type": "integer", "const": 400 },
+        "minRows": { "type": "integer", "const": 5 },
+        "maxRows": { "type": "integer", "const": 200 },
+        "maxHistoryPageRows": { "type": "integer", "const": 200 }
+      }
+    },
+    "helloPayload": {
+      "title": "HelloPayload",
+      "type": "object", "additionalProperties": false,
+      "required": ["clientBuild", "clientKind", "supportedVersions", "capabilityProfile"],
+      "properties": {
+        "clientBuild": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientKind": { "type": "string", "enum": ["browser", "desktop"] },
+        "supportedVersions": { "type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true, "items": { "type": "integer", "const": 1 } },
+        "capabilityProfile": { "type": "string", "const": "phone-terminal-v1" }
+      }
+    },
+    "screenResyncPayload": {
+      "title": "ScreenResyncPayload",
+      "type": "object", "additionalProperties": false, "required": ["reason"],
+      "properties": {
+        "lastRevision": { "$ref": "#/$defs/decimalCounter" },
+        "reason": { "type": "string", "enum": ["initial", "base-mismatch", "invalid-state", "interrupted-snapshot"] }
+      }
+    },
+    "snapshotAppliedPayload": {
+      "title": "SnapshotAppliedPayload",
+      "type": "object", "additionalProperties": false, "required": ["snapshotId", "revision"],
+      "properties": { "snapshotId": { "$ref": "#/$defs/uuid" }, "revision": { "$ref": "#/$defs/decimalCounter" } }
+    },
+    "leasePayload": {
+      "title": "LeasePayload",
+      "type": "object", "additionalProperties": false, "required": ["lease"],
+      "properties": { "lease": { "$ref": "#/$defs/secret" } }
+    },
+    "heartbeatPayload": {
+      "title": "HeartbeatPayload",
+      "type": "object", "additionalProperties": false,
+      "properties": { "lease": { "$ref": "#/$defs/secret" } }
+    },
+    "inputKeyPayload": {
+      "title": "InputKeyPayload",
+      "type": "object", "additionalProperties": false,
+      "required": ["lease", "inputSequence", "key", "modifiers"],
+      "properties": {
+        "lease": { "$ref": "#/$defs/secret" },
+        "inputSequence": { "$ref": "#/$defs/decimalCounter" },
+        "key": { "$ref": "#/$defs/keyName" },
+        "character": { "type": "string", "minLength": 1, "maxLength": 4 },
+        "modifiers": { "$ref": "#/$defs/modifiers" }
+      }
+    },
+    "inputTextPayload": {
+      "title": "InputTextPayload",
+      "type": "object", "additionalProperties": false, "required": ["lease", "inputSequence", "text"],
+      "properties": { "lease": { "$ref": "#/$defs/secret" }, "inputSequence": { "$ref": "#/$defs/decimalCounter" }, "text": { "type": "string", "minLength": 1, "maxLength": 65536 } }
+    },
+    "inputPastePayload": {
+      "title": "InputPastePayload",
+      "type": "object", "additionalProperties": false, "required": ["lease", "inputSequence", "text"],
+      "properties": { "lease": { "$ref": "#/$defs/secret" }, "inputSequence": { "$ref": "#/$defs/decimalCounter" }, "text": { "type": "string", "minLength": 1, "maxLength": 65536 } }
+    },
+    "inputMousePayload": {
+      "title": "InputMousePayload",
+      "type": "object", "additionalProperties": false,
+      "required": ["lease", "inputSequence", "kind", "button", "column", "row", "modifiers"],
+      "properties": {
+        "lease": { "$ref": "#/$defs/secret" }, "inputSequence": { "$ref": "#/$defs/decimalCounter" },
+        "kind": { "type": "string", "enum": ["press", "release", "move", "wheel"] },
+        "button": { "type": "string", "enum": ["none", "left", "middle", "right", "wheel-up", "wheel-down", "wheel-left", "wheel-right", "backward", "forward"] },
+        "column": { "type": "integer", "minimum": 0, "maximum": 399 }, "row": { "type": "integer", "minimum": 0, "maximum": 199 },
+        "modifiers": { "$ref": "#/$defs/modifiers" }
+      }
+    },
+    "terminalResizePayload": {
+      "title": "TerminalResizePayload",
+      "type": "object", "additionalProperties": false, "required": ["lease", "columns", "rows"],
+      "properties": { "lease": { "$ref": "#/$defs/secret" }, "columns": { "type": "integer", "minimum": 20, "maximum": 400 }, "rows": { "type": "integer", "minimum": 5, "maximum": 200 } }
+    },
+    "historyReadPayload": {
+      "title": "HistoryReadPayload",
+      "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "offset", "limit"],
+      "properties": {
+        "historyEpoch": { "$ref": "#/$defs/decimalCounter" }, "historyRevision": { "$ref": "#/$defs/decimalCounter" },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 4999 }, "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+      }
+    },
+    "welcomePayload": {
+      "title": "WelcomePayload",
+      "type": "object", "additionalProperties": false,
+      "required": ["hostBuild", "brokerGeneration", "negotiatedVersion", "capabilityProfile", "limits"],
+      "properties": {
+        "hostBuild": { "type": "string", "minLength": 1, "maxLength": 128 }, "brokerGeneration": { "$ref": "#/$defs/uuid" },
+        "negotiatedVersion": { "type": "integer", "const": 1 }, "capabilityProfile": { "type": "string", "const": "phone-terminal-v1" }, "limits": { "$ref": "#/$defs/limits" }
+      }
+    },
+    "snapshotBeginPayload": {
+      "title": "SnapshotBeginPayload",
+      "type": "object", "additionalProperties": false, "required": ["snapshotId", "revision", "screen"],
+      "properties": { "snapshotId": { "$ref": "#/$defs/uuid" }, "revision": { "$ref": "#/$defs/decimalCounter" }, "screen": { "$ref": "#/$defs/screenMetadata" } }
+    },
+    "snapshotRowsPayload": {
+      "title": "SnapshotRowsPayload",
+      "type": "object", "additionalProperties": false, "required": ["snapshotId", "revision", "startRow", "rows"],
+      "properties": {
+        "snapshotId": { "$ref": "#/$defs/uuid" }, "revision": { "$ref": "#/$defs/decimalCounter" },
+        "startRow": { "type": "integer", "minimum": 0, "maximum": 199 },
+        "rows": { "type": "array", "minItems": 1, "maxItems": 200, "items": { "$ref": "#/$defs/terminalRow" } }
+      }
+    },
+    "snapshotEndPayload": {
+      "title": "SnapshotEndPayload",
+      "type": "object", "additionalProperties": false, "required": ["snapshotId", "revision", "rowCount"],
+      "properties": { "snapshotId": { "$ref": "#/$defs/uuid" }, "revision": { "$ref": "#/$defs/decimalCounter" }, "rowCount": { "type": "integer", "minimum": 5, "maximum": 200 } }
+    },
+    "screenPatchPayload": {
+      "title": "ScreenPatchPayload",
+      "type": "object", "additionalProperties": false, "required": ["baseRevision", "revision", "screen", "rows", "historyReset"],
+      "properties": {
+        "baseRevision": { "$ref": "#/$defs/decimalCounter" }, "revision": { "$ref": "#/$defs/decimalCounter" }, "screen": { "$ref": "#/$defs/screenMetadata" },
+        "rows": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/changedRow" } }, "historyReset": { "type": "boolean" }
+      }
+    },
+    "historyPagePayload": {
+      "title": "HistoryPagePayload",
+      "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "columns", "offset", "rows", "complete"],
+      "properties": {
+        "historyEpoch": { "$ref": "#/$defs/decimalCounter" }, "historyRevision": { "$ref": "#/$defs/decimalCounter" },
+        "columns": { "type": "integer", "minimum": 20, "maximum": 400 }, "offset": { "type": "integer", "minimum": 0, "maximum": 4999 },
+        "rows": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/terminalRow" } },
+        "nextOffset": { "type": "integer", "minimum": 0, "maximum": 5000 }, "complete": { "type": "boolean" }
+      }
+    },
+    "historyChangedPayload": {
+      "title": "HistoryChangedPayload",
+      "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision"],
+      "properties": { "historyEpoch": { "$ref": "#/$defs/decimalCounter" }, "historyRevision": { "$ref": "#/$defs/decimalCounter" } }
+    },
+    "controlChangedPayload": {
+      "title": "ControlChangedPayload",
+      "type": "object", "additionalProperties": false, "required": ["controllerConnectionId", "leaseEpoch"],
+      "properties": {
+        "controllerConnectionId": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "controllerLabel": { "type": "string", "maxLength": 128 }, "leaseEpoch": { "$ref": "#/$defs/decimalCounter" }, "lease": { "$ref": "#/$defs/secret" }
+      }
+    },
+    "inputAcceptedPayload": {
+      "title": "InputAcceptedPayload",
+      "type": "object", "additionalProperties": false, "required": ["inputSequence"],
+      "properties": { "inputSequence": { "$ref": "#/$defs/decimalCounter" } }
+    },
+    "inputRejectedPayload": {
+      "title": "InputRejectedPayload",
+      "type": "object", "additionalProperties": false, "required": ["code", "message"],
+      "properties": { "inputSequence": { "$ref": "#/$defs/decimalCounter" }, "code": { "$ref": "#/$defs/errorCode" }, "message": { "type": "string", "minLength": 1, "maxLength": 512 } }
+    },
+    "sessionStatePayload": {
+      "title": "SessionStatePayload",
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": { "state": { "type": "string", "enum": ["starting", "running", "exiting", "exited", "lost"] }, "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 } }
+    },
+    "accessRevokedPayload": {
+      "title": "AccessRevokedPayload",
+      "type": "object", "additionalProperties": false, "required": ["message"],
+      "properties": { "message": { "type": "string", "minLength": 1, "maxLength": 512 } }
+    },
+    "errorPayload": {
+      "title": "ErrorPayload",
+      "type": "object", "additionalProperties": false, "required": ["code", "message"],
+      "properties": { "code": { "$ref": "#/$defs/errorCode" }, "message": { "type": "string", "minLength": 1, "maxLength": 512 } }
+    },
+    "sessionIdentity": {
+      "type": "object",
+      "required": ["sessionId", "generation"],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "generation": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "helloMessage": { "type": "object", "properties": { "type": { "type": "string", "const": "hello" }, "sessionId": false, "generation": false, "payload": { "$ref": "#/$defs/helloPayload" } } },
+    "sessionAttachMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "session.attach" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "screenResyncMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "screen.resync" }, "payload": { "$ref": "#/$defs/screenResyncPayload" } } },
+    "snapshotAppliedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "snapshot.applied" }, "payload": { "$ref": "#/$defs/snapshotAppliedPayload" } } },
+    "controlAcquireMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.acquire" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "controlReleaseMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.release" }, "payload": { "$ref": "#/$defs/leasePayload" } } },
+    "heartbeatMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "heartbeat" }, "payload": { "$ref": "#/$defs/heartbeatPayload" } } },
+    "inputKeyMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.key" }, "payload": { "$ref": "#/$defs/inputKeyPayload" } } },
+    "inputTextMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.text" }, "payload": { "$ref": "#/$defs/inputTextPayload" } } },
+    "inputPasteMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.paste" }, "payload": { "$ref": "#/$defs/inputPastePayload" } } },
+    "inputMouseMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.mouse" }, "payload": { "$ref": "#/$defs/inputMousePayload" } } },
+    "terminalResizeMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "terminal.resize" }, "payload": { "$ref": "#/$defs/terminalResizePayload" } } },
+    "historyReadMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.read" }, "payload": { "$ref": "#/$defs/historyReadPayload" } } },
+    "sessionDetachMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "session.detach" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "welcomeMessage": { "type": "object", "properties": { "type": { "type": "string", "const": "welcome" }, "sessionId": false, "generation": false, "payload": { "$ref": "#/$defs/welcomePayload" } } },
+    "snapshotBeginMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "snapshot.begin" }, "payload": { "$ref": "#/$defs/snapshotBeginPayload" } } },
+    "snapshotRowsMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "snapshot.rows" }, "payload": { "$ref": "#/$defs/snapshotRowsPayload" } } },
+    "snapshotEndMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "snapshot.end" }, "payload": { "$ref": "#/$defs/snapshotEndPayload" } } },
+    "screenPatchMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "screen.patch" }, "payload": { "$ref": "#/$defs/screenPatchPayload" } } },
+    "historyPageMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.page" }, "payload": { "$ref": "#/$defs/historyPagePayload" } } },
+    "historyChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.changed" }, "payload": { "$ref": "#/$defs/historyChangedPayload" } } },
+    "controlChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.changed" }, "payload": { "$ref": "#/$defs/controlChangedPayload" } } },
+    "inputAcceptedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.accepted" }, "payload": { "$ref": "#/$defs/inputAcceptedPayload" } } },
+    "inputRejectedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.rejected" }, "payload": { "$ref": "#/$defs/inputRejectedPayload" } } },
+    "sessionStateMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "session.state" }, "payload": { "$ref": "#/$defs/sessionStatePayload" } } },
+    "accessRevokedMessage": { "type": "object", "properties": { "type": { "type": "string", "const": "access.revoked" }, "sessionId": false, "generation": false, "payload": { "$ref": "#/$defs/accessRevokedPayload" } } },
+    "errorMessage": { "type": "object", "properties": { "type": { "type": "string", "const": "error" }, "payload": { "$ref": "#/$defs/errorPayload" } } }
   }
 }
