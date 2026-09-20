@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest';
+import { InvalidProtocolMessageError, parseHostMessage } from './validate';
+
+const requestId = '00000000-0000-4000-8000-000000000001';
+const brokerGeneration = '00000000-0000-4000-8000-000000000002';
+
+function welcome() {
+  return {
+    version: 1,
+    type: 'welcome',
+    requestId,
+    payload: {
+      brokerGeneration,
+      negotiatedVersion: 1,
+      capabilityProfile: 'phone-terminal-v1',
+      hostBuild: 'test',
+      limits: {
+        inboundMessageBytes: 262144,
+        outboundMessageBytes: 1048576,
+        outgoingQueueBytes: 2097152,
+        maxTextBytes: 65536,
+        maxPasteBytes: 65536,
+        minColumns: 20,
+        maxColumns: 400,
+        minRows: 5,
+        maxRows: 200,
+        maxHistoryPageRows: 200,
+      },
+    },
+  };
+}
+
+describe('parseHostMessage', () => {
+  it('returns a schema-validated host message', () => {
+    const message = parseHostMessage(JSON.stringify(welcome()));
+    expect(message.type).toBe('welcome');
+  });
+
+  it('rejects client-to-host messages even when their schema is valid', () => {
+    expect(() => parseHostMessage(JSON.stringify({
+      version: 1,
+      type: 'hello',
+      requestId,
+      payload: {
+        clientBuild: 'test',
+        clientKind: 'browser',
+        supportedVersions: [1],
+        capabilityProfile: 'phone-terminal-v1',
+      },
+    }))).toThrow('not host-to-client');
+  });
+
+  it('rejects malformed JSON and additional properties', () => {
+    expect(() => parseHostMessage('{')).toThrow('not valid JSON');
+    expect(() => parseHostMessage(JSON.stringify({ ...welcome(), unexpected: true })))
+      .toThrow(InvalidProtocolMessageError);
+  });
+
+  it('rejects messages beyond the host byte limit before parsing', () => {
+    expect(() => parseHostMessage(`{"padding":"${'x'.repeat(1024 * 1024)}"}`))
+      .toThrow('outside');
+  });
+});
