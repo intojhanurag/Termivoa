@@ -82,6 +82,11 @@ blocked event delivery on cancellation, and preserves independent read errors
 that race shutdown. The byte pump also preserves data returned together with
 EOF, following the Go reader contract.
 
+In bounded mode, only bare or singly wrapped EOF/cancel-reader sentinels count
+as clean termination. Joined source failures remain observable even when EOF,
+data delivery cancellation, or final buffered-event cancellation occurs at the
+same time. Zero-limit upstream error normalization remains unchanged.
+
 `internal/desktop.NewBoundedInput` configures both bounds to 64 KiB, using the
 shared protocol paste limit. The adapter does not own or close the source. The
 eventual command owns native input and terminal modes; it must join decoding

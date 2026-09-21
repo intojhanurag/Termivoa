@@ -84,3 +84,45 @@ rerun for this isolated decoder change.
   do not establish those results.
 - Physical phone behavior, authentication, packaging, and release evidence
   are outside this decoder checkpoint and remain pending.
+
+## Independent review correction
+
+Review of `41fa2c223184d8dca9e9db11bf91625f0b7dd236` independently compared
+the retained source with the exact cached upstream module. Only the documented
+`terminal_reader.go` modifications and two added files differed; upstream
+manifests and license were unchanged. Existing upstream, desktop, and terminal
+race tests passed before the review correction.
+
+New adversarial fixtures reproduced silent error loss: a context-aware source
+returning `errors.Join(io.EOF, cleanupFailure)` or the cancel-reader equivalent
+made `StreamEvents` return nil. A source that canceled its context while
+returning data plus a failure also lost that failure. A final pending ESC flush
+could similarly replace the source failure with a delivery cancellation.
+
+Bounded mode now preserves those independent errors. Bare and singly wrapped
+EOF/cancel-reader sentinel errors still end cleanly; joined errors are not
+classified using `errors.Is` alone. The read-pump cancellation fixture now
+waits on the actual `input: %q` logger hook, so it deterministically verifies
+joining an active blocked read rather than relying on scheduler timing.
+
+Validation after the correction:
+
+- All new joined-error and data-plus-error cases first failed against the
+  original checkpoint, then passed after correction.
+- Joined termination, canceled data delivery, canceled final flush, and the
+  blocked read-pump fixture passed 20 race repetitions in 3.524 seconds.
+- `go test -race github.com/charmbracelet/ultraviolet/... ./internal/desktop
+  ./internal/terminal -count=1 -timeout=60s`: all packages passed; ultraviolet
+  2.434 seconds, desktop 2.526 seconds, terminal 3.175 seconds.
+- `go vet github.com/charmbracelet/ultraviolet/... ./internal/desktop
+  ./internal/terminal` and `git diff --check`: passed.
+- An independent race-enabled synthetic probe preserved CJK, combining
+  accents, emoji modifiers/ZWJ, and variation selectors within bracketed
+  paste across byte chunk sizes 1 through 13, including split paste delimiters.
+- The modified Ultraviolet suite cross-compiled to Windows x64 PE32+ again.
+  Native Windows execution and console-mode/encoding validation remain pending.
+- After preserving bare cancellation when there is no independent read error,
+  all `TestPhoneTerminal` fixtures passed five race repetitions in 4.450 seconds.
+- Pinned Gitleaks `v8.30.1` staged scan passed with no leaks found.
+
+No source pin, protocol, host runtime architecture, or input limit changed.

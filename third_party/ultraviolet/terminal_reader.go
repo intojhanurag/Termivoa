@@ -143,6 +143,9 @@ func (d *TerminalReader) sendBytes(ctx context.Context, readc chan []byte) error
 		if n > 0 {
 			select {
 			case <-ctx.Done():
+				if err != nil && (d.MaxPasteBytes > 0 || d.MaxPendingBytes > 0) {
+					return errors.Join(ctx.Err(), err)
+				}
 				return ctx.Err()
 			case readc <- readBuf[:n]:
 			}
@@ -151,6 +154,23 @@ func (d *TerminalReader) sendBytes(ctx context.Context, readc chan []byte) error
 			return err //nolint:wrapcheck
 		}
 	}
+}
+
+// cleanInputEnd recognizes only a bare or singly wrapped clean termination.
+// A joined error may include descriptor cleanup or other independent failures;
+// errors.Is alone cannot establish that the entire error is harmless.
+func cleanInputEnd(err error) bool {
+	for err != nil {
+		if err == io.EOF || err == cancelreader.ErrCanceled {
+			return true
+		}
+		wrapped, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return false
+		}
+		err = wrapped.Unwrap()
+	}
+	return false
 }
 
 // StreamEvents sends events to the provided channel. It stops when the context
@@ -196,7 +216,11 @@ func (d *TerminalReader) StreamEvents(ctx context.Context, eventc chan<- Event) 
 	go func() {
 		defer wg.Done()
 		if err := d.streamData(ctx, readc); err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, cancelreader.ErrCanceled) {
+			cleanEnd := errors.Is(err, io.EOF) || errors.Is(err, cancelreader.ErrCanceled)
+			if bounded {
+				cleanEnd = cleanInputEnd(err)
+			}
+			if cleanEnd {
 				errc <- nil
 				return
 			}
@@ -214,6 +238,9 @@ func (d *TerminalReader) StreamEvents(ctx context.Context, eventc chan<- Event) 
 			return nil
 		case err := <-errc:
 			if _, decodeErr := d.sendEvents(ctx, eventc, buf.Bytes(), true); decodeErr != nil {
+				if bounded && err != nil {
+					return errors.Join(err, decodeErr)
+				}
 				return decodeErr
 			}
 			return err // return the first error encountered
