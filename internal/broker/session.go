@@ -135,6 +135,14 @@ type Session struct {
 	retirementRevision uint64
 	publishedControl   ControlState
 	publishedStatus    SessionStatus
+	termination        *sessionTermination // Actor-owned; one bounded attempt per session.
+}
+
+type sessionTermination struct {
+	done     chan struct{}
+	err      error // Published by closing done; read only after completion.
+	finished bool  // Actor-owned completion handling.
+	reply    chan sessionResponse
 }
 
 type sessionRequestKind uint8
@@ -468,7 +476,14 @@ func (session *Session) call(ctx context.Context, request sessionRequest) (sessi
 	case response := <-request.reply:
 		return response, response.err
 	case <-session.done:
-		return sessionResponse{}, ErrSessionClosed
+		// Cleanup can finish immediately after the actor publishes its reply.
+		// Preserve that authoritative result rather than racing it with Done.
+		select {
+		case response := <-request.reply:
+			return response, response.err
+		default:
+			return sessionResponse{}, ErrSessionClosed
+		}
 	}
 }
 
@@ -517,6 +532,7 @@ func (session *Session) run(columns, rows int) {
 	var counterpartDeadline <-chan time.Time
 	var shutdownTimer *time.Timer
 	var shutdownDeadline <-chan time.Time
+	var shutdownTerminationHandled bool
 	var publishTimer *time.Timer
 	var publishDeadline <-chan time.Time
 	var viewerAckTimer *time.Timer
@@ -604,15 +620,7 @@ func (session *Session) run(columns, rows int) {
 		for connectionID := range session.viewers {
 			session.detachViewer(connectionID, ErrSessionClosed)
 		}
-		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		err := session.process.Terminate(shutdownContext)
-		cancel()
-		if err != nil {
-			session.reportShutdownError(fmt.Errorf("%w: terminate process: %v", ErrSessionShutdown, err))
-			return
-		}
-		shutdownTimer = time.NewTimer(2 * processExitGrace)
-		shutdownDeadline = shutdownTimer.C
+		session.startTermination()
 	}
 	defer func() {
 		if counterpartTimer != nil {
@@ -635,10 +643,10 @@ func (session *Session) run(columns, rows int) {
 		}
 		session.checkRetirementReady()
 		session.inbox.Close()
-		if !waitSeen {
-			shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-			_ = session.process.Terminate(shutdownContext)
-			cancel()
+		// The loop exits only after Wait, ordered PTY EOF, and the one owned
+		// termination worker. A process wait must never block that loop's drain.
+		if session.termination != nil {
+			<-session.termination.done
 		}
 		if !processClosed {
 			_ = session.process.Close()
@@ -653,6 +661,15 @@ func (session *Session) run(columns, rows int) {
 		session.publishViewerEvents(status)
 		refreshControllerTimer()
 		refreshViewerAckTimer()
+		if shuttingDown && session.termination.finished && !shutdownTerminationHandled {
+			shutdownTerminationHandled = true
+			if err := session.termination.err; err != nil {
+				session.reportShutdownError(fmt.Errorf("%w: terminate process: %w", ErrSessionShutdown, err))
+			} else {
+				shutdownTimer = time.NewTimer(2 * processExitGrace)
+				shutdownDeadline = shutdownTimer.C
+			}
+		}
 		if waitSeen && readDone {
 			if status.State != SessionLost && status.State != SessionExited {
 				if publishTimer != nil {
@@ -674,7 +691,7 @@ func (session *Session) run(columns, rows int) {
 				session.markEnded(status)
 				session.clearControl()
 			}
-			if shuttingDown {
+			if shuttingDown && session.termination.finished {
 				return
 			}
 		}
@@ -697,6 +714,9 @@ func (session *Session) run(columns, rows int) {
 		// Viewer lifecycle events bypass the public request queue. A saturated
 		// client queue cannot suppress acknowledgement expiry or detach cleanup.
 		select {
+		case <-session.terminationDone():
+			session.completeTermination(&status)
+			continue
 		case <-controllerDeadline:
 			controllerDeadline = nil
 			controllerAt = time.Time{}
@@ -715,7 +735,9 @@ func (session *Session) run(columns, rows int) {
 
 		// Prefer control requests so a sustained child-output stream cannot
 		// starve snapshots, resize, termination, or lease management.
-		if !shuttingDown {
+		// Once exiting, service requests in the balanced select below: a busy
+		// observer must not starve output draining needed for process teardown.
+		if !shuttingDown && status.State == SessionRunning {
 			select {
 			case request := <-session.requests:
 				session.handleRequest(&status, request)
@@ -729,6 +751,8 @@ func (session *Session) run(columns, rows int) {
 			beginShutdown()
 		case <-shutdownDone:
 			beginShutdown()
+		case <-session.terminationDone():
+			session.completeTermination(&status)
 		case request := <-session.requests:
 			if shuttingDown {
 				request.reply <- sessionResponse{err: ErrSessionClosed}
@@ -785,7 +809,7 @@ func (session *Session) run(columns, rows int) {
 			waitErr = waitResult
 			waitSeen = true
 			if status.State == SessionRunning {
-				status.State = SessionExiting
+				session.markExiting(&status)
 			}
 			if counterpartTimer != nil {
 				counterpartTimer.Stop()
@@ -806,6 +830,13 @@ func (session *Session) run(columns, rows int) {
 			if readDone && !waitSeen {
 				session.markLost(&status)
 			} else if waitSeen && !readDone && !processClosed {
+				if session.termination != nil && !session.termination.finished {
+					// Wait can complete before the owned terminator's cleanup.
+					// Do not close its PTY while that worker can still access it.
+					counterpartTimer = time.NewTimer(processExitGrace)
+					counterpartDeadline = counterpartTimer.C
+					continue
+				}
 				// Wait has completed, so closing the PTY now follows the
 				// Process contract and wakes a platform read that did not
 				// naturally report EOF after the child exited.
@@ -911,17 +942,10 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = ErrSessionNotRunning
 			break
 		}
-		status.State = SessionExiting
-		terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		response.err = session.process.Terminate(terminateContext)
-		cancel()
-		if response.err != nil {
-			status.State = SessionLost
-			status.EndedAt = time.Now()
-			session.startRetirement(*status)
-			session.markEnded(*status)
-			session.clearControl()
-		}
+		session.markExiting(status)
+		attempt := session.startTermination()
+		attempt.reply = request.reply
+		return // The admitted caller receives the real bounded attempt result.
 	case requestRevokeDevice:
 		response.dropped = session.inbox.RevokeDevice(request.device)
 		for connectionID, viewer := range session.viewers {
@@ -980,6 +1004,13 @@ func (session *Session) executeInput(action InputAction) error {
 	}
 }
 
+// The exit boundary revokes input that was accepted but has not been encoded.
+// Bytes already handed to the single PTY writer remain in flight.
+func (session *Session) markExiting(status *SessionStatus) {
+	status.State = SessionExiting
+	session.clearControl()
+}
+
 func (session *Session) markLost(status *SessionStatus) {
 	if status.State == SessionExited || status.State == SessionLost {
 		return
@@ -989,9 +1020,45 @@ func (session *Session) markLost(status *SessionStatus) {
 	session.startRetirement(*status)
 	session.markEnded(*status)
 	session.clearControl()
-	terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	_ = session.process.Terminate(terminateContext)
-	cancel()
+	session.startTermination()
+}
+
+// startTermination is called only by the actor. Darwin may wait for PTY output
+// to drain during process teardown, so never wait for the process on the actor
+// that is the sole canonical output consumer. Close, explicit termination, and
+// failure cleanup reuse this one attempt and its original result.
+func (session *Session) startTermination() *sessionTermination {
+	if session.termination != nil {
+		return session.termination
+	}
+	attempt := &sessionTermination{done: make(chan struct{})}
+	session.termination = attempt
+	go func() {
+		defer close(attempt.done)
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		attempt.err = session.process.Terminate(ctx)
+	}()
+	return attempt
+}
+
+func (session *Session) terminationDone() <-chan struct{} {
+	if session.termination == nil || session.termination.finished {
+		return nil
+	}
+	return session.termination.done
+}
+
+func (session *Session) completeTermination(status *SessionStatus) {
+	attempt := session.termination
+	attempt.finished = true
+	if attempt.err != nil {
+		session.markLost(status)
+	}
+	if attempt.reply != nil {
+		attempt.reply <- sessionResponse{err: attempt.err}
+		attempt.reply = nil
+	}
 }
 
 func (session *Session) markEnded(status SessionStatus) {
