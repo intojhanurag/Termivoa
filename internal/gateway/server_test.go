@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -159,13 +160,30 @@ func TestShutdownTimeoutClosesIncompleteHTTPConnectionAndReturnsTimeout(t *testi
 
 	gatewayCtx, cancelGateway := context.WithCancel(context.Background())
 	ready := make(chan ReadyState, 1)
-	done := make(chan error, 1)
+	accepted := make(chan struct{})
+	var acceptOnce sync.Once
+	done := make(chan struct{})
+	var serverErr error
+	t.Cleanup(func() {
+		cancelGateway()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Error("fixture gateway did not finish cleanup")
+		}
+	})
 	go func() {
-		done <- Run(gatewayCtx, Config{
+		defer close(done)
+		serverErr = Run(gatewayCtx, Config{
 			RuntimeDir: runtimeDir, HostBuild: "gateway-test", ListenAddress: "127.0.0.1:0",
 			Profile: platform.DevelopmentProfile, ProbeInterval: 25 * time.Millisecond,
 			ShutdownTimeout: 50 * time.Millisecond,
 			Ready:           func(state ReadyState) { ready <- state },
+			connState: func(_ net.Conn, state http.ConnState) {
+				if state == http.StateNew {
+					acceptOnce.Do(func() { close(accepted) })
+				}
+			},
 		})
 	}()
 	state := waitReady(t, ready)
@@ -177,12 +195,22 @@ func TestShutdownTimeoutClosesIncompleteHTTPConnectionAndReturnsTimeout(t *testi
 	if _, err := connection.Write([]byte("GET /healthz HTTP/1.1\r\nHost: " + state.Address + "\r\n")); err != nil {
 		t.Fatal(err)
 	}
+	// A successful dial/write only proves the kernel queued the connection.
+	// Shutdown can legitimately return nil until http.Server has accepted and
+	// registered it. Establish that boundary before requiring a timeout.
+	select {
+	case <-accepted:
+	case <-done:
+		t.Fatalf("gateway exited before accepting fixture connection: %v", serverErr)
+	case <-time.After(time.Second):
+		t.Fatal("gateway did not accept fixture connection")
+	}
 
 	cancelGateway()
 	select {
-	case err := <-done:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("gateway shutdown error = %v, want deadline exceeded", err)
+	case <-done:
+		if !errors.Is(serverErr, context.DeadlineExceeded) {
+			t.Fatalf("gateway shutdown error = %v, want deadline exceeded", serverErr)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("gateway did not force-close after shutdown timeout")

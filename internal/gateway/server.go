@@ -41,6 +41,10 @@ type Config struct {
 	// Ready is an internal integration-test observation point. The callback
 	// must return promptly and receives no server ownership.
 	Ready func(ReadyState)
+
+	// connState is a package-test observation point. It must not block and
+	// receives no authority to change gateway or broker state.
+	connState func(net.Conn, http.ConnState)
 }
 
 type ReadyState struct {
@@ -117,6 +121,7 @@ func Run(ctx context.Context, config Config) error {
 	}
 	server := &http.Server{
 		Handler:           handler,
+		ConnState:         config.connState,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    16 * 1024,
