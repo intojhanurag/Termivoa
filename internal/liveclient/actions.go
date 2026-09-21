@@ -186,11 +186,10 @@ func (client *Client) Resize(ctx context.Context, columns, rows int) error {
 		return err
 	}
 	defer func() { <-client.userGate }()
-	lease, epoch, _, err := client.readyIdentity(true)
-	if err != nil {
+	if _, _, _, err := client.readyIdentity(true); err != nil {
 		return err
 	}
-	return client.oneWay(ctx, protocol.TerminalResize, protocol.TerminalResizePayload{Lease: lease, Columns: int64(columns), Rows: int64(rows)}, lease, epoch)
+	return client.resizeViewport(ctx, columns, rows)
 }
 
 // Detach closes only this connection. It is safe even if an input operation

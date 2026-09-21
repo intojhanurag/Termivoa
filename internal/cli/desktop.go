@@ -227,6 +227,9 @@ func (transport *desktopTransport) Send(ctx context.Context, action desktop.Inpu
 	if !state.Ready || !state.Controller {
 		return nil // Observer actions are discarded, never retained or replayed.
 	}
+	if !transport.display.fits() {
+		return transport.display.status(ctx) // No keystroke is held for the new grid.
+	}
 	select {
 	case transport.gate <- struct{}{}:
 		defer func() { <-transport.gate }()

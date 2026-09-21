@@ -138,7 +138,7 @@ func (client *FrameClient) ApplyPatch(generation string, payload protocol.Screen
 		return resync(errors.New("screen resize requires a new snapshot"))
 	}
 	if err := client.renderer.RenderPatch(payload.Screen, payload.Rows); err != nil {
-		return resync(err)
+		return fmt.Errorf("%w: %w", ErrResyncRequired, err)
 	}
 	client.revision = payload.Revision
 	return nil

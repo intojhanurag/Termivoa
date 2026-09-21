@@ -88,7 +88,7 @@ func (output *desktopBuffer) WriteContext(ctx context.Context, data []byte) (int
 
 func testDesktopDisplay(columns, rows int) (*desktopDisplay, *desktopBuffer) {
 	output := &desktopBuffer{}
-	return &desktopDisplay{writer: output, size: func() (int, int, error) { return columns, rows, nil }}, output
+	return &desktopDisplay{writer: output, screen: &protocol.ScreenMetadata{Columns: 20, Rows: 5}, size: func() (int, int, error) { return columns, rows, nil }}, output
 }
 
 func TestDesktopObserverTypingIsDiscardedAndDetachStaysLocal(t *testing.T) {
@@ -302,5 +302,38 @@ func TestDesktopCloseJoinsStatusWriterAndPreservesLateCleanup(t *testing.T) {
 	}
 	if err := transport.Close(); !errors.Is(err, failure) {
 		t.Fatalf("status cleanup was lost: %v", err)
+	}
+}
+
+func TestDesktopShrinkShowsSyncingWithoutQueueingInput(t *testing.T) {
+	client := desktopFake()
+	client.state.Controller = true
+	display, output := testDesktopDisplay(80, 25)
+	display.setClient(client)
+	if err := display.validate(protocol.ScreenMetadata{Columns: 80, Rows: 24}); err != nil {
+		t.Fatal(err)
+	}
+	display.size = func() (int, int, error) { return 20, 5, nil }
+	transport := newDesktopTransport(context.Background(), client, display)
+	defer transport.Close()
+	if err := transport.Send(context.Background(), desktop.TextAction{Text: "must not queue"}); err != nil {
+		t.Fatal(err)
+	}
+	if client.sent != 0 || !strings.Contains(output.String(), "Syncing") {
+		t.Fatalf("shrink input/status = %d / %q", client.sent, output.String())
+	}
+	state := client.State()
+	state.Controller, state.Ready, state.Resizing = false, false, true
+	client.setState(state)
+	if err := display.status(context.Background()); err != nil {
+		t.Fatalf("takeover prematurely stopped pending snapshot: %v", err)
+	}
+	state.Controller, state.Ready, state.Resizing = true, true, false
+	client.setState(state)
+	if err := display.validate(protocol.ScreenMetadata{Columns: 20, Rows: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if err := transport.Send(context.Background(), desktop.TextAction{Text: "fresh"}); err != nil || client.sent != 1 {
+		t.Fatalf("fresh input = %d %v", client.sent, err)
 	}
 }

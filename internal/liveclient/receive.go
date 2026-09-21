@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/desktop"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -198,7 +199,21 @@ func (client *Client) paintLoop() {
 	var snapshotSerial uint64
 	var snapshotScreen protocol.ScreenMetadata
 	var readErr error
+	resizeTimer := time.NewTimer(time.Hour)
+	defer resizeTimer.Stop()
 	for {
+		var timeout <-chan time.Time
+		if transition := client.pendingViewport(); transition != nil {
+			remaining := time.Until(transition.deadline)
+			if remaining <= 0 {
+				client.stop(errors.New("desktop resize did not produce a fitting screen within five seconds; check the terminal size and re-attach"))
+				return
+			}
+			resizeTimer.Reset(remaining)
+			timeout = resizeTimer.C
+		} else {
+			resizeTimer.Stop()
+		}
 		if readErr != nil && len(client.frameQueue) == 0 {
 			client.stop(nil)
 			return
@@ -206,6 +221,10 @@ func (client *Client) paintLoop() {
 		select {
 		case <-client.ctx.Done():
 			return
+		case <-client.paintWake:
+			continue
+		case <-timeout:
+			continue
 		case readErr = <-client.readFinished:
 			continue
 		case frame := <-client.frameQueue:
@@ -235,6 +254,11 @@ func (client *Client) paintLoop() {
 			case protocol.SnapshotEnd:
 				if !waitingSnapshot {
 					payload, _ := protocol.DecodePayload[protocol.SnapshotEndPayload](message)
+					transition := client.pendingViewport()
+					if !client.viewportSnapshotMatches(snapshotScreen, transition) {
+						assembling, waitingSnapshot = false, true
+						break
+					}
 					if client.config.ValidateScreen != nil {
 						err = client.config.ValidateScreen(snapshotScreen)
 						viewportRejected = err != nil
@@ -246,7 +270,12 @@ func (client *Client) paintLoop() {
 						err = client.oneWay(client.ctx, protocol.SnapshotApplied, protocol.SnapshotAppliedPayload{SnapshotID: payload.SnapshotID, Revision: payload.Revision}, "", 0)
 						if err == nil {
 							client.mu.Lock()
-							if client.state.Connected && snapshotSerial == client.frameSerial {
+							client.snapshotApplied = true
+							if client.viewport == transition {
+								client.viewport = nil
+								client.state.Resizing = false
+							}
+							if client.state.Connected && client.viewport == nil && snapshotSerial == client.frameSerial {
 								client.state.Ready = true
 								client.changedLocked()
 							}
@@ -256,6 +285,9 @@ func (client *Client) paintLoop() {
 					assembling = false
 				}
 			case protocol.ScreenPatch:
+				if client.pendingViewport() != nil {
+					break
+				}
 				if !waitingSnapshot {
 					if assembling {
 						err = desktop.ErrResyncRequired
@@ -274,6 +306,16 @@ func (client *Client) paintLoop() {
 			client.mu.Lock()
 			client.queuedBytes -= frame.size
 			client.mu.Unlock()
+			if resize := viewportRequest(err); resize != nil {
+				viewportRejected = true
+				client.mu.Lock()
+				canResize := client.snapshotApplied && client.lease != ""
+				client.mu.Unlock()
+				if canResize {
+					assembling, waitingSnapshot = false, true
+					err = client.resizeViewport(client.ctx, resize.Columns, resize.Rows)
+				}
+			}
 			if !viewportRejected && errors.Is(err, desktop.ErrResyncRequired) {
 				assembling, waitingSnapshot = false, true
 				client.mu.Lock()

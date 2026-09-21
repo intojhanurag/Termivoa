@@ -320,6 +320,13 @@ recovery guidance; no retries or destructive rollback occur. Local project
 registration and release/device gates remain pending; see
 `docs/evidence/p3/new-command.md`.
 
+The controlled-resize follow-up replaces the demonstrated shrink disconnect with
+a bounded Syncing/resnapshot transition. Focused race tests cover stale frames,
+fixed timeout, observer/takeover boundaries, no input replay and zero-byte versus
+partial/joined output failures. CLI/liveclient Windows test compilation passes;
+native execution and the independent outer-PTY executable shrink fixture remain
+pending. See `docs/evidence/p3/desktop-controlled-resize.md`.
+
 The public desktop attach checkpoint connects exact session generations through
 restricted IPC, defaults to read-only, and accepts explicit `--control` only after
 the initial snapshot is applied. Focused Mac race and disposable-PTY restoration

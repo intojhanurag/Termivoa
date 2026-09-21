@@ -52,7 +52,8 @@ type Config struct {
 	// ValidateScreen runs on the paint worker immediately before a complete
 	// snapshot or patch is painted. Desktop callers use it to check their
 	// current physical viewport. It must return promptly, perform no painting,
-	// and not call client methods. An error closes this viewer, not the session;
+	// and not call client methods. ViewportResizeRequired may start a bounded
+	// controller-only resize. Other errors close this viewer, not the session;
 	// the rejected frame is neither painted nor acknowledged. Nil permits any
 	// protocol-valid grid (for example, a synthetic display in tests).
 	ValidateScreen func(protocol.ScreenMetadata) error
@@ -62,6 +63,7 @@ type Config struct {
 type State struct {
 	Connected              bool
 	Ready                  bool
+	Resizing               bool
 	Controller             bool
 	ControllerConnectionID string
 	ControllerLabel        string
@@ -131,21 +133,25 @@ type Client struct {
 	changed      chan struct{}
 	writeGate    chan struct{}
 	userGate     chan struct{}
+	resizeGate   chan struct{}
+	paintWake    chan struct{}
 	frameQueue   chan frameMessage
 	readFinished chan error
 
-	mu          sync.Mutex
-	state       State
-	statePulse  chan struct{}
-	err         error
-	lease       string
-	leaseEpoch  uint64
-	sequence    uint64
-	pending     *pendingRequest
-	recent      []sentRequest
-	queuedBytes int
-	frameSerial uint64
-	detaching   bool
+	mu              sync.Mutex
+	state           State
+	statePulse      chan struct{}
+	err             error
+	lease           string
+	leaseEpoch      uint64
+	sequence        uint64
+	pending         *pendingRequest
+	recent          []sentRequest
+	queuedBytes     int
+	frameSerial     uint64
+	detaching       bool
+	snapshotApplied bool
+	viewport        *viewportResize
 }
 
 // Dial negotiates restricted local CLI access and starts one observer. Use
@@ -188,7 +194,7 @@ func start(parent context.Context, conn net.Conn, welcome protocol.IPCWelcomeCla
 	ctx, cancel := context.WithCancel(parent)
 	client := &Client{config: config, conn: conn, ctx: ctx, cancel: cancel,
 		done: make(chan struct{}), changed: make(chan struct{}, 1), statePulse: make(chan struct{}),
-		writeGate: make(chan struct{}, 1), userGate: make(chan struct{}, 1), frameQueue: make(chan frameMessage, 64), readFinished: make(chan error, 1),
+		writeGate: make(chan struct{}, 1), userGate: make(chan struct{}, 1), resizeGate: make(chan struct{}, 1), paintWake: make(chan struct{}, 1), frameQueue: make(chan frameMessage, 64), readFinished: make(chan error, 1),
 		state: State{Connected: true, LeaseEpoch: "0"}}
 	client.reader, _ = ipc.NewFrameReader(conn, protocol.MaxOutboundMessageBytes)
 	client.writer, _ = ipc.NewFrameWriter(conn, protocol.MaxInboundMessageBytes)
@@ -321,6 +327,7 @@ func (client *Client) stop(err error) {
 		}
 		client.err = err
 		client.state.Connected, client.state.Ready, client.state.Controller = false, false, false
+		client.state.Resizing = false
 		client.lease = ""
 		client.changedLocked()
 		client.mu.Unlock()
@@ -403,6 +410,12 @@ func (output contextOutput) Write(data []byte) (int, error) {
 		err = io.ErrShortWrite
 	}
 	if err != nil {
+		// A physical resize can race pre-paint validation. Only a typed local
+		// viewport request with zero written bytes may return to the painter's
+		// bounded recovery path; a partial drawing always fails closed.
+		if _, ok := err.(*ViewportResizeRequired); ok && n == 0 {
+			return n, err
+		}
 		output.failed(err)
 	}
 	return n, err

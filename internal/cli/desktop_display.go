@@ -40,7 +40,14 @@ func (display *desktopDisplay) validate(screen protocol.ScreenMetadata) error {
 
 func desktopViewport(screen protocol.ScreenMetadata, columns, rows int) error {
 	if screen.Columns > int64(columns) || screen.Rows > int64(rows) {
-		return fmt.Errorf("session grid is %dx%d but desktop terminal is %dx%d; enlarge the window to fit and re-attach (the session is still running)", screen.Columns, screen.Rows, columns, rows)
+		cause := fmt.Errorf("session grid is %dx%d but desktop terminal is %dx%d; enlarge the window to fit and re-attach (the session is still running)", screen.Columns, screen.Rows, columns, rows)
+		if columns < protocol.MinColumns || rows < protocol.MinRows {
+			return cause
+		}
+		if rows > protocol.MinRows {
+			rows--
+		}
+		return &liveclient.ViewportResizeRequired{Columns: min(columns, protocol.MaxColumns), Rows: min(rows, protocol.MaxRows), Cause: cause}
 	}
 	return nil
 }
@@ -64,6 +71,21 @@ func (display *desktopDisplay) status(ctx context.Context) error {
 	display.mu.Lock()
 	defer display.mu.Unlock()
 	footer, err := display.footerLocked()
+	state := liveclient.State{}
+	if display.client != nil {
+		state = display.client.State()
+	}
+	if _, ok := err.(*liveclient.ViewportResizeRequired); ok && (state.Controller || state.Resizing) {
+		columns, _, sizeErr := display.size()
+		if sizeErr != nil {
+			return sizeErr
+		}
+		label := "Syncing | Input ignored | Ctrl+] detach"
+		label = label[:min(len(label), max(0, columns))]
+		// This is a local placeholder, never a canonical frame or an ack. The
+		// next complete fitting snapshot replaces it and restores the cursor.
+		footer, err = []byte("\x1b[?7l\x1b[0m\x1b[2J\x1b[H\x1b[?25l"+label), nil
+	}
 	if err != nil || len(footer) == 0 {
 		return err
 	}
@@ -71,6 +93,16 @@ func (display *desktopDisplay) status(ctx context.Context) error {
 	defer cancel()
 	_, err = display.writer.WriteContext(ctx, footer)
 	return err
+}
+
+func (display *desktopDisplay) fits() bool {
+	display.mu.Lock()
+	defer display.mu.Unlock()
+	if display.screen == nil {
+		return false
+	}
+	columns, rows, err := display.size()
+	return err == nil && desktopViewport(*display.screen, columns, rows) == nil
 }
 
 func (display *desktopDisplay) footerLocked() ([]byte, error) {

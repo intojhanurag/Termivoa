@@ -457,6 +457,7 @@ func TestHeartbeatReleaseAndResizeUseCurrentLease(t *testing.T) {
 	if resize.Lease != testLease || resize.Columns != 100 || resize.Rows != 40 {
 		t.Fatal("invalid resize")
 	}
+	host.await(t, protocol.ScreenResync)
 	if err := client.ReleaseControl(context.Background()); err != nil {
 		t.Fatal(err)
 	}
