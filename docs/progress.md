@@ -277,6 +277,16 @@ loss. Focused race tests and Windows cross-compilation pass; native terminal/cli
 integration remains a separate pending gate. Evidence is recorded in
 `docs/evidence/p3/desktop-shutdown.md`.
 
+Independent command review reproduced blocked stdout preventing cancellation
+of listing and termination confirmation. Management output now uses the
+owned, context-aware pipe/terminal adapter and joins its cleanup. Actual Mac
+command regressions verify cancellation with saturated pipes, preserved caller
+descriptors/flags, no consumed confirmation, no termination, and no duplicate
+leak; both regressions fail with the previous command implementation. Regular
+file/custom-writer output retains explicitly documented synchronous limits.
+Focused race/vet and Windows cross-compilation pass after the fix; native
+Windows and the earlier full-check PTY fixture issue remain pending.
+
 The initial release-smoke failure above was fixed and merged. P1 found two
 defects in pinned dependencies and carries narrow reviewed source patches:
 arbitrary `vt.Write` boundaries split grapheme clusters and xpty leaked the

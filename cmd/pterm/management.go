@@ -72,12 +72,18 @@ func commandArgumentHelp(command string) string {
 }
 
 func runManagementCommand(ctx context.Context, command string, args []string, input *os.File, output io.Writer) (returnErr error) {
-	config, err := parseLocalCommand(command, args)
-	if errors.Is(err, flag.ErrHelp) {
-		_, err = io.WriteString(output, commandHelp)
+	config, parseErr := parseLocalCommand(command, args)
+	if parseErr != nil && !errors.Is(parseErr, flag.ErrHelp) {
+		return parseErr
+	}
+	managedOutput, err := newManagementOutput(ctx, output)
+	if err != nil {
 		return err
 	}
-	if err != nil {
+	defer func() { returnErr = errors.Join(returnErr, managedOutput.Close()) }()
+	output = managedOutput
+	if errors.Is(parseErr, flag.ErrHelp) {
+		_, err = io.WriteString(output, commandHelp)
 		return err
 	}
 	client, err := localclient.DialManagement(ctx, config.runtimeDir, buildID)
