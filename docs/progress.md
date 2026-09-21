@@ -54,8 +54,12 @@ Independent review additionally moved operation-ID validation inside the
 serialized client exchange so invalid acknowledgements close the connection
 before queued mutations can write. Confirmation now requires a context-aware
 input reader; cancellation and late-answer regressions pass without a reader
-goroutine. The executable's owned terminal/pipe input adapter remains an
-explicit integration gate, along with command routing.
+goroutine. An owned OS-descriptor/handle input adapter is now implemented;
+actual macOS pipe and pseudo-terminal cancellation, descriptor ownership,
+TTY/flag restoration, and Close interruption tests pass under the race
+detector. Windows tests compile to x86-64 PE, including an isolated native
+console fixture, but native Windows execution remains pending. Command
+routing is still an explicit integration gate.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,

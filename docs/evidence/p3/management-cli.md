@@ -46,8 +46,8 @@ canonical live-session IPC stream.
   than an arbitrary `io.Reader`. The confirmer reads synchronously into a
   fixed 64-byte buffer, checks cancellation before and after each read, and
   neither starts a background reader nor closes caller-owned input. The
-  command layer must supply and clean up an actually cancellable terminal or
-  pipe reader when executable routing is integrated.
+  repository-owned `FileConfirmationReader` supplies the owned terminal/pipe
+  adapter. Executable routing must close that adapter after the command.
 - Output distinguishes acceptance from process completion. `exiting` is
   reported as an accepted process-tree termination; `exited` and `lost` are
   explicitly reported as having no live process.
@@ -92,8 +92,55 @@ blocked after context cancellation. The input API now explicitly requires
 `ReadContext`; it does not disguise an arbitrary blocking reader as
 cancellable. The command-level regression supplies a cancellable input,
 cancels while waiting, observes the read return, and verifies that late input
-neither allocates an operation ID nor terminates the session. A production
-terminal/pipe adapter is an explicit integration gate below.
+neither allocates an operation ID nor terminates the session.
+
+## Owned terminal and pipe input
+
+`NewFileConfirmationReader` accepts an `*os.File` representing a terminal or
+pipe, duplicates its OS descriptor/handle without inheritance, and owns only
+that duplicate. Cancellation and `Close` interrupt an active read without
+closing the caller's source, including `os.Stdin`. The adapter requires
+exclusive read/reconfiguration access while in use. Regular files and other
+device types are rejected explicitly.
+
+On macOS/Linux, each read syscall temporarily enables nonblocking mode when
+needed, under a shared adapter mutex, and restores the exact previous flags
+before releasing that mutex or waiting in `poll`. This also lets owned input
+and output adapters safely share the flag discipline when their descriptors
+alias one terminal. A bounded 20 ms poll makes cancellation independent of
+input arrival. No reader goroutine or terminal-mode change is involved. The
+fixed 64-byte confirmation reader consumes no bytes beyond the newline.
+
+On Windows, the adapter duplicates the handle without changing console modes
+or flushing input. A read stays on one locked OS thread. A cancellation
+callback uses
+[CancelSynchronousIo](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelsynchronousio)
+on that thread and retries while the read is entering or completing, covering
+the API's `ERROR_NOT_FOUND` race before the read becomes pending. The callback
+is joined before releasing its thread handle or unlocking the OS thread, so
+it cannot cancel another goroutine's later I/O on a reused runtime thread.
+The actual Windows runtime gate is pending; compilation does not prove
+cancellation behavior.
+
+At `2026-09-21T06:50:05Z`, the macOS 26.5.2 / build 25F84 / arm64 test host
+passed real pipe and pseudo-terminal cancellation tests. They verify prompt
+return while input is absent, successful fresh confirmation after a canceled
+read, descriptor-flag restoration, unchanged TTY mode, `Close` interrupting an
+active pipe read, original source usability after closing the adapter, and no
+read-ahead. The native Windows test source includes these pipe tests plus a
+disposable helper process that allocates its own console to verify blocked
+console-read cancellation and preservation of the caller's handle and mode.
+
+```text
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/cli -count=1
+GOTOOLCHAIN=go1.27.1 go vet ./internal/cli
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 go vet ./internal/cli
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 \
+  go test -c ./internal/cli -o <isolated-temporary-directory>/cli.test.exe
+```
+
+These checks passed. `file` identified the result as a PE32+ x86-64 Windows
+console executable. It was not executed on Windows.
 
 ## Commands and results
 
@@ -151,10 +198,9 @@ then passed.
 - The internal command layer is tested, but `cmd/pterm` does not expose `list`
   or `terminate` in this checkpoint. That thin integration waits for the
   coordinated process-mode branch so neither checkpoint overwrites the other.
-- Executable confirmation routing must provide a genuinely cancellable input
-  implementation with explicit resource ownership. Passing `os.Stdin`
-  directly is deliberately rejected by the Go API. Native terminal/pipe
-  cancellation on macOS and Windows is not claimed by the interface test.
+- Executable confirmation routing must construct and close the owned input
+  adapter. Native macOS terminal/pipe cancellation passed; Windows runtime
+  cancellation tests are prepared but remain unexecuted.
 - `pterm new` is not presented as complete merely because the internal create
   RPC exists. The command contract requires it to create and attach locally.
 - `pterm attach`, controller acquisition, heartbeat, structured live input,
