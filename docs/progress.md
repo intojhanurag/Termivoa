@@ -307,6 +307,15 @@ are preserved; smooth window shrink remains a documented limitation and the
 independent executable/broker integration suite is pending. See
 `docs/evidence/p3/desktop-attach-command.md`.
 
+An explicit Mac `nativecompat` suite now exercises installed zsh 5.9, less 668,
+and Vim 9.1 through broker-owned PTYs and structured input. Editing, Ctrl+C,
+Ctrl+D, held multiline paste, Unicode text, pager navigation, actual editor
+save, and alternate-to-normal buffer transitions pass on the available Mac.
+The headless normalized-frame consumer does not establish outer-terminal or
+phone glyph layout. Native Windows, owner login profiles, and real attach
+command coverage remain separate gates; evidence and the explicit command are
+in `docs/evidence/p3/native-mac-applications.md`.
+
 The CLI selection checkpoint centralizes exact session-generation resolution and
 adds one-shot creation from saved project/shell IDs. It preserves uncertain-delivery
 warnings and never retries or restarts a lost session. Focused Mac race tests and
