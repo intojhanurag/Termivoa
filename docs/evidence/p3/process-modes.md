@@ -152,6 +152,15 @@ closure. The full repository check and Windows compile-only refresh also pass
 as recorded above. Cross-compilation remains compile evidence only and does not
 replace native Windows 11 execution.
 
+The follow-up review reproduced a macOS case-alias gap using temporary
+directories only: differently cased ancestor and final components both escaped
+the production/development path comparison. Those two regression cases failed
+before the fix and passed after conservatively case-folding macOS comparisons.
+Parent/child aliases are also rejected, while a distinct development sibling
+remains allowed. `GOTOOLCHAIN=go1.27.1 go test -race ./internal/platform
+./cmd/pterm -count=1` and `git diff --check` passed. No production directories
+were written for this reproduction or its fix.
+
 The first post-rebase `scripts/check` attempt stopped before generation because
 the new worktree had no `node_modules` and therefore no pinned `quicktype`
 executable. `pnpm install --frozen-lockfile` reused all 160 packages from the

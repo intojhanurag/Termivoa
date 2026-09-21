@@ -197,7 +197,10 @@ func samePath(left, right string) bool {
 
 func comparablePath(path string) string {
 	path = filepath.Clean(path)
-	if runtime.GOOS == "windows" {
+	// macOS commonly uses a case-insensitive filesystem, and EvalSymlinks
+	// preserves the spelling of ordinary path components. Conservatively
+	// reject case-only profile aliases even on a case-sensitive macOS volume.
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return strings.ToLower(path)
 	}
 	return path
