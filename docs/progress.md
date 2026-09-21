@@ -317,3 +317,12 @@ The test passed 20 isolated race repetitions afterward; the full affected
 race run and 50 history-specific repetitions also passed without a race
 report. This remains recorded as a non-reproduced timing flake in
 `docs/evidence/p3/history-paging.md`, not as native-platform evidence.
+
+The recurring full-suite PTY fixture readiness failure was reproduced with the
+fresh child still at macOS `_dyld_start`, before the Go fixture could emit
+`READY`. Test setup now separately validates and times one bounded native
+activation probe; the original two-second PTY I/O deadlines remain unchanged.
+The fixture directory cleanup also now runs before `TestMain` exits. Full-suite
+race tests and twenty focused PTY race repetitions passed; native Windows is
+still pending. See `docs/evidence/p3/pty-fixture-activation.md` for the sampled
+failure, exact checks, and distinct cold-launch versus PTY validation scopes.

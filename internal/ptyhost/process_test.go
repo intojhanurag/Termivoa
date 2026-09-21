@@ -23,10 +23,16 @@ import (
 var fixtureExecutable string
 
 func TestMain(m *testing.M) {
+	os.Exit(runPTYTests(m.Run))
+}
+
+const fixtureActivationTimeout = 10 * time.Second
+
+func runPTYTests(run func() int) int {
 	temporaryDirectory, err := os.MkdirTemp("", "pterm-ptyhost-test-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return 1
 	}
 	defer os.RemoveAll(temporaryDirectory)
 
@@ -39,16 +45,93 @@ func TestMain(m *testing.M) {
 	_, sourceFile, _, ok := runtime.Caller(0)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "locate ptyhost test source")
-		os.Exit(1)
+		return 1
 	}
 	fixturePackage := filepath.Join(filepath.Dir(sourceFile), "..", "..", "tests", "fixtures", "ptychild")
 	build := exec.Command("go", "build", "-o", fixtureExecutable, fixturePackage)
 	if output, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "build PTY fixture: %v\n%s", err, output)
-		os.Exit(1)
+		return 1
 	}
 
-	os.Exit(m.Run())
+	// A newly linked executable can still be waiting at _dyld_start on macOS
+	// while concurrently launched test binaries are activating. Validate this
+	// exact fixture once outside the PTY I/O deadline, with its own hard bound.
+	// The probe uses no PTY, opens no project, and cannot spawn descendants.
+	started := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureActivationTimeout)
+	err = activateFixture(ctx, fixtureExecutable)
+	cancel()
+	fmt.Fprintf(os.Stderr, "PTY fixture activation: %s (limit %s)\n", time.Since(started).Round(time.Millisecond), fixtureActivationTimeout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "activate PTY fixture: %v\n", err)
+		return 1
+	}
+	return run()
+}
+
+func activateFixture(ctx context.Context, executable string) error {
+	command := exec.CommandContext(ctx, executable, "--pterm-fixture-activation")
+	command.Env = append(os.Environ(), "PTERM_PTY_FIXTURE_MODE=args")
+	return runFixtureActivation(ctx, command)
+}
+
+func runFixtureActivation(ctx context.Context, command *exec.Cmd) error {
+	output, err := command.Output()
+	if err != nil {
+		return errors.Join(ctx.Err(), err)
+	}
+	var result struct {
+		Args []string `json:"args"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil || len(result.Args) != 1 || result.Args[0] != "--pterm-fixture-activation" {
+		return errors.New("fixture activation returned an unexpected response")
+	}
+	return nil
+}
+
+func TestFixtureActivationFailureDoesNotBecomeReadinessSuccess(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureActivationTimeout)
+	defer cancel()
+	wrongResponse := exec.CommandContext(ctx, fixtureExecutable, "wrong-activation-marker")
+	wrongResponse.Env = append(os.Environ(), "PTERM_PTY_FIXTURE_MODE=args")
+	if err := runFixtureActivation(ctx, wrongResponse); err == nil {
+		t.Fatal("activation accepted an incorrect response")
+	}
+
+	// A safe synthetic sleep models native activation that never completes.
+	// The separate activation gate must fail and reap it, not retry or enter
+	// any PTY lifecycle test after its deadline.
+	blocked, stop := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer stop()
+	sleeper := exec.CommandContext(blocked, fixtureExecutable)
+	sleeper.Env = append(os.Environ(), "PTERM_PTY_FIXTURE_MODE=sleep")
+	started := time.Now()
+	if err := runFixtureActivation(blocked, sleeper); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("blocked activation = %v", err)
+	}
+	if sleeper.Process != nil && sleeper.ProcessState == nil {
+		t.Fatal("activation returned without reaping its timed-out child")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("activation cancellation took %s", elapsed)
+	}
+}
+
+func TestFixtureActivationValidatesExactExecutable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureActivationTimeout)
+	defer cancel()
+	if err := activateFixture(ctx, fixtureExecutable); err != nil {
+		t.Fatal(err)
+	}
+	if err := activateFixture(ctx, filepath.Join(t.TempDir(), "missing-fixture")); err == nil {
+		t.Fatal("activation accepted a missing executable")
+	}
+	canceled, cancelNow := context.WithCancel(context.Background())
+	cancelNow()
+	if err := activateFixture(canceled, fixtureExecutable); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled activation = %v", err)
+	}
 }
 
 func TestStartReadWriteResizeAndWait(t *testing.T) {
