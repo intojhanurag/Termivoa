@@ -34,6 +34,14 @@ local administration messages through HTTP or WebSocket. Any authenticated
 management capability must carry or be bound to a broker-validated credential;
 a successful gateway health handshake is not that capability.
 
+The principal includes the broker-resolved credential/session ID, device ID and
+expiry/revocation state. Authorize reads and mutations, including retrieval of an
+already-deduplicated operation receipt, before returning their data. Logout targets
+that credential and its connections; device revocation targets every credential
+belonging to that device. A client-declared IPC role is routing, not cryptographic
+proof of process identity. Current-user IPC is the intentional local trust
+boundary, and no browser-controlled role can cross it as local administration.
+
 ## Pairing and credential lifecycle
 
 1. Generate grants, poll secrets and browser credentials independently from
