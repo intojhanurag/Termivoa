@@ -270,6 +270,12 @@ READY timeout, which remains under investigation rather than being counted as
 green. See `docs/evidence/p3/management-command-integration.md`. Desktop attach,
 phone access, and release readiness are not claimed by this checkpoint.
 
+The Windows desktop console checkpoint adds the missing reversible UTF-8 code
+pages and output VT-processing setup around the outer terminal. Injected policy
+tests pass on Mac, and Windows cross-compilation is supplemental only. Native
+Windows console/Unicode execution and complete desktop command wiring remain
+pending. See `docs/evidence/p3/windows-console-modes.md`.
+
 The desktop shutdown checkpoint reproduced restoration of the enclosing terminal
 before the input decoder had stopped. The coordinator now connects after terminal
 entry, joins input and display workers before restoration, and observes connection

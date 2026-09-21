@@ -35,21 +35,29 @@ type OuterTTY struct {
 	mu            sync.Mutex
 	rawActive     bool
 	displayActive bool
+	modes         displayModes
+	modesActive   bool
+}
+
+type displayModes interface {
+	Enter() error
+	PrepareRestore() error
+	Restore() error
 }
 
 // NewOuterTTY creates a terminal-mode guard for an attachment.
-func NewOuterTTY(fd uintptr, output io.Writer) (*OuterTTY, error) {
+func NewOuterTTY(inputFD, outputFD uintptr, output io.Writer) (*OuterTTY, error) {
 	if output == nil {
 		return nil, errors.New("desktop outer terminal writer must not be nil")
 	}
-	return &OuterTTY{fd: fd, output: output, ops: systemTTYOperations}, nil
+	return &OuterTTY{fd: inputFD, output: output, ops: systemTTYOperations, modes: newDisplayModes(outputFD)}, nil
 }
 
 // Enter switches stdin to raw mode and establishes the attachment display.
 func (tty *OuterTTY) Enter() error {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
-	if tty.rawActive || tty.displayActive {
+	if tty.rawActive || tty.displayActive || tty.modesActive {
 		return errors.New("desktop outer terminal is already entered")
 	}
 	state, err := tty.ops.makeRaw(tty.fd)
@@ -58,6 +66,12 @@ func (tty *OuterTTY) Enter() error {
 	}
 	tty.state = state
 	tty.rawActive = true
+	if tty.modes != nil {
+		tty.modesActive = true
+		if err := tty.modes.Enter(); err != nil {
+			return errors.Join(fmt.Errorf("desktop: configure terminal display: %w", err), tty.restoreLocked())
+		}
+	}
 	tty.displayActive = true
 	if _, err := io.WriteString(tty.output, enterOuterTerminal); err != nil {
 		restoreErr := tty.restoreLocked()
@@ -74,12 +88,20 @@ func (tty *OuterTTY) Restore() error {
 }
 
 func (tty *OuterTTY) restoreLocked() error {
-	if !tty.rawActive && !tty.displayActive {
+	if !tty.rawActive && !tty.displayActive && !tty.modesActive {
 		return nil
 	}
 	var sequenceErr error
 	if tty.displayActive {
-		_, sequenceErr = io.WriteString(tty.output, restoreOuterTerminal)
+		if tty.modes != nil {
+			// A prior failed sequence write still restores native modes. On a
+			// retry re-enable drawing without replacing the original values.
+			tty.modesActive = true
+			sequenceErr = tty.modes.PrepareRestore()
+		}
+		if sequenceErr == nil {
+			_, sequenceErr = io.WriteString(tty.output, restoreOuterTerminal)
+		}
 		if sequenceErr == nil {
 			tty.displayActive = false
 		} else {
@@ -96,7 +118,16 @@ func (tty *OuterTTY) restoreLocked() error {
 			restoreErr = fmt.Errorf("desktop: restore raw mode: %w", restoreErr)
 		}
 	}
-	return errors.Join(sequenceErr, restoreErr)
+	var modesErr error
+	if tty.modesActive {
+		modesErr = tty.modes.Restore()
+		if modesErr == nil {
+			tty.modesActive = false
+		} else {
+			modesErr = fmt.Errorf("desktop: restore console display modes: %w", modesErr)
+		}
+	}
+	return errors.Join(sequenceErr, restoreErr, modesErr)
 }
 
 // AttachmentTransport owns the live connection and any screen-paint workers.
