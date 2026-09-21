@@ -30,6 +30,13 @@ type fakeManagement struct {
 	terminateCalls int
 	terminatedRef  localclient.SessionRef
 	operationID    string
+	create         protocol.BrokerRPCSessionMutationResultPayload
+	createErr      error
+	createCalls    int
+	createdProject string
+	createdProfile string
+	statusCalls    int
+	statusRef      localclient.SessionRef
 }
 
 func (management *fakeManagement) ListPage(
@@ -47,9 +54,19 @@ func (management *fakeManagement) ListPage(
 
 func (management *fakeManagement) Status(
 	_ context.Context,
-	_ localclient.SessionRef,
+	ref localclient.SessionRef,
 ) (protocol.BrokerRPCSessionRecord, error) {
+	management.statusCalls++
+	management.statusRef = ref
 	return management.status, management.statusErr
+}
+
+func (management *fakeManagement) Create(_ context.Context, operationID, projectID, profileID string) (protocol.BrokerRPCSessionMutationResultPayload, error) {
+	management.createCalls++
+	management.operationID = operationID
+	management.createdProject = projectID
+	management.createdProfile = profileID
+	return management.create, management.createErr
 }
 
 func (management *fakeManagement) Terminate(

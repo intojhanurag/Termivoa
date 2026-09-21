@@ -261,6 +261,12 @@ repository remained private after merge, and `main` retained its protection.
 
 ## Known defects
 
+The CLI selection checkpoint centralizes exact session-generation resolution and
+adds one-shot creation from saved project/shell IDs. It preserves uncertain-delivery
+warnings and never retries or restarts a lost session. Focused Mac race tests and
+vet pass; public `new`/`attach` wiring remains in progress. See
+`docs/evidence/p3/cli-session-selection.md`.
+
 The command integration checkpoint wires `pterm list` and confirmed
 `pterm terminate` through the real restricted IPC client. Native Mac tests use a
 disposable PTY child and verify decline, confirmed exit, and idempotent reporting

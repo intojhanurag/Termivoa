@@ -29,6 +29,7 @@ var ErrSessionNotFound = errors.New("managed session was not found")
 type Management interface {
 	ListPage(context.Context, *string, int64) (protocol.BrokerRPCSessionListResultPayload, error)
 	Status(context.Context, localclient.SessionRef) (protocol.BrokerRPCSessionRecord, error)
+	Create(context.Context, string, string, string) (protocol.BrokerRPCSessionMutationResultPayload, error)
 	Terminate(context.Context, localclient.SessionRef, string) (protocol.BrokerRPCSessionMutationResultPayload, error)
 }
 
@@ -91,16 +92,16 @@ func (app *App) List(ctx context.Context) error {
 	return writeString(app.output, output.String())
 }
 
-// Terminate resolves the exact full session ID, refreshes that generation's
-// state, asks for explicit confirmation, and sends exactly one operation ID.
-// It never retries an ambiguously delivered mutation.
-func (app *App) Terminate(ctx context.Context, sessionID string) error {
+// ResolveSession finds exactly one generation for a complete session ID and
+// refreshes its state. Attach and destructive actions use the same identity
+// checks; a restarted or vanished session is never silently replaced.
+func (app *App) ResolveSession(ctx context.Context, sessionID string) (protocol.BrokerRPCSessionRecord, error) {
 	if !validUUID(sessionID) {
-		return errors.New("session ID must be a canonical lowercase UUID")
+		return protocol.BrokerRPCSessionRecord{}, errors.New("session ID must be a canonical lowercase UUID")
 	}
 	sessions, err := app.listAll(ctx)
 	if err != nil {
-		return err
+		return protocol.BrokerRPCSessionRecord{}, err
 	}
 	var selected *protocol.BrokerRPCSessionRecord
 	for index := range sessions {
@@ -108,23 +109,73 @@ func (app *App) Terminate(ctx context.Context, sessionID string) error {
 			continue
 		}
 		if selected != nil {
-			return errors.New("broker returned more than one generation for the requested session ID")
+			return protocol.BrokerRPCSessionRecord{}, errors.New("broker returned more than one generation for the requested session ID")
 		}
 		candidate := sessions[index]
 		selected = &candidate
 	}
 	if selected == nil {
-		return fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
+		return protocol.BrokerRPCSessionRecord{}, fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
 	ref := localclient.SessionRef{ID: selected.ID, Generation: selected.Generation}
 	current, err := app.management.Status(ctx, ref)
 	if err != nil {
-		return err
+		return protocol.BrokerRPCSessionRecord{}, err
 	}
 	if current.ID != ref.ID || current.Generation != ref.Generation {
-		return errors.New("broker status response changed session identity")
+		return protocol.BrokerRPCSessionRecord{}, errors.New("broker status response changed session identity")
 	}
+	return current, nil
+}
+
+// Create sends one deduplicated creation operation using saved project/shell
+// IDs only. The broker resolves paths and executables. No confirmation or
+// implicit retry is performed, and attachment is deliberately a separate step:
+// an attachment failure does not destroy the successfully created session.
+func (app *App) Create(ctx context.Context, projectID, shellProfileID string) (protocol.BrokerRPCSessionRecord, error) {
+	if ctx == nil {
+		return protocol.BrokerRPCSessionRecord{}, errors.New("CLI context must not be nil")
+	}
+	if !validUUID(projectID) || !validUUID(shellProfileID) {
+		return protocol.BrokerRPCSessionRecord{}, errors.New("project and shell profile IDs must be canonical lowercase UUIDs")
+	}
+	if err := ctx.Err(); err != nil {
+		return protocol.BrokerRPCSessionRecord{}, err
+	}
+	operationID, err := app.newID()
+	if err != nil {
+		return protocol.BrokerRPCSessionRecord{}, fmt.Errorf("create session operation ID: %w", err)
+	}
+	if !validUUID(operationID) {
+		return protocol.BrokerRPCSessionRecord{}, errors.New("generated creation operation ID must be a canonical lowercase UUID")
+	}
+	if err := ctx.Err(); err != nil {
+		return protocol.BrokerRPCSessionRecord{}, err
+	}
+	result, err := app.management.Create(ctx, operationID, projectID, shellProfileID)
+	if err != nil {
+		if localclient.IsDeliveryUncertain(err) {
+			return protocol.BrokerRPCSessionRecord{}, fmt.Errorf("delivery uncertain—run pterm list and inspect the sessions before creating another: %w", err)
+		}
+		return protocol.BrokerRPCSessionRecord{}, err
+	}
+	if result.OperationID != operationID || result.Session.ProjectID != projectID || result.Session.ShellProfileID != shellProfileID ||
+		!validUUID(result.Session.ID) || !validUUID(result.Session.Generation) {
+		return protocol.BrokerRPCSessionRecord{}, errors.New("delivery uncertain—creation acknowledgement did not match the requested configuration or session identity; run pterm list before creating another")
+	}
+	return result.Session, nil
+}
+
+// Terminate resolves the exact full session ID, refreshes that generation's
+// state, asks for explicit confirmation, and sends exactly one operation ID.
+// It never retries an ambiguously delivered mutation.
+func (app *App) Terminate(ctx context.Context, sessionID string) error {
+	current, err := app.ResolveSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	ref := localclient.SessionRef{ID: current.ID, Generation: current.Generation}
 	if done, message := terminalStateMessage(current); done {
 		return writeString(app.output, message)
 	}
