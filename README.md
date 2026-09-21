@@ -57,6 +57,27 @@ On Windows:
 
 The check scripts cover generation drift, Go formatting/vet/tests, TypeScript checking, web unit tests, and the production web build. Platform integration suites and physical-phone tests remain separate explicit gates; a Linux or browser-emulation pass will not imply macOS, Windows, iPhone, or Android validation.
 
+### Local CLI checkpoint
+
+`pterm list` now lists sessions through restricted broker IPC.
+`pterm terminate <session-id>` requires explicit confirmation and ends only the
+selected generation's managed process tree. A declined confirmation leaves it
+running; an exited session is reported without sending another termination.
+Neither command starts or replaces the broker. `pterm help` lists only currently
+wired commands. Installation, setup, creation, and desktop attachment are not yet
+available as a complete user workflow.
+
+In an isolated development profile, use the same runtime directory for the
+existing development broker and CLI, with options before the session ID:
+
+```sh
+pterm list --dev --runtime-dir <isolated-runtime-directory>
+pterm terminate --dev --runtime-dir <isolated-runtime-directory> <session-id>
+```
+
+The CLI refuses production/development path overlap. See the actual native Mac
+integration evidence in [docs/evidence/p3/management-command-integration.md](docs/evidence/p3/management-command-integration.md).
+
 ## Security and privacy
 
 Phone Terminal will handle terminal control, so terminal output, input, tokens, and pairing data are sensitive. Never include credentials, raw personal terminal transcripts, signing material, runtime databases, or private test data in issues, pull requests, fixtures, screenshots, or logs. See [SECURITY.md](SECURITY.md) for the current private-development reporting process.

@@ -243,6 +243,15 @@ repository remained private after merge, and `main` retained its protection.
 
 ## Known defects
 
+The command integration checkpoint wires `pterm list` and confirmed
+`pterm terminate` through the real restricted IPC client. Native Mac tests use a
+disposable PTY child and verify decline, confirmed exit, and idempotent reporting
+of an already-exited session. Focused race/vet, Windows cross-build, and frontend
+checks pass. Its initial full repository check failed the existing PTY fixture
+READY timeout, which remains under investigation rather than being counted as
+green. See `docs/evidence/p3/management-command-integration.md`. Desktop attach,
+phone access, and release readiness are not claimed by this checkpoint.
+
 The initial release-smoke failure above was fixed and merged. P1 found two
 defects in pinned dependencies and carries narrow reviewed source patches:
 arbitrary `vt.Write` boundaries split grapheme clusters and xpty leaked the

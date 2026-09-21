@@ -31,11 +31,23 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
+	return runWithInput(ctx, args, os.Stdin, output)
+}
+
+func runWithInput(ctx context.Context, args []string, input *os.File, output io.Writer) error {
+	if ctx == nil || output == nil {
+		return errors.New("command context and output must not be nil")
+	}
 	if len(args) == 0 {
 		_, err := fmt.Fprintln(output, "Phone Terminal private development build")
 		return err
 	}
 	switch args[0] {
+	case "help", "--help", "-h":
+		_, err := io.WriteString(output, commandHelp)
+		return err
+	case "list", "terminate":
+		return runManagementCommand(ctx, args[0], args[1:], input, output)
 	case brokerMode:
 		config, err := parseBrokerConfig(args[1:])
 		if err != nil {
