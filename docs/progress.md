@@ -154,6 +154,15 @@ The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
 completed. Unexecuted later-milestone gates remain pending.
 
+The desktop decoder-boundary checkpoint reproduces upstream Ultraviolet paste
+and incomplete-sequence accumulation beyond the product limit. A documented
+local patch now applies opt-in early limits, typed errors, failed-reader
+invalidation, and cancellation that joins the input pump. The desktop adapter
+selects 64 KiB limits. Retained upstream and adapter race suites pass on macOS;
+Windows test binaries cross-compile only. Actual command wiring and native
+Windows console validation remain pending. See
+`docs/evidence/p3/desktop-decoder-bounds.md`.
+
 ## Verified preflight facts
 
 | Item | Evidence observed on 2026-09-20 | Status / milestone impact |

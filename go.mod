@@ -45,3 +45,6 @@ require (
 replace github.com/charmbracelet/x/vt => ./third_party/vt
 
 replace github.com/charmbracelet/x/xpty => ./third_party/xpty
+
+// P3 bounds desktop decoder state before structured-input validation.
+replace github.com/charmbracelet/ultraviolet => ./third_party/ultraviolet
