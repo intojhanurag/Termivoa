@@ -2,7 +2,7 @@
 
 Phone Terminal is a self-hosted phone interface under active development for terminal sessions running on an owner's Mac or Windows computer. The host-side runtime is written in Go, and the phone interface is a bundled React application. Its server-authoritative terminal model is designed to let a phone and desktop attachment observe the same managed session while keeping the shell alive across viewer disconnects.
 
-> **Private development status:** this repository is private and currently in P3. The terminal core, normalized protocol, restricted live IPC, controller input, independent broker/gateway processes, bounded session registry, and SQLite metadata recovery have automated checkpoints. The live client has been tested against a real Mac broker/PTY; public desktop command integration is in progress. The authenticated phone gateway, complete phone experience, installers, and release artifacts do not exist yet. Nothing here should be treated as a supported release.
+> **Private development status:** this repository is private and currently in P3. The terminal core, normalized protocol, restricted live IPC, controller input, independent broker/gateway processes, bounded session registry, and SQLite metadata recovery have automated checkpoints. Local `new` and `attach` commands have real Mac broker/PTY tests; these checkpoints are not yet pushed or merged. The authenticated phone gateway, complete phone experience, installers, and release artifacts do not exist yet. Nothing here should be treated as a supported release.
 
 ## Intended v0 experience
 
@@ -18,7 +18,7 @@ The planned host platforms are Apple Silicon macOS and Windows 11 x64. The plann
 | Host | Windows 11 x64 | Cross-build and hosted CI are supplemental; physical native validation remains pending |
 | Phone | iPhone Safari and Home Screen mode | Owner has deferred device testing until the implementation is ready; not executed |
 | Phone | Android Chrome | Owner has deferred device testing until the implementation is ready; not executed |
-| Shell | zsh | Not tested |
+| Shell | zsh | zsh 5.9 editing, paste, Ctrl+C/Ctrl+D, less and Vim pass in isolated Mac fixtures; owner login configuration not tested |
 | Shell | Windows PowerShell and available PowerShell 7 | Not tested |
 | Optional profile | WSL bash when already installed | Not tested; never substitutes for native Windows coverage |
 
@@ -63,9 +63,14 @@ The check scripts cover generation drift, Go formatting/vet/tests, TypeScript ch
 `pterm terminate <session-id>` requires explicit confirmation and ends only the
 selected generation's managed process tree. A declined confirmation leaves it
 running; an exited session is reported without sending another termination.
-Neither command starts or replaces the broker. `pterm help` lists only currently
-wired commands. Installation, setup, creation, and desktop attachment are not yet
-available as a complete user workflow.
+`pterm attach <session-id>` starts read-only; `--control` explicitly takes control
+after the initial screen is applied. Ctrl+] detaches without ending the managed
+session; Ctrl+V followed by Ctrl+] sends a literal Ctrl+] while controlling.
+`pterm new --project <saved-id> --shell <saved-id>` creates one managed session and
+attaches with control. Neither command starts or replaces the broker. Project
+registration/setup is not yet wired, so this is a developer checkpoint, not a
+complete installation-to-session workflow. Do not edit a running broker's database
+to work around missing administration commands.
 
 In an isolated development profile, use the same runtime directory for the
 existing development broker and CLI, with options before the session ID:
@@ -73,10 +78,14 @@ existing development broker and CLI, with options before the session ID:
 ```sh
 pterm list --dev --runtime-dir <isolated-runtime-directory>
 pterm terminate --dev --runtime-dir <isolated-runtime-directory> <session-id>
+pterm attach --dev --runtime-dir <isolated-runtime-directory> <session-id>
+pterm attach --control --dev --runtime-dir <isolated-runtime-directory> <session-id>
 ```
 
 The CLI refuses production/development path overlap. See the actual native Mac
-integration evidence in [docs/evidence/p3/management-command-integration.md](docs/evidence/p3/management-command-integration.md).
+integration evidence in [docs/evidence/p3/management-command-integration.md](docs/evidence/p3/management-command-integration.md),
+[desktop attachment](docs/evidence/p3/desktop-outer-pty.md), and
+[session creation](docs/evidence/p3/new-command.md).
 
 ## Security and privacy
 

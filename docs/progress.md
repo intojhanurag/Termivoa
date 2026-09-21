@@ -21,16 +21,29 @@ Implemented locally:
   against a real Mac broker and PTY, including same-child reconnect.
 - Bounded desktop input decoding, cancellable owned terminal I/O, join-before-TTY
   restoration, and reversible Windows console setup (native execution pending).
-- Exact session selection, one-shot create orchestration, and viewport checks
-  needed by the desktop command currently being wired.
+- Exact session selection and public `new`/`attach` commands, including one-shot
+  creation, read-only attachment, explicit control, detach and TTY restoration.
+- Actual executable attachment in disposable Mac outer PTYs, plus isolated real
+  zsh, less and Vim compatibility fixtures. No owner shell configuration is used.
 
-The full ordinary check at integrated `5c39c43` passed. A concurrent broad race run
-failed a real-session retirement test and a viewer resnapshot test; focused reruns
-passed, but both observations are being investigated. A separate earlier
+The full `./scripts/check` at integrated `d227802` passed, including 47 web tests.
+The full Go race suite passed at `2c1bf3c`; later command checkpoints have focused
+race evidence, not a claim that this older full run covers them. The real outer-PTY
+executable test additionally passed twice at `df6d8d2` (16.144s). A concurrent
+earlier broad race run failed a real-session retirement test and a viewer
+resnapshot test. The viewer cancellation/epoch races were reproduced and fixed;
+the retirement timeout remains unclassified despite passing focused reruns.
+A separate earlier
 executable-broker readiness timeout remains unclassified, documented in
 `docs/evidence/p3/process-fixture-readiness-investigation.md`. These failures are
 not erased by green reruns. Native Windows 11, real-phone, authentication, signed
 installer, performance/soak, and release gates remain pending.
+
+Desktop readiness during initial resize and smooth controlled-window shrink are
+under active review. An early Control footer could precede the resized snapshot;
+this is not dismissed as a Unicode decoding defect or claimed fixed by waiting
+longer in a test. P4 ownership/ordering preparation is documented in
+`docs/p4-authentication-design.md`; authenticated routes are still absent.
 
 ### Milestone record
 
@@ -76,8 +89,8 @@ from uncertain mutation delivery without retrying. The user-facing command
 layer implements bounded `list` and exact-ID, explicitly confirmed `terminate`
 orchestration, including safe rendering of legacy control characters and
 honest already-exiting/exited/lost output. Thin `cmd/pterm` routing for `list`
-and `terminate` is integrated locally; `new` and `attach` are being wired to the
-canonical live-session stream. Focused race, full repository, and Windows
+and `terminate` is integrated locally; `new` and `attach` now use the canonical
+live-session stream. Focused race, full repository, and Windows
 cross-build evidence is recorded in
 `docs/evidence/p3/management-cli.md`.
 Independent review additionally moved operation-ID validation inside the
@@ -311,23 +324,26 @@ The public desktop attach checkpoint connects exact session generations through
 restricted IPC, defaults to read-only, and accepts explicit `--control` only after
 the initial snapshot is applied. Focused Mac race and disposable-PTY restoration
 tests pass; Windows compile-only evidence is not a native pass. Exact-fit grids
-are preserved; smooth window shrink remains a documented limitation and the
-independent executable/broker integration suite is pending. See
-`docs/evidence/p3/desktop-attach-command.md`.
+are preserved; smooth window shrink and initial resize readiness are being fixed
+in separate reviewed checkpoints. The independent executable/broker integration
+suite passes on Mac, including read-only input discard, takeover, Unicode paste,
+literal Ctrl+], Ctrl+] detach, SIGTERM restoration and same-child reconnect. See
+`docs/evidence/p3/desktop-attach-command.md` and
+`docs/evidence/p3/desktop-outer-pty.md`.
 
 An explicit Mac `nativecompat` suite now exercises installed zsh 5.9, less 668,
 and Vim 9.1 through broker-owned PTYs and structured input. Editing, Ctrl+C,
 Ctrl+D, held multiline paste, Unicode text, pager navigation, actual editor
 save, and alternate-to-normal buffer transitions pass on the available Mac.
 The headless normalized-frame consumer does not establish outer-terminal or
-phone glyph layout. Native Windows, owner login profiles, and real attach
-command coverage remain separate gates; evidence and the explicit command are
+phone glyph layout. Native Windows and owner login profiles remain separate
+gates; evidence and the explicit command are
 in `docs/evidence/p3/native-mac-applications.md`.
 
 The CLI selection checkpoint centralizes exact session-generation resolution and
 adds one-shot creation from saved project/shell IDs. It preserves uncertain-delivery
 warnings and never retries or restarts a lost session. Focused Mac race tests and
-vet pass; public `new`/`attach` wiring remains in progress. See
+vet pass; public `new`/`attach` wiring is now integrated locally. See
 `docs/evidence/p3/cli-session-selection.md`.
 
 The live-client viewport checkpoint provides a pre-paint check for the actual
