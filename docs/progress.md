@@ -311,6 +311,14 @@ race tests prove rejected drawings are not written or acknowledged and exact-fit
 grids remain valid. Public desktop command integration and native resize behavior
 are pending; see `docs/evidence/p3/live-client-viewport.md`.
 
+The real-session registry retirement fixture once exceeded its eight-second
+deadline under concurrent full race/repository checks. Eleven further focused
+race invocations, two complete ordinary Go suites, and one full race suite
+passed with overlapping runs. Failure-only synthetic-child/lifecycle probes
+never fired, so the cause remains unclassified; no deadline, retry, warmup, or
+runtime change was made. Evidence is in
+`docs/evidence/p3/retirement-readiness-investigation.md`.
+
 The command integration checkpoint wires `pterm list` and confirmed
 `pterm terminate` through the real restricted IPC client. Native Mac tests use a
 disposable PTY child and verify decline, confirmed exit, and idempotent reporting
