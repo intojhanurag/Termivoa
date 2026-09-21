@@ -78,13 +78,14 @@ type ViewerSubscription struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 
-	mu             sync.Mutex
-	deliveryCancel context.CancelFunc
-	err            error
-	budgetUsed     int
-	budgetPeak     int
-	closeOnce      sync.Once
-	detachOnce     sync.Once
+	mu                 sync.Mutex
+	deliveryCancel     context.CancelFunc
+	deliveryEpochFloor uint64
+	err                error
+	budgetUsed         int
+	budgetPeak         int
+	closeOnce          sync.Once
+	detachOnce         sync.Once
 }
 
 type publishedFrame struct {
@@ -195,9 +196,6 @@ func (subscription *ViewerSubscription) SnapshotApplied(ctx context.Context, sna
 		kind: requestViewerSnapshotApplied, connection: subscription.connectionID,
 		viewer: subscription, snapshotID: snapshotID, revision: revision,
 	})
-	if errors.Is(err, ErrViewerSnapshotMismatch) {
-		subscription.cancelDelivery()
-	}
 	return err
 }
 
@@ -206,9 +204,6 @@ func (subscription *ViewerSubscription) Resync(ctx context.Context) error {
 	_, err := subscription.session.call(ctx, sessionRequest{
 		kind: requestViewerResync, connection: subscription.connectionID, viewer: subscription,
 	})
-	if err == nil {
-		subscription.cancelDelivery()
-	}
 	return err
 }
 
@@ -264,7 +259,9 @@ func (subscription *ViewerSubscription) run() {
 		}
 
 		deliveryContext, cancel := context.WithTimeout(subscription.ctx, subscription.timeout)
-		subscription.setDeliveryCancel(cancel)
+		if !subscription.setDeliveryCancel(plan.epoch, cancel) {
+			continue
+		}
 		kind, snapshotID, clippedRows, deliveryErr := subscription.stream(deliveryContext, plan)
 		cancel()
 		subscription.clearDeliveryCancel()
@@ -575,10 +572,16 @@ func (subscription *ViewerSubscription) releaseBudget(size int) {
 	subscription.mu.Unlock()
 }
 
-func (subscription *ViewerSubscription) setDeliveryCancel(cancel context.CancelFunc) {
+func (subscription *ViewerSubscription) setDeliveryCancel(epoch uint64, cancel context.CancelFunc) bool {
 	subscription.mu.Lock()
+	if epoch < subscription.deliveryEpochFloor {
+		subscription.mu.Unlock()
+		cancel()
+		return false
+	}
 	subscription.deliveryCancel = cancel
 	subscription.mu.Unlock()
+	return true
 }
 
 func (subscription *ViewerSubscription) clearDeliveryCancel() {
@@ -589,9 +592,13 @@ func (subscription *ViewerSubscription) clearDeliveryCancel() {
 	subscription.mu.Unlock()
 }
 
-func (subscription *ViewerSubscription) cancelDelivery() {
+func (subscription *ViewerSubscription) invalidateDeliveriesBefore(epoch uint64) {
 	subscription.mu.Lock()
+	// Reservation precedes worker registration. Remember the actor's reset
+	// even if the old delivery has not installed a cancel function yet.
+	subscription.deliveryEpochFloor = epoch
 	cancel := subscription.deliveryCancel
+	subscription.deliveryCancel = nil
 	subscription.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -816,8 +823,12 @@ func (session *Session) resyncViewer(connectionID string, subscription *ViewerSu
 }
 
 func (session *Session) resetViewer(viewer *viewerActorState) {
-	clearViewerAckDeadline(viewer)
+	// Invalidate/cancel old deliveries before waking the replacement. A public
+	// caller can resume after the replacement has registered its cancel function;
+	// it must never perform unscoped cancellation after the actor reply.
 	viewer.epoch++
+	viewer.subscription.invalidateDeliveriesBefore(viewer.epoch)
+	clearViewerAckDeadline(viewer)
 	viewer.inFlight = nil
 	viewer.awaiting = nil
 	viewer.sendingSnapshot = nil
@@ -840,16 +851,7 @@ func (session *Session) restartViewerSnapshot(
 	if viewer.inFlight == nil || viewer.inFlightEpoch != epoch {
 		return errViewerDeliveryStale
 	}
-	viewer.epoch++
-	clearViewerAckDeadline(viewer)
-	viewer.inFlight = nil
-	viewer.base = nil
-	viewer.clippedRows = nil
-	viewer.awaiting = nil
-	viewer.sendingSnapshot = nil
-	viewer.earlySnapshotApplied = false
-	viewer.forceSnapshot = true
-	signalViewer(viewer.subscription)
+	session.resetViewer(viewer)
 	return nil
 }
 
