@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type confirmationHandle int
+type terminalFileHandle int
 
 // File-status flags are shared by dup and may also be shared by input/output
 // descriptors for one terminal. Serialize only the short nonblocking syscall
@@ -24,34 +24,34 @@ var (
 	errTerminalIORestore = errors.New("restore terminal descriptor flags")
 )
 
-func duplicateConfirmationInput(source *os.File) (confirmationHandle, error) {
+func duplicateTerminalFile(source *os.File) (terminalFileHandle, error) {
 	connection, err := source.SyscallConn()
 	if err != nil {
-		return -1, fmt.Errorf("access confirmation input: %w", err)
+		return -1, fmt.Errorf("access terminal I/O source: %w", err)
 	}
 	fd := -1
 	var duplicateErr error
 	if err := connection.Control(func(sourceFD uintptr) {
 		fd, duplicateErr = unix.FcntlInt(sourceFD, unix.F_DUPFD_CLOEXEC, 0)
 	}); err != nil {
-		return -1, fmt.Errorf("access confirmation descriptor: %w", err)
+		return -1, fmt.Errorf("access terminal I/O descriptor: %w", err)
 	}
 	if duplicateErr != nil {
-		return -1, fmt.Errorf("duplicate confirmation descriptor: %w", duplicateErr)
+		return -1, fmt.Errorf("duplicate terminal I/O descriptor: %w", duplicateErr)
 	}
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil {
 		_ = unix.Close(fd)
-		return -1, fmt.Errorf("inspect confirmation input: %w", err)
+		return -1, fmt.Errorf("inspect terminal I/O source: %w", err)
 	}
 	if stat.Mode&unix.S_IFMT != unix.S_IFIFO && !term.IsTerminal(uintptr(fd)) {
 		_ = unix.Close(fd)
-		return -1, errors.New("confirmation input must be a terminal or pipe")
+		return -1, errors.New("terminal I/O source must be a terminal or pipe")
 	}
-	return confirmationHandle(fd), nil
+	return terminalFileHandle(fd), nil
 }
 
-func nonblockingTerminalIO(handle confirmationHandle, operation func(int) (int, error)) (count int, operationErr error) {
+func nonblockingTerminalIO(handle terminalFileHandle, operation func(int) (int, error)) (count int, operationErr error) {
 	terminalIOMu.Lock()
 	defer terminalIOMu.Unlock()
 	fd := int(handle)
@@ -73,7 +73,7 @@ func nonblockingTerminalIO(handle confirmationHandle, operation func(int) (int, 
 	return operation(fd)
 }
 
-func readConfirmationInput(ctx context.Context, handle confirmationHandle, data []byte) (int, error) {
+func readConfirmationInput(ctx context.Context, handle terminalFileHandle, data []byte) (int, error) {
 	fd := int(handle)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -102,6 +102,6 @@ func readConfirmationInput(ctx context.Context, handle confirmationHandle, data 
 	}
 }
 
-func closeConfirmationInput(handle confirmationHandle) error {
+func closeTerminalFile(handle terminalFileHandle) error {
 	return unix.Close(int(handle))
 }

@@ -60,6 +60,11 @@ TTY/flag restoration, and Close interruption tests pass under the race
 detector. Windows tests compile to x86-64 PE, including an isolated native
 console fixture, but native Windows execution remains pending. Command
 routing is still an explicit integration gate.
+The same owned-handle infrastructure now supports cancellable terminal
+output. Actual macOS stalled-pipe and aliased input/output PTY tests pass;
+`Close` joins blocked writes while preserving caller-owned stdout. Desktop
+renderer integration and native Windows execution remain pending, documented
+in `docs/evidence/p3/terminal-output.md`.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,

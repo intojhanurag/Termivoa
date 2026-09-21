@@ -7,11 +7,49 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/windows"
 )
+
+func TestFileTerminalIORejectsOverlappedPipe(t *testing.T) {
+	id, err := NewOperationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := windows.UTF16PtrFromString(`\\.\pipe\pterm-io-test-` + id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_OVERLAPPED,
+		windows.PIPE_TYPE_BYTE|windows.PIPE_READMODE_BYTE|windows.PIPE_WAIT, 1, 4096, 4096, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := os.NewFile(uintptr(handle), "overlapped pipe fixture")
+	defer input.Close()
+	reader, err := NewFileConfirmationReader(input)
+	if err == nil {
+		_ = reader.Close()
+		t.Fatal("overlapped input was accepted as synchronous")
+	}
+	if !strings.Contains(err.Error(), "unsupported asynchronous pipe") {
+		t.Fatalf("unexpected input rejection: %v", err)
+	}
+	writer, err := NewFileTerminalWriter(input)
+	if err == nil {
+		_ = writer.Close()
+		t.Fatal("overlapped output was accepted as synchronous")
+	}
+	if !strings.Contains(err.Error(), "unsupported asynchronous pipe") {
+		t.Fatalf("unexpected output rejection: %v", err)
+	}
+	if _, err := windows.GetFileType(handle); err != nil {
+		t.Fatalf("constructor failure closed caller handle: %v", err)
+	}
+}
 
 // Console setup happens only in a disposable helper process. It never
 // detaches the owner's shell or changes the parent process's console.
@@ -59,5 +97,29 @@ func TestFileConfirmationWindowsConsoleCancellation(t *testing.T) {
 	var after uint32
 	if err := windows.GetConsoleMode(windows.Handle(input.Fd()), &after); err != nil || after != before {
 		t.Fatalf("caller console changed or was closed: before=%#x after=%#x err=%v", before, after, err)
+	}
+	output, err := os.OpenFile("CONOUT$", os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	if err := windows.GetConsoleMode(windows.Handle(output.Fd()), &before); err != nil {
+		t.Fatal(err)
+	}
+	writer, err := NewFileTerminalWriter(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	writeContext, cancelWrite := context.WithTimeout(context.Background(), time.Second)
+	defer cancelWrite()
+	if _, err := writer.WriteContext(writeContext, []byte("synthetic console fixture\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.GetConsoleMode(windows.Handle(output.Fd()), &after); err != nil || after != before {
+		t.Fatalf("caller output console changed or closed: before=%#x after=%#x err=%v", before, after, err)
 	}
 }

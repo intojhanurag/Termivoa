@@ -13,9 +13,14 @@ import (
 // source while in use; duplicated descriptors share the same input stream.
 // On Unix, each read syscall temporarily changes the shared nonblocking flag
 // under a shared adapter lock and restores it before any readiness wait. No
-// other component may read or reconfigure the source while in use.
+// code outside the owned adapters may read or reconfigure the source while
+// in use. An owned output adapter may share a terminal through the same lock.
 type FileConfirmationReader struct {
-	handle    confirmationHandle
+	file *ownedTerminalFile
+}
+
+type ownedTerminalFile struct {
+	handle    terminalFileHandle
 	closed    context.Context
 	cancel    context.CancelFunc
 	slot      chan struct{}
@@ -26,15 +31,23 @@ type FileConfirmationReader struct {
 // NewFileConfirmationReader duplicates a terminal or pipe. Regular files and
 // unsupported device types are rejected rather than treated as interruptible.
 func NewFileConfirmationReader(source *os.File) (*FileConfirmationReader, error) {
-	if source == nil {
-		return nil, errors.New("confirmation source must not be nil")
+	file, err := newOwnedTerminalFile(source)
+	if err != nil {
+		return nil, err
 	}
-	handle, err := duplicateConfirmationInput(source)
+	return &FileConfirmationReader{file: file}, nil
+}
+
+func newOwnedTerminalFile(source *os.File) (*ownedTerminalFile, error) {
+	if source == nil {
+		return nil, errors.New("terminal I/O source must not be nil")
+	}
+	handle, err := duplicateTerminalFile(source)
 	if err != nil {
 		return nil, err
 	}
 	closed, cancel := context.WithCancel(context.Background())
-	reader := &FileConfirmationReader{
+	reader := &ownedTerminalFile{
 		handle: handle, closed: closed, cancel: cancel, slot: make(chan struct{}, 1),
 	}
 	reader.slot <- struct{}{}
@@ -42,8 +55,22 @@ func NewFileConfirmationReader(source *os.File) (*FileConfirmationReader, error)
 }
 
 func (reader *FileConfirmationReader) ReadContext(ctx context.Context, data []byte) (int, error) {
+	n, err := reader.file.withContext(ctx, data, readConfirmationInput)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrClosed) {
+		return 0, err
+	}
+	return n, err
+}
+
+func (reader *FileConfirmationReader) Close() error { return reader.file.Close() }
+
+func (reader *ownedTerminalFile) withContext(
+	ctx context.Context,
+	data []byte,
+	operation func(context.Context, terminalFileHandle, []byte) (int, error),
+) (int, error) {
 	if ctx == nil {
-		return 0, errors.New("confirmation context must not be nil")
+		return 0, errors.New("terminal I/O context must not be nil")
 	}
 	select {
 	case <-ctx.Done():
@@ -68,26 +95,26 @@ func (reader *FileConfirmationReader) ReadContext(ctx context.Context, data []by
 		stopClose()
 		cancel()
 	}()
-	n, err := readConfirmationInput(readContext, reader.handle, data)
+	n, err := operation(readContext, reader.handle, data)
 	if ctx.Err() != nil {
 		if errors.Is(err, ctx.Err()) {
-			return 0, err
+			return n, err
 		}
-		return 0, errors.Join(ctx.Err(), err)
+		return n, errors.Join(ctx.Err(), err)
 	}
 	if reader.closed.Err() != nil {
-		return 0, errors.Join(os.ErrClosed, err)
+		return n, errors.Join(os.ErrClosed, err)
 	}
 	return n, err
 }
 
-func (reader *FileConfirmationReader) Close() error {
+func (reader *ownedTerminalFile) Close() error {
 	reader.closeOnce.Do(func() {
 		reader.cancel()
-		// Cancellation wakes the active read. Wait for its OS operations and
+		// Cancellation wakes the active I/O. Wait for its OS operations and
 		// cleanup before releasing the handle; no caller-owned file is closed.
 		<-reader.slot
-		reader.closeErr = closeConfirmationInput(reader.handle)
+		reader.closeErr = closeTerminalFile(reader.handle)
 		reader.slot <- struct{}{}
 	})
 	return reader.closeErr
