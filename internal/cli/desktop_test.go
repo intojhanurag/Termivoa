@@ -200,6 +200,7 @@ func TestDesktopCancelledInputCannotWaitForLaterResize(t *testing.T) {
 func TestDesktopResizeOnlyControllerAndCoalesces(t *testing.T) {
 	client := desktopFake()
 	display, _ := testDesktopDisplay(500, 300)
+	display.screen = &protocol.ScreenMetadata{Columns: 80, Rows: 24}
 	transport := newDesktopTransport(context.Background(), client, display)
 	defer transport.Close()
 	if err := transport.resize(context.Background()); err != nil || len(client.resizes) != 0 {
@@ -210,6 +211,7 @@ func TestDesktopResizeOnlyControllerAndCoalesces(t *testing.T) {
 		if err := transport.resize(context.Background()); err != nil {
 			t.Fatal(err)
 		}
+		display.screen = &protocol.ScreenMetadata{Columns: 400, Rows: 200}
 	}
 	if len(client.resizes) != 1 || client.resizes[0] != [2]int{400, 200} {
 		t.Fatalf("controller sizes = %v", client.resizes)
@@ -335,5 +337,84 @@ func TestDesktopShrinkShowsSyncingWithoutQueueingInput(t *testing.T) {
 	}
 	if err := transport.Send(context.Background(), desktop.TextAction{Text: "fresh"}); err != nil || client.sent != 1 {
 		t.Fatalf("fresh input = %d %v", client.sent, err)
+	}
+}
+
+func TestDesktopRecoveredSizeDoesNotTriggerDuplicateResize(t *testing.T) {
+	client := desktopFake()
+	client.state.Controller = true
+	display, _ := testDesktopDisplay(60, 18)
+	if err := display.validate(protocol.ScreenMetadata{Columns: 60, Rows: 17}); err != nil {
+		t.Fatal(err)
+	}
+	transport := newDesktopTransport(context.Background(), client, display)
+	defer transport.Close()
+	if err := transport.resize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("duplicate resize=%v", client.resizes)
+	}
+	// Grow back before the next shrink-sized poll would have refreshed cache.
+	display.size = func() (int, int, error) { return 80, 24, nil }
+	if err := transport.resize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.resizes) != 1 || client.resizes[0] != [2]int{80, 23} {
+		t.Fatalf("stale cache suppressed growth: %v", client.resizes)
+	}
+}
+
+type desktopReadyBarrier struct{ entered, ready chan struct{} }
+
+func (barrier desktopReadyBarrier) WaitReady(ctx context.Context) error {
+	close(barrier.entered)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-barrier.ready:
+		return nil
+	}
+}
+
+func TestDesktopStartupAdvertisesControlOnlyAfterTargetReady(t *testing.T) {
+	client := desktopFake()
+	client.state.Controller = true
+	display, output := testDesktopDisplay(80, 25)
+	display.setClient(client)
+	display.controlPending = true
+	barrier := desktopReadyBarrier{entered: make(chan struct{}), ready: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() {
+		result <- finishDesktopStartup(context.Background(), barrier, display)
+	}()
+	<-barrier.entered
+	if err := display.status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "Control |") || !strings.Contains(output.String(), "Syncing") {
+		t.Fatalf("premature control: %q", output.String())
+	}
+	close(barrier.ready)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Control |") {
+		t.Fatal("ready input was not advertised")
+	}
+}
+
+func TestDesktopStartupCanceledBeforeReadyDoesNotAdvertiseControl(t *testing.T) {
+	client := desktopFake()
+	client.state.Controller = true
+	display, output := testDesktopDisplay(80, 25)
+	display.setClient(client)
+	display.controlPending = true
+	barrier := desktopReadyBarrier{entered: make(chan struct{}), ready: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := finishDesktopStartup(ctx, barrier, display)
+	if !errors.Is(err, context.Canceled) || !display.controlPending || strings.Contains(output.String(), "Control |") {
+		t.Fatalf("failed startup advertised control: %v %q", err, output.String())
 	}
 }

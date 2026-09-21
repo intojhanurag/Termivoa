@@ -235,6 +235,21 @@ func (client *Client) paintLoop() {
 				return
 			}
 			message := frame.envelope
+			// Publish a resize/resync boundary and commit a complete paint/ack
+			// under the same gate. Checking the target after painting is too
+			// late: an old snapshot acknowledgement could reset a replacement
+			// transfer already started by the broker. Never hold client.mu here.
+			paintCommit := message.Type == protocol.SnapshotEnd || message.Type == protocol.ScreenPatch
+			if paintCommit {
+				select {
+				case client.resizeGate <- struct{}{}:
+				case <-client.ctx.Done():
+					client.mu.Lock()
+					client.queuedBytes -= frame.size
+					client.mu.Unlock()
+					return
+				}
+			}
 			var err error
 			viewportRejected := false
 			switch message.Type {
@@ -302,6 +317,9 @@ func (client *Client) paintLoop() {
 						}
 					}
 				}
+			}
+			if paintCommit {
+				<-client.resizeGate
 			}
 			client.mu.Lock()
 			client.queuedBytes -= frame.size

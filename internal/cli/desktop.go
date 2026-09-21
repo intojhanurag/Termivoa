@@ -59,13 +59,13 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	}
 	defer func() { returnErr = errors.Join(returnErr, writer.Close()) }()
 	getSize := func() (int, int, error) { return term.GetSize(outputFD) }
-	display := &desktopDisplay{writer: writer, size: getSize}
+	display := &desktopDisplay{writer: writer, size: getSize, controlPending: config.Control}
 	if _, _, err := getSize(); err != nil {
 		return fmt.Errorf("read desktop terminal dimensions: %w", err)
 	}
 	instructions := "Read-only attachment: typing is ignored. Use --control to take control.\r\nCtrl+] detaches without ending the session. With control, Ctrl+V then Ctrl+] sends literal Ctrl+].\r\n"
 	if config.Control {
-		instructions = "Requesting control after the initial screen is applied.\r\nCtrl+] detaches without ending the session. Ctrl+V then Ctrl+] sends literal Ctrl+].\r\n"
+		instructions = "Requesting control after the initial screen is applied. Input while connecting/syncing is discarded.\r\nCtrl+] detaches without ending the session. Ctrl+V then Ctrl+] sends literal Ctrl+].\r\n"
 	}
 	if _, err := (restorationWriter{writer}).Write([]byte(instructions)); err != nil {
 		return err
@@ -78,7 +78,18 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	if err != nil {
 		return err
 	}
-	attachment := desktop.Attachment{TTY: tty, Events: events}
+	startupEvents, err := desktop.NewBoundedInput(reader, os.Getenv("TERM"))
+	if err != nil {
+		return err
+	}
+	attachment := desktop.Attachment{TTY: tty, Events: events, StartupEvents: startupEvents,
+		BeforeInput: func(ctx context.Context) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return discardDesktopInput(reader.file.handle)
+		},
+	}
 	attachment.Connect = func(connectionContext context.Context) (desktop.AttachmentTransport, error) {
 		client, err := liveclient.Dial(connectionContext, liveclient.Config{
 			RuntimeDir: config.RuntimeDir, ClientBuild: config.ClientBuild,
@@ -102,6 +113,9 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 			if err := transport.resize(readyContext); err != nil {
 				return nil, errors.Join(err, transport.Close())
 			}
+			if err := finishDesktopStartup(readyContext, client, display); err != nil {
+				return nil, errors.Join(err, transport.Close())
+			}
 		}
 		if err := display.status(connectionContext); err != nil {
 			return nil, errors.Join(err, transport.Close())
@@ -114,6 +128,22 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	// final message is outside the alternate screen, with its own bounded I/O.
 	_, messageErr := (restorationWriter{writer}).Write([]byte("Attachment closed; the managed session was not terminated.\r\n"))
 	return errors.Join(returnErr, messageErr)
+}
+
+// The startup decoder is still draining/discarding input throughout this
+// write. Attachment joins it and discards any remaining native input only
+// after Connect returns, before starting a fresh live decoder.
+func finishDesktopStartup(ctx context.Context, client interface{ WaitReady(context.Context) error }, display *desktopDisplay) error {
+	if err := client.WaitReady(ctx); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	display.mu.Lock()
+	display.controlPending = false
+	display.mu.Unlock()
+	return display.status(ctx)
 }
 
 func desktopFD(file *os.File) (uintptr, error) {
@@ -164,8 +194,6 @@ type desktopTransport struct {
 	once    sync.Once
 	mu      sync.Mutex
 	err     error
-	columns int
-	rows    int
 }
 
 func newDesktopTransport(parent context.Context, client desktopConnection, display *desktopDisplay) *desktopTransport {
@@ -286,15 +314,15 @@ func (transport *desktopTransport) resize(ctx context.Context) error {
 	if columns < protocol.MinColumns || rows < protocol.MinRows {
 		return errors.New("desktop terminal is too small; enlarge it to at least 20 columns by 5 rows and re-attach")
 	}
-	if columns == transport.columns && rows == transport.rows {
+	// The paint worker may already have recovered a physical shrink before
+	// this poll runs, or the outer window may already have grown back to a
+	// cached old size. Only a ready matching canonical grid needs no resync.
+	if transport.display.matches(columns, rows) {
 		return nil
 	}
 	err = transport.client.Resize(ctx, columns, rows)
 	if inactiveDesktopControl(err) {
 		return nil
-	}
-	if err == nil {
-		transport.columns, transport.rows = columns, rows
 	}
 	return err
 }

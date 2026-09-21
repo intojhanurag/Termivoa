@@ -150,6 +150,13 @@ type Attachment struct {
 	TTY     *OuterTTY
 	Events  uv.EventStreamer
 	Connect func(context.Context) (AttachmentTransport, error)
+	// StartupEvents is a separate, fresh decoder over the same owned input.
+	// It drains setup input without sending it, but still handles local detach.
+	// It is canceled and joined before BeforeInput and Events start. BeforeInput
+	// must discard remaining native raw input at that handoff, or fail closed.
+	// Neither decoder may close the caller's original terminal descriptor.
+	StartupEvents uv.EventStreamer
+	BeforeInput   func(context.Context) error
 }
 
 // Run enters and always restores the outer terminal before returning.
@@ -160,6 +167,9 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 	if attachment.TTY == nil || attachment.Events == nil || attachment.Connect == nil {
 		return errors.New("desktop attachment requires TTY, event streamer, and connector")
 	}
+	if (attachment.StartupEvents == nil) != (attachment.BeforeInput == nil) {
+		return errors.New("desktop startup input requires both a separate decoder and handoff")
+	}
 	if err := attachment.TTY.Enter(); err != nil {
 		return errors.Join(err, attachment.TTY.Restore())
 	}
@@ -169,9 +179,12 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 
 	eventContext, cancelEvents := context.WithCancel(ctx)
 	defer cancelEvents()
-	transport, err := attachment.Connect(eventContext)
+	transport, detached, err := attachment.connectDuringStartup(eventContext)
 	if err != nil {
 		return fmt.Errorf("desktop: connect terminal: %w", err)
+	}
+	if detached {
+		return nil
 	}
 	if transport == nil {
 		return errors.New("desktop connector returned no transport")

@@ -11,11 +11,12 @@ import (
 )
 
 type desktopDisplay struct {
-	writer liveclient.Output
-	size   func() (int, int, error)
-	mu     sync.Mutex
-	screen *protocol.ScreenMetadata
-	client interface{ State() liveclient.State }
+	writer         liveclient.Output
+	size           func() (int, int, error)
+	mu             sync.Mutex
+	screen         *protocol.ScreenMetadata
+	client         interface{ State() liveclient.State }
+	controlPending bool
 }
 
 func (display *desktopDisplay) setClient(client interface{ State() liveclient.State }) {
@@ -105,6 +106,12 @@ func (display *desktopDisplay) fits() bool {
 	return err == nil && desktopViewport(*display.screen, columns, rows) == nil
 }
 
+func (display *desktopDisplay) matches(columns, rows int) bool {
+	display.mu.Lock()
+	defer display.mu.Unlock()
+	return display.screen != nil && display.screen.Columns == int64(columns) && display.screen.Rows == int64(rows)
+}
+
 func (display *desktopDisplay) footerLocked() ([]byte, error) {
 	if display.screen == nil {
 		return nil, nil
@@ -125,7 +132,7 @@ func (display *desktopDisplay) footerLocked() ([]byte, error) {
 		if state.Controller {
 			label = "Control | Ctrl+] detach | Ctrl+V Ctrl+] sends literal"
 		}
-		if !state.Ready {
+		if !state.Ready || display.controlPending {
 			label = "Syncing | Input ignored | Ctrl+] detach"
 		}
 		if !state.Connected {

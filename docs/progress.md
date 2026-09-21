@@ -327,6 +327,17 @@ partial/joined output failures. CLI/liveclient Windows test compilation passes;
 native execution and the independent outer-PTY executable shrink fixture remain
 pending. See `docs/evidence/p3/desktop-controlled-resize.md`.
 
+Independent review of the resize candidate reproduced and fixed an old-snapshot
+acknowledgement overtaking a resize publication, stale cached dimensions blocking
+grow-back, and queued startup input during blocked Control status output. Setup
+now drains a separate bounded decoder, joins it, discards remaining owned raw
+input, then starts a fresh live decoder. Initial control waits for the requested
+canonical grid. Focused race/vet and actual Mac raw-PTY startup regressions pass;
+an independent working-tree executable shrink/grow run also passed. Repeated
+committed executable evidence and native Windows remain separate gates. Partial
+input events spanning later live readiness changes are not yet established by
+these startup tests. Details and exact commands are in the same evidence record.
+
 The public desktop attach checkpoint connects exact session generations through
 restricted IPC, defaults to read-only, and accepts explicit `--control` only after
 the initial snapshot is applied. Focused Mac race and disposable-PTY restoration

@@ -3,7 +3,9 @@ package liveclient
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -246,4 +248,65 @@ func TestViewportTargetsCoalesceAndCannotExtendTransition(t *testing.T) {
 		t.Fatalf("over-limit resize emitted %s", extra.Type)
 	default:
 	}
+}
+
+func TestResizePublicationCannotOvertakeOldSnapshotPaintAndAck(t *testing.T) {
+	var armed atomic.Bool
+	entered, resume := make(chan struct{}), make(chan struct{})
+	var resumeOnce sync.Once
+	defer resumeOnce.Do(func() { close(resume) })
+	client, host, _ := newClientFixture(t, &bufferOutput{}, func(config *Config) {
+		config.ValidateScreen = func(screen protocol.ScreenMetadata) error {
+			if armed.Load() && screen.Columns == 20 {
+				close(entered)
+				<-resume
+			}
+			return nil
+		}
+	})
+	screen, rows := snapshot(t, "initial")
+	host.snapshot(t, "1", screen, rows)
+	host.await(t, protocol.SnapshotApplied)
+	waitState(t, client, func(state State) bool { return state.Ready })
+	acquire(t, client, host, "1")
+	client.resizeGate <- struct{}{}
+	var gateOnce sync.Once
+	releaseGate := func() { gateOnce.Do(func() { <-client.resizeGate }) }
+	defer releaseGate()
+	resized := make(chan error, 1)
+	go func() { resized <- client.Resize(context.Background(), 30, 6) }()
+	// Admit the public resize before SnapshotBegin changes readiness. The
+	// explicit gate supplies ordering; stack inspection only observes entry.
+	deadline := time.Now().Add(time.Second)
+	for {
+		stack := make([]byte, 1<<18)
+		n := runtime.Stack(stack, true)
+		if strings.Contains(string(stack[:n]), "(*Client).resizeViewport(") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("resize was not admitted")
+		}
+		runtime.Gosched()
+	}
+	armed.Store(true)
+	staleID := host.snapshot(t, "2", screen, rows)
+	select {
+	case <-entered:
+	case <-time.After(40 * time.Millisecond):
+	}
+	releaseGate()
+	host.await(t, protocol.TerminalResize)
+	host.await(t, protocol.ScreenResync)
+	if err := <-resized; err != nil {
+		t.Fatal(err)
+	}
+	resumeOnce.Do(func() { close(resume) })
+	newScreen, newRows := sizedSnapshot(t, 30, 6, "new target")
+	id := host.snapshot(t, "3", newScreen, newRows)
+	ack, _ := protocol.DecodePayload[protocol.SnapshotAppliedPayload](host.await(t, protocol.SnapshotApplied))
+	if ack.SnapshotID == staleID || ack.SnapshotID != id {
+		t.Fatal("old snapshot was acknowledged after resize/resync abandoned it")
+	}
+	waitState(t, client, func(state State) bool { return state.Ready && !state.Resizing })
 }
