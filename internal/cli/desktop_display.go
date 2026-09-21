@@ -1,0 +1,105 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"sync"
+
+	"github.com/intojhanurag/phone-terminal/internal/liveclient"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
+)
+
+type desktopDisplay struct {
+	writer liveclient.Output
+	size   func() (int, int, error)
+	mu     sync.Mutex
+	screen *protocol.ScreenMetadata
+	client interface{ State() liveclient.State }
+}
+
+func (display *desktopDisplay) setClient(client interface{ State() liveclient.State }) {
+	display.mu.Lock()
+	display.client = client
+	display.mu.Unlock()
+}
+
+func (display *desktopDisplay) validate(screen protocol.ScreenMetadata) error {
+	columns, rows, err := display.size()
+	if err != nil {
+		return err
+	}
+	if err := desktopViewport(screen, columns, rows); err != nil {
+		return err
+	}
+	display.mu.Lock()
+	display.screen = &screen
+	display.mu.Unlock()
+	return nil
+}
+
+func desktopViewport(screen protocol.ScreenMetadata, columns, rows int) error {
+	if screen.Columns > int64(columns) || screen.Rows > int64(rows) {
+		return fmt.Errorf("session grid is %dx%d but desktop terminal is %dx%d; enlarge the window to fit and re-attach (the session is still running)", screen.Columns, screen.Rows, columns, rows)
+	}
+	return nil
+}
+
+func (display *desktopDisplay) WriteContext(ctx context.Context, data []byte) (int, error) {
+	display.mu.Lock()
+	defer display.mu.Unlock()
+	footer, err := display.footerLocked()
+	if err != nil {
+		return 0, err
+	}
+	drawing := append(append([]byte(nil), data...), footer...)
+	n, err := display.writer.WriteContext(ctx, drawing)
+	if err == nil && n != len(drawing) {
+		err = io.ErrShortWrite
+	}
+	return min(n, len(data)), err
+}
+
+func (display *desktopDisplay) status(ctx context.Context) error {
+	display.mu.Lock()
+	defer display.mu.Unlock()
+	footer, err := display.footerLocked()
+	if err != nil || len(footer) == 0 {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, desktopIOTimeout)
+	defer cancel()
+	_, err = display.writer.WriteContext(ctx, footer)
+	return err
+}
+
+func (display *desktopDisplay) footerLocked() ([]byte, error) {
+	if display.screen == nil {
+		return nil, nil
+	}
+	columns, rows, err := display.size()
+	if err != nil {
+		return nil, err
+	}
+	if err := desktopViewport(*display.screen, columns, rows); err != nil {
+		return nil, err
+	}
+	if int64(rows) == display.screen.Rows {
+		return nil, nil // Exact-fit observers keep the complete canonical grid.
+	}
+	label := "Read-only | Ctrl+] detach | --control to type"
+	if display.client != nil {
+		state := display.client.State()
+		if state.Controller {
+			label = "Control | Ctrl+] detach | Ctrl+V Ctrl+] sends literal"
+		}
+		if !state.Ready {
+			label = "Syncing | Input ignored | Ctrl+] detach"
+		}
+		if !state.Connected {
+			label = "Disconnected | No input sent | Ctrl+] detach"
+		}
+	}
+	label = label[:min(len(label), columns)] // Static ASCII only, never child text.
+	return fmt.Appendf(nil, "\x1b[%d;1H\x1b[0m\x1b[2K%s\x1b[%d;%dH", display.screen.Rows+1, label, display.screen.Cursor.Row+1, display.screen.Cursor.Column+1), nil
+}

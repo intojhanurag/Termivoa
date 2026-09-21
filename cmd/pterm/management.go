@@ -18,17 +18,21 @@ const commandHelp = `Phone Terminal private development build
 Available commands:
   pterm list                         Show managed sessions and lifecycle state.
   pterm terminate <session-id>        Confirm and end one managed process tree.
+  pterm attach [--control] <id>       View a session; --control explicitly takes control.
   pterm help                         Show this help.
 
 Local commands talk to the existing broker; they never start or replace it.
 Development tests may use --dev and --runtime-dir <isolated-directory> before
 the session ID. Production and development profiles are never mixed.
 Phone access, installation, and the remaining CLI commands are not ready yet.
+Attach: Ctrl+] detaches, never terminates. With control, Ctrl+V then Ctrl+]
+sends literal Ctrl+]. Ordinary typing in observer mode is ignored, not queued.
 `
 
 type localCommandConfig struct {
 	runtimeDir string
 	arguments  []string
+	control    bool
 }
 
 func parseLocalCommand(command string, args []string) (localCommandConfig, error) {
@@ -36,10 +40,14 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	flags.SetOutput(io.Discard)
 	dev := flags.Bool("dev", false, "use an isolated development profile")
 	runtimeDir := flags.String("runtime-dir", "", "isolated broker runtime directory (requires --dev)")
+	var control bool
+	if command == "attach" {
+		flags.BoolVar(&control, "control", false, "explicitly take control after the initial screen is applied")
+	}
 	if err := flags.Parse(args); err != nil {
 		return localCommandConfig{}, err
 	}
-	if (command == "list" && flags.NArg() != 0) || (command == "terminate" && flags.NArg() != 1) {
+	if (command == "list" && flags.NArg() != 0) || ((command == "terminate" || command == "attach") && flags.NArg() != 1) {
 		return localCommandConfig{}, fmt.Errorf("usage: pterm %s [--dev] [--runtime-dir <directory>]%s", command, commandArgumentHelp(command))
 	}
 	profile := host.ProductionProfile
@@ -61,11 +69,11 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if err != nil {
 		return localCommandConfig{}, fmt.Errorf("invalid local command profile: %w", err)
 	}
-	return localCommandConfig{runtimeDir: validated, arguments: flags.Args()}, nil
+	return localCommandConfig{runtimeDir: validated, arguments: flags.Args(), control: control}, nil
 }
 
 func commandArgumentHelp(command string) string {
-	if command == "terminate" {
+	if command == "terminate" || command == "attach" {
 		return " <session-id>"
 	}
 	return ""

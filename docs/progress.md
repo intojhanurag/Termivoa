@@ -299,6 +299,14 @@ repository remained private after merge, and `main` retained its protection.
 
 ## Known defects
 
+The public desktop attach checkpoint connects exact session generations through
+restricted IPC, defaults to read-only, and accepts explicit `--control` only after
+the initial snapshot is applied. Focused Mac race and disposable-PTY restoration
+tests pass; Windows compile-only evidence is not a native pass. Exact-fit grids
+are preserved; smooth window shrink remains a documented limitation and the
+independent executable/broker integration suite is pending. See
+`docs/evidence/p3/desktop-attach-command.md`.
+
 The CLI selection checkpoint centralizes exact session-generation resolution and
 adds one-shot creation from saved project/shell IDs. It preserves uncertain-delivery
 warnings and never retries or restarts a lost session. Focused Mac race tests and

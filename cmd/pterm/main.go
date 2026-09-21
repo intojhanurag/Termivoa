@@ -39,15 +39,15 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return errors.New("command context and output must not be nil")
 	}
 	if len(args) == 0 {
-		_, err := fmt.Fprintln(output, "Phone Terminal private development build")
-		return err
+		return writeCommandText(ctx, output, "Phone Terminal private development build\n")
 	}
 	switch args[0] {
 	case "help", "--help", "-h":
-		_, err := io.WriteString(output, commandHelp)
-		return err
+		return writeCommandText(ctx, output, commandHelp)
 	case "list", "terminate":
 		return runManagementCommand(ctx, args[0], args[1:], input, output)
+	case "attach":
+		return runAttachCommand(ctx, args[1:], input, output)
 	case brokerMode:
 		config, err := parseBrokerConfig(args[1:])
 		if err != nil {
