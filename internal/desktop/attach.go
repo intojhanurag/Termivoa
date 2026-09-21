@@ -99,13 +99,26 @@ func (tty *OuterTTY) restoreLocked() error {
 	return errors.Join(sequenceErr, restoreErr)
 }
 
+// AttachmentTransport owns the live connection and any screen-paint workers.
+// Close must cancel and join those workers before returning. Neither Close nor
+// a lost connection terminates the managed child process.
+type AttachmentTransport interface {
+	Transport
+	io.Closer
+	Done() <-chan struct{}
+	Err() error
+}
+
 // Attachment runs decoded outer-terminal input until cancellation, a reader
-// error, or the local detach chord. The caller supplies an independently
-// cancellable Ultraviolet streamer, normally backed by a cancel reader.
+// error, connection loss, or the local detach chord. Events must honor context
+// cancellation and stop all its reads before StreamEvents returns. Connect is
+// called only after entering the outer terminal, so a new connection cannot
+// paint before the alternate screen is active. If Connect returns an error it
+// must close any connection it created.
 type Attachment struct {
-	TTY       *OuterTTY
-	Events    uv.EventStreamer
-	Transport Transport
+	TTY     *OuterTTY
+	Events  uv.EventStreamer
+	Connect func(context.Context) (AttachmentTransport, error)
 }
 
 // Run enters and always restores the outer terminal before returning.
@@ -113,8 +126,8 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 	if ctx == nil {
 		return errors.New("desktop attachment context must not be nil")
 	}
-	if attachment.TTY == nil || attachment.Events == nil || attachment.Transport == nil {
-		return errors.New("desktop attachment requires TTY, event streamer, and transport")
+	if attachment.TTY == nil || attachment.Events == nil || attachment.Connect == nil {
+		return errors.New("desktop attachment requires TTY, event streamer, and connector")
 	}
 	if err := attachment.TTY.Enter(); err != nil {
 		return errors.Join(err, attachment.TTY.Restore())
@@ -125,10 +138,46 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 
 	eventContext, cancelEvents := context.WithCancel(ctx)
 	defer cancelEvents()
+	transport, err := attachment.Connect(eventContext)
+	if err != nil {
+		return fmt.Errorf("desktop: connect terminal: %w", err)
+	}
+	if transport == nil {
+		return errors.New("desktop connector returned no transport")
+	}
 	events := make(chan uv.Event)
-	streamResult := make(chan error, 1)
+	streamStopped := make(chan struct{})
+	var streamErr error
 	go func() {
-		streamResult <- attachment.Events.StreamEvents(eventContext, events)
+		defer close(streamStopped)
+		streamErr = attachment.Events.StreamEvents(eventContext, events)
+	}()
+	defer func() {
+		// Stop painting and input before restoring the enclosing terminal.
+		// Cancellation alone is insufficient: a final read/write may still
+		// be running until both the transport and streamer have joined.
+		cancelEvents()
+		closeErr := transport.Close()
+		// Ultraviolet flushes already decoded events even on cancellation and
+		// its pinned reader uses unconditional sends. Drain and discard them
+		// while joining; otherwise a trailing key after Ctrl+] can deadlock
+		// shutdown. Never pass any of these events to the child.
+		for streamStopped != nil {
+			select {
+			case _, ok := <-events:
+				if !ok {
+					events = nil
+				}
+			case <-streamStopped:
+				streamStopped = nil
+			}
+		}
+		if closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("desktop: close terminal connection: %w", closeErr))
+		}
+		if streamErr != nil && streamErr != context.Canceled {
+			returnErr = errors.Join(returnErr, fmt.Errorf("desktop: read outer terminal: %w", streamErr))
+		}
 	}()
 
 	controller := InputController{}
@@ -136,13 +185,15 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-streamResult:
-			if err != nil {
-				return fmt.Errorf("desktop: read outer terminal: %w", err)
-			}
+		case <-streamStopped:
 			return nil
-		case event := <-events:
-			detached, err := controller.Handle(ctx, event, attachment.Transport)
+		case <-transport.Done():
+			return transport.Err()
+		case event, ok := <-events:
+			if !ok {
+				return nil
+			}
+			detached, err := controller.Handle(eventContext, event, transport)
 			if err != nil {
 				return err
 			}

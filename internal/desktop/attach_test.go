@@ -12,6 +12,190 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
+// The decoder deliberately stays alive until transport shutdown. Restoring
+// terminal modes before both have stopped races a final read or screen write.
+func TestAttachmentJoinsWorkersBeforeRestoring(t *testing.T) {
+	t.Parallel()
+	stopDecoder := make(chan struct{})
+	decoderStopped := make(chan struct{})
+	transport := &attachmentTransport{recordingTransport: &recordingTransport{}, closeFn: func() error {
+		close(stopDecoder)
+		return nil
+	}}
+	var output bytes.Buffer
+	tty := &OuterTTY{output: &output, ops: ttyOperations{
+		makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+		restore: func(uintptr, *term.State) error {
+			select {
+			case <-decoderStopped:
+				return nil
+			default:
+				return errors.New("terminal restored while decoder was still running")
+			}
+		},
+	}}
+	streamer := eventStreamerFunc(func(ctx context.Context, events chan<- uv.Event) error {
+		defer close(decoderStopped)
+		select {
+		case events <- uv.KeyPressEvent{Code: ']', Mod: uv.ModCtrl}:
+		case <-ctx.Done():
+		}
+		<-ctx.Done()
+		<-stopDecoder
+		return nil
+	})
+	attachment := Attachment{TTY: tty, Events: streamer, Connect: connectTransport(transport)}
+	if err := attachment.Run(context.Background()); err != nil {
+		// Ensure a failing implementation does not leave the fixture running.
+		select {
+		case <-stopDecoder:
+		default:
+			close(stopDecoder)
+		}
+		<-decoderStopped
+		t.Fatal(err)
+	}
+}
+
+type attachmentTransport struct {
+	*recordingTransport
+	closeFn func() error
+	done    <-chan struct{}
+	err     error
+}
+
+func (transport *attachmentTransport) Close() error {
+	if transport.closeFn != nil {
+		return transport.closeFn()
+	}
+	return nil
+}
+
+func (transport *attachmentTransport) Done() <-chan struct{} { return transport.done }
+func (transport *attachmentTransport) Err() error            { return transport.err }
+
+func connectTransport(transport AttachmentTransport) func(context.Context) (AttachmentTransport, error) {
+	return func(context.Context) (AttachmentTransport, error) { return transport, nil }
+}
+
+func TestAttachmentConnectsAfterEnteringTerminal(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	closed := false
+	restored := false
+	connectionDone := make(chan struct{})
+	close(connectionDone)
+	want := errors.New("broker disconnected")
+	tty := &OuterTTY{output: &output, ops: ttyOperations{
+		makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+		restore: func(uintptr, *term.State) error {
+			restored = true
+			if !closed {
+				t.Error("terminal restored before the connection stopped painting")
+			}
+			return nil
+		},
+	}}
+	attachment := Attachment{
+		TTY: tty,
+		Events: eventStreamerFunc(func(ctx context.Context, _ chan<- uv.Event) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+		Connect: func(context.Context) (AttachmentTransport, error) {
+			if !tty.rawActive || output.String() != enterOuterTerminal {
+				t.Error("connection started before outer terminal entry")
+			}
+			return &attachmentTransport{
+				recordingTransport: &recordingTransport{}, done: connectionDone, err: want,
+				closeFn: func() error { closed = true; return nil },
+			}, nil
+		},
+	}
+	if err := attachment.Run(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("disconnect error = %v, want %v", err, want)
+	}
+	if !restored {
+		t.Fatal("outer terminal not restored after disconnect")
+	}
+}
+
+func TestAttachmentRestoresAfterConnectionFailure(t *testing.T) {
+	t.Parallel()
+	want := errors.New("connection refused")
+	var output bytes.Buffer
+	restored := false
+	attachment := Attachment{
+		TTY: &OuterTTY{output: &output, ops: ttyOperations{
+			makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+			restore: func(uintptr, *term.State) error { restored = true; return nil },
+		}},
+		Events: eventStreamerFunc(func(context.Context, chan<- uv.Event) error {
+			t.Error("input started despite connection failure")
+			return nil
+		}),
+		Connect: func(context.Context) (AttachmentTransport, error) { return nil, want },
+	}
+	if err := attachment.Run(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("connect error = %v", err)
+	}
+	if !restored || output.String() != enterOuterTerminal+restoreOuterTerminal {
+		t.Fatal("outer terminal not restored after connection failure")
+	}
+}
+
+func TestAttachmentPreservesShutdownErrors(t *testing.T) {
+	t.Parallel()
+	readErr := errors.New("decode failed")
+	closeErr := errors.New("close failed")
+	restoreErr := errors.New("restore failed")
+	var output bytes.Buffer
+	attachment := Attachment{
+		TTY: &OuterTTY{output: &output, ops: ttyOperations{
+			makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+			restore: func(uintptr, *term.State) error { return restoreErr },
+		}},
+		Events: eventStreamerFunc(func(context.Context, chan<- uv.Event) error {
+			return errors.Join(context.Canceled, readErr)
+		}),
+		Connect: connectTransport(&attachmentTransport{
+			recordingTransport: &recordingTransport{}, closeFn: func() error { return closeErr },
+		}),
+	}
+	err := attachment.Run(context.Background())
+	for _, want := range []error{readErr, closeErr, restoreErr} {
+		if !errors.Is(err, want) {
+			t.Errorf("shutdown error %v does not contain %v", err, want)
+		}
+	}
+}
+
+func TestAttachmentClosedEventChannelStopsInsteadOfSpinning(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	closed := false
+	attachment := Attachment{
+		TTY: &OuterTTY{output: &output, ops: ttyOperations{
+			makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+			restore: func(uintptr, *term.State) error { return nil },
+		}},
+		Events: eventStreamerFunc(func(ctx context.Context, events chan<- uv.Event) error {
+			close(events)
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+		Connect: connectTransport(&attachmentTransport{
+			recordingTransport: &recordingTransport{}, closeFn: func() error { closed = true; return nil },
+		}),
+	}
+	if err := attachment.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("closed event channel did not close connection")
+	}
+}
+
 type eventStreamerFunc func(context.Context, chan<- uv.Event) error
 
 func (streamer eventStreamerFunc) StreamEvents(ctx context.Context, events chan<- uv.Event) error {
@@ -51,7 +235,7 @@ func TestAttachmentRestoresOuterTerminalAfterDetach(t *testing.T) {
 		<-ctx.Done()
 		return nil
 	})
-	attachment := Attachment{TTY: tty, Events: streamer, Transport: &recordingTransport{}}
+	attachment := Attachment{TTY: tty, Events: streamer, Connect: connectTransport(&attachmentTransport{recordingTransport: &recordingTransport{}})}
 	if err := attachment.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +273,7 @@ func TestAttachmentRestoresAfterInputFailure(t *testing.T) {
 		return nil
 	})
 	want := errors.New("send failed")
-	attachment := Attachment{TTY: tty, Events: streamer, Transport: &recordingTransport{err: want}}
+	attachment := Attachment{TTY: tty, Events: streamer, Connect: connectTransport(&attachmentTransport{recordingTransport: &recordingTransport{err: want}})}
 	if err := attachment.Run(context.Background()); !errors.Is(err, want) {
 		t.Fatalf("attachment error = %v", err)
 	}

@@ -261,6 +261,13 @@ READY timeout, which remains under investigation rather than being counted as
 green. See `docs/evidence/p3/management-command-integration.md`. Desktop attach,
 phone access, and release readiness are not claimed by this checkpoint.
 
+The desktop shutdown checkpoint reproduced restoration of the enclosing terminal
+before the input decoder had stopped. The coordinator now connects after terminal
+entry, joins input and display workers before restoration, and observes connection
+loss. Focused race tests and Windows cross-compilation pass; native terminal/client
+integration remains a separate pending gate. Evidence is recorded in
+`docs/evidence/p3/desktop-shutdown.md`.
+
 The initial release-smoke failure above was fixed and merged. P1 found two
 defects in pinned dependencies and carries narrow reviewed source patches:
 arbitrary `vt.Write` boundaries split grapheme clusters and xpty leaked the
