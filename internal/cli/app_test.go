@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -264,7 +265,14 @@ func TestLineConfirmerBoundsAndParsesInput(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var output bytes.Buffer
-			confirmer, err := NewLineConfirmer(strings.NewReader(test.input), &output)
+			input := strings.NewReader(test.input)
+			confirmer, err := NewLineConfirmer(ConfirmationReadFunc(func(ctx context.Context, data []byte) (int, error) {
+				if err := ctx.Err(); err != nil {
+					return 0, err
+				}
+				// An in-memory reader cannot block waiting for input.
+				return input.Read(data)
+			}), &output)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -276,6 +284,62 @@ func TestLineConfirmerBoundsAndParsesInput(t *testing.T) {
 				t.Fatalf("unexpected prompt output %q", output.String())
 			}
 		})
+	}
+}
+
+func TestConfirmationCancellationPreventsLateAnswerFromTerminating(t *testing.T) {
+	record := cliRecord(protocol.Running)
+	management := &fakeManagement{
+		pages:  []protocol.BrokerRPCSessionListResultPayload{{Sessions: []protocol.BrokerRPCSessionRecord{record}}},
+		status: record,
+	}
+	started := make(chan struct{})
+	answers := make(chan byte, 4)
+	readReturned := make(chan struct{})
+	input := ConfirmationReadFunc(func(ctx context.Context, data []byte) (int, error) {
+		close(started)
+		defer close(readReturned)
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case data[0] = <-answers:
+			return 1, nil
+		}
+	})
+	var output bytes.Buffer
+	confirmer, err := NewLineConfirmer(input, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idCalls := 0
+	app := newTestApp(t, management, confirmer, &output, func() (string, error) {
+		idCalls++
+		return cliOperation, nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- app.Terminate(ctx, cliSession) }()
+	<-started
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected canceled confirmation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("confirmation did not return promptly after cancellation")
+	}
+	select {
+	case <-readReturned:
+	default:
+		t.Fatal("confirmation returned while leaving its reader running")
+	}
+	for _, character := range []byte("yes\n") {
+		answers <- character
+	}
+	if idCalls != 0 || management.terminateCalls != 0 || len(answers) != 4 {
+		t.Fatalf("late confirmation was consumed: IDs=%d terminate=%d remaining=%d", idCalls, management.terminateCalls, len(answers))
 	}
 }
 

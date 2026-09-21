@@ -137,7 +137,7 @@ func (client *ManagementClient) ListPage(
 	if err != nil {
 		return protocol.BrokerRPCSessionListResultPayload{}, err
 	}
-	response, err := client.roundTrip(ctx, request, protocol.SessionListResult, false)
+	response, err := client.roundTrip(ctx, request, protocol.SessionListResult, "")
 	if err != nil {
 		return protocol.BrokerRPCSessionListResultPayload{}, err
 	}
@@ -152,7 +152,7 @@ func (client *ManagementClient) Status(
 	if err != nil {
 		return protocol.BrokerRPCSessionRecord{}, err
 	}
-	response, err := client.roundTrip(ctx, request, protocol.SessionStatusResult, false)
+	response, err := client.roundTrip(ctx, request, protocol.SessionStatusResult, "")
 	if err != nil {
 		return protocol.BrokerRPCSessionRecord{}, err
 	}
@@ -173,18 +173,13 @@ func (client *ManagementClient) Create(
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
-	response, err := client.roundTrip(ctx, request, protocol.SessionCreateResult, true)
+	response, err := client.roundTrip(ctx, request, protocol.SessionCreateResult, operationID)
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
 	payload, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](response)
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, &DeliveryUncertainError{err: err}
-	}
-	if payload.OperationID != operationID {
-		return protocol.BrokerRPCSessionMutationResultPayload{}, &DeliveryUncertainError{
-			err: errors.New("create result operation ID mismatch"),
-		}
 	}
 	return payload, nil
 }
@@ -199,18 +194,13 @@ func (client *ManagementClient) Terminate(
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
-	response, err := client.roundTrip(ctx, request, protocol.SessionTerminateResult, true)
+	response, err := client.roundTrip(ctx, request, protocol.SessionTerminateResult, operationID)
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
 	payload, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](response)
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, &DeliveryUncertainError{err: err}
-	}
-	if payload.OperationID != operationID {
-		return protocol.BrokerRPCSessionMutationResultPayload{}, &DeliveryUncertainError{
-			err: errors.New("terminate result operation ID mismatch"),
-		}
 	}
 	return payload, nil
 }
@@ -252,8 +242,9 @@ func (client *ManagementClient) roundTrip(
 	ctx context.Context,
 	request protocol.BrokerRPCEnvelope,
 	expected protocol.BrokerRPCMessageType,
-	mutation bool,
+	operationID string,
 ) (protocol.BrokerRPCEnvelope, error) {
+	mutation := operationID != ""
 	if ctx == nil {
 		return protocol.BrokerRPCEnvelope{}, errors.New("local client context must not be nil")
 	}
@@ -327,6 +318,21 @@ func (client *ManagementClient) roundTrip(
 		_ = client.Close()
 		return protocol.BrokerRPCEnvelope{}, deliveryError(ctx,
 			fmt.Errorf("unexpected management response type %q", response.Type), mutation)
+	}
+	// Keep operation correlation inside the serialized exchange. A malformed
+	// acknowledgement must poison the connection before a waiting call can
+	// acquire the slot and write another mutation.
+	if mutation {
+		payload, decodeErr := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCSessionMutationResultPayload](response)
+		if decodeErr != nil {
+			_ = client.Close()
+			return protocol.BrokerRPCEnvelope{}, deliveryError(ctx, decodeErr, true)
+		}
+		if payload.OperationID != operationID {
+			_ = client.Close()
+			return protocol.BrokerRPCEnvelope{}, deliveryError(ctx,
+				errors.New("management result operation ID mismatch"), true)
+		}
 	}
 	return response, nil
 }

@@ -362,6 +362,103 @@ func TestManagementClientOperationMismatchIsUncertain(t *testing.T) {
 	}
 }
 
+func TestMutationOperationMismatchClosesBeforeQueuedMutation(t *testing.T) {
+	for _, create := range []bool{false, true} {
+		name := "terminate"
+		if create {
+			name = "create"
+		}
+		t.Run(name, func(t *testing.T) {
+			clientConnection, serverConnection := net.Pipe()
+			defer serverConnection.Close()
+			secondPrepared := make(chan struct{})
+			idCalls := 0
+			client := newTestClient(t, clientConnection, func() (string, error) {
+				idCalls++
+				if idCalls == 1 {
+					return testRequest1, nil
+				}
+				if idCalls == 2 {
+					close(secondPrepared)
+				}
+				return testRequest2, nil
+			})
+			defer client.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			requestRead := make(chan struct{})
+			serverResult := make(chan error, 1)
+			var requests atomic.Int32
+			go func() {
+				reader, _ := ipc.NewFrameReader(serverConnection, protocol.MaxInboundMessageBytes)
+				writer, _ := ipc.NewFrameWriter(serverConnection, protocol.MaxOutboundMessageBytes)
+				data, err := reader.ReadFrame()
+				if err != nil {
+					serverResult <- err
+					return
+				}
+				requests.Add(1)
+				close(requestRead)
+				<-secondPrepared
+				request, _ := protocol.DecodeBrokerRPCRequest(data)
+				responseType := protocol.SessionTerminateResult
+				if create {
+					responseType = protocol.SessionCreateResult
+				}
+				if err := writer.WriteFrame(responseJSON(t, request, responseType,
+					protocol.BrokerRPCSessionMutationResultPayload{OperationID: testBroker, Session: testRecord(protocol.Exiting)})); err != nil {
+					serverResult <- err
+					return
+				}
+				data, err = reader.ReadFrame()
+				if err == nil {
+					// Complete an incorrectly admitted second request so a failure
+					// reports the unwanted mutation rather than timing out.
+					requests.Add(1)
+					request, _ = protocol.DecodeBrokerRPCRequest(data)
+					_ = writer.WriteFrame(responseJSON(t, request, protocol.SessionTerminateResult,
+						protocol.BrokerRPCSessionMutationResultPayload{OperationID: testOperation, Session: testRecord(protocol.Exiting)}))
+					serverResult <- errors.New("second mutation reached broker after invalid acknowledgement")
+					return
+				}
+				if !errors.Is(err, io.EOF) {
+					serverResult <- err
+					return
+				}
+				serverResult <- nil
+			}()
+			firstResult := make(chan error, 1)
+			go func() {
+				var err error
+				if create {
+					_, err = client.Create(ctx, testOperation, testProject, testProfile)
+				} else {
+					_, err = client.Terminate(ctx, SessionRef{ID: testSession, Generation: testGeneration}, testOperation)
+				}
+				firstResult <- err
+			}()
+			<-requestRead
+			secondResult := make(chan error, 1)
+			go func() {
+				_, err := client.Terminate(ctx, SessionRef{ID: testSession, Generation: testGeneration}, testOperation)
+				secondResult <- err
+			}()
+			if err := <-firstResult; !IsDeliveryUncertain(err) || !strings.Contains(err.Error(), "operation ID mismatch") {
+				t.Fatalf("first mutation did not report uncertain correlation: %v", err)
+			}
+			if err := <-secondResult; !errors.Is(err, net.ErrClosed) || IsDeliveryUncertain(err) {
+				t.Fatalf("queued mutation was not rejected before delivery: %v", err)
+			}
+			if err := <-serverResult; err != nil {
+				t.Fatal(err)
+			}
+			if requests.Load() != 1 {
+				t.Fatalf("broker received %d mutations, want one", requests.Load())
+			}
+		})
+	}
+}
+
 func TestManagementClientRejectsMismatchedCorrelation(t *testing.T) {
 	clientConnection, serverConnection := net.Pipe()
 	client := newTestClient(t, clientConnection, fixedRequestID)

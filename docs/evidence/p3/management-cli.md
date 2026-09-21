@@ -42,6 +42,12 @@ canonical live-session IPC stream.
   bell, newline, bidi-format, and other non-graphic characters appear as
   visible escapes and are never written as terminal control characters.
   Confirmation input is bounded and accepts only `y`/`yes` as approval.
+- The confirmation input contract now requires a context-aware reader rather
+  than an arbitrary `io.Reader`. The confirmer reads synchronously into a
+  fixed 64-byte buffer, checks cancellation before and after each read, and
+  neither starts a background reader nor closes caller-owned input. The
+  command layer must supply and clean up an actually cancellable terminal or
+  pipe reader when executable routing is integrated.
 - Output distinguishes acceptance from process completion. `exiting` is
   reported as an accepted process-tree termination; `exited` and `lost` are
   explicitly reported as having no live process.
@@ -65,7 +71,29 @@ Tests exercise:
 - exact full-ID termination, decline, already exiting/exited/lost handling,
   one operation ID, and ambiguous-delivery guidance;
 - bounded confirmation input and malicious legacy-title output containing
-  terminal and bidi controls.
+  terminal and bidi controls;
+- an invalid create or terminate operation acknowledgement closes the
+  connection while its serialized slot is still held, so a queued second
+  mutation cannot be transmitted;
+- cancellation while confirmation is waiting returns promptly with its
+  reader stopped, and a later `yes` remains unconsumed and sends no mutation.
+
+## Independent review corrections
+
+The review of `f43bb8aa37182ddfec7cbb11812fb761bd39c393` found that mutation
+operation-ID validation happened after the serialized connection slot was
+released and did not close the client on mismatch. Validation now happens
+inside the exchange; a mismatch closes the connection before a waiting call
+can write. The regression exercises both create and terminate with a second
+mutation already prepared and confirms only one request reaches the peer.
+
+The review also identified that generic `bufio.Reader.ReadLine` could remain
+blocked after context cancellation. The input API now explicitly requires
+`ReadContext`; it does not disguise an arbitrary blocking reader as
+cancellable. The command-level regression supplies a cancellable input,
+cancels while waiting, observes the read return, and verifies that late input
+neither allocates an operation ID nor terminates the session. A production
+terminal/pipe adapter is an explicit integration gate below.
 
 ## Commands and results
 
@@ -103,6 +131,15 @@ git diff --check
 passed
 ```
 
+After these review corrections, the following checks passed again:
+
+```text
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/cli ./internal/localclient -count=1
+GOTOOLCHAIN=go1.27.1 go vet ./internal/cli ./internal/localclient
+GOTOOLCHAIN=go1.27.1 go run github.com/zricethezav/gitleaks/v8@v8.30.1 git --staged --redact --no-banner
+git diff --check
+```
+
 The first complete-check invocation stopped before repository tests because a
 fresh worktree did not yet contain `node_modules` and therefore could not find
 the pinned `quicktype` executable. Installing the frozen lockfile resolved the
@@ -114,6 +151,10 @@ then passed.
 - The internal command layer is tested, but `cmd/pterm` does not expose `list`
   or `terminate` in this checkpoint. That thin integration waits for the
   coordinated process-mode branch so neither checkpoint overwrites the other.
+- Executable confirmation routing must provide a genuinely cancellable input
+  implementation with explicit resource ownership. Passing `os.Stdin`
+  directly is deliberately rejected by the Go API. Native terminal/pipe
+  cancellation on macOS and Windows is not claimed by the interface test.
 - `pterm new` is not presented as complete merely because the internal create
   RPC exists. The command contract requires it to create and attach locally.
 - `pterm attach`, controller acquisition, heartbeat, structured live input,

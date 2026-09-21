@@ -50,6 +50,12 @@ the coordinated process-mode checkpoint; `new` and `attach` remain pending the
 canonical live-session stream. Focused race, full repository, and Windows
 cross-build evidence is recorded in
 `docs/evidence/p3/management-cli.md`.
+Independent review additionally moved operation-ID validation inside the
+serialized client exchange so invalid acknowledgements close the connection
+before queued mutations can write. Confirmation now requires a context-aware
+input reader; cancellation and late-answer regressions pass without a reader
+goroutine. The executable's owned terminal/pipe input adapter remains an
+explicit integration gate, along with command routing.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
