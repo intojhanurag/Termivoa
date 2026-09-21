@@ -4,6 +4,36 @@ Last updated: 2026-09-21
 
 ## Current status
 
+### Local integration checkpoint (not yet pushed)
+
+The reviewed P3 process, management CLI, live IPC, and desktop-client components
+are combined on `feat/p3-desktop-integration`. Main remains at the privately merged
+PR #22 checkpoint `9d212651efe331f35fdbb66038905e705125072f`; local integration is
+not described as merged. GitHub API DNS lookup is currently timing out, so remote
+visibility/review cannot be refreshed and these checkpoints have not been pushed.
+No authentication, account, or network settings were changed to work around it.
+
+Implemented locally:
+
+- Independent broker/gateway process modes and broker-owned session persistence.
+- Real `list` and explicitly confirmed `terminate` commands over restricted IPC.
+- Canonical observer/control/input/snapshot/history live IPC and a client tested
+  against a real Mac broker and PTY, including same-child reconnect.
+- Bounded desktop input decoding, cancellable owned terminal I/O, join-before-TTY
+  restoration, and reversible Windows console setup (native execution pending).
+- Exact session selection, one-shot create orchestration, and viewport checks
+  needed by the desktop command currently being wired.
+
+The full ordinary check at integrated `5c39c43` passed. A concurrent broad race run
+failed a real-session retirement test and a viewer resnapshot test; focused reruns
+passed, but both observations are being investigated. A separate earlier
+executable-broker readiness timeout remains unclassified, documented in
+`docs/evidence/p3/process-fixture-readiness-investigation.md`. These failures are
+not erased by green reruns. Native Windows 11, real-phone, authentication, signed
+installer, performance/soak, and release gates remain pending.
+
+### Milestone record
+
 P0 — Private repository, preflight, and scaffold: **complete**.
 
 P1 — Go terminal core: **in progress**, tracked by private issue #7. The owner
@@ -45,8 +75,8 @@ only saved configuration IDs for create, and distinguishes a typed rejection
 from uncertain mutation delivery without retrying. The user-facing command
 layer implements bounded `list` and exact-ID, explicitly confirmed `terminate`
 orchestration, including safe rendering of legacy control characters and
-honest already-exiting/exited/lost output. Thin `cmd/pterm` routing is pending
-the coordinated process-mode checkpoint; `new` and `attach` remain pending the
+honest already-exiting/exited/lost output. Thin `cmd/pterm` routing for `list`
+and `terminate` is integrated locally; `new` and `attach` are being wired to the
 canonical live-session stream. Focused race, full repository, and Windows
 cross-build evidence is recorded in
 `docs/evidence/p3/management-cli.md`.
@@ -58,12 +88,12 @@ goroutine. An owned OS-descriptor/handle input adapter is now implemented;
 actual macOS pipe and pseudo-terminal cancellation, descriptor ownership,
 TTY/flag restoration, and Close interruption tests pass under the race
 detector. Windows tests compile to x86-64 PE, including an isolated native
-console fixture, but native Windows execution remains pending. Command
-routing is still an explicit integration gate.
+console fixture, but native Windows execution remains pending. Public desktop
+command routing is still an explicit integration gate.
 The same owned-handle infrastructure now supports cancellable terminal
 output. Actual macOS stalled-pipe and aliased input/output PTY tests pass;
 `Close` joins blocked writes while preserving caller-owned stdout. Desktop
-renderer integration and native Windows execution remain pending, documented
+command integration and native Windows execution remain pending, documented
 in `docs/evidence/p3/terminal-output.md`.
 
 The live local-stream checkpoint is implemented on `feat/p3-session-ipc`:
