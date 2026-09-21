@@ -75,6 +75,14 @@ independent integration review pass; evidence and fixed review findings are in
 `docs/evidence/p3/session-ipc.md`. This does not grant gateway/browser access,
 complete desktop CLI attachment, or claim physical-device support.
 
+Independent integrated-client review reproduced a late output-cleanup error
+being hidden after `Close` initiated cancellation. The live client now retains
+substantive output errors before the joined painter exits, without turning
+ordinary cancellation or normal network closure into a failure. Focused race
+regressions and desktop/liveclient/CLI package tests pass; synthetic failure
+injection and platform limitations are recorded in
+`docs/evidence/p3/live-client-cleanup.md`.
+
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
 slow-viewer isolation, actor-owned acknowledgement expiry, reliable bounded

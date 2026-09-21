@@ -192,7 +192,7 @@ func start(parent context.Context, conn net.Conn, welcome protocol.IPCWelcomeCla
 		state: State{Connected: true, LeaseEpoch: "0"}}
 	client.reader, _ = ipc.NewFrameReader(conn, protocol.MaxOutboundMessageBytes)
 	client.writer, _ = ipc.NewFrameWriter(conn, protocol.MaxInboundMessageBytes)
-	renderer, _ := desktop.NewRenderer(contextOutput{ctx: ctx, output: config.Output, failed: client.stop})
+	renderer, _ := desktop.NewRenderer(contextOutput{ctx: ctx, output: config.Output, failed: client.outputFailed})
 	client.frames, _ = desktop.NewFrameClient(renderer)
 	client.stopParent = context.AfterFunc(parent, func() { client.stop(parent.Err()) })
 	hello, err := encode(protocol.Hello, "", "", protocol.HelloPayload{ClientKind: protocol.Desktop,
@@ -328,6 +328,46 @@ func (client *Client) stop(err error) {
 		_ = client.conn.Close()
 		close(client.done)
 	})
+}
+
+// An owned output write can return a descriptor/mode restoration failure while
+// unwinding cancellation. stop is deliberately first-wins for connection
+// shutdown, but Close must retain this late failure after joining the painter.
+func (client *Client) outputFailed(err error) {
+	client.stop(err)
+	if onlyContextCancellation(err) {
+		return
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if err != nil && !errors.Is(client.err, err) {
+		client.err = errors.Join(client.err, err)
+	}
+}
+
+// errors.Is alone would also match joined substantive cleanup failures. Ignore
+// an error only when every leaf is an expected context termination sentinel.
+func onlyContextCancellation(err error) bool {
+	if err == context.Canceled || err == context.DeadlineExceeded {
+		return true
+	}
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		children := wrapped.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !onlyContextCancellation(child) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return onlyContextCancellation(wrapped.Unwrap())
+	default:
+		return false
+	}
 }
 
 func (client *Client) changedLocked() {
