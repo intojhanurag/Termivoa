@@ -19,6 +19,7 @@ Available commands:
   pterm list                         Show managed sessions and lifecycle state.
   pterm terminate <session-id>        Confirm and end one managed process tree.
   pterm attach [--control] <id>       View a session; --control explicitly takes control.
+  pterm new --project <id> --shell <id> Create and take control of a new session.
   pterm help                         Show this help.
 
 Local commands talk to the existing broker; they never start or replace it.
@@ -33,6 +34,8 @@ type localCommandConfig struct {
 	runtimeDir string
 	arguments  []string
 	control    bool
+	projectID  string
+	profileID  string
 }
 
 func parseLocalCommand(command string, args []string) (localCommandConfig, error) {
@@ -41,14 +44,22 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	dev := flags.Bool("dev", false, "use an isolated development profile")
 	runtimeDir := flags.String("runtime-dir", "", "isolated broker runtime directory (requires --dev)")
 	var control bool
+	var projectID, profileID string
 	if command == "attach" {
 		flags.BoolVar(&control, "control", false, "explicitly take control after the initial screen is applied")
+	}
+	if command == "new" {
+		flags.StringVar(&projectID, "project", "", "saved project ID")
+		flags.StringVar(&profileID, "shell", "", "saved shell profile ID")
 	}
 	if err := flags.Parse(args); err != nil {
 		return localCommandConfig{}, err
 	}
 	if (command == "list" && flags.NArg() != 0) || ((command == "terminate" || command == "attach") && flags.NArg() != 1) {
 		return localCommandConfig{}, fmt.Errorf("usage: pterm %s [--dev] [--runtime-dir <directory>]%s", command, commandArgumentHelp(command))
+	}
+	if command == "new" && (flags.NArg() != 0 || projectID == "" || profileID == "") {
+		return localCommandConfig{}, errors.New("usage: pterm new [--dev] [--runtime-dir <directory>] --project <saved-project-id> --shell <saved-shell-profile-id>")
 	}
 	profile := host.ProductionProfile
 	defaults, err := host.DefaultPaths()
@@ -69,7 +80,7 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if err != nil {
 		return localCommandConfig{}, fmt.Errorf("invalid local command profile: %w", err)
 	}
-	return localCommandConfig{runtimeDir: validated, arguments: flags.Args(), control: control}, nil
+	return localCommandConfig{runtimeDir: validated, arguments: flags.Args(), control: control, projectID: projectID, profileID: profileID}, nil
 }
 
 func commandArgumentHelp(command string) string {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestCommandHelpCancelsSaturatedOutput(t *testing.T) {
-	for _, args := range [][]string{nil, {"help"}, {"--help"}, {"attach", "--help"}} {
+	for _, args := range [][]string{nil, {"help"}, {"--help"}, {"attach", "--help"}, {"new", "--help"}} {
 		t.Run("pterm "+strings.Join(args, " "), func(t *testing.T) {
 			reader, output, _ := saturatedManagementPipe(t)
 			flags := managementOutputFlags(t, output)

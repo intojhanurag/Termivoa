@@ -299,6 +299,14 @@ repository remained private after merge, and `main` retained its protection.
 
 ## Known defects
 
+The public `new` checkpoint validates an interactive 80x24 initial viewport before
+creating from saved project/shell IDs, then attaches and explicitly takes control
+after the first snapshot. Native Mac command/PTY tests prove detach/cancellation
+preserve the new session and restore caller terminals. Errors after creation retain
+recovery guidance; no retries or destructive rollback occur. Local project
+registration and release/device gates remain pending; see
+`docs/evidence/p3/new-command.md`.
+
 The public desktop attach checkpoint connects exact session generations through
 restricted IPC, defaults to read-only, and accepts explicit `--control` only after
 the initial snapshot is applied. Focused Mac race and disposable-PTY restoration
