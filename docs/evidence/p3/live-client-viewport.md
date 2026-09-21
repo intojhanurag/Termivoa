@@ -18,6 +18,10 @@ must not paint or call back into the client. No network protocol changes.
 Deterministic tests cover rejected snapshots, a window shrinking between snapshot
 begin/end, a rejected patch preserving the last complete drawing, and exact-fit
 snapshot/patch success. Existing tests cover the nil-hook synthetic display.
+Local callback failures remain fatal even if they wrap the frame assembler's
+resync sentinel: requesting another snapshot cannot fix an unrepresentable local
+viewport. A regression proves this path sends neither an acknowledgement nor a
+resync request.
 
 Actual verification:
 

@@ -217,6 +217,7 @@ func (client *Client) paintLoop() {
 			}
 			message := frame.envelope
 			var err error
+			viewportRejected := false
 			switch message.Type {
 			case protocol.SnapshotBegin:
 				payload, _ := protocol.DecodePayload[protocol.SnapshotBeginPayload](message)
@@ -236,6 +237,7 @@ func (client *Client) paintLoop() {
 					payload, _ := protocol.DecodePayload[protocol.SnapshotEndPayload](message)
 					if client.config.ValidateScreen != nil {
 						err = client.config.ValidateScreen(snapshotScreen)
+						viewportRejected = err != nil
 					}
 					if err == nil {
 						err = client.frames.EndSnapshot(client.config.Generation, payload)
@@ -261,6 +263,7 @@ func (client *Client) paintLoop() {
 						payload, _ := protocol.DecodePayload[protocol.ScreenPatchPayload](message)
 						if client.config.ValidateScreen != nil {
 							err = client.config.ValidateScreen(payload.Screen)
+							viewportRejected = err != nil
 						}
 						if err == nil {
 							err = client.frames.ApplyPatch(client.config.Generation, payload)
@@ -271,7 +274,7 @@ func (client *Client) paintLoop() {
 			client.mu.Lock()
 			client.queuedBytes -= frame.size
 			client.mu.Unlock()
-			if errors.Is(err, desktop.ErrResyncRequired) {
+			if !viewportRejected && errors.Is(err, desktop.ErrResyncRequired) {
 				assembling, waitingSnapshot = false, true
 				client.mu.Lock()
 				client.state.Ready = false

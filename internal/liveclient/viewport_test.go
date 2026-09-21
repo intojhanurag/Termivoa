@@ -3,12 +3,29 @@ package liveclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/desktop"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
+
+func TestViewportFailureCannotTriggerResyncLoop(t *testing.T) {
+	output := &bufferOutput{}
+	rejected := fmt.Errorf("local display rejected frame: %w", desktop.ErrResyncRequired)
+	client, host, _ := newClientFixture(t, output, func(config *Config) {
+		config.ValidateScreen = func(protocol.ScreenMetadata) error { return rejected }
+	})
+	screen, rows := snapshot(t, "must not paint")
+	host.snapshot(t, "1", screen, rows)
+	awaitViewportFailure(t, client, rejected)
+	if output.text() != "" {
+		t.Fatal("rejected snapshot was painted")
+	}
+	assertNoViewportAck(t, host)
+}
 
 func TestViewportRejectsCompleteSnapshotBeforePaintOrAck(t *testing.T) {
 	output := &bufferOutput{}
