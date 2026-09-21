@@ -49,6 +49,13 @@ type Config struct {
 	SessionID   string
 	Generation  string
 	Output      Output
+	// ValidateScreen runs on the paint worker immediately before a complete
+	// snapshot or patch is painted. Desktop callers use it to check their
+	// current physical viewport. It must return promptly, perform no painting,
+	// and not call client methods. An error closes this viewer, not the session;
+	// the rejected frame is neither painted nor acknowledged. Nil permits any
+	// protocol-valid grid (for example, a synthetic display in tests).
+	ValidateScreen func(protocol.ScreenMetadata) error
 }
 
 // State is public connection state. It never exposes a lease secret.

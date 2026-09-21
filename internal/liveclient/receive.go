@@ -196,6 +196,7 @@ func (client *Client) paintLoop() {
 	}()
 	assembling, waitingSnapshot := false, true
 	var snapshotSerial uint64
+	var snapshotScreen protocol.ScreenMetadata
 	var readErr error
 	for {
 		if readErr != nil && len(client.frameQueue) == 0 {
@@ -220,6 +221,9 @@ func (client *Client) paintLoop() {
 			case protocol.SnapshotBegin:
 				payload, _ := protocol.DecodePayload[protocol.SnapshotBeginPayload](message)
 				err = client.frames.BeginSnapshot(client.config.Generation, payload)
+				if err == nil {
+					snapshotScreen = payload.Screen
+				}
 				assembling, waitingSnapshot = err == nil, false
 				snapshotSerial = frame.serial
 			case protocol.SnapshotRows:
@@ -230,7 +234,12 @@ func (client *Client) paintLoop() {
 			case protocol.SnapshotEnd:
 				if !waitingSnapshot {
 					payload, _ := protocol.DecodePayload[protocol.SnapshotEndPayload](message)
-					err = client.frames.EndSnapshot(client.config.Generation, payload)
+					if client.config.ValidateScreen != nil {
+						err = client.config.ValidateScreen(snapshotScreen)
+					}
+					if err == nil {
+						err = client.frames.EndSnapshot(client.config.Generation, payload)
+					}
 					if err == nil {
 						err = client.oneWay(client.ctx, protocol.SnapshotApplied, protocol.SnapshotAppliedPayload{SnapshotID: payload.SnapshotID, Revision: payload.Revision}, "", 0)
 						if err == nil {
@@ -250,7 +259,12 @@ func (client *Client) paintLoop() {
 						err = desktop.ErrResyncRequired
 					} else {
 						payload, _ := protocol.DecodePayload[protocol.ScreenPatchPayload](message)
-						err = client.frames.ApplyPatch(client.config.Generation, payload)
+						if client.config.ValidateScreen != nil {
+							err = client.config.ValidateScreen(payload.Screen)
+						}
+						if err == nil {
+							err = client.frames.ApplyPatch(client.config.Generation, payload)
+						}
 					}
 				}
 			}

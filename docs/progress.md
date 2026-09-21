@@ -267,6 +267,12 @@ warnings and never retries or restarts a lost session. Focused Mac race tests an
 vet pass; public `new`/`attach` wiring remains in progress. See
 `docs/evidence/p3/cli-session-selection.md`.
 
+The live-client viewport checkpoint provides a pre-paint check for the actual
+desktop grid, including snapshot transfer and observer-resize changes. Focused
+race tests prove rejected drawings are not written or acknowledged and exact-fit
+grids remain valid. Public desktop command integration and native resize behavior
+are pending; see `docs/evidence/p3/live-client-viewport.md`.
+
 The command integration checkpoint wires `pterm list` and confirmed
 `pterm terminate` through the real restricted IPC client. Native Mac tests use a
 disposable PTY child and verify decline, confirmed exit, and idempotent reporting

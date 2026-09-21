@@ -54,7 +54,7 @@ type fakeHost struct {
 	done     chan struct{}
 }
 
-func newClientFixture(t *testing.T, output Output) (*Client, *fakeHost, context.CancelFunc) {
+func newClientFixture(t *testing.T, output Output, configure ...func(*Config)) (*Client, *fakeHost, context.CancelFunc) {
 	t.Helper()
 	server, peer := net.Pipe()
 	host := &fakeHost{conn: server, requests: make(chan protocol.Envelope, 32), done: make(chan struct{})}
@@ -98,7 +98,11 @@ func newClientFixture(t *testing.T, output Output) (*Client, *fakeHost, context.
 		cancel()
 		t.Fatal(err)
 	}
-	client, err := start(ctx, peer, welcome, Config{SessionID: testSession, Generation: testGeneration, ClientBuild: "test", Output: output})
+	config := Config{SessionID: testSession, Generation: testGeneration, ClientBuild: "test", Output: output}
+	for _, update := range configure {
+		update(&config)
+	}
+	client, err := start(ctx, peer, welcome, config)
 	if err != nil {
 		cancel()
 		t.Fatal(err)
