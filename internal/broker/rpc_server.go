@@ -198,9 +198,10 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 	defer connection.Close()
 	closeOnCancel := context.AfterFunc(ctx, func() { _ = connection.Close() })
 	defer closeOnCancel()
-	if _, err := ipc.ServerHandshake(
+	peer, err := ipc.ServerHandshake(
 		ctx, connection, server.config.BrokerGeneration, server.config.HostBuild,
-	); err != nil {
+	)
+	if err != nil {
 		return err
 	}
 	reader, err := ipc.NewFrameReader(connection, protocol.MaxInboundMessageBytes)
@@ -211,6 +212,7 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 	if err != nil {
 		return err
 	}
+	first := true
 	for {
 		data, err := reader.ReadFrame()
 		if err != nil {
@@ -218,6 +220,12 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 				return nil
 			}
 			return err
+		}
+		if first {
+			first = false
+			if hello, decodeErr := protocol.DecodeClient(data); decodeErr == nil && hello.Type == protocol.Hello {
+				return server.serveSessionConnection(ctx, connection, reader, peer, hello)
+			}
 		}
 		request, err := protocol.DecodeBrokerRPCRequest(data)
 		if err != nil {

@@ -1694,6 +1694,9 @@ func (session *fakeManagedSession) FinalStatus() (SessionStatus, bool) {
 func (session *fakeManagedSession) AcquireControl(context.Context, *ViewerSubscription) (ControlGrant, error) {
 	return ControlGrant{}, nil
 }
+func (session *fakeManagedSession) AcquireControlForRequest(context.Context, *ViewerSubscription, string) (ControlGrant, error) {
+	return ControlGrant{}, errors.New("fake correlated grant is not implemented")
+}
 func (session *fakeManagedSession) AttachViewer(context.Context, ViewerConfig) (*ViewerSubscription, error) {
 	return nil, errors.New("fake viewer transport is not implemented")
 }
@@ -1711,6 +1714,9 @@ func (session *fakeManagedSession) Resize(context.Context, MutationIdentity, int
 }
 func (session *fakeManagedSession) Snapshot(context.Context) (terminal.Frame, error) {
 	return terminal.Frame{}, nil
+}
+func (session *fakeManagedSession) ReadHistory(context.Context, string, terminal.HistoryReadRequest) (terminal.HistoryReadResult, error) {
+	return terminal.HistoryReadResult{}, errors.New("fake history transport is not implemented")
 }
 func (session *fakeManagedSession) Status(context.Context) (SessionStatus, error) {
 	if session.statusStarted != nil {

@@ -636,10 +636,10 @@ func TestManagementConnectionCancellationClosesOnlyTheViewerConnection(t *testin
 	fixture := newManagementFixture(t)
 	connectionContext, cancelConnection := context.WithCancel(context.Background())
 	client := startManagementClient(t, connectionContext, fixture.server)
-	cancelConnection()
 	if err := client.connection.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
+	cancelConnection()
 	var one [1]byte
 	if _, err := client.connection.Read(one[:]); err == nil {
 		t.Fatal("canceled management connection remained open")

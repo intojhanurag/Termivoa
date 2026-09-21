@@ -66,6 +66,15 @@ output. Actual macOS stalled-pipe and aliased input/output PTY tests pass;
 renderer integration and native Windows execution remain pending, documented
 in `docs/evidence/p3/terminal-output.md`.
 
+The live local-stream checkpoint is implemented on `feat/p3-session-ipc`:
+canonical CLI-only desktop negotiation, observer attachment, correlated
+actor-ordered control grants, structured input acknowledgements, history,
+resize/resync, and a bounded cancellable writer. It also rejects malformed
+Unicode and invalid mouse buttons. Full repository/race/cross-compile checks and
+independent integration review pass; evidence and fixed review findings are in
+`docs/evidence/p3/session-ipc.md`. This does not grant gateway/browser access,
+complete desktop CLI attachment, or claim physical-device support.
+
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
 slow-viewer isolation, actor-owned acknowledgement expiry, reliable bounded

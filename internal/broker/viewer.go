@@ -51,6 +51,14 @@ type ViewerConfig struct {
 	Sink               ViewerSink
 	SendTimeout        time.Duration
 	SnapshotAckTimeout time.Duration
+	// budget is an optional connection-wide reservation boundary shared with
+	// dispatcher responses. A matching sink must not reserve these bytes twice.
+	budget viewerByteBudget
+}
+
+type viewerByteBudget interface {
+	reserve(int) error
+	release(int)
 }
 
 // ViewerSubscription owns one observer connection. Closing it releases only
@@ -63,6 +71,7 @@ type ViewerSubscription struct {
 	sink         ViewerSink
 	timeout      time.Duration
 	ackTimeout   time.Duration
+	budget       viewerByteBudget
 	notify       chan struct{}
 	done         chan struct{}
 	detached     chan struct{}
@@ -154,6 +163,7 @@ func (session *Session) AttachViewer(ctx context.Context, config ViewerConfig) (
 	subscription := &ViewerSubscription{
 		session: session, connectionID: config.ConnectionID, deviceID: config.DeviceID,
 		sink: config.Sink, timeout: config.SendTimeout, ackTimeout: config.SnapshotAckTimeout,
+		budget: config.budget,
 		notify: make(chan struct{}, 1), detached: make(chan struct{}),
 		done: make(chan struct{}), ctx: viewerContext, cancel: cancel,
 	}
@@ -363,21 +373,28 @@ func (subscription *ViewerSubscription) streamSnapshot(ctx context.Context, plan
 		return viewerDeliverySnapshot, snapshotID, nil, err
 	}
 	for start := 0; start < len(rows); {
-		end := start + 1
+		// Measure each row once, not every growing prefix. Re-encoding and
+		// validating rows[start:end+1] for every row makes snapshots quadratic
+		// in the screen height and can exhaust the delivery deadline locally.
+		// 1 KiB reserves more than the bounded envelope/UUID/counter overhead.
+		end, rowBytes := start, 0
+		for end < len(rows) {
+			encodedRow, encodeErr := json.Marshal(rows[end])
+			if encodeErr != nil {
+				return viewerDeliverySnapshot, snapshotID, nil, encodeErr
+			}
+			if rowBytes+len(encodedRow)+1 > protocol.MaxOutboundMessageBytes-1024 {
+				break
+			}
+			rowBytes += len(encodedRow) + 1
+			end++
+		}
+		if end == start {
+			return viewerDeliverySnapshot, snapshotID, nil, errOutboundMessageTooLarge
+		}
 		message, err := subscription.snapshotRowsMessage(snapshotID, revision, start, rows[start:end])
 		if err != nil {
 			return viewerDeliverySnapshot, snapshotID, nil, err
-		}
-		for end < len(rows) {
-			candidate, candidateErr := subscription.snapshotRowsMessage(snapshotID, revision, start, rows[start:end+1])
-			if errors.Is(candidateErr, errOutboundMessageTooLarge) {
-				break
-			}
-			if candidateErr != nil {
-				return viewerDeliverySnapshot, snapshotID, nil, candidateErr
-			}
-			message = candidate
-			end++
 		}
 		if err := subscription.send(ctx, message); err != nil {
 			return viewerDeliverySnapshot, snapshotID, nil, err
@@ -537,6 +554,11 @@ func (subscription *ViewerSubscription) reserveBudget(size int) error {
 	if subscription.budgetUsed+size > MaxViewerQueueBytes {
 		return ErrViewerSlow
 	}
+	if subscription.budget != nil {
+		if err := subscription.budget.reserve(size + 4); err != nil {
+			return err
+		}
+	}
 	subscription.budgetUsed += size
 	if subscription.budgetUsed > subscription.budgetPeak {
 		subscription.budgetPeak = subscription.budgetUsed
@@ -547,6 +569,9 @@ func (subscription *ViewerSubscription) reserveBudget(size int) error {
 func (subscription *ViewerSubscription) releaseBudget(size int) {
 	subscription.mu.Lock()
 	subscription.budgetUsed -= size
+	if subscription.budget != nil {
+		subscription.budget.release(size + 4)
+	}
 	subscription.mu.Unlock()
 }
 
