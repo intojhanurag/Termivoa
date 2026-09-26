@@ -36,7 +36,7 @@ Vet and `git diff --check` passed. Windows amd64 `CGO_ENABLED=0` test compilatio
 with this tag passed; the resulting PE test executable was not run on Windows.
 Independent source review found no fixture-ownership or sink-accounting defect.
 
-## Failed runs and still-open cleanup defect
+## Failed runs and separate cleanup defect
 
 The first ordinary probe, before adding the fresh-attachment/history-page checks,
 completed both modes in approximately 0.4s. The first three-repeat race run failed
@@ -57,8 +57,10 @@ reproduction captured the session actor waiting synchronously in termination,
 the PTY reader waiting on its bounded output queue, and the reaper waiting for the
 child. The child completed teardown only after the actor resumed draining output.
 The finite-completion probe passing does **not** resolve this shutdown/drain cycle.
-A dedicated lifecycle regression/fix is being developed separately; this remains
-a P3 reliability blocker until that fix and its evidence are integrated.
+A dedicated lifecycle regression and async termination fix now address that
+cycle locally; see [active-output shutdown](active-output-shutdown.md) for the
+failing baseline, native reruns, worker/input/reply ordering, and limitations.
+It remains a P3 reliability blocker on branches that have not integrated the fix.
 
 ## Explicit limitations
 

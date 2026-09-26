@@ -47,6 +47,19 @@ longer in a test. P4 ownership/ordering preparation is documented in
 
 ### Milestone record
 
+The finite-output probe reproduced a broker shutdown wait/drain cycle during
+active PTY output. The local lifecycle fix keeps the actor draining canonical
+output while one bounded termination worker runs; cleanup joins that worker,
+process Wait and PTY EOF. Deterministic tests cover Close, explicit termination,
+lost state, repeated/canceled admitted requests, error identity, queued input
+revocation, authoritative replies racing Done and continuously queued Status
+traffic that must not starve output drain. Native continuous-output Mac
+Close/Terminate regressions fail on the old runtime and pass with the fix.
+Independent source review, affected race tests, vet and Windows compile-only
+checks pass. Native Windows and sustained multi-session stress/soak remain
+pending. See `docs/evidence/p3/active-output-shutdown.md`; this is a local,
+unpushed checkpoint, not a complete P3 or release gate.
+
 P0 — Private repository, preflight, and scaffold: **complete**.
 
 P1 — Go terminal core: **in progress**, tracked by private issue #7. The owner
