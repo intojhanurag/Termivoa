@@ -45,6 +45,6 @@ function protocolValidators(): Plugin {
 export default defineConfig({
   plugins: [react(), serviceWorker(), protocolValidators()],
   build: {
-    sourcemap: true,
+    sourcemap: 'hidden',
   },
 });
