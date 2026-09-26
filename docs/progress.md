@@ -4,7 +4,26 @@ Last updated: 2026-09-27
 
 ## Current status
 
-### Local integration checkpoint (not yet pushed)
+### v0 stack (2026-09-27)
+
+The P3–P6 work is pushed as stacked private PRs: #23 (P3 desktop attach and
+live client) → #24 (P4 pairing, broker auth and gateway) → #25 (P5 phone
+website) → #26 (P6 unsigned packaging and lifecycle commands) → the v0 polish
+PR. None is merged yet: GitHub Actions did not start any job because of the
+account billing/spending limit, and branch protection requires the ten CI
+checks. Full local `./scripts/check` passed at the head of each PR. The
+configured Greptile review did not respond on these PRs; same-account agent
+review passes are recorded in each evidence file instead.
+
+A real end-to-end run on this Mac (`pterm up --dev`, desktop Chromium at
+390×844) passed: pair → approve → session list → new zsh session → Take
+control → typed command → real shell output; `pterm attach` observed the same
+session read-only and detached with Ctrl+]; a broker restart marked old
+sessions `lost` and the browser credential stayed valid. Everything that needs
+a real phone, native Windows, Tailscale HTTPS, a real login, or signing
+credentials is listed in `docs/owner-verification.md`.
+
+### Earlier local integration checkpoint (2026-09-21)
 
 The reviewed P3 process, management CLI, live IPC, and desktop-client components
 are combined on `feat/p3-desktop-integration`. Main remains at the privately merged
@@ -290,11 +309,11 @@ These questions must be resolved before their dependent gates; they do not block
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging merged through PR #21; broker-management dispatch merged through PR #22; independent process modes are implemented on `feat/p3-process-modes`; authenticated gateway/live-session IPC remains pending; evidence under `docs/evidence/p3/` |
-| P4 — Authentication and private access | Not started | None |
-| P5 — Phone experience | Not started | None |
-| P6 — Install and update | Not started | None |
-| P7 — Reliability and review | Not started | None |
+| P3 — Persistent broker | In review (PR #23) | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging merged through PR #21; broker-management dispatch merged through PR #22; independent process modes are implemented on `feat/p3-process-modes`; authenticated gateway/live-session IPC remains pending; evidence under `docs/evidence/p3/` |
+| P4 — Authentication and private access | In review (PR #24) | `docs/evidence/p4/`; real phone over cellular and Tailscale Serve pending owner |
+| P5 — Phone experience | In review (PR #25) | `docs/evidence/p5/phone-web.md`; physical iPhone/Android pending owner |
+| P6 — Install and update | In review (PR #26), unsigned | `docs/evidence/p6/`; Windows installer run, real startup registration and signing pending owner |
+| P7 — Reliability and review | In progress | `docs/evidence/p7/` (Mac soak); Windows soak pending |
 | P8 — Release preparation | Not started | None |
 
 ## Repository and CI evidence
