@@ -65,6 +65,21 @@ retracted.
 | `admin.profile.list` | empty | at most 64 shell profiles |
 | `admin.profile.detect` | empty | profiles after idempotent host shell discovery |
 | `admin.config.origin` | optional `origin` | the configured origin, if any |
+| `admin.shutdown` | empty | `terminatedSessions` (0–64) |
+| `admin.gateway.stop` | empty | empty; served only by the gateway control endpoint |
+
+`admin.shutdown` terminates every starting or running session through the same
+durable path as `session.terminate` (each ends `exited`, not `lost`), waits a
+bounded time for their process trees, writes the result, and then stops the
+broker's serve loop; the process exits cleanly. The broker rejects
+`admin.gateway.stop` with `invalid_request`.
+
+A running gateway publishes a control endpoint in the `gateway` subdirectory
+of the runtime directory, using the broker endpoint machinery: current-user
+socket or pipe, single-instance OS lock, and a descriptor whose random token
+the `ipc.welcome` returns as `brokerGeneration`. It accepts one
+`admin.gateway.stop` from a `cli` peer per connection, answers, and then exits
+cleanly; any other request receives `admin.error` `invalid_request`.
 
 `admin.device.revoke` succeeds only after the revocation is durable and every
 live stream bound to the device's credentials has been closed. If persistence

@@ -24,6 +24,7 @@ const (
 	MaxAdminProfileArguments = 16
 	MaxAdminArgumentBytes    = 256
 	MaxAdminPathBytes        = 4096
+	MaxAdminShutdownSessions = 64
 	MaxPairingOriginBytes    = 512
 	SecretTextBytes          = 43
 )
@@ -59,6 +60,7 @@ var AdminRPCResults = map[AdminRPCMessageType]AdminRPCMessageType{
 	AdminDeviceRevoke: AdminDeviceRevokeResult, AdminProjectAdd: AdminProjectAddResult,
 	AdminProjectList: AdminProjectListResult, AdminProfileList: AdminProfileListResult,
 	AdminProfileDetect: AdminProfileDetectResult, AdminConfigOrigin: AdminConfigOriginResult,
+	AdminShutdown: AdminShutdownResult, AdminGatewayStop: AdminGatewayStopResult,
 }
 
 func DecodeGatewayRPCRequest(data []byte) (GatewayRPCEnvelope, error) {
@@ -335,9 +337,19 @@ func validateSettings(payload HTTPSettingsResponse) error {
 
 func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 	switch envelope.Type {
-	case AdminPairGrant, AdminPairPending, AdminDeviceList, AdminProjectList, AdminProfileList, AdminProfileDetect:
+	case AdminPairGrant, AdminPairPending, AdminDeviceList, AdminProjectList, AdminProfileList, AdminProfileDetect,
+		AdminShutdown, AdminGatewayStop, AdminGatewayStopResult:
 		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
 		return err
+	case AdminShutdownResult:
+		payload, err := DecodeRPCPayload[AdminRPCShutdownResultPayload](envelope)
+		if err != nil {
+			return err
+		}
+		if payload.TerminatedSessions < 0 || payload.TerminatedSessions > MaxAdminShutdownSessions {
+			return errors.New("protocol: admin.shutdown.result terminatedSessions is out of range")
+		}
+		return nil
 	case AdminPairApprove, AdminPairApproveResult:
 		payload, err := DecodeRPCPayload[AdminRPCPendingIDPayload](envelope)
 		if err != nil {
