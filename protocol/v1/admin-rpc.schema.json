@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phone-terminal.invalid/protocol/v1/admin-rpc.schema.json",
+  "title": "AdminRPCMessage",
+  "description": "Bounded correlated local administration RPC. The broker accepts it only from an IPC peer that declared clientKind cli; gateways and browsers can never reach it. See authentication-rpc.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type", "requestId", "payload"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "type": { "$ref": "#/$defs/messageType" },
+    "requestId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+    "payload": { "type": "object" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/pairGrantMessage" },
+    { "$ref": "#/$defs/pairPendingMessage" },
+    { "$ref": "#/$defs/pairApproveMessage" },
+    { "$ref": "#/$defs/deviceListMessage" },
+    { "$ref": "#/$defs/deviceRevokeMessage" },
+    { "$ref": "#/$defs/projectAddMessage" },
+    { "$ref": "#/$defs/projectListMessage" },
+    { "$ref": "#/$defs/profileListMessage" },
+    { "$ref": "#/$defs/profileDetectMessage" },
+    { "$ref": "#/$defs/configOriginMessage" },
+    { "$ref": "#/$defs/pairGrantResultMessage" },
+    { "$ref": "#/$defs/pairPendingResultMessage" },
+    { "$ref": "#/$defs/pairApproveResultMessage" },
+    { "$ref": "#/$defs/deviceListResultMessage" },
+    { "$ref": "#/$defs/deviceRevokeResultMessage" },
+    { "$ref": "#/$defs/projectAddResultMessage" },
+    { "$ref": "#/$defs/projectListResultMessage" },
+    { "$ref": "#/$defs/profileListResultMessage" },
+    { "$ref": "#/$defs/profileDetectResultMessage" },
+    { "$ref": "#/$defs/configOriginResultMessage" },
+    { "$ref": "#/$defs/errorMessage" }
+  ],
+  "$defs": {
+    "messageType": {
+      "title": "AdminRPCMessageType",
+      "type": "string",
+      "enum": [
+        "admin.pair.grant", "admin.pair.pending", "admin.pair.approve", "admin.device.list",
+        "admin.device.revoke", "admin.project.add", "admin.project.list", "admin.profile.list",
+        "admin.profile.detect", "admin.config.origin",
+        "admin.pair.grant.result", "admin.pair.pending.result", "admin.pair.approve.result",
+        "admin.device.list.result", "admin.device.revoke.result", "admin.project.add.result",
+        "admin.project.list.result", "admin.profile.list.result", "admin.profile.detect.result",
+        "admin.config.origin.result", "admin.error"
+      ]
+    },
+    "timestamp": { "$ref": "http-api.schema.json#/$defs/timestamp" },
+    "displayName": {
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "maxUtf8Bytes": 128, "safeDisplayText": true
+    },
+    "localPath": {
+      "description": "A local filesystem path. Local administration only; never sent to a browser.",
+      "type": "string", "minLength": 1, "maxLength": 4096, "maxUtf8Bytes": 4096
+    },
+    "origin": {
+      "description": "Pairing link origin: https://host[:port], or http://127.0.0.1:port / http://localhost:port for development.",
+      "type": "string", "minLength": 8, "maxLength": 512, "pattern": "^https?://[^/?#@\\s]+$"
+    },
+    "pairGrantResultPayload": {
+      "title": "AdminRPCPairGrantResultPayload",
+      "description": "The only delivery of a fresh two-minute grant. origin is present when configured.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grant", "expiresAt"],
+      "properties": {
+        "grant": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" },
+        "origin": { "$ref": "#/$defs/origin" }
+      }
+    },
+    "pendingPairing": {
+      "title": "AdminRPCPendingPairing",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "verificationCode", "deviceLabel", "expiresAt"],
+      "properties": {
+        "id": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "verificationCode": { "$ref": "http-api.schema.json#/$defs/verificationCode" },
+        "deviceLabel": { "$ref": "http-api.schema.json#/$defs/deviceLabel" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "pairPendingResultPayload": {
+      "title": "AdminRPCPairPendingResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pending"],
+      "properties": {
+        "pending": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/pendingPairing" } }
+      }
+    },
+    "pendingIdPayload": {
+      "title": "AdminRPCPendingIDPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pendingId"],
+      "properties": { "pendingId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" } }
+    },
+    "device": {
+      "title": "AdminRPCDevice",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "revoked", "createdAt", "lastUsedAt"],
+      "properties": {
+        "id": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "label": { "$ref": "http-api.schema.json#/$defs/deviceLabel" },
+        "revoked": { "type": "boolean" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "lastUsedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "deviceListResultPayload": {
+      "title": "AdminRPCDeviceListResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["devices"],
+      "properties": {
+        "devices": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/device" } }
+      }
+    },
+    "deviceIdPayload": {
+      "title": "AdminRPCDeviceIDPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId"],
+      "properties": { "deviceId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" } }
+    },
+    "deviceRevokeResultPayload": {
+      "title": "AdminRPCDeviceRevokeResultPayload",
+      "description": "Sent only after the revocation is durable and every bound live stream has been closed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "closedStreams"],
+      "properties": {
+        "deviceId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "closedStreams": { "type": "integer", "minimum": 0, "maximum": 65536 }
+      }
+    },
+    "projectAddPayload": {
+      "title": "AdminRPCProjectAddPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "$ref": "#/$defs/localPath" },
+        "name": { "$ref": "#/$defs/displayName" }
+      }
+    },
+    "project": {
+      "title": "AdminRPCProject",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "path"],
+      "properties": {
+        "id": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "name": { "$ref": "#/$defs/displayName" },
+        "path": { "$ref": "#/$defs/localPath" }
+      }
+    },
+    "projectResultPayload": {
+      "title": "AdminRPCProjectResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project"],
+      "properties": { "project": { "$ref": "#/$defs/project" } }
+    },
+    "projectListResultPayload": {
+      "title": "AdminRPCProjectListResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projects"],
+      "properties": {
+        "projects": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/project" } }
+      }
+    },
+    "profile": {
+      "title": "AdminRPCShellProfile",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "executable", "arguments"],
+      "properties": {
+        "id": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "name": { "$ref": "#/$defs/displayName" },
+        "executable": { "$ref": "#/$defs/localPath" },
+        "arguments": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 256 } }
+      }
+    },
+    "profileListResultPayload": {
+      "title": "AdminRPCProfileListResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profiles"],
+      "properties": {
+        "profiles": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/profile" } }
+      }
+    },
+    "originPayload": {
+      "title": "AdminRPCOriginPayload",
+      "description": "In a request, a present origin replaces the configured one and an absent origin reads it. In a result, origin is absent when none is configured.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "origin": { "$ref": "#/$defs/origin" } }
+    },
+    "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
+    "pairGrantMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "pairPendingMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "pairApproveMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
+    "deviceListMessage": { "type": "object", "properties": { "type": { "const": "admin.device.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "deviceRevokeMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke" }, "payload": { "$ref": "#/$defs/deviceIdPayload" } } },
+    "projectAddMessage": { "type": "object", "properties": { "type": { "const": "admin.project.add" }, "payload": { "$ref": "#/$defs/projectAddPayload" } } },
+    "projectListMessage": { "type": "object", "properties": { "type": { "const": "admin.project.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "profileListMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "profileDetectMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.detect" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "configOriginMessage": { "type": "object", "properties": { "type": { "const": "admin.config.origin" }, "payload": { "$ref": "#/$defs/originPayload" } } },
+    "pairGrantResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant.result" }, "payload": { "$ref": "#/$defs/pairGrantResultPayload" } } },
+    "pairPendingResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending.result" }, "payload": { "$ref": "#/$defs/pairPendingResultPayload" } } },
+    "pairApproveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve.result" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
+    "deviceListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.device.list.result" }, "payload": { "$ref": "#/$defs/deviceListResultPayload" } } },
+    "deviceRevokeResultMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke.result" }, "payload": { "$ref": "#/$defs/deviceRevokeResultPayload" } } },
+    "projectAddResultMessage": { "type": "object", "properties": { "type": { "const": "admin.project.add.result" }, "payload": { "$ref": "#/$defs/projectResultPayload" } } },
+    "projectListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.project.list.result" }, "payload": { "$ref": "#/$defs/projectListResultPayload" } } },
+    "profileListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.list.result" }, "payload": { "$ref": "#/$defs/profileListResultPayload" } } },
+    "profileDetectResultMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.detect.result" }, "payload": { "$ref": "#/$defs/profileListResultPayload" } } },
+    "configOriginResultMessage": { "type": "object", "properties": { "type": { "const": "admin.config.origin.result" }, "payload": { "$ref": "#/$defs/originPayload" } } },
+    "errorMessage": { "type": "object", "properties": { "type": { "const": "admin.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
+  }
+}

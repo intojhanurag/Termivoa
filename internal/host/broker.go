@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/broker"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/store"
@@ -38,6 +39,7 @@ type BrokerReady struct {
 	Descriptor ipc.EndpointDescriptor
 	Registry   *broker.Registry
 	Store      *store.Store
+	Auth       *auth.Service
 	Recovered  []store.SessionMetadata
 }
 
@@ -124,9 +126,18 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 			returnErr = errors.Join(returnErr, registry.Close())
 		}
 	}()
+	// Shell discovery only saves absolute executables that exist; it never
+	// runs them. A database failure here prevents startup honestly.
+	if err := broker.DetectShellProfiles(ctx, persistence, store.Platform(runtime.GOOS), time.Now()); err != nil {
+		return err
+	}
+	authority, err := auth.NewService(auth.ServiceConfig{Store: persistence})
+	if err != nil {
+		return err
+	}
 	server, err := broker.NewManagementServer(broker.ManagementServerConfig{
 		Registry: registry, Store: persistence,
-		BrokerGeneration: generation, HostBuild: config.HostBuild,
+		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority,
 	})
 	if err != nil {
 		return err
@@ -134,11 +145,16 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	if config.Ready != nil {
 		config.Ready(BrokerReady{
 			Generation: generation, Descriptor: listener.Descriptor(), Registry: registry,
-			Store: persistence, Recovered: append([]store.SessionMetadata(nil), recovered...),
+			Store: persistence, Auth: authority, Recovered: append([]store.SessionMetadata(nil), recovered...),
 		})
 	}
 
 	serveErr := server.Serve(ctx, listener)
+	if ctx.Err() != nil && errors.Is(serveErr, ctx.Err()) {
+		// Cancellation between Ready and Serve is the same orderly shutdown
+		// that Serve reports as nil once it is running.
+		serveErr = nil
+	}
 	if config.beforeRegistryClose != nil {
 		config.beforeRegistryClose()
 	}

@@ -31,7 +31,7 @@ type desktopFakeConnection struct {
 }
 
 func desktopFake() *desktopFakeConnection {
-	return &desktopFakeConnection{state: liveclient.State{Connected: true, Ready: true, LeaseEpoch: "1"}, done: make(chan struct{}), changed: make(chan struct{}, 1)}
+	return &desktopFakeConnection{state: liveclient.State{Connected: true, Ready: true, LeaseEpoch: "1", InputEpoch: 1}, done: make(chan struct{}), changed: make(chan struct{}, 1)}
 }
 func (client *desktopFakeConnection) State() liveclient.State {
 	client.mu.Lock()
@@ -46,8 +46,19 @@ func (client *desktopFakeConnection) State() liveclient.State {
 }
 func (client *desktopFakeConnection) setState(state liveclient.State) {
 	client.mu.Lock()
+	if state.Ready != client.state.Ready || state.Controller != client.state.Controller || state.Connected != client.state.Connected || state.LeaseEpoch != client.state.LeaseEpoch {
+		state.InputEpoch = client.state.InputEpoch + 1
+	}
 	client.state = state
 	client.mu.Unlock()
+}
+
+func (client *desktopFakeConnection) SendAdmitted(ctx context.Context, action desktop.InputAction, epoch uint64) error {
+	state := client.State()
+	if epoch == 0 || epoch != state.InputEpoch || !state.Ready || !state.Controller {
+		return liveclient.ErrNotReady
+	}
+	return client.Send(ctx, action)
 }
 func (client *desktopFakeConnection) Send(ctx context.Context, _ desktop.InputAction) error {
 	client.mu.Lock()
@@ -377,7 +388,7 @@ func (barrier desktopReadyBarrier) WaitReady(ctx context.Context) error {
 	}
 }
 
-func TestDesktopStartupAdvertisesControlOnlyAfterTargetReady(t *testing.T) {
+func TestDesktopStartupKeepsSyncingUntilLiveDecoderActivation(t *testing.T) {
 	client := desktopFake()
 	client.state.Controller = true
 	display, output := testDesktopDisplay(80, 25)
@@ -399,8 +410,15 @@ func TestDesktopStartupAdvertisesControlOnlyAfterTargetReady(t *testing.T) {
 	if err := <-result; err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Control |") {
-		t.Fatal("ready input was not advertised")
+	if strings.Contains(output.String(), "Control |") {
+		t.Fatal("ready input advertised before live decoder activation")
+	}
+	admitted := false
+	if err := display.activate(context.Background(), func() { admitted = true }); err != nil {
+		t.Fatal(err)
+	}
+	if !admitted || !strings.Contains(output.String(), "Control |") {
+		t.Fatal("live input activation not advertised")
 	}
 }
 

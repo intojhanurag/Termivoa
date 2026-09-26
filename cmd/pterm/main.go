@@ -11,6 +11,7 @@ import (
 	"os/signal"
 
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
+	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 )
 
@@ -50,6 +51,8 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return runAttachCommand(ctx, args[1:], input, output)
 	case "new":
 		return runNewCommand(ctx, args[1:], input, output)
+	case "pair", "devices", "revoke", "project", "profile", "config":
+		return runAdminCommand(ctx, args[0], args[1:], input, output)
 	case "setup":
 		return runSetupCommand(ctx, args[1:], input, output)
 	case "doctor":
@@ -71,7 +74,12 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		if err != nil {
 			return err
 		}
-		return gateway.Run(ctx, config)
+		client, err := gatewayclient.New(gatewayclient.Config{RuntimeDir: config.RuntimeDir, ClientBuild: buildID})
+		if err != nil {
+			return err
+		}
+		config.Broker = client
+		return errors.Join(gateway.Run(ctx, config), client.Close())
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -135,6 +143,11 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 	dev := flags.Bool("dev", false, "use an isolated development profile")
 	runtimeDir := flags.String("runtime-dir", "", "broker runtime directory")
 	listen := flags.String("listen", "", "gateway loopback address")
+	var origins []string
+	flags.Func("origin", "exact browser origin, such as https://mac.tailnet.ts.net (repeatable)", func(value string) error {
+		origins = append(origins, value)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		return gateway.Config{}, fmt.Errorf("gateway options: %w", err)
 	}
@@ -168,7 +181,11 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 		}
 		return gateway.Config{}, err
 	}
+	if err := gateway.ValidateOrigins(profile, origins); err != nil {
+		return gateway.Config{}, err
+	}
 	return gateway.Config{
 		RuntimeDir: validatedRuntime, HostBuild: buildID, ListenAddress: *listen, Profile: profile,
+		Origins: origins,
 	}, nil
 }

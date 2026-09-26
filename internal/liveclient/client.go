@@ -61,6 +61,9 @@ type Config struct {
 
 // State is public connection state. It never exposes a lease secret.
 type State struct {
+	// InputEpoch changes whenever readiness or controller identity changes.
+	// It is local provenance, not a protocol sequence or lease secret.
+	InputEpoch             uint64
 	Connected              bool
 	Ready                  bool
 	Resizing               bool
@@ -96,14 +99,15 @@ func displayText(value string) string {
 }
 
 type pendingRequest struct {
-	id        string
-	kind      protocol.MessageType
-	sequence  string
-	epoch     uint64
-	lease     string
-	result    chan error
-	completed bool
-	attempted bool
+	id         string
+	kind       protocol.MessageType
+	sequence   string
+	epoch      uint64
+	lease      string
+	result     chan error
+	completed  bool
+	attempted  bool
+	inputEpoch uint64
 }
 
 type sentRequest struct {
@@ -138,20 +142,27 @@ type Client struct {
 	frameQueue   chan frameMessage
 	readFinished chan error
 
-	mu              sync.Mutex
-	state           State
-	statePulse      chan struct{}
-	err             error
-	lease           string
-	leaseEpoch      uint64
-	sequence        uint64
-	pending         *pendingRequest
-	recent          []sentRequest
-	queuedBytes     int
-	frameSerial     uint64
-	detaching       bool
-	snapshotApplied bool
-	viewport        *viewportResize
+	mu                  sync.Mutex
+	state               State
+	statePulse          chan struct{}
+	err                 error
+	lease               string
+	leaseEpoch          uint64
+	sequence            uint64
+	pending             *pendingRequest
+	recent              []sentRequest
+	queuedBytes         int
+	frameSerial         uint64
+	detaching           bool
+	snapshotApplied     bool
+	viewport            *viewportResize
+	inputIdentity       inputIdentity
+	inputEpochExhausted bool
+}
+
+type inputIdentity struct {
+	connected, ready, controller bool
+	lease                        string
 }
 
 // Dial negotiates restricted local CLI access and starts one observer. Use
@@ -378,6 +389,18 @@ func onlyContextCancellation(err error) bool {
 }
 
 func (client *Client) changedLocked() {
+	identity := inputIdentity{client.state.Connected, client.state.Ready, client.state.Controller, client.state.LeaseEpoch}
+	if identity != client.inputIdentity {
+		client.inputIdentity = identity
+		if client.state.InputEpoch == ^uint64(0) {
+			client.inputEpochExhausted = true
+		}
+		if client.inputEpochExhausted {
+			client.state.InputEpoch = 0 // Fail closed; never reuse an old epoch.
+		} else {
+			client.state.InputEpoch++
+		}
+	}
 	close(client.statePulse)
 	client.statePulse = make(chan struct{})
 	select {
@@ -491,6 +514,10 @@ func (client *Client) write(ctx context.Context, message protocol.Envelope) erro
 		return client.closedError()
 	}
 	if pending := client.pending; pending != nil && pending.id == message.RequestID {
+		if pending.inputEpoch != 0 && (pending.inputEpoch != client.state.InputEpoch || !client.state.Ready || !client.state.Controller) {
+			client.mu.Unlock()
+			return ErrNotReady
+		}
 		pending.attempted = true
 	}
 	client.mu.Unlock()

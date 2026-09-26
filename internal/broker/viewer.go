@@ -51,6 +51,9 @@ type ViewerConfig struct {
 	Sink               ViewerSink
 	SendTimeout        time.Duration
 	SnapshotAckTimeout time.Duration
+	// Access re-authorizes a browser viewer before control acquisition. Nil
+	// means a local desktop connection.
+	Access AccessCheck
 	// budget is an optional connection-wide reservation boundary shared with
 	// dispatcher responses. A matching sink must not reserve these bytes twice.
 	budget viewerByteBudget
@@ -69,6 +72,7 @@ type ViewerSubscription struct {
 	connectionID string
 	deviceID     string
 	sink         ViewerSink
+	access       AccessCheck
 	timeout      time.Duration
 	ackTimeout   time.Duration
 	budget       viewerByteBudget
@@ -163,7 +167,7 @@ func (session *Session) AttachViewer(ctx context.Context, config ViewerConfig) (
 	viewerContext, cancel := context.WithCancel(session.ctx)
 	subscription := &ViewerSubscription{
 		session: session, connectionID: config.ConnectionID, deviceID: config.DeviceID,
-		sink: config.Sink, timeout: config.SendTimeout, ackTimeout: config.SnapshotAckTimeout,
+		sink: config.Sink, access: config.Access, timeout: config.SendTimeout, ackTimeout: config.SnapshotAckTimeout,
 		budget: config.budget,
 		notify: make(chan struct{}, 1), detached: make(chan struct{}),
 		done: make(chan struct{}), ctx: viewerContext, cancel: cancel,

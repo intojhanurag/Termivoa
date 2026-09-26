@@ -36,6 +36,7 @@ func (attachment *Attachment) connectDuringStartup(ctx context.Context) (transpo
 		value, err := attachment.Connect(connectionContext)
 		connected <- startupResult{value, err}
 	}()
+	controller := InputController{}
 	defer func() {
 		cancelStartup()
 		if detached || returnErr != nil {
@@ -45,9 +46,13 @@ func (attachment *Attachment) connectDuringStartup(ctx context.Context) (transpo
 		// setup workers. Restoration must not race a final read or screen paint.
 		for stopped != nil || connected != nil {
 			select {
-			case _, ok := <-events:
+			case event, ok := <-events:
 				if !ok {
 					events = nil
+				} else if stop, err := controller.Handle(ctx, event, startupDiscard{}); stop || err != nil {
+					detached = detached || stop
+					returnErr = errors.Join(returnErr, err)
+					cancelConnection()
 				}
 			case <-stopped:
 				stopped = nil
@@ -67,7 +72,9 @@ func (attachment *Attachment) connectDuringStartup(ctx context.Context) (transpo
 				returnErr = err
 			} else if transport == nil {
 				returnErr = errors.New("desktop connector returned no transport")
-			} else if err := attachment.BeforeInput(ctx); err != nil {
+			} else if err := attachment.BeforeInput(ctx); err == ErrDetached {
+				detached = true
+			} else if err != nil {
 				returnErr = fmt.Errorf("desktop input handoff: %w", err)
 			}
 		}
@@ -80,10 +87,14 @@ func (attachment *Attachment) connectDuringStartup(ctx context.Context) (transpo
 				transport = nil
 			}
 		} else {
-			transport = &startupTransport{AttachmentTransport: transport, cancel: cancelConnection}
+			wrapped := &startupTransport{AttachmentTransport: transport, cancel: cancelConnection}
+			if admitted, ok := transport.(AdmittedTransport); ok {
+				transport = &startupAdmittedTransport{startupTransport: wrapped, admitted: admitted}
+			} else {
+				transport = wrapped
+			}
 		}
 	}()
-	controller := InputController{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -107,6 +118,10 @@ func (attachment *Attachment) connectDuringStartup(ctx context.Context) (transpo
 	}
 }
 
+// ErrDetached is returned by BeforeInput when discarded handoff input
+// contained the local detach chord. The attachment then detaches normally.
+var ErrDetached = errors.New("desktop: detach requested during input handoff")
+
 type startupDiscard struct{}
 
 func (startupDiscard) Send(context.Context, InputAction) error { return nil }
@@ -114,6 +129,19 @@ func (startupDiscard) Send(context.Context, InputAction) error { return nil }
 type startupTransport struct {
 	AttachmentTransport
 	cancel context.CancelFunc
+}
+
+type startupAdmittedTransport struct {
+	*startupTransport
+	admitted AdmittedTransport
+}
+
+func (transport *startupAdmittedTransport) AdmissionEpoch() uint64 {
+	return transport.admitted.AdmissionEpoch()
+}
+
+func (transport *startupAdmittedTransport) SendAdmitted(ctx context.Context, action InputAction, epoch uint64) error {
+	return transport.admitted.SendAdmitted(ctx, action, epoch)
 }
 
 func (transport *startupTransport) Close() error {
