@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -123,12 +124,28 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 	// not contaminate the child's next line or answer its own query twice.
 	controller.write(t, ctx, "\x1b[7;9RCONTROL\r")
 	waitLiveScreen(t, ctx, managed, liveReceipt(1, "CONTROL"))
+	assertLiveDisplay(t, ctx, managed, &liveDisplay{core: controller.display}, liveReceipt(1, "CONTROL"))
 	controller.write(t, ctx, "\x1b[200~PASTE 界\x1b[201~\r")
 	waitLiveScreen(t, ctx, managed, liveReceipt(2, "\x1b[200~PASTE 界\x1b[201~"))
 	controller.write(t, ctx, "QUERY\r")
 	waitLiveScreen(t, ctx, managed, "TWO_VIEWER_QUERY_OK")
 	controller.write(t, ctx, "\x16\x1d\r")
 	waitLiveScreen(t, ctx, managed, liveReceipt(4, "\x1d"))
+	controller.write(t, ctx, "\x03\x04\r")
+	waitLiveScreen(t, ctx, managed, liveReceipt(5, "\x03\x04"))
+
+	controller.resize(t, ctx, 60, 18)
+	waitOuterCanonicalSize(t, ctx, managed, 60, 17)
+	controller.waitStatus(t, ctx, "Control |")
+	assertLiveDisplay(t, ctx, managed, &liveDisplay{core: controller.display}, "ACK05:")
+	controller.write(t, ctx, "SHRUNK\r")
+	waitOuterWrappedReceipt(t, ctx, managed, liveReceipt(6, "SHRUNK"))
+	controller.resize(t, ctx, 120, 40)
+	waitOuterCanonicalSize(t, ctx, managed, 120, 39)
+	controller.waitStatus(t, ctx, "Control |")
+	controller.write(t, ctx, "GROWN\r")
+	waitLiveScreen(t, ctx, managed, liveReceipt(7, "GROWN"))
+	assertLiveDisplay(t, ctx, managed, &liveDisplay{core: controller.display}, liveReceipt(7, "GROWN"))
 
 	// A second command explicitly takes control. The first becomes read-only;
 	// detaching it must preserve both the child and the new controller.
@@ -139,7 +156,7 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 	controller.waitExit(t, ctx, false)
 	controller.assertRestored(t, ctx)
 	takeover.write(t, ctx, "TAKEOVER\r")
-	waitLiveScreen(t, ctx, managed, liveReceipt(5, "TAKEOVER"))
+	waitLiveScreen(t, ctx, managed, liveReceipt(8, "TAKEOVER"))
 	if err := takeover.target.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +166,7 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 	// Fresh observer attachment restores the current screen, not replayed raw
 	// bytes or an automatically restarted shell. It does not reacquire a lease.
 	reconnected := startOuterAttach(t, ctx, executable, append(args, created.Session.ID), 120, 40)
-	reconnected.waitText(t, ctx, liveReceipt(5, "TAKEOVER"), true)
+	reconnected.waitText(t, ctx, liveReceipt(8, "TAKEOVER"), true)
 	reconnected.waitStatus(t, ctx, "Read-only |")
 	reconnected.write(t, ctx, "\x1d")
 	reconnected.waitExit(t, ctx, false)
@@ -161,15 +178,16 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 }
 
 type outerAttach struct {
-	pty     *xpty.UnixPty
-	command *exec.Cmd
-	target  *os.Process
-	writer  *cli.FileTerminalWriter
-	display *terminal.Core
-	before  unix.Termios
-	exited  chan struct{}
-	result  outerGuardianEvent // Published by closing exited.
-	replies atomic.Int64
+	pty       *xpty.UnixPty
+	command   *exec.Cmd
+	target    *os.Process
+	writer    *cli.FileTerminalWriter
+	display   *terminal.Core
+	displayMu sync.Mutex
+	before    unix.Termios
+	exited    chan struct{}
+	result    outerGuardianEvent // Published by closing exited.
+	replies   atomic.Int64
 }
 
 func startOuterAttach(t *testing.T, ctx context.Context, executable string, args []string, columns, rows int) *outerAttach {
@@ -212,8 +230,11 @@ func startOuterAttach(t *testing.T, ctx context.Context, executable string, args
 		for {
 			n, readErr := reader.ReadContext(readContext, buffer)
 			if n > 0 {
-				if err := display.WriteOutput(readContext, buffer[:n]); err != nil {
-					readDone <- err
+				outer.displayMu.Lock()
+				writeErr := display.WriteOutput(readContext, buffer[:n])
+				outer.displayMu.Unlock()
+				if writeErr != nil {
+					readDone <- writeErr
 					return
 				}
 			}
@@ -332,6 +353,19 @@ func (outer *outerAttach) write(t *testing.T, ctx context.Context, data string) 
 	}
 }
 
+func (outer *outerAttach) resize(t *testing.T, ctx context.Context, columns, rows int) {
+	t.Helper()
+	// Model one physical terminal resize while the parser consumes its output.
+	outer.displayMu.Lock()
+	defer outer.displayMu.Unlock()
+	if err := outer.pty.Resize(columns, rows); err != nil {
+		t.Fatal(err)
+	}
+	if err := outer.display.Resize(ctx, columns, rows); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (outer *outerAttach) waitText(t *testing.T, ctx context.Context, expected string, alternate bool) {
 	t.Helper()
 	outer.waitDisplay(t, ctx, expected, alternate, false)
@@ -399,6 +433,8 @@ func (outer *outerAttach) assertRestored(t *testing.T, ctx context.Context) {
 
 func waitOuterCanonicalSize(t *testing.T, ctx context.Context, managed broker.ManagedSession, columns, rows int) {
 	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
 	for {
 		frame, err := managed.Snapshot(ctx)
 		if err != nil {
@@ -410,7 +446,19 @@ func waitOuterCanonicalSize(t *testing.T, ctx context.Context, managed broker.Ma
 		select {
 		case <-ctx.Done():
 			t.Fatalf("canonical size = %dx%d, want %dx%d", frame.Columns, frame.Rows, columns, rows)
+		case <-deadline.C:
+			t.Fatalf("canonical size = %dx%d, want %dx%d", frame.Columns, frame.Rows, columns, rows)
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
+}
+
+func waitOuterWrappedReceipt(t *testing.T, ctx context.Context, managed broker.ManagedSession, expected string) {
+	t.Helper()
+	waitLiveCondition(t, ctx, "wrapped canonical receipt after shrink", func() bool {
+		frame, err := managed.Snapshot(ctx)
+		// A SHA-256 receipt is wider than the intentionally narrowed 60-column
+		// terminal. Join normalized rows only for this synthetic receipt check.
+		return err == nil && strings.Contains(strings.ReplaceAll(liveScreenText(frame), "\n", ""), expected)
+	})
 }
