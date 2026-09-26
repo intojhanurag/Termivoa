@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/host"
@@ -548,6 +550,10 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Closing the terminal must stop both children too: they are in their
+	// own process groups and would not receive the hangup themselves.
+	ctx, stopHangup := signal.NotifyContext(ctx, syscall.SIGHUP)
+	defer stopHangup()
 	brokerArgs := []string{brokerMode, "--dev", "--runtime-dir", validated}
 	if *dataDir != "" {
 		brokerArgs = append(brokerArgs, "--data-dir", *dataDir)

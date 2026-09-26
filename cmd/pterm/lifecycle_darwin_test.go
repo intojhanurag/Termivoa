@@ -57,10 +57,18 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 	if err := up.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = up.Process.Kill(); _, _ = up.Process.Wait() })
+	pids := map[string]int{}
+	t.Cleanup(func() {
+		// The children run in their own process groups, so killing the
+		// harness alone would orphan them when a check fails early.
+		_ = up.Process.Kill()
+		_, _ = up.Process.Wait()
+		for _, pid := range pids {
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		}
+	})
 
 	lines := bufio.NewScanner(stdout)
-	pids := map[string]int{}
 	var url string
 	for url == "" && lines.Scan() {
 		var name string
