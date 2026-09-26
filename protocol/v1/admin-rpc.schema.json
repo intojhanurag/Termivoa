@@ -106,15 +106,22 @@
       "required": ["pendingId"],
       "properties": { "pendingId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" } }
     },
+    "deviceStatus": {
+      "title": "AdminRPCDeviceStatus",
+      "description": "active: not revoked, holding a credential that is unrevoked, before its absolute expiry, and used within the inactivity window. expired: not revoked, but no such credential. revoked: the device itself is revoked.",
+      "type": "string",
+      "enum": ["active", "expired", "revoked"]
+    },
     "device": {
       "title": "AdminRPCDevice",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "label", "revoked", "createdAt", "lastUsedAt"],
+      "required": ["id", "label", "revoked", "status", "createdAt", "lastUsedAt"],
       "properties": {
         "id": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
         "label": { "$ref": "http-api.schema.json#/$defs/deviceLabel" },
         "revoked": { "type": "boolean" },
+        "status": { "$ref": "#/$defs/deviceStatus" },
         "createdAt": { "$ref": "#/$defs/timestamp" },
         "lastUsedAt": { "$ref": "#/$defs/timestamp" }
       }

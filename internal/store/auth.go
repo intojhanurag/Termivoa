@@ -51,7 +51,21 @@ type Device struct {
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	RevokedAt  *time.Time
+	// Status is filled in only by ListDevices, using the same live-credential
+	// rule the device cap enforces.
+	Status DeviceStatus
 }
+
+// DeviceStatus is a device's display status: active (not revoked, holding a
+// live credential), expired (not revoked, but no live credential), or
+// revoked.
+type DeviceStatus string
+
+const (
+	DeviceActive  DeviceStatus = "active"
+	DeviceExpired DeviceStatus = "expired"
+	DeviceRevoked DeviceStatus = "revoked"
+)
 
 // BrowserSession is one browser credential, persisted as its SHA-256 hash.
 type BrowserSession struct {
@@ -444,10 +458,19 @@ func (store *Store) RevokeDevice(ctx context.Context, deviceID string, now time.
 	return credentials, commit(transaction, "device revocation")
 }
 
-// ListDevices returns the most recently created devices first.
-func (store *Store) ListDevices(ctx context.Context, limit int) ([]Device, error) {
-	rows, err := store.database.QueryContext(ctx, `SELECT id, label, created_at_ms, last_used_at_ms, revoked_at_ms
-		FROM devices ORDER BY created_at_ms DESC, id LIMIT ?`, limit)
+// ListDevices returns the most recently created devices first. Status is
+// computed with the same live-credential predicate reserveDeviceCapacity uses
+// for the device cap: a device is active only while unrevoked and holding a
+// credential that is unrevoked, before its absolute expiry, and used within
+// credentialIdle of now; a revoked device always reports revoked, and every
+// other device reports expired.
+func (store *Store) ListDevices(ctx context.Context, now time.Time, credentialIdle time.Duration, limit int) ([]Device, error) {
+	if credentialIdle <= 0 {
+		return nil, errors.New("store: invalid credential idle window")
+	}
+	when, usedAfter := millis(now), millis(now)-credentialIdle.Milliseconds()
+	rows, err := store.database.QueryContext(ctx, `SELECT id, label, created_at_ms, last_used_at_ms, revoked_at_ms,
+		id IN (`+liveDevices+`) FROM devices ORDER BY created_at_ms DESC, id LIMIT ?3`, when, usedAfter, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list devices: %w", err)
 	}
@@ -457,10 +480,19 @@ func (store *Store) ListDevices(ctx context.Context, limit int) ([]Device, error
 		var device Device
 		var created, used int64
 		var revoked sql.NullInt64
-		if err := rows.Scan(&device.ID, &device.Label, &created, &used, &revoked); err != nil {
+		var live bool
+		if err := rows.Scan(&device.ID, &device.Label, &created, &used, &revoked, &live); err != nil {
 			return nil, fmt.Errorf("store: scan device: %w", err)
 		}
 		device.CreatedAt, device.LastUsedAt, device.RevokedAt = fromMillis(created), fromMillis(used), timeFromNull(revoked)
+		switch {
+		case device.RevokedAt != nil:
+			device.Status = DeviceRevoked
+		case live:
+			device.Status = DeviceActive
+		default:
+			device.Status = DeviceExpired
+		}
 		devices = append(devices, device)
 	}
 	return devices, rows.Err()

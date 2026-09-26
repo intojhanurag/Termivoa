@@ -306,7 +306,7 @@ func sessionInput(request protocol.Envelope) (lease, sequence string, action Inp
 func classifySessionError(err error) managementFailure {
 	switch {
 	case errors.Is(err, ErrAccessRevoked):
-		return managementFailure{protocol.Revoked, "browser access was revoked or expired"}
+		return managementFailure{protocol.ErrorCodeRevoked, "browser access was revoked or expired"}
 	case errors.Is(err, ErrNotController):
 		return managementFailure{protocol.NotController, "take control before sending input"}
 	case errors.Is(err, ErrStaleLease):

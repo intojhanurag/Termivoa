@@ -274,12 +274,12 @@ func TestMethodsRoundTripPayloads(t *testing.T) {
 func TestGatewayErrorIsTypedAndKeepsConnection(t *testing.T) {
 	client, dials := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
 		return reply(t, request.RequestID, protocol.GatewayError,
-			protocol.BrokerRPCErrorPayload{Code: protocol.Revoked, Message: "device was revoked"})
+			protocol.BrokerRPCErrorPayload{Code: protocol.ErrorCodeRevoked, Message: "device was revoked"})
 	})
 	for range 2 {
 		_, err := client.Authenticate(context.Background(), testCredential)
 		var remote *gatewayapi.Error
-		if !errors.As(err, &remote) || remote.Code != protocol.Revoked {
+		if !errors.As(err, &remote) || remote.Code != protocol.ErrorCodeRevoked {
 			t.Fatalf("error = %v, want revoked", err)
 		}
 	}

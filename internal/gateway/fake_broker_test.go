@@ -58,7 +58,7 @@ func (broker *fakeBroker) authorize(credential string) error {
 	case validCredential:
 		return nil
 	case revokedCredential:
-		return &gatewayapi.Error{Code: protocol.Revoked, Message: "access revoked"}
+		return &gatewayapi.Error{Code: protocol.ErrorCodeRevoked, Message: "access revoked"}
 	default:
 		return &gatewayapi.Error{Code: protocol.Unauthorized, Message: "sign in required"}
 	}

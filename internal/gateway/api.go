@@ -327,13 +327,13 @@ func (handler *gatewayHandler) clearCookie(response http.ResponseWriter) {
 
 func isAuthFailure(err error) bool {
 	var brokerErr *gatewayapi.Error
-	return errors.As(err, &brokerErr) && (brokerErr.Code == protocol.Unauthorized || brokerErr.Code == protocol.Revoked)
+	return errors.As(err, &brokerErr) && (brokerErr.Code == protocol.Unauthorized || brokerErr.Code == protocol.ErrorCodeRevoked)
 }
 
 // brokerStatus is the documented public status mapping.
 func brokerStatus(code protocol.ErrorCode) int {
 	switch code {
-	case protocol.Unauthorized, protocol.Revoked:
+	case protocol.Unauthorized, protocol.ErrorCodeRevoked:
 		return http.StatusUnauthorized
 	case protocol.PairingExpired:
 		return http.StatusGone

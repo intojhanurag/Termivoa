@@ -969,7 +969,7 @@ func validState(value State) bool {
 
 func validErrorCode(value ErrorCode) bool {
 	switch value {
-	case Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
+	case Unauthorized, PairingExpired, PairingPending, ErrorCodeRevoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
 		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
 		OperationConflict, ProjectMissing, ShellProfileMissing:

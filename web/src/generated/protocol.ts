@@ -98,7 +98,15 @@ export type AdminRPCDevice = {
     readonly label:      string;
     readonly lastUsedAt: string;
     readonly revoked:    boolean;
+    readonly status:     AdminRPCDeviceStatus;
 }
+
+/**
+ * active: not revoked, holding a credential that is unrevoked, before its absolute expiry,
+ * and used within the inactivity window. expired: not revoked, but no such credential.
+ * revoked: the device itself is revoked.
+ */
+export type AdminRPCDeviceStatus = "active" | "expired" | "revoked";
 
 export type AdminRPCDeviceIDPayload = {
     readonly deviceId: string;

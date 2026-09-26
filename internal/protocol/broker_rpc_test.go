@@ -327,7 +327,7 @@ func TestBrokerRPCValidatesSessionRecords(t *testing.T) {
 
 func TestBrokerRPCErrorCodesAreStableAndBounded(t *testing.T) {
 	codes := []ErrorCode{
-		Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
+		Unauthorized, PairingExpired, PairingPending, ErrorCodeRevoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
 		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
 		OperationConflict, ProjectMissing, ShellProfileMissing,

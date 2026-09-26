@@ -93,11 +93,12 @@ type AccessRevokedPayload struct {
 }
 
 type AdminRPCDevice struct {
-	CreatedAt  string `json:"createdAt"`
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	LastUsedAt string `json:"lastUsedAt"`
-	Revoked    bool   `json:"revoked"`
+	CreatedAt  string               `json:"createdAt"`
+	ID         string               `json:"id"`
+	Label      string               `json:"label"`
+	LastUsedAt string               `json:"lastUsedAt"`
+	Revoked    bool                 `json:"revoked"`
+	Status     AdminRPCDeviceStatus `json:"status"`
 }
 
 type AdminRPCDeviceIDPayload struct {
@@ -607,6 +608,17 @@ type ProtocolLimits struct {
 	OutgoingQueueBytes   int64 `json:"outgoingQueueBytes"`
 }
 
+// active: not revoked, holding a credential that is unrevoked, before its absolute expiry,
+// and used within the inactivity window. expired: not revoked, but no such credential.
+// revoked: the device itself is revoked.
+type AdminRPCDeviceStatus string
+
+const (
+	Active                      AdminRPCDeviceStatus = "active"
+	AdminRPCDeviceStatusRevoked AdminRPCDeviceStatus = "revoked"
+	Expired                     AdminRPCDeviceStatus = "expired"
+)
+
 type AdminRPCMessageType string
 
 const (
@@ -640,6 +652,7 @@ const (
 type ErrorCode string
 
 const (
+	ErrorCodeRevoked    ErrorCode = "revoked"
 	GenerationChanged   ErrorCode = "generation_changed"
 	HistoryChanged      ErrorCode = "history_changed"
 	HostUnavailable     ErrorCode = "host_unavailable"
@@ -654,7 +667,6 @@ const (
 	ProjectMissing      ErrorCode = "project_missing"
 	ProtocolMismatch    ErrorCode = "protocol_mismatch"
 	ResyncRequired      ErrorCode = "resync_required"
-	Revoked             ErrorCode = "revoked"
 	SessionLost         ErrorCode = "session_lost"
 	SessionMissing      ErrorCode = "session_missing"
 	ShellProfileMissing ErrorCode = "shell_profile_missing"
