@@ -12,4 +12,7 @@ if [ ! -f web/dist/index.html ]; then
 fi
 rm -rf internal/webassets/dist
 cp -R web/dist internal/webassets/dist
+# Source maps stay in web/dist for local debugging; they are never shipped.
+# The gateway also refuses to serve *.map and dotfiles.
+find internal/webassets/dist -name '*.map' -type f -delete
 echo "Embedded web/dist into internal/webassets/dist; build with -tags webdist."

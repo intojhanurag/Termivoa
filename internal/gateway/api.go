@@ -1,8 +1,7 @@
 package gateway
 
 import (
-	"bytes"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
 	"math"
@@ -75,11 +74,13 @@ func (handler *gatewayHandler) pairPoll(response http.ResponseWriter, request *h
 	}
 	// The broker returns the credential exactly once, on the approved
 	// response. Anything else is a contract violation and sets no cookie.
+	// Max-Age is computed once: a value of 0 would omit the attribute and
+	// leave a browser-session cookie with no expiry.
+	maxAge := int(math.Ceil(time.Until(result.CredentialExpiresAt).Seconds()))
 	switch {
 	case result.Response.Status == protocol.Pending && result.Credential == "":
-	case result.Response.Status == protocol.Approved && validSecret(result.Credential) &&
-		time.Until(result.CredentialExpiresAt) > 0:
-		handler.setCookie(response, result.Credential, result.CredentialExpiresAt)
+	case result.Response.Status == protocol.Approved && validSecret(result.Credential) && maxAge > 0:
+		handler.setCookie(response, result.Credential, maxAge)
 	default:
 		writeError(response, http.StatusInternalServerError, protocol.InternalError, "internal error")
 		return
@@ -181,8 +182,8 @@ func (handler *gatewayHandler) logout(response http.ResponseWriter, request *htt
 	if !handler.mutation(response, request, &body) {
 		return
 	}
-	if cookie, err := request.Cookie(handler.cookieName()); err == nil && validSecret(cookie.Value) {
-		if err := handler.api.Logout(request.Context(), cookie.Value); err != nil && !isAuthFailure(err) {
+	if value, ok := handler.sessionCookie(request); ok && validSecret(value) {
+		if err := handler.api.Logout(request.Context(), value); err != nil && !isAuthFailure(err) {
 			writeBrokerError(response, err)
 			return
 		}
@@ -216,18 +217,33 @@ func (handler *gatewayHandler) credential(response http.ResponseWriter, request 
 		writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "too many failed attempts")
 		return "", false
 	}
-	cookie, err := request.Cookie(handler.cookieName())
-	if err != nil {
+	value, present := handler.sessionCookie(request)
+	if !present {
 		writeError(response, http.StatusUnauthorized, protocol.Unauthorized, "sign in required")
 		return "", false
 	}
-	if !validSecret(cookie.Value) {
+	if !validSecret(value) {
 		handler.authFailLimit.take(key)
 		handler.clearCookie(response)
 		writeError(response, http.StatusUnauthorized, protocol.Unauthorized, "sign in required")
 		return "", false
 	}
-	return cookie.Value, true
+	return value, true
+}
+
+// sessionCookie returns the session cookie value only when exactly one is
+// sent. A second one (for example tossed with a longer Path by another
+// localhost port in development) is treated as malformed rather than letting
+// cookie order pick the credential.
+func (handler *gatewayHandler) sessionCookie(request *http.Request) (string, bool) {
+	cookies := request.CookiesNamed(handler.cookieName())
+	if len(cookies) == 0 {
+		return "", false
+	}
+	if len(cookies) > 1 {
+		return "", true
+	}
+	return cookies[0].Value, true
 }
 
 // mutation enforces the state-changing request boundary after the method
@@ -279,41 +295,11 @@ func jsonContentType(values []string) bool {
 	return true
 }
 
-// decodeStrict accepts exactly one flat JSON object of known fields with
-// valid UTF-8 and no duplicate keys. Every request body field is a string.
+// decodeStrict accepts exactly one JSON object of known, case-sensitive
+// fields with valid UTF-8, no duplicate keys and no trailing data (the
+// json/v2 defaults plus RejectUnknownMembers).
 func decodeStrict(data []byte, destination any) error {
-	if !utf8.Valid(data) {
-		return errors.New("invalid UTF-8")
-	}
-	scanner := json.NewDecoder(bytes.NewReader(data))
-	if token, err := scanner.Token(); err != nil || token != json.Delim('{') {
-		return errors.New("body must be a JSON object")
-	}
-	seen := map[string]struct{}{}
-	for scanner.More() {
-		token, err := scanner.Token()
-		if err != nil {
-			return err
-		}
-		key, _ := token.(string)
-		if _, duplicate := seen[key]; duplicate {
-			return errors.New("duplicate key")
-		}
-		seen[key] = struct{}{}
-		var value any
-		if err := scanner.Decode(&value); err != nil {
-			return err
-		}
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(destination); err != nil {
-		return err
-	}
-	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		return errors.New("trailing data")
-	}
-	return nil
+	return jsonv2.Unmarshal(data, destination, jsonv2.RejectUnknownMembers(true))
 }
 
 func (handler *gatewayHandler) cookieName() string {
@@ -323,10 +309,10 @@ func (handler *gatewayHandler) cookieName() string {
 	return productionCookieName
 }
 
-func (handler *gatewayHandler) setCookie(response http.ResponseWriter, credential string, expiresAt time.Time) {
+func (handler *gatewayHandler) setCookie(response http.ResponseWriter, credential string, maxAge int) {
 	http.SetCookie(response, &http.Cookie{
 		Name: handler.cookieName(), Value: credential, Path: "/",
-		MaxAge:   int(math.Ceil(time.Until(expiresAt).Seconds())),
+		MaxAge:   maxAge,
 		Secure:   !handler.dev,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})

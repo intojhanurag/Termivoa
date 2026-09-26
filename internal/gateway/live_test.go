@@ -121,6 +121,28 @@ func TestLiveRelayRoundTrip(t *testing.T) {
 	waitClosed(t, stream)
 }
 
+// An exact configured origin that differs from Host must upgrade even when it
+// contains glob metacharacters such as IPv6 brackets.
+func TestLiveAcceptsIPv6LoopbackDevOrigin(t *testing.T) {
+	broker := newFakeBroker()
+	server := httptest.NewUnstartedServer(nil)
+	bound := server.Listener.Addr().String()
+	handler, err := newServer(Config{Profile: platform.DevelopmentProfile, Broker: broker, Origins: []string{"http://[::1]:5173"}}, bound, uuidC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Config.Handler = handler
+	server.Start()
+	t.Cleanup(func() { handler.stopLive(); handler.live.Wait(); server.Close() })
+	header := liveHeader(bound, validCredential)
+	header.Set("Origin", "http://[::1]:5173")
+	conn, response, err := dialLive(t, bound, header)
+	if err != nil {
+		t.Fatalf("upgrade = %v %v", response, err)
+	}
+	conn.CloseNow()
+}
+
 func TestLiveRejectsBadUpgrades(t *testing.T) {
 	broker := newFakeBroker()
 	_, bound := startLive(t, broker)
@@ -135,6 +157,7 @@ func TestLiveRejectsBadUpgrades(t *testing.T) {
 		{"no cookie", http.Header{"Origin": {"http://" + bound}}, 401},
 		{"production cookie name", http.Header{"Origin": {"http://" + bound}, "Cookie": {productionCookieName + "=" + validCredential}}, 401},
 		{"revoked", liveHeader(bound, revokedCredential), 401},
+		{"duplicate cookie", http.Header{"Origin": {"http://" + bound}, "Cookie": {developmentCookieName + "=" + validCredential + "; " + developmentCookieName + "=" + validCredential}}, 401},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			conn, response, err := dialLive(t, bound, test.header)

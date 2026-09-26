@@ -30,12 +30,15 @@ func newTestHandler(t *testing.T, broker gatewayapi.Broker) *gatewayHandler {
 		t.Fatal(err)
 	}
 	handler.assets = fstest.MapFS{
-		"index.html":             {Data: []byte("<!doctype html><title>app</title>")},
-		"sw.js":                  {Data: []byte("self.addEventListener('fetch', () => {})")},
-		"manifest.webmanifest":   {Data: []byte(`{"name":"Phone Terminal"}`)},
-		"assets/app-3f9a1c.js":   {Data: []byte("console.log(1)")},
-		"assets/app-3f9a1c.css":  {Data: []byte("body{}")},
-		"assets/font-77aa.woff2": {Data: []byte("wOF2")},
+		"index.html":               {Data: []byte("<!doctype html><title>app</title>")},
+		"sw.js":                    {Data: []byte("self.addEventListener('fetch', () => {})")},
+		"manifest.webmanifest":     {Data: []byte(`{"name":"Phone Terminal"}`)},
+		"assets/app-3f9a1c.js":     {Data: []byte("console.log(1)")},
+		"assets/app-3f9a1c.css":    {Data: []byte("body{}")},
+		"assets/font-77aa.woff2":   {Data: []byte("wOF2")},
+		"assets/app-3f9a1c.js.map": {Data: []byte(`{"sources":["src/secret.ts"]}`)},
+		".vite/manifest.json":      {Data: []byte("{}")},
+		".DS_Store":                {Data: []byte("x")},
 	}
 	return handler
 }
@@ -169,6 +172,8 @@ func TestMutationBoundary(t *testing.T) {
 		{"control label", `{"grant":"` + testSecret + `","deviceLabel":"a\u001bb"}`, requestOptions{}, 400, protocol.InvalidRequest},
 		{"long label", `{"grant":"` + testSecret + `","deviceLabel":"` + strings.Repeat("é", 33) + `"}`, requestOptions{}, 400, protocol.InvalidRequest},
 		{"missing label", `{"grant":"` + testSecret + `"}`, requestOptions{}, 400, protocol.InvalidRequest},
+		{"case-folded field", `{"GRANT":"` + testSecret + `","deviceLabel":"p"}`, requestOptions{remote: "192.0.2.60:1"}, 400, protocol.InvalidRequest},
+		{"case-folded duplicate", `{"grant":"` + testSecret + `","deviceLabel":"p","Grant":"` + validCredential + `"}`, requestOptions{remote: "192.0.2.61:1"}, 400, protocol.InvalidRequest},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := do(handler, http.MethodPost, "/api/v1/pair/redeem", test.body, test.options)
@@ -252,9 +257,12 @@ func TestPollRejectsBrokerContractViolations(t *testing.T) {
 		{Response: protocol.HTTPPairPollResponse{Status: protocol.Approved}},
 		{Response: protocol.HTTPPairPollResponse{Status: protocol.Pending}, Credential: validCredential, CredentialExpiresAt: time.Now().Add(time.Hour)},
 		{Response: protocol.HTTPPairPollResponse{Status: protocol.Approved}, Credential: validCredential, CredentialExpiresAt: time.Now().Add(-time.Hour)},
+		// Expired by under a second: Max-Age would round to 0, which omits
+		// the attribute and yields a non-expiring session cookie.
+		{Response: protocol.HTTPPairPollResponse{Status: protocol.Approved}, Credential: validCredential, CredentialExpiresAt: time.Now().Add(-time.Millisecond)},
 	}
 	handler := newTestHandler(t, broker)
-	for range 3 {
+	for range 4 {
 		response := do(handler, http.MethodPost, "/api/v1/pair/poll", pollBody, requestOptions{})
 		if response.Code != 500 || response.Header().Get("Set-Cookie") != "" || errorCode(t, response) != protocol.InternalError {
 			t.Fatalf("violation = %d %v", response.Code, response.Header())
@@ -289,9 +297,11 @@ func TestAuthenticatedRoutes(t *testing.T) {
 				t.Fatalf("headers = %v", header)
 			}
 
-			// Without a cookie, with a revoked one, or with the development
-			// cookie name, the route is unauthorized.
-			for _, cookie := range []string{"", productionCookieName + "=" + revokedCredential, developmentCookieName + "=" + validCredential} {
+			// Without a cookie, with a revoked one, with the development
+			// cookie name, or with a duplicated (possibly tossed) cookie, the
+			// route is unauthorized.
+			for _, cookie := range []string{"", productionCookieName + "=" + revokedCredential, developmentCookieName + "=" + validCredential,
+				prodCookie + "; " + productionCookieName + "=" + revokedCredential} {
 				response := do(handler, test.method, test.path, test.body, requestOptions{cookie: cookie, remote: "192.0.2.9:1"})
 				if response.Code != http.StatusUnauthorized {
 					t.Fatalf("cookie %q status = %d", cookie, response.Code)
@@ -434,6 +444,9 @@ func TestStaticSite(t *testing.T) {
 		{"/assets/font-77aa.woff2", "font/woff2", "public, max-age=31536000, immutable", "wOF2", 200},
 		{"/assets/missing.js", "", "no-store", "", 404},
 		{"/missing.png", "", "no-store", "", 404},
+		{"/assets/app-3f9a1c.js.map", "", "no-store", "", 404},
+		{"/.vite/manifest.json", "", "no-store", "", 404},
+		{"/.DS_Store", "", "no-store", "", 404},
 	} {
 		response := do(handler, http.MethodGet, test.path, "", requestOptions{})
 		header := response.Header()
@@ -484,6 +497,9 @@ func TestOriginConfiguration(t *testing.T) {
 		{"http://localhost:5173", true, true},
 		{"http://127.0.0.1:5173", true, true},
 		{"https://mac.tailnet.ts.net", true, false},
+		{"https://mac.tailnet.ts.net:443", false, false}, // browsers omit the default port
+		{"http://localhost:80", true, false},
+		{"http://[::1]:5173", true, true},
 	} {
 		_, _, err := validateOrigin(test.origin, test.dev)
 		if (err == nil) != test.ok {

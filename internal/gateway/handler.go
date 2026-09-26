@@ -28,6 +28,8 @@ const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 
 	"connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; " +
 	"frame-ancestors 'none'; form-action 'self'"
 
+var globEscaper = strings.NewReplacer(`*`, `\*`, `?`, `\?`, `[`, `\[`)
+
 type gatewayHandler struct {
 	mu     sync.RWMutex
 	broker brokerState
@@ -103,7 +105,9 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 			return nil, err
 		}
 		handler.origins[canonical] = struct{}{}
-		handler.originPatterns = append(handler.originPatterns, canonical)
+		// coder/websocket matches patterns with path.Match; escape IPv6
+		// brackets and other metacharacters so the pattern stays exact.
+		handler.originPatterns = append(handler.originPatterns, globEscaper.Replace(canonical))
 		handler.hosts[host] = struct{}{}
 	}
 
@@ -144,7 +148,11 @@ func validateOrigin(origin string, dev bool) (string, string, error) {
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Opaque != "" ||
 		parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery ||
-		(parsed.Path != "" && parsed.Path != "/") || strings.ContainsAny(origin, " \t\r\n\\") {
+		(parsed.Path != "" && parsed.Path != "/") || strings.ContainsAny(origin, " \t\r\n\\") ||
+		// Browsers omit a default or empty port from Origin and Host, so such
+		// an origin could never match.
+		strings.HasSuffix(parsed.Host, ":") || parsed.Scheme == "http" && parsed.Port() == "80" ||
+		parsed.Scheme == "https" && parsed.Port() == "443" {
 		return "", "", invalid
 	}
 	host := strings.ToLower(parsed.Host)
@@ -222,7 +230,6 @@ var contentTypes = map[string]string{
 	".mjs":         "text/javascript; charset=utf-8",
 	".css":         "text/css; charset=utf-8",
 	".json":        "application/json",
-	".map":         "application/json",
 	".webmanifest": "application/manifest+json",
 	".svg":         "image/svg+xml",
 	".png":         "image/png",
@@ -245,7 +252,9 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 		name = "index.html"
 	}
 	info, err := fs.Stat(handler.assets, name)
-	if err != nil || !info.Mode().IsRegular() {
+	// Source maps and dotfiles (.vite/manifest.json, .DS_Store) are build
+	// byproducts, never part of the served site.
+	if hidden := path.Ext(name) == ".map" || strings.HasPrefix(name, ".") || strings.Contains(name, "/."); hidden || err != nil || !info.Mode().IsRegular() {
 		if strings.HasPrefix(name, "assets/") || path.Ext(name) != "" {
 			response.Header().Set("Cache-Control", "no-store")
 			http.NotFound(response, request)
