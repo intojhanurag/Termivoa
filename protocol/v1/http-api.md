@@ -34,6 +34,14 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `POST /api/v1/logout` | cookie | `{}` | `204`; clears cookie |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
+`GET /api/v1/sessions` records may carry live presence computed by the broker
+at request time: `controlled` (some connection holds the controller lease),
+`controllerIsYou` (the lease belongs to the requesting device) and
+`viewerCount` (0..16 attached viewers). All three are absent when the session
+is not live. Lease secrets, connection IDs and other devices' labels are never
+included. Local CLI list and status results carry `controlled` and
+`viewerCount` only.
+
 Status mapping: `unauthorized`/`revoked` → 401, `pairing_expired` → 410,
 `pairing_pending` is not an error (poll returns `pending`), `limit_exceeded` →
 429, `session_missing` → 404, `generation_changed`/`session_lost` → 409,

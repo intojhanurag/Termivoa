@@ -144,7 +144,8 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		result, err := server.browserSettings(ctx, principal)
 		return result, nil, err
 	case protocol.GatewaySessionList:
-		if _, err := authorizeCredential(request, authorize); err != nil {
+		principal, err := authorizeCredential(request, authorize)
+		if err != nil {
 			return nil, nil, err
 		}
 		sessions, err := server.config.Store.ListSessions(ctx)
@@ -153,7 +154,7 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		}
 		result := protocol.HTTPSessionListResponse{Sessions: []protocol.BrokerRPCSessionRecord{}}
 		for _, session := range sessions[:min(len(sessions), protocol.MaxHTTPSessionList)] {
-			result.Sessions = append(result.Sessions, managementSessionRecord(session))
+			result.Sessions = append(result.Sessions, server.withPresence(ctx, managementSessionRecord(session), principal.DeviceID))
 		}
 		return result, nil, nil
 	case protocol.GatewaySessionCreate:

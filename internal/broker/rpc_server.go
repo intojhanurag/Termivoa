@@ -341,7 +341,7 @@ func (server *ManagementServer) listSessions(
 		Sessions: make([]protocol.BrokerRPCSessionRecord, 0, end-offset),
 	}
 	for _, session := range sessions[offset:end] {
-		result.Sessions = append(result.Sessions, managementSessionRecord(session))
+		result.Sessions = append(result.Sessions, server.withPresence(ctx, managementSessionRecord(session), ""))
 	}
 	if end < len(sessions) {
 		cursor := encodeSessionCursor(end)
@@ -448,7 +448,32 @@ func (server *ManagementServer) sessionStatus(
 	if metadata.Generation != *request.Generation {
 		return protocol.BrokerRPCSessionResultPayload{}, store.ErrGenerationChanged
 	}
-	return protocol.BrokerRPCSessionResultPayload{Session: managementSessionRecord(metadata)}, nil
+	return protocol.BrokerRPCSessionResultPayload{Session: server.withPresence(ctx, managementSessionRecord(metadata), "")}, nil
+}
+
+// withPresence adds live, non-secret presence computed at request time.
+// deviceID is the requesting browser device; it is empty on local CLI paths,
+// where controllerIsYou stays absent. A session that is not live in this
+// broker keeps every presence field absent.
+func (server *ManagementServer) withPresence(
+	ctx context.Context, record protocol.BrokerRPCSessionRecord, deviceID string,
+) protocol.BrokerRPCSessionRecord {
+	session, err := server.config.Registry.Get(record.ID)
+	if err != nil {
+		return record
+	}
+	presence, err := session.Presence(ctx)
+	if err != nil {
+		return record
+	}
+	controlled := presence.ControllerDevice != ""
+	viewers := int64(presence.Viewers)
+	record.Controlled, record.ViewerCount = &controlled, &viewers
+	if deviceID != "" {
+		mine := controlled && presence.ControllerDevice == deviceID
+		record.ControllerIsYou = &mine
+	}
+	return record
 }
 
 func (server *ManagementServer) profileMatchesHost(platform store.Platform) bool {

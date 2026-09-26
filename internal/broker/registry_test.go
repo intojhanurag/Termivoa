@@ -1730,6 +1730,9 @@ func (session *fakeManagedSession) Status(context.Context) (SessionStatus, error
 	defer session.mu.Unlock()
 	return cloneSessionStatus(session.status), nil
 }
+func (session *fakeManagedSession) Presence(context.Context) (SessionPresence, error) {
+	return SessionPresence{}, nil
+}
 func (session *fakeManagedSession) Terminate(context.Context) error {
 	session.terminateCalls.Add(1)
 	if session.terminateStarted != nil {

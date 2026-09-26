@@ -299,6 +299,12 @@ func TestBrokerRPCValidatesSessionRecords(t *testing.T) {
 			record.ExitCode = &exitCode
 			return record
 		}(),
+		func() BrokerRPCSessionRecord {
+			record := validBrokerRPCSessionRecord()
+			viewers := int64(17)
+			record.ViewerCount = &viewers
+			return record
+		}(),
 	}
 	for index, record := range tests {
 		message := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{

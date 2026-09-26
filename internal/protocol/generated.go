@@ -197,20 +197,27 @@ type BrokerRPCSessionListResultPayload struct {
 	Sessions   []BrokerRPCSessionRecord `json:"sessions"`
 }
 
+// controlled and viewerCount are live presence computed by the broker at request time and
+// are absent when the session is not live. controllerIsYou is set only on the browser
+// gateway list, for the requesting device. Lease secrets, connection IDs and other device
+// labels are never included.
 type BrokerRPCSessionRecord struct {
-	Columns        int64   `json:"columns"`
-	CreatedAt      string  `json:"createdAt"`
-	EndedAt        *string `json:"endedAt,omitempty"`
-	ExitCode       *int64  `json:"exitCode,omitempty"`
-	Generation     string  `json:"generation"`
-	ID             string  `json:"id"`
-	ProjectID      string  `json:"projectId"`
-	Rows           int64   `json:"rows"`
-	ShellProfileID string  `json:"shellProfileId"`
-	StartedAt      *string `json:"startedAt,omitempty"`
-	State          State   `json:"state"`
-	Title          string  `json:"title"`
-	UpdatedAt      string  `json:"updatedAt"`
+	Columns         int64   `json:"columns"`
+	Controlled      *bool   `json:"controlled,omitempty"`
+	ControllerIsYou *bool   `json:"controllerIsYou,omitempty"`
+	CreatedAt       string  `json:"createdAt"`
+	EndedAt         *string `json:"endedAt,omitempty"`
+	ExitCode        *int64  `json:"exitCode,omitempty"`
+	Generation      string  `json:"generation"`
+	ID              string  `json:"id"`
+	ProjectID       string  `json:"projectId"`
+	Rows            int64   `json:"rows"`
+	ShellProfileID  string  `json:"shellProfileId"`
+	StartedAt       *string `json:"startedAt,omitempty"`
+	State           State   `json:"state"`
+	Title           string  `json:"title"`
+	UpdatedAt       string  `json:"updatedAt"`
+	ViewerCount     *int64  `json:"viewerCount,omitempty"`
 }
 
 type BrokerRPCSessionMutationResultPayload struct {

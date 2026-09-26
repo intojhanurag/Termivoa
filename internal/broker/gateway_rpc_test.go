@@ -537,3 +537,92 @@ func TestAdministrationProjectsProfilesAndOrigin(t *testing.T) {
 		t.Fatalf("insecure origin answered instead of rejected: %s", data)
 	}
 }
+
+func attachPresenceViewer(t *testing.T, session *Session, connectionID, deviceID string) *ViewerSubscription {
+	t.Helper()
+	viewer, err := session.AttachViewer(context.Background(), ViewerConfig{
+		ConnectionID: connectionID, DeviceID: deviceID, Generation: rpcSessionGen, Sink: discardViewerSink{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = viewer.Close() })
+	return viewer
+}
+
+func TestSessionPresenceTracksControlAndViewers(t *testing.T) {
+	_, session, _ := newStreamFixture(t)
+	ctx := context.Background()
+	const device = "8aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
+	want := func(controller string, viewers int) {
+		t.Helper()
+		presence, err := session.Presence(ctx)
+		if err != nil || presence != (SessionPresence{ControllerDevice: controller, Viewers: viewers}) {
+			t.Fatalf("presence = %#v, %v; want controller %q, %d viewers", presence, err, controller, viewers)
+		}
+	}
+	want("", 0)
+	first := attachPresenceViewer(t, session, "8aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", device)
+	attachPresenceViewer(t, session, "8aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3", device)
+	want("", 2)
+	grant, err := session.AcquireControl(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want(device, 2)
+	identity := MutationIdentity{Generation: rpcSessionGen, ConnectionID: grant.ConnectionID, DeviceID: grant.DeviceID, Lease: grant.Lease}
+	if err := session.ReleaseControl(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	want("", 2)
+	if _, err := session.AcquireControl(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	want(device, 2)
+	_ = first.Close()
+	want("", 1)
+}
+
+func TestGatewaySessionListReportsControllerPerDevice(t *testing.T) {
+	fixture, session, _, service, _ := newAuthStreamFixture(t)
+	phone := pairDevice(t, service, "Pocket")
+	tablet := pairDevice(t, service, "Tablet")
+	viewer := attachPresenceViewer(t, session, "8bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", phone.DeviceID)
+	attachPresenceViewer(t, session, "8bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2", tablet.DeviceID)
+	if _, err := session.AcquireControl(context.Background(), viewer); err != nil {
+		t.Fatal(err)
+	}
+	gateway := startRPCTestClient(t, fixture.server, protocol.Gateway)
+	list := func(credential string) protocol.BrokerRPCSessionRecord {
+		t.Helper()
+		response := gateway.gateway(t, protocol.GatewaySessionList, credentialPayload(credential))
+		for _, secret := range []string{"8bbbbbbb", "Pocket", "Tablet", phone.DeviceID, tablet.DeviceID} {
+			if strings.Contains(string(response.Payload), secret) {
+				t.Fatalf("session list leaked %q: %s", secret, response.Payload)
+			}
+		}
+		result, err := protocol.DecodeRPCPayload[protocol.HTTPSessionListResponse](response)
+		if err != nil || len(result.Sessions) != 1 {
+			t.Fatalf("list = %#v, %v", result, err)
+		}
+		return result.Sessions[0]
+	}
+	check := func(record protocol.BrokerRPCSessionRecord, isYou *bool) {
+		t.Helper()
+		if record.Controlled == nil || !*record.Controlled || record.ViewerCount == nil || *record.ViewerCount != 2 {
+			t.Fatalf("presence = %#v", record)
+		}
+		if (isYou == nil) != (record.ControllerIsYou == nil) || (isYou != nil && *isYou != *record.ControllerIsYou) {
+			t.Fatalf("controllerIsYou = %v, want %v", record.ControllerIsYou, isYou)
+		}
+	}
+	yes, no := true, false
+	check(list(phone.Credential), &yes)
+	check(list(tablet.Credential), &no)
+
+	cli, err := fixture.server.listSessions(context.Background(), protocol.BrokerRPCSessionListRequestPayload{Limit: 10})
+	if err != nil || len(cli.Sessions) != 1 {
+		t.Fatalf("cli list = %#v, %v", cli, err)
+	}
+	check(cli.Sessions[0], nil)
+}

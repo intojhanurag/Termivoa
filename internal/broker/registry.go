@@ -51,6 +51,7 @@ type ManagedSession interface {
 	Snapshot(context.Context) (terminal.Frame, error)
 	ReadHistory(context.Context, string, terminal.HistoryReadRequest) (terminal.HistoryReadResult, error)
 	Status(context.Context) (SessionStatus, error)
+	Presence(context.Context) (SessionPresence, error)
 	Terminate(context.Context) error
 	RevokeDevice(context.Context, string) (int, error)
 }

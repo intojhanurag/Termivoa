@@ -186,6 +186,7 @@ const (
 	requestLatestViewerFrame
 	requestCompleteViewerNotice
 	requestPrepareViewerSnapshot
+	requestPresence
 )
 
 type sessionRequest struct {
@@ -220,6 +221,7 @@ type sessionResponse struct {
 	delivery   viewerDeliveryPlan
 	published  *publishedFrame
 	history    terminal.HistoryReadResult
+	presence   SessionPresence
 	err        error
 }
 
@@ -441,6 +443,19 @@ func (session *Session) ReadHistory(
 func (session *Session) Status(ctx context.Context) (SessionStatus, error) {
 	response, err := session.call(ctx, sessionRequest{kind: requestStatus})
 	return response.status, err
+}
+
+// SessionPresence is a point-in-time, non-secret view of who is attached.
+// ControllerDevice is broker-internal: callers compare it with the requesting
+// device and must never send it to another device.
+type SessionPresence struct {
+	ControllerDevice string
+	Viewers          int
+}
+
+func (session *Session) Presence(ctx context.Context) (SessionPresence, error) {
+	response, err := session.call(ctx, sessionRequest{kind: requestPresence})
+	return response.presence, err
 }
 
 // Terminate explicitly ends the process tree while keeping the final terminal
@@ -968,6 +983,10 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		response.history, response.err = session.terminal.ReadHistory(session.ctx, request.history)
 	case requestStatus:
 		response.status = cloneSessionStatus(*status)
+	case requestPresence:
+		response.presence = SessionPresence{
+			ControllerDevice: session.controller.State().DeviceID, Viewers: len(session.viewers),
+		}
 	case requestTerminate:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning

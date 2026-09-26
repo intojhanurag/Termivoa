@@ -18,6 +18,27 @@ function lifecycleLabel(session: BrokerRPCSessionRecord): string {
   }
 }
 
+function controlLabel(session: BrokerRPCSessionRecord): string {
+  if (session.controllerIsYou === true) return 'Controlled here';
+  return session.controlled === true ? 'Controlled elsewhere' : 'No controller';
+}
+
+function viewerLabel(count: number): string {
+  if (count === 0) return 'No viewers';
+  return count === 1 ? '1 viewer' : `${count} viewers`;
+}
+
+/** Live presence facts; absent when the broker reports no live presence. */
+export function PresenceFacts({ session }: { readonly session: BrokerRPCSessionRecord }) {
+  if (session.controlled === undefined || session.viewerCount === undefined) return null;
+  return (
+    <>
+      <dt>Control</dt><dd>{controlLabel(session)}</dd>
+      <dt>Viewers</dt><dd>{viewerLabel(session.viewerCount)}</dd>
+    </>
+  );
+}
+
 export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
   readonly settings: HTTPSettingsResponse;
   readonly message?: string;
@@ -116,6 +137,7 @@ export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
                   <dt>Project</dt><dd>{projectName.get(session.projectId) ?? 'Unknown project'}</dd>
                   <dt>Shell</dt><dd>{shellName.get(session.shellProfileId) ?? 'Unknown shell'}</dd>
                   <dt>State</dt><dd>{lifecycleLabel(session)}</dd>
+                  <PresenceFacts session={session} />
                   <dt>Size</dt><dd>{session.columns}×{session.rows}</dd>
                 </dl>
                 {renaming !== undefined && (

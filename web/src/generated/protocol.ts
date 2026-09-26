@@ -211,20 +211,29 @@ export type BrokerRPCSessionListResultPayload = {
     readonly sessions:    BrokerRPCSessionRecord[];
 }
 
+/**
+ * controlled and viewerCount are live presence computed by the broker at request time and
+ * are absent when the session is not live. controllerIsYou is set only on the browser
+ * gateway list, for the requesting device. Lease secrets, connection IDs and other device
+ * labels are never included.
+ */
 export type BrokerRPCSessionRecord = {
-    readonly columns:        number;
-    readonly createdAt:      string;
-    readonly endedAt?:       string;
-    readonly exitCode?:      number;
-    readonly generation:     string;
-    readonly id:             string;
-    readonly projectId:      string;
-    readonly rows:           number;
-    readonly shellProfileId: string;
-    readonly startedAt?:     string;
-    readonly state:          State;
-    readonly title:          string;
-    readonly updatedAt:      string;
+    readonly columns:          number;
+    readonly controlled?:      boolean;
+    readonly controllerIsYou?: boolean;
+    readonly createdAt:        string;
+    readonly endedAt?:         string;
+    readonly exitCode?:        number;
+    readonly generation:       string;
+    readonly id:               string;
+    readonly projectId:        string;
+    readonly rows:             number;
+    readonly shellProfileId:   string;
+    readonly startedAt?:       string;
+    readonly state:            State;
+    readonly title:            string;
+    readonly updatedAt:        string;
+    readonly viewerCount?:     number;
 }
 
 export type State = "starting" | "running" | "exiting" | "exited" | "lost";
