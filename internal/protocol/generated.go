@@ -25,6 +25,19 @@ type ProtocolTypes struct {
 	HistoryChanged                   HistoryChangedPayload                   `json:"historyChanged"`
 	HistoryPage                      HistoryPagePayload                      `json:"historyPage"`
 	HistoryRead                      HistoryReadPayload                      `json:"historyRead"`
+	HTTPDeviceSummary                HTTPDeviceSummary                       `json:"httpDeviceSummary"`
+	HTTPErrorResponse                HTTPErrorResponse                       `json:"httpErrorResponse"`
+	HTTPNamedOption                  HTTPNamedOption                         `json:"httpNamedOption"`
+	HTTPPairPollRequest              HTTPPairPollRequest                     `json:"httpPairPollRequest"`
+	HTTPPairPollResponse             HTTPPairPollResponse                    `json:"httpPairPollResponse"`
+	HTTPPairRedeemRequest            HTTPPairRedeemRequest                   `json:"httpPairRedeemRequest"`
+	HTTPPairRedeemResponse           HTTPPairRedeemResponse                  `json:"httpPairRedeemResponse"`
+	HTTPSessionCreateRequest         HTTPSessionCreateRequest                `json:"httpSessionCreateRequest"`
+	HTTPSessionListResponse          HTTPSessionListResponse                 `json:"httpSessionListResponse"`
+	HTTPSessionMutationResponse      HTTPSessionMutationResponse             `json:"httpSessionMutationResponse"`
+	HTTPSessionRenameRequest         HTTPSessionRenameRequest                `json:"httpSessionRenameRequest"`
+	HTTPSessionTerminateRequest      HTTPSessionTerminateRequest             `json:"httpSessionTerminateRequest"`
+	HTTPSettingsResponse             HTTPSettingsResponse                    `json:"httpSettingsResponse"`
 	InputAccepted                    InputAcceptedPayload                    `json:"inputAccepted"`
 	InputKey                         InputKeyPayload                         `json:"inputKey"`
 	InputMouse                       InputMousePayload                       `json:"inputMouse"`
@@ -128,6 +141,79 @@ type EmptyPayload struct {
 type ErrorPayload struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
+}
+
+type HTTPDeviceSummary struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+type HTTPErrorResponse struct {
+	Error BrokerRPCErrorPayload `json:"error"`
+}
+
+// A saved project or shell profile, selected by ID. Paths and executables are never sent to
+// the browser.
+type HTTPNamedOption struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type HTTPPairPollRequest struct {
+	PendingID  string `json:"pendingId"`
+	PollSecret string `json:"pollSecret"`
+}
+
+// An approved response is the only one that sets the session cookie.
+type HTTPPairPollResponse struct {
+	Device *HTTPDeviceSummary `json:"device,omitempty"`
+	Status HTTPPairPollStatus `json:"status"`
+}
+
+type HTTPPairRedeemRequest struct {
+	DeviceLabel string `json:"deviceLabel"`
+	Grant       string `json:"grant"`
+}
+
+type HTTPPairRedeemResponse struct {
+	ExpiresAt        string `json:"expiresAt"`
+	PendingID        string `json:"pendingId"`
+	PollSecret       string `json:"pollSecret"`
+	VerificationCode string `json:"verificationCode"`
+}
+
+type HTTPSessionCreateRequest struct {
+	OperationID    string `json:"operationId"`
+	ProjectID      string `json:"projectId"`
+	ShellProfileID string `json:"shellProfileId"`
+}
+
+type HTTPSessionListResponse struct {
+	Sessions []BrokerRPCSessionRecord `json:"sessions"`
+}
+
+type HTTPSessionMutationResponse struct {
+	OperationID string                 `json:"operationId"`
+	Session     BrokerRPCSessionRecord `json:"session"`
+}
+
+type HTTPSessionRenameRequest struct {
+	Generation  string `json:"generation"`
+	OperationID string `json:"operationId"`
+	Title       string `json:"title"`
+}
+
+type HTTPSessionTerminateRequest struct {
+	Generation  string `json:"generation"`
+	OperationID string `json:"operationId"`
+}
+
+type HTTPSettingsResponse struct {
+	BrokerGeneration string            `json:"brokerGeneration"`
+	Device           HTTPDeviceSummary `json:"device"`
+	HostBuild        string            `json:"hostBuild"`
+	Projects         []HTTPNamedOption `json:"projects"`
+	ShellProfiles    []HTTPNamedOption `json:"shellProfiles"`
 }
 
 type HeartbeatPayload struct {
@@ -415,6 +501,13 @@ const (
 	Lost     State = "lost"
 	Running  State = "running"
 	Starting State = "starting"
+)
+
+type HTTPPairPollStatus string
+
+const (
+	Approved HTTPPairPollStatus = "approved"
+	Pending  HTTPPairPollStatus = "pending"
 )
 
 type CapabilityProfile string

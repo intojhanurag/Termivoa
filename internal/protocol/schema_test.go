@@ -82,7 +82,8 @@ func TestGenerationIndexReferencesCanonicalSchemas(t *testing.T) {
 	for name, property := range index.Properties {
 		if !strings.HasPrefix(property.Ref, "envelope.schema.json#/$defs/") &&
 			!strings.HasPrefix(property.Ref, "ipc.schema.json#/$defs/") &&
-			!strings.HasPrefix(property.Ref, "broker-rpc.schema.json#/$defs/") {
+			!strings.HasPrefix(property.Ref, "broker-rpc.schema.json#/$defs/") &&
+			!strings.HasPrefix(property.Ref, "http-api.schema.json#/$defs/") {
 			t.Fatalf("generation type %q does not reference canonical schema: %q", name, property.Ref)
 		}
 	}

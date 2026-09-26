@@ -25,6 +25,19 @@ export type ProtocolTypes = {
     readonly historyChanged:                   HistoryChangedPayload;
     readonly historyPage:                      HistoryPagePayload;
     readonly historyRead:                      HistoryReadPayload;
+    readonly httpDeviceSummary:                HTTPDeviceSummary;
+    readonly httpErrorResponse:                HTTPErrorResponse;
+    readonly httpNamedOption:                  HTTPNamedOption;
+    readonly httpPairPollRequest:              HTTPPairPollRequest;
+    readonly httpPairPollResponse:             HTTPPairPollResponse;
+    readonly httpPairRedeemRequest:            HTTPPairRedeemRequest;
+    readonly httpPairRedeemResponse:           HTTPPairRedeemResponse;
+    readonly httpSessionCreateRequest:         HTTPSessionCreateRequest;
+    readonly httpSessionListResponse:          HTTPSessionListResponse;
+    readonly httpSessionMutationResponse:      HTTPSessionMutationResponse;
+    readonly httpSessionRenameRequest:         HTTPSessionRenameRequest;
+    readonly httpSessionTerminateRequest:      HTTPSessionTerminateRequest;
+    readonly httpSettingsResponse:             HTTPSettingsResponse;
     readonly inputAccepted:                    InputAcceptedPayload;
     readonly inputKey:                         InputKeyPayload;
     readonly inputMouse:                       InputMousePayload;
@@ -214,6 +227,85 @@ export type HistoryReadPayload = {
     readonly historyRevision: string;
     readonly limit:           number;
     readonly offset:          number;
+}
+
+export type HTTPDeviceSummary = {
+    readonly id:    string;
+    readonly label: string;
+}
+
+export type HTTPErrorResponse = {
+    readonly error: BrokerRPCErrorPayload;
+}
+
+/**
+ * A saved project or shell profile, selected by ID. Paths and executables are never sent to
+ * the browser.
+ */
+export type HTTPNamedOption = {
+    readonly id:   string;
+    readonly name: string;
+}
+
+export type HTTPPairPollRequest = {
+    readonly pendingId:  string;
+    readonly pollSecret: string;
+}
+
+/**
+ * An approved response is the only one that sets the session cookie.
+ */
+export type HTTPPairPollResponse = {
+    readonly device?: HTTPDeviceSummary;
+    readonly status:  HTTPPairPollStatus;
+}
+
+export type HTTPPairPollStatus = "pending" | "approved";
+
+export type HTTPPairRedeemRequest = {
+    readonly deviceLabel: string;
+    readonly grant:       string;
+}
+
+export type HTTPPairRedeemResponse = {
+    readonly expiresAt:        string;
+    readonly pendingId:        string;
+    readonly pollSecret:       string;
+    readonly verificationCode: string;
+}
+
+export type HTTPSessionCreateRequest = {
+    readonly operationId:    string;
+    readonly projectId:      string;
+    readonly shellProfileId: string;
+}
+
+export type HTTPSessionListResponse = {
+    readonly sessions: BrokerRPCSessionRecord[];
+}
+
+export type HTTPSessionMutationResponse = {
+    readonly operationId: string;
+    readonly session:     BrokerRPCSessionRecord;
+}
+
+export type HTTPSessionRenameRequest = {
+    readonly generation:  string;
+    readonly operationId: string;
+    readonly title:       string;
+}
+
+export type HTTPSessionTerminateRequest = {
+    readonly generation:  string;
+    readonly operationId: string;
+}
+
+export type HTTPSettingsResponse = {
+    readonly brokerGeneration: string;
+    readonly device:           HTTPDeviceSummary;
+    readonly hostBuild:        string;
+    readonly projects:         HTTPNamedOption[];
+    readonly shellProfiles:    HTTPNamedOption[];
 }
 
 export type InputAcceptedPayload = {

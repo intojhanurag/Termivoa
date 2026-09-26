@@ -17,7 +17,8 @@
     "brokerRPCSessionRenameRequest", "brokerRPCSessionTerminateRequest",
     "brokerRPCSessionRecord", "brokerRPCSessionListResult", "brokerRPCSessionResult",
     "brokerRPCSessionMutationResult",
-    "brokerRPCError"
+    "brokerRPCError",
+    "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -64,6 +65,19 @@
     "brokerRPCSessionListResult": { "$ref": "broker-rpc.schema.json#/$defs/sessionListResultPayload" },
     "brokerRPCSessionResult": { "$ref": "broker-rpc.schema.json#/$defs/sessionResultPayload" },
     "brokerRPCSessionMutationResult": { "$ref": "broker-rpc.schema.json#/$defs/sessionMutationResultPayload" },
-    "brokerRPCError": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" }
+    "brokerRPCError": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" },
+    "httpPairRedeemRequest": { "$ref": "http-api.schema.json#/$defs/pairRedeemRequest" },
+    "httpPairRedeemResponse": { "$ref": "http-api.schema.json#/$defs/pairRedeemResponse" },
+    "httpPairPollRequest": { "$ref": "http-api.schema.json#/$defs/pairPollRequest" },
+    "httpPairPollResponse": { "$ref": "http-api.schema.json#/$defs/pairPollResponse" },
+    "httpDeviceSummary": { "$ref": "http-api.schema.json#/$defs/deviceSummary" },
+    "httpNamedOption": { "$ref": "http-api.schema.json#/$defs/namedOption" },
+    "httpSettingsResponse": { "$ref": "http-api.schema.json#/$defs/settingsResponse" },
+    "httpSessionListResponse": { "$ref": "http-api.schema.json#/$defs/sessionListResponse" },
+    "httpSessionCreateRequest": { "$ref": "http-api.schema.json#/$defs/sessionCreateRequest" },
+    "httpSessionRenameRequest": { "$ref": "http-api.schema.json#/$defs/sessionRenameRequest" },
+    "httpSessionTerminateRequest": { "$ref": "http-api.schema.json#/$defs/sessionTerminateRequest" },
+    "httpSessionMutationResponse": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" },
+    "httpErrorResponse": { "$ref": "http-api.schema.json#/$defs/errorResponse" }
   }
 }

@@ -8,6 +8,7 @@ const schema = path.join(root, 'protocol/v1/types.schema.json');
 const envelopeSchema = path.join(root, 'protocol/v1/envelope.schema.json');
 const ipcSchema = path.join(root, 'protocol/v1/ipc.schema.json');
 const brokerRPCSchema = path.join(root, 'protocol/v1/broker-rpc.schema.json');
+const httpAPISchema = path.join(root, 'protocol/v1/http-api.schema.json');
 const outputs = [
   [
     'go',
@@ -40,6 +41,8 @@ for (const [language, output, extra] of outputs) {
       ipcSchema,
       '--additional-schema',
       brokerRPCSchema,
+      '--additional-schema',
+      httpAPISchema,
       '--out',
       output,
       '--top-level',
