@@ -481,3 +481,17 @@ The fixture directory cleanup also now runs before `TestMain` exits. Full-suite
 race tests and twenty focused PTY race repetitions passed; native Windows is
 still pending. See `docs/evidence/p3/pty-fixture-activation.md` for the sampled
 failure, exact checks, and distinct cold-launch versus PTY validation scopes.
+
+## P4 pairing and authentication (broker side)
+
+On 2026-09-27 branch `feat/p4-pairing-broker` implemented the broker half of
+P4: gateway and local administration RPC schemas, migration 004 with hashed
+secrets, the pairing/credential/revocation service, credential-bound browser
+live streams with access rechecks in the session actor, shell-profile
+discovery, `internal/gatewayclient`, and the `pair`, `devices`, `revoke`,
+`project`, `profile` and `config origin` commands. A gateway IPC peer can no
+longer reach unauthenticated session management. Race tests, Windows
+cross-vet, web checks and the real-broker pairing integration test pass on
+macOS. `TestPtermDesktopAttachNativeOuterTTY` fails identically on the base
+commit and remains open. Native Windows, the HTTP gateway/web pairing path and
+a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
