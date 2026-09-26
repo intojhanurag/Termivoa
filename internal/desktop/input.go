@@ -17,6 +17,26 @@ type Transport interface {
 	Send(context.Context, InputAction) error
 }
 
+// AdmittedTransport pins decoded input to one uninterrupted ready/controller
+// epoch. Implementations recheck admission immediately before transport writes.
+type AdmittedTransport interface {
+	Transport
+	AdmissionEpoch() uint64
+	SendAdmitted(context.Context, InputAction, uint64) error
+}
+
+type eventAdmissionTransport struct {
+	AdmittedTransport
+	epoch uint64
+}
+
+func (transport eventAdmissionTransport) Send(ctx context.Context, action InputAction) error {
+	if transport.epoch == 0 || transport.epoch != transport.AdmissionEpoch() {
+		return nil
+	}
+	return transport.SendAdmitted(ctx, action, transport.epoch)
+}
+
 // InputAction is one validated input intent sent by the desktop client.
 type InputAction interface {
 	desktopInputAction()
@@ -70,7 +90,10 @@ func sendValidated(ctx context.Context, transport Transport, action InputAction)
 // Ctrl+] detaches locally. Ctrl+V quotes the next Ctrl+] so the child can
 // receive a literal detach character.
 type InputController struct {
-	quoteNext bool
+	quoteNext  bool
+	quoteEpoch uint64
+	pasting    bool
+	pasteEpoch uint64
 }
 
 // Handle returns detached=true when the local attachment should exit.
@@ -78,13 +101,36 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 	if transport == nil {
 		return false, errors.New("desktop input transport must not be nil")
 	}
+	epoch, current := uint64(1), uint64(1)
+	if admitted, ok := transport.(AdmittedTransport); ok {
+		current = admitted.AdmissionEpoch()
+		epoch = current
+		if tagged, ok := event.(uv.InputEpochEvent); ok {
+			event, epoch = tagged.Event, tagged.Epoch
+		}
+		transport = eventAdmissionTransport{AdmittedTransport: admitted, epoch: epoch}
+	} else if tagged, ok := event.(uv.InputEpochEvent); ok {
+		// Provenance cannot be represented by a legacy transport. Detach is
+		// still local, but no tagged child action is silently downgraded.
+		event, epoch, current = tagged.Event, 0, 0
+	}
+	if controller.quoteNext && (controller.quoteEpoch != current || epoch != current || current == 0) {
+		controller.quoteNext = false
+	}
 	switch event := event.(type) {
-	case uv.KeyReleaseEvent, uv.PasteStartEvent, uv.PasteEndEvent:
+	case uv.PasteStartEvent:
+		controller.pasting, controller.pasteEpoch = true, epoch
+		return false, nil
+	case uv.PasteEndEvent:
+		controller.pasting, controller.pasteEpoch = false, 0
+		return false, nil
+	case uv.KeyReleaseEvent:
 		return false, nil
 	case uv.KeyPressEvent:
 		key := event.Key()
 		if isCtrlKey(key, 'v') && !controller.quoteNext {
-			controller.quoteNext = true
+			controller.quoteNext = epoch != 0 && epoch == current
+			controller.quoteEpoch = epoch
 			return false, nil
 		}
 		if isCtrlKey(key, ']') {
@@ -97,6 +143,9 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 				Character: "]",
 				Modifiers: protocol.Modifiers{Ctrl: true},
 			})
+		}
+		if epoch == 0 || epoch != current {
+			return false, nil
 		}
 		if controller.quoteNext {
 			// Ctrl+V is only a local quote action for the reserved detach key.
@@ -116,8 +165,14 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 		}
 		return false, sendValidated(ctx, transport, action)
 	case uv.PasteEvent:
+		if epoch == 0 || epoch != current || (controller.pasting && controller.pasteEpoch != epoch) {
+			return false, nil
+		}
 		return false, sendValidated(ctx, transport, PasteAction{Text: event.Content})
 	case uv.MouseEvent:
+		if epoch == 0 || epoch != current {
+			return false, nil
+		}
 		action, ok := mouseAction(event)
 		if !ok {
 			return false, nil

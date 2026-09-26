@@ -339,3 +339,25 @@ type failingWriter struct{}
 func (failingWriter) Write([]byte) (int, error) {
 	return 0, io.ErrClosedPipe
 }
+
+func TestAttachmentReportsActivationFailureOnce(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	want := errors.New("status write failed")
+	attachment := Attachment{
+		TTY: &OuterTTY{output: &output, ops: ttyOperations{
+			makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+			restore: func(uintptr, *term.State) error { return nil },
+		}},
+		Events: eventStreamerFunc(func(ctx context.Context, _ chan<- uv.Event) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+		Connect:  connectTransport(&attachmentTransport{recordingTransport: &recordingTransport{}}),
+		Activate: func(context.Context) error { return want },
+	}
+	err := attachment.Run(context.Background())
+	if !errors.Is(err, want) || strings.Count(err.Error(), want.Error()) != 1 {
+		t.Fatalf("activation error = %v", err)
+	}
+}

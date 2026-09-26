@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-09-21
+Last updated: 2026-09-27
 
 ## Current status
 
@@ -39,11 +39,13 @@ executable-broker readiness timeout remains unclassified, documented in
 not erased by green reruns. Native Windows 11, real-phone, authentication, signed
 installer, performance/soak, and release gates remain pending.
 
-Desktop readiness during initial resize and smooth controlled-window shrink are
-under active review. An early Control footer could precede the resized snapshot;
-this is not dismissed as a Unicode decoding defect or claimed fixed by waiting
-longer in a test. P4 ownership/ordering preparation is documented in
-`docs/p4-authentication-design.md`; authenticated routes are still absent.
+Desktop startup input is now admitted only for the current connected, ready
+controller epoch, and an early Ctrl+] at the startup handoff detaches instead of
+being flushed (2026-09-27, `docs/evidence/p3/desktop-input-admission.md`).
+Native shrink-then-grow resizing is covered by the outer-PTY executable test
+(`docs/evidence/p3/desktop-native-resize.md`). The active-output termination
+drain fix is integrated (`docs/evidence/p3/active-output-shutdown.md`).
+Native Windows execution of these paths remains pending.
 
 ### Milestone record
 

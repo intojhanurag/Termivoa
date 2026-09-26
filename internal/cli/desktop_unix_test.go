@@ -54,22 +54,6 @@ func TestAttachDesktopFailedConnectionRestoresOwnedTTY(t *testing.T) {
 	}
 }
 
-type startupObservedReader struct {
-	*FileConfirmationReader
-	read chan struct{}
-}
-
-func (reader startupObservedReader) ReadContext(ctx context.Context, data []byte) (int, error) {
-	n, err := reader.FileConfirmationReader.ReadContext(ctx, data)
-	if n > 0 {
-		select {
-		case reader.read <- struct{}{}:
-		default:
-		}
-	}
-	return n, err
-}
-
 type startupBlockedOutput struct{ entered, resume chan struct{} }
 
 func (output startupBlockedOutput) WriteContext(ctx context.Context, data []byte) (int, error) {
@@ -86,7 +70,16 @@ func (output startupBlockedOutput) WriteContext(ctx context.Context, data []byte
 
 type startupNativeTransport struct {
 	*desktopFakeConnection
-	actions []desktop.InputAction
+	actions   []desktop.InputAction
+	admission *desktopAdmission
+}
+
+func (transport *startupNativeTransport) AdmissionEpoch() uint64 { return transport.admission.epoch() }
+func (transport *startupNativeTransport) SendAdmitted(ctx context.Context, action desktop.InputAction, epoch uint64) error {
+	if epoch == 0 || epoch != transport.AdmissionEpoch() {
+		return nil
+	}
+	return transport.Send(ctx, action)
 }
 
 func (transport *startupNativeTransport) Send(_ context.Context, action desktop.InputAction) error {
@@ -116,12 +109,17 @@ func TestDesktopStartupBlockedControlWriteNeverReplaysInput(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer reader.Close()
-			observed := startupObservedReader{reader, make(chan struct{}, 1)}
-			startup, err := desktop.NewBoundedInput(observed, "xterm-256color")
+			startup, err := desktop.NewBoundedInput(reader, "xterm-256color")
 			if err != nil {
 				t.Fatal(err)
 			}
-			live, err := desktop.NewBoundedInput(reader, "xterm-256color")
+			captured := make(chan uint64, 8)
+			admission := &desktopAdmission{}
+			live, err := desktop.NewAdmittedInput(reader, "xterm-256color", func() uint64 {
+				epoch := admission.epoch()
+				captured <- epoch
+				return epoch
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,12 +130,13 @@ func TestDesktopStartupBlockedControlWriteNeverReplaysInput(t *testing.T) {
 			output := startupBlockedOutput{make(chan struct{}), make(chan struct{})}
 			client := desktopFake()
 			client.state.Controller = true
-			transport := &startupNativeTransport{desktopFakeConnection: client}
+			admission.client = client
+			transport := &startupNativeTransport{desktopFakeConnection: client, admission: admission}
 			display := &desktopDisplay{writer: output, size: func() (int, int, error) { return 80, 25, nil }, client: client, controlPending: true,
 				screen: &protocol.ScreenMetadata{Columns: 80, Rows: 24}}
 			ready := desktopReadyBarrier{make(chan struct{}), make(chan struct{})}
 			close(ready.ready)
-			handedOff := make(chan struct{})
+			activated := make(chan struct{})
 			attachment := desktop.Attachment{TTY: tty, Events: live, StartupEvents: startup,
 				Connect: func(ctx context.Context) (desktop.AttachmentTransport, error) {
 					if err := finishDesktopStartup(ctx, ready, display); err != nil {
@@ -146,9 +145,13 @@ func TestDesktopStartupBlockedControlWriteNeverReplaysInput(t *testing.T) {
 					return transport, nil
 				},
 				BeforeInput: func(context.Context) error {
-					err := discardDesktopInput(reader.file.handle)
-					close(handedOff)
-					return err
+					return discardDesktopInput(reader.file.handle)
+				},
+				Activate: func(ctx context.Context) error {
+					return display.activate(ctx, func() {
+						admission.enabled.Store(true)
+						close(activated)
+					})
 				},
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -164,15 +167,28 @@ func TestDesktopStartupBlockedControlWriteNeverReplaysInput(t *testing.T) {
 				t.Fatal(err)
 			}
 			select {
-			case <-observed.read:
+			case epoch := <-captured:
+				if epoch != 0 {
+					t.Fatalf("blocked activation admitted epoch %d", epoch)
+				}
 			case <-ctx.Done():
 				t.Fatal("startup decoder did not drain input during blocked output")
 			}
 			close(output.resume)
 			select {
-			case <-handedOff:
+			case <-activated:
 			case <-ctx.Done():
-				t.Fatal("input handoff did not complete")
+				t.Fatal("input activation did not complete")
+			}
+			if completion := map[string]string{"partial-paste": "\x1b[201~", "partial-csi": "A"}[name]; completion != "" {
+				if _, err := master.Write([]byte(completion)); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-captured:
+				case <-ctx.Done():
+					t.Fatal("partial input completion not read")
+				}
 			}
 			if _, err := master.Write([]byte("z\x1d")); err != nil {
 				t.Fatal(err)

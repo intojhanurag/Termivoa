@@ -31,6 +31,21 @@ func NewBoundedInput(input uv.ContextReader, terminalType string) (*BoundedInput
 	return &BoundedInput{reader: reader}, nil
 }
 
+// NewAdmittedInput tags complete and partial input with the current local
+// admission epoch at each owned read. A zero epoch is permanently inadmissible.
+// The callback must be nonblocking, concurrency-safe, and never reuse epochs.
+func NewAdmittedInput(input uv.ContextReader, terminalType string, epoch func() uint64) (*BoundedInput, error) {
+	if epoch == nil {
+		return nil, errors.New("desktop: input admission callback is required")
+	}
+	decoder, err := NewBoundedInput(input, terminalType)
+	if err != nil {
+		return nil, err
+	}
+	decoder.reader.InputEpoch = epoch
+	return decoder, nil
+}
+
 func (input *BoundedInput) StreamEvents(ctx context.Context, events chan<- uv.Event) error {
 	if ctx == nil {
 		return errors.New("desktop: input context must not be nil")

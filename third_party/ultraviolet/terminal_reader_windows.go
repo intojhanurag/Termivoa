@@ -18,7 +18,7 @@ import (
 )
 
 // streamData sends data from the input stream to the event channel.
-func (d *TerminalReader) streamData(ctx context.Context, readc chan []byte) error {
+func (d *TerminalReader) streamData(ctx context.Context, readc chan inputRead) error {
 	cc, ok := d.r.(*conInputReader)
 	if !ok {
 		d.logf("streamData: reader is not a conInputReader, falling back to default implementation")
@@ -64,7 +64,7 @@ func (d *TerminalReader) streamData(ctx context.Context, readc chan []byte) erro
 		select {
 		case <-ctx.Done():
 			return nil
-		case readc <- buf.Bytes():
+		case readc <- inputRead{data: buf.Bytes()}:
 		}
 
 		buf.Reset()
