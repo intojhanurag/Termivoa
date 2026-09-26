@@ -29,6 +29,9 @@ const (
 	// Revocation waits this long for bound live streams to close before it
 	// reports incomplete cleanup instead of success.
 	defaultCleanupTimeout = 5 * time.Second
+	// Timers pause while the host sleeps; live bindings recheck the wall
+	// clock at this interval so sleep cannot extend their validity.
+	defaultExpiryRecheck = time.Minute
 )
 
 var (
@@ -66,6 +69,7 @@ type Service struct {
 	redeems            rateWindow
 	polls              rateWindow
 	cleanupTimeout     time.Duration
+	expiryRecheck      time.Duration
 }
 
 // Principal is the broker-resolved identity for one valid credential.
@@ -105,6 +109,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		redeems:        rateWindow{limit: RedeemAttemptsPerMin, span: time.Minute},
 		polls:          rateWindow{limit: PollAttemptsPerMin, span: time.Minute},
 		cleanupTimeout: defaultCleanupTimeout,
+		expiryRecheck:  defaultExpiryRecheck,
 	}, nil
 }
 
@@ -331,12 +336,30 @@ func (service *Service) Bind(ctx context.Context, credential string) (*Binding, 
 		return nil, Principal{}, err
 	}
 	service.bindings[binding] = struct{}{}
-	binding.timer = time.AfterFunc(max(principal.ValidUntil.Sub(service.now()), 0), func() {
-		service.mu.Lock()
-		binding.revokeLocked(ErrExpired)
-		service.mu.Unlock()
-	})
+	service.armExpiryLocked(binding, principal.ValidUntil.Sub(service.now()))
 	return binding, principal, nil
+}
+
+// armExpiryLocked ends the binding once left elapses on the monotonic timer
+// or the wall clock reaches ValidUntil, whichever is first. Timers pause while
+// the host sleeps, so the wall clock is rechecked at least every expiryRecheck.
+func (service *Service) armExpiryLocked(binding *Binding, left time.Duration) {
+	step := max(min(left, service.expiryRecheck), 0)
+	binding.timer = time.AfterFunc(step, func() {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		select {
+		case <-binding.revoked:
+			return
+		default:
+		}
+		left := min(left-step, binding.principal.ValidUntil.Sub(service.now()))
+		if left <= 0 {
+			binding.revokeLocked(ErrExpired)
+			return
+		}
+		service.armExpiryLocked(binding, left)
+	})
 }
 
 // Logout revokes only the presented credential and closes its streams. It
@@ -435,7 +458,7 @@ func (service *Service) allow(window *rateWindow, now time.Time) bool {
 type Binding struct {
 	service   *Service
 	principal Principal
-	timer     *time.Timer
+	timer     *time.Timer // Guarded by service.mu.
 	revoked   chan struct{}
 	released  chan struct{}
 	err       error // Written under service.mu before revoked closes.
@@ -468,8 +491,8 @@ func (binding *Binding) Release() {
 		binding.service.mu.Lock()
 		delete(binding.service.bindings, binding)
 		binding.revokeLocked(ErrUnauthorized)
+		binding.timer.Stop() // Under mu: the expiry callback re-arms timer.
 		binding.service.mu.Unlock()
-		binding.timer.Stop()
 		close(binding.released)
 	})
 }

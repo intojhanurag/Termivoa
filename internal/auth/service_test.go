@@ -418,3 +418,26 @@ func TestPairingRejectsClockRollback(t *testing.T) {
 		t.Fatalf("poll after the clock recovered = %#v, %v", result, err)
 	}
 }
+
+// Go timers use a monotonic clock that pauses while the host sleeps. A live
+// binding must still end once the wall clock passes its validity, instead of
+// streaming until the paused timer eventually fires.
+func TestBindingExpiresWhenWallClockPassesDuringHostSleep(t *testing.T) {
+	service, clock := newTestService(t)
+	service.expiryRecheck = 10 * time.Millisecond
+	issued := pair(t, service, "Phone")
+	binding, principal, err := service.Bind(context.Background(), issued.Credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer binding.Release()
+	clock.Set(principal.ValidUntil) // Days pass on the wall clock; no monotonic time does.
+	select {
+	case <-binding.Revoked():
+	case <-time.After(5 * time.Second):
+		t.Fatal("binding kept streaming after the wall clock passed its validity")
+	}
+	if !errors.Is(binding.Check(), ErrExpired) {
+		t.Fatalf("expired binding check = %v", binding.Check())
+	}
+}
