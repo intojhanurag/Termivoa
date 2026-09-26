@@ -20,7 +20,9 @@ Available commands:
   pterm terminate <session-id>        Confirm and end one managed process tree.
   pterm attach [--control] <id>       View a session; --control explicitly takes control.
   pterm new --project <id> --shell <id> Create and take control of a new session.
-  pterm pair [--origin <url>]        Print a two-minute, single-use phone pairing link.
+  pterm pair [--origin <url>] [--no-qr]
+                                     Print a two-minute, single-use phone pairing link
+                                     and, on a terminal, its QR code.
   pterm pair pending                 Show phones waiting for approval and their codes.
   pterm pair approve <pending-id>    Approve a phone after comparing its code.
   pterm devices                      Show paired devices, status and last use.
@@ -35,19 +37,22 @@ Available commands:
   pterm uninstall [--dry-run] [--yes] [--delete-data]
                                      Remove startup registration; data only with --delete-data.
   pterm launch [--no-open]           Start broker and gateway if needed; open the local page.
+  pterm stop                         Stop the gateway only; sessions keep running.
+  pterm shutdown                     Confirm, end all sessions, stop broker and gateway.
   pterm up --dev [--listen <addr>]   Development harness: broker and gateway as separate processes.
   pterm help                         Show this help.
 
 Local commands talk to the existing broker; they never start or replace it.
 Development tests may use --dev and --runtime-dir <isolated-directory> after
 the command words and before any ID, path or URL. Production and development
-profiles are never mixed. The pairing link is a secret; no QR code is shown.
+profiles are never mixed. The pairing link and its QR code are a secret.
 Attach: Ctrl+] detaches, never terminates. With control, Ctrl+V then Ctrl+]
 sends literal Ctrl+]. Ordinary typing in observer mode is ignored, not queued.
 `
 
 type localCommandConfig struct {
 	runtimeDir string
+	dev        bool
 	arguments  []string
 	control    bool
 	projectID  string
@@ -71,7 +76,7 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if err := flags.Parse(args); err != nil {
 		return localCommandConfig{}, err
 	}
-	if (command == "list" && flags.NArg() != 0) || ((command == "terminate" || command == "attach") && flags.NArg() != 1) {
+	if ((command == "list" || command == "stop" || command == "shutdown") && flags.NArg() != 0) || ((command == "terminate" || command == "attach") && flags.NArg() != 1) {
 		return localCommandConfig{}, fmt.Errorf("usage: pterm %s [--dev] [--runtime-dir <directory>]%s", command, commandArgumentHelp(command))
 	}
 	if command == "new" && (flags.NArg() != 0 || projectID == "" || profileID == "") {
@@ -96,7 +101,9 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if err != nil {
 		return localCommandConfig{}, fmt.Errorf("invalid local command profile: %w", err)
 	}
-	return localCommandConfig{runtimeDir: validated, arguments: flags.Args(), control: control, projectID: projectID, profileID: profileID}, nil
+	return localCommandConfig{
+		runtimeDir: validated, dev: *dev, arguments: flags.Args(), control: control, projectID: projectID, profileID: profileID,
+	}, nil
 }
 
 func commandArgumentHelp(command string) string {

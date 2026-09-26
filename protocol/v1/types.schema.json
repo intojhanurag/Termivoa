@@ -20,7 +20,7 @@
     "brokerRPCError",
     "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse",
     "gatewayRPCMessageType", "gatewayRPCCredential", "gatewayRPCSessionCreate", "gatewayRPCSessionRename", "gatewayRPCSessionTerminate", "gatewayRPCPairPollResult", "gatewayRPCPrincipal",
-    "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin"
+    "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin", "adminRPCShutdownResult"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -103,6 +103,7 @@
     "adminRPCProjectListResult": { "$ref": "admin-rpc.schema.json#/$defs/projectListResultPayload" },
     "adminRPCShellProfile": { "$ref": "admin-rpc.schema.json#/$defs/profile" },
     "adminRPCProfileListResult": { "$ref": "admin-rpc.schema.json#/$defs/profileListResultPayload" },
-    "adminRPCOrigin": { "$ref": "admin-rpc.schema.json#/$defs/originPayload" }
+    "adminRPCOrigin": { "$ref": "admin-rpc.schema.json#/$defs/originPayload" },
+    "adminRPCShutdownResult": { "$ref": "admin-rpc.schema.json#/$defs/shutdownResultPayload" }
   }
 }

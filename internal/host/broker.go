@@ -78,6 +78,9 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	if err != nil {
 		return err
 	}
+	// admin.shutdown cancels this context: the same orderly exit as a signal.
+	ctx, shutdown := context.WithCancel(ctx)
+	defer shutdown()
 	dataDir, dataLock, err := ipc.LockBrokerDataDirectory(config.DataDir)
 	if err != nil {
 		return err
@@ -138,6 +141,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	server, err := broker.NewManagementServer(broker.ManagementServerConfig{
 		Registry: registry, Store: persistence,
 		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority,
+		Shutdown: shutdown,
 	})
 	if err != nil {
 		return err

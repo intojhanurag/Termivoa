@@ -42,6 +42,9 @@ type ManagementServerConfig struct {
 	// Auth is the pairing and browser-credential authority. Without it,
 	// gateway and local administration requests fail as host_unavailable.
 	Auth *auth.Service
+	// Shutdown stops the broker's serve loop after an admin.shutdown result
+	// is written. Without it, admin.shutdown fails as host_unavailable.
+	Shutdown func()
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC

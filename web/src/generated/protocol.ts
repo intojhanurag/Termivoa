@@ -21,6 +21,7 @@ export type ProtocolTypes = {
     readonly adminRPCProjectListResult:        AdminRPCProjectListResultPayload;
     readonly adminRPCProjectResult:            AdminRPCProjectResultPayload;
     readonly adminRPCShellProfile:             AdminRPCShellProfile;
+    readonly adminRPCShutdownResult:           AdminRPCShutdownResultPayload;
     readonly brokerRPCEmpty:                   BrokerRPCEmptyPayload;
     readonly brokerRPCError:                   BrokerRPCErrorPayload;
     readonly brokerRPCMessageType:             BrokerRPCMessageType;
@@ -115,7 +116,7 @@ export type AdminRPCDeviceRevokeResultPayload = {
     readonly deviceId:      string;
 }
 
-export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.error";
+export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.error";
 
 /**
  * In a request, a present origin replaces the configured one and an absent origin reads it.
@@ -177,6 +178,14 @@ export type AdminRPCProjectListResultPayload = {
 
 export type AdminRPCProjectResultPayload = {
     readonly project: AdminRPCProject;
+}
+
+/**
+ * Sent after every live session was terminated through the normal termination path and
+ * before the broker stops serving.
+ */
+export type AdminRPCShutdownResultPayload = {
+    readonly terminatedSessions: number;
 }
 
 export type BrokerRPCEmptyPayload = {

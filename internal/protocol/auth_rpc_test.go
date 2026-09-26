@@ -85,6 +85,15 @@ func TestAdminRPCValidatesPayloadsAndOrigins(t *testing.T) {
 	})); err == nil {
 		t.Fatal("malformed verification code accepted")
 	}
+	if _, err := DecodeAdminRPCRequest(rpcJSON(t, "admin.shutdown", map[string]bool{"force": true})); err == nil {
+		t.Fatal("shutdown request with an unknown field accepted")
+	}
+	for count, valid := range map[int64]bool{0: true, 64: true, -1: false, 65: false} {
+		_, err := DecodeAdminRPCResponse(rpcJSON(t, "admin.shutdown.result", AdminRPCShutdownResultPayload{TerminatedSessions: count}))
+		if (err == nil) != valid {
+			t.Fatalf("shutdown result with %d sessions: %v", count, err)
+		}
+	}
 	for _, origin := range []string{
 		"https://mac.example.ts.net", "https://mac.example.ts.net:8443", "http://127.0.0.1:8788", "http://localhost:5173",
 	} {

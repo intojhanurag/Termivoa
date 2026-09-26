@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://phone-terminal.invalid/protocol/v1/admin-rpc.schema.json",
   "title": "AdminRPCMessage",
-  "description": "Bounded correlated local administration RPC. The broker accepts it only from an IPC peer that declared clientKind cli; gateways and browsers can never reach it. See authentication-rpc.md.",
+  "description": "Bounded correlated local administration RPC. The broker accepts it only from an IPC peer that declared clientKind cli; gateways and browsers can never reach it. admin.gateway.stop is served only by the gateway's private control endpoint, never by the broker. See authentication-rpc.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "type", "requestId", "payload"],
@@ -23,6 +23,8 @@
     { "$ref": "#/$defs/profileListMessage" },
     { "$ref": "#/$defs/profileDetectMessage" },
     { "$ref": "#/$defs/configOriginMessage" },
+    { "$ref": "#/$defs/shutdownMessage" },
+    { "$ref": "#/$defs/gatewayStopMessage" },
     { "$ref": "#/$defs/pairGrantResultMessage" },
     { "$ref": "#/$defs/pairPendingResultMessage" },
     { "$ref": "#/$defs/pairApproveResultMessage" },
@@ -33,6 +35,8 @@
     { "$ref": "#/$defs/profileListResultMessage" },
     { "$ref": "#/$defs/profileDetectResultMessage" },
     { "$ref": "#/$defs/configOriginResultMessage" },
+    { "$ref": "#/$defs/shutdownResultMessage" },
+    { "$ref": "#/$defs/gatewayStopResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -42,11 +46,11 @@
       "enum": [
         "admin.pair.grant", "admin.pair.pending", "admin.pair.approve", "admin.device.list",
         "admin.device.revoke", "admin.project.add", "admin.project.list", "admin.profile.list",
-        "admin.profile.detect", "admin.config.origin",
+        "admin.profile.detect", "admin.config.origin", "admin.shutdown", "admin.gateway.stop",
         "admin.pair.grant.result", "admin.pair.pending.result", "admin.pair.approve.result",
         "admin.device.list.result", "admin.device.revoke.result", "admin.project.add.result",
         "admin.project.list.result", "admin.profile.list.result", "admin.profile.detect.result",
-        "admin.config.origin.result", "admin.error"
+        "admin.config.origin.result", "admin.shutdown.result", "admin.gateway.stop.result", "admin.error"
       ]
     },
     "timestamp": { "$ref": "http-api.schema.json#/$defs/timestamp" },
@@ -207,6 +211,14 @@
       "additionalProperties": false,
       "properties": { "origin": { "$ref": "#/$defs/origin" } }
     },
+    "shutdownResultPayload": {
+      "title": "AdminRPCShutdownResultPayload",
+      "description": "Sent after every live session was terminated through the normal termination path and before the broker stops serving.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminatedSessions"],
+      "properties": { "terminatedSessions": { "type": "integer", "minimum": 0, "maximum": 64 } }
+    },
     "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
     "pairGrantMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "pairPendingMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
@@ -218,6 +230,8 @@
     "profileListMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "profileDetectMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.detect" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "configOriginMessage": { "type": "object", "properties": { "type": { "const": "admin.config.origin" }, "payload": { "$ref": "#/$defs/originPayload" } } },
+    "shutdownMessage": { "type": "object", "properties": { "type": { "const": "admin.shutdown" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "gatewayStopMessage": { "type": "object", "properties": { "type": { "const": "admin.gateway.stop" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "pairGrantResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant.result" }, "payload": { "$ref": "#/$defs/pairGrantResultPayload" } } },
     "pairPendingResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending.result" }, "payload": { "$ref": "#/$defs/pairPendingResultPayload" } } },
     "pairApproveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve.result" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
@@ -228,6 +242,8 @@
     "profileListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.list.result" }, "payload": { "$ref": "#/$defs/profileListResultPayload" } } },
     "profileDetectResultMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.detect.result" }, "payload": { "$ref": "#/$defs/profileListResultPayload" } } },
     "configOriginResultMessage": { "type": "object", "properties": { "type": { "const": "admin.config.origin.result" }, "payload": { "$ref": "#/$defs/originPayload" } } },
+    "shutdownResultMessage": { "type": "object", "properties": { "type": { "const": "admin.shutdown.result" }, "payload": { "$ref": "#/$defs/shutdownResultPayload" } } },
+    "gatewayStopResultMessage": { "type": "object", "properties": { "type": { "const": "admin.gateway.stop.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "admin.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

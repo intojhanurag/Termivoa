@@ -307,6 +307,16 @@ func (h Host) StartCommand(service Service) []string {
 	return []string{"launchctl", "kickstart", h.domain() + "/" + service.Label}
 }
 
+// UnloadCommand stops a registered service and keeps its supervisor from
+// starting it again until `pterm setup --apply` registers it again. pterm
+// only prints it; the owner decides whether to run it.
+func (h Host) UnloadCommand(service Service) []string {
+	if h.OS == "windows" {
+		return []string{"schtasks", "/Change", "/TN", h.TaskName(service), "/Disable"}
+	}
+	return []string{"launchctl", "bootout", h.domain() + "/" + service.Label}
+}
+
 // Inspect reads registration files and queries the supervisor. It is
 // read-only and must run on h.OS.
 func (h Host) Inspect(ctx context.Context, runner Runner) ([]Status, error) {
@@ -472,12 +482,17 @@ func (step Step) String() string {
 	case step.RemoveTree != "":
 		return "delete all data in " + step.RemoveTree
 	default:
-		quoted := make([]string, len(step.Command))
-		for index, argument := range step.Command {
-			quoted[index] = displayArg(argument)
-		}
-		return "run " + strings.Join(quoted, " ")
+		return "run " + DisplayCommand(step.Command)
 	}
+}
+
+// DisplayCommand quotes a command line for the owner to copy.
+func DisplayCommand(command []string) string {
+	quoted := make([]string, len(command))
+	for index, argument := range command {
+		quoted[index] = displayArg(argument)
+	}
+	return strings.Join(quoted, " ")
 }
 
 func displayArg(value string) string {

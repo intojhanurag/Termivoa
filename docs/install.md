@@ -49,7 +49,7 @@ and notarized builds are pending owner signing.
 pterm setup                      # read-only checks and the planned changes
 pterm setup --apply              # register startup after you confirm
 pterm project add ~/code/app     # register a project root
-pterm pair                       # show the expiring pairing link / QR code
+pterm pair                       # show the expiring pairing link and its QR code
 pterm pair approve <pending-id>  # approve after the codes match
 ```
 
@@ -70,6 +70,11 @@ What `--apply` registers:
 | Restart | on failure (`KeepAlive` / `SuccessfulExit=false`) | on failure, every minute |
 | Command | `launchctl bootstrap gui/<uid> <plist>` | `schtasks /Create /TN <name> /XML <file> /F`, then `/Run` |
 | Logs | `~/Library/Application Support/Phone Terminal/logs/` | Task Scheduler history (no stdout capture) |
+
+`pterm pair` prints the link and, when the output is a terminal, a QR code of
+the same link drawn in black on white so it scans on dark and light themes.
+`--no-qr` prints only the link. Both are a single-use secret that expires after
+two minutes: do not share them in chats, issues, screenshots or logs.
 
 `pterm doctor` repeats the read-only checks and exits non-zero if it finds a
 problem. It never prints secrets.
@@ -105,6 +110,36 @@ controls them.
   broker restarts, marks those sessions lost, and never re-runs old commands.
 - Restarting only the gateway keeps sessions alive.
 
+## Stop and shut down
+
+```sh
+pterm stop                       # stop the gateway only; sessions keep running
+pterm shutdown                   # confirm, end every session, stop broker and gateway
+```
+
+`pterm stop` asks the running gateway to exit through its private control
+endpoint in the runtime directory (a current-user-only socket or named pipe).
+It never looks up or signals processes by name. The broker and every session
+keep running, and `pterm list` still shows them; phones cannot connect until
+the gateway starts again (`pterm launch`, or your next login).
+
+`pterm shutdown` shows how many sessions are active and asks for confirmation,
+like `pterm terminate`. Then the broker ends every session and its process tree
+through the normal termination path, stops, and the gateway stops after it.
+Phones that are still connected see the host as unavailable.
+
+Both commands exit the processes cleanly, so the supervisor does not restart
+them on failure. If they are registered for startup, the supervisor starts them
+again at your next login (or `pterm launch` starts them). The command then
+prints the exact command that unloads the registration, but never runs it:
+
+| | macOS | Windows |
+| --- | --- | --- |
+| Gateway | `launchctl bootout gui/<uid>/dev.phone-terminal.gateway` | `schtasks /Change /TN "Phone Terminal Gateway (<user>)" /Disable` |
+| Broker | `launchctl bootout gui/<uid>/dev.phone-terminal.broker` | `schtasks /Change /TN "Phone Terminal Broker (<user>)" /Disable` |
+
+`pterm setup --apply` registers them again.
+
 ## Updates (manual, staged)
 
 v0 has no automatic updater. Nothing downloads code at startup.
@@ -125,11 +160,12 @@ v0 has no automatic updater. Nothing downloads code at startup.
    LaunchAgents, which restarts the broker (only when no session is active).
 4. Rollback: run `pterm setup --apply` from the previous version.
 
-Pending: a broker-side refusal for replacement (for example a future
-`pterm shutdown` or an update RPC) needs broker RPC support. Today the check is
-done by `pterm setup` / `pterm uninstall` through the session list before they
-change the broker registration. Database backup before migration is not yet
-implemented.
+To update now instead of waiting for sessions to finish, run `pterm shutdown`
+first: it ends every session only after you confirm. Pending: a broker-side
+refusal for replacement (an update RPC) needs broker RPC support. Today the
+check is done by `pterm setup` / `pterm uninstall` through the session list
+before they change the broker registration. Database backup before migration is
+not yet implemented.
 
 ## Uninstall
 

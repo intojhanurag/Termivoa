@@ -21,6 +21,7 @@ type ProtocolTypes struct {
 	AdminRPCProjectListResult        AdminRPCProjectListResultPayload        `json:"adminRPCProjectListResult"`
 	AdminRPCProjectResult            AdminRPCProjectResultPayload            `json:"adminRPCProjectResult"`
 	AdminRPCShellProfile             AdminRPCShellProfile                    `json:"adminRPCShellProfile"`
+	AdminRPCShutdownResult           AdminRPCShutdownResultPayload           `json:"adminRPCShutdownResult"`
 	BrokerRPCEmpty                   BrokerRPCEmptyPayload                   `json:"brokerRPCEmpty"`
 	BrokerRPCError                   BrokerRPCErrorPayload                   `json:"brokerRPCError"`
 	BrokerRPCMessageType             BrokerRPCMessageType                    `json:"brokerRPCMessageType"`
@@ -169,6 +170,12 @@ type AdminRPCProjectListResultPayload struct {
 
 type AdminRPCProjectResultPayload struct {
 	Project AdminRPCProject `json:"project"`
+}
+
+// Sent after every live session was terminated through the normal termination path and
+// before the broker stops serving.
+type AdminRPCShutdownResultPayload struct {
+	TerminatedSessions int64 `json:"terminatedSessions"`
 }
 
 type BrokerRPCEmptyPayload struct {
@@ -610,6 +617,8 @@ const (
 	AdminDeviceRevoke        AdminRPCMessageType = "admin.device.revoke"
 	AdminDeviceRevokeResult  AdminRPCMessageType = "admin.device.revoke.result"
 	AdminError               AdminRPCMessageType = "admin.error"
+	AdminGatewayStop         AdminRPCMessageType = "admin.gateway.stop"
+	AdminGatewayStopResult   AdminRPCMessageType = "admin.gateway.stop.result"
 	AdminPairApprove         AdminRPCMessageType = "admin.pair.approve"
 	AdminPairApproveResult   AdminRPCMessageType = "admin.pair.approve.result"
 	AdminPairGrant           AdminRPCMessageType = "admin.pair.grant"
@@ -624,6 +633,8 @@ const (
 	AdminProjectAddResult    AdminRPCMessageType = "admin.project.add.result"
 	AdminProjectList         AdminRPCMessageType = "admin.project.list"
 	AdminProjectListResult   AdminRPCMessageType = "admin.project.list.result"
+	AdminShutdown            AdminRPCMessageType = "admin.shutdown"
+	AdminShutdownResult      AdminRPCMessageType = "admin.shutdown.result"
 )
 
 type ErrorCode string

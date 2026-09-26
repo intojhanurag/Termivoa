@@ -103,7 +103,7 @@ func TestPairPrintsGrantOnlyInsideLink(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			admin := &fakeAdmin{grant: testGrant(test.configured)}
 			var output bytes.Buffer
-			if err := Pair(context.Background(), admin, test.flag, &output); err != nil {
+			if err := Pair(context.Background(), admin, test.flag, false, &output); err != nil {
 				t.Fatal(err)
 			}
 			text := output.String()
@@ -122,7 +122,8 @@ func TestPairPrintsGrantOnlyInsideLink(t *testing.T) {
 				}
 			}
 			if !found || !strings.Contains(text, "2026-09-27T00:02:00Z") ||
-				!strings.Contains(text, "`pterm pair approve <pending-id>`") || !strings.Contains(text, "No QR code") {
+				!strings.Contains(text, "`pterm pair approve <pending-id>`") || strings.Contains(text, "\x1b[") ||
+				!strings.Contains(text, "Open this link") {
 				t.Fatalf("unexpected pairing output %q", text)
 			}
 		})
@@ -132,7 +133,7 @@ func TestPairPrintsGrantOnlyInsideLink(t *testing.T) {
 func TestPairWithoutOriginExplainsHowToConfigure(t *testing.T) {
 	admin := &fakeAdmin{grant: testGrant(nil)}
 	var output bytes.Buffer
-	err := Pair(context.Background(), admin, "", &output)
+	err := Pair(context.Background(), admin, "", true, &output)
 	if err == nil || !strings.Contains(err.Error(), "pterm config origin https://<your-private-host>") ||
 		!strings.Contains(err.Error(), "--origin") || strings.Contains(err.Error(), adminGrant) {
 		t.Fatalf("unexpected missing-origin error: %v", err)
@@ -145,7 +146,7 @@ func TestPairWithoutOriginExplainsHowToConfigure(t *testing.T) {
 func TestPairRejectsInvalidOriginFlagBeforeCreatingGrant(t *testing.T) {
 	for _, flag := range []string{"http://example.com", "https://Example.com", "https://host/path", "ftp://host"} {
 		admin := &fakeAdmin{grant: testGrant(nil)}
-		if err := Pair(context.Background(), admin, flag, &bytes.Buffer{}); err == nil {
+		if err := Pair(context.Background(), admin, flag, true, &bytes.Buffer{}); err == nil {
 			t.Fatalf("origin %q accepted", flag)
 		}
 		if admin.grantCalls != 0 {
