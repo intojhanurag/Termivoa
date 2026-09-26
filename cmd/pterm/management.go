@@ -20,6 +20,12 @@ Available commands:
   pterm terminate <session-id>        Confirm and end one managed process tree.
   pterm attach [--control] <id>       View a session; --control explicitly takes control.
   pterm new --project <id> --shell <id> Create and take control of a new session.
+  pterm setup [--apply] [--yes]      Read-only checks; --apply registers per-user startup.
+  pterm doctor                       Read-only diagnostics; never prints secrets.
+  pterm uninstall [--dry-run] [--yes] [--delete-data]
+                                     Remove startup registration; data only with --delete-data.
+  pterm launch [--no-open]           Start broker and gateway if needed; open the local page.
+  pterm up --dev [--listen <addr>]   Development harness: broker and gateway as separate processes.
   pterm help                         Show this help.
 
 Local commands talk to the existing broker; they never start or replace it.

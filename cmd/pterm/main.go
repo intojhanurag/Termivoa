@@ -50,6 +50,16 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return runAttachCommand(ctx, args[1:], input, output)
 	case "new":
 		return runNewCommand(ctx, args[1:], input, output)
+	case "setup":
+		return runSetupCommand(ctx, args[1:], input, output)
+	case "doctor":
+		return runDoctorCommand(ctx, args[1:], output)
+	case "uninstall":
+		return runUninstallCommand(ctx, args[1:], input, output)
+	case "launch":
+		return runLaunchCommand(ctx, args[1:], output)
+	case "up":
+		return runUpCommand(ctx, args[1:], output)
 	case brokerMode:
 		config, err := parseBrokerConfig(args[1:])
 		if err != nil {
