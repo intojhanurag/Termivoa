@@ -65,6 +65,7 @@ const NAMED_KEYS: Readonly<Record<string, KeyName>> = {
 
 const PRINTABLE_ASCII = /^[!-~]$/u;
 const LINE_BREAK = /\r\n|\r|\n/u;
+const SINGLE_LINE_BREAK = /^(?:\r\n|\r|\n)$/u;
 const DISALLOWED_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/gu;
 
 export const NO_MODIFIERS: Modifiers = Object.freeze({ shift: false, alt: false, ctrl: false, meta: false });
@@ -266,6 +267,12 @@ export class InputController {
   }
 
   private emitText(data: string): void {
+    // Keyboard clipboard chips and text replacements insert text without a
+    // paste event; multiline content must still get the composer's confirmation.
+    if (LINE_BREAK.test(data) && !SINGLE_LINE_BREAK.test(data)) {
+      this.sink.paste(data);
+      return;
+    }
     const latch = this.consumeLatch();
     if ((latch.ctrl || latch.alt) && [...data].length === 1) {
       const modifiers = { ...NO_MODIFIERS, ...latch };

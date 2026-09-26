@@ -124,6 +124,15 @@ describe('InputController', () => {
     expect(calls).toEqual([['paste', 'rm -rf build\nmake']]);
   });
 
+  it('routes multiline keyboard insertions to the composer instead of sending Enter', () => {
+    const { calls, fire } = harness();
+    fire('beforeinput', { inputType: 'insertText', data: 'make\nmake install' });
+    fire('compositionstart');
+    fire('compositionend', { data: 'a\r\nb' });
+    fire('beforeinput', { inputType: 'insertText', data: '\n' });
+    expect(calls).toEqual([['paste', 'make\nmake install'], ['paste', 'a\r\nb'], ['key', 'enter', none]]);
+  });
+
   it('clears the field after input so text is never re-read', () => {
     const { field, fire } = harness();
     field.value = 'stale';
