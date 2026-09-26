@@ -209,6 +209,24 @@ describe('Connection', () => {
     expect(connection.getStatus().notice).toBeUndefined();
   });
 
+  it('drops the lease after a rejected input so later input cannot fall into a sequence gap', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    await takeControl(connection, socket());
+    connection.sendText('a');
+    connection.sendText('b');
+    socket().receive('input.rejected', { inputSequence: '1', code: 'limit_exceeded', message: 'session resource limit reached' });
+
+    expect(connection.getStatus()).toMatchObject({ control: 'observer', notice: 'session resource limit reached' });
+    expect(socket().sent.at(-1)).toMatchObject({ type: 'control.release', payload: { lease } });
+    expect(connection.sendText('c')).toBe(false);
+    expect(socket().types().filter((type) => type === 'input.text')).toHaveLength(2);
+
+    await takeControl(connection, socket());
+    connection.sendText('d');
+    expect(socket().sent.at(-1)).toMatchObject({ type: 'input.text', payload: { text: 'd', inputSequence: '1' } });
+  });
+
   it('shows a lost session when the session generation changes', async () => {
     const { connection, socket } = harness();
     await attachLive(socket());

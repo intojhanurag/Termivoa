@@ -383,14 +383,22 @@ export class Connection {
         case 'input.accepted':
           this.sender?.accepted(message.payload.inputSequence);
           return;
-        case 'input.rejected':
-          this.sender?.rejected(message.payload.inputSequence);
-          if (message.payload.code === 'stale_lease' || message.payload.code === 'not_controller') {
-            this.dropControl(message.payload.message);
-          } else {
-            this.update({ notice: message.payload.message });
+        case 'input.rejected': {
+          // The broker never advances its high-water mark for a rejected
+          // sequence, so every later sequence on this lease is a gap. Stop
+          // sending and require an explicit Take control for a fresh lease.
+          const { code, inputSequence, message: text } = message.payload;
+          this.sender?.rejected(inputSequence);
+          const lease = this.lease;
+          if (lease !== undefined && code !== 'stale_lease' && code !== 'not_controller') {
+            this.sendSession('control.release', { lease });
           }
+          this.sender?.disconnect();
+          this.sender = undefined;
+          this.dropControl(undefined);
+          this.update({ notice: text });
           return;
+        }
         case 'session.state':
           this.update({ sessionState: message.payload.state, exitCode: message.payload.exitCode });
           if (message.payload.state === 'lost') {
