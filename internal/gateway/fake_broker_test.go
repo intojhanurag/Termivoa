@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
@@ -155,6 +156,7 @@ type fakeStream struct {
 	toPhone, fromPhone chan []byte
 	end, closed        chan struct{}
 	endOnce, closeOnce sync.Once
+	sendErr            atomic.Pointer[gatewayapi.Error]
 }
 
 var errStreamEnded = errors.New("stream ended")
@@ -162,6 +164,9 @@ var errStreamEnded = errors.New("stream ended")
 func (stream *fakeStream) finish() { stream.endOnce.Do(func() { close(stream.end) }) }
 
 func (stream *fakeStream) Send(ctx context.Context, envelope []byte) error {
+	if rejected := stream.sendErr.Load(); rejected != nil {
+		return rejected
+	}
 	select {
 	case stream.fromPhone <- envelope:
 		return nil

@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
@@ -35,7 +36,7 @@ func (stream *liveStream) Send(ctx context.Context, envelope []byte) error {
 		return err
 	}
 	if _, err := protocol.DecodeClient(envelope); err != nil {
-		return fmt.Errorf("gatewayclient: invalid live client message: %w", err)
+		return &gatewayapi.Error{Code: protocol.InvalidRequest, Message: "message does not match protocol v1; reconnecting is required"}
 	}
 	stream.sendMu.Lock()
 	defer stream.sendMu.Unlock()

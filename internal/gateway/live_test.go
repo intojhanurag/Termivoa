@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
@@ -322,4 +323,39 @@ func TestLivePingKeepsResponsivePhone(t *testing.T) {
 		t.Fatal("socket closed")
 	case <-time.After(200 * time.Millisecond):
 	}
+}
+
+// A message the broker boundary rejects as malformed reaches the phone as a
+// typed error before the socket closes, not as a generic host failure.
+func TestLiveRejectedMessageSendsTypedErrorThenCloses(t *testing.T) {
+	broker := newFakeBroker()
+	_, bound := startLive(t, broker)
+	conn, _, err := dialLive(t, bound, liveHeader(bound, validCredential))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	stream := openedStream(t, broker)
+	stream.sendErr.Store(&gatewayapi.Error{Code: protocol.InvalidRequest, Message: "message does not match protocol v1"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"version":1,"type":"input.key","payload":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	kind, data, err := conn.Read(ctx)
+	if err != nil || kind != websocket.MessageText {
+		t.Fatalf("read notice: %v %v", kind, err)
+	}
+	envelope, err := protocol.DecodeHost(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := protocol.DecodePayload[protocol.ErrorPayload](envelope)
+	if err != nil || envelope.Type != protocol.Error || payload.Code != protocol.InvalidRequest {
+		t.Fatalf("notice = %s (%v)", data, err)
+	}
+	if _, _, err := conn.Read(ctx); websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
+		t.Fatalf("close = %v, want policy violation", err)
+	}
+	waitClosed(t, stream)
 }
