@@ -111,7 +111,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 // CreateGrant returns a fresh two-minute grant. Its transport value is
 // returned only to the restricted local CLI and never persisted.
 func (service *Service) CreateGrant(ctx context.Context) (string, time.Time, error) {
-	now := service.now().UTC()
+	now := service.clock()
 	secret, err := generateSecret(service.random)
 	if err != nil {
 		return "", time.Time{}, err
@@ -137,7 +137,7 @@ func (service *Service) CreateGrant(ctx context.Context) (string, time.Time, err
 // Redeem atomically consumes a grant and creates a pending pairing with an
 // independent poll secret and a human comparison code.
 func (service *Service) Redeem(ctx context.Context, grant, label string) (protocol.HTTPPairRedeemResponse, error) {
-	now := service.now().UTC()
+	now := service.clock()
 	if !service.allow(&service.redeems, now) {
 		return protocol.HTTPPairRedeemResponse{}, ErrRateLimited
 	}
@@ -185,18 +185,18 @@ func (service *Service) Redeem(ctx context.Context, grant, label string) (protoc
 }
 
 func (service *Service) Pending(ctx context.Context) ([]store.PendingPairing, error) {
-	return service.store.ListPendingPairings(ctx, service.now().UTC(), protocol.MaxAdminPendingPairings)
+	return service.store.ListPendingPairings(ctx, service.clock(), protocol.MaxAdminPendingPairings)
 }
 
 // Approve is reachable only through restricted local administration.
 func (service *Service) Approve(ctx context.Context, pendingID string) error {
-	return mapStoreError(service.store.ApprovePendingPairing(ctx, pendingID, service.now().UTC()))
+	return mapStoreError(service.store.ApprovePendingPairing(ctx, pendingID, service.clock()))
 }
 
 // Poll requires the independent poll secret. The approved poll atomically
 // creates the device and credential; the plaintext exists only in this result.
 func (service *Service) Poll(ctx context.Context, pendingID, pollSecret string) (PollResult, error) {
-	now := service.now().UTC()
+	now := service.clock()
 	if !service.allow(&service.polls, now) {
 		return PollResult{}, ErrRateLimited
 	}
@@ -265,7 +265,7 @@ func (service *Service) Authenticate(ctx context.Context, credential string) (Pr
 }
 
 func (service *Service) resolve(ctx context.Context, credential string) (Principal, error) {
-	now := service.now().UTC()
+	now := service.clock()
 	parsed, err := ParseSecret(credential)
 	if err != nil {
 		return Principal{}, ErrUnauthorized
@@ -352,7 +352,7 @@ func (service *Service) Logout(ctx context.Context, credential string) error {
 		return binding.principal.CredentialID == principal.CredentialID
 	}, ErrRevoked)
 	service.mu.Unlock()
-	persistErr := service.store.RevokeCredential(ctx, principal.CredentialID, service.now().UTC())
+	persistErr := service.store.RevokeCredential(ctx, principal.CredentialID, service.clock())
 	return errors.Join(persistErr, waitReleased(ctx, targets, service.cleanupTimeout))
 }
 
@@ -371,7 +371,7 @@ func (service *Service) RevokeDevice(ctx context.Context, deviceID string) (int,
 		return binding.principal.DeviceID == deviceID
 	}, ErrRevoked)
 	service.mu.Unlock()
-	credentials, err := service.store.RevokeDevice(ctx, deviceID, service.now().UTC())
+	credentials, err := service.store.RevokeDevice(ctx, deviceID, service.clock())
 	if errors.Is(err, store.ErrDeviceMissing) {
 		if !previouslyRevoked {
 			service.mu.Lock()
@@ -416,6 +416,12 @@ func waitReleased(ctx context.Context, bindings []*Binding, timeout time.Duratio
 		}
 	}
 	return nil
+}
+
+// clock returns the current time at SQLite's millisecond resolution, so every
+// reported expiry equals the persisted one.
+func (service *Service) clock() time.Time {
+	return service.now().UTC().Truncate(time.Millisecond)
 }
 
 func (service *Service) allow(window *rateWindow, now time.Time) bool {
