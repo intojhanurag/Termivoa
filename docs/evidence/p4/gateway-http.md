@@ -102,7 +102,7 @@ attach in a native outer PTY and does not use the gateway.
   from `127.0.0.1`, so the limits are effectively global for that origin.
 - The gateway checks that inbound WebSocket messages are one JSON object; the
   broker validates envelope semantics.
-- Vite source maps (`build.sourcemap: true`) are embedded and served.
+- Vite source maps (`build.sourcemap: true`) stay in `web/dist` only; they are not embedded or served (see the review pass below).
 
 ## Owner verification needed
 
@@ -118,3 +118,55 @@ attach in a native outer PTY and does not use the gateway.
 - End-to-end with the real broker client (`internal/gatewayclient`) once the
   lead wires `config.Broker`; the relay is tested only with a fake broker.
 - Windows gateway runtime (only cross-compiled `go vet` ran here).
+
+## Review pass 2026-09-27
+
+Adversarial review of `git diff eb8421a..HEAD` by a second agent on the same
+account (not an independent reviewer). Each fixed finding has a test that
+failed before the fix.
+
+| # | Severity | Finding | Status |
+| --- | --- | --- | --- |
+| 1 | Medium | `decodeStrict` used `encoding/json` v1, which matches field names case-insensitively. `{"GRANT":...}` was accepted, and `{"grant":A,...,"Grant":B}` slipped past the duplicate-key check and used `B`. | Fixed: `encoding/json/v2` `Unmarshal` with `RejectUnknownMembers(true)` (case-sensitive, rejects duplicates, invalid UTF-8, lone surrogates and trailing data). The hand-written token scan is deleted. |
+| 2 | Low | Duplicate session cookies: `request.Cookie` took the first one, so a cookie tossed with a longer `Path` (possible for `pterm_dev_session` from another localhost port; `__Host-` blocks it in production) chose the credential. | Fixed: exactly one session cookie is required; duplicates are treated as malformed (401, counted as an auth failure, cookie cleared). |
+| 3 | Medium | Source maps and dotfiles were served: `*.map` exposed the original web source, and `all:dist` would also serve `.vite/manifest.json` or `.DS_Store`. | Fixed: the static handler returns 404 for `*.map` and any path segment starting with `.`; `scripts/embed-web.sh` deletes `*.map` after copying (maps stay in `web/dist` for local debugging). |
+| 4 | Low | An origin with a default or empty port (`https://host:443`, `http://localhost:80`, `https://host:`) was accepted but can never match, because browsers omit default ports in `Origin` and `Host`. It failed closed with a silent 421/403. | Fixed: rejected at configuration time. |
+| 5 | Low | The exact origin was passed to coder/websocket `OriginPatterns`, which uses `path.Match`. IPv6 brackets (`http://[::1]:5173`, dev only) became a character class, so a valid cross-origin dev upgrade got 403 after the exact check passed. | Fixed: glob metacharacters are escaped; the exact check stays authoritative. |
+| 6 | Low | `pairPoll` checked `time.Until(expiry) > 0` and `setCookie` computed Max-Age again. An expiry crossing between the two gives `Max-Age` 0, which Go omits, so the cookie would become a browser-session cookie with no expiry. | Fixed: Max-Age is computed once and must be ≥ 1. The race is not deterministic; a sub-second-expired case was added as a regression test. |
+
+Checked with no defect found: every `/api/v1/*` route and the WebSocket
+upgrade reach the broker only with the cookie credential (broker
+re-authorizes; the upgrade also calls `Authenticate` before `OpenLive` and
+before `Accept`); `/api/*` and `/assets/*` misses never fall back to HTML;
+Host check (case, trailing dot, ports, absolute-form request URI, missing
+Host); `null` and duplicate `Origin`; logout requires Origin, the request
+header and `{}`; bodies are bounded by `MaxBytesReader` (chunked and
+Content-Length lies included); no logging of secrets and no broker text on
+internal or transport errors; limiter map bounded at 1024 clients; relay
+read limit, one writer plus concurrent `Ping`, all goroutines joined, broker
+and phone blocking bounded by context cancel and the write timeout;
+shutdown stops live sockets with 1001 before `Run` returns.
+
+Not fixed (notes for the lead):
+
+- Any broker stream end closes the socket with 1008 "access ended", including
+  a broker crash or restart. The `LiveStream` contract does not say how to
+  tell revocation from transport failure; a client must use the
+  `access.revoked` message, not the close code, to decide to re-pair.
+- `http.ServeMux` 301 redirects for unclean paths such as `//api/v1/x` do not
+  carry `Cache-Control: no-store` (path check runs before cleaning). No data
+  is returned.
+- The outgoing budget counts queued messages only; the one message being
+  written (≤ 1 MiB) is extra.
+- The built JS still ends with `//# sourceMappingURL=...`; the map now 404s.
+  `build.sourcemap: 'hidden'` in `web/vite.config.ts` would drop the comment.
+
+Commands after the fixes:
+
+| Command | Result |
+| --- | --- |
+| `GOTOOLCHAIN=go1.27.1 go test -race -count=2 ./internal/gateway/... ./internal/webassets/... ./cmd/...` | pass |
+| `./scripts/embed-web.sh && GOTOOLCHAIN=go1.27.1 go test -race -tags webdist ./internal/gateway/` | pass; no `*.map` in `internal/webassets/dist` |
+| `GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go vet ./...` | pass |
+| `GOTOOLCHAIN=go1.27.1 go vet ./...` | pass |
+| `gofmt -l cmd internal` | no output |
