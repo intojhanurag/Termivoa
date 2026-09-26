@@ -29,6 +29,16 @@ describe('takeGrantFromFragment', () => {
     expect(replaceState).toHaveBeenLastCalledWith(null, '', '/pair?x=1');
   });
 
+  it('strips a fragment on any path but accepts a grant only on /pair', () => {
+    const replaceState = vi.fn();
+    expect(takeGrantFromFragment({ hash: `#${grant}`, pathname: '/pair/', search: '' }, { replaceState }))
+      .toBeUndefined();
+    expect(replaceState).toHaveBeenLastCalledWith(null, '', '/pair/');
+    expect(takeGrantFromFragment({ hash: `#${grant}`, pathname: '/', search: '' }, { replaceState }))
+      .toBeUndefined();
+    expect(replaceState).toHaveBeenLastCalledWith(null, '', '/');
+  });
+
   it('does nothing without a fragment', () => {
     const replaceState = vi.fn();
     expect(takeGrantFromFragment({ hash: '', pathname: '/pair', search: '' }, { replaceState })).toBeUndefined();

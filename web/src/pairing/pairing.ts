@@ -14,8 +14,10 @@ interface HistoryLike {
 }
 
 /**
- * Reads the pairing grant from the URL fragment and removes the fragment from
- * the history entry before anything else can observe it. Call once at startup.
+ * Removes any URL fragment from the history entry before anything else can
+ * observe it, and returns the pairing grant only on /pair. The app never uses
+ * fragments, so a mistyped path must not leave a secret in the URL. Call once
+ * at startup.
  */
 export function takeGrantFromFragment(location: LocationLike, history: HistoryLike): string | undefined {
   const raw = location.hash.replace(/^#/u, '');
@@ -23,6 +25,9 @@ export function takeGrantFromFragment(location: LocationLike, history: HistoryLi
     return undefined;
   }
   history.replaceState(null, '', `${location.pathname}${location.search}`);
+  if (location.pathname !== '/pair') {
+    return undefined;
+  }
   const grant = raw.startsWith('grant=') ? raw.slice('grant='.length) : raw;
   return GRANT.test(grant) ? grant : undefined;
 }

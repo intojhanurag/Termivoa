@@ -7,11 +7,7 @@ import './styles/global.css';
 
 // Read and strip the pairing fragment before anything renders. The grant
 // lives only in this in-memory holder until it is redeemed.
-const grant: GrantHolder = {
-  value: window.location.pathname === '/pair'
-    ? takeGrantFromFragment(window.location, window.history)
-    : undefined,
-};
+const grant: GrantHolder = { value: takeGrantFromFragment(window.location, window.history) };
 
 const root = document.getElementById('root');
 
