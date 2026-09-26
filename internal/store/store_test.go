@@ -38,8 +38,8 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	if err := store.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 3 {
-		t.Fatalf("migration count = %d, want 3", migrations)
+	if migrations != 4 {
+		t.Fatalf("migration count = %d, want 4", migrations)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("close store: %v", err)
@@ -50,8 +50,8 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	if err := reopened.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after reopen: %v", err)
 	}
-	if migrations != 3 {
-		t.Fatalf("migration count after reopen = %d, want 3", migrations)
+	if migrations != 4 {
+		t.Fatalf("migration count after reopen = %d, want 4", migrations)
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(path)
@@ -74,8 +74,8 @@ func TestOpenUpgradesExistingSessionSchemaWithReceiptMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load migrations: %v", err)
 	}
-	if len(migrations) != 3 {
-		t.Fatalf("bundled migrations = %d, want 3", len(migrations))
+	if len(migrations) != 4 {
+		t.Fatalf("bundled migrations = %d, want 4", len(migrations))
 	}
 	if err := applyMigrations(context.Background(), database, migrations[:1], testTime.UnixMilli()); err != nil {
 		t.Fatalf("apply old schema: %v", err)
@@ -90,8 +90,8 @@ func TestOpenUpgradesExistingSessionSchemaWithReceiptMigrations(t *testing.T) {
 	if err := upgraded.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil {
 		t.Fatalf("count upgraded migrations: %v", err)
 	}
-	if applied != 3 {
-		t.Fatalf("upgraded migration count = %d, want 3", applied)
+	if applied != 4 {
+		t.Fatalf("upgraded migration count = %d, want 4", applied)
 	}
 	var receiptsTable int
 	if err := upgraded.database.QueryRow(`SELECT count(*) FROM sqlite_master
