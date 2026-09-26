@@ -92,7 +92,7 @@ func (client *Client) receive(message protocol.Envelope, size int) error {
 		return nil
 	case protocol.AccessRevoked:
 		payload, _ := protocol.DecodePayload[protocol.AccessRevokedPayload](message)
-		return remoteError(protocol.Revoked, payload.Message)
+		return remoteError(protocol.ErrorCodeRevoked, payload.Message)
 	case protocol.Error:
 		return client.hostError(message)
 	default:
@@ -149,7 +149,7 @@ func (client *Client) hostError(message protocol.Envelope) error {
 	if payload.Code == protocol.GenerationChanged {
 		return errors.Join(ErrGenerationChanged, err)
 	}
-	if payload.Code == protocol.Revoked || payload.Code == protocol.SessionLost || payload.Code == protocol.SessionMissing || payload.Code == protocol.Unauthorized {
+	if payload.Code == protocol.ErrorCodeRevoked || payload.Code == protocol.SessionLost || payload.Code == protocol.SessionMissing || payload.Code == protocol.Unauthorized {
 		return err
 	}
 	client.mu.Lock()

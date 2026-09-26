@@ -447,6 +447,9 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 					return err
 				}
 			}
+			if err := validateDeviceStatus(device.Status, device.Revoked); err != nil {
+				return err
+			}
 		}
 		return nil
 	case AdminDeviceRevokeResult:
@@ -529,6 +532,21 @@ func validateAdminPath(value string, absolute bool) error {
 	}
 	if absolute && !filepath.IsAbs(value) && !strings.HasPrefix(value, "/") {
 		return errors.New("path must be absolute")
+	}
+	return nil
+}
+
+// validateDeviceStatus checks status against its enum and against the
+// compatibility revoked flag, which must agree: revoked is kept only for
+// callers that have not moved to status.
+func validateDeviceStatus(status AdminRPCDeviceStatus, revoked bool) error {
+	switch status {
+	case Active, Expired, AdminRPCDeviceStatusRevoked:
+	default:
+		return errors.New("device status is not a recognized value")
+	}
+	if (status == AdminRPCDeviceStatusRevoked) != revoked {
+		return errors.New("device status disagrees with the revoked flag")
 	}
 	return nil
 }

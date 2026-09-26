@@ -293,7 +293,7 @@ func formatRPCTime(value time.Time) string { return value.UTC().Format(time.RFC3
 func classifyAuthError(err error) (managementFailure, bool) {
 	switch {
 	case errors.Is(err, auth.ErrRevoked), errors.Is(err, ErrAccessRevoked):
-		return managementFailure{protocol.Revoked, "browser access was revoked"}, true
+		return managementFailure{protocol.ErrorCodeRevoked, "browser access was revoked"}, true
 	case errors.Is(err, auth.ErrUnauthorized), errors.Is(err, auth.ErrExpired), errors.Is(err, auth.ErrPollSecret):
 		return managementFailure{protocol.Unauthorized, "browser is not authorized"}, true
 	case errors.Is(err, auth.ErrPairingExpired):

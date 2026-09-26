@@ -273,6 +273,7 @@ func adminResponseJSON(t *testing.T, requestID string, messageType protocol.Admi
 
 func testDeviceRecord() protocol.AdminRPCDevice {
 	return protocol.AdminRPCDevice{
-		ID: testDevice, Label: "Phone", CreatedAt: "2026-09-27T00:00:00Z", LastUsedAt: "2026-09-27T00:01:00Z",
+		ID: testDevice, Label: "Phone", Status: protocol.Active,
+		CreatedAt: "2026-09-27T00:00:00Z", LastUsedAt: "2026-09-27T00:01:00Z",
 	}
 }

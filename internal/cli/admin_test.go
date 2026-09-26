@@ -161,7 +161,7 @@ func TestPairPendingAndDevicesEscapeUntrustedLabels(t *testing.T) {
 			ID: adminPending, VerificationCode: "123-456", DeviceLabel: hostileLabel, ExpiresAt: "2026-09-27T00:05:00Z",
 		}},
 		devices: []protocol.AdminRPCDevice{{
-			ID: adminDevice, Label: hostileLabel, Revoked: true,
+			ID: adminDevice, Label: hostileLabel, Revoked: true, Status: protocol.AdminRPCDeviceStatusRevoked,
 			CreatedAt: "2026-09-27T00:00:00Z", LastUsedAt: "2026-09-27T00:01:00Z",
 		}},
 		projects: []protocol.AdminRPCProject{{ID: adminProject, Name: hostileLabel, Path: "/tmp/\x1b[31mred"}},
@@ -207,6 +207,27 @@ func TestAdminListsReportEmpty(t *testing.T) {
 	want := "No pending pairings.\nNo paired devices.\nNo saved projects.\nNo shell profiles.\n"
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
+	}
+}
+
+func TestDevicesPrintsEachStatus(t *testing.T) {
+	admin := &fakeAdmin{devices: []protocol.AdminRPCDevice{
+		{ID: adminDevice, Label: "Active phone", Status: protocol.Active,
+			CreatedAt: "2026-09-27T00:00:00Z", LastUsedAt: "2026-09-27T00:01:00Z"},
+		{ID: adminPending, Label: "Idle phone", Status: protocol.Expired,
+			CreatedAt: "2026-09-01T00:00:00Z", LastUsedAt: "2026-09-01T00:01:00Z"},
+		{ID: adminProject, Label: "Revoked phone", Revoked: true, Status: protocol.AdminRPCDeviceStatusRevoked,
+			CreatedAt: "2026-08-01T00:00:00Z", LastUsedAt: "2026-08-01T00:01:00Z"},
+	}}
+	var output bytes.Buffer
+	if err := Devices(context.Background(), admin, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, want := range []string{"active", "expired", "revoked"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("output %q missing status %q", text, want)
+		}
 	}
 }
 

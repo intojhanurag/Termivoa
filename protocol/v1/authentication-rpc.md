@@ -58,7 +58,7 @@ retracted.
 | `admin.pair.grant` | empty | grant (43-character base64url), `expiresAt`, optional configured `origin` |
 | `admin.pair.pending` | empty | at most 16 unexpired pending pairings: `id`, `verificationCode`, `deviceLabel`, `expiresAt` |
 | `admin.pair.approve` | `pendingId` | `pendingId` |
-| `admin.device.list` | empty | at most 200 devices: `id`, `label`, `revoked`, `createdAt`, `lastUsedAt` |
+| `admin.device.list` | empty | at most 200 devices: `id`, `label`, `revoked`, `status`, `createdAt`, `lastUsedAt` |
 | `admin.device.revoke` | `deviceId` | `deviceId`, `closedStreams` |
 | `admin.project.add` | `path`, optional `name` | the saved project |
 | `admin.project.list` | empty | at most 200 projects |
@@ -85,6 +85,12 @@ cleanly; any other request receives `admin.error` `invalid_request`.
 live stream bound to the device's credentials has been closed. If persistence
 fails, the in-memory revocation stays in force (fail closed) and the caller
 receives an error rather than a success.
+
+A device's `status` is computed with the same rule the device cap uses:
+`revoked` when the device is revoked; otherwise `active` when it holds a
+credential that is unrevoked, before its absolute expiry, and used within the
+7-day inactivity window; otherwise `expired`. `revoked` (boolean) is kept for
+compatibility and is redundant with `status == "revoked"`.
 
 ## Pairing limits and lifetimes
 

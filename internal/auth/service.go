@@ -412,7 +412,7 @@ func (service *Service) RevokeDevice(ctx context.Context, deviceID string) (int,
 }
 
 func (service *Service) Devices(ctx context.Context) ([]store.Device, error) {
-	return service.store.ListDevices(ctx, protocol.MaxAdminDevices)
+	return service.store.ListDevices(ctx, service.clock(), BrowserInactivityLifetime, protocol.MaxAdminDevices)
 }
 
 func (service *Service) revokeBindingsLocked(match func(*Binding) bool, reason error) []*Binding {

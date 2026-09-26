@@ -23,7 +23,7 @@ func TestDecodeIPCHandshake(t *testing.T) {
 
 func TestDecodeIPCErrorMatchesCanonicalErrorCodes(t *testing.T) {
 	codes := []ErrorCode{
-		Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
+		Unauthorized, PairingExpired, PairingPending, ErrorCodeRevoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
 		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
 		OperationConflict, ProjectMissing, ShellProfileMissing,

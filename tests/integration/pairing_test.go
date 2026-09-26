@@ -123,10 +123,10 @@ func TestPairedBrowserControlsSessionUntilRevoked(t *testing.T) {
 		t.Fatalf("receive after access.revoked = %v", err)
 	}
 	var remote *gatewayapi.Error
-	if _, err := gateway.Authenticate(ctx, credential); !errors.As(err, &remote) || remote.Code != protocol.Revoked {
+	if _, err := gateway.Authenticate(ctx, credential); !errors.As(err, &remote) || remote.Code != protocol.ErrorCodeRevoked {
 		t.Fatalf("authenticate after revoke = %v", err)
 	}
-	if _, err := gateway.OpenLive(ctx, credential); !errors.As(err, &remote) || remote.Code != protocol.Revoked {
+	if _, err := gateway.OpenLive(ctx, credential); !errors.As(err, &remote) || remote.Code != protocol.ErrorCodeRevoked {
 		t.Fatalf("open live after revoke = %v", err)
 	}
 	status, err := managed.Status(ctx)

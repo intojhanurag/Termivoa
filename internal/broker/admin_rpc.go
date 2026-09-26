@@ -114,6 +114,7 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		for _, device := range devices {
 			result.Devices = append(result.Devices, protocol.AdminRPCDevice{
 				ID: device.ID, Label: device.Label, Revoked: device.RevokedAt != nil,
+				Status:    adminDeviceStatus(device.Status),
 				CreatedAt: formatRPCTime(device.CreatedAt), LastUsedAt: formatRPCTime(device.LastUsedAt),
 			})
 		}
@@ -235,6 +236,20 @@ func (server *ManagementServer) addProject(ctx context.Context, payload protocol
 	}
 	record, _ := adminProject(project)
 	return record, nil
+}
+
+// adminDeviceStatus maps the store's live-credential status to the wire
+// enum. An unrecognized store value fails closed to revoked rather than
+// reporting a paired device as active.
+func adminDeviceStatus(status store.DeviceStatus) protocol.AdminRPCDeviceStatus {
+	switch status {
+	case store.DeviceActive:
+		return protocol.Active
+	case store.DeviceExpired:
+		return protocol.Expired
+	default:
+		return protocol.AdminRPCDeviceStatusRevoked
+	}
 }
 
 func adminProject(project store.Project) (protocol.AdminRPCProject, bool) {

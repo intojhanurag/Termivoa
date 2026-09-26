@@ -230,7 +230,7 @@ func TestDeviceCapacityPrunesOnlyRevokedDevices(t *testing.T) {
 	if err := pair(4); err != nil {
 		t.Fatalf("revoked device was not pruned for capacity: %v", err)
 	}
-	devices, err := store.ListDevices(ctx, 10)
+	devices, err := store.ListDevices(ctx, testTime, testLimits.CredentialIdle, 10)
 	if err != nil || len(devices) != 2 {
 		t.Fatalf("devices = %d, %v", len(devices), err)
 	}
@@ -269,9 +269,9 @@ func TestDeviceCapacityIgnoresExpiredDevices(t *testing.T) {
 		_, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits)
 		return err
 	}
-	listed := func(want ...int) {
+	listed := func(now time.Time, want ...int) {
 		t.Helper()
-		devices, err := store.ListDevices(ctx, 10)
+		devices, err := store.ListDevices(ctx, now, testLimits.CredentialIdle, 10)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -301,7 +301,7 @@ func TestDeviceCapacityIgnoresExpiredDevices(t *testing.T) {
 	if err := pair(3, testTime.Add(2*day), 30*day); err != nil {
 		t.Fatalf("absolutely expired device still counted: %v", err)
 	}
-	listed(2, 3)
+	listed(testTime.Add(2*day), 2, 3)
 	three, _ := testIssue(3, testTime)
 	if _, err := store.RevokeDevice(ctx, three.ID, testTime.Add(2*day)); err != nil {
 		t.Fatal(err)
@@ -312,15 +312,75 @@ func TestDeviceCapacityIgnoresExpiredDevices(t *testing.T) {
 	if err := pair(4, later, 30*day); err != nil {
 		t.Fatalf("pairing with revoked and idle-expired devices = %v", err)
 	}
-	listed(2, 4)
+	listed(later, 2, 4)
 	if err := pair(5, later, 30*day); err != nil {
 		t.Fatalf("idle-expired device still counted: %v", err)
 	}
-	listed(4, 5)
+	listed(later, 4, 5)
 	if err := pair(6, later, 30*day); !errors.Is(err, ErrDeviceCapacity) {
 		t.Fatalf("live devices were pruned: %v", err)
 	}
-	listed(4, 5)
+	listed(later, 4, 5)
+}
+
+// TestListDevicesStatus checks every status ListDevices reports: active,
+// expired by absolute expiry despite recent use, expired by 7-day inactivity
+// despite a distant absolute expiry, and revoked (which overrides a live
+// credential).
+func TestListDevicesStatus(t *testing.T) {
+	testStore := openTestStore(t, filepath.Join(t.TempDir(), "status.sqlite"))
+	defer testStore.Close()
+	ctx := context.Background()
+	day := 24 * time.Hour
+	checkTime := testTime.Add(30 * day)
+	credentialIdle := 7 * day
+	limits := PairingLimits{FailedPolls: 3, Devices: 8, CredentialIdle: credentialIdle}
+
+	issue := func(number int, lastUsed, expires time.Time) Device {
+		grant := PairingGrant{ID: testUUID(number), Hash: testHash(fmt.Sprint("grant", number)), CreatedAt: testTime, ExpiresAt: testTime.Add(time.Minute)}
+		pending := testPending(number, testTime)
+		if err := testStore.CreatePairingGrant(ctx, grant, 8); err != nil {
+			t.Fatal(err)
+		}
+		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+			t.Fatal(err)
+		}
+		if err := testStore.ApprovePendingPairing(ctx, pending.ID, testTime); err != nil {
+			t.Fatal(err)
+		}
+		device, session := testIssue(number, testTime)
+		session.LastUsedAt, session.ExpiresAt = lastUsed, expires
+		issued, approved, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, limits)
+		if err != nil || !approved {
+			t.Fatalf("issue device %d = %v, %v", number, approved, err)
+		}
+		return issued
+	}
+
+	active := issue(1, checkTime.Add(-1*day), checkTime.Add(20*day))
+	absoluteExpired := issue(2, checkTime.Add(-1*day), checkTime.Add(-time.Hour))
+	inactiveExpired := issue(3, checkTime.Add(-8*day), checkTime.Add(20*day))
+	revoked := issue(4, checkTime.Add(-1*day), checkTime.Add(20*day))
+	if _, err := testStore.RevokeDevice(ctx, revoked.ID, testTime); err != nil {
+		t.Fatal(err)
+	}
+
+	devices, err := testStore.ListDevices(ctx, checkTime, credentialIdle, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]DeviceStatus{}
+	for _, device := range devices {
+		status[device.ID] = device.Status
+	}
+	for id, want := range map[string]DeviceStatus{
+		active.ID: DeviceActive, absoluteExpired.ID: DeviceExpired,
+		inactiveExpired.ID: DeviceExpired, revoked.ID: DeviceRevoked,
+	} {
+		if got := status[id]; got != want {
+			t.Fatalf("device %s status = %q, want %q", id, got, want)
+		}
+	}
 }
 
 func TestAuthenticationMigrationUpgradesAndRollsBackOnConflict(t *testing.T) {

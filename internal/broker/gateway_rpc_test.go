@@ -160,6 +160,57 @@ func TestPeerRoleSelectsTheOnlyReachableRPCSchema(t *testing.T) {
 	}
 }
 
+// TestAdminDeviceListReportsStatus checks that admin.device.list surfaces the
+// store's live-credential status: freshly paired devices are active, a
+// credential that ages past its lifetime reports expired, and revocation
+// overrides an already-expired credential.
+func TestAdminDeviceListReportsStatus(t *testing.T) {
+	fixture, _, _, service, clock := newAuthStreamFixture(t)
+	local := startRPCTestClient(t, fixture.server, protocol.CLI)
+	day := 24 * time.Hour
+	base := clock.Now()
+
+	alpha := pairDevice(t, service, "Alpha")
+	bravo := pairDevice(t, service, "Bravo")
+
+	statusByID := func() map[string]protocol.AdminRPCDevice {
+		t.Helper()
+		result, err := protocol.DecodeRPCPayload[protocol.AdminRPCDeviceListResultPayload](
+			local.admin(t, protocol.AdminDeviceList, protocol.BrokerRPCEmptyPayload{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		byID := map[string]protocol.AdminRPCDevice{}
+		for _, device := range result.Devices {
+			byID[device.ID] = device
+		}
+		return byID
+	}
+
+	devices := statusByID()
+	if devices[alpha.DeviceID].Status != protocol.Active || devices[bravo.DeviceID].Status != protocol.Active {
+		t.Fatalf("freshly paired devices = %#v", devices)
+	}
+
+	// Past both the 30-day absolute and 7-day inactivity lifetime.
+	clock.Set(base.Add(31 * day))
+	devices = statusByID()
+	if devices[alpha.DeviceID].Status != protocol.Expired || devices[bravo.DeviceID].Status != protocol.Expired {
+		t.Fatalf("expired devices = %#v", devices)
+	}
+
+	if _, err := service.RevokeDevice(context.Background(), bravo.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	devices = statusByID()
+	if devices[alpha.DeviceID].Status != protocol.Expired {
+		t.Fatalf("alpha status changed after bravo revocation = %#v", devices[alpha.DeviceID])
+	}
+	if devices[bravo.DeviceID].Status != protocol.AdminRPCDeviceStatusRevoked || !devices[bravo.DeviceID].Revoked {
+		t.Fatalf("revoked device = %#v", devices[bravo.DeviceID])
+	}
+}
+
 func TestGatewayPairingAndCredentialAuthorizedSessionRPC(t *testing.T) {
 	fixture, _, _, service, _ := newAuthStreamFixture(t)
 	local := startRPCTestClient(t, fixture.server, protocol.CLI)
@@ -255,7 +306,7 @@ func TestGatewayPairingAndCredentialAuthorizedSessionRPC(t *testing.T) {
 		{protocol.GatewayAuthCheck, credentialPayload(credential)}, {protocol.GatewaySessionList, credentialPayload(credential)},
 		{protocol.GatewayLiveOpen, credentialPayload(credential)},
 	} {
-		if code := gatewayErrorCode(t, gateway.gateway(t, request.messageType, request.payload)); code != protocol.Revoked {
+		if code := gatewayErrorCode(t, gateway.gateway(t, request.messageType, request.payload)); code != protocol.ErrorCodeRevoked {
 			t.Fatalf("%s after revocation = %s", request.messageType, code)
 		}
 	}

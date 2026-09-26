@@ -310,7 +310,7 @@ func TestAuthenticatedRoutes(t *testing.T) {
 		})
 	}
 	revoked := do(handler, http.MethodGet, "/api/v1/settings", "", requestOptions{cookie: productionCookieName + "=" + revokedCredential, remote: "192.0.2.10:1"})
-	if errorCode(t, revoked) != protocol.Revoked || !strings.Contains(revoked.Header().Get("Set-Cookie"), "Max-Age=0") {
+	if errorCode(t, revoked) != protocol.ErrorCodeRevoked || !strings.Contains(revoked.Header().Get("Set-Cookie"), "Max-Age=0") {
 		t.Fatalf("revoked = %s %v", revoked.Body, revoked.Header())
 	}
 	if response := do(handler, http.MethodPatch, "/api/v1/sessions/not-a-uuid", renameBody, requestOptions{cookie: prodCookie}); response.Code != 400 {

@@ -285,8 +285,5 @@ func writeTable(output io.Writer, header string, rows int, row func(int) string)
 }
 
 func deviceStatus(device protocol.AdminRPCDevice) string {
-	if device.Revoked {
-		return "revoked"
-	}
-	return "active"
+	return string(device.Status)
 }
