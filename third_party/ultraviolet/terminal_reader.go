@@ -40,6 +40,15 @@ type TerminalReader struct {
 	// to further decoding, so a rejected paste cannot become subsequent keys.
 	MaxPasteBytes   int
 	MaxPendingBytes int
+	// InputEpoch optionally tags reads and decoded events with an application
+	// admission epoch. Zero means rejected input. Configure before streaming;
+	// the callback must be concurrency-safe and must not block. Epochs must
+	// never be reused. This requires bounded ContextReader mode; ordinary
+	// readers retain their upstream shapes. Mixed-epoch fragments are tagged zero.
+	InputEpoch       func() uint64
+	inputEpoch       uint64
+	pasteInputEpoch  uint64
+	pasteInputActive bool
 
 	// MouseMode determines whether mouse events are enabled or not. This is a
 	// platform-specific feature and is only available on Windows. When this is
@@ -127,7 +136,19 @@ const readBufSize = 4096
 
 // sendBytes reads data from the reader and sends it to the provided channel.
 // It stops when an error occurs or when the context is closed.
-func (d *TerminalReader) sendBytes(ctx context.Context, readc chan []byte) error {
+type inputRead struct {
+	data  []byte
+	epoch uint64
+}
+
+// InputEpochEvent preserves admission at read/decode time, not a physical
+// keystroke timestamp. Consumers still recheck the epoch before sending input.
+type InputEpochEvent struct {
+	Event Event
+	Epoch uint64
+}
+
+func (d *TerminalReader) sendBytes(ctx context.Context, readc chan inputRead) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -141,13 +162,17 @@ func (d *TerminalReader) sendBytes(ctx context.Context, readc chan []byte) error
 			n, err = d.r.Read(readBuf[:])
 		}
 		if n > 0 {
+			read := inputRead{data: readBuf[:n]}
+			if d.InputEpoch != nil {
+				read.epoch = d.InputEpoch()
+			}
 			select {
 			case <-ctx.Done():
 				if err != nil && (d.MaxPasteBytes > 0 || d.MaxPendingBytes > 0) {
 					return errors.Join(ctx.Err(), err)
 				}
 				return ctx.Err()
-			case readc <- readBuf[:n]:
+			case readc <- read:
 			}
 		}
 		if err != nil {
@@ -180,6 +205,12 @@ func (d *TerminalReader) StreamEvents(ctx context.Context, eventc chan<- Event) 
 		return errors.New("terminal input limits must not be negative")
 	}
 	bounded := d.MaxPasteBytes > 0 || d.MaxPendingBytes > 0
+	if d.InputEpoch != nil && !bounded {
+		return errors.New("input admission epochs require bounded decoding")
+	}
+	if _, ok := d.r.(ContextReader); d.InputEpoch != nil && !ok {
+		return errors.New("input admission epochs require a ContextReader")
+	}
 	if _, ok := d.r.(ContextReader); bounded && !ok {
 		return errors.New("bounded terminal input requires a ContextReader")
 	}
@@ -190,7 +221,7 @@ func (d *TerminalReader) StreamEvents(ctx context.Context, eventc chan<- Event) 
 	ctx, cancel := context.WithCancel(ctx)
 	var buf bytes.Buffer
 	errc := make(chan error, 1)
-	readc := make(chan []byte)
+	readc := make(chan inputRead)
 	timeout := time.NewTimer(d.EscTimeout)
 	defer timeout.Stop()
 	ttimeout := time.Now().Add(d.EscTimeout)
@@ -277,12 +308,22 @@ func (d *TerminalReader) StreamEvents(ctx context.Context, eventc chan<- Event) 
 			}
 
 		case read := <-readc:
-			d.logf("input: %q", read)
-			if d.MaxPendingBytes > 0 && len(read) > d.MaxPendingBytes-buf.Len() {
+			d.logf("input: %q", read.data)
+			if d.MaxPendingBytes > 0 && len(read.data) > d.MaxPendingBytes-buf.Len() {
 				d.eventScanner.inputErr = ErrPendingInputLimit
 				return ErrPendingInputLimit
 			}
-			buf.Write(read)
+			if d.InputEpoch != nil {
+				if buf.Len() == 0 && !d.eventScanner.pendingText() {
+					d.inputEpoch = read.epoch
+				} else if d.inputEpoch != read.epoch {
+					d.inputEpoch = 0
+				}
+				if d.pasteInputActive && d.pasteInputEpoch != read.epoch {
+					d.pasteInputEpoch = 0
+				}
+			}
+			buf.Write(read.data)
 			ttimeout = time.Now().Add(d.EscTimeout)
 			n, err := d.sendEvents(ctx, eventc, buf.Bytes(), false)
 			if err != nil {
@@ -321,6 +362,23 @@ func (d *TerminalReader) sendEvents(ctx context.Context, eventc chan<- Event, bu
 		return 0, d.eventScanner.inputErr
 	}
 	for _, event := range events {
+		if d.InputEpoch != nil {
+			epoch := d.inputEpoch
+			switch event.(type) {
+			case PasteStartEvent:
+				d.pasteInputActive, d.pasteInputEpoch = true, epoch
+			case PasteEvent:
+				if !d.pasteInputActive || d.pasteInputEpoch != epoch {
+					epoch = 0
+				} else {
+					epoch = d.pasteInputEpoch
+				}
+			case PasteEndEvent:
+				epoch = d.pasteInputEpoch
+				d.pasteInputActive, d.pasteInputEpoch = false, 0
+			}
+			event = InputEpochEvent{Event: event, Epoch: epoch}
+		}
 		if d.MaxPasteBytes > 0 || d.MaxPendingBytes > 0 {
 			select {
 			case <-ctx.Done():
@@ -347,6 +405,10 @@ type eventScanner struct {
 	table       map[string]Key
 	lookup      bool
 	logger      Logger
+}
+
+func (d *eventScanner) pendingText() bool {
+	return d.utf16Half[0] || d.utf16Half[1] || len(d.graphemeBuf[0]) > 0 || len(d.graphemeBuf[1]) > 0
 }
 
 // newEventScanner creates a new event scanner.

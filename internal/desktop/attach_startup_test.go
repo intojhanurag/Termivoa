@@ -133,3 +133,22 @@ func TestAttachmentStartupHandoffFailureClosesTransport(t *testing.T) {
 		t.Fatalf("failed handoff: %v, closed: %v", err, closed)
 	}
 }
+
+func TestAttachmentStartupHandoffDetachClosesTransport(t *testing.T) {
+	joined := make(chan struct{})
+	closed := false
+	attachment := Attachment{
+		TTY: startupTestTTY(t, joined),
+		StartupEvents: eventStreamerFunc(func(ctx context.Context, _ chan<- uv.Event) error {
+			defer close(joined)
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+		Connect:     connectTransport(&attachmentTransport{recordingTransport: &recordingTransport{}, closeFn: func() error { closed = true; return nil }}),
+		BeforeInput: func(context.Context) error { return ErrDetached },
+		Events:      eventStreamerFunc(func(context.Context, chan<- uv.Event) error { t.Error("live input after handoff detach"); return nil }),
+	}
+	if err := attachment.Run(context.Background()); err != nil || !closed {
+		t.Fatalf("handoff detach: %v, closed: %v", err, closed)
+	}
+}

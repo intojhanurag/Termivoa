@@ -154,9 +154,14 @@ type Attachment struct {
 	// It drains setup input without sending it, but still handles local detach.
 	// It is canceled and joined before BeforeInput and Events start. BeforeInput
 	// must discard remaining native raw input at that handoff, or fail closed.
+	// It returns ErrDetached if that discarded input contained Ctrl+].
 	// Neither decoder may close the caller's original terminal descriptor.
 	StartupEvents uv.EventStreamer
 	BeforeInput   func(context.Context) error
+	// Activate writes final ready status while the live decoder is already
+	// draining gated input. It must honor cancellation; no post-activation
+	// native flush/parser reset may discard newly advertised live input.
+	Activate func(context.Context) error
 }
 
 // Run enters and always restores the outer terminal before returning.
@@ -196,6 +201,15 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 		defer close(streamStopped)
 		streamErr = attachment.Events.StreamEvents(eventContext, events)
 	}()
+	var activated chan struct{}
+	var activationErr error
+	if attachment.Activate != nil {
+		activated = make(chan struct{})
+		go func(done chan struct{}) {
+			defer close(done)
+			activationErr = attachment.Activate(eventContext)
+		}(activated)
+	}
 	defer func() {
 		// Stop painting and input before restoring the enclosing terminal.
 		// Cancellation alone is insufficient: a final read/write may still
@@ -206,7 +220,7 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 		// its pinned reader uses unconditional sends. Drain and discard them
 		// while joining; otherwise a trailing key after Ctrl+] can deadlock
 		// shutdown. Never pass any of these events to the child.
-		for streamStopped != nil {
+		for streamStopped != nil || activated != nil {
 			select {
 			case _, ok := <-events:
 				if !ok {
@@ -214,7 +228,12 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 				}
 			case <-streamStopped:
 				streamStopped = nil
+			case <-activated:
+				activated = nil
 			}
+		}
+		if activationErr != nil && !onlyStartupCancellation(activationErr) {
+			returnErr = errors.Join(returnErr, fmt.Errorf("desktop: activate input: %w", activationErr))
 		}
 		if closeErr != nil {
 			returnErr = errors.Join(returnErr, fmt.Errorf("desktop: close terminal connection: %w", closeErr))
@@ -233,6 +252,11 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 			return nil
 		case <-transport.Done():
 			return transport.Err()
+		case <-activated:
+			activated = nil
+			if activationErr != nil {
+				return ctx.Err() // The deferred join reports the activation failure once.
+			}
 		case event, ok := <-events:
 			if !ok {
 				return nil

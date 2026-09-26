@@ -65,6 +65,19 @@ func (client *Client) AcquireControl(ctx context.Context) error {
 // Send waits for broker acceptance, never retries, and rejects overlapping
 // user calls instead of retaining queued keystrokes for a later prompt.
 func (client *Client) Send(ctx context.Context, action desktop.InputAction) error {
+	return client.send(ctx, action, 0)
+}
+
+// SendAdmitted refuses a decoded action from an earlier local readiness or
+// lease epoch. Zero is never an admissible captured epoch.
+func (client *Client) SendAdmitted(ctx context.Context, action desktop.InputAction, inputEpoch uint64) error {
+	if inputEpoch == 0 {
+		return ErrNotReady
+	}
+	return client.send(ctx, action, inputEpoch)
+}
+
+func (client *Client) send(ctx context.Context, action desktop.InputAction, inputEpoch uint64) error {
 	if err := client.beginUser(ctx); err != nil {
 		return err
 	}
@@ -85,7 +98,7 @@ func (client *Client) Send(ctx context.Context, action desktop.InputAction) erro
 	if err != nil {
 		return err
 	}
-	return client.request(ctx, message, counter, epoch, lease)
+	return client.requestAdmitted(ctx, message, counter, epoch, lease, inputEpoch)
 }
 
 func inputPayload(action desktop.InputAction, lease, sequence string) (protocol.MessageType, any, error) {
@@ -108,9 +121,13 @@ func inputPayload(action desktop.InputAction, lease, sequence string) (protocol.
 }
 
 func (client *Client) request(ctx context.Context, message protocol.Envelope, sequence string, epoch uint64, lease string) error {
+	return client.requestAdmitted(ctx, message, sequence, epoch, lease, 0)
+}
+
+func (client *Client) requestAdmitted(ctx context.Context, message protocol.Envelope, sequence string, epoch uint64, lease string, inputEpoch uint64) error {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-	pending := &pendingRequest{id: message.RequestID, kind: message.Type, sequence: sequence, epoch: epoch, lease: lease, result: make(chan error, 1)}
+	pending := &pendingRequest{id: message.RequestID, kind: message.Type, sequence: sequence, epoch: epoch, lease: lease, inputEpoch: inputEpoch, result: make(chan error, 1)}
 	client.mu.Lock()
 	if !client.state.Connected {
 		client.mu.Unlock()
@@ -136,6 +153,11 @@ func (client *Client) request(ctx context.Context, message protocol.Envelope, se
 		return err
 	}
 	if err := client.write(ctx, message); err != nil {
+		// A local epoch rejection occurs before writing/acceptance and does
+		// not break the connection or create delivery uncertainty.
+		if err == ErrNotReady && inputEpoch != 0 {
+			return err
+		}
 		return uncertain(err)
 	}
 	select {

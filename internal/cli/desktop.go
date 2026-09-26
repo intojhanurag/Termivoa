@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/x/term"
@@ -59,7 +60,7 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	}
 	defer func() { returnErr = errors.Join(returnErr, writer.Close()) }()
 	getSize := func() (int, int, error) { return term.GetSize(outputFD) }
-	display := &desktopDisplay{writer: writer, size: getSize, controlPending: config.Control}
+	display := &desktopDisplay{writer: writer, size: getSize, controlPending: true}
 	if _, _, err := getSize(); err != nil {
 		return fmt.Errorf("read desktop terminal dimensions: %w", err)
 	}
@@ -74,7 +75,8 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	if err != nil {
 		return err
 	}
-	events, err := desktop.NewBoundedInput(reader, os.Getenv("TERM"))
+	admission := &desktopAdmission{}
+	events, err := desktop.NewAdmittedInput(reader, os.Getenv("TERM"), admission.epoch)
 	if err != nil {
 		return err
 	}
@@ -87,8 +89,22 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			return discardDesktopInput(reader.file.handle)
+			// Queued bytes are never sent, but the local detach chord still works.
+			detach, err := drainDesktopDetach(reader.file.handle)
+			if err != nil {
+				return err
+			}
+			if err := discardDesktopInput(reader.file.handle); err != nil {
+				return err
+			}
+			if detach {
+				return desktop.ErrDetached
+			}
+			return nil
 		},
+	}
+	attachment.Activate = func(ctx context.Context) error {
+		return display.activate(ctx, func() { admission.enabled.Store(true) })
 	}
 	attachment.Connect = func(connectionContext context.Context) (desktop.AttachmentTransport, error) {
 		client, err := liveclient.Dial(connectionContext, liveclient.Config{
@@ -106,6 +122,7 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 			return nil, errors.Join(err, client.Close())
 		}
 		transport := newDesktopTransport(connectionContext, client, display)
+		transport.admission = admission.epoch
 		if config.Control {
 			if err := client.AcquireControl(readyContext); err != nil {
 				return nil, errors.Join(err, transport.Close())
@@ -120,7 +137,8 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 		if err := display.status(connectionContext); err != nil {
 			return nil, errors.Join(err, transport.Close())
 		}
-		transport.start()
+		admission.client = client // Published before the live decoder starts.
+		transport.start()         // Always started before exposing Close to Attachment.
 		return transport, nil
 	}
 	returnErr = attachment.Run(ctx)
@@ -140,10 +158,23 @@ func finishDesktopStartup(ctx context.Context, client interface{ WaitReady(conte
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	display.mu.Lock()
-	display.controlPending = false
-	display.mu.Unlock()
 	return display.status(ctx)
+}
+
+type desktopAdmission struct {
+	enabled atomic.Bool
+	client  desktopConnection
+}
+
+func (admission *desktopAdmission) epoch() uint64 {
+	if !admission.enabled.Load() {
+		return 0
+	}
+	state := admission.client.State()
+	if !state.Connected || !state.Ready || !state.Controller {
+		return 0
+	}
+	return state.InputEpoch
 }
 
 func desktopFD(file *os.File) (uintptr, error) {
@@ -180,20 +211,22 @@ type desktopConnection interface {
 	State() liveclient.State
 	Changed() <-chan struct{}
 	Resize(context.Context, int, int) error
+	SendAdmitted(context.Context, desktop.InputAction, uint64) error
 }
 
 type desktopTransport struct {
-	client  desktopConnection
-	display *desktopDisplay
-	ctx     context.Context
-	cancel  context.CancelFunc
-	gate    chan struct{}
-	sending chan struct{}
-	done    chan struct{}
-	wg      sync.WaitGroup
-	once    sync.Once
-	mu      sync.Mutex
-	err     error
+	client    desktopConnection
+	display   *desktopDisplay
+	ctx       context.Context
+	cancel    context.CancelFunc
+	gate      chan struct{}
+	sending   chan struct{}
+	done      chan struct{}
+	wg        sync.WaitGroup
+	once      sync.Once
+	mu        sync.Mutex
+	err       error
+	admission func() uint64
 }
 
 func newDesktopTransport(parent context.Context, client desktopConnection, display *desktopDisplay) *desktopTransport {
@@ -239,6 +272,28 @@ func (transport *desktopTransport) start() {
 }
 
 func (transport *desktopTransport) Send(ctx context.Context, action desktop.InputAction) error {
+	return transport.send(ctx, action, 0)
+}
+
+func (transport *desktopTransport) AdmissionEpoch() uint64 {
+	if transport.admission != nil {
+		return transport.admission()
+	}
+	state := transport.client.State()
+	if !state.Connected || !state.Ready || !state.Controller {
+		return 0
+	}
+	return state.InputEpoch
+}
+
+func (transport *desktopTransport) SendAdmitted(ctx context.Context, action desktop.InputAction, epoch uint64) error {
+	if epoch == 0 || epoch != transport.AdmissionEpoch() {
+		return nil
+	}
+	return transport.send(ctx, action, epoch)
+}
+
+func (transport *desktopTransport) send(ctx context.Context, action desktop.InputAction, epoch uint64) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -252,7 +307,7 @@ func (transport *desktopTransport) Send(ctx context.Context, action desktop.Inpu
 	if !state.Connected {
 		return liveclient.ErrClosed
 	}
-	if !state.Ready || !state.Controller {
+	if !state.Ready || !state.Controller || (epoch != 0 && epoch != state.InputEpoch) {
 		return nil // Observer actions are discarded, never retained or replayed.
 	}
 	if !transport.display.fits() {
@@ -281,7 +336,12 @@ func (transport *desktopTransport) Send(ctx context.Context, action desktop.Inpu
 	if !current.Ready || !current.Controller || current.LeaseEpoch != state.LeaseEpoch {
 		return nil
 	}
-	err := transport.client.Send(ctx, action)
+	var err error
+	if epoch != 0 {
+		err = transport.client.SendAdmitted(ctx, action, epoch)
+	} else {
+		err = transport.client.Send(ctx, action)
+	}
 	if inactiveDesktopControl(err) {
 		return nil
 	}
