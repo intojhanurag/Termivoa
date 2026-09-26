@@ -20,12 +20,23 @@ Available commands:
   pterm terminate <session-id>        Confirm and end one managed process tree.
   pterm attach [--control] <id>       View a session; --control explicitly takes control.
   pterm new --project <id> --shell <id> Create and take control of a new session.
+  pterm pair [--origin <url>]        Print a two-minute, single-use phone pairing link.
+  pterm pair pending                 Show phones waiting for approval and their codes.
+  pterm pair approve <pending-id>    Approve a phone after comparing its code.
+  pterm devices                      Show paired devices, status and last use.
+  pterm revoke <device-id>           Confirm and revoke one device's browser access.
+  pterm project add [--name <name>] <path> Save a project directory.
+  pterm project list                 Show saved projects.
+  pterm profile list                 Show saved shell profiles.
+  pterm profile detect               Detect host shells and save them as profiles.
+  pterm config origin [<url>]        Show or set the private HTTPS pairing origin.
   pterm help                         Show this help.
 
 Local commands talk to the existing broker; they never start or replace it.
-Development tests may use --dev and --runtime-dir <isolated-directory> before
-the session ID. Production and development profiles are never mixed.
-Phone access, installation, and the remaining CLI commands are not ready yet.
+Development tests may use --dev and --runtime-dir <isolated-directory> after
+the command words and before any ID, path or URL. Production and development
+profiles are never mixed. The pairing link is a secret; no QR code is shown.
+Installation and setup commands are not ready yet.
 Attach: Ctrl+] detaches, never terminates. With control, Ctrl+V then Ctrl+]
 sends literal Ctrl+]. Ordinary typing in observer mode is ignored, not queued.
 `
