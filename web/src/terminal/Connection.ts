@@ -25,6 +25,8 @@ export const HEARTBEAT_MS = 5000;
 export const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15000] as const;
 const HISTORY_PAGE_ROWS = 200;
 const MAX_HISTORY_PAGES = 25;
+// Continuous output bumps the history revision on every scrolled line.
+const MAX_HISTORY_RESTARTS = 5;
 const OPEN = 1;
 
 export type LinkState = 'connecting' | 'attaching' | 'live' | 'reconnecting' | 'lost' | 'revoked' | 'closed';
@@ -79,6 +81,7 @@ interface HistoryState {
   revision: string;
   expectedOffset: number;
   pages: number;
+  restarts: number;
   advanced: boolean;
   history: string[];
   screen: string[];
@@ -249,6 +252,7 @@ export class Connection {
       revision: screen.historyRevision,
       expectedOffset: 0,
       pages: 0,
+      restarts: 0,
       advanced: false,
       history: [],
       screen: this.screenRows.map(rowText),
@@ -619,6 +623,11 @@ export class Connection {
   private handleHistoryChanged(changed: HistoryChangedPayload): void {
     const history = this.history;
     if (history === undefined || history.view.state !== 'loading') {
+      return;
+    }
+    if (++history.restarts > MAX_HISTORY_RESTARTS) {
+      history.view = { ...history.view, state: 'unavailable' };
+      this.emit();
       return;
     }
     history.epoch = changed.historyEpoch;

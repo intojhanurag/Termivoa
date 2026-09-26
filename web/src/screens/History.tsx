@@ -38,7 +38,7 @@ export function History({ connection, fontSize, onReturn }: {
           {view === undefined || view.state === 'loading'
             ? 'Loading history…'
             : view.state === 'unavailable'
-              ? 'History unavailable while disconnected.'
+              ? 'History unavailable right now. Return to live and try again.'
               : view.newOutput ? 'New output available' : 'Frozen snapshot — select text to copy'}
         </span>
         <button type="button" className="primary" onClick={onReturn}>Return to live</button>

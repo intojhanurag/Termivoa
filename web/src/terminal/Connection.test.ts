@@ -365,6 +365,17 @@ describe('History/Selection', () => {
     expect(connection.getHistory()?.historyRows).toBe(1);
   });
 
+  it('stops restarting when history keeps changing under continuous output', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    for (let revision = 1; revision <= 20; revision++) {
+      socket().receive('history.changed', { historyEpoch: '1', historyRevision: String(revision) });
+    }
+    expect(socket().types().filter((type) => type === 'history.read').length).toBeLessThanOrEqual(6);
+    expect(connection.getHistory()?.state).toBe('unavailable');
+  });
+
   it('uses only the live grid for alternate-screen applications', async () => {
     const { connection, socket } = harness();
     socket().open();
