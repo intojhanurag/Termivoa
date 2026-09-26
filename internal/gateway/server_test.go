@@ -227,9 +227,9 @@ func TestShutdownTimeoutClosesIncompleteHTTPConnectionAndReturnsTimeout(t *testi
 }
 
 func TestHealthHandlerRejectsWrongPathMethodAndHost(t *testing.T) {
-	handler := &healthHandler{
-		broker:       brokerState{available: true, generation: gatewayTestGeneration},
-		allowedHosts: map[string]struct{}{"127.0.0.1:8787": {}},
+	handler, err := newServer(Config{Profile: platform.ProductionProfile}, "127.0.0.1:8787", gatewayTestGeneration)
+	if err != nil {
+		t.Fatal(err)
 	}
 	for _, test := range []struct {
 		name, method, path, host string
