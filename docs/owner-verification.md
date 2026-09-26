@@ -95,6 +95,13 @@ The agent did not change Tailscale or startup settings (AGENTS.md rule 12).
 - [ ] After rotation or font-size change, the controller resize matches the
       visible area. Observers do not resize the PTY.
 
+### Bandwidth on cellular (soak risk P7-SOAK-1)
+
+- [ ] Run a command that scrolls fast (for example `yes | head -n 200000`) with
+      the phone on cellular. On the Mac, a scrolling screen sent about 6 MiB/s
+      to each viewer. Check whether the phone is dropped as "too slow" and
+      reconnects again and again. See `docs/evidence/p7/soak.md`.
+
 ### Revocation
 
 - [ ] `pterm devices`, then `pterm revoke <device-id>` while the phone has
@@ -137,6 +144,12 @@ but billing blocked it.
 - [ ] Public release stays your manual decision (plan section 20).
 
 ## 6. Known open defects
+- Performance risks from the Mac soak (`docs/evidence/p7/soak.md`):
+  scrolling bandwidth (P7-SOAK-1), CPU spent re-validating outgoing frames
+  (P7-SOAK-2), higher latency while scrolling (P7-SOAK-3), and about 33 MiB of
+  history per full session (P7-SOAK-4).
+- Not run yet: Windows 11 soak, a 24-hour soak, the 10-minute stress run, and
+  the 1,000-event key-to-frame p95 < 30 ms benchmark.
 
 - Two earlier unexplained timeouts (real-session retirement, executable broker
   readiness). See `docs/progress.md`.
