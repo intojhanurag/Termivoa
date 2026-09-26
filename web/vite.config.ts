@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import standaloneCode from 'ajv/dist/standalone';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import envelopeSchema from '../protocol/v1/envelope.schema.json';
+import { createProtocolAjv } from './src/protocol/ajv';
 
 /** Emits /sw.js with a cache name derived from this build's hashed assets. */
 function serviceWorker(): Plugin {
@@ -17,8 +20,30 @@ function serviceWorker(): Plugin {
   };
 }
 
+const VALIDATORS = 'virtual:protocol-validators';
+
+/**
+ * Compiles the envelope schema to standalone JavaScript at build/test time.
+ * The browser never runs Ajv's compiler, so no `Function`/eval is needed and
+ * the gateway CSP can omit 'unsafe-eval'.
+ */
+function protocolValidators(): Plugin {
+  return {
+    name: 'pterm-protocol-validators',
+    resolveId: (id) => (id === VALIDATORS ? `\0${VALIDATORS}` : undefined),
+    load(id) {
+      if (id !== `\0${VALIDATORS}`) {
+        return undefined;
+      }
+      const ajv = createProtocolAjv({ standalone: true });
+      ajv.addSchema(envelopeSchema, 'envelope');
+      return standaloneCode(ajv, { validateEnvelope: 'envelope' });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), serviceWorker()],
+  plugins: [react(), serviceWorker(), protocolValidators()],
   build: {
     sourcemap: true,
   },
