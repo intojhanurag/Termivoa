@@ -21,6 +21,7 @@ const PairingOriginSetting = "pairing_origin"
 var (
 	errProjectPath  = errors.New("broker: project path is not an existing directory")
 	errProjectLimit = errors.New("broker: saved project limit reached")
+	errNotBrokerRPC = errors.New("broker: request is served by the gateway control endpoint")
 )
 
 func isAdminRPC(data []byte) bool {
@@ -51,10 +52,28 @@ func (server *ManagementServer) serveAdminRequest(ctx context.Context, writer *i
 			return err
 		}
 	}
-	return writer.WriteFrame(response)
+	if err := writer.WriteFrame(response); err != nil {
+		return err
+	}
+	if request.Type == protocol.AdminShutdown && dispatchErr == nil {
+		// The result is written first; stopping the serve loop then closes
+		// this connection with every other one.
+		server.config.Shutdown()
+	}
+	return nil
 }
 
 func (server *ManagementServer) dispatchAdmin(ctx context.Context, request protocol.AdminRPCEnvelope) (any, error) { //nolint:gocyclo
+	switch request.Type {
+	case protocol.AdminShutdown:
+		if server.config.Shutdown == nil {
+			return nil, ErrRegistryClosed
+		}
+		terminated, err := server.config.Registry.TerminateAll(ctx)
+		return protocol.AdminRPCShutdownResultPayload{TerminatedSessions: int64(terminated)}, err
+	case protocol.AdminGatewayStop:
+		return nil, errNotBrokerRPC
+	}
 	authority := server.config.Auth
 	if authority == nil {
 		return nil, errAuthUnavailable
@@ -245,6 +264,8 @@ func classifyAdminError(err error) managementFailure {
 	switch {
 	case errors.Is(err, errProjectPath):
 		return managementFailure{protocol.InvalidRequest, "project path must be an existing directory"}
+	case errors.Is(err, errNotBrokerRPC):
+		return managementFailure{protocol.InvalidRequest, "the broker does not stop the gateway; run pterm stop"}
 	case errors.Is(err, errProjectLimit):
 		return managementFailure{protocol.LimitExceeded, "saved project limit reached"}
 	default:

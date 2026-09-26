@@ -128,6 +128,14 @@ func (client *AdminClient) PairingOrigin(ctx context.Context, origin *string) (*
 	return result.Origin, err
 }
 
+// Shutdown asks the broker to terminate every live session through the
+// normal termination path and then stop. A transport failure after the write
+// is a DeliveryUncertainError.
+func (client *AdminClient) Shutdown(ctx context.Context) (protocol.AdminRPCShutdownResultPayload, error) {
+	return adminCall[protocol.AdminRPCShutdownResultPayload](ctx, client, protocol.AdminShutdown,
+		protocol.BrokerRPCEmptyPayload{}, true, nil)
+}
+
 // adminCall performs one serialized exchange. Correlation, the exact result
 // type, and any caller check are verified inside the exchange slot, so a
 // malformed acknowledgement closes the connection before a queued call writes.
