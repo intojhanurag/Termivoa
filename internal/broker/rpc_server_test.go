@@ -581,7 +581,7 @@ func TestManagementServeCancellationPreservesBrokerRuntime(t *testing.T) {
 	serveResult := make(chan error, 1)
 	go func() { serveResult <- fixture.server.Serve(serveContext, listener) }()
 
-	connection, _, _, err := ipc.DialBroker(context.Background(), runtimeDir, protocol.Gateway, "gateway-test")
+	connection, _, _, err := ipc.DialBroker(context.Background(), runtimeDir, protocol.CLI, "cli-test")
 	if err != nil {
 		t.Fatalf("dial broker: %v", err)
 	}
@@ -618,10 +618,10 @@ func TestManagementServeCancellationPreservesBrokerRuntime(t *testing.T) {
 	}
 	_ = connection.Close()
 	if _, err := fixture.registry.Get(created.Session.ID); err != nil {
-		t.Fatalf("gateway shutdown ended broker session: %v", err)
+		t.Fatalf("management connection shutdown ended broker session: %v", err)
 	}
 	if _, err := fixture.persistence.GetSession(context.Background(), created.Session.ID); err != nil {
-		t.Fatalf("gateway shutdown closed broker store: %v", err)
+		t.Fatalf("management connection shutdown closed broker store: %v", err)
 	}
 }
 

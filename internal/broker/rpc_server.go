@@ -16,6 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
@@ -38,6 +39,9 @@ type ManagementServerConfig struct {
 	BrokerGeneration string
 	HostBuild        string
 	HostPlatform     store.Platform
+	// Auth is the pairing and browser-credential authority. Without it,
+	// gateway and local administration requests fail as host_unavailable.
+	Auth *auth.Service
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -224,8 +228,30 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 		if first {
 			first = false
 			if hello, decodeErr := protocol.DecodeClient(data); decodeErr == nil && hello.Type == protocol.Hello {
-				return server.serveSessionConnection(ctx, connection, reader, peer, hello)
+				return server.serveSessionConnection(ctx, connection, reader, peer, hello, nil)
 			}
+		}
+		// The peer role selects the schema. A gateway can reach only
+		// credential-carrying gateway RPC; local administration and
+		// unauthenticated session management remain CLI-only.
+		if peer.ClientKind == protocol.Gateway {
+			binding, err := server.serveGatewayRequest(ctx, writer, data)
+			if err != nil || binding == nil {
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			return server.serveBoundLiveStream(ctx, connection, reader, peer, binding)
+		}
+		if peer.ClientKind != protocol.CLI {
+			return errors.New("broker: unsupported local peer role")
+		}
+		if isAdminRPC(data) {
+			if err := server.serveAdminRequest(ctx, writer, data); err != nil {
+				return err
+			}
+			continue
 		}
 		request, err := protocol.DecodeBrokerRPCRequest(data)
 		if err != nil {
@@ -486,6 +512,9 @@ type managementFailure struct {
 var errInvalidSessionCursor = errors.New("broker: invalid session-list cursor")
 
 func classifyManagementError(err error) managementFailure {
+	if failure, ok := classifyAuthError(err); ok {
+		return failure
+	}
 	switch {
 	case errors.Is(err, store.ErrProjectMissing):
 		return managementFailure{protocol.ProjectMissing, "saved project is unavailable"}

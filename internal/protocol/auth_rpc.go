@@ -602,3 +602,9 @@ func ValidatePairingOrigin(value string) error {
 		return errors.New("origin must use https")
 	}
 }
+
+// ValidateDisplayText applies the schema's safeDisplayText rule: non-empty,
+// trimmed, valid UTF-8 without control characters, at most maxBytes bytes.
+func ValidateDisplayText(value string, maxBytes int) error {
+	return validateBrokerRPCText(value, maxBytes, "display text")
+}

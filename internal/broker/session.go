@@ -70,6 +70,25 @@ type MutationIdentity struct {
 	ConnectionID string
 	DeviceID     string
 	Lease        string
+	// Access re-authorizes a browser principal inside the actor. Nil means a
+	// local desktop connection inside the current-user boundary.
+	Access AccessCheck
+}
+
+// AccessCheck reports whether a browser credential may still act. It must be
+// cheap and non-blocking because the session actor calls it before encoding.
+type AccessCheck interface {
+	Check() error
+}
+
+// ErrAccessRevoked rejects an action whose browser access was revoked or expired.
+var ErrAccessRevoked = errors.New("broker: browser access was revoked or expired")
+
+func checkAccess(access AccessCheck) error {
+	if access != nil && access.Check() != nil {
+		return ErrAccessRevoked
+	}
+	return nil
 }
 
 type terminalRuntime interface {
@@ -795,7 +814,11 @@ func (session *Session) run(columns, rows int) {
 				session.markLost(&status)
 			} else if ok {
 				control := session.controller.State()
-				if control.ConnectionID != input.ConnectionID || control.DeviceID != input.DeviceID || control.Epoch != input.LeaseEpoch {
+				if checkAccess(input.access) != nil {
+					// Revocation or expiry after admission: never encode it, and
+					// drop the rest of that connection's accepted input.
+					session.inbox.DropConnection(input.ConnectionID)
+				} else if control.ConnectionID != input.ConnectionID || control.DeviceID != input.DeviceID || control.Epoch != input.LeaseEpoch {
 					threshold := control.Epoch
 					if threshold <= input.LeaseEpoch {
 						threshold = input.LeaseEpoch + 1
@@ -872,6 +895,9 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = err
 			break
 		}
+		if response.err = checkAccess(viewer.subscription.access); response.err != nil {
+			break
+		}
 		response.grant, response.err = session.controller.Acquire(
 			session.generation, viewer.subscription.connectionID, viewer.subscription.deviceID,
 		)
@@ -882,6 +908,9 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 	case requestHeartbeat:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning
+			break
+		}
+		if response.err = checkAccess(request.identity.Access); response.err != nil {
 			break
 		}
 		response.control, response.err = session.controller.Heartbeat(
@@ -901,14 +930,16 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = ErrSessionNotRunning
 			break
 		}
-		response.acceptance, response.err = session.inbox.Submit(
-			request.identity.Generation, request.identity.ConnectionID,
-			request.identity.DeviceID, request.identity.Lease,
-			request.sequence, request.action,
-		)
+		if response.err = checkAccess(request.identity.Access); response.err != nil {
+			break
+		}
+		response.acceptance, response.err = session.inbox.submit(request.identity, request.sequence, request.action)
 	case requestResize:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning
+			break
+		}
+		if response.err = checkAccess(request.identity.Access); response.err != nil {
 			break
 		}
 		if _, err := session.controller.Authorize(

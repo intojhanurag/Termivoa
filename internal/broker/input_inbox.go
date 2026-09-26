@@ -56,6 +56,9 @@ type AcceptedInput struct {
 	Sequence     uint64
 	Action       InputAction
 	byteSize     int
+	// access is rechecked by the actor immediately before encoding. Nil means
+	// a local desktop connection inside the current-user boundary.
+	access AccessCheck
 }
 
 // InputInbox is the bounded ingress to a session actor. It serializes
@@ -86,6 +89,13 @@ func (inbox *InputInbox) Submit(
 	sequence uint64,
 	action InputAction,
 ) (InputAcceptance, error) {
+	return inbox.submit(MutationIdentity{
+		Generation: generation, ConnectionID: connectionID, DeviceID: deviceID, Lease: lease,
+	}, sequence, action)
+}
+
+func (inbox *InputInbox) submit(identity MutationIdentity, sequence uint64, action InputAction) (InputAcceptance, error) {
+	generation, connectionID, deviceID, lease := identity.Generation, identity.ConnectionID, identity.DeviceID, identity.Lease
 	validated, err := validatedInputAction(action)
 	if err != nil {
 		return InputAcceptance{}, err
@@ -115,6 +125,7 @@ func (inbox *InputInbox) Submit(
 		Sequence:     sequence,
 		Action:       validated,
 		byteSize:     actionBytes,
+		access:       identity.Access,
 	})
 	inbox.queuedBytes += actionBytes
 	inbox.signal()

@@ -401,7 +401,7 @@ func brokerRoundTrip(t *testing.T, runtimeDir string, request protocol.BrokerRPC
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	connection, _, _, err := ipc.DialBroker(ctx, runtimeDir, protocol.Gateway, "process-integration")
+	connection, _, _, err := ipc.DialBroker(ctx, runtimeDir, protocol.CLI, "process-integration")
 	if err != nil {
 		t.Fatal(err)
 	}

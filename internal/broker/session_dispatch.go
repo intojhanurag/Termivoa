@@ -7,19 +7,23 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 )
 
-// sessionConnection is one local desktop observer, never a PTY owner. The
-// broker generates its identity; neither connection ID nor device ID is taken
-// from untrusted message fields. Browser access will require the distinct
-// broker-authorized pairing boundary, not a gateway-supplied desktop identity.
+// sessionConnection is one live observer, never a PTY owner. The broker
+// generates its connection identity; neither connection ID nor device ID is
+// taken from untrusted message fields. A local desktop gets a random device ID.
+// A browser stream is bound to a broker-validated credential and uses its
+// paired device ID; access is rechecked before every action.
 type sessionConnection struct {
 	server          *ManagementServer
 	writer          *sessionWriter
+	access          *auth.Binding
 	connectionID    string
 	deviceID        string
 	sessionID       string
@@ -29,24 +33,48 @@ type sessionConnection struct {
 	snapshotApplied bool
 }
 
+// errStreamRevoked ends a browser stream after access.revoked was sent.
+var errStreamRevoked = errors.New("broker: browser stream access ended")
+
 func (server *ManagementServer) serveSessionConnection(
 	ctx context.Context, conn net.Conn, reader *ipc.FrameReader,
-	peer protocol.IPCHelloClass, hello protocol.Envelope,
+	peer protocol.IPCHelloClass, hello protocol.Envelope, binding *auth.Binding,
 ) error {
+	if binding != nil {
+		// Registered first so it runs last: the viewer is closed (lease
+		// released, queued input dropped) and the connection closed before a
+		// waiting revocation is told the stream is gone.
+		defer binding.Release()
+	}
 	helloPayload, err := protocol.DecodePayload[protocol.HelloPayload](hello)
 	if err != nil {
 		return err
 	}
-	stream := &sessionConnection{server: server, writer: newSessionWriter(conn)}
-	if peer.ClientKind != protocol.CLI || helloPayload.ClientKind != protocol.Desktop {
-		return stream.failure(ctx, hello, protocol.Unauthorized, "local desktop access requires a restricted CLI connection")
+	stream := &sessionConnection{server: server, writer: newSessionWriter(conn), access: binding}
+	desktop := binding == nil && peer.ClientKind == protocol.CLI && helloPayload.ClientKind == protocol.Desktop
+	browser := binding != nil && peer.ClientKind == protocol.Gateway && helloPayload.ClientKind == protocol.Browser
+	if !desktop && !browser {
+		return stream.failure(ctx, hello, protocol.Unauthorized,
+			"live access requires a local CLI desktop or a credential-bound gateway browser")
 	}
 	stream.connectionID, err = randomUUID()
 	if err != nil {
 		return err
 	}
-	stream.deviceID, err = randomUUID()
-	if err != nil {
+	if browser {
+		stream.deviceID = binding.Principal().DeviceID
+		// Revocation, logout or expiry interrupts a peer blocked in ReadFrame;
+		// the dispatch goroutine then performs the ordered cleanup itself.
+		stopWatch := make(chan struct{})
+		defer close(stopWatch)
+		go func() {
+			select {
+			case <-binding.Revoked():
+				_ = conn.SetReadDeadline(time.Now())
+			case <-stopWatch:
+			}
+		}()
+	} else if stream.deviceID, err = randomUUID(); err != nil {
 		return err
 	}
 	if err := stream.send(ctx, hello, protocol.Welcome, protocol.WelcomePayload{
@@ -69,16 +97,25 @@ func (server *ManagementServer) serveSessionConnection(
 	for {
 		data, err := reader.ReadFrame()
 		if err != nil {
+			if stream.revoked() {
+				return stream.endAccess(ctx, conn)
+			}
 			return err
 		}
 		request, err := protocol.DecodeClient(data)
 		if err != nil {
 			return err
 		}
+		if stream.revoked() {
+			return stream.endAccess(ctx, conn)
+		}
 		if request.Type == protocol.Hello {
 			return stream.failure(ctx, request, protocol.ProtocolMismatch, "hello is only valid at connection start")
 		}
 		if err := stream.dispatch(ctx, request); err != nil {
+			if errors.Is(err, errStreamRevoked) {
+				return stream.endAccess(ctx, conn)
+			}
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
@@ -87,7 +124,44 @@ func (server *ManagementServer) serveSessionConnection(
 	}
 }
 
+func (stream *sessionConnection) revoked() bool {
+	return stream.access != nil && stream.access.Check() != nil
+}
+
+// endAccess sends access.revoked as the stream's last message, then closes the
+// viewer (releasing its lease and queued input) and the connection. Delivery of
+// the notice is best effort; the closure is not.
+func (stream *sessionConnection) endAccess(ctx context.Context, conn net.Conn) error {
+	message := "browser access was revoked"
+	if errors.Is(stream.access.Check(), auth.ErrExpired) {
+		message = "browser access expired; pair this device again"
+	}
+	var sendErr error
+	requestID, err := randomUUID()
+	if err == nil {
+		payload, _ := json.Marshal(protocol.AccessRevokedPayload{Message: message})
+		var notice []byte
+		notice, err = json.Marshal(protocol.Envelope{
+			Version: protocol.Version, Type: protocol.AccessRevoked, RequestID: requestID, Payload: payload,
+		})
+		if err == nil {
+			_ = conn.SetReadDeadline(time.Time{})
+			sendErr = stream.writer.Send(ctx, notice, func() {})
+		}
+	}
+	if stream.viewer != nil {
+		_ = stream.viewer.Close()
+		stream.viewer = nil
+	}
+	_ = conn.Close()
+	_ = sendErr // The peer may already be gone; revocation does not depend on it.
+	return err
+}
+
 func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.Envelope) error {
+	if stream.revoked() {
+		return errStreamRevoked
+	}
 	if request.Type == protocol.SessionAttach {
 		return stream.attach(ctx, request)
 	}
@@ -98,7 +172,11 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 		return stream.failure(ctx, request, protocol.GenerationChanged, "session generation changed")
 	}
 	identity := func(lease string) MutationIdentity {
-		return MutationIdentity{Generation: stream.generation, ConnectionID: stream.connectionID, DeviceID: stream.deviceID, Lease: lease}
+		identity := MutationIdentity{Generation: stream.generation, ConnectionID: stream.connectionID, DeviceID: stream.deviceID, Lease: lease}
+		if stream.access != nil {
+			identity.Access = stream.access
+		}
+		return identity
 	}
 	var err error
 	switch request.Type {
@@ -181,19 +259,29 @@ func (stream *sessionConnection) attach(ctx context.Context, request protocol.En
 	}
 	session, err := stream.server.config.Registry.Get(*request.SessionID)
 	if err == nil {
-		stream.viewer, err = session.AttachViewer(ctx, ViewerConfig{
+		config := ViewerConfig{
 			ConnectionID: stream.connectionID, DeviceID: stream.deviceID, Generation: *request.Generation,
 			Sink: reservedViewerSink{writer: stream.writer}, budget: stream.writer,
-		})
+		}
+		if stream.access != nil {
+			config.Access = stream.access
+		}
+		stream.viewer, err = session.AttachViewer(ctx, config)
 	}
 	if err != nil {
 		failure := classifySessionError(err)
 		return stream.failure(ctx, request, failure.code, failure.message)
 	}
+	if stream.revoked() {
+		// A revocation that raced this attachment could not see the new
+		// viewer; recheck after registration so it cannot outlive access.
+		return errStreamRevoked
+	}
 	stream.session, stream.sessionID, stream.generation = session, *request.SessionID, *request.Generation
 	// Retirement, a stalled viewer, or revocation must also interrupt a peer
 	// blocked in ReadFrame. This goroutine ends with the viewer on disconnect.
-	go func() { <-stream.viewer.Done(); _ = stream.writer.conn.Close() }()
+	viewer := stream.viewer
+	go func() { <-viewer.Done(); _ = stream.writer.conn.Close() }()
 	return nil
 }
 
@@ -217,6 +305,8 @@ func sessionInput(request protocol.Envelope) (lease, sequence string, action Inp
 
 func classifySessionError(err error) managementFailure {
 	switch {
+	case errors.Is(err, ErrAccessRevoked):
+		return managementFailure{protocol.Revoked, "browser access was revoked or expired"}
 	case errors.Is(err, ErrNotController):
 		return managementFailure{protocol.NotController, "take control before sending input"}
 	case errors.Is(err, ErrStaleLease):
