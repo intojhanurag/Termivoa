@@ -623,6 +623,7 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 	}
 	fmt.Fprintf(output, "Development gateway: %s/\nPress Ctrl+C to stop both processes.\n", base)
 
+	var exitErr error
 	for len(processes) > 0 {
 		select {
 		case <-ctx.Done():
@@ -630,9 +631,16 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 			return nil
 		case result := <-done:
 			reap(result)
+			if result.err != nil {
+				exitErr = errors.Join(exitErr, fmt.Errorf("%s: %w", result.name, result.err))
+			}
 		}
 	}
-	return errors.New("both development processes exited")
+	// Both exiting cleanly is the normal result of pterm shutdown.
+	if exitErr != nil {
+		return fmt.Errorf("development processes exited: %w", exitErr)
+	}
+	return nil
 }
 
 func exitText(err error) string {
