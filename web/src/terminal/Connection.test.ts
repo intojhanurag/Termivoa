@@ -7,6 +7,7 @@ import {
   rowText,
   type ScreenDisplay,
 } from './Connection';
+import { fitGrid } from './TerminalView';
 import type { CellStyle, ScreenMetadata, ScreenPatch, ScreenSnapshot, TerminalRow } from './FrameRenderer';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -276,7 +277,11 @@ describe('Connection', () => {
     await takeControl(connection, socket());
     expect(connection.resize(10, 1000)).toBe(true);
     expect(socket().sent.at(-1)).toMatchObject({ type: 'terminal.resize', payload: { lease, columns: 20, rows: 200 } });
+    expect(connection.resize(20, 200)).toBe(false);
     expect(connection.resize(20, 5)).toBe(false);
+    expect(fitGrid(390, 700, 8.4, 17)).toEqual({ columns: 46, rows: 41 });
+    expect(fitGrid(100, 50, 8.4, 17)).toEqual({ columns: 20, rows: 5 });
+    expect(fitGrid(390, 700, 0, 17)).toEqual({ columns: 20, rows: 5 });
     expect(clampGrid(1000, 1)).toEqual({ columns: 400, rows: 5 });
     expect(clampGrid(57.9, 31.2)).toEqual({ columns: 57, rows: 31 });
     expect(clampGrid(Number.NaN, Number.POSITIVE_INFINITY)).toEqual({ columns: 20, rows: 5 });

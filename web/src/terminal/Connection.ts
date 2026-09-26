@@ -85,7 +85,7 @@ interface HistoryState {
   view: HistoryView;
 }
 
-const INITIAL_STATUS: ConnectionStatus = {
+export const INITIAL_STATUS: ConnectionStatus = {
   link: 'connecting',
   control: 'observer',
   otherController: false,
@@ -128,6 +128,7 @@ export class Connection {
   private screenRows: TerminalRow[] = [];
   private history: HistoryState | undefined;
   private stopped = false;
+  private requestedSize: string | undefined;
 
   private readonly createSocket: (url: string) => WebSocket;
   private readonly requestFrame: (callback: () => void) => void;
@@ -155,9 +156,7 @@ export class Connection {
   }
 
   canSend(): boolean {
-    const { link, control, sessionState } = this.status;
-    return link === 'live' && control === 'controller' && this.sender !== undefined
-      && sessionState !== 'exited' && sessionState !== 'lost';
+    return canSendWith(this.status) && this.sender !== undefined;
   }
 
   start(): void {
@@ -230,9 +229,12 @@ export class Connection {
       return false;
     }
     const size = clampGrid(columns, rows);
-    if (this.screen?.columns === size.columns && this.screen.rows === size.rows) {
+    const key = `${size.columns}x${size.rows}`;
+    if ((this.screen?.columns === size.columns && this.screen.rows === size.rows) || this.requestedSize === key) {
       return false;
     }
+    // The resize snapshot clears this; until then an identical request is redundant.
+    this.requestedSize = key;
     this.sendSession('terminal.resize', { lease, ...size });
     return true;
   }
@@ -493,6 +495,7 @@ export class Connection {
       this.paint(() => this.options.display.paintSnapshot(snapshot), epoch, () => {
         this.screen = snapshot.screen;
         this.screenRows = [...snapshot.rows];
+        this.requestedSize = undefined;
         this.sendSession('snapshot.applied', { snapshotId, revision: snapshot.revision });
         this.reconnectAttempt = 0;
         this.update({
@@ -656,6 +659,7 @@ export class Connection {
     const uncertain = this.sender?.disconnect() ?? [];
     this.sender = undefined;
     this.lease = undefined;
+    this.requestedSize = undefined;
     const message = uncertain.length > 0 ? DELIVERY_UNCERTAIN : notice;
     this.update({
       control: 'observer',
@@ -764,6 +768,12 @@ export class Connection {
       listener();
     }
   }
+}
+
+/** Input and resize are allowed only for a live controller of a running session. */
+export function canSendWith(status: ConnectionStatus): boolean {
+  return status.link === 'live' && status.control === 'controller'
+    && status.sessionState !== 'exited' && status.sessionState !== 'exiting' && status.sessionState !== 'lost';
 }
 
 export function clampGrid(columns: number, rows: number): { columns: number; rows: number } {
