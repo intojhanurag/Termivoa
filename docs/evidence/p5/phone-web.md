@@ -183,3 +183,58 @@ Android Chrome (Gboard and at least one other keyboard):
 5. Width agreement as above.
 6. Controller-only resize: the measured grid matches the visible area after
    rotation and font-size changes; observers do not resize the PTY.
+
+## Review pass 2026-09-27
+
+An adversarial review of `git diff eb8421a..HEAD -- web docs/evidence/p5`
+against AGENTS.md, plan sections 5 and 7–11, and `protocol/v1`. This was a
+same-account agent review, not an independent human review. Each fix has a
+vitest test that failed before the fix.
+
+Fixed:
+
+| Severity | Finding | Fix |
+| --- | --- | --- |
+| Blocker | Ajv compiled validators with `Function()` at runtime. The gateway CSP has no `'unsafe-eval'`, so the served page was blank. | A Vite virtual module (`virtual:protocol-validators`) emits standalone Ajv code at build and test time. The custom keywords are now code generators. The bundle contains no `Function(`, `eval(`, or `sourceMappingURL`. Test: `src/protocol/noEval.test.ts` blocks `Function` and validates. |
+| Medium | After any `input.rejected` (for example `limit_exceeded`), the page kept the lease. The broker does not advance its high-water mark for a rejected sequence, so every later input was rejected as `input_gap` while the page still showed "You have control". | Any rejection releases the lease, stops sending, and shows the message. The user must press Take control for a new lease (sequence restarts at 1). |
+| Medium | Multiline text from keyboard clipboard chips, text replacement, or a composition commit arrived as `insertText`, not a `paste` event. It was sent at once with Enter keys and skipped the multiline confirmation. | Multiline inserted text goes to the Composer. A lone line break is still one `enter` key. |
+| Low | The pairing fragment was removed only on exactly `/pair`. At `/pair/` or another path the grant stayed in the URL and history. | Every fragment is removed at startup. The grant is accepted only on `/pair`. |
+| Low | Under continuous output each `history.read` got `history.changed`, and the page restarted without end ("Loading history…" forever). | After five restarts the view becomes unavailable and asks the user to return to live. |
+| Build | Built JS pointed to a source map that the gateway refuses to serve. | `build.sourcemap: 'hidden'`. |
+
+Checked, no defect found: input is gated on a live link, the controller
+role, a current lease, and a running session. Reconnect attaches as an
+observer and sends only `hello`, `session.attach`, and `snapshot.applied`,
+with no replay. Sequences are decimal strings from a `bigint` counter per
+lease. Patches are applied only on a matching base revision, after the
+serialized snapshot paint. `snapshot.applied` is sent only after the paint
+promise resolves. Observers never send resize, and resize is clamped to
+20–400 × 5–200. IME commits are sent once. No Enter comes from a form
+submit. The composer never sends on reconnect. The poll secret is never in
+React state or storage. There is no `innerHTML` and no
+`dangerouslySetInnerHTML`. Every WebSocket message goes through
+`parseHostMessage`. Terminate, Ctrl+C, and Detach use separate handlers.
+History pages are keyed by epoch, revision, and offset. The service worker
+caches only `/assets/*` and activates only after the user chooses to reload.
+Listeners, timers, and sockets are released on unmount. Controls are at
+least 44 px.
+
+Not fixed (recorded):
+
+- Lazy loading the Live route was not done. The service worker does not
+  precache, so after a host upgrade an old page could request a lazy chunk
+  that no longer exists and fail. Safe splitting needs a chunk-load error
+  path. The single chunk is now 866 kB raw (203 kB gzip, down from 231 kB).
+- A lease heartbeat that is in flight when the shell exits can get
+  `session_lost` from the broker (`ErrSessionNotRunning` maps to
+  `session_lost`), so the page can show "Session lost" for an exited shell.
+  This is a small race. The mapping is in Go and is outside this branch's
+  scope.
+- `control.changed` without a lease drops local control without comparing
+  `leaseEpoch`. The current broker never sends the holder a lease-less
+  notice for its own epoch, so this is only a robustness gap.
+
+Checks after the fixes: `pnpm typecheck` passed. `pnpm test:web` passed:
+11 files, 86 tests. `pnpm build:web` passed. `./scripts/check` exited 0: no protocol
+generation drift, gofmt and `go vet` clean, 22 Go test packages passed,
+and the web typecheck, 86 tests, and build passed.
