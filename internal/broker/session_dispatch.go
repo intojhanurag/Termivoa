@@ -104,7 +104,7 @@ func (server *ManagementServer) serveSessionConnection(
 		}
 		request, err := protocol.DecodeClient(data)
 		if err != nil {
-			return err
+			return errors.Join(err, stream.rejectMalformed(ctx))
 		}
 		if stream.revoked() {
 			return stream.endAccess(ctx, conn)
@@ -332,6 +332,17 @@ func (stream *sessionConnection) failure(ctx context.Context, request protocol.E
 		return stream.send(ctx, request, protocol.InputRejected, protocol.InputRejectedPayload{Code: code, Message: message, InputSequence: &sequence})
 	}
 	return stream.send(ctx, request, protocol.Error, protocol.ErrorPayload{Code: code, Message: message})
+}
+
+// rejectMalformed tells the client why the stream is closing before the
+// connection ends. The request ID is fresh because the original is untrusted.
+func (stream *sessionConnection) rejectMalformed(ctx context.Context) error {
+	requestID, err := randomUUID()
+	if err != nil {
+		return err
+	}
+	return stream.send(ctx, protocol.Envelope{RequestID: requestID}, protocol.Error,
+		protocol.ErrorPayload{Code: protocol.InvalidRequest, Message: "message does not match protocol v1; reconnecting is required"})
 }
 
 func (stream *sessionConnection) send(ctx context.Context, request protocol.Envelope, kind protocol.MessageType, payload any) error {
