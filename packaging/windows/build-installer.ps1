@@ -24,8 +24,14 @@ $artifacts = Join-Path $repo 'artifacts'
 New-Item -ItemType Directory -Force $dist, $artifacts | Out-Null
 $exe = Join-Path $dist 'pterm.exe'
 
+pnpm build:web
+if ($LASTEXITCODE -ne 0) { throw 'web build failed' }
+$embedded = Join-Path $repo 'internal\webassets\dist'
+if (Test-Path $embedded) { Remove-Item -Recurse -Force $embedded }
+Copy-Item -Recurse (Join-Path $repo 'web\dist') $embedded
+
 $env:CGO_ENABLED = '0'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'
-go build -trimpath -ldflags "-X main.buildID=$buildId" -o $exe ./cmd/pterm
+go build -trimpath -tags webdist -ldflags "-X main.buildID=$buildId" -o $exe ./cmd/pterm
 if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
 
 $iscc = if ($env:ISCC) { $env:ISCC } else { Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe' }

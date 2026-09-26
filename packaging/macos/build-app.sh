@@ -19,8 +19,11 @@ app="dist/macos/Phone Terminal.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
+pnpm build:web
+./scripts/embed-web.sh
+
 export CGO_ENABLED=0 GOOS=darwin GOARCH=arm64
-go build -trimpath -ldflags "-X main.buildID=$build_id" -o "$app/Contents/MacOS/pterm" ./cmd/pterm
+go build -trimpath -tags webdist -ldflags "-X main.buildID=$build_id" -o "$app/Contents/MacOS/pterm" ./cmd/pterm
 go build -trimpath -o "$app/Contents/MacOS/Phone Terminal" ./packaging/macos/launcher
 
 cat >"$app/Contents/Info.plist" <<EOF
