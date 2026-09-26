@@ -11,6 +11,7 @@ import (
 	"os/signal"
 
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
+	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 )
 
@@ -63,7 +64,12 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		if err != nil {
 			return err
 		}
-		return gateway.Run(ctx, config)
+		client, err := gatewayclient.New(gatewayclient.Config{RuntimeDir: config.RuntimeDir, ClientBuild: buildID})
+		if err != nil {
+			return err
+		}
+		config.Broker = client
+		return errors.Join(gateway.Run(ctx, config), client.Close())
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -168,9 +174,6 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 	if err := gateway.ValidateOrigins(profile, origins); err != nil {
 		return gateway.Config{}, err
 	}
-	// TODO(p4): construct the broker client once internal/gatewayclient lands:
-	// config.Broker = gatewayclient.New(validatedRuntime, buildID)
-	// Until then the gateway serves health and the static site only.
 	return gateway.Config{
 		RuntimeDir: validatedRuntime, HostBuild: buildID, ListenAddress: *listen, Profile: profile,
 		Origins: origins,

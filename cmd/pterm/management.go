@@ -36,7 +36,6 @@ Local commands talk to the existing broker; they never start or replace it.
 Development tests may use --dev and --runtime-dir <isolated-directory> after
 the command words and before any ID, path or URL. Production and development
 profiles are never mixed. The pairing link is a secret; no QR code is shown.
-Installation and setup commands are not ready yet.
 Attach: Ctrl+] detaches, never terminates. With control, Ctrl+V then Ctrl+]
 sends literal Ctrl+]. Ordinary typing in observer mode is ignored, not queued.
 `
