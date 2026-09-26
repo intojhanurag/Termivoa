@@ -377,3 +377,44 @@ func (randReader) Read(data []byte) (int, error) {
 	}
 	return copy(data, secret.value[:]), nil
 }
+
+// A wall clock moved behind a grant or pending pairing's creation must not
+// extend its two- or five-minute lifetime; the rejected attempts consume
+// nothing, so pairing resumes once the clock is back.
+func TestPairingRejectsClockRollback(t *testing.T) {
+	service, clock := newTestService(t)
+	ctx := context.Background()
+	grant, _, err := service.CreateGrant(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Set(serviceStart.Add(-time.Hour))
+	if _, err := service.Redeem(ctx, grant, "Phone"); !errors.Is(err, ErrPairingExpired) {
+		t.Fatalf("grant redeemed behind its creation time: %v", err)
+	}
+	clock.Set(serviceStart.Add(time.Second))
+	redeemed, err := service.Redeem(ctx, grant, "Phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Set(serviceStart.Add(-time.Hour))
+	if err := service.Approve(ctx, redeemed.PendingID); !errors.Is(err, ErrPairingExpired) {
+		t.Fatalf("pending approved behind its creation time: %v", err)
+	}
+	if pending, err := service.Pending(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("pending listed behind its creation time: %d, %v", len(pending), err)
+	}
+	clock.Set(serviceStart.Add(2 * time.Second))
+	if err := service.Approve(ctx, redeemed.PendingID); err != nil {
+		t.Fatal(err)
+	}
+	clock.Set(serviceStart.Add(-time.Hour))
+	if result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret); !errors.Is(err, ErrPairingExpired) ||
+		result.Credential != "" {
+		t.Fatalf("credential issued behind the pending creation time: %#v, %v", result, err)
+	}
+	clock.Set(serviceStart.Add(3 * time.Second))
+	if result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret); err != nil || !result.Approved {
+		t.Fatalf("poll after the clock recovered = %#v, %v", result, err)
+	}
+}
