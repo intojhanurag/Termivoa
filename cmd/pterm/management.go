@@ -37,6 +37,8 @@ Available commands:
   pterm uninstall [--dry-run] [--yes] [--delete-data]
                                      Remove startup registration; data only with --delete-data.
   pterm launch [--no-open]           Start broker and gateway if needed; open the local page.
+  pterm stop                         Stop the gateway only; sessions keep running.
+  pterm shutdown                     Confirm, end all sessions, stop broker and gateway.
   pterm up --dev [--listen <addr>]   Development harness: broker and gateway as separate processes.
   pterm help                         Show this help.
 
@@ -50,6 +52,7 @@ sends literal Ctrl+]. Ordinary typing in observer mode is ignored, not queued.
 
 type localCommandConfig struct {
 	runtimeDir string
+	dev        bool
 	arguments  []string
 	control    bool
 	projectID  string
@@ -73,7 +76,7 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if err := flags.Parse(args); err != nil {
 		return localCommandConfig{}, err
 	}
-	if (command == "list" && flags.NArg() != 0) || ((command == "terminate" || command == "attach") && flags.NArg() != 1) {
+	if ((command == "list" || command == "stop" || command == "shutdown") && flags.NArg() != 0) || ((command == "terminate" || command == "attach") && flags.NArg() != 1) {
 		return localCommandConfig{}, fmt.Errorf("usage: pterm %s [--dev] [--runtime-dir <directory>]%s", command, commandArgumentHelp(command))
 	}
 	if command == "new" && (flags.NArg() != 0 || projectID == "" || profileID == "") {
@@ -98,7 +101,9 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if err != nil {
 		return localCommandConfig{}, fmt.Errorf("invalid local command profile: %w", err)
 	}
-	return localCommandConfig{runtimeDir: validated, arguments: flags.Args(), control: control, projectID: projectID, profileID: profileID}, nil
+	return localCommandConfig{
+		runtimeDir: validated, dev: *dev, arguments: flags.Args(), control: control, projectID: projectID, profileID: profileID,
+	}, nil
 }
 
 func commandArgumentHelp(command string) string {

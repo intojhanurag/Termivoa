@@ -451,3 +451,14 @@ func TestTaskXMLIsWellFormed(t *testing.T) {
 		t.Fatalf("decoded task = %+v", task)
 	}
 }
+
+func TestUnloadCommandsAreExactAndPerUser(t *testing.T) {
+	for host, want := range map[*Host]string{
+		&macHost:     "launchctl bootout gui/501/dev.phone-terminal.gateway",
+		&windowsHost: `schtasks /Change /TN "Phone Terminal Gateway (Ada & Co)" /Disable`,
+	} {
+		if got := DisplayCommand(host.UnloadCommand(Services[1])); got != want {
+			t.Errorf("unload command = %q, want %q", got, want)
+		}
+	}
+}

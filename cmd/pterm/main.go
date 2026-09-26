@@ -63,6 +63,10 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return runLaunchCommand(ctx, args[1:], output)
 	case "up":
 		return runUpCommand(ctx, args[1:], output)
+	case "stop":
+		return runStopCommand(ctx, args[1:], output)
+	case "shutdown":
+		return runShutdownCommand(ctx, args[1:], input, output)
 	case brokerMode:
 		config, err := parseBrokerConfig(args[1:])
 		if err != nil {
@@ -74,15 +78,31 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		if err != nil {
 			return err
 		}
-		client, err := gatewayclient.New(gatewayclient.Config{RuntimeDir: config.RuntimeDir, ClientBuild: buildID})
-		if err != nil {
-			return err
-		}
-		config.Broker = client
-		return errors.Join(gateway.Run(ctx, config), client.Close())
+		return runGateway(ctx, config)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+// runGateway serves the gateway until ctx ends or `pterm stop` asks it to
+// exit through its private control endpoint. Either way it exits cleanly.
+func runGateway(ctx context.Context, config gateway.Config) error {
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	control, err := host.ListenGatewayControl(ctx, config.RuntimeDir, buildID, stop)
+	if err != nil {
+		return err
+	}
+	client, err := gatewayclient.New(gatewayclient.Config{RuntimeDir: config.RuntimeDir, ClientBuild: buildID})
+	if err != nil {
+		return errors.Join(err, control.Close())
+	}
+	config.Broker = client
+	err = gateway.Run(ctx, config)
+	if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+		err = nil // A stop during startup is still a clean exit.
+	}
+	return errors.Join(err, client.Close(), control.Close())
 }
 
 func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
