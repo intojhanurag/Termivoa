@@ -129,3 +129,58 @@ afterwards), so it is not caused by this branch. It is not counted as passing.
   only and says so.
 - Linux shell discovery: not implemented because Linux is not a supported v0
   broker host and the stored profile platform allows only darwin/windows/wsl.
+
+## Security review pass 2026-09-27
+
+Scope: `internal/auth`, the pairing/device/credential parts of `internal/store`,
+`internal/broker/gateway_rpc.go`, `internal/broker/admin_rpc.go` and
+`internal/gatewayclient`. Reviewer: an agent on the same account as the
+author, so this is not an independent review. Branch `fix/v0-auth-review`,
+base `f139b49`. macOS arm64, Go 1.27.1.
+
+Defects found and fixed (failing test first, then the fix):
+
+1. Low. Clock rollback extended pairing lifetimes. The store checked only
+   `expires_at_ms <= now`, so a wall clock moved backward kept a grant or
+   pending pairing redeemable, approvable and pollable for the size of the
+   rollback. A creation time after now is now treated as expired in
+   redemption, approval, polling and the pending list. The rejected attempt
+   consumes nothing. Test: `auth.TestPairingRejectsClockRollback`.
+2. Low. Host sleep extended a live binding. The expiry timer was one
+   `time.AfterFunc` for the full remaining validity. Go timers use a
+   monotonic clock that pauses while the host sleeps, so after a sleep across
+   expiry, a passive browser viewer kept receiving output until the delayed
+   timer fired or the browser sent a frame. The timer now rechecks the wall
+   clock at least once a minute. Test:
+   `auth.TestBindingExpiresWhenWallClockPassesDuringHostSleep`.
+
+Checked and found sound: secret and poll-hash comparison (`subtle`;
+lookups are by SHA-256 of the presented value); no secret or hash in
+errors, results or logs; single-use grant redemption and single credential
+issuance (one SQLite connection, `BEGIN IMMEDIATE`, UNIQUE hashes, delete in
+the same transaction); `_foreign_keys` and `_txlock` are honored by
+modernc.org/sqlite v1.59.0; approval of expired, consumed or unknown pending
+IDs; rate limits before any row allocation; bounded pending, grant, failed
+poll and device rows; authorization before receipt replay on every gateway
+mutation; revocation barrier ordering against `Bind`; inactivity never
+extends absolute expiry; separate development and production databases;
+gateway peers cannot reach admin or management RPC or desktop live mode;
+broker-generated device and credential IDs; parameterized SQL only. Device
+labels reject C0/C1 controls but allow bidi and format characters; the CLI
+prints them through `strconv.QuoteToGraphic`, which escapes those, so no
+unsafe terminal output was found.
+
+Not fixed, availability only: a device whose credential expired but was
+never revoked still counts as active toward the 64-device limit and is never
+pruned. After 64 such pairings, new pairing returns `limit_exceeded` until
+the owner runs `pterm revoke`.
+
+Commands (all pass):
+
+```sh
+GOTOOLCHAIN=go1.27.1 go test -race -count=3 ./internal/auth/... ./internal/store/... \
+  ./internal/broker/... ./internal/gatewayclient/...
+GOTOOLCHAIN=go1.27.1 go test -count=1 -run Pair ./tests/integration/   # -run Pairing matches no test
+GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 go vet ./...
+gofmt -l internal tests cmd                                             # no output
+```
