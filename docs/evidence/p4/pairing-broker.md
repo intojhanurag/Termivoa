@@ -127,5 +127,7 @@ afterwards), so it is not caused by this branch. It is not counted as passing.
 - The pre-existing `TestPtermDesktopAttachNativeOuterTTY` failure above.
 - QR code rendering: deliberately not implemented; `pterm pair` prints the link
   only and says so.
+  (Superseded in P6: `pterm pair` now also prints a terminal QR code; see
+  `docs/evidence/p6/cli-lifecycle.md`.)
 - Linux shell discovery: not implemented because Linux is not a supported v0
   broker host and the stored profile platform allows only darwin/windows/wsl.

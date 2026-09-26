@@ -12,6 +12,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.59.0
+	rsc.io/qr v0.2.0
 )
 
 require (

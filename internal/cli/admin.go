@@ -31,10 +31,11 @@ type Admin interface {
 
 const setOriginHint = "run `pterm config origin https://<your-private-host>`"
 
-// Pair creates one grant and prints it only inside the pairing link. The
-// grant is the URL fragment by design, so it never reaches the server's
-// request line; it must not appear anywhere else in output or errors.
-func Pair(ctx context.Context, admin Admin, originFlag string, output io.Writer) error {
+// Pair creates one grant and prints it only inside the pairing link and,
+// when showQR is set, a terminal QR code of that same link. The grant is the
+// URL fragment by design, so it never reaches the server's request line; it
+// must not appear anywhere else in output or errors.
+func Pair(ctx context.Context, admin Admin, originFlag string, showQR bool, output io.Writer) error {
 	if originFlag != "" {
 		if err := protocol.ValidatePairingOrigin(originFlag); err != nil {
 			return fmt.Errorf("invalid --origin: %w", err)
@@ -57,13 +58,21 @@ func Pair(ctx context.Context, admin Admin, originFlag string, output io.Writer)
 	if protocol.ValidateSecretText(grant.Grant) != nil {
 		return errors.New("broker returned a malformed pairing grant")
 	}
+	link := origin + "/pair#" + grant.Grant
+	code, instruction := "", "Open this link"
+	if showQR {
+		if code, err = renderQR(link); err != nil {
+			code = "No QR code: " + err.Error() + ".\n"
+		} else {
+			instruction = "Scan the QR code or open this link"
+		}
+	}
 	return writeString(output, fmt.Sprintf(
-		"Pairing link (expires %s):\n%s/pair#%s\n"+
-			"Open this link on the phone within 2 minutes. Then run `pterm pair pending` and approve with "+
+		"%sPairing link (expires %s):\n%s\n"+
+			"%s on the phone within 2 minutes. Then run `pterm pair pending` and approve with "+
 			"`pterm pair approve <pending-id>` after comparing the code.\n"+
-			"No QR code is shown in this build; open the link on the phone directly.\n"+
-			"The link is a single-use secret: do not paste it into chats, issues or logs.\n",
-		grant.ExpiresAt, origin, grant.Grant))
+			"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n",
+		code, grant.ExpiresAt, link, instruction))
 }
 
 func PairPending(ctx context.Context, admin Admin, output io.Writer) error {

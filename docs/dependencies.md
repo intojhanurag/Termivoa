@@ -15,6 +15,7 @@ P1/P2 fixtures must establish terminal behavior.
 | `github.com/charmbracelet/x/ansi` | `v0.11.7` | ANSI utilities | pending notice audit |
 | `modernc.org/sqlite` | `v1.59.0` | Local metadata database | pending notice audit |
 | `github.com/Microsoft/go-winio` | `v0.6.2` | Windows named-pipe IPC | pending notice audit |
+| `rsc.io/qr` | `v0.2.0` | Terminal QR code for `pterm pair` (packages `qr`, `qr/coding`, `qr/gf256` only; never the cgo `libqrencode` subpackage) | BSD-3-Clause, checked against the locked module `LICENSE`; distribution notice audit pending |
 
 ## Build-time web dependencies
 

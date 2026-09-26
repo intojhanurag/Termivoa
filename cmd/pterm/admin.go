@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/x/term"
+
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
@@ -21,7 +23,7 @@ const adminProfileFlags = "[--dev] [--runtime-dir <directory>]"
 // positional arguments, because Go's flag package stops at the first
 // positional: pterm project add [--dev] [--runtime-dir D] [--name N] <path>.
 var adminUsages = map[string]string{
-	"pair":           "pterm pair " + adminProfileFlags + " [--origin <https-origin>]",
+	"pair":           "pterm pair " + adminProfileFlags + " [--origin <https-origin>] [--no-qr]",
 	"pair pending":   "pterm pair pending " + adminProfileFlags,
 	"pair approve":   "pterm pair approve " + adminProfileFlags + " <pending-id>",
 	"devices":        "pterm devices " + adminProfileFlags,
@@ -44,6 +46,7 @@ type adminCommandConfig struct {
 	runtimeDir string
 	arguments  []string
 	origin     string
+	noQR       bool
 	name       *string
 }
 
@@ -77,6 +80,7 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 	config := adminCommandConfig{action: action}
 	if action == "pair" {
 		flags.StringVar(&config.origin, "origin", "", "https origin for this pairing link")
+		flags.BoolVar(&config.noQR, "no-qr", false, "print only the link, without a terminal QR code")
 	}
 	if action == "project add" {
 		flags.Func("name", "project display name", func(value string) error {
@@ -151,6 +155,9 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	if parseErr != nil && !errors.Is(parseErr, flag.ErrHelp) {
 		return parseErr
 	}
+	// The QR code uses terminal colors, so redirected output gets only the link.
+	file, isFile := output.(*os.File)
+	showQR := !config.noQR && isFile && term.IsTerminal(file.Fd())
 	managedOutput, err := newManagementOutput(ctx, output)
 	if err != nil {
 		return err
@@ -168,7 +175,7 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	defer func() { returnErr = errors.Join(returnErr, client.Close()) }()
 	switch config.action {
 	case "pair":
-		return cli.Pair(ctx, client, config.origin, output)
+		return cli.Pair(ctx, client, config.origin, showQR, output)
 	case "pair pending":
 		return cli.PairPending(ctx, client, output)
 	case "pair approve":

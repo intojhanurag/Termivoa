@@ -13,6 +13,7 @@ This file is a preparatory dependency inventory for private development. Direct 
 | `github.com/charmbracelet/x/ansi` | v0.11.7 | MIT |
 | `modernc.org/sqlite` | v1.59.0 | BSD-3-Clause; locked source also carries SQLite's public-domain dedication and the bundled sqlite-vec MIT notice |
 | `github.com/Microsoft/go-winio` | v0.6.2 | MIT |
+| `rsc.io/qr` | v0.2.0 | BSD-3-Clause (Copyright 2009 The Go Authors) |
 | React | 19.3.0 | MIT |
 | Vite | 8.3.0 | MIT |
 | `@xterm/xterm` | 6.0.0 | MIT |
