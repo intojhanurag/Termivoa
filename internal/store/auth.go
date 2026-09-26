@@ -124,12 +124,13 @@ func (store *Store) RedeemPairingGrant(ctx context.Context, grantHash []byte, pe
 		return err
 	}
 	var grantID string
-	var expires int64
+	var created, expires int64
 	var redeemed sql.NullInt64
 	err = transaction.QueryRowContext(ctx,
-		`SELECT id, expires_at_ms, redeemed_at_ms FROM pairing_grants WHERE grant_hash = ?`, grantHash,
-	).Scan(&grantID, &expires, &redeemed)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && (redeemed.Valid || expires <= now) {
+		`SELECT id, created_at_ms, expires_at_ms, redeemed_at_ms FROM pairing_grants WHERE grant_hash = ?`, grantHash,
+	).Scan(&grantID, &created, &expires, &redeemed)
+	// A clock behind the creation time must not extend the grant lifetime.
+	if errors.Is(err, sql.ErrNoRows) || err == nil && (redeemed.Valid || expires <= now || created > now) {
 		return ErrPairingInvalid
 	}
 	if err != nil {
@@ -163,7 +164,8 @@ func (store *Store) RedeemPairingGrant(ctx context.Context, grantHash []byte, pe
 func (store *Store) ListPendingPairings(ctx context.Context, now time.Time, limit int) ([]PendingPairing, error) {
 	rows, err := store.database.QueryContext(ctx, `SELECT id, grant_id, poll_hash, verification_code,
 		device_label, created_at_ms, expires_at_ms, approved_at_ms FROM pending_pairings
-		WHERE expires_at_ms > ? AND approved_at_ms IS NULL ORDER BY created_at_ms, id LIMIT ?`, millis(now), limit)
+		WHERE expires_at_ms > ?1 AND created_at_ms <= ?1 AND approved_at_ms IS NULL
+		ORDER BY created_at_ms, id LIMIT ?2`, millis(now), limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list pending pairings: %w", err)
 	}
@@ -196,16 +198,16 @@ func (store *Store) ApprovePendingPairing(ctx context.Context, id string, now ti
 		return fmt.Errorf("store: begin pending approval: %w", err)
 	}
 	defer transaction.Rollback() //nolint:errcheck
-	var expires int64
+	var created, expires int64
 	var approved sql.NullInt64
-	err = transaction.QueryRowContext(ctx,
-		`SELECT expires_at_ms, approved_at_ms FROM pending_pairings WHERE id = ?`, id).Scan(&expires, &approved)
+	err = transaction.QueryRowContext(ctx, `SELECT created_at_ms, expires_at_ms, approved_at_ms
+		FROM pending_pairings WHERE id = ?`, id).Scan(&created, &expires, &approved)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return ErrPendingMissing
 	case err != nil:
 		return fmt.Errorf("store: read pending pairing: %w", err)
-	case expires <= millis(now):
+	case expires <= millis(now), created > millis(now): // Rollback cannot extend its lifetime.
 		return ErrPendingMissing
 	case approved.Valid:
 		return ErrPendingApproved
@@ -236,12 +238,12 @@ func (store *Store) CompletePendingPairing(
 	when := millis(now)
 	var storedHash []byte
 	var label string
-	var expires int64
+	var created, expires int64
 	var approved sql.NullInt64
 	var failed int
-	err = transaction.QueryRowContext(ctx, `SELECT poll_hash, device_label, expires_at_ms, approved_at_ms, failed_polls
-		FROM pending_pairings WHERE id = ?`, id).Scan(&storedHash, &label, &expires, &approved, &failed)
-	if errors.Is(err, sql.ErrNoRows) {
+	err = transaction.QueryRowContext(ctx, `SELECT poll_hash, device_label, created_at_ms, expires_at_ms, approved_at_ms,
+		failed_polls FROM pending_pairings WHERE id = ?`, id).Scan(&storedHash, &label, &created, &expires, &approved, &failed)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && created > when { // Rollback cannot extend its lifetime.
 		return Device{}, false, ErrPendingMissing
 	}
 	if err != nil {
