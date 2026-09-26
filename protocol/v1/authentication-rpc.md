@@ -81,7 +81,7 @@ receives an error rather than a success.
 | Redeem attempts | 30 per minute per broker; excess returns `limit_exceeded` before any row is allocated |
 | Poll attempts | 120 per minute per broker; excess returns `limit_exceeded` |
 | Browser credential | 256-bit; 30-day absolute and 7-day inactivity expiry; last use persisted at most once per minute |
-| Devices | at most 64 active; the oldest revoked devices are pruned to keep at most 200 rows |
+| Devices | at most 64 rows; the oldest revoked devices are pruned first, active devices never |
 
 Error codes: an unknown, used or expired grant and an unknown or expired
 pending pairing return `pairing_expired`; a wrong poll secret, or an unknown,
