@@ -461,3 +461,26 @@ func TestSessionStreamStructuredInputEncoding(t *testing.T) {
 	}
 	waitStreamInput(t, process, "\x03\x1bOA\x1b[200~one\ntwo\x1b[201~\x1b[M !!")
 }
+
+func TestSessionStreamReportsMalformedMessageBeforeClosing(t *testing.T) {
+	fixture, _, _ := newStreamFixture(t)
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attach(t)
+	// Modifiers must be an object; an array is a protocol violation.
+	malformed := []byte(`{"version":1,"type":"input.key","requestId":"` + rpcSessionID + `","sessionId":"` + rpcSessionID +
+		`","generation":"` + rpcSessionGen + `","payload":{"lease":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","inputSequence":"1","key":"enter","modifiers":[]}}`)
+	if err := client.conn.SetWriteDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.writer.WriteFrame(malformed); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := protocol.DecodePayload[protocol.ErrorPayload](client.await(t, protocol.Error, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != protocol.InvalidRequest {
+		t.Fatalf("error code = %q, want %q", payload.Code, protocol.InvalidRequest)
+	}
+	<-client.done
+}

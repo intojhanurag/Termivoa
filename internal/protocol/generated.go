@@ -5,6 +5,22 @@ package protocol
 // Generation index for named types in the canonical v1 protocol schemas.
 type ProtocolTypes struct {
 	AccessRevoked                    AccessRevokedPayload                    `json:"accessRevoked"`
+	AdminRPCDevice                   AdminRPCDevice                          `json:"adminRPCDevice"`
+	AdminRPCDeviceID                 AdminRPCDeviceIDPayload                 `json:"adminRPCDeviceID"`
+	AdminRPCDeviceListResult         AdminRPCDeviceListResultPayload         `json:"adminRPCDeviceListResult"`
+	AdminRPCDeviceRevokeResult       AdminRPCDeviceRevokeResultPayload       `json:"adminRPCDeviceRevokeResult"`
+	AdminRPCMessageType              AdminRPCMessageType                     `json:"adminRPCMessageType"`
+	AdminRPCOrigin                   AdminRPCOriginPayload                   `json:"adminRPCOrigin"`
+	AdminRPCPairGrantResult          AdminRPCPairGrantResultPayload          `json:"adminRPCPairGrantResult"`
+	AdminRPCPairPendingResult        AdminRPCPairPendingResultPayload        `json:"adminRPCPairPendingResult"`
+	AdminRPCPendingID                AdminRPCPendingIDPayload                `json:"adminRPCPendingID"`
+	AdminRPCPendingPairing           AdminRPCPendingPairing                  `json:"adminRPCPendingPairing"`
+	AdminRPCProfileListResult        AdminRPCProfileListResultPayload        `json:"adminRPCProfileListResult"`
+	AdminRPCProject                  AdminRPCProject                         `json:"adminRPCProject"`
+	AdminRPCProjectAdd               AdminRPCProjectAddPayload               `json:"adminRPCProjectAdd"`
+	AdminRPCProjectListResult        AdminRPCProjectListResultPayload        `json:"adminRPCProjectListResult"`
+	AdminRPCProjectResult            AdminRPCProjectResultPayload            `json:"adminRPCProjectResult"`
+	AdminRPCShellProfile             AdminRPCShellProfile                    `json:"adminRPCShellProfile"`
 	BrokerRPCEmpty                   BrokerRPCEmptyPayload                   `json:"brokerRPCEmpty"`
 	BrokerRPCError                   BrokerRPCErrorPayload                   `json:"brokerRPCError"`
 	BrokerRPCMessageType             BrokerRPCMessageType                    `json:"brokerRPCMessageType"`
@@ -20,6 +36,13 @@ type ProtocolTypes struct {
 	Empty                            EmptyPayload                            `json:"empty"`
 	Error                            ErrorPayload                            `json:"error"`
 	ErrorCode                        ErrorCode                               `json:"errorCode"`
+	GatewayRPCCredential             GatewayRPCCredentialPayload             `json:"gatewayRPCCredential"`
+	GatewayRPCMessageType            GatewayRPCMessageType                   `json:"gatewayRPCMessageType"`
+	GatewayRPCPairPollResult         GatewayRPCPairPollResultPayload         `json:"gatewayRPCPairPollResult"`
+	GatewayRPCPrincipal              GatewayRPCPrincipalPayload              `json:"gatewayRPCPrincipal"`
+	GatewayRPCSessionCreate          GatewayRPCSessionCreatePayload          `json:"gatewayRPCSessionCreate"`
+	GatewayRPCSessionRename          GatewayRPCSessionRenamePayload          `json:"gatewayRPCSessionRename"`
+	GatewayRPCSessionTerminate       GatewayRPCSessionTerminatePayload       `json:"gatewayRPCSessionTerminate"`
 	Heartbeat                        HeartbeatPayload                        `json:"heartbeat"`
 	Hello                            HelloPayload                            `json:"hello"`
 	HistoryChanged                   HistoryChangedPayload                   `json:"historyChanged"`
@@ -66,6 +89,86 @@ type ProtocolTypes struct {
 
 type AccessRevokedPayload struct {
 	Message string `json:"message"`
+}
+
+type AdminRPCDevice struct {
+	CreatedAt  string `json:"createdAt"`
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	LastUsedAt string `json:"lastUsedAt"`
+	Revoked    bool   `json:"revoked"`
+}
+
+type AdminRPCDeviceIDPayload struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type AdminRPCDeviceListResultPayload struct {
+	Devices []AdminRPCDevice `json:"devices"`
+}
+
+// Sent only after the revocation is durable and every bound live stream has been closed.
+type AdminRPCDeviceRevokeResultPayload struct {
+	ClosedStreams int64  `json:"closedStreams"`
+	DeviceID      string `json:"deviceId"`
+}
+
+// In a request, a present origin replaces the configured one and an absent origin reads it.
+// In a result, origin is absent when none is configured.
+type AdminRPCOriginPayload struct {
+	Origin *string `json:"origin,omitempty"`
+}
+
+// The only delivery of a fresh two-minute grant. origin is present when configured.
+type AdminRPCPairGrantResultPayload struct {
+	ExpiresAt string  `json:"expiresAt"`
+	Grant     string  `json:"grant"`
+	Origin    *string `json:"origin,omitempty"`
+}
+
+type AdminRPCPairPendingResultPayload struct {
+	Pending []AdminRPCPendingPairing `json:"pending"`
+}
+
+type AdminRPCPendingPairing struct {
+	DeviceLabel      string `json:"deviceLabel"`
+	ExpiresAt        string `json:"expiresAt"`
+	ID               string `json:"id"`
+	VerificationCode string `json:"verificationCode"`
+}
+
+type AdminRPCPendingIDPayload struct {
+	PendingID string `json:"pendingId"`
+}
+
+type AdminRPCProfileListResultPayload struct {
+	Profiles []AdminRPCShellProfile `json:"profiles"`
+}
+
+type AdminRPCShellProfile struct {
+	Arguments  []string `json:"arguments"`
+	Executable string   `json:"executable"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+}
+
+type AdminRPCProject struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type AdminRPCProjectAddPayload struct {
+	Name *string `json:"name,omitempty"`
+	Path string  `json:"path"`
+}
+
+type AdminRPCProjectListResultPayload struct {
+	Projects []AdminRPCProject `json:"projects"`
+}
+
+type AdminRPCProjectResultPayload struct {
+	Project AdminRPCProject `json:"project"`
 }
 
 type BrokerRPCEmptyPayload struct {
@@ -143,9 +246,70 @@ type ErrorPayload struct {
 	Message string    `json:"message"`
 }
 
+// The raw browser cookie value. It is never logged, persisted, or echoed.
+type GatewayRPCCredentialPayload struct {
+	Credential string `json:"credential"`
+}
+
+// credential and credentialExpiresAt appear exactly when response.status is approved. That
+// single response is the only delivery of the credential; it is never replayable.
+type GatewayRPCPairPollResultPayload struct {
+	Credential          *string              `json:"credential,omitempty"`
+	CredentialExpiresAt *string              `json:"credentialExpiresAt,omitempty"`
+	Response            HTTPPairPollResponse `json:"response"`
+}
+
+// An approved response is the only one that sets the session cookie.
+type HTTPPairPollResponse struct {
+	Device *HTTPDeviceSummary `json:"device,omitempty"`
+	Status HTTPPairPollStatus `json:"status"`
+}
+
 type HTTPDeviceSummary struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+}
+
+// Broker-resolved identity for one valid credential. Display and routing data only.
+type GatewayRPCPrincipalPayload struct {
+	CredentialID string `json:"credentialId"`
+	DeviceID     string `json:"deviceId"`
+	DeviceLabel  string `json:"deviceLabel"`
+	ExpiresAt    string `json:"expiresAt"`
+}
+
+type GatewayRPCSessionCreatePayload struct {
+	Credential string                   `json:"credential"`
+	Request    HTTPSessionCreateRequest `json:"request"`
+}
+
+type HTTPSessionCreateRequest struct {
+	OperationID    string `json:"operationId"`
+	ProjectID      string `json:"projectId"`
+	ShellProfileID string `json:"shellProfileId"`
+}
+
+type GatewayRPCSessionRenamePayload struct {
+	Credential string                   `json:"credential"`
+	Request    HTTPSessionRenameRequest `json:"request"`
+	SessionID  string                   `json:"sessionId"`
+}
+
+type HTTPSessionRenameRequest struct {
+	Generation  string `json:"generation"`
+	OperationID string `json:"operationId"`
+	Title       string `json:"title"`
+}
+
+type GatewayRPCSessionTerminatePayload struct {
+	Credential string                      `json:"credential"`
+	Request    HTTPSessionTerminateRequest `json:"request"`
+	SessionID  string                      `json:"sessionId"`
+}
+
+type HTTPSessionTerminateRequest struct {
+	Generation  string `json:"generation"`
+	OperationID string `json:"operationId"`
 }
 
 type HTTPErrorResponse struct {
@@ -164,12 +328,6 @@ type HTTPPairPollRequest struct {
 	PollSecret string `json:"pollSecret"`
 }
 
-// An approved response is the only one that sets the session cookie.
-type HTTPPairPollResponse struct {
-	Device *HTTPDeviceSummary `json:"device,omitempty"`
-	Status HTTPPairPollStatus `json:"status"`
-}
-
 type HTTPPairRedeemRequest struct {
 	DeviceLabel string `json:"deviceLabel"`
 	Grant       string `json:"grant"`
@@ -182,12 +340,6 @@ type HTTPPairRedeemResponse struct {
 	VerificationCode string `json:"verificationCode"`
 }
 
-type HTTPSessionCreateRequest struct {
-	OperationID    string `json:"operationId"`
-	ProjectID      string `json:"projectId"`
-	ShellProfileID string `json:"shellProfileId"`
-}
-
 type HTTPSessionListResponse struct {
 	Sessions []BrokerRPCSessionRecord `json:"sessions"`
 }
@@ -195,17 +347,6 @@ type HTTPSessionListResponse struct {
 type HTTPSessionMutationResponse struct {
 	OperationID string                 `json:"operationId"`
 	Session     BrokerRPCSessionRecord `json:"session"`
-}
-
-type HTTPSessionRenameRequest struct {
-	Generation  string `json:"generation"`
-	OperationID string `json:"operationId"`
-	Title       string `json:"title"`
-}
-
-type HTTPSessionTerminateRequest struct {
-	Generation  string `json:"generation"`
-	OperationID string `json:"operationId"`
 }
 
 type HTTPSettingsResponse struct {
@@ -452,6 +593,32 @@ type ProtocolLimits struct {
 	OutgoingQueueBytes   int64 `json:"outgoingQueueBytes"`
 }
 
+type AdminRPCMessageType string
+
+const (
+	AdminConfigOrigin        AdminRPCMessageType = "admin.config.origin"
+	AdminConfigOriginResult  AdminRPCMessageType = "admin.config.origin.result"
+	AdminDeviceList          AdminRPCMessageType = "admin.device.list"
+	AdminDeviceListResult    AdminRPCMessageType = "admin.device.list.result"
+	AdminDeviceRevoke        AdminRPCMessageType = "admin.device.revoke"
+	AdminDeviceRevokeResult  AdminRPCMessageType = "admin.device.revoke.result"
+	AdminError               AdminRPCMessageType = "admin.error"
+	AdminPairApprove         AdminRPCMessageType = "admin.pair.approve"
+	AdminPairApproveResult   AdminRPCMessageType = "admin.pair.approve.result"
+	AdminPairGrant           AdminRPCMessageType = "admin.pair.grant"
+	AdminPairGrantResult     AdminRPCMessageType = "admin.pair.grant.result"
+	AdminPairPending         AdminRPCMessageType = "admin.pair.pending"
+	AdminPairPendingResult   AdminRPCMessageType = "admin.pair.pending.result"
+	AdminProfileDetect       AdminRPCMessageType = "admin.profile.detect"
+	AdminProfileDetectResult AdminRPCMessageType = "admin.profile.detect.result"
+	AdminProfileList         AdminRPCMessageType = "admin.profile.list"
+	AdminProfileListResult   AdminRPCMessageType = "admin.profile.list.result"
+	AdminProjectAdd          AdminRPCMessageType = "admin.project.add"
+	AdminProjectAddResult    AdminRPCMessageType = "admin.project.add.result"
+	AdminProjectList         AdminRPCMessageType = "admin.project.list"
+	AdminProjectListResult   AdminRPCMessageType = "admin.project.list.result"
+)
+
 type ErrorCode string
 
 const (
@@ -501,6 +668,32 @@ const (
 	Lost     State = "lost"
 	Running  State = "running"
 	Starting State = "starting"
+)
+
+type GatewayRPCMessageType string
+
+const (
+	GatewayAuthCheck              GatewayRPCMessageType = "gateway.auth.check"
+	GatewayAuthCheckResult        GatewayRPCMessageType = "gateway.auth.check.result"
+	GatewayAuthLogout             GatewayRPCMessageType = "gateway.auth.logout"
+	GatewayAuthLogoutResult       GatewayRPCMessageType = "gateway.auth.logout.result"
+	GatewayError                  GatewayRPCMessageType = "gateway.error"
+	GatewayLiveOpen               GatewayRPCMessageType = "gateway.live.open"
+	GatewayLiveOpenResult         GatewayRPCMessageType = "gateway.live.open.result"
+	GatewayPairPoll               GatewayRPCMessageType = "gateway.pair.poll"
+	GatewayPairPollResult         GatewayRPCMessageType = "gateway.pair.poll.result"
+	GatewayPairRedeem             GatewayRPCMessageType = "gateway.pair.redeem"
+	GatewayPairRedeemResult       GatewayRPCMessageType = "gateway.pair.redeem.result"
+	GatewaySessionCreate          GatewayRPCMessageType = "gateway.session.create"
+	GatewaySessionCreateResult    GatewayRPCMessageType = "gateway.session.create.result"
+	GatewaySessionList            GatewayRPCMessageType = "gateway.session.list"
+	GatewaySessionListResult      GatewayRPCMessageType = "gateway.session.list.result"
+	GatewaySessionRename          GatewayRPCMessageType = "gateway.session.rename"
+	GatewaySessionRenameResult    GatewayRPCMessageType = "gateway.session.rename.result"
+	GatewaySessionTerminate       GatewayRPCMessageType = "gateway.session.terminate"
+	GatewaySessionTerminateResult GatewayRPCMessageType = "gateway.session.terminate.result"
+	GatewaySettings               GatewayRPCMessageType = "gateway.settings"
+	GatewaySettingsResult         GatewayRPCMessageType = "gateway.settings.result"
 )
 
 type HTTPPairPollStatus string

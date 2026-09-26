@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-09-21
+Last updated: 2026-09-27
 
 ## Current status
 
@@ -39,11 +39,13 @@ executable-broker readiness timeout remains unclassified, documented in
 not erased by green reruns. Native Windows 11, real-phone, authentication, signed
 installer, performance/soak, and release gates remain pending.
 
-Desktop readiness during initial resize and smooth controlled-window shrink are
-under active review. An early Control footer could precede the resized snapshot;
-this is not dismissed as a Unicode decoding defect or claimed fixed by waiting
-longer in a test. P4 ownership/ordering preparation is documented in
-`docs/p4-authentication-design.md`; authenticated routes are still absent.
+Desktop startup input is now admitted only for the current connected, ready
+controller epoch, and an early Ctrl+] at the startup handoff detaches instead of
+being flushed (2026-09-27, `docs/evidence/p3/desktop-input-admission.md`).
+Native shrink-then-grow resizing is covered by the outer-PTY executable test
+(`docs/evidence/p3/desktop-native-resize.md`). The active-output termination
+drain fix is integrated (`docs/evidence/p3/active-output-shutdown.md`).
+Native Windows execution of these paths remains pending.
 
 ### Milestone record
 
@@ -481,3 +483,17 @@ The fixture directory cleanup also now runs before `TestMain` exits. Full-suite
 race tests and twenty focused PTY race repetitions passed; native Windows is
 still pending. See `docs/evidence/p3/pty-fixture-activation.md` for the sampled
 failure, exact checks, and distinct cold-launch versus PTY validation scopes.
+
+## P4 pairing and authentication (broker side)
+
+On 2026-09-27 branch `feat/p4-pairing-broker` implemented the broker half of
+P4: gateway and local administration RPC schemas, migration 004 with hashed
+secrets, the pairing/credential/revocation service, credential-bound browser
+live streams with access rechecks in the session actor, shell-profile
+discovery, `internal/gatewayclient`, and the `pair`, `devices`, `revoke`,
+`project`, `profile` and `config origin` commands. A gateway IPC peer can no
+longer reach unauthenticated session management. Race tests, Windows
+cross-vet, web checks and the real-broker pairing integration test pass on
+macOS. `TestPtermDesktopAttachNativeOuterTTY` fails identically on the base
+commit and remains open. Native Windows, the HTTP gateway/web pairing path and
+a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.

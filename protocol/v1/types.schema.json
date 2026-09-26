@@ -18,7 +18,9 @@
     "brokerRPCSessionRecord", "brokerRPCSessionListResult", "brokerRPCSessionResult",
     "brokerRPCSessionMutationResult",
     "brokerRPCError",
-    "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse"
+    "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse",
+    "gatewayRPCMessageType", "gatewayRPCCredential", "gatewayRPCSessionCreate", "gatewayRPCSessionRename", "gatewayRPCSessionTerminate", "gatewayRPCPairPollResult", "gatewayRPCPrincipal",
+    "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -78,6 +80,29 @@
     "httpSessionRenameRequest": { "$ref": "http-api.schema.json#/$defs/sessionRenameRequest" },
     "httpSessionTerminateRequest": { "$ref": "http-api.schema.json#/$defs/sessionTerminateRequest" },
     "httpSessionMutationResponse": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" },
-    "httpErrorResponse": { "$ref": "http-api.schema.json#/$defs/errorResponse" }
+    "httpErrorResponse": { "$ref": "http-api.schema.json#/$defs/errorResponse" },
+    "gatewayRPCMessageType": { "$ref": "gateway-rpc.schema.json#/$defs/messageType" },
+    "gatewayRPCCredential": { "$ref": "gateway-rpc.schema.json#/$defs/credentialPayload" },
+    "gatewayRPCSessionCreate": { "$ref": "gateway-rpc.schema.json#/$defs/sessionCreatePayload" },
+    "gatewayRPCSessionRename": { "$ref": "gateway-rpc.schema.json#/$defs/sessionRenamePayload" },
+    "gatewayRPCSessionTerminate": { "$ref": "gateway-rpc.schema.json#/$defs/sessionTerminatePayload" },
+    "gatewayRPCPairPollResult": { "$ref": "gateway-rpc.schema.json#/$defs/pairPollResultPayload" },
+    "gatewayRPCPrincipal": { "$ref": "gateway-rpc.schema.json#/$defs/principalPayload" },
+    "adminRPCMessageType": { "$ref": "admin-rpc.schema.json#/$defs/messageType" },
+    "adminRPCPairGrantResult": { "$ref": "admin-rpc.schema.json#/$defs/pairGrantResultPayload" },
+    "adminRPCPendingPairing": { "$ref": "admin-rpc.schema.json#/$defs/pendingPairing" },
+    "adminRPCPairPendingResult": { "$ref": "admin-rpc.schema.json#/$defs/pairPendingResultPayload" },
+    "adminRPCPendingID": { "$ref": "admin-rpc.schema.json#/$defs/pendingIdPayload" },
+    "adminRPCDevice": { "$ref": "admin-rpc.schema.json#/$defs/device" },
+    "adminRPCDeviceListResult": { "$ref": "admin-rpc.schema.json#/$defs/deviceListResultPayload" },
+    "adminRPCDeviceID": { "$ref": "admin-rpc.schema.json#/$defs/deviceIdPayload" },
+    "adminRPCDeviceRevokeResult": { "$ref": "admin-rpc.schema.json#/$defs/deviceRevokeResultPayload" },
+    "adminRPCProjectAdd": { "$ref": "admin-rpc.schema.json#/$defs/projectAddPayload" },
+    "adminRPCProject": { "$ref": "admin-rpc.schema.json#/$defs/project" },
+    "adminRPCProjectResult": { "$ref": "admin-rpc.schema.json#/$defs/projectResultPayload" },
+    "adminRPCProjectListResult": { "$ref": "admin-rpc.schema.json#/$defs/projectListResultPayload" },
+    "adminRPCShellProfile": { "$ref": "admin-rpc.schema.json#/$defs/profile" },
+    "adminRPCProfileListResult": { "$ref": "admin-rpc.schema.json#/$defs/profileListResultPayload" },
+    "adminRPCOrigin": { "$ref": "admin-rpc.schema.json#/$defs/originPayload" }
   }
 }
