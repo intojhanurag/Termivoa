@@ -123,3 +123,27 @@ here.
   line. Only cross-compiled `go vet` ran here.
 - Scanning the QR code with a real phone camera over the private HTTPS origin.
 - The interactive-shell background-job defect above.
+
+## Background jobs at terminate and shutdown (fixed 2026-09-27)
+
+The manual run above found that `sleep 900 &` in an interactive zsh survived
+`pterm shutdown` and `pterm terminate`. Interactive shells run each job in its
+own process group, ignore SIGTERM, and (tested with a raw PTY) zsh `-f -i` did
+not forward SIGHUP to its jobs. The broker signaled only the shell's process
+group.
+
+Fix: `internal/ptyhost` now signals every process in the managed PTY session
+(the child is the session leader, so its PID is the session ID): SIGHUP then
+SIGTERM, then SIGKILL after the existing grace period. On macOS the session
+members come from `kern.proc.all` plus `getsid`; on Linux (development only)
+from `/proc/<pid>/stat`. A process that calls `setsid` itself leaves the session
+and stays outside the managed boundary, as before.
+
+Test: `TestTerminateHangsUpInteractiveShellJobs` (real `/bin/zsh -f -i` and
+`/bin/bash --norc --noprofile -i`, each with `sleep 300 &`). Before the fix it
+failed on both shells; after the fix it passed 5/5 runs. `go test -race` for
+`internal/ptyhost`, `internal/broker` and `internal/host` passed.
+`CGO_ENABLED=0 go vet` passed for linux, windows and freebsd.
+
+Not tested: the Linux `/proc` path at runtime (only built here; CI Linux jobs are
+blocked by billing). Windows already ends all descendants through the Job Object.

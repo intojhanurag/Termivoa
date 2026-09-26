@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -129,5 +132,60 @@ func assertProcessGone(t *testing.T, pid int) {
 			t.Fatalf("descendant process %d remains after session ended: %v", pid, err)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// An interactive shell puts each background job in its own process group and
+// ignores SIGTERM. Terminate must still end those jobs, the same way closing a
+// real terminal window hangs up the shell and its jobs.
+func TestTerminateHangsUpInteractiveShellJobs(t *testing.T) {
+	for _, shell := range []struct {
+		path string
+		args []string
+	}{
+		{"/bin/zsh", []string{"-f", "-i"}},
+		{"/bin/bash", []string{"--norc", "--noprofile", "-i"}},
+	} {
+		t.Run(filepath.Base(shell.path), func(t *testing.T) {
+			if _, err := os.Stat(shell.path); err != nil {
+				t.Skipf("%s is not installed", shell.path)
+			}
+			process, err := Start(context.Background(), Spec{
+				Executable: shell.path, Args: shell.args, Directory: t.TempDir(),
+				Env:     []string{"HOME=" + t.TempDir(), "PATH=/usr/bin:/bin", "TERM=xterm-256color", "PS1=$ "},
+				Columns: 80, Rows: 24,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer process.Close()
+			if _, err := process.Write([]byte(`sleep 300 & echo JOB=$!=E""ND` + "\n")); err != nil {
+				t.Fatal(err)
+			}
+			output := readUntil(t, process, "=END\r\n", 5*time.Second)
+			match := regexp.MustCompile(`JOB=(\d+)=END`).FindStringSubmatch(output)
+			if match == nil {
+				t.Fatalf("no job pid in %q", output)
+			}
+			jobPID, _ := strconv.Atoi(match[1])
+			defer syscall.Kill(jobPID, syscall.SIGKILL)
+			// The broker always drains output; an exiting shell otherwise waits
+			// for its unread terminal output.
+			go func() {
+				buffer := make([]byte, 4096)
+				for {
+					if _, err := process.Read(buffer); err != nil {
+						return
+					}
+				}
+			}()
+
+			terminationContext, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := process.Terminate(terminationContext); err != nil {
+				t.Fatalf("terminate: %v", err)
+			}
+			assertProcessGone(t, jobPID)
+		})
 	}
 }
