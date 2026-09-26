@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var testLimits = PairingLimits{OutstandingGrants: 2, PendingPairings: 2, FailedPolls: 3, Devices: 2}
+var testLimits = PairingLimits{OutstandingGrants: 2, PendingPairings: 2, FailedPolls: 3, Devices: 2, CredentialIdle: 7 * 24 * time.Hour}
 
 func testHash(label string) []byte {
 	sum := sha256.Sum256([]byte(label))
@@ -242,6 +242,85 @@ func TestDeviceCapacityPrunesOnlyRevokedDevices(t *testing.T) {
 	if _, err := store.RevokeDevice(ctx, testUUID(9999), testTime); !errors.Is(err, ErrDeviceMissing) {
 		t.Fatalf("missing device revoke = %v", err)
 	}
+}
+
+// Expired-but-unrevoked devices do not count toward the cap; they stay listed
+// until their row is needed. Revoked devices are pruned before expired ones,
+// and a live device is never pruned.
+func TestDeviceCapacityIgnoresExpiredDevices(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "expired.sqlite"))
+	defer store.Close()
+	ctx := context.Background()
+	day := 24 * time.Hour
+	pair := func(number int, now time.Time, lifetime time.Duration) error {
+		grant := PairingGrant{ID: testUUID(number), Hash: testHash(fmt.Sprint("grant", number)), CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+		pending := testPending(number, now)
+		if err := store.CreatePairingGrant(ctx, grant, 8); err != nil {
+			return err
+		}
+		if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+			return err
+		}
+		if err := store.ApprovePendingPairing(ctx, pending.ID, now); err != nil {
+			return err
+		}
+		device, session := testIssue(number, now)
+		session.ExpiresAt = now.Add(lifetime)
+		_, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits)
+		return err
+	}
+	listed := func(want ...int) {
+		t.Helper()
+		devices, err := store.ListDevices(ctx, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for _, device := range devices {
+			got[device.ID] = true
+		}
+		if len(devices) != len(want) {
+			t.Fatalf("devices = %d, want %v", len(devices), want)
+		}
+		for _, number := range want {
+			if !got[testUUID(2000+number)] {
+				t.Fatalf("device %d is not listed", number)
+			}
+		}
+	}
+	if err := pair(1, testTime, day); err != nil { // Absolute expiry after one day.
+		t.Fatal(err)
+	}
+	if err := pair(2, testTime, 30*day); err != nil {
+		t.Fatal(err)
+	}
+	if err := pair(3, testTime, 30*day); !errors.Is(err, ErrDeviceCapacity) {
+		t.Fatalf("live device capacity = %v", err)
+	}
+	// Device 1 passed its absolute expiry without revocation.
+	if err := pair(3, testTime.Add(2*day), 30*day); err != nil {
+		t.Fatalf("absolutely expired device still counted: %v", err)
+	}
+	listed(2, 3)
+	three, _ := testIssue(3, testTime)
+	if _, err := store.RevokeDevice(ctx, three.ID, testTime.Add(2*day)); err != nil {
+		t.Fatal(err)
+	}
+	// At day 8 device 2 is idle-expired (last use day 0). The revoked device
+	// is pruned first; the expired one stays listed.
+	later := testTime.Add(8 * day)
+	if err := pair(4, later, 30*day); err != nil {
+		t.Fatalf("pairing with revoked and idle-expired devices = %v", err)
+	}
+	listed(2, 4)
+	if err := pair(5, later, 30*day); err != nil {
+		t.Fatalf("idle-expired device still counted: %v", err)
+	}
+	listed(4, 5)
+	if err := pair(6, later, 30*day); !errors.Is(err, ErrDeviceCapacity) {
+		t.Fatalf("live devices were pruned: %v", err)
+	}
+	listed(4, 5)
 }
 
 func TestAuthenticationMigrationUpgradesAndRollsBackOnConflict(t *testing.T) {

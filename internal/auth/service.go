@@ -239,7 +239,7 @@ func (service *Service) Poll(ctx context.Context, pendingID, pollSecret string) 
 			ID: sessionID, DeviceID: deviceID, CredentialHash: credentialHash,
 			CreatedAt: lifetime.CreatedAt, LastUsedAt: lifetime.LastUsedAt, ExpiresAt: lifetime.ExpiresAt,
 		},
-		store.PairingLimits{FailedPolls: MaxFailedPolls, Devices: MaxDevices})
+		store.PairingLimits{FailedPolls: MaxFailedPolls, Devices: MaxDevices, CredentialIdle: BrowserInactivityLifetime})
 	if err != nil {
 		return PollResult{}, mapStoreError(err)
 	}

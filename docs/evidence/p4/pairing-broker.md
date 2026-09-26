@@ -184,3 +184,35 @@ GOTOOLCHAIN=go1.27.1 go test -count=1 -run Pair ./tests/integration/   # -run Pa
 GOOS=windows GOARCH=amd64 GOTOOLCHAIN=go1.27.1 go vet ./...
 gofmt -l internal tests cmd                                             # no output
 ```
+
+## Device cap and expired devices 2026-09-27
+
+Fixes the availability gap recorded in the security review above.
+
+Decision: a device counts toward the 64-device cap only while it is not
+revoked and holds at least one credential that is unrevoked, before its
+absolute expiry, and used within the 7-day inactivity window. The store
+reads the same persisted fields (`expires_at_ms`, `last_used_at_ms`,
+`revoked_at_ms`) that `auth` uses to authenticate, so a device that can no
+longer sign in never blocks pairing. A device whose credentials were all
+logged out is also inactive, because it can never authenticate again.
+
+Revoked devices did not count before this change and still do not.
+
+Pruning is capacity-driven and runs in the pairing-completion transaction.
+When the table already holds 64 rows, the broker deletes inactive devices
+(and, by cascade, their credentials) until one row is free: revoked devices
+first, oldest revocation first, then expired devices, oldest last use first.
+A live device is never pruned. Until its row is needed, an expired device
+stays in `pterm devices`. The table stays bounded at 64 rows, so no separate
+time-based retention prune was added.
+
+Not changed: `pterm devices` still shows an expired, unrevoked device as
+`active`. The status is computed in `internal/cli` from the admin RPC
+`revoked` flag. An `expired` status needs an optional admin RPC device field
+and a CLI change, which are outside this change.
+
+Tests: `internal/store` `TestDeviceCapacityIgnoresExpiredDevices` (absolute
+and inactivity expiry do not count, revoked pruned before expired, expired
+stays listed, live devices never pruned) and the existing
+`TestDeviceCapacityPrunesOnlyRevokedDevices`.
