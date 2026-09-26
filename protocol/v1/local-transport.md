@@ -7,17 +7,22 @@ inbound and 1 MiB outbound, including JSON encoding.
 
 After the IPC handshake, the first request selects one connection mode:
 
-- A management request from `broker-rpc.schema.json` selects sequential,
-  correlated management RPC. The connection cannot later switch to live mode.
+- From a `cli` peer, a management request from `broker-rpc.schema.json` or a
+  local administration request from `admin-rpc.schema.json` selects
+  sequential, correlated RPC. The connection cannot later switch to live mode.
+- From a `gateway` peer, only `gateway-rpc.schema.json` is accepted. A
+  successful credential-bound `gateway.live.open` switches that connection to
+  a browser live stream. See `authentication-rpc.md`.
 - Canonical `hello` from `envelope.schema.json` selects a live terminal stream.
   It negotiates the same capability profile, envelopes, and structured inputs
   used by the phone protocol. No original child ANSI or raw client bytes cross
   this boundary.
 
-The currently implemented live mode accepts only an IPC `cli` peer declaring
-the canonical `desktop` client kind. A gateway/browser cannot obtain this local
-desktop capability. Broker-authorized browser credentials and gateway binding
-are a separate P4 deliverable, not an implicit trust grant to the gateway.
+Live mode accepts an IPC `cli` peer declaring the canonical `desktop` client
+kind, or a `gateway` peer declaring `browser` only after `gateway.live.open`
+bound the connection to a broker-validated browser credential. A gateway cannot
+declare `desktop`, a CLI cannot declare `browser`, and the gateway role alone
+is never an implicit trust grant.
 
 ## Live attachment
 

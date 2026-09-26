@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phone-terminal.invalid/protocol/v1/gateway-rpc.schema.json",
+  "title": "GatewayRPCMessage",
+  "description": "Bounded correlated RPC between the browser gateway and the broker on an IPC connection whose peer declared clientKind gateway. Every authenticated request carries the raw browser credential; the broker hashes and re-authorizes it for each request. See authentication-rpc.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type", "requestId", "payload"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "type": { "$ref": "#/$defs/messageType" },
+    "requestId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+    "payload": { "type": "object" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/pairRedeemMessage" },
+    { "$ref": "#/$defs/pairPollMessage" },
+    { "$ref": "#/$defs/authCheckMessage" },
+    { "$ref": "#/$defs/authLogoutMessage" },
+    { "$ref": "#/$defs/settingsMessage" },
+    { "$ref": "#/$defs/sessionListMessage" },
+    { "$ref": "#/$defs/sessionCreateMessage" },
+    { "$ref": "#/$defs/sessionRenameMessage" },
+    { "$ref": "#/$defs/sessionTerminateMessage" },
+    { "$ref": "#/$defs/liveOpenMessage" },
+    { "$ref": "#/$defs/pairRedeemResultMessage" },
+    { "$ref": "#/$defs/pairPollResultMessage" },
+    { "$ref": "#/$defs/authCheckResultMessage" },
+    { "$ref": "#/$defs/authLogoutResultMessage" },
+    { "$ref": "#/$defs/settingsResultMessage" },
+    { "$ref": "#/$defs/sessionListResultMessage" },
+    { "$ref": "#/$defs/sessionCreateResultMessage" },
+    { "$ref": "#/$defs/sessionRenameResultMessage" },
+    { "$ref": "#/$defs/sessionTerminateResultMessage" },
+    { "$ref": "#/$defs/liveOpenResultMessage" },
+    { "$ref": "#/$defs/errorMessage" }
+  ],
+  "$defs": {
+    "messageType": {
+      "title": "GatewayRPCMessageType",
+      "type": "string",
+      "enum": [
+        "gateway.pair.redeem", "gateway.pair.poll", "gateway.auth.check", "gateway.auth.logout",
+        "gateway.settings", "gateway.session.list", "gateway.session.create", "gateway.session.rename",
+        "gateway.session.terminate", "gateway.live.open",
+        "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
+        "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
+        "gateway.session.create.result", "gateway.session.rename.result",
+        "gateway.session.terminate.result", "gateway.live.open.result", "gateway.error"
+      ]
+    },
+    "credentialPayload": {
+      "title": "GatewayRPCCredentialPayload",
+      "description": "The raw browser cookie value. It is never logged, persisted, or echoed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" }
+      }
+    },
+    "sessionCreatePayload": {
+      "title": "GatewayRPCSessionCreatePayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "request": { "$ref": "http-api.schema.json#/$defs/sessionCreateRequest" }
+      }
+    },
+    "sessionRenamePayload": {
+      "title": "GatewayRPCSessionRenamePayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "sessionId", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "sessionId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "request": { "$ref": "http-api.schema.json#/$defs/sessionRenameRequest" }
+      }
+    },
+    "sessionTerminatePayload": {
+      "title": "GatewayRPCSessionTerminatePayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "sessionId", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "sessionId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "request": { "$ref": "http-api.schema.json#/$defs/sessionTerminateRequest" }
+      }
+    },
+    "pairPollResultPayload": {
+      "title": "GatewayRPCPairPollResultPayload",
+      "description": "credential and credentialExpiresAt appear exactly when response.status is approved. That single response is the only delivery of the credential; it is never replayable.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["response"],
+      "properties": {
+        "response": { "$ref": "http-api.schema.json#/$defs/pairPollResponse" },
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "credentialExpiresAt": { "$ref": "http-api.schema.json#/$defs/timestamp" }
+      }
+    },
+    "principalPayload": {
+      "title": "GatewayRPCPrincipalPayload",
+      "description": "Broker-resolved identity for one valid credential. Display and routing data only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "deviceLabel", "credentialId", "expiresAt"],
+      "properties": {
+        "deviceId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "deviceLabel": { "$ref": "http-api.schema.json#/$defs/deviceLabel" },
+        "credentialId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "expiresAt": { "$ref": "http-api.schema.json#/$defs/timestamp" }
+      }
+    },
+    "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
+    "pairRedeemMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemRequest" } } },
+    "pairPollMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairPollRequest" } } },
+    "authCheckMessage": { "type": "object", "properties": { "type": { "const": "gateway.auth.check" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "authLogoutMessage": { "type": "object", "properties": { "type": { "const": "gateway.auth.logout" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "settingsMessage": { "type": "object", "properties": { "type": { "const": "gateway.settings" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "sessionListMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.list" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "sessionCreateMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.create" }, "payload": { "$ref": "#/$defs/sessionCreatePayload" } } },
+    "sessionRenameMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.rename" }, "payload": { "$ref": "#/$defs/sessionRenamePayload" } } },
+    "sessionTerminateMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.terminate" }, "payload": { "$ref": "#/$defs/sessionTerminatePayload" } } },
+    "liveOpenMessage": { "type": "object", "properties": { "type": { "const": "gateway.live.open" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "pairRedeemResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemResponse" } } },
+    "pairPollResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll.result" }, "payload": { "$ref": "#/$defs/pairPollResultPayload" } } },
+    "authCheckResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.auth.check.result" }, "payload": { "$ref": "#/$defs/principalPayload" } } },
+    "authLogoutResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.auth.logout.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "settingsResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.settings.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/settingsResponse" } } },
+    "sessionListResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.list.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionListResponse" } } },
+    "sessionCreateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.create.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" } } },
+    "sessionRenameResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.rename.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" } } },
+    "sessionTerminateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.terminate.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" } } },
+    "liveOpenResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.live.open.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "errorMessage": { "type": "object", "properties": { "type": { "const": "gateway.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
+  }
+}
