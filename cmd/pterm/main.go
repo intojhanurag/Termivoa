@@ -125,6 +125,11 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 	dev := flags.Bool("dev", false, "use an isolated development profile")
 	runtimeDir := flags.String("runtime-dir", "", "broker runtime directory")
 	listen := flags.String("listen", "", "gateway loopback address")
+	var origins []string
+	flags.Func("origin", "exact browser origin, such as https://mac.tailnet.ts.net (repeatable)", func(value string) error {
+		origins = append(origins, value)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		return gateway.Config{}, fmt.Errorf("gateway options: %w", err)
 	}
@@ -158,7 +163,14 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 		}
 		return gateway.Config{}, err
 	}
+	if err := gateway.ValidateOrigins(profile, origins); err != nil {
+		return gateway.Config{}, err
+	}
+	// TODO(p4): construct the broker client once internal/gatewayclient lands:
+	// config.Broker = gatewayclient.New(validatedRuntime, buildID)
+	// Until then the gateway serves health and the static site only.
 	return gateway.Config{
 		RuntimeDir: validatedRuntime, HostBuild: buildID, ListenAddress: *listen, Profile: profile,
+		Origins: origins,
 	}, nil
 }
