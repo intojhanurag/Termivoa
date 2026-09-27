@@ -54,6 +54,11 @@ type Broker interface {
 	CreateSession(ctx context.Context, credential string, request protocol.HTTPSessionCreateRequest) (protocol.HTTPSessionMutationResponse, error)
 	RenameSession(ctx context.Context, credential, sessionID string, request protocol.HTTPSessionRenameRequest) (protocol.HTTPSessionMutationResponse, error)
 	TerminateSession(ctx context.Context, credential, sessionID string, request protocol.HTTPSessionTerminateRequest) (protocol.HTTPSessionMutationResponse, error)
+	// RenameDevice renames only the device that owns the credential.
+	RenameDevice(ctx context.Context, credential string, request protocol.HTTPDeviceRenameRequest) (protocol.HTTPDeviceSummary, error)
+	// Origin returns the configured browser origin, or "" when none is set.
+	// It needs no credential: the origin is not a secret.
+	Origin(ctx context.Context) (string, error)
 	// OpenLive binds a new broker live stream to the credential. The stream
 	// starts as an observer and carries canonical envelope JSON both ways.
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)

@@ -36,6 +36,7 @@ var (
 	testGrant      = strings.Repeat("G", 43)
 	testPollSecret = strings.Repeat("P", 43)
 	testIssued     = strings.Repeat("I", 43)
+	testOrigin     = "https://mac.example.ts.net"
 )
 
 // handler answers one validated request on the numbered connection (from 1).
@@ -246,6 +247,35 @@ func TestMethodsRoundTripPayloads(t *testing.T) {
 				return client.TerminateSession(ctx, testCredential, testSession, terminateRequest)
 			},
 			want: mutation,
+		},
+		{
+			name: "rename device", requestType: protocol.GatewayDeviceRename,
+			payload: protocol.GatewayRPCDeviceRenamePayload{
+				Credential: testCredential, Request: protocol.HTTPDeviceRenameRequest{Label: "Work phone"},
+			},
+			result: protocol.HTTPDeviceSummary{ID: testDevice, Label: "Work phone"},
+			call: func(ctx context.Context, client *Client) (any, error) {
+				return client.RenameDevice(ctx, testCredential, protocol.HTTPDeviceRenameRequest{Label: "Work phone"})
+			},
+			want: protocol.HTTPDeviceSummary{ID: testDevice, Label: "Work phone"},
+		},
+		{
+			name: "origin", requestType: protocol.GatewayOrigin,
+			payload: protocol.BrokerRPCEmptyPayload{},
+			result:  protocol.GatewayRPCOriginResultPayload{Origin: &testOrigin},
+			call: func(ctx context.Context, client *Client) (any, error) {
+				return client.Origin(ctx)
+			},
+			want: testOrigin,
+		},
+		{
+			name: "no origin", requestType: protocol.GatewayOrigin,
+			payload: protocol.BrokerRPCEmptyPayload{},
+			result:  protocol.GatewayRPCOriginResultPayload{},
+			call: func(ctx context.Context, client *Client) (any, error) {
+				return client.Origin(ctx)
+			},
+			want: "",
 		},
 	}
 	for _, test := range cases {

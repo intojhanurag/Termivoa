@@ -32,6 +32,7 @@ type fakeBroker struct {
 	pollErr     error
 	opErr       error // returned by session operations when set
 	opened      chan *fakeStream
+	origin      string // returned by Origin
 }
 
 func newFakeBroker() *fakeBroker { return &fakeBroker{opened: make(chan *fakeStream, 4)} }
@@ -137,6 +138,26 @@ func (broker *fakeBroker) RenameSession(_ context.Context, credential, sessionID
 
 func (broker *fakeBroker) TerminateSession(_ context.Context, credential, sessionID string, _ protocol.HTTPSessionTerminateRequest) (protocol.HTTPSessionMutationResponse, error) {
 	return broker.mutate("terminate:"+sessionID, credential)
+}
+
+func (broker *fakeBroker) RenameDevice(_ context.Context, credential string, request protocol.HTTPDeviceRenameRequest) (protocol.HTTPDeviceSummary, error) {
+	broker.record("rename-device:" + request.Label)
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPDeviceSummary{}, err
+	}
+	return protocol.HTTPDeviceSummary{ID: uuidA, Label: request.Label}, broker.opErr
+}
+
+func (broker *fakeBroker) setOrigin(origin string) {
+	broker.mu.Lock()
+	broker.origin = origin
+	broker.mu.Unlock()
+}
+
+func (broker *fakeBroker) Origin(context.Context) (string, error) {
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	return broker.origin, nil
 }
 
 func (broker *fakeBroker) OpenLive(_ context.Context, credential string) (gatewayapi.LiveStream, error) {
