@@ -150,8 +150,34 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	returnErr = attachment.Run(ctx)
 	// Run has joined both decoder and painter and restored native modes. This
 	// final message is outside the alternate screen, with its own bounded I/O.
-	_, messageErr := (restorationWriter{writer}).Write([]byte("Attachment closed; the managed session was not terminated.\r\n"))
+	_, messageErr := (restorationWriter{writer}).Write([]byte(display.closedMessage()))
 	return errors.Join(returnErr, messageErr)
+}
+
+// closedMessage reports the session outcome the host last announced. Detach
+// and connection loss leave the managed session running.
+func (display *desktopDisplay) closedMessage() string {
+	display.mu.Lock()
+	client := display.client
+	display.mu.Unlock()
+	if client == nil {
+		return desktopClosedMessage(liveclient.State{})
+	}
+	return desktopClosedMessage(client.State())
+}
+
+func desktopClosedMessage(state liveclient.State) string {
+	switch state.Lifecycle {
+	case protocol.Exited:
+		// Go reports -1 for a process ended by a signal (pterm terminate).
+		if state.ExitCode != nil && *state.ExitCode >= 0 {
+			return fmt.Sprintf("Session ended (exit code %d).\r\n", *state.ExitCode)
+		}
+		return "Session ended.\r\n"
+	case protocol.Lost:
+		return "Session was lost; start a new session explicitly.\r\n"
+	}
+	return "Attachment closed; the managed session was not terminated.\r\n"
 }
 
 // The startup decoder is still draining/discarding input throughout this
