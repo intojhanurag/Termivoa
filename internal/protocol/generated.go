@@ -199,7 +199,10 @@ type AdminRPCShutdownResultPayload struct {
 
 // Broker-computed activity of a running session. question is present exactly when state is
 // waiting. stateSince is the RFC 3339 time of the last change of state or question.
+// afterWork is true only on idle, when this idle ended a working period in this broker's
+// lifetime ("your turn"); it is absent otherwise and resets when work starts again.
 type AgentStatus struct {
+	AfterWork  *bool          `json:"afterWork,omitempty"`
 	Question   *AgentQuestion `json:"question,omitempty"`
 	State      AgentState     `json:"state"`
 	StateSince string         `json:"stateSince"`

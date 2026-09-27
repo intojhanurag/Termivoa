@@ -95,6 +95,9 @@ non-authoritative display fields:
     1 second) or `idle` (quiet for 3 seconds with no question).
   - `stateSince`: when the state or the question last changed (RFC 3339,
     millisecond precision). Use it for "waiting 2 min".
+  - `afterWork`: `true` only on an `idle` that ended a working period in this
+    broker's lifetime (not the session's startup output); absent otherwise.
+    With output the device has not viewed, show "Your turn".
   - `question`: present exactly while `waiting`. `text` is the question line
     (at most 160 characters). Optional `detail` says what is being approved,
     such as the tool and command: up to 6 lines joined with `\n`, each at

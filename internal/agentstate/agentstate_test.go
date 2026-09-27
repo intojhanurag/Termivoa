@@ -224,6 +224,45 @@ func TestTrackerTransitionsAndWakeups(t *testing.T) {
 	}
 }
 
+func TestTrackerWorkedMeasuresBusyPeriod(t *testing.T) {
+	start := time.Unix(1000, 0)
+	tracker := NewTracker("gen")
+	prompt := Parse(Screen{Lines: []string{"Proceed?", "❯ 1. Yes", "  2. No"}})
+	observe := func(at time.Time, parsed Parsed, lastOutput time.Time) Status {
+		t.Helper()
+		if changed, _ := tracker.Observe(at, parsed, lastOutput); !changed {
+			t.Fatalf("no change at %v", at.Sub(start))
+		}
+		return tracker.Status()
+	}
+	// Startup output is not work: its idle carries no Worked.
+	observe(start, Parsed{}, start)
+	if status := observe(start.Add(5*time.Second), Parsed{}, start); status.State != Idle || status.Worked != 0 {
+		t.Fatalf("startup idle = %#v", status)
+	}
+	// Work, a question, more work, then idle: Worked spans all of it.
+	at := start.Add(time.Minute)
+	busy := at
+	observe(at, Parsed{Busy: true}, at)
+	at = at.Add(10 * time.Second)
+	tracker.Observe(at, prompt, at.Add(-2*time.Second)) // Question not settled yet.
+	if status := observe(at.Add(Settle), prompt, at); status.State != Waiting || status.Worked != 0 {
+		t.Fatalf("waiting = %#v", status)
+	}
+	at = at.Add(time.Minute)
+	observe(at, Parsed{Busy: true}, at)
+	at = at.Add(30 * time.Second)
+	if status := observe(at, Parsed{}, at.Add(-IdleAfter)); status.State != Idle || status.Worked != at.Sub(busy) {
+		t.Fatalf("idle = %#v, want worked %v", status, at.Sub(busy))
+	}
+	// The next period starts fresh.
+	at = at.Add(time.Hour)
+	observe(at, Parsed{Busy: true}, at)
+	if status := observe(at.Add(4*time.Second), Parsed{}, at); status.Worked != 4*time.Second {
+		t.Fatalf("second idle = %#v", status)
+	}
+}
+
 // claudePrompt draws a Claude Code permission dialog for body lines.
 func claudePrompt(body ...string) Screen {
 	lines := []string{"⏺ Working", strings.Repeat("─", 40), " Bash command", ""}

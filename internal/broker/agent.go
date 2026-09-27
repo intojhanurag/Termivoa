@@ -10,7 +10,13 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/agentstate"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
+
+// agentDoneAfter is the shortest busy period that sends a "done" push when
+// the agent goes idle. Shorter blips (a shell command, typing) stay silent.
+// A variable only so tests can shorten it.
+var agentDoneAfter = 20 * time.Second
 
 // agentScreen copies the visible grid as plain row text for the detector.
 // Concealed (SGR 8) cells are blank, as in the live view; the detector cleans
@@ -57,8 +63,34 @@ func (session *Session) observeAgent(startedAt time.Time) time.Time {
 	if lastOutput.IsZero() {
 		lastOutput = startedAt
 	}
-	_, wake := session.agent.Observe(time.Now(), parsed, lastOutput)
+	changed, wake := session.agent.Observe(time.Now(), parsed, lastOutput)
+	if changed {
+		session.notifyAgent(session.agent.Status())
+	}
 	return wake
+}
+
+// notifyAgent turns one agent state change into at most one push event:
+// waiting once per question id within a busy period (a prompt that flickers
+// away and back does not buzz twice), and done when idle ends a busy period
+// of at least agentDoneAfter. Scans run only while the session is running,
+// so an exited or lost session never notifies. The hook must not block.
+func (session *Session) notifyAgent(status agentstate.Status) {
+	if session.notify == nil {
+		return
+	}
+	switch status.State {
+	case agentstate.Waiting:
+		if status.QuestionID != session.notifiedID {
+			session.notifiedID = status.QuestionID
+			session.notify(webpush.Event{SessionID: session.id, Kind: webpush.KindWaiting})
+		}
+	case agentstate.Idle:
+		session.notifiedID = ""
+		if status.Worked >= agentDoneAfter {
+			session.notify(webpush.Event{SessionID: session.id, Kind: webpush.KindDone, Duration: status.Worked})
+		}
+	}
 }
 
 // currentAnswer returns the option for an answer only when the published
@@ -122,6 +154,10 @@ func agentPayload(status agentstate.Status) *protocol.AgentStatus {
 	}
 	payload := &protocol.AgentStatus{
 		State: protocol.AgentState(status.State), StateSince: status.Since.UTC().Format(millisecondRFC3339),
+	}
+	if status.Worked > 0 {
+		afterWork := true
+		payload.AfterWork = &afterWork
 	}
 	if status.Question != nil {
 		question := &protocol.AgentQuestion{ID: status.QuestionID, Text: status.Question.Text}

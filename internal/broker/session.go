@@ -13,6 +13,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/agentstate"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 const (
@@ -56,6 +57,9 @@ type SessionConfig struct {
 	Process            ptyhost.Spec
 	InputQueueCapacity int
 	PTYOutputQueue     int
+	// Notify receives agent transitions worth a push notification. It is
+	// called on the session actor and must not block. Nil disables them.
+	Notify func(webpush.Event)
 }
 
 // SessionStatus is an immutable lifecycle snapshot. A nil ExitCode means the
@@ -169,6 +173,8 @@ type Session struct {
 	// question changed; the actor then rescans and republishes session.state.
 	agentDropped   bool
 	agentRepublish bool
+	notify         func(webpush.Event)
+	notifiedID     string              // Last question a waiting notification was sent for.
 	termination    *sessionTermination // Actor-owned; one bounded attempt per session.
 }
 
@@ -337,6 +343,7 @@ func startSessionRuntime(
 		retirementReady:     make(chan struct{}),
 		viewers:             make(map[string]*viewerActorState),
 		agent:               agentstate.NewTracker(config.Generation),
+		notify:              config.Notify,
 	}
 
 	session.pumpWG.Add(3)

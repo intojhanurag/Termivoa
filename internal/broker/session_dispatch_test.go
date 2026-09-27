@@ -38,7 +38,13 @@ func (process *streamProcess) inputText() string {
 
 func newStreamFixture(t *testing.T) (*managementFixture, *Session, *streamProcess) {
 	t.Helper()
-	fixture := newManagementFixture(t)
+	return startStreamFixture(t, newManagementFixture(t))
+}
+
+// startStreamFixture creates one session in fixture, for callers that adjust
+// the registry configuration first.
+func startStreamFixture(t *testing.T, fixture *managementFixture) (*managementFixture, *Session, *streamProcess) {
+	t.Helper()
 	process := &streamProcess{viewerProcess: newViewerProcess()}
 	var session *Session
 	fixture.registry.config.start = func(parent context.Context, config SessionConfig) (registrySession, error) {

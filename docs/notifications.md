@@ -85,9 +85,35 @@ The endpoint URL comes from the browser, so the broker treats it as untrusted:
   ("Get a buzz when an agent needs you") or the Settings switch.
 - Settings has **Send a test notification** to check the whole path.
 
-## The hook for agent-state detection
+## When notifications fire
 
-Nothing sends `waiting` or `done` yet. The agent-state detector calls:
+The broker's agent-state detector (`docs/agent-state.md`) decides. Every
+running session checks its state after each screen scan, on the session
+actor; the notification hook never blocks it. A goroutine reads the session
+title (read at send time, so a rename applies) and the project name from
+SQLite, then calls `Notifier.Notify`, which sends in the background.
+
+| Kind | Fires when |
+| --- | --- |
+| `waiting` | The state becomes `waiting` with a question id not yet notified in this busy period. A prompt that flickers away and back does not buzz twice. After the next `idle`, the same question may notify again. |
+| `done` | The state becomes `idle` after a busy period of at least 20 s (`agentDoneAfter` in `internal/broker/agent.go`). The busy period starts at the first `working` after the last `idle` and includes any `waiting` in between; "Worked for N min" is its length. Shorter blips (a shell command, typing) stay silent. |
+
+- The first `working` of a new session is its startup output (the shell
+  prompt). It starts no busy period.
+- Exited and lost sessions never notify: scans run only while the session is
+  `running`. There is no "exited" notification.
+- An answer sent from the phone does not stop the next notifications: the
+  next question has a new id, and "done" still fires (you may have left).
+- The rate limits above still apply: one per session and kind per 60 s.
+
+**Viewers do not suppress notifications.** A phone that has the session open
+also gets the banner. The broker cannot tell an open screen from a locked
+phone: when iOS suspends a Home Screen app, its WebSocket is often not
+closed, and the viewer stays attached until the broker notices. Suppressing on
+"a viewer is attached" would drop the buzz in exactly the locked-phone case,
+and a browser tab left open on another computer would silence the phone too.
+
+## The notifier API
 
 ```go
 // internal/webpush
@@ -105,5 +131,6 @@ type Event struct {
 `Notify` returns at once and delivers in the background (detached from
 `ctx` cancellation, 60 s deadline). It returns `false` when the event is
 invalid, coalesced, over the rate limit, or dropped because earlier
-deliveries are still running. The broker's notifier is
+deliveries are still running. The host passes `Notifier.Notify` to the
+session registry as `RegistryConfig.Notify`; the same notifier is
 `host.BrokerReady.Push` / `ManagementServerConfig.Push`.

@@ -60,6 +60,20 @@ describe('parseHostMessage', () => {
     expect(message.type === 'session.state' && message.payload.agent?.question?.options).toHaveLength(2);
   });
 
+  it('accepts afterWork as a boolean only', () => {
+    const idle = (afterWork: unknown) => JSON.stringify({
+      version: 1,
+      type: 'session.state',
+      requestId,
+      sessionId: brokerGeneration,
+      generation: brokerGeneration,
+      payload: { state: 'running', agent: { state: 'idle', stateSince: '2026-09-27T10:00:00.000Z', afterWork } },
+    });
+    const message = parseHostMessage(idle(true));
+    expect(message.type === 'session.state' && message.payload.agent?.afterWork).toBe(true);
+    expect(() => parseHostMessage(idle('yes'))).toThrow(InvalidProtocolMessageError);
+  });
+
   it('rejects an agent detail with control characters or blank lines', () => {
     for (const detail of ['rm \u001b[31m', 'a\n\nb', 'a \nb', '\nb']) {
       expect(() => parseHostMessage(JSON.stringify({

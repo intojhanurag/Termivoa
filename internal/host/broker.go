@@ -119,8 +119,21 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 		return err
 	}
 
+	authority, err := auth.NewService(auth.ServiceConfig{Store: persistence})
+	if err != nil {
+		return err
+	}
+	// The broker sends push notifications: it owns devices, revocation and
+	// session state. It creates its VAPID key on first start. Sessions send
+	// agent waiting/done events through the registry.
+	notifier, err := webpush.NewNotifier(ctx, webpush.NotifierConfig{
+		Store: persistence, Revoked: authority.DeviceRevoked, CredentialIdle: auth.BrowserInactivityLifetime,
+	})
+	if err != nil {
+		return err
+	}
 	registry, err := broker.NewRegistry(ctx, broker.RegistryConfig{
-		Store: persistence, BrokerGeneration: generation,
+		Store: persistence, BrokerGeneration: generation, Notify: notifier.Notify,
 	})
 	if err != nil {
 		return err
@@ -134,18 +147,6 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	// Shell discovery only saves absolute executables that exist; it never
 	// runs them. A database failure here prevents startup honestly.
 	if err := broker.DetectShellProfiles(ctx, persistence, store.Platform(runtime.GOOS), time.Now()); err != nil {
-		return err
-	}
-	authority, err := auth.NewService(auth.ServiceConfig{Store: persistence})
-	if err != nil {
-		return err
-	}
-	// The broker sends push notifications: it owns devices, revocation and
-	// session state. It creates its VAPID key on first start.
-	notifier, err := webpush.NewNotifier(ctx, webpush.NotifierConfig{
-		Store: persistence, Revoked: authority.DeviceRevoked, CredentialIdle: auth.BrowserInactivityLifetime,
-	})
-	if err != nil {
 		return err
 	}
 	server, err := broker.NewManagementServer(broker.ManagementServerConfig{
