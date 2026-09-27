@@ -1,4 +1,4 @@
-; Per-user Inno Setup installer for Phone Terminal. Build it with
+; Per-user Inno Setup installer for Termivoa. Build it with
 ; packaging/windows/build-installer.ps1, which defines the values below.
 ; No administrator rights, services, or machine-wide changes: files go under
 ; %LOCALAPPDATA%\Programs\Phone Terminal and startup uses two per-user
@@ -21,13 +21,15 @@
 
 [Setup]
 AppId={{EBF51E47-4F36-40E1-9A74-D41FF979ED6D}
-AppName=Phone Terminal
+AppName=Termivoa
 AppVersion={#AppVersion}
-AppVerName=Phone Terminal {#AppVersion}
-AppPublisher=Phone Terminal contributors
+AppVerName=Termivoa {#AppVersion}
+AppPublisher=Termivoa contributors
 VersionInfoVersion={#NumericVersion}
+; The install and data directory names stay "Phone Terminal" so existing installs,
+; startup tasks and data keep working (docs/naming.md).
 DefaultDirName={localappdata}\Programs\Phone Terminal
-DefaultGroupName=Phone Terminal
+DefaultGroupName=Termivoa
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -35,11 +37,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; conhost --headless, used by the startup tasks, needs Windows 10 1809 or later.
 MinVersion=10.0.17763
 OutputDir={#OutputDir}
-OutputBaseFilename=Phone-Terminal-{#AppVersion}-windows-x64{#Label}-setup
+OutputBaseFilename=Termivoa-{#AppVersion}-windows-x64{#Label}-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-UninstallDisplayName=Phone Terminal
+UninstallDisplayName=Termivoa
 UninstallDisplayIcon={#ExeDir}\pterm.exe
 ; Never close a running broker: that would end its live sessions.
 CloseApplications=no
@@ -52,18 +54,23 @@ SignedUninstaller=yes
 #endif
 
 [Tasks]
-Name: "startup"; Description: "Start Phone Terminal when I sign in (two scheduled tasks for my account only: broker and gateway)"
+Name: "startup"; Description: "Start Termivoa when I sign in (two scheduled tasks for my account only: broker and gateway)"
 Name: "path"; Description: "Add pterm to my PATH (my account only)"; Flags: unchecked
+
+[InstallDelete]
+; Shortcuts from before the rename to Termivoa.
+Type: files; Name: "{group}\Phone Terminal.lnk"
+Type: files; Name: "{group}\Uninstall Phone Terminal.lnk"
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{#ExeDir}"; DestName: "pterm.exe"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Phone Terminal"; Filename: "{#ExeDir}\pterm.exe"; Parameters: "launch"; Comment: "Start Phone Terminal and open its local page"; Flags: runminimized
-Name: "{group}\Uninstall Phone Terminal"; Filename: "{uninstallexe}"
+Name: "{group}\Termivoa"; Filename: "{#ExeDir}\pterm.exe"; Parameters: "launch"; Comment: "Start Termivoa and open its local page"; Flags: runminimized
+Name: "{group}\Uninstall Termivoa"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{#ExeDir}\pterm.exe"; Parameters: "launch"; Description: "Open Phone Terminal now"; Flags: postinstall nowait skipifsilent runhidden
+Filename: "{#ExeDir}\pterm.exe"; Parameters: "launch"; Description: "Open Termivoa now"; Flags: postinstall nowait skipifsilent runhidden
 
 [Code]
 function RunPterm(Params: String; var Code: Integer): Boolean;
@@ -71,7 +78,7 @@ begin
   Result := Exec(ExpandConstant('{#ExeDir}\pterm.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
 
-{ Rewrite the user's PATH without any Phone Terminal version directory, then
+{ Rewrite the user's PATH without any Termivoa version directory, then
   append Addition if it is not empty. Other entries keep their order. }
 procedure UpdateUserPath(Addition: String);
 var
@@ -126,12 +133,12 @@ begin
   if WizardIsTaskSelected('startup') then
   begin
     if not RunPterm('setup --apply --yes', Code) or (Code <> 0) then
-      SuppressibleMsgBox('Phone Terminal is installed, but startup registration did not complete (exit code ' + IntToStr(Code) + '). ' +
-        'The broker may have active sessions, or Phone Terminal may already be running without startup registration. ' +
+      SuppressibleMsgBox('Termivoa is installed, but startup registration did not complete (exit code ' + IntToStr(Code) + '). ' +
+        'The broker may have active sessions, or Termivoa may already be running without startup registration. ' +
         'Run "pterm setup --apply" to see why and what to stop first.', mbError, MB_OK, IDOK);
   end
   else if not RunPterm('uninstall --yes', Code) or (Code <> 0) then
-    SuppressibleMsgBox('Existing Phone Terminal startup tasks could not be removed (exit code ' + IntToStr(Code) + '). ' +
+    SuppressibleMsgBox('Existing Termivoa startup tasks could not be removed (exit code ' + IntToStr(Code) + '). ' +
       'Run "pterm uninstall" to see why.', mbError, MB_OK, IDOK);
 end;
 
@@ -148,12 +155,12 @@ var
 begin
   Result := True;
   UninstallParams := 'uninstall --yes';
-  if not UninstallSilent() and (MsgBox('Also delete your Phone Terminal data (paired devices, projects, settings and logs)?' + #13#10#13#10 +
+  if not UninstallSilent() and (MsgBox('Also delete your Termivoa data (paired devices, projects, settings and logs)?' + #13#10#13#10 +
     'Choose No to keep it for a later reinstall.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
     UninstallParams := UninstallParams + ' --delete-data';
   if RunPterm(UninstallParams + ' --dry-run', Code) and (Code <> 0) then
   begin
-    SuppressibleMsgBox('Phone Terminal cannot be uninstalled now: its broker has active sessions, did not answer, or is running without startup registration. ' +
+    SuppressibleMsgBox('Termivoa cannot be uninstalled now: its broker has active sessions, did not answer, or is running without startup registration. ' +
       'Run "pterm uninstall" to see why, finish or terminate the sessions (pterm list, pterm terminate), stop the broker it names, and try again.', mbError, MB_OK, IDOK);
     Result := False;
   end;
@@ -166,7 +173,7 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     if not RunPterm(UninstallParams, Code) or (Code <> 0) then
-      SuppressibleMsgBox('Phone Terminal uninstall did not complete (exit code ' + IntToStr(Code) + '). ' +
+      SuppressibleMsgBox('Termivoa uninstall did not complete (exit code ' + IntToStr(Code) + '). ' +
         'Your data is kept if a broker was still running. Run "pterm uninstall" to see why; remove any leftover ' +
         '"Phone Terminal Broker" and "Phone Terminal Gateway" tasks in Task Scheduler.', mbError, MB_OK, IDOK);
   end;

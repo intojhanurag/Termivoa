@@ -1,12 +1,12 @@
 #!/bin/sh
-# Package dist/macos/Phone Terminal.app into a compressed read-only DMG in
+# Package dist/macos/Termivoa.app into a compressed read-only DMG in
 # artifacts/. The file name says "unsigned" unless PTERM_DMG_LABEL=signed.
 set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repo_dir"
 
-app="dist/macos/Phone Terminal.app"
+app="dist/macos/Termivoa.app"
 if [ ! -d "$app" ]; then
   echo "Run packaging/macos/build-app.sh first." >&2
   exit 1
@@ -22,13 +22,13 @@ esac
 
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
-ditto "$app" "$stage/Phone Terminal.app"
+ditto "$app" "$stage/Termivoa.app"
 ln -s /Applications "$stage/Applications"
 
 mkdir -p artifacts
-dmg="artifacts/Phone-Terminal-$version-macos-arm64$suffix.dmg"
+dmg="artifacts/Termivoa-$version-macos-arm64$suffix.dmg"
 rm -f "$dmg" "$dmg.sha256"
-hdiutil create -quiet -volname "Phone Terminal" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
+hdiutil create -quiet -volname "Termivoa" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
 (cd artifacts && shasum -a 256 "$(basename "$dmg")" >"$(basename "$dmg").sha256")
 
 echo "Built $dmg"

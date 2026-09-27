@@ -1,4 +1,4 @@
-// Command launcher is the Phone Terminal.app bundle executable. It runs the
+// Command launcher is the Termivoa.app bundle executable. It runs the
 // bundled `pterm launch`, which starts or checks the per-user broker and
 // gateway and opens the local page, and shows an alert if that fails.
 package main
@@ -25,7 +25,7 @@ func main() {
 func alert(message string) {
 	_ = exec.Command("osascript",
 		"-e", "on run argv",
-		"-e", `display alert "Phone Terminal could not start" message (item 1 of argv) as critical`,
+		"-e", `display alert "Termivoa could not start" message (item 1 of argv) as critical`,
 		"-e", "end run", message).Run()
 	os.Exit(1)
 }

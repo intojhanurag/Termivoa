@@ -1,5 +1,5 @@
 #!/bin/sh
-# Owner-authorized release step: sign Phone Terminal.app with the owner's
+# Owner-authorized release step: sign Termivoa.app with the owner's
 # Developer ID, notarize and staple it, then build, sign, notarize and staple
 # the DMG. Credentials never enter this repository: the signing identity stays
 # in the login keychain and notarytool uses a stored keychain profile, named by
@@ -14,7 +14,7 @@ fi
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repo_dir"
-app="dist/macos/Phone Terminal.app"
+app="dist/macos/Termivoa.app"
 if [ ! -d "$app" ]; then
   echo "Run packaging/macos/build-app.sh first." >&2
   exit 1
@@ -38,7 +38,7 @@ notarize "$work/app.zip"
 xcrun stapler staple "$app"
 
 PTERM_DMG_LABEL=signed "$repo_dir/packaging/macos/build-dmg.sh"
-dmg=$(ls -t artifacts/Phone-Terminal-*-macos-arm64.dmg | head -n 1)
+dmg=$(ls -t artifacts/Termivoa-*-macos-arm64.dmg | head -n 1)
 codesign --force --timestamp --sign "$DEVELOPER_ID_APPLICATION" "$dmg"
 notarize "$dmg"
 xcrun stapler staple "$dmg"
