@@ -48,11 +48,36 @@ describe('parseHostMessage', () => {
         agent: {
           state: 'waiting',
           stateSince: '2026-09-27T10:00:00.000Z',
-          question: { id: '0123456789abcdef0123456789abcdef', text: 'Do you want to proceed?', options: [{ label: 'Yes' }, { label: 'No' }] },
+          question: {
+            id: '0123456789abcdef0123456789abcdef',
+            text: 'Do you want to proceed?',
+            detail: 'Bash command\nnpm test -- --watch=false',
+            options: [{ label: 'Yes' }, { label: 'No' }],
+          },
         },
       },
     }));
     expect(message.type === 'session.state' && message.payload.agent?.question?.options).toHaveLength(2);
+  });
+
+  it('rejects an agent detail with control characters or blank lines', () => {
+    for (const detail of ['rm \u001b[31m', 'a\n\nb', 'a \nb', '\nb']) {
+      expect(() => parseHostMessage(JSON.stringify({
+        version: 1,
+        type: 'session.state',
+        requestId,
+        sessionId: brokerGeneration,
+        generation: brokerGeneration,
+        payload: {
+          state: 'running',
+          agent: {
+            state: 'waiting',
+            stateSince: '2026-09-27T10:00:00.000Z',
+            question: { id: '0123456789abcdef0123456789abcdef', text: 'Proceed?', detail, options: [{ label: 'Yes' }] },
+          },
+        },
+      }))).toThrow(InvalidProtocolMessageError);
+    }
   });
 
   it('rejects client-to-host messages even when their schema is valid', () => {

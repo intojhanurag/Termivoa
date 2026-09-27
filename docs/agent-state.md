@@ -50,6 +50,37 @@ prompts, and other list prompts):
 ends with `[y/N]`, `[Y/n]`, `(y/n)` or `(yes/no)` (case-insensitive, optional
 `:` or `?`). Options: Yes and No.
 
+## Detail: what is being approved
+
+`question.detail` shows what the answer approves, so the answer card can show
+the command, not only "Do you want to proceed?".
+
+- **Menus**: the dialog lines above option 1, top-down. The search skips the
+  blank rows right above option 1, then reads upward and stops at a
+  horizontal rule, a box top corner (`╭ ┌ ╔`), two blank rows in a row, or 16
+  rows. Blank rows are left out. The question row adds only the text after
+  its `?`; a title row without `?` is left out. Option continuation lines
+  belong to the labels, not the detail.
+  - Claude Code: `Bash command` / tip / `touch x.txt` / `Create empty file x.txt`.
+  - Codex approval: `Would you like to run the following command?` /
+    `Environment: local` / `$ touch x.txt` (the `Reason: …?` line is the text).
+- **y/n prompts**: up to 2 non-blank rows directly above the prompt row
+  (apt: the package list line and the disk-space line).
+- Each line is cleaned like the question text and cut to 120 characters. At
+  most 6 lines and 600 characters in total, joined with `\n`. `detail` is absent
+  when there are no such lines.
+
+## Question id
+
+`questionId` is the first 32 hex characters of SHA-256 over length-prefixed
+fields: session generation, question text, displayed detail, the **full**
+uncapped context lines (so a change below the 6-line display cap, such as
+line 8 of a diff, still changes the id), and the option labels. It does not
+include the keys, because they follow the highlight. Two Claude Code prompts
+with the same "Do you want to proceed?" and the same options but different
+commands therefore have different ids, and an answer sent for the first is
+rejected with `question_changed` once the second is on screen.
+
 ## Keys the broker sends
 
 The phone sends only the option index. The broker derives the keys from the
@@ -87,8 +118,11 @@ first one moves the highlight, the second sends Enter on that same option.
 Rejections do not consume the sequence. The broker never answers on its own,
 and a phone must never send `input.answer` without an explicit user action.
 
-`questionId` is `sha256(generation, text, labels)` cut to 32 hex characters.
-It does not include the keys, because they follow the highlight.
+If step 4 drops an answer, the phone has already seen `input.accepted`. The
+actor then rescans the screen at once and sends a fresh `session.state` even
+if the state looks unchanged, so the phone shows the new question (or the new
+state) and the user can decide again. An accepted answer is proof of receipt,
+not proof that keys were written.
 
 ## Performance
 
@@ -116,11 +150,11 @@ copy the session-list preview uses) and a pass over its rows.
 
 - Menus without numbers (Claude Code's folder-trust dialog) are not offered:
   they need arrow keys. The session shows `idle` or `working` instead.
-- An identical question asked twice in a row has the same id. An answer meant
-  for the first one can answer the second. Both show the same text and options.
-- The question text is one line. For Claude Code it is "Do you want to
-  proceed?"; the command it asks about is visible on the live screen, not in
-  the question.
+- An identical prompt asked twice in a row (same command, text and options)
+  has the same id. An answer meant for the first one can answer the second;
+  both approve exactly the same thing.
+- Context is limited to 16 rows above the options. Two prompts that differ
+  only further up share an id.
 - A busy line left on screen by a crashed agent keeps the state `working`.
 - Any program that shows text matching the rules is detected. The rules are
   conservative; a missed question is preferred to a wrong `waiting`.

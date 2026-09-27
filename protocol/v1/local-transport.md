@@ -61,8 +61,9 @@ may keep its lease, refresh, and answer again with the same sequence. On
 acceptance the broker writes the keys for that option exactly once through
 the single input writer. The client never sends the keys; the broker derives
 them from the screen. Just before writing, the broker checks the question
-again and drops the answer if it changed in between. Answers are never sent
-automatically.
+again and drops the answer if it changed in between; it then sends a fresh
+`session.state` at once so the client can show the new question. Answers are
+never sent automatically.
 
 `screen.resync` schedules a new snapshot. `terminal.resize` requires the current
 lease and causes a full snapshot. History requests read immutable bounded actor

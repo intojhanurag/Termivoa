@@ -9,8 +9,10 @@ package agentstate
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -40,6 +42,16 @@ const (
 	MaxQuestionBytes = 480
 	MaxLabelRunes    = 80
 	MaxLabelBytes    = 240
+
+	// Detail display caps. The id hashes the whole context, not only this.
+	MaxDetailLines     = 6
+	MaxDetailLineRunes = 120
+	MaxDetailLineBytes = 360
+	MaxDetailRunes     = 600
+	MaxDetailBytes     = 1800
+
+	// maxContextRows bounds how far above a menu the context search reads.
+	maxContextRows = 16
 )
 
 // Screen is one sanitized copy of the visible grid. Lines hold one entry per
@@ -66,24 +78,68 @@ type Option struct {
 	Input Input
 }
 
-// Question is a recognized prompt. Text is safe display text.
+// Question is a recognized prompt. Text is safe display text. Detail is the
+// safe, capped display form of what is being approved (tool, command, file),
+// one line per "\n"; it is empty when the screen shows no such lines.
 type Question struct {
 	Text    string
+	Detail  string
 	Options []Option
+	// context is every dialog line above the options (uncapped), so the id
+	// changes whenever anything that is being approved changes.
+	context []string
 }
 
 // ID is a stable hash of the question in one session generation. It covers the
-// text and option labels but not the inputs, which follow the menu highlight.
+// text, the full context and detail, and the option labels, but not the
+// inputs, which follow the menu highlight. Each field is length-prefixed.
 func (question Question) ID(generation string) string {
 	hash := sha256.New()
-	hash.Write([]byte(generation))
-	hash.Write([]byte{0})
-	hash.Write([]byte(question.Text))
+	write := func(value string) {
+		var size [8]byte
+		binary.BigEndian.PutUint64(size[:], uint64(len(value)))
+		hash.Write(size[:])
+		hash.Write([]byte(value))
+	}
+	write(generation)
+	write(question.Text)
+	write(question.Detail)
+	write(strconv.Itoa(len(question.context)))
+	for _, line := range question.context {
+		write(line)
+	}
+	write(strconv.Itoa(len(question.Options)))
 	for _, option := range question.Options {
-		hash.Write([]byte{0})
-		hash.Write([]byte(option.Label))
+		write(option.Label)
 	}
 	return hex.EncodeToString(hash.Sum(nil))[:32]
+}
+
+// newQuestion fills Detail from the full context.
+func newQuestion(text string, context []string) *Question {
+	return &Question{Text: text, Detail: formatDetail(context), context: context}
+}
+
+// formatDetail cleans and caps context lines for display.
+func formatDetail(context []string) string {
+	var kept []string
+	runes, bytes := 0, 0
+	for _, line := range context {
+		line = Clean(line, MaxDetailLineRunes, MaxDetailLineBytes)
+		if line == "" {
+			continue
+		}
+		size := utf8.RuneCountInString(line)
+		if len(kept) > 0 {
+			size++ // The "\n" separator.
+		}
+		if len(kept) == MaxDetailLines || runes+size > MaxDetailRunes || bytes+len(line)+1 > MaxDetailBytes {
+			break
+		}
+		kept = append(kept, line)
+		runes, bytes = runes+size, bytes+len(line)+1
+	}
+	return strings.Join(kept, "\n")
 }
 
 // Parsed is what one screen shows, before timing is applied.
@@ -237,7 +293,7 @@ func parseMenu(lines []string, last int, screen Screen) *Question {
 	if screen.CursorVisible && (screen.CursorRow < textRow || screen.CursorRow > end) {
 		return nil
 	}
-	question := &Question{Text: text}
+	question := newQuestion(text, menuContext(lines, top, textRow))
 	for index, option := range options {
 		if index == MaxOptions {
 			break
@@ -284,6 +340,44 @@ func menuTitle(lines []string, top int) (string, int) {
 	return fallback, fallbackRow
 }
 
+// menuContext returns the dialog lines above a menu, top-down: from option 1
+// upward, after the blank rows right above it, until a horizontal rule, a box
+// top corner, two blank rows in a row, or maxContextRows. The question row is
+// replaced by what follows its "?" (Codex puts more text there); a fallback
+// title row is left out because it is the question text itself.
+func menuContext(lines []string, top, questionRow int) []string {
+	row := top - 1
+	for row >= 0 && lines[row] == "" {
+		row--
+	}
+	var context []string
+	blanks := 0
+	for stop := top - maxContextRows; row >= 0 && row >= stop; row-- {
+		line := lines[row]
+		if rulePattern.MatchString(line) || strings.IndexAny(line, "╭┌╔") == 0 {
+			break
+		}
+		if line == "" {
+			if blanks++; blanks == 2 {
+				break
+			}
+			continue
+		}
+		blanks = 0
+		if row == questionRow {
+			index := strings.IndexByte(line, '?')
+			if index < 0 {
+				continue
+			}
+			if line = strings.TrimSpace(line[index+1:]); line == "" {
+				continue
+			}
+		}
+		context = append([]string{line}, context...)
+	}
+	return context
+}
+
 // parseYesNo recognizes a [y/N], (y/n), [Y/n] or (yes/no) prompt that ends the
 // visible cursor line when that line is the last content on screen.
 func parseYesNo(lines []string, last int, screen Screen) *Question {
@@ -302,10 +396,18 @@ func parseYesNo(lines []string, last int, screen Screen) *Question {
 	if len(match[1]) > 1 {
 		yes, no = "yes", "no"
 	}
-	return &Question{Text: text, Options: []Option{
+	// Up to two lines directly above belong to the same prompt (apt lists the
+	// packages and the size there); a blank row ends them.
+	var context []string
+	for row := last - 1; row >= 0 && row >= last-2 && lines[row] != ""; row-- {
+		context = append([]string{lines[row]}, context...)
+	}
+	question := newQuestion(text, context)
+	question.Options = []Option{
 		{Label: "Yes", Input: Input{Text: yes, Enter: true}},
 		{Label: "No", Input: Input{Text: no, Enter: true}},
-	}}
+	}
+	return question
 }
 
 // trimLine removes surrounding spaces and box-drawing borders.

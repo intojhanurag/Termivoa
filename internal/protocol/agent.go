@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"regexp"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -12,6 +13,11 @@ const (
 	MaxAgentQuestionBytes = 480
 	MaxAgentLabelRunes    = 80
 	MaxAgentLabelBytes    = 240
+	MaxAgentDetailLines   = 6
+	MaxAgentDetailRunes   = 600
+	MaxAgentDetailBytes   = 1800
+	maxAgentDetailLine    = 120
+	maxAgentDetailLineB   = 360
 )
 
 var agentQuestionIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
@@ -41,11 +47,33 @@ func validateAgentStatus(status AgentStatus) error {
 	if err := validateAgentText(question.Text, MaxAgentQuestionRunes, MaxAgentQuestionBytes, "question"); err != nil {
 		return err
 	}
+	if question.Detail != nil {
+		if err := validateAgentDetail(*question.Detail); err != nil {
+			return err
+		}
+	}
 	if len(question.Options) == 0 || len(question.Options) > MaxAgentOptions {
 		return errors.New("agent options are outside bounds")
 	}
 	for _, option := range question.Options {
 		if err := validateAgentText(option.Label, MaxAgentLabelRunes, MaxAgentLabelBytes, "option label"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateAgentDetail allows "\n" between lines; each line is safe display text.
+func validateAgentDetail(detail string) error {
+	if len(detail) > MaxAgentDetailBytes || utf8.RuneCountInString(detail) > MaxAgentDetailRunes {
+		return errors.New("agent detail is outside bounds")
+	}
+	lines := strings.Split(detail, "\n")
+	if len(lines) > MaxAgentDetailLines {
+		return errors.New("agent detail has too many lines")
+	}
+	for _, line := range lines {
+		if err := validateAgentText(line, maxAgentDetailLine, maxAgentDetailLineB, "detail line"); err != nil {
 			return err
 		}
 	}

@@ -27,9 +27,9 @@ No version has been released. Development history and evidence are in
 - Agent state per running session (`working`, `waiting`, `idle`), computed by
   the broker from the screen. When Claude Code, Codex or a numbered or y/n
   prompt waits for an answer, the session list and the live `session.state`
-  notice carry the question and its options, and the controller can answer
-  with `input.answer`. The broker rejects a stale answer with
-  `question_changed`. See [docs/agent-state.md](docs/agent-state.md).
+  notice carry the question, what it approves (such as the command) and its
+  options, and the controller can answer with `input.answer`. The broker
+  rejects a stale answer with `question_changed`. See [docs/agent-state.md](docs/agent-state.md).
 
 #### Pairing and devices
 

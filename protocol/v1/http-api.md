@@ -91,10 +91,14 @@ non-authoritative display fields:
     1 second) or `idle` (quiet for 3 seconds with no question).
   - `stateSince`: when the state or the question last changed (RFC 3339,
     millisecond precision). Use it for "waiting 2 min".
-  - `question`: present exactly while `waiting`. `id` is a 32-hex hash of the
-    session generation, question text and option labels. `text` (at most 160
-    characters) and each `options[].label` (at most 80) are terminal output:
-    render them only as text. Up to 6 options.
+  - `question`: present exactly while `waiting`. `text` is the question line
+    (at most 160 characters). Optional `detail` says what is being approved,
+    such as the tool and command: up to 6 lines joined with `\n`, each at
+    most 120 characters, 600 in total. Up to 6 `options[].label` (at most 80
+    each). `id` is a 32-hex hash of the session generation, text, the full
+    dialog context behind `detail`, and the labels, so a different command
+    gives a different id. All of these are terminal output: render them only
+    as text.
   `agent` is absent until the broker's first screen scan (about 0.5 seconds
   after start). The live stream carries the same object on `session.state`.
   Answering uses the live WebSocket message `input.answer`; see

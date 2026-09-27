@@ -221,10 +221,13 @@ export type AgentStatus = {
 }
 
 /**
- * A recognized prompt. id is a stable hash of the session generation, text and option
- * labels; input.answer must repeat it. text is terminal output: render it as text only.
+ * A recognized prompt. id is a stable hash of the session generation, text, the full dialog
+ * context (of which detail is the capped display form) and option labels; input.answer must
+ * repeat it. text, detail and labels are terminal output: render them as text only. detail
+ * says what is being approved (tool, command, file), one line per newline.
  */
 export type AgentQuestion = {
+    readonly detail?: string;
     readonly id:      string;
     readonly options: [AgentOption, ...AgentOption[]];
     readonly text:    string;

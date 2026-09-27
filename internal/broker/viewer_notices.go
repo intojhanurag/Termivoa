@@ -131,13 +131,13 @@ func (session *Session) publishViewerEvents(status SessionStatus) {
 
 func (session *Session) publishSessionState(status SessionStatus) {
 	previous, agent := session.publishedStatus, session.agent.Status()
-	if previous.State == status.State && sameExitCode(previous.ExitCode, status.ExitCode) &&
+	if !session.agentRepublish && previous.State == status.State && sameExitCode(previous.ExitCode, status.ExitCode) &&
 		(status.State != SessionRunning || agent.State == session.publishedAgent.State &&
 			agent.QuestionID == session.publishedAgent.QuestionID) {
 		return
 	}
 	session.publishedStatus = cloneSessionStatus(status)
-	session.publishedAgent = agent
+	session.publishedAgent, session.agentRepublish = agent, false
 	for connectionID, viewer := range session.viewers {
 		if err := session.queueStateNotice(viewer, status); err != nil {
 			session.detachViewer(connectionID, err)

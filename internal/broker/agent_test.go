@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,4 +146,145 @@ func TestAgentScreenBlanksConcealedCells(t *testing.T) {
 	if screen.Lines[0] != "O ?" || screen.Lines[1] != "界 x" || screen.CursorRow != 1 || !screen.CursorVisible {
 		t.Fatalf("screen = %#v", screen)
 	}
+}
+
+// claudeDialog draws a Claude Code permission prompt for one command.
+func claudeDialog(command string) string {
+	return "\x1b[2J\x1b[H\x1b[?25l" + strings.Repeat("\u2500", 40) + "\r\n Bash command\r\n\r\n   " + command +
+		"\r\n\r\n Do you want to proceed?\r\n \u276f 1. Yes\r\n   2. No"
+}
+
+// awaitQuestion reads session.state notices until a waiting question other
+// than skip appears.
+func awaitQuestion(t *testing.T, client *streamClient, skip string) protocol.AgentQuestion {
+	t.Helper()
+	for {
+		status := awaitAgentState(t, client, protocol.Waiting)
+		if status.Question.ID != skip {
+			return *status.Question
+		}
+	}
+}
+
+func TestAnswerForReplacedPromptIsRejected(t *testing.T) {
+	fixture, _, process := newStreamFixture(t)
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attach(t)
+	grant := client.acquire(t)
+
+	process.Emit([]byte(claudeDialog("rm -rf build")))
+	first := awaitQuestion(t, client, "")
+	if first.Detail == nil || *first.Detail != "Bash command\nrm -rf build" {
+		t.Fatalf("first detail = %v", first.Detail)
+	}
+	// Same question text and labels, different command: a new id.
+	process.Emit([]byte(claudeDialog("npm test -- --watch=false")))
+	second := awaitQuestion(t, client, first.ID)
+	if second.Text != first.Text || second.Detail == nil || *second.Detail != "Bash command\nnpm test -- --watch=false" {
+		t.Fatalf("second = %#v", second)
+	}
+	request := client.action(t, protocol.InputAnswer, protocol.InputAnswerPayload{
+		Lease: *grant.Lease, InputSequence: "1", QuestionID: first.ID, OptionIndex: 0,
+	})
+	message := client.await(t, "", request)
+	payload, err := protocol.DecodePayload[protocol.InputRejectedPayload](message)
+	if message.Type != protocol.InputRejected || err != nil || payload.Code != protocol.QuestionChanged {
+		t.Fatalf("stale answer = %s %s", message.Type, message.Payload)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if input := process.inputText(); input != "" {
+		t.Fatalf("stale answer reached the child: %q", input)
+	}
+}
+
+// flipTerminal serves a replacement screen after a set number of further
+// screen reads, so a test can change the question between an answer's
+// admission check and its write without racing the actor.
+type flipTerminal struct {
+	*terminal.Core
+	mu     sync.Mutex
+	after  int
+	armed  bool
+	screen *terminal.Frame
+	sent   []string
+}
+
+func (core *flipTerminal) ScreenSnapshot(ctx context.Context) (terminal.Frame, error) {
+	core.mu.Lock()
+	defer core.mu.Unlock()
+	if core.armed {
+		if core.after == 0 {
+			return *core.screen, nil
+		}
+		core.after--
+	}
+	return core.Core.ScreenSnapshot(ctx)
+}
+
+func (core *flipTerminal) SendText(ctx context.Context, text string) error {
+	core.mu.Lock()
+	core.sent = append(core.sent, text)
+	core.mu.Unlock()
+	return core.Core.SendText(ctx, text)
+}
+
+func TestDroppedAnswerRepublishesState(t *testing.T) {
+	fixture := newManagementFixture(t)
+	process := &streamProcess{viewerProcess: newViewerProcess()}
+	var core *flipTerminal
+	fixture.registry.config.start = func(parent context.Context, config SessionConfig) (registrySession, error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		real, err := terminal.New(ctx, terminal.Config{Columns: config.Process.Columns, Rows: config.Process.Rows})
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		config.InputQueueCapacity, config.PTYOutputQueue = DefaultInputQueueCapacity, DefaultPTYOutputQueue
+		core = &flipTerminal{Core: real}
+		return startSessionRuntime(ctx, cancel, parent.Done(), config, process, core)
+	}
+	if _, err := fixture.server.createSession(context.Background(), protocol.BrokerRPCSessionCreateRequestPayload{
+		OperationID: "86666666-6666-4666-8666-666666666667", ProjectID: rpcProjectID, ShellProfileID: rpcProfileID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attach(t)
+	grant := client.acquire(t)
+	process.Emit([]byte(claudeDialog("rm -rf build")))
+	first := awaitQuestion(t, client, "")
+
+	// The admission check reads the real screen; the write-time check and
+	// every later scan see a different prompt.
+	replaced := terminal.Frame{Screen: []terminal.Row{
+		textRow("Do you want to proceed?"), textRow("\u276f 1. Yes"), textRow("  2. Never"),
+	}}
+	core.mu.Lock()
+	core.armed, core.after, core.screen = true, 1, &replaced
+	core.mu.Unlock()
+	request := client.action(t, protocol.InputAnswer, protocol.InputAnswerPayload{
+		Lease: *grant.Lease, InputSequence: "1", QuestionID: first.ID, OptionIndex: 1,
+	})
+	client.await(t, protocol.InputAccepted, request)
+	// A fresh session.state follows at once, without the old question.
+	message := client.await(t, protocol.SessionState, "")
+	payload, err := protocol.DecodePayload[protocol.SessionStatePayload](message)
+	if err != nil || payload.Agent == nil || payload.Agent.Question != nil && payload.Agent.Question.ID == first.ID {
+		t.Fatalf("state after drop = %s, %v", message.Payload, err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	core.mu.Lock()
+	sent := core.sent
+	core.mu.Unlock()
+	if len(sent) != 0 || process.inputText() != "" {
+		t.Fatalf("dropped answer was written: %q %q", sent, process.inputText())
+	}
+}
+
+func textRow(text string) terminal.Row {
+	var row terminal.Row
+	for _, character := range text {
+		row.Cells = append(row.Cells, terminal.Cell{Text: string(character), Width: 1})
+	}
+	return row
 }

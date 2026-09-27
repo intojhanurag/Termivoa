@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // loadScreen reads a fixture: a "# cursor=ROW,COL visible=BOOL" header, then
@@ -37,11 +38,15 @@ func TestDetectFixtures(t *testing.T) {
 		stable   time.Duration
 		state    State
 		question string
+		detail   string
 		options  []Option
 	}{
 		// Real captures (Claude Code 2.1.283, Codex CLI 0.157.0).
 		{fixture: "claude-permission.txt", quiet: 300 * time.Millisecond, stable: 2 * time.Second, state: Waiting,
-			question: "Do you want to proceed?", options: []Option{
+			question: "Do you want to proceed?",
+			detail: "Bash command\nTip: auto mode handles these prompts for you — choose \"switch to auto mode\" below\n" +
+				"touch x.txt\nCreate empty file x.txt",
+			options: []Option{
 				{"Yes", enter},
 				{"Yes, and always allow access to /tmp/project from this project", text("2")},
 				{"Yes, and switch to auto mode · auto mode handles these prompts for you", text("3")},
@@ -55,28 +60,38 @@ func TestDetectFixtures(t *testing.T) {
 		// Unnumbered menus need arrow keys to answer, so they are not offered.
 		{fixture: "claude-trust-folder.txt", quiet: 5 * time.Second, stable: 5 * time.Second, state: Idle},
 		{fixture: "codex-trust-folder.txt", quiet: 5 * time.Second, stable: 5 * time.Second, state: Waiting,
-			question: "Trust this folder?", options: []Option{{"Trust and continue", enter}, {"Quit", text("2")}}},
+			question: "Trust this folder?",
+			detail: "Folder access\n/tmp/project\nCodex can read, edit, and run files here, subject to your permission\n" +
+				"settings. Folder settings can run code automatically, even without a model request. Continue\n" +
+				"only if you trust these files. Your trust decision will be saved.",
+			options: []Option{{"Trust and continue", enter}, {"Quit", text("2")}}},
 		{fixture: "codex-approval.txt", quiet: 2 * time.Second, stable: 2 * time.Second, state: Waiting,
-			question: "Reason: Do you want to allow creating x.txt in the workspace?", options: []Option{
+			question: "Reason: Do you want to allow creating x.txt in the workspace?",
+			detail:   "Would you like to run the following command?\nEnvironment: local\n$ touch x.txt",
+			options: []Option{
 				{"Yes, proceed", text("y")},
 				{"Yes, and don't ask again for commands that start with `touch x.txt`", text("p")},
 				{"No, and tell Codex what to do differently", escape},
 			}},
 		{fixture: "codex-idle-after-reject.txt", quiet: 5 * time.Second, stable: 5 * time.Second, state: Idle},
 		{fixture: "codex-daemon-menu.txt", quiet: 5 * time.Second, stable: 5 * time.Second, state: Waiting,
-			question: "Experimental feature request failed", options: []Option{
+			question: "Experimental feature request failed", detail: "Cannot use the background server",
+			options: []Option{
 				{"Run without daemon this time Restart with these settings (disabled) Restart can…", text("1")},
 				{"Cancel", enter},
 			}},
 		// Hand-written from known UIs.
 		{fixture: "claude-permission-boxed.txt", quiet: 2 * time.Second, stable: 2 * time.Second, state: Waiting,
-			question: "Do you want to proceed?", options: []Option{
+			question: "Do you want to proceed?", detail: "Bash command\nrm -rf build\nRemove the build directory",
+			options: []Option{
 				{"Yes", enter},
 				{"Yes, and don't ask again for rm commands in /tmp/project", text("2")},
 				{"No, and tell Claude what to do differently", escape},
 			}},
 		{fixture: "apt-yes-no.txt", quiet: 2 * time.Second, stable: 2 * time.Second, state: Waiting,
-			question: "Do you want to continue? [Y/n]", options: []Option{
+			question: "Do you want to continue? [Y/n]",
+			detail:   "ripgrep\nAfter this operation, 5,210 kB of additional disk space will be used.",
+			options: []Option{
 				{"Yes", Input{Text: "y", Enter: true}}, {"No", Input{Text: "n", Enter: true}},
 			}},
 		{fixture: "yes-no-answered.txt", quiet: 5 * time.Second, stable: 5 * time.Second, state: Idle},
@@ -96,6 +111,9 @@ func TestDetectFixtures(t *testing.T) {
 			}
 			if question.Text != test.question {
 				t.Fatalf("question = %q, want %q", question.Text, test.question)
+			}
+			if question.Detail != test.detail {
+				t.Fatalf("detail = %q\nwant %q", question.Detail, test.detail)
 			}
 			if !reflect.DeepEqual(question.Options, test.options) {
 				t.Fatalf("options = %#v\nwant %#v", question.Options, test.options)
@@ -203,5 +221,57 @@ func TestTrackerTransitionsAndWakeups(t *testing.T) {
 	later := at.Add(10 * time.Second)
 	if changed, wake = tracker.Observe(later, Parsed{}, at); !changed || tracker.Status().State != Idle || !wake.IsZero() {
 		t.Fatalf("idle: %v %#v wake %v", changed, tracker.Status(), wake)
+	}
+}
+
+// claudePrompt draws a Claude Code permission dialog for body lines.
+func claudePrompt(body ...string) Screen {
+	lines := []string{"⏺ Working", strings.Repeat("─", 40), " Bash command", ""}
+	for _, line := range body {
+		lines = append(lines, "   "+line)
+	}
+	return Screen{Lines: append(lines, "", " Do you want to proceed?", " ❯ 1. Yes", "   2. No", "", " Esc to cancel")}
+}
+
+func TestQuestionIDChangesWithWhatIsApproved(t *testing.T) {
+	first := Parse(claudePrompt("rm -rf build", "Remove the build directory")).Question
+	second := Parse(claudePrompt("npm test -- --watch=false", "Run the tests")).Question
+	if first == nil || second == nil {
+		t.Fatal("prompts not recognized")
+	}
+	if first.Text != second.Text || !reflect.DeepEqual(first.Options, second.Options) {
+		t.Fatalf("prompts differ beyond the command: %#v %#v", first, second)
+	}
+	if first.Detail != "Bash command\nrm -rf build\nRemove the build directory" {
+		t.Fatalf("detail = %q", first.Detail)
+	}
+	if first.ID("gen") == second.ID("gen") {
+		t.Fatal("different commands share a question id")
+	}
+	// A change below the display cap (line 8 of a diff) still changes the id.
+	body := []string{"1", "2", "3", "4", "5", "6", "7"}
+	shown := Parse(claudePrompt(append(body, "old")...)).Question
+	hidden := Parse(claudePrompt(append(body, "new")...)).Question
+	if shown.Detail != hidden.Detail || shown.ID("gen") == hidden.ID("gen") {
+		t.Fatalf("hidden context change: %q / %q", shown.Detail, hidden.Detail)
+	}
+}
+
+func TestDetailIsSanitizedAndCapped(t *testing.T) {
+	long := strings.Repeat("x", 300)
+	question := Parse(claudePrompt("rm \x1b[31m-rf\x07 ‮build", long, "3", "4", "5", "6", "7")).Question
+	lines := strings.Split(question.Detail, "\n")
+	if len(lines) != MaxDetailLines || lines[1] != "rm [31m-rf �build" {
+		t.Fatalf("detail = %q", question.Detail)
+	}
+	if got := []rune(lines[2]); len(got) != MaxDetailLineRunes || got[len(got)-1] != '…' {
+		t.Fatalf("long line = %q", lines[2])
+	}
+	many := make([]string, 20)
+	for index := range many {
+		many[index] = strings.Repeat("界", 119)
+	}
+	if detail := formatDetail(many); utf8.RuneCountInString(detail) > MaxDetailRunes || len(detail) > MaxDetailBytes {
+		t.Fatalf("detail exceeds caps: %d runes %d bytes", utf8.RuneCountInString(detail), len(detail))
 	}
 }

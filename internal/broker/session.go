@@ -165,7 +165,11 @@ type Session struct {
 	lastOutput         time.Time           // Actor-owned: when child output was last applied.
 	agent              *agentstate.Tracker // Actor-owned agent-state detector.
 	publishedAgent     agentstate.Status
-	termination        *sessionTermination // Actor-owned; one bounded attempt per session.
+	// agentDropped is set when an accepted answer was dropped because its
+	// question changed; the actor then rescans and republishes session.state.
+	agentDropped   bool
+	agentRepublish bool
+	termination    *sessionTermination // Actor-owned; one bounded attempt per session.
 }
 
 type sessionTermination struct {
@@ -890,6 +894,12 @@ func (session *Session) run(columns, rows int) {
 					session.inbox.DropBeforeLeaseEpoch(threshold)
 				} else if err := session.executeInput(input.Action); err != nil {
 					session.markLost(&status)
+				}
+				if session.agentDropped && status.State == SessionRunning {
+					// The phone saw input.accepted for an answer that was not
+					// written. Send the current state now so it refreshes.
+					session.agentDropped, session.agentRepublish = false, true
+					armAgent(session.observeAgent(status.StartedAt))
 				}
 			}
 		case waitResult := <-session.waited:

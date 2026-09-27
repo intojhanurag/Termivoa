@@ -199,9 +199,12 @@ type AgentStatus struct {
 	StateSince string         `json:"stateSince"`
 }
 
-// A recognized prompt. id is a stable hash of the session generation, text and option
-// labels; input.answer must repeat it. text is terminal output: render it as text only.
+// A recognized prompt. id is a stable hash of the session generation, text, the full dialog
+// context (of which detail is the capped display form) and option labels; input.answer must
+// repeat it. text, detail and labels are terminal output: render them as text only. detail
+// says what is being approved (tool, command, file), one line per newline.
 type AgentQuestion struct {
+	Detail  *string       `json:"detail,omitempty"`
 	ID      string        `json:"id"`
 	Options []AgentOption `json:"options"`
 	Text    string        `json:"text"`

@@ -93,6 +93,7 @@ func (session *Session) checkAnswer(action InputAction) error {
 func (session *Session) executeAnswer(action InputAction) error {
 	option, err := session.currentAnswer(action)
 	if errors.Is(err, ErrQuestionChanged) || errors.Is(err, errAnswerOption) {
+		session.agentDropped = true
 		return nil
 	}
 	if err != nil {
@@ -124,6 +125,9 @@ func agentPayload(status agentstate.Status) *protocol.AgentStatus {
 	}
 	if status.Question != nil {
 		question := &protocol.AgentQuestion{ID: status.QuestionID, Text: status.Question.Text}
+		if detail := status.Question.Detail; detail != "" {
+			question.Detail = &detail
+		}
 		for _, option := range status.Question.Options {
 			question.Options = append(question.Options, protocol.AgentOption{Label: option.Label})
 		}
