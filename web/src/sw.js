@@ -1,4 +1,4 @@
-/* Phone Terminal service worker. Built into /sw.js by vite.config.ts.
+/* Termivoa service worker. Built into /sw.js by vite.config.ts.
  * Caches only immutable, content-hashed /assets/* files. It never caches API
  * responses, WebSocket traffic, terminal frames, history, or secrets. A new
  * version waits until the user explicitly chooses to reload. */
@@ -100,7 +100,7 @@ self.addEventListener('push', (event) => {
   }
   const sessionId = typeof data.sessionId === 'string' && SESSION_ID.test(data.sessionId) ? data.sessionId : '';
   const kind = KINDS.includes(data.kind) ? data.kind : 'test';
-  event.waitUntil(self.registration.showNotification(text(data.title, 120) || 'Phone Terminal', {
+  event.waitUntil(self.registration.showNotification(text(data.title, 120) || 'Termivoa', {
     body: text(data.body, 160),
     tag: `${sessionId || 'pterm'}:${kind}`,
     icon: '/icon-192.png',

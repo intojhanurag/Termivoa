@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install pterm for the current Linux user in ~/.local/bin, then run
-# `pterm setup`, which asks before it changes anything. No sudo: Phone
-# Terminal runs as your user. Only two optional steps that setup explains
+# `pterm setup`, which asks before it changes anything. No sudo: Termivoa
+# runs as your user. Only two optional steps that setup explains
 # need an administrator: `loginctl enable-linger` (if your system refuses it)
 # and `sudo tailscale set --operator=$USER`; you run those yourself.
 #
@@ -15,13 +15,13 @@ if [ "$(uname -s)" != Linux ]; then
   exit 1
 fi
 if [ "$(id -u)" = 0 ]; then
-  echo "Run this as your normal user, not root: Phone Terminal runs per user." >&2
+  echo "Run this as your normal user, not root: Termivoa runs per user." >&2
   exit 1
 fi
 case $(uname -m) in
   x86_64 | amd64) arch=amd64 ;;
   aarch64 | arm64) arch=arm64 ;;
-  *) echo "Unsupported CPU $(uname -m); Phone Terminal builds for x86_64 and arm64." >&2; exit 1 ;;
+  *) echo "Unsupported CPU $(uname -m); Termivoa builds for x86_64 and arm64." >&2; exit 1 ;;
 esac
 
 source=${1:-}

@@ -1,4 +1,4 @@
-// Command pterm is the Phone Terminal companion entry point.
+// Command pterm is the Termivoa companion entry point.
 package main
 
 import (
@@ -46,7 +46,7 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return errors.New("command context and output must not be nil")
 	}
 	if len(args) == 0 {
-		return writeCommandText(ctx, output, "Phone Terminal private development build\n")
+		return writeCommandText(ctx, output, "Termivoa private development build\n")
 	}
 	switch args[0] {
 	case "help", "--help", "-h":

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://phone-terminal.invalid/protocol/v1/envelope.schema.json",
   "title": "WireMessage",
-  "description": "Canonical Phone Terminal protocol v1 message union.",
+  "description": "Canonical Termivoa protocol v1 message union.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "type", "requestId", "payload"],

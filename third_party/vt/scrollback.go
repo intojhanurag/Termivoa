@@ -10,7 +10,7 @@ import (
 const DefaultScrollbackSize = 10000
 
 // normalizedCellBytes conservatively covers the fixed fields and style data
-// in Phone Terminal's normalized cell representation. Variable display/link
+// in Termivoa's normalized cell representation. Variable display/link
 // strings are charged separately below.
 const normalizedCellBytes = 256
 

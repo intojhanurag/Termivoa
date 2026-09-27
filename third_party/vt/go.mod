@@ -25,6 +25,6 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 )
 
-// Phone Terminal: run this retained suite against the patched parser that
+// Termivoa: run this retained suite against the patched parser that
 // NewEmulator requires. The root module carries the authoritative replace.
 replace github.com/charmbracelet/x/ansi => ../ansi

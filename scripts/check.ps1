@@ -4,7 +4,7 @@ Set-Location $RepoDir
 
 $NodeMajor = node -p "process.versions.node.split('.')[0]"
 if ($NodeMajor -ne '24') {
-    throw "Phone Terminal checks require Node 24.11.0."
+    throw "Termivoa checks require Node 24.11.0."
 }
 
 pnpm protocol:generate

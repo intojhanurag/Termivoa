@@ -1,6 +1,6 @@
 {
-  "name": "Phone Terminal",
-  "short_name": "Terminal",
+  "name": "Termivoa",
+  "short_name": "Termivoa",
   "description": "Private terminal sessions on your own computer.",
   "start_url": "/",
   "scope": "/",

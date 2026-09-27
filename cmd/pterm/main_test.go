@@ -188,7 +188,7 @@ func TestRunWithoutCommandIsNonOperational(t *testing.T) {
 	if err := run(context.Background(), nil, &output); err != nil {
 		t.Fatal(err)
 	}
-	if output.String() != "Phone Terminal private development build\n" {
+	if output.String() != "Termivoa private development build\n" {
 		t.Fatalf("output = %q", output.String())
 	}
 }

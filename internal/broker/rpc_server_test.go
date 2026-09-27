@@ -50,7 +50,7 @@ func newManagementFixture(t *testing.T) *managementFixture {
 		t.Fatalf("begin broker generation: %v", err)
 	}
 	for _, project := range []store.Project{
-		{ID: rpcProjectID, DisplayName: "Phone Terminal", CanonicalPath: "/tmp/phone-terminal", CreatedAt: now, UpdatedAt: now},
+		{ID: rpcProjectID, DisplayName: "Termivoa", CanonicalPath: "/tmp/phone-terminal", CreatedAt: now, UpdatedAt: now},
 		{ID: rpcProjectTwo, DisplayName: "Second Project", CanonicalPath: "/tmp/second-project", CreatedAt: now, UpdatedAt: now},
 	} {
 		if err := persistence.PutProject(context.Background(), project); err != nil {

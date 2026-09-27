@@ -84,7 +84,7 @@ describe('preview addresses', () => {
     for (const bad of ['', '?port=0', '?port=70000', '?port=5173.0', '?port=-1', '?port=1e3', '?port=abc']) {
       expect(previewPortParam(bad)).toBeUndefined();
     }
-    expect(titleFor({ name: 'preview', session, port: 5173 })).toBe('Preview :5173 · Phone Terminal');
+    expect(titleFor({ name: 'preview', session, port: 5173 })).toBe('Preview :5173 · Termivoa');
   });
 });
 
