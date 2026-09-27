@@ -28,6 +28,7 @@ const MAX_HISTORY_PAGES = 25;
 // Continuous output bumps the history revision on every scrolled line.
 const MAX_HISTORY_RESTARTS = 5;
 const OPEN = 1;
+const FRAME_FALLBACK_MS = 100;
 
 export type LinkState = 'connecting' | 'attaching' | 'live' | 'reconnecting' | 'lost' | 'revoked' | 'closed';
 export type ControlState = 'observer' | 'acquiring' | 'controller';
@@ -429,13 +430,25 @@ export class Connection {
       case 'revoked':
         this.stop('revoked', message);
         return;
-      case 'generation_changed':
       case 'session_lost':
       case 'session_missing':
+        // A late heartbeat or resize after the shell exited: keep the exit screen.
+        if (this.status.sessionState === 'exited' || this.status.sessionState === 'exiting') {
+          this.update({ sessionState: 'exited' });
+          this.stop('closed');
+          return;
+        }
+        this.lose();
+        return;
+      case 'generation_changed':
         this.lose();
         return;
       case 'resync_required':
         this.requestResync('invalid-state');
+        // The broker refuses control.acquire until the new snapshot is applied.
+        if (this.status.control === 'acquiring') {
+          this.update({ control: 'observer' });
+        }
         return;
       case 'not_controller':
       case 'stale_lease':
@@ -487,12 +500,21 @@ export class Connection {
     }
     this.frameScheduled = true;
     const epoch = this.socketEpoch;
-    this.requestFrame(() => {
+    let ran = false;
+    const run = () => {
+      if (ran) {
+        return;
+      }
+      ran = true;
+      clearTimeout(fallback);
       this.frameScheduled = false;
       if (epoch === this.socketEpoch) {
         this.flushFrame();
       }
-    });
+    };
+    // Hidden tabs never run animation frames; the broker still needs snapshot.applied.
+    const fallback = setTimeout(run, FRAME_FALLBACK_MS);
+    this.requestFrame(run);
   }
 
   private flushFrame(): void {
