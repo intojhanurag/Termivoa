@@ -44,6 +44,9 @@ No version has been released. Development history and evidence are in
   requests stop waiting after 15 seconds; the offline screen and the offline
   page retry by themselves and name what to check (Tailscale, a sleeping
   computer).
+- One terminal-style layout for the offline, error, update-required and
+  session-lost screens; a small **update** pill on Sessions replaces the
+  full-width update banner.
 
 #### Agent keys, snippets and presets
 
