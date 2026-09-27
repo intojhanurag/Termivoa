@@ -19,6 +19,18 @@ present only while the session is `running`.
 `stateSince` is the time of the last change of state or question. A new
 question while already waiting resets it.
 
+`afterWork: true` is set only on an `idle` that ended a busy period in this
+broker's lifetime: the first `working` after the last `idle` started it, and
+any `waiting` in between is part of it. It stays until the next state change
+(new work clears it). The first `working` of a new session is its startup
+output and starts no busy period, so a fresh shell is plain `idle`. The phone
+shows **Your turn** for `idle` with `afterWork` and output it has not viewed;
+`afterWork` survives a page reload because the broker keeps it.
+
+Push notifications follow the same transitions: `waiting` once per new
+question id, and `done` when an idle ends a busy period of at least 20 s. See
+`docs/notifications.md`.
+
 Waiting uses "the same question for 1 s", not "no output for 1 s". Claude
 Code blinks a dot about every 0.6 s while its permission dialog is open, so
 its output never goes quiet (seen in the real capture).

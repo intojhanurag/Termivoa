@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/http';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { noteBusy } from './activity';
 
 const FONT_SIZE_KEY = 'pterm.fontSize';
 export const DEFAULT_FONT_SIZE = 14;
@@ -174,7 +173,6 @@ export function useSessionList(active: boolean, onFailure: (error: unknown) => v
   const loader = useMemo(() => latestOnly(
     async () => (await api.sessions()).sessions,
     (list) => {
-      noteBusy(list);
       setSessions(list);
       setReachable(true);
     },

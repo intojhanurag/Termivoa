@@ -219,8 +219,11 @@ export type AdminRPCShutdownResultPayload = {
 /**
  * Broker-computed activity of a running session. question is present exactly when state is
  * waiting. stateSince is the RFC 3339 time of the last change of state or question.
+ * afterWork is true only on idle, when this idle ended a working period in this broker's
+ * lifetime ("your turn"); it is absent otherwise and resets when work starts again.
  */
 export type AgentStatus = {
+    readonly afterWork?: boolean;
     readonly question?:  AgentQuestion;
     readonly state:      AgentState;
     readonly stateSince: string;

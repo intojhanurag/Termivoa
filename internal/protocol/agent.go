@@ -25,8 +25,9 @@ var agentQuestionIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 // ValidAgentQuestionID reports whether value has the question-hash form.
 func ValidAgentQuestionID(value string) bool { return agentQuestionIDPattern.MatchString(value) }
 
-// validateAgentStatus applies the schema rules plus the one JSON Schema does
-// not express here: question is present exactly while waiting.
+// validateAgentStatus applies the schema rules plus the ones JSON Schema does
+// not express here: question is present exactly while waiting, and afterWork
+// only on idle.
 func validateAgentStatus(status AgentStatus) error {
 	if status.State != Working && status.State != Waiting && status.State != Idle {
 		return errors.New("agent state is invalid")
@@ -36,6 +37,9 @@ func validateAgentStatus(status AgentStatus) error {
 	}
 	if (status.Question != nil) != (status.State == Waiting) {
 		return errors.New("agent question is present only while waiting")
+	}
+	if status.AfterWork != nil && status.State != Idle {
+		return errors.New("agent afterWork is present only while idle")
 	}
 	if status.Question == nil {
 		return nil

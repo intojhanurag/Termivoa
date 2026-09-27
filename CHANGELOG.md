@@ -66,7 +66,11 @@ No version has been released. Development history and evidence are in
 - RFC 8291 encryption and RFC 8292 VAPID with the Go standard library only;
   an exact push-service host allow-list (SSRF guard); per-device and total
   subscription caps; revoke and logout delete a phone's subscriptions.
-- `webpush.Notifier.Notify` hook for agent-state detection (not wired yet).
+- Agent notifications are live: "… is waiting for you" once per new question,
+  and "… is done · your turn" when an agent goes idle after working at least
+  20 seconds. Exited or lost sessions never notify.
+- Agent status carries `afterWork` on an idle that followed work, so the
+  session list shows **Your turn** after a reload too.
 
 #### Agent keys, snippets and presets
 

@@ -15,6 +15,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 const (
@@ -82,6 +83,10 @@ type RegistryConfig struct {
 
 	Store            *store.Store
 	BrokerGeneration string
+
+	// Notify sends agent push notifications (webpush.Notifier.Notify). Nil
+	// disables them. It must return promptly.
+	Notify func(context.Context, webpush.Event) bool
 }
 
 // CreateSessionRequest is built only after the broker resolves trusted local
@@ -345,6 +350,7 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		ID: id, Generation: generation, Process: request.Process,
 		InputQueueCapacity: registry.config.InputQueueCapacity,
 		PTYOutputQueue:     registry.config.PTYOutputQueue,
+		Notify:             registry.agentNotifier(),
 	})
 	if err != nil {
 		registry.releasePending(id)
@@ -398,6 +404,30 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		return CreateSessionResult{ID: id, Generation: generation, Snapshot: persistedSnapshot}, ErrRegistryClosed
 	}
 	return CreateSessionResult{ID: id, Generation: generation, Session: session, Snapshot: persistedSnapshot}, nil
+}
+
+// agentNotifier returns the session hook for agent push notifications. The
+// hook runs on the session actor, so the title and project lookup (SQLite)
+// and Notify run in a goroutine. The title is read at send time because a
+// rename can change it; no terminal text is used.
+func (registry *Registry) agentNotifier() func(webpush.Event) {
+	notify, persistence := registry.config.Notify, registry.config.Store
+	if notify == nil || persistence == nil {
+		return nil
+	}
+	return func(event webpush.Event) {
+		go func() {
+			metadata, err := persistence.GetSession(registry.ctx, event.SessionID)
+			if err != nil {
+				return
+			}
+			event.SessionTitle = metadata.Title
+			if project, err := persistence.GetProject(registry.ctx, metadata.ProjectID); err == nil {
+				event.ProjectName = project.DisplayName
+			}
+			notify(registry.ctx, event)
+		}()
+	}
 }
 
 // Rename durably deduplicates a metadata change. The live runtime is not

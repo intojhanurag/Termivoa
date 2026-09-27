@@ -7,8 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/agentstate"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 // A Claude Code style dialog: option 1 highlighted, cursor hidden.
@@ -287,4 +289,111 @@ func textRow(text string) terminal.Row {
 		row.Cells = append(row.Cells, terminal.Cell{Text: string(character), Width: 1})
 	}
 	return row
+}
+
+func TestNotifyAgentRules(t *testing.T) {
+	var events []webpush.Event
+	session := &Session{id: rpcSessionID, notify: func(event webpush.Event) { events = append(events, event) }}
+	waiting := func(id string) agentstate.Status {
+		return agentstate.Status{State: agentstate.Waiting, QuestionID: id}
+	}
+	for _, status := range []agentstate.Status{
+		waiting("a"), {State: agentstate.Working}, waiting("a"), // Flicker: once.
+		waiting("b"), // A new question in the same busy period.
+		{State: agentstate.Idle, Worked: agentDoneAfter - time.Millisecond}, // Short: silent.
+		waiting("a"), // A new turn may ask the same question again.
+		{State: agentstate.Idle, Worked: agentDoneAfter},
+		{State: agentstate.Idle}, // Startup idle: no busy period.
+	} {
+		session.notifyAgent(status)
+	}
+	want := []webpush.Event{
+		{SessionID: rpcSessionID, Kind: webpush.KindWaiting},
+		{SessionID: rpcSessionID, Kind: webpush.KindWaiting},
+		{SessionID: rpcSessionID, Kind: webpush.KindWaiting},
+		{SessionID: rpcSessionID, Kind: webpush.KindDone, Duration: agentDoneAfter},
+	}
+	if len(events) != len(want) {
+		t.Fatalf("events = %#v", events)
+	}
+	for index := range want {
+		if events[index] != want[index] {
+			t.Fatalf("event %d = %#v, want %#v", index, events[index], want[index])
+		}
+	}
+}
+
+// End to end through the registry hook: real screens, real tracker, the
+// session title read at send time, afterWork on the wire, and silence once
+// the session has exited.
+func TestAgentTransitionsNotify(t *testing.T) {
+	previous := agentDoneAfter
+	agentDoneAfter = time.Second
+	t.Cleanup(func() { agentDoneAfter = previous })
+	events := make(chan webpush.Event, 8)
+	fixture := newManagementFixture(t)
+	fixture.registry.config.Notify = func(_ context.Context, event webpush.Event) bool {
+		events <- event
+		return true
+	}
+	fixture, session, process := startStreamFixture(t, fixture)
+	if err := fixture.persistence.RenameSession(context.Background(), session.id, session.generation, "claude", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	next := func() webpush.Event {
+		t.Helper()
+		select {
+		case event := <-events:
+			return event
+		case <-time.After(5 * time.Second):
+			t.Fatal("no notification")
+			return webpush.Event{}
+		}
+	}
+	quiet := func(what string) {
+		t.Helper()
+		select {
+		case event := <-events:
+			t.Fatalf("%s notified: %#v", what, event)
+		default:
+		}
+	}
+
+	// The shell's startup output is not work: idle without afterWork.
+	idle := waitPresence(t, session, func(presence SessionPresence) bool { return presence.Agent.State == agentstate.Idle })
+	if agentPayload(idle.Agent).AfterWork != nil {
+		t.Fatalf("startup idle has afterWork: %#v", idle.Agent)
+	}
+	quiet("startup")
+
+	process.Emit([]byte(agentDialog))
+	if event := next(); event.Kind != webpush.KindWaiting || event.SessionID != session.id ||
+		event.SessionTitle != "claude" || event.ProjectName != "Phone Terminal" {
+		t.Fatalf("waiting event = %#v", event)
+	}
+
+	// Answered elsewhere: the dialog goes away, output stops, idle follows.
+	process.Emit([]byte("\x1b[2J\x1b[Hdone\r\n"))
+	if event := next(); event.Kind != webpush.KindDone || event.Duration < agentstate.IdleAfter || event.Duration > 10*time.Second {
+		t.Fatalf("done event = %#v", event)
+	}
+	idle = waitPresence(t, session, func(presence SessionPresence) bool { return presence.Agent.State == agentstate.Idle })
+	if payload := agentPayload(idle.Agent); payload.AfterWork == nil || !*payload.AfterWork {
+		t.Fatalf("idle after work = %#v", payload)
+	}
+
+	// New output clears afterWork. The session then exits mid-work: no done.
+	process.Emit([]byte("more\r\n"))
+	working := waitPresence(t, session, func(presence SessionPresence) bool { return presence.Agent.State == agentstate.Working })
+	if agentPayload(working.Agent).AfterWork != nil {
+		t.Fatalf("working has afterWork: %#v", working.Agent)
+	}
+	process.release()
+	select {
+	case <-session.Ended():
+	case <-time.After(5 * time.Second):
+		t.Fatal("session did not end")
+	}
+	time.Sleep(agentstate.IdleAfter + 500*time.Millisecond)
+	quiet("exited session")
 }

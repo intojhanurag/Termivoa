@@ -462,6 +462,10 @@ type Status struct {
 	Since      time.Time
 	Question   *Question // Set only while Waiting.
 	QuestionID string    // Set only while Waiting.
+	// Worked is set only on Idle: the length of the busy period this idle
+	// ended, from the first Working after the previous Idle. Zero when the
+	// idle ended no busy period (or only the session's startup output).
+	Worked time.Duration
 }
 
 // Tracker turns successive parses into a Status. It keeps no clock of its
@@ -471,6 +475,7 @@ type Tracker struct {
 	status         Status
 	candidate      string
 	candidateSince time.Time
+	busySince      time.Time // First Working since the last Idle; zero when none.
 }
 
 func NewTracker(generation string) *Tracker {
@@ -498,6 +503,14 @@ func (tracker *Tracker) Observe(now time.Time, parsed Parsed, lastOutput time.Ti
 	}
 	changed := next.State != tracker.status.State || next.QuestionID != tracker.status.QuestionID
 	if changed {
+		switch {
+		// The first status of a session is its startup output (the shell
+		// prompt), not work anyone waits for, so it starts no busy period.
+		case state == Working && tracker.busySince.IsZero() && tracker.status.State != "":
+			tracker.busySince = now
+		case state == Idle && !tracker.busySince.IsZero():
+			next.Worked, tracker.busySince = now.Sub(tracker.busySince), time.Time{}
+		}
 		tracker.status = next
 	}
 	var wake time.Time

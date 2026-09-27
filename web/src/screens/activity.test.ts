@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentBadge, hasNewOutput, markViewed, noteBusy, readViewed, since, VIEWED_KEY, viewedKey } from './activity';
+import { agentBadge, hasNewOutput, markViewed, readViewed, since, VIEWED_KEY, viewedKey } from './activity';
 import { loadPresets, MAX_PRESETS, presetFrom, PRESETS_KEY, runFirstProblem, savePresets } from './presets';
 
 function memory() {
@@ -72,21 +72,17 @@ describe('agent status', () => {
     expect(since(undefined, now)).toBe('');
   });
 
-  it('labels waiting and working, and says "your turn" only after this page saw the session busy', () => {
+  it('labels waiting and working, and says "your turn" only for idle after work with unseen output', () => {
     const stateSince = '2026-09-27T10:00:00Z';
-    const seen = new Set<string>();
-    const idle = { ...session, agent: { state: 'idle' as const, stateSince } };
-    expect(agentBadge({ ...session, agent: { state: 'waiting', stateSince } }, false, seen)).toEqual({ label: 'Waiting', tone: 'amber' });
-    expect(agentBadge({ ...session, agent: { state: 'working', stateSince } }, false, seen)).toEqual({ label: 'Working', tone: 'accent' });
-    expect(agentBadge(session, true, seen)).toBeUndefined();
-    // A shell idle at its prompt since before this page load: neutral.
-    noteBusy([idle], seen);
-    expect(agentBadge(idle, true, seen)).toBeUndefined();
-    // Seen working, now idle with unseen output: your turn; once viewed: neutral again.
-    noteBusy([{ ...session, agent: { state: 'working', stateSince } }], seen);
-    expect(agentBadge(idle, true, seen)).toEqual({ label: 'Your turn', tone: 'green' });
-    expect(agentBadge(idle, false, seen)).toBeUndefined();
-    expect(agentBadge({ ...idle, generation: 'other' }, true, seen)).toBeUndefined();
+    expect(agentBadge({ ...session, agent: { state: 'waiting', stateSince } }, false)).toEqual({ label: 'Waiting', tone: 'amber' });
+    expect(agentBadge({ ...session, agent: { state: 'working', stateSince } }, false)).toEqual({ label: 'Working', tone: 'accent' });
+    expect(agentBadge({}, true)).toBeUndefined();
+    // A shell idle at its prompt (no afterWork from the broker): neutral.
+    expect(agentBadge({ ...session, agent: { state: 'idle', stateSince } }, true)).toBeUndefined();
+    // Idle after work with unseen output: your turn; once viewed: neutral again.
+    const done = { ...session, agent: { state: 'idle' as const, stateSince, afterWork: true } };
+    expect(agentBadge(done, true)).toEqual({ label: 'Your turn', tone: 'green' });
+    expect(agentBadge(done, false)).toBeUndefined();
   });
 });
 

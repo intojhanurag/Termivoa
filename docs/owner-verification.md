@@ -133,10 +133,14 @@ Real delivery cannot be tested without a phone. See `docs/notifications.md`.
 - [ ] iPhone Home Screen app (iOS 16.4+): the Sessions card
       "Get a buzz when an agent needs you" appears; **Turn on** asks for
       permission; Settings → **Send a test notification** arrives.
-- [ ] iPhone: a "waiting" notification (`<title> is waiting for you`) and a
-      "done" notification (`<title> is done · your turn`) arrive on the lock
-      screen once the agent-state detector is wired in. No terminal text is
-      shown.
+- [ ] iPhone, phone locked: a Claude Code permission prompt buzzes
+      "`<title>` is waiting for you" (`<project> · tap to answer`). No
+      terminal text is shown.
+- [ ] iPhone, phone locked: a task that runs about 1 minute ends with
+      "`<title>` is done · your turn" (`Worked for 1 min`). A quick shell
+      command (under 20 s) does not buzz.
+- [ ] After reloading the app, a finished agent session with output you have
+      not opened still shows **Your turn**; opening it clears the pill.
 - [ ] iPhone Safari in a normal tab shows no card, and Settings says
       "Add to Home Screen to get notifications".
 - [ ] Android Chrome: the same card, test, "waiting" and "done" checks.

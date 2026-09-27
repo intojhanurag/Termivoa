@@ -472,6 +472,10 @@ func TestBrokerRPCValidatesAgentStatus(t *testing.T) {
 	if err := decode(AgentStatus{State: Idle, StateSince: since}, Running); err != nil {
 		t.Fatalf("valid idle rejected: %v", err)
 	}
+	afterWork := true
+	if err := decode(AgentStatus{State: Idle, StateSince: since, AfterWork: &afterWork}, Running); err != nil {
+		t.Fatalf("idle after work rejected: %v", err)
+	}
 	for name, test := range map[string]struct {
 		agent AgentStatus
 		state State
@@ -481,6 +485,7 @@ func TestBrokerRPCValidatesAgentStatus(t *testing.T) {
 		"bad since":          {AgentStatus{State: Idle, StateSince: "now"}, Running},
 		"waiting no q":       {AgentStatus{State: Waiting, StateSince: since}, Running},
 		"question on idle":   {AgentStatus{State: Idle, StateSince: since, Question: question()}, Running},
+		"afterWork working":  {AgentStatus{State: Working, StateSince: since, AfterWork: &afterWork}, Running},
 		"bad id":             {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: "ABC", Text: "Q?", Options: []AgentOption{{Label: "Yes"}}}}, Running},
 		"control text":       {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: strings.Repeat("a", 32), Text: "Q\x1b?", Options: []AgentOption{{Label: "Yes"}}}}, Running},
 		"no options":         {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: strings.Repeat("a", 32), Text: "Q?"}}, Running},
