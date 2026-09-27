@@ -425,6 +425,16 @@ func (service *Service) RevokeDevice(ctx context.Context, deviceID string) (int,
 	return len(targets), errors.Join(err, waitReleased(ctx, targets, service.cleanupTimeout))
 }
 
+// DeviceRevoked reports an in-memory revocation, which holds even when its
+// persistence failed. Push delivery checks it so a revoked phone that still
+// has a subscription row gets nothing.
+func (service *Service) DeviceRevoked(deviceID string) bool {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	_, revoked := service.revokedDevices[deviceID]
+	return revoked
+}
+
 // RenameDevice sets a device's display label. A label is untrusted display
 // text and never identity, so renaming changes no authorization state.
 func (service *Service) RenameDevice(ctx context.Context, deviceID, label string) error {
