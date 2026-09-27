@@ -1,64 +1,113 @@
-# Contributing to Phone Terminal
+# Contributing
 
-Phone Terminal is in private development. The implementation plan and `AGENTS.md` are authoritative. Do not widen scope, publish artifacts, or make support claims without evidence.
+Thanks for your interest. The project is still in private development and
+has no release yet, so expect changes. Please open an issue before large
+changes. [AGENTS.md](AGENTS.md) and the
+[implementation plan](docs/implementation-plan.md) describe the design rules
+that every change must keep (for example: the broker owns all PTYs, clients get
+normalized frames, input is never queued or resent).
 
-## Development setup
+## Set up
 
-The locked toolchain is Go 1.27.1, Node.js 24.11.0, and pnpm 10.33.0. Select the version in `.nvmrc`, enable the pinned pnpm version through Corepack, and run `pnpm install --frozen-lockfile`. Go's toolchain selection can obtain Go 1.27.1 without replacing an older system default. Do not install application dependencies globally when a repository-local tool is available.
-
-Run the repository checks with:
+You need Go 1.27.1, Node.js 24.11.0 and pnpm 10.33.0. Node and pnpm are build
+tools only.
 
 ```sh
-./scripts/check
+nvm use                     # reads .nvmrc (24.11.0)
+corepack enable             # uses the pnpm version pinned in package.json
+pnpm install --frozen-lockfile
 ```
 
-and on Windows:
+Go's toolchain selection downloads Go 1.27.1 if your default Go is older
+(`GOTOOLCHAIN=go1.27.1`). Do not install project tools globally.
 
-```powershell
-./scripts/check.ps1
+## Check
+
+```sh
+./scripts/check             # Windows: ./scripts/check.ps1
 ```
 
-Both scripts run generation drift, Go formatting/vet/tests, TypeScript checking, frontend unit tests, and the production web build. Platform integration commands remain separate because generic tests do not establish native macOS or Windows lifecycle behavior.
+This runs protocol generation drift, the `plan.md` copy check, Go formatting,
+`go vet` and tests (including the patched `third_party` modules), TypeScript
+checks, web unit tests and the production web build.
 
-## Code organization
+Useful narrower commands:
 
-- `cmd/pterm`: CLI entry point and internal process modes
-- `internal`: broker, PTY, terminal, protocol, IPC, gateway, auth, store, and platform boundaries
-- `protocol/v1`: canonical JSON Schemas and capability documentation
-- `web`: strict TypeScript/React phone interface
-- `tests`: deterministic fixtures and integration tests
-- `packaging`: macOS and Windows packaging/signing preparation
-- `docs`: architecture, decisions, progress, evidence, and release material
+```sh
+GOTOOLCHAIN=go1.27.1 go test ./internal/broker/...
+pnpm typecheck
+pnpm test:web
+pnpm protocol:generate      # after changing protocol/v1 schemas
+```
 
-## Branches, commits, and pull requests
+To run the real stack locally without changing startup or Tailscale settings,
+use the development harness in
+[docs/install.md](docs/install.md#development-harness).
 
-Use one descriptive branch per milestone or reviewable subtask, such as `feat/p1-terminal-core` or `fix/p2-resize-state`. Keep `main` buildable. After the initial bootstrap, application changes enter `main` through pull requests.
+Platform integration and real-device tests are separate. A Linux or
+browser-emulation pass does not prove macOS, Windows, iPhone or Android
+behavior, and WSL does not replace native Windows.
 
-Use Conventional Commit messages with meaningful scopes, for example `feat(terminal): add canonical row snapshots`. Before each commit:
+## Code layout
 
-1. Inspect `git status` and the staged diff.
-2. Stage only explicit task files.
-3. Run relevant checks.
-4. Review staged content for secrets, runtime data, personal paths, terminal transcripts, generated binaries, and signing material.
+| Path | Contents |
+| --- | --- |
+| `cmd/pterm` | CLI entry point and internal process modes |
+| `internal/` | broker, PTY host, terminal, protocol, IPC, gateway, auth, store, lifecycle and platform code |
+| `protocol/v1` | canonical JSON Schemas and capability docs |
+| `web/` | strict TypeScript + React phone app |
+| `tests/` | deterministic fixtures, integration and soak tests |
+| `packaging/` | macOS and Windows packaging and signing scripts |
+| `third_party/` | patched upstream Go modules ([docs/dependency-patches.md](docs/dependency-patches.md)) |
+| `docs/` | architecture, decisions, progress, evidence and release material |
 
-Pull requests must explain the problem, behavior change, validation evidence, compatibility impact, limitations, and milestone. Resolve review conversations and rerun affected checks. Do not bypass CI, rewrite shared history, or invent a second reviewer.
+## Branches, commits and pull requests
 
-## Testing and evidence
+- One branch per reviewable change, for example `feat/terminal-row-snapshots`
+  or `fix/resize-state`. Keep `main` buildable; changes reach `main` through
+  pull requests.
+- Use [Conventional Commits](https://www.conventionalcommits.org/) with a
+  meaningful scope, for example `feat(terminal): add canonical row snapshots`.
+- Before each commit: check `git status` and the staged diff, stage explicit
+  paths, run the relevant checks, and make sure nothing staged contains
+  secrets, runtime data, personal paths, terminal transcripts, binaries or
+  signing material.
+- Fill in the [pull request template](.github/pull_request_template.md):
+  problem, behavior change, validation actually run, compatibility impact and
+  limitations. Do not mark a test as passed unless you ran it.
+- Resolve review conversations and rerun affected checks. Do not bypass CI or
+  rewrite shared history.
 
-Add deterministic fixtures before relying on screenshots or a real coding-agent run. Record exact commands, environment, expected/actual outcomes, and defect links under `docs/evidence/<milestone>/`. Mark tests that could not run as blocked.
+## Tests and evidence
 
-Native Windows coverage cannot be replaced by WSL. Emulator or responsive-browser tests cannot replace physical iPhone or Android evidence. Tests using a real coding CLI require owner approval before spending credits or touching a non-fixture repository.
+Add deterministic fixtures before you rely on screenshots or a real
+coding-agent run. Milestone evidence (exact commands, environment, expected and
+actual results) lives in [docs/evidence/](docs/evidence/README.md). Tests that
+use a real coding CLI need the owner's approval before spending credits.
 
 ## Protocol and dependency changes
 
-Protocol changes begin in the canonical JSON Schemas and include regenerated Go/TypeScript types, validation, compatibility tests, and documentation. Never change protocol behavior silently.
+Protocol changes start in the JSON Schemas in `protocol/v1`, then regenerate
+the Go and TypeScript types (`pnpm protocol:generate`) and add validation,
+compatibility tests and docs. Never change protocol behavior silently.
 
-Dependency changes must pin exact versions, explain the reason, update checksums/lockfiles and notices, and run the affected regression suite. Do not use floating `latest` references in release builds or workflow actions.
+Dependency changes pin exact versions, explain the reason, update lockfiles,
+checksums and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and run the
+affected tests. No floating `latest` references in builds or workflow actions.
 
 ## Reporting issues
 
-Use sanitized reproduction steps and synthetic data. Never post credentials, pairing links, tokens, environment variables, customer/employer code, raw personal terminal history, or sensitive screenshots. Security-sensitive reports follow `SECURITY.md`.
+Use the issue templates with sanitized steps and synthetic data. Never post
+credentials, pairing links or QR codes, tokens, environment variables, private
+code, real terminal history or sensitive screenshots. Report security problems
+privately as described in [SECURITY.md](SECURITY.md).
 
-## Licensing
+## Conduct
 
-Contributions are licensed under the project's Apache License 2.0. No contributor-license-agreement service or fabricated sign-off is used. Preserve third-party license and notice obligations.
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+Contributions are licensed under the [Apache License 2.0](LICENSE). There is no
+contributor license agreement (CLA) and no sign-off requirement. Keep
+third-party license and notice obligations intact.
