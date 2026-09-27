@@ -7,6 +7,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,9 +33,11 @@ var (
 )
 
 // Spec describes a command to start in a new pseudo-terminal. Args excludes
-// the executable name. Env entries are applied after the inherited host
-// environment, so the caller can set terminal-specific variables without
-// accidentally dropping required OS variables such as SystemRoot on Windows.
+// the executable name. The child does not inherit the broker's whole
+// environment: it receives only the allowlisted host variables (see
+// inheritedEnvironment), followed by Env. Callers therefore set terminal
+// variables such as TERM in Env without dropping required OS variables such
+// as SystemRoot on Windows.
 type Spec struct {
 	Executable string
 	Args       []string
@@ -84,7 +89,7 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 
 	cmd := exec.Command(spec.Executable, append([]string(nil), spec.Args...)...)
 	cmd.Dir = spec.Directory
-	cmd.Env = append(os.Environ(), spec.Env...)
+	cmd.Env = append(inheritedEnvironment(os.Environ(), runtime.GOOS), spec.Env...)
 	configureCommand(cmd)
 
 	if err := terminal.Start(cmd); err != nil {
@@ -112,6 +117,57 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 	go p.reap()
 	go p.watchSession(ctx)
 	return p, nil
+}
+
+// Host variables a managed session inherits. Everything else in the broker's
+// environment, such as CLAUDE_CODE_*, TERM_PROGRAM, ITERM_SESSION_ID, VSCODE_*,
+// TMUX, SHLVL, and PWD, describes the program or terminal that started the
+// broker, not the new session. A macOS login shell rebuilds the rest from the
+// user's profile. The Unix list is what launchd gives a user agent, without
+// its XPC_* service markers, plus locale and time zone. Unix names are
+// case-sensitive; LC_* is a prefix.
+var unixInheritedNames = []string{
+	"HOME", "USER", "LOGNAME", "SHELL", "PATH", "TMPDIR", "SSH_AUTH_SOCK",
+	"__CF_USER_TEXT_ENCODING", "LANG", "LANGUAGE", "TZ",
+}
+
+// Windows names are case-insensitive and stored upper case; PROCESSOR_* is a
+// prefix. They are the per-machine and per-user variables Windows itself
+// defines for a logon, which programs and shells need to locate the system,
+// the user profile, and temporary storage. Persistent user variables from the
+// registry (for example JAVA_HOME) are not in this list.
+var windowsInheritedNames = []string{
+	"SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "COMSPEC", "PATH", "PATHEXT",
+	"TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PUBLIC",
+	"ALLUSERSPROFILE", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
+	"PROGRAMW6432", "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)",
+	"COMMONPROGRAMW6432", "HOMEDRIVE", "HOMEPATH", "USERNAME", "USERDOMAIN",
+	"COMPUTERNAME", "OS", "NUMBER_OF_PROCESSORS", "PSMODULEPATH",
+}
+
+// inheritedEnvironment returns the entries of environ that a managed session
+// may inherit on goos, in their original order and spelling.
+func inheritedEnvironment(environ []string, goos string) []string {
+	names, prefix, windows := unixInheritedNames, "LC_", goos == "windows"
+	if windows {
+		names, prefix = windowsInheritedNames, "PROCESSOR_"
+	}
+	// Never nil: a nil exec.Cmd.Env (and conpty's Env) inherits everything.
+	kept := []string{}
+	for _, entry := range environ {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok || name == "" {
+			// Also drops Windows' hidden per-drive "=C:=C:\dir" entries.
+			continue
+		}
+		if windows {
+			name = strings.ToUpper(name)
+		}
+		if strings.HasPrefix(name, prefix) || slices.Contains(names, name) {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
 }
 
 func validateDimensions(columns, rows int) error {

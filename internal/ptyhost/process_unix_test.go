@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -251,4 +252,49 @@ func TestSessionJobsGetGracePeriod(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestChildDoesNotInheritLaunchingProgramEnvironment(t *testing.T) {
+	home := t.TempDir()
+	for name, value := range map[string]string{
+		"HOME": home, "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8",
+		"CLAUDE_CODE_X": "leak", "CLAUDECODE": "1", "TERM_PROGRAM": "iTerm.app",
+		"ITERM_SESSION_ID": "w0t0p0", "VSCODE_GIT_IPC_HANDLE": "/tmp/leak", "TERM": "dumb",
+	} {
+		t.Setenv(name, value)
+	}
+
+	process, err := Start(context.Background(), Spec{
+		Executable: "/bin/sh",
+		Args:       []string{"-c", "env; echo PTERM_ENV_END"},
+		Env:        []string{"TERM=xterm-256color", "COLORTERM=truecolor"},
+		Columns:    DefaultColumns,
+		Rows:       DefaultRows,
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer process.Close()
+
+	child := map[string]string{}
+	for _, line := range strings.Split(readUntil(t, process, "PTERM_ENV_END", 5*time.Second), "\n") {
+		if name, value, ok := strings.Cut(strings.TrimRight(line, "\r"), "="); ok {
+			child[name] = value
+		}
+	}
+	for name, want := range map[string]string{
+		"HOME": home, "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8",
+		"TERM": "xterm-256color", "COLORTERM": "truecolor",
+	} {
+		if child[name] != want {
+			t.Errorf("child %s = %q, want %q", name, child[name], want)
+		}
+	}
+	for name := range child {
+		if strings.HasPrefix(name, "CLAUDE") || strings.HasPrefix(name, "VSCODE_") ||
+			name == "TERM_PROGRAM" || name == "ITERM_SESSION_ID" {
+			t.Errorf("child inherited %s", name) // never print values: tokens
+		}
+	}
+	_ = process.Wait(context.Background())
 }
