@@ -84,6 +84,13 @@ No version has been released. Development history and evidence are in
   polls, duplicate snippet IDs, hidden SGR-8 text in previews and an
   unannounced pairing code for screen readers.
 
+### Fixed
+
+- Windows: SQLite opens with a valid `file:///C:/...` URI (UNC paths use
+  `file:////server/share/...`); private directories get one current-user ACE
+  that the check accepts; folders left by an elevated run are taken back for
+  the current user.
+
 ### Known limits
 
 - Real iPhone, Android, native Windows 11, real Tailscale Serve HTTPS and

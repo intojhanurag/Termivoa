@@ -155,13 +155,33 @@ func securePrivateFile(path string) error {
 	return validatePrivateFile(path)
 }
 
+// fileAllAccess is FILE_ALL_ACCESS. A specific mask, unlike GENERIC_ALL, is
+// stored as one ACE even when it is inheritable, so the directory DACL stays a
+// single current-user ACE instead of an effective ACE plus an inherit-only one.
+const fileAllAccess = windows.STANDARD_RIGHTS_REQUIRED | windows.SYNCHRONIZE | 0x1FF
+
 func applyCurrentUserACL(path string, inherit bool) error {
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
 	}
-	if err := validateCurrentUserOwner(path, sid); err != nil {
+	owner, err := fileOwner(path)
+	if err != nil {
 		return err
+	}
+	// An elevated run creates objects owned by BUILTIN\Administrators. Take
+	// them back for the current user in the same call that sets the DACL; the
+	// access check uses the old DACL, which (inherited from the user profile)
+	// grants the user WRITE_DAC and WRITE_OWNER. Any other foreign owner is
+	// still rejected so another user cannot pre-create a path we then trust.
+	securityInfo := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
+	var newOwner *windows.SID
+	if !owner.Equals(sid) {
+		if !owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+			return fmt.Errorf("%s: file owner %s is not the current user", path, owner)
+		}
+		securityInfo |= windows.OWNER_SECURITY_INFORMATION
+		newOwner = sid
 	}
 	var pinner runtime.Pinner
 	pinner.Pin(sid)
@@ -171,7 +191,7 @@ func applyCurrentUserACL(path string, inherit bool) error {
 		inheritance = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
 	}
 	entries := []windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.GENERIC_ALL,
+		AccessPermissions: fileAllAccess,
 		AccessMode:        windows.SET_ACCESS,
 		Inheritance:       inheritance,
 		Trustee: windows.TRUSTEE{
@@ -183,11 +203,15 @@ func applyCurrentUserACL(path string, inherit bool) error {
 	if err != nil {
 		return err
 	}
-	return windows.SetNamedSecurityInfo(
-		path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		nil, nil, acl, nil,
-	)
+	err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, securityInfo, newOwner, nil, acl, nil)
+	if err != nil && newOwner != nil {
+		return fmt.Errorf(
+			"%s is owned by Administrators (most likely an elevated pterm run created it) and this user cannot take it back: %w; "+
+				"from an elevated prompt run: icacls \"%s\" /setowner <your user name> /T /C, then run pterm again without elevation",
+			path, err, path,
+		)
+	}
+	return err
 }
 
 func validateCurrentUserACL(path string) error {
@@ -208,15 +232,22 @@ func validateCurrentUserACL(path string) error {
 	return validateCurrentUserSecurityDescriptor(descriptor, sid, true)
 }
 
-func validateCurrentUserOwner(path string, sid *windows.SID) error {
+func fileOwner(path string) (*windows.SID, error) {
 	// The x/sys wrapper returns a Go-owned copy; see validateCurrentUserACL.
 	descriptor, err := windows.GetNamedSecurityInfo(
 		path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return validateCurrentUserSecurityDescriptor(descriptor, sid, false)
+	owner, _, err := descriptor.Owner()
+	if err != nil {
+		return nil, fmt.Errorf("read file owner: %w", err)
+	}
+	if owner == nil {
+		return nil, errors.New("file has no owner")
+	}
+	return owner, nil
 }
 
 func validateCurrentUserSecurityDescriptor(
@@ -241,19 +272,23 @@ func validateCurrentUserSecurityDescriptor(
 	if err != nil {
 		return err
 	}
-	if acl == nil || acl.AceCount != 1 {
+	// A nil DACL grants everyone access and an empty one grants nobody.
+	if acl == nil || acl.AceCount == 0 {
 		return errors.New("file DACL is not current-user-only")
 	}
-	var ace *windows.ACCESS_ALLOWED_ACE
-	if err := windows.GetAce(acl, 0, &ace); err != nil {
-		return err
-	}
-	if ace == nil || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-		return errors.New("file DACL does not contain one allow ACE")
-	}
-	aceSID := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-	if !aceSID.Equals(sid) {
-		return errors.New("file DACL grants a principal other than the current user")
+	// Every ACE, including inherit-only ones, must allow the current user.
+	for index := range uint32(acl.AceCount) {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(acl, index, &ace); err != nil {
+			return err
+		}
+		if ace == nil || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+			return errors.New("file DACL contains an ACE that is not an allow ACE")
+		}
+		aceSID := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		if !aceSID.Equals(sid) {
+			return errors.New("file DACL grants a principal other than the current user")
+		}
 	}
 	return nil
 }
