@@ -4,6 +4,8 @@ import {
   Connection,
   DELIVERY_UNCERTAIN,
   HEARTBEAT_MS,
+  RECONNECT_DELAYS_MS,
+  RESUME_CHECK_MS,
   rowText,
   type ScreenDisplay,
 } from './Connection';
@@ -186,7 +188,7 @@ describe('Connection', () => {
 
     expect(connection.getStatus()).toMatchObject({ link: 'reconnecting', control: 'observer', notice: DELIVERY_UNCERTAIN });
     expect(connection.sendText('more')).toBe(false);
-    await vi.advanceTimersByTimeAsync(499);
+    await vi.advanceTimersByTimeAsync(249);
     expect(FakeSocket.all).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     const second = socket();
@@ -602,6 +604,140 @@ describe('Session tab switching', () => {
     expect(nextSocket.sent.every((message) => message.sessionId === undefined || message.sessionId === otherId)).toBe(true);
     expect(JSON.stringify(nextSocket.sent)).not.toContain(lease);
     expect(next.sendText('npm test')).toBe(false);
+  });
+});
+
+describe('Connection resume', () => {
+  class FakeDocument extends EventTarget {
+    visibilityState: 'visible' | 'hidden' = 'visible';
+  }
+  let page: FakeDocument;
+  let win: EventTarget;
+  const setVisibility = (state: 'visible' | 'hidden') => {
+    page.visibilityState = state;
+    page.dispatchEvent(new Event('visibilitychange'));
+  };
+  const pageshow = (persisted: boolean) => win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted }));
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+    page = new FakeDocument();
+    win = new EventTarget();
+    vi.stubGlobal('document', page);
+    vi.stubGlobal('window', win);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /** Fails `count` connection attempts in a row and returns the gap before each retry. */
+  async function failTimes(count: number): Promise<number[]> {
+    const gaps: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const before = FakeSocket.all.length;
+      (FakeSocket.all.at(-1) as FakeSocket).close();
+      let waited = 0;
+      while (FakeSocket.all.length === before) {
+        await vi.advanceTimersByTimeAsync(50);
+        waited += 50;
+      }
+      gaps.push(waited);
+    }
+    return gaps;
+  }
+
+  it('caps the reconnect backoff at 5 seconds', async () => {
+    harness();
+    expect(await failTimes(8)).toEqual([250, 500, 1000, 2000, 3000, 5000, 5000, 5000]);
+    expect(RECONNECT_DELAYS_MS.at(-1)).toBe(5000);
+  });
+
+  it.each([
+    ['visible', () => { setVisibility('hidden'); setVisibility('visible'); }],
+    ['online', () => { win.dispatchEvent(new Event('online')); }],
+    ['pageshow', () => { pageshow(false); }],
+  ])('reconnects at once on %s and resets the backoff', async (_name, trigger) => {
+    const { connection } = harness();
+    await failTimes(5);
+    const waiting = FakeSocket.all.length;
+    (FakeSocket.all.at(-1) as FakeSocket).close();
+    expect(connection.getStatus().link).toBe('reconnecting');
+
+    trigger();
+    expect(FakeSocket.all).toHaveLength(waiting + 1);
+    expect(connection.getStatus().link).toBe('reconnecting');
+    // The pending 5 s retry is gone, and the next failure retries at the shortest delay.
+    expect(await failTimes(1)).toEqual([RECONNECT_DELAYS_MS[0]]);
+  });
+
+  it('abandons a stuck in-flight attempt when the page comes back', async () => {
+    const { connection } = harness();
+    await failTimes(2);
+    const stuck = FakeSocket.all.at(-1) as FakeSocket;
+    setVisibility('visible');
+    expect(stuck.readyState).toBe(3);
+    expect(FakeSocket.all.at(-1)).not.toBe(stuck);
+    expect(connection.getStatus().link).toBe('reconnecting');
+    // The stuck socket's own close scheduled nothing more.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(FakeSocket.all.at(-2)).toBe(stuck);
+  });
+
+  it('leaves a live socket alone after a short hide', async () => {
+    const { socket } = harness();
+    await attachLive(socket());
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(RESUME_CHECK_MS - 1000);
+    setVisibility('visible');
+    pageshow(false);
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it('reopens a live socket after a long hide, as an observer, without resending input', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    await takeControl(connection, first);
+    connection.sendText('rm -i notes.txt');
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(RESUME_CHECK_MS + 1000);
+    setVisibility('visible');
+
+    const second = socket();
+    expect(second).not.toBe(first);
+    expect(first.readyState).toBe(3);
+    expect(connection.getStatus()).toMatchObject({ link: 'reconnecting', control: 'observer', notice: DELIVERY_UNCERTAIN });
+    expect(connection.sendText('more')).toBe(false);
+    await attachLive(second, '9');
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+    expect(connection.getStatus()).toMatchObject({ link: 'live', control: 'observer' });
+    expect(second.types().filter((type) => type.startsWith('input.') || type === 'control.acquire')).toEqual([]);
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it('reopens a live socket on bfcache restore and on online', async () => {
+    const { socket } = harness();
+    await attachLive(socket());
+    pageshow(true);
+    expect(FakeSocket.all).toHaveLength(2);
+    await attachLive(socket());
+    win.dispatchEvent(new Event('online'));
+    expect(FakeSocket.all).toHaveLength(3);
+  });
+
+  it('removes its listeners on detach', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.detach();
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(RESUME_CHECK_MS * 2);
+    setVisibility('visible');
+    pageshow(true);
+    win.dispatchEvent(new Event('online'));
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(connection.getStatus().link).toBe('closed');
   });
 });
 

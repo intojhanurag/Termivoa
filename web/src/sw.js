@@ -6,7 +6,7 @@ const CACHE = 'pterm-assets-__BUILD__';
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="refresh" content="10">
+<meta http-equiv="refresh" content="5">
 <meta name="theme-color" content="#0B0E14">
 <title>Connection unavailable</title>
 <style>
@@ -28,7 +28,7 @@ a{display:flex;align-items:center;height:52px;padding:0 24px;border-radius:26px;
 <h1>Can't reach<br>your computer</h1>
 <p class="lead">Your sessions are safe. They keep running.</p>
 <ul><li><b>?</b>tailscale on, both devices</li><li><b>?</b>computer awake, not asleep</li></ul>
-<div class="actions"><span class="pill">retrying every 10s</span><a href="/">Retry now</a></div>
+<div class="actions"><span class="pill">retrying every 5s</span><a href="/">Retry now</a></div>
 </body></html>`;
 
 self.addEventListener('install', () => {
