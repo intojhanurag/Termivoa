@@ -73,6 +73,11 @@ describe('snippet storage', () => {
     const many = Array.from({ length: 60 }, (_, index) => snippet({ id: String(index) }));
     expect(loadSnippets(memory(JSON.stringify(many)))).toHaveLength(MAX_SNIPPETS);
   });
+
+  it('keeps only the first entry of a repeated stored id, so editing one never rewrites another', () => {
+    const stored = [snippet(), snippet({ title: 'Other', text: 'rm -rf build' }), snippet({ id: 'b' })];
+    expect(loadSnippets(memory(JSON.stringify(stored)))).toEqual([snippet(), snippet({ id: 'b' })]);
+  });
 });
 
 describe('sending a snippet', () => {

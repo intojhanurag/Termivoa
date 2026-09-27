@@ -65,7 +65,11 @@ export function loadSnippets(store: StorageLike | undefined = storage()): Snippe
   if (raw === null) return [...DEFAULT_SNIPPETS];
   try {
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isSnippet).slice(0, MAX_SNIPPETS) : [...DEFAULT_SNIPPETS];
+    if (!Array.isArray(parsed)) return [...DEFAULT_SNIPPETS];
+    // Edit and delete work by id, so a repeated id keeps only its first entry.
+    const ids = new Set<string>();
+    return parsed.filter(isSnippet).filter((item) => !ids.has(item.id) && ids.add(item.id) !== undefined)
+      .slice(0, MAX_SNIPPETS);
   } catch {
     return [...DEFAULT_SNIPPETS];
   }
