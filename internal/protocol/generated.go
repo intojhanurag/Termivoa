@@ -263,13 +263,16 @@ type BrokerRPCSessionListResultPayload struct {
 // controlled and viewerCount are live presence computed by the broker at request time and
 // are absent when the session is not live. controllerIsYou is set only on the browser
 // gateway list, for the requesting device. Lease secrets, connection IDs and other device
-// labels are never included.
+// labels are never included. titleIsCustom is true when a user renamed the session; clients
+// show the basename of cwd (the live folder) as the title only when it is absent or false.
+// cwd is present only while the session is running.
 type BrokerRPCSessionRecord struct {
 	Agent           *AgentStatus  `json:"agent,omitempty"`
 	Columns         int64         `json:"columns"`
 	Controlled      *bool         `json:"controlled,omitempty"`
 	ControllerIsYou *bool         `json:"controllerIsYou,omitempty"`
 	CreatedAt       string        `json:"createdAt"`
+	Cwd             *string       `json:"cwd,omitempty"`
 	EndedAt         *string       `json:"endedAt,omitempty"`
 	ExitCode        *int64        `json:"exitCode,omitempty"`
 	Generation      string        `json:"generation"`
@@ -283,6 +286,7 @@ type BrokerRPCSessionRecord struct {
 	StartedAt       *string       `json:"startedAt,omitempty"`
 	State           State         `json:"state"`
 	Title           string        `json:"title"`
+	TitleIsCustom   *bool         `json:"titleIsCustom,omitempty"`
 	UpdatedAt       string        `json:"updatedAt"`
 	ViewerCount     *int64        `json:"viewerCount,omitempty"`
 }
@@ -736,6 +740,7 @@ type ScreenResyncPayload struct {
 
 type SessionStatePayload struct {
 	Agent    *AgentStatus  `json:"agent,omitempty"`
+	Cwd      *string       `json:"cwd,omitempty"`
 	ExitCode *int64        `json:"exitCode,omitempty"`
 	Previews []PreviewPort `json:"previews,omitempty"`
 	State    State         `json:"state"`

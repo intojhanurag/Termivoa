@@ -51,6 +51,8 @@ retransmission.
 broker's `working`/`waiting`/`idle` state, `stateSince`, and the parsed
 `question` while waiting. The broker sends a new `session.state` whenever the
 agent state or question changes, so a live screen needs no polling.
+It also carries `previews` and `cwd` (the live working folder, display text
+only) while running, and a new `session.state` follows when either changes.
 
 `input.answer` answers the current question. It carries the controller lease,
 the next input sequence, `questionId` and `optionIndex` (0-based). The broker

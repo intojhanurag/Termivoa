@@ -80,7 +80,7 @@ follows `local-transport.md` live-mode semantics: observer first, explicit
 
 ## Session activity fields
 
-Live session records on the gateway session list may include three optional,
+Live session records on the gateway session list may include these optional,
 non-authoritative display fields:
 
 - `lastOutputAt`: when child output was last applied to the canonical screen
@@ -101,10 +101,6 @@ non-authoritative display fields:
   - `afterWork`: `true` only on an `idle` that ended a working period in this
     broker's lifetime (not the session's startup output); absent otherwise.
     With output the device has not viewed, show "Your turn".
-- `previews`: TCP ports that processes of this running session listen on
-  (`[{port, since}]`, sorted by port, at most 8), verified by the broker from
-  the operating system. Also on the live `session.state` notice; absent there
-  means none. See `docs/preview.md`.
   - `question`: present exactly while `waiting`. `text` is the question line
     (at most 160 characters). Optional `detail` says what is being approved,
     such as the tool and command: up to 6 lines joined with `\n`, each at
@@ -117,9 +113,23 @@ non-authoritative display fields:
   after start). The live stream carries the same object on `session.state`.
   Answering uses the live WebSocket message `input.answer`; see
   `local-transport.md` and `docs/agent-state.md`.
+- `previews`: TCP ports that processes of this running session listen on
+  (`[{port, since}]`, sorted by port, at most 8), verified by the broker from
+  the operating system. Also on the live `session.state` notice; absent there
+  means none. See `docs/preview.md`.
+- `cwd`: the session's live working folder, an absolute path of at most 512
+  bytes without control characters. The broker reads it from the operating
+  system (macOS, Linux) or from an OSC 7 / OSC 9;9 report in terminal output
+  (see `docs/live-folder.md`). It is display text only: never open, link or
+  run it. Absent when unknown. Also on the live `session.state` notice.
 
-All three are absent when the session is not live in this broker. They are not
-shown on CLI management results.
+These fields are absent when the session is not live in this broker. They are
+not shown on CLI management results.
+
+Every session record may also carry `titleIsCustom: true` when a user renamed
+the session. The default title (the project name) is not custom. Clients show
+the last path segment of `cwd` as the session's name unless `titleIsCustom` is
+true; the project name stays on the secondary line.
 
 
 ## Push notifications

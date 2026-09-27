@@ -142,6 +142,10 @@
         "since": { "type": "string", "minLength": 20, "maxLength": 35 }
       }
     },
+    "workingDirectory": {
+      "description": "The live working folder of a running session: an absolute path (POSIX or Windows) read by the broker from the operating system or from an OSC 7 / OSC 9;9 report in terminal output. It is display text only; never open, link or execute it. Absent when unknown. See docs/live-folder.md.",
+      "type": "string", "minLength": 1, "maxLength": 512, "maxUtf8Bytes": 512, "safeDisplayText": true
+    },
     "previewPorts": {
       "description": "Previewable ports of a running session, sorted by port, unique. Absent when there are none.",
       "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/previewPort" }
@@ -469,7 +473,8 @@
       "properties": {
         "state": { "$ref": "#/$defs/sessionLifecycle" }, "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
         "agent": { "$ref": "#/$defs/agentStatus" },
-        "previews": { "$ref": "#/$defs/previewPorts" }
+        "previews": { "$ref": "#/$defs/previewPorts" },
+        "cwd": { "$ref": "#/$defs/workingDirectory" }
       }
     },
     "accessRevokedPayload": {
