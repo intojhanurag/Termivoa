@@ -512,8 +512,9 @@ func validateShellProfile(profile ShellProfile) error {
 	if len(profile.DisplayName) == 0 || len(profile.DisplayName) > 128 || strings.IndexByte(profile.DisplayName, 0) >= 0 {
 		return errors.New("store: shell profile display name must be 1..128 bytes without NUL")
 	}
-	if profile.Platform != PlatformDarwin && profile.Platform != PlatformWindows && profile.Platform != PlatformWSL {
-		return errors.New("store: shell profile platform must be darwin, windows, or wsl")
+	if profile.Platform != PlatformDarwin && profile.Platform != PlatformWindows && profile.Platform != PlatformWSL &&
+		profile.Platform != PlatformLinux {
+		return errors.New("store: shell profile platform must be darwin, windows, wsl, or linux")
 	}
 	if len(profile.ExecutablePath) == 0 || len(profile.ExecutablePath) > 32768 || strings.IndexByte(profile.ExecutablePath, 0) >= 0 ||
 		!filepath.IsAbs(profile.ExecutablePath) || filepath.Clean(profile.ExecutablePath) != profile.ExecutablePath {
