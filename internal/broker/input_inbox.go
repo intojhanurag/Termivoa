@@ -30,6 +30,9 @@ const (
 	InputKindText  InputKind = "text"
 	InputKindPaste InputKind = "paste"
 	InputKindMouse InputKind = "mouse"
+	// InputKindAnswer answers the detected agent question. The actor derives
+	// the keys from the screen when it writes, never from the client.
+	InputKindAnswer InputKind = "answer"
 )
 
 // InputAction is the immutable broker representation of one validated v1
@@ -45,6 +48,9 @@ type InputAction struct {
 	Button    protocol.Button
 	Column    int64
 	Row       int64
+	// QuestionID and OptionIndex belong to InputKindAnswer only.
+	QuestionID  string
+	OptionIndex int
 }
 
 // AcceptedInput records receipt by the broker. It is not a claim that the
@@ -283,7 +289,17 @@ func inputActionBytes(action InputAction) int {
 
 func validatedInputAction(action InputAction) (InputAction, error) {
 	validated := action
+	if action.Kind != InputKindAnswer && (action.QuestionID != "" || action.OptionIndex != 0) {
+		return InputAction{}, errors.New("broker: input contains answer fields")
+	}
 	switch action.Kind {
+	case InputKindAnswer:
+		if action != (InputAction{Kind: InputKindAnswer, QuestionID: action.QuestionID, OptionIndex: action.OptionIndex}) {
+			return InputAction{}, errors.New("broker: answer input contains unrelated fields")
+		}
+		if !protocol.ValidAgentQuestionID(action.QuestionID) || action.OptionIndex < 0 || action.OptionIndex >= protocol.MaxAgentOptions {
+			return InputAction{}, errors.New("broker: invalid answer input")
+		}
 	case InputKindKey:
 		if action.Text != "" || action.MouseKind != "" || action.Button != "" || action.Column != 0 || action.Row != 0 {
 			return InputAction{}, errors.New("broker: key input contains unrelated fields")

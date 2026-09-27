@@ -10,6 +10,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 
+	"github.com/intojhanurag/phone-terminal/internal/agentstate"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 )
@@ -20,12 +21,19 @@ const (
 	defaultRequestQueue   = 128
 	shutdownTimeout       = 3 * time.Second
 	processExitGrace      = time.Second
+	// agentScanInterval bounds agent-state work: after output, the screen is
+	// scanned at most this often, never per output chunk.
+	agentScanInterval = 500 * time.Millisecond
 )
 
 var (
 	ErrSessionClosed     = errors.New("broker: session is closed")
 	ErrSessionNotRunning = errors.New("broker: session is not running")
 	ErrSessionShutdown   = errors.New("broker: session shutdown did not complete")
+	// ErrQuestionChanged rejects an answer whose question is no longer the
+	// one on screen, so a phone never approves a prompt it did not show.
+	ErrQuestionChanged = errors.New("broker: agent question changed")
+	errAnswerOption    = errors.New("broker: answer option does not exist")
 )
 
 // SessionState is the explicit lifecycle of one managed process generation.
@@ -155,6 +163,8 @@ type Session struct {
 	publishedControl   ControlState
 	publishedStatus    SessionStatus
 	lastOutput         time.Time           // Actor-owned: when child output was last applied.
+	agent              *agentstate.Tracker // Actor-owned agent-state detector.
+	publishedAgent     agentstate.Status
 	termination        *sessionTermination // Actor-owned; one bounded attempt per session.
 }
 
@@ -322,6 +332,7 @@ func startSessionRuntime(
 		ended:               make(chan struct{}),
 		retirementReady:     make(chan struct{}),
 		viewers:             make(map[string]*viewerActorState),
+		agent:               agentstate.NewTracker(config.Generation),
 	}
 
 	session.pumpWG.Add(3)
@@ -454,12 +465,13 @@ func (session *Session) Status(ctx context.Context) (SessionStatus, error) {
 // ControllerDevice is broker-internal: callers compare it with the requesting
 // device and must never send it to another device. LastOutput is zero until
 // child output is applied. Preview is set only when requested and is empty
-// for a blank screen.
+// for a blank screen. Agent has an empty State until the first screen scan.
 type SessionPresence struct {
 	ControllerDevice string
 	Viewers          int
 	LastOutput       time.Time
 	Preview          string
+	Agent            agentstate.Status
 }
 
 // Presence reads presence in one actor call. With preview, the actor also
@@ -592,6 +604,23 @@ func (session *Session) run(columns, rows int) {
 	var controllerTimer *time.Timer
 	var controllerDeadline <-chan time.Time
 	var controllerAt time.Time
+	agentTimer := time.NewTimer(agentScanInterval)
+	agentDeadline, agentAt := agentTimer.C, status.StartedAt.Add(agentScanInterval)
+	// armAgent keeps the earliest pending scan, so a burst of output costs one
+	// scan per agentScanInterval at most.
+	armAgent := func(at time.Time) {
+		if at.IsZero() || agentDeadline != nil && !at.Before(agentAt) {
+			return
+		}
+		if !agentTimer.Stop() {
+			select {
+			case <-agentTimer.C:
+			default:
+			}
+		}
+		agentTimer.Reset(max(time.Until(at), 0))
+		agentDeadline, agentAt = agentTimer.C, at
+	}
 	refreshControllerTimer := func() {
 		// Use the same state capture that published observer notices. A second
 		// State call could expire the lease between publication and timer setup,
@@ -689,6 +718,7 @@ func (session *Session) run(columns, rows int) {
 		if controllerTimer != nil {
 			controllerTimer.Stop()
 		}
+		agentTimer.Stop()
 		for connectionID := range session.viewers {
 			session.detachViewer(connectionID, ErrSessionClosed)
 		}
@@ -827,6 +857,7 @@ func (session *Session) run(columns, rows int) {
 				} else {
 					session.lastOutput = time.Now()
 					schedulePublish()
+					armAgent(session.lastOutput.Add(agentScanInterval))
 				}
 			}
 			if event.err != nil {
@@ -911,6 +942,11 @@ func (session *Session) run(columns, rows int) {
 			if err := session.capturePublished(); err != nil {
 				session.markLost(&status)
 			}
+		case <-agentDeadline:
+			agentDeadline = nil
+			if status.State == SessionRunning && !shuttingDown {
+				armAgent(session.observeAgent(status.StartedAt))
+			}
 		}
 	}
 }
@@ -970,6 +1006,19 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		if response.err = checkAccess(request.identity.Access); response.err != nil {
 			break
 		}
+		if request.action.Kind == InputKindAnswer {
+			// Authorize first so a non-controller learns nothing about the
+			// screen; neither check consumes the input sequence.
+			if _, response.err = session.controller.Authorize(
+				request.identity.Generation, request.identity.ConnectionID,
+				request.identity.DeviceID, request.identity.Lease,
+			); response.err != nil {
+				break
+			}
+			if response.err = session.checkAnswer(request.action); response.err != nil {
+				break
+			}
+		}
 		response.acceptance, response.err = session.inbox.submit(request.identity, request.sequence, request.action)
 	case requestResize:
 		if status.State != SessionRunning {
@@ -1008,7 +1057,7 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 	case requestPresence:
 		response.presence = SessionPresence{
 			ControllerDevice: session.controller.State().DeviceID, Viewers: len(session.viewers),
-			LastOutput: session.lastOutput,
+			LastOutput: session.lastOutput, Agent: session.agent.Status(),
 		}
 		if request.preview {
 			response.frame, response.err = session.terminal.ScreenSnapshot(session.ctx)
@@ -1075,6 +1124,8 @@ func (session *Session) executeInput(action InputAction) error {
 			return err
 		}
 		return session.terminal.SendMouse(session.ctx, mouse)
+	case InputKindAnswer:
+		return session.executeAnswer(action)
 	default:
 		return errors.New("broker: unsupported input action")
 	}
