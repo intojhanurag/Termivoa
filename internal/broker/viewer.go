@@ -15,9 +15,13 @@ import (
 )
 
 const (
-	MaxViewersPerSession      = 16
-	MaxViewerQueueBytes       = 2 * 1024 * 1024
-	DefaultViewerTimeout      = 5 * time.Second
+	MaxViewersPerSession = 16
+	MaxViewerQueueBytes  = 2 * 1024 * 1024
+	// DefaultViewerTimeout bounds one delivery to a viewer connection. The
+	// gateway stops reading while its phone is behind, which makes this worker
+	// coalesce to the newest screen; the gateway disconnects a phone that makes
+	// no progress for 15 s, so this must stay above that.
+	DefaultViewerTimeout      = 20 * time.Second
 	DefaultSnapshotAckTimeout = 5 * time.Second
 	framePublishInterval      = time.Second / 60
 	MaxViewerQueuedNotices    = 64
