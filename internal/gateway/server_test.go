@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -295,4 +296,59 @@ func shortGatewayRuntimeDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	return filepath.Join(root, "runtime")
+}
+
+// At logon the broker may answer after the gateway starts.
+func TestRunWaitsForALateBrokerThenGivesUp(t *testing.T) {
+	runtimeDir := shortGatewayRuntimeDir(t)
+	start := func(wait time.Duration) (<-chan ReadyState, <-chan error, context.CancelFunc) {
+		ctx, cancel := context.WithCancel(context.Background())
+		ready, done := make(chan ReadyState, 1), make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Config{
+				RuntimeDir: runtimeDir, HostBuild: "gateway-test", ListenAddress: "127.0.0.1:0",
+				Profile: platform.DevelopmentProfile, ProbeInterval: 25 * time.Millisecond, BrokerWait: wait,
+				Ready: func(state ReadyState) { ready <- state },
+			})
+		}()
+		return ready, done, cancel
+	}
+
+	_, done, cancel := start(150 * time.Millisecond)
+	defer cancel()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "connect to broker (waited 150ms)") {
+			t.Fatalf("gateway without a broker = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("gateway waited past BrokerWait")
+	}
+
+	_, done, cancel = start(time.Minute)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled wait = %v", err)
+	}
+
+	ready, done, cancel := start(time.Minute)
+	defer func() {
+		cancel()
+		<-done
+	}()
+	time.Sleep(300 * time.Millisecond)
+	brokerCtx, cancelBroker := context.WithCancel(context.Background())
+	listener, err := ipc.ListenBroker(brokerCtx, ipc.ListenerConfig{RuntimeDir: runtimeDir, BrokerGeneration: gatewayTestGeneration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokerDone := serveHandshakes(brokerCtx, listener)
+	t.Cleanup(func() {
+		cancelBroker()
+		_ = listener.Close()
+		<-brokerDone
+	})
+	if state := waitReady(t, ready); state.BrokerGeneration != gatewayTestGeneration {
+		t.Fatalf("late broker generation = %q", state.BrokerGeneration)
+	}
 }
