@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/http';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 
@@ -103,28 +103,57 @@ export interface SessionList {
 }
 
 /**
+ * Wraps a request so a slow response never overwrites a newer one, and tells
+ * the poll timer when a request is still open so ticks do not pile up.
+ */
+export function latestOnly<T>(
+  load: () => Promise<T>,
+  onResult: (value: T) => void,
+  onError: (error: unknown) => void,
+): { readonly run: () => Promise<void>; readonly busy: () => boolean } {
+  let issued = 0;
+  let open = 0;
+  const run = async () => {
+    const ticket = ++issued;
+    open++;
+    try {
+      const value = await load();
+      if (ticket === issued) onResult(value);
+    } catch (error) {
+      if (ticket === issued) onError(error);
+    } finally {
+      open--;
+    }
+  };
+  return { run, busy: () => open > 0 };
+}
+
+/**
  * The session list for Sessions and the Live tabs. While `active`, it
- * refreshes every few seconds, but only when the page is visible.
+ * refreshes every few seconds, but only when the page is visible and the
+ * previous request has finished.
  */
 export function useSessionList(active: boolean, onFailure: (error: unknown) => void): SessionList {
   const [sessions, setSessions] = useState<ReadonlyArray<BrokerRPCSessionRecord>>();
   const [reachable, setReachable] = useState(true);
-  const reload = useCallback(async () => {
-    try {
-      setSessions((await api.sessions()).sessions);
+  const loader = useMemo(() => latestOnly(
+    async () => (await api.sessions()).sessions,
+    (list) => {
+      setSessions(list);
       setReachable(true);
-    } catch (error) {
+    },
+    (error) => {
       setReachable(false);
       onFailure(error);
-    }
-  }, [onFailure]);
+    },
+  ), [onFailure]);
   useEffect(() => {
     if (!active) {
       return undefined;
     }
     const tick = () => {
-      if (document.visibilityState === 'visible') {
-        void reload();
+      if (document.visibilityState === 'visible' && !loader.busy()) {
+        void loader.run();
       }
     };
     tick();
@@ -134,6 +163,6 @@ export function useSessionList(active: boolean, onFailure: (error: unknown) => v
       clearInterval(timer);
       document.removeEventListener('visibilitychange', tick);
     };
-  }, [active, reload]);
-  return { sessions, reachable, reload };
+  }, [active, loader]);
+  return { sessions, reachable, reload: loader.run };
 }
