@@ -13,7 +13,7 @@ import (
 
 const (
 	enterOuterTerminal   = "\x1b[?1049h\x1b[?2004h\x1b[?7l\x1b[2J\x1b[H"
-	restoreOuterTerminal = "\x1b[0m\x1b[?25h\x1b[?7h\x1b[?2004l\x1b[?1049l"
+	restoreOuterTerminal = "\x1b[0m\x1b[0 q\x1b[?25h\x1b[?7h\x1b[?2004l\x1b[?1049l"
 )
 
 type ttyOperations struct {
@@ -162,6 +162,10 @@ type Attachment struct {
 	// draining gated input. It must honor cancellation; no post-activation
 	// native flush/parser reset may discard newly advertised live input.
 	Activate func(context.Context) error
+	// InputRejected reports a decoded action that fails shared protocol
+	// validation. The action is dropped and the attachment continues; only an
+	// error returned here (for example a status write failure) ends it.
+	InputRejected func(context.Context, *InvalidInputError) error
 }
 
 // Run enters and always restores the outer terminal before returning.
@@ -262,6 +266,12 @@ func (attachment *Attachment) Run(ctx context.Context) (returnErr error) {
 				return nil
 			}
 			detached, err := controller.Handle(eventContext, event, transport)
+			if invalid, ok := errors.AsType[*InvalidInputError](err); ok {
+				err = nil // Dropped locally; transport and I/O errors stay fatal.
+				if attachment.InputRejected != nil {
+					err = attachment.InputRejected(eventContext, invalid)
+				}
+			}
 			if err != nil {
 				return err
 			}
