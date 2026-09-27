@@ -7,7 +7,7 @@ import {
   rowText,
   type ScreenDisplay,
 } from './Connection';
-import { fitGrid } from './TerminalView';
+import { fitGrid, followCursor } from './TerminalView';
 import type { CellStyle, ScreenMetadata, ScreenPatch, ScreenSnapshot, TerminalRow } from './FrameRenderer';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -500,5 +500,13 @@ describe('Session tab switching', () => {
     expect(nextSocket.sent.every((message) => message.sessionId === undefined || message.sessionId === otherId)).toBe(true);
     expect(JSON.stringify(nextSocket.sent)).not.toContain(lease);
     expect(next.sendText('npm test')).toBe(false);
+  });
+});
+
+describe('followCursor', () => {
+  it('scrolls only as far as needed to show the cursor row', () => {
+    expect(followCursor(0, 300, { top: 100, bottom: 117 })).toBe(0);
+    expect(followCursor(0, 300, { top: 580, bottom: 597 })).toBe(297);
+    expect(followCursor(297, 300, { top: 34, bottom: 51 })).toBe(34);
   });
 });

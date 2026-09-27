@@ -35,9 +35,11 @@ const MODIFIER_ARROWS: ReadonlyArray<[KeyName, string, string]> = [
 
 /** The in-control dock: agent keys, modifiers and arrows, and the four actions. */
 export function CockpitDock({
-  disabled, latched, alternate, historyEnabled,
-  onAgentKey, onKey, onLatch, onWheel, onType, onCompose, onSnippets, onHistory,
+  compact, disabled, latched, alternate, historyEnabled,
+  onAgentKey, onKey, onLatch, onWheel, onType, onCompose, onSnippets, onHistory, onHideKeyboard,
 }: {
+  /** The keyboard is up: one scrolling row of keys, so the terminal keeps its space. */
+  readonly compact: boolean;
   readonly disabled: boolean;
   readonly latched: { readonly ctrl: boolean; readonly alt: boolean };
   readonly alternate: boolean;
@@ -50,39 +52,59 @@ export function CockpitDock({
   readonly onCompose: () => void;
   readonly onSnippets: () => void;
   readonly onHistory: () => void;
+  readonly onHideKeyboard: () => void;
 }) {
+  const agentKeys = AGENT_KEYS.map((key) => (
+    <KeyButton
+      key={key.id}
+      label={key.name}
+      disabled={disabled}
+      weight={key.weight}
+      {...(key.tone === undefined ? {} : { className: key.tone })}
+      onPress={() => onAgentKey(key)}
+    >
+      <span className="glyph">{key.glyph}</span>
+      {key.sub !== undefined && <span className="sub">{key.sub}</span>}
+    </KeyButton>
+  ));
+  const modifierKeys = (
+    <>
+      <KeyButton label="Tab" disabled={disabled} onPress={() => onKey('tab')}>tab</KeyButton>
+      <KeyButton label="Control modifier" disabled={disabled} pressed={latched.ctrl} onPress={() => onLatch('ctrl')}>ctrl</KeyButton>
+      <KeyButton label="Alt modifier" disabled={disabled} pressed={latched.alt} onPress={() => onLatch('alt')}>alt</KeyButton>
+      {MODIFIER_ARROWS.map(([name, glyph, label]) => (
+        <KeyButton key={name} label={label} disabled={disabled} weight={0.8} onPress={() => onKey(name)}>{glyph}</KeyButton>
+      ))}
+      {alternate && (
+        <>
+          <KeyButton label="Scroll application up" disabled={disabled} weight={0.8} onPress={() => onWheel('wheel-up')}>▲</KeyButton>
+          <KeyButton label="Scroll application down" disabled={disabled} weight={0.8} onPress={() => onWheel('wheel-down')}>▼</KeyButton>
+        </>
+      )}
+    </>
+  );
+  if (compact) {
+    return (
+      <section className="dock compact" aria-label="Terminal keys">
+        <div className="key-row compact-row" role="group" aria-label="Keys">
+          {agentKeys}
+          {modifierKeys}
+          <KeyButton label="Snippets" disabled={false} className="snips-key" onPress={onSnippets}>⌘ snips</KeyButton>
+        </div>
+        <KeyButton label="Hide keyboard" disabled={false} className="hide-keyboard" onPress={onHideKeyboard}>
+          <svg width="20" height="16" viewBox="0 0 20 16" aria-hidden="true">
+            <rect x="1" y="1" width="18" height="9" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M7 12.5l3 2.5 3-2.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+        </KeyButton>
+      </section>
+    );
+  }
   return (
     <section className="dock" aria-label="Terminal keys">
       <p className="caps dock-label" id="agent-keys-label">Agent keys</p>
-      <div className="key-row" role="group" aria-labelledby="agent-keys-label">
-        {AGENT_KEYS.map((key) => (
-          <KeyButton
-            key={key.id}
-            label={key.name}
-            disabled={disabled}
-            weight={key.weight}
-            {...(key.tone === undefined ? {} : { className: key.tone })}
-            onPress={() => onAgentKey(key)}
-          >
-            <span className="glyph">{key.glyph}</span>
-            {key.sub !== undefined && <span className="sub">{key.sub}</span>}
-          </KeyButton>
-        ))}
-      </div>
-      <div className="key-row" role="group" aria-label="Modifier and arrow keys">
-        <KeyButton label="Tab" disabled={disabled} onPress={() => onKey('tab')}>tab</KeyButton>
-        <KeyButton label="Control modifier" disabled={disabled} pressed={latched.ctrl} onPress={() => onLatch('ctrl')}>ctrl</KeyButton>
-        <KeyButton label="Alt modifier" disabled={disabled} pressed={latched.alt} onPress={() => onLatch('alt')}>alt</KeyButton>
-        {MODIFIER_ARROWS.map(([name, glyph, label]) => (
-          <KeyButton key={name} label={label} disabled={disabled} weight={0.8} onPress={() => onKey(name)}>{glyph}</KeyButton>
-        ))}
-        {alternate && (
-          <>
-            <KeyButton label="Scroll application up" disabled={disabled} weight={0.8} onPress={() => onWheel('wheel-up')}>▲</KeyButton>
-            <KeyButton label="Scroll application down" disabled={disabled} weight={0.8} onPress={() => onWheel('wheel-down')}>▼</KeyButton>
-          </>
-        )}
-      </div>
+      <div className="key-row" role="group" aria-labelledby="agent-keys-label">{agentKeys}</div>
+      <div className="key-row" role="group" aria-label="Modifier and arrow keys">{modifierKeys}</div>
       <div className="action-row">
         <button type="button" className="action primary" disabled={disabled} onClick={onType}>
           <span aria-hidden="true" className="glyph">❯</span>type

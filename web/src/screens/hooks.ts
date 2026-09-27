@@ -51,6 +51,40 @@ export function useVisualViewport(): void {
   }, []);
 }
 
+/** An on-screen keyboard takes at least this much height; browser bars take less. */
+export const KEYBOARD_MIN_PX = 150;
+
+/**
+ * The viewport is "keyboard open" when it is much shorter than the tallest
+ * viewport seen at the same layout width, so rotation has its own baseline.
+ */
+export function keyboardTracker(): (width: number, height: number) => boolean {
+  const tallest = new Map<number, number>();
+  return (width, height) => {
+    const most = Math.max(tallest.get(width) ?? 0, height);
+    tallest.set(width, most);
+    return most - height >= KEYBOARD_MIN_PX;
+  };
+}
+
+/** True while an on-screen keyboard covers part of the page. */
+export function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (viewport === null || viewport === undefined) {
+      return undefined;
+    }
+    const track = keyboardTracker();
+    // Layout width ignores pinch zoom; height times scale undoes the zoom.
+    const apply = () => setOpen(track(window.innerWidth, viewport.height * viewport.scale));
+    apply();
+    viewport.addEventListener('resize', apply);
+    return () => viewport.removeEventListener('resize', apply);
+  }, []);
+  return open;
+}
+
 /**
  * Registers the asset-only service worker on secure contexts. A waiting update
  * is surfaced to the user; it activates only after an explicit reload.

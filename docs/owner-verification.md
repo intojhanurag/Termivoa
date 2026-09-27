@@ -81,6 +81,10 @@ The agent did not change Tailscale or startup settings on this Mac. Follow
 - [ ] Add to Home Screen: name, icon, standalone launch, dark theme.
 - [ ] With the keyboard open, the cursor row and the action bar stay visible
       (portrait and landscape).
+- [ ] Keyboard-up layout: tabs and the status line hide, one key row shows,
+      and the size in the status line (for example `46×35`) is the same before
+      and after the keyboard opens. Claude Code does not redraw when the
+      keyboard opens or closes. Tested only in a desktop browser at phone size.
 - [ ] IME (Japanese, Chinese, Korean), dictation and emoji commit each word once.
       Autocorrect and capitalization stay off.
 - [ ] Key bar keeps the keyboard open. Ctrl then `c` sends Ctrl+C. A hardware
