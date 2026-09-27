@@ -95,16 +95,32 @@ func appendRow(drawing *strings.Builder, columns, rowIndex int64, row protocol.T
 	}
 
 	appendPosition(drawing, rowIndex, 0)
-	drawing.WriteString(escape + "0m" + escape + "2K")
+	current := escape + "0m"
+	drawing.WriteString(current + escape + "2K")
+	// next is the outer cursor column, or -1 when it is not known. Only a
+	// printable ASCII cell has a width every terminal agrees on. After any
+	// other cell (wide, emoji, combining, ambiguous) the next cell is
+	// positioned explicitly, so a width disagreement cannot shift the row.
+	next := int64(0)
 	for _, run := range row.Runs {
-		drawing.WriteString(sgr(run.Style))
+		style := sgr(run.Style)
 		for offset, cell := range run.Cells {
-			column := run.Column + int64(offset)
 			if cell.Continuation {
 				continue
 			}
-			appendPosition(drawing, rowIndex, column)
+			column := run.Column + int64(offset)
+			if column != next {
+				appendPosition(drawing, rowIndex, column)
+			}
+			if style != current {
+				drawing.WriteString(style)
+				current = style
+			}
 			drawing.WriteString(cell.Text)
+			next = -1
+			if cell.Width == 1 && len(cell.Text) == 1 {
+				next = column + 1
+			}
 		}
 	}
 
