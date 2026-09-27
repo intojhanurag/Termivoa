@@ -117,10 +117,12 @@ hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$(mktemp -d)" <dmg>
   page, PATH opt-in, Start-menu shortcut, `pterm setup --apply --yes` result.
 - Register startup on a real login and reboot/log in again on both OSes:
   LaunchAgents load and restart on failure; Scheduled Tasks start at logon.
-  On Windows specifically confirm that `conhost.exe --headless` shows no
-  window, passes pterm's exit code so restart-on-failure works, and that
-  `schtasks /End` stops the pterm child (otherwise uninstall leaves it running
-  and its files locked).
+- Windows `conhost.exe --headless` wrapper (not verifiable on this Mac): it
+  shows no window; it passes pterm's exit code so restart-on-failure through
+  conhost actually restarts pterm; and `schtasks /End` stops the pterm.exe
+  child, not only conhost. If `/End` leaves pterm.exe running, uninstall now
+  keeps the data (it refuses deletion while any broker runs) but the broker
+  keeps running and its files stay locked.
 - Re-running the installer while the old broker runs: task definition is
   replaced without stopping the running broker (expected; confirm).
 - Tailscale Serve setup by the owner and phone access over the tailnet.
@@ -141,3 +143,53 @@ hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$(mktemp -d)" <dmg>
 - A broker-side refusal to be replaced (update/shutdown RPC) is pending broker
   work; today `pterm setup`/`uninstall` check the session list first.
 - No database backup before migration yet; no app icon.
+
+## PR #26 adversarial review 2026-09-27
+
+Findings verified and fixed (failing test first for each):
+
+1. `setup --apply` registered startup while a broker/gateway started outside
+   registration (e.g. by `pterm launch`) was running; the registered copies
+   would fail on the data lock / port 8787 and restart forever. Setup now
+   refuses before any change when the broker runs and is not registered, or
+   when the gateway address is in use and the gateway is not registered. The
+   error names the broker process from its endpoint descriptor (pterm has no
+   stop command yet). Test: `TestSetupRefusesProcessesRunningOutsideStartup`
+   (real in-process dev broker in temp dirs, busy loopback port, fake
+   launchctl: no bootstrap, no plist written).
+2. `uninstall --delete-data` trusted "registered" as "the live broker is
+   launchd's". Data deletion now runs only after the unregister steps and
+   only once no broker runs (answering endpoint or held data/runtime lock),
+   polled for `waitTimeout`; otherwise it refuses and keeps data. The Windows
+   uninstaller now asks the data question first and runs
+   `pterm uninstall --yes [--delete-data] --dry-run` with that choice, so a
+   non-zero exit aborts before anything is removed. Test:
+   `TestUninstallKeepsDataWhileABrokerRuns` (unregistered broker; and
+   registered-in-launchd but live broker not launchd's: bootout runs, data and
+   runtime dirs survive).
+3. `activeSessions` treated any dial/handshake failure within 3 s as "no
+   broker". It now waits `ipc.HandshakeTimeout + 2s` and, when the broker does
+   not answer, checks the broker locks with the new read-only
+   `ipc.BrokerLocksHeld` (creates no directory or lock file). A held lock
+   means "running but did not answer": setup/uninstall refuse. Only no answer
+   and no held lock means no broker. `pterm launch` uses a plain endpoint
+   handshake check instead, so its polling never probes locks. Tests:
+   `TestLifecycleRefusesABrokerThatDoesNotAnswer` (held data lock +
+   `ipc.ListenBroker` that never answers; then data lock alone),
+   `TestBrokerLocksHeldProbesWithoutCreatingLocks`.
+4. `build-installer.ps1` copied `web\dist` source maps into the embed
+   directory; it now deletes `*.map` after the copy, like
+   `scripts/embed-web.sh`. Not run here (no PowerShell/Inno Setup on this Mac).
+
+Commands (all pass):
+
+- `GOTOOLCHAIN=go1.27.1 go test -race -count=2 ./internal/lifecycle/... ./cmd/...`
+- `GOTOOLCHAIN=go1.27.1 go test -race ./internal/ipc/...`
+- `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./...`
+- `gofmt -l cmd internal` (no output)
+- `./scripts/check` (Node 24.11.0)
+
+Not verified here: the `.iss` changes and the `.ps1` map removal compile and
+run only in the Windows CI job or on the owner's Windows machine. Probing a
+free broker lock takes it for an instant; a broker starting in that instant
+fails once and is restarted by its supervisor.
