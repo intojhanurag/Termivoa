@@ -46,6 +46,17 @@ func TestScreenPreviewUsesLastNonBlankRow(t *testing.T) {
 	if got := screenPreview(wide); got != "界👩\u200d💻x" {
 		t.Fatalf("wide preview = %q", got)
 	}
+	concealed := terminal.Frame{Screen: []terminal.Row{
+		{Cells: []terminal.Cell{{Text: "o", Width: 1}, {Text: "k", Width: 1}}},
+		{Cells: []terminal.Cell{
+			{Text: "p", Width: 1}, {Text: "w", Width: 1}, {Text: ":", Width: 1},
+			{Text: "s", Width: 1, Conceal: true}, {Text: "3", Width: 1, Conceal: true}, {Text: "!", Width: 1},
+		}},
+		{Cells: []terminal.Cell{{Text: "x", Width: 1, Conceal: true}}},
+	}}
+	if got := screenPreview(concealed); got != "pw: !" {
+		t.Fatalf("concealed preview = %q", got)
+	}
 }
 
 func TestScreenPreviewTruncatesToRuneAndByteLimits(t *testing.T) {

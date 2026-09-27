@@ -29,12 +29,17 @@ func screenPreview(frame terminal.Frame) string {
 // previewRow joins cell texts, drops C0/C1 controls and DEL, collapses every
 // Unicode space run to one ASCII space, trims, and replaces any other
 // non-printable rune (format, bidi, private-use, unassigned) with U+FFFD.
+// Concealed cells (SGR 8) count as blank: the live view hides them too.
 func previewRow(row terminal.Row) string {
 	var text strings.Builder
 	runes, space := 0, false
 cells:
 	for _, cell := range row.Cells {
 		if cell.Continuation {
+			continue
+		}
+		if cell.Conceal {
+			space = text.Len() > 0
 			continue
 		}
 		for _, character := range cell.Text {
