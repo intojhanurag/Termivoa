@@ -784,3 +784,25 @@ func TestMaximumPasteOfHTMLCharactersFitsMessageLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The broker rejects control while this viewer's newest snapshot is unapplied.
+// The client stays attached and observing, and can acquire after applying it.
+func TestAcquireResyncRequiredReturnsToObserver(t *testing.T) {
+	client, host, _ := readyClient(t)
+	result := make(chan error, 1)
+	go func() { result <- client.AcquireControl(context.Background()) }()
+	request := host.await(t, protocol.ControlAcquire)
+	host.send(t, protocol.Error, request.RequestID, protocol.ErrorPayload{Code: protocol.ResyncRequired, Message: "apply the current snapshot before taking control"})
+	var remote *RemoteError
+	if err := <-result; !errors.As(err, &remote) || remote.Code != protocol.ResyncRequired {
+		t.Fatalf("acquire = %v", err)
+	}
+	if state := client.State(); !state.Connected || state.Ready || state.Controller {
+		t.Fatalf("state after rejected acquire = %#v", state)
+	}
+	screen, rows := snapshot(t, "current")
+	host.snapshot(t, "9007199254740994", screen, rows)
+	host.await(t, protocol.SnapshotApplied)
+	waitState(t, client, func(state State) bool { return state.Ready })
+	acquire(t, client, host, "1")
+}
