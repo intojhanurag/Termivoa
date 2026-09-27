@@ -423,6 +423,14 @@ func strictPayload[T any](envelope Envelope) (T, error) {
 }
 
 func strictDecode(data []byte, destination any) error {
+	// encoding/json replaces malformed UTF-8 with U+FFFD. Reject the original
+	// bytes before decoding so a received user action is never silently changed.
+	if !utf8.Valid(data) {
+		return errors.New("protocol: message must be valid UTF-8")
+	}
+	if err := validateJSONUnicodeEscapes(data); err != nil {
+		return err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
@@ -435,6 +443,67 @@ func strictDecode(data []byte, destination any) error {
 		return err
 	}
 	return validateExactJSONFields(data, destination)
+}
+
+// validateJSONUnicodeEscapes rejects lone UTF-16 surrogates before encoding/json
+// can replace them. Ordinary JSON syntax remains the decoder's responsibility;
+// this scan only distinguishes escaped backslashes from actual Unicode escapes.
+func validateJSONUnicodeEscapes(data []byte) error {
+	inString := false
+	for index := 0; index < len(data); index++ {
+		if data[index] == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString || data[index] != '\\' {
+			continue
+		}
+		index++
+		if index >= len(data) || data[index] != 'u' {
+			continue
+		}
+		value, ok := jsonHexQuad(data, index+1)
+		if !ok {
+			return errors.New("protocol: invalid JSON Unicode escape")
+		}
+		index += 4
+		if value >= 0xdc00 && value <= 0xdfff {
+			return errors.New("protocol: unpaired JSON Unicode surrogate")
+		}
+		if value < 0xd800 || value > 0xdbff {
+			continue
+		}
+		if index+2 >= len(data) || data[index+1] != '\\' || data[index+2] != 'u' {
+			return errors.New("protocol: unpaired JSON Unicode surrogate")
+		}
+		low, ok := jsonHexQuad(data, index+3)
+		if !ok || low < 0xdc00 || low > 0xdfff {
+			return errors.New("protocol: unpaired JSON Unicode surrogate")
+		}
+		index += 6
+	}
+	return nil
+}
+
+func jsonHexQuad(data []byte, start int) (uint16, bool) {
+	if start+4 > len(data) {
+		return 0, false
+	}
+	var value uint16
+	for _, digit := range data[start : start+4] {
+		value <<= 4
+		switch {
+		case digit >= '0' && digit <= '9':
+			value |= uint16(digit - '0')
+		case digit >= 'a' && digit <= 'f':
+			value |= uint16(digit-'a') + 10
+		case digit >= 'A' && digit <= 'F':
+			value |= uint16(digit-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return value, true
 }
 
 // validateExactJSONFields closes encoding/json's case-insensitive struct-field
@@ -862,6 +931,11 @@ func validKey(value KeyName) bool {
 }
 
 func validMouse(kind Kind, button Button) bool {
+	switch button {
+	case ButtonNone, Left, Middle, Right, WheelUp, WheelDown, WheelLeft, WheelRight, Backward, Forward:
+	default:
+		return false
+	}
 	wheelButton := button == WheelUp || button == WheelDown || button == WheelLeft || button == WheelRight
 	switch kind {
 	case Wheel:
@@ -895,7 +969,7 @@ func validState(value State) bool {
 
 func validErrorCode(value ErrorCode) bool {
 	switch value {
-	case Unauthorized, PairingExpired, PairingPending, Revoked, ProtocolMismatch, SessionMissing,
+	case Unauthorized, PairingExpired, PairingPending, ErrorCodeRevoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
 		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
 		OperationConflict, ProjectMissing, ShellProfileMissing:

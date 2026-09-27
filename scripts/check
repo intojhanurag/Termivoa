@@ -18,7 +18,7 @@ if ! cmp -s plan.md docs/implementation-plan.md; then
   exit 1
 fi
 
-unformatted=$(find cmd internal tests third_party/vt third_party/xpty -name '*.go' -type f -print 2>/dev/null | xargs gofmt -l 2>/dev/null || true)
+unformatted=$(find cmd internal tests third_party/vt third_party/xpty third_party/ultraviolet -name '*.go' -type f -print 2>/dev/null | xargs gofmt -l 2>/dev/null || true)
 if [ -n "$unformatted" ]; then
   echo "Go files require formatting:" >&2
   echo "$unformatted" >&2
@@ -29,6 +29,7 @@ GOTOOLCHAIN=go1.27.1 go vet ./...
 GOTOOLCHAIN=go1.27.1 go test ./...
 (cd third_party/vt && GOTOOLCHAIN=go1.27.1 go test ./...)
 (cd third_party/xpty && GOTOOLCHAIN=go1.27.1 go test ./...)
+GOTOOLCHAIN=go1.27.1 go test github.com/charmbracelet/ultraviolet/...
 pnpm typecheck
 pnpm test:web
 pnpm build:web

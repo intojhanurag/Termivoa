@@ -12,6 +12,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.59.0
+	rsc.io/qr v0.2.0
 )
 
 require (
@@ -45,3 +46,6 @@ require (
 replace github.com/charmbracelet/x/vt => ./third_party/vt
 
 replace github.com/charmbracelet/x/xpty => ./third_party/xpty
+
+// P3 bounds desktop decoder state before structured-input validation.
+replace github.com/charmbracelet/ultraviolet => ./third_party/ultraviolet

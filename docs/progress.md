@@ -1,8 +1,100 @@
 # Implementation progress
 
-Last updated: 2026-09-21
+Last updated: 2026-09-27
 
 ## Current status
+
+### v0 merge without CI (2026-09-29)
+
+The owner asked to merge the v0 stack without hosted CI: the account's 3,000
+included GitHub Actions minutes for September were used up, and they reset in
+early October. PR #27 contains all of #23–#26 and was squash-merged alone into
+`main` with administrator bypass; "include administrators" was turned off only
+for that merge and turned back on right after. #23–#26 were closed as included
+in #27. Before the merge, an adversarial review of all five PRs found 25 real
+defects; all were fixed with failing-first tests except desktop mouse
+forwarding, which is documented as out of scope for v0. The full local
+`./scripts/check` and `go test -race ./internal/... ./cmd/...` passed on the
+merged head (macOS arm64). Native Windows tests, the Linux `/proc` path and the
+packaging workflow have not run in CI yet: run CI on `main` when minutes reset
+and fix any failure in a follow-up PR.
+
+### v0 stack (2026-09-27)
+
+The P3–P6 work is pushed as stacked private PRs: #23 (P3 desktop attach and
+live client) → #24 (P4 pairing, broker auth and gateway) → #25 (P5 phone
+website) → #26 (P6 unsigned packaging and lifecycle commands) → the v0 polish
+PR. None is merged yet: GitHub Actions did not start any job because of the
+account billing/spending limit, and branch protection requires the ten CI
+checks. Full local `./scripts/check` passed at the head of each PR. The
+configured Greptile review did not respond on these PRs; same-account agent
+review passes are recorded in each evidence file instead.
+
+A real end-to-end run on this Mac (`pterm up --dev`, desktop Chromium at
+390×844) passed: pair → approve → session list → new zsh session → Take
+control → typed command → real shell output; `pterm attach` observed the same
+session read-only and detached with Ctrl+]; a broker restart marked old
+sessions `lost` and the browser credential stayed valid. Everything that needs
+a real phone, native Windows, Tailscale HTTPS, a real login, or signing
+credentials is listed in `docs/owner-verification.md`.
+
+### Earlier local integration checkpoint (2026-09-21)
+
+The reviewed P3 process, management CLI, live IPC, and desktop-client components
+are combined on `feat/p3-desktop-integration`. Main remains at the privately merged
+PR #22 checkpoint `9d212651efe331f35fdbb66038905e705125072f`; local integration is
+not described as merged. GitHub API DNS lookup is currently timing out, so remote
+visibility/review cannot be refreshed and these checkpoints have not been pushed.
+No authentication, account, or network settings were changed to work around it.
+
+Implemented locally:
+
+- Independent broker/gateway process modes and broker-owned session persistence.
+- Real `list` and explicitly confirmed `terminate` commands over restricted IPC.
+- Canonical observer/control/input/snapshot/history live IPC and a client tested
+  against a real Mac broker and PTY, including same-child reconnect.
+- Bounded desktop input decoding, cancellable owned terminal I/O, join-before-TTY
+  restoration, and reversible Windows console setup (native execution pending).
+- Exact session selection and public `new`/`attach` commands, including one-shot
+  creation, read-only attachment, explicit control, detach and TTY restoration.
+- Actual executable attachment in disposable Mac outer PTYs, plus isolated real
+  zsh, less and Vim compatibility fixtures. No owner shell configuration is used.
+
+The full `./scripts/check` at integrated `d227802` passed, including 47 web tests.
+The full Go race suite passed at `2c1bf3c`; later command checkpoints have focused
+race evidence, not a claim that this older full run covers them. The real outer-PTY
+executable test additionally passed twice at `df6d8d2` (16.144s). A concurrent
+earlier broad race run failed a real-session retirement test and a viewer
+resnapshot test. The viewer cancellation/epoch races were reproduced and fixed;
+the retirement timeout remains unclassified despite passing focused reruns.
+A separate earlier
+executable-broker readiness timeout remains unclassified, documented in
+`docs/evidence/p3/process-fixture-readiness-investigation.md`. These failures are
+not erased by green reruns. Native Windows 11, real-phone, authentication, signed
+installer, performance/soak, and release gates remain pending.
+
+Desktop startup input is now admitted only for the current connected, ready
+controller epoch, and an early Ctrl+] at the startup handoff detaches instead of
+being flushed (2026-09-27, `docs/evidence/p3/desktop-input-admission.md`).
+Native shrink-then-grow resizing is covered by the outer-PTY executable test
+(`docs/evidence/p3/desktop-native-resize.md`). The active-output termination
+drain fix is integrated (`docs/evidence/p3/active-output-shutdown.md`).
+Native Windows execution of these paths remains pending.
+
+### Milestone record
+
+The finite-output probe reproduced a broker shutdown wait/drain cycle during
+active PTY output. The local lifecycle fix keeps the actor draining canonical
+output while one bounded termination worker runs; cleanup joins that worker,
+process Wait and PTY EOF. Deterministic tests cover Close, explicit termination,
+lost state, repeated/canceled admitted requests, error identity, queued input
+revocation, authoritative replies racing Done and continuously queued Status
+traffic that must not starve output drain. Native continuous-output Mac
+Close/Terminate regressions fail on the old runtime and pass with the fix.
+Independent source review, affected race tests, vet and Windows compile-only
+checks pass. Native Windows and sustained multi-session stress/soak remain
+pending. See `docs/evidence/p3/active-output-shutdown.md`; this is a local,
+unpushed checkpoint, not a complete P3 or release gate.
 
 P0 — Private repository, preflight, and scaffold: **complete**.
 
@@ -37,6 +129,51 @@ Broker-management RPC merged from private PR #20 as
 `e14cc5722066f714db2c3a71a4d5442b11df4089`.
 Immutable history paging merged from private PR #21 as
 `f74f7620746ba1646e7a056886558f23dbbc795a`.
+Broker-management dispatch merged from private PR #22 as
+`9d212651efe331f35fdbb66038905e705125072f`. A local management-client
+checkpoint is now implemented on `feat/p3-management-cli`: it authenticates as
+the local CLI, enforces bounded and exactly correlated management RPC, exposes
+only saved configuration IDs for create, and distinguishes a typed rejection
+from uncertain mutation delivery without retrying. The user-facing command
+layer implements bounded `list` and exact-ID, explicitly confirmed `terminate`
+orchestration, including safe rendering of legacy control characters and
+honest already-exiting/exited/lost output. Thin `cmd/pterm` routing for `list`
+and `terminate` is integrated locally; `new` and `attach` now use the canonical
+live-session stream. Focused race, full repository, and Windows
+cross-build evidence is recorded in
+`docs/evidence/p3/management-cli.md`.
+Independent review additionally moved operation-ID validation inside the
+serialized client exchange so invalid acknowledgements close the connection
+before queued mutations can write. Confirmation now requires a context-aware
+input reader; cancellation and late-answer regressions pass without a reader
+goroutine. An owned OS-descriptor/handle input adapter is now implemented;
+actual macOS pipe and pseudo-terminal cancellation, descriptor ownership,
+TTY/flag restoration, and Close interruption tests pass under the race
+detector. Windows tests compile to x86-64 PE, including an isolated native
+console fixture, but native Windows execution remains pending. Public desktop
+command routing is still an explicit integration gate.
+The same owned-handle infrastructure now supports cancellable terminal
+output. Actual macOS stalled-pipe and aliased input/output PTY tests pass;
+`Close` joins blocked writes while preserving caller-owned stdout. Desktop
+command integration and native Windows execution remain pending, documented
+in `docs/evidence/p3/terminal-output.md`.
+
+The live local-stream checkpoint is implemented on `feat/p3-session-ipc`:
+canonical CLI-only desktop negotiation, observer attachment, correlated
+actor-ordered control grants, structured input acknowledgements, history,
+resize/resync, and a bounded cancellable writer. It also rejects malformed
+Unicode and invalid mouse buttons. Full repository/race/cross-compile checks and
+independent integration review pass; evidence and fixed review findings are in
+`docs/evidence/p3/session-ipc.md`. This does not grant gateway/browser access,
+complete desktop CLI attachment, or claim physical-device support.
+
+Independent integrated-client review reproduced a late output-cleanup error
+being hidden after `Close` initiated cancellation. The live client now retains
+substantive output errors before the joined painter exits, without turning
+ordinary cancellation or normal network closure into a failure. Focused race
+regressions and desktop/liveclient/CLI package tests pass; synthetic failure
+injection and platform limitations are recorded in
+`docs/evidence/p3/live-client-cleanup.md`.
 
 The viewer checkpoint provides broker-owned
 bounded viewer subscriptions, exact snapshot/patch revision boundaries,
@@ -49,19 +186,32 @@ The broker-management RPC checkpoint defines and validates bounded local IPC
 requests/results for session list, create, rename, terminate, and status.
 Mutation operation IDs are distinct from request correlation IDs, and create
 requests can reference only saved project and shell-profile IDs. Request
-dispatch is now integrated with the durable registry/store checkpoint on
-`feat/p3-broker-rpc-dispatch`: accepted current-user connections complete the
-handshake, execute sequential correlated RPC, resolve process configuration
-inside the broker, return typed bounded errors, and survive gateway reconnects
-without starting a second process. Validation evidence is recorded in
+dispatch merged from private PR #22 as
+`9d212651efe331f35fdbb66038905e705125072f`: accepted current-user
+connections complete the handshake, execute sequential correlated RPC, resolve
+process configuration inside the broker, return typed bounded errors, and
+survive gateway reconnects without starting a second process. Validation
+evidence is recorded in
 `docs/evidence/p3/broker-management-rpc.md` and
 `docs/evidence/p3/broker-management-dispatch.md`.
 The protocol audit then tightened exact case-sensitive JSON field matching,
 lowercase UUID canonicalization, schema-level session identity invariants, and
 consistent UTF-8 title semantics while preserving stored legacy titles. The
-dispatcher now enforces response correlation. The gateway HTTP/WebSocket
-bridge, live-session frame/input dispatch, process separation, and native
-Windows evidence remain pending.
+dispatcher now enforces response correlation. Independent broker/gateway
+process modes are implemented on `feat/p3-process-modes`: the broker acquires
+canonical data-directory and runtime IPC locks before opening SQLite, retains
+data ownership through Registry/Store cleanup, owns generation recovery and
+the Registry, while the gateway owns only an exact-Host loopback health
+bootstrap and restricted IPC probes. macOS runner and executable-process tests
+prove a gateway restart preserves the same child/session generation and
+advancing canonical output; startup recovery marks prior live metadata lost
+without rerunning it. Review regressions also prove that a same-data broker with
+a distinct runtime cannot overlap live ownership or shutdown cleanup, bare and
+partial development modes remain isolated from canonical production paths, and
+gateway timeout cleanup force-closes incomplete HTTP connections without
+suppressing the timeout error. Evidence is in `docs/evidence/p3/process-modes.md`.
+Authenticated HTTP/WebSocket-to-live-session dispatch and native Windows 11
+execution remain pending.
 
 The history-paging checkpoint provides actor-owned normal-history
 epochs/revisions, immutable pages of at most 200 rows, stale-token
@@ -103,6 +253,15 @@ boundary. Final validation and the follow-up independent audit are recorded in
 The P1 terminal-core checkpoint is implemented and merged. No benchmark,
 physical-phone test, installer, signing operation, or release has been
 completed. Unexecuted later-milestone gates remain pending.
+
+The desktop decoder-boundary checkpoint reproduces upstream Ultraviolet paste
+and incomplete-sequence accumulation beyond the product limit. A documented
+local patch now applies opt-in early limits, typed errors, failed-reader
+invalidation, and cancellation that joins the input pump. The desktop adapter
+selects 64 KiB limits. Retained upstream and adapter race suites pass on macOS;
+Windows test binaries cross-compile only. Actual command wiring and native
+Windows console validation remain pending. See
+`docs/evidence/p3/desktop-decoder-bounds.md`.
 
 ## Verified preflight facts
 
@@ -165,11 +324,11 @@ These questions must be resolved before their dependent gates; they do not block
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
 | P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
 | P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In progress | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging merged through PR #21; broker-management dispatch is implemented on `feat/p3-broker-rpc-dispatch`; gateway integration remains pending; evidence under `docs/evidence/p3/` |
-| P4 — Authentication and private access | Not started | None |
-| P5 — Phone experience | Not started | None |
-| P6 — Install and update | Not started | None |
-| P7 — Reliability and review | Not started | None |
+| P3 — Persistent broker | In review (PR #23) | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging merged through PR #21; broker-management dispatch merged through PR #22; independent process modes are implemented on `feat/p3-process-modes`; authenticated gateway/live-session IPC remains pending; evidence under `docs/evidence/p3/` |
+| P4 — Authentication and private access | In review (PR #24) | `docs/evidence/p4/`; real phone over cellular and Tailscale Serve pending owner |
+| P5 — Phone experience | In review (PR #25) | `docs/evidence/p5/phone-web.md`; physical iPhone/Android pending owner |
+| P6 — Install and update | In review (PR #26), unsigned | `docs/evidence/p6/`; Windows installer run, real startup registration and signing pending owner |
+| P7 — Reliability and review | In progress | `docs/evidence/p7/` (Mac soak); Windows soak pending |
 | P8 — Release preparation | Not started | None |
 
 ## Repository and CI evidence
@@ -201,6 +360,112 @@ Final-head Actions run `35509425646` passed all ten required checks. The
 repository remained private after merge, and `main` retained its protection.
 
 ## Known defects
+
+Termination boundary decision (2026-09-27, pending owner approval): on Unix,
+terminate and shutdown now signal every process in the managed PTY session, not
+only the session shell's process group that the owner approved on 2026-09-20
+(plan section 6). This ends interactive-shell background jobs. Session members
+get the 500 ms grace period before SIGKILL, also when the shell exits on its own.
+Processes that call `setsid` stay outside. See
+`docs/evidence/p6/cli-lifecycle.md` and `docs/owner-verification.md`.
+
+The public `new` checkpoint validates an interactive 80x24 initial viewport before
+creating from saved project/shell IDs, then attaches and explicitly takes control
+after the first snapshot. Native Mac command/PTY tests prove detach/cancellation
+preserve the new session and restore caller terminals. Errors after creation retain
+recovery guidance; no retries or destructive rollback occur. Local project
+registration and release/device gates remain pending; see
+`docs/evidence/p3/new-command.md`.
+
+The controlled-resize follow-up replaces the demonstrated shrink disconnect with
+a bounded Syncing/resnapshot transition. Focused race tests cover stale frames,
+fixed timeout, observer/takeover boundaries, no input replay and zero-byte versus
+partial/joined output failures. CLI/liveclient Windows test compilation passes;
+native execution and the independent outer-PTY executable shrink fixture remain
+pending. See `docs/evidence/p3/desktop-controlled-resize.md`.
+
+Independent review of the resize candidate reproduced and fixed an old-snapshot
+acknowledgement overtaking a resize publication, stale cached dimensions blocking
+grow-back, and queued startup input during blocked Control status output. Setup
+now drains a separate bounded decoder, joins it, discards remaining owned raw
+input, then starts a fresh live decoder. Initial control waits for the requested
+canonical grid. Focused race/vet and actual Mac raw-PTY startup regressions pass;
+an independent working-tree executable shrink/grow run also passed. Repeated
+committed executable evidence and native Windows remain separate gates. Partial
+input events spanning later live readiness changes are not yet established by
+these startup tests. Details and exact commands are in the same evidence record.
+
+The public desktop attach checkpoint connects exact session generations through
+restricted IPC, defaults to read-only, and accepts explicit `--control` only after
+the initial snapshot is applied. Focused Mac race and disposable-PTY restoration
+tests pass; Windows compile-only evidence is not a native pass. Exact-fit grids
+are preserved; smooth window shrink and initial resize readiness are being fixed
+in separate reviewed checkpoints. The independent executable/broker integration
+suite passes on Mac, including read-only input discard, takeover, Unicode paste,
+literal Ctrl+], Ctrl+] detach, SIGTERM restoration and same-child reconnect. See
+`docs/evidence/p3/desktop-attach-command.md` and
+`docs/evidence/p3/desktop-outer-pty.md`.
+
+An explicit Mac `nativecompat` suite now exercises installed zsh 5.9, less 668,
+and Vim 9.1 through broker-owned PTYs and structured input. Editing, Ctrl+C,
+Ctrl+D, held multiline paste, Unicode text, pager navigation, actual editor
+save, and alternate-to-normal buffer transitions pass on the available Mac.
+The headless normalized-frame consumer does not establish outer-terminal or
+phone glyph layout. Native Windows and owner login profiles remain separate
+gates; evidence and the explicit command are
+in `docs/evidence/p3/native-mac-applications.md`.
+
+The CLI selection checkpoint centralizes exact session-generation resolution and
+adds one-shot creation from saved project/shell IDs. It preserves uncertain-delivery
+warnings and never retries or restarts a lost session. Focused Mac race tests and
+vet pass; public `new`/`attach` wiring is now integrated locally. See
+`docs/evidence/p3/cli-session-selection.md`.
+
+The live-client viewport checkpoint provides a pre-paint check for the actual
+desktop grid, including snapshot transfer and observer-resize changes. Focused
+race tests prove rejected drawings are not written or acknowledged and exact-fit
+grids remain valid. Public desktop command integration and native resize behavior
+are pending; see `docs/evidence/p3/live-client-viewport.md`.
+
+The real-session registry retirement fixture once exceeded its eight-second
+deadline under concurrent full race/repository checks. Eleven further focused
+race invocations, two complete ordinary Go suites, and one full race suite
+passed with overlapping runs. Failure-only synthetic-child/lifecycle probes
+never fired, so the cause remains unclassified; no deadline, retry, warmup, or
+runtime change was made. Evidence is in
+`docs/evidence/p3/retirement-readiness-investigation.md`.
+
+The command integration checkpoint wires `pterm list` and confirmed
+`pterm terminate` through the real restricted IPC client. Native Mac tests use a
+disposable PTY child and verify decline, confirmed exit, and idempotent reporting
+of an already-exited session. Focused race/vet, Windows cross-build, and frontend
+checks pass. Its initial full repository check failed the existing PTY fixture
+READY timeout, which remains under investigation rather than being counted as
+green. See `docs/evidence/p3/management-command-integration.md`. Desktop attach,
+phone access, and release readiness are not claimed by this checkpoint.
+
+The Windows desktop console checkpoint adds the missing reversible UTF-8 code
+pages and output VT-processing setup around the outer terminal. Injected policy
+tests pass on Mac, and Windows cross-compilation is supplemental only. Native
+Windows console/Unicode execution and complete desktop command wiring remain
+pending. See `docs/evidence/p3/windows-console-modes.md`.
+
+The desktop shutdown checkpoint reproduced restoration of the enclosing terminal
+before the input decoder had stopped. The coordinator now connects after terminal
+entry, joins input and display workers before restoration, and observes connection
+loss. Focused race tests and Windows cross-compilation pass; native terminal/client
+integration remains a separate pending gate. Evidence is recorded in
+`docs/evidence/p3/desktop-shutdown.md`.
+
+Independent command review reproduced blocked stdout preventing cancellation
+of listing and termination confirmation. Management output now uses the
+owned, context-aware pipe/terminal adapter and joins its cleanup. Actual Mac
+command regressions verify cancellation with saturated pipes, preserved caller
+descriptors/flags, no consumed confirmation, no termination, and no duplicate
+leak; both regressions fail with the previous command implementation. Regular
+file/custom-writer output retains explicitly documented synchronous limits.
+Focused race/vet and Windows cross-compilation pass after the fix; native
+Windows and the earlier full-check PTY fixture issue remain pending.
 
 The initial release-smoke failure above was fixed and merged. P1 found two
 defects in pinned dependencies and carries narrow reviewed source patches:
@@ -251,3 +516,26 @@ The test passed 20 isolated race repetitions afterward; the full affected
 race run and 50 history-specific repetitions also passed without a race
 report. This remains recorded as a non-reproduced timing flake in
 `docs/evidence/p3/history-paging.md`, not as native-platform evidence.
+
+The recurring full-suite PTY fixture readiness failure was reproduced with the
+fresh child still at macOS `_dyld_start`, before the Go fixture could emit
+`READY`. Test setup now separately validates and times one bounded native
+activation probe; the original two-second PTY I/O deadlines remain unchanged.
+The fixture directory cleanup also now runs before `TestMain` exits. Full-suite
+race tests and twenty focused PTY race repetitions passed; native Windows is
+still pending. See `docs/evidence/p3/pty-fixture-activation.md` for the sampled
+failure, exact checks, and distinct cold-launch versus PTY validation scopes.
+
+## P4 pairing and authentication (broker side)
+
+On 2026-09-27 branch `feat/p4-pairing-broker` implemented the broker half of
+P4: gateway and local administration RPC schemas, migration 004 with hashed
+secrets, the pairing/credential/revocation service, credential-bound browser
+live streams with access rechecks in the session actor, shell-profile
+discovery, `internal/gatewayclient`, and the `pair`, `devices`, `revoke`,
+`project`, `profile` and `config origin` commands. A gateway IPC peer can no
+longer reach unauthenticated session management. Race tests, Windows
+cross-vet, web checks and the real-broker pairing integration test pass on
+macOS. `TestPtermDesktopAttachNativeOuterTTY` fails identically on the base
+commit and remains open. Native Windows, the HTTP gateway/web pairing path and
+a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.

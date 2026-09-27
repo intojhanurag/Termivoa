@@ -1,4 +1,3 @@
-import envelopeSchema from '../../../protocol/v1/envelope.schema.json';
 import type {
   AccessRevokedPayload,
   ControlChangedPayload,
@@ -14,7 +13,8 @@ import type {
   SnapshotRowsPayload,
   WelcomePayload,
 } from '../generated/protocol';
-import { createProtocolAjv } from './ajv';
+// Standalone code generated at build/test time by vite.config.ts; no runtime compiler.
+import { validateEnvelope } from 'virtual:protocol-validators';
 
 const MAX_HOST_MESSAGE_BYTES = 1024 * 1024;
 
@@ -61,8 +61,6 @@ const hostTypes = new Set<keyof HostPayloads>([
   'error',
 ]);
 
-const ajv = createProtocolAjv();
-const validateEnvelope = ajv.compile(envelopeSchema);
 const encoder = new TextEncoder();
 
 export class InvalidProtocolMessageError extends Error {

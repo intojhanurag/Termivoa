@@ -116,6 +116,7 @@
     },
     "sessionRecord": {
       "title": "BrokerRPCSessionRecord",
+      "description": "controlled and viewerCount are live presence computed by the broker at request time and are absent when the session is not live. controllerIsYou is set only on the browser gateway list, for the requesting device. Lease secrets, connection IDs and other device labels are never included.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -138,7 +139,10 @@
         "updatedAt": { "type": "string", "minLength": 20, "maxLength": 35 },
         "startedAt": { "type": "string", "minLength": 20, "maxLength": 35 },
         "endedAt": { "type": "string", "minLength": 20, "maxLength": 35 },
-        "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 }
+        "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
+        "controlled": { "type": "boolean" },
+        "controllerIsYou": { "type": "boolean" },
+        "viewerCount": { "type": "integer", "minimum": 0, "maximum": 16 }
       }
     },
     "sessionListResultPayload": {

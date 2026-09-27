@@ -339,6 +339,9 @@ func validateBrokerRPCSessionRecord(record BrokerRPCSessionRecord) error {
 	if record.ExitCode != nil && (*record.ExitCode < -2147483648 || *record.ExitCode > 2147483647) {
 		return errors.New("exitCode is outside int32 bounds")
 	}
+	if record.ViewerCount != nil && (*record.ViewerCount < 0 || *record.ViewerCount > 16) {
+		return errors.New("viewerCount is outside bounds")
+	}
 	return nil
 }
 

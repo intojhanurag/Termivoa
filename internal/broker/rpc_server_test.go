@@ -581,7 +581,7 @@ func TestManagementServeCancellationPreservesBrokerRuntime(t *testing.T) {
 	serveResult := make(chan error, 1)
 	go func() { serveResult <- fixture.server.Serve(serveContext, listener) }()
 
-	connection, _, _, err := ipc.DialBroker(context.Background(), runtimeDir, protocol.Gateway, "gateway-test")
+	connection, _, _, err := ipc.DialBroker(context.Background(), runtimeDir, protocol.CLI, "cli-test")
 	if err != nil {
 		t.Fatalf("dial broker: %v", err)
 	}
@@ -618,10 +618,10 @@ func TestManagementServeCancellationPreservesBrokerRuntime(t *testing.T) {
 	}
 	_ = connection.Close()
 	if _, err := fixture.registry.Get(created.Session.ID); err != nil {
-		t.Fatalf("gateway shutdown ended broker session: %v", err)
+		t.Fatalf("management connection shutdown ended broker session: %v", err)
 	}
 	if _, err := fixture.persistence.GetSession(context.Background(), created.Session.ID); err != nil {
-		t.Fatalf("gateway shutdown closed broker store: %v", err)
+		t.Fatalf("management connection shutdown closed broker store: %v", err)
 	}
 }
 
@@ -636,10 +636,10 @@ func TestManagementConnectionCancellationClosesOnlyTheViewerConnection(t *testin
 	fixture := newManagementFixture(t)
 	connectionContext, cancelConnection := context.WithCancel(context.Background())
 	client := startManagementClient(t, connectionContext, fixture.server)
-	cancelConnection()
 	if err := client.connection.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
+	cancelConnection()
 	var one [1]byte
 	if _, err := client.connection.Read(one[:]); err == nil {
 		t.Fatal("canceled management connection remained open")

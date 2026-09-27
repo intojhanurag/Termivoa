@@ -5,6 +5,23 @@
  */
 export type ProtocolTypes = {
     readonly accessRevoked:                    AccessRevokedPayload;
+    readonly adminRPCDevice:                   AdminRPCDevice;
+    readonly adminRPCDeviceID:                 AdminRPCDeviceIDPayload;
+    readonly adminRPCDeviceListResult:         AdminRPCDeviceListResultPayload;
+    readonly adminRPCDeviceRevokeResult:       AdminRPCDeviceRevokeResultPayload;
+    readonly adminRPCMessageType:              AdminRPCMessageType;
+    readonly adminRPCOrigin:                   AdminRPCOriginPayload;
+    readonly adminRPCPairGrantResult:          AdminRPCPairGrantResultPayload;
+    readonly adminRPCPairPendingResult:        AdminRPCPairPendingResultPayload;
+    readonly adminRPCPendingID:                AdminRPCPendingIDPayload;
+    readonly adminRPCPendingPairing:           AdminRPCPendingPairing;
+    readonly adminRPCProfileListResult:        AdminRPCProfileListResultPayload;
+    readonly adminRPCProject:                  AdminRPCProject;
+    readonly adminRPCProjectAdd:               AdminRPCProjectAddPayload;
+    readonly adminRPCProjectListResult:        AdminRPCProjectListResultPayload;
+    readonly adminRPCProjectResult:            AdminRPCProjectResultPayload;
+    readonly adminRPCShellProfile:             AdminRPCShellProfile;
+    readonly adminRPCShutdownResult:           AdminRPCShutdownResultPayload;
     readonly brokerRPCEmpty:                   BrokerRPCEmptyPayload;
     readonly brokerRPCError:                   BrokerRPCErrorPayload;
     readonly brokerRPCMessageType:             BrokerRPCMessageType;
@@ -20,11 +37,31 @@ export type ProtocolTypes = {
     readonly empty:                            EmptyPayload;
     readonly error:                            ErrorPayload;
     readonly errorCode:                        ErrorCode;
+    readonly gatewayRPCCredential:             GatewayRPCCredentialPayload;
+    readonly gatewayRPCMessageType:            GatewayRPCMessageType;
+    readonly gatewayRPCPairPollResult:         GatewayRPCPairPollResultPayload;
+    readonly gatewayRPCPrincipal:              GatewayRPCPrincipalPayload;
+    readonly gatewayRPCSessionCreate:          GatewayRPCSessionCreatePayload;
+    readonly gatewayRPCSessionRename:          GatewayRPCSessionRenamePayload;
+    readonly gatewayRPCSessionTerminate:       GatewayRPCSessionTerminatePayload;
     readonly heartbeat:                        HeartbeatPayload;
     readonly hello:                            HelloPayload;
     readonly historyChanged:                   HistoryChangedPayload;
     readonly historyPage:                      HistoryPagePayload;
     readonly historyRead:                      HistoryReadPayload;
+    readonly httpDeviceSummary:                HTTPDeviceSummary;
+    readonly httpErrorResponse:                HTTPErrorResponse;
+    readonly httpNamedOption:                  HTTPNamedOption;
+    readonly httpPairPollRequest:              HTTPPairPollRequest;
+    readonly httpPairPollResponse:             HTTPPairPollResponse;
+    readonly httpPairRedeemRequest:            HTTPPairRedeemRequest;
+    readonly httpPairRedeemResponse:           HTTPPairRedeemResponse;
+    readonly httpSessionCreateRequest:         HTTPSessionCreateRequest;
+    readonly httpSessionListResponse:          HTTPSessionListResponse;
+    readonly httpSessionMutationResponse:      HTTPSessionMutationResponse;
+    readonly httpSessionRenameRequest:         HTTPSessionRenameRequest;
+    readonly httpSessionTerminateRequest:      HTTPSessionTerminateRequest;
+    readonly httpSettingsResponse:             HTTPSettingsResponse;
     readonly inputAccepted:                    InputAcceptedPayload;
     readonly inputKey:                         InputKeyPayload;
     readonly inputMouse:                       InputMousePayload;
@@ -53,6 +90,110 @@ export type ProtocolTypes = {
 
 export type AccessRevokedPayload = {
     readonly message: string;
+}
+
+export type AdminRPCDevice = {
+    readonly createdAt:  string;
+    readonly id:         string;
+    readonly label:      string;
+    readonly lastUsedAt: string;
+    readonly revoked:    boolean;
+    readonly status:     AdminRPCDeviceStatus;
+}
+
+/**
+ * active: not revoked, holding a credential that is unrevoked, before its absolute expiry,
+ * and used within the inactivity window. expired: not revoked, but no such credential.
+ * revoked: the device itself is revoked.
+ */
+export type AdminRPCDeviceStatus = "active" | "expired" | "revoked";
+
+export type AdminRPCDeviceIDPayload = {
+    readonly deviceId: string;
+}
+
+export type AdminRPCDeviceListResultPayload = {
+    readonly devices: AdminRPCDevice[];
+}
+
+/**
+ * Sent only after the revocation is durable and every bound live stream has been closed.
+ */
+export type AdminRPCDeviceRevokeResultPayload = {
+    readonly closedStreams: number;
+    readonly deviceId:      string;
+}
+
+export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.error";
+
+/**
+ * In a request, a present origin replaces the configured one and an absent origin reads it.
+ * In a result, origin is absent when none is configured.
+ */
+export type AdminRPCOriginPayload = {
+    readonly origin?: string;
+}
+
+/**
+ * The only delivery of a fresh two-minute grant. origin is present when configured.
+ */
+export type AdminRPCPairGrantResultPayload = {
+    readonly expiresAt: string;
+    readonly grant:     string;
+    readonly origin?:   string;
+}
+
+export type AdminRPCPairPendingResultPayload = {
+    readonly pending: AdminRPCPendingPairing[];
+}
+
+export type AdminRPCPendingPairing = {
+    readonly deviceLabel:      string;
+    readonly expiresAt:        string;
+    readonly id:               string;
+    readonly verificationCode: string;
+}
+
+export type AdminRPCPendingIDPayload = {
+    readonly pendingId: string;
+}
+
+export type AdminRPCProfileListResultPayload = {
+    readonly profiles: AdminRPCShellProfile[];
+}
+
+export type AdminRPCShellProfile = {
+    readonly arguments:  string[];
+    readonly executable: string;
+    readonly id:         string;
+    readonly name:       string;
+}
+
+export type AdminRPCProject = {
+    readonly id:   string;
+    readonly name: string;
+    readonly path: string;
+}
+
+export type AdminRPCProjectAddPayload = {
+    readonly name?: string;
+    readonly path:  string;
+}
+
+export type AdminRPCProjectListResultPayload = {
+    readonly projects: AdminRPCProject[];
+}
+
+export type AdminRPCProjectResultPayload = {
+    readonly project: AdminRPCProject;
+}
+
+/**
+ * Sent after every live session was terminated through the normal termination path and
+ * before the broker stops serving.
+ */
+export type AdminRPCShutdownResultPayload = {
+    readonly terminatedSessions: number;
 }
 
 export type BrokerRPCEmptyPayload = {
@@ -87,20 +228,29 @@ export type BrokerRPCSessionListResultPayload = {
     readonly sessions:    BrokerRPCSessionRecord[];
 }
 
+/**
+ * controlled and viewerCount are live presence computed by the broker at request time and
+ * are absent when the session is not live. controllerIsYou is set only on the browser
+ * gateway list, for the requesting device. Lease secrets, connection IDs and other device
+ * labels are never included.
+ */
 export type BrokerRPCSessionRecord = {
-    readonly columns:        number;
-    readonly createdAt:      string;
-    readonly endedAt?:       string;
-    readonly exitCode?:      number;
-    readonly generation:     string;
-    readonly id:             string;
-    readonly projectId:      string;
-    readonly rows:           number;
-    readonly shellProfileId: string;
-    readonly startedAt?:     string;
-    readonly state:          State;
-    readonly title:          string;
-    readonly updatedAt:      string;
+    readonly columns:          number;
+    readonly controlled?:      boolean;
+    readonly controllerIsYou?: boolean;
+    readonly createdAt:        string;
+    readonly endedAt?:         string;
+    readonly exitCode?:        number;
+    readonly generation:       string;
+    readonly id:               string;
+    readonly projectId:        string;
+    readonly rows:             number;
+    readonly shellProfileId:   string;
+    readonly startedAt?:       string;
+    readonly state:            State;
+    readonly title:            string;
+    readonly updatedAt:        string;
+    readonly viewerCount?:     number;
 }
 
 export type State = "starting" | "running" | "exiting" | "exited" | "lost";
@@ -136,6 +286,84 @@ export type EmptyPayload = {
 export type ErrorPayload = {
     readonly code:    ErrorCode;
     readonly message: string;
+}
+
+/**
+ * The raw browser cookie value. It is never logged, persisted, or echoed.
+ */
+export type GatewayRPCCredentialPayload = {
+    readonly credential: string;
+}
+
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.error";
+
+/**
+ * credential and credentialExpiresAt appear exactly when response.status is approved. That
+ * single response is the only delivery of the credential; it is never replayable.
+ */
+export type GatewayRPCPairPollResultPayload = {
+    readonly credential?:          string;
+    readonly credentialExpiresAt?: string;
+    readonly response:             HTTPPairPollResponse;
+}
+
+/**
+ * An approved response is the only one that sets the session cookie.
+ */
+export type HTTPPairPollResponse = {
+    readonly device?: HTTPDeviceSummary;
+    readonly status:  HTTPPairPollStatus;
+}
+
+export type HTTPDeviceSummary = {
+    readonly id:    string;
+    readonly label: string;
+}
+
+export type HTTPPairPollStatus = "pending" | "approved";
+
+/**
+ * Broker-resolved identity for one valid credential. Display and routing data only.
+ */
+export type GatewayRPCPrincipalPayload = {
+    readonly credentialId: string;
+    readonly deviceId:     string;
+    readonly deviceLabel:  string;
+    readonly expiresAt:    string;
+}
+
+export type GatewayRPCSessionCreatePayload = {
+    readonly credential: string;
+    readonly request:    HTTPSessionCreateRequest;
+}
+
+export type HTTPSessionCreateRequest = {
+    readonly operationId:    string;
+    readonly projectId:      string;
+    readonly shellProfileId: string;
+}
+
+export type GatewayRPCSessionRenamePayload = {
+    readonly credential: string;
+    readonly request:    HTTPSessionRenameRequest;
+    readonly sessionId:  string;
+}
+
+export type HTTPSessionRenameRequest = {
+    readonly generation:  string;
+    readonly operationId: string;
+    readonly title:       string;
+}
+
+export type GatewayRPCSessionTerminatePayload = {
+    readonly credential: string;
+    readonly request:    HTTPSessionTerminateRequest;
+    readonly sessionId:  string;
+}
+
+export type HTTPSessionTerminateRequest = {
+    readonly generation:  string;
+    readonly operationId: string;
 }
 
 export type HeartbeatPayload = {
@@ -214,6 +442,53 @@ export type HistoryReadPayload = {
     readonly historyRevision: string;
     readonly limit:           number;
     readonly offset:          number;
+}
+
+export type HTTPErrorResponse = {
+    readonly error: BrokerRPCErrorPayload;
+}
+
+/**
+ * A saved project or shell profile, selected by ID. Paths and executables are never sent to
+ * the browser.
+ */
+export type HTTPNamedOption = {
+    readonly id:   string;
+    readonly name: string;
+}
+
+export type HTTPPairPollRequest = {
+    readonly pendingId:  string;
+    readonly pollSecret: string;
+}
+
+export type HTTPPairRedeemRequest = {
+    readonly deviceLabel: string;
+    readonly grant:       string;
+}
+
+export type HTTPPairRedeemResponse = {
+    readonly expiresAt:        string;
+    readonly pendingId:        string;
+    readonly pollSecret:       string;
+    readonly verificationCode: string;
+}
+
+export type HTTPSessionListResponse = {
+    readonly sessions: BrokerRPCSessionRecord[];
+}
+
+export type HTTPSessionMutationResponse = {
+    readonly operationId: string;
+    readonly session:     BrokerRPCSessionRecord;
+}
+
+export type HTTPSettingsResponse = {
+    readonly brokerGeneration: string;
+    readonly device:           HTTPDeviceSummary;
+    readonly hostBuild:        string;
+    readonly projects:         HTTPNamedOption[];
+    readonly shellProfiles:    HTTPNamedOption[];
 }
 
 export type InputAcceptedPayload = {

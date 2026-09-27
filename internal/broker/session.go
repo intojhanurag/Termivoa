@@ -70,6 +70,25 @@ type MutationIdentity struct {
 	ConnectionID string
 	DeviceID     string
 	Lease        string
+	// Access re-authorizes a browser principal inside the actor. Nil means a
+	// local desktop connection inside the current-user boundary.
+	Access AccessCheck
+}
+
+// AccessCheck reports whether a browser credential may still act. It must be
+// cheap and non-blocking because the session actor calls it before encoding.
+type AccessCheck interface {
+	Check() error
+}
+
+// ErrAccessRevoked rejects an action whose browser access was revoked or expired.
+var ErrAccessRevoked = errors.New("broker: browser access was revoked or expired")
+
+func checkAccess(access AccessCheck) error {
+	if access != nil && access.Check() != nil {
+		return ErrAccessRevoked
+	}
+	return nil
 }
 
 type terminalRuntime interface {
@@ -133,6 +152,16 @@ type Session struct {
 	published          *publishedFrame
 	retiring           bool
 	retirementRevision uint64
+	publishedControl   ControlState
+	publishedStatus    SessionStatus
+	termination        *sessionTermination // Actor-owned; one bounded attempt per session.
+}
+
+type sessionTermination struct {
+	done     chan struct{}
+	err      error // Published by closing done; read only after completion.
+	finished bool  // Actor-owned completion handling.
+	reply    chan sessionResponse
 }
 
 type sessionRequestKind uint8
@@ -155,6 +184,9 @@ const (
 	requestViewerResync
 	requestRestartViewerSnapshot
 	requestLatestViewerFrame
+	requestCompleteViewerNotice
+	requestPrepareViewerSnapshot
+	requestPresence
 )
 
 type sessionRequest struct {
@@ -174,6 +206,8 @@ type sessionRequest struct {
 	deliveryErr   error
 	clippedRows   []bool
 	history       terminal.HistoryReadRequest
+	requestID     string
+	notice        *viewerNotice
 	reply         chan sessionResponse
 }
 
@@ -187,6 +221,7 @@ type sessionResponse struct {
 	delivery   viewerDeliveryPlan
 	published  *publishedFrame
 	history    terminal.HistoryReadResult
+	presence   SessionPresence
 	err        error
 }
 
@@ -317,8 +352,9 @@ func (session *Session) Done() <-chan struct{} {
 }
 
 // RetirementReady closes after Ended and after every attached viewer has
-// either acknowledged the final published frame or detached. The registry
-// waits for this barrier before closing the session runtime.
+// either acknowledged the final published frame and drained lifecycle/control
+// notices or detached. The registry waits for this barrier before closing the
+// session runtime.
 func (session *Session) RetirementReady() <-chan struct{} {
 	return session.retirementReady
 }
@@ -336,7 +372,8 @@ func (session *Session) FinalStatus() (SessionStatus, bool) {
 
 // AcquireControl explicitly replaces the current controller with an attached
 // viewer incarnation. Pending input from the replaced connection is removed
-// before the new lease is returned.
+// before the new lease is returned. It is the in-process primitive and does not
+// check snapshot readiness; client requests use AcquireControlForRequest.
 func (session *Session) AcquireControl(ctx context.Context, viewer *ViewerSubscription) (ControlGrant, error) {
 	if viewer == nil {
 		return ControlGrant{}, ErrViewerMissing
@@ -344,6 +381,25 @@ func (session *Session) AcquireControl(ctx context.Context, viewer *ViewerSubscr
 	response, err := session.call(ctx, sessionRequest{
 		kind: requestAcquire, connection: viewer.connectionID,
 		device: viewer.deviceID, viewer: viewer,
+	})
+	return response.grant, err
+}
+
+// AcquireControlForRequest serializes the holder's secret grant with every
+// observer notification in the session actor. The caller must not send another
+// successful grant reply: it is already queued on the viewer sink using requestID.
+// The actor rejects it with ErrViewerSnapshotPending until the viewer has
+// applied its current snapshot.
+func (session *Session) AcquireControlForRequest(ctx context.Context, viewer *ViewerSubscription, requestID string) (ControlGrant, error) {
+	if viewer == nil {
+		return ControlGrant{}, ErrViewerMissing
+	}
+	if !validOperationUUID(requestID) {
+		return ControlGrant{}, errors.New("broker: control request must have a canonical UUID")
+	}
+	response, err := session.call(ctx, sessionRequest{
+		kind: requestAcquire, connection: viewer.connectionID,
+		device: viewer.deviceID, viewer: viewer, requestID: requestID,
 	})
 	return response.grant, err
 }
@@ -390,6 +446,19 @@ func (session *Session) ReadHistory(
 func (session *Session) Status(ctx context.Context) (SessionStatus, error) {
 	response, err := session.call(ctx, sessionRequest{kind: requestStatus})
 	return response.status, err
+}
+
+// SessionPresence is a point-in-time, non-secret view of who is attached.
+// ControllerDevice is broker-internal: callers compare it with the requesting
+// device and must never send it to another device.
+type SessionPresence struct {
+	ControllerDevice string
+	Viewers          int
+}
+
+func (session *Session) Presence(ctx context.Context) (SessionPresence, error) {
+	response, err := session.call(ctx, sessionRequest{kind: requestPresence})
+	return response.presence, err
 }
 
 // Terminate explicitly ends the process tree while keeping the final terminal
@@ -444,7 +513,14 @@ func (session *Session) call(ctx context.Context, request sessionRequest) (sessi
 	case response := <-request.reply:
 		return response, response.err
 	case <-session.done:
-		return sessionResponse{}, ErrSessionClosed
+		// Cleanup can finish immediately after the actor publishes its reply.
+		// Preserve that authoritative result rather than racing it with Done.
+		select {
+		case response := <-request.reply:
+			return response, response.err
+		default:
+			return sessionResponse{}, ErrSessionClosed
+		}
 	}
 }
 
@@ -493,11 +569,38 @@ func (session *Session) run(columns, rows int) {
 	var counterpartDeadline <-chan time.Time
 	var shutdownTimer *time.Timer
 	var shutdownDeadline <-chan time.Time
+	var shutdownTerminationHandled bool
 	var publishTimer *time.Timer
 	var publishDeadline <-chan time.Time
 	var viewerAckTimer *time.Timer
 	var viewerAckDeadline <-chan time.Time
 	var viewerAckAt time.Time
+	var controllerTimer *time.Timer
+	var controllerDeadline <-chan time.Time
+	var controllerAt time.Time
+	refreshControllerTimer := func() {
+		// Use the same state capture that published observer notices. A second
+		// State call could expire the lease between publication and timer setup,
+		// leaving idle observers with neither a notice nor another wake-up.
+		state := session.publishedControl
+		if state.ConnectionID == "" {
+			if controllerTimer != nil {
+				controllerTimer.Stop()
+			}
+			controllerDeadline = nil
+			controllerAt = time.Time{}
+			return
+		}
+		if state.ExpiresAt.Equal(controllerAt) {
+			return
+		}
+		if controllerTimer != nil {
+			controllerTimer.Stop()
+		}
+		controllerTimer = time.NewTimer(max(time.Until(state.ExpiresAt), 0))
+		controllerDeadline = controllerTimer.C
+		controllerAt = state.ExpiresAt
+	}
 	refreshViewerAckTimer := func() {
 		next, ok := session.nextViewerAckDeadline()
 		if !ok {
@@ -547,22 +650,14 @@ func (session *Session) run(columns, rows int) {
 		if status.State == SessionRunning {
 			status.State = SessionLost
 			status.EndedAt = time.Now()
-			session.startRetirement()
+			session.startRetirement(status)
 			session.markEnded(status)
 			session.clearControl()
 		}
 		for connectionID := range session.viewers {
 			session.detachViewer(connectionID, ErrSessionClosed)
 		}
-		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		err := session.process.Terminate(shutdownContext)
-		cancel()
-		if err != nil {
-			session.reportShutdownError(fmt.Errorf("%w: terminate process: %v", ErrSessionShutdown, err))
-			return
-		}
-		shutdownTimer = time.NewTimer(2 * processExitGrace)
-		shutdownDeadline = shutdownTimer.C
+		session.startTermination()
 	}
 	defer func() {
 		if counterpartTimer != nil {
@@ -577,15 +672,18 @@ func (session *Session) run(columns, rows int) {
 		if viewerAckTimer != nil {
 			viewerAckTimer.Stop()
 		}
+		if controllerTimer != nil {
+			controllerTimer.Stop()
+		}
 		for connectionID := range session.viewers {
 			session.detachViewer(connectionID, ErrSessionClosed)
 		}
 		session.checkRetirementReady()
 		session.inbox.Close()
-		if !waitSeen {
-			shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-			_ = session.process.Terminate(shutdownContext)
-			cancel()
+		// The loop exits only after Wait, ordered PTY EOF, and the one owned
+		// termination worker. A process wait must never block that loop's drain.
+		if session.termination != nil {
+			<-session.termination.done
 		}
 		if !processClosed {
 			_ = session.process.Close()
@@ -597,7 +695,18 @@ func (session *Session) run(columns, rows int) {
 	}()
 
 	for {
+		session.publishViewerEvents(status)
+		refreshControllerTimer()
 		refreshViewerAckTimer()
+		if shuttingDown && session.termination.finished && !shutdownTerminationHandled {
+			shutdownTerminationHandled = true
+			if err := session.termination.err; err != nil {
+				session.reportShutdownError(fmt.Errorf("%w: terminate process: %w", ErrSessionShutdown, err))
+			} else {
+				shutdownTimer = time.NewTimer(2 * processExitGrace)
+				shutdownDeadline = shutdownTimer.C
+			}
+		}
 		if waitSeen && readDone {
 			if status.State != SessionLost && status.State != SessionExited {
 				if publishTimer != nil {
@@ -615,11 +724,11 @@ func (session *Session) run(columns, rows int) {
 				status.EndedAt = time.Now()
 				code := processExitCode(waitErr)
 				status.ExitCode = &code
-				session.startRetirement()
+				session.startRetirement(status)
 				session.markEnded(status)
 				session.clearControl()
 			}
-			if shuttingDown {
+			if shuttingDown && session.termination.finished {
 				return
 			}
 		}
@@ -642,6 +751,14 @@ func (session *Session) run(columns, rows int) {
 		// Viewer lifecycle events bypass the public request queue. A saturated
 		// client queue cannot suppress acknowledgement expiry or detach cleanup.
 		select {
+		case <-session.terminationDone():
+			session.completeTermination(&status)
+			continue
+		case <-controllerDeadline:
+			controllerDeadline = nil
+			controllerAt = time.Time{}
+			session.controller.Expire()
+			continue
 		case <-viewerAckDeadline:
 			viewerAckDeadline = nil
 			viewerAckAt = time.Time{}
@@ -655,7 +772,9 @@ func (session *Session) run(columns, rows int) {
 
 		// Prefer control requests so a sustained child-output stream cannot
 		// starve snapshots, resize, termination, or lease management.
-		if !shuttingDown {
+		// Once exiting, service requests in the balanced select below: a busy
+		// observer must not starve output draining needed for process teardown.
+		if !shuttingDown && status.State == SessionRunning {
 			select {
 			case request := <-session.requests:
 				session.handleRequest(&status, request)
@@ -669,6 +788,8 @@ func (session *Session) run(columns, rows int) {
 			beginShutdown()
 		case <-shutdownDone:
 			beginShutdown()
+		case <-session.terminationDone():
+			session.completeTermination(&status)
 		case request := <-session.requests:
 			if shuttingDown {
 				request.reply <- sessionResponse{err: ErrSessionClosed}
@@ -679,6 +800,10 @@ func (session *Session) run(columns, rows int) {
 			viewerAckDeadline = nil
 			viewerAckAt = time.Time{}
 			session.expireViewerAckDeadlines(time.Now())
+		case <-controllerDeadline:
+			controllerDeadline = nil
+			controllerAt = time.Time{}
+			session.controller.Expire()
 		case event := <-session.viewerEvents:
 			session.handleViewerDetach(event)
 		case event := <-session.pty:
@@ -707,7 +832,11 @@ func (session *Session) run(columns, rows int) {
 				session.markLost(&status)
 			} else if ok {
 				control := session.controller.State()
-				if control.ConnectionID != input.ConnectionID || control.DeviceID != input.DeviceID || control.Epoch != input.LeaseEpoch {
+				if checkAccess(input.access) != nil {
+					// Revocation or expiry after admission: never encode it, and
+					// drop the rest of that connection's accepted input.
+					session.inbox.DropConnection(input.ConnectionID)
+				} else if control.ConnectionID != input.ConnectionID || control.DeviceID != input.DeviceID || control.Epoch != input.LeaseEpoch {
 					threshold := control.Epoch
 					if threshold <= input.LeaseEpoch {
 						threshold = input.LeaseEpoch + 1
@@ -721,7 +850,7 @@ func (session *Session) run(columns, rows int) {
 			waitErr = waitResult
 			waitSeen = true
 			if status.State == SessionRunning {
-				status.State = SessionExiting
+				session.markExiting(&status)
 			}
 			if counterpartTimer != nil {
 				counterpartTimer.Stop()
@@ -742,6 +871,13 @@ func (session *Session) run(columns, rows int) {
 			if readDone && !waitSeen {
 				session.markLost(&status)
 			} else if waitSeen && !readDone && !processClosed {
+				if session.termination != nil && !session.termination.finished {
+					// Wait can complete before the owned terminator's cleanup.
+					// Do not close its PTY while that worker can still access it.
+					counterpartTimer = time.NewTimer(processExitGrace)
+					counterpartDeadline = counterpartTimer.C
+					continue
+				}
 				// Wait has completed, so closing the PTY now follows the
 				// Process contract and wakes a platform read that did not
 				// naturally report EOF after the child exited.
@@ -777,15 +913,26 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = err
 			break
 		}
+		if response.err = checkAccess(viewer.subscription.access); response.err != nil {
+			break
+		}
+		if request.requestID != "" && !viewer.snapshotApplied() {
+			response.err = ErrViewerSnapshotPending
+			break
+		}
 		response.grant, response.err = session.controller.Acquire(
 			session.generation, viewer.subscription.connectionID, viewer.subscription.deviceID,
 		)
 		if response.err == nil {
 			session.inbox.DropBeforeLeaseEpoch(response.grant.Epoch)
+			response.err = session.publishControlGrant(response.grant, request.requestID)
 		}
 	case requestHeartbeat:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning
+			break
+		}
+		if response.err = checkAccess(request.identity.Access); response.err != nil {
 			break
 		}
 		response.control, response.err = session.controller.Heartbeat(
@@ -805,14 +952,16 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = ErrSessionNotRunning
 			break
 		}
-		response.acceptance, response.err = session.inbox.Submit(
-			request.identity.Generation, request.identity.ConnectionID,
-			request.identity.DeviceID, request.identity.Lease,
-			request.sequence, request.action,
-		)
+		if response.err = checkAccess(request.identity.Access); response.err != nil {
+			break
+		}
+		response.acceptance, response.err = session.inbox.submit(request.identity, request.sequence, request.action)
 	case requestResize:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning
+			break
+		}
+		if response.err = checkAccess(request.identity.Access); response.err != nil {
 			break
 		}
 		if _, err := session.controller.Authorize(
@@ -841,22 +990,19 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		response.history, response.err = session.terminal.ReadHistory(session.ctx, request.history)
 	case requestStatus:
 		response.status = cloneSessionStatus(*status)
+	case requestPresence:
+		response.presence = SessionPresence{
+			ControllerDevice: session.controller.State().DeviceID, Viewers: len(session.viewers),
+		}
 	case requestTerminate:
 		if status.State != SessionRunning {
 			response.err = ErrSessionNotRunning
 			break
 		}
-		status.State = SessionExiting
-		terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		response.err = session.process.Terminate(terminateContext)
-		cancel()
-		if response.err != nil {
-			status.State = SessionLost
-			status.EndedAt = time.Now()
-			session.startRetirement()
-			session.markEnded(*status)
-			session.clearControl()
-		}
+		session.markExiting(status)
+		attempt := session.startTermination()
+		attempt.reply = request.reply
+		return // The admitted caller receives the real bounded attempt result.
 	case requestRevokeDevice:
 		response.dropped = session.inbox.RevokeDevice(request.device)
 		for connectionID, viewer := range session.viewers {
@@ -865,7 +1011,11 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			}
 		}
 	case requestAttachViewer:
-		response.err = session.attachViewer(request)
+		response.err = session.attachViewer(request, *status)
+	case requestCompleteViewerNotice:
+		response.err = session.completeViewerNotice(request)
+	case requestPrepareViewerSnapshot:
+		response.err = session.prepareViewerSnapshot(request)
 	case requestReserveViewerDelivery:
 		response.delivery, response.err = session.reserveViewerDelivery(request.connection, request.viewer)
 	case requestCompleteViewerDelivery:
@@ -911,18 +1061,61 @@ func (session *Session) executeInput(action InputAction) error {
 	}
 }
 
+// The exit boundary revokes input that was accepted but has not been encoded.
+// Bytes already handed to the single PTY writer remain in flight.
+func (session *Session) markExiting(status *SessionStatus) {
+	status.State = SessionExiting
+	session.clearControl()
+}
+
 func (session *Session) markLost(status *SessionStatus) {
 	if status.State == SessionExited || status.State == SessionLost {
 		return
 	}
 	status.State = SessionLost
 	status.EndedAt = time.Now()
-	session.startRetirement()
+	session.startRetirement(*status)
 	session.markEnded(*status)
 	session.clearControl()
-	terminateContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	_ = session.process.Terminate(terminateContext)
-	cancel()
+	session.startTermination()
+}
+
+// startTermination is called only by the actor. Darwin may wait for PTY output
+// to drain during process teardown, so never wait for the process on the actor
+// that is the sole canonical output consumer. Close, explicit termination, and
+// failure cleanup reuse this one attempt and its original result.
+func (session *Session) startTermination() *sessionTermination {
+	if session.termination != nil {
+		return session.termination
+	}
+	attempt := &sessionTermination{done: make(chan struct{})}
+	session.termination = attempt
+	go func() {
+		defer close(attempt.done)
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		attempt.err = session.process.Terminate(ctx)
+	}()
+	return attempt
+}
+
+func (session *Session) terminationDone() <-chan struct{} {
+	if session.termination == nil || session.termination.finished {
+		return nil
+	}
+	return session.termination.done
+}
+
+func (session *Session) completeTermination(status *SessionStatus) {
+	attempt := session.termination
+	attempt.finished = true
+	if attempt.err != nil {
+		session.markLost(status)
+	}
+	if attempt.reply != nil {
+		attempt.reply <- sessionResponse{err: attempt.err}
+		attempt.reply = nil
+	}
 }
 
 func (session *Session) markEnded(status SessionStatus) {
@@ -935,11 +1128,12 @@ func (session *Session) markEnded(status SessionStatus) {
 	})
 }
 
-func (session *Session) startRetirement() {
+func (session *Session) startRetirement(status SessionStatus) {
 	if session.retiring {
 		return
 	}
 	session.retiring = true
+	session.publishSessionState(status)
 	if session.published != nil {
 		session.retirementRevision = session.published.frame.Revision
 	}
@@ -954,7 +1148,7 @@ func (session *Session) checkRetirementReady() {
 		return
 	}
 	for _, viewer := range session.viewers {
-		if viewer.inFlight != nil || viewer.awaiting != nil || viewer.base == nil ||
+		if len(viewer.notices) > 0 || viewer.noticeInFlight != nil || viewer.inFlight != nil || viewer.awaiting != nil || viewer.base == nil ||
 			viewer.base.frame.Revision < session.retirementRevision {
 			return
 		}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://phone-terminal.invalid/protocol/v1/ipc.schema.json",
   "title": "IPCMessage",
-  "description": "Versioned local broker IPC handshake. Subsequent management RPCs use broker-rpc.schema.json inside the same length-prefixed transport.",
+  "description": "Versioned local broker IPC handshake. The first subsequent message selects management RPC (broker-rpc.schema.json) or a canonical live-session hello (envelope.schema.json). See local-transport.md for connection modes and authorization boundaries.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "type", "requestId", "payload"],

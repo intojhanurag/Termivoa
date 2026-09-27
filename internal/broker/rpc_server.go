@@ -16,6 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
@@ -38,6 +39,12 @@ type ManagementServerConfig struct {
 	BrokerGeneration string
 	HostBuild        string
 	HostPlatform     store.Platform
+	// Auth is the pairing and browser-credential authority. Without it,
+	// gateway and local administration requests fail as host_unavailable.
+	Auth *auth.Service
+	// Shutdown stops the broker's serve loop after an admin.shutdown result
+	// is written. Without it, admin.shutdown fails as host_unavailable.
+	Shutdown func()
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -198,9 +205,10 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 	defer connection.Close()
 	closeOnCancel := context.AfterFunc(ctx, func() { _ = connection.Close() })
 	defer closeOnCancel()
-	if _, err := ipc.ServerHandshake(
+	peer, err := ipc.ServerHandshake(
 		ctx, connection, server.config.BrokerGeneration, server.config.HostBuild,
-	); err != nil {
+	)
+	if err != nil {
 		return err
 	}
 	reader, err := ipc.NewFrameReader(connection, protocol.MaxInboundMessageBytes)
@@ -211,6 +219,7 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 	if err != nil {
 		return err
 	}
+	first := true
 	for {
 		data, err := reader.ReadFrame()
 		if err != nil {
@@ -218,6 +227,34 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 				return nil
 			}
 			return err
+		}
+		if first {
+			first = false
+			if hello, decodeErr := protocol.DecodeClient(data); decodeErr == nil && hello.Type == protocol.Hello {
+				return server.serveSessionConnection(ctx, connection, reader, peer, hello, nil)
+			}
+		}
+		// The peer role selects the schema. A gateway can reach only
+		// credential-carrying gateway RPC; local administration and
+		// unauthenticated session management remain CLI-only.
+		if peer.ClientKind == protocol.Gateway {
+			binding, err := server.serveGatewayRequest(ctx, writer, data)
+			if err != nil || binding == nil {
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			return server.serveBoundLiveStream(ctx, connection, reader, peer, binding)
+		}
+		if peer.ClientKind != protocol.CLI {
+			return errors.New("broker: unsupported local peer role")
+		}
+		if isAdminRPC(data) {
+			if err := server.serveAdminRequest(ctx, writer, data); err != nil {
+				return err
+			}
+			continue
 		}
 		request, err := protocol.DecodeBrokerRPCRequest(data)
 		if err != nil {
@@ -307,7 +344,7 @@ func (server *ManagementServer) listSessions(
 		Sessions: make([]protocol.BrokerRPCSessionRecord, 0, end-offset),
 	}
 	for _, session := range sessions[offset:end] {
-		result.Sessions = append(result.Sessions, managementSessionRecord(session))
+		result.Sessions = append(result.Sessions, server.withPresence(ctx, managementSessionRecord(session), ""))
 	}
 	if end < len(sessions) {
 		cursor := encodeSessionCursor(end)
@@ -414,7 +451,36 @@ func (server *ManagementServer) sessionStatus(
 	if metadata.Generation != *request.Generation {
 		return protocol.BrokerRPCSessionResultPayload{}, store.ErrGenerationChanged
 	}
-	return protocol.BrokerRPCSessionResultPayload{Session: managementSessionRecord(metadata)}, nil
+	return protocol.BrokerRPCSessionResultPayload{Session: server.withPresence(ctx, managementSessionRecord(metadata), "")}, nil
+}
+
+// withPresence adds live, non-secret presence computed at request time.
+// deviceID is the requesting browser device; it is empty on local CLI paths,
+// where controllerIsYou stays absent. A session that is not live in this
+// broker, or that already exited or was lost while still registered, keeps
+// every presence field absent.
+func (server *ManagementServer) withPresence(
+	ctx context.Context, record protocol.BrokerRPCSessionRecord, deviceID string,
+) protocol.BrokerRPCSessionRecord {
+	if record.State == protocol.Exited || record.State == protocol.Lost {
+		return record
+	}
+	session, err := server.config.Registry.Get(record.ID)
+	if err != nil {
+		return record
+	}
+	presence, err := session.Presence(ctx)
+	if err != nil {
+		return record
+	}
+	controlled := presence.ControllerDevice != ""
+	viewers := int64(presence.Viewers)
+	record.Controlled, record.ViewerCount = &controlled, &viewers
+	if deviceID != "" {
+		mine := controlled && presence.ControllerDevice == deviceID
+		record.ControllerIsYou = &mine
+	}
+	return record
 }
 
 func (server *ManagementServer) profileMatchesHost(platform store.Platform) bool {
@@ -478,6 +544,9 @@ type managementFailure struct {
 var errInvalidSessionCursor = errors.New("broker: invalid session-list cursor")
 
 func classifyManagementError(err error) managementFailure {
+	if failure, ok := classifyAuthError(err); ok {
+		return failure
+	}
 	switch {
 	case errors.Is(err, store.ErrProjectMissing):
 		return managementFailure{protocol.ProjectMissing, "saved project is unavailable"}

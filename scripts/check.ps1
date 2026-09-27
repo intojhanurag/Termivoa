@@ -17,7 +17,7 @@ if ($RootPlan -ne $DocsPlan) {
     throw 'docs/implementation-plan.md must be an exact copy of plan.md.'
 }
 
-$GoFiles = Get-ChildItem cmd, internal, tests, third_party/vt, third_party/xpty -Recurse -Filter *.go -ErrorAction SilentlyContinue
+$GoFiles = Get-ChildItem cmd, internal, tests, third_party/vt, third_party/xpty, third_party/ultraviolet -Recurse -Filter *.go -ErrorAction SilentlyContinue
 if ($GoFiles) {
     $Unformatted = $GoFiles.FullName | ForEach-Object { gofmt -l $_ }
     if ($Unformatted) { throw "Go files require formatting: $($Unformatted -join ', ')" }
@@ -30,6 +30,7 @@ Push-Location third_party/vt
 try { go test ./... } finally { Pop-Location }
 Push-Location third_party/xpty
 try { go test ./... } finally { Pop-Location }
+go test github.com/charmbracelet/ultraviolet/...
 pnpm typecheck
 pnpm test:web
 pnpm build:web

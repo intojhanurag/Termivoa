@@ -1,0 +1,72 @@
+name: Packaging
+
+# Builds UNSIGNED installers as private workflow artifacts. No secrets, no
+# signing identities, no publication.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: go1.27.1
+  PNPM_VERSION: 10.33.0
+  INNO_SETUP_VERSION: 6.7.1
+
+jobs:
+  package-macos-unsigned:
+    name: package-macos-unsigned
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.11.0
+      - run: corepack enable && corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:web
+      - run: ./packaging/macos/build-app.sh
+      - run: ./packaging/macos/build-dmg.sh
+      - name: Verify unsigned bundle and read-only DMG
+        run: |
+          codesign -dv "dist/macos/Phone Terminal.app" 2>&1 | grep -E 'Signature=adhoc|not signed'
+          mountpoint=$(mktemp -d)
+          hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mountpoint" artifacts/*-macos-arm64-unsigned.dmg
+          "$mountpoint/Phone Terminal.app/Contents/MacOS/pterm" help
+          hdiutil detach "$mountpoint"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phone-terminal-macos-arm64-unsigned
+          path: artifacts/*-macos-arm64-unsigned.dmg*
+          retention-days: 7
+          if-no-files-found: error
+
+  package-windows-unsigned:
+    name: package-windows-unsigned
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.11.0
+      - run: corepack enable && corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:web
+      - run: choco install innosetup --version=${{ env.INNO_SETUP_VERSION }} --no-progress -y
+      - run: ./packaging/windows/build-installer.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phone-terminal-windows-x64-unsigned
+          path: artifacts/*-windows-x64-unsigned-setup.exe*
+          retention-days: 7
+          if-no-files-found: error

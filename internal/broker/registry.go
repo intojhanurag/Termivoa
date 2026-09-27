@@ -43,12 +43,15 @@ var (
 type ManagedSession interface {
 	AttachViewer(context.Context, ViewerConfig) (*ViewerSubscription, error)
 	AcquireControl(context.Context, *ViewerSubscription) (ControlGrant, error)
+	AcquireControlForRequest(context.Context, *ViewerSubscription, string) (ControlGrant, error)
 	Heartbeat(context.Context, MutationIdentity) (ControlState, error)
 	ReleaseControl(context.Context, MutationIdentity) error
 	SubmitInput(context.Context, MutationIdentity, uint64, InputAction) (InputAcceptance, error)
 	Resize(context.Context, MutationIdentity, int, int) error
 	Snapshot(context.Context) (terminal.Frame, error)
+	ReadHistory(context.Context, string, terminal.HistoryReadRequest) (terminal.HistoryReadResult, error)
 	Status(context.Context) (SessionStatus, error)
+	Presence(context.Context) (SessionPresence, error)
 	Terminate(context.Context) error
 	RevokeDevice(context.Context, string) (int, error)
 }

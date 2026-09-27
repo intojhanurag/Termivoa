@@ -1,8 +1,8 @@
 # Dependency patches
 
-Phone Terminal keeps narrow source patches for two pinned Go dependencies under
+Phone Terminal keeps narrow source patches for three pinned Go dependencies under
 `third_party/`. Their original versions remain in `go.mod`; local `replace`
-directives make the reviewed copies authoritative for builds. Both directories
+directives make the reviewed copies authoritative for builds. All three directories
 preserve the upstream license and test suite.
 
 ## `github.com/charmbracelet/x/vt`
@@ -57,15 +57,60 @@ policy belongs to `internal/ptyhost`, not this dependency patch.
 Remove the xpty patch only after the pinned upstream start path demonstrably
 closes the original process handle and the native Windows lifecycle suite passes.
 
+## `github.com/charmbracelet/ultraviolet`
+
+Upstream baseline: `v0.0.0-20260303162955-0b88c25f3fff`, retained from the
+verified Go module cache with its original MIT license and complete test suite.
+
+The upstream reader accumulates bracketed paste in `eventScanner.paste` before
+emitting a paste event. It also retains undecoded input until a sequence is
+complete or its escape timeout expires. Neither accumulation has a byte limit;
+validating a completed protocol message is therefore too late to bound memory.
+
+The local patch adds opt-in `MaxPasteBytes` and `MaxPendingBytes` limits and
+stable `ErrPasteLimit` / `ErrPendingInputLimit` errors. It checks sizes before
+appending content, caps paste backing allocations, and permanently rejects
+further use of a decoder that exceeded a limit. An oversized paste produces no
+partial paste or subsequent key events. Zero limits retain upstream behavior,
+including a deterministic fixture demonstrating the original unbounded state.
+
+Bounded mode requires `ContextReader.ReadContext`, provided by the new
+`NewContextTerminalReader` constructor. Its contract requires cancellation to
+finish the actual read; wrapping a blocking reader in an unjoined goroutine is
+insufficient. The reader cancels and joins its pump on a limit failure, stops
+blocked event delivery on cancellation, and preserves independent read errors
+that race shutdown. The byte pump also preserves data returned together with
+EOF, following the Go reader contract.
+
+In bounded mode, only bare or singly wrapped EOF/cancel-reader sentinels count
+as clean termination. Joined source failures remain observable even when EOF,
+data delivery cancellation, or final buffered-event cancellation occurs at the
+same time. Zero-limit upstream error normalization remains unchanged.
+
+`internal/desktop.NewBoundedInput` configures both bounds to 64 KiB, using the
+shared protocol paste limit. The adapter does not own or close the source. The
+eventual command owns native input and terminal modes; it must join decoding
+before closing input or restoring the TTY. Native Windows console encoding and
+console cancellation require separate platform evidence.
+
+Remove this patch only when an upstream version provides equivalent early
+limits, error semantics, and joined cancellation, with these fixtures passing.
+
 ## Validation
 
-Run both retained upstream suites as well as the repository adapter suites:
+Run all retained upstream suites as well as the repository adapter suites:
 
 ```sh
 (cd third_party/vt && go test ./...)
 (cd third_party/xpty && go test ./...)
+go test -race github.com/charmbracelet/ultraviolet/...
 go test -race ./internal/terminal ./internal/ptyhost
+go test -race ./internal/desktop
 ```
 
 Native Windows execution remains a separate required gate; cross-compilation is
 only a compile check.
+
+The Ultraviolet suite runs through the root module's exact dependency graph,
+which includes the plan's pinned ANSI version. Its retained upstream `go.mod`
+and `go.sum` are unchanged provenance records.

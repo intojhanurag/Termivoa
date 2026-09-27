@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phone-terminal.invalid/protocol/v1/http-api.schema.json",
+  "title": "HTTPAPIBody",
+  "description": "Bounded JSON bodies of the same-origin browser HTTP API. See http-api.md for routes, headers and cookie rules.",
+  "$defs": {
+    "uuid": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+    "timestamp": { "type": "string", "minLength": 20, "maxLength": 35 },
+    "secret": {
+      "description": "256-bit random value encoded as unpadded base64url (43 characters).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "deviceLabel": {
+      "type": "string", "minLength": 1, "maxLength": 64,
+      "maxUtf8Bytes": 64, "safeDisplayText": true
+    },
+    "verificationCode": {
+      "description": "Short human comparison code. It never authorizes access by itself.",
+      "type": "string",
+      "pattern": "^[0-9]{3}-[0-9]{3}$"
+    },
+    "pairRedeemRequest": {
+      "title": "HTTPPairRedeemRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grant", "deviceLabel"],
+      "properties": {
+        "grant": { "$ref": "#/$defs/secret" },
+        "deviceLabel": { "$ref": "#/$defs/deviceLabel" }
+      }
+    },
+    "pairRedeemResponse": {
+      "title": "HTTPPairRedeemResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pendingId", "pollSecret", "verificationCode", "expiresAt"],
+      "properties": {
+        "pendingId": { "$ref": "#/$defs/uuid" },
+        "pollSecret": { "$ref": "#/$defs/secret" },
+        "verificationCode": { "$ref": "#/$defs/verificationCode" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "pairPollRequest": {
+      "title": "HTTPPairPollRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pendingId", "pollSecret"],
+      "properties": {
+        "pendingId": { "$ref": "#/$defs/uuid" },
+        "pollSecret": { "$ref": "#/$defs/secret" }
+      }
+    },
+    "pairPollStatus": {
+      "title": "HTTPPairPollStatus",
+      "type": "string",
+      "enum": ["pending", "approved"]
+    },
+    "pairPollResponse": {
+      "title": "HTTPPairPollResponse",
+      "description": "An approved response is the only one that sets the session cookie.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "$ref": "#/$defs/pairPollStatus" },
+        "device": { "$ref": "#/$defs/deviceSummary" }
+      }
+    },
+    "deviceSummary": {
+      "title": "HTTPDeviceSummary",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "label": { "$ref": "#/$defs/deviceLabel" }
+      }
+    },
+    "namedOption": {
+      "title": "HTTPNamedOption",
+      "description": "A saved project or shell profile, selected by ID. Paths and executables are never sent to the browser.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "name": {
+          "type": "string", "minLength": 1, "maxLength": 128,
+          "maxUtf8Bytes": 128, "safeDisplayText": true
+        }
+      }
+    },
+    "settingsResponse": {
+      "title": "HTTPSettingsResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "projects", "shellProfiles", "hostBuild", "brokerGeneration"],
+      "properties": {
+        "device": { "$ref": "#/$defs/deviceSummary" },
+        "projects": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/namedOption" } },
+        "shellProfiles": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/namedOption" } },
+        "hostBuild": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "brokerGeneration": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "sessionListResponse": {
+      "title": "HTTPSessionListResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessions"],
+      "properties": {
+        "sessions": { "type": "array", "maxItems": 200, "items": { "$ref": "broker-rpc.schema.json#/$defs/sessionRecord" } }
+      }
+    },
+    "sessionCreateRequest": {
+      "title": "HTTPSessionCreateRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "projectId", "shellProfileId"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "shellProfileId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "sessionRenameRequest": {
+      "title": "HTTPSessionRenameRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "generation", "title"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "generation": { "$ref": "#/$defs/uuid" },
+        "title": { "$ref": "broker-rpc.schema.json#/$defs/sessionRenameRequestPayload/properties/title" }
+      }
+    },
+    "sessionTerminateRequest": {
+      "title": "HTTPSessionTerminateRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "generation"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "generation": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "sessionMutationResponse": {
+      "title": "HTTPSessionMutationResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operationId", "session"],
+      "properties": {
+        "operationId": { "$ref": "#/$defs/uuid" },
+        "session": { "$ref": "broker-rpc.schema.json#/$defs/sessionRecord" }
+      }
+    },
+    "errorResponse": {
+      "title": "HTTPErrorResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" }
+      }
+    }
+  }
+}

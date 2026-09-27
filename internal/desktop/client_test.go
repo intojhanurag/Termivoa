@@ -3,10 +3,42 @@ package desktop
 import (
 	"bytes"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
+
+type frameFailureWriter struct{ failure error }
+
+func (writer *frameFailureWriter) Write(data []byte) (int, error) {
+	if writer.failure != nil {
+		return 0, writer.failure
+	}
+	return len(data), nil
+}
+
+func TestFrameClientPreservesPatchRendererErrorIdentity(t *testing.T) {
+	output := &frameFailureWriter{}
+	renderer, _ := NewRenderer(output)
+	client, _ := NewFrameClient(renderer)
+	generation, snapshotID := "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"
+	screen := testScreen()
+	if err := client.BeginSnapshot(generation, protocol.SnapshotBeginPayload{SnapshotID: snapshotID, Revision: "1", Screen: screen}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.AddSnapshotRows(generation, protocol.SnapshotRowsPayload{SnapshotID: snapshotID, Revision: "1", Rows: testRows(screen.Columns, screen.Rows)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.EndSnapshot(generation, protocol.SnapshotEndPayload{SnapshotID: snapshotID, Revision: "1", RowCount: screen.Rows}); err != nil {
+		t.Fatal(err)
+	}
+	output.failure = io.ErrClosedPipe
+	err := client.ApplyPatch(generation, protocol.ScreenPatchPayload{BaseRevision: "1", Revision: "2", Screen: screen})
+	if !errors.Is(err, ErrResyncRequired) || !errors.Is(err, io.ErrClosedPipe) || client.DisplayedRevision() != "1" {
+		t.Fatalf("renderer error/revision = %v / %s", err, client.DisplayedRevision())
+	}
+}
 
 func TestFrameClientPaintsOnlyCompleteSnapshotAndMatchingPatch(t *testing.T) {
 	var output bytes.Buffer

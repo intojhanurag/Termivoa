@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -129,5 +132,123 @@ func assertProcessGone(t *testing.T, pid int) {
 			t.Fatalf("descendant process %d remains after session ended: %v", pid, err)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// An interactive shell puts each background job in its own process group and
+// ignores SIGTERM. Terminate must still end those jobs, the same way closing a
+// real terminal window hangs up the shell and its jobs.
+func TestTerminateHangsUpInteractiveShellJobs(t *testing.T) {
+	for _, shell := range []struct {
+		path string
+		args []string
+	}{
+		{"/bin/zsh", []string{"-f", "-i"}},
+		{"/bin/bash", []string{"--norc", "--noprofile", "-i"}},
+	} {
+		t.Run(filepath.Base(shell.path), func(t *testing.T) {
+			if _, err := os.Stat(shell.path); err != nil {
+				t.Skipf("%s is not installed", shell.path)
+			}
+			process, err := Start(context.Background(), Spec{
+				Executable: shell.path, Args: shell.args, Directory: t.TempDir(),
+				Env:     []string{"HOME=" + t.TempDir(), "PATH=/usr/bin:/bin", "TERM=xterm-256color", "PS1=$ "},
+				Columns: 80, Rows: 24,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer process.Close()
+			if _, err := process.Write([]byte(`sleep 300 & echo JOB=$!=E""ND` + "\n")); err != nil {
+				t.Fatal(err)
+			}
+			output := readUntil(t, process, "=END\r\n", 5*time.Second)
+			match := regexp.MustCompile(`JOB=(\d+)=END`).FindStringSubmatch(output)
+			if match == nil {
+				t.Fatalf("no job pid in %q", output)
+			}
+			jobPID, _ := strconv.Atoi(match[1])
+			defer syscall.Kill(jobPID, syscall.SIGKILL)
+			// The broker always drains output; an exiting shell otherwise waits
+			// for its unread terminal output.
+			go func() {
+				buffer := make([]byte, 4096)
+				for {
+					if _, err := process.Read(buffer); err != nil {
+						return
+					}
+				}
+			}()
+
+			terminationContext, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := process.Terminate(terminationContext); err != nil {
+				t.Fatalf("terminate: %v", err)
+			}
+			assertProcessGone(t, jobPID)
+		})
+	}
+}
+
+// A background job that traps hangup and needs a moment to clean up must get
+// the grace period, both when the session is terminated and when the user
+// ends the shell with exit. The job runs in its own process group, so only the
+// session boundary reaches it.
+func TestSessionJobsGetGracePeriod(t *testing.T) {
+	const shell = "/bin/bash"
+	if _, err := os.Stat(shell); err != nil {
+		t.Skipf("%s is not installed", shell)
+	}
+	for _, ending := range []string{"terminate", "exit"} {
+		t.Run(ending, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "cleaned")
+			process, err := Start(context.Background(), Spec{
+				Executable: shell, Args: []string{"--norc", "--noprofile", "-i"}, Directory: t.TempDir(),
+				Env:     []string{"HOME=" + t.TempDir(), "PATH=/usr/bin:/bin", "TERM=xterm-256color", "PS1=$ "},
+				Columns: 80, Rows: 24,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer process.Close()
+			job := `(trap 'sleep 0.1; echo ok > ` + marker + `; exit 0' HUP TERM; while :; do sleep 0.05; done) & echo JOB=$!=E""ND` + "\n"
+			if _, err := process.Write([]byte(job)); err != nil {
+				t.Fatal(err)
+			}
+			output := readUntil(t, process, "=END\r\n", 5*time.Second)
+			match := regexp.MustCompile(`JOB=(\d+)=END`).FindStringSubmatch(output)
+			if match == nil {
+				t.Fatalf("no job pid in %q", output)
+			}
+			jobPID, _ := strconv.Atoi(match[1])
+			defer syscall.Kill(jobPID, syscall.SIGKILL)
+			go func() {
+				buffer := make([]byte, 4096)
+				for {
+					if _, err := process.Read(buffer); err != nil {
+						return
+					}
+				}
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if ending == "terminate" {
+				if err := process.Terminate(ctx); err != nil {
+					t.Fatalf("terminate: %v", err)
+				}
+			} else {
+				if _, err := process.Write([]byte("exit\n")); err != nil {
+					t.Fatal(err)
+				}
+				if err := process.Wait(ctx); err != nil {
+					t.Fatalf("wait: %v", err)
+				}
+			}
+			assertProcessGone(t, jobPID)
+			if _, err := os.Stat(marker); err != nil {
+				t.Fatalf("background job was killed before its hangup cleanup finished: %v", err)
+			}
+		})
 	}
 }

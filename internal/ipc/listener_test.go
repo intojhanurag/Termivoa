@@ -74,6 +74,69 @@ func TestBrokerListenerEnforcesSingleOwner(t *testing.T) {
 	}
 }
 
+func TestBrokerDataDirectoryLockIsExclusiveAndReusable(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "data")
+	canonical, first, err := LockBrokerDataDirectory(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonical == "" || first == nil {
+		t.Fatalf("data lock = %q, %#v", canonical, first)
+	}
+	if _, second, err := LockBrokerDataDirectory(dataDir); !errors.Is(err, ErrBrokerAlreadyRunning) || second != nil {
+		t.Fatalf("second data lock = %#v, %v", second, err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	canonicalAgain, replacement, err := LockBrokerDataDirectory(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonicalAgain != canonical {
+		t.Fatalf("replacement canonical path = %q, want %q", canonicalAgain, canonical)
+	}
+	if err := replacement.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBrokerLocksHeldProbesWithoutCreatingLocks(t *testing.T) {
+	dataDir, runtimeDir := filepath.Join(t.TempDir(), "data"), shortRuntimeDir(t)
+	if held, err := BrokerLocksHeld(dataDir, runtimeDir); held || err != nil {
+		t.Fatalf("fresh directories: held=%v err=%v", held, err)
+	}
+	if _, err := os.Stat(dataDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("probe created the data directory")
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "broker.lock")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("probe created the runtime lock")
+	}
+	_, lock, err := LockBrokerDataDirectory(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held, err := BrokerLocksHeld(dataDir, runtimeDir); !held || err != nil {
+		t.Fatalf("held data lock: held=%v err=%v", held, err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := ListenBroker(context.Background(), ListenerConfig{RuntimeDir: runtimeDir, BrokerGeneration: testBrokerGeneration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held, err := BrokerLocksHeld(dataDir, runtimeDir); !held || err != nil {
+		t.Fatalf("held runtime lock: held=%v err=%v", held, err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if held, err := BrokerLocksHeld(dataDir, runtimeDir); held || err != nil {
+		t.Fatalf("released locks: held=%v err=%v", held, err)
+	}
+}
+
 func TestBrokerListenerRejectsDescriptorGenerationMismatch(t *testing.T) {
 	runtimeDir := shortRuntimeDir(t)
 	if err := prepareRuntimeDir(runtimeDir); err != nil {

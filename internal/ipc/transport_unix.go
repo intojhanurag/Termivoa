@@ -158,8 +158,8 @@ func prepareRuntimeDir(runtimeDir string) error {
 	return nil
 }
 
-func acquireBrokerLock(runtimeDir string) (brokerLock, error) {
-	path := filepath.Join(runtimeDir, "broker.lock")
+func acquireBrokerLock(directory, filename string) (brokerLock, error) {
+	path := filepath.Join(directory, filename)
 	fd, err := unix.Open(path, unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("ipc: open broker lock: %w", err)
@@ -217,7 +217,15 @@ func (lock *unixBrokerLock) Close() error {
 }
 
 func platformEndpoint(runtimeDir string) (transport, address string, err error) {
-	address = filepath.Join(runtimeDir, "broker.sock")
+	return platformEndpointNamed(runtimeDir, defaultSocketName)
+}
+
+// platformEndpointNamed is platformEndpoint for a non-default SocketName. The
+// name is a short trusted literal chosen by this codebase (never derived from
+// user input), so it needs no additional sanitization beyond staying within
+// the same Unix-socket path budget as the default "broker" name.
+func platformEndpointNamed(runtimeDir, name string) (transport, address string, err error) {
+	address = filepath.Join(runtimeDir, name+".sock")
 	if len(address) > unixSocketPathMax {
 		return "", "", fmt.Errorf("ipc: Unix socket path is %d bytes, maximum is %d", len(address), unixSocketPathMax)
 	}
