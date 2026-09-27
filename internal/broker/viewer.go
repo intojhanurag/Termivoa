@@ -30,6 +30,7 @@ var (
 	ErrViewerSlow             = errors.New("broker: viewer could not consume bounded output")
 	ErrViewerSnapshotMismatch = errors.New("broker: viewer snapshot acknowledgement does not match")
 	ErrViewerSnapshotTimeout  = errors.New("broker: viewer snapshot acknowledgement timed out")
+	ErrViewerSnapshotPending  = errors.New("broker: viewer has not applied its current snapshot")
 	errViewerDeliveryStale    = errors.New("broker: viewer delivery was superseded")
 	errViewerSnapshotRestart  = errors.New("broker: snapshot catch-up window exceeded")
 )
@@ -815,6 +816,16 @@ func (session *Session) applyViewerSnapshot(
 	}
 	session.checkRetirementReady()
 	return nil
+}
+
+// snapshotApplied reports whether the client applied the newest snapshot the
+// broker sent or scheduled for it. An early snapshot.applied for the snapshot
+// being sent counts; the worker commits it when that delivery completes.
+func (viewer *viewerActorState) snapshotApplied() bool {
+	if viewer.sendingSnapshot != nil {
+		return viewer.earlySnapshotApplied
+	}
+	return viewer.base != nil && viewer.awaiting == nil && !viewer.forceSnapshot
 }
 
 func (session *Session) resyncViewer(connectionID string, subscription *ViewerSubscription) error {

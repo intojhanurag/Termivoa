@@ -605,3 +605,28 @@ func TestSupersededBlockedWriteStillClosesOnShutdown(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestReviewControlGrantedWhileNewSnapshotUnapplied(t *testing.T) {
+	fixture, _, _ := newStreamFixture(t)
+	first := startStreamClient(t, fixture.server, protocol.CLI)
+	first.attach(t)
+	second := startStreamClient(t, fixture.server, protocol.CLI)
+	second.attach(t)
+	grant := first.acquire(t)
+	first.action(t, protocol.TerminalResize, protocol.TerminalResizePayload{Lease: *grant.Lease, Columns: 100, Rows: 30})
+	begin, _ := protocol.DecodePayload[protocol.SnapshotBeginPayload](second.await(t, protocol.SnapshotBegin, ""))
+	second.await(t, protocol.SnapshotEnd, "")
+	if begin.Screen.Columns != 100 || begin.Screen.Rows != 30 {
+		t.Fatalf("resize snapshot = %#v", begin.Screen)
+	}
+	// The dispatcher saw an earlier snapshot.applied; the actor knows this
+	// viewer's current snapshot is still unapplied.
+	request := second.action(t, protocol.ControlAcquire, protocol.EmptyPayload{})
+	reply := second.await(t, "", request)
+	failure, _ := protocol.DecodePayload[protocol.ErrorPayload](reply)
+	if reply.Type != protocol.Error || failure.Code != protocol.ResyncRequired {
+		t.Fatalf("control granted over an unapplied snapshot: %s %s", reply.Type, reply.Payload)
+	}
+	second.action(t, protocol.SnapshotApplied, protocol.SnapshotAppliedPayload{SnapshotID: begin.SnapshotID, Revision: begin.Revision})
+	second.acquire(t)
+}
