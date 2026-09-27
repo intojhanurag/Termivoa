@@ -29,6 +29,8 @@ if ($LASTEXITCODE -ne 0) { throw 'web build failed' }
 $embedded = Join-Path $repo 'internal\webassets\dist'
 if (Test-Path $embedded) { Remove-Item -Recurse -Force $embedded }
 Copy-Item -Recurse (Join-Path $repo 'web\dist') $embedded
+# Source maps stay out of the binary, as in scripts/embed-web.sh.
+Get-ChildItem $embedded -Recurse -Filter '*.map' | Remove-Item -Force
 
 $env:CGO_ENABLED = '0'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'
 go build -trimpath -tags webdist -ldflags "-X main.buildID=$buildId" -o $exe ./cmd/pterm
