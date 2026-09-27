@@ -285,6 +285,8 @@ func TestAuthenticatedRoutes(t *testing.T) {
 		{http.MethodPatch, "/api/v1/sessions/" + uuidB, renameBody, "rename:" + uuidB, `"session":{`},
 		{http.MethodPost, "/api/v1/sessions/" + uuidB + "/terminate", terminateBody, "terminate:" + uuidB, `"session":{`},
 		{http.MethodPatch, "/api/v1/device", `{"label":"Work phone"}`, "rename-device:Work phone", `"label":"Work phone"`},
+		{http.MethodGet, "/api/v1/push", "", "push-config", `"publicKey":"B`},
+		{http.MethodPost, "/api/v1/push/test", `{}`, "push-test", `"sent":1`},
 	} {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			response := do(handler, test.method, test.path, test.body, requestOptions{cookie: prodCookie})
@@ -543,5 +545,42 @@ func TestHostClockRollbackKeepsCookie(t *testing.T) {
 			response.Header().Get("Set-Cookie") != "" {
 			t.Fatalf("clock rollback = %d %s %v", response.Code, response.Body, response.Header())
 		}
+	}
+}
+
+func TestPushSubscriptionRoutes(t *testing.T) {
+	broker := newFakeBroker()
+	handler := newTestHandler(t, broker)
+	endpoint := "https://fcm.googleapis.com/fcm/send/abc"
+	subscribe := `{"endpoint":"` + endpoint + `","keys":{"p256dh":"B` + strings.Repeat("a", 86) + `","auth":"` + strings.Repeat("b", 22) + `"}}`
+	if response := do(handler, http.MethodPost, "/api/v1/push/subscribe", subscribe, requestOptions{cookie: prodCookie}); response.Code != 204 ||
+		!broker.called("push-subscribe:"+endpoint) {
+		t.Fatalf("subscribe = %d %s", response.Code, response.Body)
+	}
+	if response := do(handler, http.MethodPost, "/api/v1/push/unsubscribe", `{"endpoint":"`+endpoint+`"}`, requestOptions{cookie: prodCookie}); response.Code != 204 ||
+		!broker.called("push-unsubscribe:"+endpoint) {
+		t.Fatalf("unsubscribe = %d %s", response.Code, response.Body)
+	}
+	for name, test := range map[string]struct {
+		path, body string
+		options    requestOptions
+		status     int
+	}{
+		"http endpoint":   {"/api/v1/push/subscribe", strings.Replace(subscribe, "https://", "http://", 1), requestOptions{cookie: prodCookie}, 400},
+		"short auth":      {"/api/v1/push/subscribe", strings.Replace(subscribe, strings.Repeat("b", 22), "bb", 1), requestOptions{cookie: prodCookie}, 400},
+		"compressed key":  {"/api/v1/push/subscribe", strings.Replace(subscribe, `"B`, `"A`, 1), requestOptions{cookie: prodCookie}, 400},
+		"extra field":     {"/api/v1/push/subscribe", strings.Replace(subscribe, `{"endpoint"`, `{"expirationTime":null,"endpoint"`, 1), requestOptions{cookie: prodCookie}, 400},
+		"space endpoint":  {"/api/v1/push/unsubscribe", `{"endpoint":"https://fcm.googleapis.com/a b"}`, requestOptions{cookie: prodCookie}, 400},
+		"missing header":  {"/api/v1/push/subscribe", subscribe, requestOptions{cookie: prodCookie, omitHeader: true}, 403},
+		"missing origin":  {"/api/v1/push/test", `{}`, requestOptions{cookie: prodCookie, omitOrigin: true}, 403},
+		"no cookie":       {"/api/v1/push/subscribe", subscribe, requestOptions{}, 401},
+		"test with field": {"/api/v1/push/test", `{"deviceId":"` + uuidB + `"}`, requestOptions{cookie: prodCookie}, 400},
+	} {
+		if response := do(handler, http.MethodPost, test.path, test.body, test.options); response.Code != test.status {
+			t.Errorf("%s = %d %s", name, response.Code, response.Body)
+		}
+	}
+	if response := do(handler, http.MethodGet, "/api/v1/push/subscribe", "", requestOptions{cookie: prodCookie}); response.Code != 405 {
+		t.Fatalf("GET subscribe = %d", response.Code)
 	}
 }

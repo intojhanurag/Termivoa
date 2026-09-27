@@ -21,6 +21,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/store"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 const (
@@ -42,6 +43,9 @@ type ManagementServerConfig struct {
 	// Auth is the pairing and browser-credential authority. Without it,
 	// gateway and local administration requests fail as host_unavailable.
 	Auth *auth.Service
+	// Push owns VAPID keys and push subscriptions. Without it, the browser
+	// push requests fail as host_unavailable.
+	Push *webpush.Notifier
 	// Shutdown stops the broker's serve loop after an admin.shutdown result
 	// is written. Without it, admin.shutdown fails as host_unavailable.
 	Shutdown func()

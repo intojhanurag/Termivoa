@@ -14,6 +14,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/broker"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/store"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 const databaseFilename = "phone-terminal.db"
@@ -40,6 +41,7 @@ type BrokerReady struct {
 	Registry   *broker.Registry
 	Store      *store.Store
 	Auth       *auth.Service
+	Push       *webpush.Notifier
 	Recovered  []store.SessionMetadata
 }
 
@@ -138,9 +140,17 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	if err != nil {
 		return err
 	}
+	// The broker sends push notifications: it owns devices, revocation and
+	// session state. It creates its VAPID key on first start.
+	notifier, err := webpush.NewNotifier(ctx, webpush.NotifierConfig{
+		Store: persistence, Revoked: authority.DeviceRevoked, CredentialIdle: auth.BrowserInactivityLifetime,
+	})
+	if err != nil {
+		return err
+	}
 	server, err := broker.NewManagementServer(broker.ManagementServerConfig{
 		Registry: registry, Store: persistence,
-		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority,
+		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority, Push: notifier,
 		Shutdown: shutdown,
 	})
 	if err != nil {
@@ -149,7 +159,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	if config.Ready != nil {
 		config.Ready(BrokerReady{
 			Generation: generation, Descriptor: listener.Descriptor(), Registry: registry,
-			Store: persistence, Auth: authority, Recovered: append([]store.SessionMetadata(nil), recovered...),
+			Store: persistence, Auth: authority, Push: notifier, Recovered: append([]store.SessionMetadata(nil), recovered...),
 		})
 	}
 

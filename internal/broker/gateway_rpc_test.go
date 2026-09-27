@@ -2,9 +2,13 @@ package broker
 
 import (
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +18,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 type authClock struct {
@@ -897,5 +902,75 @@ func TestGatewayDeviceRenameTargetsTheCallingDevice(t *testing.T) {
 		protocol.AdminRPCDeviceRenamePayload{DeviceID: "00000000-0000-4000-8000-000000009999", Label: "Ghost"})
 	if missing.Type != protocol.AdminError {
 		t.Fatalf("rename of a missing device = %s", missing.Type)
+	}
+}
+
+type acceptingPushService struct{ endpoints chan string }
+
+func (service acceptingPushService) RoundTrip(request *http.Request) (*http.Response, error) {
+	service.endpoints <- request.URL.String()
+	return &http.Response{StatusCode: http.StatusCreated, Body: http.NoBody, Header: http.Header{}}, nil
+}
+
+// Push requests act only on the calling device and apply the host allow-list.
+func TestGatewayPushSubscribeTestAndUnsubscribe(t *testing.T) {
+	fixture, _, _, service, _ := newAuthStreamFixture(t)
+	gateway := startRPCTestClient(t, fixture.server, protocol.Gateway)
+	alpha := pairDevice(t, service, "Alpha")
+	credential := protocol.GatewayRPCCredentialPayload{Credential: alpha.Credential}
+
+	if code := gatewayErrorCode(t, gateway.gateway(t, protocol.GatewayPushConfig, credential)); code != protocol.HostUnavailable {
+		t.Fatalf("push without a notifier = %s", code)
+	}
+	pushService := acceptingPushService{endpoints: make(chan string, 4)}
+	notifier, err := webpush.NewNotifier(context.Background(), webpush.NotifierConfig{
+		Store: fixture.persistence, Revoked: service.DeviceRevoked, CredentialIdle: auth.BrowserInactivityLifetime,
+		Client: &http.Client{Transport: pushService},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.server.config.Push = notifier
+
+	config, err := protocol.DecodeRPCPayload[protocol.HTTPPushConfigResponse](gateway.gateway(t, protocol.GatewayPushConfig, credential))
+	if err != nil || config.PublicKey != notifier.PublicKey() {
+		t.Fatalf("config = %#v, %v", config, err)
+	}
+	phone, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription := func(endpoint string) protocol.GatewayRPCPushSubscribePayload {
+		return protocol.GatewayRPCPushSubscribePayload{Credential: alpha.Credential, Request: protocol.HTTPPushSubscribeRequest{
+			Endpoint: endpoint, Keys: protocol.HTTPPushSubscriptionKeys{
+				P256Dh: base64.RawURLEncoding.EncodeToString(phone.PublicKey().Bytes()),
+				Auth:   base64.RawURLEncoding.EncodeToString(make([]byte, 16)),
+			},
+		}}
+	}
+	if code := gatewayErrorCode(t, gateway.gateway(t, protocol.GatewayPushSubscribe,
+		subscription("https://metadata.example/latest"))); code != protocol.InvalidRequest {
+		t.Fatalf("unknown push host = %s", code)
+	}
+	endpoint := "https://fcm.googleapis.com/fcm/send/alpha"
+	if response := gateway.gateway(t, protocol.GatewayPushSubscribe, subscription(endpoint)); response.Type != protocol.GatewayPushSubscribeResult {
+		t.Fatalf("subscribe = %s", response.Type)
+	}
+	sent, err := protocol.DecodeRPCPayload[protocol.HTTPPushTestResponse](gateway.gateway(t, protocol.GatewayPushTest, credential))
+	if err != nil || sent.Sent != 1 || <-pushService.endpoints != endpoint {
+		t.Fatalf("test = %#v, %v", sent, err)
+	}
+	if response := gateway.gateway(t, protocol.GatewayPushUnsubscribe, protocol.GatewayRPCPushUnsubscribePayload{
+		Credential: alpha.Credential, Request: protocol.HTTPPushUnsubscribeRequest{Endpoint: endpoint},
+	}); response.Type != protocol.GatewayPushUnsubscribeResult {
+		t.Fatalf("unsubscribe = %s", response.Type)
+	}
+	left, _ := fixture.persistence.ListPushSubscriptions(context.Background(), "", time.Now(), auth.BrowserInactivityLifetime, 10)
+	if len(left) != 0 {
+		t.Fatalf("subscriptions after unsubscribe = %d", len(left))
+	}
+	unknown := gateway.gateway(t, protocol.GatewayPushConfig, protocol.GatewayRPCCredentialPayload{Credential: strings.Repeat("A", 43)})
+	if code := gatewayErrorCode(t, unknown); code != protocol.Unauthorized {
+		t.Fatalf("unknown credential = %s", code)
 	}
 }

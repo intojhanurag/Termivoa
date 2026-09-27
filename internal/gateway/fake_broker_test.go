@@ -148,6 +148,38 @@ func (broker *fakeBroker) RenameDevice(_ context.Context, credential string, req
 	return protocol.HTTPDeviceSummary{ID: uuidA, Label: request.Label}, broker.opErr
 }
 
+func (broker *fakeBroker) PushConfig(_ context.Context, credential string) (protocol.HTTPPushConfigResponse, error) {
+	broker.record("push-config")
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPPushConfigResponse{}, err
+	}
+	return protocol.HTTPPushConfigResponse{PublicKey: "B" + strings.Repeat("A", 86)}, broker.opErr
+}
+
+func (broker *fakeBroker) PushSubscribe(_ context.Context, credential string, request protocol.HTTPPushSubscribeRequest) error {
+	broker.record("push-subscribe:" + request.Endpoint)
+	if err := broker.authorize(credential); err != nil {
+		return err
+	}
+	return broker.opErr
+}
+
+func (broker *fakeBroker) PushUnsubscribe(_ context.Context, credential string, request protocol.HTTPPushUnsubscribeRequest) error {
+	broker.record("push-unsubscribe:" + request.Endpoint)
+	if err := broker.authorize(credential); err != nil {
+		return err
+	}
+	return broker.opErr
+}
+
+func (broker *fakeBroker) PushTest(_ context.Context, credential string) (protocol.HTTPPushTestResponse, error) {
+	broker.record("push-test")
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPPushTestResponse{}, err
+	}
+	return protocol.HTTPPushTestResponse{Sent: 1}, broker.opErr
+}
+
 func (broker *fakeBroker) setOrigin(origin string) {
 	broker.mu.Lock()
 	broker.origin = origin
