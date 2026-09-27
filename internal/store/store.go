@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,17 +92,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 }
 
 func openDatabase(ctx context.Context, absolutePath string) (*sql.DB, error) {
-	dsnURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(absolutePath)}
-	query := dsnURL.Query()
-	query.Set("_foreign_keys", "1")
-	query.Set("_busy_timeout", fmt.Sprint(busyTimeoutMillis))
-	query.Set("_journal_mode", "WAL")
-	query.Set("_synchronous", "NORMAL")
-	query.Set("_txlock", "immediate")
-	query.Set("_dqs", "0")
-	query.Set("_defensive", "1")
-	dsnURL.RawQuery = query.Encode()
-	database, err := sql.Open("sqlite", dsnURL.String())
+	database, err := sql.Open("sqlite", sqliteDSN(filepath.ToSlash(absolutePath)))
 	if err != nil {
 		return nil, fmt.Errorf("store: open SQLite: %w", err)
 	}
@@ -112,6 +103,29 @@ func openDatabase(ctx context.Context, absolutePath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("store: initialize SQLite: %w", err)
 	}
 	return database, nil
+}
+
+// sqliteDSN builds the SQLite URI for an absolute, slash-separated path.
+// SQLite rejects any URI authority except "localhost", so the path must sit
+// under an empty authority: a Windows drive path C:/x becomes file:///C:/x
+// (the Windows VFS drops the "/" before "C:") and a UNC path //server/share/x
+// becomes file:////server/share/x, both as documented at sqlite.org/uri.html.
+// A POSIX path already starts with "/" and is unchanged.
+func sqliteDSN(slashPath string) string {
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	dsnURL := &url.URL{Scheme: "file", Path: slashPath}
+	query := dsnURL.Query()
+	query.Set("_foreign_keys", "1")
+	query.Set("_busy_timeout", fmt.Sprint(busyTimeoutMillis))
+	query.Set("_journal_mode", "WAL")
+	query.Set("_synchronous", "NORMAL")
+	query.Set("_txlock", "immediate")
+	query.Set("_dqs", "0")
+	query.Set("_defensive", "1")
+	dsnURL.RawQuery = query.Encode()
+	return dsnURL.String()
 }
 
 func (store *Store) Close() error {

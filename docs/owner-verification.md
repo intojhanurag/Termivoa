@@ -139,6 +139,13 @@ but billing blocked it.
 - [ ] Broker, gateway and admin commands run natively. PowerShell and pwsh
       profiles are detected.
 - [ ] ConPTY: one response per terminal query; shutdown has no deadlock.
+- [ ] Broker starts: run `pterm.exe __broker` in a normal (not elevated)
+      prompt and leave it in the foreground; it keeps running with no SQLite
+      or ACL error. Then `icacls "%LOCALAPPDATA%\Phone Terminal"` and
+      `icacls "%LOCALAPPDATA%\Phone Terminal\runtime"` show only the current
+      user, and the owner (`dir /q "%LOCALAPPDATA%"`) is the current user.
+      Stop it, run it once from an elevated prompt, stop it, and run it again
+      unelevated: it still starts.
 - [ ] Session environment: set a user variable such as `JAVA_HOME` and add a
       folder to the user `Path` (System Properties, then sign out and in).
       Start pterm from Windows Terminal or VS Code, create a session, and run

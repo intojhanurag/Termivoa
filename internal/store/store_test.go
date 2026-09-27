@@ -740,3 +740,18 @@ func assertPragma(t *testing.T, database *sql.DB, name, want string) {
 		t.Fatalf("pragma %s = %q, want %q", name, got, want)
 	}
 }
+
+func TestSQLiteDSNUsesEmptyAuthority(t *testing.T) {
+	const pragmas = "?_busy_timeout=5000&_defensive=1&_dqs=0&_foreign_keys=1&_journal_mode=WAL&_synchronous=NORMAL&_txlock=immediate"
+	for input, want := range map[string]string{
+		"/Users/a/x.db":             "file:///Users/a/x.db" + pragmas,
+		"C:/Users/A B/x.db":         "file:///C:/Users/A%20B/x.db" + pragmas,
+		"//server/share/dir/x.db":   "file:////server/share/dir/x.db" + pragmas,
+		"/tmp/100% #1?/x.db":        "file:///tmp/100%25%20%231%3F/x.db" + pragmas,
+		"D:/Phone Terminal/data.db": "file:///D:/Phone%20Terminal/data.db" + pragmas,
+	} {
+		if got := sqliteDSN(input); got != want {
+			t.Errorf("sqliteDSN(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
