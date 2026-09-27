@@ -45,6 +45,8 @@ type ProtocolTypes struct {
 	GatewayRPCOriginResult           GatewayRPCOriginResultPayload           `json:"gatewayRPCOriginResult"`
 	GatewayRPCPairPollResult         GatewayRPCPairPollResultPayload         `json:"gatewayRPCPairPollResult"`
 	GatewayRPCPrincipal              GatewayRPCPrincipalPayload              `json:"gatewayRPCPrincipal"`
+	GatewayRPCPushSubscribe          GatewayRPCPushSubscribePayload          `json:"gatewayRPCPushSubscribe"`
+	GatewayRPCPushUnsubscribe        GatewayRPCPushUnsubscribePayload        `json:"gatewayRPCPushUnsubscribe"`
 	GatewayRPCSessionCreate          GatewayRPCSessionCreatePayload          `json:"gatewayRPCSessionCreate"`
 	GatewayRPCSessionRename          GatewayRPCSessionRenamePayload          `json:"gatewayRPCSessionRename"`
 	GatewayRPCSessionTerminate       GatewayRPCSessionTerminatePayload       `json:"gatewayRPCSessionTerminate"`
@@ -61,6 +63,10 @@ type ProtocolTypes struct {
 	HTTPPairPollResponse             HTTPPairPollResponse                    `json:"httpPairPollResponse"`
 	HTTPPairRedeemRequest            HTTPPairRedeemRequest                   `json:"httpPairRedeemRequest"`
 	HTTPPairRedeemResponse           HTTPPairRedeemResponse                  `json:"httpPairRedeemResponse"`
+	HTTPPushConfigResponse           HTTPPushConfigResponse                  `json:"httpPushConfigResponse"`
+	HTTPPushSubscribeRequest         HTTPPushSubscribeRequest                `json:"httpPushSubscribeRequest"`
+	HTTPPushTestResponse             HTTPPushTestResponse                    `json:"httpPushTestResponse"`
+	HTTPPushUnsubscribeRequest       HTTPPushUnsubscribeRequest              `json:"httpPushUnsubscribeRequest"`
 	HTTPSessionCreateRequest         HTTPSessionCreateRequest                `json:"httpSessionCreateRequest"`
 	HTTPSessionListResponse          HTTPSessionListResponse                 `json:"httpSessionListResponse"`
 	HTTPSessionMutationResponse      HTTPSessionMutationResponse             `json:"httpSessionMutationResponse"`
@@ -350,6 +356,32 @@ type GatewayRPCPrincipalPayload struct {
 	ExpiresAt    string `json:"expiresAt"`
 }
 
+// Saves a push subscription for the device that owns the credential.
+type GatewayRPCPushSubscribePayload struct {
+	Credential string                   `json:"credential"`
+	Request    HTTPPushSubscribeRequest `json:"request"`
+}
+
+type HTTPPushSubscribeRequest struct {
+	Endpoint string                   `json:"endpoint"`
+	Keys     HTTPPushSubscriptionKeys `json:"keys"`
+}
+
+type HTTPPushSubscriptionKeys struct {
+	Auth   string `json:"auth"`
+	P256Dh string `json:"p256dh"`
+}
+
+// Removes one push subscription of the device that owns the credential.
+type GatewayRPCPushUnsubscribePayload struct {
+	Credential string                     `json:"credential"`
+	Request    HTTPPushUnsubscribeRequest `json:"request"`
+}
+
+type HTTPPushUnsubscribeRequest struct {
+	Endpoint string `json:"endpoint"`
+}
+
 type GatewayRPCSessionCreatePayload struct {
 	Credential string                   `json:"credential"`
 	Request    HTTPSessionCreateRequest `json:"request"`
@@ -410,6 +442,16 @@ type HTTPPairRedeemResponse struct {
 	PendingID        string `json:"pendingId"`
 	PollSecret       string `json:"pollSecret"`
 	VerificationCode string `json:"verificationCode"`
+}
+
+// The broker's VAPID application server public key.
+type HTTPPushConfigResponse struct {
+	PublicKey string `json:"publicKey"`
+}
+
+// How many of the calling device's subscriptions accepted the test notification.
+type HTTPPushTestResponse struct {
+	Sent int64 `json:"sent"`
 }
 
 type HTTPSessionListResponse struct {
@@ -796,6 +838,14 @@ const (
 	GatewayPairPollResult         GatewayRPCMessageType = "gateway.pair.poll.result"
 	GatewayPairRedeem             GatewayRPCMessageType = "gateway.pair.redeem"
 	GatewayPairRedeemResult       GatewayRPCMessageType = "gateway.pair.redeem.result"
+	GatewayPushConfig             GatewayRPCMessageType = "gateway.push.config"
+	GatewayPushConfigResult       GatewayRPCMessageType = "gateway.push.config.result"
+	GatewayPushSubscribe          GatewayRPCMessageType = "gateway.push.subscribe"
+	GatewayPushSubscribeResult    GatewayRPCMessageType = "gateway.push.subscribe.result"
+	GatewayPushTest               GatewayRPCMessageType = "gateway.push.test"
+	GatewayPushTestResult         GatewayRPCMessageType = "gateway.push.test.result"
+	GatewayPushUnsubscribe        GatewayRPCMessageType = "gateway.push.unsubscribe"
+	GatewayPushUnsubscribeResult  GatewayRPCMessageType = "gateway.push.unsubscribe.result"
 	GatewaySessionCreate          GatewayRPCMessageType = "gateway.session.create"
 	GatewaySessionCreateResult    GatewayRPCMessageType = "gateway.session.create.result"
 	GatewaySessionList            GatewayRPCMessageType = "gateway.session.list"

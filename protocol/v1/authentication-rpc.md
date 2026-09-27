@@ -37,6 +37,10 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.live.open` | `GatewayRPCCredentialPayload` | empty; the connection switches to live mode |
 | `gateway.device.rename` | credential + `HTTPDeviceRenameRequest` | `HTTPDeviceSummary` of the credential's own device |
 | `gateway.origin` | empty | `GatewayRPCOriginResultPayload`: the configured origin, if any |
+| `gateway.push.config` | `GatewayRPCCredentialPayload` | `HTTPPushConfigResponse` |
+| `gateway.push.subscribe` | credential + `HTTPPushSubscribeRequest` | empty |
+| `gateway.push.unsubscribe` | credential + `HTTPPushUnsubscribeRequest` | empty |
+| `gateway.push.test` | `GatewayRPCCredentialPayload` | `HTTPPushTestResponse` |
 
 `gateway.origin` is the only request besides pairing that carries no
 credential: the configured origin is not a secret. The gateway asks for it at
@@ -48,6 +52,11 @@ does not answer. So `pterm config origin` takes effect without a restart.
 
 `gateway.device.rename` changes only the label of the device that owns the
 credential. Labels stay untrusted display text, never identity.
+
+The `gateway.push.*` requests act only on the device that owns the
+credential; the request never names a device. The broker applies the push
+host allow-list, stores the subscription, and sends the test notification
+itself.
 
 Authorization precedes every other decision, including replay of an existing
 operation receipt. A poll result carries `credential` and

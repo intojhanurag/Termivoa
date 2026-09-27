@@ -25,6 +25,10 @@
     { "$ref": "#/$defs/liveOpenMessage" },
     { "$ref": "#/$defs/originMessage" },
     { "$ref": "#/$defs/deviceRenameMessage" },
+    { "$ref": "#/$defs/pushConfigMessage" },
+    { "$ref": "#/$defs/pushSubscribeMessage" },
+    { "$ref": "#/$defs/pushUnsubscribeMessage" },
+    { "$ref": "#/$defs/pushTestMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -37,6 +41,10 @@
     { "$ref": "#/$defs/liveOpenResultMessage" },
     { "$ref": "#/$defs/originResultMessage" },
     { "$ref": "#/$defs/deviceRenameResultMessage" },
+    { "$ref": "#/$defs/pushConfigResultMessage" },
+    { "$ref": "#/$defs/pushSubscribeResultMessage" },
+    { "$ref": "#/$defs/pushUnsubscribeResultMessage" },
+    { "$ref": "#/$defs/pushTestResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -47,11 +55,13 @@
         "gateway.pair.redeem", "gateway.pair.poll", "gateway.auth.check", "gateway.auth.logout",
         "gateway.settings", "gateway.session.list", "gateway.session.create", "gateway.session.rename",
         "gateway.session.terminate", "gateway.live.open", "gateway.origin", "gateway.device.rename",
+        "gateway.push.config", "gateway.push.subscribe", "gateway.push.unsubscribe", "gateway.push.test",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
         "gateway.session.terminate.result", "gateway.live.open.result", "gateway.origin.result",
-        "gateway.device.rename.result", "gateway.error"
+        "gateway.device.rename.result", "gateway.push.config.result", "gateway.push.subscribe.result",
+        "gateway.push.unsubscribe.result", "gateway.push.test.result", "gateway.error"
       ]
     },
     "credentialPayload": {
@@ -107,6 +117,28 @@
         "request": { "$ref": "http-api.schema.json#/$defs/deviceRenameRequest" }
       }
     },
+    "pushSubscribePayload": {
+      "title": "GatewayRPCPushSubscribePayload",
+      "description": "Saves a push subscription for the device that owns the credential.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "request": { "$ref": "http-api.schema.json#/$defs/pushSubscribeRequest" }
+      }
+    },
+    "pushUnsubscribePayload": {
+      "title": "GatewayRPCPushUnsubscribePayload",
+      "description": "Removes one push subscription of the device that owns the credential.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "request": { "$ref": "http-api.schema.json#/$defs/pushUnsubscribeRequest" }
+      }
+    },
     "originResultPayload": {
       "title": "GatewayRPCOriginResultPayload",
       "description": "The browser origin configured with admin.config.origin, absent when none is set. It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it is valid for the gateway's profile.",
@@ -154,6 +186,10 @@
     "liveOpenMessage": { "type": "object", "properties": { "type": { "const": "gateway.live.open" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "originMessage": { "type": "object", "properties": { "type": { "const": "gateway.origin" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "deviceRenameMessage": { "type": "object", "properties": { "type": { "const": "gateway.device.rename" }, "payload": { "$ref": "#/$defs/deviceRenamePayload" } } },
+    "pushConfigMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.config" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "pushSubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.subscribe" }, "payload": { "$ref": "#/$defs/pushSubscribePayload" } } },
+    "pushUnsubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.unsubscribe" }, "payload": { "$ref": "#/$defs/pushUnsubscribePayload" } } },
+    "pushTestMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.test" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "pairRedeemResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemResponse" } } },
     "pairPollResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll.result" }, "payload": { "$ref": "#/$defs/pairPollResultPayload" } } },
     "authCheckResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.auth.check.result" }, "payload": { "$ref": "#/$defs/principalPayload" } } },
@@ -166,6 +202,10 @@
     "liveOpenResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.live.open.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "originResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.origin.result" }, "payload": { "$ref": "#/$defs/originResultPayload" } } },
     "deviceRenameResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.device.rename.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/deviceSummary" } } },
+    "pushConfigResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.config.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pushConfigResponse" } } },
+    "pushSubscribeResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.subscribe.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "pushUnsubscribeResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.unsubscribe.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "pushTestResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.test.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pushTestResponse" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "gateway.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

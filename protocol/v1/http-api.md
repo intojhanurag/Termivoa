@@ -32,6 +32,10 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `PATCH /api/v1/sessions/{id}` | cookie | `HTTPSessionRenameRequest` | `200 HTTPSessionMutationResponse` |
 | `POST /api/v1/sessions/{id}/terminate` | cookie | `HTTPSessionTerminateRequest` | `200 HTTPSessionMutationResponse` |
 | `PATCH /api/v1/device` | cookie | `HTTPDeviceRenameRequest` | `200 HTTPDeviceSummary`; renames the calling device only |
+| `GET /api/v1/push` | cookie | – | `200 HTTPPushConfigResponse` |
+| `POST /api/v1/push/subscribe` | cookie | `HTTPPushSubscribeRequest` | `204`; saves it for the calling device |
+| `POST /api/v1/push/unsubscribe` | cookie | `HTTPPushUnsubscribeRequest` | `204`; removes it from the calling device only |
+| `POST /api/v1/push/test` | cookie | `{}` | `200 HTTPPushTestResponse` |
 | `POST /api/v1/logout` | cookie | `{}` | `204`; clears cookie |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
@@ -107,3 +111,17 @@ non-authoritative display fields:
 All three are absent when the session is not live in this broker. They are not
 shown on CLI management results.
 
+
+## Push notifications
+
+`GET /api/v1/push` returns the broker's VAPID public key (unpadded base64url
+of an uncompressed P-256 point) for `PushManager.subscribe`. The subscribe
+body is exactly `{endpoint, keys: {p256dh, auth}}`; other
+`PushSubscription.toJSON()` fields such as `expirationTime` are rejected by
+strict decoding. The gateway checks only the schema shape. The broker
+accepts an endpoint only on a known push service host (see
+`docs/notifications.md`); any other host is `invalid_request`. More than 64
+subscriptions in total, or a test notification within 5 s of the last one,
+is `limit_exceeded`. `sent` counts the calling device's subscriptions whose
+push service accepted the test notification (0..5). Revocation and logout
+delete the device's subscriptions.
