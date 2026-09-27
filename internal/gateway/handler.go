@@ -33,6 +33,9 @@ var globEscaper = strings.NewReplacer(`*`, `\*`, `?`, `\?`, `[`, `\[`)
 type gatewayHandler struct {
 	mu     sync.RWMutex
 	broker brokerState
+	// configured is the origin saved with `pterm config origin`, refreshed
+	// from the broker; it joins the static hosts and origins below.
+	configured allowedOrigin
 
 	mux     *http.ServeMux
 	hosts   map[string]struct{}
@@ -54,6 +57,10 @@ type gatewayHandler struct {
 	liveCtx    context.Context
 	cancelLive context.CancelFunc
 }
+
+// allowedOrigin is one exact serialized origin and the Host value a browser
+// sends with it.
+type allowedOrigin struct{ origin, host string }
 
 // beginLive registers a WebSocket handler unless the gateway is stopping.
 func (handler *gatewayHandler) beginLive() bool {
@@ -95,11 +102,13 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		liveLimits:    defaultLiveLimits,
 	}
 	handler.liveCtx, handler.cancelLive = context.WithCancel(context.Background())
-	origins := config.Origins
-	if dev {
-		origins = append([]string{"http://" + bound, "http://" + localhost}, origins...)
+	// The page served on the bound loopback address is always allowed, so a
+	// browser on this computer can pair without any configured origin.
+	for _, loopback := range []string{"http://" + bound, "http://" + localhost} {
+		handler.origins[loopback] = struct{}{}
+		handler.originPatterns = append(handler.originPatterns, globEscaper.Replace(loopback))
 	}
-	for _, origin := range origins {
+	for _, origin := range config.Origins {
 		canonical, host, err := validateOrigin(origin, dev)
 		if err != nil {
 			return nil, err
@@ -123,6 +132,7 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/sessions", handler.sessions)
 		mux.HandleFunc("/api/v1/sessions/{id}", handler.renameSession)
 		mux.HandleFunc("/api/v1/sessions/{id}/terminate", handler.terminateSession)
+		mux.HandleFunc("/api/v1/device", handler.renameDevice)
 		mux.HandleFunc("/api/v1/logout", handler.logout)
 		mux.HandleFunc("/api/v1/ws", handler.serveLive)
 	}
@@ -177,7 +187,7 @@ func (handler *gatewayHandler) ServeHTTP(response http.ResponseWriter, request *
 	header.Set("X-Content-Type-Options", "nosniff")
 	// Host is compared case-insensitively (RFC 9110) but otherwise exactly:
 	// no trailing dots, suffixes, or alternate ports. X-Forwarded-* is ignored.
-	if _, ok := handler.hosts[strings.ToLower(request.Host)]; !ok {
+	if !handler.hostAllowed(strings.ToLower(request.Host)) {
 		header.Set("Cache-Control", "no-store")
 		writeError(response, http.StatusMisdirectedRequest, "invalid_request", "unknown host")
 		return
@@ -194,8 +204,50 @@ func (handler *gatewayHandler) originAllowed(request *http.Request) bool {
 	if len(values) != 1 {
 		return false
 	}
-	_, ok := handler.origins[strings.ToLower(values[0])]
-	return ok
+	origin := strings.ToLower(values[0])
+	if _, ok := handler.origins[origin]; ok {
+		return true
+	}
+	handler.mu.RLock()
+	defer handler.mu.RUnlock()
+	return handler.configured.origin != "" && handler.configured.origin == origin
+}
+
+func (handler *gatewayHandler) hostAllowed(host string) bool {
+	if _, ok := handler.hosts[host]; ok {
+		return true
+	}
+	handler.mu.RLock()
+	defer handler.mu.RUnlock()
+	return handler.configured.host != "" && handler.configured.host == host
+}
+
+// applyConfiguredOrigin replaces the broker-configured origin. A value that is
+// not valid for this profile (http in production, non-loopback in
+// development) is dropped instead of widening the allow-list.
+func (handler *gatewayHandler) applyConfiguredOrigin(origin string) {
+	var next allowedOrigin
+	if origin != "" {
+		if canonical, host, err := validateOrigin(origin, handler.dev); err == nil {
+			next = allowedOrigin{origin: canonical, host: host}
+		}
+	}
+	handler.mu.Lock()
+	handler.configured = next
+	handler.mu.Unlock()
+}
+
+// refreshOrigin asks the broker for the configured origin. On failure it
+// keeps the last known value: a broker that does not answer serves no API.
+func (handler *gatewayHandler) refreshOrigin(ctx context.Context) {
+	if handler.api == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	if origin, err := handler.api.Origin(ctx); err == nil {
+		handler.applyConfiguredOrigin(origin)
+	}
 }
 
 func (handler *gatewayHandler) serveHealth(response http.ResponseWriter, request *http.Request) {

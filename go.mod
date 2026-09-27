@@ -49,3 +49,7 @@ replace github.com/charmbracelet/x/xpty => ./third_party/xpty
 
 // P3 bounds desktop decoder state before structured-input validation.
 replace github.com/charmbracelet/ultraviolet => ./third_party/ultraviolet
+
+// Terminal output is UTF-8: C1 continuation bytes inside OSC/DCS/APC strings
+// must not terminate the string (see docs/dependency-patches.md).
+replace github.com/charmbracelet/x/ansi => ./third_party/ansi

@@ -57,6 +57,10 @@ On Windows:
 
 The check scripts cover generation drift, Go formatting/vet/tests, TypeScript checking, web unit tests, and the production web build. Platform integration suites and physical-phone tests remain separate explicit gates; a Linux or browser-emulation pass will not imply macOS, Windows, iPhone, or Android validation.
 
+### Use it
+
+New users: follow [docs/getting-started.md](docs/getting-started.md) (install → `pterm setup` → scan the QR code).
+
 ### Try it locally (development profile)
 
 This uses isolated temporary directories. It changes no startup, Tailscale or

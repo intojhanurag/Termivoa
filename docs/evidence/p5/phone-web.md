@@ -276,3 +276,143 @@ pipe"). This branch did not change Go code. `go test -count=5
 (24 Go packages ok, web typecheck, 92 tests, and build passed). The
 liveclient tests are flaky under parallel load; this is recorded, not fixed
 here (Go is outside this task's scope).
+
+## First-user polish 2026-09-29
+
+Branch `feat/hu-web`, base `12b8dc7`. Apple Silicon macOS 26.5.2, Node
+24.11.0, pnpm 10.33.0. Only `web/` and this file changed. No dependency was
+added. `web/src/generated/protocol.ts` was not edited. The server side of
+`PATCH /api/v1/device` is built in parallel on another branch; the page was
+tested with mocked `fetch` and a throwaway mock gateway, not the Go gateway.
+
+### Faster first load
+
+Setup, Sessions and Settings no longer load the terminal code. `Live` (with
+xterm, its CSS, the protocol validators, `Connection`, `InputController`,
+History and Composer) is a lazy chunk (`React.lazy`). The Sessions screen
+fetches that chunk in the background after it shows, so Open and Start
+session still go straight to the live terminal.
+
+| Initial load (`pnpm build:web`) | Before | After |
+| --- | --- | --- |
+| Entry JS | 867.37 kB (203.93 kB gzip) | 244.23 kB (76.00 kB gzip) |
+| Entry CSS | 8.55 kB (2.37 kB gzip) | 4.75 kB (1.58 kB gzip) |
+| Lazy `Live` chunk | – | 629.28 kB JS (130.08 kB gzip) + 3.93 kB CSS |
+
+Initial JS is 63% smaller after gzip. The `Live` chunk is still over Vite's
+500 kB warning size; xterm is most of it.
+
+Chunk failure: after a host upgrade an old page can ask for a `Live-*.js`
+that the gateway no longer serves (the gateway returns 404 for missing
+`/assets/*`, never HTML). The import is wrapped (`loadChunk`) so only that
+failure becomes `ChunkLoadError`. `ChunkErrorBoundary` shows "A new version
+is available" with a Reload button instead of a blank page. Other render
+errors are not hidden. Reload is a normal page load: it does not tell a
+waiting service worker to skip waiting. `sw.js` is unchanged: it still has no
+`skipWaiting()` on install and does not cache a failed (404) asset. The build
+has no inline script, no `eval(`/`Function(`, and no `sourceMappingURL`, so it
+works with the gateway CSP (`script-src 'self'`).
+
+### Device rename in Settings
+
+Settings has a "Device name" field with the current label and a "Save name"
+button. It calls `PATCH /api/v1/device` with `{label}` (same-origin,
+`Content-Type: application/json`, `X-Pterm-Request: 1`), and shows the
+server's new label. Validation mirrors the `deviceLabel` schema: 1–64
+characters, at most 64 UTF-8 bytes, no control characters, no edge
+whitespace (input is trimmed first). The same check now drives the pairing
+name field. States: invalid (message under the field, button off),
+unchanged (button off), "Saving…", "Name saved.", and the server's error
+message. A 401 goes back to Setup; no network goes to "Connection
+unavailable". The field has a label, `aria-describedby` help and a
+`role="status"` line.
+
+### First-use fixes
+
+- Sessions with no saved project: shows "Add a project on your computer
+  first:" with `pterm project add <folder>` and a Check again button,
+  instead of an empty picker. No shell profile: points to `pterm doctor`.
+- Refresh and Check again now reload settings too, so a project added on
+  the computer shows up without reloading the page. The pickers fall back to
+  the first option when the list changes.
+- Start session opens the live terminal right away ("Starting…" while
+  waiting) and no longer reloads the list behind it.
+- Pairing errors say what happened and what to do: expired or used link
+  (410/401) → "This pairing link expired or was already used. Run
+  `pterm pair` again on your computer."; 429 → wait a minute; no network →
+  "This phone cannot reach your computer."; raw server text is no longer
+  shown. Opening `/pair` without a usable grant (reloaded or cut link) says
+  so, instead of the generic text.
+- Setup steps now include "Check the code on both screens, then approve it
+  on your computer." Logout and revocation reasons are plain ("You logged
+  out. This phone no longer has access.", "This phone is no longer paired
+  with your computer.") above the same steps.
+- A reloaded `/pair` (or any unknown path) after pairing is replaced by `/`.
+- Live, read-only: a line above the controls says "Read-only. Tap Take
+  control to type." (or "Tap Take control to move control to this phone."
+  when another connection has control). Not shown while connecting, while
+  controlling, or after the shell ended. Reconnect text is now "Reconnecting…
+  typing is paused".
+- 320 px: selects and inputs are full width (a long project name no longer
+  widens the page); command blocks wrap at spaces first and have no extra
+  margin.
+
+Not done (outside the plan or needs a protocol decision): automatic Take
+control after Start session. The live contract is observer first with an
+explicit `control.acquire`, so the page still waits for the tap.
+
+### Tests
+
+New files: `src/api/http.test.ts` (label rules incl. 16×4-byte emoji ok,
+66-byte CJK rejected; PATCH method, path, headers, same-origin, body; error
+code/message), `src/screens/Settings.test.tsx` (save trims and PATCHes,
+invalid/unchanged send nothing, API error thrown; labelled field markup),
+`src/screens/chunks.test.tsx` (static import graph from `main.tsx` has no
+`@xterm`, `Live`, `Connection` or react-virtual; `ChunkLoadError` wrapping;
+boundary shows Reload for chunk errors and rethrows others),
+`src/sw.test.ts` (no `skipWaiting` on install, only on the reload message; a
+404 asset is not cached), `src/screens/Setup.test.tsx` (error wording,
+logout reason with steps, `/pair` without grant),
+`src/screens/Live.test.tsx` (read-only hint). `Sessions.test.tsx` gained 3
+empty-state tests.
+
+```
+pnpm typecheck    # pass
+pnpm test:web     # 18 files, 117 tests passed (was 12 files, 94 tests)
+pnpm build:web    # pass (Live chunk size warning only)
+./scripts/check   # exit 0: no generation drift, plan copy ok, gofmt/go vet
+                  # clean, all Go packages ok, web typecheck/117 tests/build
+```
+
+Desktop Chromium smoke test at 320×640 CSS px against `web/dist` served by a
+throwaway mock gateway outside the repository (no WebSocket): the first load
+fetched only `index-*.js`/`index-*.css`, then `Live-*` in the background
+after Sessions showed; no element wider than the viewport and every button
+at least 44×44 px on Sessions, Settings and Live; the empty-project card;
+Start session went straight to `/sessions/<id>`; Settings rename showed
+"Enter a name." for a blank name and "Name saved." after a save. With the
+service worker and caches cleared and the mock returning 404 for `Live-*`,
+opening a session showed "A new version is available" and Reload.
+
+### Owner verification needed
+
+Not run; each needs a real phone over the private HTTPS hostname and the Go
+gateway with the rename route.
+
+1. First load on a slow mobile connection: Sessions appears before the
+   terminal code finishes; opening a session right after shows "Opening
+   terminal…" briefly, then the terminal.
+2. Upgrade path: open the app, install a newer host build, then open a
+   session without reloading. Expect "A new version is available" → Reload
+   → the session opens. A live session already open keeps working, and the
+   "Reload to update" banner still waits for a tap.
+3. Rename in Settings on iPhone Safari and Android Chrome: the name saves,
+   `pterm devices` shows it on the computer, emoji and CJK names within 64
+   bytes save, and a 65th byte is refused on the phone.
+4. Fresh install with no project: the card shows the command; after
+   `pterm project add <folder>` on the computer, Check again shows the
+   pickers.
+5. Pairing: an expired link, a used link, and a reloaded `/pair` page each
+   say to run `pterm pair` again.
+6. Read-only hint and Take control on a 320 px wide phone (for example
+   iPhone SE 1st gen) in portrait, with the keyboard open and closed.

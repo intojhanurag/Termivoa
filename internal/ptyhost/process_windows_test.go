@@ -5,6 +5,8 @@ package ptyhost
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,5 +62,29 @@ func assertWindowsProcessGone(t *testing.T, pid uint32) {
 			t.Fatalf("descendant process %d remains after Job Object termination: %v", pid, err)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Needs native Windows: it reads the real user default environment block.
+// Cross-compiled only on macOS (go test -c).
+func TestHostEnvironmentUsesUserDefaultBlockWithoutLauncherVariables(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_X", "leak")
+	t.Setenv("WT_SESSION", "leak")
+	t.Setenv("PTERM_LAUNCHER_ONLY", "leak")
+
+	names := map[string]bool{}
+	for _, entry := range hostEnvironment(os.Environ()) {
+		name, _, _ := strings.Cut(entry, "=")
+		names[strings.ToUpper(name)] = true
+	}
+	for _, name := range []string{"SYSTEMROOT", "PATH", "USERPROFILE", "TEMP"} {
+		if !names[name] {
+			t.Errorf("session environment lacks %s", name)
+		}
+	}
+	for _, name := range []string{"CLAUDE_CODE_X", "WT_SESSION", "PTERM_LAUNCHER_ONLY"} {
+		if names[name] {
+			t.Errorf("session environment inherited launcher variable %s", name)
+		}
 	}
 }

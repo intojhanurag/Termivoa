@@ -172,6 +172,28 @@ func (handler *gatewayHandler) terminateSession(response http.ResponseWriter, re
 	handler.respond(response, request, result, err)
 }
 
+// renameDevice renames the device that owns the session cookie; the broker
+// picks the device from the credential.
+func (handler *gatewayHandler) renameDevice(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPatch) {
+		return
+	}
+	var body protocol.HTTPDeviceRenameRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	if !validText(body.Label, maxDeviceLabelBytes) {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid device label")
+		return
+	}
+	result, err := handler.api.RenameDevice(request.Context(), credential, body)
+	handler.respond(response, request, result, err)
+}
+
 // logout always clears the cookie once the broker has no valid credential
 // for it. On other broker failures the cookie stays so the user can retry.
 func (handler *gatewayHandler) logout(response http.ResponseWriter, request *http.Request) {

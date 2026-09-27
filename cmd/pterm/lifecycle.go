@@ -15,10 +15,14 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/x/term"
+
+	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
@@ -56,10 +60,10 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 		return lifecycleEnv{}, err
 	}
 	target := lifecycle.Host{OS: runtime.GOOS, Executable: executable, DataDir: paths.DataDir}
+	if target.HomeDir, err = os.UserHomeDir(); err != nil {
+		return lifecycleEnv{}, err
+	}
 	if runtime.GOOS == "darwin" {
-		if target.HomeDir, err = os.UserHomeDir(); err != nil {
-			return lifecycleEnv{}, err
-		}
 		target.UID = os.Getuid()
 	} else {
 		current, err := user.Current()
@@ -81,11 +85,12 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 }
 
 type hostReport struct {
-	statuses []lifecycle.Status
-	broker   bool  // answered, or holds its data or runtime lock
-	sessions int   // active sessions of a broker that answered
-	listErr  error // set when a running broker's sessions are unknown
-	problems int
+	statuses  []lifecycle.Status
+	tailscale tailscaleReport
+	broker    bool  // answered, or holds its data or runtime lock
+	sessions  int   // active sessions of a broker that answered
+	listErr   error // set when a running broker's sessions are unknown
+	problems  int
 }
 
 // inspectHost performs only read-only checks and prints them.
@@ -139,7 +144,9 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 		}
 	}
 	fmt.Fprintf(output, "  shells: %s\n", strings.Join(detectShells(), ", "))
-	report.problems += inspectTailscale(ctx, env.tailscale, output)
+	var problems int
+	report.tailscale, problems = inspectTailscale(ctx, env.tailscale, output)
+	report.problems += problems
 	return report, nil
 }
 
@@ -169,43 +176,89 @@ func containsString(values []string, value string) bool {
 	return false
 }
 
+// tailscaleRun runs the tailscale CLI and returns its standard output. With
+// stream set, output goes there instead: `tailscale serve` may print a link
+// to enable Serve and wait. Tests replace it.
+var tailscaleRun = func(ctx context.Context, cli string, stream io.Writer, args ...string) ([]byte, error) {
+	command := exec.CommandContext(ctx, cli, args...)
+	if stream != nil {
+		command.Stdout, command.Stderr = stream, stream
+		return nil, command.Run()
+	}
+	return command.Output()
+}
+
+// tailscaleReport is what the read-only Tailscale checks found.
+type tailscaleReport struct {
+	installed       bool
+	status          lifecycle.TailscaleStatus
+	statusErr       error
+	serveErr        error
+	serveConfigured bool
+	serveFindings   []string // conflicts and Funnel exposure; never overwritten
+}
+
+// phoneOrigin is the private HTTPS origin Tailscale gives this computer. When
+// there is none, problem says why and what the owner does next.
+func (report tailscaleReport) phoneOrigin() (origin, problem string) {
+	again := ", then run `pterm setup` again."
+	switch {
+	case !report.installed:
+		return "", "Tailscale is not installed. Install it from https://tailscale.com/download and sign in" + again
+	case report.statusErr != nil:
+		return "", "Tailscale did not report its status. Open Tailscale and sign in" + again
+	case report.status.BackendState != "Running":
+		return "", "Tailscale is not connected (" + report.status.BackendState + "). Run `tailscale up` or sign in from the Tailscale app" + again
+	case report.status.DNSName == "":
+		return "", "Tailscale has no DNS name for this computer. Turn on MagicDNS and HTTPS certificates in the Tailscale admin console" + again
+	}
+	origin = "https://" + strings.ToLower(report.status.DNSName)
+	if protocol.ValidatePairingOrigin(origin) != nil {
+		return "", "Tailscale reported an unusable DNS name " + strconv.Quote(report.status.DNSName) + "; set the address yourself with `pterm config origin https://<host>`."
+	}
+	return origin, ""
+}
+
 // inspectTailscale runs only `status --json` and `serve status --json`.
-func inspectTailscale(ctx context.Context, cli string, output io.Writer) (problems int) {
+func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report tailscaleReport, problems int) {
 	if cli == "" {
 		fmt.Fprintln(output, "  ! tailscale: not installed (required for phone access)")
-		return 1
+		return report, 1
 	}
+	report.installed = true
 	run := func(args ...string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return exec.CommandContext(ctx, cli, args...).Output()
+		return tailscaleRun(ctx, cli, nil, args...)
 	}
 	data, err := run("status", "--json")
 	status, parseErr := lifecycle.ParseTailscaleStatus(data)
-	if err != nil || parseErr != nil {
-		fmt.Fprintf(output, "  ! tailscale: status unavailable: %v\n", errors.Join(err, parseErr))
-		return 1
+	if report.statusErr = errors.Join(err, parseErr); report.statusErr != nil {
+		fmt.Fprintf(output, "  ! tailscale: status unavailable: %v\n", report.statusErr)
+		return report, 1
 	}
+	report.status = status
 	fmt.Fprintf(output, "  tailscale: %s, host %s\n", status.BackendState, status.DNSName)
 	if status.BackendState != "Running" {
 		problems++
 	}
 	data, err = run("serve", "status", "--json")
-	configured, findings, parseErr := lifecycle.ServeFindings(data)
+	report.serveConfigured, report.serveFindings, parseErr = lifecycle.ServeFindings(data)
 	switch {
 	case err != nil || parseErr != nil:
-		fmt.Fprintf(output, "  ! tailscale serve: status unavailable: %v\n", errors.Join(err, parseErr))
-		return problems + 1
-	case configured:
+		report.serveErr = errors.Join(err, parseErr)
+		fmt.Fprintf(output, "  ! tailscale serve: status unavailable: %v\n", report.serveErr)
+		return report, problems + 1
+	case report.serveConfigured:
 		fmt.Fprintln(output, "  tailscale serve: HTTPS 443 proxies the Phone Terminal gateway")
 	default:
 		fmt.Fprintln(output, "  ! tailscale serve: not configured for Phone Terminal")
 		problems++
 	}
-	for _, finding := range findings {
+	for _, finding := range report.serveFindings {
 		fmt.Fprintf(output, "  ! tailscale serve: %s\n", finding)
 	}
-	return problems + len(findings)
+	return report, problems + len(report.serveFindings)
 }
 
 // activeSessions reports whether a broker is running and how many of its
@@ -337,11 +390,18 @@ func parseLifecycleFlags(command string, args []string, bools ...string) (map[st
 	return values, nil
 }
 
+// runSetupCommand is the first-run wizard. It runs read-only checks, shows
+// everything it will do, and asks once. Then it registers startup, waits for
+// the broker and gateway, saves the Tailscale phone address, asks separately
+// before it changes Tailscale Serve, adds a Home project if there is none, and
+// pairs a phone. --apply --yes is the non-interactive installer path: it only
+// registers startup and saves the phone address when no other one is set.
 func runSetupCommand(ctx context.Context, args []string, input *os.File, output io.Writer) error {
 	options, err := parseLifecycleFlags("setup", args, "apply", "yes")
 	if err != nil {
 		return err
 	}
+	apply, yes := *options["apply"], *options["yes"]
 	env, err := loadLifecycleEnv()
 	if err != nil {
 		return err
@@ -354,52 +414,180 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(output, "\nStartup registration (current user only, no administrator rights):")
-	if len(plan.Steps) == 0 {
-		fmt.Fprintln(output, "  already registered for this pterm; nothing to change.")
-	} else if err := lifecycle.Describe(plan, output); err != nil {
-		return err
-	}
-	fmt.Fprintf(output, `
-Phone access over your private tailnet (run it yourself; pterm never changes Tailscale):
-  %s
-It keeps any existing Serve configuration; if HTTPS 443 already serves something
-else, resolve that conflict yourself. Never use Tailscale Funnel: it would put
-your terminal on the public internet.
-`, lifecycle.ServeCommand)
-	if !*options["apply"] {
-		fmt.Fprintln(output, "\nNo changes made. Run `pterm setup --apply` to register startup.")
+	origin, originProblem := report.tailscale.phoneOrigin()
+	describeSetup(env, plan, report.tailscale, origin, originProblem, yes, output)
+	if !apply && input == nil {
+		fmt.Fprintln(output, "\nNo changes made. Run `pterm setup` in a terminal, or `pterm setup --apply --yes` to register startup without questions.")
 		return nil
 	}
 	if problems := lifecycle.ExecutableProblems(env.host.OS, env.host.Executable); len(problems) > 0 {
 		return fmt.Errorf("refusing to register this pterm: %s", problems[0])
 	}
-	if len(plan.Steps) == 0 {
-		return nil
+	if len(plan.Steps) > 0 {
+		// A registered copy of a process already running outside startup
+		// registration would fail on the data lock or port and restart forever.
+		if report.broker && !report.statuses[0].Registered {
+			return fmt.Errorf("refusing to register startup: a broker is already running outside startup registration; finish its sessions, %s, then rerun `pterm setup`", stopBrokerHint(env.paths.RuntimeDir))
+		}
+		if !report.statuses[1].Registered && addressInUse(env.gateway) {
+			return fmt.Errorf("refusing to register startup: %s is already in use (a gateway started outside startup registration, or another program); stop that process, then rerun `pterm setup`", env.gateway)
+		}
+		if plan.ChangesRunningBroker {
+			if err := report.refuseActiveSessions("replace the broker registration"); err != nil {
+				return err
+			}
+		}
 	}
-	// A registered copy of a process already running outside startup
-	// registration would fail on the data lock or port and restart forever.
-	if report.broker && !report.statuses[0].Registered {
-		return fmt.Errorf("refusing to register startup: a broker is already running outside startup registration; finish its sessions, %s, then rerun `pterm setup --apply`", stopBrokerHint(env.paths.RuntimeDir))
-	}
-	if !report.statuses[1].Registered && addressInUse(env.gateway) {
-		return fmt.Errorf("refusing to register startup: %s is already in use (a gateway started outside startup registration, or another program); stop that process, then rerun `pterm setup --apply`", env.gateway)
-	}
-	if plan.ChangesRunningBroker {
-		if err := report.refuseActiveSessions("replace the broker registration"); err != nil {
+	if !yes {
+		if err := confirmLifecycle(ctx, input, output, "\nContinue? [y/N] "); err != nil {
 			return err
 		}
 	}
-	if !*options["yes"] {
-		if err := confirmLifecycle(ctx, input, output, "\nApply these startup changes? [y/N] "); err != nil {
+	if len(plan.Steps) > 0 {
+		fmt.Fprintln(output, "\nRegistering startup:")
+		if err := lifecycle.Apply(ctx, env.runner, plan, output); err != nil {
 			return err
 		}
 	}
-	fmt.Fprintln(output, "\nApplying:")
-	if err := lifecycle.Apply(ctx, env.runner, plan, output); err != nil {
+
+	fmt.Fprintln(output, "\nWaiting for the broker...")
+	brokerUp := func() error {
+		ctx, cancel := context.WithTimeout(ctx, ipc.HandshakeTimeout)
+		defer cancel()
+		_, _, err := ipc.ValidateBrokerEndpoint(ctx, env.paths.RuntimeDir, protocol.CLI, buildID)
 		return err
 	}
-	fmt.Fprintf(output, "\nStartup registered. Local page: %s/\nNext: pterm project add <path>, then pterm pair.\n", env.gateway)
+	if err := waitWithin(ctx, 3*waitTimeout, brokerUp); err != nil {
+		if yes {
+			fmt.Fprintf(output, "The broker does not answer yet (%v). It starts at your next login; then run `pterm setup` to pair your phone.\n", err)
+			return nil
+		}
+		return fmt.Errorf("the broker did not start (see %s): %w", env.host.LogDir(), err)
+	}
+	admin, err := localclient.DialAdmin(ctx, env.paths.RuntimeDir, buildID)
+	if err != nil {
+		return fmt.Errorf("cannot connect to the broker: %w", err)
+	}
+	defer admin.Close()
+	if origin != "" {
+		if err := savePhoneOrigin(ctx, admin, origin, output); err != nil {
+			return err
+		}
+	}
+	if yes {
+		fmt.Fprintln(output, "\nStartup is registered. To pair your phone, run `pterm setup` (or `pterm pair`) in a terminal.")
+		return nil
+	}
+	fmt.Fprintln(output, "Waiting for the gateway...")
+	if err := waitWithin(ctx, 3*waitTimeout, func() error { return gatewayHealthy(ctx, env.gateway) }); err != nil {
+		return fmt.Errorf("the gateway did not start (see %s): %w", env.host.LogDir(), err)
+	}
+	confirmer := fileConfirmer{input: input, output: output}
+	if origin != "" {
+		if err := offerTailscaleServe(ctx, env, report.tailscale, origin, confirmer, output); err != nil {
+			return err
+		}
+	}
+	projects, err := admin.Projects(ctx)
+	if err != nil {
+		return err
+	}
+	if len(projects) == 0 {
+		name := "Home"
+		if err := cli.ProjectAdd(ctx, admin, env.host.HomeDir, &name, output); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintln(output, "\nPair your phone:")
+	file, isFile := output.(*os.File)
+	return cli.Pair(ctx, admin, cli.PairOptions{
+		Fallback: env.gateway, ShowQR: isFile && term.IsTerminal(file.Fd()), Confirmer: confirmer,
+	}, output)
+}
+
+func describeSetup(env lifecycleEnv, plan lifecycle.Plan, tailscale tailscaleReport, origin, originProblem string,
+	yes bool, output io.Writer,
+) {
+	fmt.Fprintln(output, "\npterm setup will:")
+	fmt.Fprintln(output, "1. Start Phone Terminal when you log in (current user only, no administrator rights):")
+	if len(plan.Steps) == 0 {
+		fmt.Fprintln(output, "  already registered for this pterm; nothing to change.")
+	} else {
+		_ = lifecycle.Describe(plan, output)
+	}
+	fmt.Fprintln(output, "2. Wait until the broker and the gateway answer.")
+	if origin == "" {
+		fmt.Fprintf(output, "3. Skip the phone address: %s\n   Until then, only a browser on this computer can pair.\n", originProblem)
+	} else {
+		fmt.Fprintf(output, "3. Save the phone address %s (unless you set another one).\n", origin)
+	}
+	if yes {
+		fmt.Fprintf(output, "Phone access over your tailnet (run it yourself): %s\n", lifecycle.ServeCommand)
+	} else {
+		fmt.Fprintf(output, "4. Add your home folder %s as project \"Home\" if you have no project.\n", env.host.HomeDir)
+		fmt.Fprintln(output, "5. Show a QR code for your phone and ask you to approve the code it shows.")
+		if origin != "" && tailscale.serveErr == nil && !tailscale.serveConfigured && len(tailscale.serveFindings) == 0 {
+			fmt.Fprintf(output, "Before step 4 it asks separately whether to run: %s\n", lifecycle.ServeCommand)
+		}
+	}
+	fmt.Fprintln(output, "Never use Tailscale Funnel: it would put your terminal on the public internet.")
+}
+
+// savePhoneOrigin saves origin unless the owner already chose another one.
+func savePhoneOrigin(ctx context.Context, admin *localclient.AdminClient, origin string, output io.Writer) error {
+	current, err := admin.PairingOrigin(ctx, nil)
+	if err != nil {
+		return err
+	}
+	switch {
+	case current == nil:
+		return cli.ConfigOrigin(ctx, admin, &origin, output)
+	case *current == origin:
+		fmt.Fprintf(output, "Phone address: %s\n", origin)
+	default:
+		fmt.Fprintf(output, "Phone address stays %s. Tailscale names this computer %s; to use that, run `pterm config origin %s`.\n",
+			*current, origin, origin)
+	}
+	return nil
+}
+
+// offerTailscaleServe runs `tailscale serve` only after its own explicit yes,
+// and only when HTTPS 443 serves nothing else and Funnel is off.
+func offerTailscaleServe(ctx context.Context, env lifecycleEnv, tailscale tailscaleReport, origin string,
+	confirmer fileConfirmer, output io.Writer,
+) error {
+	switch {
+	case tailscale.serveErr != nil:
+		fmt.Fprintf(output, "Could not read the Tailscale Serve status; run it yourself: %s\n", lifecycle.ServeCommand)
+		return nil
+	case tailscale.serveConfigured:
+		fmt.Fprintf(output, "Tailscale Serve already shares the page at %s/\n", origin)
+		return nil
+	case len(tailscale.serveFindings) > 0:
+		fmt.Fprintln(output, "Tailscale Serve was not changed:")
+		for _, finding := range tailscale.serveFindings {
+			fmt.Fprintf(output, "  ! %s\n", finding)
+		}
+		fmt.Fprintln(output, "Resolve this yourself, then run `pterm setup` again. Until then, only a browser on this computer can pair.")
+		return nil
+	}
+	approved, err := confirmer.Confirm(ctx, fmt.Sprintf(
+		"\nShare the page with your tailnet devices at %s/ ?\nThis runs: %s\nOnly devices in your tailnet can reach it; it never uses Funnel. [y/N] ",
+		origin, lifecycle.ServeCommand))
+	if err != nil {
+		return err
+	}
+	if !approved {
+		fmt.Fprintf(output, "Tailscale Serve not changed. To share the page later, run: %s\n", lifecycle.ServeCommand)
+		return nil
+	}
+	serveCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	if _, err := tailscaleRun(serveCtx, env.tailscale, output, strings.Fields(lifecycle.ServeCommand)[1:]...); err != nil {
+		fmt.Fprintf(output, "tailscale serve failed (%v). Fix it, then run it yourself: %s\n", err, lifecycle.ServeCommand)
+		return nil
+	}
+	fmt.Fprintf(output, "Tailscale Serve shares the page at %s/\n", origin)
 	return nil
 }
 
@@ -568,7 +756,11 @@ func startDetached(ctx context.Context, env lifecycleEnv, status lifecycle.Statu
 }
 
 func waitFor(ctx context.Context, check func() error) error {
-	deadline := time.Now().Add(waitTimeout)
+	return waitWithin(ctx, waitTimeout, check)
+}
+
+func waitWithin(ctx context.Context, timeout time.Duration, check func() error) error {
+	deadline := time.Now().Add(timeout)
 	for {
 		err := check()
 		if err == nil || time.Now().After(deadline) {
@@ -598,7 +790,8 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 	if !*dev || flags.NArg() != 0 {
 		return errors.New("usage: pterm up --dev [--data-dir <dir>] [--runtime-dir <dir>] [--listen <addr>]; installed use relies on `pterm setup`")
 	}
-	if *runtimeDir == "" {
+	customRuntime := *runtimeDir != ""
+	if !customRuntime {
 		development, err := host.DevelopmentPaths()
 		if err != nil {
 			return err
@@ -684,7 +877,14 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 		stopAll()
 		return fmt.Errorf("development gateway did not become healthy: %w", err)
 	}
-	fmt.Fprintf(output, "Development gateway: %s/\nPress Ctrl+C to stop both processes.\n", base)
+	pair := "pterm pair --dev"
+	if customRuntime {
+		pair += " --runtime-dir " + lifecycle.DisplayCommand([]string{validated})
+	}
+	if *listen != devListenAddress {
+		pair += " --origin " + base
+	}
+	fmt.Fprintf(output, "Development gateway: %s/\nPair a browser: %s\nPress Ctrl+C to stop both processes.\n", base, pair)
 
 	var exitErr error
 	for len(processes) > 0 {

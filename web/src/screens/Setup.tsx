@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ApiError, deviceLabelProblem } from '../api/http';
 import { PairingFlow, type PendingPairing } from '../pairing/pairing';
 import type { GrantHolder } from './App';
 
@@ -12,7 +13,17 @@ function defaultLabel(): string {
   return 'Browser';
 }
 
-const SAFE_LABEL = /^[^\p{Cc}\s](?:[^\p{Cc}]{0,62}[^\p{Cc}\s])?$/u;
+/** A plain-language reason a pairing attempt failed. The UI adds "run pterm pair again". */
+export function pairingFailure(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.code === 'network') return 'This phone cannot reach your computer.';
+    if (error.status === 410 || error.status === 401 || error.code === 'pairing_expired') {
+      return 'This pairing link expired or was already used.';
+    }
+    if (error.status === 429 || error.code === 'limit_exceeded') return 'Too many pairing attempts. Wait a minute first.';
+  }
+  return 'Pairing did not work.';
+}
 
 export function Setup({ grant, reason, onPaired }: {
   readonly grant: GrantHolder;
@@ -28,7 +39,8 @@ export function Setup({ grant, reason, onPaired }: {
   useEffect(() => () => flow.current?.cancel(), []);
 
   const trimmed = label.trim();
-  const labelValid = SAFE_LABEL.test(trimmed) && new TextEncoder().encode(trimmed).byteLength <= 64;
+  const labelProblem = deviceLabelProblem(trimmed);
+  const labelValid = labelProblem === undefined;
 
   async function pair() {
     const secret = grant.value;
@@ -52,7 +64,7 @@ export function Setup({ grant, reason, onPaired }: {
       }
     } catch (failure) {
       setPending(undefined);
-      setError(failure instanceof Error ? failure.message : 'Pairing failed');
+      setError(pairingFailure(failure));
       setPhase('error');
     }
   }
@@ -63,10 +75,16 @@ export function Setup({ grant, reason, onPaired }: {
       {reason !== undefined && <p role="status" className="notice">{reason}</p>}
       {phase === 'none' && (
         <>
-          <p>This browser is not paired with your computer.</p>
+          {window.location.pathname === '/pair' ? (
+            <p role="alert" className="error">
+              This pairing link is incomplete or was already opened. Run <code>pterm pair</code> again on your
+              computer and open the new link.
+            </p>
+          ) : <p>This phone is not paired with your computer yet.</p>}
           <ol className="steps">
             <li>On your computer, run <code>pterm pair</code>.</li>
             <li>Scan the QR code or open the link it shows on this phone.</li>
+            <li>Check the code on both screens, then approve it on your computer.</li>
           </ol>
           <p className="muted">The link works once and expires after two minutes.</p>
         </>
@@ -85,9 +103,13 @@ export function Setup({ grant, reason, onPaired }: {
             value={label}
             maxLength={64}
             autoComplete="off"
+            aria-describedby="device-label-help"
+            aria-invalid={!labelValid}
             onChange={(event) => setLabel(event.target.value)}
           />
-          {!labelValid && <p className="error">Use 1–64 characters without control characters.</p>}
+          <p id="device-label-help" className={labelValid ? 'muted field-note' : 'error field-note'}>
+            {labelProblem ?? 'Your computer shows this name in pterm devices. You can change it later in Settings.'}
+          </p>
           <button type="submit" className="primary" disabled={!labelValid}>Pair this device</button>
         </form>
       )}
@@ -103,12 +125,12 @@ export function Setup({ grant, reason, onPaired }: {
       )}
       {phase === 'expired' && (
         <p role="alert" className="error">
-          This pairing request expired or was refused. Run <code>pterm pair</code> on your computer again.
+          This pairing request expired or was refused. Run <code>pterm pair</code> again on your computer.
         </p>
       )}
       {phase === 'error' && (
         <p role="alert" className="error">
-          {error} Run <code>pterm pair</code> on your computer to get a new link.
+          {error} Run <code>pterm pair</code> again on your computer.
         </p>
       )}
     </main>

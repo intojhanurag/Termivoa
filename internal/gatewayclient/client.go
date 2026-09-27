@@ -216,6 +216,36 @@ func (client *Client) TerminateSession(
 		protocol.GatewayRPCSessionTerminatePayload{Credential: credential, SessionID: sessionID, Request: request})
 }
 
+// RenameDevice renames the credential's own device. The broker chooses the
+// device from the credential; the result must not name another one's label.
+func (client *Client) RenameDevice(
+	ctx context.Context,
+	credential string,
+	request protocol.HTTPDeviceRenameRequest,
+) (protocol.HTTPDeviceSummary, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPDeviceSummary{}, err
+	}
+	return roundTrip(ctx, client, protocol.GatewayDeviceRename,
+		protocol.GatewayRPCDeviceRenamePayload{Credential: credential, Request: request}, true,
+		func(result protocol.HTTPDeviceSummary) error {
+			if result.Label != request.Label {
+				return errors.New("gatewayclient: rename result label mismatch")
+			}
+			return nil
+		})
+}
+
+// Origin returns the configured browser origin, or "" when none is set.
+func (client *Client) Origin(ctx context.Context) (string, error) {
+	result, err := roundTrip[protocol.GatewayRPCOriginResultPayload](ctx, client, protocol.GatewayOrigin,
+		protocol.BrokerRPCEmptyPayload{}, false, nil)
+	if err != nil || result.Origin == nil {
+		return "", err
+	}
+	return *result.Origin, nil
+}
+
 func (client *Client) mutate(
 	ctx context.Context,
 	requestType protocol.GatewayRPCMessageType,

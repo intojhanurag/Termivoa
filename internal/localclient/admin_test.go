@@ -277,3 +277,23 @@ func testDeviceRecord() protocol.AdminRPCDevice {
 		CreatedAt: "2026-09-27T00:00:00Z", LastUsedAt: "2026-09-27T00:01:00Z",
 	}
 }
+
+func TestAdminClientRenameDeviceRequiresExactAcknowledgement(t *testing.T) {
+	for _, echoed := range []string{"Work phone", "Other"} {
+		client, serverConnection := newAdminPipe(t)
+		go func() {
+			_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+				payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCDeviceRenamePayload](request)
+				if err != nil || payload.DeviceID != testDevice || payload.Label != "Work phone" {
+					return nil
+				}
+				payload.Label = echoed
+				return adminResponseJSON(t, request.RequestID, protocol.AdminDeviceRenameResult, payload)
+			})
+		}()
+		err := client.RenameDevice(context.Background(), testDevice, "Work phone")
+		if (echoed == "Work phone") != (err == nil) || (err != nil && !IsDeliveryUncertain(err)) {
+			t.Fatalf("rename acknowledged as %q = %v", echoed, err)
+		}
+	}
+}

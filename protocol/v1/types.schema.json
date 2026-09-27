@@ -18,9 +18,9 @@
     "brokerRPCSessionRecord", "brokerRPCSessionListResult", "brokerRPCSessionResult",
     "brokerRPCSessionMutationResult",
     "brokerRPCError",
-    "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse",
-    "gatewayRPCMessageType", "gatewayRPCCredential", "gatewayRPCSessionCreate", "gatewayRPCSessionRename", "gatewayRPCSessionTerminate", "gatewayRPCPairPollResult", "gatewayRPCPrincipal",
-    "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin", "adminRPCShutdownResult"
+    "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse", "httpDeviceRenameRequest",
+    "gatewayRPCMessageType", "gatewayRPCCredential", "gatewayRPCSessionCreate", "gatewayRPCSessionRename", "gatewayRPCSessionTerminate", "gatewayRPCPairPollResult", "gatewayRPCPrincipal", "gatewayRPCDeviceRename", "gatewayRPCOriginResult",
+    "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin", "adminRPCShutdownResult", "adminRPCDeviceRename"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -81,6 +81,7 @@
     "httpSessionTerminateRequest": { "$ref": "http-api.schema.json#/$defs/sessionTerminateRequest" },
     "httpSessionMutationResponse": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" },
     "httpErrorResponse": { "$ref": "http-api.schema.json#/$defs/errorResponse" },
+    "httpDeviceRenameRequest": { "$ref": "http-api.schema.json#/$defs/deviceRenameRequest" },
     "gatewayRPCMessageType": { "$ref": "gateway-rpc.schema.json#/$defs/messageType" },
     "gatewayRPCCredential": { "$ref": "gateway-rpc.schema.json#/$defs/credentialPayload" },
     "gatewayRPCSessionCreate": { "$ref": "gateway-rpc.schema.json#/$defs/sessionCreatePayload" },
@@ -88,6 +89,8 @@
     "gatewayRPCSessionTerminate": { "$ref": "gateway-rpc.schema.json#/$defs/sessionTerminatePayload" },
     "gatewayRPCPairPollResult": { "$ref": "gateway-rpc.schema.json#/$defs/pairPollResultPayload" },
     "gatewayRPCPrincipal": { "$ref": "gateway-rpc.schema.json#/$defs/principalPayload" },
+    "gatewayRPCDeviceRename": { "$ref": "gateway-rpc.schema.json#/$defs/deviceRenamePayload" },
+    "gatewayRPCOriginResult": { "$ref": "gateway-rpc.schema.json#/$defs/originResultPayload" },
     "adminRPCMessageType": { "$ref": "admin-rpc.schema.json#/$defs/messageType" },
     "adminRPCPairGrantResult": { "$ref": "admin-rpc.schema.json#/$defs/pairGrantResultPayload" },
     "adminRPCPendingPairing": { "$ref": "admin-rpc.schema.json#/$defs/pendingPairing" },
@@ -104,6 +107,7 @@
     "adminRPCShellProfile": { "$ref": "admin-rpc.schema.json#/$defs/profile" },
     "adminRPCProfileListResult": { "$ref": "admin-rpc.schema.json#/$defs/profileListResultPayload" },
     "adminRPCOrigin": { "$ref": "admin-rpc.schema.json#/$defs/originPayload" },
-    "adminRPCShutdownResult": { "$ref": "admin-rpc.schema.json#/$defs/shutdownResultPayload" }
+    "adminRPCShutdownResult": { "$ref": "admin-rpc.schema.json#/$defs/shutdownResultPayload" },
+    "adminRPCDeviceRename": { "$ref": "admin-rpc.schema.json#/$defs/deviceRenamePayload" }
   }
 }

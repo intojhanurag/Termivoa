@@ -284,6 +284,7 @@ func TestAuthenticatedRoutes(t *testing.T) {
 		{http.MethodPost, "/api/v1/sessions", createBody, "create", `"operationId":"` + uuidA},
 		{http.MethodPatch, "/api/v1/sessions/" + uuidB, renameBody, "rename:" + uuidB, `"session":{`},
 		{http.MethodPost, "/api/v1/sessions/" + uuidB + "/terminate", terminateBody, "terminate:" + uuidB, `"session":{`},
+		{http.MethodPatch, "/api/v1/device", `{"label":"Work phone"}`, "rename-device:Work phone", `"label":"Work phone"`},
 	} {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			response := do(handler, test.method, test.path, test.body, requestOptions{cookie: prodCookie})
@@ -324,6 +325,24 @@ func TestAuthenticatedRoutes(t *testing.T) {
 	}
 	if response := do(handler, http.MethodPost, "/api/v1/sessions", createBody, requestOptions{cookie: prodCookie, omitOrigin: true}); response.Code != 403 {
 		t.Fatalf("create without origin = %d", response.Code)
+	}
+	for name, test := range map[string]struct {
+		method, body string
+		options      requestOptions
+		status       int
+	}{
+		"control label":   {http.MethodPatch, `{"label":"a\u0007"}`, requestOptions{cookie: prodCookie}, 400},
+		"empty label":     {http.MethodPatch, `{"label":""}`, requestOptions{cookie: prodCookie}, 400},
+		"long label":      {http.MethodPatch, `{"label":"` + strings.Repeat("x", 65) + `"}`, requestOptions{cookie: prodCookie}, 400},
+		"device id field": {http.MethodPatch, `{"label":"x","deviceId":"` + uuidB + `"}`, requestOptions{cookie: prodCookie}, 400},
+		"missing origin":  {http.MethodPatch, `{"label":"x"}`, requestOptions{cookie: prodCookie, omitOrigin: true}, 403},
+		"missing header":  {http.MethodPatch, `{"label":"x"}`, requestOptions{cookie: prodCookie, omitHeader: true}, 403},
+		"text body":       {http.MethodPatch, `{"label":"x"}`, requestOptions{cookie: prodCookie, contentType: "text/plain"}, 415},
+		"post":            {http.MethodPost, `{"label":"x"}`, requestOptions{cookie: prodCookie}, 405},
+	} {
+		if response := do(handler, test.method, "/api/v1/device", test.body, test.options); response.Code != test.status {
+			t.Fatalf("device rename %s = %d %s", name, response.Code, response.Body)
+		}
 	}
 }
 

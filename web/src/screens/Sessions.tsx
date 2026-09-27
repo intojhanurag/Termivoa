@@ -39,19 +39,47 @@ export function PresenceFacts({ session }: { readonly session: BrokerRPCSessionR
   );
 }
 
-export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
+/** What to do when there is nothing to start a session with, or undefined when ready. */
+export function NewSessionHelp({ settings }: { readonly settings: HTTPSettingsResponse }) {
+  if (settings.projects.length === 0) {
+    return (
+      <div className="stack">
+        <p>Add a project on your computer first:</p>
+        <pre className="command"><code>pterm project add &lt;folder&gt;</code></pre>
+        <p className="muted">Then tap Check again. A project is a folder where new sessions start.</p>
+      </div>
+    );
+  }
+  if (settings.shellProfiles.length === 0) {
+    return (
+      <div className="stack">
+        <p>Your computer has no shell available for new sessions.</p>
+        <p className="muted">Run <code>pterm doctor</code> on your computer to see why, then tap Check again.</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+export function Sessions({ settings, message, onOpen, onSettings, onRefreshSettings, onFailure }: {
   readonly settings: HTTPSettingsResponse;
   readonly message?: string;
   readonly onOpen: (session: BrokerRPCSessionRecord) => void;
   readonly onSettings: () => void;
+  readonly onRefreshSettings: () => Promise<void>;
   readonly onFailure: (error: unknown) => string;
 }) {
   const [sessions, setSessions] = useState<ReadonlyArray<BrokerRPCSessionRecord>>();
   const [error, setError] = useState<string | undefined>(message);
   const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [pending, setPending] = useState<Pending>();
-  const [projectId, setProjectId] = useState(settings.projects[0]?.id ?? '');
-  const [shellId, setShellId] = useState(settings.shellProfiles[0]?.id ?? '');
+  const [chosenProject, setProjectId] = useState<string>();
+  const [chosenShell, setShellId] = useState<string>();
+  // Fall back to the first option when the choice is gone or settings were refreshed.
+  const projectId = settings.projects.find((item) => item.id === chosenProject)?.id ?? settings.projects[0]?.id ?? '';
+  const shellId = settings.shellProfiles.find((item) => item.id === chosenShell)?.id ?? settings.shellProfiles[0]?.id ?? '';
+  const canCreate = settings.projects.length > 0 && settings.shellProfiles.length > 0;
 
   const projectName = new Map(settings.projects.map((item) => [item.id, item.name]));
   const shellName = new Map(settings.shellProfiles.map((item) => [item.id, item.name]));
@@ -66,13 +94,12 @@ export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function mutate(work: () => Promise<unknown>, after?: (result: unknown) => void) {
+  async function mutate(work: () => Promise<unknown>) {
     setBusy(true);
     setError(undefined);
     try {
-      const result = await work();
+      await work();
       setPending(undefined);
-      after?.(result);
       await load();
     } catch (failure) {
       setError(onFailure(failure));
@@ -81,10 +108,33 @@ export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
     }
   }
 
-  const create = () => mutate(
-    () => api.createSession({ operationId: crypto.randomUUID(), projectId, shellProfileId: shellId }),
-    (result) => onOpen((result as Awaited<ReturnType<typeof api.createSession>>).session),
-  );
+  async function refresh() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await onRefreshSettings();
+      await load();
+    } catch (failure) {
+      setError(onFailure(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Start session opens the live terminal right away; the list is not reloaded behind it.
+  async function create() {
+    setBusy(true);
+    setStarting(true);
+    setError(undefined);
+    try {
+      const created = await api.createSession({ operationId: crypto.randomUUID(), projectId, shellProfileId: shellId });
+      onOpen(created.session);
+    } catch (failure) {
+      setError(onFailure(failure));
+      setBusy(false);
+      setStarting(false);
+    }
+  }
 
   return (
     <main className="page">
@@ -96,10 +146,11 @@ export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
 
       <section className="card stack" aria-labelledby="new-session">
         <h2 id="new-session">New session</h2>
-        {settings.projects.length === 0 || settings.shellProfiles.length === 0 ? (
-          <p className="muted">
-            No saved project or shell profile yet. On your computer, run <code>pterm project add &lt;path&gt;</code>.
-          </p>
+        {!canCreate ? (
+          <>
+            <NewSessionHelp settings={settings} />
+            <button type="button" disabled={busy} onClick={() => { void refresh(); }}>Check again</button>
+          </>
         ) : (
           <>
             <label htmlFor="project">Project</label>
@@ -111,7 +162,7 @@ export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
               {settings.shellProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
             <button type="button" className="primary" disabled={busy} onClick={() => { void create(); }}>
-              Start session
+              {starting ? 'Starting…' : 'Start session'}
             </button>
           </>
         )}
@@ -120,10 +171,12 @@ export function Sessions({ settings, message, onOpen, onSettings, onFailure }: {
       <section aria-labelledby="session-list" className="stack">
         <div className="page-header">
           <h2 id="session-list">Your sessions</h2>
-          <button type="button" onClick={() => { void load(); }} disabled={busy}>Refresh</button>
+          <button type="button" onClick={() => { void refresh(); }} disabled={busy}>Refresh</button>
         </div>
         {sessions === undefined && <p role="status">Loading…</p>}
-        {sessions?.length === 0 && <p className="muted">No sessions yet.</p>}
+        {sessions?.length === 0 && (
+          <p className="muted">{canCreate ? 'No sessions yet. Start one above.' : 'No sessions yet.'}</p>
+        )}
         <ul className="session-list">
           {sessions?.map((session) => {
             const ended = session.state === 'exited' || session.state === 'lost';

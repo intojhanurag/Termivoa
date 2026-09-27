@@ -16,6 +16,23 @@ type platformProcessTree struct {
 	job windows.Handle
 }
 
+// hostEnvironment starts from the user's default environment block, not from
+// the broker's inherited environment, so registry variables reach sessions
+// but launcher variables do not. If the block is unavailable it falls back to
+// the allowlisted host variables.
+func hostEnvironment(host []string) []string {
+	var token windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE, &token); err != nil {
+		return windowsEnvironment(nil, host)
+	}
+	defer token.Close()
+	userDefault, err := token.Environ(false)
+	if err != nil {
+		userDefault = nil
+	}
+	return windowsEnvironment(userDefault, host)
+}
+
 func configureCommand(cmd *exec.Cmd) {
 	// xpty creates the process through CreateProcess and honors CreationFlags.
 	// Starting suspended closes the otherwise unavoidable window in which the

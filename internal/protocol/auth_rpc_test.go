@@ -152,3 +152,38 @@ func rpcTypeNames[T ~string](results map[T]T, errorType string) []string {
 	sort.Strings(names)
 	return names
 }
+
+func TestGatewayOriginAndDeviceRenameMessages(t *testing.T) {
+	if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.origin", BrokerRPCEmptyPayload{})); err != nil {
+		t.Fatal(err)
+	}
+	origin := "https://mac.example.ts.net"
+	for _, payload := range []GatewayRPCOriginResultPayload{{}, {Origin: &origin}} {
+		if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.origin.result", payload)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bad := "https://mac.example.ts.net/path"
+	if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.origin.result", GatewayRPCOriginResultPayload{Origin: &bad})); err == nil {
+		t.Fatal("origin with a path accepted")
+	}
+	rename := GatewayRPCDeviceRenamePayload{Credential: rpcTestSecret, Request: HTTPDeviceRenameRequest{Label: "Work phone"}}
+	if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.device.rename", rename)); err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{"", " padded", "bell\a", strings.Repeat("x", 65)} {
+		rename.Request.Label = label
+		if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.device.rename", rename)); err == nil {
+			t.Fatalf("label %q accepted", label)
+		}
+	}
+	if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.device.rename.result", HTTPDeviceSummary{ID: rpcTestID, Label: "Work phone"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeAdminRPCRequest(rpcJSON(t, "admin.device.rename", AdminRPCDeviceRenamePayload{DeviceID: rpcTestID, Label: "Work phone"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeAdminRPCRequest(rpcJSON(t, "admin.device.rename", AdminRPCDeviceRenamePayload{DeviceID: "x", Label: "Work phone"})); err == nil {
+		t.Fatal("malformed device ID accepted")
+	}
+}

@@ -7,6 +7,7 @@ import type {
   ScreenResyncPayload,
   State as SessionLifecycle,
 } from '../generated/protocol';
+import { CLIENT_BUILD } from '../api/http';
 import { parseHostMessage, type ValidatedHostMessage } from '../protocol/validate';
 import {
   ResyncRequiredError,
@@ -20,7 +21,6 @@ import { DeliveryUncertainError, InputSender } from './InputSender';
 import { SnapshotAssembler } from './SnapshotAssembler';
 
 export const DELIVERY_UNCERTAIN = 'Delivery uncertain—check the terminal before sending again.';
-export const CLIENT_BUILD = 'phone-terminal-web/0.0.0-private';
 export const HEARTBEAT_MS = 5000;
 export const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15000] as const;
 const HISTORY_PAGE_ROWS = 200;

@@ -421,6 +421,13 @@ func openViewer(t *testing.T, ctx context.Context, gateway *gatewayclient.Client
 	if err != nil {
 		t.Fatal(err)
 	}
+	return openViewerOn(t, ctx, stream, session, control)
+}
+
+// openViewerOn runs the viewer protocol on any live stream, such as a phone
+// WebSocket through the real gateway.
+func openViewerOn(t *testing.T, ctx context.Context, stream gatewayapi.LiveStream, session protocol.BrokerRPCSessionRecord, control bool) *viewer {
+	t.Helper()
 	v := &viewer{t: t, ctx: ctx, stream: stream, session: session, done: make(chan struct{}),
 		echoWaiters: map[string]chan time.Time{}, ready: make(chan struct{})}
 	t.Cleanup(func() { _ = stream.Close(); <-v.done })
@@ -501,12 +508,12 @@ func (v *viewer) run() {
 func (v *viewer) handle(envelope protocol.Envelope, received time.Time) error {
 	switch envelope.Type {
 	case protocol.SnapshotBegin:
-		payload, _ := protocol.DecodePayload[protocol.SnapshotBeginPayload](envelope)
+		payload, _ := payloadOf[protocol.SnapshotBeginPayload](envelope)
 		v.mu.Lock()
 		v.pendingSnap = make([]string, payload.Screen.Rows)
 		v.mu.Unlock()
 	case protocol.SnapshotRows:
-		payload, _ := protocol.DecodePayload[protocol.SnapshotRowsPayload](envelope)
+		payload, _ := payloadOf[protocol.SnapshotRowsPayload](envelope)
 		v.mu.Lock()
 		for i, row := range payload.Rows {
 			if index := int(payload.StartRow) + i; index < len(v.pendingSnap) {
@@ -515,7 +522,7 @@ func (v *viewer) handle(envelope protocol.Envelope, received time.Time) error {
 		}
 		v.mu.Unlock()
 	case protocol.SnapshotEnd:
-		payload, _ := protocol.DecodePayload[protocol.SnapshotEndPayload](envelope)
+		payload, _ := payloadOf[protocol.SnapshotEndPayload](envelope)
 		v.mu.Lock()
 		if int(payload.RowCount) != len(v.pendingSnap) {
 			v.mu.Unlock()
@@ -530,7 +537,7 @@ func (v *viewer) handle(envelope protocol.Envelope, received time.Time) error {
 		}
 		v.readyOnce.Do(func() { close(v.ready) })
 	case protocol.ScreenPatch:
-		payload, _ := protocol.DecodePayload[protocol.ScreenPatchPayload](envelope)
+		payload, _ := payloadOf[protocol.ScreenPatchPayload](envelope)
 		v.mu.Lock()
 		if !v.snapshotReady || payload.BaseRevision != v.revision {
 			v.baseMismatches.Add(1)
@@ -545,7 +552,7 @@ func (v *viewer) handle(envelope protocol.Envelope, received time.Time) error {
 		v.patches.Add(1)
 		v.observeStatus(received)
 	case protocol.ControlChanged:
-		payload, _ := protocol.DecodePayload[protocol.ControlChangedPayload](envelope)
+		payload, _ := payloadOf[protocol.ControlChangedPayload](envelope)
 		if payload.Lease != nil {
 			v.mu.Lock()
 			v.lease = *payload.Lease
@@ -674,6 +681,14 @@ func (v *viewer) takeLatencies() []time.Duration {
 	out := v.outputLatency
 	v.outputLatency = nil
 	return out
+}
+
+// payloadOf decodes a payload that DecodeHost already validated strictly;
+// validating it a second time made the viewer, not the link, the bottleneck.
+func payloadOf[T any](envelope protocol.Envelope) (T, error) {
+	var payload T
+	err := json.Unmarshal(envelope.Payload, &payload)
+	return payload, err
 }
 
 func rowText(row protocol.TerminalRow) string {

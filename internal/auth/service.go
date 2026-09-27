@@ -425,6 +425,15 @@ func (service *Service) RevokeDevice(ctx context.Context, deviceID string) (int,
 	return len(targets), errors.Join(err, waitReleased(ctx, targets, service.cleanupTimeout))
 }
 
+// RenameDevice sets a device's display label. A label is untrusted display
+// text and never identity, so renaming changes no authorization state.
+func (service *Service) RenameDevice(ctx context.Context, deviceID, label string) error {
+	if protocol.ValidateDeviceLabel(label) != nil {
+		return ErrInvalidLabel
+	}
+	return mapStoreError(service.store.RenameDevice(ctx, deviceID, label))
+}
+
 // Devices reports SQLite-persisted device state, overridden with any
 // in-memory revocation that failed to persist: such a device still looks
 // live in SQLite, but it is fail-closed for auth and must be reported and

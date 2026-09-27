@@ -30,8 +30,15 @@ func hostShellCandidates(platform store.Platform, getenv func(string) string, lo
 			{"bash (login)", "/bin/bash", []string{"-l"}},
 		}
 		// macOS paths are POSIX; path (not filepath) keeps host-independent tests.
-		if shell := path.Clean(getenv("SHELL")); path.IsAbs(shell) && shell != "/bin/zsh" && shell != "/bin/bash" {
-			candidates = append(candidates, shellCandidate{path.Base(shell) + " (login)", shell, []string{"-l"}})
+		// The user's login shell comes first so it is the default choice.
+		if shell := path.Clean(getenv("SHELL")); path.IsAbs(shell) {
+			index := slices.IndexFunc(candidates, func(candidate shellCandidate) bool { return candidate.executable == shell })
+			switch {
+			case index > 0:
+				candidates[0], candidates[index] = candidates[index], candidates[0]
+			case index < 0:
+				candidates = append([]shellCandidate{{path.Base(shell) + " (login)", shell, []string{"-l"}}}, candidates...)
+			}
 		}
 		return candidates
 	case store.PlatformWindows:
@@ -57,7 +64,10 @@ func DetectShellProfiles(ctx context.Context, persistence *store.Store, platform
 	if err != nil {
 		return err
 	}
-	for _, candidate := range hostShellCandidates(platform, os.Getenv, exec.LookPath) {
+	for index, candidate := range hostShellCandidates(platform, os.Getenv, exec.LookPath) {
+		// Lists are ordered by creation time; one millisecond apart keeps the
+		// preferred order instead of leaving it to random IDs.
+		created := now.UTC().Add(time.Duration(index) * time.Millisecond)
 		info, err := os.Stat(candidate.executable)
 		if err != nil || !info.Mode().IsRegular() || len(existing) >= protocol.MaxAdminProfiles {
 			continue
@@ -74,7 +84,7 @@ func DetectShellProfiles(ctx context.Context, persistence *store.Store, platform
 		}
 		profile := store.ShellProfile{
 			ID: id, DisplayName: candidate.name, Platform: platform, ExecutablePath: candidate.executable,
-			Arguments: candidate.arguments, CreatedAt: now.UTC(), UpdatedAt: now.UTC(),
+			Arguments: candidate.arguments, CreatedAt: created, UpdatedAt: created,
 		}
 		if err := persistence.PutShellProfile(ctx, profile); err != nil {
 			return err

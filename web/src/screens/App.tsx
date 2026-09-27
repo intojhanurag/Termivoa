@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { api, ApiError, CONNECTION_UNAVAILABLE, isAuthFailure } from '../api/http';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
+import { ChunkErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
-import { Live } from './Live';
 import { Sessions } from './Sessions';
 import { Settings } from './Settings';
 import { Setup } from './Setup';
+
+// The terminal (xterm, protocol validators) loads only when a session opens,
+// so Setup and Sessions start without it.
+const loadLive = () => loadChunk(() => import('./Live'));
+const Live = lazy(() => loadLive().then((module) => ({ default: module.Live })));
 
 export interface GrantHolder {
   value: string | undefined;
@@ -53,7 +58,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
 
   const handleFailure = useCallback((error: unknown): string => {
     if (isAuthFailure(error)) {
-      toSetup('This device is no longer paired.');
+      toSetup('This phone is no longer paired with your computer.');
     } else if (error instanceof ApiError && error.code === 'network') {
       setView({ name: 'offline' });
     }
@@ -78,6 +83,9 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
         handleFailure(error);
       }
       return;
+    }
+    if (path !== '/') {
+      window.history.replaceState(null, '', '/');
     }
     setView({ name: 'sessions' });
   }, [handleFailure]);
@@ -108,6 +116,18 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     return () => window.removeEventListener('popstate', onPop);
   }, [boot, route]);
 
+  // Fetch the terminal code in the background once the session list is up,
+  // so Open and Start session go straight to the live terminal.
+  useEffect(() => {
+    if (view.name === 'sessions') {
+      loadLive().catch(() => undefined);
+    }
+  }, [view.name]);
+
+  const refreshSettings = useCallback(async () => {
+    setSettings(await api.settings());
+  }, []);
+
   const startNew = useCallback(async (from: BrokerRPCSessionRecord) => {
     try {
       const created = await api.createSession({
@@ -130,7 +150,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       }
     }
     window.history.replaceState(null, '', '/');
-    toSetup('You logged out. Pair again to use this device.');
+    toSetup('You logged out. This phone no longer has access.');
   }, [toSetup]);
 
   return (
@@ -165,19 +185,23 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           {...(view.message === undefined ? {} : { message: view.message })}
           onOpen={(session) => navigate({ name: 'live', session })}
           onSettings={() => navigate({ name: 'settings' })}
+          onRefreshSettings={refreshSettings}
           onFailure={handleFailure}
         />
       )}
       {view.name === 'live' && (
-        <Live
-          key={`${view.session.id}/${view.session.generation}`}
-          session={view.session}
-          settings={settings}
-          fontSize={fontSize}
-          onSessions={() => navigate({ name: 'sessions' })}
-          onStartNew={() => { void startNew(view.session); }}
-          onRevoked={(reason) => toSetup(reason ?? 'Access to this computer was revoked.')}
-        />
+        <ChunkErrorBoundary key={`${view.session.id}/${view.session.generation}`}>
+          <Suspense fallback={<main className="page"><p role="status">Opening terminal…</p></main>}>
+            <Live
+              session={view.session}
+              settings={settings}
+              fontSize={fontSize}
+              onSessions={() => navigate({ name: 'sessions' })}
+              onStartNew={() => { void startNew(view.session); }}
+              onRevoked={(reason) => toSetup(reason ?? 'Access to this computer was revoked.')}
+            />
+          </Suspense>
+        </ChunkErrorBoundary>
       )}
       {view.name === 'settings' && settings !== undefined && (
         <Settings
@@ -185,6 +209,8 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           fontSize={fontSize}
           onFontSize={setFontSize}
           onBack={() => navigate({ name: 'sessions' })}
+          onRenamed={(device) => setSettings({ ...settings, device })}
+          onFailure={handleFailure}
           onLogout={logout}
         />
       )}

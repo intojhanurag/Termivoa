@@ -10,7 +10,7 @@ This file is a preparatory dependency inventory for private development. Direct 
 | `github.com/charmbracelet/x/xpty` | v0.1.4 plus repository patch; see `docs/dependency-patches.md` | MIT |
 | `github.com/charmbracelet/x/vt` | v0.0.0-20260920004010-53e2afe73ae5 plus repository patch; see `docs/dependency-patches.md` | MIT |
 | `github.com/charmbracelet/ultraviolet` | v0.0.0-20260303162955-0b88c25f3fff plus repository patch; see `docs/dependency-patches.md` | MIT |
-| `github.com/charmbracelet/x/ansi` | v0.11.7 | MIT |
+| `github.com/charmbracelet/x/ansi` | v0.11.7 plus repository patch; see `docs/dependency-patches.md` | MIT |
 | `modernc.org/sqlite` | v1.59.0 | BSD-3-Clause; locked source also carries SQLite's public-domain dedication and the bundled sqlite-vec MIT notice |
 | `github.com/Microsoft/go-winio` | v0.6.2 | MIT |
 | `rsc.io/qr` | v0.2.0 | BSD-3-Clause (Copyright 2009 The Go Authors) |
@@ -23,10 +23,10 @@ This file is a preparatory dependency inventory for private development. Direct 
 | Ajv | 8.20.0 | MIT |
 | quicktype | 26.0.0 | Apache-2.0 |
 
-The patched `xpty`, `vt`, and `ultraviolet` sources and their upstream MIT license texts are
+The patched `ansi`, `xpty`, `vt`, and `ultraviolet` sources and their upstream MIT license texts are
 retained under `third_party/`. Development-only tools, GitHub Actions,
 packaging tools, fonts/icons, generated code notices, and all transitive
-dependencies must be added after exact versions are locked. Except for the three
+dependencies must be added after exact versions are locked. Except for the four
 explicit local replacements, a name in this file does not mean the component
 is currently vendored, linked, or shipped.
 

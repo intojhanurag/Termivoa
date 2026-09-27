@@ -82,7 +82,7 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 	if err := syscall.Kill(-pids["gateway"], syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	for lines.Scan() && strings.HasPrefix(lines.Text(), "Press Ctrl+C") {
+	for lines.Scan() && (strings.HasPrefix(lines.Text(), "Press Ctrl+C") || strings.HasPrefix(lines.Text(), "Pair a browser: ")) {
 	}
 	if !strings.HasPrefix(lines.Text(), "gateway exited:") {
 		t.Fatalf("harness did not report the gateway exit: %q", lines.Text())

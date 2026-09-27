@@ -51,6 +51,7 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewaySettings: GatewaySettingsResult, GatewaySessionList: GatewaySessionListResult,
 	GatewaySessionCreate: GatewaySessionCreateResult, GatewaySessionRename: GatewaySessionRenameResult,
 	GatewaySessionTerminate: GatewaySessionTerminateResult, GatewayLiveOpen: GatewayLiveOpenResult,
+	GatewayOrigin: GatewayOriginResult, GatewayDeviceRename: GatewayDeviceRenameResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -61,6 +62,7 @@ var AdminRPCResults = map[AdminRPCMessageType]AdminRPCMessageType{
 	AdminProjectList: AdminProjectListResult, AdminProfileList: AdminProfileListResult,
 	AdminProfileDetect: AdminProfileDetectResult, AdminConfigOrigin: AdminConfigOriginResult,
 	AdminShutdown: AdminShutdownResult, AdminGatewayStop: AdminGatewayStopResult,
+	AdminDeviceRename: AdminDeviceRenameResult,
 }
 
 func DecodeGatewayRPCRequest(data []byte) (GatewayRPCEnvelope, error) {
@@ -209,6 +211,33 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 			return errors.New("terminate request contains a non-canonical UUID")
 		}
 		return nil
+	case GatewayOrigin:
+		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
+		return err
+	case GatewayOriginResult:
+		payload, err := DecodeRPCPayload[GatewayRPCOriginResultPayload](envelope)
+		if err != nil || payload.Origin == nil {
+			return err
+		}
+		return ValidatePairingOrigin(*payload.Origin)
+	case GatewayDeviceRename:
+		payload, err := DecodeRPCPayload[GatewayRPCDeviceRenamePayload](envelope)
+		if err != nil {
+			return err
+		}
+		if err := ValidateSecretText(payload.Credential); err != nil {
+			return err
+		}
+		return ValidateDeviceLabel(payload.Request.Label)
+	case GatewayDeviceRenameResult:
+		payload, err := DecodeRPCPayload[HTTPDeviceSummary](envelope)
+		if err != nil {
+			return err
+		}
+		if !validUUID(payload.ID) {
+			return errors.New("device id must be a canonical UUID")
+		}
+		return ValidateDeviceLabel(payload.Label)
 	case GatewayPairRedeemResult:
 		payload, err := DecodeRPCPayload[HTTPPairRedeemResponse](envelope)
 		if err != nil {
@@ -368,6 +397,15 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 			return errors.New("deviceId must be a canonical UUID")
 		}
 		return nil
+	case AdminDeviceRename, AdminDeviceRenameResult:
+		payload, err := DecodeRPCPayload[AdminRPCDeviceRenamePayload](envelope)
+		if err != nil {
+			return err
+		}
+		if !validUUID(payload.DeviceID) {
+			return errors.New("deviceId must be a canonical UUID")
+		}
+		return ValidateDeviceLabel(payload.Label)
 	case AdminProjectAdd:
 		payload, err := DecodeRPCPayload[AdminRPCProjectAddPayload](envelope)
 		if err != nil {

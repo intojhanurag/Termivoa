@@ -17,9 +17,13 @@ func TestHostShellCandidatesAreAbsolutePerPlatform(t *testing.T) {
 	getenv := func(key string) string { return env[key] }
 	noPwsh := func(string) (string, error) { return "", errors.New("missing") }
 	darwin := hostShellCandidates(store.PlatformDarwin, getenv, noPwsh)
-	if len(darwin) != 3 || darwin[0].executable != "/bin/zsh" || !reflect.DeepEqual(darwin[0].arguments, []string{"-l"}) ||
-		darwin[2].executable != "/opt/homebrew/bin/fish" {
+	if len(darwin) != 3 || darwin[0].executable != "/opt/homebrew/bin/fish" || !reflect.DeepEqual(darwin[0].arguments, []string{"-l"}) ||
+		darwin[1].executable != "/bin/zsh" || darwin[2].executable != "/bin/bash" {
 		t.Fatalf("darwin candidates = %#v", darwin)
+	}
+	env["SHELL"] = "/bin/bash"
+	if got := hostShellCandidates(store.PlatformDarwin, getenv, noPwsh); len(got) != 2 || got[0].executable != "/bin/bash" || got[1].executable != "/bin/zsh" {
+		t.Fatalf("login shell is not first: %#v", got)
 	}
 	env["SHELL"] = "relative-shell"
 	if got := hostShellCandidates(store.PlatformDarwin, getenv, noPwsh); len(got) != 2 {

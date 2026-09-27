@@ -34,8 +34,10 @@ type Config struct {
 	// Origins lists exact browser origins such as
 	// "https://mac.tailnet.ts.net". Their hosts join the bound loopback
 	// address as the only accepted Host values. Production accepts https
-	// origins only; the development profile adds its own loopback http origins
-	// and accepts only loopback origins. Forwarded headers are never consulted.
+	// origins only; development accepts only loopback origins. The bound
+	// loopback http origins are always accepted, and the origin configured in
+	// the broker (`pterm config origin`) is added and refreshed on every broker
+	// probe, so it needs no restart. Forwarded headers are never consulted.
 	Origins []string
 
 	// Broker authorizes every browser request. Nil serves only health and the
@@ -113,6 +115,7 @@ func Run(ctx context.Context, config Config) error {
 		_ = listener.Close()
 		return err
 	}
+	handler.refreshOrigin(ctx)
 	server := &http.Server{
 		Handler:           handler,
 		ConnState:         config.connState,
@@ -214,6 +217,9 @@ func monitorBroker(ctx context.Context, handler *gatewayHandler, config Config) 
 				handler.broker = brokerState{available: true, generation: welcome.BrokerGeneration}
 			}
 			handler.mu.Unlock()
+			if err == nil {
+				handler.refreshOrigin(ctx)
+			}
 		}
 	}
 }

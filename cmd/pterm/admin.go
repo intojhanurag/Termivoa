@@ -13,20 +13,21 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
 const adminProfileFlags = "[--dev] [--runtime-dir <directory>]"
 
-// Administration commands take subcommand words first, then flags, then
-// positional arguments, because Go's flag package stops at the first
-// positional: pterm project add [--dev] [--runtime-dir D] [--name N] <path>.
+// Administration commands take subcommand words first; flags and positional
+// arguments may follow in any order (see parseInterspersed).
 var adminUsages = map[string]string{
-	"pair":           "pterm pair " + adminProfileFlags + " [--origin <https-origin>] [--no-qr]",
+	"pair":           "pterm pair " + adminProfileFlags + " [--origin <https-origin>] [--no-qr] [--no-wait]",
 	"pair pending":   "pterm pair pending " + adminProfileFlags,
 	"pair approve":   "pterm pair approve " + adminProfileFlags + " <pending-id>",
 	"devices":        "pterm devices " + adminProfileFlags,
+	"devices rename": "pterm devices rename " + adminProfileFlags + " <device-id> <label>",
 	"revoke":         "pterm revoke " + adminProfileFlags + " <device-id>",
 	"project add":    "pterm project add " + adminProfileFlags + " [--name <name>] <path>",
 	"project list":   "pterm project list " + adminProfileFlags,
@@ -44,15 +45,18 @@ var adminSubcommands = map[string][]string{
 type adminCommandConfig struct {
 	action     string
 	runtimeDir string
+	dev        bool
 	arguments  []string
 	origin     string
 	noQR       bool
+	noWait     bool
 	name       *string
 }
 
 func parseAdminCommand(command string, args []string) (adminCommandConfig, error) {
 	action := command
-	if command == "pair" && len(args) > 0 && (args[0] == "pending" || args[0] == "approve") {
+	if command == "pair" && len(args) > 0 && (args[0] == "pending" || args[0] == "approve") ||
+		command == "devices" && len(args) > 0 && args[0] == "rename" {
 		action, args = command+" "+args[0], args[1:]
 	}
 	if subcommands, ok := adminSubcommands[command]; ok {
@@ -81,6 +85,7 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 	if action == "pair" {
 		flags.StringVar(&config.origin, "origin", "", "https origin for this pairing link")
 		flags.BoolVar(&config.noQR, "no-qr", false, "print only the link, without a terminal QR code")
+		flags.BoolVar(&config.noWait, "no-wait", false, "print the link and return without waiting to approve")
 	}
 	if action == "project add" {
 		flags.Func("name", "project display name", func(value string) error {
@@ -91,7 +96,8 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 			return nil
 		})
 	}
-	if err := flags.Parse(args); err != nil {
+	arguments, err := parseInterspersed(flags, args)
+	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return adminCommandConfig{}, err
 		}
@@ -103,14 +109,19 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 		minimum, maximum = 1, 1
 	case "config origin":
 		maximum = 1
+	case "devices rename":
+		minimum, maximum = 2, 2
+		if len(arguments) > 2 { // An unquoted label with spaces.
+			arguments = []string{arguments[0], strings.Join(arguments[1:], " ")}
+		}
 	}
-	if flags.NArg() < minimum || flags.NArg() > maximum {
+	if len(arguments) < minimum || len(arguments) > maximum {
 		return adminCommandConfig{}, fmt.Errorf("usage: %s", usage)
 	}
 	// Reject a malformed origin before contacting the broker or creating a grant.
 	origin := config.origin
-	if action == "config origin" && flags.NArg() == 1 {
-		origin = flags.Arg(0)
+	if action == "config origin" && len(arguments) == 1 {
+		origin = arguments[0]
 	}
 	if origin != "" {
 		if err := protocol.ValidatePairingOrigin(origin); err != nil {
@@ -121,8 +132,35 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 	if err != nil {
 		return adminCommandConfig{}, err
 	}
-	config.runtimeDir, config.arguments = validated, flags.Args()
+	config.runtimeDir, config.dev, config.arguments = validated, *dev, arguments
 	return config, nil
+}
+
+// parseInterspersed parses flags that appear before, between or after
+// positional arguments, so `pterm pair approve <id> --dev` works like
+// `pterm pair approve --dev <id>`. Everything after "--" is positional.
+func parseInterspersed(flags *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for {
+		if err := flags.Parse(args); err != nil {
+			return nil, err
+		}
+		rest := flags.Args()
+		if consumed := len(args) - len(rest); consumed > 0 && args[consumed-1] == "--" || len(rest) == 0 {
+			return append(positional, rest...), nil
+		}
+		positional = append(positional, rest[0])
+		args = rest[1:]
+	}
+}
+
+// localOrigin is the default gateway page on this computer, used for a
+// pairing link when no phone origin is configured.
+func localOrigin(dev bool) string {
+	if dev {
+		return "http://" + devListenAddress
+	}
+	return strings.TrimSuffix(lifecycle.LocalURL, "/")
 }
 
 // adminRuntimeDir applies the same profile rules as parseLocalCommand: a
@@ -175,13 +213,19 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	defer func() { returnErr = errors.Join(returnErr, client.Close()) }()
 	switch config.action {
 	case "pair":
-		return cli.Pair(ctx, client, config.origin, showQR, output)
+		options := cli.PairOptions{Origin: config.origin, Fallback: localOrigin(config.dev), ShowQR: showQR}
+		if !config.noWait && input != nil {
+			options.Confirmer = fileConfirmer{input: input, output: output}
+		}
+		return cli.Pair(ctx, client, options, output)
 	case "pair pending":
 		return cli.PairPending(ctx, client, output)
 	case "pair approve":
 		return cli.PairApprove(ctx, client, config.arguments[0], output)
 	case "devices":
 		return cli.Devices(ctx, client, output)
+	case "devices rename":
+		return cli.RenameDevice(ctx, client, config.arguments[0], config.arguments[1], output)
 	case "revoke":
 		return cli.Revoke(ctx, client, config.arguments[0], fileConfirmer{input: input, output: output}, output)
 	case "project add":

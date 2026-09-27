@@ -87,6 +87,12 @@ func (server *ManagementServer) serveBoundLiveStream(
 func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 	ctx context.Context, request protocol.GatewayRPCEnvelope,
 ) (any, *auth.Binding, error) {
+	if request.Type == protocol.GatewayOrigin {
+		// The configured origin is not a secret; the gateway polls it so a
+		// changed origin takes effect without a restart.
+		origin, err := server.pairingOrigin(ctx)
+		return protocol.GatewayRPCOriginResultPayload{Origin: origin}, nil, err
+	}
 	authority := server.config.Auth
 	if authority == nil {
 		return nil, nil, errAuthUnavailable
@@ -205,6 +211,20 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		return protocol.HTTPSessionMutationResponse{
 			OperationID: payload.Request.OperationID, Session: managementMutationSessionRecord(result.Snapshot),
 		}, nil, nil
+	case protocol.GatewayDeviceRename:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCDeviceRenamePayload](request)
+		if err != nil {
+			return nil, nil, err
+		}
+		principal, err := authorize(payload.Credential)
+		if err != nil {
+			return nil, nil, err
+		}
+		// The device comes from the broker-resolved credential, never the request.
+		if err := authority.RenameDevice(ctx, principal.DeviceID, payload.Request.Label); err != nil {
+			return nil, nil, err
+		}
+		return protocol.HTTPDeviceSummary{ID: principal.DeviceID, Label: payload.Request.Label}, nil, nil
 	case protocol.GatewayLiveOpen:
 		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCCredentialPayload](request)
 		if err != nil {

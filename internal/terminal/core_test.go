@@ -927,6 +927,26 @@ func TestCancellationAfterEnqueueWaitsForAuthoritativeResult(t *testing.T) {
 	}
 }
 
+func TestOSCTitleWithC1ContinuationBytesDoesNotLeak(t *testing.T) {
+	t.Parallel()
+	// U+201C/U+201D (E2 80 9C/9D) and U+2733 (E2 9C B3) contain C1 bytes.
+	for name, input := range map[string]string{
+		"quotes":      "abc\r\n\x1b]0;say \xe2\x80\x9chi\xe2\x80\x9d\x07def\r\n",
+		"claude-code": "abc\r\n\x1b]0;\xe2\x9c\xb3 Claude Code\x07def\r\n",
+		"esc-st":      "abc\r\n\x1b]2;\xe2\x9c\xb3 x\x1b\\def\r\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			for split := range len(input) {
+				frame := snapshotAfterWrites(t, []byte(input[:split]), []byte(input[split:]))
+				got := []string{rowText(frame.Screen[0]), rowText(frame.Screen[1]), rowText(frame.Screen[2])}
+				if want := []string{"abc", "def", ""}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("split %d: screen rows = %q, want %q", split, got, want)
+				}
+			}
+		})
+	}
+}
+
 func newTestCore(t *testing.T, columns, rows int) *Core {
 	t.Helper()
 	core, err := New(context.Background(), Config{Columns: columns, Rows: rows})

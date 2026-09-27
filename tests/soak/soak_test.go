@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/broker"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -276,8 +277,9 @@ func TestSoakStalledViewer(t *testing.T) {
 		t.Errorf("broker RSS grew %.1f MiB while a viewer was stalled", growth)
 	}
 
-	// The stalled stream should only hold what was already buffered, then EOF.
-	drainCtx, stopDrain := context.WithTimeout(ctx, 10*time.Second)
+	// The stalled stream should only hold what was already buffered, then EOF
+	// once the broker's viewer delivery timeout has passed.
+	drainCtx, stopDrain := context.WithTimeout(ctx, broker.DefaultViewerTimeout+10*time.Second)
 	defer stopDrain()
 	var messages, drained int
 	var receiveErr error

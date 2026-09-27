@@ -51,19 +51,26 @@ In a second terminal:
 - [ ] In a terminal: `./bin/pterm attach --dev --runtime-dir /tmp/pt/run <session-id>`.
       You see the same screen. Ctrl+] detaches, and the session keeps running.
 
-## 2. Real phone over Tailscale (needs your approval)
+## 2. Real phone over Tailscale (the 3-step first run)
 
-The agent did not change Tailscale or startup settings (AGENTS.md rule 12).
+The agent did not change Tailscale or startup settings on this Mac. Follow
+[getting-started.md](getting-started.md):
 
-- [ ] Run `pterm setup` and read the checks. It prints the Tailscale Serve command
-      but does not run it. Never use Funnel.
-- [ ] Run `tailscale serve --bg --https=443 http://127.0.0.1:8787` yourself.
-      Confirm that Serve sends the original `Host` (for example
-      `mac.tailnet.ts.net`) to the gateway.
-- [ ] Start the gateway with `--origin https://<host>.ts.net`, or run
-      `pterm setup --apply` to register startup.
-- [ ] `pterm config origin https://<host>.ts.net`, then `pterm pair`. Scan or
-      open the link on the phone over cellular data.
+- [ ] Build and install (DMG or from source), then run `pterm setup`.
+      Check the plan it prints, answer `y` once, and answer `y` to the separate
+      Tailscale Serve question only if it is correct for you. Never use Funnel.
+- [ ] Setup saved `https://<your-mac>.<tailnet>.ts.net` as the phone address
+      (`pterm config origin` shows it) and added the project "Home".
+- [ ] Confirm that Tailscale Serve keeps the original `Host`
+      (`<your-mac>.<tailnet>.ts.net`) when it forwards to `127.0.0.1:8787`.
+      The gateway fix assumes this.
+- [ ] Scan the QR code on the phone over cellular data, compare the code, and
+      answer `y` on the Mac. The phone opens the session list.
+- [ ] Log out of your Mac and back in: the broker and gateway start again, and
+      the phone still works without pairing again.
+- [ ] Run Claude Code or Codex in a session from the phone (`command claude`
+      if your shell aliases add extra flags). Check that fast output stays
+      connected on cellular (bandwidth fix, `docs/evidence/p7/soak.md`).
 
 ### iPhone Safari and Home Screen app
 
@@ -115,6 +122,12 @@ but billing blocked it.
 - [ ] Broker, gateway and admin commands run natively. PowerShell and pwsh
       profiles are detected.
 - [ ] ConPTY: one response per terminal query; shutdown has no deadlock.
+- [ ] Session environment: set a user variable such as `JAVA_HOME` and add a
+      folder to the user `Path` (System Properties, then sign out and in).
+      Start pterm from Windows Terminal or VS Code, create a session, and run
+      `Get-ChildItem env:`. `JAVA_HOME` and the user `Path` folder are there;
+      `WT_SESSION`, `TERM_PROGRAM`, `VSCODE_*` and `CLAUDE_CODE_*` are not.
+      Also run `go test ./internal/ptyhost/ -run HostEnvironment`.
 - [ ] Desktop attach: console modes are restored after exit. A Ctrl+] pressed
       exactly at the startup handoff may be lost on Windows (known limit), so
       press it again.

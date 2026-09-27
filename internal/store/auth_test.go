@@ -538,3 +538,38 @@ func TestAuthenticationMigrationUpgradesAndRollsBackOnConflict(t *testing.T) {
 		}
 	}
 }
+
+func TestRenameDeviceChangesOnlyThatLabel(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "rename.sqlite"))
+	defer store.Close()
+	ctx := context.Background()
+	grant := PairingGrant{ID: testUUID(1), Hash: testHash("grant"), CreatedAt: testTime, ExpiresAt: testTime.Add(2 * time.Minute)}
+	if err := store.CreatePairingGrant(ctx, grant, 2); err != nil {
+		t.Fatal(err)
+	}
+	pending := testPending(1, testTime)
+	if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApprovePendingPairing(ctx, pending.ID, testTime); err != nil {
+		t.Fatal(err)
+	}
+	device, session := testIssue(1, testTime)
+	if _, approved, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, testLimits); err != nil || !approved {
+		t.Fatalf("issue = %v, %v", approved, err)
+	}
+	if err := store.RenameDevice(ctx, device.ID, "Work phone ✓"); err != nil {
+		t.Fatal(err)
+	}
+	if _, owner, err := store.LookupCredential(ctx, session.CredentialHash); err != nil || owner.Label != "Work phone ✓" {
+		t.Fatalf("renamed device = %#v, %v", owner, err)
+	}
+	if err := store.RenameDevice(ctx, testUUID(9999), "Other"); !errors.Is(err, ErrDeviceMissing) {
+		t.Fatalf("rename of a missing device = %v", err)
+	}
+	for _, label := range []string{"", string(make([]byte, 65)), "\xff"} {
+		if err := store.RenameDevice(ctx, device.ID, label); err == nil {
+			t.Fatalf("label %q accepted", label)
+		}
+	}
+}
