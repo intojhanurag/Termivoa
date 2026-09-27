@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,7 +71,13 @@ type streamClient struct {
 
 func startStreamClient(t *testing.T, server *ManagementServer, kind protocol.IPCClientKind) *streamClient {
 	t.Helper()
-	clientConn, serverConn := net.Pipe()
+	return startWrappedStreamClient(t, server, kind, func(conn net.Conn) net.Conn { return conn })
+}
+
+func startWrappedStreamClient(t *testing.T, server *ManagementServer, kind protocol.IPCClientKind, wrap func(net.Conn) net.Conn) *streamClient {
+	t.Helper()
+	pipeConn, serverConn := net.Pipe()
+	clientConn := wrap(pipeConn)
 	go func() { _ = server.serveConnection(context.Background(), serverConn) }()
 	if _, err := ipc.ClientHandshake(context.Background(), clientConn, kind, "stream-test"); err != nil {
 		t.Fatal(err)
@@ -144,7 +151,7 @@ func (client *streamClient) await(t *testing.T, kind protocol.MessageType, reque
 	for {
 		select {
 		case message := <-client.messages:
-			if message.Type == kind && (requestID == "" || message.RequestID == requestID) {
+			if (kind == "" || message.Type == kind) && (requestID == "" || message.RequestID == requestID) {
 				return message
 			}
 		case <-client.done:
@@ -152,7 +159,7 @@ func (client *streamClient) await(t *testing.T, kind protocol.MessageType, reque
 			for {
 				select {
 				case message := <-client.messages:
-					if message.Type == kind && (requestID == "" || message.RequestID == requestID) {
+					if (kind == "" || message.Type == kind) && (requestID == "" || message.RequestID == requestID) {
 						return message
 					}
 				default:
@@ -483,4 +490,166 @@ func TestSessionStreamReportsMalformedMessageBeforeClosing(t *testing.T) {
 		t.Fatalf("error code = %q, want %q", payload.Code, protocol.InvalidRequest)
 	}
 	<-client.done
+}
+
+// stallingConn models a briefly slow desktop reader: once stalled, it reads at
+// most the configured bytes and then blocks until resumed.
+type stallingConn struct {
+	net.Conn
+	mu      sync.Mutex
+	allow   int // negative: unlimited
+	resumed chan struct{}
+}
+
+func (conn *stallingConn) stallAfter(bytes int) {
+	conn.mu.Lock()
+	conn.allow, conn.resumed = bytes, make(chan struct{})
+	conn.mu.Unlock()
+}
+
+func (conn *stallingConn) stalled() bool {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	return conn.allow == 0
+}
+
+func (conn *stallingConn) resume() {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	if conn.allow >= 0 {
+		conn.allow = -1
+		close(conn.resumed)
+	}
+}
+
+func (conn *stallingConn) Read(data []byte) (int, error) {
+	conn.mu.Lock()
+	allow, resumed := conn.allow, conn.resumed
+	conn.mu.Unlock()
+	if allow == 0 {
+		<-resumed
+		return conn.Conn.Read(data)
+	}
+	if allow > 0 && len(data) > allow {
+		data = data[:allow]
+	}
+	count, err := conn.Conn.Read(data)
+	conn.mu.Lock()
+	if conn.allow > 0 {
+		conn.allow -= count
+	}
+	conn.mu.Unlock()
+	return count, err
+}
+
+// stallResizeAndResync blocks the broker writer inside a partial resize
+// snapshot frame, then supersedes that delivery with a client resync.
+func stallResizeAndResync(t *testing.T) (*Session, *streamProcess, *streamClient, *stallingConn, protocol.ControlChangedPayload) {
+	t.Helper()
+	fixture, session, process := newStreamFixture(t)
+	stall := &stallingConn{allow: -1}
+	client := startWrappedStreamClient(t, fixture.server, protocol.CLI, func(conn net.Conn) net.Conn {
+		stall.Conn = conn
+		return stall
+	})
+	t.Cleanup(stall.resume)
+	client.attach(t)
+	grant := client.acquire(t)
+	// The resize snapshot's first frame stops after its header and two payload
+	// bytes, so the broker's single writer is blocked inside a partial frame.
+	stall.stallAfter(6)
+	client.action(t, protocol.TerminalResize, protocol.TerminalResizePayload{Lease: *grant.Lease, Columns: 100, Rows: 30})
+	deadline := time.Now().Add(3 * time.Second)
+	for !stall.stalled() {
+		if time.Now().After(deadline) {
+			t.Fatal("resize snapshot never reached the stalled reader")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// The desktop client sends this after its own resize. The following
+	// lease-less heartbeat has no reply; its write returns only after the
+	// dispatcher has finished handling the resync.
+	client.action(t, protocol.ScreenResync, protocol.ScreenResyncPayload{Reason: protocol.BaseMismatch})
+	client.action(t, protocol.Heartbeat, protocol.HeartbeatPayload{})
+	time.Sleep(50 * time.Millisecond) // let any cancellation callback run
+	return session, process, client, stall, grant
+}
+
+func TestReviewResyncDuringBlockedWriteClosesConnection(t *testing.T) {
+	_, process, client, stall, grant := stallResizeAndResync(t)
+	stall.resume()
+
+	var begin protocol.SnapshotBeginPayload
+	for {
+		message := client.await(t, "", "")
+		if message.Type == protocol.SnapshotBegin {
+			begin, _ = protocol.DecodePayload[protocol.SnapshotBeginPayload](message)
+		}
+		if message.Type == protocol.SnapshotEnd {
+			end, _ := protocol.DecodePayload[protocol.SnapshotEndPayload](message)
+			if end.SnapshotID != begin.SnapshotID {
+				t.Fatalf("snapshot end %s does not close begin %s", end.SnapshotID, begin.SnapshotID)
+			}
+			break
+		}
+	}
+	if begin.Screen.Columns != 100 || begin.Screen.Rows != 30 {
+		t.Fatalf("replacement snapshot = %#v", begin.Screen)
+	}
+	client.action(t, protocol.SnapshotApplied, protocol.SnapshotAppliedPayload{SnapshotID: begin.SnapshotID, Revision: begin.Revision})
+	request := client.action(t, protocol.InputText, protocol.InputTextPayload{Lease: *grant.Lease, InputSequence: "1", Text: "ok"})
+	client.await(t, protocol.InputAccepted, request)
+	waitStreamInput(t, process, "ok")
+}
+
+func TestSupersededBlockedWriteStillClosesOnShutdown(t *testing.T) {
+	session, _, client, _, _ := stallResizeAndResync(t)
+	// The superseded frame is still blocked. Viewer shutdown must close the
+	// connection now, not after that frame's write deadline.
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(DefaultViewerTimeout / 2)
+	for {
+		// A zero-byte pipe write is consumed by the dispatcher's frame reader
+		// without changing the stream, or fails once the broker closes it.
+		err := client.conn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+		if err == nil {
+			_, err = client.conn.Write(nil)
+		}
+		if errors.Is(err, io.ErrClosedPipe) {
+			return
+		} else if err != nil && !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("stopped viewer left its connection open behind a blocked write")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestReviewControlGrantedWhileNewSnapshotUnapplied(t *testing.T) {
+	fixture, _, _ := newStreamFixture(t)
+	first := startStreamClient(t, fixture.server, protocol.CLI)
+	first.attach(t)
+	second := startStreamClient(t, fixture.server, protocol.CLI)
+	second.attach(t)
+	grant := first.acquire(t)
+	first.action(t, protocol.TerminalResize, protocol.TerminalResizePayload{Lease: *grant.Lease, Columns: 100, Rows: 30})
+	begin, _ := protocol.DecodePayload[protocol.SnapshotBeginPayload](second.await(t, protocol.SnapshotBegin, ""))
+	second.await(t, protocol.SnapshotEnd, "")
+	if begin.Screen.Columns != 100 || begin.Screen.Rows != 30 {
+		t.Fatalf("resize snapshot = %#v", begin.Screen)
+	}
+	// The dispatcher saw an earlier snapshot.applied; the actor knows this
+	// viewer's current snapshot is still unapplied.
+	request := second.action(t, protocol.ControlAcquire, protocol.EmptyPayload{})
+	reply := second.await(t, "", request)
+	failure, _ := protocol.DecodePayload[protocol.ErrorPayload](reply)
+	if reply.Type != protocol.Error || failure.Code != protocol.ResyncRequired {
+		t.Fatalf("control granted over an unapplied snapshot: %s %s", reply.Type, reply.Payload)
+	}
+	second.action(t, protocol.SnapshotApplied, protocol.SnapshotAppliedPayload{SnapshotID: begin.SnapshotID, Revision: begin.Revision})
+	second.acquire(t)
 }

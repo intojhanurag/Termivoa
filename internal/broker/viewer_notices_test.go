@@ -34,6 +34,8 @@ func TestViewerControlNoticesOrderSecretGrantsAndPublicTakeover(t *testing.T) {
 			t.Fatalf("initial state = %#v, error %v", state, err)
 		}
 	}
+	ackNoticeSnapshot(t, first, firstSink)
+	ackNoticeSnapshot(t, second, secondSink)
 	firstGrant, err := session.AcquireControlForRequest(context.Background(), first, firstControlRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +79,7 @@ func TestViewerIdleControllerExpiryIsBroadcastWithoutPolling(t *testing.T) {
 	sink := newRecordingViewerSink()
 	viewer := attachNoticeViewer(t, session, testViewerConnection, sink)
 	defer viewer.Close()
+	ackNoticeSnapshot(t, viewer, sink)
 	grant, err := session.AcquireControlForRequest(context.Background(), viewer, firstControlRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +120,10 @@ func TestViewerAcceptsSnapshotAckBeforeEndWriteCompletion(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("snapshot acknowledgement was not attempted")
+	}
+	// The early acknowledgement already covers the snapshot being sent.
+	if _, err := session.AcquireControlForRequest(context.Background(), viewer, firstControlRequest); err != nil {
+		t.Fatalf("early-applied viewer could not take control: %v", err)
 	}
 	process.Emit([]byte("AFTER"))
 	waitForTerminalRevision(t, session, 1)
@@ -181,8 +188,10 @@ func TestViewerNoticeFloodDisconnectsAndReleasesController(t *testing.T) {
 		t.Fatal("initial control notice did not reach gate")
 	}
 	var acquireErr error
+	// The gated viewer never receives its snapshot, so use the in-process
+	// acquire; each grant still queues one control notice.
 	for index := 0; index <= MaxViewerQueuedNotices; index++ {
-		_, acquireErr = session.AcquireControlForRequest(context.Background(), viewer, firstControlRequest)
+		_, acquireErr = session.AcquireControl(context.Background(), viewer)
 		if acquireErr != nil {
 			break
 		}

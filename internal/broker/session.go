@@ -372,7 +372,8 @@ func (session *Session) FinalStatus() (SessionStatus, bool) {
 
 // AcquireControl explicitly replaces the current controller with an attached
 // viewer incarnation. Pending input from the replaced connection is removed
-// before the new lease is returned.
+// before the new lease is returned. It is the in-process primitive and does not
+// check snapshot readiness; client requests use AcquireControlForRequest.
 func (session *Session) AcquireControl(ctx context.Context, viewer *ViewerSubscription) (ControlGrant, error) {
 	if viewer == nil {
 		return ControlGrant{}, ErrViewerMissing
@@ -387,6 +388,8 @@ func (session *Session) AcquireControl(ctx context.Context, viewer *ViewerSubscr
 // AcquireControlForRequest serializes the holder's secret grant with every
 // observer notification in the session actor. The caller must not send another
 // successful grant reply: it is already queued on the viewer sink using requestID.
+// The actor rejects it with ErrViewerSnapshotPending until the viewer has
+// applied its current snapshot.
 func (session *Session) AcquireControlForRequest(ctx context.Context, viewer *ViewerSubscription, requestID string) (ControlGrant, error) {
 	if viewer == nil {
 		return ControlGrant{}, ErrViewerMissing
@@ -911,6 +914,10 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			break
 		}
 		if response.err = checkAccess(viewer.subscription.access); response.err != nil {
+			break
+		}
+		if request.requestID != "" && !viewer.snapshotApplied() {
+			response.err = ErrViewerSnapshotPending
 			break
 		}
 		response.grant, response.err = session.controller.Acquire(
