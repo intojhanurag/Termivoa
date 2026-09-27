@@ -143,10 +143,17 @@ func (client *Client) requestAdmitted(ctx context.Context, message protocol.Enve
 		client.mu.Unlock()
 	}()
 	uncertain := func(err error) error {
+		select {
+		case <-client.done:
+			// The connection already failed; a concurrent write error such as
+			// a closed pipe must not hide the recorded root cause.
+			err = client.closedError()
+		default:
+		}
 		client.mu.Lock()
 		attempted := pending.attempted
 		client.mu.Unlock()
-		if sequence != "" && attempted {
+		if sequence != "" && attempted && !errors.Is(err, ErrDeliveryUncertain) {
 			err = errors.Join(ErrDeliveryUncertain, err)
 		}
 		client.stop(err)

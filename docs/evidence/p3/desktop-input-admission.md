@@ -83,3 +83,40 @@ its fix.
   `Syncing` showed, but read after activation (a small scheduling window), is
   admitted.
 - The real-terminal and phone UX gates remain pending.
+
+## Review pass 2026-09-27 (PR #23 adversarial review)
+
+Each fix has a test that failed before the fix and passes after it.
+
+1. MEDIUM: one invalid decoded input ended `pterm attach`. Examples: Alt + a
+   non-ASCII letter (`KeyAction{Character:"é", Alt}`), a paste with a form feed
+   (`"a\fb"`), and an empty bracketed paste. Fix: `sendValidated` returns a typed
+   `*desktop.InvalidInputError`. `Attachment.Run` drops that action and calls
+   `InputRejected`. The CLI shows `Input not sent: invalid <kind>` in the
+   controller footer for 3 s. An empty paste is now a no-op. Transport and I/O
+   errors are still fatal. Protocol validation is unchanged. Tests:
+   `TestAttachmentDropsInvalidLocalInputAndContinues`,
+   `TestInputControllerEmptyPasteIsNoOp`,
+   `TestDesktopRejectedInputShowsBriefFooterNotice`.
+2. LOW: restore did not reset the cursor shape that the renderer sets with
+   DECSCUSR. Fix: `restoreOuterTerminal` now sends `\e[0 q`. Test:
+   `TestRestoreOuterTerminalResetsCursorShape`.
+3. LOW: Ctrl+V followed by a paste or mouse event kept the quote armed, so
+   the next Ctrl+] did not detach. The Ctrl+V was also lost. Fix: a paste or
+   mouse event first sends the pending Ctrl+V as an ordinary key, the same as
+   any other key. Test: `TestInputControllerQuoteBeforePasteOrMouseSendsCtrlV`.
+4. MEDIUM: a rejected `session.attach` (for example `limit_exceeded` at 16
+   viewers) only set `LastError`. `WaitReady` waited 15 s and reported
+   `context deadline exceeded`. Fix: an error for the attach request closes
+   the client with the typed `*liveclient.RemoteError`. `WaitReady` returns it
+   at once, and `pterm attach` prints the broker reason one time. Tests:
+   `TestAttachRejectionEndsWaitReadyWithRemoteReason`, plus the real-broker test
+   `TestLiveClientAttachRejectedAtViewerLimit` (17th viewer). Before the fix,
+   this test failed with `context deadline exceeded` after 3 s.
+5. LOW: `json.Marshal` HTML-escaped the payload. A valid 64 KiB paste of `<`
+   became more than 256 KiB and was rejected, which ended the attachment. Fix:
+   the live client encodes with `SetEscapeHTML(false)` and removes the trailing
+   newline. Test: `TestMaximumPasteOfHTMLCharactersFitsMessageLimit`.
+6. LOW (documentation only): desktop mouse reporting is not enabled in the outer
+   terminal. `docs/architecture.md` and `desktop-attach-command.md` now say
+   that desktop mouse forwarding is not enabled in v0.
