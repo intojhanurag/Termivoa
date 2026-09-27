@@ -13,7 +13,8 @@ Phone Terminal runs two per-user processes from one `pterm` executable:
 - the **broker** owns every terminal session, the terminal state and the database;
 - the **gateway** serves the web page on `127.0.0.1:8787` and talks to the broker.
 
-They start separately at login and restart on failure. Neither runs as root,
+They start separately at login (see the startup table below for restarts
+and logs). Neither runs as root,
 SYSTEM or an administrator. No Node.js, Go or compiler is needed on the host.
 
 ## Install
@@ -46,6 +47,31 @@ and notarized builds are pending owner signing.
      `pterm setup --apply --yes`, which registers two scheduled tasks for your
      account only.
    - **Add pterm to my PATH** (unchecked): edits only your user PATH.
+
+Without the PATH option, `pterm` is not a command. In PowerShell, go to the
+folder that has `pterm.exe` and write `.\pterm.exe` in its place, for example
+`.\pterm.exe setup`.
+
+#### Test on Windows with a single pterm.exe
+
+To try a bare `pterm.exe` without the installer:
+
+1. Put it in `%LOCALAPPDATA%\Programs\Termivoa\`. Do not use Desktop or
+   Documents (OneDrive may move or sync them) or a Temp folder (`pterm setup`
+   refuses Temp): the startup tasks run this exact path at every logon.
+2. In PowerShell:
+
+   ```powershell
+   cd "$env:LOCALAPPDATA\Programs\Termivoa"
+   .\pterm.exe setup
+   .\pterm.exe doctor
+   ```
+
+3. Logs are in `%LOCALAPPDATA%\Phone Terminal\logs\` (`broker.log`,
+   `gateway.log`).
+
+Microsoft Defender or SmartScreen may warn about an unsigned `pterm.exe`.
+Signed builds are pending owner signing.
 
 ## First run: three steps
 
@@ -106,10 +132,13 @@ What startup registration adds:
 | --- | --- | --- |
 | Broker | `~/Library/LaunchAgents/dev.phone-terminal.broker.plist` | task `Phone Terminal Broker (<user>)` |
 | Gateway | `~/Library/LaunchAgents/dev.phone-terminal.gateway.plist` | task `Phone Terminal Gateway (<user>)` |
-| Start | at login (`RunAtLoad`) | at your logon (gateway 10 s later) |
-| Restart | on failure (`KeepAlive` / `SuccessfulExit=false`) | on failure, every minute |
+| Start | at login (`RunAtLoad`) | at your logon (gateway 10 s later), normal priority |
+| Restart | on failure (`KeepAlive` / `SuccessfulExit=false`) | Task Scheduler "restart on failure" (every minute, up to 999 times); not yet verified through `conhost.exe --headless` |
 | Command | `launchctl bootstrap gui/<uid> <plist>` | `schtasks /Create /TN <name> /XML <file> /F`, then `/Run` |
-| Logs | `~/Library/Application Support/Phone Terminal/logs/` | Task Scheduler history (no stdout capture) |
+| Logs | `~/Library/Application Support/Phone Terminal/logs/` | `%LOCALAPPDATA%\Phone Terminal\logs\` (pterm writes them; the headless console shows nothing) |
+
+On both systems the gateway waits up to two minutes for the broker when it
+starts, so a slow broker start at login does not stop it.
 
 ### Pairing a phone
 
@@ -203,7 +232,8 @@ prints the exact command that unloads the registration, but never runs it:
 | Gateway | `launchctl bootout gui/<uid>/dev.phone-terminal.gateway` | `schtasks /Change /TN "Phone Terminal Gateway (<user>)" /Disable` |
 | Broker | `launchctl bootout gui/<uid>/dev.phone-terminal.broker` | `schtasks /Change /TN "Phone Terminal Broker (<user>)" /Disable` |
 
-`pterm setup --apply` registers them again.
+`pterm setup --apply` registers them again. On Windows, `pterm doctor` reports
+a disabled task, and setup creates it again, enabled.
 
 ## Updates (manual, staged)
 
@@ -241,7 +271,10 @@ pterm uninstall --delete-data    # also delete paired devices, projects, setting
 ```
 
 Uninstall stops and removes the two startup entries. It refuses while the
-broker has active sessions or does not answer. Your data stays unless you pass
+broker has active sessions or does not answer. On Windows, ending a task may
+end only its console host, so uninstall then also stops the gateway and shuts
+down the broker, and only after it checks again that no session is active.
+Your data stays unless you pass
 `--delete-data`, which also refuses while any broker still runs (for example
 one started by `pterm launch` without startup registration); stop the broker
 it names first.
@@ -283,6 +316,12 @@ go build -tags webdist -o bin/pterm ./cmd/pterm
 mkdir -p /tmp/pt/data /tmp/pt/run && chmod 700 /tmp/pt/data /tmp/pt/run
 ./bin/pterm up --dev --data-dir /tmp/pt/data --runtime-dir /tmp/pt/run
 ```
+
+The `/tmp` and `chmod` lines are for macOS and Linux only. On Windows, build
+`bin\pterm.exe` and leave out `--data-dir` and `--runtime-dir`: the development
+profile then uses `%LOCALAPPDATA%\Phone Terminal Development`. In PowerShell:
+`.\bin\pterm.exe up --dev`, and in the second terminal the same commands with
+`.\bin\pterm.exe` and without `--runtime-dir /tmp/pt/run`.
 
 In a second terminal:
 

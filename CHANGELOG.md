@@ -77,8 +77,26 @@ No version has been released. Development history and evidence are in
 
 ### Fixed
 
+- Windows: SQLite opens with a valid `file:///C:/...` URI (UNC paths use
+  `file:////server/share/...`); private directories get one current-user ACE
+  that the check accepts; folders left by an elevated run are taken back for
+  the current user.
 - `pterm attach` on Windows: a Ctrl+] pressed during the startup handoff now
   detaches, as on macOS and Linux. Before, it was lost.
+- Windows: the startup broker and gateway write `broker.log` and `gateway.log`
+  in `%LOCALAPPDATA%\Phone Terminal\logs\`; the headless console discarded
+  their output.
+- Windows: startup tasks run at normal priority (was below normal, which
+  sessions inherited).
+- Windows: a disabled startup task counts as not registered, so
+  `pterm setup --apply` creates it again, enabled; `pterm doctor` reports it.
+- Windows: `pterm doctor` and `pterm setup` also find Tailscale in
+  `%ProgramFiles%\Tailscale\tailscale.exe`.
+- Windows: console close, logoff and shutdown stop pterm cleanly.
+- The gateway waits up to two minutes for the broker at start instead of
+  exiting at once.
+- Windows: `pterm uninstall` also stops the gateway and the broker (only with
+  no active session); ending a task may leave pterm running.
 
 ### Security
 
@@ -90,13 +108,6 @@ No version has been released. Development history and evidence are in
 - Fixes from adversarial reviews before the v0 merge, including overlapping
   polls, duplicate snippet IDs, hidden SGR-8 text in previews and an
   unannounced pairing code for screen readers.
-
-### Fixed
-
-- Windows: SQLite opens with a valid `file:///C:/...` URI (UNC paths use
-  `file:////server/share/...`); private directories get one current-user ACE
-  that the check accepts; folders left by an elevated run are taken back for
-  the current user.
 
 ### Known limits
 
