@@ -5,11 +5,20 @@ package ptyhost
 import (
 	"errors"
 	"os/exec"
+	"sync/atomic"
 	"syscall"
+	"time"
 )
+
+// sessionPollInterval bounds how often the session is enumerated while its
+// members use the termination grace period.
+const sessionPollInterval = 10 * time.Millisecond
 
 type platformProcessTree struct {
 	processGroupID int
+	// hangupAt is when the session was first asked to end, in Unix
+	// nanoseconds. Zero means no request yet. The grace period runs from it.
+	hangupAt *atomic.Int64
 }
 
 func configureCommand(cmd *exec.Cmd) {
@@ -25,7 +34,7 @@ func configureCommand(cmd *exec.Cmd) {
 }
 
 func attachProcessTree(cmd *exec.Cmd) (platformProcessTree, error) {
-	return platformProcessTree{processGroupID: cmd.Process.Pid}, nil
+	return platformProcessTree{processGroupID: cmd.Process.Pid, hangupAt: new(atomic.Int64)}, nil
 }
 
 func cleanupUnattachedProcess(cmd *exec.Cmd) (bool, error) {
@@ -34,6 +43,7 @@ func cleanupUnattachedProcess(cmd *exec.Cmd) (bool, error) {
 }
 
 func terminateProcessTree(tree platformProcessTree) error {
+	tree.hangupAt.CompareAndSwap(0, time.Now().UnixNano())
 	// Hang up first, as closing a real terminal does, then ask to terminate.
 	return errors.Join(signalSession(tree.processGroupID, syscall.SIGHUP), signalSession(tree.processGroupID, syscall.SIGTERM))
 }
@@ -81,11 +91,25 @@ func signalProcessGroup(processGroupID int, signal syscall.Signal) error {
 	return err
 }
 
+// closeProcessTree runs after the session leader was reaped. Remaining session
+// members, such as background jobs, get the same grace period as a Terminate
+// request: they are hung up (unless Terminate already did), then killed when
+// they are still present once the grace period from the first request ends.
 func closeProcessTree(tree platformProcessTree) error {
-	// The session leader's exit may already have caused the kernel to hang up
-	// the controlling terminal and remove the process group. Darwin can report
-	// EPERM while that teardown is in flight, so this is a best-effort safety
-	// sweep. Explicit cancellation and Terminate surface their signal errors.
+	// The leader's exit may already have caused the kernel to hang up the
+	// controlling terminal and remove the process group. Darwin can report
+	// EPERM while that teardown is in flight, so these are best-effort sweeps.
+	// Explicit cancellation and Terminate surface their signal errors.
+	if tree.hangupAt.Load() == 0 {
+		_ = terminateProcessTree(tree)
+	}
+	deadline := time.Unix(0, tree.hangupAt.Load()).Add(terminationGracePeriod)
+	for time.Now().Before(deadline) {
+		if members, err := sessionMembers(tree.processGroupID); err != nil || len(members) == 0 {
+			break
+		}
+		time.Sleep(sessionPollInterval)
+	}
 	_ = cleanupExitedProcessTree(tree)
 	return nil
 }

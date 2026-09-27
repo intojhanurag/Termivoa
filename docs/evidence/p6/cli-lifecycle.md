@@ -122,7 +122,10 @@ here.
   restarting a clean exit, and the printed `schtasks /Change ... /Disable`
   line. Only cross-compiled `go vet` ran here.
 - Scanning the QR code with a real phone camera over the private HTTPS origin.
-- The interactive-shell background-job defect above.
+- The interactive-shell background-job defect above is fixed (next section),
+  but the fix widens the Unix termination boundary from the process group the
+  owner approved on 2026-09-20 to the whole managed PTY session. The owner must
+  approve or reject that change (`docs/owner-verification.md`, section 6).
 
 ## Background jobs at terminate and shutdown (fixed 2026-09-27)
 
@@ -134,10 +137,31 @@ group.
 
 Fix: `internal/ptyhost` now signals every process in the managed PTY session
 (the child is the session leader, so its PID is the session ID): SIGHUP then
-SIGTERM, then SIGKILL after the existing grace period. On macOS the session
-members come from `kern.proc.all` plus `getsid`; on Linux (development only)
-from `/proc/<pid>/stat`. A process that calls `setsid` itself leaves the session
-and stays outside the managed boundary, as before.
+SIGTERM, then SIGKILL to members that are still present 500 ms
+(`terminationGracePeriod`) after that request. On macOS the session members
+come from `kern.proc.all` plus `getsid`; on Linux (development only) from
+`/proc/<pid>/stat`. Zombies are skipped. A process that calls `setsid` itself
+leaves the session and stays outside the managed boundary, as before.
+
+Grace period (corrected 2026-09-27, PR #27 review): the first version of this
+fix did not give background jobs the grace period. The interactive shell exits
+at once on SIGHUP, and the reaper then sent SIGKILL to every session member
+immediately. A job that traps HUP/TERM and needs 100 ms to clean up was killed
+mid-cleanup (3/3 in review). Now, after the leader exits, the reaper polls the
+session every 10 ms and sends SIGKILL only to members still present when the
+grace period ends; the period counts from the first hangup request. When the
+leader exits on its own (the user typed `exit`), the reaper first sends SIGHUP
+and SIGTERM to the remaining members, then applies the same grace. `Wait`
+returns at most one grace period after the leader exits. Windows is unchanged.
+Test: `TestSessionJobsGetGracePeriod` (real `/bin/bash --norc --noprofile -i`,
+a background job with `trap 'sleep 0.1; echo ok > marker; exit 0' HUP TERM`;
+subtests `terminate` and `exit`). Before the change both subtests failed (no
+marker); after it they pass.
+
+Boundary change: plan section 6 and the 2026-09-20 owner approval describe the
+process group as the Unix termination boundary. This fix signals every process
+in the managed PTY session. It never signals processes outside that session.
+This needs owner approval (`docs/owner-verification.md`, section 6).
 
 Test: `TestTerminateHangsUpInteractiveShellJobs` (real `/bin/zsh -f -i` and
 `/bin/bash --norc --noprofile -i`, each with `sleep 300 &`). Before the fix it

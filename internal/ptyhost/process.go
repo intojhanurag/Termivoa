@@ -215,10 +215,15 @@ func (p *Process) Wait(ctx context.Context) error {
 }
 
 // Terminate ends the platform-managed process boundary. This is a Job Object
-// on Windows and the isolated PTY process group on Unix. It first requests a
-// graceful termination, then forcibly ends remaining contained processes after
-// a short grace period or when ctx expires. Reaping continues in the
-// background even if the caller's context expires.
+// on Windows. On Unix it is the PTY session the child leads: its process group
+// and every other process in that session, such as an interactive shell's
+// background jobs in their own process groups. Processes that called setsid
+// have left the session and are never signaled. Terminate first sends a hangup
+// and a termination request, then forcibly ends processes still in the boundary
+// after a short grace period or when ctx expires. On Unix the grace period
+// also covers session members that remain after the leader exits, whether the
+// leader exited on request or on its own. Reaping continues in the background
+// even if the caller's context expires.
 func (p *Process) Terminate(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("ptyhost: nil termination context")

@@ -8,6 +8,8 @@ import (
 
 // sessionMembers lists live processes in the PTY session sessionID by reading
 // the session field of /proc/<pid>/stat. Linux is a development host only.
+// Zombies are excluded: they cannot be signaled and must not extend the grace
+// period.
 func sessionMembers(sessionID int) ([]int, error) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -30,7 +32,7 @@ func sessionMembers(sessionID int) ([]int, error) {
 			continue
 		}
 		fields := strings.Fields(string(stat[closing+1:]))
-		if len(fields) < 4 {
+		if len(fields) < 4 || fields[0] == "Z" {
 			continue
 		}
 		if sid, err := strconv.Atoi(fields[3]); err == nil && sid == sessionID {

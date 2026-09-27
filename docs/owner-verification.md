@@ -144,6 +144,11 @@ but billing blocked it.
 - [ ] Public release stays your manual decision (plan section 20).
 
 ## 6. Known open defects
+- [ ] Approve or reject: terminate/shutdown now signal every process in the
+      managed PTY session (not only the process group). It never signals
+      processes outside that session; processes that call setsid stay outside.
+      Plan section 6 describes the process-group boundary. See
+      `docs/evidence/p6/cli-lifecycle.md`.
 - Performance risks from the Mac soak (`docs/evidence/p7/soak.md`):
   scrolling bandwidth (P7-SOAK-1), CPU spent re-validating outgoing frames
   (P7-SOAK-2), higher latency while scrolling (P7-SOAK-3), and about 33 MiB of

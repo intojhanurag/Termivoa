@@ -346,6 +346,14 @@ repository remained private after merge, and `main` retained its protection.
 
 ## Known defects
 
+Termination boundary decision (2026-09-27, pending owner approval): on Unix,
+terminate and shutdown now signal every process in the managed PTY session, not
+only the session shell's process group that the owner approved on 2026-09-20
+(plan section 6). This ends interactive-shell background jobs. Session members
+get the 500 ms grace period before SIGKILL, also when the shell exits on its own.
+Processes that call `setsid` stay outside. See
+`docs/evidence/p6/cli-lifecycle.md` and `docs/owner-verification.md`.
+
 The public `new` checkpoint validates an interactive 80x24 initial viewport before
 creating from saved project/shell IDs, then attaches and explicitly takes control
 after the first snapshot. Native Mac command/PTY tests prove detach/cancellation
