@@ -436,6 +436,25 @@ func (store *Store) RevokeCredential(ctx context.Context, sessionID string, now 
 	return nil
 }
 
+// RenameDevice replaces a device's display label. Callers validate the label
+// as safe display text; the store only enforces the column bounds.
+func (store *Store) RenameDevice(ctx context.Context, deviceID, label string) error {
+	if !validUUID(deviceID) {
+		return ErrDeviceMissing
+	}
+	if label == "" || len(label) > 64 || !utf8.ValidString(label) {
+		return errors.New("store: invalid device label")
+	}
+	result, err := store.database.ExecContext(ctx, `UPDATE devices SET label = ? WHERE id = ?`, label, deviceID)
+	if err != nil {
+		return fmt.Errorf("store: rename device: %w", err)
+	}
+	if changed, err := result.RowsAffected(); err != nil || changed != 1 {
+		return ErrDeviceMissing
+	}
+	return nil
+}
+
 // RevokeDevice durably revokes a device and every credential it owns, and
 // returns those credential IDs for in-memory fan-out.
 func (store *Store) RevokeDevice(ctx context.Context, deviceID string, now time.Time) ([]string, error) {

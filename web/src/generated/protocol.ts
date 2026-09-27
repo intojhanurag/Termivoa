@@ -8,6 +8,7 @@ export type ProtocolTypes = {
     readonly adminRPCDevice:                   AdminRPCDevice;
     readonly adminRPCDeviceID:                 AdminRPCDeviceIDPayload;
     readonly adminRPCDeviceListResult:         AdminRPCDeviceListResultPayload;
+    readonly adminRPCDeviceRename:             AdminRPCDeviceRenamePayload;
     readonly adminRPCDeviceRevokeResult:       AdminRPCDeviceRevokeResultPayload;
     readonly adminRPCMessageType:              AdminRPCMessageType;
     readonly adminRPCOrigin:                   AdminRPCOriginPayload;
@@ -38,7 +39,9 @@ export type ProtocolTypes = {
     readonly error:                            ErrorPayload;
     readonly errorCode:                        ErrorCode;
     readonly gatewayRPCCredential:             GatewayRPCCredentialPayload;
+    readonly gatewayRPCDeviceRename:           GatewayRPCDeviceRenamePayload;
     readonly gatewayRPCMessageType:            GatewayRPCMessageType;
+    readonly gatewayRPCOriginResult:           GatewayRPCOriginResultPayload;
     readonly gatewayRPCPairPollResult:         GatewayRPCPairPollResultPayload;
     readonly gatewayRPCPrincipal:              GatewayRPCPrincipalPayload;
     readonly gatewayRPCSessionCreate:          GatewayRPCSessionCreatePayload;
@@ -118,6 +121,14 @@ export type AdminRPCDeviceListResultPayload = {
 }
 
 /**
+ * Sets a paired device's display label. The result echoes the saved values.
+ */
+export type AdminRPCDeviceRenamePayload = {
+    readonly deviceId: string;
+    readonly label:    string;
+}
+
+/**
  * Sent only after the revocation is durable and every bound live stream has been closed.
  */
 export type AdminRPCDeviceRevokeResultPayload = {
@@ -125,7 +136,7 @@ export type AdminRPCDeviceRevokeResultPayload = {
     readonly deviceId:      string;
 }
 
-export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.error";
+export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.error";
 
 /**
  * In a request, a present origin replaces the configured one and an absent origin reads it.
@@ -296,7 +307,28 @@ export type GatewayRPCCredentialPayload = {
     readonly credential: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.error";
+/**
+ * Renames only the device that owns the credential.
+ */
+export type GatewayRPCDeviceRenamePayload = {
+    readonly credential: string;
+    readonly request:    HTTPDeviceRenameRequest;
+}
+
+export type HTTPDeviceRenameRequest = {
+    readonly label: string;
+}
+
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.error";
+
+/**
+ * The browser origin configured with admin.config.origin, absent when none is set. It is
+ * not a secret. The gateway adds it to its exact Host and Origin allow-list when it is
+ * valid for the gateway's profile.
+ */
+export type GatewayRPCOriginResultPayload = {
+    readonly origin?: string;
+}
 
 /**
  * credential and credentialExpiresAt appear exactly when response.status is approved. That
@@ -443,10 +475,6 @@ export type HistoryReadPayload = {
     readonly historyRevision: string;
     readonly limit:           number;
     readonly offset:          number;
-}
-
-export type HTTPDeviceRenameRequest = {
-    readonly label: string;
 }
 
 export type HTTPErrorResponse = {

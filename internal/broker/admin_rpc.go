@@ -126,6 +126,12 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		}
 		closed, err := authority.RevokeDevice(ctx, payload.DeviceID)
 		return protocol.AdminRPCDeviceRevokeResultPayload{DeviceID: payload.DeviceID, ClosedStreams: int64(closed)}, err
+	case protocol.AdminDeviceRename:
+		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCDeviceRenamePayload](request)
+		if err != nil {
+			return nil, err
+		}
+		return payload, authority.RenameDevice(ctx, payload.DeviceID, payload.Label)
 	case protocol.AdminProjectAdd:
 		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCProjectAddPayload](request)
 		if err != nil {

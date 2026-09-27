@@ -20,19 +20,23 @@ Available commands:
   pterm terminate <session-id>        Confirm and end one managed process tree.
   pterm attach [--control] <id>       View a session; --control explicitly takes control.
   pterm new --project <id> --shell <id> Create and take control of a new session.
-  pterm pair [--origin <url>] [--no-qr]
+  pterm pair [--origin <url>] [--no-qr] [--no-wait]
                                      Print a two-minute, single-use phone pairing link
-                                     and, on a terminal, its QR code.
+                                     and, on a terminal, its QR code; then wait for the
+                                     phone and approve it after you compare its code.
   pterm pair pending                 Show phones waiting for approval and their codes.
   pterm pair approve <pending-id>    Approve a phone after comparing its code.
   pterm devices                      Show paired devices, status and last use.
+  pterm devices rename <id> <label>  Rename a paired device.
   pterm revoke <device-id>           Confirm and revoke one device's browser access.
   pterm project add [--name <name>] <path> Save a project directory.
   pterm project list                 Show saved projects.
   pterm profile list                 Show saved shell profiles.
   pterm profile detect               Detect host shells and save them as profiles.
   pterm config origin [<url>]        Show or set the private HTTPS pairing origin.
-  pterm setup [--apply] [--yes]      Read-only checks; --apply registers per-user startup.
+  pterm setup                        First run: checks, one confirmation, startup,
+                                     phone address, Tailscale Serve (asks), pairing.
+  pterm setup --apply --yes          Installer mode: register startup, ask nothing.
   pterm doctor                       Read-only diagnostics; never prints secrets.
   pterm uninstall [--dry-run] [--yes] [--delete-data]
                                      Remove startup registration; data only with --delete-data.
@@ -43,8 +47,8 @@ Available commands:
   pterm help                         Show this help.
 
 Local commands talk to the existing broker; they never start or replace it.
-Development tests may use --dev and --runtime-dir <isolated-directory> after
-the command words and before any ID, path or URL. Production and development
+Development tests may use --dev and --runtime-dir <isolated-directory>
+anywhere after the command words. Production and development
 profiles are never mixed. The pairing link and its QR code are a secret.
 Attach: Ctrl+] detaches, never terminates. With control, Ctrl+V then Ctrl+]
 sends literal Ctrl+]. Ordinary typing in observer mode is ignored, not queued.
@@ -73,13 +77,14 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 		flags.StringVar(&projectID, "project", "", "saved project ID")
 		flags.StringVar(&profileID, "shell", "", "saved shell profile ID")
 	}
-	if err := flags.Parse(args); err != nil {
+	arguments, err := parseInterspersed(flags, args)
+	if err != nil {
 		return localCommandConfig{}, err
 	}
-	if ((command == "list" || command == "stop" || command == "shutdown") && flags.NArg() != 0) || ((command == "terminate" || command == "attach") && flags.NArg() != 1) {
+	if ((command == "list" || command == "stop" || command == "shutdown") && len(arguments) != 0) || ((command == "terminate" || command == "attach") && len(arguments) != 1) {
 		return localCommandConfig{}, fmt.Errorf("usage: pterm %s [--dev] [--runtime-dir <directory>]%s", command, commandArgumentHelp(command))
 	}
-	if command == "new" && (flags.NArg() != 0 || projectID == "" || profileID == "") {
+	if command == "new" && (len(arguments) != 0 || projectID == "" || profileID == "") {
 		return localCommandConfig{}, errors.New("usage: pterm new [--dev] [--runtime-dir <directory>] --project <saved-project-id> --shell <saved-shell-profile-id>")
 	}
 	profile := host.ProductionProfile
@@ -102,7 +107,7 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 		return localCommandConfig{}, fmt.Errorf("invalid local command profile: %w", err)
 	}
 	return localCommandConfig{
-		runtimeDir: validated, dev: *dev, arguments: flags.Args(), control: control, projectID: projectID, profileID: profileID,
+		runtimeDir: validated, dev: *dev, arguments: arguments, control: control, projectID: projectID, profileID: profileID,
 	}, nil
 }
 

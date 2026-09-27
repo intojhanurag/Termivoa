@@ -96,6 +96,19 @@ func (client *AdminClient) RevokeDevice(ctx context.Context, deviceID string) (p
 		})
 }
 
+// RenameDevice sets a paired device's display label.
+func (client *AdminClient) RenameDevice(ctx context.Context, deviceID, label string) error {
+	request := protocol.AdminRPCDeviceRenamePayload{DeviceID: deviceID, Label: label}
+	_, err := adminCall(ctx, client, protocol.AdminDeviceRename, request, true,
+		func(result protocol.AdminRPCDeviceRenamePayload) error {
+			if result != request {
+				return errors.New("admin rename acknowledgement mismatch")
+			}
+			return nil
+		})
+	return err
+}
+
 // AddProject sends a path the broker validates and canonicalizes.
 func (client *AdminClient) AddProject(ctx context.Context, path string, name *string) (protocol.AdminRPCProject, error) {
 	result, err := adminCall[protocol.AdminRPCProjectResultPayload](ctx, client, protocol.AdminProjectAdd,

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
@@ -36,10 +37,15 @@ type fakeAdmin struct {
 	profiles    []protocol.AdminRPCShellProfile
 	origin      *string
 	originCalls []*string
+	renamed     []string
+	afterGrant  func(*fakeAdmin) // runs after a grant is created
 }
 
 func (admin *fakeAdmin) CreatePairingGrant(context.Context) (protocol.AdminRPCPairGrantResultPayload, error) {
 	admin.grantCalls++
+	if admin.afterGrant != nil {
+		admin.afterGrant(admin)
+	}
 	return admin.grant, nil
 }
 
@@ -59,6 +65,11 @@ func (admin *fakeAdmin) Devices(context.Context) ([]protocol.AdminRPCDevice, err
 func (admin *fakeAdmin) RevokeDevice(_ context.Context, deviceID string) (protocol.AdminRPCDeviceRevokeResultPayload, error) {
 	admin.revoked = append(admin.revoked, deviceID)
 	return admin.revoke, admin.revokeErr
+}
+
+func (admin *fakeAdmin) RenameDevice(_ context.Context, deviceID, label string) error {
+	admin.renamed = append(admin.renamed, deviceID+"="+label)
+	return nil
 }
 
 func (admin *fakeAdmin) AddProject(_ context.Context, path string, name *string) (protocol.AdminRPCProject, error) {
@@ -103,7 +114,7 @@ func TestPairPrintsGrantOnlyInsideLink(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			admin := &fakeAdmin{grant: testGrant(test.configured)}
 			var output bytes.Buffer
-			if err := Pair(context.Background(), admin, test.flag, false, &output); err != nil {
+			if err := Pair(context.Background(), admin, PairOptions{Origin: test.flag}, &output); err != nil {
 				t.Fatal(err)
 			}
 			text := output.String()
@@ -133,7 +144,7 @@ func TestPairPrintsGrantOnlyInsideLink(t *testing.T) {
 func TestPairWithoutOriginExplainsHowToConfigure(t *testing.T) {
 	admin := &fakeAdmin{grant: testGrant(nil)}
 	var output bytes.Buffer
-	err := Pair(context.Background(), admin, "", true, &output)
+	err := Pair(context.Background(), admin, PairOptions{ShowQR: true}, &output)
 	if err == nil || !strings.Contains(err.Error(), "pterm config origin https://<your-private-host>") ||
 		!strings.Contains(err.Error(), "--origin") || strings.Contains(err.Error(), adminGrant) {
 		t.Fatalf("unexpected missing-origin error: %v", err)
@@ -146,7 +157,7 @@ func TestPairWithoutOriginExplainsHowToConfigure(t *testing.T) {
 func TestPairRejectsInvalidOriginFlagBeforeCreatingGrant(t *testing.T) {
 	for _, flag := range []string{"http://example.com", "https://Example.com", "https://host/path", "ftp://host"} {
 		admin := &fakeAdmin{grant: testGrant(nil)}
-		if err := Pair(context.Background(), admin, flag, true, &bytes.Buffer{}); err == nil {
+		if err := Pair(context.Background(), admin, PairOptions{Origin: flag, ShowQR: true}, &bytes.Buffer{}); err == nil {
 			t.Fatalf("origin %q accepted", flag)
 		}
 		if admin.grantCalls != 0 {
@@ -342,5 +353,80 @@ func TestConfigOriginValidatesSetAndShows(t *testing.T) {
 	if err := ConfigOrigin(context.Background(), admin, nil, &output); err != nil ||
 		output.String() != "Pairing origin: "+adminOrigin+"\n" {
 		t.Fatalf("show = %q, %v", output.String(), err)
+	}
+}
+
+// Pair waits for a phone that redeems this grant, shows its code, and
+// approves only after the owner says yes. Pending pairings that existed
+// before the grant are never offered.
+func TestPairWaitsAndApprovesOnlyAfterConfirmation(t *testing.T) {
+	origin := adminOrigin
+	older := protocol.AdminRPCPendingPairing{ID: adminDevice, VerificationCode: "111-111", DeviceLabel: "Older", ExpiresAt: "2026-09-27T00:05:00Z"}
+	for _, answer := range []bool{true, false} {
+		admin := &fakeAdmin{grant: testGrant(&origin), pending: []protocol.AdminRPCPendingPairing{older}}
+		admin.grant.ExpiresAt = time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
+		admin.afterGrant = func(admin *fakeAdmin) {
+			admin.pending = append(admin.pending, protocol.AdminRPCPendingPairing{
+				ID: adminPending, VerificationCode: "123-456", DeviceLabel: hostileLabel, ExpiresAt: "2026-09-27T00:05:00Z",
+			})
+		}
+		confirmer := &fakeConfirmer{answer: answer}
+		var output bytes.Buffer
+		err := Pair(context.Background(), admin, PairOptions{Confirmer: confirmer, PollInterval: time.Millisecond}, &output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if confirmer.calls != 1 || !strings.Contains(confirmer.prompt, "shows code 123-456. Approve? [y/N]") ||
+			strings.Contains(confirmer.prompt, "\x1b") || strings.Contains(confirmer.prompt, "111-111") {
+			t.Fatalf("prompt %d times: %q", confirmer.calls, confirmer.prompt)
+		}
+		if answer && (len(admin.approved) != 1 || admin.approved[0] != adminPending) {
+			t.Fatalf("approved = %v", admin.approved)
+		}
+		if !answer && (len(admin.approved) != 0 || !strings.Contains(output.String(), "Not approved")) {
+			t.Fatalf("declined pairing approved %v: %q", admin.approved, output.String())
+		}
+	}
+}
+
+func TestPairStopsWaitingWhenTheGrantExpires(t *testing.T) {
+	origin := adminOrigin
+	admin := &fakeAdmin{grant: testGrant(&origin)}
+	admin.grant.ExpiresAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+	confirmer := &fakeConfirmer{answer: true}
+	err := Pair(context.Background(), admin, PairOptions{Confirmer: confirmer, PollInterval: time.Millisecond}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "expired") || confirmer.calls != 0 {
+		t.Fatalf("expired wait = %v after %d prompts", err, confirmer.calls)
+	}
+}
+
+func TestPairFallsBackToTheLocalPage(t *testing.T) {
+	admin := &fakeAdmin{grant: testGrant(nil)}
+	var output bytes.Buffer
+	if err := Pair(context.Background(), admin, PairOptions{Fallback: "http://127.0.0.1:8787"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if text := output.String(); !strings.Contains(text, "\nhttp://127.0.0.1:8787/pair#"+adminGrant+"\n") ||
+		!strings.Contains(text, "works only on this computer") || !strings.Contains(text, "pterm setup") {
+		t.Fatalf("fallback output = %q", text)
+	}
+}
+
+func TestRenameDeviceTrimsAndValidates(t *testing.T) {
+	admin := &fakeAdmin{}
+	var output bytes.Buffer
+	if err := RenameDevice(context.Background(), admin, adminDevice, "  Work phone ", &output); err != nil {
+		t.Fatal(err)
+	}
+	if len(admin.renamed) != 1 || admin.renamed[0] != adminDevice+"=Work phone" || !strings.Contains(output.String(), `"Work phone"`) {
+		t.Fatalf("rename = %v, %q", admin.renamed, output.String())
+	}
+	for _, test := range []struct{ id, label string }{{"bad", "x"}, {adminDevice, " "}, {adminDevice, "a\x1b"}, {adminDevice, strings.Repeat("x", 65)}} {
+		if err := RenameDevice(context.Background(), admin, test.id, test.label, &output); err == nil {
+			t.Fatalf("rename %q %q accepted", test.id, test.label)
+		}
+	}
+	if len(admin.renamed) != 1 {
+		t.Fatalf("invalid renames reached the broker: %v", admin.renamed)
 	}
 }

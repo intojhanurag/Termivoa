@@ -23,6 +23,8 @@
     { "$ref": "#/$defs/sessionRenameMessage" },
     { "$ref": "#/$defs/sessionTerminateMessage" },
     { "$ref": "#/$defs/liveOpenMessage" },
+    { "$ref": "#/$defs/originMessage" },
+    { "$ref": "#/$defs/deviceRenameMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -33,6 +35,8 @@
     { "$ref": "#/$defs/sessionRenameResultMessage" },
     { "$ref": "#/$defs/sessionTerminateResultMessage" },
     { "$ref": "#/$defs/liveOpenResultMessage" },
+    { "$ref": "#/$defs/originResultMessage" },
+    { "$ref": "#/$defs/deviceRenameResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -42,11 +46,12 @@
       "enum": [
         "gateway.pair.redeem", "gateway.pair.poll", "gateway.auth.check", "gateway.auth.logout",
         "gateway.settings", "gateway.session.list", "gateway.session.create", "gateway.session.rename",
-        "gateway.session.terminate", "gateway.live.open",
+        "gateway.session.terminate", "gateway.live.open", "gateway.origin", "gateway.device.rename",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
-        "gateway.session.terminate.result", "gateway.live.open.result", "gateway.error"
+        "gateway.session.terminate.result", "gateway.live.open.result", "gateway.origin.result",
+        "gateway.device.rename.result", "gateway.error"
       ]
     },
     "credentialPayload": {
@@ -91,6 +96,26 @@
         "request": { "$ref": "http-api.schema.json#/$defs/sessionTerminateRequest" }
       }
     },
+    "deviceRenamePayload": {
+      "title": "GatewayRPCDeviceRenamePayload",
+      "description": "Renames only the device that owns the credential.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "request": { "$ref": "http-api.schema.json#/$defs/deviceRenameRequest" }
+      }
+    },
+    "originResultPayload": {
+      "title": "GatewayRPCOriginResultPayload",
+      "description": "The browser origin configured with admin.config.origin, absent when none is set. It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it is valid for the gateway's profile.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": { "$ref": "admin-rpc.schema.json#/$defs/origin" }
+      }
+    },
     "pairPollResultPayload": {
       "title": "GatewayRPCPairPollResultPayload",
       "description": "credential and credentialExpiresAt appear exactly when response.status is approved. That single response is the only delivery of the credential; it is never replayable.",
@@ -127,6 +152,8 @@
     "sessionRenameMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.rename" }, "payload": { "$ref": "#/$defs/sessionRenamePayload" } } },
     "sessionTerminateMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.terminate" }, "payload": { "$ref": "#/$defs/sessionTerminatePayload" } } },
     "liveOpenMessage": { "type": "object", "properties": { "type": { "const": "gateway.live.open" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "originMessage": { "type": "object", "properties": { "type": { "const": "gateway.origin" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "deviceRenameMessage": { "type": "object", "properties": { "type": { "const": "gateway.device.rename" }, "payload": { "$ref": "#/$defs/deviceRenamePayload" } } },
     "pairRedeemResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemResponse" } } },
     "pairPollResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll.result" }, "payload": { "$ref": "#/$defs/pairPollResultPayload" } } },
     "authCheckResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.auth.check.result" }, "payload": { "$ref": "#/$defs/principalPayload" } } },
@@ -137,6 +164,8 @@
     "sessionRenameResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.rename.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" } } },
     "sessionTerminateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.terminate.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" } } },
     "liveOpenResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.live.open.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "originResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.origin.result" }, "payload": { "$ref": "#/$defs/originResultPayload" } } },
+    "deviceRenameResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.device.rename.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/deviceSummary" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "gateway.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }
