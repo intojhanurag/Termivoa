@@ -112,7 +112,7 @@ func decode(data []byte, client bool) (Envelope, error) {
 var clientMessageTypes = map[MessageType]bool{
 	Hello: true, SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
-	InputText: true, InputPaste: true, InputMouse: true, TerminalResize: true,
+	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
 	HistoryRead: true, SessionDetach: true,
 }
 
@@ -126,7 +126,7 @@ var hostMessageTypes = map[MessageType]bool{
 var sessionMessageTypes = map[MessageType]bool{
 	SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
-	InputText: true, InputPaste: true, InputMouse: true, TerminalResize: true,
+	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
 	HistoryRead: true, SessionDetach: true, SnapshotBegin: true,
 	SnapshotRows: true, SnapshotEnd: true, ScreenPatch: true, HistoryPage: true,
 	MessageTypeHistoryChanged: true, ControlChanged: true, InputAccepted: true,
@@ -218,6 +218,17 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return ValidateMouseInput(payload.Kind, payload.Button, payload.Column, payload.Row)
+	case InputAnswer:
+		payload, err := strictPayload[InputAnswerPayload](envelope)
+		if err != nil {
+			return err
+		}
+		if err := validateInputIdentity(payload.Lease, payload.InputSequence); err != nil {
+			return err
+		}
+		if !ValidAgentQuestionID(payload.QuestionID) || payload.OptionIndex < 0 || payload.OptionIndex >= MaxAgentOptions {
+			return errors.New("invalid answer")
+		}
 	case TerminalResize:
 		payload, err := strictPayload[TerminalResizePayload](envelope)
 		if err != nil {
@@ -368,6 +379,12 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		}
 		if !validState(payload.State) || (payload.ExitCode != nil && payload.State != Exited) {
 			return errors.New("invalid session state")
+		}
+		if payload.Agent != nil {
+			if payload.State != Running {
+				return errors.New("agent status is only valid while running")
+			}
+			return validateAgentStatus(*payload.Agent)
 		}
 	case AccessRevoked:
 		payload, err := strictPayload[AccessRevokedPayload](envelope)
@@ -972,7 +989,7 @@ func validErrorCode(value ErrorCode) bool {
 	case Unauthorized, PairingExpired, PairingPending, ErrorCodeRevoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
 		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
-		OperationConflict, ProjectMissing, ShellProfileMissing:
+		OperationConflict, ProjectMissing, ShellProfileMissing, QuestionChanged:
 		return true
 	default:
 		return false

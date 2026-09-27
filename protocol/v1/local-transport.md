@@ -46,6 +46,24 @@ proves receipt at the broker, not successful shell execution. Transport loss
 after sending leaves delivery uncertain and must never trigger automatic
 retransmission.
 
+`session.state` also carries `agent` while the session is running: the
+broker's `working`/`waiting`/`idle` state, `stateSince`, and the parsed
+`question` while waiting. The broker sends a new `session.state` whenever the
+agent state or question changes, so a live screen needs no polling.
+
+`input.answer` answers the current question. It carries the controller lease,
+the next input sequence, `questionId` and `optionIndex` (0-based). The broker
+authorizes the lease first, then requires that `questionId` is still the
+detected question on the current screen; otherwise it replies
+`input.rejected` with `question_changed` (or `invalid_request` for an option
+that is not offered). Neither rejection consumes the sequence, so the client
+may keep its lease, refresh, and answer again with the same sequence. On
+acceptance the broker writes the keys for that option exactly once through
+the single input writer. The client never sends the keys; the broker derives
+them from the screen. Just before writing, the broker checks the question
+again and drops the answer if it changed in between. Answers are never sent
+automatically.
+
 `screen.resync` schedules a new snapshot. `terminal.resize` requires the current
 lease and causes a full snapshot. History requests read immutable bounded actor
 pages and return either `history.page` or `history.changed`. `session.detach`

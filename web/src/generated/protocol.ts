@@ -23,6 +23,7 @@ export type ProtocolTypes = {
     readonly adminRPCProjectResult:            AdminRPCProjectResultPayload;
     readonly adminRPCShellProfile:             AdminRPCShellProfile;
     readonly adminRPCShutdownResult:           AdminRPCShutdownResultPayload;
+    readonly agentStatus:                      AgentStatus;
     readonly brokerRPCEmpty:                   BrokerRPCEmptyPayload;
     readonly brokerRPCError:                   BrokerRPCErrorPayload;
     readonly brokerRPCMessageType:             BrokerRPCMessageType;
@@ -67,6 +68,7 @@ export type ProtocolTypes = {
     readonly httpSessionTerminateRequest:      HTTPSessionTerminateRequest;
     readonly httpSettingsResponse:             HTTPSettingsResponse;
     readonly inputAccepted:                    InputAcceptedPayload;
+    readonly inputAnswer:                      InputAnswerPayload;
     readonly inputKey:                         InputKeyPayload;
     readonly inputMouse:                       InputMousePayload;
     readonly inputPaste:                       InputPastePayload;
@@ -208,6 +210,36 @@ export type AdminRPCShutdownResultPayload = {
     readonly terminatedSessions: number;
 }
 
+/**
+ * Broker-computed activity of a running session. question is present exactly when state is
+ * waiting. stateSince is the RFC 3339 time of the last change of state or question.
+ */
+export type AgentStatus = {
+    readonly question?:  AgentQuestion;
+    readonly state:      AgentState;
+    readonly stateSince: string;
+}
+
+/**
+ * A recognized prompt. id is a stable hash of the session generation, text and option
+ * labels; input.answer must repeat it. text is terminal output: render it as text only.
+ */
+export type AgentQuestion = {
+    readonly id:      string;
+    readonly options: [AgentOption, ...AgentOption[]];
+    readonly text:    string;
+}
+
+/**
+ * One answer the broker can send. Label is terminal output: render it as text only. The
+ * broker chooses the keys from the current screen; the client sends only the option index.
+ */
+export type AgentOption = {
+    readonly label: string;
+}
+
+export type AgentState = "working" | "waiting" | "idle";
+
 export type BrokerRPCEmptyPayload = {
 }
 
@@ -216,7 +248,7 @@ export type BrokerRPCErrorPayload = {
     readonly message: string;
 }
 
-export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing";
+export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed";
 
 export type BrokerRPCMessageType = "session.list.request" | "session.create.request" | "session.rename.request" | "session.terminate.request" | "session.status.request" | "session.list.result" | "session.create.result" | "session.rename.result" | "session.terminate.result" | "session.status.result" | "broker.error";
 
@@ -247,6 +279,7 @@ export type BrokerRPCSessionListResultPayload = {
  * labels are never included.
  */
 export type BrokerRPCSessionRecord = {
+    readonly agent?:           AgentStatus;
     readonly columns:          number;
     readonly controlled?:      boolean;
     readonly controllerIsYou?: boolean;
@@ -530,6 +563,17 @@ export type InputAcceptedPayload = {
     readonly inputSequence: string;
 }
 
+/**
+ * Answers the current agent question. The broker rejects it with question_changed unless
+ * questionId is still the detected question, then writes that option's keys once.
+ */
+export type InputAnswerPayload = {
+    readonly inputSequence: string;
+    readonly lease:         string;
+    readonly optionIndex:   number;
+    readonly questionId:    string;
+}
+
 export type InputKeyPayload = {
     readonly character?:    string;
     readonly inputSequence: string;
@@ -604,7 +648,7 @@ export type LeasePayload = {
     readonly lease: string;
 }
 
-export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error";
+export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error";
 
 export type ScreenMetadata = {
     readonly background:      Color;
@@ -655,6 +699,7 @@ export type ScreenResyncPayload = {
 export type Reason = "initial" | "base-mismatch" | "invalid-state" | "interrupted-snapshot";
 
 export type SessionStatePayload = {
+    readonly agent?:    AgentStatus;
     readonly exitCode?: number;
     readonly state:     State;
 }

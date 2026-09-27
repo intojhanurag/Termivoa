@@ -36,6 +36,25 @@ describe('parseHostMessage', () => {
     expect(message.type).toBe('welcome');
   });
 
+  it('accepts session.state with a waiting agent question', () => {
+    const message = parseHostMessage(JSON.stringify({
+      version: 1,
+      type: 'session.state',
+      requestId,
+      sessionId: brokerGeneration,
+      generation: brokerGeneration,
+      payload: {
+        state: 'running',
+        agent: {
+          state: 'waiting',
+          stateSince: '2026-09-27T10:00:00.000Z',
+          question: { id: '0123456789abcdef0123456789abcdef', text: 'Do you want to proceed?', options: [{ label: 'Yes' }, { label: 'No' }] },
+        },
+      },
+    }));
+    expect(message.type === 'session.state' && message.payload.agent?.question?.options).toHaveLength(2);
+  });
+
   it('rejects client-to-host messages even when their schema is valid', () => {
     expect(() => parseHostMessage(JSON.stringify({
       version: 1,
