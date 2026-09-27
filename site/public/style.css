@@ -205,7 +205,8 @@ h1 { display: inline-flex; flex-direction: column; gap: 6px; font-weight: 400; }
 
 @media (max-width: 980px) {
   body { font-size: 18px; }
-  .nav nav a:not(.nav-beta) { display: none; }
+  .nav nav { gap: 24px; }
+  .nav nav a:not(.nav-beta, .nav-docs) { display: none; }
   .nav-beta { display: inline; color: var(--signal); }
   .hero { flex-direction: column; align-items: flex-start; padding-bottom: 96px; gap: 64px; }
   .hero-phone { align-self: center; width: min(414px, 86vw); }

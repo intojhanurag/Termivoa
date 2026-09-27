@@ -28,6 +28,12 @@ The exact direct and transitive dependency graph is locked in
 `pnpm-lock.yaml`. The P0 baseline uses Node 24.11.0 and pnpm 10.33.0. The
 runtime companion does not require Node.
 
+## Website build dependencies
+
+The website in `site/` (landing page and docs) is built with Astro 7.3.5 and
+Starlight 0.42.4, locked in `site/pnpm-lock.yaml`. It is a separate static
+site: nothing from `site/` ships in `pterm` or the phone app.
+
 ## Security tooling
 
 CI pins Gitleaks 8.30.1 and govulncheck 1.8.0. Scanner results require human

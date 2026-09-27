@@ -1,0 +1,77 @@
+/* Termivoa brand on top of Starlight: the same night palette and fonts as the landing page. */
+@font-face { font-family: 'Newsreader'; font-style: normal; font-weight: 400 500; font-display: swap; src: url(/fonts/newsreader-normal.woff2) format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/jetbrainsmono-normal.woff2) format('woff2'); }
+
+:root {
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+	--tv-serif: 'Newsreader', Georgia, serif;
+	--sl-content-width: 46rem;
+	--sl-line-height: 1.7;
+
+	/* Dark (default) */
+	--sl-color-accent-low: #0F2A30;
+	--sl-color-accent: #64D8E8;
+	--sl-color-accent-high: #B6EEF5;
+	--sl-color-white: #FFFFFF;
+	--sl-color-gray-1: #ECE8E1;
+	--sl-color-gray-2: #D2D4D9;
+	--sl-color-gray-3: #A9AFB9;
+	--sl-color-gray-4: #6B7280;
+	--sl-color-gray-5: #2A303B;
+	--sl-color-gray-6: #11151B;
+	--sl-color-black: #07090C;
+	--sl-color-orange: #F2B544;
+	--sl-color-orange-low: #3A2B10;
+	--sl-color-orange-high: #F8D89A;
+	/* Notes use the signal cyan instead of Starlight's blue. */
+	--sl-color-blue-low: #0F2A30;
+	--sl-color-blue: #64D8E8;
+	--sl-color-blue-high: #B6EEF5;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #D6F4F8;
+	--sl-color-accent: #0B7D8C;
+	--sl-color-accent-high: #064E57;
+	--sl-color-white: #07090C;
+	--sl-color-gray-1: #11151B;
+	--sl-color-gray-2: #2A303B;
+	--sl-color-gray-3: #4B5563;
+	--sl-color-gray-4: #6B7280;
+	--sl-color-gray-5: #D8DADF;
+	--sl-color-gray-6: #EEF0F2;
+	--sl-color-gray-7: #F7F8F9;
+	--sl-color-black: #FFFFFF;
+	--sl-color-blue-low: #D6F4F8;
+	--sl-color-blue: #0B7D8C;
+	--sl-color-blue-high: #064E57;
+}
+
+/* Serif headings like the landing page; body stays in the system sans for easy reading. */
+.site-title,
+.sl-markdown-content :is(h1, h2, h3),
+h1#_top {
+	font-family: var(--tv-serif);
+	font-weight: 500;
+	letter-spacing: -0.015em;
+}
+h1#_top { font-size: clamp(2.2rem, 5vw, 2.9rem); line-height: 1.1; }
+.sl-markdown-content h2 { font-size: 1.75rem; margin-top: 2.2em; }
+.sl-markdown-content h3 { font-size: 1.35rem; }
+.site-title { font-size: 1.35rem; color: var(--sl-color-white); }
+
+/* Calm surfaces: no heavy borders, rounded code and inline code. */
+.sl-markdown-content code:not(pre code) {
+	padding: 0.1em 0.4em;
+	border-radius: 6px;
+	font-size: 0.9em;
+}
+.sl-markdown-content table { font-size: 0.95rem; }
+.sl-markdown-content :is(th, td) { padding: 0.55rem 0.9rem; }
+
+/* A quieter current page in the sidebar. */
+.sidebar-content a[aria-current='page'] {
+	background: var(--sl-color-accent-low);
+	color: var(--sl-color-accent-high);
+	font-weight: 600;
+}
