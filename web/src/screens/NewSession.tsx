@@ -1,0 +1,223 @@
+import { useState } from 'react';
+import { api } from '../api/http';
+import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
+import {
+  loadPresets,
+  presetFrom,
+  runFirstProblem,
+  samePreset,
+  savePresets,
+  type LaunchPreset,
+} from './presets';
+
+/** What to do when there is nothing to start a session with, or null when ready. */
+export function NewSessionHelp({ settings }: { readonly settings: HTTPSettingsResponse }) {
+  if (settings.projects.length === 0) {
+    return (
+      <div className="stack">
+        <p>Add a project on your computer first:</p>
+        <pre className="command"><code>pterm project add &lt;folder&gt;</code></pre>
+        <p className="muted">Then tap Check again. A project is a folder where new sessions start.</p>
+      </div>
+    );
+  }
+  if (settings.shellProfiles.length === 0) {
+    return (
+      <div className="stack">
+        <p>Your computer has no shell available for new sessions.</p>
+        <p className="muted">Run <code>pterm doctor</code> on your computer to see why, then tap Check again.</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+export function NewSession({ settings, onCancel, onStarted, onRefreshSettings, onFailure }: {
+  readonly settings: HTTPSettingsResponse;
+  readonly onCancel: () => void;
+  /** `runFirst` is the trimmed command to type once, if any. */
+  readonly onStarted: (session: BrokerRPCSessionRecord, runFirst: string | undefined) => void;
+  readonly onRefreshSettings: () => Promise<void>;
+  readonly onFailure: (error: unknown) => string;
+}) {
+  const [presets, setPresets] = useState<LaunchPreset[]>(() => loadPresets());
+  const [editing, setEditing] = useState(false);
+  const [chosenProject, setProjectId] = useState<string>();
+  const [chosenShell, setShellId] = useState<string>();
+  const [runFirst, setRunFirst] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [note, setNote] = useState<string>();
+
+  // The server lists the user's login shell first, so it is the default.
+  const projectId = settings.projects.find((item) => item.id === chosenProject)?.id ?? settings.projects[0]?.id ?? '';
+  const shellId = settings.shellProfiles.find((item) => item.id === chosenShell)?.id ?? settings.shellProfiles[0]?.id ?? '';
+  const canCreate = settings.projects.length > 0 && settings.shellProfiles.length > 0;
+  const projectName = new Map(settings.projects.map((item) => [item.id, item.name]));
+  const shellName = new Map(settings.shellProfiles.map((item) => [item.id, item.name]));
+  const command = runFirst.trim();
+  const commandProblem = runFirstProblem(command);
+
+  async function start(project: string, shell: string, first: string | undefined) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const created = await api.createSession({ operationId: crypto.randomUUID(), projectId: project, shellProfileId: shell });
+      onStarted(created.session, first);
+    } catch (failure) {
+      setError(onFailure(failure));
+      setBusy(false);
+    }
+  }
+
+  function store(next: LaunchPreset[], done: string) {
+    const problem = savePresets(next);
+    if (problem !== undefined) {
+      setError(problem);
+      return;
+    }
+    setPresets(next);
+    setError(undefined);
+    setNote(done);
+  }
+
+  function saveCustom() {
+    const preset = presetFrom(projectId, shellId, command, projectName.get(projectId) ?? '');
+    if (presets.some((item) => samePreset(item, preset))) {
+      setNote('This preset is already saved.');
+      return;
+    }
+    store([...presets, preset], `Saved “${preset.label}” as a preset.`);
+  }
+
+  async function refresh() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await onRefreshSettings();
+    } catch (failure) {
+      setError(onFailure(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="page screen">
+      <header className="screen-header">
+        <div>
+          <h1>New session</h1>
+          <p className="subtitle">Runs on your computer</p>
+        </div>
+        <button type="button" className="link" onClick={onCancel}>Cancel</button>
+      </header>
+      {error !== undefined && <p role="alert" className="error">{error}</p>}
+
+      {!canCreate ? (
+        <section className="stack">
+          <NewSessionHelp settings={settings} />
+          <button type="button" disabled={busy} onClick={() => { void refresh(); }}>Check again</button>
+        </section>
+      ) : (
+        <>
+          {presets.length > 0 && (
+            <section className="group" aria-labelledby="launch-heading">
+              <div className="section-head">
+                <h2 id="launch-heading" className="caps">Launch</h2>
+                <button type="button" className="link" aria-pressed={editing} onClick={() => setEditing(!editing)}>
+                  {editing ? 'done' : 'edit'}
+                </button>
+              </div>
+              <ul className="rows">
+                {presets.map((preset, index) => {
+                  const available = projectName.has(preset.projectId) && shellName.has(preset.shellProfileId);
+                  return (
+                    <li key={`${preset.label}/${preset.projectId}/${preset.shellProfileId}/${preset.runFirst ?? ''}`}>
+                      <button
+                        type="button"
+                        className={index === 0 && !editing ? 'launch-row first' : 'launch-row'}
+                        disabled={busy || (!editing && !available)}
+                        {...(editing ? { 'aria-label': `Remove preset ${preset.label}` } : {})}
+                        onClick={() => {
+                          if (editing) {
+                            store(presets.filter((_, at) => at !== index), `Removed “${preset.label}”.`);
+                          } else {
+                            void start(preset.projectId, preset.shellProfileId, preset.runFirst);
+                          }
+                        }}
+                      >
+                        <span className={preset.runFirst === undefined ? 'tile dashed' : 'tile'} aria-hidden="true">
+                          {preset.runFirst === undefined ? '$' : '❯'}
+                        </span>
+                        <span className="row-text">
+                          <span className="row-title">{preset.label}</span>
+                          <span className="row-meta">
+                            {available
+                              ? `${projectName.get(preset.projectId)} · ${shellName.get(preset.shellProfileId)}`
+                              : 'Project or shell is no longer available'}
+                          </span>
+                        </span>
+                        <span className="row-trail">{editing ? 'remove' : index === 0 ? 'start ⏎' : 'start'}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
+          <section className="group" aria-labelledby="custom-heading">
+            <h2 id="custom-heading" className="caps">Custom</h2>
+            <div className="field-group">
+              <div className="field-row">
+                <label htmlFor="project">project</label>
+                <select id="project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+                  {settings.projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </div>
+              <div className="field-row">
+                <label htmlFor="shell">shell</label>
+                <select id="shell" value={shellId} onChange={(event) => setShellId(event.target.value)}>
+                  {settings.shellProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </div>
+              <div className="field-row">
+                <label htmlFor="run-first">run first</label>
+                <input
+                  id="run-first"
+                  value={runFirst}
+                  placeholder="optional, e.g. claude"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-describedby="run-first-help"
+                  aria-invalid={commandProblem !== undefined}
+                  onChange={(event) => { setRunFirst(event.target.value); setNote(undefined); }}
+                />
+              </div>
+            </div>
+            <p id="run-first-help" className={commandProblem === undefined ? 'hint-text' : 'error'}>
+              {commandProblem ?? 'Typed once with Enter when the session opens, only if no one else has control.'}
+            </p>
+            <div className="row">
+              <button type="button" disabled={commandProblem !== undefined} onClick={saveCustom}>save as preset</button>
+              {note !== undefined && <span role="status" className="muted">{note}</span>}
+            </div>
+          </section>
+
+          <div className="bottom-bar">
+            <button
+              type="button"
+              className="primary wide"
+              disabled={busy || commandProblem !== undefined}
+              onClick={() => { void start(projectId, shellId, command === '' ? undefined : command); }}
+            >
+              <span aria-hidden="true" className="prompt">❯</span> {busy ? 'starting…' : 'start session'}
+            </button>
+          </div>
+        </>
+      )}
+    </main>
+  );
+}

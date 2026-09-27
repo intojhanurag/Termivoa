@@ -1,4 +1,4 @@
-const MAX_PASTE_BYTES = 64 * 1024;
+export const MAX_PASTE_BYTES = 64 * 1024;
 
 /**
  * Composer drafts live only in memory and are keyed by session generation, so

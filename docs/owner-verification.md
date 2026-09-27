@@ -109,6 +109,18 @@ The agent did not change Tailscale or startup settings on this Mac. Follow
       to each viewer. Check whether the phone is dropped as "too slow" and
       reconnects again and again. See `docs/evidence/p7/soak.md`.
 
+### UI v2 on a real phone (tabs, agent keys, snippets, run first)
+
+- [ ] The agent keys row fits and every key is easy to hit with a thumb (it
+      wraps to two rows below 390 px wide, for example on a 375 px iPhone).
+- [ ] `esc`, `⌃C`, `⇧⇥`, `↑`, `1`, `2`, `y`, `⏎` work in Claude Code and Codex.
+- [ ] Session tabs switch sessions; the new-output dot appears and clears.
+- [ ] Snippets send once; a multi-line snippet asks before it pastes.
+- [ ] A launch preset with "run first" (for example `claude`) starts the
+      agent once, and never again after reconnecting.
+- [ ] VoiceOver / TalkBack read the key names ("Control C", "Shift Tab") and
+      the pairing code.
+
 ### Revocation
 
 - [ ] `pterm devices`, then `pterm revoke <device-id>` while the phone has

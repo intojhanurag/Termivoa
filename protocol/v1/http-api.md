@@ -70,3 +70,20 @@ never supplies device or credential identity in messages. Every later message
 follows `local-transport.md` live-mode semantics: observer first, explicit
 `control.acquire`, lease and sequence on every input. Revocation or expiry sends
 `access.revoked` and closes the socket.
+
+## Session activity fields
+
+Live session records on the gateway session list may include two optional,
+non-authoritative display fields:
+
+- `lastOutputAt`: when child output was last applied to the canonical screen
+  (RFC 3339, millisecond precision). Any child output counts, even bytes that
+  leave the screen unchanged, such as a bell or a title change. Clients compare it with the time
+  they last viewed the session to show a "new output" dot.
+- `preview`: the last non-blank line of the current screen as plain text, with
+  control characters removed and at most 160 characters. It is terminal
+  output: render it only as text, never as markup or a link.
+
+Both are absent when the session is not live in this broker. They are not
+shown on CLI management results.
+

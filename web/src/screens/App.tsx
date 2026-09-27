@@ -2,7 +2,9 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { api, ApiError, CONNECTION_UNAVAILABLE, isAuthFailure } from '../api/http';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { ChunkErrorBoundary, loadChunk } from './chunks';
-import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
+import { useFontSize, useServiceWorkerUpdate, useSessionList, useVisualViewport } from './hooks';
+import { NewSession } from './NewSession';
+import type { RunFirstRequest } from './presets';
 import { Sessions } from './Sessions';
 import { Settings } from './Settings';
 import { Setup } from './Setup';
@@ -21,13 +23,15 @@ type View =
   | { readonly name: 'offline' }
   | { readonly name: 'setup'; readonly reason?: string }
   | { readonly name: 'sessions'; readonly message?: string }
-  | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord }
+  | { readonly name: 'new'; readonly back?: View }
+  | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest }
   | { readonly name: 'settings' };
 
 function pathFor(view: View): string {
   switch (view.name) {
     case 'live': return `/sessions/${encodeURIComponent(view.session.id)}`;
     case 'settings': return '/settings';
+    case 'new': return '/new';
     case 'setup': return window.location.pathname === '/pair' ? '/pair' : '/';
     default: return '/';
   }
@@ -65,10 +69,24 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     return error instanceof Error ? error.message : 'Request failed';
   }, [toSetup]);
 
+  // A failed background refresh only matters when access is gone; the list
+  // shows "cannot reach" itself and the live terminal has its own link state.
+  const handlePollFailure = useCallback((error: unknown) => {
+    if (isAuthFailure(error)) {
+      toSetup('This phone is no longer paired with your computer.');
+    }
+  }, [toSetup]);
+
+  const list = useSessionList(view.name === 'sessions' || view.name === 'live', handlePollFailure);
+
   const route = useCallback(async () => {
     const path = window.location.pathname;
     if (path === '/settings') {
       setView({ name: 'settings' });
+      return;
+    }
+    if (path === '/new') {
+      setView({ name: 'new' });
       return;
     }
     const match = /^\/sessions\/([^/]+)$/u.exec(path);
@@ -117,9 +135,9 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
   }, [boot, route]);
 
   // Fetch the terminal code in the background once the session list is up,
-  // so Open and Start session go straight to the live terminal.
+  // so opening a session goes straight to the live terminal.
   useEffect(() => {
-    if (view.name === 'sessions') {
+    if (view.name === 'sessions' || view.name === 'new') {
       loadLive().catch(() => undefined);
     }
   }, [view.name]);
@@ -127,6 +145,9 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
   const refreshSettings = useCallback(async () => {
     setSettings(await api.settings());
   }, []);
+
+  const openSession = useCallback((session: BrokerRPCSessionRecord) => navigate({ name: 'live', session }), [navigate]);
+  const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
 
   const startNew = useCallback(async (from: BrokerRPCSessionRecord) => {
     try {
@@ -158,15 +179,17 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       {update.available && (
         <div className="banner" role="status">
           <span>An update is ready.</span>
-          <button type="button" onClick={update.reload}>Reload to update</button>
+          <button type="button" onClick={update.reload}>reload to update</button>
         </div>
       )}
-      {view.name === 'boot' && <main className="page"><p role="status">Loading…</p></main>}
+      {view.name === 'boot' && <main className="page"><p role="status" className="muted">Loading…</p></main>}
       {view.name === 'offline' && (
         <main className="page">
           <h1>{CONNECTION_UNAVAILABLE}</h1>
-          <p>This phone cannot reach your computer right now. Nothing can run until the connection returns.</p>
-          <button type="button" className="primary" onClick={() => { void boot(); }}>Try again</button>
+          <p className="muted">This phone cannot reach your computer right now. Nothing can run until the connection returns.</p>
+          <button type="button" className="primary wide" onClick={() => { void boot(); }}>
+            <span aria-hidden="true" className="prompt">❯</span> try again
+          </button>
         </main>
       )}
       {view.name === 'setup' && (
@@ -182,21 +205,43 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       {view.name === 'sessions' && settings !== undefined && (
         <Sessions
           settings={settings}
+          list={list}
           {...(view.message === undefined ? {} : { message: view.message })}
-          onOpen={(session) => navigate({ name: 'live', session })}
+          onOpen={openSession}
+          onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}
           onSettings={() => navigate({ name: 'settings' })}
+          onRefreshSettings={refreshSettings}
+          onFailure={handleFailure}
+        />
+      )}
+      {view.name === 'new' && settings !== undefined && (
+        <NewSession
+          settings={settings}
+          onCancel={() => navigate(view.back ?? { name: 'sessions' })}
+          onStarted={(session, command) => {
+            void list.reload();
+            navigate(command === undefined
+              ? { name: 'live', session }
+              : { name: 'live', session, runFirst: { command, settled: false } });
+          }}
           onRefreshSettings={refreshSettings}
           onFailure={handleFailure}
         />
       )}
       {view.name === 'live' && (
         <ChunkErrorBoundary key={`${view.session.id}/${view.session.generation}`}>
-          <Suspense fallback={<main className="page"><p role="status">Opening terminal…</p></main>}>
+          <Suspense fallback={<main className="page"><p role="status" className="muted">Opening terminal…</p></main>}>
             <Live
               session={view.session}
+              sessions={list.sessions}
               settings={settings}
               fontSize={fontSize}
-              onSessions={() => navigate({ name: 'sessions' })}
+              {...(view.runFirst === undefined ? {} : { runFirst: view.runFirst })}
+              onOpen={openSession}
+              onNew={() => navigate({ name: 'new', back: { name: 'live', session: view.session } })}
+              onSessions={toSessions}
+              onSettings={() => navigate({ name: 'settings' })}
+              onChanged={list.reload}
               onStartNew={() => { void startNew(view.session); }}
               onRevoked={(reason) => toSetup(reason ?? 'Access to this computer was revoked.')}
             />
@@ -208,7 +253,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           settings={settings}
           fontSize={fontSize}
           onFontSize={setFontSize}
-          onBack={() => navigate({ name: 'sessions' })}
+          onBack={toSessions}
           onRenamed={(device) => setSettings({ ...settings, device })}
           onFailure={handleFailure}
           onLogout={logout}

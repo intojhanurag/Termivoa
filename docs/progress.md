@@ -4,6 +4,20 @@ Last updated: 2026-09-27
 
 ## Current status
 
+### Phone UI v2 (2026-09-27)
+
+The owner approved the Paper design "termivoa" (session tabs, agent keys,
+keycap dock, snippets, launch presets with run first, redesigned Sessions,
+Pair, Composer, History and Settings). It is implemented in `web/**`, with
+two optional broker session-list fields (`lastOutputAt`, `preview`) for the
+new-output dot and the list preview. An adversarial agent review fixed four
+defects (overlapping polls, pairing code not read by screen readers, duplicate
+snippet ids, hidden SGR-8 text in previews). The full local check (155 web
+tests) and Go race tests pass; a real dev-stack browser run at 390×844 passed
+pairing, run first, agent keys (a real `⌃C` interrupt), snippets, tab switching
+with the new-output dot, and the session list preview. Real-phone checks are
+listed in `docs/owner-verification.md`.
+
 ### First-run polish merge without CI (2026-09-27)
 
 The owner asked to merge PR #28 (3-step setup, origin fix, bandwidth pacing

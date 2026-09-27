@@ -452,3 +452,53 @@ describe('History/Selection', () => {
     expect(rowText(row('vim'))).toBe('vim');
   });
 });
+
+describe('Session tab switching', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('detaches the old session and attaches the next one read-only, carrying no control or input', async () => {
+    const { connection: first, socket } = harness();
+    const firstSocket = socket();
+    await attachLive(firstSocket);
+    await takeControl(first, firstSocket);
+    first.sendText('npm test');
+
+    // Live unmounts (detach) and remounts for the other tab with a new Connection.
+    first.detach();
+    expect(firstSocket.types().slice(-2)).toEqual(['control.release', 'session.detach']);
+    expect(firstSocket.readyState).toBe(3);
+    expect(first.sendText('more')).toBe(false);
+
+    const otherId = id(11);
+    const otherGeneration = id(12);
+    const next = new Connection({
+      url: 'wss://host.invalid/api/v1/ws',
+      sessionId: otherId,
+      generation: otherGeneration,
+      display: { paintSnapshot: async () => undefined, applyPatch: async () => undefined },
+      createSocket: (url) => new FakeSocket(url) as unknown as WebSocket,
+      requestFrame: (callback) => queueMicrotask(callback),
+    });
+    next.start();
+    const nextSocket = socket();
+    expect(nextSocket).not.toBe(firstSocket);
+    nextSocket.open();
+    welcome(nextSocket);
+    nextSocket.receive('snapshot.begin', { snapshotId: id(60), revision: '1', screen: metadata() }, { sessionId: otherId, generation: otherGeneration });
+    nextSocket.receive('snapshot.rows', { snapshotId: id(60), revision: '1', startRow: 0, rows: ['', '', '', '', ''].map(row) }, { sessionId: otherId, generation: otherGeneration });
+    nextSocket.receive('snapshot.end', { snapshotId: id(60), revision: '1', rowCount: 5 }, { sessionId: otherId, generation: otherGeneration });
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 2);
+
+    expect(next.getStatus()).toMatchObject({ link: 'live', control: 'observer' });
+    expect(nextSocket.types().filter((type) => type !== 'heartbeat')).toEqual(['hello', 'session.attach', 'snapshot.applied']);
+    expect(nextSocket.sent.every((message) => message.sessionId === undefined || message.sessionId === otherId)).toBe(true);
+    expect(JSON.stringify(nextSocket.sent)).not.toContain(lease);
+    expect(next.sendText('npm test')).toBe(false);
+  });
+});

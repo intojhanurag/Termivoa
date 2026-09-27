@@ -56,15 +56,15 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
   }
 
   return (
-    <main className="page">
-      <header className="page-header">
-        <h1>Settings</h1>
-        <button type="button" onClick={onBack}>Sessions</button>
+    <main className="page screen">
+      <header className="screen-header">
+        <h1 className="display">Settings</h1>
+        <button type="button" className="link strong" onClick={onBack}>Done</button>
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 
-      <section className="card stack" aria-labelledby="device-heading">
-        <h2 id="device-heading">This device</h2>
+      <section className="group stack" aria-labelledby="device-heading">
+        <h2 id="device-heading" className="caps">This device</h2>
         <form
           className="stack"
           onSubmit={(event) => {
@@ -85,7 +85,7 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
               setNameState({ kind: 'idle' });
             }}
           />
-          <p id="device-name-help" className="muted field-note">
+          <p id="device-name-help" className="hint-text">
             Your computer shows this name in <code>pterm devices</code>.
           </p>
           <p id="device-name-status" role="status" className={nameState.kind === 'error' || nameProblem !== undefined ? 'error field-note' : 'muted field-note'}>
@@ -99,25 +99,29 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
             disabled={nameProblem !== undefined || unchanged || nameState.kind === 'saving'}
           >Save name</button>
         </form>
+      </section>
+
+      <section className="group stack" aria-labelledby="font-heading">
+        <h2 id="font-heading" className="caps">Terminal text size</h2>
+        <div className="font-row" role="group" aria-labelledby="font-heading">
+          <button type="button" className="key" aria-label="Smaller text" disabled={fontSize <= MIN_FONT_SIZE}
+            onClick={() => onFontSize(fontSize - 1)}>A−</button>
+          <output aria-live="polite" className="font-size">{fontSize} px</output>
+          <button type="button" className="key" aria-label="Larger text" disabled={fontSize >= MAX_FONT_SIZE}
+            onClick={() => onFontSize(fontSize + 1)}>A+</button>
+        </div>
+      </section>
+
+      <section className="group stack" aria-labelledby="build-heading">
+        <h2 id="build-heading" className="caps">Build</h2>
         <dl className="facts">
           <dt>Host build</dt><dd>{settings.hostBuild}</dd>
           <dt>Web build</dt><dd>{CLIENT_BUILD}</dd>
         </dl>
       </section>
 
-      <section className="card stack" aria-labelledby="font-heading">
-        <h2 id="font-heading">Terminal text size</h2>
-        <div className="row" role="group" aria-labelledby="font-heading">
-          <button type="button" aria-label="Smaller text" disabled={fontSize <= MIN_FONT_SIZE}
-            onClick={() => onFontSize(fontSize - 1)}>A−</button>
-          <output aria-live="polite" className="font-size">{fontSize} px</output>
-          <button type="button" aria-label="Larger text" disabled={fontSize >= MAX_FONT_SIZE}
-            onClick={() => onFontSize(fontSize + 1)}>A+</button>
-        </div>
-      </section>
-
-      <section className="card stack" aria-labelledby="logout-heading">
-        <h2 id="logout-heading">Log out</h2>
+      <section className="group stack" aria-labelledby="logout-heading">
+        <h2 id="logout-heading" className="caps">Log out</h2>
         <p className="muted">Removes this browser's access. Running sessions keep running on your computer.</p>
         <button
           type="button"

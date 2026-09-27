@@ -3,7 +3,7 @@ import { ApiError, deviceLabelProblem } from '../api/http';
 import { PairingFlow, type PendingPairing } from '../pairing/pairing';
 import type { GrantHolder } from './App';
 
-type Phase = 'none' | 'label' | 'redeeming' | 'waiting' | 'expired' | 'error';
+type Phase = 'none' | 'label' | 'redeeming' | 'waiting' | 'expired' | 'error' | 'cancelled';
 
 function defaultLabel(): string {
   const agent = navigator.userAgent;
@@ -23,6 +23,31 @@ export function pairingFailure(error: unknown): string {
     if (error.status === 429 || error.code === 'limit_exceeded') return 'Too many pairing attempts. Wait a minute first.';
   }
   return 'Pairing did not work.';
+}
+
+/** The verification code as digit tiles, grouped like the computer prints it ("485-431"). */
+export function CodeTiles({ code }: { readonly code: string }) {
+  const groups = code.split('-');
+  return (
+    <p className="code-tiles">
+      <span className="visually-hidden">Verification code {code}</span>
+      {groups.map((group, index) => (
+        <span key={index} className="code-group" aria-hidden="true">
+          {index > 0 && <span className="code-dash" />}
+          {[...group].map((digit, at) => <span key={at} className="code-tile">{digit}</span>)}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function Step({ label, title }: { readonly label: string; readonly title: string }) {
+  return (
+    <div className="step-head">
+      <p className="step-label">{label}</p>
+      <h1 className="display">{title}</h1>
+    </div>
+  );
 }
 
 export function Setup({ grant, reason, onPaired }: {
@@ -69,9 +94,13 @@ export function Setup({ grant, reason, onPaired }: {
     }
   }
 
+  const title = phase === 'waiting' ? 'Does your computer show this code?'
+    : phase === 'label' || phase === 'redeeming' ? 'Name this phone' : 'Pair this phone';
+
   return (
-    <main className="page">
-      <h1>Pair this device</h1>
+    <main className="page screen setup">
+      <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
+      <Step label={phase === 'waiting' ? 'Step 2 of 2' : 'Step 1 of 2'} title={title} />
       {reason !== undefined && <p role="status" className="notice">{reason}</p>}
       {phase === 'none' && (
         <>
@@ -80,13 +109,13 @@ export function Setup({ grant, reason, onPaired }: {
               This pairing link is incomplete or was already opened. Run <code>pterm pair</code> again on your
               computer and open the new link.
             </p>
-          ) : <p>This phone is not paired with your computer yet.</p>}
+          ) : <p className="muted">This phone is not paired with your computer yet.</p>}
           <ol className="steps">
             <li>On your computer, run <code>pterm pair</code>.</li>
             <li>Scan the QR code or open the link it shows on this phone.</li>
             <li>Check the code on both screens, then approve it on your computer.</li>
           </ol>
-          <p className="muted">The link works once and expires after two minutes.</p>
+          <p className="hint-text">The link works once and expires after two minutes.</p>
         </>
       )}
       {phase === 'label' && (
@@ -107,21 +136,44 @@ export function Setup({ grant, reason, onPaired }: {
             aria-invalid={!labelValid}
             onChange={(event) => setLabel(event.target.value)}
           />
-          <p id="device-label-help" className={labelValid ? 'muted field-note' : 'error field-note'}>
+          <p id="device-label-help" className={labelValid ? 'hint-text' : 'error field-note'}>
             {labelProblem ?? 'Your computer shows this name in pterm devices. You can change it later in Settings.'}
           </p>
-          <button type="submit" className="primary" disabled={!labelValid}>Pair this device</button>
+          <button type="submit" className="primary wide" disabled={!labelValid}>
+            <span aria-hidden="true" className="prompt">❯</span> Pair this device
+          </button>
         </form>
       )}
-      {phase === 'redeeming' && <p role="status">Checking the pairing link…</p>}
+      {phase === 'redeeming' && <p role="status" className="muted">Checking the pairing link…</p>}
       {phase === 'waiting' && pending !== undefined && (
-        <section className="stack" aria-live="polite">
-          <p>Verification code</p>
-          <p className="code" aria-label={`Verification code ${pending.verificationCode}`}>{pending.verificationCode}</p>
-          <p>Check that your computer shows the same code. Then run this on your computer:</p>
+        <section className="stack pair-wait" aria-live="polite">
+          <CodeTiles code={pending.verificationCode} />
+          <p className="muted">If it matches, type y in the terminal on your computer:</p>
+          <pre className="command prompt-preview"><code>
+            <span className="muted">Phone “{trimmed}” shows code {pending.verificationCode}.</span>{'\n'}
+            Approve? [y/N] <span className="accent strong">y</span><span className="cursor" aria-hidden="true" />
+          </code></pre>
+          <p className="hint-text">If your computer is not asking, run this on it:</p>
           <pre className="command"><code>pterm pair approve {pending.pendingId}</code></pre>
-          <p role="status" className="muted">Waiting for approval…</p>
+          <div className="waiting">
+            <p role="status"><span className="dots" aria-hidden="true"><span /><span /><span /></span>Waiting for your computer</p>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                flow.current?.cancel();
+                setPending(undefined);
+                setPhase('cancelled');
+              }}
+            >Codes don't match? Cancel</button>
+          </div>
         </section>
+      )}
+      {phase === 'cancelled' && (
+        <p role="alert" className="error">
+          Pairing cancelled. This phone stays unpaired; if your computer asks, answer N. Run <code>pterm pair</code> again
+          to start over.
+        </p>
       )}
       {phase === 'expired' && (
         <p role="alert" className="error">

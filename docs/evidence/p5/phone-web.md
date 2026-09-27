@@ -416,3 +416,254 @@ gateway with the rename route.
    say to run `pterm pair` again.
 6. Read-only hint and Take control on a 320 px wide phone (for example
    iPhone SE 1st gen) in portrait, with the keyboard open and closed.
+
+## UI v2 (2026-09-27)
+
+Branch `feat/ui-v2-web`. The phone web client now follows the approved
+"Termivoa v2" design (Paper file "termivoa"; exact colors, sizes, spacing
+and radii were read with the Paper tools, not from screenshots). Fonts stay
+local: system-ui for the UI, the local monospace stack for the terminal,
+keycaps, tabs and the status line. No downloaded fonts, gradients or
+animations. Protocol and security behavior is unchanged; the client only
+reads the two new optional session fields `lastOutputAt` and `preview`.
+
+### What changed
+
+- Live (in control): session tabs (open tab with `❯` and accent border,
+  new-output dot, `+` new session, `…` menu), status line
+  (`project · shell · cols×rows`, link dot, `● CONTROL`), and the cockpit dock:
+  agent keys `esc` `⌃C` `⇧⇥` `↑` `1` `2` `y` `⏎`, modifier row `tab`
+  `ctrl` `alt` `←` `↓` `→` (plus application scroll `▲` `▼` on the alternate
+  screen), and actions `❯ type`, `¶ compose`, `⌘ snips`, `↺ history`.
+- Live (read-only): same tabs and status line with `READ-ONLY`; the dock says
+  who has control ("<device> has control" / "No one has control"), "You are
+  watching. The agent keeps working.", Take control, History and Sessions.
+- `…` menu: Release control, Rename, Terminate (same confirmation text as
+  before), All sessions, Settings. Rename and Terminate moved here from the
+  Sessions list.
+- Composer and Snippets are bottom sheets over the dimmed terminal. They
+  overlay the dock, so opening them does not resize the PTY.
+- Sessions: title, host line, settings button; rows with glyph tile, name,
+  controller text (You = accent, Other device = amber, No one = muted),
+  `project · shell · age`, new-output dot and preview line (plain text only);
+  exited rows faded and not openable; `❯ new session`.
+- New session (new screen, `/new`): saved launch presets, custom project /
+  shell (first profile, the login shell, is the default) / optional "run
+  first", "save as preset", `❯ start session`.
+- Pair: wordmark, step label, big title, six digit tiles, a preview of the
+  computer's `Approve? [y/N]` prompt, the `pterm pair approve` fallback,
+  static waiting dots and "Codes don't match? Cancel".
+- History: header with Done, "Paused at … · N lines", older lines dimmed,
+  accent selection, "New output · Return to live" pill, and a Copy button
+  that copies the current selection with the user's tap.
+- Settings restyled (device name, text size, build, log out).
+- Fix found during the browser check: the controller's fit loop could
+  oscillate with desktop scrollbars (grid overflows → scrollbar narrows the
+  box → smaller grid → scrollbar goes → larger grid). The terminal area now
+  hides scrollbars from layout (panning still works) and measures its
+  offset size.
+
+### Feature rules
+
+- Tabs: running sessions from the session list, polled every 5 s while
+  Sessions or Live is open and the page is visible. Switching tabs unmounts
+  Live (release control, `session.detach`, close) and mounts a new
+  connection that attaches read-only. No lease, sequence or input carries
+  over.
+- New-output dot: `lastOutputAt` newer than this device's last view of that
+  session id + generation. Last-view times live in localStorage
+  (`pterm.lastViewed`, at most 100 entries, not secret). A view records
+  max(phone time, the session's own `lastOutputAt`) so clock skew cannot
+  flag output already seen.
+- Agent keys send fixed messages (exact envelopes tested), ignore the armed
+  Ctrl/Alt latch, and are disabled without control. The modifier row keeps
+  the existing latch behavior.
+- Snippets (localStorage `pterm.snippets`): three generic defaults; title
+  ≤ 80 characters, text ≤ 64 KiB and no control characters except tab and
+  line breaks, at most 50. Tap sends `input.paste`, then Enter only when the
+  snippet asks. Multi-line text shows the composer's confirmation first.
+  Disabled without control. `+ new`, edit and delete via an edit toggle.
+- Launch presets (localStorage `pterm.launchPresets`, at most 20, none by
+  default): label, project, shell, optional run first (one line, ≤ 1000
+  characters).
+- Run first: after the first snapshot is applied, ask for control only if no
+  one holds it, then send the command as text and Enter once, and keep
+  control. If someone else holds control, the grant fails, the link drops or
+  the shell ends, nothing is sent and a banner says why. The request is
+  in-memory only and marked settled, so reconnects, reloads and returning to
+  the tab never send it again.
+
+### Tests
+
+```
+pnpm typecheck    # pass
+pnpm test:web     # 22 files, 151 tests passed (was 18 files, 117 tests)
+pnpm build:web    # pass (Live chunk size warning only, as before)
+./scripts/check   # exit 0 (Node 24.11.0): no generation drift, plan copy ok,
+                  # gofmt/go vet clean, all Go packages ok, web checks as above
+```
+
+New or changed tests: exact agent-key envelopes and nothing sent without
+control (`terminal/agentKeys.test.ts`); snippet defaults, bounds, tampered
+storage, multi-line confirmation and sendEnter (`terminal/snippets.test.ts`);
+run first: free control only, sent once, not after reconnect or remount, not
+when control is taken or the link drops, not after exit
+(`terminal/runFirst.test.ts`); new-output dot against last view, generation
+keying, clock skew, storage bound, and launch preset bounds
+(`screens/activity.test.ts`); tab switching detaches and reattaches
+read-only with no control or input carried (`terminal/Connection.test.ts`);
+dock accessible names ("Control C", "Shift Tab", "Enter", …), keys disabled
+without control, armed modifier, tab dot and active tab
+(`screens/Live.test.tsx`); controller text, ages, preview and title rendered
+as text with no HTML injection, exited rows, first use and New session
+(`screens/Sessions.test.tsx`); the import graph still keeps xterm, Live and
+the new dock/sheet/run-first code out of the first-load chunk
+(`screens/chunks.test.tsx`).
+
+### Sizes (gzip)
+
+| Asset | Before | After |
+| --- | --- | --- |
+| First-load JS (`index-*.js`) | 76.00 kB | 78.56 kB |
+| First-load CSS (`index-*.css`) | 1.58 kB | 3.88 kB |
+| `index.html` | 0.46 kB | 0.46 kB |
+| Live JS (lazy) | 130.08 kB | 135.83 kB |
+| Live CSS (lazy, xterm) | 1.01 kB | 1.01 kB |
+
+### Desktop browser check (not a phone)
+
+Desktop Chromium at 390×844 and 320×568 CSS px against `web/dist` served by
+a throwaway mock gateway outside the repository (hand-written WebSocket that
+speaks the v1 envelopes). Checked: Sessions rows, dots and a preview holding
+`<img …>` shown as literal text; read-only dock with "MacBook has control";
+Take control → cockpit; `⌃C`, `⇧⇥`, `y`, `⏎` produced exactly
+`character c + ctrl`, `tab + shift`, text `y`, `enter`; snippet `git status`
+→ `input.paste` + `enter`; a two-line snippet asked first, then pasted;
+switching to another tab sent `control.release`, `session.detach`, then a
+new `hello`/`session.attach` and showed READ-ONLY; New session with run
+first `claude` → one `control.acquire`, `input.text "claude"`, `enter`;
+reloading that session sent nothing. At 320 px every button was at least
+44×44 px and nothing overflowed the viewport; the agent-key row wraps to two
+lines there.
+
+### Deviations from the design
+
+- Keys and tabs keep 44 px hit targets. The design's agent keys are 34–46 px
+  wide, so the row needs about 390 px; narrower phones wrap it to two lines.
+  Tabs keep the 36 px face inside a 44 px button.
+- The design's "edit" next to AGENT KEYS was dropped (not implemented).
+- The session list does not include other devices' labels, so the list says
+  "Other device" (amber) instead of a device name. Live shows the label from
+  `control.changed` when the broker sends it.
+- "12 new lines" in History is "New output": the client knows output
+  arrived, not how many lines.
+- Pairing says "your computer" (hosts can be Windows) and shows the real
+  `Approve? [y/N]` prompt plus the `pterm pair approve` fallback.
+- "hold to edit" on snippets and presets is an explicit edit toggle
+  (long-press is not accessible). Presets can be removed this way.
+- The Sessions host line says "Your computer", as the API has no host name.
+- The read-only "Details" link was not in the brief and was left out.
+- Small hint text uses the muted color instead of the design's `#5B6578`,
+  which is below 4.5:1 contrast; section labels keep `#5B6578`.
+
+### Owner verification needed
+
+Not run; each needs a real phone over the private HTTPS hostname.
+
+1. Cockpit dock on iPhone Safari and Android Chrome with the soft keyboard
+   open: keys stay above the keyboard, tapping a key does not close the
+   keyboard, the armed `ctrl` then a typed letter sends Ctrl+letter.
+2. Agent keys against a real agent (for example Claude Code): `esc` stops,
+   `⌃C` interrupts, `⇧⇥` cycles the mode, `1`/`2`/`y`/`⏎` answer prompts.
+3. Tabs: switching between two running sessions never carries control
+   (the new tab says READ-ONLY until Take control), the new-output dot
+   appears for a background session that prints, and clears after viewing.
+4. Snippets: defaults present on a fresh phone; add, edit, delete survive a
+   reload; a multi-line snippet asks first; nothing is sent without control.
+5. New session with run first on a fresh session: the command runs once;
+   reconnecting (toggle airplane mode) does not run it again.
+6. 320–375 px wide phones: the agent-key row wraps cleanly and the terminal
+   keeps a usable height; Composer and Snippets sheets scroll above the
+   keyboard.
+7. History Copy on iOS and Android: select lines, tap Copy, paste elsewhere.
+8. VoiceOver/TalkBack read "Control C", "Shift Tab", "Enter", tab names with
+   ", new output", and "Take control".
+
+## UI v2 review pass 2026-09-27
+
+Same-account agent review (not an independent reviewer) of
+`git diff origin/main...feat/ui-v2` on branch `fix/ui-v2-review`. Each fix
+has a test that failed before the fix.
+
+### Fixed
+
+- Medium: the session list poll could stack requests (a new one every 5 s
+  while an older one hung) and a slow older response could overwrite a newer
+  list. `latestOnly` in `screens/hooks.ts` now skips a tick while a request is
+  open and applies only the newest response (`screens/hooks.test.ts`).
+- Medium (accessibility): the pairing code tiles are `aria-hidden` and the
+  `aria-label` sat on a `<p>`, where screen readers do not read it, so the
+  verification code had no spoken text. It is now visually hidden text
+  (`screens/Setup.test.tsx`).
+- Low: a stored snippet list with a repeated id made editing one snippet
+  overwrite the other (edit and delete match by id). Loading keeps the first
+  entry per id (`terminal/snippets.test.ts`).
+- Low (privacy): the session list preview printed text the terminal marks as
+  concealed (SGR 8), which the live view hides. Concealed cells now count as
+  blank (`internal/broker/preview_test.go`).
+- Docs: `http-api.md` said `lastOutputAt` moves when the screen changes; it
+  moves on any applied child output (bell, title change), as the broker
+  evidence already says.
+
+### Checked, no defect found
+
+- Run first: sent once (the request is in-memory and marked settled before
+  sending); nothing after reload, back/forward, tab return or reconnect
+  (every new view has no request); asks for control only when the first
+  snapshot is live and `control.changed` (sent before the snapshot) shows no
+  other controller; gives up if control is taken while acquiring.
+- Tabs: the Live screen is keyed by session id + generation, so switching
+  releases control, sends `session.detach`, closes the socket and clears the
+  reconnect timer; lease, sequence, latch, panel and composer draft do not
+  carry over.
+- Agent keys: sent only through the Connection, which refuses without a live
+  lease. Real encodings through the broker codec and emulator: `esc` →
+  `\x1b`, `⌃C` → `\x03`, `⇧⇥` → `\x1b[Z`, `↑` → `\x1b[A`, `⏎` → `\r`.
+- Snippets: every send goes through `checkPaste` (64 KiB bound, multi-line
+  confirmation, control required); stored data is type-checked and bounded;
+  a lone surrogate from tampered storage is refused by the sender without a
+  crash.
+- localStorage (`pterm.snippets`, `pterm.launchPresets`, `pterm.lastViewed`):
+  corrupt JSON, wrong types and oversize arrays fall back or are filtered;
+  none holds a secret.
+- No `innerHTML`/`dangerouslySetInnerHTML`/links; titles, previews, labels
+  and snippet text render as React text only.
+- Polling stops when the page is hidden and when Sessions/Live unmount; an
+  auth failure returns to Setup and stops it.
+- Broker: `lastOutput` is set only in the PTY output case of the actor; CLI
+  list/status pass no device, so they never carry `lastOutputAt`/`preview`;
+  the screen copy is taken in the actor and the text is built after it
+  replies.
+- Preview validator parity: 200,031 strings (random from a hostile pool of
+  controls, NEL, NBSP, U+180E, U+2028, U+200B, U+FEFF, bidi, combining marks,
+  CJK, emoji, private-use, unassigned, plus 160/161-rune and 480/481-byte
+  edges) gave the same verdict from Go `ValidatePreviewText` and the schema
+  rule used by the web Ajv keywords (11,690 valid on both sides, 0
+  disagreements). All 19,985 non-empty `screenPreview` outputs from 20,000
+  random screens passed the schema rule. Scratch harness only, outside the
+  repository.
+
+### Known limits (not changed)
+
+- Run first and a manual Take control can still take over another device
+  that acquired within one round trip before our `control.acquire`: the
+  protocol's acquire is a takeover and has no "only if free" form.
+- Closing a sheet does not return focus to the button that opened it.
+
+### Commands
+
+```
+pnpm typecheck && pnpm test:web && pnpm build:web   # pass, 23 files, 155 tests
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/...   # pass
+GOTOOLCHAIN=go1.27.1 ./scripts/check                # exit 0 (Node 24.11.0)
+```

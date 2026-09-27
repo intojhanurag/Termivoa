@@ -624,7 +624,7 @@ func TestSessionPresenceTracksControlAndViewers(t *testing.T) {
 	const device = "8aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
 	want := func(controller string, viewers int) {
 		t.Helper()
-		presence, err := session.Presence(ctx)
+		presence, err := session.Presence(ctx, false)
 		if err != nil || presence != (SessionPresence{ControllerDevice: controller, Viewers: viewers}) {
 			t.Fatalf("presence = %#v, %v; want controller %q, %d viewers", presence, err, controller, viewers)
 		}
@@ -693,13 +693,18 @@ func TestGatewaySessionListReportsControllerPerDevice(t *testing.T) {
 		t.Fatalf("cli list = %#v, %v", cli, err)
 	}
 	check(cli.Sessions[0], nil)
+	if cli.Sessions[0].Preview != nil || cli.Sessions[0].LastOutputAt != nil {
+		t.Fatalf("cli list carries terminal activity: %#v", cli.Sessions[0])
+	}
 }
 
 // A session that already exited or was lost can stay in the registry for a
 // moment. It must not report presence, the same as a session that is gone.
 func TestWithPresenceSkipsEndedSessions(t *testing.T) {
-	fixture, session, _, service, _ := newAuthStreamFixture(t)
+	fixture, session, process, service, _ := newAuthStreamFixture(t)
 	phone := pairDevice(t, service, "Pocket")
+	process.Emit([]byte("still here\r\n"))
+	waitPresence(t, session, func(presence SessionPresence) bool { return presence.Preview == "still here" })
 	viewer := attachPresenceViewer(t, session, "8ccccccc-cccc-4ccc-8ccc-ccccccccccc1", phone.DeviceID)
 	if _, err := session.AcquireControl(context.Background(), viewer); err != nil {
 		t.Fatal(err)
@@ -712,13 +717,106 @@ func TestWithPresenceSkipsEndedSessions(t *testing.T) {
 		record := managementSessionRecord(metadata)
 		record.State = state
 		got := fixture.server.withPresence(context.Background(), record, phone.DeviceID)
-		if got.Controlled != nil || got.ViewerCount != nil || got.ControllerIsYou != nil {
+		if got.Controlled != nil || got.ViewerCount != nil || got.ControllerIsYou != nil ||
+			got.LastOutputAt != nil || got.Preview != nil {
 			t.Fatalf("%s session has presence: %#v", state, got)
 		}
 	}
 	running := fixture.server.withPresence(context.Background(), managementSessionRecord(metadata), phone.DeviceID)
-	if running.Controlled == nil || !*running.Controlled {
+	if running.Controlled == nil || !*running.Controlled || running.LastOutputAt == nil || running.Preview == nil {
 		t.Fatalf("running session lost presence: %#v", running)
+	}
+}
+
+func waitPresence(t *testing.T, session *Session, ready func(SessionPresence) bool) SessionPresence {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		presence, err := session.Presence(context.Background(), true)
+		if err == nil && ready(presence) {
+			return presence
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("presence never became ready: %#v, %v", presence, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// lastOutputAt moves only when child output is applied. Resize, snapshots,
+// viewer attach/resync and control changes leave it alone.
+func TestLastOutputTracksOnlyChildOutput(t *testing.T) {
+	_, session, process := newStreamFixture(t)
+	ctx := context.Background()
+	if presence, err := session.Presence(ctx, true); err != nil || !presence.LastOutput.IsZero() || presence.Preview != "" {
+		t.Fatalf("fresh session activity = %#v, %v", presence, err)
+	}
+	before := time.Now()
+	process.Emit([]byte("\x1b[2J\x1b[Hbuild ok\r\n\x1b[1mtests   \ue0b0passed\x1b[0m\r\n"))
+	first := waitPresence(t, session, func(presence SessionPresence) bool { return !presence.LastOutput.IsZero() })
+	if first.LastOutput.Before(before) {
+		t.Fatalf("lastOutput %v precedes the output", first.LastOutput)
+	}
+	first = waitPresence(t, session, func(presence SessionPresence) bool { return presence.Preview == "tests \ufffdpassed" })
+
+	time.Sleep(5 * time.Millisecond)
+	viewer := attachPresenceViewer(t, session, "8ddddddd-dddd-4ddd-8ddd-ddddddddddd1", "8ddddddd-dddd-4ddd-8ddd-ddddddddddd2")
+	grant, err := session.AcquireControl(ctx, viewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := MutationIdentity{Generation: rpcSessionGen, ConnectionID: grant.ConnectionID, DeviceID: grant.DeviceID, Lease: grant.Lease}
+	if err := session.Resize(ctx, identity, 100, 30); err != nil {
+		t.Fatal(err)
+	}
+	_ = viewer.Resync(ctx)
+	if _, err := session.Snapshot(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.ReleaseControl(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	if presence, err := session.Presence(ctx, true); err != nil || !presence.LastOutput.Equal(first.LastOutput) {
+		t.Fatalf("non-output actions moved lastOutput: %v -> %#v, %v", first.LastOutput, presence, err)
+	}
+
+	process.Emit([]byte("next"))
+	second := waitPresence(t, session, func(presence SessionPresence) bool { return presence.LastOutput.After(first.LastOutput) })
+	if second.Preview != "next" {
+		t.Fatalf("preview after output = %q", second.Preview)
+	}
+	process.Emit([]byte("\x1b[2J"))
+	waitPresence(t, session, func(presence SessionPresence) bool { return presence.Preview == "" })
+}
+
+func TestGatewaySessionListCarriesActivity(t *testing.T) {
+	fixture, _, process, service, _ := newAuthStreamFixture(t)
+	phone := pairDevice(t, service, "Pocket")
+	process.Emit([]byte("$ make\r\n" + strings.Repeat("界", 100) + "\r\n")) // Wraps at 80 columns.
+	gateway := startRPCTestClient(t, fixture.server, protocol.Gateway)
+	want := strings.Repeat("界", 20)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		response := gateway.gateway(t, protocol.GatewaySessionList, credentialPayload(phone.Credential))
+		result, err := protocol.DecodeRPCPayload[protocol.HTTPSessionListResponse](response)
+		if err != nil || len(result.Sessions) != 1 {
+			t.Fatalf("list = %#v, %v", result, err)
+		}
+		record := result.Sessions[0]
+		if record.Preview != nil && *record.Preview == want {
+			if record.LastOutputAt == nil || len(*record.LastOutputAt) != len("2026-09-27T00:00:00.000Z") ||
+				!strings.HasSuffix(*record.LastOutputAt, "Z") {
+				t.Fatalf("lastOutputAt = %v", record.LastOutputAt)
+			}
+			if _, err := time.Parse(time.RFC3339Nano, *record.LastOutputAt); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("gateway list never carried the preview: %#v", record)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
