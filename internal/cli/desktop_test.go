@@ -461,3 +461,33 @@ func TestDesktopRejectedInputShowsBriefFooterNotice(t *testing.T) {
 		t.Fatalf("expired notice footer = %q", got)
 	}
 }
+
+func TestDesktopClosedMessageReportsSessionOutcome(t *testing.T) {
+	t.Parallel()
+	code, signaled := int64(3), int64(-1)
+	for _, test := range []struct {
+		name  string
+		state liveclient.State
+		want  string
+	}{
+		{"exited with code", liveclient.State{Lifecycle: protocol.Exited, ExitCode: &code}, "Session ended (exit code 3).\r\n"},
+		{"exited without code", liveclient.State{Lifecycle: protocol.Exited}, "Session ended.\r\n"},
+		{"ended by signal", liveclient.State{Lifecycle: protocol.Exited, ExitCode: &signaled}, "Session ended.\r\n"},
+		{"lost", liveclient.State{Lifecycle: protocol.Lost}, "Session was lost; start a new session explicitly.\r\n"},
+		{"detach while running", liveclient.State{Connected: true, Lifecycle: protocol.Running}, "Attachment closed; the managed session was not terminated.\r\n"},
+		{"connection loss", liveclient.State{Lifecycle: protocol.Running}, "Attachment closed; the managed session was not terminated.\r\n"},
+		{"exiting is not yet ended", liveclient.State{Lifecycle: protocol.Exiting}, "Attachment closed; the managed session was not terminated.\r\n"},
+	} {
+		display, _ := testDesktopDisplay(20, 6)
+		client := desktopFake()
+		client.setState(test.state)
+		display.setClient(client)
+		if got := display.closedMessage(); got != test.want {
+			t.Fatalf("%s: message = %q, want %q", test.name, got, test.want)
+		}
+	}
+	display, _ := testDesktopDisplay(20, 6)
+	if got := display.closedMessage(); got != "Attachment closed; the managed session was not terminated.\r\n" {
+		t.Fatalf("no connection: message = %q", got)
+	}
+}
