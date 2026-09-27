@@ -54,6 +54,8 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayOrigin: GatewayOriginResult, GatewayDeviceRename: GatewayDeviceRenameResult,
 	GatewayPushConfig: GatewayPushConfigResult, GatewayPushSubscribe: GatewayPushSubscribeResult,
 	GatewayPushUnsubscribe: GatewayPushUnsubscribeResult, GatewayPushTest: GatewayPushTestResult,
+	GatewayUploadBegin: GatewayUploadBeginResult, GatewayUploadChunk: GatewayUploadChunkResult,
+	GatewayUploadCommit: GatewayUploadCommitResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -347,7 +349,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 	case GatewayError:
 		return validateRPCError[GatewayRPCMessageType](envelope)
 	default:
-		return errors.New("unknown gateway RPC message type")
+		return validateGatewayUploadPayload(envelope)
 	}
 }
 

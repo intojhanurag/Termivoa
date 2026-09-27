@@ -50,6 +50,8 @@ export type ProtocolTypes = {
     readonly gatewayRPCSessionCreate:          GatewayRPCSessionCreatePayload;
     readonly gatewayRPCSessionRename:          GatewayRPCSessionRenamePayload;
     readonly gatewayRPCSessionTerminate:       GatewayRPCSessionTerminatePayload;
+    readonly gatewayRPCUploadBegin:            GatewayRPCUploadBeginPayload;
+    readonly gatewayRPCUploadChunk:            GatewayRPCUploadChunkPayload;
     readonly heartbeat:                        HeartbeatPayload;
     readonly hello:                            HelloPayload;
     readonly historyChanged:                   HistoryChangedPayload;
@@ -73,6 +75,9 @@ export type ProtocolTypes = {
     readonly httpSessionRenameRequest:         HTTPSessionRenameRequest;
     readonly httpSessionTerminateRequest:      HTTPSessionTerminateRequest;
     readonly httpSettingsResponse:             HTTPSettingsResponse;
+    readonly httpUploadContentType:            HTTPUploadContentType;
+    readonly httpUploadRequest:                HTTPUploadRequest;
+    readonly httpUploadResponse:               HTTPUploadResponse;
     readonly inputAccepted:                    InputAcceptedPayload;
     readonly inputAnswer:                      InputAnswerPayload;
     readonly inputKey:                         InputKeyPayload;
@@ -366,7 +371,7 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.error";
 
 /**
  * The browser origin configured with admin.config.origin, absent when none is set. It is
@@ -474,6 +479,25 @@ export type GatewayRPCSessionTerminatePayload = {
 export type HTTPSessionTerminateRequest = {
     readonly generation:  string;
     readonly operationId: string;
+}
+
+/**
+ * Starts one image upload on a dedicated connection. Only the device that holds the
+ * session's controller lease may upload. size is the exact decoded file size.
+ */
+export type GatewayRPCUploadBeginPayload = {
+    readonly credential: string;
+    readonly generation: string;
+    readonly sessionId:  string;
+    readonly size:       number;
+}
+
+/**
+ * The next 1 byte to 128 KiB of the file, standard padded base64, so the message stays
+ * under the 256 KiB IPC limit.
+ */
+export type GatewayRPCUploadChunkPayload = {
+    readonly data: string;
 }
 
 export type HeartbeatPayload = {
@@ -613,6 +637,29 @@ export type HTTPSettingsResponse = {
     readonly hostBuild:        string;
     readonly projects:         HTTPNamedOption[];
     readonly shellProfiles:    HTTPNamedOption[];
+}
+
+/**
+ * Image type detected by the broker from the file's magic bytes. The client never names it.
+ */
+export type HTTPUploadContentType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+
+/**
+ * One image for the session's project folder. data is the file, standard padded base64, 1
+ * byte to 5 MiB decoded. The client name is never sent: the broker names the file.
+ */
+export type HTTPUploadRequest = {
+    readonly data:       string;
+    readonly generation: string;
+}
+
+/**
+ * Where the broker saved the image, relative to the session's project folder.
+ */
+export type HTTPUploadResponse = {
+    readonly contentType: HTTPUploadContentType;
+    readonly path:        string;
+    readonly size:        number;
 }
 
 export type InputAcceptedPayload = {

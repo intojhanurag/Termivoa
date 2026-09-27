@@ -50,6 +50,8 @@ type ProtocolTypes struct {
 	GatewayRPCSessionCreate          GatewayRPCSessionCreatePayload          `json:"gatewayRPCSessionCreate"`
 	GatewayRPCSessionRename          GatewayRPCSessionRenamePayload          `json:"gatewayRPCSessionRename"`
 	GatewayRPCSessionTerminate       GatewayRPCSessionTerminatePayload       `json:"gatewayRPCSessionTerminate"`
+	GatewayRPCUploadBegin            GatewayRPCUploadBeginPayload            `json:"gatewayRPCUploadBegin"`
+	GatewayRPCUploadChunk            GatewayRPCUploadChunkPayload            `json:"gatewayRPCUploadChunk"`
 	Heartbeat                        HeartbeatPayload                        `json:"heartbeat"`
 	Hello                            HelloPayload                            `json:"hello"`
 	HistoryChanged                   HistoryChangedPayload                   `json:"historyChanged"`
@@ -73,6 +75,9 @@ type ProtocolTypes struct {
 	HTTPSessionRenameRequest         HTTPSessionRenameRequest                `json:"httpSessionRenameRequest"`
 	HTTPSessionTerminateRequest      HTTPSessionTerminateRequest             `json:"httpSessionTerminateRequest"`
 	HTTPSettingsResponse             HTTPSettingsResponse                    `json:"httpSettingsResponse"`
+	HTTPUploadContentType            HTTPUploadContentType                   `json:"httpUploadContentType"`
+	HTTPUploadRequest                HTTPUploadRequest                       `json:"httpUploadRequest"`
+	HTTPUploadResponse               HTTPUploadResponse                      `json:"httpUploadResponse"`
 	InputAccepted                    InputAcceptedPayload                    `json:"inputAccepted"`
 	InputAnswer                      InputAnswerPayload                      `json:"inputAnswer"`
 	InputKey                         InputKeyPayload                         `json:"inputKey"`
@@ -419,6 +424,21 @@ type HTTPSessionTerminateRequest struct {
 	OperationID string `json:"operationId"`
 }
 
+// Starts one image upload on a dedicated connection. Only the device that holds the
+// session's controller lease may upload. size is the exact decoded file size.
+type GatewayRPCUploadBeginPayload struct {
+	Credential string `json:"credential"`
+	Generation string `json:"generation"`
+	SessionID  string `json:"sessionId"`
+	Size       int64  `json:"size"`
+}
+
+// The next 1 byte to 128 KiB of the file, standard padded base64, so the message stays
+// under the 256 KiB IPC limit.
+type GatewayRPCUploadChunkPayload struct {
+	Data string `json:"data"`
+}
+
 type HTTPErrorResponse struct {
 	Error BrokerRPCErrorPayload `json:"error"`
 }
@@ -472,6 +492,20 @@ type HTTPSettingsResponse struct {
 	HostBuild        string            `json:"hostBuild"`
 	Projects         []HTTPNamedOption `json:"projects"`
 	ShellProfiles    []HTTPNamedOption `json:"shellProfiles"`
+}
+
+// One image for the session's project folder. data is the file, standard padded base64, 1
+// byte to 5 MiB decoded. The client name is never sent: the broker names the file.
+type HTTPUploadRequest struct {
+	Data       string `json:"data"`
+	Generation string `json:"generation"`
+}
+
+// Where the broker saved the image, relative to the session's project folder.
+type HTTPUploadResponse struct {
+	ContentType HTTPUploadContentType `json:"contentType"`
+	Path        string                `json:"path"`
+	Size        int64                 `json:"size"`
 }
 
 type HeartbeatPayload struct {
@@ -859,6 +893,12 @@ const (
 	GatewaySessionTerminateResult GatewayRPCMessageType = "gateway.session.terminate.result"
 	GatewaySettings               GatewayRPCMessageType = "gateway.settings"
 	GatewaySettingsResult         GatewayRPCMessageType = "gateway.settings.result"
+	GatewayUploadBegin            GatewayRPCMessageType = "gateway.upload.begin"
+	GatewayUploadBeginResult      GatewayRPCMessageType = "gateway.upload.begin.result"
+	GatewayUploadChunk            GatewayRPCMessageType = "gateway.upload.chunk"
+	GatewayUploadChunkResult      GatewayRPCMessageType = "gateway.upload.chunk.result"
+	GatewayUploadCommit           GatewayRPCMessageType = "gateway.upload.commit"
+	GatewayUploadCommitResult     GatewayRPCMessageType = "gateway.upload.commit.result"
 )
 
 type HTTPPairPollStatus string
@@ -866,6 +906,16 @@ type HTTPPairPollStatus string
 const (
 	Approved HTTPPairPollStatus = "approved"
 	Pending  HTTPPairPollStatus = "pending"
+)
+
+// Image type detected by the broker from the file's magic bytes. The client never names it.
+type HTTPUploadContentType string
+
+const (
+	ImageGIF  HTTPUploadContentType = "image/gif"
+	ImageJPEG HTTPUploadContentType = "image/jpeg"
+	ImagePNG  HTTPUploadContentType = "image/png"
+	ImageWebp HTTPUploadContentType = "image/webp"
 )
 
 type CapabilityProfile string

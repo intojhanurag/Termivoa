@@ -29,6 +29,9 @@
     { "$ref": "#/$defs/pushSubscribeMessage" },
     { "$ref": "#/$defs/pushUnsubscribeMessage" },
     { "$ref": "#/$defs/pushTestMessage" },
+    { "$ref": "#/$defs/uploadBeginMessage" },
+    { "$ref": "#/$defs/uploadChunkMessage" },
+    { "$ref": "#/$defs/uploadCommitMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -45,6 +48,9 @@
     { "$ref": "#/$defs/pushSubscribeResultMessage" },
     { "$ref": "#/$defs/pushUnsubscribeResultMessage" },
     { "$ref": "#/$defs/pushTestResultMessage" },
+    { "$ref": "#/$defs/uploadBeginResultMessage" },
+    { "$ref": "#/$defs/uploadChunkResultMessage" },
+    { "$ref": "#/$defs/uploadCommitResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -56,12 +62,14 @@
         "gateway.settings", "gateway.session.list", "gateway.session.create", "gateway.session.rename",
         "gateway.session.terminate", "gateway.live.open", "gateway.origin", "gateway.device.rename",
         "gateway.push.config", "gateway.push.subscribe", "gateway.push.unsubscribe", "gateway.push.test",
+        "gateway.upload.begin", "gateway.upload.chunk", "gateway.upload.commit",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
         "gateway.session.terminate.result", "gateway.live.open.result", "gateway.origin.result",
         "gateway.device.rename.result", "gateway.push.config.result", "gateway.push.subscribe.result",
-        "gateway.push.unsubscribe.result", "gateway.push.test.result", "gateway.error"
+        "gateway.push.unsubscribe.result", "gateway.push.test.result",
+        "gateway.upload.begin.result", "gateway.upload.chunk.result", "gateway.upload.commit.result", "gateway.error"
       ]
     },
     "credentialPayload": {
@@ -139,6 +147,29 @@
         "request": { "$ref": "http-api.schema.json#/$defs/pushUnsubscribeRequest" }
       }
     },
+    "uploadBeginPayload": {
+      "title": "GatewayRPCUploadBeginPayload",
+      "description": "Starts one image upload on a dedicated connection. Only the device that holds the session's controller lease may upload. size is the exact decoded file size.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "sessionId", "generation", "size"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "sessionId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "generation": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "size": { "type": "integer", "minimum": 1, "maximum": 5242880 }
+      }
+    },
+    "uploadChunkPayload": {
+      "title": "GatewayRPCUploadChunkPayload",
+      "description": "The next 1 byte to 128 KiB of the file, standard padded base64, so the message stays under the 256 KiB IPC limit.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data"],
+      "properties": {
+        "data": { "type": "string", "minLength": 4, "maxLength": 174764, "contentEncoding": "base64" }
+      }
+    },
     "originResultPayload": {
       "title": "GatewayRPCOriginResultPayload",
       "description": "The browser origin configured with admin.config.origin, absent when none is set. It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it is valid for the gateway's profile.",
@@ -190,6 +221,9 @@
     "pushSubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.subscribe" }, "payload": { "$ref": "#/$defs/pushSubscribePayload" } } },
     "pushUnsubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.unsubscribe" }, "payload": { "$ref": "#/$defs/pushUnsubscribePayload" } } },
     "pushTestMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.test" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "uploadBeginMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.begin" }, "payload": { "$ref": "#/$defs/uploadBeginPayload" } } },
+    "uploadChunkMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.chunk" }, "payload": { "$ref": "#/$defs/uploadChunkPayload" } } },
+    "uploadCommitMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.commit" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "pairRedeemResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemResponse" } } },
     "pairPollResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll.result" }, "payload": { "$ref": "#/$defs/pairPollResultPayload" } } },
     "authCheckResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.auth.check.result" }, "payload": { "$ref": "#/$defs/principalPayload" } } },
@@ -206,6 +240,9 @@
     "pushSubscribeResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.subscribe.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "pushUnsubscribeResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.unsubscribe.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "pushTestResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.test.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pushTestResponse" } } },
+    "uploadBeginResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.begin.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "uploadChunkResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.chunk.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "uploadCommitResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.commit.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/uploadResponse" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "gateway.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

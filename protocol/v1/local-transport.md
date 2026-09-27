@@ -12,7 +12,8 @@ After the IPC handshake, the first request selects one connection mode:
   sequential, correlated RPC. The connection cannot later switch to live mode.
 - From a `gateway` peer, only `gateway-rpc.schema.json` is accepted. A
   successful credential-bound `gateway.live.open` switches that connection to
-  a browser live stream. See `authentication-rpc.md`.
+  a browser live stream, and `gateway.upload.begin` dedicates it to one
+  chunked image upload. See `authentication-rpc.md`.
 - Canonical `hello` from `envelope.schema.json` selects a live terminal stream.
   It negotiates the same capability profile, envelopes, and structured inputs
   used by the phone protocol. No original child ANSI or raw client bytes cross

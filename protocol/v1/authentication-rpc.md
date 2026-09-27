@@ -41,6 +41,9 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.push.subscribe` | credential + `HTTPPushSubscribeRequest` | empty |
 | `gateway.push.unsubscribe` | credential + `HTTPPushUnsubscribeRequest` | empty |
 | `gateway.push.test` | `GatewayRPCCredentialPayload` | `HTTPPushTestResponse` |
+| `gateway.upload.begin` | `GatewayRPCUploadBeginPayload`: credential, `sessionId`, `generation`, `size` | empty; the connection now carries this upload only |
+| `gateway.upload.chunk` | `GatewayRPCUploadChunkPayload`: `data`, 1 byte to 128 KiB as base64 | empty |
+| `gateway.upload.commit` | `GatewayRPCCredentialPayload` | `HTTPUploadResponse` |
 
 `gateway.origin` is the only request besides pairing that carries no
 credential: the configured origin is not a secret. The gateway asks for it at
@@ -57,6 +60,30 @@ The `gateway.push.*` requests act only on the device that owns the
 credential; the request never names a device. The broker applies the push
 host allow-list, stores the subscription, and sends the test notification
 itself.
+
+### Image uploads
+
+An image (at most 5 MiB) does not fit in one 256 KiB IPC message, so the
+gateway sends it on a new, dedicated connection:
+
+1. `gateway.upload.begin` with the credential, session, generation and the
+   exact `size`. The broker authorizes the credential, requires that the
+   device holds the controller lease of that running generation, and takes an
+   upload slot (one per device, four in total, 12 per minute per device).
+2. `gateway.upload.chunk` messages in order, each at most 128 KiB decoded
+   (about 171 KiB of base64, well under the 256 KiB message limit). Each waits
+   for its empty result, so at most one chunk is in flight. More bytes than
+   `size` fail at once.
+3. `gateway.upload.commit` with the credential. The broker requires exactly
+   `size` bytes, authorizes the credential and the controller again (control
+   may have moved), checks the magic bytes, and writes the file. The result
+   is `HTTPUploadResponse`.
+
+The broker keeps the bytes in memory only, never on disk before commit. Any
+error answers `gateway.error` and ends the connection, which drops the
+buffer; so does 30 seconds without a message. Chunk and commit messages on
+any other connection are `invalid_request`. The connection ends after the
+commit result.
 
 Authorization precedes every other decision, including replay of an existing
 operation receipt. A poll result carries `credential` and
