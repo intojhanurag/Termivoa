@@ -3,6 +3,46 @@
 Date: 2026-09-27. The owner deferred these items to work on the UI first.
 Ask the agent to "do pending work" to complete them.
 
+## Road to public beta (updated 2026-09-28)
+
+Done: private beta `v0.1.0-beta.1` released, website and docs live at
+<https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>.
+
+### Before the public beta (the repo goes public)
+
+- [ ] **Real-device tests.** Linux (VPS `t3-vps`), Windows laptop, Android
+      phone. Also test the update steps in the docs once
+      (`pterm shutdown` → download → `pterm launch`).
+- [ ] **CI.** Run GitHub Actions after the minutes reset (early October) and
+      fix what fails. See "After the GitHub Actions minutes reset" below.
+- [ ] **24-hour soak test.** Sessions running for a full day; check memory
+      and reconnects (`scripts/soak.sh`).
+- [ ] **Secret scan of the full git history** before it becomes public.
+- [ ] **Licence audit.** Finish the notice audit in
+      `THIRD_PARTY_NOTICES.md` and `docs/dependencies.md`.
+- [ ] **One-line installer.** `curl … | sh` for macOS and Linux. Needs a
+      public repo or the binaries hosted on the website.
+- [ ] **Owner confirms** the `SECURITY.md` response times (7 days / 30 days).
+- [ ] **Owner makes the repo public.** Only the owner does this.
+
+### Small code items
+
+- [ ] Staged update refusal and diagnostics export (see "Backend gaps" below).
+- [ ] `pterm setup` asks "Pair another phone? [y/N]" when a phone is already
+      paired.
+
+### Money (owner decisions, all can wait)
+
+- [ ] **Domain** for the website, about $10–15 a year. Any time.
+- [ ] **Apple Developer Program**, $99 a year, to sign and notarize the Mac
+      app. Only before v1.0; `gh`/`curl` installs need no signing.
+- [ ] **Windows code-signing certificate.** Only if many Windows users come.
+
+### Before v1.0
+
+- [ ] Security review by an outside person.
+- [ ] Signed macOS and Windows apps.
+
 ## Windows (logic only; native testing is still an owner gate)
 
 - [x] **WSL bash profile.** Done in #38 (needs a real-Windows check). Detect WSL and add a "WSL bash" shell profile when
