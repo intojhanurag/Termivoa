@@ -62,33 +62,49 @@ func (PasteAction) desktopInputAction() {}
 func (KeyAction) desktopInputAction()   {}
 func (MouseAction) desktopInputAction() {}
 
+// InvalidInputError is a decoded local action that the shared protocol
+// rejects. It is never sent; Kind is a static ASCII action name.
+type InvalidInputError struct {
+	Kind string
+	Err  error
+}
+
+func (err *InvalidInputError) Error() string {
+	return fmt.Sprintf("desktop: invalid %s input: %v", err.Kind, err.Err)
+}
+
+func (err *InvalidInputError) Unwrap() error { return err.Err }
+
 func sendValidated(ctx context.Context, transport Transport, action InputAction) error {
 	var err error
+	var kind string
 	switch action := action.(type) {
 	case TextAction:
-		err = protocol.ValidateTextInput(action.Text)
+		kind, err = "text", protocol.ValidateTextInput(action.Text)
 	case PasteAction:
-		err = protocol.ValidatePasteInput(action.Text)
+		kind, err = "paste", protocol.ValidatePasteInput(action.Text)
 	case KeyAction:
 		var character *string
 		if action.Character != "" {
 			character = &action.Character
 		}
-		err = protocol.ValidateKeyInput(action.Key, character, action.Modifiers)
+		kind, err = "key", protocol.ValidateKeyInput(action.Key, character, action.Modifiers)
 	case MouseAction:
-		err = protocol.ValidateMouseInput(action.Kind, action.Button, action.Column, action.Row)
+		kind, err = "mouse", protocol.ValidateMouseInput(action.Kind, action.Button, action.Column, action.Row)
 	default:
-		err = errors.New("unsupported desktop input action")
+		return errors.New("unsupported desktop input action")
 	}
 	if err != nil {
-		return fmt.Errorf("desktop: invalid input: %w", err)
+		return &InvalidInputError{Kind: kind, Err: err}
 	}
 	return transport.Send(ctx, action)
 }
 
 // InputController maps Ultraviolet events into shared protocol input actions.
 // Ctrl+] detaches locally. Ctrl+V quotes the next Ctrl+] so the child can
-// receive a literal detach character.
+// receive a literal detach character; before any other key, paste, or mouse
+// event the pending Ctrl+V is sent as an ordinary key. Handle returns an
+// *InvalidInputError for a decoded action the protocol rejects; nothing is sent.
 type InputController struct {
 	quoteNext  bool
 	quoteEpoch uint64
@@ -168,10 +184,16 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 		if epoch == 0 || epoch != current || (controller.pasting && controller.pasteEpoch != epoch) {
 			return false, nil
 		}
+		if err := controller.flushQuote(ctx, transport); err != nil || event.Content == "" {
+			return false, err // An empty bracketed paste has nothing to send.
+		}
 		return false, sendValidated(ctx, transport, PasteAction{Text: event.Content})
 	case uv.MouseEvent:
 		if epoch == 0 || epoch != current {
 			return false, nil
+		}
+		if err := controller.flushQuote(ctx, transport); err != nil {
+			return false, err
 		}
 		action, ok := mouseAction(event)
 		if !ok {
@@ -183,6 +205,21 @@ func (controller *InputController) Handle(ctx context.Context, event uv.Event, t
 		// unknown sequences are intentionally never relayed to the child.
 		return false, nil
 	}
+}
+
+// flushQuote sends a pending Ctrl+V as an ordinary key. Ctrl+V is only a local
+// quote for the reserved detach key; for anything else both user actions are
+// preserved in order.
+func (controller *InputController) flushQuote(ctx context.Context, transport Transport) error {
+	if !controller.quoteNext {
+		return nil
+	}
+	controller.quoteNext = false
+	return sendValidated(ctx, transport, KeyAction{
+		Key:       protocol.Character,
+		Character: "v",
+		Modifiers: protocol.Modifiers{Ctrl: true},
+	})
 }
 
 func isCtrlKey(key uv.Key, code rune) bool {

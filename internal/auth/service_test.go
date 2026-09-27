@@ -208,9 +208,18 @@ func TestCredentialLifetimeExpiryAndClockRollback(t *testing.T) {
 	}
 	clock.Set(serviceStart.Add(-time.Hour))
 	fresh := pair(t, service, "Fresh")
+	// A clock step back rejects the request as a host fault, not as a bad
+	// credential, so the gateway keeps the cookie and the phone can retry.
 	clock.Set(serviceStart.Add(-2 * time.Hour))
-	if _, err := service.Authenticate(ctx, fresh.Credential); !errors.Is(err, ErrUnauthorized) {
+	if _, err := service.Authenticate(ctx, fresh.Credential); !errors.Is(err, ErrClockRollback) || errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("clock rollback before creation = %v", err)
+	}
+	if _, _, err := service.Bind(ctx, fresh.Credential); !errors.Is(err, ErrClockRollback) {
+		t.Fatalf("live bind after clock rollback = %v", err)
+	}
+	clock.Set(serviceStart.Add(-time.Hour))
+	if _, err := service.Authenticate(ctx, fresh.Credential); err != nil {
+		t.Fatalf("after the clock recovers: %v", err)
 	}
 }
 

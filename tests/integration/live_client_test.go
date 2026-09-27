@@ -452,3 +452,30 @@ func waitLiveCondition(t *testing.T, ctx context.Context, name string, ready fun
 		}
 	}
 }
+
+// The seventeenth viewer is rejected by the real broker. WaitReady must end
+// promptly with the broker's reason, not wait for a snapshot that never comes.
+func TestLiveClientAttachRejectedAtViewerLimit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	runtimeDir, _ := startLiveBroker(t, ctx)
+	created := createLiveSession(t, ctx, runtimeDir)
+	for range broker.MaxViewersPerSession {
+		connectLiveClient(t, ctx, runtimeDir, created.Session)
+	}
+	client, err := liveclient.Dial(ctx, liveclient.Config{
+		RuntimeDir: runtimeDir, ClientBuild: "live-integration", SessionID: created.Session.ID,
+		Generation: created.Session.Generation, Output: &liveDisplay{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	readyContext, cancelReady := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelReady()
+	err = client.WaitReady(readyContext)
+	remote, ok := errors.AsType[*liveclient.RemoteError](err)
+	if !ok || remote.Code != protocol.LimitExceeded {
+		t.Fatalf("attach beyond viewer limit = %v", err)
+	}
+}

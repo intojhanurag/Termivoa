@@ -309,6 +309,10 @@ func classifyAuthError(err error) (managementFailure, bool) {
 	case errors.Is(err, auth.ErrCleanup):
 		return managementFailure{protocol.InternalError,
 			"revocation is saved, but some live connections did not confirm closure in time"}, true
+	case errors.Is(err, auth.ErrClockRollback):
+		// Not unauthorized: the gateway would clear a cookie that cannot be
+		// sent again, forcing a new pairing for a host clock fault.
+		return managementFailure{protocol.HostUnavailable, "host clock changed; retry"}, true
 	case errors.Is(err, errAuthUnavailable):
 		return managementFailure{protocol.HostUnavailable, "broker authentication is unavailable"}, true
 	}

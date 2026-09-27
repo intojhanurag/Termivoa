@@ -4,24 +4,15 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
-)
 
-func freeLoopbackAddress(t *testing.T) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	return listener.Addr().String()
-}
+	"github.com/intojhanurag/phone-terminal/internal/host"
+)
 
 func processGroup(t *testing.T, pid int) int {
 	t.Helper()
@@ -49,7 +40,8 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 		t.Fatalf("build pterm: %v\n%s", err, output)
 	}
 	runtimeDir := filepath.Join(root, "runtime")
-	up := exec.Command(binary, "up", "--dev", "--data-dir", filepath.Join(root, "data"), "--runtime-dir", runtimeDir, "--listen", freeLoopbackAddress(t))
+	dataDir := filepath.Join(root, "data")
+	up := exec.Command(binary, "up", "--dev", "--data-dir", dataDir, "--runtime-dir", runtimeDir, "--listen", freeLoopbackAddress(t))
 	stdout, err := up.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +87,7 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 	if !strings.HasPrefix(lines.Text(), "gateway exited:") {
 		t.Fatalf("harness did not report the gateway exit: %q", lines.Text())
 	}
-	if _, reachable, _ := activeSessions(context.Background(), runtimeDir); !reachable {
+	if _, reachable, _ := activeSessions(context.Background(), host.Paths{DataDir: dataDir, RuntimeDir: runtimeDir}); !reachable {
 		t.Fatal("killing the gateway's process group stopped the broker")
 	}
 
@@ -105,7 +97,7 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 	if err := up.Wait(); err != nil {
 		t.Fatalf("harness exit after Ctrl+C: %v", err)
 	}
-	if _, reachable, _ := activeSessions(context.Background(), runtimeDir); reachable {
+	if _, reachable, _ := activeSessions(context.Background(), host.Paths{DataDir: dataDir, RuntimeDir: runtimeDir}); reachable {
 		t.Fatal("broker still running after Ctrl+C")
 	}
 }

@@ -513,3 +513,16 @@ func TestOriginConfiguration(t *testing.T) {
 		t.Fatal("development origins are not exact")
 	}
 }
+
+// A broker clock step back keeps the cookie: the pairing credential is sent
+// only once, so clearing it would force the phone to pair again.
+func TestHostClockRollbackKeepsCookie(t *testing.T) {
+	handler := newTestHandler(t, newFakeBroker())
+	for range 20 { // more than the failed-auth limit
+		response := do(handler, http.MethodGet, "/api/v1/settings", "", requestOptions{cookie: productionCookieName + "=" + clockCredential})
+		if response.Code != http.StatusServiceUnavailable || errorCode(t, response) != protocol.HostUnavailable ||
+			response.Header().Get("Set-Cookie") != "" {
+			t.Fatalf("clock rollback = %d %s %v", response.Code, response.Body, response.Header())
+		}
+	}
+}

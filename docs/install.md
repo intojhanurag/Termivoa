@@ -58,7 +58,10 @@ runtime directories, whether the broker and gateway respond, startup
 registration, available shells, and `tailscale status --json` /
 `tailscale serve status --json` if Tailscale is installed. Then it prints the
 exact files and commands it would use. It changes nothing without `--apply`,
-and `--apply` asks for confirmation unless you pass `--yes`.
+and `--apply` asks for confirmation unless you pass `--yes`. `--apply` refuses
+while a broker or gateway already runs without startup registration (for
+example after `pterm launch`): the registered copy could not start and would
+restart forever. Stop the process it names, then rerun.
 
 What `--apply` registers:
 
@@ -176,7 +179,10 @@ pterm uninstall --delete-data    # also delete paired devices, projects, setting
 ```
 
 Uninstall stops and removes the two startup entries. It refuses while the
-broker has active sessions. Your data stays unless you pass `--delete-data`.
+broker has active sessions or does not answer. Your data stays unless you pass
+`--delete-data`, which also refuses while any broker still runs (for example
+one started by `pterm launch` without startup registration); stop the broker
+it names first.
 
 Then remove the application:
 

@@ -145,6 +145,36 @@ func (lock *BrokerDataLock) Close() error {
 	return lock.closeErr
 }
 
+// BrokerLocksHeld reports whether a live process holds the broker lock of
+// dataDir or runtimeDir. It creates no directory or lock file: a missing lock
+// file has never been held.
+// ponytail: probing takes an existing free lock for an instant, so a broker
+// starting in that instant fails once; its supervisor or the user retries.
+func BrokerLocksHeld(dataDir, runtimeDir string) (bool, error) {
+	for _, lock := range [][2]string{{dataDir, "broker-data.lock"}, {runtimeDir, "broker.lock"}} {
+		if lock[0] == "" {
+			// An unknown directory is not the current working directory.
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(lock[0], lock[1])); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return false, fmt.Errorf("ipc: inspect broker lock: %w", err)
+		}
+		held, err := acquireBrokerLock(lock[0], lock[1])
+		if errors.Is(err, ErrBrokerAlreadyRunning) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if err := held.Close(); err != nil {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
 // ListenBroker acquires exclusive broker ownership, recovers a stale endpoint,
 // binds the current-user-only transport, and atomically publishes its descriptor.
 func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, error) {

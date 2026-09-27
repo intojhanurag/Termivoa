@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +14,7 @@ import (
 var (
 	validCredential   = strings.Repeat("A", 43)
 	revokedCredential = strings.Repeat("R", 43)
+	clockCredential   = strings.Repeat("K", 43) // broker clock stepped back
 	testSecret        = strings.Repeat("s", 43)
 )
 
@@ -59,6 +59,8 @@ func (broker *fakeBroker) authorize(credential string) error {
 		return nil
 	case revokedCredential:
 		return &gatewayapi.Error{Code: protocol.ErrorCodeRevoked, Message: "access revoked"}
+	case clockCredential:
+		return &gatewayapi.Error{Code: protocol.HostUnavailable, Message: "host clock changed; retry"}
 	default:
 		return &gatewayapi.Error{Code: protocol.Unauthorized, Message: "sign in required"}
 	}
@@ -157,13 +159,18 @@ type fakeStream struct {
 	end, closed        chan struct{}
 	endOnce, closeOnce sync.Once
 	sendErr            atomic.Pointer[gatewayapi.Error]
+	sends              atomic.Int32
 }
-
-var errStreamEnded = errors.New("stream ended")
 
 func (stream *fakeStream) finish() { stream.endOnce.Do(func() { close(stream.end) }) }
 
 func (stream *fakeStream) Send(ctx context.Context, envelope []byte) error {
+	defer stream.sends.Add(1)
+	select {
+	case <-stream.end: // like gatewayclient after access.revoked
+		return gatewayapi.ErrStreamEnded
+	default:
+	}
 	if rejected := stream.sendErr.Load(); rejected != nil {
 		return rejected
 	}
@@ -173,7 +180,7 @@ func (stream *fakeStream) Send(ctx context.Context, envelope []byte) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-stream.closed:
-		return errStreamEnded
+		return gatewayapi.ErrStreamEnded
 	}
 }
 
@@ -187,11 +194,11 @@ func (stream *fakeStream) Receive(ctx context.Context) ([]byte, error) {
 	case data := <-stream.toPhone:
 		return data, nil
 	case <-stream.end:
-		return nil, errStreamEnded
+		return nil, gatewayapi.ErrStreamEnded
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-stream.closed:
-		return nil, errStreamEnded
+		return nil, gatewayapi.ErrStreamEnded
 	}
 }
 

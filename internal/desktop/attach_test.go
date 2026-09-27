@@ -361,3 +361,57 @@ func TestAttachmentReportsActivationFailureOnce(t *testing.T) {
 		t.Fatalf("activation error = %v", err)
 	}
 }
+
+// A locally invalid decoded action is dropped and reported, never fatal. The
+// attachment keeps sending later input and still detaches on Ctrl+].
+func TestAttachmentDropsInvalidLocalInputAndContinues(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	transport := &attachmentTransport{recordingTransport: &recordingTransport{}}
+	var rejected []string
+	streamer := eventStreamerFunc(func(ctx context.Context, events chan<- uv.Event) error {
+		for _, event := range []uv.Event{
+			uv.KeyPressEvent{Code: 'é', Text: "é", Mod: uv.ModAlt},
+			uv.PasteEvent{Content: "a\fb"},
+			uv.PasteEvent{Content: ""},
+			uv.KeyPressEvent{Code: 'x', Text: "x"},
+			uv.KeyPressEvent{Code: ']', Mod: uv.ModCtrl},
+		} {
+			select {
+			case events <- event:
+			case <-ctx.Done():
+				return nil
+			}
+		}
+		<-ctx.Done()
+		return nil
+	})
+	attachment := Attachment{
+		TTY: &OuterTTY{output: &output, ops: ttyOperations{
+			makeRaw: func(uintptr) (*term.State, error) { return &term.State{}, nil },
+			restore: func(uintptr, *term.State) error { return nil },
+		}},
+		Events:  streamer,
+		Connect: connectTransport(transport),
+		InputRejected: func(_ context.Context, err *InvalidInputError) error {
+			rejected = append(rejected, err.Kind)
+			return nil
+		},
+	}
+	if err := attachment.Run(context.Background()); err != nil {
+		t.Fatalf("invalid local input ended attachment: %v", err)
+	}
+	if len(transport.actions) != 1 || transport.actions[0] != (TextAction{Text: "x"}) {
+		t.Fatalf("actions = %#v", transport.actions)
+	}
+	if strings.Join(rejected, ",") != "key,paste" {
+		t.Fatalf("rejected = %q", rejected)
+	}
+}
+
+func TestRestoreOuterTerminalResetsCursorShape(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(restoreOuterTerminal, "\x1b[0 q") {
+		t.Fatalf("restore sequence %q does not reset DECSCUSR", restoreOuterTerminal)
+	}
+}

@@ -359,3 +359,57 @@ func TestLiveRejectedMessageSendsTypedErrorThenCloses(t *testing.T) {
 	}
 	waitClosed(t, stream)
 }
+
+// A phone message sent after the broker ended the stream must not drop the
+// queued backlog and access.revoked: the phone still gets them, then 1008.
+func TestLiveSendAfterRevokeStillFlushesNotice(t *testing.T) {
+	broker := newFakeBroker()
+	_, bound := startLive(t, broker, func(handler *gatewayHandler) {
+		handler.liveLimits.outgoingBudget = 64 * 1024 * 1024
+	})
+	conn, _, err := dialLive(t, bound, liveHeader(bound, validCredential))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	conn.SetReadLimit(-1)
+	stream := openedStream(t, broker)
+	// 16 MiB of backlog outlasts loopback socket buffers while the phone
+	// does not read, so the writer is still busy when the heartbeat arrives.
+	backlog := []byte(`{"p":"` + strings.Repeat("x", 1000*1024) + `"}`)
+	for range 16 {
+		stream.toPhone <- backlog
+	}
+	revoked := []byte(`{"version":1,"type":"access.revoked","requestId":"` + uuidA + `","payload":{}}`)
+	stream.toPhone <- revoked
+	stream.finish()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	heartbeat := []byte(`{"version":1,"type":"heartbeat","requestId":"` + uuidB + `","payload":{}}`)
+	if err := conn.Write(ctx, websocket.MessageText, heartbeat); err != nil {
+		t.Fatal(err)
+	}
+	for stream.sends.Load() == 0 {
+		if ctx.Err() != nil {
+			t.Fatal("heartbeat did not reach the broker stream")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	for received := 0; ; received++ {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read after %d backlog messages: %v (close %d)", received, err, websocket.CloseStatus(err))
+		}
+		if bytes.Equal(data, revoked) {
+			if received != 16 {
+				t.Fatalf("access.revoked after %d of 16 backlog messages", received)
+			}
+			break
+		}
+	}
+	if code := readClose(t, conn); code != websocket.StatusPolicyViolation {
+		t.Fatalf("close code = %d, want 1008", code)
+	}
+	waitClosed(t, stream)
+}

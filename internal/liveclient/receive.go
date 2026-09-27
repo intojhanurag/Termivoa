@@ -172,6 +172,11 @@ func (client *Client) hostError(message protocol.Envelope) error {
 	}
 	for _, sent := range client.recent {
 		if sent.id == message.RequestID {
+			if sent.kind == protocol.SessionAttach {
+				// No viewer exists, so this connection can never become ready.
+				// Closing it ends WaitReady now with the broker's reason.
+				return err
+			}
 			client.remoteErrorLocked(err, sent.lease, sent.epoch)
 			return nil
 		}

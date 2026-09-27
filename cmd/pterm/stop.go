@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
@@ -40,7 +41,7 @@ func runStopCommand(ctx context.Context, args []string, output io.Writer) error 
 	default:
 		text.WriteString("The gateway is not running.\n")
 	}
-	count, reachable, err := activeSessions(ctx, config.runtimeDir)
+	count, reachable, err := activeSessions(ctx, host.Paths{RuntimeDir: config.runtimeDir})
 	switch {
 	case !reachable:
 		text.WriteString("The broker is not running.\n")
@@ -74,7 +75,7 @@ func runShutdownCommand(ctx context.Context, args []string, input *os.File, outp
 		_, err = io.WriteString(output, commandHelp)
 		return err
 	}
-	count, reachable, err := activeSessions(ctx, config.runtimeDir)
+	count, reachable, err := activeSessions(ctx, host.Paths{RuntimeDir: config.runtimeDir})
 	if reachable && err != nil {
 		return fmt.Errorf("cannot list the broker's sessions: %w", err)
 	}

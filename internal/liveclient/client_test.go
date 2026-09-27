@@ -52,6 +52,7 @@ type fakeHost struct {
 	writer   *ipc.FrameWriter
 	requests chan protocol.Envelope
 	done     chan struct{}
+	attach   protocol.Envelope
 }
 
 func newClientFixture(t *testing.T, output Output, configure ...func(*Config)) (*Client, *fakeHost, context.CancelFunc) {
@@ -108,7 +109,7 @@ func newClientFixture(t *testing.T, output Output, configure ...func(*Config)) (
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cancel(); _ = client.Close(); _ = server.Close(); <-host.done })
-	host.await(t, protocol.SessionAttach)
+	host.attach = host.await(t, protocol.SessionAttach)
 	host.send(t, protocol.SessionState, "", protocol.SessionStatePayload{State: protocol.Running})
 	return client, host, cancel
 }
@@ -745,5 +746,41 @@ func TestWriteCancellationClosesPartialFrame(t *testing.T) {
 	}
 	if _, err := peer.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Fatalf("poisoned connection remained open: %v", err)
+	}
+}
+
+// A rejected session.attach (for example the viewer limit) must end WaitReady
+// promptly with the broker's reason instead of waiting for a snapshot.
+func TestAttachRejectionEndsWaitReadyWithRemoteReason(t *testing.T) {
+	client, host, _ := newClientFixture(t, &bufferOutput{})
+	host.send(t, protocol.Error, host.attach.RequestID, protocol.ErrorPayload{Code: protocol.LimitExceeded, Message: "session resource limit reached"})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := client.WaitReady(ctx)
+	remote, ok := errors.AsType[*RemoteError](err)
+	if !ok || remote.Code != protocol.LimitExceeded || !strings.Contains(err.Error(), "session resource limit reached") {
+		t.Fatalf("WaitReady after attach rejection = %v", err)
+	}
+	if client.State().Connected {
+		t.Fatal("rejected attachment left an unattached connection open")
+	}
+}
+
+// JSON HTML escaping would expand each '<' to six bytes and push a valid
+// maximum-size paste past the inbound message limit.
+func TestMaximumPasteOfHTMLCharactersFitsMessageLimit(t *testing.T) {
+	client, host, _ := readyClient(t)
+	acquire(t, client, host, "1")
+	text := strings.Repeat("<", protocol.MaxPasteBytes)
+	result := make(chan error, 1)
+	go func() { result <- client.Send(context.Background(), desktop.PasteAction{Text: text}) }()
+	request := host.await(t, protocol.InputPaste)
+	payload, err := protocol.DecodePayload[protocol.InputPastePayload](request)
+	if err != nil || payload.Text != text {
+		t.Fatalf("paste payload = %d bytes, %v", len(payload.Text), err)
+	}
+	host.send(t, protocol.InputAccepted, request.RequestID, protocol.InputAcceptedPayload{InputSequence: payload.InputSequence})
+	if err := <-result; err != nil {
+		t.Fatal(err)
 	}
 }

@@ -46,7 +46,10 @@ Status mapping: `unauthorized`/`revoked` → 401, `pairing_expired` → 410,
 `pairing_pending` is not an error (poll returns `pending`), `limit_exceeded` →
 429, `session_missing` → 404, `generation_changed`/`session_lost` → 409,
 `host_unavailable` → 503, malformed input → 400 with `internal_error` never
-used for client mistakes.
+used for client mistakes. Only `unauthorized` and `revoked` clear the cookie.
+A host clock step back behind the credential's creation or last use is
+`host_unavailable` ("host clock changed; retry"): the request is rejected but
+the cookie is kept, because the credential cannot be delivered again.
 
 ## Pairing flow
 

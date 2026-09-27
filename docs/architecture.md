@@ -77,7 +77,7 @@ Normal-screen history is bounded and paged as an immutable snapshot. Alternate-s
 
 ## Input and control
 
-Remote and desktop clients send bounded `key`, `text`, `paste`, and `mouse` messages. The broker's emulator encodes them for active terminal modes. Control characters use named key events rather than raw bytes.
+Remote and desktop clients send bounded `key`, `text`, `paste`, and `mouse` messages. The broker's emulator encodes them for active terminal modes. Control characters use named key events rather than raw bytes. In v0 the desktop client does not enable mouse reporting in the outer terminal, so it sends no `mouse` messages and outer-terminal text selection keeps working; desktop mouse forwarding is a later, opt-in change.
 
 Each session has one controller connection. Acquiring control revokes the prior lease, advances a lease epoch, and produces a new random lease secret. Mutating messages carry session generation, lease, and a monotonically increasing sequence. Authorization and lease validity are rechecked at the broker immediately before acceptance.
 

@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -24,10 +26,9 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
-const (
-	devListenAddress = "127.0.0.1:8788"
-	waitTimeout      = 10 * time.Second
-)
+const devListenAddress = "127.0.0.1:8788"
+
+var waitTimeout = 10 * time.Second // tests shorten it
 
 // lifecycleEnv holds everything the lifecycle commands touch outside the
 // process, so tests can substitute a temporary home and a fake runner.
@@ -81,7 +82,9 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 
 type hostReport struct {
 	statuses []lifecycle.Status
-	broker   bool
+	broker   bool  // answered, or holds its data or runtime lock
+	sessions int   // active sessions of a broker that answered
+	listErr  error // set when a running broker's sessions are unknown
 	problems int
 }
 
@@ -105,15 +108,14 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 		fmt.Fprintf(output, "  %s directory: %s (%s)\n", directory.name, directory.path, state)
 	}
 
-	count, reachable, err := activeSessions(ctx, env.paths.RuntimeDir)
-	report.broker = reachable
+	report.sessions, report.broker, report.listErr = activeSessions(ctx, env.paths)
 	switch {
-	case !reachable:
+	case !report.broker:
 		problem("broker: not running")
-	case err != nil:
-		problem("broker: running, but its sessions could not be listed: %v", err)
+	case report.listErr != nil:
+		problem("broker: %v", report.listErr)
 	default:
-		fmt.Fprintf(output, "  broker: running, %d active session(s)\n", count)
+		fmt.Fprintf(output, "  broker: running, %d active session(s)\n", report.sessions)
 	}
 	if err := gatewayHealthy(ctx, env.gateway); err != nil {
 		problem("gateway: %s is not healthy: %v", env.gateway, err)
@@ -121,10 +123,11 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 		fmt.Fprintf(output, "  gateway: %s healthy\n", env.gateway)
 	}
 
-	report.statuses, err = env.host.Inspect(ctx, env.runner)
+	statuses, err := env.host.Inspect(ctx, env.runner)
 	if err != nil {
 		return report, err
 	}
+	report.statuses = statuses
 	for _, status := range report.statuses {
 		switch {
 		case status.Registered && status.FileMatches:
@@ -205,13 +208,23 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (proble
 	return problems + len(findings)
 }
 
-// activeSessions reports whether a broker answers and how many of its
-// sessions are not yet exited or lost.
-func activeSessions(ctx context.Context, runtimeDir string) (count int, reachable bool, err error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+// activeSessions reports whether a broker is running and how many of its
+// sessions are not yet exited or lost. It fails closed: a broker that holds
+// its data or runtime lock but does not answer (hung, starting, or another
+// protocol version) is running with err set. Only no answer and no held lock
+// means no broker.
+func activeSessions(ctx context.Context, paths host.Paths) (count int, running bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, ipc.HandshakeTimeout+2*time.Second)
 	defer cancel()
-	client, err := localclient.DialManagement(ctx, runtimeDir, buildID)
-	if err != nil {
+	client, dialErr := localclient.DialManagement(ctx, paths.RuntimeDir, buildID)
+	if dialErr != nil {
+		held, lockErr := ipc.BrokerLocksHeld(paths.DataDir, paths.RuntimeDir)
+		switch {
+		case lockErr != nil:
+			return 0, true, fmt.Errorf("cannot tell whether a broker is running: %w", lockErr)
+		case held:
+			return 0, true, fmt.Errorf("a broker is running but did not answer (%v); %s first", dialErr, stopBrokerHint(paths.RuntimeDir))
+		}
 		return 0, false, nil
 	}
 	defer client.Close()
@@ -219,7 +232,7 @@ func activeSessions(ctx context.Context, runtimeDir string) (count int, reachabl
 	for {
 		page, err := client.ListPage(ctx, cursor, 100)
 		if err != nil {
-			return 0, true, err
+			return 0, true, fmt.Errorf("running, but its sessions could not be listed: %w", err)
 		}
 		for _, session := range page.Sessions {
 			if session.State == protocol.Starting || session.State == protocol.Running || session.State == protocol.Exiting {
@@ -233,18 +246,45 @@ func activeSessions(ctx context.Context, runtimeDir string) (count int, reachabl
 	}
 }
 
-func refuseActiveSessions(ctx context.Context, runtimeDir, action string) error {
-	count, reachable, err := activeSessions(ctx, runtimeDir)
-	if !reachable {
+func (report hostReport) refuseActiveSessions(action string) error {
+	if !report.broker {
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("refusing to %s: cannot verify the broker's sessions: %w", action, err)
+	if report.listErr != nil {
+		return fmt.Errorf("refusing to %s: cannot verify the broker's sessions: %w", action, report.listErr)
 	}
-	if count > 0 {
-		return fmt.Errorf("refusing to %s: the broker has %d active session(s) that would end; finish them or run `pterm terminate <session-id>` first", action, count)
+	if report.sessions > 0 {
+		return fmt.Errorf("refusing to %s: the broker has %d active session(s) that would end; finish them or run `pterm terminate <session-id>` first", action, report.sessions)
 	}
 	return nil
+}
+
+// stopBrokerHint says how to stop the broker, naming its recorded process ID
+// as a last resort when it does not answer. The ID is diagnostic only.
+func stopBrokerHint(runtimeDir string) string {
+	descriptor, err := ipc.ReadEndpointDescriptor(runtimeDir)
+	switch {
+	case err != nil || descriptor.ProcessID <= 0:
+		return "run `pterm shutdown`"
+	case runtime.GOOS == "windows":
+		return fmt.Sprintf("run `pterm shutdown` (if the broker does not answer, end pterm.exe process %d in Task Manager)", descriptor.ProcessID)
+	default:
+		return fmt.Sprintf("run `pterm shutdown` (if the broker does not answer, `kill %d`)", descriptor.ProcessID)
+	}
+}
+
+// addressInUse reports whether the gateway's loopback address cannot be bound.
+func addressInUse(base string) bool {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return true
+	}
+	listener, err := net.Listen("tcp", parsed.Host)
+	if err != nil {
+		return true
+	}
+	_ = listener.Close()
+	return false
 }
 
 func gatewayHealthy(ctx context.Context, base string) error {
@@ -337,8 +377,16 @@ your terminal on the public internet.
 	if len(plan.Steps) == 0 {
 		return nil
 	}
+	// A registered copy of a process already running outside startup
+	// registration would fail on the data lock or port and restart forever.
+	if report.broker && !report.statuses[0].Registered {
+		return fmt.Errorf("refusing to register startup: a broker is already running outside startup registration; finish its sessions, %s, then rerun `pterm setup --apply`", stopBrokerHint(env.paths.RuntimeDir))
+	}
+	if !report.statuses[1].Registered && addressInUse(env.gateway) {
+		return fmt.Errorf("refusing to register startup: %s is already in use (a gateway started outside startup registration, or another program); stop that process, then rerun `pterm setup --apply`", env.gateway)
+	}
 	if plan.ChangesRunningBroker {
-		if err := refuseActiveSessions(ctx, env.paths.RuntimeDir, "replace the broker registration"); err != nil {
+		if err := report.refuseActiveSessions("replace the broker registration"); err != nil {
 			return err
 		}
 	}
@@ -412,13 +460,13 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	fmt.Fprintln(output, "The application itself stays: move Phone Terminal.app to the Trash, or remove it in Windows Settings > Apps.")
 
 	if plan.ChangesRunningBroker || len(data) > 0 {
-		if err := refuseActiveSessions(ctx, env.paths.RuntimeDir, "uninstall"); err != nil {
+		if err := report.refuseActiveSessions("uninstall"); err != nil {
 			return err
 		}
 	}
-	brokerRegistered := len(report.statuses) > 0 && report.statuses[0].Registered
-	if len(data) > 0 && report.broker && !brokerRegistered {
-		return errors.New("refusing to delete data: a broker not started by startup registration is running; stop it first")
+	refuseDelete := fmt.Errorf("refusing to delete data: a broker is running that removing startup registration does not stop; finish its sessions, %s, then rerun `pterm uninstall --delete-data`", stopBrokerHint(env.paths.RuntimeDir))
+	if len(data) > 0 && report.broker && !report.statuses[0].Registered {
+		return refuseDelete
 	}
 	if *options["dry-run"] || len(plan.Steps) == 0 {
 		return nil
@@ -429,7 +477,22 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 		}
 	}
 	fmt.Fprintln(output, "\nApplying:")
-	return lifecycle.Apply(ctx, env.runner, plan, output)
+	// UninstallPlan puts data deletion last. Delete only once no broker
+	// runs: registration does not prove the live broker was the one stopped.
+	unregister := len(plan.Steps) - len(data)
+	if err := lifecycle.Apply(ctx, env.runner, lifecycle.Plan{Steps: plan.Steps[:unregister]}, output); err != nil || len(data) == 0 {
+		return err
+	}
+	stopped := func() error {
+		if _, running, _ := activeSessions(ctx, env.paths); running {
+			return refuseDelete
+		}
+		return nil
+	}
+	if err := waitFor(ctx, stopped); err != nil {
+		return err
+	}
+	return lifecycle.Apply(ctx, env.runner, lifecycle.Plan{Steps: plan.Steps[unregister:]}, output)
 }
 
 func runLaunchCommand(ctx context.Context, args []string, output io.Writer) error {
@@ -447,10 +510,10 @@ func runLaunchCommand(ctx context.Context, args []string, output io.Writer) erro
 	}
 	checks := []func() error{
 		func() error {
-			if _, reachable, _ := activeSessions(ctx, env.paths.RuntimeDir); !reachable {
-				return errors.New("broker not reachable")
-			}
-			return nil
+			ctx, cancel := context.WithTimeout(ctx, ipc.HandshakeTimeout)
+			defer cancel()
+			_, _, err := ipc.ValidateBrokerEndpoint(ctx, env.paths.RuntimeDir, protocol.CLI, buildID)
+			return err
 		},
 		func() error { return gatewayHealthy(ctx, env.gateway) },
 	}

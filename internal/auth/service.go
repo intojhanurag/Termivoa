@@ -305,6 +305,9 @@ func (service *Service) resolve(ctx context.Context, credential string) (Princip
 	}
 	lifetime := BrowserLifetime{CreatedAt: session.CreatedAt, LastUsedAt: session.LastUsedAt, ExpiresAt: session.ExpiresAt}
 	if err := lifetime.Check(now); err != nil {
+		if errors.Is(err, ErrClockRollback) {
+			return Principal{}, ErrClockRollback // host fault: keep the cookie
+		}
 		return Principal{}, ErrUnauthorized
 	}
 	if now.Sub(session.LastUsedAt) >= lastUseResolution {

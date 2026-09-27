@@ -23,12 +23,15 @@ Installer behavior:
   `pterm setup --apply --yes`, which registers two per-user scheduled tasks
   (broker, gateway): at logon, least privilege, hidden, restart on failure,
   started through `conhost.exe --headless` so no console window appears.
-  If the broker has active sessions, setup refuses and the installer says so.
+  If the broker has active sessions, or a broker or gateway already runs
+  without startup registration, setup refuses and the installer says so.
 - Task "Add pterm to my PATH" is unchecked by default and edits only the
   current user's PATH.
-- The uninstaller first runs `pterm uninstall --dry-run` and stops if the
-  broker has active sessions. It then removes the tasks and asks whether to
-  delete data (default: keep).
+- The uninstaller first asks whether to delete data (default: keep), then runs
+  `pterm uninstall --dry-run` with that choice and stops if the broker has
+  active sessions, does not answer, or (when deleting data) runs without
+  startup registration. It then removes the tasks; data is deleted only after
+  no broker is running.
 
 ## Signing (owner only)
 
