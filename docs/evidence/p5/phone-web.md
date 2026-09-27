@@ -588,3 +588,82 @@ Not run; each needs a real phone over the private HTTPS hostname.
 7. History Copy on iOS and Android: select lines, tap Copy, paste elsewhere.
 8. VoiceOver/TalkBack read "Control C", "Shift Tab", "Enter", tab names with
    ", new output", and "Take control".
+
+## UI v2 review pass 2026-09-27
+
+Same-account agent review (not an independent reviewer) of
+`git diff origin/main...feat/ui-v2` on branch `fix/ui-v2-review`. Each fix
+has a test that failed before the fix.
+
+### Fixed
+
+- Medium: the session list poll could stack requests (a new one every 5 s
+  while an older one hung) and a slow older response could overwrite a newer
+  list. `latestOnly` in `screens/hooks.ts` now skips a tick while a request is
+  open and applies only the newest response (`screens/hooks.test.ts`).
+- Medium (accessibility): the pairing code tiles are `aria-hidden` and the
+  `aria-label` sat on a `<p>`, where screen readers do not read it, so the
+  verification code had no spoken text. It is now visually hidden text
+  (`screens/Setup.test.tsx`).
+- Low: a stored snippet list with a repeated id made editing one snippet
+  overwrite the other (edit and delete match by id). Loading keeps the first
+  entry per id (`terminal/snippets.test.ts`).
+- Low (privacy): the session list preview printed text the terminal marks as
+  concealed (SGR 8), which the live view hides. Concealed cells now count as
+  blank (`internal/broker/preview_test.go`).
+- Docs: `http-api.md` said `lastOutputAt` moves when the screen changes; it
+  moves on any applied child output (bell, title change), as the broker
+  evidence already says.
+
+### Checked, no defect found
+
+- Run first: sent once (the request is in-memory and marked settled before
+  sending); nothing after reload, back/forward, tab return or reconnect
+  (every new view has no request); asks for control only when the first
+  snapshot is live and `control.changed` (sent before the snapshot) shows no
+  other controller; gives up if control is taken while acquiring.
+- Tabs: the Live screen is keyed by session id + generation, so switching
+  releases control, sends `session.detach`, closes the socket and clears the
+  reconnect timer; lease, sequence, latch, panel and composer draft do not
+  carry over.
+- Agent keys: sent only through the Connection, which refuses without a live
+  lease. Real encodings through the broker codec and emulator: `esc` →
+  `\x1b`, `⌃C` → `\x03`, `⇧⇥` → `\x1b[Z`, `↑` → `\x1b[A`, `⏎` → `\r`.
+- Snippets: every send goes through `checkPaste` (64 KiB bound, multi-line
+  confirmation, control required); stored data is type-checked and bounded;
+  a lone surrogate from tampered storage is refused by the sender without a
+  crash.
+- localStorage (`pterm.snippets`, `pterm.launchPresets`, `pterm.lastViewed`):
+  corrupt JSON, wrong types and oversize arrays fall back or are filtered;
+  none holds a secret.
+- No `innerHTML`/`dangerouslySetInnerHTML`/links; titles, previews, labels
+  and snippet text render as React text only.
+- Polling stops when the page is hidden and when Sessions/Live unmount; an
+  auth failure returns to Setup and stops it.
+- Broker: `lastOutput` is set only in the PTY output case of the actor; CLI
+  list/status pass no device, so they never carry `lastOutputAt`/`preview`;
+  the screen copy is taken in the actor and the text is built after it
+  replies.
+- Preview validator parity: 200,031 strings (random from a hostile pool of
+  controls, NEL, NBSP, U+180E, U+2028, U+200B, U+FEFF, bidi, combining marks,
+  CJK, emoji, private-use, unassigned, plus 160/161-rune and 480/481-byte
+  edges) gave the same verdict from Go `ValidatePreviewText` and the schema
+  rule used by the web Ajv keywords (11,690 valid on both sides, 0
+  disagreements). All 19,985 non-empty `screenPreview` outputs from 20,000
+  random screens passed the schema rule. Scratch harness only, outside the
+  repository.
+
+### Known limits (not changed)
+
+- Run first and a manual Take control can still take over another device
+  that acquired within one round trip before our `control.acquire`: the
+  protocol's acquire is a takeover and has no "only if free" form.
+- Closing a sheet does not return focus to the button that opened it.
+
+### Commands
+
+```
+pnpm typecheck && pnpm test:web && pnpm build:web   # pass, 23 files, 155 tests
+GOTOOLCHAIN=go1.27.1 go test -race ./internal/...   # pass
+GOTOOLCHAIN=go1.27.1 ./scripts/check                # exit 0 (Node 24.11.0)
+```
