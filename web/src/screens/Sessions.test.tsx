@@ -61,6 +61,24 @@ describe('SessionRow', () => {
     expect(html).toContain(', new output');
   });
 
+  it('shows the cwd basename as the title while the meta line keeps the project name', () => {
+    const html = row({ ...base, title: 'Home', cwd: '/Users/me/src/app' });
+    expect(html).toContain('<span class="row-title">app');
+    expect(html).toContain('api · zsh');
+    expect(html).not.toContain('>Home<');
+  });
+
+  it('keeps a custom title over the cwd basename', () => {
+    const html = row({ ...base, title: 'My shell', titleIsCustom: true, cwd: '/Users/me/src/app' });
+    expect(html).toContain('<span class="row-title">My shell');
+  });
+
+  it('renders a hostile cwd as text only, never markup', () => {
+    const html = row({ ...base, title: 'Home', cwd: '/Users/me/<img src=x onerror=alert(1)>' });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
   it('renders preview and title strictly as text, never markup or links', () => {
     const html = row({
       ...base,

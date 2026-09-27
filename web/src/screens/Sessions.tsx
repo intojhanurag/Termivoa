@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since } from './activity';
+import { sessionName } from './folder';
 import type { SessionList } from './hooks';
 import { NewSessionHelp } from './NewSession';
 
@@ -94,7 +95,7 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
         <span className="row-text">
           <span className="row-head">
             <span className="row-title">
-              {session.title}
+              {sessionName(session)}
               {fresh && <><span className="dot accent" aria-hidden="true" /><span className="visually-hidden">, new output</span></>}
               {badge?.tone === 'amber' && <span className="visually-hidden">, waiting for you</span>}
             </span>
