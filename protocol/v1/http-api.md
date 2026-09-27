@@ -38,6 +38,7 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `POST /api/v1/push/unsubscribe` | cookie | `HTTPPushUnsubscribeRequest` | `204`; removes it from the calling device only |
 | `POST /api/v1/push/test` | cookie | `{}` | `200 HTTPPushTestResponse` |
 | `POST /api/v1/sessions/{id}/uploads` | cookie, controller | `HTTPUploadRequest` (body up to 7 MiB) | `200 HTTPUploadResponse`; see Image uploads |
+| `GET /api/v1/preview` | cookie | – | `200 HTTPPreviewConfigResponse`: the preview origin to frame, absent when previews are off |
 | `POST /api/v1/logout` | cookie | `{}` | `204`; clears cookie |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
@@ -51,7 +52,7 @@ included. Local CLI list and status results carry `controlled` and
 
 Status mapping: `unauthorized`/`revoked` → 401, `pairing_expired` → 410,
 `pairing_pending` is not an error (poll returns `pending`), `limit_exceeded` →
-429, `session_missing` → 404, `generation_changed`/`session_lost` → 409,
+429, `session_missing`/`preview_missing` → 404, `generation_changed`/`session_lost` → 409,
 `host_unavailable` → 503, malformed input → 400 with `internal_error` never
 used for client mistakes. Only `unauthorized` and `revoked` clear the cookie.
 A host clock step back behind the credential's creation or last use is
@@ -100,6 +101,10 @@ non-authoritative display fields:
   - `afterWork`: `true` only on an `idle` that ended a working period in this
     broker's lifetime (not the session's startup output); absent otherwise.
     With output the device has not viewed, show "Your turn".
+- `previews`: TCP ports that processes of this running session listen on
+  (`[{port, since}]`, sorted by port, at most 8), verified by the broker from
+  the operating system. Also on the live `session.state` notice; absent there
+  means none. See `docs/preview.md`.
   - `question`: present exactly while `waiting`. `text` is the question line
     (at most 160 characters). Optional `detail` says what is being approved,
     such as the tool and command: up to 6 lines joined with `\n`, each at
@@ -163,3 +168,16 @@ The phone re-encodes every photo through a canvas before upload, which drops
 EXIF and GPS metadata and scales the long edge to at most 2048 px. The broker
 does not re-encode; it stores the bytes it received. Removing an attachment on
 the phone does not delete the file on the computer.
+
+## Preview listener
+
+A separate loopback listener (production 127.0.0.1:8789, exposed as
+`https://<host>:8443` by Tailscale Serve) serves only dev-server previews:
+
+| Route | Auth | Result |
+| --- | --- | --- |
+| `GET /__termivoa/select?session=<uuid>&port=<1..65535>` | cookie | `303` to `/` with the preview-only cookie `__Host-pterm_preview=<session>.<port>` when the broker allows it; `401`, `404` (`preview_missing`, `session_missing`) or `400` otherwise |
+| any other path | cookie + preview cookie | proxied to the selected dev server (HTTP and WebSocket), re-authorized per request |
+
+Answers from the listener itself are short `text/plain` bodies. Requests with
+an `Origin` other than the preview origin are `403`; unknown Host is `421`.

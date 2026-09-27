@@ -44,6 +44,8 @@ export type ProtocolTypes = {
     readonly gatewayRPCMessageType:            GatewayRPCMessageType;
     readonly gatewayRPCOriginResult:           GatewayRPCOriginResultPayload;
     readonly gatewayRPCPairPollResult:         GatewayRPCPairPollResultPayload;
+    readonly gatewayRPCPreviewCheck:           GatewayRPCPreviewCheckPayload;
+    readonly gatewayRPCPreviewTarget:          GatewayRPCPreviewTargetPayload;
     readonly gatewayRPCPrincipal:              GatewayRPCPrincipalPayload;
     readonly gatewayRPCPushSubscribe:          GatewayRPCPushSubscribePayload;
     readonly gatewayRPCPushUnsubscribe:        GatewayRPCPushUnsubscribePayload;
@@ -65,6 +67,7 @@ export type ProtocolTypes = {
     readonly httpPairPollResponse:             HTTPPairPollResponse;
     readonly httpPairRedeemRequest:            HTTPPairRedeemRequest;
     readonly httpPairRedeemResponse:           HTTPPairRedeemResponse;
+    readonly httpPreviewConfigResponse:        HTTPPreviewConfigResponse;
     readonly httpPushConfigResponse:           HTTPPushConfigResponse;
     readonly httpPushSubscribeRequest:         HTTPPushSubscribeRequest;
     readonly httpPushTestResponse:             HTTPPushTestResponse;
@@ -92,6 +95,7 @@ export type ProtocolTypes = {
     readonly ipcWelcome:                       IPCWelcomeClass;
     readonly lease:                            LeasePayload;
     readonly messageType:                      MessageType;
+    readonly previewPort:                      PreviewPort;
     readonly screenMetadata:                   ScreenMetadata;
     readonly screenPatch:                      ScreenPatchPayload;
     readonly screenResync:                     ScreenResyncPayload;
@@ -265,7 +269,7 @@ export type BrokerRPCErrorPayload = {
     readonly message: string;
 }
 
-export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed";
+export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed" | "preview_missing";
 
 export type BrokerRPCMessageType = "session.list.request" | "session.create.request" | "session.rename.request" | "session.terminate.request" | "session.status.request" | "session.list.result" | "session.create.result" | "session.rename.result" | "session.terminate.result" | "session.status.result" | "broker.error";
 
@@ -307,6 +311,7 @@ export type BrokerRPCSessionRecord = {
     readonly id:               string;
     readonly lastOutputAt?:    string;
     readonly preview?:         string;
+    readonly previews?:        [PreviewPort, ...PreviewPort[]];
     readonly projectId:        string;
     readonly rows:             number;
     readonly shellProfileId:   string;
@@ -315,6 +320,20 @@ export type BrokerRPCSessionRecord = {
     readonly title:            string;
     readonly updatedAt:        string;
     readonly viewerCount?:     number;
+}
+
+/**
+ * Previewable ports of a running session, sorted by port, unique. Absent when there are
+ * none.
+ *
+ * A TCP port that a process in this session's process tree listens on, on a loopback or
+ * wildcard address, verified by the broker from the operating system. since is the RFC 3339
+ * time the broker first saw it. The phone may open it through the gateway's separate
+ * preview origin; see docs/preview.md.
+ */
+export type PreviewPort = {
+    readonly port:  number;
+    readonly since: string;
 }
 
 export type State = "starting" | "running" | "exiting" | "exited" | "lost";
@@ -371,7 +390,7 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.error";
 
 /**
  * The browser origin configured with admin.config.origin, absent when none is set. It is
@@ -406,6 +425,26 @@ export type HTTPDeviceSummary = {
 }
 
 export type HTTPPairPollStatus = "pending" | "approved";
+
+/**
+ * Asks whether the credential may preview port of session now. The broker re-authorizes the
+ * credential and re-verifies from the operating system (cached at most 2 s) that a process
+ * in the session's process tree listens on the port.
+ */
+export type GatewayRPCPreviewCheckPayload = {
+    readonly credential: string;
+    readonly port:       number;
+    readonly sessionId:  string;
+}
+
+/**
+ * The loopback address the gateway dials for an allowed preview port.
+ */
+export type GatewayRPCPreviewTargetPayload = {
+    readonly host: PreviewHost;
+}
+
+export type PreviewHost = "127.0.0.1" | "::1";
 
 /**
  * Broker-resolved identity for one valid credential. Display and routing data only.
@@ -609,6 +648,14 @@ export type HTTPPairRedeemResponse = {
 }
 
 /**
+ * GET /api/v1/preview. origin is the separate preview origin that the phone app may frame
+ * (for example https://host:8443); it is absent when the gateway serves no previews.
+ */
+export type HTTPPreviewConfigResponse = {
+    readonly origin?: string;
+}
+
+/**
  * The broker's VAPID application server public key.
  */
 export type HTTPPushConfigResponse = {
@@ -804,6 +851,7 @@ export type Reason = "initial" | "base-mismatch" | "invalid-state" | "interrupte
 export type SessionStatePayload = {
     readonly agent?:    AgentStatus;
     readonly exitCode?: number;
+    readonly previews?: [PreviewPort, ...PreviewPort[]];
     readonly state:     State;
 }
 

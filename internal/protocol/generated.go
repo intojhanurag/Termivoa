@@ -44,6 +44,8 @@ type ProtocolTypes struct {
 	GatewayRPCMessageType            GatewayRPCMessageType                   `json:"gatewayRPCMessageType"`
 	GatewayRPCOriginResult           GatewayRPCOriginResultPayload           `json:"gatewayRPCOriginResult"`
 	GatewayRPCPairPollResult         GatewayRPCPairPollResultPayload         `json:"gatewayRPCPairPollResult"`
+	GatewayRPCPreviewCheck           GatewayRPCPreviewCheckPayload           `json:"gatewayRPCPreviewCheck"`
+	GatewayRPCPreviewTarget          GatewayRPCPreviewTargetPayload          `json:"gatewayRPCPreviewTarget"`
 	GatewayRPCPrincipal              GatewayRPCPrincipalPayload              `json:"gatewayRPCPrincipal"`
 	GatewayRPCPushSubscribe          GatewayRPCPushSubscribePayload          `json:"gatewayRPCPushSubscribe"`
 	GatewayRPCPushUnsubscribe        GatewayRPCPushUnsubscribePayload        `json:"gatewayRPCPushUnsubscribe"`
@@ -65,6 +67,7 @@ type ProtocolTypes struct {
 	HTTPPairPollResponse             HTTPPairPollResponse                    `json:"httpPairPollResponse"`
 	HTTPPairRedeemRequest            HTTPPairRedeemRequest                   `json:"httpPairRedeemRequest"`
 	HTTPPairRedeemResponse           HTTPPairRedeemResponse                  `json:"httpPairRedeemResponse"`
+	HTTPPreviewConfigResponse        HTTPPreviewConfigResponse               `json:"httpPreviewConfigResponse"`
 	HTTPPushConfigResponse           HTTPPushConfigResponse                  `json:"httpPushConfigResponse"`
 	HTTPPushSubscribeRequest         HTTPPushSubscribeRequest                `json:"httpPushSubscribeRequest"`
 	HTTPPushTestResponse             HTTPPushTestResponse                    `json:"httpPushTestResponse"`
@@ -92,6 +95,7 @@ type ProtocolTypes struct {
 	IPCWelcome                       IPCWelcomeClass                         `json:"ipcWelcome"`
 	Lease                            LeasePayload                            `json:"lease"`
 	MessageType                      MessageType                             `json:"messageType"`
+	PreviewPort                      PreviewPort                             `json:"previewPort"`
 	ScreenMetadata                   ScreenMetadata                          `json:"screenMetadata"`
 	ScreenPatch                      ScreenPatchPayload                      `json:"screenPatch"`
 	ScreenResync                     ScreenResyncPayload                     `json:"screenResync"`
@@ -261,25 +265,38 @@ type BrokerRPCSessionListResultPayload struct {
 // gateway list, for the requesting device. Lease secrets, connection IDs and other device
 // labels are never included.
 type BrokerRPCSessionRecord struct {
-	Agent           *AgentStatus `json:"agent,omitempty"`
-	Columns         int64        `json:"columns"`
-	Controlled      *bool        `json:"controlled,omitempty"`
-	ControllerIsYou *bool        `json:"controllerIsYou,omitempty"`
-	CreatedAt       string       `json:"createdAt"`
-	EndedAt         *string      `json:"endedAt,omitempty"`
-	ExitCode        *int64       `json:"exitCode,omitempty"`
-	Generation      string       `json:"generation"`
-	ID              string       `json:"id"`
-	LastOutputAt    *string      `json:"lastOutputAt,omitempty"`
-	Preview         *string      `json:"preview,omitempty"`
-	ProjectID       string       `json:"projectId"`
-	Rows            int64        `json:"rows"`
-	ShellProfileID  string       `json:"shellProfileId"`
-	StartedAt       *string      `json:"startedAt,omitempty"`
-	State           State        `json:"state"`
-	Title           string       `json:"title"`
-	UpdatedAt       string       `json:"updatedAt"`
-	ViewerCount     *int64       `json:"viewerCount,omitempty"`
+	Agent           *AgentStatus  `json:"agent,omitempty"`
+	Columns         int64         `json:"columns"`
+	Controlled      *bool         `json:"controlled,omitempty"`
+	ControllerIsYou *bool         `json:"controllerIsYou,omitempty"`
+	CreatedAt       string        `json:"createdAt"`
+	EndedAt         *string       `json:"endedAt,omitempty"`
+	ExitCode        *int64        `json:"exitCode,omitempty"`
+	Generation      string        `json:"generation"`
+	ID              string        `json:"id"`
+	LastOutputAt    *string       `json:"lastOutputAt,omitempty"`
+	Preview         *string       `json:"preview,omitempty"`
+	Previews        []PreviewPort `json:"previews,omitempty"`
+	ProjectID       string        `json:"projectId"`
+	Rows            int64         `json:"rows"`
+	ShellProfileID  string        `json:"shellProfileId"`
+	StartedAt       *string       `json:"startedAt,omitempty"`
+	State           State         `json:"state"`
+	Title           string        `json:"title"`
+	UpdatedAt       string        `json:"updatedAt"`
+	ViewerCount     *int64        `json:"viewerCount,omitempty"`
+}
+
+// Previewable ports of a running session, sorted by port, unique. Absent when there are
+// none.
+//
+// A TCP port that a process in this session's process tree listens on, on a loopback or
+// wildcard address, verified by the broker from the operating system. since is the RFC 3339
+// time the broker first saw it. The phone may open it through the gateway's separate
+// preview origin; see docs/preview.md.
+type PreviewPort struct {
+	Port  int64  `json:"port"`
+	Since string `json:"since"`
 }
 
 type BrokerRPCSessionMutationResultPayload struct {
@@ -354,6 +371,20 @@ type HTTPPairPollResponse struct {
 type HTTPDeviceSummary struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+}
+
+// Asks whether the credential may preview port of session now. The broker re-authorizes the
+// credential and re-verifies from the operating system (cached at most 2 s) that a process
+// in the session's process tree listens on the port.
+type GatewayRPCPreviewCheckPayload struct {
+	Credential string `json:"credential"`
+	Port       int64  `json:"port"`
+	SessionID  string `json:"sessionId"`
+}
+
+// The loopback address the gateway dials for an allowed preview port.
+type GatewayRPCPreviewTargetPayload struct {
+	Host PreviewHost `json:"host"`
 }
 
 // Broker-resolved identity for one valid credential. Display and routing data only.
@@ -465,6 +496,12 @@ type HTTPPairRedeemResponse struct {
 	PendingID        string `json:"pendingId"`
 	PollSecret       string `json:"pollSecret"`
 	VerificationCode string `json:"verificationCode"`
+}
+
+// GET /api/v1/preview. origin is the separate preview origin that the phone app may frame
+// (for example https://host:8443); it is absent when the gateway serves no previews.
+type HTTPPreviewConfigResponse struct {
+	Origin *string `json:"origin,omitempty"`
 }
 
 // The broker's VAPID application server public key.
@@ -698,9 +735,10 @@ type ScreenResyncPayload struct {
 }
 
 type SessionStatePayload struct {
-	Agent    *AgentStatus `json:"agent,omitempty"`
-	ExitCode *int64       `json:"exitCode,omitempty"`
-	State    State        `json:"state"`
+	Agent    *AgentStatus  `json:"agent,omitempty"`
+	ExitCode *int64        `json:"exitCode,omitempty"`
+	Previews []PreviewPort `json:"previews,omitempty"`
+	State    State         `json:"state"`
 }
 
 type SnapshotAppliedPayload struct {
@@ -820,6 +858,7 @@ const (
 	OperationConflict   ErrorCode = "operation_conflict"
 	PairingExpired      ErrorCode = "pairing_expired"
 	PairingPending      ErrorCode = "pairing_pending"
+	PreviewMissing      ErrorCode = "preview_missing"
 	ProjectMissing      ErrorCode = "project_missing"
 	ProtocolMismatch    ErrorCode = "protocol_mismatch"
 	QuestionChanged     ErrorCode = "question_changed"
@@ -875,6 +914,8 @@ const (
 	GatewayPairPollResult         GatewayRPCMessageType = "gateway.pair.poll.result"
 	GatewayPairRedeem             GatewayRPCMessageType = "gateway.pair.redeem"
 	GatewayPairRedeemResult       GatewayRPCMessageType = "gateway.pair.redeem.result"
+	GatewayPreviewCheck           GatewayRPCMessageType = "gateway.preview.check"
+	GatewayPreviewCheckResult     GatewayRPCMessageType = "gateway.preview.check.result"
 	GatewayPushConfig             GatewayRPCMessageType = "gateway.push.config"
 	GatewayPushConfigResult       GatewayRPCMessageType = "gateway.push.config.result"
 	GatewayPushSubscribe          GatewayRPCMessageType = "gateway.push.subscribe"
@@ -906,6 +947,13 @@ type HTTPPairPollStatus string
 const (
 	Approved HTTPPairPollStatus = "approved"
 	Pending  HTTPPairPollStatus = "pending"
+)
+
+type PreviewHost string
+
+const (
+	The1      PreviewHost = "::1"
+	The127001 PreviewHost = "127.0.0.1"
 )
 
 // Image type detected by the broker from the file's magic bytes. The client never names it.

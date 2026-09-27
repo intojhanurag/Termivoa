@@ -380,10 +380,13 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if !validState(payload.State) || (payload.ExitCode != nil && payload.State != Exited) {
 			return errors.New("invalid session state")
 		}
+		if (payload.Agent != nil || payload.Previews != nil) && payload.State != Running {
+			return errors.New("agent status and previews are only valid while running")
+		}
+		if err := ValidatePreviewPorts(payload.Previews); err != nil {
+			return err
+		}
 		if payload.Agent != nil {
-			if payload.State != Running {
-				return errors.New("agent status is only valid while running")
-			}
 			return validateAgentStatus(*payload.Agent)
 		}
 	case AccessRevoked:
@@ -989,7 +992,7 @@ func validErrorCode(value ErrorCode) bool {
 	case Unauthorized, PairingExpired, PairingPending, ErrorCodeRevoked, ProtocolMismatch, SessionMissing,
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
 		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
-		OperationConflict, ProjectMissing, ShellProfileMissing, QuestionChanged:
+		OperationConflict, ProjectMissing, ShellProfileMissing, QuestionChanged, PreviewMissing:
 		return true
 	default:
 		return false

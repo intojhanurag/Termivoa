@@ -44,6 +44,7 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.upload.begin` | `GatewayRPCUploadBeginPayload`: credential, `sessionId`, `generation`, `size` | empty; the connection now carries this upload only |
 | `gateway.upload.chunk` | `GatewayRPCUploadChunkPayload`: `data`, 1 byte to 128 KiB as base64 | empty |
 | `gateway.upload.commit` | `GatewayRPCCredentialPayload` | `HTTPUploadResponse` |
+| `gateway.preview.check` | credential + `sessionId` + `port` | `GatewayRPCPreviewTargetPayload` (`host`: `127.0.0.1` or `::1`), or `preview_missing` |
 
 `gateway.origin` is the only request besides pairing that carries no
 credential: the configured origin is not a secret. The gateway asks for it at
@@ -84,6 +85,11 @@ error answers `gateway.error` and ends the connection, which drops the
 buffer; so does 30 seconds without a message. Chunk and commit messages on
 any other connection are `invalid_request`. The connection ends after the
 commit result.
+
+`gateway.preview.check` authorizes the credential, requires a running
+session, and allows the port only when a process in that session's process
+tree listens on it now (an OS scan at most 2 s old). The gateway sends it for
+every preview request and again every 5 s for open preview sockets.
 
 Authorization precedes every other decision, including replay of an existing
 operation receipt. A poll result carries `credential` and
