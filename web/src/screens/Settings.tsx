@@ -1,17 +1,59 @@
 import { useState } from 'react';
-import type { HTTPSettingsResponse } from '../generated/protocol';
-import { CLIENT_BUILD } from '../terminal/Connection';
+import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
+import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 
-export function Settings({ settings, fontSize, onFontSize, onBack, onLogout }: {
+export type DeviceNameResult =
+  | { readonly kind: 'saved'; readonly device: HTTPDeviceSummary }
+  | { readonly kind: 'invalid'; readonly message: string }
+  | { readonly kind: 'unchanged' };
+
+/** Validates like the schema, then renames this device. API failures throw ApiError. */
+export async function saveDeviceName(draft: string, current: string): Promise<DeviceNameResult> {
+  const label = draft.trim();
+  const problem = deviceLabelProblem(label);
+  if (problem !== undefined) return { kind: 'invalid', message: problem };
+  if (label === current) return { kind: 'unchanged' };
+  return { kind: 'saved', device: await api.renameDevice({ label }) };
+}
+
+type NameState =
+  | { readonly kind: 'idle' | 'saving' | 'saved' }
+  | { readonly kind: 'error'; readonly message: string };
+
+export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout }: {
   readonly settings: HTTPSettingsResponse;
   readonly fontSize: number;
   readonly onFontSize: (size: number) => void;
   readonly onBack: () => void;
+  readonly onRenamed: (device: HTTPDeviceSummary) => void;
+  readonly onFailure: (error: unknown) => string;
   readonly onLogout: () => Promise<void>;
 }) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [name, setName] = useState(settings.device.label);
+  const [nameState, setNameState] = useState<NameState>({ kind: 'idle' });
+  const nameProblem = deviceLabelProblem(name.trim());
+  const unchanged = name.trim() === settings.device.label;
+
+  async function rename() {
+    setNameState({ kind: 'saving' });
+    try {
+      const result = await saveDeviceName(name, settings.device.label);
+      if (result.kind === 'invalid') {
+        setNameState({ kind: 'error', message: result.message });
+        return;
+      }
+      if (result.kind === 'saved') {
+        setName(result.device.label);
+        onRenamed(result.device);
+      }
+      setNameState({ kind: 'saved' });
+    } catch (failure) {
+      setNameState({ kind: 'error', message: onFailure(failure) });
+    }
+  }
 
   return (
     <main className="page">
@@ -23,12 +65,44 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onLogout }: {
 
       <section className="card stack" aria-labelledby="device-heading">
         <h2 id="device-heading">This device</h2>
+        <form
+          className="stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void rename();
+          }}
+        >
+          <label htmlFor="device-name">Device name</label>
+          <input
+            id="device-name"
+            value={name}
+            maxLength={64}
+            autoComplete="off"
+            aria-describedby="device-name-help device-name-status"
+            aria-invalid={nameProblem !== undefined}
+            onChange={(event) => {
+              setName(event.target.value);
+              setNameState({ kind: 'idle' });
+            }}
+          />
+          <p id="device-name-help" className="muted field-note">
+            Your computer shows this name in <code>pterm devices</code>.
+          </p>
+          <p id="device-name-status" role="status" className={nameState.kind === 'error' || nameProblem !== undefined ? 'error field-note' : 'muted field-note'}>
+            {nameProblem ?? (nameState.kind === 'error' ? nameState.message
+              : nameState.kind === 'saving' ? 'Saving…'
+                : nameState.kind === 'saved' ? 'Name saved.' : '')}
+          </p>
+          <button
+            type="submit"
+            className="primary"
+            disabled={nameProblem !== undefined || unchanged || nameState.kind === 'saving'}
+          >Save name</button>
+        </form>
         <dl className="facts">
-          <dt>Device name</dt><dd>{settings.device.label}</dd>
           <dt>Host build</dt><dd>{settings.hostBuild}</dd>
           <dt>Web build</dt><dd>{CLIENT_BUILD}</dd>
         </dl>
-        <p className="muted">Device names are set when pairing. Manage devices on your computer with <code>pterm devices</code>.</p>
       </section>
 
       <section className="card stack" aria-labelledby="font-heading">

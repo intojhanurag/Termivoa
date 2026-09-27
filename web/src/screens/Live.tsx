@@ -1,3 +1,4 @@
+import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { canSendWith, Connection, INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
@@ -21,7 +22,7 @@ function linkLabel(status: ConnectionStatus): string {
     case 'connecting': return 'Connecting…';
     case 'attaching': return 'Loading screen…';
     case 'live': return 'Connected';
-    case 'reconnecting': return 'Reconnecting… input is off';
+    case 'reconnecting': return 'Reconnecting… typing is paused';
     case 'lost': return 'Session lost';
     case 'revoked': return 'Access revoked';
     case 'closed': return 'Disconnected';
@@ -40,6 +41,17 @@ function controlLabel(status: ConnectionStatus): string {
         ? `Viewing — ${status.controllerLabel ?? 'another connection'} has control`
         : 'Viewing (read-only)';
   }
+}
+
+/** One calm line that says why typing is off and what to do about it. */
+export function readOnlyHint(status: ConnectionStatus): string | undefined {
+  if (status.link !== 'live' || status.control !== 'observer'
+    || status.sessionState === 'exited' || status.sessionState === 'exiting') {
+    return undefined;
+  }
+  return status.otherController
+    ? 'Tap Take control to move control to this phone.'
+    : 'Read-only. Tap Take control to type.';
 }
 
 const ARROWS: ReadonlyArray<[KeyName, string, string]> = [
@@ -209,6 +221,7 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
 
   const press = (key: KeyName) => controller.current?.pressKey(key);
   const normalBuffer = status.buffer === 'normal';
+  const hint = readOnlyHint(status);
 
   if (status.link === 'lost') {
     return (
@@ -292,6 +305,7 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
       )}
 
       <nav className="action-bar" aria-label="Terminal controls">
+        {hint !== undefined && panel !== 'history' && <p className="hint" role="status">{hint}</p>}
         {panel !== 'history' && (
           <div className="key-row" role="toolbar" aria-label="Terminal keys">
             <KeyButton label="Escape" disabled={!canSend} onPress={() => press('escape')}>Esc</KeyButton>

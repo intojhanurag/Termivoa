@@ -1,5 +1,7 @@
 import type {
   ErrorCode,
+  HTTPDeviceRenameRequest,
+  HTTPDeviceSummary,
   HTTPPairPollRequest,
   HTTPPairPollResponse,
   HTTPPairRedeemRequest,
@@ -13,6 +15,24 @@ import type {
 } from '../generated/protocol';
 
 export const CONNECTION_UNAVAILABLE = 'Connection unavailable';
+export const CLIENT_BUILD = 'phone-terminal-web/0.0.0-private';
+
+const CONTROL = /\p{Cc}/u;
+const EDGE_SPACE = /^\p{White_Space}|\p{White_Space}$/u;
+
+/**
+ * Mirrors the `deviceLabel` schema: 1–64 characters, at most 64 UTF-8 bytes,
+ * no control characters, no leading or trailing whitespace. Returns a short
+ * message for the first problem, or undefined when the label is valid.
+ */
+export function deviceLabelProblem(label: string): string | undefined {
+  const length = [...label].length;
+  if (length === 0) return 'Enter a name.';
+  if (length > 64 || new TextEncoder().encode(label).byteLength > 64) return 'Use a shorter name (64 bytes at most).';
+  if (CONTROL.test(label)) return 'Remove control characters from the name.';
+  if (EDGE_SPACE.test(label)) return 'Remove spaces at the start or end.';
+  return undefined;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -67,6 +87,8 @@ export const api = {
     request<HTTPSessionMutationResponse>('PATCH', sessionPath(id), body),
   terminateSession: (id: string, body: HTTPSessionTerminateRequest) =>
     request<HTTPSessionMutationResponse>('POST', `${sessionPath(id)}/terminate`, body),
+  renameDevice: (body: HTTPDeviceRenameRequest) =>
+    request<HTTPDeviceSummary>('PATCH', '/api/v1/device', body),
   logout: () => request<undefined>('POST', '/api/v1/logout', {}),
   pairRedeem: (body: HTTPPairRedeemRequest) =>
     request<HTTPPairRedeemResponse>('POST', '/api/v1/pair/redeem', body),
