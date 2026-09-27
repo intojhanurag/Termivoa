@@ -3,9 +3,12 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -238,6 +241,119 @@ func TestLiveBrokerEndFlushesThenClosesWithPolicy(t *testing.T) {
 	waitClosed(t, stream)
 }
 
+// A stream that ends after the session ended closes normally. Only access
+// ending (tested above) uses 1008; any other broker end asks for a retry.
+func TestLiveBrokerEndCloseCodeFollowsLastMessage(t *testing.T) {
+	state := func(value string) []byte {
+		return []byte(`{"version":1,"type":"session.state","requestId":"` + uuidA + `","payload":{"state":"` + value + `"}}`)
+	}
+	for _, test := range []struct {
+		name string
+		last []byte
+		want websocket.StatusCode
+	}{
+		{"exited", state("exited"), websocket.StatusNormalClosure},
+		{"lost", state("lost"), websocket.StatusNormalClosure},
+		{"running", state("running"), websocket.StatusTryAgainLater},
+		{"no message", nil, websocket.StatusTryAgainLater},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			broker := newFakeBroker()
+			_, bound := startLive(t, broker)
+			conn, _, err := dialLive(t, bound, liveHeader(bound, validCredential))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.CloseNow()
+			stream := openedStream(t, broker)
+			if test.last != nil {
+				stream.toPhone <- test.last
+			}
+			stream.finish()
+			if test.last != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if _, got, err := conn.Read(ctx); err != nil || !bytes.Equal(got, test.last) {
+					t.Fatalf("phone received %q %v", got, err)
+				}
+			}
+			if code := readClose(t, conn); code != test.want {
+				t.Fatalf("close code = %d, want %d", code, test.want)
+			}
+			waitClosed(t, stream)
+		})
+	}
+}
+
+// The phone socket negotiates permessage-deflate without context takeover,
+// terminal frames shrink on the wire, and the inbound limit applies to the
+// decompressed size.
+func TestLiveCompressesWithoutContextTakeover(t *testing.T) {
+	broker := newFakeBroker()
+	_, bound := startLive(t, broker)
+	var wire countingConn
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, response, err := websocket.Dial(ctx, "ws://"+bound+"/api/v1/ws", &websocket.DialOptions{
+		HTTPHeader:      liveHeader(bound, validCredential),
+		CompressionMode: websocket.CompressionContextTakeover, // what browsers offer
+		HTTPClient: &http.Client{Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				raw, err := (&net.Dialer{}).DialContext(ctx, network, address)
+				wire.Conn = raw
+				return &wire, err
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	conn.SetReadLimit(-1)
+	extensions := response.Header.Get("Sec-WebSocket-Extensions")
+	if !strings.Contains(extensions, "permessage-deflate") || !strings.Contains(extensions, "server_no_context_takeover") ||
+		!strings.Contains(extensions, "client_no_context_takeover") {
+		t.Fatalf("extensions = %q", extensions)
+	}
+	stream := openedStream(t, broker)
+
+	cell := `{"contentClipped":false,"continuation":false,"text":"x","width":1},`
+	frame := []byte(`{"cells":[` + strings.Repeat(cell, 2000) + `{}]}`)
+	before := wire.read.Load()
+	stream.toPhone <- frame
+	if _, got, err := conn.Read(ctx); err != nil || !bytes.Equal(got, frame) {
+		t.Fatalf("phone received %d bytes, %v", len(got), err)
+	}
+	onWire := wire.read.Load() - before
+	t.Logf("frame %d bytes, %d on the wire", len(frame), onWire)
+	if onWire*10 > int64(len(frame)) {
+		t.Fatalf("frame of %d bytes used %d wire bytes", len(frame), onWire)
+	}
+
+	// Tiny when compressed, above the inbound limit when decompressed.
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"p":"`+strings.Repeat("x", protocol.MaxInboundMessageBytes)+`"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if code := readClose(t, conn); code != websocket.StatusMessageTooBig {
+		t.Fatalf("close code = %d, want %d", code, websocket.StatusMessageTooBig)
+	}
+	waitClosed(t, stream)
+	if len(stream.fromPhone) != 0 {
+		t.Fatal("oversized message reached the broker")
+	}
+}
+
+type countingConn struct {
+	net.Conn
+	read atomic.Int64
+}
+
+func (conn *countingConn) Read(buffer []byte) (int, error) {
+	n, err := conn.Conn.Read(buffer)
+	conn.read.Add(int64(n))
+	return n, err
+}
+
 func TestLiveOversizeBrokerMessageClosesSocket(t *testing.T) {
 	broker := newFakeBroker()
 	_, bound := startLive(t, broker)
@@ -255,7 +371,10 @@ func TestLiveOversizeBrokerMessageClosesSocket(t *testing.T) {
 	waitClosed(t, stream)
 }
 
-func TestLiveSlowPhoneIsDisconnectedWithoutBlockingBroker(t *testing.T) {
+// A phone that falls behind stops the relay from reading the broker stream,
+// so stale frames stay in the broker (which coalesces them) rather than in
+// the gateway. Reading resumes when the phone catches up, with nothing lost.
+func TestLiveRelayPausesBrokerReadsWhilePhoneIsBehind(t *testing.T) {
 	broker := newFakeBroker()
 	_, bound := startLive(t, broker)
 	conn, _, err := dialLive(t, bound, liveHeader(bound, validCredential))
@@ -263,23 +382,83 @@ func TestLiveSlowPhoneIsDisconnectedWithoutBlockingBroker(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(-1)
 	stream := openedStream(t, broker)
-	// The phone never reads. 64 x 512 KiB far exceeds socket buffers plus the
-	// 2 MiB outgoing budget; the fake broker's sends never wait on the phone.
+	// 64 x 512 KiB is 32 MiB: far above socket buffers and the 2 MiB outgoing
+	// budget, so the relay survives only if it stops reading.
+	message := func(index int) []byte {
+		return []byte(fmt.Sprintf(`{"i":%d,"p":"%s"}`, index, strings.Repeat("x", 512*1024)))
+	}
+	for index := range cap(stream.toPhone) {
+		stream.toPhone <- message(index)
+	}
+	pending := waitSteady(t, stream.toPhone)
+	if pending == 0 {
+		t.Fatal("relay read the whole broker stream while the phone read nothing")
+	}
+	select {
+	case <-stream.closed:
+		t.Fatal("paused phone was disconnected")
+	default:
+	}
+	t.Logf("relay paused with %d of %d broker messages unread", pending, cap(stream.toPhone))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for index := range cap(stream.toPhone) {
+		_, got, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read message %d: %v", index, err)
+		}
+		if !bytes.Equal(got, message(index)) {
+			t.Fatalf("message %d out of order or corrupted", index)
+		}
+	}
+}
+
+// A phone that makes no progress is disconnected after the stall timeout
+// while the relay holds only a bounded part of the broker stream.
+func TestLiveStalledPhoneIsDisconnected(t *testing.T) {
+	broker := newFakeBroker()
+	_, bound := startLive(t, broker, func(handler *gatewayHandler) {
+		handler.liveLimits.stallTimeout = 200 * time.Millisecond
+		handler.liveLimits.writeTimeout = 200 * time.Millisecond
+	})
+	conn, _, err := dialLive(t, bound, liveHeader(bound, validCredential))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	stream := openedStream(t, broker)
 	message := []byte(`{"p":"` + strings.Repeat("x", 512*1024) + `"}`)
 	start := time.Now()
 	for range cap(stream.toPhone) {
-		select {
-		case stream.toPhone <- message:
-		case <-stream.closed:
-		case <-time.After(5 * time.Second):
-			t.Fatal("broker send blocked")
-		}
+		stream.toPhone <- message
 	}
 	waitClosed(t, stream)
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("disconnect took %v", elapsed)
 	}
+	if len(stream.toPhone) == 0 {
+		t.Fatal("relay drained the broker stream for a phone that never read")
+	}
+}
+
+// waitSteady returns the queue length once it stops changing.
+func waitSteady(t *testing.T, queue chan []byte) int {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	last, since := len(queue), time.Now()
+	for time.Since(since) < 500*time.Millisecond {
+		if time.Now().After(deadline) {
+			t.Fatal("relay kept reading the broker stream")
+		}
+		time.Sleep(20 * time.Millisecond)
+		if current := len(queue); current != last {
+			last, since = current, time.Now()
+		}
+	}
+	return last
 }
 
 func TestLiveShutdownClosesSockets(t *testing.T) {

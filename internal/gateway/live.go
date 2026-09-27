@@ -1,12 +1,14 @@
 package gateway
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -20,14 +22,33 @@ import (
 
 type liveLimits struct {
 	outgoingBudget int
-	writeTimeout   time.Duration
-	pingInterval   time.Duration
-	pingTimeout    time.Duration
+	// readAhead: the relay reads the next broker message only while the
+	// outbox (queued plus the message on the wire) holds at most this many
+	// bytes. A phone that falls behind stops the broker stream, so the broker's
+	// per-viewer worker coalesces to its newest screen instead of the gateway
+	// queueing stale ones.
+	readAhead int
+	// stallTimeout bounds one such pause, and writeTimeout one message write.
+	// Either one expiring means the phone made no progress; the relay then
+	// disconnects it. Both must stay below broker.DefaultViewerTimeout, so the
+	// gateway, not the broker's IPC write deadline, reports a stalled phone.
+	stallTimeout time.Duration
+	writeTimeout time.Duration
+	// sendBuffer caps the kernel send buffer of the phone socket. The gateway
+	// listens on loopback only, so a small buffer costs no throughput, and
+	// stale frames wait in the broker (which replaces them) instead of in an
+	// auto-sized kernel buffer the relay cannot see.
+	sendBuffer   int
+	pingInterval time.Duration
+	pingTimeout  time.Duration
 }
 
 var defaultLiveLimits = liveLimits{
 	outgoingBudget: 2 * 1024 * 1024,
-	writeTimeout:   10 * time.Second,
+	readAhead:      64 * 1024,
+	stallTimeout:   15 * time.Second,
+	writeTimeout:   15 * time.Second,
+	sendBuffer:     16 * 1024,
 	pingInterval:   20 * time.Second,
 	pingTimeout:    10 * time.Second,
 }
@@ -65,7 +86,16 @@ func (handler *gatewayHandler) serveLive(response http.ResponseWriter, request *
 		handler.respond(response, request, nil, err)
 		return
 	}
-	conn, err := websocket.Accept(response, request, &websocket.AcceptOptions{OriginPatterns: handler.originPatterns})
+	// permessage-deflate without context takeover: every message is
+	// compressed alone, so the holder-only lease in control.changed never
+	// shares a compression window with attacker-influenced terminal output
+	// (a CRIME-style length oracle needs both in one window). The read limit
+	// applies to decompressed bytes, and the relay checks outbound sizes
+	// before compression.
+	conn, err := websocket.Accept(sendBufferLimit{response, handler.liveLimits.sendBuffer}, request,
+		&websocket.AcceptOptions{
+			OriginPatterns: handler.originPatterns, CompressionMode: websocket.CompressionNoContextTakeover,
+		})
 	if err != nil {
 		_ = stream.Close()
 		return
@@ -90,7 +120,7 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 		once.Do(func() { code, reason = closeCode, closeReason })
 		cancel()
 	}
-	out := &outbox{budget: limits.outgoingBudget, ready: make(chan struct{}, 1)}
+	out := &outbox{budget: limits.outgoingBudget, ready: make(chan struct{}, 1), drained: make(chan struct{}, 1)}
 
 	wait.Add(3)
 	go func() { // browser -> broker; blocking here only slows this phone.
@@ -120,7 +150,7 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 				if errors.As(err, &rejected) && rejected.Code == protocol.InvalidRequest {
 					// Tell the phone why before the writer closes the socket.
 					if notice, noticeErr := invalidRequestNotice(rejected.Message); noticeErr == nil && out.push(notice) {
-						out.end()
+						out.end(websocket.StatusPolicyViolation, "invalid message")
 						return
 					}
 					finish(websocket.StatusInvalidFramePayloadData, "invalid message")
@@ -131,14 +161,22 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 			}
 		}
 	}()
-	go func() { // broker -> outbox; never blocks on the phone.
+	go func() { // broker -> outbox; pauses while the phone is behind.
 		defer wait.Done()
+		var last []byte
 		for {
-			data, err := stream.Receive(ctx)
-			if err != nil {
-				out.end()
+			if !out.waitRoom(ctx, limits.readAhead, limits.stallTimeout) {
+				if ctx.Err() == nil {
+					finish(websocket.StatusTryAgainLater, "client too slow")
+				}
 				return
 			}
+			data, err := stream.Receive(ctx)
+			if err != nil {
+				out.end(streamEndStatus(last))
+				return
+			}
+			last = data
 			if len(data) > protocol.MaxOutboundMessageBytes {
 				finish(websocket.StatusInternalError, "oversized host message")
 				return
@@ -170,12 +208,12 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 	}()
 
 	// Writer: drains the outbox; after the broker stream ends it flushes what
-	// remains (such as access.revoked) and closes with a policy code.
+	// remains (such as access.revoked) and closes with the end status.
 	for ctx.Err() == nil {
 		data, ended := out.pop()
 		if data == nil {
 			if ended {
-				finish(websocket.StatusPolicyViolation, "access ended")
+				finish(out.endStatus())
 				break
 			}
 			select {
@@ -187,6 +225,7 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 		writeCtx, writeCancel := context.WithTimeout(ctx, limits.writeTimeout)
 		err := conn.Write(writeCtx, websocket.MessageText, data)
 		writeCancel()
+		out.written(len(data))
 		if err != nil {
 			finish(0, "")
 		}
@@ -199,6 +238,28 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 		_ = conn.Close(code, reason)
 	}
 	wait.Wait()
+}
+
+// streamEndStatus maps the broker's last message before its stream ended to
+// the phone's close status: 1008 only when access ended (revocation, logout
+// or expiry), 1000 when the session ended, and 1013 otherwise.
+func streamEndStatus(last []byte) (websocket.StatusCode, string) {
+	// The broker stream validated this message; only its type and state matter.
+	var envelope struct {
+		Type    protocol.MessageType `json:"type"`
+		Payload struct {
+			State protocol.State `json:"state"`
+		} `json:"payload"`
+	}
+	_ = json.Unmarshal(last, &envelope)
+	switch {
+	case envelope.Type == protocol.AccessRevoked:
+		return websocket.StatusPolicyViolation, "access ended"
+	case envelope.Type == protocol.SessionState &&
+		(envelope.Payload.State == protocol.Exited || envelope.Payload.State == protocol.Lost):
+		return websocket.StatusNormalClosure, "session ended"
+	}
+	return websocket.StatusTryAgainLater, "host unavailable"
 }
 
 // invalidRequestNotice is a canonical host error for a rejected phone message.
@@ -224,6 +285,25 @@ func invalidRequestNotice(message string) ([]byte, error) {
 	return notice, nil
 }
 
+// sendBufferLimit sets the send buffer of the connection that
+// websocket.Accept hijacks.
+type sendBufferLimit struct {
+	http.ResponseWriter
+	bytes int
+}
+
+func (writer sendBufferLimit) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := writer.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("gateway: response does not support hijacking")
+	}
+	conn, buffered, err := hijacker.Hijack()
+	if tcp, ok := conn.(*net.TCPConn); ok && err == nil && writer.bytes > 0 {
+		_ = tcp.SetWriteBuffer(writer.bytes)
+	}
+	return conn, buffered, err
+}
+
 // singleJSONObject accepts one UTF-8 JSON object within the inbound limit.
 func singleJSONObject(data []byte) bool {
 	trimmed := bytes.TrimLeft(data, " \t\r\n")
@@ -234,12 +314,15 @@ func singleJSONObject(data []byte) bool {
 // outbox holds broker messages not yet written to the phone, bounded by
 // total bytes. Exceeding the budget disconnects the viewer.
 type outbox struct {
-	mu     sync.Mutex
-	queue  [][]byte
-	bytes  int
-	budget int
-	ended  bool
-	ready  chan struct{}
+	mu        sync.Mutex
+	queue     [][]byte
+	bytes     int // queued plus the message being written
+	budget    int
+	ended     bool
+	endCode   websocket.StatusCode
+	endReason string
+	ready     chan struct{} // wakes the writer
+	drained   chan struct{} // wakes a paused broker reader
 }
 
 func (box *outbox) push(data []byte) bool {
@@ -254,11 +337,20 @@ func (box *outbox) push(data []byte) bool {
 	return true
 }
 
-func (box *outbox) end() {
+// end lets the writer flush what is queued, then close with code.
+func (box *outbox) end(code websocket.StatusCode, reason string) {
 	box.mu.Lock()
 	defer box.mu.Unlock()
-	box.ended = true
+	if !box.ended {
+		box.ended, box.endCode, box.endReason = true, code, reason
+	}
 	box.signal()
+}
+
+func (box *outbox) endStatus() (websocket.StatusCode, string) {
+	box.mu.Lock()
+	defer box.mu.Unlock()
+	return box.endCode, box.endReason
 }
 
 func (box *outbox) pop() ([]byte, bool) {
@@ -270,8 +362,44 @@ func (box *outbox) pop() ([]byte, bool) {
 	data := box.queue[0]
 	box.queue[0] = nil
 	box.queue = box.queue[1:]
-	box.bytes -= len(data)
 	return data, false
+}
+
+// written releases a popped message once its write has finished or failed.
+func (box *outbox) written(size int) {
+	box.mu.Lock()
+	box.bytes -= size
+	box.mu.Unlock()
+	select {
+	case box.drained <- struct{}{}:
+	default:
+	}
+}
+
+// waitRoom blocks while the outbox holds more than limit bytes. It reports
+// false if ctx ends or the outbox does not drain within timeout.
+func (box *outbox) waitRoom(ctx context.Context, limit int, timeout time.Duration) bool {
+	if box.room(limit) {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for !box.room(limit) {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return false
+		case <-box.drained:
+		}
+	}
+	return true
+}
+
+func (box *outbox) room(limit int) bool {
+	box.mu.Lock()
+	defer box.mu.Unlock()
+	return box.bytes <= limit
 }
 
 func (box *outbox) signal() {
