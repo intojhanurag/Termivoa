@@ -23,6 +23,7 @@ type ProtocolTypes struct {
 	AdminRPCProjectResult            AdminRPCProjectResultPayload            `json:"adminRPCProjectResult"`
 	AdminRPCShellProfile             AdminRPCShellProfile                    `json:"adminRPCShellProfile"`
 	AdminRPCShutdownResult           AdminRPCShutdownResultPayload           `json:"adminRPCShutdownResult"`
+	AgentStatus                      AgentStatus                             `json:"agentStatus"`
 	BrokerRPCEmpty                   BrokerRPCEmptyPayload                   `json:"brokerRPCEmpty"`
 	BrokerRPCError                   BrokerRPCErrorPayload                   `json:"brokerRPCError"`
 	BrokerRPCMessageType             BrokerRPCMessageType                    `json:"brokerRPCMessageType"`
@@ -67,6 +68,7 @@ type ProtocolTypes struct {
 	HTTPSessionTerminateRequest      HTTPSessionTerminateRequest             `json:"httpSessionTerminateRequest"`
 	HTTPSettingsResponse             HTTPSettingsResponse                    `json:"httpSettingsResponse"`
 	InputAccepted                    InputAcceptedPayload                    `json:"inputAccepted"`
+	InputAnswer                      InputAnswerPayload                      `json:"inputAnswer"`
 	InputKey                         InputKeyPayload                         `json:"inputKey"`
 	InputMouse                       InputMousePayload                       `json:"inputMouse"`
 	InputPaste                       InputPastePayload                       `json:"inputPaste"`
@@ -189,6 +191,31 @@ type AdminRPCShutdownResultPayload struct {
 	TerminatedSessions int64 `json:"terminatedSessions"`
 }
 
+// Broker-computed activity of a running session. question is present exactly when state is
+// waiting. stateSince is the RFC 3339 time of the last change of state or question.
+type AgentStatus struct {
+	Question   *AgentQuestion `json:"question,omitempty"`
+	State      AgentState     `json:"state"`
+	StateSince string         `json:"stateSince"`
+}
+
+// A recognized prompt. id is a stable hash of the session generation, text, the full dialog
+// context (of which detail is the capped display form) and option labels; input.answer must
+// repeat it. text, detail and labels are terminal output: render them as text only. detail
+// says what is being approved (tool, command, file), one line per newline.
+type AgentQuestion struct {
+	Detail  *string       `json:"detail,omitempty"`
+	ID      string        `json:"id"`
+	Options []AgentOption `json:"options"`
+	Text    string        `json:"text"`
+}
+
+// One answer the broker can send. Label is terminal output: render it as text only. The
+// broker chooses the keys from the current screen; the client sends only the option index.
+type AgentOption struct {
+	Label string `json:"label"`
+}
+
 type BrokerRPCEmptyPayload struct {
 }
 
@@ -220,24 +247,25 @@ type BrokerRPCSessionListResultPayload struct {
 // gateway list, for the requesting device. Lease secrets, connection IDs and other device
 // labels are never included.
 type BrokerRPCSessionRecord struct {
-	Columns         int64   `json:"columns"`
-	Controlled      *bool   `json:"controlled,omitempty"`
-	ControllerIsYou *bool   `json:"controllerIsYou,omitempty"`
-	CreatedAt       string  `json:"createdAt"`
-	EndedAt         *string `json:"endedAt,omitempty"`
-	ExitCode        *int64  `json:"exitCode,omitempty"`
-	Generation      string  `json:"generation"`
-	ID              string  `json:"id"`
-	LastOutputAt    *string `json:"lastOutputAt,omitempty"`
-	Preview         *string `json:"preview,omitempty"`
-	ProjectID       string  `json:"projectId"`
-	Rows            int64   `json:"rows"`
-	ShellProfileID  string  `json:"shellProfileId"`
-	StartedAt       *string `json:"startedAt,omitempty"`
-	State           State   `json:"state"`
-	Title           string  `json:"title"`
-	UpdatedAt       string  `json:"updatedAt"`
-	ViewerCount     *int64  `json:"viewerCount,omitempty"`
+	Agent           *AgentStatus `json:"agent,omitempty"`
+	Columns         int64        `json:"columns"`
+	Controlled      *bool        `json:"controlled,omitempty"`
+	ControllerIsYou *bool        `json:"controllerIsYou,omitempty"`
+	CreatedAt       string       `json:"createdAt"`
+	EndedAt         *string      `json:"endedAt,omitempty"`
+	ExitCode        *int64       `json:"exitCode,omitempty"`
+	Generation      string       `json:"generation"`
+	ID              string       `json:"id"`
+	LastOutputAt    *string      `json:"lastOutputAt,omitempty"`
+	Preview         *string      `json:"preview,omitempty"`
+	ProjectID       string       `json:"projectId"`
+	Rows            int64        `json:"rows"`
+	ShellProfileID  string       `json:"shellProfileId"`
+	StartedAt       *string      `json:"startedAt,omitempty"`
+	State           State        `json:"state"`
+	Title           string       `json:"title"`
+	UpdatedAt       string       `json:"updatedAt"`
+	ViewerCount     *int64       `json:"viewerCount,omitempty"`
 }
 
 type BrokerRPCSessionMutationResultPayload struct {
@@ -494,6 +522,15 @@ type InputAcceptedPayload struct {
 	InputSequence string `json:"inputSequence"`
 }
 
+// Answers the current agent question. The broker rejects it with question_changed unless
+// questionId is still the detected question, then writes that option's keys once.
+type InputAnswerPayload struct {
+	InputSequence string `json:"inputSequence"`
+	Lease         string `json:"lease"`
+	OptionIndex   int64  `json:"optionIndex"`
+	QuestionID    string `json:"questionId"`
+}
+
 type InputKeyPayload struct {
 	Character     *string   `json:"character,omitempty"`
 	InputSequence string    `json:"inputSequence"`
@@ -582,8 +619,9 @@ type ScreenResyncPayload struct {
 }
 
 type SessionStatePayload struct {
-	ExitCode *int64 `json:"exitCode,omitempty"`
-	State    State  `json:"state"`
+	Agent    *AgentStatus `json:"agent,omitempty"`
+	ExitCode *int64       `json:"exitCode,omitempty"`
+	State    State        `json:"state"`
 }
 
 type SnapshotAppliedPayload struct {
@@ -680,6 +718,14 @@ const (
 	AdminShutdownResult      AdminRPCMessageType = "admin.shutdown.result"
 )
 
+type AgentState string
+
+const (
+	Idle    AgentState = "idle"
+	Waiting AgentState = "waiting"
+	Working AgentState = "working"
+)
+
 type ErrorCode string
 
 const (
@@ -697,6 +743,7 @@ const (
 	PairingPending      ErrorCode = "pairing_pending"
 	ProjectMissing      ErrorCode = "project_missing"
 	ProtocolMismatch    ErrorCode = "protocol_mismatch"
+	QuestionChanged     ErrorCode = "question_changed"
 	ResyncRequired      ErrorCode = "resync_required"
 	SessionLost         ErrorCode = "session_lost"
 	SessionMissing      ErrorCode = "session_missing"
@@ -895,6 +942,7 @@ const (
 	HistoryPage               MessageType = "history.page"
 	HistoryRead               MessageType = "history.read"
 	InputAccepted             MessageType = "input.accepted"
+	InputAnswer               MessageType = "input.answer"
 	InputKey                  MessageType = "input.key"
 	InputMouse                MessageType = "input.mouse"
 	InputPaste                MessageType = "input.paste"

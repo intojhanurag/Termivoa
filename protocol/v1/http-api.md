@@ -73,7 +73,7 @@ follows `local-transport.md` live-mode semantics: observer first, explicit
 
 ## Session activity fields
 
-Live session records on the gateway session list may include two optional,
+Live session records on the gateway session list may include three optional,
 non-authoritative display fields:
 
 - `lastOutputAt`: when child output was last applied to the canonical screen
@@ -84,6 +84,26 @@ non-authoritative display fields:
   control characters removed and at most 160 characters. It is terminal
   output: render it only as text, never as markup or a link.
 
-Both are absent when the session is not live in this broker. They are not
+- `agent`: the broker's agent state for the session (`AgentStatus` in
+  `envelope.schema.json`):
+  - `state`: `working` (output in the last 3 seconds, or an "esc to interrupt"
+    status line), `waiting` (a recognized question has stayed on screen for
+    1 second) or `idle` (quiet for 3 seconds with no question).
+  - `stateSince`: when the state or the question last changed (RFC 3339,
+    millisecond precision). Use it for "waiting 2 min".
+  - `question`: present exactly while `waiting`. `text` is the question line
+    (at most 160 characters). Optional `detail` says what is being approved,
+    such as the tool and command: up to 6 lines joined with `\n`, each at
+    most 120 characters, 600 in total. Up to 6 `options[].label` (at most 80
+    each). `id` is a 32-hex hash of the session generation, text, the full
+    dialog context behind `detail`, and the labels, so a different command
+    gives a different id. All of these are terminal output: render them only
+    as text.
+  `agent` is absent until the broker's first screen scan (about 0.5 seconds
+  after start). The live stream carries the same object on `session.state`.
+  Answering uses the live WebSocket message `input.answer`; see
+  `local-transport.md` and `docs/agent-state.md`.
+
+All three are absent when the session is not live in this broker. They are not
 shown on CLI management results.
 

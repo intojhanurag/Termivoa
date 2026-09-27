@@ -289,3 +289,35 @@ func testRow(columns int) TerminalRow {
 }
 
 func stringPointer(value string) *string { return &value }
+
+func TestAnswerAndAgentStateValidation(t *testing.T) {
+	lease := strings.Repeat("A", 43)
+	valid := InputAnswerPayload{Lease: lease, InputSequence: "3", QuestionID: strings.Repeat("0f", 16), OptionIndex: 5}
+	if _, err := DecodeClient(encodeTestMessage(t, InputAnswer, valid, true)); err != nil {
+		t.Fatalf("valid answer: %v", err)
+	}
+	for name, payload := range map[string]InputAnswerPayload{
+		"negative index": {Lease: lease, InputSequence: "3", QuestionID: valid.QuestionID, OptionIndex: -1},
+		"index too big":  {Lease: lease, InputSequence: "3", QuestionID: valid.QuestionID, OptionIndex: 6},
+		"short id":       {Lease: lease, InputSequence: "3", QuestionID: "0f", OptionIndex: 0},
+		"bad sequence":   {Lease: lease, InputSequence: "03", QuestionID: valid.QuestionID, OptionIndex: 0},
+	} {
+		if _, err := DecodeClient(encodeTestMessage(t, InputAnswer, payload, true)); err == nil {
+			t.Errorf("%s answer was accepted", name)
+		}
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, InputAnswer, valid, false)); err == nil {
+		t.Error("answer without session identity was accepted")
+	}
+
+	agent := &AgentStatus{State: Working, StateSince: "2026-09-20T10:00:01.234Z"}
+	if _, err := DecodeHost(encodeTestMessage(t, SessionState, SessionStatePayload{State: Running, Agent: agent}, true)); err != nil {
+		t.Fatalf("running agent state: %v", err)
+	}
+	if _, err := DecodeHost(encodeTestMessage(t, SessionState, SessionStatePayload{State: Exiting, Agent: agent}, true)); err == nil {
+		t.Fatal("agent state on an exiting session was accepted")
+	}
+	if _, err := DecodeHost(encodeTestMessage(t, InputRejected, InputRejectedPayload{Code: QuestionChanged, Message: "refresh"}, true)); err != nil {
+		t.Fatalf("question_changed rejection: %v", err)
+	}
+}

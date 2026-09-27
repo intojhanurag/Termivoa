@@ -435,3 +435,65 @@ func validBrokerRPCSessionRecord() BrokerRPCSessionRecord {
 }
 
 func brokerRPCStringPointer(value string) *string { return &value }
+
+func TestBrokerRPCValidatesAgentStatus(t *testing.T) {
+	sessionID, generation := brokerRPCSessionID, brokerRPCGeneration
+	decode := func(agent AgentStatus, state State) error {
+		record := validBrokerRPCSessionRecord()
+		if state != Running {
+			record.State = state
+			record.EndedAt = brokerRPCStringPointer("2026-09-20T10:00:02Z")
+			record.UpdatedAt = "2026-09-20T10:00:02Z"
+		}
+		record.Agent = &agent
+		message := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
+			Version: Version, Type: SessionStatusResult, RequestID: brokerRPCRequestID,
+			SessionID: &sessionID, Generation: &generation,
+		}, BrokerRPCSessionResultPayload{Session: record})
+		_, err := DecodeBrokerRPCResponse(message)
+		return err
+	}
+	since := "2026-09-20T10:00:01.234Z"
+	question := func() *AgentQuestion {
+		return &AgentQuestion{ID: strings.Repeat("a", 32), Text: "Do you want to proceed?",
+			Options: []AgentOption{{Label: "Yes"}, {Label: "No"}}}
+	}
+	withDetail := func(detail string) *AgentQuestion {
+		value := question()
+		value.Detail = &detail
+		return value
+	}
+	if err := decode(AgentStatus{State: Waiting, StateSince: since, Question: question()}, Running); err != nil {
+		t.Fatalf("valid waiting rejected: %v", err)
+	}
+	if err := decode(AgentStatus{State: Waiting, StateSince: since, Question: withDetail("Bash command\nnpm test -- --watch=false")}, Running); err != nil {
+		t.Fatalf("valid detail rejected: %v", err)
+	}
+	if err := decode(AgentStatus{State: Idle, StateSince: since}, Running); err != nil {
+		t.Fatalf("valid idle rejected: %v", err)
+	}
+	for name, test := range map[string]struct {
+		agent AgentStatus
+		state State
+	}{
+		"exited":             {AgentStatus{State: Idle, StateSince: since}, Exited},
+		"unknown state":      {AgentStatus{State: "thinking", StateSince: since}, Running},
+		"bad since":          {AgentStatus{State: Idle, StateSince: "now"}, Running},
+		"waiting no q":       {AgentStatus{State: Waiting, StateSince: since}, Running},
+		"question on idle":   {AgentStatus{State: Idle, StateSince: since, Question: question()}, Running},
+		"bad id":             {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: "ABC", Text: "Q?", Options: []AgentOption{{Label: "Yes"}}}}, Running},
+		"control text":       {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: strings.Repeat("a", 32), Text: "Q\x1b?", Options: []AgentOption{{Label: "Yes"}}}}, Running},
+		"no options":         {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: strings.Repeat("a", 32), Text: "Q?"}}, Running},
+		"seven options":      {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: strings.Repeat("a", 32), Text: "Q?", Options: make([]AgentOption, 7)}}, Running},
+		"detail control":     {AgentStatus{State: Waiting, StateSince: since, Question: withDetail("rm\x1b[31m")}, Running},
+		"detail blank line":  {AgentStatus{State: Waiting, StateSince: since, Question: withDetail("a\n\nb")}, Running},
+		"detail seven lines": {AgentStatus{State: Waiting, StateSince: since, Question: withDetail("1\n2\n3\n4\n5\n6\n7")}, Running},
+		"detail long line":   {AgentStatus{State: Waiting, StateSince: since, Question: withDetail(strings.Repeat("x", 121))}, Running},
+		"detail edge space":  {AgentStatus{State: Waiting, StateSince: since, Question: withDetail("a \nb")}, Running},
+		"long label":         {AgentStatus{State: Waiting, StateSince: since, Question: &AgentQuestion{ID: strings.Repeat("a", 32), Text: "Q?", Options: []AgentOption{{Label: strings.Repeat("x", 81)}}}}, Running},
+	} {
+		if err := decode(test.agent, test.state); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}

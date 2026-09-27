@@ -26,6 +26,7 @@
     { "$ref": "#/$defs/inputTextMessage" },
     { "$ref": "#/$defs/inputPasteMessage" },
     { "$ref": "#/$defs/inputMouseMessage" },
+    { "$ref": "#/$defs/inputAnswerMessage" },
     { "$ref": "#/$defs/terminalResizeMessage" },
     { "$ref": "#/$defs/historyReadMessage" },
     { "$ref": "#/$defs/sessionDetachMessage" },
@@ -65,7 +66,7 @@
       "enum": [
         "hello", "session.attach", "screen.resync", "snapshot.applied",
         "control.acquire", "control.release", "heartbeat", "input.key",
-        "input.text", "input.paste", "input.mouse", "terminal.resize",
+        "input.text", "input.paste", "input.mouse", "input.answer", "terminal.resize",
         "history.read", "session.detach", "welcome", "snapshot.begin",
         "snapshot.rows", "snapshot.end", "screen.patch", "history.page",
         "history.changed", "control.changed", "input.accepted",
@@ -81,13 +82,55 @@
         "session_lost", "not_controller", "stale_lease", "input_gap",
         "limit_exceeded", "history_changed", "resync_required",
         "host_unavailable", "internal_error", "invalid_request",
-        "operation_conflict", "project_missing", "shell_profile_missing"
+        "operation_conflict", "project_missing", "shell_profile_missing",
+        "question_changed"
       ]
     },
     "sessionLifecycle": {
       "title": "State",
       "type": "string",
       "enum": ["starting", "running", "exiting", "exited", "lost"]
+    },
+    "agentState": {
+      "title": "AgentState",
+      "type": "string",
+      "enum": ["working", "waiting", "idle"]
+    },
+    "agentQuestionId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "agentOption": {
+      "title": "AgentOption",
+      "description": "One answer the broker can send. Label is terminal output: render it as text only. The broker chooses the keys from the current screen; the client sends only the option index.",
+      "type": "object", "additionalProperties": false, "required": ["label"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 80, "maxUtf8Bytes": 240, "safeDisplayText": true }
+      }
+    },
+    "agentQuestion": {
+      "title": "AgentQuestion",
+      "description": "A recognized prompt. id is a stable hash of the session generation, text, the full dialog context (of which detail is the capped display form) and option labels; input.answer must repeat it. text, detail and labels are terminal output: render them as text only. detail says what is being approved (tool, command, file), one line per newline.",
+      "type": "object", "additionalProperties": false, "required": ["id", "text", "options"],
+      "properties": {
+        "id": { "$ref": "#/$defs/agentQuestionId" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 160, "maxUtf8Bytes": 480, "safeDisplayText": true },
+        "detail": {
+          "type": "string", "minLength": 1, "maxLength": 600, "maxUtf8Bytes": 1800,
+          "pattern": "^[^\\p{Cc}\\s](?:[^\\p{Cc}]*[^\\p{Cc}\\s])?(?:\\n[^\\p{Cc}\\s](?:[^\\p{Cc}]*[^\\p{Cc}\\s])?){0,5}$"
+        },
+        "options": { "type": "array", "minItems": 1, "maxItems": 6, "items": { "$ref": "#/$defs/agentOption" } }
+      }
+    },
+    "agentStatus": {
+      "title": "AgentStatus",
+      "description": "Broker-computed activity of a running session. question is present exactly when state is waiting. stateSince is the RFC 3339 time of the last change of state or question.",
+      "type": "object", "additionalProperties": false, "required": ["state", "stateSince"],
+      "properties": {
+        "state": { "$ref": "#/$defs/agentState" },
+        "stateSince": { "type": "string", "minLength": 20, "maxLength": 35 },
+        "question": { "$ref": "#/$defs/agentQuestion" }
+      }
     },
     "emptyPayload": {
       "title": "EmptyPayload",
@@ -313,6 +356,17 @@
         "modifiers": { "$ref": "#/$defs/modifiers" }
       }
     },
+    "inputAnswerPayload": {
+      "title": "InputAnswerPayload",
+      "description": "Answers the current agent question. The broker rejects it with question_changed unless questionId is still the detected question, then writes that option's keys once.",
+      "type": "object", "additionalProperties": false,
+      "required": ["lease", "inputSequence", "questionId", "optionIndex"],
+      "properties": {
+        "lease": { "$ref": "#/$defs/secret" }, "inputSequence": { "$ref": "#/$defs/decimalCounter" },
+        "questionId": { "$ref": "#/$defs/agentQuestionId" },
+        "optionIndex": { "type": "integer", "minimum": 0, "maximum": 5 }
+      }
+    },
     "terminalResizePayload": {
       "title": "TerminalResizePayload",
       "type": "object", "additionalProperties": false, "required": ["lease", "columns", "rows"],
@@ -398,7 +452,10 @@
     "sessionStatePayload": {
       "title": "SessionStatePayload",
       "type": "object", "additionalProperties": false, "required": ["state"],
-      "properties": { "state": { "$ref": "#/$defs/sessionLifecycle" }, "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 } }
+      "properties": {
+        "state": { "$ref": "#/$defs/sessionLifecycle" }, "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
+        "agent": { "$ref": "#/$defs/agentStatus" }
+      }
     },
     "accessRevokedPayload": {
       "title": "AccessRevokedPayload",
@@ -429,6 +486,7 @@
     "inputTextMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.text" }, "payload": { "$ref": "#/$defs/inputTextPayload" } } },
     "inputPasteMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.paste" }, "payload": { "$ref": "#/$defs/inputPastePayload" } } },
     "inputMouseMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.mouse" }, "payload": { "$ref": "#/$defs/inputMousePayload" } } },
+    "inputAnswerMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.answer" }, "payload": { "$ref": "#/$defs/inputAnswerPayload" } } },
     "terminalResizeMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "terminal.resize" }, "payload": { "$ref": "#/$defs/terminalResizePayload" } } },
     "historyReadMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.read" }, "payload": { "$ref": "#/$defs/historyReadPayload" } } },
     "sessionDetachMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "session.detach" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },

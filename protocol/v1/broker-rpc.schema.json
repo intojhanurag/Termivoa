@@ -147,7 +147,8 @@
         "preview": {
           "type": "string", "minLength": 1, "maxLength": 160,
           "maxUtf8Bytes": 480, "safeDisplayText": true
-        }
+        },
+        "agent": { "$ref": "envelope.schema.json#/$defs/agentStatus" }
       }
     },
     "sessionListResultPayload": {

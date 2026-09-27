@@ -1,0 +1,6 @@
+# cursor=4,2 visible=true
+$ cat menu.txt
+Pick one?
+> 1. alpha
+  2. beta
+$

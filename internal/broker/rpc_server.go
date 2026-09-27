@@ -456,7 +456,7 @@ func (server *ManagementServer) sessionStatus(
 
 // withPresence adds live, non-secret presence computed at request time.
 // deviceID is the requesting browser device; it is empty on local CLI paths,
-// where controllerIsYou, lastOutputAt and preview stay absent so terminal
+// where controllerIsYou, lastOutputAt, preview and agent stay absent so terminal
 // content never appears in CLI output. A session that is not live in this
 // broker, or that already exited or was lost while still registered, keeps
 // every presence field absent.
@@ -488,6 +488,7 @@ func (server *ManagementServer) withPresence(
 		if presence.Preview != "" {
 			record.Preview = &presence.Preview
 		}
+		record.Agent = agentPayload(presence.Agent)
 	}
 	return record
 }

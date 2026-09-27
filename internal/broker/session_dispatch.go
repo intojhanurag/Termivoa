@@ -201,7 +201,7 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 	case protocol.TerminalResize:
 		payload, _ := protocol.DecodePayload[protocol.TerminalResizePayload](request)
 		err = stream.session.Resize(ctx, identity(payload.Lease), int(payload.Columns), int(payload.Rows))
-	case protocol.InputKey, protocol.InputText, protocol.InputPaste, protocol.InputMouse:
+	case protocol.InputKey, protocol.InputText, protocol.InputPaste, protocol.InputMouse, protocol.InputAnswer:
 		lease, sequence, action := sessionInput(request)
 		counter, _ := strconv.ParseUint(sequence, 10, 64)
 		_, err = stream.session.SubmitInput(ctx, identity(lease), counter, action)
@@ -296,6 +296,9 @@ func sessionInput(request protocol.Envelope) (lease, sequence string, action Inp
 	case protocol.InputMouse:
 		p, _ := protocol.DecodePayload[protocol.InputMousePayload](request)
 		return p.Lease, p.InputSequence, InputAction{Kind: InputKindMouse, MouseKind: p.Kind, Button: p.Button, Column: p.Column, Row: p.Row, Modifiers: p.Modifiers}
+	case protocol.InputAnswer:
+		p, _ := protocol.DecodePayload[protocol.InputAnswerPayload](request)
+		return p.Lease, p.InputSequence, InputAction{Kind: InputKindAnswer, QuestionID: p.QuestionID, OptionIndex: int(p.OptionIndex)}
 	}
 	panic("broker: input conversion called for non-input message")
 }
@@ -308,6 +311,10 @@ func classifySessionError(err error) managementFailure {
 		return managementFailure{protocol.NotController, "take control before sending input"}
 	case errors.Is(err, ErrStaleLease):
 		return managementFailure{protocol.StaleLease, "controller lease is no longer valid"}
+	case errors.Is(err, ErrQuestionChanged):
+		return managementFailure{protocol.QuestionChanged, "the question on screen changed; check it and answer again"}
+	case errors.Is(err, errAnswerOption):
+		return managementFailure{protocol.InvalidRequest, "that answer is not offered"}
 	case errors.Is(err, ErrInputGap):
 		return managementFailure{protocol.InputGap, "input sequence has a gap; check the terminal before sending again"}
 	case errors.Is(err, ErrViewerSnapshotPending):
@@ -326,7 +333,8 @@ func classifySessionError(err error) managementFailure {
 }
 
 func (stream *sessionConnection) failure(ctx context.Context, request protocol.Envelope, code protocol.ErrorCode, message string) error {
-	if request.Type == protocol.InputKey || request.Type == protocol.InputText || request.Type == protocol.InputPaste || request.Type == protocol.InputMouse {
+	if request.Type == protocol.InputKey || request.Type == protocol.InputText || request.Type == protocol.InputPaste ||
+		request.Type == protocol.InputMouse || request.Type == protocol.InputAnswer {
 		_, sequence, _ := sessionInput(request)
 		return stream.send(ctx, request, protocol.InputRejected, protocol.InputRejectedPayload{Code: code, Message: message, InputSequence: &sequence})
 	}

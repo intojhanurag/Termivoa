@@ -1,0 +1,6 @@
+# cursor=4,39 visible=true
+$ sudo apt install ripgrep
+The following NEW packages will be installed:
+  ripgrep
+After this operation, 5,210 kB of additional disk space will be used.
+Do you want to continue? [Y/n]

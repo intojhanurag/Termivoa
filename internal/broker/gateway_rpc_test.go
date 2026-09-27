@@ -693,7 +693,7 @@ func TestGatewaySessionListReportsControllerPerDevice(t *testing.T) {
 		t.Fatalf("cli list = %#v, %v", cli, err)
 	}
 	check(cli.Sessions[0], nil)
-	if cli.Sessions[0].Preview != nil || cli.Sessions[0].LastOutputAt != nil {
+	if cli.Sessions[0].Preview != nil || cli.Sessions[0].LastOutputAt != nil || cli.Sessions[0].Agent != nil {
 		t.Fatalf("cli list carries terminal activity: %#v", cli.Sessions[0])
 	}
 }
@@ -718,7 +718,7 @@ func TestWithPresenceSkipsEndedSessions(t *testing.T) {
 		record.State = state
 		got := fixture.server.withPresence(context.Background(), record, phone.DeviceID)
 		if got.Controlled != nil || got.ViewerCount != nil || got.ControllerIsYou != nil ||
-			got.LastOutputAt != nil || got.Preview != nil {
+			got.LastOutputAt != nil || got.Preview != nil || got.Agent != nil {
 			t.Fatalf("%s session has presence: %#v", state, got)
 		}
 	}
