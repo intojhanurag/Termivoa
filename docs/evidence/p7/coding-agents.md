@@ -3,6 +3,9 @@
 Date: 2026-09-29. Branch `test/hu-agents`, base `12b8dc7`. Product code was
 not changed.
 
+Note (2026-09-27): the date above is a typo. The run happened on or before
+2026-09-27, because `terminal-fixes.md` (dated 2026-09-27) fixes its defects.
+
 ## Environment
 
 | Item | Value |
