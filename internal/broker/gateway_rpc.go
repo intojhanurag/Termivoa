@@ -286,6 +286,9 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 			return nil, nil, err
 		}
 		return protocol.BrokerRPCEmptyPayload{}, binding, nil
+	case protocol.GatewayUploadBegin, protocol.GatewayUploadChunk, protocol.GatewayUploadCommit:
+		// An upload must start a fresh connection; see serveUpload.
+		return nil, nil, errUploadOrder
 	default:
 		return nil, nil, errors.New("broker: unsupported gateway request")
 	}

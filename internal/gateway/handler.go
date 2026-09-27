@@ -48,7 +48,9 @@ type gatewayHandler struct {
 	assets         fs.FS
 
 	redeemLimit, pollLimit, authFailLimit *limiter
-	liveLimits                            liveLimits
+	// uploads bounds concurrent upload bodies held in memory.
+	uploads    chan struct{}
+	liveLimits liveLimits
 
 	// live tracks hijacked WebSocket handlers, which Shutdown cannot see.
 	// liveMu orders live.Add against stopLive so Wait never races an Add.
@@ -99,6 +101,7 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		redeemLimit:   newLimiter(5, time.Minute/5),
 		pollLimit:     newLimiter(10, time.Second),
 		authFailLimit: newLimiter(20, 6*time.Second),
+		uploads:       make(chan struct{}, maxConcurrentUploads),
 		liveLimits:    defaultLiveLimits,
 	}
 	handler.liveCtx, handler.cancelLive = context.WithCancel(context.Background())
@@ -132,6 +135,7 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/sessions", handler.sessions)
 		mux.HandleFunc("/api/v1/sessions/{id}", handler.renameSession)
 		mux.HandleFunc("/api/v1/sessions/{id}/terminate", handler.terminateSession)
+		mux.HandleFunc("/api/v1/sessions/{id}/uploads", handler.upload)
 		mux.HandleFunc("/api/v1/device", handler.renameDevice)
 		mux.HandleFunc("/api/v1/push", handler.pushConfig)
 		mux.HandleFunc("/api/v1/push/subscribe", handler.pushSubscribe)

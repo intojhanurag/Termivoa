@@ -24,7 +24,7 @@ export function saveDraft(key: string, text: string): void {
 
 export type PasteCheck = 'disabled' | 'empty' | 'too-large' | 'needs-confirmation' | 'ready';
 
-/** Decides whether "Paste into terminal" may send now. Never sends by itself. */
+/** Decides whether "Send" may paste the draft now. Never sends by itself. */
 export function checkPaste(text: string, canSend: boolean, confirmed: boolean): PasteCheck {
   if (!canSend) {
     return 'disabled';

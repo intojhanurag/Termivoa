@@ -328,6 +328,9 @@ func classifySessionError(err error) managementFailure {
 	case errors.Is(err, ErrSessionClosed), errors.Is(err, ErrSessionRetired), errors.Is(err, ErrSessionNotRunning):
 		return managementFailure{protocol.SessionLost, "session process is no longer running"}
 	default:
+		if failure, ok := classifyUploadError(err); ok {
+			return failure
+		}
 		return classifyManagementError(err)
 	}
 }

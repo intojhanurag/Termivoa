@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, deviceLabelProblem, REQUEST_TIMEOUT_MS } from './http';
+import { api, ApiError, blobToBase64, deviceLabelProblem, REQUEST_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from './http';
 
 const device = { id: '00000000-0000-4000-8000-000000000020', label: 'Work phone' };
 
@@ -93,5 +93,49 @@ describe('push API', () => {
     expect(JSON.parse(calls[1]?.[1].body as string)).toEqual({ endpoint, keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } });
     expect(JSON.parse(calls[2]?.[1].body as string)).toEqual({ endpoint });
     expect(calls[3]?.[1].body).toBe('{}');
+  });
+});
+
+describe('photo upload', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('posts the image to the session uploads path with the fixed header', async () => {
+    const saved = { path: '.termivoa/uploads/20260927-143012-a1b2c3d4.png', size: 421000, contentType: 'image/png' };
+    const fetch = vi.fn(async () => json(200, saved));
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(api.uploadImage('a/b', { generation: 'g1', data: 'iVBORw0KGgo=' })).resolves.toEqual(saved);
+
+    const [path, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(path).toBe('/api/v1/sessions/a%2Fb/uploads');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Pterm-Request': '1' });
+    expect(JSON.parse(init.body as string)).toEqual({ generation: 'g1', data: 'iVBORw0KGgo=' });
+  });
+
+  it('waits longer than a normal request before giving up', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_path: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    })));
+    let settled = false;
+    const pending = api.uploadImage('s', { generation: 'g', data: 'AA==' }).catch((error: unknown) => { settled = true; return error; });
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(UPLOAD_TIMEOUT_MS - REQUEST_TIMEOUT_MS);
+    expect(await pending).toMatchObject({ code: 'network' });
+  });
+
+  it('shows the server message for a refused upload', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(409, { error: { code: 'not_controller', message: 'Take control to attach a photo.' } })));
+    const failure = await api.uploadImage('s', { generation: 'g', data: 'AA==' }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ status: 409, code: 'not_controller', message: 'Take control to attach a photo.' });
+  });
+
+  it('encodes a blob as standard padded base64 across chunk edges', async () => {
+    const bytes = new Uint8Array(0x8000 * 2 + 5).map((_value, index) => (index * 7) % 256);
+    expect(await blobToBase64(new Blob([bytes]))).toBe(Buffer.from(bytes).toString('base64'));
+    expect(await blobToBase64(new Blob([new Uint8Array([1])]))).toBe('AQ==');
+    expect(await blobToBase64(new Blob([]))).toBe('');
   });
 });

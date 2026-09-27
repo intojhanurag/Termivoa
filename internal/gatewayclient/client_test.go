@@ -833,3 +833,56 @@ func TestDeadIdleConnectionRedialsOnceBeforeDelivery(t *testing.T) {
 		t.Fatalf("dials = %d, requests = %d; want 2, 3", dials.Load(), requests.Load())
 	}
 }
+
+func TestUploadChunksOnADedicatedConnection(t *testing.T) {
+	data := make([]byte, 2*protocol.MaxUploadChunkBytes+17)
+	for index := range data {
+		data[index] = byte(index)
+	}
+	var received []byte
+	var sizes []int
+	saved := protocol.HTTPUploadResponse{Path: ".termivoa/uploads/20260927-143012-a1b2c3d4.png", Size: int64(len(data)), ContentType: protocol.ImagePNG}
+	client, dials := pipeClient(t, func(connection int, request protocol.GatewayRPCEnvelope) []byte {
+		switch request.Type {
+		case protocol.GatewayUploadBegin:
+			payload, _ := protocol.DecodeRPCPayload[protocol.GatewayRPCUploadBeginPayload](request)
+			if payload.Size != int64(len(data)) || payload.SessionID != testSession || payload.Generation != testGeneration {
+				t.Errorf("begin = %+v", payload)
+			}
+			return reply(t, request.RequestID, protocol.GatewayUploadBeginResult, protocol.BrokerRPCEmptyPayload{})
+		case protocol.GatewayUploadChunk:
+			payload, _ := protocol.DecodeRPCPayload[protocol.GatewayRPCUploadChunkPayload](request)
+			chunk, err := protocol.DecodeUploadData(payload.Data, protocol.MaxUploadChunkBytes)
+			if err != nil {
+				t.Error(err)
+			}
+			received, sizes = append(received, chunk...), append(sizes, len(chunk))
+			return reply(t, request.RequestID, protocol.GatewayUploadChunkResult, protocol.BrokerRPCEmptyPayload{})
+		case protocol.GatewayUploadCommit:
+			return reply(t, request.RequestID, protocol.GatewayUploadCommitResult, saved)
+		}
+		t.Errorf("unexpected %s", request.Type)
+		return nil
+	})
+	result, err := client.Upload(context.Background(), testCredential, testSession, testGeneration, data)
+	if err != nil || result != saved {
+		t.Fatalf("upload = %+v, %v", result, err)
+	}
+	if !reflect.DeepEqual(sizes, []int{protocol.MaxUploadChunkBytes, protocol.MaxUploadChunkBytes, 17}) || string(received) != string(data) {
+		t.Fatalf("chunks = %v, reassembled equal = %v", sizes, string(received) == string(data))
+	}
+	if dials.Load() != 1 {
+		t.Fatalf("dials = %d", dials.Load())
+	}
+
+	refused, _ := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
+		return reply(t, request.RequestID, protocol.GatewayError, protocol.BrokerRPCErrorPayload{
+			Code: protocol.NotController, Message: "take control before attaching a photo",
+		})
+	})
+	var remote *gatewayapi.Error
+	if _, err := refused.Upload(context.Background(), testCredential, testSession, testGeneration, data); !errors.As(err, &remote) ||
+		remote.Code != protocol.NotController {
+		t.Fatalf("refused upload = %v", err)
+	}
+}

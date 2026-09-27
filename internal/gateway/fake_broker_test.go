@@ -180,6 +180,16 @@ func (broker *fakeBroker) PushTest(_ context.Context, credential string) (protoc
 	return protocol.HTTPPushTestResponse{Sent: 1}, broker.opErr
 }
 
+func (broker *fakeBroker) Upload(_ context.Context, credential, sessionID, generation string, data []byte) (protocol.HTTPUploadResponse, error) {
+	broker.record("upload:" + sessionID + "/" + generation + "/" + string(data))
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPUploadResponse{}, err
+	}
+	return protocol.HTTPUploadResponse{
+		Path: ".termivoa/uploads/20260927-143012-a1b2c3d4.png", Size: int64(len(data)), ContentType: protocol.ImagePNG,
+	}, broker.opErr
+}
+
 func (broker *fakeBroker) setOrigin(origin string) {
 	broker.mu.Lock()
 	broker.origin = origin

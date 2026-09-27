@@ -40,6 +40,7 @@ safe, and private networking does not replace application authentication.
 | Slow viewer → child progress | Bounded queues and history, independent emulator/response writer, disconnect slow viewers | Automated fixtures and a Mac soak (`docs/evidence/p7/soak.md`); 10-minute stress run, 24-hour soak and Windows soak pending |
 | Gateway lifetime → child lifetime | Independent broker owns PTYs, process cleanup, SQLite | Mac process restart fixture; native Windows 11 pending |
 | Broker → push services (outbound) | Browser-supplied endpoint limited to exact push hosts over https:443; no redirects, no proxy, public addresses only, 10 s timeout; payload is names and status only, encrypted (RFC 8291) and VAPID-signed; revoke/logout delete subscriptions | Unit tests incl. RFC 8291 vectors and SSRF cases (`internal/webpush`); dev-stack curl check; real iPhone/Android delivery pending owner |
+| Phone → project folder (photo upload) | Controller-only, rechecked at commit; magic-byte type check; 5 MiB cap; server-chosen name, `O_EXCL`, 0600/current-user ACL; `os.Root` confinement; symlinked `.termivoa`/`uploads` refused; per-device limits | Unit and RPC tests (`internal/broker/upload_test.go`, gateway and protocol tests); dev-stack curl and browser check; real iPhone pending owner |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
 
 ## Pairing and credential acceptance criteria (P4)
@@ -146,6 +147,49 @@ Web Push adds the only outbound connection the broker makes on its own. See
   credential, and the in-memory revocation set is checked at send time.
   A notification already accepted by a push service before revocation may
   still arrive.
+
+## Photo uploads
+
+A photo upload is the only browser action that writes a file on the host
+other than through the terminal. See `protocol/v1/http-api.md` (Image
+uploads) and `protocol/v1/authentication-rpc.md`.
+
+- **Who.** Only the device that holds the session's controller lease may
+  upload; the broker checks it when the upload starts and again just before
+  it writes. The controller can already type any shell command, so this adds
+  no new power; a paired phone that only watches cannot write files. The
+  request never names a path: the broker picks the session's project folder.
+- **Where.** The file goes to `<project>/.termivoa/uploads/`. All steps go
+  through Go's `os.Root`, so no path can leave the project folder. A
+  `.termivoa` or `uploads` that is a symlink, junction or file is refused, and
+  the opened directory must be the one that was checked. The name is
+  `<yyyyMMdd-HHmmss>-<8 random hex>.<ext>`, chosen by the broker; the phone's
+  file name is never sent. Files are created with `O_EXCL` (never
+  overwritten) and mode 0600, or a current-user-only ACL on Windows.
+  `.termivoa/.gitignore` with `*` is created when missing, so uploads are not
+  committed; an existing `.gitignore` there is left unchanged.
+- **What.** The type comes from magic bytes only (JPEG, PNG, WebP, GIF);
+  SVG, HTML and anything else is refused. The broker never decodes or runs the
+  image. At most 5 MiB decoded.
+- **How much.** The gateway accepts at most two upload bodies at once (about
+  7 MiB each); the broker one upload per device, four in total, and 12 per
+  minute per device. Chunks travel on a dedicated IPC connection with every
+  message under 256 KiB; a stalled upload is dropped after 30 seconds, and
+  nothing reaches the disk before commit. Uploads are not deleted
+  automatically; removing an attachment on the phone keeps the file.
+- **Privacy.** The phone redraws each photo on a canvas before upload, which
+  drops EXIF and GPS metadata and caps the long edge at 2048 px, because the
+  agent may later send the image to an AI service. The broker trusts the
+  bytes it receives and does not strip metadata itself; a client that skips
+  the canvas step can upload an original file.
+
+## Voice dictation
+
+Voice uses the browser's Web Speech API. On iPhone, Safari may send audio to
+Apple's speech service; the app sends no audio anywhere itself. Text is only
+added to the draft; nothing is sent to the terminal until the user taps
+**Send**. Listening stops when the panel or sheet closes or the page is
+hidden.
 
 ## Operational and release limits
 

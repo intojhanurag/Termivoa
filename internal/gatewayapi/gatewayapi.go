@@ -61,6 +61,9 @@ type Broker interface {
 	PushSubscribe(ctx context.Context, credential string, request protocol.HTTPPushSubscribeRequest) error
 	PushUnsubscribe(ctx context.Context, credential string, request protocol.HTTPPushUnsubscribeRequest) error
 	PushTest(ctx context.Context, credential string) (protocol.HTTPPushTestResponse, error)
+	// Upload saves one image into the session's project folder. The broker
+	// accepts it only from the device that holds the session's control.
+	Upload(ctx context.Context, credential, sessionID, generation string, data []byte) (protocol.HTTPUploadResponse, error)
 	// Origin returns the configured browser origin, or "" when none is set.
 	// It needs no credential: the origin is not a secret.
 	Origin(ctx context.Context) (string, error)

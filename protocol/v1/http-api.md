@@ -11,7 +11,8 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 - Every state-changing request (`POST`, `PATCH`) and the WebSocket upgrade
   require an exact `Origin` match. A missing `Origin` is rejected.
 - HTTP mutations require `Content-Type: application/json` and the fixed header
-  `X-Pterm-Request: 1`. Request bodies are limited to 64 KiB.
+  `X-Pterm-Request: 1`. Request bodies are limited to 64 KiB, except an image
+  upload (about 7 MiB, see Image uploads).
 - Authenticated responses send `Cache-Control: no-store`.
 - Errors return `HTTPErrorResponse` with a stable `errorCode` and a short safe
   message. Stack traces and secrets are never returned.
@@ -36,6 +37,7 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `POST /api/v1/push/subscribe` | cookie | `HTTPPushSubscribeRequest` | `204`; saves it for the calling device |
 | `POST /api/v1/push/unsubscribe` | cookie | `HTTPPushUnsubscribeRequest` | `204`; removes it from the calling device only |
 | `POST /api/v1/push/test` | cookie | `{}` | `200 HTTPPushTestResponse` |
+| `POST /api/v1/sessions/{id}/uploads` | cookie, controller | `HTTPUploadRequest` (body up to 7 MiB) | `200 HTTPUploadResponse`; see Image uploads |
 | `POST /api/v1/logout` | cookie | `{}` | `204`; clears cookie |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
@@ -128,3 +130,36 @@ subscriptions in total, or a test notification within 5 s of the last one,
 is `limit_exceeded`. `sent` counts the calling device's subscriptions whose
 push service accepted the test notification (0..5). Revocation and logout
 delete the device's subscriptions.
+
+## Image uploads
+
+`POST /api/v1/sessions/{id}/uploads` saves one image into the session's
+project folder so a coding agent can read it by path. The body is
+`{generation, data}`: `data` is the file as standard padded base64, 1 byte to
+5 MiB (5,242,880 bytes) decoded, so the JSON body is at most about 7 MiB. The
+client's file name is never sent.
+
+- Only the device that holds the session's controller lease may upload
+  (`not_controller`, 409, otherwise). The broker checks this at the start and
+  again just before it writes, together with the credential and the running
+  session `generation`.
+- The broker detects the type from the file's magic bytes only: JPEG, PNG,
+  WebP or GIF. Anything else is `invalid_request`.
+- The broker names the file `.termivoa/uploads/<yyyyMMdd-HHmmss>-<8 hex>.<ext>`
+  (local time) inside the project folder, creates it exclusively with mode
+  0600 (a current-user-only ACL on Windows), and creates `.termivoa/.gitignore`
+  containing `*` when it is missing. `.termivoa` and `uploads` must be plain
+  directories; a symlink, junction or file there is refused with
+  `invalid_request`.
+- Limits: one running upload per device, four in total at the broker and two
+  at the gateway, and 12 uploads per minute per device (`limit_exceeded`,
+  429).
+- The response `path` is relative to the project folder (the session's
+  starting directory), for example
+  `.termivoa/uploads/20260927-143012-a1b2c3d4.png`, with `size` in bytes and
+  the detected `contentType`.
+
+The phone re-encodes every photo through a canvas before upload, which drops
+EXIF and GPS metadata and scales the long edge to at most 2048 px. The broker
+does not re-encode; it stores the bytes it received. Removing an attachment on
+the phone does not delete the file on the computer.
