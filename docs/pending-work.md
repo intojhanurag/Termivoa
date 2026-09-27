@@ -5,15 +5,18 @@ Ask the agent to "do pending work" to complete them.
 
 ## Windows (logic only; native testing is still an owner gate)
 
-- [ ] **WSL bash profile.** Detect WSL and add a "WSL bash" shell profile when
+- [x] **WSL bash profile.** Done in #38 (needs a real-Windows check). Detect WSL and add a "WSL bash" shell profile when
       WSL is installed (plan section 5: a separate explicit profile, never a
       replacement for native Windows coverage). `store.PlatformWSL` exists, but
       `internal/broker/shell_profiles.go` does not add it.
-- [ ] **Ctrl+] at the attach startup handoff.** On Windows a Ctrl+] pressed
+- [x] **Ctrl+] at the attach startup handoff.** Done in #37 (needs a real-Windows check). On Windows a Ctrl+] pressed
       exactly while `pterm attach` starts is lost; Unix drains and scans for it.
-- [ ] **Scheduled Task launcher.** Tasks start pterm through
+- [x] **Scheduled Task launcher.** Kept `conhost --headless` after review; added logs, normal priority, a late-broker wait and a clean uninstall stop in #40. Tasks start pterm through
       `conhost.exe --headless`. Restart on failure and `schtasks /End` stopping
       pterm are unproven. Consider starting `pterm.exe` directly and hidden.
+
+Also fixed before the first Windows test (#39): SQLite path URI on Windows and
+the current-user-only folder ACL check (both would have stopped `pterm setup`).
 
 ## Backend gaps from the plan
 
