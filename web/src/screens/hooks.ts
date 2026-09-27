@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { api } from '../api/http';
+import type { BrokerRPCSessionRecord } from '../generated/protocol';
 
 const FONT_SIZE_KEY = 'pterm.fontSize';
 export const DEFAULT_FONT_SIZE = 14;
@@ -89,4 +91,49 @@ export function useServiceWorkerUpdate(): { available: boolean; reload: () => vo
 export function websocketUrl(): string {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${scheme}//${window.location.host}/api/v1/ws`;
+}
+
+export const SESSION_POLL_MS = 5000;
+
+export interface SessionList {
+  readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
+  /** False after the last list request failed. */
+  readonly reachable: boolean;
+  readonly reload: () => Promise<void>;
+}
+
+/**
+ * The session list for Sessions and the Live tabs. While `active`, it
+ * refreshes every few seconds, but only when the page is visible.
+ */
+export function useSessionList(active: boolean, onFailure: (error: unknown) => void): SessionList {
+  const [sessions, setSessions] = useState<ReadonlyArray<BrokerRPCSessionRecord>>();
+  const [reachable, setReachable] = useState(true);
+  const reload = useCallback(async () => {
+    try {
+      setSessions((await api.sessions()).sessions);
+      setReachable(true);
+    } catch (error) {
+      setReachable(false);
+      onFailure(error);
+    }
+  }, [onFailure]);
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+    const tick = () => {
+      if (document.visibilityState === 'visible') {
+        void reload();
+      }
+    };
+    tick();
+    const timer = setInterval(tick, SESSION_POLL_MS);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [active, reload]);
+  return { sessions, reachable, reload };
 }
