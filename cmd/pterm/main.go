@@ -9,10 +9,16 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
 	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/ipc"
+	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 )
 
 const (
@@ -72,12 +78,14 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		if err != nil {
 			return err
 		}
+		useServiceLog("broker", config.Profile)
 		return host.RunBroker(ctx, config)
 	case gatewayMode:
 		config, err := parseGatewayConfig(args[1:])
 		if err != nil {
 			return err
 		}
+		useServiceLog("gateway", config.Profile)
 		return runGateway(ctx, config)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -103,6 +111,36 @@ func runGateway(ctx context.Context, config gateway.Config) error {
 		err = nil // A stop during startup is still a clean exit.
 	}
 	return errors.Join(err, client.Close(), control.Close())
+}
+
+// useServiceLog appends a production broker's or gateway's output and crash
+// report to <data>\logs\<name>.log on Windows, where the task's headless
+// console discards it. launchd redirects both streams on macOS, and `pterm
+// launch` hands the child that same file, so nothing is written twice.
+func useServiceLog(name string, profile host.Profile) {
+	if runtime.GOOS != "windows" || profile != host.ProductionProfile {
+		return
+	}
+	file, err := openServiceLog(name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pterm: open %s log: %v\n", name, err)
+		return
+	}
+	os.Stdout, os.Stderr = file, file
+	_ = debug.SetCrashOutput(file, debug.CrashOptions{})
+	fmt.Fprintf(file, "%s pterm %s started (build %s)\n", time.Now().Format(time.RFC3339), name, buildID)
+}
+
+func openServiceLog(name string) (*os.File, error) {
+	paths, err := host.DefaultPaths()
+	if err != nil {
+		return nil, err
+	}
+	directory, err := ipc.EnsurePrivateDirectory(lifecycle.Host{OS: runtime.GOOS, DataDir: paths.DataDir}.LogDir())
+	if err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Join(directory, name+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
 func parseBrokerConfig(args []string) (host.BrokerConfig, error) {

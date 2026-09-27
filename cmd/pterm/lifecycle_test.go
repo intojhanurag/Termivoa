@@ -310,3 +310,33 @@ func TestUpRequiresExplicitDevelopmentProfile(t *testing.T) {
 		t.Fatalf("up without --dev = %v", err)
 	}
 }
+
+func TestInstalledTailscaleUsesAbsoluteProgramFiles(t *testing.T) {
+	programFiles := t.TempDir()
+	cli := filepath.Join(programFiles, "Tailscale", "tailscale.exe")
+	env := func(value string) func(string) string {
+		return func(name string) string {
+			if name == "ProgramFiles" {
+				return value
+			}
+			return ""
+		}
+	}
+	if got := installedTailscale("windows", env(programFiles)); got != "" {
+		t.Fatalf("missing CLI found at %q", got)
+	}
+	if err := os.MkdirAll(filepath.Dir(cli), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cli, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := installedTailscale("windows", env(programFiles)); got != cli {
+		t.Fatalf("installed CLI = %q, want %q", got, cli)
+	}
+	for _, value := range []string{"", "relative"} {
+		if got := installedTailscale("windows", env(value)); got != "" {
+			t.Errorf("ProgramFiles %q gave %q", value, got)
+		}
+	}
+}

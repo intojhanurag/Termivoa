@@ -21,6 +21,8 @@ const (
 	defaultProbeInterval     = time.Second
 	probeTimeout             = 750 * time.Millisecond
 	shutdownTimeout          = 3 * time.Second
+	defaultBrokerWait        = 2 * time.Minute
+	maxBrokerRetry           = 5 * time.Second
 )
 
 type Config struct {
@@ -30,6 +32,10 @@ type Config struct {
 	Profile         platform.Profile
 	ProbeInterval   time.Duration
 	ShutdownTimeout time.Duration
+
+	// BrokerWait bounds how long startup retries an unreachable broker; zero
+	// means two minutes. At logon the broker may start after the gateway.
+	BrokerWait time.Duration
 
 	// Origins lists exact browser origins such as
 	// "https://mac.tailnet.ts.net". Their hosts join the bound loopback
@@ -97,9 +103,12 @@ func Run(ctx context.Context, config Config) error {
 		return errors.New("gateway: shutdown timeout must be between 25ms and 1m")
 	}
 
-	initial, err := probeBroker(ctx, config.RuntimeDir, config.HostBuild)
+	if config.BrokerWait == 0 {
+		config.BrokerWait = defaultBrokerWait
+	}
+	initial, err := waitForBroker(ctx, config)
 	if err != nil {
-		return fmt.Errorf("gateway: connect to broker: %w", err)
+		return err
 	}
 	listener, err := net.Listen("tcp", config.ListenAddress)
 	if err != nil {
@@ -199,6 +208,33 @@ func probeBroker(ctx context.Context, runtimeDir, build string) (protocol.IPCWel
 	defer cancel()
 	_, welcome, err := ipc.ValidateBrokerEndpoint(probeCtx, runtimeDir, protocol.Gateway, build)
 	return welcome, err
+}
+
+// waitForBroker probes at once, then retries with backoff until the broker
+// answers, ctx ends, or config.BrokerWait passes.
+func waitForBroker(ctx context.Context, config Config) (protocol.IPCWelcomeClass, error) {
+	deadline := time.Now().Add(config.BrokerWait)
+	delay := 100 * time.Millisecond
+	for {
+		welcome, err := probeBroker(ctx, config.RuntimeDir, config.HostBuild)
+		if err == nil {
+			return welcome, nil
+		}
+		if ctx.Err() != nil {
+			return welcome, ctx.Err()
+		}
+		if time.Until(deadline) <= 0 {
+			return welcome, fmt.Errorf("gateway: connect to broker (waited %s): %w", config.BrokerWait, err)
+		}
+		timer := time.NewTimer(min(delay, time.Until(deadline)))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return welcome, ctx.Err()
+		case <-timer.C:
+		}
+		delay = min(2*delay, maxBrokerRetry)
+	}
 }
 
 func monitorBroker(ctx context.Context, handler *gatewayHandler, config Config) {

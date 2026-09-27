@@ -21,8 +21,11 @@ Installer behavior:
   executable a running broker uses, and the previous version stays for rollback.
 - Task "Start Phone Terminal when I sign in" (checked) runs
   `pterm setup --apply --yes`, which registers two per-user scheduled tasks
-  (broker, gateway): at logon, least privilege, hidden, restart on failure,
-  started through `conhost.exe --headless` so no console window appears.
+  (broker, gateway): at logon, least privilege, hidden, normal priority,
+  Task Scheduler "restart on failure" every minute (not yet verified through
+  the console host), started through `conhost.exe --headless` so no console
+  window appears. The headless console discards output, so pterm writes
+  `%LOCALAPPDATA%\Phone Terminal\logs\broker.log` and `gateway.log` itself.
   If the broker has active sessions, or a broker or gateway already runs
   without startup registration, setup refuses and the installer says so.
 - Task "Add pterm to my PATH" is unchecked by default and edits only the
@@ -30,8 +33,9 @@ Installer behavior:
 - The uninstaller first asks whether to delete data (default: keep), then runs
   `pterm uninstall --dry-run` with that choice and stops if the broker has
   active sessions, does not answer, or (when deleting data) runs without
-  startup registration. It then removes the tasks; data is deleted only after
-  no broker is running.
+  startup registration. It then removes the tasks and stops the gateway and
+  the broker (after checking again that no session is active); data is
+  deleted only after no broker is running.
 
 ## Signing (owner only)
 

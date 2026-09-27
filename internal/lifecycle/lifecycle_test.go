@@ -95,7 +95,7 @@ const wantGatewayTask = `<?xml version="1.0" encoding="UTF-16"?>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <Priority>7</Priority>
+    <Priority>5</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
       <Count>999</Count>
@@ -460,5 +460,45 @@ func TestUnloadCommandsAreExactAndPerUser(t *testing.T) {
 		if got := DisplayCommand(host.UnloadCommand(Services[1])); got != want {
 			t.Errorf("unload command = %q, want %q", got, want)
 		}
+	}
+}
+
+// schtasksFake answers /Query /XML with an enabled or disabled task.
+type schtasksFake map[string]string
+
+func (fake schtasksFake) Run(_ context.Context, name string, args ...string) (string, error) {
+	enabled, ok := fake[args[2]]
+	if name != "schtasks" || args[0] != "/Query" || args[len(args)-1] != "/XML" {
+		return "", errors.New("unexpected command")
+	}
+	if !ok {
+		return "ERROR: The system cannot find the file specified.", errors.New("exit status 1")
+	}
+	// schtasks may write UTF-16; Inspect must read either encoding.
+	return strings.Join(strings.Split("<Settings>\n<Enabled>"+enabled+"</Enabled>\n</Settings>", ""), "\x00"), nil
+}
+
+// A task disabled by the printed unload command still exists: setup must
+// recreate it enabled, and uninstall must still delete it.
+func TestWindowsDisabledTaskIsRecreatedAndStillUninstalled(t *testing.T) {
+	broker, gateway := windowsHost.TaskName(Services[0]), windowsHost.TaskName(Services[1])
+	status, err := windowsHost.Inspect(context.Background(), schtasksFake{broker: "true", gateway: "false"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status[0].Registered || status[0].Disabled || status[1].Registered || !status[1].Disabled {
+		t.Fatalf("statuses = %+v", status)
+	}
+	for index := range status {
+		status[index].FileExists, status[index].FileMatches = true, true
+	}
+	install, _ := windowsHost.InstallPlan(status)
+	want := [][]string{{"schtasks", "/Create", "/TN", gateway, "/XML", status[1].File, "/F"}, {"schtasks", "/Run", "/TN", gateway}}
+	if !reflect.DeepEqual(commands(install), want) || install.ChangesRunningBroker {
+		t.Fatalf("install = %q changes=%v", commands(install), install.ChangesRunningBroker)
+	}
+	removal, _ := windowsHost.UninstallPlan(status, nil)
+	if got := commands(removal); len(got) != 4 || got[1][3] != gateway {
+		t.Fatalf("uninstall = %q", got)
 	}
 }

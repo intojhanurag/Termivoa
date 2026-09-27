@@ -163,9 +163,19 @@ but billing blocked it.
 - [ ] Run the unsigned installer: per-user location, PATH opt-in (off by
       default), Start-menu shortcut, `pterm setup --apply --yes`.
 - [ ] Scheduled Tasks start at logon and restart on failure. `conhost.exe
-      --headless` shows no window, passes the exit code, and `schtasks /End`
-      stops pterm.
-- [ ] Clean uninstall, with and without data deletion.
+      --headless` shows no window and passes the exit code. Task Manager >
+      Details shows `pterm.exe` and session shells at Normal priority.
+- [ ] Logs: after logon, `%LOCALAPPDATA%\Phone Terminal\logs\broker.log` and
+      `gateway.log` each get a "started" line; a failed start writes its error
+      there.
+- [ ] Slow broker at logon: give the broker task a 60 s logon delay in Task
+      Scheduler, sign out and in. The gateway waits, then becomes healthy
+      without a restart (`gateway.log` shows one start).
+- [ ] Disable a task with the command `pterm stop` prints: `pterm doctor`
+      reports it disabled and `pterm setup --apply` enables it again.
+- [ ] Clean uninstall, with and without data deletion. With no active session,
+      `pterm uninstall` leaves no `pterm.exe` running (Task Manager), and
+      `--delete-data` succeeds.
 
 ## 4. macOS startup and install
 
