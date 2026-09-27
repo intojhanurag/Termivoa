@@ -126,6 +126,28 @@ The agent did not change Tailscale or startup settings on this Mac. Follow
 - [ ] VoiceOver / TalkBack read the key names ("Control C", "Shift Tab") and
       the pairing code.
 
+### Notifications (Web Push)
+
+Real delivery cannot be tested without a phone. See `docs/notifications.md`.
+
+- [ ] iPhone Home Screen app (iOS 16.4+): the Sessions card
+      "Get a buzz when an agent needs you" appears; **Turn on** asks for
+      permission; Settings → **Send a test notification** arrives.
+- [ ] iPhone: a "waiting" notification (`<title> is waiting for you`) and a
+      "done" notification (`<title> is done · your turn`) arrive on the lock
+      screen once the agent-state detector is wired in. No terminal text is
+      shown.
+- [ ] iPhone Safari in a normal tab shows no card, and Settings says
+      "Add to Home Screen to get notifications".
+- [ ] Android Chrome: the same card, test, "waiting" and "done" checks.
+- [ ] Tapping a notification opens the app at that session
+      (`/sessions/<id>`), both with the app closed and with it open on
+      another screen.
+- [ ] `pterm revoke <device-id>` (and, separately, logging out on the phone)
+      stops notifications to that phone.
+- [ ] Apple accepts the VAPID subject `https://github.com/intojhanurag/phone-terminal`
+      (a `403 BadJwtToken` from Apple would mean it does not).
+
 ### Revocation
 
 - [ ] `pterm devices`, then `pterm revoke <device-id>` while the phone has

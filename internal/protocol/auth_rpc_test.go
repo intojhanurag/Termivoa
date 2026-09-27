@@ -187,3 +187,43 @@ func TestGatewayOriginAndDeviceRenameMessages(t *testing.T) {
 		t.Fatal("malformed device ID accepted")
 	}
 }
+
+func TestGatewayPushMessages(t *testing.T) {
+	keys := HTTPPushSubscriptionKeys{P256Dh: "B" + strings.Repeat("x", 86), Auth: strings.Repeat("y", 22)}
+	valid := GatewayRPCPushSubscribePayload{Credential: rpcTestSecret, Request: HTTPPushSubscribeRequest{
+		Endpoint: "https://web.push.apple.com/abc", Keys: keys,
+	}}
+	if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.push.subscribe", valid)); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*GatewayRPCPushSubscribePayload){
+		func(payload *GatewayRPCPushSubscribePayload) {
+			payload.Request.Endpoint = "http://web.push.apple.com/abc"
+		},
+		func(payload *GatewayRPCPushSubscribePayload) {
+			payload.Request.Endpoint = "https://web.push.apple.com/\u00e9"
+		},
+		func(payload *GatewayRPCPushSubscribePayload) {
+			payload.Request.Keys.P256Dh = "A" + strings.Repeat("x", 86)
+		},
+		func(payload *GatewayRPCPushSubscribePayload) {
+			payload.Request.Keys.Auth = strings.Repeat("y", 21) + "="
+		},
+		func(payload *GatewayRPCPushSubscribePayload) { payload.Credential = "short" },
+	} {
+		payload := valid
+		mutate(&payload)
+		if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.push.subscribe", payload)); err == nil {
+			t.Errorf("accepted %+v", payload)
+		}
+	}
+	if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.push.test", GatewayRPCCredentialPayload{Credential: rpcTestSecret})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.push.test.result", HTTPPushTestResponse{Sent: 6})); err == nil {
+		t.Fatal("sent above the cap accepted")
+	}
+	if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.push.config.result", HTTPPushConfigResponse{PublicKey: keys.P256Dh})); err != nil {
+		t.Fatal(err)
+	}
+}

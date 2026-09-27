@@ -165,6 +165,69 @@
         "label": { "$ref": "#/$defs/deviceLabel" }
       }
     },
+    "pushPublicKey": {
+      "description": "Uncompressed P-256 public key (65 bytes) as unpadded base64url.",
+      "type": "string",
+      "pattern": "^B[A-Za-z0-9_-]{86}$"
+    },
+    "pushEndpoint": {
+      "description": "Push service URL from PushSubscription.endpoint. The broker accepts only https URLs on a known push service host.",
+      "type": "string", "minLength": 12, "maxLength": 2048,
+      "pattern": "^https://[!-~]+$"
+    },
+    "pushConfigResponse": {
+      "title": "HTTPPushConfigResponse",
+      "description": "The broker's VAPID application server public key.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publicKey"],
+      "properties": {
+        "publicKey": { "$ref": "#/$defs/pushPublicKey" }
+      }
+    },
+    "pushSubscriptionKeys": {
+      "title": "HTTPPushSubscriptionKeys",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p256dh", "auth"],
+      "properties": {
+        "p256dh": { "$ref": "#/$defs/pushPublicKey" },
+        "auth": {
+          "$comment": "16-byte push authentication secret as unpadded base64url.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$"
+        }
+      }
+    },
+    "pushSubscribeRequest": {
+      "title": "HTTPPushSubscribeRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "keys"],
+      "properties": {
+        "endpoint": { "$ref": "#/$defs/pushEndpoint" },
+        "keys": { "$ref": "#/$defs/pushSubscriptionKeys" }
+      }
+    },
+    "pushUnsubscribeRequest": {
+      "title": "HTTPPushUnsubscribeRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint"],
+      "properties": {
+        "endpoint": { "$ref": "#/$defs/pushEndpoint" }
+      }
+    },
+    "pushTestResponse": {
+      "title": "HTTPPushTestResponse",
+      "description": "How many of the calling device's subscriptions accepted the test notification.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sent"],
+      "properties": {
+        "sent": { "type": "integer", "minimum": 0, "maximum": 5 }
+      }
+    },
     "errorResponse": {
       "title": "HTTPErrorResponse",
       "type": "object",

@@ -56,6 +56,11 @@ type Broker interface {
 	TerminateSession(ctx context.Context, credential, sessionID string, request protocol.HTTPSessionTerminateRequest) (protocol.HTTPSessionMutationResponse, error)
 	// RenameDevice renames only the device that owns the credential.
 	RenameDevice(ctx context.Context, credential string, request protocol.HTTPDeviceRenameRequest) (protocol.HTTPDeviceSummary, error)
+	// Push requests act only on the device that owns the credential.
+	PushConfig(ctx context.Context, credential string) (protocol.HTTPPushConfigResponse, error)
+	PushSubscribe(ctx context.Context, credential string, request protocol.HTTPPushSubscribeRequest) error
+	PushUnsubscribe(ctx context.Context, credential string, request protocol.HTTPPushUnsubscribeRequest) error
+	PushTest(ctx context.Context, credential string) (protocol.HTTPPushTestResponse, error)
 	// Origin returns the configured browser origin, or "" when none is set.
 	// It needs no credential: the origin is not a secret.
 	Origin(ctx context.Context) (string, error)

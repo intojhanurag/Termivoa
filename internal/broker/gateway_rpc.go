@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,11 +13,15 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 const fallbackOptionName = "Unnamed"
 
-var errAuthUnavailable = errors.New("broker: authentication service is not configured")
+var (
+	errAuthUnavailable = errors.New("broker: authentication service is not configured")
+	errPushUnavailable = errors.New("broker: push notifications are not configured")
+)
 
 // serveGatewayRequest answers one correlated gateway request. A malformed
 // request poisons the connection, as in management RPC. A successful
@@ -225,6 +230,52 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 			return nil, nil, err
 		}
 		return protocol.HTTPDeviceSummary{ID: principal.DeviceID, Label: payload.Request.Label}, nil, nil
+	case protocol.GatewayPushConfig, protocol.GatewayPushTest:
+		principal, err := authorizeCredential(request, authorize)
+		if err != nil {
+			return nil, nil, err
+		}
+		if server.config.Push == nil {
+			return nil, nil, errPushUnavailable
+		}
+		if request.Type == protocol.GatewayPushConfig {
+			return protocol.HTTPPushConfigResponse{PublicKey: server.config.Push.PublicKey()}, nil, nil
+		}
+		sent, err := server.config.Push.Test(ctx, principal.DeviceID)
+		return protocol.HTTPPushTestResponse{Sent: int64(sent)}, nil, err
+	case protocol.GatewayPushSubscribe:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCPushSubscribePayload](request)
+		if err != nil {
+			return nil, nil, err
+		}
+		principal, err := authorize(payload.Credential)
+		if err != nil {
+			return nil, nil, err
+		}
+		if server.config.Push == nil {
+			return nil, nil, errPushUnavailable
+		}
+		p256dh, keyErr := base64.RawURLEncoding.Strict().DecodeString(payload.Request.Keys.P256Dh)
+		secret, secretErr := base64.RawURLEncoding.Strict().DecodeString(payload.Request.Keys.Auth)
+		if keyErr != nil || secretErr != nil {
+			return nil, nil, webpush.ErrKey
+		}
+		// The device comes from the broker-resolved credential, never the request.
+		return protocol.BrokerRPCEmptyPayload{}, nil, server.config.Push.Subscribe(ctx, principal.DeviceID,
+			webpush.Subscription{Endpoint: payload.Request.Endpoint, P256dh: p256dh, Auth: secret})
+	case protocol.GatewayPushUnsubscribe:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCPushUnsubscribePayload](request)
+		if err != nil {
+			return nil, nil, err
+		}
+		principal, err := authorize(payload.Credential)
+		if err != nil {
+			return nil, nil, err
+		}
+		if server.config.Push == nil {
+			return nil, nil, errPushUnavailable
+		}
+		return protocol.BrokerRPCEmptyPayload{}, nil, server.config.Push.Unsubscribe(ctx, principal.DeviceID, payload.Request.Endpoint)
 	case protocol.GatewayLiveOpen:
 		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCCredentialPayload](request)
 		if err != nil {
@@ -335,6 +386,14 @@ func classifyAuthError(err error) (managementFailure, bool) {
 		return managementFailure{protocol.HostUnavailable, "host clock changed; retry"}, true
 	case errors.Is(err, errAuthUnavailable):
 		return managementFailure{protocol.HostUnavailable, "broker authentication is unavailable"}, true
+	case errors.Is(err, errPushUnavailable):
+		return managementFailure{protocol.HostUnavailable, "notifications are unavailable on this computer"}, true
+	case errors.Is(err, webpush.ErrEndpoint):
+		return managementFailure{protocol.InvalidRequest, "this push service is not supported"}, true
+	case errors.Is(err, webpush.ErrKey):
+		return managementFailure{protocol.InvalidRequest, "push subscription keys are invalid"}, true
+	case errors.Is(err, store.ErrPushCapacity), errors.Is(err, webpush.ErrRateLimited):
+		return managementFailure{protocol.LimitExceeded, "notification limit reached; wait and try again"}, true
 	}
 	return managementFailure{}, false
 }

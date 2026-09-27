@@ -45,6 +45,8 @@ export type ProtocolTypes = {
     readonly gatewayRPCOriginResult:           GatewayRPCOriginResultPayload;
     readonly gatewayRPCPairPollResult:         GatewayRPCPairPollResultPayload;
     readonly gatewayRPCPrincipal:              GatewayRPCPrincipalPayload;
+    readonly gatewayRPCPushSubscribe:          GatewayRPCPushSubscribePayload;
+    readonly gatewayRPCPushUnsubscribe:        GatewayRPCPushUnsubscribePayload;
     readonly gatewayRPCSessionCreate:          GatewayRPCSessionCreatePayload;
     readonly gatewayRPCSessionRename:          GatewayRPCSessionRenamePayload;
     readonly gatewayRPCSessionTerminate:       GatewayRPCSessionTerminatePayload;
@@ -61,6 +63,10 @@ export type ProtocolTypes = {
     readonly httpPairPollResponse:             HTTPPairPollResponse;
     readonly httpPairRedeemRequest:            HTTPPairRedeemRequest;
     readonly httpPairRedeemResponse:           HTTPPairRedeemResponse;
+    readonly httpPushConfigResponse:           HTTPPushConfigResponse;
+    readonly httpPushSubscribeRequest:         HTTPPushSubscribeRequest;
+    readonly httpPushTestResponse:             HTTPPushTestResponse;
+    readonly httpPushUnsubscribeRequest:       HTTPPushUnsubscribeRequest;
     readonly httpSessionCreateRequest:         HTTPSessionCreateRequest;
     readonly httpSessionListResponse:          HTTPSessionListResponse;
     readonly httpSessionMutationResponse:      HTTPSessionMutationResponse;
@@ -357,7 +363,7 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.error";
 
 /**
  * The browser origin configured with admin.config.origin, absent when none is set. It is
@@ -401,6 +407,36 @@ export type GatewayRPCPrincipalPayload = {
     readonly deviceId:     string;
     readonly deviceLabel:  string;
     readonly expiresAt:    string;
+}
+
+/**
+ * Saves a push subscription for the device that owns the credential.
+ */
+export type GatewayRPCPushSubscribePayload = {
+    readonly credential: string;
+    readonly request:    HTTPPushSubscribeRequest;
+}
+
+export type HTTPPushSubscribeRequest = {
+    readonly endpoint: string;
+    readonly keys:     HTTPPushSubscriptionKeys;
+}
+
+export type HTTPPushSubscriptionKeys = {
+    readonly auth:   string;
+    readonly p256dh: string;
+}
+
+/**
+ * Removes one push subscription of the device that owns the credential.
+ */
+export type GatewayRPCPushUnsubscribePayload = {
+    readonly credential: string;
+    readonly request:    HTTPPushUnsubscribeRequest;
+}
+
+export type HTTPPushUnsubscribeRequest = {
+    readonly endpoint: string;
 }
 
 export type GatewayRPCSessionCreatePayload = {
@@ -543,6 +579,20 @@ export type HTTPPairRedeemResponse = {
     readonly pendingId:        string;
     readonly pollSecret:       string;
     readonly verificationCode: string;
+}
+
+/**
+ * The broker's VAPID application server public key.
+ */
+export type HTTPPushConfigResponse = {
+    readonly publicKey: string;
+}
+
+/**
+ * How many of the calling device's subscriptions accepted the test notification.
+ */
+export type HTTPPushTestResponse = {
+    readonly sent: number;
 }
 
 export type HTTPSessionListResponse = {

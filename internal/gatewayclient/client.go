@@ -236,6 +236,40 @@ func (client *Client) RenameDevice(
 		})
 }
 
+func (client *Client) PushConfig(ctx context.Context, credential string) (protocol.HTTPPushConfigResponse, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPPushConfigResponse{}, err
+	}
+	return roundTrip[protocol.HTTPPushConfigResponse](ctx, client, protocol.GatewayPushConfig,
+		protocol.GatewayRPCCredentialPayload{Credential: credential}, false, nil)
+}
+
+func (client *Client) PushSubscribe(ctx context.Context, credential string, request protocol.HTTPPushSubscribeRequest) error {
+	if err := checkCredential(credential); err != nil {
+		return err
+	}
+	_, err := roundTrip[protocol.BrokerRPCEmptyPayload](ctx, client, protocol.GatewayPushSubscribe,
+		protocol.GatewayRPCPushSubscribePayload{Credential: credential, Request: request}, true, nil)
+	return err
+}
+
+func (client *Client) PushUnsubscribe(ctx context.Context, credential string, request protocol.HTTPPushUnsubscribeRequest) error {
+	if err := checkCredential(credential); err != nil {
+		return err
+	}
+	_, err := roundTrip[protocol.BrokerRPCEmptyPayload](ctx, client, protocol.GatewayPushUnsubscribe,
+		protocol.GatewayRPCPushUnsubscribePayload{Credential: credential, Request: request}, true, nil)
+	return err
+}
+
+func (client *Client) PushTest(ctx context.Context, credential string) (protocol.HTTPPushTestResponse, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPPushTestResponse{}, err
+	}
+	return roundTrip[protocol.HTTPPushTestResponse](ctx, client, protocol.GatewayPushTest,
+		protocol.GatewayRPCCredentialPayload{Credential: credential}, true, nil)
+}
+
 // Origin returns the configured browser origin, or "" when none is set.
 func (client *Client) Origin(ctx context.Context) (string, error) {
 	result, err := roundTrip[protocol.GatewayRPCOriginResultPayload](ctx, client, protocol.GatewayOrigin,

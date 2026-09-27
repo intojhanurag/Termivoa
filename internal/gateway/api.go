@@ -194,6 +194,84 @@ func (handler *gatewayHandler) renameDevice(response http.ResponseWriter, reques
 	handler.respond(response, request, result, err)
 }
 
+// pushConfig returns the broker's VAPID public key.
+func (handler *gatewayHandler) pushConfig(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodGet) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	result, err := handler.api.PushConfig(request.Context(), credential)
+	handler.respond(response, request, result, err)
+}
+
+// pushSubscribe saves a push subscription for the calling device. The broker
+// applies the push-host allow-list; the gateway checks only the shape.
+func (handler *gatewayHandler) pushSubscribe(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body protocol.HTTPPushSubscribeRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	if protocol.ValidatePushSubscription(body) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid push subscription")
+		return
+	}
+	handler.respondEmpty(response, request, handler.api.PushSubscribe(request.Context(), credential, body))
+}
+
+func (handler *gatewayHandler) pushUnsubscribe(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body protocol.HTTPPushUnsubscribeRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	if protocol.ValidatePushEndpointText(body.Endpoint) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid push endpoint")
+		return
+	}
+	handler.respondEmpty(response, request, handler.api.PushUnsubscribe(request.Context(), credential, body))
+}
+
+// pushTest sends a fixed test notification to the calling device.
+func (handler *gatewayHandler) pushTest(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body struct{}
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	result, err := handler.api.PushTest(request.Context(), credential)
+	handler.respond(response, request, result, err)
+}
+
+func (handler *gatewayHandler) respondEmpty(response http.ResponseWriter, request *http.Request, err error) {
+	if err != nil {
+		handler.respond(response, request, nil, err)
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
 // logout always clears the cookie once the broker has no valid credential
 // for it. On other broker failures the cookie stays so the user can retry.
 func (handler *gatewayHandler) logout(response http.ResponseWriter, request *http.Request) {

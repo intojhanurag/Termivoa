@@ -80,3 +80,54 @@ self.addEventListener('fetch', (event) => {
   }
   // Everything else, including /api/*, goes straight to the network.
 });
+
+/* Push. A payload carries only a session name, a status and a session id,
+ * never terminal text. Every push shows a notification: the subscription is
+ * userVisibleOnly, and iOS revokes push for a worker that shows nothing. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const KINDS = ['waiting', 'done', 'test'];
+const text = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    const parsed = event.data ? event.data.json() : {};
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      data = parsed;
+    }
+  } catch {
+    // Not JSON: fall back to the generic notification below.
+  }
+  const sessionId = typeof data.sessionId === 'string' && SESSION_ID.test(data.sessionId) ? data.sessionId : '';
+  const kind = KINDS.includes(data.kind) ? data.kind : 'test';
+  event.waitUntil(self.registration.showNotification(text(data.title, 120) || 'Phone Terminal', {
+    body: text(data.body, 160),
+    tag: `${sessionId || 'pterm'}:${kind}`,
+    icon: '/icon-192.png',
+    data: { url: sessionId ? `/sessions/${sessionId}` : '/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data;
+  const path = data && typeof data.url === 'string' && data.url.startsWith('/') && !data.url.startsWith('//') ? data.url : '/';
+  // '/\host' would parse as another origin, so check the resolved origin too.
+  const resolved = new URL(path, self.location.origin);
+  const url = resolved.origin === self.location.origin ? resolved.href : `${self.location.origin}/`;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+    const client = windows.find((item) => new URL(item.url).origin === self.location.origin);
+    if (!client) {
+      return self.clients.openWindow(url);
+    }
+    await client.focus();
+    try {
+      if (await client.navigate(url)) {
+        return undefined;
+      }
+    } catch {
+      // Uncontrolled windows cannot be navigated; open one at the right page instead.
+    }
+    return self.clients.openWindow(url);
+  }));
+});

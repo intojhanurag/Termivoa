@@ -423,9 +423,16 @@ func (store *Store) TouchCredential(ctx context.Context, sessionID string, now t
 	return commit(transaction, "credential use")
 }
 
-// RevokeCredential durably revokes one browser credential (logout).
+// RevokeCredential durably revokes one browser credential (logout) and
+// deletes the push subscriptions of its device: a logged-out phone must not
+// keep getting notifications.
 func (store *Store) RevokeCredential(ctx context.Context, sessionID string, now time.Time) error {
-	result, err := store.database.ExecContext(ctx, `UPDATE browser_sessions
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin credential revocation: %w", err)
+	}
+	defer transaction.Rollback() //nolint:errcheck
+	result, err := transaction.ExecContext(ctx, `UPDATE browser_sessions
 		SET revoked_at_ms = coalesce(revoked_at_ms, ?) WHERE id = ?`, millis(now), sessionID)
 	if err != nil {
 		return fmt.Errorf("store: revoke credential: %w", err)
@@ -433,7 +440,15 @@ func (store *Store) RevokeCredential(ctx context.Context, sessionID string, now 
 	if changed, err := result.RowsAffected(); err != nil || changed != 1 {
 		return ErrCredentialMissing
 	}
-	return nil
+	var deviceID string
+	if err := transaction.QueryRowContext(ctx, `SELECT device_id FROM browser_sessions WHERE id = ?`, sessionID).
+		Scan(&deviceID); err != nil {
+		return fmt.Errorf("store: read credential device: %w", err)
+	}
+	if err := deleteDevicePush(ctx, transaction, deviceID); err != nil {
+		return err
+	}
+	return commit(transaction, "credential revocation")
 }
 
 // RenameDevice replaces a device's display label. Callers validate the label
@@ -455,8 +470,8 @@ func (store *Store) RenameDevice(ctx context.Context, deviceID, label string) er
 	return nil
 }
 
-// RevokeDevice durably revokes a device and every credential it owns, and
-// returns those credential IDs for in-memory fan-out.
+// RevokeDevice durably revokes a device and every credential it owns,
+// deletes its push subscriptions, and returns those credential IDs for in-memory fan-out.
 func (store *Store) RevokeDevice(ctx context.Context, deviceID string, now time.Time) ([]string, error) {
 	if !validUUID(deviceID) {
 		return nil, ErrDeviceMissing
@@ -478,6 +493,9 @@ func (store *Store) RevokeDevice(ctx context.Context, deviceID string, now time.
 	if _, err := transaction.ExecContext(ctx, `UPDATE browser_sessions SET revoked_at_ms = coalesce(revoked_at_ms, ?)
 		WHERE device_id = ?`, when, deviceID); err != nil {
 		return nil, fmt.Errorf("store: revoke device credentials: %w", err)
+	}
+	if err := deleteDevicePush(ctx, transaction, deviceID); err != nil {
+		return nil, err
 	}
 	rows, err := transaction.QueryContext(ctx, `SELECT id FROM browser_sessions WHERE device_id = ? ORDER BY id`, deviceID)
 	if err != nil {

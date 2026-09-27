@@ -6,6 +6,10 @@ import type {
   HTTPPairPollResponse,
   HTTPPairRedeemRequest,
   HTTPPairRedeemResponse,
+  HTTPPushConfigResponse,
+  HTTPPushSubscribeRequest,
+  HTTPPushTestResponse,
+  HTTPPushUnsubscribeRequest,
   HTTPSessionCreateRequest,
   HTTPSessionListResponse,
   HTTPSessionMutationResponse,
@@ -101,6 +105,10 @@ export const api = {
     request<HTTPPairRedeemResponse>('POST', '/api/v1/pair/redeem', body),
   pairPoll: (body: HTTPPairPollRequest) =>
     request<HTTPPairPollResponse>('POST', '/api/v1/pair/poll', body),
+  pushConfig: () => request<HTTPPushConfigResponse>('GET', '/api/v1/push'),
+  pushSubscribe: (body: HTTPPushSubscribeRequest) => request<undefined>('POST', '/api/v1/push/subscribe', body),
+  pushUnsubscribe: (body: HTTPPushUnsubscribeRequest) => request<undefined>('POST', '/api/v1/push/unsubscribe', body),
+  pushTest: () => request<HTTPPushTestResponse>('POST', '/api/v1/push/test', {}),
 };
 
 export function isAuthFailure(error: unknown): boolean {

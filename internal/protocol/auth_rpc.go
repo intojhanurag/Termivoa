@@ -52,6 +52,8 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewaySessionCreate: GatewaySessionCreateResult, GatewaySessionRename: GatewaySessionRenameResult,
 	GatewaySessionTerminate: GatewaySessionTerminateResult, GatewayLiveOpen: GatewayLiveOpenResult,
 	GatewayOrigin: GatewayOriginResult, GatewayDeviceRename: GatewayDeviceRenameResult,
+	GatewayPushConfig: GatewayPushConfigResult, GatewayPushSubscribe: GatewayPushSubscribeResult,
+	GatewayPushUnsubscribe: GatewayPushUnsubscribeResult, GatewayPushTest: GatewayPushTestResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -169,7 +171,8 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 			return errors.New("pendingId must be a canonical UUID")
 		}
 		return ValidateSecretText(payload.PollSecret)
-	case GatewayAuthCheck, GatewayAuthLogout, GatewaySettings, GatewaySessionList, GatewayLiveOpen:
+	case GatewayAuthCheck, GatewayAuthLogout, GatewaySettings, GatewaySessionList, GatewayLiveOpen,
+		GatewayPushConfig, GatewayPushTest:
 		payload, err := DecodeRPCPayload[GatewayRPCCredentialPayload](envelope)
 		if err != nil {
 			return err
@@ -238,6 +241,42 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 			return errors.New("device id must be a canonical UUID")
 		}
 		return ValidateDeviceLabel(payload.Label)
+	case GatewayPushSubscribe:
+		payload, err := DecodeRPCPayload[GatewayRPCPushSubscribePayload](envelope)
+		if err != nil {
+			return err
+		}
+		if err := ValidateSecretText(payload.Credential); err != nil {
+			return err
+		}
+		return ValidatePushSubscription(payload.Request)
+	case GatewayPushUnsubscribe:
+		payload, err := DecodeRPCPayload[GatewayRPCPushUnsubscribePayload](envelope)
+		if err != nil {
+			return err
+		}
+		if err := ValidateSecretText(payload.Credential); err != nil {
+			return err
+		}
+		return ValidatePushEndpointText(payload.Request.Endpoint)
+	case GatewayPushConfigResult:
+		payload, err := DecodeRPCPayload[HTTPPushConfigResponse](envelope)
+		if err != nil {
+			return err
+		}
+		return validatePushKey(payload.PublicKey, PushPublicKeyText)
+	case GatewayPushSubscribeResult, GatewayPushUnsubscribeResult:
+		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
+		return err
+	case GatewayPushTestResult:
+		payload, err := DecodeRPCPayload[HTTPPushTestResponse](envelope)
+		if err != nil {
+			return err
+		}
+		if payload.Sent < 0 || payload.Sent > MaxPushTestSent {
+			return errors.New("sent is out of range")
+		}
+		return nil
 	case GatewayPairRedeemResult:
 		payload, err := DecodeRPCPayload[HTTPPairRedeemResponse](envelope)
 		if err != nil {
@@ -611,6 +650,54 @@ func ValidateSecretText(value string) error {
 		if !(character >= 'a' && character <= 'z') && !(character >= 'A' && character <= 'Z') &&
 			!(character >= '0' && character <= '9') && character != '_' && character != '-' {
 			return errors.New("secret has an invalid shape")
+		}
+	}
+	return nil
+}
+
+const (
+	PushPublicKeyText    = 87 // 65 bytes, unpadded base64url
+	PushAuthText         = 22 // 16 bytes, unpadded base64url
+	MaxPushEndpointBytes = 2048
+	MaxPushTestSent      = 5
+)
+
+// ValidatePushSubscription checks the schema shape of a browser push
+// subscription. The broker additionally applies the push-host allow-list
+// and decodes the keys.
+func ValidatePushSubscription(request HTTPPushSubscribeRequest) error {
+	if err := ValidatePushEndpointText(request.Endpoint); err != nil {
+		return err
+	}
+	if err := validatePushKey(request.Keys.P256Dh, PushPublicKeyText); err != nil {
+		return err
+	}
+	return validatePushKey(request.Keys.Auth, PushAuthText)
+}
+
+// ValidatePushEndpointText mirrors the pushEndpoint schema: an https URL of
+// printable ASCII, 12..2048 bytes.
+func ValidatePushEndpointText(value string) error {
+	if len(value) < 12 || len(value) > MaxPushEndpointBytes || !strings.HasPrefix(value, "https://") {
+		return errors.New("push endpoint is outside bounds")
+	}
+	for index := 0; index < len(value); index++ {
+		if value[index] <= ' ' || value[index] > '~' {
+			return errors.New("push endpoint must be printable ASCII")
+		}
+	}
+	return nil
+}
+
+func validatePushKey(value string, size int) error {
+	if len(value) != size || size == PushPublicKeyText && value[0] != 'B' {
+		return errors.New("push key has an invalid shape")
+	}
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if !(character >= 'a' && character <= 'z') && !(character >= 'A' && character <= 'Z') &&
+			!(character >= '0' && character <= '9') && character != '_' && character != '-' {
+			return errors.New("push key has an invalid shape")
 		}
 	}
 	return nil
