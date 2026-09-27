@@ -16,12 +16,16 @@ import type {
   HTTPSessionRenameRequest,
   HTTPSessionTerminateRequest,
   HTTPSettingsResponse,
+  HTTPUploadRequest,
+  HTTPUploadResponse,
 } from '../generated/protocol';
 
 export const CONNECTION_UNAVAILABLE = 'Connection unavailable';
 export const CLIENT_BUILD = 'phone-terminal-web/0.0.0-private';
 /** A request that has not answered by now is treated as a lost connection. */
 export const REQUEST_TIMEOUT_MS = 15_000;
+/** A photo of up to 5 MiB can take a while on a slow phone link. */
+export const UPLOAD_TIMEOUT_MS = 60_000;
 
 const CONTROL = /\p{Cc}/u;
 const EDGE_SPACE = /^\p{White_Space}|\p{White_Space}$/u;
@@ -51,7 +55,12 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: 'GET' | 'POST' | 'PATCH',
+  path: string,
+  body?: unknown,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
   const init: RequestInit = { method, credentials: 'same-origin', cache: 'no-store' };
   if (method !== 'GET') {
     // Every mutation carries the JSON type and the fixed gateway header.
@@ -59,7 +68,7 @@ async function request<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?:
     init.body = JSON.stringify(body ?? {});
   }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   init.signal = controller.signal;
   let response: Response;
   try {
@@ -109,7 +118,19 @@ export const api = {
   pushSubscribe: (body: HTTPPushSubscribeRequest) => request<undefined>('POST', '/api/v1/push/subscribe', body),
   pushUnsubscribe: (body: HTTPPushUnsubscribeRequest) => request<undefined>('POST', '/api/v1/push/unsubscribe', body),
   pushTest: () => request<HTTPPushTestResponse>('POST', '/api/v1/push/test', {}),
+  uploadImage: (id: string, body: HTTPUploadRequest) =>
+    request<HTTPUploadResponse>('POST', `${sessionPath(id)}/uploads`, body, UPLOAD_TIMEOUT_MS),
 };
+
+/** Standard padded base64 of a blob, built in chunks so large files do not overflow the call stack. */
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let start = 0; start < bytes.length; start += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+  }
+  return btoa(binary);
+}
 
 export function isAuthFailure(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.code === 'unauthorized' || error.code === 'revoked');
