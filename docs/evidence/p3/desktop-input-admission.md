@@ -120,3 +120,49 @@ Each fix has a test that failed before the fix and passes after it.
 6. LOW (documentation only): desktop mouse reporting is not enabled in the outer
    terminal. `docs/architecture.md` and `desktop-attach-command.md` now say
    that desktop mouse forwarding is not enabled in v0.
+
+### Broker findings
+
+Each fix has a test that failed before the fix and passes after it.
+
+7. MEDIUM: `screen.resync` could close the whole connection. The resync
+   canceled the in-flight delivery context. If the viewer worker was blocked in
+   a write, `sessionWriter.sendReserved` closed the connection. The desktop
+   client sends `terminal.resize` and then `screen.resync`, so a briefly slow
+   reader was disconnected by its own resync. Fix: supersession cancels with
+   the cause `errViewerDeliveryStale`. The writer lets that frame finish under
+   its write deadline. The canceled context stops the stale plan before its
+   next frame, and the epoch check drops it. A write timeout, budget overflow,
+   or shutdown still closes the connection. A frame is never cut short and then
+   followed by other data. The attach watcher now closes the connection on the
+   viewer stop signal, not on `Done`. Thus shutdown and revocation are not
+   delayed behind a superseded frame. Tests:
+   `TestReviewResyncDuringBlockedWriteClosesConnection` (stall the reader
+   inside the resize snapshot frame, resync, resume; the connection stays open,
+   a new 100x30 snapshot arrives, input is accepted). Before the fix it failed
+   3/3 with `io: read/write on closed pipe`.
+   `TestSupersededBlockedWriteStillClosesOnShutdown` failed before the watcher
+   change: the connection stayed open for the full write deadline.
+8. LOW-MEDIUM: control could be granted over an unapplied snapshot. The
+   dispatcher flag `snapshotApplied` stayed true after the broker sent the
+   viewer a new snapshot (for example, another controller's resize). Fix: the
+   session actor checks the requesting viewer on `control.acquire`. It returns
+   `resync_required` while a snapshot is awaiting acknowledgement, forced, or
+   being sent, or when no base exists. An early `snapshot.applied` for the
+   snapshot being sent still counts. The dispatcher flag is removed. The
+   in-process `Session.AcquireControl` (tests only) does not do this check.
+   Tests: `TestReviewControlGrantedWhileNewSnapshotUnapplied` (before the fix
+   it failed 3/3 with a granted `control.changed`), the early path in
+   `TestViewerAcceptsSnapshotAckBeforeEndWriteCompletion`, and
+   `TestAcquireResyncRequiredReturnsToObserver`. The last test shows that the
+   desktop client stays attached as an observer and can acquire after it
+   applies the next snapshot.
+
+Commands, all passed:
+
+```sh
+GOTOOLCHAIN=go1.27.1 go test -race -count=3 ./internal/broker/... ./internal/liveclient/... ./internal/cli/... ./internal/desktop/...
+GOTOOLCHAIN=go1.27.1 go test -count=1 ./tests/integration/
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./...
+./scripts/check
+```
