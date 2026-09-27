@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { Connection } from '../terminal/Connection';
 import { checkPaste, lineCount, readDraft, saveDraft } from '../terminal/composer';
 import { NO_MODIFIERS } from '../terminal/InputController';
+import { KeyButton } from './Dock';
+import { Sheet, SheetHeader } from './Sheet';
 
 export function Composer({ connection, canSend, draftKey, onClose }: {
   readonly connection: Connection;
@@ -38,25 +40,37 @@ export function Composer({ connection, canSend, draftKey, onClose }: {
   const lines = lineCount(text);
 
   return (
-    <section className="panel stack" aria-labelledby="composer-title">
-      <div className="page-header">
-        <h2 id="composer-title">Composer</h2>
-        <button type="button" onClick={onClose}>Close</button>
-      </div>
-      <label htmlFor="composer-draft" className="muted">
+    <Sheet labelledBy="composer-title" onClose={onClose}>
+      <SheetHeader id="composer-title" title="Compose">
+        <button type="button" className="link" onClick={onClose}>Close</button>
+      </SheetHeader>
+      <label htmlFor="composer-draft" className="visually-hidden">
         Draft text here. Nothing is sent until you choose an action.
       </label>
       <textarea
         id="composer-draft"
-        className="composer-input"
+        className="draft composer-input"
         value={text}
         rows={5}
+        placeholder="Draft text here. Nothing is sent until you paste it."
         autoCapitalize="off"
         autoCorrect="off"
         autoComplete="off"
         spellCheck={false}
         onChange={(event) => { setText(event.target.value); setConfirming(false); }}
       />
+      <div className="spread composer-meta">
+        {lines > 1 ? (
+          <span className="amber note">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path d="M7 1.5 13 12.5H1z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              <path d="M7 5.5v3M7 10.3v.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            {lines} lines · you confirm before it pastes
+          </span>
+        ) : <span />}
+        <button type="button" className="link" disabled={text === ''} onClick={() => setText('')}>Clear</button>
+      </div>
       {!canSend && (
         <p role="status" className="notice">
           Sending is off because you are not connected or do not have control. Your draft is kept.
@@ -76,16 +90,20 @@ export function Composer({ connection, canSend, draftKey, onClose }: {
           </div>
         </div>
       ) : (
-        <div className="row">
-          <button type="button" className="primary" disabled={!canSend || text === ''} onClick={() => paste(false)}>
-            Paste into terminal
+        <div className="composer-actions">
+          <button type="button" className="primary paste" disabled={!canSend || text === ''} onClick={() => paste(false)}>
+            <span aria-hidden="true" className="prompt">❯</span> Paste into terminal
           </button>
-          <button type="button" disabled={!canSend} onClick={() => connection.sendKey('enter', NO_MODIFIERS)}>
-            Enter
-          </button>
-          <button type="button" disabled={text === ''} onClick={() => setText('')}>Clear draft</button>
+          <KeyButton
+            label="Enter"
+            className="enter tall"
+            disabled={!canSend}
+            onPress={() => connection.sendKey('enter', NO_MODIFIERS)}
+          >
+            <span className="glyph">⏎</span><span className="sub">enter</span>
+          </KeyButton>
         </div>
       )}
-    </section>
+    </Sheet>
   );
 }

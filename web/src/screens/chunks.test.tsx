@@ -41,6 +41,15 @@ describe('first-load split', () => {
     expect(reachable).not.toContain(resolve(src, 'terminal/Connection.ts'));
     expect(reachable).not.toContain('@tanstack/react-virtual');
   });
+
+  it('keeps the v2 terminal dock, sheets and run-first code in the Live chunk', () => {
+    const reachable = [...staticImports(resolve(src, 'main.tsx'))];
+    expect(reachable).toContain(resolve(src, 'screens/NewSession.tsx'));
+    for (const file of ['screens/Dock.tsx', 'screens/Snippets.tsx', 'screens/SessionMenu.tsx', 'screens/Composer.tsx',
+      'screens/History.tsx', 'terminal/agentKeys.ts', 'terminal/snippets.ts', 'terminal/runFirst.ts']) {
+      expect(reachable).not.toContain(resolve(src, file));
+    }
+  });
 });
 
 describe('chunk load failures', () => {

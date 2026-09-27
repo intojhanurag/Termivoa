@@ -1,92 +1,107 @@
 import '@xterm/xterm/css/xterm.css';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse, KeyName } from '../generated/protocol';
-import { canSendWith, Connection, INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
+import { sendAgentKey } from '../terminal/agentKeys';
+import { canSendWith, Connection, INITIAL_STATUS } from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
+import { runFirstCommand } from '../terminal/runFirst';
 import { TerminalView } from '../terminal/TerminalView';
+import { hasNewOutput, markViewed, readViewed, type ViewedTimes } from './activity';
 import { Composer } from './Composer';
+import { CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { History } from './History';
 import { websocketUrl } from './hooks';
+import type { RunFirstRequest } from './presets';
+import { SessionMenu } from './SessionMenu';
+import { Snippets } from './Snippets';
 
 interface Runtime {
   readonly connection: Connection;
   readonly view: TerminalView;
 }
 
+type Panel = 'none' | 'composer' | 'history' | 'snippets' | 'menu';
+
 const noSubscribe = () => () => undefined;
 const initialStatus = () => INITIAL_STATUS;
+const sameSession = (a: BrokerRPCSessionRecord, b: BrokerRPCSessionRecord) => a.id === b.id && a.generation === b.generation;
 
-function linkLabel(status: ConnectionStatus): string {
-  switch (status.link) {
-    case 'connecting': return 'Connecting…';
-    case 'attaching': return 'Loading screen…';
-    case 'live': return 'Connected';
-    case 'reconnecting': return 'Reconnecting… typing is paused';
-    case 'lost': return 'Session lost';
-    case 'revoked': return 'Access revoked';
-    case 'closed': return 'Disconnected';
-  }
+/** Tabs: running sessions, plus the open one even after it exits. */
+export function liveTabs(
+  sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined,
+  current: BrokerRPCSessionRecord,
+): BrokerRPCSessionRecord[] {
+  const running = (sessions ?? []).filter((item) => sameSession(item, current)
+    || (item.state !== 'exited' && item.state !== 'lost'));
+  return running.some((item) => sameSession(item, current)) ? running : [current, ...running];
 }
 
-function controlLabel(status: ConnectionStatus): string {
-  if (status.sessionState === 'exited') {
-    return status.exitCode === undefined ? 'Shell exited' : `Shell exited (code ${status.exitCode})`;
-  }
-  switch (status.control) {
-    case 'controller': return 'You have control';
-    case 'acquiring': return 'Requesting control…';
-    case 'observer':
-      return status.otherController
-        ? `Viewing — ${status.controllerLabel ?? 'another connection'} has control`
-        : 'Viewing (read-only)';
-  }
-}
-
-/** One calm line that says why typing is off and what to do about it. */
-export function readOnlyHint(status: ConnectionStatus): string | undefined {
-  if (status.link !== 'live' || status.control !== 'observer'
-    || status.sessionState === 'exited' || status.sessionState === 'exiting') {
-    return undefined;
-  }
-  return status.otherController
-    ? 'Tap Take control to move control to this phone.'
-    : 'Read-only. Tap Take control to type.';
-}
-
-const ARROWS: ReadonlyArray<[KeyName, string, string]> = [
-  ['arrow-left', '←', 'Left arrow'],
-  ['arrow-up', '↑', 'Up arrow'],
-  ['arrow-down', '↓', 'Down arrow'],
-  ['arrow-right', '→', 'Right arrow'],
-];
-
-/** Buttons that must not take focus from the input textarea (keeps the keyboard up). */
-function KeyButton({ label, onPress, disabled, pressed, children }: {
-  readonly label: string;
-  readonly onPress: () => void;
-  readonly disabled: boolean;
-  readonly pressed?: boolean;
-  readonly children: ReactNode;
+/** Session tabs. Switching opens a new read-only connection; nothing carries over. */
+export function TabBar({ tabs, current, viewed, onOpen, onNew, onMenu }: {
+  readonly tabs: ReadonlyArray<BrokerRPCSessionRecord>;
+  readonly current: BrokerRPCSessionRecord;
+  readonly viewed: ViewedTimes;
+  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+  readonly onNew: () => void;
+  readonly onMenu: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="key"
-      aria-label={label}
-      {...(pressed === undefined ? {} : { 'aria-pressed': pressed })}
-      disabled={disabled}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onPress}
-    >{children}</button>
+    <nav className="tabs" aria-label="Open sessions">
+      <div className="tab-scroll">
+        {tabs.map((tab) => {
+          const active = sameSession(tab, current);
+          const fresh = !active && hasNewOutput(tab, viewed);
+          return (
+            <button
+              key={`${tab.id}/${tab.generation}`}
+              type="button"
+              className={active ? 'tab active' : 'tab'}
+              {...(active ? { 'aria-current': 'page' as const } : {})}
+              onClick={() => { if (!active) onOpen(tab); }}
+            >
+              <span className="tab-face">
+                {active && <span className="tab-prompt" aria-hidden="true">❯</span>}
+                <span className="tab-label">{tab.title}</span>
+                {fresh && <><span className="dot accent" aria-hidden="true" /><span className="visually-hidden">, new output</span></>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <button type="button" className="tab tab-new" aria-label="New session" onClick={onNew}>
+        <span className="tab-face">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M6 1v10M1 6h10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </span>
+      </button>
+      <span className="tab-spacer" />
+      <button type="button" className="tab-more" aria-label="Session menu" aria-haspopup="dialog" onClick={onMenu}>
+        <svg width="18" height="4" viewBox="0 0 18 4" aria-hidden="true">
+          <circle cx="2" cy="2" r="1.6" fill="currentColor" />
+          <circle cx="9" cy="2" r="1.6" fill="currentColor" />
+          <circle cx="16" cy="2" r="1.6" fill="currentColor" />
+        </svg>
+      </button>
+    </nav>
   );
 }
 
-export function Live({ session, settings, fontSize, onSessions, onStartNew, onRevoked }: {
+export function Live({
+  session, sessions, settings, fontSize, runFirst,
+  onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onRevoked,
+}: {
   readonly session: BrokerRPCSessionRecord;
+  readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
   readonly settings: HTTPSettingsResponse | undefined;
   readonly fontSize: number;
+  readonly runFirst?: RunFirstRequest;
+  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+  readonly onNew: () => void;
   readonly onSessions: () => void;
+  readonly onSettings: () => void;
+  readonly onChanged: () => Promise<void>;
   readonly onStartNew: () => void;
   readonly onRevoked: (reason: string | undefined) => void;
 }) {
@@ -97,9 +112,10 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
   const initialFont = useRef(fontSize);
   const touchStart = useRef<number | undefined>(undefined);
   const [runtime, setRuntime] = useState<Runtime>();
-  const [panel, setPanel] = useState<'none' | 'composer' | 'history'>('none');
+  const [panel, setPanel] = useState<Panel>('none');
   const [composerVersion, setComposerVersion] = useState(0);
   const [latched, setLatched] = useState({ ctrl: false, alt: false });
+  const [runFirstNotice, setRunFirstNotice] = useState<string>();
 
   const status = useSyncExternalStore(
     runtime?.connection.subscribe ?? noSubscribe,
@@ -107,7 +123,15 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
   );
   const canSend = canSendWith(status);
   const draft = draftKey(session.id, session.generation);
+  const current = sessions?.find((item) => sameSession(item, session)) ?? session;
   const projectName = settings?.projects.find((item) => item.id === session.projectId)?.name;
+  const shellName = settings?.shellProfiles.find((item) => item.id === session.shellProfileId)?.name;
+
+  // This device is looking at the session: its output is not "new" here.
+  const latest = useRef(current);
+  latest.current = current;
+  useEffect(() => { markViewed(latest.current); }, [current]);
+  useEffect(() => () => markViewed(latest.current), []);
 
   useEffect(() => {
     const element = host.current;
@@ -130,6 +154,13 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
       setRuntime(undefined);
     };
   }, [session.id, session.generation]);
+
+  useEffect(() => {
+    if (runtime === undefined || runFirst === undefined || runFirst.settled) {
+      return undefined;
+    }
+    return runFirstCommand(runtime.connection, runFirst, setRunFirstNotice);
+  }, [runtime, runFirst]);
 
   useEffect(() => { runtime?.view.setFontSize(fontSize); }, [runtime, fontSize]);
 
@@ -167,7 +198,9 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
     const fit = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const size = runtime.view.fit(element.clientWidth, element.clientHeight);
+        // offset* include a classic scrollbar, so a grid that briefly overflows
+        // does not shrink the next measurement and start a resize loop.
+        const size = runtime.view.fit(element.offsetWidth, element.offsetHeight);
         if (size !== undefined) {
           runtime.connection.resize(size.columns, size.rows);
         }
@@ -180,7 +213,7 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
       observer.disconnect();
       clearTimeout(timer);
     };
-  }, [runtime, canSend, fontSize, panel]);
+  }, [runtime, canSend, fontSize, panel === 'history']);
 
   // Release control when the page is hidden; expiry covers missed events.
   useEffect(() => {
@@ -219,20 +252,25 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
     setPanel('none');
   }
 
-  const press = (key: KeyName) => controller.current?.pressKey(key);
   const normalBuffer = status.buffer === 'normal';
-  const hint = readOnlyHint(status);
+  const historyEnabled = status.link === 'live';
+  const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu';
+  const badge = controlBadge(status);
+  const place = [projectName, shellName, status.columns === undefined ? undefined : `${status.columns}×${status.rows}`]
+    .filter((part) => part !== undefined).join(' · ');
 
   if (status.link === 'lost') {
     return (
-      <main className="page">
+      <main className="page screen">
         <section role="alert" className="stack">
           <h1>Session lost</h1>
           <p>
             “{session.title}” is no longer available. Its host restarted or the session generation changed.
             Programs from that session are not running here, and nothing was re-run.
           </p>
-          <button type="button" className="primary" onClick={onStartNew}>Start new session</button>
+          <button type="button" className="primary wide" onClick={onStartNew}>
+            <span aria-hidden="true" className="prompt">❯</span> start new session
+          </button>
           <button type="button" onClick={onSessions}>Back to sessions</button>
         </section>
       </main>
@@ -241,16 +279,25 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
 
   return (
     <main className="live">
-      <header className="live-bar">
-        <div className="live-title">
-          <strong>{session.title}</strong>
-          {projectName !== undefined && <span className="muted"> · {projectName}</span>}
-        </div>
-        <div className="live-status" role="status">
-          <span className={status.link === 'live' ? 'accent' : 'warn'}>{linkLabel(status)}</span>
-          <span> · {controlLabel(status)}</span>
-        </div>
-      </header>
+      {panel !== 'history' && (
+        <>
+          <TabBar
+            tabs={liveTabs(sessions, session)}
+            current={session}
+            viewed={readViewed()}
+            onOpen={onOpen}
+            onNew={onNew}
+            onMenu={() => setPanel('menu')}
+          />
+          <div className="status-line" role="status">
+            <span className="place">
+              <span className={status.link === 'live' ? 'dot green' : 'dot amber'} aria-hidden="true" />
+              {status.link === 'live' ? place || 'Connected' : linkLabel(status)}
+            </span>
+            <span className={`badge-text ${badge.tone}`}>{badge.text}</span>
+          </div>
+        </>
+      )}
 
       {status.notice !== undefined && (
         <div className="banner" role="alert">
@@ -258,12 +305,21 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
           <button type="button" onClick={() => runtime?.connection.dismissNotice()}>Dismiss</button>
         </div>
       )}
+      {runFirstNotice !== undefined && (
+        <div className="banner" role="alert">
+          <span>{runFirstNotice}</span>
+          <button type="button" onClick={() => setRunFirstNotice(undefined)}>Dismiss</button>
+        </div>
+      )}
 
       <div
         ref={area}
-        className="terminal-area"
+        className={sheet ? 'terminal-area dim' : 'terminal-area'}
         hidden={panel === 'history'}
-        onClick={() => { if (canSend) input.current?.focus(); }}
+        onClick={() => {
+          if (sheet) setPanel('none');
+          else if (canSend) input.current?.focus();
+        }}
         onWheel={(event) => { if (event.deltaY < 0 && normalBuffer && area.current?.scrollTop === 0) openHistory(); }}
         onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientY; }}
         onTouchMove={(event) => {
@@ -294,6 +350,36 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
       )}
+
+      {panel !== 'history' && (
+        <div className={sheet ? 'dock-slot covered' : 'dock-slot'}>
+          {status.control === 'controller' ? (
+            <CockpitDock
+              disabled={!canSend}
+              latched={latched}
+              alternate={!normalBuffer}
+              historyEnabled={historyEnabled}
+              onAgentKey={(key) => { if (runtime !== undefined) sendAgentKey(runtime.connection, key); }}
+              onKey={(key: KeyName) => controller.current?.pressKey(key)}
+              onLatch={(modifier) => controller.current?.toggleLatch(modifier)}
+              onWheel={(button) => runtime?.connection.sendWheel(button)}
+              onType={() => { setPanel('none'); input.current?.focus(); }}
+              onCompose={() => setPanel('composer')}
+              onSnippets={() => setPanel('snippets')}
+              onHistory={openHistory}
+            />
+          ) : (
+            <ReadOnlyDock
+              status={status}
+              historyEnabled={historyEnabled}
+              onTakeControl={() => runtime?.connection.takeControl()}
+              onHistory={openHistory}
+              onSessions={onSessions}
+            />
+          )}
+        </div>
+      )}
+
       {panel === 'composer' && runtime !== undefined && (
         <Composer
           key={composerVersion}
@@ -303,51 +389,21 @@ export function Live({ session, settings, fontSize, onSessions, onStartNew, onRe
           onClose={() => setPanel('none')}
         />
       )}
-
-      <nav className="action-bar" aria-label="Terminal controls">
-        {hint !== undefined && panel !== 'history' && <p className="hint" role="status">{hint}</p>}
-        {panel !== 'history' && (
-          <div className="key-row" role="toolbar" aria-label="Terminal keys">
-            <KeyButton label="Escape" disabled={!canSend} onPress={() => press('escape')}>Esc</KeyButton>
-            <KeyButton label="Tab" disabled={!canSend} onPress={() => press('tab')}>Tab</KeyButton>
-            <KeyButton label="Control modifier" disabled={!canSend} pressed={latched.ctrl}
-              onPress={() => controller.current?.toggleLatch('ctrl')}>Ctrl</KeyButton>
-            <KeyButton label="Alt modifier" disabled={!canSend} pressed={latched.alt}
-              onPress={() => controller.current?.toggleLatch('alt')}>Alt</KeyButton>
-            {ARROWS.map(([key, glyph, label]) => (
-              <KeyButton key={key} label={label} disabled={!canSend} onPress={() => press(key)}>{glyph}</KeyButton>
-            ))}
-            {!normalBuffer && (
-              <>
-                <KeyButton label="Scroll application up" disabled={!canSend}
-                  onPress={() => runtime?.connection.sendWheel('wheel-up')}>Scroll ▲</KeyButton>
-                <KeyButton label="Scroll application down" disabled={!canSend}
-                  onPress={() => runtime?.connection.sendWheel('wheel-down')}>Scroll ▼</KeyButton>
-              </>
-            )}
-          </div>
-        )}
-        <div className="key-row">
-          <button type="button" aria-label="Open keyboard" disabled={!canSend}
-            onClick={() => { setPanel('none'); input.current?.focus(); }}>Type</button>
-          <button type="button" aria-pressed={panel === 'composer'}
-            onClick={() => setPanel(panel === 'composer' ? 'none' : 'composer')}>Compose</button>
-          <button type="button" aria-pressed={panel === 'history'} disabled={status.link !== 'live' && panel !== 'history'}
-            onClick={() => (panel === 'history' ? closeHistory() : openHistory())}>History</button>
-          <button type="button" onClick={onSessions}>Sessions</button>
-          {status.control === 'controller' ? (
-            <button type="button" onClick={() => runtime?.connection.releaseControl()}>Release</button>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              disabled={status.link !== 'live' || status.control === 'acquiring'
-                || status.sessionState === 'exited' || status.sessionState === 'exiting'}
-              onClick={() => runtime?.connection.takeControl()}
-            >Take control</button>
-          )}
-        </div>
-      </nav>
+      {panel === 'snippets' && runtime !== undefined && (
+        <Snippets target={runtime.connection} canSend={canSend} onClose={() => setPanel('none')} />
+      )}
+      {panel === 'menu' && (
+        <SessionMenu
+          session={current}
+          controlling={status.control === 'controller'}
+          onRelease={() => runtime?.connection.releaseControl()}
+          onSessions={onSessions}
+          onSettings={onSettings}
+          onChanged={onChanged}
+          onAuthFailure={() => onRevoked('This phone is no longer paired with your computer.')}
+          onClose={() => setPanel('none')}
+        />
+      )}
     </main>
   );
 }
