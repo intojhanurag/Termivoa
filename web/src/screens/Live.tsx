@@ -15,6 +15,7 @@ import { useKeyboardOpen, websocketUrl } from './hooks';
 import type { RunFirstRequest } from './presets';
 import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
+import { StateScreen, WindowArt } from './StateScreen';
 
 interface Runtime {
   readonly connection: Connection;
@@ -295,19 +296,19 @@ export function Live({
 
   if (status.link === 'lost') {
     return (
-      <main className="page screen">
-        <section role="alert" className="stack">
-          <h1>Session lost</h1>
-          <p>
-            “{session.title}” is no longer available. Its host restarted or the session generation changed.
-            Programs from that session are not running here, and nothing was re-run.
-          </p>
-          <button type="button" className="primary wide" onClick={onStartNew}>
-            <span aria-hidden="true" className="prompt">❯</span> start new session
-          </button>
-          <button type="button" onClick={onSessions}>Back to sessions</button>
-        </section>
-      </main>
+      <StateScreen
+        tone="red"
+        label="Termivoa · session lost"
+        art={<WindowArt mark="gone" />}
+        title={<>This session<br />is gone</>}
+        lead={`“${session.title}” ended on your computer. Nothing was re-run.`}
+        actions={(
+          <>
+            <button type="button" className="state-pill" onClick={onSessions}>sessions</button>
+            <button type="button" className="primary" onClick={onStartNew}>New session</button>
+          </>
+        )}
+      />
     );
   }
 

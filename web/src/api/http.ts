@@ -16,6 +16,8 @@ import type {
 
 export const CONNECTION_UNAVAILABLE = 'Connection unavailable';
 export const CLIENT_BUILD = 'phone-terminal-web/0.0.0-private';
+/** A request that has not answered by now is treated as a lost connection. */
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 const CONTROL = /\p{Cc}/u;
 const EDGE_SPACE = /^\p{White_Space}|\p{White_Space}$/u;
@@ -52,11 +54,16 @@ async function request<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?:
     init.headers = { 'Content-Type': 'application/json', 'X-Pterm-Request': '1' };
     init.body = JSON.stringify(body ?? {});
   }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  init.signal = controller.signal;
   let response: Response;
   try {
     response = await fetch(path, init);
   } catch {
     throw new ApiError(0, 'network', CONNECTION_UNAVAILABLE);
+  } finally {
+    clearTimeout(timer);
   }
   if (!response.ok) {
     let code: ApiError['code'] = 'unknown';

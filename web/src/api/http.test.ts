@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, deviceLabelProblem } from './http';
+import { api, ApiError, deviceLabelProblem, REQUEST_TIMEOUT_MS } from './http';
 
 const device = { id: '00000000-0000-4000-8000-000000000020', label: 'Work phone' };
 
@@ -50,5 +50,21 @@ describe('api.renameDevice', () => {
     const failure = await api.renameDevice({ label: 'x' }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ApiError);
     expect(failure).toMatchObject({ status: 400, code: 'invalid_request', message: 'label is invalid' });
+  });
+});
+
+describe('request timeout', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('turns a request that never answers into a network error', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_path: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    })));
+    const pending = api.settings().catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+    const error = await pending;
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe('network');
   });
 });

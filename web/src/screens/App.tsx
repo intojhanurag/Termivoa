@@ -5,6 +5,7 @@ import { ChunkErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useSessionList, useVisualViewport } from './hooks';
 import { adoptFragmentGrant, type GrantSlot } from '../pairing/pairing';
 import { NewSession } from './NewSession';
+import { OfflineScreen } from './StateScreen';
 import type { RunFirstRequest } from './presets';
 import { Sessions } from './Sessions';
 import { Settings } from './Settings';
@@ -25,6 +26,24 @@ type View =
   | { readonly name: 'new'; readonly back?: View }
   | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest }
   | { readonly name: 'settings' };
+
+/** While the host is unreachable, try again this often in seconds (and on network or focus changes). */
+export const OFFLINE_RETRY_S = 10;
+
+const APP_NAME = 'Phone Terminal';
+
+/** The browser tab title: the screen, or the open session's name. */
+export function titleFor(view: View): string {
+  switch (view.name) {
+    case 'live': return `${view.session.title} · ${APP_NAME}`;
+    case 'sessions': return `Sessions · ${APP_NAME}`;
+    case 'new': return `New session · ${APP_NAME}`;
+    case 'settings': return `Settings · ${APP_NAME}`;
+    case 'setup': return `Pair · ${APP_NAME}`;
+    case 'offline': return `${CONNECTION_UNAVAILABLE} · ${APP_NAME}`;
+    case 'boot': return APP_NAME;
+  }
+}
 
 function pathFor(view: View): string {
   switch (view.name) {
@@ -155,6 +174,63 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     };
   }, [adoptLinkGrant, boot, route]);
 
+  useEffect(() => { document.title = titleFor(view); }, [view]);
+
+  // Offline: keep trying quietly, and at once when the network or the app comes back.
+  const offline = view.name === 'offline';
+  const [retryIn, setRetryIn] = useState(OFFLINE_RETRY_S);
+  const [phoneOnline, setPhoneOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    if (!offline) {
+      return undefined;
+    }
+    let left = OFFLINE_RETRY_S;
+    setRetryIn(left);
+    let busy = false;
+    const attempt = async () => {
+      if (busy || document.visibilityState !== 'visible') {
+        return;
+      }
+      busy = true;
+      try {
+        await api.settings();
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'network') {
+          return;
+        }
+      } finally {
+        busy = false;
+      }
+      void boot();
+    };
+    const now = () => {
+      left = OFFLINE_RETRY_S;
+      setRetryIn(left);
+      void attempt();
+    };
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      left -= 1;
+      if (left <= 0) {
+        now();
+      } else {
+        setRetryIn(left);
+      }
+    };
+    const onOnline = () => { setPhoneOnline(true); now(); };
+    const onOffline = () => setPhoneOnline(false);
+    const timer = setInterval(tick, 1000);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', now);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', now);
+    };
+  }, [offline, boot]);
+
   // Fetch the terminal code in the background once the session list is up,
   // so opening a session goes straight to the live terminal.
   useEffect(() => {
@@ -197,21 +273,13 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
 
   return (
     <div className="app">
-      {update.available && (
-        <div className="banner" role="status">
-          <span>An update is ready.</span>
-          <button type="button" onClick={update.reload}>reload to update</button>
-        </div>
-      )}
-      {view.name === 'boot' && <main className="page"><p role="status" className="muted">Loading…</p></main>}
-      {view.name === 'offline' && (
-        <main className="page">
-          <h1>{CONNECTION_UNAVAILABLE}</h1>
-          <p className="muted">This phone cannot reach your computer right now. Nothing can run until the connection returns.</p>
-          <button type="button" className="primary wide" onClick={() => { void boot(); }}>
-            <span aria-hidden="true" className="prompt">❯</span> try again
-          </button>
+      {view.name === 'boot' && (
+        <main className="page state-screen">
+          <p className="state-label" role="status"><span className="dot accent pulse" aria-hidden="true" />Termivoa · connecting</p>
         </main>
+      )}
+      {view.name === 'offline' && (
+        <OfflineScreen phoneOnline={phoneOnline} retryIn={retryIn} onRetry={() => { void boot(); }} />
       )}
       {view.name === 'setup' && (
         <Setup
@@ -234,6 +302,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           onSettings={() => navigate({ name: 'settings' })}
           onRefreshSettings={refreshSettings}
           onFailure={handleFailure}
+          {...(update.available ? { onUpdate: update.reload } : {})}
         />
       )}
       {view.name === 'new' && settings !== undefined && (

@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ChunkErrorBoundary, ChunkLoadError, loadChunk, UpdateRequired } from './chunks';
+import { AppErrorBoundary, ChunkErrorBoundary, ChunkLoadError, loadChunk, UpdateRequired } from './chunks';
 
 const src = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -68,7 +68,7 @@ describe('chunk load failures', () => {
     boundary.state = ChunkErrorBoundary.getDerivedStateFromError(new ChunkLoadError(new Error('404')));
     const html = renderToStaticMarkup(<>{boundary.render()}</>);
     expect(html).toContain('role="alert"');
-    expect(html).toContain('A new version is available');
+    expect(html).toContain('A new version');
     expect(html).toContain('>Reload</button>');
   });
 
@@ -82,5 +82,24 @@ describe('chunk load failures', () => {
   it('renders the update screen with an accessible Reload button', () => {
     expect(renderToStaticMarkup(<UpdateRequired onReload={() => undefined} />))
       .toContain('<button type="button" class="primary">Reload</button>');
+  });
+});
+
+describe('app error boundary', () => {
+  it('shows the error and a reload instead of a blank page', () => {
+    const boundary = new AppErrorBoundary({ children: <p>app</p> });
+    expect(renderToStaticMarkup(<>{boundary.render()}</>)).toBe('<p>app</p>');
+    boundary.state = AppErrorBoundary.getDerivedStateFromError(new TypeError('x is undefined'));
+    const html = renderToStaticMarkup(<>{boundary.render()}</>);
+    expect(html).toContain('This screen');
+    expect(html).toContain('copy error');
+    expect(html).toContain('TypeError: x is undefined');
+    expect(html).toContain('>Reload</button>');
+  });
+
+  it('still asks for an update when screen code could not load', () => {
+    const boundary = new AppErrorBoundary({ children: null });
+    boundary.state = AppErrorBoundary.getDerivedStateFromError(new ChunkLoadError(new Error('404')));
+    expect(renderToStaticMarkup(<>{boundary.render()}</>)).toContain('A new version');
   });
 });

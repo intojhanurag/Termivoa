@@ -39,4 +39,19 @@ describe('service worker', () => {
     expect((await reply)?.status).toBe(404);
     expect(put).not.toHaveBeenCalled();
   });
+
+  it('answers a failed page load with an offline page that retries by itself', async () => {
+    const { handlers } = loadWorker(async () => { throw new TypeError('offline'); });
+    let reply: Promise<Response> | undefined;
+    handlers.get('fetch')?.({
+      // Request cannot be built with mode "navigate", so pass the fields the worker reads.
+      request: { method: 'GET', url: 'https://host.example/', mode: 'navigate' },
+      respondWith: (value: Promise<Response>) => { reply = value; },
+    });
+    const response = await reply;
+    expect(response?.status).toBe(503);
+    const html = await response?.text();
+    expect(html).toContain('<meta http-equiv="refresh" content="10">');
+    expect(html).toContain('<a href="/">Retry now</a>');
+  });
 });
