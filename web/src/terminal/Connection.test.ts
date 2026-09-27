@@ -227,6 +227,95 @@ describe('Connection', () => {
     expect(socket().sent.at(-1)).toMatchObject({ type: 'input.text', payload: { text: 'd', inputSequence: '1' } });
   });
 
+  describe('answers', () => {
+    const questionId = 'ab'.repeat(16);
+    const waiting = (qid = questionId) => ({
+      state: 'running',
+      agent: { state: 'waiting', stateSince: '2026-09-27T10:00:00Z', question: { id: qid, text: 'Proceed?', options: [{ label: 'Yes' }, { label: 'No' }] } },
+    });
+
+    it('publishes the agent status from session.state to observers', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      socket().receive('session.state', waiting());
+      expect(connection.getStatus().agent?.question?.id).toBe(questionId);
+      expect(connection.sendAnswer(questionId, 0)).toBe(false);
+      expect(socket().types()).not.toContain('input.answer');
+    });
+
+    it('sends one answer with the lease and next sequence, then closes on input.accepted', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      await takeControl(connection, socket());
+      socket().receive('session.state', waiting());
+      connection.sendText('a');
+      expect(connection.sendAnswer(questionId, 1)).toBe(true);
+      expect(socket().sent.at(-1)).toMatchObject({
+        type: 'input.answer', sessionId, generation, payload: { lease, inputSequence: '2', questionId, optionIndex: 1 },
+      });
+      expect(connection.getStatus().answer).toEqual({ questionId, optionIndex: 1, phase: 'pending' });
+      // A second tap while the first is pending sends nothing.
+      expect(connection.sendAnswer(questionId, 0)).toBe(false);
+      expect(socket().types().filter((type) => type === 'input.answer')).toHaveLength(1);
+
+      socket().receive('input.accepted', { inputSequence: '2' });
+      expect(connection.getStatus().answer?.phase).toBe('sent');
+      socket().receive('session.state', { state: 'running', agent: { state: 'working', stateSince: '2026-09-27T10:00:05Z' } });
+      expect(connection.getStatus().answer).toBeUndefined();
+      expect(connection.getStatus().control).toBe('controller');
+    });
+
+    it('keeps control after question_changed and reuses the refused sequence', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      await takeControl(connection, socket());
+      socket().receive('session.state', waiting());
+      connection.sendAnswer(questionId, 0);
+      socket().receive('input.rejected', { inputSequence: '1', code: 'question_changed', message: 'the question on screen changed' });
+
+      expect(connection.getStatus()).toMatchObject({ control: 'controller', notice: undefined, answer: { questionId, phase: 'changed' } });
+      expect(socket().types()).not.toContain('control.release');
+      // The old question is still shown: its options stay refused until a fresh state.
+      socket().receive('session.state', waiting('cd'.repeat(16)));
+      expect(connection.getStatus().answer?.phase).toBe('changed');
+      expect(connection.sendAnswer('cd'.repeat(16), 1)).toBe(true);
+      expect(socket().sent.at(-1)).toMatchObject({ type: 'input.answer', payload: { inputSequence: '1', questionId: 'cd'.repeat(16) } });
+      socket().close();
+      expect(connection.getStatus()).toMatchObject({ notice: DELIVERY_UNCERTAIN, answer: undefined, agent: undefined });
+    });
+
+    it('keeps control after invalid_request and shows the reason', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      await takeControl(connection, socket());
+      connection.sendAnswer(questionId, 5);
+      socket().receive('input.rejected', { inputSequence: '1', code: 'invalid_request', message: 'that answer is not offered' });
+      expect(connection.getStatus()).toMatchObject({ control: 'controller', notice: 'that answer is not offered', answer: undefined });
+      connection.sendText('n');
+      expect(socket().sent.at(-1)).toMatchObject({ type: 'input.text', payload: { inputSequence: '1' } });
+    });
+
+    it('drops control as before when later input already used the next sequence', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      await takeControl(connection, socket());
+      connection.sendAnswer(questionId, 0);
+      connection.sendText('x');
+      socket().receive('input.rejected', { inputSequence: '1', code: 'question_changed', message: 'changed' });
+      expect(connection.getStatus()).toMatchObject({ control: 'observer', answer: undefined });
+      expect(socket().sent.at(-1)).toMatchObject({ type: 'control.release' });
+    });
+
+    it('drops control on other answer rejections', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      await takeControl(connection, socket());
+      connection.sendAnswer(questionId, 0);
+      socket().receive('input.rejected', { inputSequence: '1', code: 'stale_lease', message: 'lease expired' });
+      expect(connection.getStatus()).toMatchObject({ control: 'observer', notice: 'lease expired', answer: undefined });
+    });
+  });
+
   it('shows a lost session when the session generation changes', async () => {
     const { connection, socket } = harness();
     await attachLive(socket());

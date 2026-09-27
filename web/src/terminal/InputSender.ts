@@ -11,7 +11,8 @@ const TEXT_CONTROLS = /[\u0000-\u001f\u007f-\u009f]/u;
 const PASTE_CONTROLS = /[\u0000\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
 const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
 
-type InputKind = 'input.key' | 'input.text' | 'input.paste' | 'input.mouse';
+type InputKind = 'input.key' | 'input.text' | 'input.paste' | 'input.mouse' | 'input.answer';
+const QUESTION_ID = /^[0-9a-f]{32}$/u;
 
 export interface DeliveryUncertain {
   readonly inputSequence: string;
@@ -97,6 +98,14 @@ export class InputSender {
     return this.send('input.mouse', { kind, button, column, row, modifiers });
   }
 
+  /** Answers the agent question by option index; the broker picks the keys. */
+  sendAnswer(questionId: string, optionIndex: number): string {
+    if (!QUESTION_ID.test(questionId) || !Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex > 5) {
+      throw new Error('Answer needs a question id and an option index from 0 to 5');
+    }
+    return this.send('input.answer', { questionId, optionIndex });
+  }
+
   accepted(sequence: string): void {
     this.removePending(sequence);
   }
@@ -105,6 +114,20 @@ export class InputSender {
     if (sequence !== undefined) {
       this.removePending(sequence);
     }
+  }
+
+  /**
+   * The broker did not consume a rejected sequence. When it was the last one
+   * sent, the next input reuses it and the lease stays usable; otherwise a
+   * later input already fell into the gap and this returns false.
+   */
+  rewind(sequence: string): boolean {
+    if (!this.active || sequence !== (this.nextSequence - 1n).toString(10)) {
+      return false;
+    }
+    this.removePending(sequence);
+    this.nextSequence--;
+    return true;
   }
 
   disconnect(): ReadonlyArray<DeliveryUncertain> {

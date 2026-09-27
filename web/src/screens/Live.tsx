@@ -8,8 +8,9 @@ import { InputController } from '../terminal/InputController';
 import { runFirstCommand } from '../terminal/runFirst';
 import { followCursor, TerminalView } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, type ViewedTimes } from './activity';
+import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { Composer } from './Composer';
-import { CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
+import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { History } from './History';
 import { useKeyboardOpen, websocketUrl } from './hooks';
 import type { RunFirstRequest } from './presets';
@@ -120,6 +121,8 @@ export function Live({
   const [composerVersion, setComposerVersion] = useState(0);
   const [latched, setLatched] = useState({ ctrl: false, alt: false });
   const [runFirstNotice, setRunFirstNotice] = useState<string>();
+  // The question whose card the user folded away to look at the terminal.
+  const [foldedQuestion, setFoldedQuestion] = useState<string>();
   const keyboard = useKeyboardOpen();
   const keyboardRef = useRef(keyboard);
   keyboardRef.current = keyboard;
@@ -293,6 +296,9 @@ export function Live({
   const normalBuffer = status.buffer === 'normal';
   const historyEnabled = status.link === 'live';
   const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu';
+  const question = panel === 'none' ? openQuestion(status) : undefined;
+  // With the keyboard up the card folds to its pill, so typing and keys keep working.
+  const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
   const badge = controlBadge(status);
   const place = [projectName, shellName, status.columns === undefined ? undefined : `${status.columns}×${status.rows}`]
     .filter((part) => part !== undefined).join(' · ');
@@ -352,7 +358,7 @@ export function Live({
 
       <div
         ref={area}
-        className={sheet ? 'terminal-area dim' : 'terminal-area'}
+        className={sheet || cardOpen ? 'terminal-area dim' : 'terminal-area'}
         hidden={panel === 'history'}
         onClick={() => {
           if (sheet) setPanel('none');
@@ -387,6 +393,25 @@ export function Live({
 
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
+      )}
+
+      {question !== undefined && status.agent !== undefined && (
+        <div className="answer-anchor">
+          {cardOpen ? (
+            <AnswerCard
+              title={current.title}
+              question={question}
+              stateSince={status.agent.stateSince}
+              status={status}
+              canTake={canTakeControl(status)}
+              onAnswer={(index) => { runtime?.connection.sendAnswer(question.id, index); }}
+              onTakeControl={() => runtime?.connection.takeControl()}
+              onHide={() => setFoldedQuestion(question.id)}
+            />
+          ) : (
+            <AnswerPill onOpen={() => { input.current?.blur(); setFoldedQuestion(undefined); }} />
+          )}
+        </div>
       )}
 
       {panel !== 'history' && (
