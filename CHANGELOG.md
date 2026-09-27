@@ -37,6 +37,9 @@ No version has been released. Development history and evidence are in
 - Session list with project, shell, last-output preview and a new-output dot.
 - Session tabs, a key bar (Esc, Tab, Ctrl, Alt, arrows), composer for long or
   multi-line text, history with copy, and settings.
+- Keyboard-up layout: tabs and the status line hide, all keys fold into one
+  scrolling row, and the PTY keeps its size while the view follows the cursor,
+  so full-screen agents do not redraw when the keyboard opens or closes.
 
 #### Agent keys, snippets and presets
 

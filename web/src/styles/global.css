@@ -400,6 +400,16 @@ textarea {
 .action.primary { flex-grow: 1.3; font-size: 15px; }
 .action.primary .glyph { color: var(--on-accent); font-weight: 800; }
 
+/* Keyboard up: tabs and status hide, keys fold into one scrolling row. */
+.live.keyboard .tabs, .live.keyboard .status-line { display: none; }
+.dock.compact { flex-direction: row; align-items: center; gap: 6px; padding: 6px 8px; }
+.compact-row { flex: 1; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.compact-row::-webkit-scrollbar { display: none; }
+.compact-row .key { flex: 0 0 auto; min-width: 44px; height: 40px; padding: 0 8px; }
+.compact-row .key .sub { display: none; }
+.key.snips-key { font-size: 14px; white-space: nowrap; }
+.key.hide-keyboard { flex: 0 0 44px; height: 40px; color: var(--muted); }
+
 .dock.readonly { gap: 14px; padding: 16px; background: var(--surface); }
 .controller-line { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
 .watching { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 15px; line-height: 20px; }

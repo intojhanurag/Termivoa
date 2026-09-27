@@ -53,6 +53,17 @@ export class TerminalView {
     return fitGrid(width, height, cellWidth, cellHeight);
   }
 
+  /** Pixel top and bottom of the cursor row inside the terminal element. */
+  cursorBand(): { top: number; bottom: number } | undefined {
+    const screen = this.terminal.element?.querySelector<HTMLElement>('.xterm-screen');
+    if (screen === null || screen === undefined || screen.clientHeight === 0) {
+      return undefined;
+    }
+    const cellHeight = screen.clientHeight / this.terminal.rows;
+    const row = this.terminal.buffer.active.cursorY;
+    return { top: row * cellHeight, bottom: (row + 1) * cellHeight };
+  }
+
   dispose(): void {
     this.terminal.dispose();
   }
@@ -68,4 +79,19 @@ export function fitGrid(
     return clampGrid(0, 0);
   }
   return clampGrid(width / cellWidth, height / cellHeight);
+}
+
+/** The scroll offset that keeps the cursor row visible, or the same offset when it already is. */
+export function followCursor(
+  scrollTop: number,
+  visibleHeight: number,
+  band: { top: number; bottom: number },
+): number {
+  if (band.bottom > scrollTop + visibleHeight) {
+    return Math.ceil(band.bottom - visibleHeight);
+  }
+  if (band.top < scrollTop) {
+    return Math.floor(band.top);
+  }
+  return scrollTop;
 }

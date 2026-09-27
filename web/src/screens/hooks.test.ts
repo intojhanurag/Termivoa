@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestOnly } from './hooks';
+import { keyboardTracker, latestOnly } from './hooks';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -34,5 +34,18 @@ describe('latestOnly', () => {
     await run;
     expect(loader.busy()).toBe(false);
     expect(errors).toHaveLength(1);
+  });
+});
+
+describe('keyboardTracker', () => {
+  it('reports open only when the viewport is much shorter than the tallest seen at that width', () => {
+    const track = keyboardTracker();
+    expect(track(390, 760)).toBe(false);
+    expect(track(390, 700)).toBe(false); // browser bars, not a keyboard
+    expect(track(390, 420)).toBe(true);
+    expect(track(390, 760)).toBe(false);
+    expect(track(844, 350)).toBe(false); // rotation starts a new baseline
+    expect(track(844, 180)).toBe(true);
+    expect(track(390, 420)).toBe(true); // back in portrait, the old baseline still holds
   });
 });

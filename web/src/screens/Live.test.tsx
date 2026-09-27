@@ -10,9 +10,10 @@ import { liveTabs, TabBar } from './Live';
 const live: ConnectionStatus = { ...INITIAL_STATUS, link: 'live', control: 'observer', sessionState: 'running' };
 const noop = () => undefined;
 
-function dock(disabled: boolean, latched = { ctrl: false, alt: false }, alternate = false) {
+function dock(disabled: boolean, latched = { ctrl: false, alt: false }, alternate = false, compact = false) {
   return renderToStaticMarkup(
     <CockpitDock
+      compact={compact}
       disabled={disabled}
       latched={latched}
       alternate={alternate}
@@ -25,6 +26,7 @@ function dock(disabled: boolean, latched = { ctrl: false, alt: false }, alternat
       onCompose={noop}
       onSnippets={noop}
       onHistory={noop}
+      onHideKeyboard={noop}
     />,
   );
 }
@@ -126,5 +128,17 @@ describe('session tabs', () => {
     expect(html).toMatch(/s2<\/span><span class="dot accent"/u);
     expect(html).toContain('aria-label="New session"');
     expect(html).toContain('aria-label="Session menu"');
+  });
+});
+
+describe('keyboard-up dock', () => {
+  it('folds every key into one row, drops the action row, and can hide the keyboard', () => {
+    const html = dock(false, { ctrl: false, alt: false }, true, true);
+    expect(html).toContain('class="dock compact"');
+    expect(html).not.toContain('action-row');
+    expect(html).not.toContain('Agent keys');
+    const labels = keyButtons(html).map((match) => match[1]);
+    for (const key of AGENT_KEYS) expect(labels).toContain(key.name);
+    expect(labels).toEqual(expect.arrayContaining(['Tab', 'Control modifier', 'Left arrow', 'Scroll application up', 'Snippets', 'Hide keyboard']));
   });
 });

@@ -6,12 +6,12 @@ import { canSendWith, Connection, INITIAL_STATUS } from '../terminal/Connection'
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
 import { runFirstCommand } from '../terminal/runFirst';
-import { TerminalView } from '../terminal/TerminalView';
+import { followCursor, TerminalView } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, type ViewedTimes } from './activity';
 import { Composer } from './Composer';
 import { CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { History } from './History';
-import { websocketUrl } from './hooks';
+import { useKeyboardOpen, websocketUrl } from './hooks';
 import type { RunFirstRequest } from './presets';
 import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
@@ -116,6 +116,12 @@ export function Live({
   const [composerVersion, setComposerVersion] = useState(0);
   const [latched, setLatched] = useState({ ctrl: false, alt: false });
   const [runFirstNotice, setRunFirstNotice] = useState<string>();
+  const keyboard = useKeyboardOpen();
+  const keyboardRef = useRef(keyboard);
+  keyboardRef.current = keyboard;
+  // PTY rows measured without the keyboard. The keyboard never shrinks the
+  // PTY, so full-screen programs do not redraw each time it opens or closes.
+  const restRows = useRef<number | undefined>(undefined);
 
   const status = useSyncExternalStore(
     runtime?.connection.subscribe ?? noSubscribe,
@@ -201,9 +207,13 @@ export function Live({
         // offset* include a classic scrollbar, so a grid that briefly overflows
         // does not shrink the next measurement and start a resize loop.
         const size = runtime.view.fit(element.offsetWidth, element.offsetHeight);
-        if (size !== undefined) {
-          runtime.connection.resize(size.columns, size.rows);
+        if (size === undefined) {
+          return;
         }
+        if (!keyboardRef.current || restRows.current === undefined) {
+          restRows.current = size.rows;
+        }
+        runtime.connection.resize(size.columns, keyboardRef.current ? restRows.current : size.rows);
       }, 150);
     };
     const observer = new ResizeObserver(fit);
@@ -213,7 +223,31 @@ export function Live({
       observer.disconnect();
       clearTimeout(timer);
     };
-  }, [runtime, canSend, fontSize, panel === 'history']);
+  }, [runtime, canSend, fontSize, panel === 'history', keyboard]);
+
+  // With the keyboard up the grid is taller than the view: keep the cursor row in sight.
+  useEffect(() => {
+    const element = area.current;
+    if (runtime === undefined || element === null || !keyboard) {
+      return undefined;
+    }
+    const follow = () => {
+      const band = runtime.view.cursorBand();
+      if (band !== undefined) {
+        element.scrollTop = followCursor(element.scrollTop, element.clientHeight, band);
+      }
+    };
+    follow();
+    const parsed = runtime.view.terminal.onWriteParsed(follow);
+    const resized = runtime.view.terminal.onResize(follow);
+    const observer = new ResizeObserver(follow);
+    observer.observe(element);
+    return () => {
+      parsed.dispose();
+      resized.dispose();
+      observer.disconnect();
+    };
+  }, [runtime, keyboard]);
 
   // Release control when the page is hidden; expiry covers missed events.
   useEffect(() => {
@@ -278,7 +312,7 @@ export function Live({
   }
 
   return (
-    <main className="live">
+    <main className={keyboard ? 'live keyboard' : 'live'}>
       {panel !== 'history' && (
         <>
           <TabBar
@@ -355,6 +389,7 @@ export function Live({
         <div className={sheet ? 'dock-slot covered' : 'dock-slot'}>
           {status.control === 'controller' ? (
             <CockpitDock
+              compact={keyboard}
               disabled={!canSend}
               latched={latched}
               alternate={!normalBuffer}
@@ -367,6 +402,7 @@ export function Live({
               onCompose={() => setPanel('composer')}
               onSnippets={() => setPanel('snippets')}
               onHistory={openHistory}
+              onHideKeyboard={() => input.current?.blur()}
             />
           ) : (
             <ReadOnlyDock
