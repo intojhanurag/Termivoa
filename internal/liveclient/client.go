@@ -3,6 +3,7 @@
 package liveclient
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -449,7 +450,7 @@ func encode(kind protocol.MessageType, sessionID, generation string, payload any
 	if err != nil {
 		return protocol.Envelope{}, err
 	}
-	data, err := json.Marshal(payload)
+	data, err := marshal(payload)
 	if err != nil {
 		return protocol.Envelope{}, err
 	}
@@ -460,11 +461,24 @@ func encode(kind protocol.MessageType, sessionID, generation string, payload any
 	if generation != "" {
 		envelope.Generation = &generation
 	}
-	encoded, err := json.Marshal(envelope)
+	encoded, err := marshal(envelope)
 	if err != nil {
 		return protocol.Envelope{}, err
 	}
 	return protocol.DecodeClient(encoded)
+}
+
+// marshal is json.Marshal without HTML escaping. Escaping would expand each
+// '<', '>' or '&' to six bytes, so a valid maximum-size paste could exceed the
+// inbound message limit.
+func marshal(value any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
 func newUUID() (string, error) {
@@ -482,7 +496,7 @@ func (client *Client) write(ctx context.Context, message protocol.Envelope) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	data, err := json.Marshal(message)
+	data, err := marshal(message)
 	if err != nil {
 		return err
 	}

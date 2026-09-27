@@ -5,6 +5,7 @@ package gatewayapi
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -18,6 +19,11 @@ type Principal struct {
 	CredentialID string
 	ExpiresAt    time.Time
 }
+
+// ErrStreamEnded is wrapped by LiveStream errors after the broker ended the
+// stream on purpose (it sent access.revoked). It is not a transport failure:
+// the relay stops reading, flushes queued messages and closes with 1008.
+var ErrStreamEnded = errors.New("gatewayapi: live stream ended")
 
 // Error carries a stable public error code and a safe short message.
 type Error struct {
@@ -55,7 +61,7 @@ type Broker interface {
 
 // LiveStream carries one canonical envelope JSON message per call. The broker
 // sends access.revoked before closing a stream whose credential stops being
-// valid; Receive then returns an error.
+// valid; Send and Receive then return an error that wraps ErrStreamEnded.
 type LiveStream interface {
 	Send(ctx context.Context, envelope []byte) error
 	Receive(ctx context.Context) ([]byte, error)

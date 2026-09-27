@@ -63,6 +63,9 @@ boundary, and no browser-controlled role can cross it as local administration.
 6. Authentication checks device revocation, credential revocation, 30-day absolute
    expiry and seven-day inactivity expiry. Use injected time in deterministic tests;
    reject clock-related invalid states rather than extending the absolute lifetime.
+   A clock step back behind creation or last use rejects the request as a
+   retryable host fault (`host_unavailable`), not as an invalid credential, so
+   the gateway keeps the cookie; corrupt lifetime metadata stays unauthorized.
 7. Expired and consumed grants/pending records are pruned with bounded retention.
    Apply explicit capacity/rate limits before untrusted attempts allocate persistent
    rows. Device labels remain untrusted bounded display text, never identity.

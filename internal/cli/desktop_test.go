@@ -436,3 +436,28 @@ func TestDesktopStartupCanceledBeforeReadyDoesNotAdvertiseControl(t *testing.T) 
 		t.Fatalf("failed startup advertised control: %v %q", err, output.String())
 	}
 }
+
+func TestDesktopRejectedInputShowsBriefFooterNotice(t *testing.T) {
+	client := desktopFake()
+	client.state.Controller = true
+	display, output := testDesktopDisplay(80, 24)
+	display.setClient(client)
+	rejected := &desktop.InvalidInputError{Kind: "paste", Err: errors.New("control byte")}
+	if err := display.rejectInput(context.Background(), rejected); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Input not sent: invalid paste") {
+		t.Fatalf("rejection footer = %q", output.String())
+	}
+	output.Reset()
+	if err := display.expireNotice(context.Background()); err != nil || output.Len() != 0 {
+		t.Fatalf("fresh notice expired early: %q %v", output.String(), err)
+	}
+	display.noticeUntil = time.Now().Add(-time.Second)
+	if err := display.expireNotice(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); strings.Contains(got, "Input not sent") || !strings.Contains(got, "Control |") {
+		t.Fatalf("expired notice footer = %q", got)
+	}
+}

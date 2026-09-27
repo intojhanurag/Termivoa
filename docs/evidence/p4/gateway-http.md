@@ -170,3 +170,25 @@ Commands after the fixes:
 | `GOTOOLCHAIN=go1.27.1 GOOS=windows GOARCH=amd64 go vet ./...` | pass |
 | `GOTOOLCHAIN=go1.27.1 go vet ./...` | pass |
 | `gofmt -l cmd internal` | no output |
+
+## PR #24 adversarial review 2026-09-27
+
+Each fix has a regression test that failed before the fix.
+
+| # | Severity | Finding | Fix | Test |
+| --- | --- | --- | --- | --- |
+| 1 | Medium-low | After the broker sent `access.revoked`, the next phone message made `stream.Send` return `ErrAccessRevoked`. The relay treated it as "host unavailable" and closed at once, so the queued `access.revoked` was never written and there was no 1008 close. | New `gatewayapi.ErrStreamEnded`; `gatewayclient.ErrAccessRevoked` wraps it. On that error the relay stops reading; `Receive` ends the outbox after the notice, and the writer flushes it and closes with 1008. The gateway still imports only `gatewayapi`. | `TestLiveSendAfterRevokeStillFlushesNotice` (16 MiB backlog + `access.revoked`, phone sends a heartbeat; before the fix: EOF after 0 messages) |
+| 2 | Low | The shared RPC connection was dropped only after a failure, so the first call after a broker restart wrote to a dead socket (EPIPE): 503 `host_unavailable`, or `ErrDeliveryUncertain` for a mutation that was never delivered. | If the request write fails on a reused connection, the frame never reached the broker complete, so the client drops the connection and retries once on a new one. A fully written request is never retried. | `TestDeadIdleConnectionRedialsOnceBeforeDelivery` (real unix socket; server answers once and closes; next mutation succeeds with one redial; a written but unanswered mutation stays uncertain with no redial) |
+| 3 | Low | A small clock step back made `Check` return `ErrInvalidLifetime`; `resolve` mapped it to `ErrUnauthorized`, and the gateway cleared the cookie. The credential is delivered only once, so the phone had to pair again. | `Check` returns `ErrClockRollback` (wraps `ErrInvalidLifetime`) when stored metadata is valid but the clock is behind last use. The broker maps it to `host_unavailable` "host clock changed; retry" (503, cookie kept). Expiry, revocation and corrupt metadata still clear the cookie. | `TestBrowserLifetimeRejectsInvalidMetadataAndClockRollback`, `TestCredentialLifetimeExpiryAndClockRollback` (auth), `TestGatewayClockRollbackIsHostUnavailable` (broker), `TestHostClockRollbackKeepsCookie` (gateway) |
+| 4 | – | Expiry delayed during host sleep. | Fixed on a later branch; not changed here. | – |
+
+Commands after the fixes:
+
+| Command | Result |
+| --- | --- |
+| `GOTOOLCHAIN=go1.27.1 go test -race -count=2 ./internal/auth/... ./internal/gateway/... ./internal/gatewayclient/... ./internal/broker/...` | pass |
+| `GOTOOLCHAIN=go1.27.1 go test -race -count=20 -run 'TestLiveSendAfterRevoke\|TestDeadIdle' ./internal/gateway/ ./internal/gatewayclient/` | pass |
+| `GOTOOLCHAIN=go1.27.1 go test -count=1 -run Pair ./tests/integration/` | pass |
+| `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./...` | pass |
+| `gofmt -l cmd internal tests` | no output |
+| `./scripts/check` (Node 24.11.0) | pass |

@@ -103,6 +103,7 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 			return nil
 		},
 	}
+	attachment.InputRejected = display.rejectInput
 	attachment.Activate = func(ctx context.Context) error {
 		return display.activate(ctx, func() { admission.enabled.Store(true) })
 	}
@@ -119,7 +120,12 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 		readyContext, cancelReady := context.WithTimeout(connectionContext, 15*time.Second)
 		defer cancelReady()
 		if err := client.WaitReady(readyContext); err != nil {
-			return nil, errors.Join(err, client.Close())
+			// A rejected attach (for example the viewer limit) is also the
+			// close reason; report the broker's message once.
+			if closeErr := client.Close(); closeErr != err {
+				err = errors.Join(err, closeErr)
+			}
+			return nil, err
 		}
 		transport := newDesktopTransport(connectionContext, client, display)
 		transport.admission = admission.epoch
@@ -254,6 +260,10 @@ func (transport *desktopTransport) start() {
 					return
 				}
 			case <-ticker.C:
+				if err := transport.display.expireNotice(transport.ctx); err != nil {
+					transport.finish(err)
+					return
+				}
 				// Coalesce local resize measurements, never input. A resize waits
 				// until the current input acknowledgement has completed.
 				select {
