@@ -260,10 +260,6 @@ func (listener *BrokerListener) Accept() (net.Conn, error) {
 	}
 }
 
-func (listener *BrokerListener) Addr() net.Addr {
-	return listener.listener.Addr()
-}
-
 func (listener *BrokerListener) Descriptor() EndpointDescriptor {
 	return listener.descriptor
 }

@@ -13,7 +13,7 @@ describe('deviceLabelProblem mirrors the deviceLabel schema', () => {
   it('accepts 1–64 characters within 64 UTF-8 bytes', () => {
     expect(deviceLabelProblem('a')).toBeUndefined();
     expect(deviceLabelProblem('x'.repeat(64))).toBeUndefined();
-    expect(deviceLabelProblem('Anurag’s iPhone')).toBeUndefined();
+    expect(deviceLabelProblem('Ada’s iPhone')).toBeUndefined();
     expect(deviceLabelProblem('😀'.repeat(16))).toBeUndefined(); // 16 characters, 64 bytes
   });
 
