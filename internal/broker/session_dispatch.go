@@ -21,16 +21,15 @@ import (
 // A browser stream is bound to a broker-validated credential and uses its
 // paired device ID; access is rechecked before every action.
 type sessionConnection struct {
-	server          *ManagementServer
-	writer          *sessionWriter
-	access          *auth.Binding
-	connectionID    string
-	deviceID        string
-	sessionID       string
-	generation      string
-	session         ManagedSession
-	viewer          *ViewerSubscription
-	snapshotApplied bool
+	server       *ManagementServer
+	writer       *sessionWriter
+	access       *auth.Binding
+	connectionID string
+	deviceID     string
+	sessionID    string
+	generation   string
+	session      ManagedSession
+	viewer       *ViewerSubscription
 }
 
 // errStreamRevoked ends a browser stream after access.revoked was sent.
@@ -184,15 +183,11 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 		payload, _ := protocol.DecodePayload[protocol.SnapshotAppliedPayload](request)
 		revision, _ := strconv.ParseUint(payload.Revision, 10, 64)
 		err = stream.viewer.SnapshotApplied(ctx, payload.SnapshotID, revision)
-		stream.snapshotApplied = err == nil
 	case protocol.ScreenResync:
-		stream.snapshotApplied = false
 		err = stream.viewer.Resync(ctx)
 	case protocol.ControlAcquire:
-		if !stream.snapshotApplied {
-			return stream.failure(ctx, request, protocol.ResyncRequired, "apply the current snapshot before taking control")
-		}
-		// The actor queues the holder-only grant in the same ordered stream as
+		// The actor rejects a viewer whose current snapshot is unapplied and
+		// queues the holder-only grant in the same ordered stream as
 		// takeover/release notices. Sending it here could overtake a newer lease.
 		_, err = stream.session.AcquireControlForRequest(ctx, stream.viewer, request.RequestID)
 	case protocol.ControlRelease:
@@ -279,9 +274,11 @@ func (stream *sessionConnection) attach(ctx context.Context, request protocol.En
 	}
 	stream.session, stream.sessionID, stream.generation = session, *request.SessionID, *request.Generation
 	// Retirement, a stalled viewer, or revocation must also interrupt a peer
-	// blocked in ReadFrame. This goroutine ends with the viewer on disconnect.
+	// blocked in ReadFrame. Wait for the stop signal, not Done: a superseded
+	// frame may still hold the writer until its deadline. This goroutine ends
+	// with the viewer on disconnect.
 	viewer := stream.viewer
-	go func() { <-viewer.Done(); _ = stream.writer.conn.Close() }()
+	go func() { <-viewer.ctx.Done(); _ = stream.writer.conn.Close() }()
 	return nil
 }
 
@@ -313,6 +310,8 @@ func classifySessionError(err error) managementFailure {
 		return managementFailure{protocol.StaleLease, "controller lease is no longer valid"}
 	case errors.Is(err, ErrInputGap):
 		return managementFailure{protocol.InputGap, "input sequence has a gap; check the terminal before sending again"}
+	case errors.Is(err, ErrViewerSnapshotPending):
+		return managementFailure{protocol.ResyncRequired, "apply the current snapshot before taking control"}
 	case errors.Is(err, ErrViewerSnapshotMismatch):
 		return managementFailure{protocol.ResyncRequired, "snapshot acknowledgement does not match; request a new snapshot"}
 	case errors.Is(err, ErrViewerMissing):
