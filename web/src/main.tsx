@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { takeGrantFromFragment } from './pairing/pairing';
 import { App, type GrantHolder } from './screens/App';
+import { AppErrorBoundary } from './screens/chunks';
 import './styles/global.css';
 
 // Read and strip the pairing fragment before anything renders. The grant
@@ -16,6 +17,8 @@ if (root === null) {
 
 createRoot(root).render(
   <StrictMode>
-    <App grant={grant} />
+    <AppErrorBoundary>
+      <App grant={grant} />
+    </AppErrorBoundary>
   </StrictMode>,
 );

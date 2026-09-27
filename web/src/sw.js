@@ -6,10 +6,16 @@ const CACHE = 'pterm-assets-__BUILD__';
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="refresh" content="10">
 <title>Connection unavailable</title>
-<style>body{margin:0;padding:2rem 1.25rem;background:#0B0E14;color:#D5DCE5;font-family:system-ui,sans-serif}</style>
+<style>body{margin:0;padding:2rem 1.25rem;background:#0B0E14;color:#D5DCE5;font-family:system-ui,sans-serif;line-height:1.5}
+a{display:inline-block;margin-top:1rem;padding:.8rem 1.4rem;border-radius:10px;background:#64D8E8;color:#0B0E14;font-weight:700;text-decoration:none}
+li,.muted{color:#8B96A5}</style>
 </head><body><h1>Connection unavailable</h1>
-<p>This phone cannot reach your computer right now. Nothing can run until the connection returns.</p>
+<p>This phone cannot reach your computer right now. Your sessions keep running there.</p>
+<ul><li>Tailscale is on for this phone and for your computer.</li><li>Your computer is awake and online.</li></ul>
+<p class="muted">Trying again every 10 seconds…</p>
+<a href="/">Try again</a>
 </body></html>`;
 
 self.addEventListener('install', () => {

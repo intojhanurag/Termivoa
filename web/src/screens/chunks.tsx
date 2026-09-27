@@ -59,3 +59,40 @@ export class ChunkErrorBoundary extends Component<{ readonly children: ReactNode
     throw error;
   }
 }
+
+/** The text shown for an error nothing else handled. */
+export function errorText(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+/**
+ * The last line of defense: a render error that nothing else handled shows
+ * its message and a reload, never a blank page.
+ */
+export class AppErrorBoundary extends Component<{ readonly children: ReactNode }, BoundaryState> {
+  override state: BoundaryState = { error: undefined };
+
+  static getDerivedStateFromError(error: unknown): BoundaryState {
+    return { error };
+  }
+
+  override render() {
+    const { error } = this.state;
+    if (error === undefined) {
+      return this.props.children;
+    }
+    if (error instanceof ChunkLoadError) {
+      return <UpdateRequired onReload={() => window.location.reload()} />;
+    }
+    return (
+      <main className="page">
+        <section role="alert" className="stack">
+          <h1>Something went wrong</h1>
+          <p>This screen hit an error. Your sessions keep running on your computer.</p>
+          <pre className="error-detail">{errorText(error)}</pre>
+          <button type="button" className="primary" onClick={() => window.location.reload()}>Reload</button>
+        </section>
+      </main>
+    );
+  }
+}

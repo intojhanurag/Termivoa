@@ -26,6 +26,24 @@ type View =
   | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest }
   | { readonly name: 'settings' };
 
+/** While the host is unreachable, try again this often (and on network or focus changes). */
+export const OFFLINE_RETRY_MS = 10_000;
+
+const APP_NAME = 'Phone Terminal';
+
+/** The browser tab title: the screen, or the open session's name. */
+export function titleFor(view: View): string {
+  switch (view.name) {
+    case 'live': return `${view.session.title} · ${APP_NAME}`;
+    case 'sessions': return `Sessions · ${APP_NAME}`;
+    case 'new': return `New session · ${APP_NAME}`;
+    case 'settings': return `Settings · ${APP_NAME}`;
+    case 'setup': return `Pair · ${APP_NAME}`;
+    case 'offline': return `${CONNECTION_UNAVAILABLE} · ${APP_NAME}`;
+    case 'boot': return APP_NAME;
+  }
+}
+
 function pathFor(view: View): string {
   switch (view.name) {
     case 'live': return `/sessions/${encodeURIComponent(view.session.id)}`;
@@ -155,6 +173,42 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     };
   }, [adoptLinkGrant, boot, route]);
 
+  useEffect(() => { document.title = titleFor(view); }, [view]);
+
+  // Offline: keep trying quietly, and at once when the network or the app comes back.
+  const offline = view.name === 'offline';
+  useEffect(() => {
+    if (!offline) {
+      return undefined;
+    }
+    let busy = false;
+    const attempt = async () => {
+      if (busy || document.visibilityState !== 'visible') {
+        return;
+      }
+      busy = true;
+      try {
+        await api.settings();
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'network') {
+          return;
+        }
+      } finally {
+        busy = false;
+      }
+      void boot();
+    };
+    const run = () => { void attempt(); };
+    const timer = setInterval(run, OFFLINE_RETRY_MS);
+    window.addEventListener('online', run);
+    document.addEventListener('visibilitychange', run);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', run);
+      document.removeEventListener('visibilitychange', run);
+    };
+  }, [offline, boot]);
+
   // Fetch the terminal code in the background once the session list is up,
   // so opening a session goes straight to the live terminal.
   useEffect(() => {
@@ -207,7 +261,12 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       {view.name === 'offline' && (
         <main className="page">
           <h1>{CONNECTION_UNAVAILABLE}</h1>
-          <p className="muted">This phone cannot reach your computer right now. Nothing can run until the connection returns.</p>
+          <p className="muted">This phone cannot reach your computer right now. Your sessions keep running there.</p>
+          <ul className="tips">
+            <li>Tailscale is on for this phone and for your computer.</li>
+            <li>Your computer is awake and online.</li>
+          </ul>
+          <p className="muted">Trying again automatically…</p>
           <button type="button" className="primary wide" onClick={() => { void boot(); }}>
             <span aria-hidden="true" className="prompt">❯</span> try again
           </button>

@@ -102,6 +102,12 @@ button {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  /* Taps act at once: no double-tap zoom, no gray flash, no text selection or callout on long press. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 button:disabled { opacity: 0.45; cursor: default; }
 button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
@@ -478,3 +484,6 @@ button.paste { flex: 1; min-height: 54px; border-radius: 14px; font-size: 17px; 
 .history-actions { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 12px 16px 16px; }
 .pill { display: flex; align-items: center; gap: 8px; border-radius: 22px; background: var(--surface-2); border-color: var(--line); font-size: 14px; }
 .pill svg { color: var(--accent); }
+
+.tips { margin: 0; padding-left: 1.2rem; color: var(--muted); line-height: 1.6; }
+.error-detail { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--well); color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
