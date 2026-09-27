@@ -584,3 +584,54 @@ func TestPushSubscriptionRoutes(t *testing.T) {
 		t.Fatalf("GET subscribe = %d", response.Code)
 	}
 }
+
+func TestUploadRoute(t *testing.T) {
+	broker := newFakeBroker()
+	handler := newTestHandler(t, broker)
+	path := "/api/v1/sessions/" + uuidB + "/uploads"
+	body := func(data string) string { return `{"generation":"` + uuidC + `","data":"` + data + `"}` }
+	response := do(handler, http.MethodPost, path, body("aGVsbG8="), requestOptions{cookie: prodCookie})
+	if response.Code != 200 || !broker.called("upload:"+uuidB+"/"+uuidC+"/hello") {
+		t.Fatalf("upload = %d %s", response.Code, response.Body)
+	}
+	var result protocol.HTTPUploadResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Size != 5 {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	huge := strings.Repeat("A", protocol.MaxUploadRequestText+4)
+	for name, test := range map[string]struct {
+		path, body string
+		options    requestOptions
+		status     int
+	}{
+		"missing header":  {path, body("aGVsbG8="), requestOptions{cookie: prodCookie, omitHeader: true}, 403},
+		"wrong origin":    {path, body("aGVsbG8="), requestOptions{cookie: prodCookie, origin: "https://evil.example"}, 403},
+		"form type":       {path, body("aGVsbG8="), requestOptions{cookie: prodCookie, contentType: "text/plain"}, 415},
+		"no cookie":       {path, body("aGVsbG8="), requestOptions{}, 401},
+		"bad session":     {"/api/v1/sessions/nope/uploads", body("aGVsbG8="), requestOptions{cookie: prodCookie}, 400},
+		"bad base64":      {path, body("aGVsbG8"), requestOptions{cookie: prodCookie}, 400},
+		"url base64":      {path, body("-_-_"), requestOptions{cookie: prodCookie}, 400},
+		"client name":     {path, strings.Replace(body("aGVsbG8="), `{`, `{"name":"x.png",`, 1), requestOptions{cookie: prodCookie}, 400},
+		"over 5 MiB":      {path, body(huge), requestOptions{cookie: prodCookie}, 400},
+		"body over limit": {path, body(huge + strings.Repeat("A", 2048)), requestOptions{cookie: prodCookie}, 413},
+	} {
+		if response := do(handler, http.MethodPost, test.path, test.body, test.options); response.Code != test.status {
+			t.Errorf("%s = %d %s", name, response.Code, response.Body)
+		}
+	}
+	if response := do(handler, http.MethodGet, path, "", requestOptions{cookie: prodCookie}); response.Code != 405 {
+		t.Fatalf("GET upload = %d", response.Code)
+	}
+	broker.opErr = &gatewayapi.Error{Code: protocol.NotController, Message: "take control before attaching a photo"}
+	if response := do(handler, http.MethodPost, path, body("aGVsbG8="), requestOptions{cookie: prodCookie}); response.Code != 409 ||
+		errorCode(t, response) != protocol.NotController {
+		t.Fatalf("not controller = %d %s", response.Code, response.Body)
+	}
+	// A second upload while one holds the only slots is refused, not queued.
+	for range maxConcurrentUploads {
+		handler.uploads <- struct{}{}
+	}
+	if response := do(handler, http.MethodPost, path, body("aGVsbG8="), requestOptions{cookie: prodCookie}); response.Code != 429 {
+		t.Fatalf("busy = %d %s", response.Code, response.Body)
+	}
+}

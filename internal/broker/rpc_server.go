@@ -64,6 +64,8 @@ type ManagementServer struct {
 	stopping      bool
 	connections   map[net.Conn]struct{}
 	connectionsWG sync.WaitGroup
+
+	uploads uploadLimits
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -242,6 +244,10 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 		// credential-carrying gateway RPC; local administration and
 		// unauthenticated session management remain CLI-only.
 		if peer.ClientKind == protocol.Gateway {
+			// An upload owns the rest of its dedicated connection.
+			if request, err := protocol.DecodeGatewayRPCRequest(data); err == nil && request.Type == protocol.GatewayUploadBegin {
+				return server.serveUpload(ctx, connection, reader, writer, request)
+			}
 			binding, err := server.serveGatewayRequest(ctx, writer, data)
 			if err != nil || binding == nil {
 				if err != nil {

@@ -21,10 +21,13 @@ const (
 	productionCookieName  = "__Host-pterm_session"
 	developmentCookieName = "pterm_dev_session"
 	maxRequestBodyBytes   = 64 * 1024
-	requestHeaderName     = "X-Pterm-Request"
-	maxDeviceLabelBytes   = 64
-	maxSessionTitleBytes  = 128
-	maxErrorMessageBytes  = 512
+	// maxUploadBodyBytes fits a 5 MiB image as base64 plus the JSON fields.
+	maxUploadBodyBytes   = protocol.MaxUploadRequestText + 1024
+	maxConcurrentUploads = 2
+	requestHeaderName    = "X-Pterm-Request"
+	maxDeviceLabelBytes  = 64
+	maxSessionTitleBytes = 128
+	maxErrorMessageBytes = 512
 )
 
 func (handler *gatewayHandler) pairRedeem(response http.ResponseWriter, request *http.Request) {
@@ -264,6 +267,43 @@ func (handler *gatewayHandler) pushTest(response http.ResponseWriter, request *h
 	handler.respond(response, request, result, err)
 }
 
+// upload saves one image for the session. The broker checks that this device
+// controls the session, validates the image by its magic bytes, and names
+// and writes the file; the gateway only bounds and decodes the body.
+func (handler *gatewayHandler) upload(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	select {
+	case handler.uploads <- struct{}{}:
+		defer func() { <-handler.uploads }()
+	default:
+		writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "another photo is uploading; try again")
+		return
+	}
+	var body protocol.HTTPUploadRequest
+	if !handler.mutationLimit(response, request, &body, maxUploadBodyBytes) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	sessionID := request.PathValue("id")
+	if !validUUID(sessionID) || !validUUID(body.Generation) {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid upload request")
+		return
+	}
+	data, err := protocol.DecodeUploadData(body.Data, protocol.MaxUploadBytes)
+	if err != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "photo data is invalid or larger than 5 MB")
+		return
+	}
+	body.Data = ""
+	result, err := handler.api.Upload(request.Context(), credential, sessionID, body.Generation, data)
+	handler.respond(response, request, result, err)
+}
+
 func (handler *gatewayHandler) respondEmpty(response http.ResponseWriter, request *http.Request, err error) {
 	if err != nil {
 		handler.respond(response, request, nil, err)
@@ -350,6 +390,13 @@ func (handler *gatewayHandler) sessionCookie(request *http.Request) (string, boo
 // check: exact Origin, the fixed request header, JSON content type, a 64 KiB
 // body and strict decoding.
 func (handler *gatewayHandler) mutation(response http.ResponseWriter, request *http.Request, destination any) bool {
+	return handler.mutationLimit(response, request, destination, maxRequestBodyBytes)
+}
+
+// mutationLimit is mutation with a larger body limit, for uploads only.
+func (handler *gatewayHandler) mutationLimit(
+	response http.ResponseWriter, request *http.Request, destination any, limit int64,
+) bool {
 	if !handler.originAllowed(request) {
 		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
 		return false
@@ -362,7 +409,7 @@ func (handler *gatewayHandler) mutation(response http.ResponseWriter, request *h
 		writeError(response, http.StatusUnsupportedMediaType, protocol.InvalidRequest, "content type must be application/json")
 		return false
 	}
-	data, err := io.ReadAll(http.MaxBytesReader(response, request.Body, maxRequestBodyBytes))
+	data, err := io.ReadAll(http.MaxBytesReader(response, request.Body, limit))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {

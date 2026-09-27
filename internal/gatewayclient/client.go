@@ -8,6 +8,7 @@ package gatewayclient
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -268,6 +269,71 @@ func (client *Client) PushTest(ctx context.Context, credential string) (protocol
 	}
 	return roundTrip[protocol.HTTPPushTestResponse](ctx, client, protocol.GatewayPushTest,
 		protocol.GatewayRPCCredentialPayload{Credential: credential}, true, nil)
+}
+
+// Upload sends one image on a dedicated connection: gateway.upload.begin,
+// chunks of at most MaxUploadChunkBytes, then gateway.upload.commit. Each
+// message waits for its result, so the broker bounds what is in flight.
+func (client *Client) Upload(
+	ctx context.Context, credential, sessionID, generation string, data []byte,
+) (protocol.HTTPUploadResponse, error) {
+	var result protocol.HTTPUploadResponse
+	if ctx == nil {
+		return result, errors.New("gatewayclient: context must not be nil")
+	}
+	if err := checkCredential(credential); err != nil {
+		return result, err
+	}
+	select {
+	case <-client.done:
+		return result, net.ErrClosed
+	default:
+	}
+	connection, err := dialRPC(ctx, client.dial)
+	if err != nil {
+		return result, err
+	}
+	defer connection.conn.Close()
+	clearDeadline, err := setContextDeadline(ctx, connection.conn.SetDeadline)
+	if err != nil {
+		return result, err
+	}
+	defer clearDeadline()
+	send := func(requestType protocol.GatewayRPCMessageType, payload any) (protocol.GatewayRPCEnvelope, error) {
+		data, requestID, err := encodeRequest(requestType, payload)
+		if err != nil {
+			return protocol.GatewayRPCEnvelope{}, err
+		}
+		return connection.exchange(data, requestID, requestType)
+	}
+	fail := func(err error) (protocol.HTTPUploadResponse, error) {
+		var remote *gatewayapi.Error
+		if errors.As(err, &remote) {
+			return protocol.HTTPUploadResponse{}, remote
+		}
+		return protocol.HTTPUploadResponse{}, failure(ctx, err, true)
+	}
+	if _, err := send(protocol.GatewayUploadBegin, protocol.GatewayRPCUploadBeginPayload{
+		Credential: credential, SessionID: sessionID, Generation: generation, Size: int64(len(data)),
+	}); err != nil {
+		return fail(err)
+	}
+	for start := 0; start < len(data); start += protocol.MaxUploadChunkBytes {
+		chunk := data[start:min(start+protocol.MaxUploadChunkBytes, len(data))]
+		if _, err := send(protocol.GatewayUploadChunk, protocol.GatewayRPCUploadChunkPayload{
+			Data: base64.StdEncoding.EncodeToString(chunk),
+		}); err != nil {
+			return fail(err)
+		}
+	}
+	response, err := send(protocol.GatewayUploadCommit, protocol.GatewayRPCCredentialPayload{Credential: credential})
+	if err != nil {
+		return fail(err)
+	}
+	if result, err = protocol.DecodeRPCPayload[protocol.HTTPUploadResponse](response); err != nil {
+		return fail(err)
+	}
+	return result, nil
 }
 
 // Origin returns the configured browser origin, or "" when none is set.
