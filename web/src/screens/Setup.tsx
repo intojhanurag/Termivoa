@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, deviceLabelProblem } from '../api/http';
-import { PairingFlow, type PendingPairing } from '../pairing/pairing';
+import { claimGrant, PairingFlow, type PendingPairing } from '../pairing/pairing';
 import type { GrantHolder } from './App';
 
 type Phase = 'none' | 'label' | 'redeeming' | 'waiting' | 'expired' | 'error' | 'cancelled';
@@ -68,11 +68,15 @@ export function Setup({ grant, reason, onPaired }: {
   const labelValid = labelProblem === undefined;
 
   async function pair() {
-    const secret = grant.value;
-    grant.value = undefined;
-    if (secret === undefined || !labelValid) {
+    const claim = claimGrant(grant, labelValid);
+    if ('problem' in claim) {
+      if (claim.problem === 'missing') {
+        // Never a silent tap: say the link must be made again.
+        setPhase('none');
+      }
       return;
     }
+    const secret = claim.secret;
     const pairing = new PairingFlow();
     flow.current = pairing;
     setPhase('redeeming');

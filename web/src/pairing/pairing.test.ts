@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PairingFlow, takeGrantFromFragment } from './pairing';
+import { adoptFragmentGrant, claimGrant, PairingFlow, takeGrantFromFragment } from './pairing';
 
 const grant = 'g'.repeat(43);
 const pollSecret = 'p'.repeat(43);
@@ -126,5 +126,52 @@ describe('PairingFlow', () => {
     await vi.advanceTimersByTimeAsync(6000);
     await expect(outcome).resolves.toBe('expired');
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('adoptFragmentGrant', () => {
+  const grant = 'A'.repeat(43);
+
+  it('takes a new grant from a same-tab link and strips it from the URL', () => {
+    const holder: { value: string | undefined } = { value: undefined };
+    const replaced: string[] = [];
+    const adopted = adoptFragmentGrant(
+      holder,
+      { hash: `#${grant}`, pathname: '/pair', search: '' },
+      { replaceState: (_data, _unused, url) => { replaced.push(url); } },
+    );
+    expect(adopted).toBe(true);
+    expect(holder.value).toBe(grant);
+    expect(replaced).toEqual(['/pair']);
+  });
+
+  it('ignores fragments that are not a pairing grant', () => {
+    const holder: { value: string | undefined } = { value: 'kept' };
+    const adopted = adoptFragmentGrant(
+      holder,
+      { hash: '#section', pathname: '/pair', search: '' },
+      { replaceState: () => undefined },
+    );
+    expect(adopted).toBe(false);
+    expect(holder.value).toBe('kept');
+  });
+});
+
+describe('claimGrant', () => {
+  it('keeps the grant when the device name is not valid yet', () => {
+    const holder: { value: string | undefined } = { value: 'secret' };
+    expect(claimGrant(holder, false)).toEqual({ problem: 'label' });
+    expect(holder.value).toBe('secret');
+  });
+
+  it('reports a missing grant instead of doing nothing', () => {
+    expect(claimGrant({ value: undefined }, true)).toEqual({ problem: 'missing' });
+  });
+
+  it('hands out the grant exactly once', () => {
+    const holder: { value: string | undefined } = { value: 'secret' };
+    expect(claimGrant(holder, true)).toEqual({ secret: 'secret' });
+    expect(holder.value).toBeUndefined();
+    expect(claimGrant(holder, true)).toEqual({ problem: 'missing' });
   });
 });
