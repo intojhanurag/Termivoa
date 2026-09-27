@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces and when an individual 
 
 ## Enforcement
 
-During private development, report incidents directly to the repository owner through an existing private communication channel. **Before public release, the owner must approve and add a real confidential reporting address here.** No public enforcement address has been designated, and contributors should not put sensitive incident details in a public issue.
+Report incidents privately by email to **aojharaj2004@gmail.com**. Do not put sensitive incident details in a public issue.
 
 All complaints will be reviewed and investigated promptly and fairly. Community leaders will respect the privacy and security of the reporter.
 
