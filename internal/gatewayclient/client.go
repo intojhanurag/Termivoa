@@ -31,6 +31,9 @@ var (
 	ErrAccessRevoked = fmt.Errorf("gatewayclient: live stream access was revoked: %w", gatewayapi.ErrStreamEnded)
 )
 
+// errWriteFailed marks an exchange whose request frame was not fully written.
+var errWriteFailed = errors.New("gatewayclient: request write failed")
+
 var (
 	_ gatewayapi.Broker     = (*Client)(nil)
 	_ gatewayapi.LiveStream = (*liveStream)(nil)
@@ -261,22 +264,37 @@ func roundTrip[R any](
 	}
 	defer func() { client.slot <- struct{}{} }()
 
-	connection, err := client.connection(ctx)
-	if err != nil {
-		return result, err
+	var (
+		connection *rpcConn
+		response   protocol.GatewayRPCEnvelope
+	)
+	for {
+		var reused bool
+		connection, reused, err = client.connection(ctx)
+		if err != nil {
+			return result, err
+		}
+		var clearDeadline func()
+		if clearDeadline, err = setContextDeadline(ctx, connection.conn.SetDeadline); err != nil {
+			return result, err // ctx ended before anything was written
+		}
+		response, err = connection.exchange(data, requestID, requestType)
+		clearDeadline()
+		// An idle shared connection is dead after a broker restart. A failed
+		// write left at most a partial frame, which the broker never acts on,
+		// so redial once. Never retry after the whole request was written.
+		if reused && errors.Is(err, errWriteFailed) && ctx.Err() == nil {
+			client.poison(connection)
+			continue
+		}
+		break
 	}
-	clearDeadline, err := setContextDeadline(ctx, connection.conn.SetDeadline)
-	if err != nil {
-		return result, err // ctx ended before anything was written
-	}
-	defer clearDeadline()
 	fail := func(err error) (R, error) {
 		client.poison(connection)
 		var zero R
 		return zero, failure(ctx, err, uncertain)
 	}
 
-	response, err := connection.exchange(data, requestID, requestType)
 	var remote *gatewayapi.Error
 	if errors.As(err, &remote) {
 		return result, remote
@@ -295,30 +313,30 @@ func roundTrip[R any](
 	return result, nil
 }
 
-// connection returns the shared connection, dialing one if needed. The caller
-// must hold the slot.
-func (client *Client) connection(ctx context.Context) (*rpcConn, error) {
+// connection returns the shared connection, dialing one if needed, and
+// whether it was reused. The caller must hold the slot.
+func (client *Client) connection(ctx context.Context) (*rpcConn, bool, error) {
 	client.mu.Lock()
 	current, closed := client.conn, client.closed
 	client.mu.Unlock()
 	if closed {
-		return nil, net.ErrClosed
+		return nil, false, net.ErrClosed
 	}
 	if current != nil {
-		return current, nil
+		return current, true, nil
 	}
 	connection, err := dialRPC(ctx, client.dial)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if client.closed {
 		_ = connection.conn.Close()
-		return nil, net.ErrClosed
+		return nil, false, net.ErrClosed
 	}
 	client.conn = connection
-	return connection, nil
+	return connection, false, nil
 }
 
 func (client *Client) poison(connection *rpcConn) {
@@ -401,7 +419,7 @@ func (connection *rpcConn) exchange(
 	requestType protocol.GatewayRPCMessageType,
 ) (protocol.GatewayRPCEnvelope, error) {
 	if err := connection.writer.WriteFrame(data); err != nil {
-		return protocol.GatewayRPCEnvelope{}, err
+		return protocol.GatewayRPCEnvelope{}, fmt.Errorf("%w: %w", errWriteFailed, err)
 	}
 	responseData, err := connection.reader.ReadFrame()
 	if err != nil {

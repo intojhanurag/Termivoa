@@ -705,3 +705,101 @@ func TestOpenLiveBrokerErrorIsTyped(t *testing.T) {
 	}
 	<-closed
 }
+
+// After a broker restart the idle shared connection is dead. A write that
+// fails on it delivered nothing, so the client redials once and the call
+// succeeds. A request that was written is never retried.
+func TestDeadIdleConnectionRedialsOnceBeforeDelivery(t *testing.T) {
+	tempBase := ""
+	if runtime.GOOS == "darwin" {
+		tempBase = "/tmp"
+	}
+	dir, err := os.MkdirTemp(tempBase, "ptgw-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := dir + "/rpc.sock"
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	var requests atomic.Int32
+	firstClosed := make(chan struct{})
+	go func() {
+		for number := 1; ; number++ {
+			connection, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer connection.Close()
+				reader, _ := ipc.NewFrameReader(connection, protocol.MaxInboundMessageBytes)
+				writer, _ := ipc.NewFrameWriter(connection, protocol.MaxOutboundMessageBytes)
+				// Connection 1 answers once and closes (a broker restart).
+				// Connection 2 answers once, then reads a request and closes
+				// without answering.
+				for answered := 0; ; answered++ {
+					data, err := reader.ReadFrame()
+					if err != nil {
+						return
+					}
+					requests.Add(1)
+					if answered == 1 {
+						return
+					}
+					request, err := protocol.DecodeGatewayRPCRequest(data)
+					if err != nil {
+						t.Errorf("invalid request: %v", err)
+						return
+					}
+					var response []byte
+					if request.Type == protocol.GatewayAuthCheck {
+						response = reply(t, request.RequestID, protocol.GatewayAuthCheckResult, protocol.GatewayRPCPrincipalPayload{
+							CredentialID: testCredID, DeviceID: testDevice, DeviceLabel: "Phone", ExpiresAt: "2026-10-27T00:00:00Z",
+						})
+					} else {
+						response = reply(t, request.RequestID, protocol.GatewaySessionCreateResult,
+							protocol.HTTPSessionMutationResponse{OperationID: testOperation, Session: testRecord()})
+					}
+					if err := writer.WriteFrame(response); err != nil {
+						return
+					}
+					if number == 1 {
+						_ = connection.Close()
+						close(firstClosed)
+						return
+					}
+				}
+			}()
+		}
+	}()
+	var dials atomic.Int32
+	client := newClient(func(ctx context.Context) (net.Conn, error) {
+		dials.Add(1)
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "unix", path)
+	})
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.Authenticate(ctx, testCredential); err != nil {
+		t.Fatal(err)
+	}
+	<-firstClosed
+	request := protocol.HTTPSessionCreateRequest{OperationID: testOperation, ProjectID: testProject, ShellProfileID: testProfile}
+	if _, err := client.CreateSession(ctx, testCredential, request); err != nil {
+		t.Fatalf("call after broker restart = %v", err)
+	}
+	if dials.Load() != 2 || requests.Load() != 2 {
+		t.Fatalf("dials = %d, requests = %d; want 2, 2", dials.Load(), requests.Load())
+	}
+	// Written but unanswered: uncertain, and not retried.
+	if _, err := client.CreateSession(ctx, testCredential, request); !errors.Is(err, ErrDeliveryUncertain) {
+		t.Fatalf("unanswered mutation = %v, want delivery uncertain", err)
+	}
+	if dials.Load() != 2 || requests.Load() != 3 {
+		t.Fatalf("dials = %d, requests = %d; want 2, 3", dials.Load(), requests.Load())
+	}
+}
