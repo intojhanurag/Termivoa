@@ -14,6 +14,7 @@ import (
 var (
 	validCredential   = strings.Repeat("A", 43)
 	revokedCredential = strings.Repeat("R", 43)
+	clockCredential   = strings.Repeat("K", 43) // broker clock stepped back
 	testSecret        = strings.Repeat("s", 43)
 )
 
@@ -58,6 +59,8 @@ func (broker *fakeBroker) authorize(credential string) error {
 		return nil
 	case revokedCredential:
 		return &gatewayapi.Error{Code: protocol.Revoked, Message: "access revoked"}
+	case clockCredential:
+		return &gatewayapi.Error{Code: protocol.HostUnavailable, Message: "host clock changed; retry"}
 	default:
 		return &gatewayapi.Error{Code: protocol.Unauthorized, Message: "sign in required"}
 	}

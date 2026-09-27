@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -15,6 +16,10 @@ var (
 	ErrRevoked         = errors.New("auth: credential revoked")
 	ErrExpired         = errors.New("auth: credential expired")
 	ErrInvalidLifetime = errors.New("auth: invalid credential lifetime")
+	// ErrClockRollback wraps ErrInvalidLifetime when stored metadata is valid
+	// but the host clock is behind creation or last use. It is a host fault,
+	// not proof that the credential is bad.
+	ErrClockRollback = fmt.Errorf("%w: host clock is behind recorded use", ErrInvalidLifetime)
 )
 
 // BrowserLifetime is broker-owned metadata, never client-supplied authority.
@@ -39,11 +44,13 @@ func (lifetime BrowserLifetime) Check(now time.Time) error {
 	if lifetime.Revoked {
 		return ErrRevoked
 	}
-	if !validAuthTime(now) || !validAuthTime(lifetime.CreatedAt) || !validAuthTime(lifetime.LastUsedAt) ||
-		!validAuthTime(lifetime.ExpiresAt) || lifetime.CreatedAt.After(now) || lifetime.LastUsedAt.After(now) ||
-		lifetime.LastUsedAt.Before(lifetime.CreatedAt) ||
+	if !validAuthTime(lifetime.CreatedAt) || !validAuthTime(lifetime.LastUsedAt) ||
+		!validAuthTime(lifetime.ExpiresAt) || lifetime.LastUsedAt.Before(lifetime.CreatedAt) ||
 		!lifetime.ExpiresAt.Equal(lifetime.CreatedAt.Add(BrowserAbsoluteLifetime)) {
 		return ErrInvalidLifetime
+	}
+	if !validAuthTime(now) || lifetime.LastUsedAt.After(now) { // CreatedAt <= LastUsedAt here
+		return ErrClockRollback
 	}
 	if !now.Before(lifetime.ExpiresAt) || !now.Before(lifetime.LastUsedAt.Add(BrowserInactivityLifetime)) {
 		return ErrExpired

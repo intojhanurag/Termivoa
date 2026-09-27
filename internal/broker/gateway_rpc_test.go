@@ -397,6 +397,23 @@ func TestLogoutClosesOnlyThatCredentialsStream(t *testing.T) {
 	secondStream.acquire(t)
 }
 
+// A host clock step back is host_unavailable, not unauthorized, so the
+// gateway does not clear the phone's only-once-delivered cookie.
+func TestGatewayClockRollbackIsHostUnavailable(t *testing.T) {
+	fixture, _, _, service, clock := newAuthStreamFixture(t)
+	start := clock.Now()
+	issued := pairDevice(t, service, "Phone")
+	gateway := startRPCTestClient(t, fixture.server, protocol.Gateway)
+	clock.Set(start.Add(-time.Minute))
+	if code := gatewayErrorCode(t, gateway.gateway(t, protocol.GatewayAuthCheck, credentialPayload(issued.Credential))); code != protocol.HostUnavailable {
+		t.Fatalf("auth check after clock rollback = %s", code)
+	}
+	clock.Set(start)
+	if response := gateway.gateway(t, protocol.GatewayAuthCheck, credentialPayload(issued.Credential)); response.Type != protocol.GatewayAuthCheckResult {
+		t.Fatalf("auth check after the clock recovers = %s", response.Type)
+	}
+}
+
 func TestLiveStreamClosesWhenCredentialExpires(t *testing.T) {
 	fixture, _, _, service, clock := newAuthStreamFixture(t)
 	start := clock.Now()
