@@ -10,16 +10,17 @@ in `docs/evidence/` have the full details.
 Mark an item `[x]` when you finish it. Record the result (pass or fail, device,
 OS and browser version) next to it.
 
-## 0. Unblock the pull requests
+## 0. Run hosted CI on `main`
 
-GitHub Actions did not run any job, because the account has a billing or
-spending-limit problem. Branch protection needs the 10 CI checks, so the PRs
-cannot merge.
+GitHub Actions does not start any job, because the account has a billing or
+spending-limit problem. On 2026-09-27 the owner merged #27 (v0, which contains
+#23–#26), #28 (first run) and #30 (phone UI v2) into `main` without hosted CI,
+after the full local check passed on macOS. See `docs/progress.md`.
 
 - [ ] Fix billing: GitHub → Settings → Billing and plans.
-- [ ] Re-run CI on the PRs in this order: #23 (P3) → #24 (P4) → #25 (P5) →
-      #26 (P6) → the v0 polish PR. Merge each one after its checks pass, then
-      rebase the next PR on `main`.
+- [ ] Re-run CI on `main`. Native Windows tests, the Linux `/proc` path and
+      the packaging workflow have never run in CI. Fix any failure in a
+      follow-up PR.
 - [ ] The first CI run of `.github/workflows/packaging.yml` is the first real
       build of the Windows installer (`packaging/windows/*`). Check that it
       passes.
@@ -165,7 +166,8 @@ but billing blocked it.
 - [ ] Windows: code-signing certificate thumbprint + timestamp URL, then
       `packaging/windows/sign.ps1`.
 - [ ] Check Gatekeeper and SmartScreen with the signed artifacts.
-- [ ] Final product name, bundle IDs and publisher identity (still placeholders).
+- [ ] Final product name, bundle IDs and publisher identity (still placeholders;
+      proposed public name: Termivoa, see `docs/release-checklist.md`).
 - [ ] Public release stays your manual decision (plan section 20).
 
 ## 6. Known open defects
@@ -185,5 +187,7 @@ but billing blocked it.
   readiness). See `docs/progress.md`.
 - The session list does not show which device has control. The HTTP session
   record has no field for it.
-- The broker cannot yet refuse an update while sessions are active (documented
-  in `docs/install.md` as pending).
+- `pterm setup` and `pterm uninstall` refuse to replace the broker while
+  sessions are active, but the broker itself cannot yet refuse an update (no
+  update RPC; documented in `docs/install.md` as pending). A database backup
+  before migration is not implemented.

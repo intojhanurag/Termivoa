@@ -1,6 +1,6 @@
 # ADR 0002: Server-authoritative terminal replication
 
-- Status: Accepted by the authoritative plan; implementation pending
+- Status: Accepted by the authoritative plan; implemented in v0 (2026-09-27, verified on the macOS development profile)
 - Date: 2026-09-20
 
 ## Context
@@ -18,3 +18,5 @@ Browser xterm is a display surface with stdin and independent scrollback disable
 ## Consequences
 
 Reconnection uses a current-state snapshot instead of raw replay and preserves live normal/alternate-buffer behavior. The protocol must carry cell width/style, cursor, dimensions, generation, revision, history, and Unicode-width metadata. The project must prove emulator/browser width agreement and query uniqueness with fixtures. ConPTY remains inside the broker-owned Windows boundary, while browser and desktop clients remain display/input clients only. If the pinned emulator cannot meet a required case, the milestone stops for an evidenced adapter patch or owner-approved architecture amendment.
+
+Open decision (2026-09-27): on Unix, terminate and shutdown now signal every process in the managed PTY session, not only the shell's process group. This change waits for owner approval; see [owner-verification.md](../owner-verification.md) section 6 and [cli-lifecycle evidence](../evidence/p6/cli-lifecycle.md).

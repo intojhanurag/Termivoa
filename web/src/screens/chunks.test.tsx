@@ -28,7 +28,7 @@ function staticImports(entry: string): Set<string> {
       if (found !== undefined) visit(found);
     }
   };
-  visit(resolve(src, 'main.tsx'));
+  visit(entry);
   return seen;
 }
 

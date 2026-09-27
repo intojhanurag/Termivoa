@@ -22,6 +22,12 @@ body:
     validations:
       required: true
   - type: textarea
+    id: doctor
+    attributes:
+      label: pterm doctor output
+      description: Paste `pterm doctor` output if relevant. It never prints secrets, but check it for host names or paths you do not want to share.
+      render: text
+  - type: textarea
     id: reproduction
     attributes:
       label: Reproduction steps

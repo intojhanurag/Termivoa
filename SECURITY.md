@@ -22,8 +22,25 @@ Do not send secrets until a secure route is agreed. If a credential was exposed,
 
 ## Security boundaries
 
-The intended v0 is a single-owner, single-host product. Browser authentication does not protect against malware already running as the same host user. Tailscale connectivity does not replace application authentication. The host shell retains the owner's filesystem permissions; registered projects are convenience roots, not sandboxes.
+The v0 design is single-owner and single-host. Browser authentication does not
+protect against malware already running as the same host user. Tailscale
+connectivity does not replace application authentication. The host shell
+keeps the owner's filesystem permissions; registered projects are convenience
+roots, not sandboxes.
 
-Production browser access is intended to use private HTTPS through Tailscale Serve to a loopback-only gateway. Tailscale Funnel and public tunnels are out of scope. Terminal contents are not intended to be persisted in v0.
+What is implemented (see [docs/threat-model.md](docs/threat-model.md) and
+[docs/architecture.md](docs/architecture.md)):
 
-These are design requirements, not claims that the controls have been implemented or audited.
+- the gateway listens on loopback only; phones reach it through private
+  Tailscale Serve HTTPS. Tailscale Funnel and public tunnels are out of scope,
+  and `pterm setup` / `pterm doctor` warn when Funnel is on;
+- pairing uses a single-use, two-minute link plus owner approval after comparing
+  a code; paired devices use `HttpOnly`, `SameSite=Strict` session cookies and
+  can be revoked at once with `pterm revoke`;
+- clients receive normalized screen frames, never raw terminal bytes, and send
+  only structured input;
+- terminal content is not written to the database; there is no telemetry.
+
+These controls have automated tests but no independent security audit, and
+real-device and real-tailnet checks are still pending
+([docs/owner-verification.md](docs/owner-verification.md)).

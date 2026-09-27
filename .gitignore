@@ -36,6 +36,8 @@ coverage/
 # Web
 node_modules/
 web/dist/
+# Copied by scripts/embed-web.sh for -tags webdist builds
+internal/webassets/dist/
 *.tsbuildinfo
 
 # Packaging outputs

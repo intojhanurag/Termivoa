@@ -4,6 +4,39 @@ Last updated: 2026-09-27
 
 ## Current status
 
+### Summary (2026-09-27)
+
+The v0 flow is complete on `main` and verified on the macOS development
+profile (Apple Silicon, macOS 26.5.2): desktop attach, phone pairing and
+revocation, the authenticated gateway, the phone web app (UI v2), the 3-step
+`pterm setup` first run, per-user startup registration and unsigned
+packaging. It landed as #27 (v0, containing #23–#26), #28 (first run and
+daily use) and #30 (phone UI v2). All three were merged without hosted CI,
+because GitHub Actions jobs do not start (account billing). The full local
+`./scripts/check` and `go test -race ./internal/... ./cmd/...` passed on the
+merged heads. The GitHub repository is now `intojhanurag/Termivoa` (proposed
+public name, pending owner confirmation; "Phone Terminal" stays the working
+name).
+
+Not yet verified (owner checklist in
+[owner-verification.md](owner-verification.md)):
+
+- Hosted CI on `main`, including native Windows tests and the packaging
+  workflow.
+- Physical iPhone Safari and Android Chrome, and private Tailscale Serve HTTPS
+  over cellular.
+- Native Windows 11: broker, ConPTY, desktop attach, installer, Scheduled
+  Tasks.
+- Startup after a real macOS logout/login, and the unsigned DMG.
+- Signing and notarization (needs owner credentials).
+- Windows soak, 24-hour soak, 10-minute stress run and the key-to-frame
+  latency benchmark.
+- Owner decisions: the Unix termination boundary, the final public name and
+  identifiers.
+
+The dated entries below are the history log; older entries describe the state
+on their own date.
+
 ### Phone UI v2 (2026-09-27)
 
 The owner approved the Paper design "termivoa" (session tabs, agent keys,
@@ -27,7 +60,7 @@ started. "Include administrators" was turned off only for the squash merge and
 restored right after. The full local `./scripts/check` (117 web tests) and
 `go test -race ./internal/... ./cmd/...` passed on the merged head.
 
-### v0 merge without CI (2026-09-29)
+### v0 merge without CI (2026-09-27)
 
 The owner asked to merge the v0 stack without hosted CI: the account's 3,000
 included GitHub Actions minutes for September were used up, and they reset in
@@ -47,7 +80,8 @@ and fix any failure in a follow-up PR.
 The P3–P6 work is pushed as stacked private PRs: #23 (P3 desktop attach and
 live client) → #24 (P4 pairing, broker auth and gateway) → #25 (P5 phone
 website) → #26 (P6 unsigned packaging and lifecycle commands) → the v0 polish
-PR. None is merged yet: GitHub Actions did not start any job because of the
+PR. (Superseded the same day: #27 replaced #23–#26 and was merged; see
+"v0 merge without CI" above.) None is merged yet: GitHub Actions did not start any job because of the
 account billing/spending limit, and branch protection requires the ten CI
 checks. Full local `./scripts/check` passed at the head of each PR. The
 configured Greptile review did not respond on these PRs; same-account agent
@@ -299,6 +333,9 @@ Windows console validation remain pending. See
 | Web toolchain | Default PATH has Node.js 25.8.1; nvm already contains Node.js 24.11.0, selected with pnpm 10.33.0 for repository checks | Locked P0 web toolchain is available without changing the global default. |
 | Tailscale | CLI 1.102.4 is installed; backend reported `Stopped` | No configuration was changed. P4 production phone access requires owner authorization/login and conflict-safe Serve setup. |
 
+Note (2026-09-27): the repository was later renamed to `intojhanurag/Termivoa`;
+the old name redirects. It is still private.
+
 Commands used for this read-only preflight included `gh api user`, `gh repo view`, `git config --get`, `uname -m`, `sw_vers`, tool version commands, and a minimal `tailscale status` query. No token, raw credential, private hostname, or Tailscale Serve configuration was recorded here.
 
 ## P0 deliverables
@@ -332,10 +369,11 @@ These questions must be resolved before their dependent gates; they do not block
 | Physical iPhone and Android access | Test arrangement not established | P4 private cellular connection and P5 physical-device acceptance |
 | Tailscale login/configuration | Installed but stopped; no authorization to log in or alter Serve configuration | P4 private HTTPS evidence |
 | Host installation consent | Not requested; no startup/PATH/install changes made | P6 installation and startup evidence |
-| Coding CLI and disposable test repository | Not selected or authorized | Real-application smoke test in P7 |
+| Coding CLI and disposable test repository | Claude Code and Codex CLI ran in a disposable empty project on the Mac development profile (`docs/evidence/p7/coding-agents.md`) | A real-phone agent run remains in `owner-verification.md` |
 | Apple signing/notarization | Membership, identities, and approved credential location not established | Signed macOS P6/P8 artifacts |
 | Windows code signing | Owner-approved trusted identity and key access not established | Signed Windows P6/P8 artifacts |
-| Public identity | Final product name, package identifiers, publisher identity, and publication permission not confirmed | Public-release P8 handoff |
+| Public identity | Proposed name Termivoa (repository renamed to `intojhanurag/Termivoa`); final name, package identifiers, publisher identity, and publication permission not confirmed | Public-release P8 handoff |
+| Hosted CI | GitHub Actions jobs do not start because of account billing; `main` was merged without hosted CI (2026-09-27) | Native Windows CI, packaging workflow, required checks on later PRs |
 | Public contacts | Owner-approved Code of Conduct and vulnerability-reporting routes not provided | Public-readiness documents |
 | Branch enforcement | Supported and configured on private `main`: required PR, strict named checks, resolved conversations, linear history, admin enforcement, no force push, no deletion | No current blocker. Squash is the only enabled merge method. |
 | Existing GitHub App | `Greptile Review` runs automatically on private PRs; the agent did not install it | Owner confirmed on 2026-09-20 that Greptile is intentionally authorized to review this project. It is not a required branch-protection context and its confidence threshold is configured not to block merging. |
@@ -345,13 +383,13 @@ These questions must be resolved before their dependent gates; they do not block
 | Milestone | Status | Evidence |
 | --- | --- | --- |
 | P0 — Private repository, preflight and scaffold | Complete | PR #5 squash-merged as `6ece2af8ea46fbf5bc7221dfba1b677ca7ea02e8`; final-head CI run `35509425646` passed all ten required checks |
-| P1 — Go terminal core | In progress | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
-| P2 — Frame and input protocol | In progress | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
-| P3 — Persistent broker | In review (PR #23) | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging merged through PR #21; broker-management dispatch merged through PR #22; independent process modes are implemented on `feat/p3-process-modes`; authenticated gateway/live-session IPC remains pending; evidence under `docs/evidence/p3/` |
-| P4 — Authentication and private access | In review (PR #24) | `docs/evidence/p4/`; real phone over cellular and Tailscale Serve pending owner |
-| P5 — Phone experience | In review (PR #25) | `docs/evidence/p5/phone-web.md`; physical iPhone/Android pending owner |
-| P6 — Install and update | In review (PR #26), unsigned | `docs/evidence/p6/`; Windows installer run, real startup registration and signing pending owner |
-| P7 — Reliability and review | In progress | `docs/evidence/p7/` (Mac soak); Windows soak pending |
+| P1 — Go terminal core | Implemented on macOS; native Windows 11 pending | PR #8 merged as `0342a0058e088b4a4970eb23ec2e150aac6f0232`; architecture boundaries approved; native Windows 11 execution remains pending |
+| P2 — Frame and input protocol | Implemented; physical-device evidence pending | Private issue #9; PR #10 merged as `0e7b870c5ad1be1c63c99a080437cd04b8ef16ad`; checkpoint evidence in `docs/evidence/p2/frame-protocol-validation.md`; live broker/gateway connection and physical-device evidence remain pending |
+| P3 — Persistent broker | Merged in #27 (2026-09-27); native Windows pending | Private issue #11; controller/input-ingress and local IPC merged through PR #13; broker-owned runtime and bounded registry merged through PR #15; SQLite persistence merged through PR #16; platform IPC merged through PR #17; viewer delivery merged through PR #18; durable operation receipts merged through PR #19; broker-management RPC merged through PR #20; immutable history paging merged through PR #21; broker-management dispatch merged through PR #22; process modes, live-session IPC and desktop attach landed through PR #23, merged as part of #27; evidence under `docs/evidence/p3/` |
+| P4 — Authentication and private access | Merged in #27 (2026-09-27) | `docs/evidence/p4/`; real phone over cellular and Tailscale Serve pending owner |
+| P5 — Phone experience | Merged in #27; UI v2 in #30 (2026-09-27) | `docs/evidence/p5/phone-web.md`; physical iPhone/Android pending owner |
+| P6 — Install and update | Merged in #27; first run in #28 (2026-09-27); unsigned | `docs/evidence/p6/`; Windows installer run, real startup registration and signing pending owner |
+| P7 — Reliability and review | In progress | `docs/evidence/p7/` (Mac soak, coding agents, terminal fixes); Windows soak, 24-hour soak and stress run pending |
 | P8 — Release preparation | Not started | None |
 
 ## Repository and CI evidence

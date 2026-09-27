@@ -1,18 +1,23 @@
 # Dependency record
 
-This is the P0 resolution record. Exact transitive versions are recorded in
-`go.sum` and `pnpm-lock.yaml`. Inclusion here does not claim compatibility;
-P1/P2 fixtures must establish terminal behavior.
+This started as the P0 resolution record and lists the direct dependencies in
+`go.mod` and `web/package.json` as of 2026-09-27. Exact transitive versions are
+recorded in `go.sum` and `pnpm-lock.yaml`. Terminal behavior is established by
+the fixtures under `docs/evidence/`, not by inclusion here. Local patches are
+described in [dependency-patches.md](dependency-patches.md); release notices are
+tracked in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 ## Runtime Go dependencies
 
 | Module | Version | Purpose | License check |
 | --- | --- | --- | --- |
 | `github.com/coder/websocket` | `v1.8.15` | WebSocket transport | pending notice audit |
-| `github.com/charmbracelet/x/xpty` | `v0.1.4` | PTY/ConPTY integration | pending notice audit |
-| `github.com/charmbracelet/x/vt` | `v0.0.0-20260920004010-53e2afe73ae5` | Authoritative emulator | pending notice audit |
+| `github.com/charmbracelet/x/xpty` | `v0.1.4`, local patch | PTY/ConPTY integration | pending notice audit |
+| `github.com/charmbracelet/x/vt` | `v0.0.0-20260920004010-53e2afe73ae5`, local patch | Authoritative emulator | pending notice audit |
 | `github.com/charmbracelet/ultraviolet` | `v0.0.0-20260303162955-0b88c25f3fff`, local bounded-input patch | Desktop input decoding; see `dependency-patches.md` | upstream MIT text retained; distribution notice audit pending |
-| `github.com/charmbracelet/x/ansi` | `v0.11.7` | ANSI utilities | pending notice audit |
+| `github.com/charmbracelet/x/ansi` | `v0.11.7`, local patch | ANSI utilities | pending notice audit |
+| `github.com/charmbracelet/x/term` | `v0.2.2` | Local terminal state and size for CLI commands | MIT per locked module `LICENSE`; distribution notice audit pending |
+| `golang.org/x/sys` | `v0.47.0` | Platform system calls (Unix and Windows) | BSD-3-Clause per locked module `LICENSE`; distribution notice audit pending |
 | `modernc.org/sqlite` | `v1.59.0` | Local metadata database | pending notice audit |
 | `github.com/Microsoft/go-winio` | `v0.6.2` | Windows named-pipe IPC | pending notice audit |
 | `rsc.io/qr` | `v0.2.0` | Terminal QR code for `pterm pair` (packages `qr`, `qr/coding`, `qr/gf256` only; never the cgo `libqrencode` subpackage) | BSD-3-Clause, checked against the locked module `LICENSE`; distribution notice audit pending |

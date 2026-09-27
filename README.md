@@ -1,119 +1,207 @@
-# Phone Terminal
+# Termivoa
 
-Phone Terminal is a self-hosted phone interface under active development for terminal sessions running on an owner's Mac or Windows computer. The host-side runtime is written in Go, and the phone interface is a bundled React application. Its server-authoritative terminal model is designed to let a phone and desktop attachment observe the same managed session while keeping the shell alive across viewer disconnects.
+Control your computer's terminal sessions — shells and AI coding agents such as
+Claude Code or Codex — from your phone, privately over Tailscale.
 
-> **Private development status:** this repository is private. As of 2026-09-27 the full v0 flow works on a Mac in the development profile: pairing a browser, creating a session, taking control, typing into a real shell, and attaching the same session from a desktop terminal. The authenticated gateway, phone website and unsigned macOS/Windows packaging exist. Real phones, native Windows, Tailscale HTTPS, signing and startup registration on a real login are not yet verified; see [docs/owner-verification.md](docs/owner-verification.md). Nothing here should be treated as a supported release.
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-## Intended v0 experience
+The command-line tool is `pterm`. "Phone Terminal" is the internal working name
+used in the code and packaging; the final public name still needs the owner's
+confirmation (see [docs/release-checklist.md](docs/release-checklist.md)).
 
-The planned v0 supports one owner and one host computer, with multiple sessions started and owned by the Phone Terminal broker. Users can attach from their preferred desktop terminal through `pterm` and from a paired phone browser over private Tailscale HTTPS. Existing arbitrary terminal processes cannot be adopted.
+> **Status:** private development, not released. The full flow is tested on an
+> Apple Silicon Mac. Windows support is written but not yet verified on a real
+> Windows machine. There are no signed builds.
 
-The planned host platforms are Apple Silicon macOS and Windows 11 x64. The planned phone browsers are iPhone Safari/Home Screen mode and Android Chrome. These are targets, not current support claims; the tested matrix will be updated only when evidence exists.
+<p align="center">
+  <img src="docs/images/sessions.png" width="220" alt="Session list with project, shell, last output preview and a new-output dot">
+  <img src="docs/images/live.png" width="220" alt="Live terminal session with session tabs and the agent key row">
+  <img src="docs/images/snippets.png" width="220" alt="Snippets sheet with saved prompts and shell commands">
+  <img src="docs/images/pair.png" width="220" alt="Pairing screen that shows the code to compare on the computer">
+</p>
 
-## Support matrix
+## Features
 
-| Surface | v0 target | Current evidence |
-| --- | --- | --- |
-| Host | Apple Silicon macOS | Automated PTY, terminal, protocol, desktop-foundation, IPC, and live-session runtime tests pass on macOS 26.5.2 |
-| Host | Windows 11 x64 | Cross-build and hosted CI are supplemental; physical native validation remains pending |
-| Phone | iPhone Safari and Home Screen mode | Desktop Chromium at 390×844 against the real stack passes; physical iPhone not executed |
-| Phone | Android Chrome | Not executed on a physical device |
-| Shell | zsh | zsh 5.9 editing, paste, Ctrl+C/Ctrl+D, less and Vim pass in isolated Mac fixtures; owner login configuration not tested |
-| Shell | Windows PowerShell and available PowerShell 7 | Not tested |
-| Optional profile | WSL bash when already installed | Not tested; never substitutes for native Windows coverage |
+- **Many live sessions.** Start shells or coding agents on your computer and
+  switch between them with tabs. A dot shows new output.
+- **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
+  for coding-agent prompts, plus a key bar with Esc, Tab, Ctrl, Alt and arrows.
+- **Snippets.** Save prompts and commands you send often; send them with or
+  without Enter.
+- **Launch presets and "run first".** Save a project + shell + first command
+  and start it in one tap.
+- **Composer.** Write long or multi-line text before you send it.
+- **History and copy.** Scroll back through bounded history and copy text.
+- **Desktop attach.** `pterm attach` opens the same session from any desktop
+  terminal. Read-only by default; `--control` to type; Ctrl+] detaches.
+- **Sessions survive the phone.** Close the app or lose signal; the session
+  keeps running on the computer. Input is never queued or resent on its own.
+- **Pairing you can check.** Scan a QR code, compare a short code on both
+  screens, approve on the computer. Revoke a phone at any time.
+- **Private by design.** Loopback-only server, reachable only through your own
+  Tailscale network. No cloud service, no account, no telemetry.
 
-Linux may run generic CI and development checks, but it is not a claimed v0 host platform.
+## Quick start
 
-## Architecture
-
-One Go executable uses separate broker, gateway, and CLI/desktop-attach process boundaries:
-
-- The broker owns PTYs, authoritative virtual-terminal state, authentication, controller leases, and SQLite.
-- The gateway serves the embedded website and the authenticated HTTP/WebSocket API. It forwards every request to the broker over restricted IPC with the browser credential; it never owns or spawns PTYs.
-- Clients receive normalized screen snapshots and row patches, not the child's ANSI byte stream, and send structured input rather than arbitrary bytes.
-- Production browser access binds to loopback and is exposed only through explicitly authorized Tailscale Serve configuration.
-
-See [docs/architecture.md](docs/architecture.md), the versioned decision records in [docs/decisions](docs/decisions), and the authoritative implementation plan in [docs/implementation-plan.md](docs/implementation-plan.md).
-
-## Repository layout
-
-The repository contains `cmd/pterm`, the `internal/*` runtime ownership boundaries, `web`, `protocol/v1`, `tests`, `packaging`, and milestone evidence under `docs/evidence`. Implemented packages remain internal while their milestone contracts are completed.
-
-## Development prerequisites
-
-The locked baseline is Go 1.27.1, Node.js 24.11.0, and pnpm 10.33.0. Direct dependencies and complete lockfiles are pinned in the repository. Node.js and pnpm are development tools only; released companions will embed the web assets and will not require a Node runtime.
-
-Contributors use:
-
-```sh
-./scripts/check
-```
-
-On Windows:
-
-```powershell
-./scripts/check.ps1
-```
-
-The check scripts cover generation drift, Go formatting/vet/tests, TypeScript checking, web unit tests, and the production web build. Platform integration suites and physical-phone tests remain separate explicit gates; a Linux or browser-emulation pass will not imply macOS, Windows, iPhone, or Android validation.
-
-### Use it
-
-New users: follow [docs/getting-started.md](docs/getting-started.md) (install → `pterm setup` → scan the QR code).
-
-### Try it locally (development profile)
-
-This uses isolated temporary directories. It changes no startup, Tailscale or
-production state.
+No release is published yet, so build from source first. You need Go 1.27.1,
+Node.js 24.11.0 and pnpm 10.33.0 (build tools only; the host does not need Node).
 
 ```sh
+git clone https://github.com/intojhanurag/Termivoa.git
+cd Termivoa
 pnpm install --frozen-lockfile
 pnpm build:web && ./scripts/embed-web.sh
 go build -tags webdist -o bin/pterm ./cmd/pterm
-mkdir -p /tmp/pt/data /tmp/pt/run && chmod 700 /tmp/pt/data /tmp/pt/run
-./bin/pterm up --dev --data-dir /tmp/pt/data --runtime-dir /tmp/pt/run
 ```
 
-In a second terminal (flags go after the command words, before IDs or paths):
+`pterm setup` registers the binary at its current path to start at login, so
+keep it at a stable path (or build the app with
+`./packaging/macos/build-app.sh` and move it to Applications).
+
+Then the three steps from [docs/getting-started.md](docs/getting-started.md):
+
+1. Install [Tailscale](https://tailscale.com/download) on the computer and the
+   phone, signed in to the same account.
+2. Run `pterm setup`. It checks the host, shows what it will do, and asks once.
+   It asks separately before it runs `tailscale serve`. It never uses Funnel.
+3. Scan the QR code with the phone. If the phone shows the same code as the
+   computer, answer `y`.
+
+To try it without touching startup or Tailscale settings, use the isolated
+development profile in [docs/install.md](docs/install.md#development-harness)
+(`pterm up --dev`).
+
+## How it works
+
+```mermaid
+flowchart LR
+  phone["Phone browser"] <-->|"private HTTPS"| serve["Tailscale Serve"]
+  serve <--> gateway["gateway<br/>127.0.0.1:8787"]
+  gateway <-->|"local IPC"| broker["broker<br/>PTYs · terminal state · SQLite"]
+  desktop["Desktop terminal<br/>pterm attach"] <-->|"local IPC"| broker
+```
+
+One Go executable runs as two per-user processes. The **broker** owns every
+PTY, the terminal emulator state, authentication and the SQLite database. The
+**gateway** serves the embedded web app and API on loopback and forwards each
+request to the broker; it never starts a shell. The broker sends clients
+server-authoritative screen frames (snapshots and row patches), not the raw
+terminal byte stream, and clients send structured input (text, keys, paste)
+that goes through one writer per session. Only one device controls a session at
+a time. Details: [docs/architecture.md](docs/architecture.md).
+
+## Security model
+
+- The gateway listens on `127.0.0.1` only. Phones reach it through Tailscale
+  Serve (private HTTPS inside your tailnet). Tailscale Funnel and public tunnels
+  are not supported.
+- A new phone needs a single-use, two-minute pairing link and your approval on
+  the computer after you compare its code.
+- Paired phones use a `__Host-`, `HttpOnly`, `SameSite=Strict` session cookie.
+  `pterm revoke <device-id>` ends a phone's access at once.
+- Clients never receive raw terminal bytes and cannot send arbitrary bytes.
+- Terminal content is not stored on disk. No telemetry.
+
+A session runs with your user's permissions; projects are not sandboxes. Read
+the [threat model](docs/threat-model.md) and [SECURITY.md](SECURITY.md).
+
+## Platform support
+
+| Surface | Target | Status |
+| --- | --- | --- |
+| Host | macOS on Apple Silicon | Tested (automated suites and a real end-to-end run, macOS 26.5) |
+| Host | Windows 11 x64 | Written; cross-compiled only, not run natively yet |
+| Host | Linux | Development and CI checks only; not a supported host |
+| Phone | iPhone Safari and Home Screen app | Tested in desktop Chromium at 390×844; real iPhone pending |
+| Phone | Android Chrome | Real device pending |
+| Shell | zsh | Tested in isolated fixtures |
+| Shell | Windows PowerShell / PowerShell 7 | Not tested |
+| Shell | WSL bash (if installed) | Not tested |
+| Network | Tailscale Serve HTTPS | Real tailnet run pending |
+| Packaging | macOS DMG, Windows installer | Unsigned builds only |
+
+The full list of what still needs real hardware is in
+[docs/owner-verification.md](docs/owner-verification.md).
+
+## CLI reference
+
+| Command | What it does |
+| --- | --- |
+| `pterm setup` | First run: checks, one confirmation, startup, phone address, Tailscale Serve (asks), pairing. |
+| `pterm doctor` | Read-only diagnostics. Never prints secrets. |
+| `pterm pair` | Print a pairing link and QR code, then approve the phone after you compare codes. |
+| `pterm pair pending` / `pair approve <id>` | Approve a phone later (with `pair --no-wait`). |
+| `pterm devices` | List paired phones. `devices rename <id> <label>` renames one. |
+| `pterm revoke <device-id>` | Remove a phone's access at once. |
+| `pterm project add [--name <n>] <path>` / `project list` | Save or list project folders. |
+| `pterm list` | List sessions and their state. |
+| `pterm attach [--control] <session-id>` | Open a session in this terminal. Ctrl+] detaches. |
+| `pterm new --project <id> --shell <id>` | Start a session and take control. |
+| `pterm terminate <session-id>` | End one session (asks first). |
+| `pterm stop` | Stop the gateway only; sessions keep running. |
+| `pterm shutdown` | End all sessions and stop the broker and gateway (asks first). |
+| `pterm uninstall [--dry-run] [--delete-data]` | Remove startup registration; data only with `--delete-data`. |
+
+Also: `pterm launch`, `pterm config origin`, `pterm profile list|detect` and the
+development harness `pterm up --dev`. Run `pterm help` for all flags.
+
+## Development
+
+Prerequisites: Go 1.27.1, Node.js 24.11.0 (`.nvmrc`) and pnpm 10.33.0 (via
+Corepack).
 
 ```sh
-./bin/pterm project add --dev --runtime-dir /tmp/pt/run --name demo <project-dir>
-./bin/pterm config origin --dev --runtime-dir /tmp/pt/run http://127.0.0.1:8788
-./bin/pterm pair --dev --runtime-dir /tmp/pt/run
-./bin/pterm pair pending --dev --runtime-dir /tmp/pt/run
-./bin/pterm pair approve --dev --runtime-dir /tmp/pt/run <pending-id>
-./bin/pterm list --dev --runtime-dir /tmp/pt/run
-./bin/pterm attach --dev --runtime-dir /tmp/pt/run <session-id>
+pnpm install --frozen-lockfile
+./scripts/check        # Windows: ./scripts/check.ps1
 ```
 
-Open the pairing link in a browser, compare the code, approve it, start a
-session, and press **Take control**. `pterm attach` starts read-only; `--control`
-takes control explicitly. Ctrl+] detaches without ending the session.
+`./scripts/check` runs protocol generation drift, Go format/vet/tests, the
+patched `third_party` modules, TypeScript checks, web unit tests and the
+production web build.
 
-Installed use (`pterm setup`, Tailscale Serve, startup registration) is described
-in [docs/install.md](docs/install.md).
+| Path | Contents |
+| --- | --- |
+| `cmd/pterm` | CLI entry point and process modes |
+| `internal/` | broker, PTY host, terminal, IPC, gateway, auth, store, lifecycle |
+| `web/` | React + TypeScript phone app |
+| `protocol/v1` | JSON Schemas; Go and TypeScript types are generated from them |
+| `tests/` | fixtures, integration and soak tests |
+| `packaging/` | macOS app/DMG and Windows installer scripts |
+| `third_party/` | patched upstream Go modules ([notes](docs/dependency-patches.md)) |
+| `docs/` | architecture, decisions, evidence, release material |
 
-## Security and privacy
+## Documentation
 
-Phone Terminal will handle terminal control, so terminal output, input, tokens, and pairing data are sensitive. Never include credentials, raw personal terminal transcripts, signing material, runtime databases, or private test data in issues, pull requests, fixtures, screenshots, or logs. See [SECURITY.md](SECURITY.md) for the current private-development reporting process.
+- [Getting started](docs/getting-started.md) — the three-step first run
+- [Install, update and uninstall](docs/install.md)
+- [Architecture](docs/architecture.md) and [decision records](docs/decisions/)
+- [Threat model](docs/threat-model.md) and [authentication design](docs/p4-authentication-design.md)
+- [Progress log](docs/progress.md) and [milestone evidence](docs/evidence/README.md)
+- [Owner verification checklist](docs/owner-verification.md)
+- [Release checklist](docs/release-checklist.md)
+- [Dependencies](docs/dependencies.md) and [dependency patches](docs/dependency-patches.md)
+- [Implementation plan](docs/implementation-plan.md) (the original specification)
 
-## Current limitations
+## Roadmap and known limits
 
-- Physical iPhone/Android, native Windows 11, real Tailscale Serve HTTPS, startup registration on a real login, signing and notarization have not passed their gates. The checklist is [docs/owner-verification.md](docs/owner-verification.md).
-- Tailscale is not configured by this repository, and no public tunnel is supported.
-- A live session requires the host to stay awake, logged in, and running the broker. Host reboot, logout, or broker failure does not preserve a live process. Recovery marks old live sessions lost; it never restarts their commands.
-- Signing identities, owner-approved public contacts, final branding, and publication authorization have not been established.
-
-Progress and blockers are tracked in [docs/progress.md](docs/progress.md).
-
-## Screenshots
-
-No screenshots are committed yet. Future screenshots must use synthetic data and identify the tested build; private terminal content must never be captured for documentation.
+- Real iPhone and Android runs, native Windows 11, real Tailscale Serve HTTPS
+  and startup after a real login are still pending
+  ([docs/owner-verification.md](docs/owner-verification.md)).
+- Signed and notarized builds need the owner's signing identities.
+- A live session needs the computer awake, logged in and running the broker.
+  Reboot, logout or a broker crash ends live sessions; they are marked lost and
+  never restarted.
+- Existing terminal processes cannot be adopted; only sessions started by the
+  broker can be shared.
+- No automatic updater. Open defects and risks are tracked in
+  [docs/progress.md](docs/progress.md).
 
 ## Contributing
 
-Development is currently private. See [CONTRIBUTING.md](CONTRIBUTING.md) for the expected workflow and validation standards. Contributions are licensed under Apache-2.0 unless explicitly stated otherwise.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please read the
+[Code of Conduct](CODE_OF_CONDUCT.md). Never put credentials, pairing links or
+real terminal history in issues, pull requests or screenshots.
 
 ## License
 
-Original project code is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[Apache-2.0](LICENSE). Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

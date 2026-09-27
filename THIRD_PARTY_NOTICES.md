@@ -1,10 +1,10 @@
 # Third-party notices
 
-This file is a preparatory dependency inventory for private development. Direct and transitive versions are locked, but no distribution artifact exists yet and the full notice audit is pending. Before a release candidate is assembled, generate an SBOM from the locked dependency manifests, inspect transitive dependencies, preserve required upstream `LICENSE` and `NOTICE` material, and replace this preparatory list with the exact shipped inventory.
+This file is a preparatory dependency inventory for private development. Direct and transitive versions are locked. Unsigned development artifacts can be built with the scripts under `packaging/`, but no release artifact has been distributed and the full notice audit is pending. Before a release candidate is assembled, generate an SBOM from the locked dependency manifests, inspect transitive dependencies, preserve required upstream `LICENSE` and `NOTICE` material, and replace this preparatory list with the exact shipped inventory.
 
-## Planned direct runtime dependencies
+## Direct dependencies (runtime and build)
 
-| Component | Planned baseline | Upstream license to verify against locked source |
+| Component | Locked version | Upstream license to verify against locked source |
 | --- | --- | --- |
 | `github.com/coder/websocket` | v1.8.15 | ISC |
 | `github.com/charmbracelet/x/xpty` | v0.1.4 plus repository patch; see `docs/dependency-patches.md` | MIT |
@@ -13,8 +13,10 @@ This file is a preparatory dependency inventory for private development. Direct 
 | `github.com/charmbracelet/x/ansi` | v0.11.7 plus repository patch; see `docs/dependency-patches.md` | MIT |
 | `modernc.org/sqlite` | v1.59.0 | BSD-3-Clause; locked source also carries SQLite's public-domain dedication and the bundled sqlite-vec MIT notice |
 | `github.com/Microsoft/go-winio` | v0.6.2 | MIT |
+| `github.com/charmbracelet/x/term` | v0.2.2 | MIT |
+| `golang.org/x/sys` | v0.47.0 | BSD-3-Clause |
 | `rsc.io/qr` | v0.2.0 | BSD-3-Clause (Copyright 2009 The Go Authors) |
-| React | 19.3.0 | MIT |
+| React and React DOM | 19.3.0 | MIT |
 | Vite | 8.3.0 | MIT |
 | `@xterm/xterm` | 6.0.0 | MIT |
 | `@xterm/addon-webgl` | 0.19.0 | MIT |

@@ -101,7 +101,7 @@ func errorCode(t *testing.T, response *httptest.ResponseRecorder) protocol.Error
 }
 
 var (
-	redeemBody = `{"grant":"` + strings.Repeat("g", 42) + `-","deviceLabel":"Anurag's phone"}`
+	redeemBody = `{"grant":"` + strings.Repeat("g", 42) + `-","deviceLabel":"Ada's phone"}`
 	pollBody   = `{"pendingId":"` + uuidA + `","pollSecret":"` + strings.Repeat("s", 42) + `_"}`
 )
 

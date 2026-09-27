@@ -129,7 +129,7 @@ PASS
 GOTOOLCHAIN=go1.27.1 go test -race ./internal/broker -run 'TestDetachedViewerHandleCannotMutateReplacementWithReusedConnectionID|TestCurrentViewerCanExplicitlyTakeControl|TestManagedSessionRuntime/(structured_input|viewer_close|only_current)' -count=50
 PASS
 
-PATH=/Users/anuragojha/.nvm/versions/node/v24.11.0/bin:$PATH ./scripts/check
+PATH=$HOME/.nvm/versions/node/v24.11.0/bin:$PATH ./scripts/check
 PASS: protocol generation drift, Go format/vet/tests, patched dependency tests,
 TypeScript typecheck, 32 web tests, and production Vite build
 

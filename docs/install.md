@@ -2,7 +2,11 @@
 
 > Status: private development. Only **unsigned** artifacts exist. Signed and
 > notarized releases need the owner's Apple Developer ID and Windows
-> code-signing identity. Nothing below has passed the release gate yet.
+> code-signing identity. Nothing below has passed the release gate yet. No
+> release is published: build from source ([README quick start](../README.md#quick-start))
+> or build the artifacts with [`packaging/macos`](../packaging/macos/README.md)
+> and [`packaging/windows`](../packaging/windows/README.md). The short version
+> of this guide is [getting-started.md](getting-started.md).
 
 Phone Terminal runs two per-user processes from one `pterm` executable:
 
@@ -265,5 +269,32 @@ pterm up --dev                   # broker + gateway, isolated development profil
 
 It starts the broker and gateway as two child processes in separate process
 groups, prints the loopback URL (default `http://127.0.0.1:8788/`) and the
-matching `pterm pair --dev ...` command, and stops both on Ctrl+C. Killing the gateway does not stop the broker. `--data-dir`,
-`--runtime-dir` and `--listen` select other development locations.
+matching `pterm pair --dev ...` command, and stops both on Ctrl+C. Killing the
+gateway does not stop the broker. `--data-dir`, `--runtime-dir` and `--listen`
+select other development locations. It changes no startup, Tailscale or
+production state.
+
+A full local run from a source checkout, with isolated temporary directories:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:web && ./scripts/embed-web.sh
+go build -tags webdist -o bin/pterm ./cmd/pterm
+mkdir -p /tmp/pt/data /tmp/pt/run && chmod 700 /tmp/pt/data /tmp/pt/run
+./bin/pterm up --dev --data-dir /tmp/pt/data --runtime-dir /tmp/pt/run
+```
+
+In a second terminal:
+
+```sh
+./bin/pterm project add --dev --runtime-dir /tmp/pt/run --name demo <project-dir>
+./bin/pterm config origin --dev --runtime-dir /tmp/pt/run http://127.0.0.1:8788
+./bin/pterm pair --dev --runtime-dir /tmp/pt/run
+./bin/pterm list --dev --runtime-dir /tmp/pt/run
+./bin/pterm attach --dev --runtime-dir /tmp/pt/run <session-id>
+```
+
+Open the pairing link in a browser, compare the code and answer `y` (or use
+`pterm pair pending` and `pterm pair approve <pending-id>` with `--no-wait`).
+Start a session and tap **Take control**. `pterm attach` starts read-only;
+`--control` takes control. Ctrl+] detaches without ending the session.

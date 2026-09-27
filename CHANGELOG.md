@@ -1,33 +1,81 @@
 # Changelog
 
-All notable changes will be documented here. The project intends to follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and Semantic Versioning once releases begin.
+All notable changes are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project will
+use [Semantic Versioning](https://semver.org/) once releases begin.
 
 ## [Unreleased]
 
+No version has been released. Development history and evidence are in
+[docs/progress.md](docs/progress.md) and [docs/evidence/](docs/evidence/README.md).
+
 ### Added
 
-- Private repository policy and open-source preparation documents.
-- Initial architecture and locked-decision records.
-- Milestone progress and release-readiness checklists.
-- Authoritative Go terminal core, normalized frame protocol, and display-only
-  browser/desktop client foundations.
-- Broker controller leases, bounded structured-input ingress, and bounded local
-  IPC handshake framing.
-- Broker-owned live PTY session runtime with viewer-independent query replies,
-  structured input, final-screen retention, and ordered lifecycle shutdown.
-- Broker-local session registry with random process generations, create-operation
-  deduplication, bounded live/retired resources, and coordinated shutdown.
-- Broker-owned SQLite migrations and validated project, shell-profile, and
-  session metadata, including restart recovery that marks prior live sessions
-  lost without replaying commands.
-- Canonical bounded local broker-management RPC for session list, create,
-  rename, terminate, and status, with mutation operation IDs and stable errors.
+#### Sessions
 
-### Not yet implemented
+- Broker-owned PTY sessions that keep running while phones and desktop
+  terminals connect and disconnect.
+- Several sessions at once, each started from a saved project and shell profile.
+- Server-authoritative terminal state: clients receive screen snapshots and row
+  patches, and send structured input through one writer per session.
+- One controller per session, with explicit **Take control** and release.
+- Bounded, paged scrollback history.
+- Session metadata in SQLite; after a broker restart, old live sessions are
+  marked lost and their commands are never re-run.
 
-- Durable mutation receipts, authentication/settings persistence, platform IPC
-  listeners, and separate gateway process.
-- Connected desktop attachment and complete phone interface.
-- Pairing, private network setup, installers, signing, and release artifacts.
+#### Pairing and devices
 
-No version has been released.
+- `pterm pair` with a single-use, two-minute link and QR code; the owner
+  approves after comparing the code shown on the phone.
+- `pterm devices`, `pterm devices rename` and `pterm revoke` (takes effect at
+  once, including on open connections).
+
+#### Phone UI
+
+- Phone web app (with a manifest for Home Screen use) served by the gateway
+  from embedded assets.
+- Session list with project, shell, last-output preview and a new-output dot.
+- Session tabs, a key bar (Esc, Tab, Ctrl, Alt, arrows), composer for long or
+  multi-line text, history with copy, and settings.
+
+#### Agent keys, snippets and presets
+
+- Agent keys: one-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter for
+  coding-agent prompts.
+- Snippets: saved prompts and commands, sent with or without Enter.
+- Launch presets with an optional **run first** command, typed once when the
+  session opens and only if no one else has control.
+
+#### Desktop attach
+
+- `pterm attach` opens a session in any desktop terminal, read-only by default;
+  `--control` takes control and Ctrl+] detaches without ending the session.
+- `pterm list`, `pterm new`, `pterm terminate`, `pterm project` and
+  `pterm profile` management commands.
+
+#### Setup and packaging
+
+- `pterm setup`: read-only checks, one confirmation, per-user startup
+  registration (LaunchAgents on macOS, Scheduled Tasks on Windows), Tailscale
+  phone address, an opt-in `tailscale serve` step, and pairing.
+- `pterm doctor`, `pterm launch`, `pterm stop`, `pterm shutdown` and
+  `pterm uninstall`.
+- Unsigned macOS app and DMG build scripts and a Windows per-user installer
+  script, with separate owner-only signing scripts.
+
+### Security
+
+- Gateway bound to loopback; phone access only through private Tailscale Serve
+  HTTPS. Funnel is never enabled and is reported by `pterm doctor`.
+- `__Host-`, `HttpOnly`, `SameSite=Strict` session cookies, strict Origin and
+  Host checks, and a content security policy.
+- Bounds on message sizes, paste, history, queues and viewers.
+- Fixes from adversarial reviews before the v0 merge, including overlapping
+  polls, duplicate snippet IDs, hidden SGR-8 text in previews and an
+  unannounced pairing code for screen readers.
+
+### Known limits
+
+- Real iPhone, Android, native Windows 11, real Tailscale Serve HTTPS and
+  signing are not yet verified; see
+  [docs/owner-verification.md](docs/owner-verification.md).

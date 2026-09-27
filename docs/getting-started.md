@@ -12,16 +12,21 @@ You need:
 
 ## 1. Install
 
-Download the DMG, open it, and drag **Phone Terminal.app** to
-**Applications**. To use `pterm` in a terminal:
+No release is published yet. Build `pterm` from source as shown in the
+[README quick start](../README.md#quick-start), or build the unsigned app and
+DMG with [`packaging/macos`](../packaging/macos/README.md).
+
+With the DMG, open it and drag **Phone Terminal.app** to **Applications**. To
+use `pterm` in a terminal:
 
 ```sh
 mkdir -p ~/.local/bin
 ln -s "/Applications/Phone Terminal.app/Contents/MacOS/pterm" ~/.local/bin/pterm
 ```
 
-Builds are not signed yet, so macOS may block the first launch. Build from
-source instead if you prefer (see the README).
+Builds are not signed yet, so macOS may block the first launch. Windows 11
+steps are in [install.md](install.md#windows-11-x64); they are not yet verified
+on a real Windows machine.
 
 ## 2. Run setup
 
@@ -51,10 +56,16 @@ app.
 
 ## Use it
 
-- **Start a shell:** pick a project and a shell, then tap **Start session**.
-- **Type:** tap **Take control**. The key bar has Esc, Tab, Ctrl, Alt and
-  arrows. Use **Compose** for long text or multi-line prompts.
-- **Scroll back:** tap **History**. Select text and copy it.
+- **Start a shell:** tap **New session**, pick a project and a shell, then tap
+  **start session**. Fill in **run first** (for example `claude`) to type one
+  command when the session opens; **save as preset** keeps it under **Launch**
+  for one-tap starts.
+- **Switch sessions:** use the tabs at the top. A dot marks new output.
+- **Type:** tap **Take control**. The agent keys (esc, ⌃C, ⇧⇥, ↑, 1, 2, y, ⏎)
+  answer coding-agent prompts in one tap. The key bar has Esc, Tab, Ctrl, Alt
+  and arrows. Use **compose** for long text or multi-line prompts, and
+  **snips** for saved snippets.
+- **Scroll back:** tap **history**. Select text and copy it.
 - **Leave:** close the app. The session keeps running. When you come back you
   see the current screen; tap **Take control** to type again.
 - **Same session on the Mac:** `pterm list`, then `pterm attach <session-id>`.
