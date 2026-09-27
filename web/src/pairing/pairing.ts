@@ -32,6 +32,43 @@ export function takeGrantFromFragment(location: LocationLike, history: HistoryLi
   return GRANT.test(grant) ? grant : undefined;
 }
 
+/** In-memory holder for a pairing grant that has not been redeemed yet. */
+export interface GrantSlot {
+  value: string | undefined;
+}
+
+/**
+ * Takes a grant from a pairing link opened in the tab that already runs the
+ * app. Only the fragment changes then, so the page does not reload and the
+ * startup read never sees it. Returns true when a new grant was taken.
+ */
+export function adoptFragmentGrant(slot: GrantSlot, location: LocationLike, history: HistoryLike): boolean {
+  const grant = takeGrantFromFragment(location, history);
+  if (grant === undefined) {
+    return false;
+  }
+  slot.value = grant;
+  return true;
+}
+
+/**
+ * Hands out the grant once, only when pairing can start. An invalid device
+ * name keeps the grant so the user can fix the name and try again.
+ */
+export function claimGrant(
+  slot: GrantSlot, labelValid: boolean,
+): { readonly secret: string } | { readonly problem: 'label' | 'missing' } {
+  if (!labelValid) {
+    return { problem: 'label' };
+  }
+  const secret = slot.value;
+  if (secret === undefined) {
+    return { problem: 'missing' };
+  }
+  slot.value = undefined;
+  return { secret };
+}
+
 export interface PendingPairing {
   readonly pendingId: string;
   readonly verificationCode: string;

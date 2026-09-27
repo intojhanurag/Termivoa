@@ -3,6 +3,7 @@ import { api, ApiError, CONNECTION_UNAVAILABLE, isAuthFailure } from '../api/htt
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { ChunkErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useSessionList, useVisualViewport } from './hooks';
+import { adoptFragmentGrant, type GrantSlot } from '../pairing/pairing';
 import { NewSession } from './NewSession';
 import type { RunFirstRequest } from './presets';
 import { Sessions } from './Sessions';
@@ -14,9 +15,7 @@ import { Setup } from './Setup';
 const loadLive = () => loadChunk(() => import('./Live'));
 const Live = lazy(() => loadLive().then((module) => ({ default: module.Live })));
 
-export interface GrantHolder {
-  value: string | undefined;
-}
+export type GrantHolder = GrantSlot;
 
 type View =
   | { readonly name: 'boot' }
@@ -127,12 +126,34 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     await route();
   }, [grant, route, toSetup]);
 
+  // A new pairing link opened in this same tab only changes the fragment, so
+  // the page does not reload. Browsers fire popstate and then hashchange for
+  // it; whichever runs first takes the grant and shows pairing.
+  const [grantEpoch, setGrantEpoch] = useState(0);
+  const adoptLinkGrant = useCallback(() => {
+    if (!adoptFragmentGrant(grant, window.location, window.history)) {
+      return false;
+    }
+    setGrantEpoch((epoch) => epoch + 1);
+    setView({ name: 'setup' });
+    return true;
+  }, [grant]);
+
   useEffect(() => {
     void boot();
-    const onPop = () => { void route(); };
+    const onPop = () => {
+      if (!adoptLinkGrant()) {
+        void route();
+      }
+    };
+    const onHashChange = () => { adoptLinkGrant(); };
     window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, [boot, route]);
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.removeEventListener('hashchange', onHashChange);
+    };
+  }, [adoptLinkGrant, boot, route]);
 
   // Fetch the terminal code in the background once the session list is up,
   // so opening a session goes straight to the live terminal.
@@ -194,6 +215,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       )}
       {view.name === 'setup' && (
         <Setup
+          key={grantEpoch}
           grant={grant}
           {...(view.reason === undefined ? {} : { reason: view.reason })}
           onPaired={() => {
