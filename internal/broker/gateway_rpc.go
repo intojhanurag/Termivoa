@@ -276,6 +276,23 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 			return nil, nil, errPushUnavailable
 		}
 		return protocol.BrokerRPCEmptyPayload{}, nil, server.config.Push.Unsubscribe(ctx, principal.DeviceID, payload.Request.Endpoint)
+	case protocol.GatewayPreviewCheck:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCPreviewCheckPayload](request)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, err := authorize(payload.Credential); err != nil {
+			return nil, nil, err
+		}
+		session, err := server.config.Registry.Get(payload.SessionID)
+		if err != nil {
+			return nil, nil, err
+		}
+		host, err := session.PreviewTarget(ctx, uint16(payload.Port))
+		if err != nil {
+			return nil, nil, err
+		}
+		return protocol.GatewayRPCPreviewTargetPayload{Host: protocol.PreviewHost(host)}, nil, nil
 	case protocol.GatewayLiveOpen:
 		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCCredentialPayload](request)
 		if err != nil {

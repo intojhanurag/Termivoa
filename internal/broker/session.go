@@ -11,6 +11,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/intojhanurag/phone-terminal/internal/agentstate"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
@@ -174,8 +175,14 @@ type Session struct {
 	agentDropped   bool
 	agentRepublish bool
 	notify         func(webpush.Event)
-	notifiedID     string              // Last question a waiting notification was sent for.
-	termination    *sessionTermination // Actor-owned; one bounded attempt per session.
+	notifiedID     string // Last question a waiting notification was sent for.
+	// Dev-server preview ports (devpreview.go). previews and
+	// previewRepublish are actor-owned; the scanner is shared with gateway checks.
+	previewScanner   *previewScanner
+	previewResults   chan previewScanResult
+	previews         []previewPort
+	previewRepublish bool
+	termination      *sessionTermination // Actor-owned; one bounded attempt per session.
 }
 
 type sessionTermination struct {
@@ -344,6 +351,8 @@ func startSessionRuntime(
 		viewers:             make(map[string]*viewerActorState),
 		agent:               agentstate.NewTracker(config.Generation),
 		notify:              config.Notify,
+		previewScanner:      newPreviewScanner(process),
+		previewResults:      make(chan previewScanResult, 1),
 	}
 
 	session.pumpWG.Add(3)
@@ -483,6 +492,7 @@ type SessionPresence struct {
 	LastOutput       time.Time
 	Preview          string
 	Agent            agentstate.Status
+	Previews         []protocol.PreviewPort
 }
 
 // Presence reads presence in one actor call. With preview, the actor also
@@ -632,6 +642,22 @@ func (session *Session) run(columns, rows int) {
 		agentTimer.Reset(max(time.Until(at), 0))
 		agentDeadline, agentAt = agentTimer.C, at
 	}
+	// Preview scans follow the agent pattern: one pending timer, earliest
+	// wins, and at most one OS scan in flight off the actor.
+	var previewTimer *time.Timer
+	var previewDeadline <-chan time.Time
+	var previewAt, previewLastScan time.Time
+	var previewScanning bool
+	armPreview := func(at time.Time) {
+		if session.previewScanner == nil || previewDeadline != nil && !at.Before(previewAt) {
+			return
+		}
+		if previewTimer != nil {
+			previewTimer.Stop()
+		}
+		previewTimer = time.NewTimer(max(time.Until(at), 0))
+		previewDeadline, previewAt = previewTimer.C, at
+	}
 	refreshControllerTimer := func() {
 		// Use the same state capture that published observer notices. A second
 		// State call could expire the lease between publication and timer setup,
@@ -730,6 +756,9 @@ func (session *Session) run(columns, rows int) {
 			controllerTimer.Stop()
 		}
 		agentTimer.Stop()
+		if previewTimer != nil {
+			previewTimer.Stop()
+		}
 		for connectionID := range session.viewers {
 			session.detachViewer(connectionID, ErrSessionClosed)
 		}
@@ -869,6 +898,7 @@ func (session *Session) run(columns, rows int) {
 					session.lastOutput = time.Now()
 					schedulePublish()
 					armAgent(session.lastOutput.Add(agentScanInterval))
+					armPreview(later(session.lastOutput.Add(previewScanDelay), previewLastScan.Add(previewScanEvery)))
 				}
 			}
 			if event.err != nil {
@@ -963,6 +993,31 @@ func (session *Session) run(columns, rows int) {
 			agentDeadline = nil
 			if status.State == SessionRunning && !shuttingDown {
 				armAgent(session.observeAgent(status.StartedAt))
+			}
+		case <-previewDeadline:
+			previewDeadline = nil
+			if status.State == SessionRunning && !shuttingDown && !previewScanning {
+				previewScanning = true
+				go func() {
+					ports, err := session.previewScanner.scan(session.ctx, 0)
+					session.previewResults <- previewScanResult{ports: ports, err: err}
+				}()
+			}
+		case result := <-session.previewResults:
+			previewScanning, previewLastScan = false, time.Now()
+			if status.State != SessionRunning || shuttingDown {
+				break
+			}
+			if result.err == nil {
+				var changed bool
+				session.previews, changed = mergePreviews(session.previews, result.ports, previewLastScan)
+				session.previewRepublish = session.previewRepublish || changed
+			}
+			switch {
+			case time.Since(session.lastOutput) < previewActiveFor:
+				armPreview(previewLastScan.Add(previewScanEvery))
+			case len(session.previews) > 0:
+				armPreview(previewLastScan.Add(previewIdleEvery))
 			}
 		}
 	}
@@ -1075,6 +1130,9 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		response.presence = SessionPresence{
 			ControllerDevice: session.controller.State().DeviceID, Viewers: len(session.viewers),
 			LastOutput: session.lastOutput, Agent: session.agent.Status(),
+		}
+		if status.State == SessionRunning {
+			response.presence.Previews = previewPayload(session.previews)
 		}
 		if request.preview {
 			response.frame, response.err = session.terminal.ScreenSnapshot(session.ctx)

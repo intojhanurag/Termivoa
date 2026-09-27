@@ -311,6 +311,8 @@ func classifySessionError(err error) managementFailure {
 		return managementFailure{protocol.NotController, "take control before sending input"}
 	case errors.Is(err, ErrStaleLease):
 		return managementFailure{protocol.StaleLease, "controller lease is no longer valid"}
+	case errors.Is(err, ErrPreviewPort):
+		return managementFailure{protocol.PreviewMissing, "no dev server of this session listens on that port"}
 	case errors.Is(err, ErrQuestionChanged):
 		return managementFailure{protocol.QuestionChanged, "the question on screen changed; check it and answer again"}
 	case errors.Is(err, errAnswerOption):

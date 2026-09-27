@@ -85,6 +85,7 @@ func (session *Session) queueStateNotice(viewer *viewerActorState, state Session
 	}
 	if state.State == SessionRunning {
 		payload.Agent = agentPayload(session.publishedAgent)
+		payload.Previews = previewPayload(session.previews)
 	}
 	return session.queueViewerNotice(viewer, protocol.SessionState, payload, "")
 }
@@ -131,13 +132,13 @@ func (session *Session) publishViewerEvents(status SessionStatus) {
 
 func (session *Session) publishSessionState(status SessionStatus) {
 	previous, agent := session.publishedStatus, session.agent.Status()
-	if !session.agentRepublish && previous.State == status.State && sameExitCode(previous.ExitCode, status.ExitCode) &&
+	if !session.agentRepublish && !session.previewRepublish && previous.State == status.State && sameExitCode(previous.ExitCode, status.ExitCode) &&
 		(status.State != SessionRunning || agent.State == session.publishedAgent.State &&
 			agent.QuestionID == session.publishedAgent.QuestionID) {
 		return
 	}
 	session.publishedStatus = cloneSessionStatus(status)
-	session.publishedAgent, session.agentRepublish = agent, false
+	session.publishedAgent, session.agentRepublish, session.previewRepublish = agent, false, false
 	for connectionID, viewer := range session.viewers {
 		if err := session.queueStateNotice(viewer, status); err != nil {
 			session.detachViewer(connectionID, err)

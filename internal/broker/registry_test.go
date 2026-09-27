@@ -1746,6 +1746,9 @@ func (session *fakeManagedSession) Terminate(context.Context) error {
 func (session *fakeManagedSession) RevokeDevice(context.Context, string) (int, error) {
 	return 0, nil
 }
+func (session *fakeManagedSession) PreviewTarget(context.Context, uint16) (string, error) {
+	return "", ErrPreviewPort
+}
 func (session *fakeManagedSession) Close() error {
 	session.closed.Store(true)
 	session.mu.Lock()
