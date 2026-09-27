@@ -457,10 +457,14 @@ func (server *ManagementServer) sessionStatus(
 // withPresence adds live, non-secret presence computed at request time.
 // deviceID is the requesting browser device; it is empty on local CLI paths,
 // where controllerIsYou stays absent. A session that is not live in this
-// broker keeps every presence field absent.
+// broker, or that already exited or was lost while still registered, keeps
+// every presence field absent.
 func (server *ManagementServer) withPresence(
 	ctx context.Context, record protocol.BrokerRPCSessionRecord, deviceID string,
 ) protocol.BrokerRPCSessionRecord {
+	if record.State == protocol.Exited || record.State == protocol.Lost {
+		return record
+	}
 	session, err := server.config.Registry.Get(record.ID)
 	if err != nil {
 		return record

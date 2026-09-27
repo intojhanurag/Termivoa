@@ -677,3 +677,30 @@ func TestGatewaySessionListReportsControllerPerDevice(t *testing.T) {
 	}
 	check(cli.Sessions[0], nil)
 }
+
+// A session that already exited or was lost can stay in the registry for a
+// moment. It must not report presence, the same as a session that is gone.
+func TestWithPresenceSkipsEndedSessions(t *testing.T) {
+	fixture, session, _, service, _ := newAuthStreamFixture(t)
+	phone := pairDevice(t, service, "Pocket")
+	viewer := attachPresenceViewer(t, session, "8ccccccc-cccc-4ccc-8ccc-ccccccccccc1", phone.DeviceID)
+	if _, err := session.AcquireControl(context.Background(), viewer); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := fixture.persistence.GetSession(context.Background(), session.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []protocol.State{protocol.Exited, protocol.Lost} {
+		record := managementSessionRecord(metadata)
+		record.State = state
+		got := fixture.server.withPresence(context.Background(), record, phone.DeviceID)
+		if got.Controlled != nil || got.ViewerCount != nil || got.ControllerIsYou != nil {
+			t.Fatalf("%s session has presence: %#v", state, got)
+		}
+	}
+	running := fixture.server.withPresence(context.Background(), managementSessionRecord(metadata), phone.DeviceID)
+	if running.Controlled == nil || !*running.Controlled {
+		t.Fatalf("running session lost presence: %#v", running)
+	}
+}
