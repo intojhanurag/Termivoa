@@ -94,6 +94,7 @@ pterm setup will:
 4. Add your home folder /Users/you as project "Home" if you have no project.
 5. Show a QR code for your phone and ask you to approve the code it shows.
 Before step 4 it asks separately whether to run: tailscale serve --bg --https=443 http://127.0.0.1:8787
+Before step 4 it also asks separately whether to run: tailscale serve --bg --https=8443 http://127.0.0.1:8789
 Never use Tailscale Funnel: it would put your terminal on the public internet.
 
 Continue? [y/N]
@@ -111,6 +112,11 @@ After `y` it:
   the only authorization. It asks only when HTTPS 443 serves nothing else and
   Funnel is off; otherwise it lists the conflict and changes nothing. It never
   enables Funnel;
+- after that, only when HTTPS 443 serves Phone Terminal, asks a **second,
+  separate** question before it runs
+  `tailscale serve --bg --https=8443 http://127.0.0.1:8789` for dev-server
+  previews (see below). It changes nothing if HTTPS 8443 already serves
+  something else;
 - adds your home folder as project "Home" when no project exists;
 - goes straight to pairing (below).
 
@@ -188,6 +194,22 @@ tailnet). If HTTPS 443 already serves something else, setup reports it and
 does not change it: resolve that yourself; do not overwrite another service.
 If you set up Serve by hand under another name, tell pterm with
 `pterm config origin https://<that-name>`; the gateway accepts it at once.
+
+### Dev-server previews (optional, HTTPS 8443)
+
+The phone can show a web page that a program in a session serves (for example
+`npm run dev`). The page is served on a separate origin, so it needs a second
+Serve port. `pterm setup` asks separately, or run it yourself:
+
+```sh
+tailscale serve --bg --https=8443 http://127.0.0.1:8789
+```
+
+Previews then open inside the app at `https://<host>.<tailnet>.ts.net:8443/`.
+Only ports that the session's own processes listen on are shown. `pterm
+doctor` says whether this is set up; it is optional and never a doctor
+failure. The gateway serves only dev-server previews on 127.0.0.1:8789, never
+the app. Design and security: [preview.md](preview.md).
 
 **Never use Tailscale Funnel.** Funnel makes the page public on the internet.
 `pterm setup` and `pterm doctor` warn if Funnel is on.
@@ -304,7 +326,8 @@ It starts the broker and gateway as two child processes in separate process
 groups, prints the loopback URL (default `http://127.0.0.1:8788/`) and the
 matching `pterm pair --dev ...` command, and stops both on Ctrl+C. Killing the
 gateway does not stop the broker. `--data-dir`, `--runtime-dir` and `--listen`
-select other development locations. It changes no startup, Tailscale or
+select other development locations. `--preview-listen` sets the dev-server
+preview listener (default `127.0.0.1:8790`; `off` disables it). It changes no startup, Tailscale or
 production state.
 
 A full local run from a source checkout, with isolated temporary directories:

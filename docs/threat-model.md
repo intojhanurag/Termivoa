@@ -39,6 +39,7 @@ safe, and private networking does not replace application authentication.
 | Child bytes → display | One canonical emulator, normalized cells, validated drawing allowlist, no child ANSI relay | Parser/frame/client fixtures; real application/device width evidence incomplete |
 | Slow viewer → child progress | Bounded queues and history, independent emulator/response writer, disconnect slow viewers | Automated fixtures and a Mac soak (`docs/evidence/p7/soak.md`); 10-minute stress run, 24-hour soak and Windows soak pending |
 | Gateway lifetime → child lifetime | Independent broker owns PTYs, process cleanup, SQLite | Mac process restart fixture; native Windows 11 pending |
+| Dev site → app (dev-server preview) | Dev site served on a separate origin (`https://host:8443`, own loopback listener that never serves the app); app CSP frames only that origin; app rejects requests from the preview origin; every preview request re-authorized by the broker; only OS-verified ports of the session's own process tree; Termivoa cookies and identity headers never forwarded | Unit and loopback tests (`internal/gateway/preview_test.go`, `internal/broker/devpreview_test.go`, `internal/ptyhost/listen_test.go`); Chromium iframe check on the dev profile; iPhone over Tailscale Serve 8443 pending owner |
 | Broker → push services (outbound) | Browser-supplied endpoint limited to exact push hosts over https:443; no redirects, no proxy, public addresses only, 10 s timeout; payload is names and status only, encrypted (RFC 8291) and VAPID-signed; revoke/logout delete subscriptions | Unit tests incl. RFC 8291 vectors and SSRF cases (`internal/webpush`); dev-stack curl check; real iPhone/Android delivery pending owner |
 | Phone → project folder (photo upload) | Controller-only, rechecked at commit; magic-byte type check; 5 MiB cap; server-chosen name, `O_EXCL`, 0600/current-user ACL; `os.Root` confinement; symlinked `.termivoa`/`uploads` refused; per-device limits | Unit and RPC tests (`internal/broker/upload_test.go`, gateway and protocol tests); dev-stack curl and browser check; real iPhone pending owner |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
@@ -190,6 +191,37 @@ Apple's speech service; the app sends no audio anywhere itself. Text is only
 added to the draft; nothing is sent to the terminal until the user taps
 **Send**. Listening stops when the panel or sheet closes or the page is
 hidden.
+
+## Dev-server preview
+
+See `docs/preview.md` for the full design.
+
+- **Origin isolation.** The dev site is arbitrary code from the owner's
+  project and its dependencies. It runs on the preview origin, never on the
+  app origin, so it cannot read the app's DOM, storage, API responses or
+  terminal. The app's CSP `frame-src` names only the preview origin.
+- **Shared cookie.** Cookies are host-scoped, so the dev site's requests to
+  the app carry the owner's session cookie. The app answers 403 to every
+  request whose `Origin` is the preview origin (reads and WebSockets too), and
+  mutations and WebSockets still need the exact app origin. The dev site can
+  still make cookie-bearing top-level navigations or `no-cors` GETs to the
+  app; those read nothing and change nothing.
+- **Port ownership.** Only ports that the OS reports listening on loopback or
+  wildcard addresses and owned by the session's process tree can be proxied,
+  checked again on every request (scan at most 2 s old). Databases, admin
+  panels and other local services outside the session are never offered or
+  proxied, even if their port number is sent by hand.
+- **Revocation.** A revoked or expired device gets 401 on its next preview
+  request; open preview WebSockets and streams close within 5 s.
+- **Proxy hygiene.** No Termivoa cookie, `X-Pterm-*`, `Tailscale-*` or
+  forwarded header reaches the dev server; the dev server cannot set a
+  Termivoa cookie; redirects are never followed by the gateway.
+- **Known limits.** Previews of different sessions share one origin; a large
+  cookie set by a dev site can break app requests until cleared; a same-user
+  process binding a more specific address on the same port is out of scope.
+- **Network.** The owner runs `tailscale serve --bg --https=8443
+  http://127.0.0.1:8789` only after a separate `y` in `pterm setup` (or by
+  hand). Never Funnel.
 
 ## Operational and release limits
 
