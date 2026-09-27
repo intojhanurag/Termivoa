@@ -76,8 +76,9 @@ follows `local-transport.md` live-mode semantics: observer first, explicit
 Live session records on the gateway session list may include two optional,
 non-authoritative display fields:
 
-- `lastOutputAt`: when the canonical screen last changed because of child
-  output (RFC 3339, millisecond precision). Clients compare it with the time
+- `lastOutputAt`: when child output was last applied to the canonical screen
+  (RFC 3339, millisecond precision). Any child output counts, even bytes that
+  leave the screen unchanged, such as a bell or a title change. Clients compare it with the time
   they last viewed the session to show a "new output" dot.
 - `preview`: the last non-blank line of the current screen as plain text, with
   control characters removed and at most 160 characters. It is terminal
