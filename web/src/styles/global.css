@@ -238,6 +238,17 @@ textarea {
 .controller.muted { font-weight: 500; }
 .preview { padding-top: 4px; color: var(--preview); font-family: var(--mono); font-size: 13px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-section { margin: 0 -8px; }
+
+/* Agent status on the session list: one pill per row; waiting rows stand out. */
+.status-pill { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 12px; background: color-mix(in srgb, currentColor 14%, transparent); font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; line-height: 24px; text-transform: uppercase; white-space: nowrap; }
+.status-pill.plain { padding: 0; background: none; }
+.pill-time { text-transform: none; }
+.tile.amber { background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); font-family: var(--mono); font-size: 18px; }
+.tile.green { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+.tile .spinner { width: 14px; height: 14px; }
+.session-row.asking { background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 45%, transparent), inset 3px 0 0 var(--amber); }
+.question { padding-top: 4px; color: var(--text); font-family: var(--mono); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+.answer-link { color: var(--amber); font-size: 13px; font-weight: 700; line-height: 16px; }
 .empty { padding: 0 8px; }
 
 .launch-row {
@@ -318,6 +329,7 @@ textarea {
 .tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.active .tab-face { background: var(--surface); border-color: var(--accent); color: var(--text); }
 .tab-prompt { color: var(--accent); font-weight: 700; }
+.tab .dot.amber { width: 7px; height: 7px; border-radius: 4px; }
 .tab-new { width: 44px; }
 .tab-spacer { flex: 1; }
 .tab-new .tab-face { justify-content: center; width: 36px; margin: 0 auto; padding: 0; border-style: dashed; border-color: var(--dash); }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
-import { hasNewOutput, readViewed } from './activity';
+import { agentBadge, hasNewOutput, readViewed, since } from './activity';
 import type { SessionList } from './hooks';
 import { NewSessionHelp } from './NewSession';
 
@@ -46,7 +46,19 @@ function PromptGlyph() {
   );
 }
 
-/** One session. Title and preview are terminal-controlled text: rendered as text only. */
+function CheckGlyph() {
+  return (
+    <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true">
+      <path d="M2 7.5l4.5 4.5L16 2" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * One session. Title, preview and question are terminal-controlled text:
+ * rendered as text only. A running agent gets one status pill at the top
+ * right; the controller then moves into the meta line.
+ */
 export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
   readonly session: BrokerRPCSessionRecord;
   readonly project: string;
@@ -59,27 +71,49 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
   const controller = controllerText(session);
   const you = session.controllerIsYou === true && !done;
   const when = age(done ? session.endedAt ?? session.updatedAt : session.startedAt ?? session.createdAt, now);
+  const badge = done ? undefined : agentBadge(session, fresh);
+  const question = session.agent?.state === 'waiting' ? session.agent.question?.text : undefined;
+  const duration = since(session.agent?.stateSince, now);
+  const tile = done ? 'tile dashed'
+    : badge !== undefined ? `tile ${badge.tone}`
+      : you ? 'tile accent' : 'tile';
+  const glyph = done ? <span className="stop-glyph" />
+    : badge?.tone === 'amber' ? '?'
+      : badge?.tone === 'accent' ? <span className="spinner" />
+        : badge?.tone === 'green' ? <CheckGlyph /> : <PromptGlyph />;
+  const meta = [project, shell, when, badge !== undefined && controller !== undefined ? controller.text : ''];
   return (
     <li>
       <button
         type="button"
-        className={`session-row${you ? ' you' : ''}${done ? ' ended' : ''}`}
+        className={`session-row${you ? ' you' : ''}${done ? ' ended' : ''}${badge?.tone === 'amber' ? ' asking' : ''}`}
         disabled={done}
         onClick={() => onOpen(session)}
       >
-        <span className={done ? 'tile dashed' : you ? 'tile accent' : 'tile'} aria-hidden="true">
-          {done ? <span className="stop-glyph" /> : <PromptGlyph />}
-        </span>
+        <span className={tile} aria-hidden="true">{glyph}</span>
         <span className="row-text">
           <span className="row-head">
             <span className="row-title">
               {session.title}
               {fresh && <><span className="dot accent" aria-hidden="true" /><span className="visually-hidden">, new output</span></>}
+              {badge?.tone === 'amber' && <span className="visually-hidden">, waiting for you</span>}
             </span>
-            {controller !== undefined && <span className={`controller ${controller.tone}`}>{controller.text}</span>}
+            {badge !== undefined ? (
+              <span className={`status-pill ${badge.tone}`}>
+                {badge.tone !== 'green' && <span className={`dot ${badge.tone}`} aria-hidden="true" />}
+                {badge.label}{duration !== '' && <span className="pill-time"> · {duration}</span>}
+              </span>
+            ) : controller !== undefined && (
+              <span className={done ? 'status-pill plain muted' : `controller ${controller.tone}`}>{controller.text}</span>
+            )}
           </span>
-          <span className="row-meta">{[project, shell, when].filter((part) => part !== '').join(' · ')}</span>
-          {session.preview !== undefined && session.preview !== '' && !done && (
+          <span className="row-meta">{meta.filter((part) => part !== '').join(' · ')}</span>
+          {question !== undefined ? (
+            <>
+              <span className="question">{question}</span>
+              <span className="answer-link">Answer ›</span>
+            </>
+          ) : session.preview !== undefined && session.preview !== '' && !done && (
             <span className="preview">{session.preview}</span>
           )}
         </span>
@@ -138,6 +172,21 @@ export function PushCard({ onClose, onFailure }: {
   );
 }
 
+/** Waiting sessions first; otherwise the broker's order (sort is stable). */
+export function waitingFirst(sessions: ReadonlyArray<BrokerRPCSessionRecord>): BrokerRPCSessionRecord[] {
+  const waiting = (session: BrokerRPCSessionRecord) => (session.agent?.state === 'waiting' ? 0 : 1);
+  return [...sessions].sort((a, b) => waiting(a) - waiting(b));
+}
+
+/** "Your computer · 1 waiting · 1 working", or "· connected" when no agent is busy. */
+export function hostSummary(sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined): string {
+  const count = (state: string) => (sessions ?? []).filter((session) => session.agent?.state === state).length;
+  const parts = [[count('waiting'), 'waiting'], [count('working'), 'working']]
+    .filter(([n]) => n !== 0)
+    .map(([n, label]) => `${n} ${label}`);
+  return ['Your computer', ...(parts.length === 0 ? ['connected'] : parts)].join(' · ');
+}
+
 export function Sessions({ settings, list, message, onOpen, onNew, onSettings, onRefreshSettings, onFailure, onUpdate }: {
   readonly settings: HTTPSettingsResponse;
   readonly list: SessionList;
@@ -186,7 +235,7 @@ export function Sessions({ settings, list, message, onOpen, onNew, onSettings, o
           <h1 className="display">Sessions</h1>
           <p className="host-line" role="status">
             <span className={reachable ? 'dot green' : 'dot amber'} aria-hidden="true" />
-            {reachable ? 'Your computer · connected' : 'Your computer · not reachable, retrying'}
+            {reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying'}
           </p>
         </div>
         <div className="header-actions">
@@ -222,7 +271,7 @@ export function Sessions({ settings, list, message, onOpen, onNew, onSettings, o
         {sessions === undefined && <p role="status" className="muted">Loading…</p>}
         {sessions?.length === 0 && <p className="muted empty">No sessions yet.</p>}
         <ul className="rows">
-          {sessions?.map((session) => (
+          {sessions !== undefined && waitingFirst(sessions).map((session) => (
             <SessionRow
               key={`${session.id}/${session.generation}`}
               session={session}

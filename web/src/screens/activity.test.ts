@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasNewOutput, markViewed, readViewed, VIEWED_KEY, viewedKey } from './activity';
+import { agentBadge, hasNewOutput, markViewed, noteBusy, readViewed, since, VIEWED_KEY, viewedKey } from './activity';
 import { loadPresets, MAX_PRESETS, presetFrom, PRESETS_KEY, runFirstProblem, savePresets } from './presets';
 
 function memory() {
@@ -57,6 +57,36 @@ describe('new-output dot', () => {
     expect(viewed['0/g']).toBeUndefined();
     store.setItem(VIEWED_KEY, '{"a/b":"x","c/d":5}');
     expect(readViewed(store)).toEqual({ 'c/d': 5 });
+  });
+});
+
+describe('agent status', () => {
+  it('formats compact durations', () => {
+    const now = at('12:00:00');
+    expect(since('2026-09-27T11:59:48Z', now)).toBe('12s');
+    expect(since('2026-09-27T11:58:00Z', now)).toBe('2m');
+    expect(since('2026-09-27T10:55:00Z', now)).toBe('1h 5m');
+    expect(since('2026-09-27T10:00:00Z', now)).toBe('2h');
+    expect(since('2026-09-25T10:00:00Z', now)).toBe('2d');
+    expect(since('2026-09-27T12:00:05Z', now)).toBe('0s');
+    expect(since(undefined, now)).toBe('');
+  });
+
+  it('labels waiting and working, and says "your turn" only after this page saw the session busy', () => {
+    const stateSince = '2026-09-27T10:00:00Z';
+    const seen = new Set<string>();
+    const idle = { ...session, agent: { state: 'idle' as const, stateSince } };
+    expect(agentBadge({ ...session, agent: { state: 'waiting', stateSince } }, false, seen)).toEqual({ label: 'Waiting', tone: 'amber' });
+    expect(agentBadge({ ...session, agent: { state: 'working', stateSince } }, false, seen)).toEqual({ label: 'Working', tone: 'accent' });
+    expect(agentBadge(session, true, seen)).toBeUndefined();
+    // A shell idle at its prompt since before this page load: neutral.
+    noteBusy([idle], seen);
+    expect(agentBadge(idle, true, seen)).toBeUndefined();
+    // Seen working, now idle with unseen output: your turn; once viewed: neutral again.
+    noteBusy([{ ...session, agent: { state: 'working', stateSince } }], seen);
+    expect(agentBadge(idle, true, seen)).toEqual({ label: 'Your turn', tone: 'green' });
+    expect(agentBadge(idle, false, seen)).toBeUndefined();
+    expect(agentBadge({ ...idle, generation: 'other' }, true, seen)).toBeUndefined();
   });
 });
 

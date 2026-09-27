@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import type { SessionList } from './hooks';
 import { NewSession } from './NewSession';
-import { age, controllerText, PushCard, SessionRow, Sessions } from './Sessions';
+import { noteBusy } from './activity';
+import { age, controllerText, hostSummary, PushCard, SessionRow, Sessions, waitingFirst } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -82,6 +83,69 @@ describe('SessionRow', () => {
   });
 });
 
+const waiting: BrokerRPCSessionRecord = {
+  ...base,
+  title: 'claude',
+  agent: {
+    state: 'waiting',
+    stateSince: '2026-09-27T11:58:00Z',
+    question: { id: 'q1', text: 'Do you want to <b>proceed</b>?', options: [{ label: 'Yes' }, { label: 'No' }] },
+  },
+  preview: 'hidden preview',
+};
+const working: BrokerRPCSessionRecord = { ...base, id: '84444444-4444-4444-8444-444444444445', agent: { state: 'working', stateSince: '2026-09-27T11:56:00Z' }, preview: 'Thinking…' };
+
+describe('agent status badges', () => {
+  it('highlights a waiting row with a pill, a ? tile, the question as text and an Answer label', () => {
+    const html = row({ ...waiting, controlled: true, controllerIsYou: true, viewerCount: 1 });
+    expect(html).toContain('class="session-row you asking"');
+    expect(html).toContain('<span class="tile amber" aria-hidden="true">?</span>');
+    expect(html).toContain('<span class="status-pill amber"><span class="dot amber" aria-hidden="true"></span>Waiting<span class="pill-time"> · 2m</span></span>');
+    expect(html).toContain(', waiting for you');
+    expect(html).toContain('<span class="question">Do you want to &lt;b&gt;proceed&lt;/b&gt;?</span>');
+    expect(html).not.toContain('<b>');
+    expect(html).toContain('Answer ›');
+    expect(html).not.toContain('hidden preview');
+    expect(html).toContain('api · zsh · 2 h · You');
+  });
+
+  it('shows a working pill with a spinner and keeps the preview line', () => {
+    const html = row(working);
+    expect(html).toContain('<span class="spinner"></span>');
+    expect(html).toContain('Working<span class="pill-time"> · 4m</span>');
+    expect(html).toContain('<span class="preview">Thinking…</span>');
+    expect(html).not.toContain('waiting for you');
+  });
+
+  it('keeps an idle shell neutral, and says your turn after this page saw it working with unseen output', () => {
+    const idle: BrokerRPCSessionRecord = { ...base, id: '84444444-4444-4444-8444-444444444446', agent: { state: 'idle', stateSince: '2026-09-27T11:48:00Z' } };
+    expect(row(idle, true)).not.toContain('status-pill');
+    noteBusy([{ ...idle, agent: { state: 'working', stateSince: '2026-09-27T11:40:00Z' } }]);
+    const html = row(idle, true);
+    expect(html).toContain('<span class="status-pill green">Your turn<span class="pill-time"> · 12m</span></span>');
+    expect(html).toContain('<span class="tile green" aria-hidden="true"><svg');
+    expect(row(idle, false)).not.toContain('status-pill');
+  });
+
+  it('shows ended sessions as muted text, not a tinted pill', () => {
+    const html = row({ ...base, state: 'exited', exitCode: 2, endedAt: '2026-09-27T11:00:00Z' });
+    expect(html).toContain('<span class="status-pill plain muted">Exited · 2</span>');
+  });
+
+  it('sorts waiting sessions first and keeps the rest in order', () => {
+    const idle = { ...base, id: 'a' };
+    const other = { ...waiting, id: 'b' };
+    expect(waitingFirst([idle, working, waiting, other]).map((item) => item.id)).toEqual([waiting.id, 'b', 'a', working.id]);
+  });
+
+  it('summarizes waiting and working counts on the host line', () => {
+    expect(hostSummary([waiting, working, { ...working, id: 'c' }, base])).toBe('Your computer · 1 waiting · 2 working');
+    expect(hostSummary([working])).toBe('Your computer · 1 working');
+    expect(hostSummary([base])).toBe('Your computer · connected');
+    expect(hostSummary(undefined)).toBe('Your computer · connected');
+  });
+});
+
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },
   brokerGeneration: '00000000-0000-4000-8000-000000000030',
@@ -110,6 +174,22 @@ describe('Sessions first use', () => {
     expect(html).toContain('<code>pterm project add &lt;folder&gt;</code>');
     expect(html).toContain('>Check again</button>');
     expect(html).not.toContain('new session</button>');
+  });
+
+  it('lists waiting sessions first under a summary host line', () => {
+    const html = renderToStaticMarkup(
+      <Sessions
+        settings={settings}
+        list={{ ...list, sessions: [working, waiting] }}
+        onOpen={() => undefined}
+        onNew={() => undefined}
+        onSettings={() => undefined}
+        onRefreshSettings={async () => undefined}
+        onFailure={() => ''}
+      />,
+    );
+    expect(html).toContain('Your computer · 1 waiting · 1 working');
+    expect(html.indexOf('>Waiting<')).toBeLessThan(html.indexOf('>Working<'));
   });
 
   it('offers ❯ new session once a project and shell exist', () => {
