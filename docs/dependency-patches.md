@@ -1,8 +1,8 @@
 # Dependency patches
 
-Phone Terminal keeps narrow source patches for three pinned Go dependencies under
+Phone Terminal keeps narrow source patches for four pinned Go dependencies under
 `third_party/`. Their original versions remain in `go.mod`; local `replace`
-directives make the reviewed copies authoritative for builds. All three directories
+directives make the reviewed copies authoritative for builds. All four directories
 preserve the upstream license and test suite.
 
 ## `github.com/charmbracelet/x/vt`
@@ -37,9 +37,43 @@ The local patch:
 - bounds parser sequence data and retained OSC 8 URLs while discarding unused
   hyperlink parameters.
 
+- enables the patched parser's UTF-8 string mode (see `ansi` below), so a
+  C1 continuation byte in an OSC, DCS, or APC string is not ST. Its
+  `go.mod` has `replace github.com/charmbracelet/x/ansi => ../ansi`, so the
+  retained suite runs against the same parser as the root module.
+
 Remove this patch only after an upstream version provides equivalent streaming
 and width behavior and all split-byte, combining-mark, variation-selector, ZWJ,
 and width-profile fixtures pass unchanged.
+
+## `github.com/charmbracelet/x/ansi`
+
+Upstream baseline: `v0.11.7`, copied from the verified Go module cache with its
+original MIT license, `go.mod`, `go.sum`, fixtures, and complete test suite.
+
+The pinned parser takes the 8-bit C1 String Terminator `0x9C` as the end of an
+OSC, DCS, SOS, PM, or APC string. In UTF-8 output `0x9C` is also a continuation
+byte: `✳` is `E2 9C B3` and `“` is `E2 80 9C`. Claude Code writes the title
+`ESC ] 0 ; ✳ Claude Code BEL` at every start, so the OSC ended early and
+` Claude Code` printed into the shell screen and history. SOS, PM, and APC
+strings also dropped out of the string state on any byte `0x80`-`0xFF`.
+
+The local patch adds opt-in `Parser.SetUTF8Strings`. When enabled, every byte
+`0x80`-`0xFF` inside those strings is string data. The string ends only with
+`ESC \` (7-bit ST) or, for OSC, BEL; CAN and SUB still cancel it. This is the
+behavior of xterm and VTE in UTF-8 mode, which decode UTF-8 before they look
+for controls, so a raw `0x9C` byte is never ST. One difference: they accept
+the encoded C1 character U+009C (`C2 9C`) as ST, and this patch treats it as
+data. Programs use `ESC \` or BEL. Raw C1 bytes in the ground state keep the
+upstream behavior.
+
+The default stays off, so upstream `Parser`, `DecodeSequence`, width, and
+truncation behavior and the upstream suite are unchanged. `vt.NewEmulator` is
+the only caller that enables it. `parser_phone_terminal_test.go` and the vt and
+`internal/terminal` regression tests cover it.
+
+Remove this patch only after an upstream parser stops treating C1 bytes inside
+UTF-8 control strings as controls and those tests pass unchanged.
 
 ## `github.com/charmbracelet/x/xpty`
 
@@ -101,6 +135,7 @@ limits, error semantics, and joined cancellation, with these fixtures passing.
 Run all retained upstream suites as well as the repository adapter suites:
 
 ```sh
+(cd third_party/ansi && go test ./...)
 (cd third_party/vt && go test ./...)
 (cd third_party/xpty && go test ./...)
 go test -race github.com/charmbracelet/ultraviolet/...
@@ -112,5 +147,6 @@ Native Windows execution remains a separate required gate; cross-compilation is
 only a compile check.
 
 The Ultraviolet suite runs through the root module's exact dependency graph,
-which includes the plan's pinned ANSI version. Its retained upstream `go.mod`
+which includes the plan's pinned ANSI version with the opt-in patch above
+(off for Ultraviolet, so its behavior is upstream). Its retained upstream `go.mod`
 and `go.sum` are unchanged provenance records.

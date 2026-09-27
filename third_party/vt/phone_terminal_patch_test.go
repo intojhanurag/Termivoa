@@ -91,3 +91,25 @@ func TestPhoneTerminalHyperlinkLimitDropsParamsAndOversizedURL(t *testing.T) {
 		t.Fatalf("oversized link retained: %#v", cell.Link)
 	}
 }
+
+func TestPhoneTerminalOSCTitleKeepsC1ContinuationBytes(t *testing.T) {
+	emulator := NewEmulator(20, 5)
+	var titles []string
+	emulator.SetCallbacks(Callbacks{Title: func(title string) { titles = append(titles, title) }})
+	_, _ = emulator.Write([]byte("abc\r\n\x1b]0;say \xe2\x80\x9chi\xe2\x80\x9d\x07def\r\n"))
+
+	if len(titles) != 1 || titles[0] != "say \xe2\x80\x9chi\xe2\x80\x9d" {
+		t.Fatalf("titles = %q, want [%q]", titles, "say \xe2\x80\x9chi\xe2\x80\x9d")
+	}
+	for y, want := range []string{"abc", "def", ""} {
+		var row strings.Builder
+		for x := range emulator.Width() {
+			if cell := emulator.CellAt(x, y); cell != nil {
+				row.WriteString(cell.Content)
+			}
+		}
+		if got := strings.TrimRight(row.String(), " "); got != want {
+			t.Fatalf("row %d = %q, want %q", y, got, want)
+		}
+	}
+}

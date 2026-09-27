@@ -98,6 +98,9 @@ func NewEmulator(w, h int) *Emulator {
 	t.parser = ansi.NewParser()
 	t.parser.SetParamsSize(parser.MaxParamsSize)
 	t.parser.SetDataSize(1024 * 1024 * 4) // 4MB data buffer
+	// Phone Terminal: the emulator decodes UTF-8, so C1 continuation bytes in
+	// OSC/DCS/APC text (for example "\u2733" = E2 9C B3) are not ST.
+	t.parser.SetUTF8Strings(true)
 	t.parser.SetHandler(ansi.Handler{
 		Print:     t.handlePrint,
 		Execute:   t.handleControl,
