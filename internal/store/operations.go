@@ -166,7 +166,7 @@ func (store *Store) RenameSessionWithReceipt(
 	if when < updated {
 		when = updated
 	}
-	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata SET title = ?, updated_at_ms = ?
+	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata SET title = ?, title_custom = 1, updated_at_ms = ?
 		WHERE id = ? AND generation = ? AND broker_generation = ?`, title, when, id, generation, broker); err != nil {
 		return MutationResult{}, false, fmt.Errorf("store: rename session with receipt: %w", err)
 	}
@@ -380,7 +380,7 @@ func backfillMutationReceiptSnapshots(ctx context.Context, transaction *sql.Tx) 
 	}
 
 	for _, receipt := range receipts {
-		session, err := readMutationSession(ctx, transaction, receipt.sessionID)
+		session, err := readMutationSessionColumns(ctx, transaction, receipt.sessionID, sessionColumnsV5+`, 0`)
 		if err != nil {
 			return err
 		}
@@ -465,7 +465,11 @@ func insertMutation(ctx context.Context, transaction *sql.Tx, fingerprint [sha25
 }
 
 func readMutationSession(ctx context.Context, querier mutationQuerier, id string) (SessionMetadata, error) {
-	session, err := scanSession(querier.QueryRowContext(ctx, `SELECT `+sessionColumns+`
+	return readMutationSessionColumns(ctx, querier, id, sessionColumns)
+}
+
+func readMutationSessionColumns(ctx context.Context, querier mutationQuerier, id, columns string) (SessionMetadata, error) {
+	session, err := scanSession(querier.QueryRowContext(ctx, `SELECT `+columns+`
 		FROM session_metadata WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return SessionMetadata{}, ErrSessionMissing
@@ -479,7 +483,7 @@ func readMutationSession(ctx context.Context, querier mutationQuerier, id string
 func mutationSessionSnapshot(session SessionMetadata) MutationSessionSnapshot {
 	snapshot := MutationSessionSnapshot{
 		ID: session.ID, Generation: session.Generation, BrokerGeneration: session.BrokerGeneration,
-		Title: session.Title, ProjectID: session.ProjectID, ShellProfileID: session.ShellProfileID,
+		Title: session.Title, TitleCustom: session.TitleCustom, ProjectID: session.ProjectID, ShellProfileID: session.ShellProfileID,
 		State: session.State, Columns: session.Columns, Rows: session.Rows,
 		CreatedAt: session.CreatedAt, UpdatedAt: session.UpdatedAt,
 	}
@@ -501,7 +505,7 @@ func mutationSessionSnapshot(session SessionMetadata) MutationSessionSnapshot {
 func mutationSnapshotMetadata(snapshot MutationSessionSnapshot) SessionMetadata {
 	metadata := SessionMetadata{
 		ID: snapshot.ID, Generation: snapshot.Generation, BrokerGeneration: snapshot.BrokerGeneration,
-		Title: snapshot.Title, ProjectID: snapshot.ProjectID, ShellProfileID: snapshot.ShellProfileID,
+		Title: snapshot.Title, TitleCustom: snapshot.TitleCustom, ProjectID: snapshot.ProjectID, ShellProfileID: snapshot.ShellProfileID,
 		State: snapshot.State, Columns: snapshot.Columns, Rows: snapshot.Rows,
 		CreatedAt: snapshot.CreatedAt, UpdatedAt: snapshot.UpdatedAt,
 	}

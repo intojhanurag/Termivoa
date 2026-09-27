@@ -114,6 +114,9 @@ func TestRenameAndTerminateReceiptsReturnOriginalResults(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	mustTransition(t, store, session, SessionRunning, nil, 1)
+	if created, err := store.GetSession(context.Background(), session.ID); err != nil || created.TitleCustom {
+		t.Fatalf("new session custom=%t, err=%v; want not custom", created.TitleCustom, err)
+	}
 
 	renameFingerprint := sha256.Sum256([]byte("rename to first"))
 	renameAt := testTime.Add(2 * time.Second)
@@ -121,7 +124,7 @@ func TestRenameAndTerminateReceiptsReturnOriginalResults(t *testing.T) {
 		context.Background(), testRenameOperation, renameFingerprint,
 		session.ID, session.Generation, "first title", renameAt,
 	)
-	if err != nil || replayed {
+	if err != nil || replayed || !firstRename.Session.TitleCustom {
 		t.Fatalf("first rename = %+v, replayed=%t, err=%v", firstRename, replayed, err)
 	}
 	secondFingerprint := sha256.Sum256([]byte("rename to second"))
@@ -139,7 +142,7 @@ func TestRenameAndTerminateReceiptsReturnOriginalResults(t *testing.T) {
 		t.Fatalf("rename replay = %+v, replayed=%t, err=%v; want %+v", replayedRename, replayed, err, firstRename)
 	}
 	metadata, err := store.GetSession(context.Background(), session.ID)
-	if err != nil || metadata.Title != "second title" {
+	if err != nil || metadata.Title != "second title" || !metadata.TitleCustom {
 		t.Fatalf("metadata after old replay = %+v, err=%v", metadata, err)
 	}
 

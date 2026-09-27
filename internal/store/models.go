@@ -53,6 +53,7 @@ type SessionMetadata struct {
 	Generation       string
 	BrokerGeneration string
 	Title            string
+	TitleCustom      bool // Set once a user renamed the session.
 	ProjectID        string
 	ShellProfileID   string
 	State            SessionState
@@ -87,6 +88,7 @@ type MutationSessionSnapshot struct {
 	Generation       string       `json:"generation"`
 	BrokerGeneration string       `json:"brokerGeneration"`
 	Title            string       `json:"title"`
+	TitleCustom      bool         `json:"titleCustom,omitempty"`
 	ProjectID        string       `json:"projectId"`
 	ShellProfileID   string       `json:"shellProfileId"`
 	State            SessionState `json:"state"`

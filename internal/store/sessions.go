@@ -14,8 +14,11 @@ import (
 const (
 	defaultRetainedTerminalSessions = 4096
 	defaultSessionListLimit         = defaultRetainedTerminalSessions + 64
-	sessionColumns                  = `id, generation, broker_generation, title, project_id, shell_profile_id,
+	// sessionColumnsV5 are the columns before migration 6. The migration 3
+	// backfill runs on that schema and selects a constant for title_custom.
+	sessionColumnsV5 = `id, generation, broker_generation, title, project_id, shell_profile_id,
 state, columns_count, rows_count, created_at_ms, updated_at_ms, started_at_ms, ended_at_ms, exit_code`
+	sessionColumns = sessionColumnsV5 + `, title_custom`
 )
 
 func (store *Store) PutProject(ctx context.Context, project Project) error {
@@ -328,7 +331,7 @@ func (store *Store) RenameSession(ctx context.Context, id, generation, title str
 	if when < updated {
 		return fmt.Errorf("%w: rename for session %s", ErrTimestampRegression, id)
 	}
-	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata SET title = ?, updated_at_ms = ?
+	if _, err := transaction.ExecContext(ctx, `UPDATE session_metadata SET title = ?, title_custom = 1, updated_at_ms = ?
 	        WHERE id = ? AND generation = ? AND broker_generation = ?`, title, when, id, generation, broker); err != nil {
 		return fmt.Errorf("store: rename session: %w", err)
 	}
@@ -454,7 +457,7 @@ func scanSession(scanner rowScanner) (SessionMetadata, error) {
 	if err := scanner.Scan(
 		&session.ID, &session.Generation, &session.BrokerGeneration, &session.Title,
 		&session.ProjectID, &session.ShellProfileID, &session.State, &session.Columns, &session.Rows,
-		&created, &updated, &started, &ended, &exitCode,
+		&created, &updated, &started, &ended, &exitCode, &session.TitleCustom,
 	); err != nil {
 		return SessionMetadata{}, err
 	}
