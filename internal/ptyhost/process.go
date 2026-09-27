@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -34,8 +33,8 @@ var (
 
 // Spec describes a command to start in a new pseudo-terminal. Args excludes
 // the executable name. The child does not inherit the broker's whole
-// environment: it receives only the allowlisted host variables (see
-// inheritedEnvironment), followed by Env. Callers therefore set terminal
+// environment: it receives hostEnvironment (the allowlisted host variables on
+// Unix, the user's default environment on Windows), followed by Env. Callers therefore set terminal
 // variables such as TERM in Env without dropping required OS variables such
 // as SystemRoot on Windows.
 type Spec struct {
@@ -89,7 +88,7 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 
 	cmd := exec.Command(spec.Executable, append([]string(nil), spec.Args...)...)
 	cmd.Dir = spec.Directory
-	cmd.Env = append(inheritedEnvironment(os.Environ(), runtime.GOOS), spec.Env...)
+	cmd.Env = append(hostEnvironment(os.Environ()), spec.Env...)
 	configureCommand(cmd)
 
 	if err := terminal.Start(cmd); err != nil {
@@ -134,8 +133,9 @@ var unixInheritedNames = []string{
 // Windows names are case-insensitive and stored upper case; PROCESSOR_* is a
 // prefix. They are the per-machine and per-user variables Windows itself
 // defines for a logon, which programs and shells need to locate the system,
-// the user profile, and temporary storage. Persistent user variables from the
-// registry (for example JAVA_HOME) are not in this list.
+// the user profile, and temporary storage. On Windows they fill gaps in, or
+// replace when it is unavailable, the user's default environment block (see
+// windowsEnvironment), which carries registry variables such as JAVA_HOME.
 var windowsInheritedNames = []string{
 	"SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "COMSPEC", "PATH", "PATHEXT",
 	"TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PUBLIC",
@@ -164,6 +164,47 @@ func inheritedEnvironment(environ []string, goos string) []string {
 			name = strings.ToUpper(name)
 		}
 		if strings.HasPrefix(name, prefix) || slices.Contains(names, name) {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
+}
+
+// launcherVariablePrefixes name variables set by the program or terminal
+// that started the broker. windowsEnvironment removes them even from the
+// user's default environment block. Matching is case-insensitive.
+var launcherVariablePrefixes = []string{
+	"CLAUDECODE", "CLAUDE_CODE_", "TERM_PROGRAM", "TERM_SESSION_ID",
+	"WT_SESSION", "WT_PROFILE_ID", "VSCODE_", "ITERM_", "TMUX",
+}
+
+// windowsEnvironment builds a Windows session environment. userDefault is the
+// user's default environment block (CreateEnvironmentBlock without
+// inheritance): the environment of a fresh logon, with system and user
+// registry variables such as JAVA_HOME and the user Path. Launcher variables
+// are removed from it. Allowlisted host variables it lacks are added. Without
+// a block, the result is the allowlisted host environment. Never nil.
+func windowsEnvironment(userDefault, host []string) []string {
+	allowed := inheritedEnvironment(host, "windows")
+	if len(userDefault) == 0 {
+		return allowed
+	}
+	kept := []string{}
+	seen := map[string]bool{}
+	for _, entry := range userDefault {
+		name, _, ok := strings.Cut(entry, "=")
+		name = strings.ToUpper(name)
+		if !ok || name == "" || slices.ContainsFunc(launcherVariablePrefixes, func(prefix string) bool {
+			return strings.HasPrefix(name, prefix)
+		}) {
+			continue
+		}
+		kept = append(kept, entry)
+		seen[name] = true
+	}
+	for _, entry := range allowed {
+		name, _, _ := strings.Cut(entry, "=")
+		if !seen[strings.ToUpper(name)] {
 			kept = append(kept, entry)
 		}
 	}

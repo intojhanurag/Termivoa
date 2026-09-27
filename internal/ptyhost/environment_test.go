@@ -45,3 +45,30 @@ func TestInheritedEnvironmentWindowsAllowlist(t *testing.T) {
 		t.Fatalf("inherited = %q, want %q", got, keep)
 	}
 }
+
+func TestWindowsEnvironmentStartsFromUserDefaultBlock(t *testing.T) {
+	userDefault := []string{
+		`=::=::\`, `SystemRoot=C:\Windows`, `Path=C:\Windows;C:\Users\a\bin`, `JAVA_HOME=C:\jdk`,
+		`TEMP=C:\Users\a\AppData\Local\Temp`, `Claude_Code_Persisted=1`, `WT_SESSION=x`, `vscode_x=1`,
+	}
+	host := []string{
+		`PATH=C:\launcher;C:\Windows`, `temp=C:\launcher-temp`, `ComSpec=C:\Windows\system32\cmd.exe`,
+		`CLAUDE_CODE_MESSAGING_TOKEN=secret`, `TERM_PROGRAM=vscode`, `WT_SESSION=abc`, `LAUNCHER_ONLY=1`,
+	}
+	want := []string{
+		`SystemRoot=C:\Windows`, `Path=C:\Windows;C:\Users\a\bin`, `JAVA_HOME=C:\jdk`,
+		`TEMP=C:\Users\a\AppData\Local\Temp`, `ComSpec=C:\Windows\system32\cmd.exe`,
+	}
+	if got := windowsEnvironment(userDefault, host); !reflect.DeepEqual(got, want) {
+		t.Fatalf("environment = %q, want %q", got, want)
+	}
+
+	// Without a default block, fall back to the allowlist; never nil.
+	fallback := []string{`PATH=C:\launcher;C:\Windows`, `temp=C:\launcher-temp`, `ComSpec=C:\Windows\system32\cmd.exe`}
+	if got := windowsEnvironment(nil, host); !reflect.DeepEqual(got, fallback) {
+		t.Fatalf("fallback = %q, want %q", got, fallback)
+	}
+	if got := windowsEnvironment(nil, nil); got == nil || len(got) != 0 {
+		t.Fatalf("empty fallback = %#v, want non-nil empty", got)
+	}
+}
