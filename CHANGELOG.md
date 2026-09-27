@@ -56,6 +56,18 @@ No version has been released. Development history and evidence are in
   session-lost screens; a small **update** pill on Sessions replaces the
   full-width update banner.
 
+#### Notifications
+
+- Private Web Push notifications, sent by the broker: a one-time
+  "Get a buzz when an agent needs you" card on Sessions, an on/off switch and
+  **Send a test notification** in Settings. Lock-screen text is only the
+  session name and status ("… is waiting for you", "… is done · your turn");
+  tapping opens that session. iPhone needs the Home Screen app.
+- RFC 8291 encryption and RFC 8292 VAPID with the Go standard library only;
+  an exact push-service host allow-list (SSRF guard); per-device and total
+  subscription caps; revoke and logout delete a phone's subscriptions.
+- `webpush.Notifier.Notify` hook for agent-state detection (not wired yet).
+
 #### Agent keys, snippets and presets
 
 - Agent keys: one-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter for

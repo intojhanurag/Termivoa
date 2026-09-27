@@ -39,6 +39,7 @@ safe, and private networking does not replace application authentication.
 | Child bytes → display | One canonical emulator, normalized cells, validated drawing allowlist, no child ANSI relay | Parser/frame/client fixtures; real application/device width evidence incomplete |
 | Slow viewer → child progress | Bounded queues and history, independent emulator/response writer, disconnect slow viewers | Automated fixtures and a Mac soak (`docs/evidence/p7/soak.md`); 10-minute stress run, 24-hour soak and Windows soak pending |
 | Gateway lifetime → child lifetime | Independent broker owns PTYs, process cleanup, SQLite | Mac process restart fixture; native Windows 11 pending |
+| Broker → push services (outbound) | Browser-supplied endpoint limited to exact push hosts over https:443; no redirects, no proxy, public addresses only, 10 s timeout; payload is names and status only, encrypted (RFC 8291) and VAPID-signed; revoke/logout delete subscriptions | Unit tests incl. RFC 8291 vectors and SSRF cases (`internal/webpush`); dev-stack curl check; real iPhone/Android delivery pending owner |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
 
 ## Pairing and credential acceptance criteria (P4)
@@ -115,6 +116,36 @@ Each result needs its source/build, environment, exact command, expected/actual
 outcome and evidence under `docs/evidence`. A skipped or unavailable test remains
 pending. Real phones, native Windows 11, signed installers and the full soak cannot
 be inferred from Mac unit tests or cross-compilation.
+
+## Push notifications
+
+Web Push adds the only outbound connection the broker makes on its own. See
+`docs/notifications.md`.
+
+- **SSRF.** The endpoint URL is attacker-influenced (any paired browser can
+  send one). The broker accepts only `https` on port 443 to
+  `fcm.googleapis.com`, `updates.push.services.mozilla.com`,
+  `web.push.apple.com`, `*.push.apple.com` or `*.notify.windows.com`, matched
+  by whole DNS labels. It follows no redirects, uses no proxy and refuses to
+  dial loopback, private, link-local, CGNAT/Tailscale or unspecified
+  addresses. A paired browser can therefore make the broker send at most a
+  small encrypted POST to a real push service, rate limited to 12 per minute.
+- **Payload privacy.** Only the session title, project name, a status and a
+  duration are sent, end-to-end encrypted to the phone's key; the push
+  service sees the endpoint, timing, size and the VAPID public key. Terminal
+  output, prompts and previews are never included; plan.md's rule that
+  terminal-triggered (OSC) notifications stay disabled is unchanged —
+  notifications come only from the broker's own state, never from child
+  output.
+- **Keys.** The VAPID private key lives in the 0600 broker database and is
+  redacted in formatting and logs. Its VAPID subject names the project, not
+  the tailnet host or the user. Subscription `auth`/`p256dh` values are
+  stored per device and deleted on revoke, logout and device pruning.
+- **Revocation.** A revoked or logged-out phone gets nothing: rows are
+  deleted in the revocation transaction, delivery also requires a live
+  credential, and the in-memory revocation set is checked at send time.
+  A notification already accepted by a push service before revocation may
+  still arrive.
 
 ## Operational and release limits
 
