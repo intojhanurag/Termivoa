@@ -44,8 +44,10 @@ type gatewayHandler struct {
 	// second layer; the exact check in originAllowed is authoritative.
 	originPatterns []string
 	dev            bool
-	api            gatewayapi.Broker
-	assets         fs.FS
+	// previewPort is the bound preview listener port; "" when previews are off.
+	previewPort string
+	api         gatewayapi.Broker
+	assets      fs.FS
 
 	redeemLimit, pollLimit, authFailLimit *limiter
 	// uploads bounds concurrent upload bodies held in memory.
@@ -142,6 +144,7 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/push/unsubscribe", handler.pushUnsubscribe)
 		mux.HandleFunc("/api/v1/push/test", handler.pushTest)
 		mux.HandleFunc("/api/v1/logout", handler.logout)
+		mux.HandleFunc("/api/v1/preview", handler.previewConfig)
 		mux.HandleFunc("/api/v1/ws", handler.serveLive)
 	}
 	handler.mux = mux
@@ -190,7 +193,12 @@ func validateOrigin(origin string, dev bool) (string, string, error) {
 
 func (handler *gatewayHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	header := response.Header()
-	header.Set("Content-Security-Policy", contentSecurityPolicy)
+	policy := contentSecurityPolicy
+	// The app may frame exactly the dev-server preview origin, nothing else.
+	if preview := handler.previewOriginFor(request); preview != "" {
+		policy += "; frame-src " + preview
+	}
+	header.Set("Content-Security-Policy", policy)
 	header.Set("Referrer-Policy", "no-referrer")
 	header.Set("X-Content-Type-Options", "nosniff")
 	// Host is compared case-insensitively (RFC 9110) but otherwise exactly:
@@ -199,6 +207,15 @@ func (handler *gatewayHandler) ServeHTTP(response http.ResponseWriter, request *
 		header.Set("Cache-Control", "no-store")
 		writeError(response, http.StatusMisdirectedRequest, "invalid_request", "unknown host")
 		return
+	}
+	// A dev site in the preview frame shares the host name (and so the
+	// cookie). The app refuses anything it sends, reads included.
+	for _, origin := range request.Header.Values("Origin") {
+		if handler.isPreviewOrigin(origin) {
+			header.Set("Cache-Control", "no-store")
+			writeError(response, http.StatusForbidden, "invalid_request", "origin not allowed")
+			return
+		}
 	}
 	if request.URL.Path == "/healthz" || request.URL.Path == "/api" || strings.HasPrefix(request.URL.Path, "/api/") {
 		header.Set("Cache-Control", "no-store")
@@ -212,7 +229,12 @@ func (handler *gatewayHandler) originAllowed(request *http.Request) bool {
 	if len(values) != 1 {
 		return false
 	}
-	origin := strings.ToLower(values[0])
+	return handler.originAllowedValue(values[0])
+}
+
+// originAllowedValue reports whether origin is one of the exact allowed ones.
+func (handler *gatewayHandler) originAllowedValue(origin string) bool {
+	origin = strings.ToLower(origin)
 	if _, ok := handler.origins[origin]; ok {
 		return true
 	}

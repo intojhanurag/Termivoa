@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,6 +34,7 @@ type fakeBroker struct {
 	opErr       error // returned by session operations when set
 	opened      chan *fakeStream
 	origin      string // returned by Origin
+	previews    map[uint16]string
 }
 
 func newFakeBroker() *fakeBroker { return &fakeBroker{opened: make(chan *fakeStream, 4)} }
@@ -188,6 +190,34 @@ func (broker *fakeBroker) Upload(_ context.Context, credential, sessionID, gener
 	return protocol.HTTPUploadResponse{
 		Path: ".termivoa/uploads/20260927-143012-a1b2c3d4.png", Size: int64(len(data)), ContentType: protocol.ImagePNG,
 	}, broker.opErr
+}
+
+// PreviewTarget allows port 5173 of uuidB (owned, IPv4) and port 5174 of
+// uuidB (owned, IPv6 only); everything else is not a dev server of it.
+func (broker *fakeBroker) PreviewTarget(_ context.Context, credential, sessionID string, port uint16) (string, error) {
+	broker.record("preview:" + sessionID + ":" + strconv.Itoa(int(port)))
+	if err := broker.authorize(credential); err != nil {
+		return "", err
+	}
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	if host, ok := broker.previews[port]; ok && sessionID == uuidB {
+		return host, nil
+	}
+	return "", &gatewayapi.Error{Code: protocol.PreviewMissing, Message: "no dev server"}
+}
+
+func (broker *fakeBroker) setPreview(port uint16, host string) {
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	if broker.previews == nil {
+		broker.previews = map[uint16]string{}
+	}
+	if host == "" {
+		delete(broker.previews, port)
+	} else {
+		broker.previews[port] = host
+	}
 }
 
 func (broker *fakeBroker) setOrigin(origin string) {

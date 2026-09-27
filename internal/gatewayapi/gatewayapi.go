@@ -64,6 +64,10 @@ type Broker interface {
 	// Upload saves one image into the session's project folder. The broker
 	// accepts it only from the device that holds the session's control.
 	Upload(ctx context.Context, credential, sessionID, generation string, data []byte) (protocol.HTTPUploadResponse, error)
+	// PreviewTarget authorizes a dev-server preview: the credential is valid
+	// and a process of the running session listens on port now (verified by
+	// the broker from the OS). It returns the loopback address to dial.
+	PreviewTarget(ctx context.Context, credential, sessionID string, port uint16) (string, error)
 	// Origin returns the configured browser origin, or "" when none is set.
 	// It needs no credential: the origin is not a secret.
 	Origin(ctx context.Context) (string, error)

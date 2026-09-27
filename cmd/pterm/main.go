@@ -201,6 +201,7 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 	dev := flags.Bool("dev", false, "use an isolated development profile")
 	runtimeDir := flags.String("runtime-dir", "", "broker runtime directory")
 	listen := flags.String("listen", "", "gateway loopback address")
+	previewListen := flags.String("preview-listen", "", `dev-server preview loopback address, or "off"`)
 	var origins []string
 	flags.Func("origin", "exact browser origin, such as https://mac.tailnet.ts.net (repeatable)", func(value string) error {
 		origins = append(origins, value)
@@ -215,10 +216,18 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 	profile := host.ProductionProfile
 	defaultRuntime := production.RuntimeDir
 	defaultListen := gateway.ProductionListenAddress
+	defaultPreview := gateway.ProductionPreviewListenAddress
 	if *dev {
 		profile = host.DevelopmentProfile
 		defaultRuntime = development.RuntimeDir
 		defaultListen = gateway.DevelopmentListenAddress
+		defaultPreview = gateway.DevelopmentPreviewListenAddress
+	}
+	switch *previewListen {
+	case "":
+		*previewListen = defaultPreview
+	case "off":
+		*previewListen = ""
 	}
 	if *runtimeDir == "" {
 		*runtimeDir = defaultRuntime
@@ -239,11 +248,19 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 		}
 		return gateway.Config{}, err
 	}
+	if *previewListen != "" {
+		if err := gateway.ValidatePreviewListenAddress(profile, *previewListen); err != nil {
+			if !*dev {
+				return gateway.Config{}, fmt.Errorf("gateway preview listener overrides require explicit --dev: %w", err)
+			}
+			return gateway.Config{}, err
+		}
+	}
 	if err := gateway.ValidateOrigins(profile, origins); err != nil {
 		return gateway.Config{}, err
 	}
 	return gateway.Config{
 		RuntimeDir: validatedRuntime, HostBuild: buildID, ListenAddress: *listen, Profile: profile,
-		Origins: origins,
+		PreviewListenAddress: *previewListen, Origins: origins,
 	}, nil
 }

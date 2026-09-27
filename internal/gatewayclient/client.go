@@ -336,6 +336,15 @@ func (client *Client) Upload(
 	return result, nil
 }
 
+func (client *Client) PreviewTarget(ctx context.Context, credential, sessionID string, port uint16) (string, error) {
+	if err := checkCredential(credential); err != nil {
+		return "", err
+	}
+	result, err := roundTrip[protocol.GatewayRPCPreviewTargetPayload](ctx, client, protocol.GatewayPreviewCheck,
+		protocol.GatewayRPCPreviewCheckPayload{Credential: credential, SessionID: sessionID, Port: int64(port)}, false, nil)
+	return string(result.Host), err
+}
+
 // Origin returns the configured browser origin, or "" when none is set.
 func (client *Client) Origin(ctx context.Context) (string, error) {
 	result, err := roundTrip[protocol.GatewayRPCOriginResultPayload](ctx, client, protocol.GatewayOrigin,
