@@ -87,7 +87,7 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
   );
 }
 
-export function Sessions({ settings, list, message, onOpen, onNew, onSettings, onRefreshSettings, onFailure }: {
+export function Sessions({ settings, list, message, onOpen, onNew, onSettings, onRefreshSettings, onFailure, onUpdate }: {
   readonly settings: HTTPSettingsResponse;
   readonly list: SessionList;
   readonly message?: string;
@@ -96,6 +96,8 @@ export function Sessions({ settings, list, message, onOpen, onNew, onSettings, o
   readonly onSettings: () => void;
   readonly onRefreshSettings: () => Promise<void>;
   readonly onFailure: (error: unknown) => string;
+  /** Present when a new version waits; tapping it reloads into that version. */
+  readonly onUpdate?: () => void;
 }) {
   const [error, setError] = useState<string | undefined>(message);
   const [busy, setBusy] = useState(false);
@@ -129,13 +131,23 @@ export function Sessions({ settings, list, message, onOpen, onNew, onSettings, o
             {reachable ? 'Your computer · connected' : 'Your computer · not reachable, retrying'}
           </p>
         </div>
-        <button type="button" className="round" aria-label="Settings" onClick={onSettings}>
-          <svg width="20" height="18" viewBox="0 0 20 18" aria-hidden="true">
-            <path d="M2 4h9M15 4h3M2 14h3M9 14h9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            <circle cx="13" cy="4" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
-            <circle cx="7" cy="14" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
-          </svg>
-        </button>
+        <div className="header-actions">
+          {onUpdate !== undefined && (
+            <button type="button" className="update-pill" aria-label="Update to the new version" onClick={onUpdate}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M12 7a5 5 0 1 1-1.5-3.6M12 1.5v2.9H9.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              update
+            </button>
+          )}
+          <button type="button" className="round" aria-label="Settings" onClick={onSettings}>
+            <svg width="20" height="18" viewBox="0 0 20 18" aria-hidden="true">
+              <path d="M2 4h9M15 4h3M2 14h3M9 14h9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              <circle cx="13" cy="4" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+              <circle cx="7" cy="14" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+            </svg>
+          </button>
+        </div>
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 

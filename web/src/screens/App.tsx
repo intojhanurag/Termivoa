@@ -5,6 +5,7 @@ import { ChunkErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useSessionList, useVisualViewport } from './hooks';
 import { adoptFragmentGrant, type GrantSlot } from '../pairing/pairing';
 import { NewSession } from './NewSession';
+import { OfflineScreen } from './StateScreen';
 import type { RunFirstRequest } from './presets';
 import { Sessions } from './Sessions';
 import { Settings } from './Settings';
@@ -26,8 +27,8 @@ type View =
   | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest }
   | { readonly name: 'settings' };
 
-/** While the host is unreachable, try again this often (and on network or focus changes). */
-export const OFFLINE_RETRY_MS = 10_000;
+/** While the host is unreachable, try again this often in seconds (and on network or focus changes). */
+export const OFFLINE_RETRY_S = 10;
 
 const APP_NAME = 'Phone Terminal';
 
@@ -177,10 +178,14 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
 
   // Offline: keep trying quietly, and at once when the network or the app comes back.
   const offline = view.name === 'offline';
+  const [retryIn, setRetryIn] = useState(OFFLINE_RETRY_S);
+  const [phoneOnline, setPhoneOnline] = useState(() => navigator.onLine);
   useEffect(() => {
     if (!offline) {
       return undefined;
     }
+    let left = OFFLINE_RETRY_S;
+    setRetryIn(left);
     let busy = false;
     const attempt = async () => {
       if (busy || document.visibilityState !== 'visible') {
@@ -198,14 +203,31 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       }
       void boot();
     };
-    const run = () => { void attempt(); };
-    const timer = setInterval(run, OFFLINE_RETRY_MS);
-    window.addEventListener('online', run);
-    document.addEventListener('visibilitychange', run);
+    const now = () => {
+      left = OFFLINE_RETRY_S;
+      setRetryIn(left);
+      void attempt();
+    };
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      left -= 1;
+      if (left <= 0) {
+        now();
+      } else {
+        setRetryIn(left);
+      }
+    };
+    const onOnline = () => { setPhoneOnline(true); now(); };
+    const onOffline = () => setPhoneOnline(false);
+    const timer = setInterval(tick, 1000);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', now);
     return () => {
       clearInterval(timer);
-      window.removeEventListener('online', run);
-      document.removeEventListener('visibilitychange', run);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', now);
     };
   }, [offline, boot]);
 
@@ -251,26 +273,13 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
 
   return (
     <div className="app">
-      {update.available && (
-        <div className="banner" role="status">
-          <span>An update is ready.</span>
-          <button type="button" onClick={update.reload}>reload to update</button>
-        </div>
-      )}
-      {view.name === 'boot' && <main className="page"><p role="status" className="muted">Loading…</p></main>}
-      {view.name === 'offline' && (
-        <main className="page">
-          <h1>{CONNECTION_UNAVAILABLE}</h1>
-          <p className="muted">This phone cannot reach your computer right now. Your sessions keep running there.</p>
-          <ul className="tips">
-            <li>Tailscale is on for this phone and for your computer.</li>
-            <li>Your computer is awake and online.</li>
-          </ul>
-          <p className="muted">Trying again automatically…</p>
-          <button type="button" className="primary wide" onClick={() => { void boot(); }}>
-            <span aria-hidden="true" className="prompt">❯</span> try again
-          </button>
+      {view.name === 'boot' && (
+        <main className="page state-screen">
+          <p className="state-label" role="status"><span className="dot accent pulse" aria-hidden="true" />Termivoa · connecting</p>
         </main>
+      )}
+      {view.name === 'offline' && (
+        <OfflineScreen phoneOnline={phoneOnline} retryIn={retryIn} onRetry={() => { void boot(); }} />
       )}
       {view.name === 'setup' && (
         <Setup
@@ -293,6 +302,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           onSettings={() => navigate({ name: 'settings' })}
           onRefreshSettings={refreshSettings}
           onFailure={handleFailure}
+          {...(update.available ? { onUpdate: update.reload } : {})}
         />
       )}
       {view.name === 'new' && settings !== undefined && (
