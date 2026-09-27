@@ -258,6 +258,18 @@ describe('Connection', () => {
       expect(connection.getStatus().previews).toBeUndefined();
     });
 
+    it('maps session.state cwd, clears it when absent and on reconnect', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      socket().receive('session.state', { state: 'running', cwd: '/Users/me/src/app' });
+      expect(connection.getStatus().cwd).toBe('/Users/me/src/app');
+      socket().receive('session.state', { state: 'running' });
+      expect(connection.getStatus().cwd).toBeUndefined();
+      socket().receive('session.state', { state: 'running', cwd: '/Users/me/src/app' });
+      socket().close();
+      expect(connection.getStatus().cwd).toBeUndefined();
+    });
+
     it('sends one answer with the lease and next sequence, then closes on input.accepted', async () => {
       const { connection, socket } = harness();
       await attachLive(socket());

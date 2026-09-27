@@ -130,6 +130,26 @@ describe('session tabs', () => {
     expect(html).toContain('aria-label="Session menu"');
   });
 
+  it('shows the cwd basename as the tab label, the live cwd for the active tab, and the title when custom', () => {
+    const open = record(1, { cwd: '/Users/me/src/app' });
+    const custom = record(2, { title: 'My shell', titleIsCustom: true, cwd: '/Users/me/other' });
+    const stale = record(3, { cwd: '/Users/me/stale' });
+    const html = renderToStaticMarkup(
+      <TabBar
+        tabs={[open, custom, stale]}
+        current={open}
+        viewed={{}}
+        liveCwd="/Users/me/fresh"
+        onOpen={noop}
+        onNew={noop}
+        onMenu={noop}
+      />,
+    );
+    expect(html).toContain('<span class="tab-label">fresh</span>');
+    expect(html).toContain('<span class="tab-label">My shell</span>');
+    expect(html).toContain('<span class="tab-label">stale</span>');
+  });
+
   it('shows an amber waiting dot instead of the new-output dot on another waiting tab', () => {
     const agent: AgentStatus = { state: 'waiting', stateSince: '2026-09-27T10:05:00Z', question: { id: 'q', text: 'Proceed?', options: [{ label: 'Yes' }] } };
     const open = record(1, { agent });

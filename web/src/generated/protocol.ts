@@ -297,7 +297,9 @@ export type BrokerRPCSessionListResultPayload = {
  * controlled and viewerCount are live presence computed by the broker at request time and
  * are absent when the session is not live. controllerIsYou is set only on the browser
  * gateway list, for the requesting device. Lease secrets, connection IDs and other device
- * labels are never included.
+ * labels are never included. titleIsCustom is true when a user renamed the session; clients
+ * show the basename of cwd (the live folder) as the title only when it is absent or false.
+ * cwd is present only while the session is running.
  */
 export type BrokerRPCSessionRecord = {
     readonly agent?:           AgentStatus;
@@ -305,6 +307,7 @@ export type BrokerRPCSessionRecord = {
     readonly controlled?:      boolean;
     readonly controllerIsYou?: boolean;
     readonly createdAt:        string;
+    readonly cwd?:             string;
     readonly endedAt?:         string;
     readonly exitCode?:        number;
     readonly generation:       string;
@@ -318,6 +321,7 @@ export type BrokerRPCSessionRecord = {
     readonly startedAt?:       string;
     readonly state:            State;
     readonly title:            string;
+    readonly titleIsCustom?:   boolean;
     readonly updatedAt:        string;
     readonly viewerCount?:     number;
 }
@@ -850,6 +854,7 @@ export type Reason = "initial" | "base-mismatch" | "invalid-state" | "interrupte
 
 export type SessionStatePayload = {
     readonly agent?:    AgentStatus;
+    readonly cwd?:      string;
     readonly exitCode?: number;
     readonly previews?: [PreviewPort, ...PreviewPort[]];
     readonly state:     State;

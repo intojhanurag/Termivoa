@@ -11,6 +11,7 @@ import { hasNewOutput, markViewed, readViewed, type ViewedTimes } from './activi
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { Composer } from './Composer';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
+import { displayPath, sessionName } from './folder';
 import { History } from './History';
 import { PreviewChip } from './PreviewChip';
 import { useKeyboardOpen, websocketUrl } from './hooks';
@@ -41,10 +42,12 @@ export function liveTabs(
 }
 
 /** Session tabs. Switching opens a new read-only connection; nothing carries over. */
-export function TabBar({ tabs, current, viewed, onOpen, onNew, onMenu }: {
+export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }: {
   readonly tabs: ReadonlyArray<BrokerRPCSessionRecord>;
   readonly current: BrokerRPCSessionRecord;
   readonly viewed: ViewedTimes;
+  /** The active tab's live session.state cwd, when connected live. */
+  readonly liveCwd?: string | undefined;
   readonly onOpen: (session: BrokerRPCSessionRecord) => void;
   readonly onNew: () => void;
   readonly onMenu: () => void;
@@ -67,7 +70,7 @@ export function TabBar({ tabs, current, viewed, onOpen, onNew, onMenu }: {
             >
               <span className="tab-face">
                 {active && <span className="tab-prompt" aria-hidden="true">❯</span>}
-                <span className="tab-label">{tab.title}</span>
+                <span className="tab-label">{sessionName(tab, active ? liveCwd : undefined)}</span>
                 {fresh && <><span className="dot accent" aria-hidden="true" /><span className="visually-hidden">, new output</span></>}
                 {waiting && <><span className="dot amber" aria-hidden="true" /><span className="visually-hidden">, waiting for you</span></>}
               </span>
@@ -305,7 +308,11 @@ export function Live({
   // With the keyboard up the card folds to its pill, so typing and keys keep working.
   const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
   const badge = controlBadge(status);
-  const place = [projectName, shellName, status.columns === undefined ? undefined : `${status.columns}×${status.rows}`]
+  const liveCwd = status.link === 'live' ? status.cwd : undefined;
+  const cwd = liveCwd ?? current.cwd;
+  // The path is the priority once known; it stands in for the project name.
+  const path = cwd === undefined ? undefined : displayPath(cwd);
+  const place = [path ?? projectName, shellName, status.columns === undefined ? undefined : `${status.columns}×${status.rows}`]
     .filter((part) => part !== undefined).join(' · ');
 
   if (status.link === 'lost') {
@@ -334,6 +341,7 @@ export function Live({
             tabs={liveTabs(sessions, session)}
             current={session}
             viewed={readViewed()}
+            liveCwd={liveCwd}
             onOpen={onOpen}
             onNew={onNew}
             onMenu={() => setPanel('menu')}

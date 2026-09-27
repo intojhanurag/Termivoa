@@ -344,10 +344,13 @@ func validateBrokerRPCSessionRecord(record BrokerRPCSessionRecord) error {
 	if record.ViewerCount != nil && (*record.ViewerCount < 0 || *record.ViewerCount > 16) {
 		return errors.New("viewerCount is outside bounds")
 	}
-	if (record.LastOutputAt != nil || record.Preview != nil || record.Agent != nil || record.Previews != nil) && terminal {
-		return errors.New("lastOutputAt, preview, agent and previews are only valid for a live session")
+	if (record.LastOutputAt != nil || record.Preview != nil || record.Agent != nil || record.Previews != nil || record.Cwd != nil) && terminal {
+		return errors.New("lastOutputAt, preview, agent, previews and cwd are only valid for a live session")
 	}
 	if err := ValidatePreviewPorts(record.Previews); err != nil {
+		return err
+	}
+	if err := validateOptionalWorkingDirectory(record.Cwd); err != nil {
 		return err
 	}
 	if record.Agent != nil {

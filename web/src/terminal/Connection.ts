@@ -60,6 +60,8 @@ export interface ConnectionStatus {
   readonly agent: AgentStatus | undefined;
   /** Ports this session's processes listen on; undefined when none. */
   readonly previews: ReadonlyArray<PreviewPort> | undefined;
+  /** The session's live working folder. Display as text only; undefined when unknown. */
+  readonly cwd: string | undefined;
   /** The one answer this phone sent for the shown question. */
   readonly answer: AnswerState | undefined;
 }
@@ -126,6 +128,7 @@ export const INITIAL_STATUS: ConnectionStatus = {
   hostBuild: undefined,
   agent: undefined,
   previews: undefined,
+  cwd: undefined,
   answer: undefined,
 };
 
@@ -520,7 +523,7 @@ export class Connection {
           return;
         }
         case 'session.state': {
-          const { agent, previews } = message.payload;
+          const { agent, previews, cwd } = message.payload;
           // A fresh state ends a sent answer; a "question changed" note stays while a question is up.
           const answer = this.status.answer;
           const keep = answer?.phase === 'pending' || (answer?.phase === 'changed' && agent?.state === 'waiting');
@@ -529,6 +532,7 @@ export class Connection {
             exitCode: message.payload.exitCode,
             agent,
             previews,
+            cwd,
             answer: keep ? answer : undefined,
           });
           if (message.payload.state === 'lost') {
@@ -874,7 +878,7 @@ export class Connection {
       return;
     }
     // The next attach sends a fresh session.state; never answer from an old one.
-    this.update({ link: 'reconnecting', otherController: false, controllerLabel: undefined, agent: undefined, previews: undefined });
+    this.update({ link: 'reconnecting', otherController: false, controllerLabel: undefined, agent: undefined, previews: undefined, cwd: undefined });
     const delay = RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => this.open(), delay);

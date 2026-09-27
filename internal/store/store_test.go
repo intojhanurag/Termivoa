@@ -38,8 +38,8 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	if err := store.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 5 {
-		t.Fatalf("migration count = %d, want 5", migrations)
+	if migrations != 6 {
+		t.Fatalf("migration count = %d, want 6", migrations)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("close store: %v", err)
@@ -50,8 +50,8 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	if err := reopened.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations after reopen: %v", err)
 	}
-	if migrations != 5 {
-		t.Fatalf("migration count after reopen = %d, want 4", migrations)
+	if migrations != 6 {
+		t.Fatalf("migration count after reopen = %d, want 6", migrations)
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(path)
@@ -74,8 +74,8 @@ func TestOpenUpgradesExistingSessionSchemaWithReceiptMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load migrations: %v", err)
 	}
-	if len(migrations) != 5 {
-		t.Fatalf("bundled migrations = %d, want 5", len(migrations))
+	if len(migrations) != 6 {
+		t.Fatalf("bundled migrations = %d, want 6", len(migrations))
 	}
 	if err := applyMigrations(context.Background(), database, migrations[:1], testTime.UnixMilli()); err != nil {
 		t.Fatalf("apply old schema: %v", err)
@@ -90,8 +90,8 @@ func TestOpenUpgradesExistingSessionSchemaWithReceiptMigrations(t *testing.T) {
 	if err := upgraded.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil {
 		t.Fatalf("count upgraded migrations: %v", err)
 	}
-	if applied != 5 {
-		t.Fatalf("upgraded migration count = %d, want 5", applied)
+	if applied != 6 {
+		t.Fatalf("upgraded migration count = %d, want 6", applied)
 	}
 	var receiptsTable int
 	if err := upgraded.database.QueryRow(`SELECT count(*) FROM sqlite_master
@@ -123,6 +123,11 @@ func TestOpenMarksUnprovableV2ReceiptsUnavailableWithoutRerun(t *testing.T) {
 	}
 	if err := applyMigrations(context.Background(), database, migrations[:2], testTime.UnixMilli()); err != nil {
 		t.Fatalf("apply v2 schema: %v", err)
+	}
+	// This build's queries read title_custom (migration 6). Lend the column to
+	// the v2 fixture and drop it again before the upgrade.
+	if _, err := database.Exec(`ALTER TABLE session_metadata ADD COLUMN title_custom INTEGER NOT NULL DEFAULT 0`); err != nil {
+		t.Fatal(err)
 	}
 	legacy := &Store{database: database}
 	beginBroker(t, legacy, testBrokerA)
@@ -169,6 +174,9 @@ func TestOpenMarksUnprovableV2ReceiptsUnavailableWithoutRerun(t *testing.T) {
 	); err != nil {
 		t.Fatalf("rename session after v2 terminate receipt: %v", err)
 	}
+	if _, err := database.Exec(`ALTER TABLE session_metadata DROP COLUMN title_custom`); err != nil {
+		t.Fatal(err)
+	}
 	if err := database.Close(); err != nil {
 		t.Fatalf("close v2 database: %v", err)
 	}
@@ -197,8 +205,8 @@ func TestOpenMarksUnprovableV2ReceiptsUnavailableWithoutRerun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get migrated session: %v", err)
 	}
-	if stored.Title != "renamed after terminate" {
-		t.Fatalf("migrated session title = %q, want later rename", stored.Title)
+	if stored.Title != "renamed after terminate" || !stored.TitleCustom {
+		t.Fatalf("migrated session title = %q custom=%t, want later rename, custom", stored.Title, stored.TitleCustom)
 	}
 	var unavailableMarkers int
 	if err := upgraded.database.QueryRow(`SELECT count(*) FROM mutation_receipts

@@ -380,10 +380,13 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if !validState(payload.State) || (payload.ExitCode != nil && payload.State != Exited) {
 			return errors.New("invalid session state")
 		}
-		if (payload.Agent != nil || payload.Previews != nil) && payload.State != Running {
-			return errors.New("agent status and previews are only valid while running")
+		if (payload.Agent != nil || payload.Previews != nil || payload.Cwd != nil) && payload.State != Running {
+			return errors.New("agent status, previews and cwd are only valid while running")
 		}
 		if err := ValidatePreviewPorts(payload.Previews); err != nil {
+			return err
+		}
+		if err := validateOptionalWorkingDirectory(payload.Cwd); err != nil {
 			return err
 		}
 		if payload.Agent != nil {

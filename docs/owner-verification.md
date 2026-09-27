@@ -209,6 +209,18 @@ Real delivery cannot be tested without a phone. See `docs/notifications.md`.
 - [ ] Revoke the phone with `pterm revoke <device-id>` while the preview is
       open: HMR stops within 5 s and reload shows "no longer paired".
 
+### Live folder
+
+- [ ] Mac: open a session from the "Home" project, run `cd src` (any
+      subfolder). Within about 2 seconds the tab shows `src`, the Live status
+      line shows `~/src` and, on the Sessions list, the row title is `src`
+      while its second line still reads "Home · zsh".
+- [ ] Mac: run `vim` in another folder with `cd /tmp && vim`; the tab shows
+      `tmp` while vim runs.
+- [ ] Rename the session (… > Rename…) to "build", then `cd ..`: the tab and
+      row keep "build".
+- [ ] Linux (Ubuntu host, when available): the same `cd` check.
+
 ### Revocation
 
 - [ ] `pterm devices`, then `pterm revoke <device-id>` while the phone has
@@ -226,6 +238,12 @@ but billing blocked it.
       in the project folder (`pwd` shows `/mnt/c/...`). Without a distro, or
       without WSL, no WSL profile appears.
 - [ ] ConPTY: one response per terminal query; shutdown has no deadlock.
+- [ ] Live folder: in a Windows PowerShell 5.1 session and in a PowerShell 7
+      session, run `cd C:\Windows`. The phone tab shows `Windows` within about
+      2 seconds and the prompt looks exactly as before (no extra characters).
+      A profile prompt (oh-my-posh or a custom `prompt` in `$PROFILE`) still
+      shows. A renamed session keeps its name. cmd.exe and WSL sessions keep
+      the project name.
 - [ ] Broker starts: run `pterm.exe __broker` in a normal (not elevated)
       prompt and leave it in the foreground; it keeps running with no SQLite
       or ACL error. Then `icacls "%LOCALAPPDATA%\Phone Terminal"` and

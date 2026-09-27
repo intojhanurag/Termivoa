@@ -11,6 +11,17 @@ No version has been released. Development history and evidence are in
 
 ### Added
 
+#### Live folder
+
+- Tabs and the Sessions list show each running session's live folder name
+  instead of the project name it started with; the Live status line shows the
+  path (`~/src/app`). Renamed sessions keep their name.
+- The broker publishes `cwd` on the session list and `session.state`: on macOS
+  and Linux from the foreground process (`lsof` / `/proc`), on Windows
+  PowerShell from a session-scoped prompt hook (OSC 9;9), and from OSC 7 /
+  OSC 9;9 reports on any host. Session records gain `titleIsCustom`. See
+  `docs/live-folder.md`.
+
 #### Dev-server preview
 
 - The broker finds TCP ports that a session's own processes listen on

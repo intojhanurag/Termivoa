@@ -1,11 +1,13 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -28,6 +30,8 @@ const (
 	MaxHistoryBytes     = 32 * 1024 * 1024
 	MaxCommandQueue     = 1024
 	MaxOutputQueue      = 1024
+	// MaxDirectoryReportBytes bounds a recorded OSC 7 or OSC 9;9 payload.
+	MaxDirectoryReportBytes = 4096
 
 	defaultCommandQueue = 128
 	defaultOutputQueue  = 128
@@ -60,6 +64,34 @@ type Core struct {
 	done      chan struct{}
 	cancel    context.CancelFunc
 	closeOnce sync.Once
+	// directory is written by the actor's emulator and read by the broker.
+	directory atomic.Pointer[DirectoryReport]
+}
+
+// DirectoryReport is the payload of the newest OSC 7 ("7;file://host/dir") or
+// OSC 9;9 ("9;9;\"C:\\dir\"") sequence in child output, verbatim and
+// unvalidated: it is terminal output. Seq counts reports; zero means none.
+type DirectoryReport struct {
+	Payload string
+	Seq     uint64
+}
+
+// DirectoryReport returns the newest working-directory report. It is safe to
+// call from any goroutine.
+func (core *Core) DirectoryReport() DirectoryReport {
+	if report := core.directory.Load(); report != nil {
+		return *report
+	}
+	return DirectoryReport{}
+}
+
+// recordDirectory runs on the emulator for OSC 7 and OSC 9. It never consumes
+// the sequence, so the emulator's own handling is unchanged.
+func (core *Core) recordDirectory(data []byte) bool {
+	if len(data) <= MaxDirectoryReportBytes && (bytes.HasPrefix(data, []byte("7;")) || bytes.HasPrefix(data, []byte("9;9;"))) {
+		core.directory.Store(&DirectoryReport{Payload: string(data), Seq: core.DirectoryReport().Seq + 1})
+	}
+	return false
 }
 
 type commandKind uint8
@@ -136,6 +168,8 @@ func New(ctx context.Context, config Config) (*Core, error) {
 	emulator.SetMaxGraphemeBytes(config.MaxCellBytes)
 	emulator.SetMaxLinkBytes(MaxLinkBytes)
 	emulator.SetMaxSequenceBytes(MaxSequenceBytes)
+	emulator.RegisterOscHandler(7, core.recordDirectory)
+	emulator.RegisterOscHandler(9, core.recordDirectory)
 	history := newHistoryState()
 	emulator.SetScrollbackChangeCallback(history.changed)
 
