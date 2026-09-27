@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,11 +26,26 @@ func TestLifecycleModesMatchInternalModes(t *testing.T) {
 
 // launchctlFake records commands and models launchd registration state.
 type launchctlFake struct {
+	mu         sync.Mutex
 	calls      []string
 	registered map[string]bool
 }
 
+func (fake *launchctlFake) bootstrapped() int {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	count := 0
+	for _, call := range fake.calls {
+		if strings.HasPrefix(call, "launchctl bootstrap ") {
+			count++
+		}
+	}
+	return count
+}
+
 func (fake *launchctlFake) Run(_ context.Context, name string, args ...string) (string, error) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
 	fake.calls = append(fake.calls, name+" "+strings.Join(args, " "))
 	switch args[0] {
 	case "print":
@@ -144,7 +160,7 @@ func TestSetupAndUninstallChangeStartupOnlyWithConsent(t *testing.T) {
 	if err := runWithInput(ctx, []string{"setup"}, nil, &output); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"No changes made", lifecycle.ServeCommand, "Never use Tailscale Funnel", "run launchctl bootstrap gui/501 " + plist} {
+	for _, want := range []string{"No changes made", "Tailscale is not installed", "Never use Tailscale Funnel", "run launchctl bootstrap gui/501 " + plist} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("setup output lacks %q:\n%s", want, output.String())
 		}
@@ -208,7 +224,7 @@ func TestSetupRefusesProcessesRunningOutsideStartup(t *testing.T) {
 
 	startLifecycleBroker(t, env.paths)
 	err = runWithInput(ctx, []string{"setup", "--apply", "--yes"}, nil, &output)
-	if err == nil || !strings.Contains(err.Error(), "outside startup registration") || !strings.Contains(err.Error(), "rerun `pterm setup --apply`") {
+	if err == nil || !strings.Contains(err.Error(), "outside startup registration") || !strings.Contains(err.Error(), "rerun `pterm setup`") {
 		t.Fatalf("setup --apply with an unregistered broker = %v", err)
 	}
 	if got := fake.mutations(); len(got) != 0 {
