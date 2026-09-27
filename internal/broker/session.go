@@ -182,7 +182,12 @@ type Session struct {
 	previewResults   chan previewScanResult
 	previews         []previewPort
 	previewRepublish bool
-	termination      *sessionTermination // Actor-owned; one bounded attempt per session.
+	// Live working folder (cwd.go). cwd and cwdRepublish are actor-owned.
+	cwdRead      func(context.Context) (string, error)
+	cwdResults   chan string
+	cwd          cwdTracker
+	cwdRepublish bool
+	termination  *sessionTermination // Actor-owned; one bounded attempt per session.
 }
 
 type sessionTermination struct {
@@ -353,6 +358,8 @@ func startSessionRuntime(
 		notify:              config.Notify,
 		previewScanner:      newPreviewScanner(process),
 		previewResults:      make(chan previewScanResult, 1),
+		cwdRead:             readOSDirectory(process),
+		cwdResults:          make(chan string, 1),
 	}
 
 	session.pumpWG.Add(3)
@@ -493,6 +500,7 @@ type SessionPresence struct {
 	Preview          string
 	Agent            agentstate.Status
 	Previews         []protocol.PreviewPort
+	Cwd              string
 }
 
 // Presence reads presence in one actor call. With preview, the actor also
@@ -658,6 +666,20 @@ func (session *Session) run(columns, rows int) {
 		previewTimer = time.NewTimer(max(time.Until(at), 0))
 		previewDeadline, previewAt = previewTimer.C, at
 	}
+	// Working-folder checks follow the same pattern.
+	cwdTimer := time.NewTimer(cwdCheckDelay)
+	cwdDeadline, cwdAt := cwdTimer.C, status.StartedAt.Add(cwdCheckDelay)
+	var cwdLastCheck time.Time
+	var cwdMissed bool // A check came due while one was running.
+	armCwd := func(activity time.Time) {
+		at := later(activity.Add(cwdCheckDelay), cwdLastCheck.Add(cwdCheckEvery))
+		if cwdDeadline != nil && !at.Before(cwdAt) {
+			return
+		}
+		cwdTimer.Stop()
+		cwdTimer = time.NewTimer(max(time.Until(at), 0))
+		cwdDeadline, cwdAt = cwdTimer.C, at
+	}
 	refreshControllerTimer := func() {
 		// Use the same state capture that published observer notices. A second
 		// State call could expire the lease between publication and timer setup,
@@ -756,6 +778,7 @@ func (session *Session) run(columns, rows int) {
 			controllerTimer.Stop()
 		}
 		agentTimer.Stop()
+		cwdTimer.Stop()
 		if previewTimer != nil {
 			previewTimer.Stop()
 		}
@@ -899,6 +922,7 @@ func (session *Session) run(columns, rows int) {
 					schedulePublish()
 					armAgent(session.lastOutput.Add(agentScanInterval))
 					armPreview(later(session.lastOutput.Add(previewScanDelay), previewLastScan.Add(previewScanEvery)))
+					armCwd(session.lastOutput)
 				}
 			}
 			if event.err != nil {
@@ -931,6 +955,8 @@ func (session *Session) run(columns, rows int) {
 					session.inbox.DropBeforeLeaseEpoch(threshold)
 				} else if err := session.executeInput(input.Action); err != nil {
 					session.markLost(&status)
+				} else {
+					armCwd(time.Now())
 				}
 				if session.agentDropped && status.State == SessionRunning {
 					// The phone saw input.accepted for an answer that was not
@@ -1002,6 +1028,31 @@ func (session *Session) run(columns, rows int) {
 					ports, err := session.previewScanner.scan(session.ctx, 0)
 					session.previewResults <- previewScanResult{ports: ports, err: err}
 				}()
+			}
+		case <-cwdDeadline:
+			cwdDeadline = nil
+			cwdMissed = session.cwd.checking
+			if status.State == SessionRunning && !shuttingDown && !session.cwd.checking {
+				session.cwd.checking = true
+				go func() {
+					ctx, cancel := context.WithTimeout(session.ctx, cwdCheckTimeout)
+					defer cancel()
+					path, _ := session.cwdRead(ctx)
+					session.cwdResults <- path
+				}()
+			}
+		case path := <-session.cwdResults:
+			session.cwd.checking, cwdLastCheck = false, time.Now()
+			if status.State == SessionRunning && !shuttingDown {
+				var report terminal.DirectoryReport
+				if reporter, ok := session.terminal.(directoryReporter); ok {
+					report = reporter.DirectoryReport()
+				}
+				session.cwdRepublish = session.cwd.next(path, report) || session.cwdRepublish
+				if cwdMissed {
+					cwdMissed = false
+					armCwd(cwdLastCheck)
+				}
 			}
 		case result := <-session.previewResults:
 			previewScanning, previewLastScan = false, time.Now()
@@ -1133,6 +1184,7 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 		}
 		if status.State == SessionRunning {
 			response.presence.Previews = previewPayload(session.previews)
+			response.presence.Cwd = session.cwd.current
 		}
 		if request.preview {
 			response.frame, response.err = session.terminal.ScreenSnapshot(session.ctx)

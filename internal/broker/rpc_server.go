@@ -401,7 +401,7 @@ func (server *ManagementServer) createSession(
 		ProjectID: payload.ProjectID, ShellProfileID: payload.ShellProfileID,
 		Process: ptyhost.Spec{
 			Executable: profile.ExecutablePath,
-			Args:       append([]string(nil), profile.Arguments...),
+			Args:       withDirectoryHook(profile.Platform, profile.ExecutablePath, profile.Arguments),
 			Directory:  project.CanonicalPath,
 			Env:        []string{"TERM=" + terminalType, "COLORTERM=" + terminalColorMode},
 			Columns:    ptyhost.DefaultColumns,
@@ -492,6 +492,7 @@ func (server *ManagementServer) withPresence(
 		mine := controlled && presence.ControllerDevice == deviceID
 		record.ControllerIsYou = &mine
 		record.Previews = presence.Previews
+		record.Cwd = cwdPayload(presence.Cwd)
 		if !presence.LastOutput.IsZero() {
 			value := presence.LastOutput.UTC().Format(millisecondRFC3339)
 			record.LastOutputAt = &value
@@ -533,6 +534,9 @@ func managementSessionRecord(metadata store.SessionMetadata) protocol.BrokerRPCS
 		value := int64(*metadata.ExitCode)
 		record.ExitCode = &value
 	}
+	if metadata.TitleCustom {
+		record.TitleIsCustom = &metadata.TitleCustom
+	}
 	return record
 }
 
@@ -555,6 +559,9 @@ func managementMutationSessionRecord(snapshot store.MutationSessionSnapshot) pro
 	if snapshot.HasExitCode {
 		value := int64(snapshot.ExitCode)
 		record.ExitCode = &value
+	}
+	if snapshot.TitleCustom {
+		record.TitleIsCustom = &snapshot.TitleCustom
 	}
 	return record
 }
