@@ -91,7 +91,12 @@ session.
 ## If something does not work
 
 - **The phone cannot open the page:** check that Tailscale is on for both
-  devices, then run `pterm doctor`.
+  devices, then run `pterm doctor`. Any network works (home Wi-Fi, other
+  Wi-Fi, mobile data) while Tailscale is on.
+- **It stops working when the Mac sleeps:** a sleeping Mac cannot answer. Keep
+  it on power and turn on **System Settings → Battery → Options → Prevent
+  automatic sleeping on power adapter when the display is off**. Sessions
+  continue when the Mac wakes.
 - **"This pairing link expired":** links last 2 minutes. Run `pterm pair` again.
 - **"Read-only":** tap **Take control**. Only one device can type at a time.
 - **"Delivery uncertain":** the connection broke while you typed. Look at the
@@ -99,6 +104,8 @@ session.
   own.
 - **"Session lost":** the Mac restarted, logged out, or the broker stopped. A
   lost session cannot come back; start a new one.
+- **You lost your phone:** on the Mac, run `pterm devices`, then
+  `pterm revoke <device-id>`. That phone loses access at once.
 
 Details: [docs/install.md](install.md). Things not yet verified on real devices:
 [docs/owner-verification.md](owner-verification.md).
