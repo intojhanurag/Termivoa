@@ -127,24 +127,34 @@ begin
   begin
     if not RunPterm('setup --apply --yes', Code) or (Code <> 0) then
       SuppressibleMsgBox('Phone Terminal is installed, but startup registration did not complete (exit code ' + IntToStr(Code) + '). ' +
-        'If the broker has active sessions, finish them and then run "pterm setup --apply".', mbError, MB_OK, IDOK);
+        'The broker may have active sessions, or Phone Terminal may already be running without startup registration. ' +
+        'Run "pterm setup --apply" to see why and what to stop first.', mbError, MB_OK, IDOK);
   end
   else if not RunPterm('uninstall --yes', Code) or (Code <> 0) then
     SuppressibleMsgBox('Existing Phone Terminal startup tasks could not be removed (exit code ' + IntToStr(Code) + '). ' +
       'Run "pterm uninstall" to see why.', mbError, MB_OK, IDOK);
 end;
 
-{ Refuse to start uninstalling while the broker reports active sessions.
+var
+  UninstallParams: String;
+
+{ Ask about data first, then check with exactly those options: pterm exits
+  non-zero while the broker has active sessions, does not answer, or (with
+  data deletion) runs outside startup registration, and nothing is removed.
   A missing pterm.exe does not block removal. }
 function InitializeUninstall(): Boolean;
 var
   Code: Integer;
 begin
   Result := True;
-  if RunPterm('uninstall --dry-run', Code) and (Code <> 0) then
+  UninstallParams := 'uninstall --yes';
+  if not UninstallSilent() and (MsgBox('Also delete your Phone Terminal data (paired devices, projects, settings and logs)?' + #13#10#13#10 +
+    'Choose No to keep it for a later reinstall.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
+    UninstallParams := UninstallParams + ' --delete-data';
+  if RunPterm(UninstallParams + ' --dry-run', Code) and (Code <> 0) then
   begin
-    SuppressibleMsgBox('Phone Terminal cannot be uninstalled now: its broker has active sessions or could not be checked. ' +
-      'Finish or terminate them (pterm list, pterm terminate) and try again.', mbError, MB_OK, IDOK);
+    SuppressibleMsgBox('Phone Terminal cannot be uninstalled now: its broker has active sessions, did not answer, or is running without startup registration. ' +
+      'Run "pterm uninstall" to see why, finish or terminate the sessions (pterm list, pterm terminate), stop the broker it names, and try again.', mbError, MB_OK, IDOK);
     Result := False;
   end;
 end;
@@ -152,17 +162,13 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Code: Integer;
-  Params: String;
 begin
   if CurUninstallStep = usUninstall then
   begin
-    Params := 'uninstall --yes';
-    if not UninstallSilent() and (MsgBox('Also delete your Phone Terminal data (paired devices, projects, settings and logs)?' + #13#10#13#10 +
-      'Choose No to keep it for a later reinstall.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
-      Params := Params + ' --delete-data';
-    if not RunPterm(Params, Code) or (Code <> 0) then
-      SuppressibleMsgBox('Removing the Phone Terminal startup tasks failed (exit code ' + IntToStr(Code) + '). ' +
-        'Delete the "Phone Terminal Broker" and "Phone Terminal Gateway" tasks in Task Scheduler.', mbError, MB_OK, IDOK);
+    if not RunPterm(UninstallParams, Code) or (Code <> 0) then
+      SuppressibleMsgBox('Phone Terminal uninstall did not complete (exit code ' + IntToStr(Code) + '). ' +
+        'Your data is kept if a broker was still running. Run "pterm uninstall" to see why; remove any leftover ' +
+        '"Phone Terminal Broker" and "Phone Terminal Gateway" tasks in Task Scheduler.', mbError, MB_OK, IDOK);
   end;
   if CurUninstallStep = usPostUninstall then
     UpdateUserPath('');
