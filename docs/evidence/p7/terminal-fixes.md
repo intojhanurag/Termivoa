@@ -53,14 +53,25 @@ default stays the same and the upstream ansi suite passes unchanged.
 
 Cause: `internal/ptyhost/process.go` set `cmd.Env = append(os.Environ(), ...)`.
 
-Fix: `inheritedEnvironment` keeps only an allowlist, then the broker adds
+Fix: `hostEnvironment` builds the session environment, then the broker adds
 `TERM` and `COLORTERM` (`internal/broker/rpc_server.go`, unchanged).
 
 - Unix (case-sensitive): `HOME USER LOGNAME SHELL PATH TMPDIR SSH_AUTH_SOCK
   __CF_USER_TEXT_ENCODING LANG LANGUAGE TZ LC_*`. This is what launchd gives a
   user agent (without `XPC_*`), plus locale and time zone. The zsh login
   shell loads the rest from the user's profile.
-- Windows (case-insensitive): `SystemRoot windir SystemDrive ComSpec Path
+- Windows: start from the user's default environment block
+  (`CreateEnvironmentBlock` for the broker's process token, without
+  inheritance, via `windows.Token.Environ(false)`). This is the environment a
+  fresh logon gets: system and user registry variables such as `JAVA_HOME` and
+  the user `Path`. The broker's own inherited environment is not used.
+  Launcher variables (`CLAUDECODE`, `CLAUDE_CODE_*`, `TERM_PROGRAM*`,
+  `TERM_SESSION_ID`, `WT_SESSION`, `WT_PROFILE_ID`, `VSCODE_*`, `ITERM_*`,
+  `TMUX*`, case-insensitive) are removed even from that block. Allowlisted
+  host variables that the block lacks are added. If the block call fails, the
+  session gets only the allowlisted host variables (never an empty `Env`,
+  which would inherit everything).
+- Windows allowlist (case-insensitive): `SystemRoot windir SystemDrive ComSpec Path
   PATHEXT TEMP TMP USERPROFILE APPDATA LOCALAPPDATA PUBLIC ALLUSERSPROFILE
   ProgramData ProgramFiles ProgramFiles(x86) ProgramW6432 CommonProgramFiles
   CommonProgramFiles(x86) CommonProgramW6432 HOMEDRIVE HOMEPATH USERNAME
@@ -72,7 +83,11 @@ Fix: `inheritedEnvironment` keeps only an allowlist, then the broker adds
 Repro: `TestChildDoesNotInheritLaunchingProgramEnvironment` starts
 `/bin/sh -c env` in a real PTY. The test sets `CLAUDE_CODE_X`, `CLAUDECODE`,
 `TERM_PROGRAM`, `ITERM_SESSION_ID`, and `VSCODE_GIT_IPC_HANDLE`, and the real
-Claude Code variables are also present.
+Claude Code variables are also present. `windowsEnvironment` (the merge and
+the fallback) has a pure-function test that runs on every platform.
+`TestHostEnvironmentUsesUserDefaultBlockWithoutLauncherVariables`
+(`process_windows_test.go`) reads the real block; it needs native Windows and
+was only compiled here.
 
 Before (old `os.Environ()` line; values not recorded here):
 
@@ -93,10 +108,9 @@ and `COLORTERM=truecolor` are set, and no `CLAUDE*`, `VSCODE_*`,
 `TERM_PROGRAM`, or `ITERM_SESSION_ID` variable is present. Both lists are also
 covered by pure-function tests (`internal/ptyhost/environment_test.go`).
 
-Known limit: on Windows there is no login profile, so persistent user
-variables from the registry (for example `JAVA_HOME`) are not in the session.
-If they are needed, add the user's default environment block
-(`windows.Token.Environment(false)`) before the allowlisted values.
+Known limit: a variable that the user sets only in the launching terminal
+(not in the registry) does not reach Windows sessions. On macOS the login
+shell profile is the place for such variables.
 
 ## Checks
 
@@ -105,7 +119,9 @@ If they are needed, add the user's default environment block
 | `GOTOOLCHAIN=go1.27.1 go test -race ./internal/... ./cmd/...` | Pass |
 | `GOTOOLCHAIN=go1.27.1 go test -count=1 ./tests/integration/` | Pass |
 | `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./...` | Pass |
+| `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c ./internal/ptyhost/` | Compiles (not run) |
 | `./scripts/check` (gofmt, vet, `go test ./...`, ansi/vt/xpty/Ultraviolet suites, web typecheck/test/build) | Pass |
 
-Native Windows execution was not run; the Windows allowlist has only the
-pure-function test and a cross-compile check.
+Native Windows execution was not run. Owner check (`docs/owner-verification.md`
+section 3): confirm `JAVA_HOME` and the user `Path` reach sessions; launcher
+variables do not.
