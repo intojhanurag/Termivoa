@@ -56,7 +56,7 @@ func TestPairQRAndTooLongLinkKeepTheSecretOutOfErrors(t *testing.T) {
 	origin := "https://mac.example.ts.net"
 	admin := &fakeAdmin{grant: testGrant(&origin)}
 	var output bytes.Buffer
-	if err := Pair(context.Background(), admin, "", true, &output); err != nil {
+	if err := Pair(context.Background(), admin, PairOptions{ShowQR: true}, &output); err != nil {
 		t.Fatal(err)
 	}
 	text := output.String()
