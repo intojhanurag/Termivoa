@@ -13,7 +13,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 )
 
-const commandHelp = `Phone Terminal private development build
+const commandHelp = `Termivoa private development build
 
 Available commands:
   pterm list                         Show managed sessions and lifecycle state.

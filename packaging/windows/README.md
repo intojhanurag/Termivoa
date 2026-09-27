@@ -11,7 +11,7 @@ machine-wide changes.
 It cross-builds `dist/windows/pterm.exe` (`GOOS=windows GOARCH=amd64
 CGO_ENABLED=0`, `-trimpath`) and compiles `phone-terminal.iss` with Inno Setup 6
 (`ISCC` env var or the default install path) into
-`artifacts/Phone-Terminal-<version>-windows-x64-unsigned-setup.exe` (+ `.sha256`).
+`artifacts/Termivoa-<version>-windows-x64-unsigned-setup.exe` (+ `.sha256`).
 CI builds it in `.github/workflows/packaging.yml` with a pinned Inno Setup.
 
 Installer behavior:
@@ -19,7 +19,7 @@ Installer behavior:
 - Installs to `%LOCALAPPDATA%\Programs\Phone Terminal\versions\<version>\pterm.exe`.
   Each version gets its own directory, so an update never overwrites the
   executable a running broker uses, and the previous version stays for rollback.
-- Task "Start Phone Terminal when I sign in" (checked) runs
+- Task "Start Termivoa when I sign in" (checked) runs
   `pterm setup --apply --yes`, which registers two per-user scheduled tasks
   (broker, gateway): at logon, least privilege, hidden, normal priority,
   Task Scheduler "restart on failure" every minute (not yet verified through

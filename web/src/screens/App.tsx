@@ -46,7 +46,7 @@ export function offlineRetry(failures: number): { readonly offline: boolean; rea
   };
 }
 
-const APP_NAME = 'Phone Terminal';
+const APP_NAME = 'Termivoa';
 
 /** The browser tab title: the screen, or the open session's name. */
 export function titleFor(view: View): string {

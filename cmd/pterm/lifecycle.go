@@ -185,7 +185,7 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 	noStartup := env.host.OS == "linux" && !env.host.Systemd
 	if noStartup {
 		fmt.Fprintf(output, "  startup: not available: systemd user services are not running (%s); "+
-			"start Phone Terminal with `pterm launch` after each restart\n", env.noSystemd)
+			"start Termivoa with `pterm launch` after each restart\n", env.noSystemd)
 		if env.wsl {
 			fmt.Fprintf(output, "  %s\n", wslSystemdHint)
 		}
@@ -208,10 +208,10 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 		case !known:
 			fmt.Fprintln(output, "  linger: unknown (loginctl did not answer)")
 		case enabled:
-			fmt.Fprintln(output, "  linger: on; Phone Terminal keeps running after you log out and starts at boot")
+			fmt.Fprintln(output, "  linger: on; Termivoa keeps running after you log out and starts at boot")
 		default:
 			report.lingerOff = true
-			fmt.Fprintf(output, "  linger: off; Phone Terminal stops when you log out. On a server, turn it on: %s\n",
+			fmt.Fprintf(output, "  linger: off; Termivoa stops when you log out. On a server, turn it on: %s\n",
 				lifecycle.DisplayCommand(env.host.LingerCommand()))
 		}
 	}
@@ -237,7 +237,7 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 const (
 	wslLifetimeNote = "Windows stops this Linux VM when no Windows program uses it, and every session ends then. " +
 		"For sessions that last, use the Windows app with its \"WSL bash\" profile (docs/install.md)."
-	wslSystemdHint = "To start Phone Terminal at login inside WSL, turn on systemd: add \"[boot]\" and \"systemd=true\" " +
+	wslSystemdHint = "To start Termivoa at login inside WSL, turn on systemd: add \"[boot]\" and \"systemd=true\" " +
 		"to /etc/wsl.conf, run `wsl --shutdown` in Windows, then open WSL and run `pterm setup` again."
 )
 
@@ -369,9 +369,9 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		fmt.Fprintf(output, "  ! tailscale serve: status unavailable: %v\n", report.serveErr)
 		return report, problems + 1
 	case report.serve.Configured:
-		fmt.Fprintln(output, "  tailscale serve: HTTPS 443 proxies the Phone Terminal gateway")
+		fmt.Fprintln(output, "  tailscale serve: HTTPS 443 proxies the Termivoa gateway")
 	default:
-		fmt.Fprintln(output, "  ! tailscale serve: not configured for Phone Terminal")
+		fmt.Fprintln(output, "  ! tailscale serve: not configured for Termivoa")
 		problems++
 	}
 	for _, finding := range report.serve.Problems {
@@ -380,7 +380,7 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 	problems += len(report.serve.Problems)
 
 	// Dev-server previews (HTTPS 8443) are optional: unconfigured or
-	// conflicting never fails doctor, since only Phone Terminal itself (443)
+	// conflicting never fails doctor, since only Termivoa itself (443)
 	// is required.
 	switch {
 	case report.serve.PreviewConfigured:
@@ -588,7 +588,7 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 		}
 	}
 	if noStartup {
-		fmt.Fprintln(output, "\nStarting Phone Terminal in the background (no startup registration):")
+		fmt.Fprintln(output, "\nStarting Termivoa in the background (no startup registration):")
 		if err := startMissing(ctx, env, report.statuses, output); err != nil {
 			return err
 		}
@@ -667,13 +667,13 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, ori
 	fmt.Fprintln(output, "\npterm setup will:")
 	switch {
 	case env.host.OS == "linux" && !env.host.Systemd:
-		fmt.Fprintf(output, "1. Start Phone Terminal now in the background, as `pterm launch` does. It cannot start at login here:\n"+
+		fmt.Fprintf(output, "1. Start Termivoa now in the background, as `pterm launch` does. It cannot start at login here:\n"+
 			"  systemd user services are not running (%s).\n  After each restart, run `pterm launch` again.\n", env.noSystemd)
 		if env.wsl {
 			fmt.Fprintf(output, "  %s\n", wslSystemdHint)
 		}
 	default:
-		fmt.Fprintln(output, "1. Start Phone Terminal when you log in (current user only, no administrator rights):")
+		fmt.Fprintln(output, "1. Start Termivoa when you log in (current user only, no administrator rights):")
 		if len(plan.Steps) == 0 {
 			fmt.Fprintln(output, "  already registered for this pterm; nothing to change.")
 		} else {
@@ -730,14 +730,14 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, ori
 func offerLinger(ctx context.Context, env lifecycleEnv, confirmer fileConfirmer, output io.Writer) error {
 	command := env.host.LingerCommand()
 	approved, err := confirmer.Confirm(ctx, fmt.Sprintf(
-		"\nKeep Phone Terminal running when you log out, and start it at boot before anyone logs in?\n"+
+		"\nKeep Termivoa running when you log out, and start it at boot before anyone logs in?\n"+
 			"On a server (no desktop login) you need this, or your sessions end when your last SSH login closes.\n"+
 			"This runs: %s [y/N] ", lifecycle.DisplayCommand(command)))
 	if err != nil {
 		return err
 	}
 	if !approved {
-		fmt.Fprintf(output, "Linger not changed. Phone Terminal stops when you log out. To change it later, run: %s\n",
+		fmt.Fprintf(output, "Linger not changed. Termivoa stops when you log out. To change it later, run: %s\n",
 			lifecycle.DisplayCommand(command))
 		return nil
 	}
@@ -746,7 +746,7 @@ func offerLinger(ctx context.Context, env lifecycleEnv, confirmer fileConfirmer,
 			err, strings.TrimSpace(result), lifecycle.DisplayCommand(command))
 		return nil
 	}
-	fmt.Fprintln(output, "Linger is on: Phone Terminal keeps running after you log out and starts at boot.")
+	fmt.Fprintln(output, "Linger is on: Termivoa keeps running after you log out and starts at boot.")
 	return nil
 }
 
@@ -814,7 +814,7 @@ func offerTailscaleServe(ctx context.Context, env lifecycleEnv, tailscale tailsc
 
 // offerTailscalePreviewServe asks a second, separate consent to run
 // `tailscale serve` for the dev-server preview listener on HTTPS 8443, a
-// separate origin from the phone terminal's 443. It never runs without its
+// separate origin from Termivoa's own 443. It never runs without its
 // own explicit yes, and only when HTTPS 8443 serves nothing else.
 func offerTailscalePreviewServe(ctx context.Context, env lifecycleEnv, tailscale tailscaleReport, origin string,
 	confirmer fileConfirmer, output io.Writer,
@@ -939,7 +939,7 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	case "linux":
 		fmt.Fprintf(output, "The pterm program itself stays: delete %s yourself.\n", env.host.Executable)
 	default:
-		fmt.Fprintln(output, "The application itself stays: move Phone Terminal.app to the Trash, or remove it in Windows Settings > Apps.")
+		fmt.Fprintln(output, "The application itself stays: move Termivoa.app to the Trash, or remove it in Windows Settings > Apps.")
 	}
 
 	if plan.ChangesRunningBroker || len(data) > 0 {
@@ -1055,7 +1055,7 @@ func runLaunchCommand(ctx context.Context, args []string, output io.Writer) erro
 		return err
 	}
 	url := env.gateway + "/"
-	fmt.Fprintf(output, "Phone Terminal is running: %s\n", url)
+	fmt.Fprintf(output, "Termivoa is running: %s\n", url)
 	if *options["no-open"] {
 		return nil
 	}

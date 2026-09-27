@@ -13,7 +13,7 @@ Tailscale HTTPS and signed installers are not yet verified; see
 
 ## Product boundary
 
-Phone Terminal manages terminal sessions that it starts on one owner's Mac or Windows host. A session can be observed from a desktop attachment and a paired phone browser. Viewer disconnects and gateway restarts must not end a broker-owned shell. A broker crash, OS logout, or host reboot ends the live process boundary; v0 reports the session lost and does not silently rerun commands.
+Termivoa manages terminal sessions that it starts on one owner's Mac or Windows host. A session can be observed from a desktop attachment and a paired phone browser. Viewer disconnects and gateway restarts must not end a broker-owned shell. A broker crash, OS logout, or host reboot ends the live process boundary; v0 reports the session lost and does not silently rerun commands.
 
 The host must remain awake, logged in, and running the broker. Registered project roots simplify session creation but do not sandbox the shell from the owner's filesystem.
 

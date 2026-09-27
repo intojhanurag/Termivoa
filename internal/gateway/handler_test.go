@@ -32,7 +32,7 @@ func newTestHandler(t *testing.T, broker gatewayapi.Broker) *gatewayHandler {
 	handler.assets = fstest.MapFS{
 		"index.html":               {Data: []byte("<!doctype html><title>app</title>")},
 		"sw.js":                    {Data: []byte("self.addEventListener('fetch', () => {})")},
-		"manifest.webmanifest":     {Data: []byte(`{"name":"Phone Terminal"}`)},
+		"manifest.webmanifest":     {Data: []byte(`{"name":"Termivoa"}`)},
 		"assets/app-3f9a1c.js":     {Data: []byte("console.log(1)")},
 		"assets/app-3f9a1c.css":    {Data: []byte("body{}")},
 		"assets/font-77aa.woff2":   {Data: []byte("wOF2")},
@@ -459,7 +459,7 @@ func TestStaticSite(t *testing.T) {
 		{"/pair", "text/html; charset=utf-8", "no-store", "<title>app</title>", 200},
 		{"/sessions/abc", "text/html; charset=utf-8", "no-store", "<title>app</title>", 200},
 		{"/sw.js", "text/javascript; charset=utf-8", "no-store", "addEventListener", 200},
-		{"/manifest.webmanifest", "application/manifest+json", "no-store", "Phone Terminal", 200},
+		{"/manifest.webmanifest", "application/manifest+json", "no-store", "Termivoa", 200},
 		{"/assets/app-3f9a1c.js", "text/javascript; charset=utf-8", "public, max-age=31536000, immutable", "console", 200},
 		{"/assets/app-3f9a1c.css", "text/css; charset=utf-8", "public, max-age=31536000, immutable", "body", 200},
 		{"/assets/font-77aa.woff2", "font/woff2", "public, max-age=31536000, immutable", "wOF2", 200},
@@ -496,7 +496,7 @@ func TestEmbeddedPlaceholderServes(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := do(handler, http.MethodGet, "/pair", "", requestOptions{host: testBound})
-	if response.Code != 200 || !strings.Contains(response.Body.String(), "Phone Terminal") {
+	if response.Code != 200 || !strings.Contains(response.Body.String(), "Termivoa") {
 		t.Fatalf("placeholder = %d %s", response.Code, response.Body)
 	}
 }

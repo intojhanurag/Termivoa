@@ -89,7 +89,7 @@ describe('service worker push', () => {
     for (const json of [() => { throw new SyntaxError('bad'); }, () => null, () => ['x'], () => 'text']) {
       const { handlers, self } = loadWorker(async () => new Response(''));
       await fire(handlers, 'push', pushEvent(json));
-      expect(self.registration.showNotification).toHaveBeenCalledWith('Phone Terminal', expect.objectContaining({ body: '', tag: 'pterm:test', data: { url: '/' } }));
+      expect(self.registration.showNotification).toHaveBeenCalledWith('Termivoa', expect.objectContaining({ body: '', tag: 'pterm:test', data: { url: '/' } }));
     }
     const { handlers, self } = loadWorker(async () => new Response(''));
     await fire(handlers, 'push', {});

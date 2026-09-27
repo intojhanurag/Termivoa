@@ -14,7 +14,7 @@ import (
 )
 
 // Zero-valued limits deliberately retain upstream behavior. This fixture also
-// records why Phone Terminal must configure limits before decoding user input.
+// records why Termivoa must configure limits before decoding user input.
 func TestPhoneTerminalReproduceUnboundedDefaults(t *testing.T) {
 	const productLimit = 64 * 1024
 	scanner := newEventScanner()

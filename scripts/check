@@ -6,7 +6,7 @@ cd "$repo_dir"
 
 node_major=$(node -p "process.versions.node.split('.')[0]")
 if [ "$node_major" != "24" ]; then
-  echo "Phone Terminal checks require Node 24; run 'nvm use 24.11.0'." >&2
+  echo "Termivoa checks require Node 24; run 'nvm use 24.11.0'." >&2
   exit 1
 fi
 

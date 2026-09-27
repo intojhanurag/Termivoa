@@ -184,6 +184,15 @@ No version has been released. Development history and evidence are in
 - Unsigned macOS app and DMG build scripts and a Windows per-user installer
   script, with separate owner-only signing scripts.
 
+### Changed
+
+- The product is renamed to **Termivoa** (working name: Phone Terminal): web
+  app title and home-screen name, CLI messages, docs, `Termivoa.app`, the DMG
+  and the Windows installer. The `pterm` command, data directories, startup
+  entries, cookies and the database file keep their old names so existing
+  installs keep working (`docs/naming.md`).
+- Security reports and Code of Conduct reports go to aojharaj2004@gmail.com.
+
 ### Fixed
 
 - Linux: phone streams were held to about 2 MB/s, because the 16 KiB send

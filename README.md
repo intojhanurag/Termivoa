@@ -5,9 +5,9 @@ Claude Code or Codex — from your phone, privately over Tailscale.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-The command-line tool is `pterm`. "Phone Terminal" is the internal working name
-used in the code and packaging; the final public name still needs the owner's
-confirmation (see [docs/release-checklist.md](docs/release-checklist.md)).
+The command-line tool is `pterm`. Some data folders and startup entries keep
+the old working name "Phone Terminal" so existing installs keep working (see
+[docs/naming.md](docs/naming.md)).
 
 > **Status:** private development, not released. The full flow is tested on an
 > Apple Silicon Mac. Windows and Linux support is written but not yet verified
@@ -211,3 +211,7 @@ real terminal history in issues, pull requests or screenshots.
 ## License
 
 [Apache-2.0](LICENSE). Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+---
+
+Made by [Anurag](https://github.com/intojhanurag).

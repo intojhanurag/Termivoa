@@ -18,7 +18,7 @@ import (
 
 var macHost = Host{
 	OS:         "darwin",
-	Executable: `/Users/ada/Apps/R&D <"x">/Phone Terminal.app/Contents/MacOS/pterm`,
+	Executable: `/Users/ada/Apps/R&D <"x">/Termivoa.app/Contents/MacOS/pterm`,
 	DataDir:    "/Users/ada/Library/Application Support/Phone Terminal",
 	HomeDir:    "/Users/ada",
 	UID:        501,
@@ -39,7 +39,7 @@ const wantBrokerPlist = `<?xml version="1.0" encoding="UTF-8"?>
 	<string>dev.phone-terminal.broker</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/ada/Apps/R&amp;D &lt;&#34;x&#34;&gt;/Phone Terminal.app/Contents/MacOS/pterm</string>
+		<string>/Users/ada/Apps/R&amp;D &lt;&#34;x&#34;&gt;/Termivoa.app/Contents/MacOS/pterm</string>
 		<string>__broker</string>
 	</array>
 	<key>RunAtLoad</key>
@@ -420,11 +420,11 @@ func TestServeFindings(t *testing.T) {
 
 func TestExecutableProblems(t *testing.T) {
 	for path, bad := range map[string]bool{
-		"/Applications/Phone Terminal.app/Contents/MacOS/pterm":                false,
-		"/Volumes/Phone Terminal/Phone Terminal.app/Contents/MacOS/pterm":      true,
-		"/private/var/folders/x/AppTranslocation/y/d/Phone Terminal.app/pterm": true,
-		"/var/folders/x/T/go-build123/b001/exe/pterm":                          true,
-		"/Users/ada/Applications/Phone Terminal.app/Contents/MacOS/pterm":      false,
+		"/Applications/Termivoa.app/Contents/MacOS/pterm":                false,
+		"/Volumes/Termivoa/Termivoa.app/Contents/MacOS/pterm":            true,
+		"/private/var/folders/x/AppTranslocation/y/d/Termivoa.app/pterm": true,
+		"/var/folders/x/T/go-build123/b001/exe/pterm":                    true,
+		"/Users/ada/Applications/Termivoa.app/Contents/MacOS/pterm":      false,
 	} {
 		if got := len(ExecutableProblems("darwin", path)) > 0; got != bad {
 			t.Errorf("%s: problem=%v", path, got)

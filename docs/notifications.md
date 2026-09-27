@@ -11,7 +11,7 @@ and no terminal text leaves the computer.
 | --- | --- | --- |
 | `waiting` | `<session title> is waiting for you` | `<project> · tap to answer` |
 | `done` | `<session title> is done · your turn` | `Worked for N min` |
-| test | `Phone Terminal` | `Notifications are on.` |
+| test | `Termivoa` | `Notifications are on.` |
 
 The encrypted payload is `{title, body, sessionId, kind}` and nothing else.
 It never carries terminal output, a question text, a preview line, a path or a

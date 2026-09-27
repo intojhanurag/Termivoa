@@ -164,6 +164,10 @@ func (h Host) File(service Service) string {
 	return h.join(h.HomeDir, "Library", "LaunchAgents", service.Label+".plist")
 }
 
+// Labels, unit names, task names and the unit/task descriptions keep the old
+// "Phone Terminal" working name: changing them would orphan or invalidate
+// existing startup registrations (docs/naming.md).
+
 // Unit is the systemd user unit name of a service.
 func Unit(service Service) string { return "phone-terminal-" + service.Name + ".service" }
 
@@ -601,7 +605,7 @@ func (h Host) UninstallPlan(statuses []Status, deleteData []string) (Plan, error
 		}
 		base := path[strings.LastIndexAny(path, `/\`)+1:]
 		if base != "Phone Terminal" && base != "phone-terminal" {
-			return Plan{}, fmt.Errorf("lifecycle: refusing to delete %q: not a Phone Terminal data directory", path)
+			return Plan{}, fmt.Errorf("lifecycle: refusing to delete %q: not a Termivoa data directory", path)
 		}
 		plan.Steps = append(plan.Steps, Step{RemoveTree: path})
 	}

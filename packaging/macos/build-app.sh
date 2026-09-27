@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build an UNSIGNED Phone Terminal.app for Apple Silicon into dist/macos.
+# Build an UNSIGNED Termivoa.app for Apple Silicon into dist/macos.
 # Signing is a separate owner-authorized step (sign-and-notarize.sh).
 set -eu
 
@@ -15,7 +15,7 @@ short_version=${version%%-*}
 build_id="$version+$(git rev-parse --short=12 HEAD)"
 git diff --quiet HEAD -- || build_id="$build_id.dirty"
 
-app="dist/macos/Phone Terminal.app"
+app="dist/macos/Termivoa.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
@@ -24,7 +24,7 @@ pnpm build:web
 
 export CGO_ENABLED=0 GOOS=darwin GOARCH=arm64
 go build -trimpath -tags webdist -ldflags "-X main.buildID=$build_id" -o "$app/Contents/MacOS/pterm" ./cmd/pterm
-go build -trimpath -o "$app/Contents/MacOS/Phone Terminal" ./packaging/macos/launcher
+go build -trimpath -o "$app/Contents/MacOS/Termivoa" ./packaging/macos/launcher
 
 cat >"$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -34,15 +34,15 @@ cat >"$app/Contents/Info.plist" <<EOF
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Phone Terminal</string>
+	<string>Termivoa</string>
 	<key>CFBundleExecutable</key>
-	<string>Phone Terminal</string>
+	<string>Termivoa</string>
 	<key>CFBundleIdentifier</key>
 	<string>dev.phone-terminal.companion</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Phone Terminal</string>
+	<string>Termivoa</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

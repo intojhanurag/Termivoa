@@ -81,7 +81,7 @@ func runShutdownCommand(ctx context.Context, args []string, input *os.File, outp
 	}
 	var text strings.Builder
 	if reachable {
-		prompt := fmt.Sprintf("Shut down Phone Terminal? This ends %d active session(s) and their process trees, "+
+		prompt := fmt.Sprintf("Shut down Termivoa? This ends %d active session(s) and their process trees, "+
 			"then stops the broker and the gateway. [y/N] ", count)
 		confirmed, err := fileConfirmer{input: input, output: output}.Confirm(ctx, prompt)
 		if err != nil {

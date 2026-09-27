@@ -45,9 +45,10 @@ This checklist prepares a reviewable v0.1.0 candidate. It does not authorize pub
 - [ ] Apache-2.0 license is present for original code.
 - [ ] Exact direct/transitive dependency inventory, upstream licenses, required notices, and distribution copies are reviewed.
 - [ ] SBOM and checksums are included with artifacts.
-- [ ] Owner-approved Code of Conduct enforcement contact is present.
-- [ ] Owner-approved private vulnerability-reporting route is present.
-- [ ] Final product name, package identifiers, maintainer/publisher identity, and screenshots from synthetic data are approved. Proposed public name: Termivoa (the GitHub repository is already `intojhanurag/Termivoa`); "Phone Terminal" stays the internal working name until the owner confirms. Package identifiers (for example `dev.phone-terminal.*`) and the Go module path `github.com/intojhanurag/phone-terminal` still use the working name.
+- [x] Owner-approved Code of Conduct enforcement contact is present (aojharaj2004@gmail.com).
+- [x] Owner-approved private vulnerability-reporting route is present (`SECURITY.md`, aojharaj2004@gmail.com).
+- [x] Final product name: **Termivoa** (owner decision, 2026-09-27; repository `intojhanurag/Termivoa`). Package identifiers (`dev.phone-terminal.*`), data folders, startup entries and the Go module path `github.com/intojhanurag/phone-terminal` keep the old working name for compatibility (`docs/naming.md`).
+- [ ] Maintainer/publisher identity for signing and screenshots from synthetic data are approved.
 - [ ] Contribution workflow and contribution licensing are accurate; no fabricated sign-offs or CLA service exists.
 
 ## Secret and privacy review

@@ -50,7 +50,7 @@ type Emulator struct {
 	// preserves the upstream unlimited behavior.
 	maxGraphemeBytes int
 	// maxLinkBytes bounds retained OSC 8 URLs. When non-zero, OSC 8 parameters
-	// are discarded because Phone Terminal does not expose them.
+	// are discarded because Termivoa does not expose them.
 	maxLinkBytes int
 
 	// The ANSI parser to use.
@@ -98,7 +98,7 @@ func NewEmulator(w, h int) *Emulator {
 	t.parser = ansi.NewParser()
 	t.parser.SetParamsSize(parser.MaxParamsSize)
 	t.parser.SetDataSize(1024 * 1024 * 4) // 4MB data buffer
-	// Phone Terminal: the emulator decodes UTF-8, so C1 continuation bytes in
+	// Termivoa: the emulator decodes UTF-8, so C1 continuation bytes in
 	// OSC/DCS/APC text (for example "\u2733" = E2 9C B3) are not ST.
 	t.parser.SetUTF8Strings(true)
 	t.parser.SetHandler(ansi.Handler{
@@ -316,7 +316,7 @@ func (e *Emulator) SetMaxGraphemeBytes(maxBytes int) {
 }
 
 // SetMaxLinkBytes bounds OSC 8 URLs retained in cursor and cell state. Values
-// below one disable hyperlinks. Phone Terminal does not retain OSC 8 params.
+// below one disable hyperlinks. Termivoa does not retain OSC 8 params.
 func (e *Emulator) SetMaxLinkBytes(maxBytes int) {
 	e.maxLinkBytes = max(0, maxBytes)
 }

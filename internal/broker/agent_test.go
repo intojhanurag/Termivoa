@@ -368,7 +368,7 @@ func TestAgentTransitionsNotify(t *testing.T) {
 
 	process.Emit([]byte(agentDialog))
 	if event := next(); event.Kind != webpush.KindWaiting || event.SessionID != session.id ||
-		event.SessionTitle != "claude" || event.ProjectName != "Phone Terminal" {
+		event.SessionTitle != "claude" || event.ProjectName != "Termivoa" {
 		t.Fatalf("waiting event = %#v", event)
 	}
 

@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+// The product is Termivoa, but these directory names keep the old working name:
+// renaming them would orphan existing data (docs/naming.md).
 const (
 	applicationDirectoryName            = "Phone Terminal"
 	developmentApplicationDirectoryName = "Phone Terminal Development"

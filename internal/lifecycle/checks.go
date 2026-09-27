@@ -17,10 +17,10 @@ func ExecutableProblems(goos, path string) []string {
 	}
 	if goos == "darwin" {
 		if strings.HasPrefix(path, "/Volumes/") {
-			problems = append(problems, "pterm is running from a mounted disk image; copy Phone Terminal.app to Applications first")
+			problems = append(problems, "pterm is running from a mounted disk image; copy Termivoa.app to Applications first")
 		}
 		if strings.Contains(path, "/AppTranslocation/") {
-			problems = append(problems, "macOS App Translocation is active; move Phone Terminal.app to Applications and open it from there")
+			problems = append(problems, "macOS App Translocation is active; move Termivoa.app to Applications and open it from there")
 		}
 	}
 	if goos == "windows" && strings.Contains(lower, "/appdata/local/temp/") {
@@ -86,7 +86,7 @@ func ServeFindings(data []byte) (ServeStatus, error) {
 	var status ServeStatus
 	for _, hostPort := range sortedKeys(raw.AllowFunnel) {
 		if raw.AllowFunnel[hostPort] {
-			status.Problems = append(status.Problems, "Tailscale Funnel is enabled for "+hostPort+"; Phone Terminal must never be public. Turn Funnel off before pairing.")
+			status.Problems = append(status.Problems, "Tailscale Funnel is enabled for "+hostPort+"; Termivoa must never be public. Turn Funnel off before pairing.")
 		}
 	}
 	configured, problems := servePortFindings(raw, "443", LocalURL)

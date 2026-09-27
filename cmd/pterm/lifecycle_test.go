@@ -96,7 +96,7 @@ func newLifecycleTestEnv(t *testing.T) (lifecycleEnv, *launchctlFake) {
 	fake := &launchctlFake{registered: map[string]bool{}}
 	data := filepath.Join(root, "Application Support", "Phone Terminal")
 	env := lifecycleEnv{
-		host:    lifecycle.Host{OS: "darwin", Executable: "/Applications/Phone Terminal.app/Contents/MacOS/pterm", DataDir: data, HomeDir: filepath.Join(root, "home"), UID: 501},
+		host:    lifecycle.Host{OS: "darwin", Executable: "/Applications/Termivoa.app/Contents/MacOS/pterm", DataDir: data, HomeDir: filepath.Join(root, "home"), UID: 501},
 		paths:   host.Paths{DataDir: data, RuntimeDir: filepath.Join(root, "Caches", "Phone Terminal", "runtime")},
 		runner:  fake,
 		gateway: "http://" + freeLoopbackAddress(t),
@@ -344,7 +344,7 @@ func TestInstalledTailscaleUsesAbsoluteProgramFiles(t *testing.T) {
 
 // TestInspectTailscaleReportsPreviewFindingsSeparately proves the dev-server
 // preview (HTTPS 8443) lines in `pterm doctor` output are independent of the
-// phone terminal's own HTTPS 443 status, and that a preview conflict never
+// Termivoa's own HTTPS 443 status, and that a preview conflict never
 // counts as a doctor problem (previews are optional).
 func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
 	const status = `{"BackendState":"Running","Self":{"DNSName":"h.ts.net."}}`
@@ -357,13 +357,13 @@ func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
 		"both configured": {
 			serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
 				`"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
-			want:     []string{"tailscale serve: HTTPS 443 proxies the Phone Terminal gateway", "tailscale serve: HTTPS 8443 proxies dev-server previews"},
+			want:     []string{"tailscale serve: HTTPS 443 proxies the Termivoa gateway", "tailscale serve: HTTPS 8443 proxies dev-server previews"},
 			problems: 0,
 		},
 		"neither configured": {
 			serve: `{}`,
 			want: []string{
-				"! tailscale serve: not configured for Phone Terminal",
+				"! tailscale serve: not configured for Termivoa",
 				"tailscale serve: dev-server previews not shared (optional): " + lifecycle.PreviewServeCommand,
 			},
 			problems: 1,
@@ -372,7 +372,7 @@ func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
 			serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
 				`"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
 			want: []string{
-				"tailscale serve: HTTPS 443 proxies the Phone Terminal gateway",
+				"tailscale serve: HTTPS 443 proxies the Termivoa gateway",
 				"! tailscale serve: HTTPS 8443 path / on h.ts.net:8443 already serves http://127.0.0.1:3000; pterm will not overwrite it",
 			},
 			lacks:    []string{"dev-server previews not shared"},

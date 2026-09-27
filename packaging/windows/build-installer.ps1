@@ -50,7 +50,7 @@ if ($Sign) {
 & $iscc @arguments (Join-Path $PSScriptRoot 'phone-terminal.iss')
 if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
 
-Get-ChildItem $artifacts -Filter "Phone-Terminal-$Version-windows-x64*-setup.exe" | ForEach-Object {
+Get-ChildItem $artifacts -Filter "Termivoa-$Version-windows-x64*-setup.exe" | ForEach-Object {
     $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -Path "$($_.FullName).sha256" -Value "$hash  $($_.Name)" -Encoding ascii
     Write-Host "Built $($_.FullName) ($buildId)"

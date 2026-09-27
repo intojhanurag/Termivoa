@@ -110,7 +110,7 @@ func TestLinuxSetupAndUninstallUseSystemdUserUnits(t *testing.T) {
 	for _, want := range []string{
 		"No changes made", "write " + broker + ":", "ExecStart=/opt/pterm/bin/pterm __broker",
 		"run systemctl --user daemon-reload", "run systemctl --user enable phone-terminal-broker.service",
-		"linger: off; Phone Terminal stops when you log out",
+		"linger: off; Termivoa stops when you log out",
 		"asks separately whether to keep running after you log out: loginctl enable-linger ada",
 	} {
 		if !strings.Contains(output.String(), want) {
@@ -173,7 +173,7 @@ func TestLinuxSetupWithoutSystemdExplainsTheFallback(t *testing.T) {
 	}
 	for _, want := range []string{
 		"startup: not available: systemd user services are not running (offline)",
-		"Start Phone Terminal now in the background, as `pterm launch` does",
+		"Start Termivoa now in the background, as `pterm launch` does",
 		"After each restart, run `pterm launch` again.",
 		"systemd=true", "/etc/wsl.conf",
 		"Windows stops this Linux VM when no Windows program uses it",

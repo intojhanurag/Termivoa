@@ -177,7 +177,7 @@ func (notifier *Notifier) Test(ctx context.Context, deviceID string) (int, error
 		return 0, ErrRateLimited
 	}
 	return notifier.deliver(ctx, deviceID, Message{
-		Title: "Phone Terminal", Body: "Notifications are on.", Kind: kindTest,
+		Title: "Termivoa", Body: "Notifications are on.", Kind: kindTest,
 	}, time.Minute, UrgencyNormal)
 }
 

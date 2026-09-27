@@ -16,7 +16,7 @@ if (-not $thumbprint -or $thumbprint -notmatch '^[0-9A-Fa-f]{40}$' -or -not $tim
 $signtool = if ($env:SIGNTOOL) { $env:SIGNTOOL } else { (Get-Command signtool.exe -ErrorAction Stop).Source }
 
 foreach ($file in $Path) {
-    & $signtool sign /sha1 $thumbprint /fd SHA256 /tr $timestamp /td SHA256 /d 'Phone Terminal' $file
+    & $signtool sign /sha1 $thumbprint /fd SHA256 /tr $timestamp /td SHA256 /d 'Termivoa' $file
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & $signtool verify /pa $file
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
