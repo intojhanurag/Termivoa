@@ -56,7 +56,8 @@ describe('service worker', () => {
     const response = await reply;
     expect(response?.status).toBe(503);
     const html = await response?.text();
-    expect(html).toContain('<meta http-equiv="refresh" content="10">');
+    expect(html).toContain('<meta http-equiv="refresh" content="5">');
+    expect(html).toContain('retrying every 5s');
     expect(html).toContain('<a href="/">Retry now</a>');
   });
 });

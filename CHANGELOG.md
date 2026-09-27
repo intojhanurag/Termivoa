@@ -140,6 +140,12 @@ No version has been released. Development history and evidence are in
 
 ### Fixed
 
+- The phone reconnects in seconds after a lock, backgrounding or network
+  switch: the live link retries at most every 5 s and at once when the app
+  comes back or goes online, and replaces a possibly dead socket after 10 s
+  or more hidden (as an observer; input is never resent). The offline screen
+  shows only after two failed tries and retries after 1, 2, 4, 8, then every
+  10 s; the service worker offline page reloads every 5 s.
 - Windows: SQLite opens with a valid `file:///C:/...` URI (UNC paths use
   `file:////server/share/...`); private directories get one current-user ACE
   that the check accepts; folders left by an elevated run are taken back for

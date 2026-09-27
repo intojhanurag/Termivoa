@@ -30,8 +30,21 @@ type View =
   | { readonly name: 'preview'; readonly session: BrokerRPCSessionRecord; readonly port: number }
   | { readonly name: 'settings' };
 
-/** While the host is unreachable, try again this often in seconds (and on network or focus changes). */
+/** While the host is unreachable, try again at most this often in seconds (and at once on network or focus changes). */
 export const OFFLINE_RETRY_S = 10;
+/** Failed boot attempts that still show "connecting": one quick failure (iOS waking the network) is not offline. */
+export const OFFLINE_GRACE_FAILURES = 2;
+
+/**
+ * After `failures` failed attempts in a row: whether to show the offline
+ * screen, and the seconds until the next try (1, 2, 4, 8, then every 10).
+ */
+export function offlineRetry(failures: number): { readonly offline: boolean; readonly retryIn: number } {
+  return {
+    offline: failures >= OFFLINE_GRACE_FAILURES,
+    retryIn: Math.min(2 ** Math.max(0, failures - 1), OFFLINE_RETRY_S),
+  };
+}
 
 const APP_NAME = 'Phone Terminal';
 
@@ -154,15 +167,22 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       return;
     }
     setView({ name: 'boot' });
-    try {
-      setSettings(await api.settings());
-    } catch (error) {
-      if (isAuthFailure(error)) {
-        toSetup();
-      } else {
-        setView({ name: 'offline' });
+    for (let failures = 1; ; failures++) {
+      try {
+        setSettings(await api.settings());
+        break;
+      } catch (error) {
+        if (isAuthFailure(error)) {
+          toSetup();
+          return;
+        }
+        const next = offlineRetry(failures);
+        if (next.offline) {
+          setView({ name: 'offline' });
+          return;
+        }
+        await new Promise((resolve) => { setTimeout(resolve, next.retryIn * 1000); });
       }
-      return;
     }
     // Never blocks boot: a failed or empty answer means no previews.
     previewConfig.current = api.previewConfig().then((config) => previewOrigin(config.origin), () => undefined);
@@ -209,7 +229,9 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     if (!offline) {
       return undefined;
     }
-    let left = OFFLINE_RETRY_S;
+    // Boot already failed OFFLINE_GRACE_FAILURES times before showing this screen.
+    let failures = OFFLINE_GRACE_FAILURES;
+    let left = offlineRetry(failures).retryIn;
     setRetryIn(left);
     let busy = false;
     const attempt = async () => {
@@ -228,16 +250,22 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       }
       void boot();
     };
-    const now = () => {
-      left = OFFLINE_RETRY_S;
+    const retry = () => {
+      left = offlineRetry(failures).retryIn;
       setRetryIn(left);
       void attempt();
+    };
+    // Back on the network or in front: try now and start the backoff over.
+    const now = () => {
+      failures = 1;
+      retry();
     };
     const tick = () => {
       if (document.visibilityState !== 'visible') return;
       left -= 1;
       if (left <= 0) {
-        now();
+        failures += 1;
+        retry();
       } else {
         setRetryIn(left);
       }

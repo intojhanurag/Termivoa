@@ -24,7 +24,15 @@ import { SnapshotAssembler } from './SnapshotAssembler';
 
 export const DELIVERY_UNCERTAIN = 'Delivery uncertain—check the terminal before sending again.';
 export const HEARTBEAT_MS = 5000;
-export const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15000] as const;
+export const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 3000, 5000] as const;
+/**
+ * Back after at least this long hidden, a live socket may be half-open (iOS
+ * sleep, network switch): it looks open and delivers nothing. The gateway's
+ * WebSocket pings are invisible to JS and heartbeat has no reply, so the
+ * check is to reopen the socket. Live already releases control when hidden,
+ * so reattaching as an observer costs the user nothing.
+ */
+export const RESUME_CHECK_MS = 10_000;
 const HISTORY_PAGE_ROWS = 200;
 const MAX_HISTORY_PAGES = 25;
 // Continuous output bumps the history revision on every scrolled line.
@@ -152,6 +160,7 @@ export class Connection {
   private history: HistoryState | undefined;
   private stopped = false;
   private requestedSize: string | undefined;
+  private hiddenAt: number | undefined;
 
   private readonly createSocket: (url: string) => WebSocket;
   private readonly requestFrame: (callback: () => void) => void;
@@ -184,6 +193,7 @@ export class Connection {
 
   start(): void {
     this.stopped = false;
+    this.listen(true);
     this.open();
   }
 
@@ -304,6 +314,58 @@ export class Connection {
   closeHistory(): void {
     this.history = undefined;
     this.emit();
+  }
+
+  private readonly onVisibility = (): void => {
+    if (document.visibilityState === 'hidden') {
+      this.hiddenAt ??= Date.now();
+      return;
+    }
+    const hiddenFor = this.hiddenAt === undefined ? 0 : Date.now() - this.hiddenAt;
+    this.hiddenAt = undefined;
+    this.resume(hiddenFor > RESUME_CHECK_MS);
+  };
+
+  private readonly onPageShow = (event: PageTransitionEvent): void => this.resume(event.persisted);
+
+  // Offline to online means the old network path is likely gone.
+  private readonly onOnline = (): void => this.resume(true);
+
+  private listen(on: boolean): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+    if (on) {
+      document.addEventListener('visibilitychange', this.onVisibility);
+      window.addEventListener('pageshow', this.onPageShow);
+      window.addEventListener('online', this.onOnline);
+    } else {
+      document.removeEventListener('visibilitychange', this.onVisibility);
+      window.removeEventListener('pageshow', this.onPageShow);
+      window.removeEventListener('online', this.onOnline);
+    }
+  }
+
+  /**
+   * The page or network is back: skip a pending (possibly frozen) retry and
+   * connect now. With `verify`, a live socket is replaced too, since it may be
+   * half-open. Either way the new socket attaches as an observer; input is
+   * never resent.
+   */
+  private resume(verify: boolean): void {
+    const { link } = this.status;
+    if (this.stopped || !(link === 'reconnecting' || (verify && link === 'live'))) {
+      return;
+    }
+    const socket = this.socket;
+    if (socket !== undefined) {
+      // Same cleanup as a real close (stops input, drops control); the old
+      // socket's own close event is then stale.
+      this.handleClose(this.socketEpoch);
+      socket.close(4002, 'reconnect');
+    }
+    this.open();
+    this.reconnectAttempt = 0;
   }
 
   private open(): void {
@@ -824,6 +886,7 @@ export class Connection {
 
   private stop(link: 'lost' | 'revoked' | 'closed', notice?: string): void {
     this.stopped = true;
+    this.listen(false);
     this.clearReconnect();
     this.stopHeartbeat();
     this.dropControl(undefined);
