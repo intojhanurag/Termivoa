@@ -4,6 +4,21 @@ Last updated: 2026-09-27
 
 ## Current status
 
+### v0 merge without CI (2026-09-29)
+
+The owner asked to merge the v0 stack without hosted CI: the account's 3,000
+included GitHub Actions minutes for September were used up, and they reset in
+early October. PR #27 contains all of #23–#26 and was squash-merged alone into
+`main` with administrator bypass; "include administrators" was turned off only
+for that merge and turned back on right after. #23–#26 were closed as included
+in #27. Before the merge, an adversarial review of all five PRs found 25 real
+defects; all were fixed with failing-first tests except desktop mouse
+forwarding, which is documented as out of scope for v0. The full local
+`./scripts/check` and `go test -race ./internal/... ./cmd/...` passed on the
+merged head (macOS arm64). Native Windows tests, the Linux `/proc` path and the
+packaging workflow have not run in CI yet: run CI on `main` when minutes reset
+and fix any failure in a follow-up PR.
+
 ### v0 stack (2026-09-27)
 
 The P3–P6 work is pushed as stacked private PRs: #23 (P3 desktop attach and
