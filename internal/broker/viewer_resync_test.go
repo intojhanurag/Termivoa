@@ -136,20 +136,20 @@ func TestViewerResetRejectsLateDeliveryRegistration(t *testing.T) {
 			if err := session.resyncViewer(testViewerConnection, subscription); err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			ctx, cancel := context.WithCancelCause(context.Background())
+			defer cancel(nil)
 			if subscription.setDeliveryCancel(plan.epoch, cancel) {
 				t.Fatal("old reserved delivery registered after reset")
 			}
-			if !errors.Is(ctx.Err(), context.Canceled) {
+			if !errors.Is(context.Cause(ctx), errViewerDeliveryStale) {
 				t.Fatal("old reserved delivery acquired an uncanceled context after reset")
 			}
 			replacement, err := session.reserveViewerDelivery(testViewerConnection, subscription)
 			if err != nil || replacement.kind != viewerDeliverySnapshot {
 				t.Fatalf("reserve replacement: kind=%v, error=%v", replacement.kind, err)
 			}
-			replacementContext, replacementCancel := context.WithCancel(context.Background())
-			defer replacementCancel()
+			replacementContext, replacementCancel := context.WithCancelCause(context.Background())
+			defer replacementCancel(nil)
 			if !subscription.setDeliveryCancel(replacement.epoch, replacementCancel) {
 				t.Fatal("replacement registration was rejected")
 			}

@@ -87,8 +87,14 @@ func (writer *sessionWriter) sendReserved(ctx context.Context, message []byte, d
 		return err
 	}
 	// A cancellation during a partial frame poisons the stream. Close it rather
-	// than appending another message to an incomplete JSON frame.
-	stop := context.AfterFunc(ctx, func() { _ = writer.conn.Close() })
+	// than appending another message to an incomplete JSON frame. A delivery
+	// superseded by resync is not a failure: its frame completes under the write
+	// deadline and the canceled context stops the stale plan's next frame.
+	stop := context.AfterFunc(ctx, func() {
+		if !errors.Is(context.Cause(ctx), errViewerDeliveryStale) {
+			_ = writer.conn.Close()
+		}
+	})
 	defer stop()
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(message)))
