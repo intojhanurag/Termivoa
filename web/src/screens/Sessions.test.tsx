@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import type { SessionList } from './hooks';
 import { NewSession } from './NewSession';
-import { noteBusy } from './activity';
 import { age, controllerText, hostSummary, PushCard, SessionRow, Sessions, waitingFirst } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
@@ -117,10 +116,10 @@ describe('agent status badges', () => {
     expect(html).not.toContain('waiting for you');
   });
 
-  it('keeps an idle shell neutral, and says your turn after this page saw it working with unseen output', () => {
-    const idle: BrokerRPCSessionRecord = { ...base, id: '84444444-4444-4444-8444-444444444446', agent: { state: 'idle', stateSince: '2026-09-27T11:48:00Z' } };
-    expect(row(idle, true)).not.toContain('status-pill');
-    noteBusy([{ ...idle, agent: { state: 'working', stateSince: '2026-09-27T11:40:00Z' } }]);
+  it('keeps an idle shell neutral, and says your turn for idle after work with unseen output', () => {
+    const shell: BrokerRPCSessionRecord = { ...base, id: '84444444-4444-4444-8444-444444444446', agent: { state: 'idle', stateSince: '2026-09-27T11:48:00Z' } };
+    expect(row(shell, true)).not.toContain('status-pill');
+    const idle: BrokerRPCSessionRecord = { ...shell, agent: { state: 'idle', stateSince: '2026-09-27T11:48:00Z', afterWork: true } };
     const html = row(idle, true);
     expect(html).toContain('<span class="status-pill green">Your turn<span class="pill-time"> · 12m</span></span>');
     expect(html).toContain('<span class="tile green" aria-hidden="true"><svg');

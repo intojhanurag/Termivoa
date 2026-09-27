@@ -70,17 +70,7 @@ export function since(iso: string | undefined, now: number): string {
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
 }
 
-type AgentRef = Pick<BrokerRPCSessionRecord, 'id' | 'generation' | 'agent'>;
-
-/** Session generations this page load saw working or waiting. */
-const busySeen = new Set<string>();
-
-/** Called with every session list; remembers which sessions were busy. */
-export function noteBusy(sessions: ReadonlyArray<AgentRef>, seen: Set<string> = busySeen): void {
-  for (const session of sessions) {
-    if (session.agent !== undefined && session.agent.state !== 'idle') seen.add(viewedKey(session));
-  }
-}
+type AgentRef = Pick<BrokerRPCSessionRecord, 'agent'>;
 
 export interface AgentBadge {
   readonly label: 'Waiting' | 'Working' | 'Your turn';
@@ -89,20 +79,16 @@ export interface AgentBadge {
 
 /**
  * The status pill for a running session, or undefined for the neutral look.
- * The broker reports `idle` for any quiet program, and a plain shell at its
- * prompt is always idle after its last output, so idle alone cannot tell "the
- * agent finished" from "a shell sits there". Rule: "Your turn" only when this
- * page load saw the session working or waiting AND it printed output this
- * device has not viewed yet. After a reload, or once you open the session,
- * an idle session goes back to the neutral look.
- * ponytail: memory is per page load; a broker-side "was busy" flag would
- * survive reloads if that matters.
+ * The broker reports `idle` for any quiet program, so a plain shell at its
+ * prompt is idle too. "Your turn" needs both `afterWork` (the broker saw this
+ * idle end a working period, so it survives reloads) and output this device
+ * has not viewed yet, so opening the session clears it.
  */
-export function agentBadge(session: AgentRef, fresh: boolean, seen: ReadonlySet<string> = busySeen): AgentBadge | undefined {
+export function agentBadge(session: AgentRef, fresh: boolean): AgentBadge | undefined {
   switch (session.agent?.state) {
     case 'waiting': return { label: 'Waiting', tone: 'amber' };
     case 'working': return { label: 'Working', tone: 'accent' };
-    case 'idle': return fresh && seen.has(viewedKey(session)) ? { label: 'Your turn', tone: 'green' } : undefined;
+    case 'idle': return fresh && session.agent.afterWork === true ? { label: 'Your turn', tone: 'green' } : undefined;
     default: return undefined;
   }
 }
