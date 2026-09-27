@@ -26,6 +26,9 @@ func ExecutableProblems(goos, path string) []string {
 	if goos == "windows" && strings.Contains(lower, "/appdata/local/temp/") {
 		problems = append(problems, "pterm is running from a temporary directory; install it first")
 	}
+	if goos == "linux" && (strings.HasPrefix(path, "/tmp/") || strings.HasPrefix(path, "/var/tmp/") || strings.HasPrefix(path, "/dev/shm/")) {
+		problems = append(problems, "pterm is running from a temporary directory; install it first (scripts/install-linux.sh puts it in ~/.local/bin)")
+	}
 	return problems
 }
 

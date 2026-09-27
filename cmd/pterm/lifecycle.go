@@ -74,10 +74,16 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 		target.UID = os.Getuid()
 	} else {
 		current, err := user.Current()
-		if err != nil {
+		switch {
+		case err == nil:
+			target.User = current.Username
+		case runtime.GOOS == "linux":
+			// Without cgo, users only in LDAP/SSSD are not in /etc/passwd;
+			// loginctl accepts the numeric ID as well.
+			target.User = strconv.Itoa(os.Getuid())
+		default:
 			return lifecycleEnv{}, err
 		}
-		target.User = current.Username
 	}
 	tailscale, _ := exec.LookPath("tailscale")
 	if tailscale == "" {

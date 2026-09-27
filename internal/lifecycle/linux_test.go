@@ -321,3 +321,19 @@ type runnerFunc func(context.Context, string, ...string) (string, error)
 func (run runnerFunc) Run(ctx context.Context, name string, args ...string) (string, error) {
 	return run(ctx, name, args...)
 }
+
+func TestLinuxExecutableProblems(t *testing.T) {
+	for path, bad := range map[string]bool{
+		"/home/ada/.local/bin/pterm":      false,
+		"/usr/local/bin/pterm":            false,
+		"/tmp/pterm":                      true,
+		"/var/tmp/x/pterm":                true,
+		"/dev/shm/pterm":                  true,
+		"/tmp/go-build123/b001/exe/pterm": true,
+		"/home/ada/tmp/pterm":             false,
+	} {
+		if got := len(ExecutableProblems("linux", path)) > 0; got != bad {
+			t.Errorf("%s: problem=%v", path, got)
+		}
+	}
+}
