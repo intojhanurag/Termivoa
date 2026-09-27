@@ -21,9 +21,9 @@ const render = (session: BrokerRPCSessionRecord) => renderToStaticMarkup(<dl><Pr
 describe('PresenceFacts', () => {
   it('names who controls the session and how many viewers are attached', () => {
     expect(render({ ...base, controlled: true, controllerIsYou: true, viewerCount: 1 }))
-      .toBe('<dl><dt>Control</dt><dd>Controlled here</dd><dt>Viewers</dt><dd>1 viewer</dd></dl>');
+      .toBe('<dl><dt>Control</dt><dd>Controlled by this device</dd><dt>Viewers</dt><dd>1 viewer</dd></dl>');
     expect(render({ ...base, controlled: true, controllerIsYou: false, viewerCount: 3 }))
-      .toContain('<dd>Controlled elsewhere</dd><dt>Viewers</dt><dd>3 viewers</dd>');
+      .toContain('<dd>Controlled by another device</dd><dt>Viewers</dt><dd>3 viewers</dd>');
     expect(render({ ...base, controlled: false, controllerIsYou: false, viewerCount: 0 }))
       .toContain('<dd>No controller</dd><dt>Viewers</dt><dd>No viewers</dd>');
   });

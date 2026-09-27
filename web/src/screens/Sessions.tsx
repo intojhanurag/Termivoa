@@ -19,8 +19,8 @@ function lifecycleLabel(session: BrokerRPCSessionRecord): string {
 }
 
 function controlLabel(session: BrokerRPCSessionRecord): string {
-  if (session.controllerIsYou === true) return 'Controlled here';
-  return session.controlled === true ? 'Controlled elsewhere' : 'No controller';
+  if (session.controllerIsYou === true) return 'Controlled by this device';
+  return session.controlled === true ? 'Controlled by another device' : 'No controller';
 }
 
 function viewerLabel(count: number): string {
