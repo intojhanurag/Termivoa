@@ -1,6 +1,6 @@
 # Get started in 5 minutes
 
-Phone Terminal lets you use the terminal sessions on your Mac from your phone.
+Termivoa lets you use the terminal sessions on your Mac from your phone.
 Your shells and coding agents keep running on the Mac while the phone is away.
 
 You need:
@@ -16,12 +16,12 @@ No release is published yet. Build `pterm` from source as shown in the
 [README quick start](../README.md#quick-start), or build the unsigned app and
 DMG with [`packaging/macos`](../packaging/macos/README.md).
 
-With the DMG, open it and drag **Phone Terminal.app** to **Applications**. To
+With the DMG, open it and drag **Termivoa.app** to **Applications**. To
 use `pterm` in a terminal:
 
 ```sh
 mkdir -p ~/.local/bin
-ln -s "/Applications/Phone Terminal.app/Contents/MacOS/pterm" ~/.local/bin/pterm
+ln -s "/Applications/Termivoa.app/Contents/MacOS/pterm" ~/.local/bin/pterm
 ```
 
 Builds are not signed yet, so macOS may block the first launch. Windows 11
@@ -39,7 +39,7 @@ pterm setup
 
 Setup checks your Mac, shows what it will do, and asks **once**. It then:
 
-- starts Phone Terminal every time you log in;
+- starts Termivoa every time you log in;
 - sets your phone address to your Mac's Tailscale name;
 - asks before it shares the page with your own Tailscale devices (never with
   the public internet);
@@ -54,7 +54,7 @@ Setup checks your Mac, shows what it will do, and asks **once**. It then:
    `Phone "My iPhone" shows code 485-431. Approve? [y/N]`. If the codes match,
    type `y`.
 
-On iPhone, tap **Share → Add to Home Screen** to open Phone Terminal like an
+On iPhone, tap **Share → Add to Home Screen** to open Termivoa like an
 app.
 
 ## Use it
@@ -90,7 +90,7 @@ session.
 | `pterm revoke <device-id>` | Remove a phone at once. |
 | `pterm terminate <session-id>` | End one session. |
 | `pterm stop` | Stop phone access; sessions keep running. |
-| `pterm shutdown` | End all sessions and stop Phone Terminal. |
+| `pterm shutdown` | End all sessions and stop Termivoa. |
 | `pterm doctor` | Check what is wrong. Never prints secrets. |
 
 ## If something does not work
@@ -105,7 +105,7 @@ session.
 - **"This pairing link expired":** links last 2 minutes. Run `pterm pair` again.
 - **"Read-only":** tap **Take control**. Only one device can type at a time.
 - **"Delivery uncertain":** the connection broke while you typed. Look at the
-  terminal before you send it again. Phone Terminal never resends input on its
+  terminal before you send it again. Termivoa never resends input on its
   own.
 - **"Session lost":** the Mac restarted, logged out, or the broker stopped. A
   lost session cannot come back; start a new one.

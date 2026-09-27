@@ -1,6 +1,6 @@
 # Dependency patches
 
-Phone Terminal keeps narrow source patches for four pinned Go dependencies under
+Termivoa keeps narrow source patches for four pinned Go dependencies under
 `third_party/`. Their original versions remain in `go.mod`; local `replace`
 directives make the reviewed copies authoritative for builds. All four directories
 preserve the upstream license and test suite.
@@ -21,7 +21,7 @@ The local patch:
 - adds `WriteStream`, which preserves the parser's pending grapheme across
   arbitrary PTY chunks;
 - adds an explicit `Flush` publication boundary used immediately before a
-  Phone Terminal snapshot;
+  Termivoa snapshot;
 - keeps upstream `Write` behavior for compatibility with other callers and the
   upstream test suite;
 - calculates stored cell widths with the emulator's advertised width method;
@@ -84,7 +84,7 @@ then opens another handle with `os.FindProcess` and previously discarded the
 original without closing it. The local patch closes that original handle after
 the replacement succeeds and fails safely if closing it fails.
 
-Phone Terminal separately starts the ConPTY process suspended, assigns it to a
+Termivoa separately starts the ConPTY process suspended, assigns it to a
 kill-on-close Job Object, and then resumes its initial thread. That process
 policy belongs to `internal/ptyhost`, not this dependency patch.
 

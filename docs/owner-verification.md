@@ -362,8 +362,9 @@ WSL (optional):
 - [ ] Windows: code-signing certificate thumbprint + timestamp URL, then
       `packaging/windows/sign.ps1`.
 - [ ] Check Gatekeeper and SmartScreen with the signed artifacts.
-- [ ] Final product name, bundle IDs and publisher identity (still placeholders;
-      proposed public name: Termivoa, see `docs/release-checklist.md`).
+- [x] Final product name: Termivoa (decided 2026-09-27). Bundle IDs keep
+      `dev.phone-terminal.*` for compatibility (`docs/naming.md`).
+- [ ] Publisher identity for signing.
 - [ ] Public release stays your manual decision (plan section 20).
 
 ## 6. Known open defects

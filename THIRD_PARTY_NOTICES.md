@@ -32,4 +32,4 @@ dependencies must be added after exact versions are locked. Except for the four
 explicit local replacements, a name in this file does not mean the component
 is currently vendored, linked, or shipped.
 
-Apache-2.0 applies only to original Phone Terminal code. It does not replace any third-party license.
+Apache-2.0 applies only to original Termivoa code. It does not replace any third-party license.

@@ -14,9 +14,10 @@ packaging. It landed as #27 (v0, containing #23–#26), #28 (first run and
 daily use) and #30 (phone UI v2). All three were merged without hosted CI,
 because GitHub Actions jobs do not start (account billing). The full local
 `./scripts/check` and `go test -race ./internal/... ./cmd/...` passed on the
-merged heads. The GitHub repository is now `intojhanurag/Termivoa` (proposed
-public name, pending owner confirmation; "Phone Terminal" stays the working
-name).
+merged heads. The GitHub repository is now `intojhanurag/Termivoa`. The owner
+confirmed the product name **Termivoa** (2026-09-27); user-facing text uses it,
+and data folders, startup entries and other stored names keep "Phone Terminal"
+for compatibility (`docs/naming.md`).
 
 Not yet verified (owner checklist in
 [owner-verification.md](owner-verification.md)):
@@ -396,9 +397,9 @@ These questions must be resolved before their dependent gates; they do not block
 | Coding CLI and disposable test repository | Claude Code and Codex CLI ran in a disposable empty project on the Mac development profile (`docs/evidence/p7/coding-agents.md`) | A real-phone agent run remains in `owner-verification.md` |
 | Apple signing/notarization | Membership, identities, and approved credential location not established | Signed macOS P6/P8 artifacts |
 | Windows code signing | Owner-approved trusted identity and key access not established | Signed Windows P6/P8 artifacts |
-| Public identity | Proposed name Termivoa (repository renamed to `intojhanurag/Termivoa`); final name, package identifiers, publisher identity, and publication permission not confirmed | Public-release P8 handoff |
+| Public identity | Name decided: Termivoa (2026-09-27; repository `intojhanurag/Termivoa`; kept compatibility names in `docs/naming.md`). Publisher identity for signing and publication permission not confirmed | Public-release P8 handoff |
 | Hosted CI | GitHub Actions jobs do not start because of account billing; `main` was merged without hosted CI (2026-09-27) | Native Windows CI, packaging workflow, required checks on later PRs |
-| Public contacts | Owner-approved Code of Conduct and vulnerability-reporting routes not provided | Public-readiness documents |
+| Public contacts | Done (2026-09-27): owner chose aojharaj2004@gmail.com for security reports (`SECURITY.md`) and Code of Conduct reports | No current blocker |
 | Branch enforcement | Supported and configured on private `main`: required PR, strict named checks, resolved conversations, linear history, admin enforcement, no force push, no deletion | No current blocker. Squash is the only enabled merge method. |
 | Existing GitHub App | `Greptile Review` runs automatically on private PRs; the agent did not install it | Owner confirmed on 2026-09-20 that Greptile is intentionally authorized to review this project. It is not a required branch-protection context and its confidence threshold is configured not to block merging. |
 

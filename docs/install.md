@@ -1,4 +1,4 @@
-# Installing Phone Terminal
+# Installing Termivoa
 
 > Status: private development. Only **unsigned** artifacts exist. Signed and
 > notarized releases need the owner's Apple Developer ID and Windows
@@ -10,7 +10,7 @@
 > written and tested in containers, but not yet on a real Linux computer. The
 > short version of this guide is [getting-started.md](getting-started.md).
 
-Phone Terminal runs two per-user processes from one `pterm` executable:
+Termivoa runs two per-user processes from one `pterm` executable:
 
 - the **broker** owns every terminal session, the terminal state and the database;
 - the **gateway** serves the web page on `127.0.0.1:8787` and talks to the broker.
@@ -23,15 +23,15 @@ SYSTEM or an administrator. No Node.js, Go or compiler is needed on the host.
 
 ### macOS (Apple Silicon)
 
-1. Open `Phone-Terminal-<version>-macos-arm64.dmg`.
-2. Drag **Phone Terminal.app** to **Applications**. Do not run it from the
+1. Open `Termivoa-<version>-macos-arm64.dmg`.
+2. Drag **Termivoa.app** to **Applications**. Do not run it from the
    disk image: `pterm setup` refuses a pterm on a mounted image or in
    App Translocation, because that path disappears later.
 3. Optional, for the CLI on your PATH (you do this; the app never changes PATH):
 
    ```sh
    mkdir -p ~/.local/bin
-   ln -s "/Applications/Phone Terminal.app/Contents/MacOS/pterm" ~/.local/bin/pterm
+   ln -s "/Applications/Termivoa.app/Contents/MacOS/pterm" ~/.local/bin/pterm
    ```
 
    The rest of this guide writes `pterm` for that path.
@@ -41,11 +41,11 @@ and notarized builds are pending owner signing.
 
 ### Windows 11 (x64)
 
-1. Run `Phone-Terminal-<version>-windows-x64-setup.exe`. It needs no
+1. Run `Termivoa-<version>-windows-x64-setup.exe`. It needs no
    administrator rights and installs to
    `%LOCALAPPDATA%\Programs\Phone Terminal\versions\<version>\`.
 2. Choose tasks:
-   - **Start Phone Terminal when I sign in** (checked): runs
+   - **Start Termivoa when I sign in** (checked): runs
      `pterm setup --apply --yes`, which registers two scheduled tasks for your
      account only.
    - **Add pterm to my PATH** (unchecked): edits only your user PATH.
@@ -77,7 +77,7 @@ Signed builds are pending owner signing.
 
 ### Linux (Ubuntu 22.04 and 24.04, x86_64 or arm64)
 
-Phone Terminal is one static `pterm` file. It needs no root, no packages and
+Termivoa is one static `pterm` file. It needs no root, no packages and
 no Node.js on the host. Put it in `~/.local/bin` and run `pterm setup`:
 
 ```sh
@@ -91,7 +91,7 @@ pnpm install --frozen-lockfile
 
 `scripts/install-linux.sh` copies the file to `~/.local/bin/pterm` and runs
 `pterm setup`. Without an argument, in a source checkout on the host, it builds
-the binary first. It refuses to run as root: Phone Terminal runs as your user.
+the binary first. It refuses to run as root: Termivoa runs as your user.
 If `~/.local/bin` is not on your PATH yet, Ubuntu adds it at your next login;
 until then use `~/.local/bin/pterm`. There is no download: nothing is published
 yet.
@@ -122,7 +122,7 @@ it will do and asks **once**:
 
 ```text
 pterm setup will:
-1. Start Phone Terminal when you log in (current user only, no administrator rights):
+1. Start Termivoa when you log in (current user only, no administrator rights):
    ...the exact files and launchctl / schtasks / systemctl --user commands...
 2. Wait until the broker and the gateway answer.
 3. Save the phone address https://<mac>.<tailnet>.ts.net (unless you set another one).
@@ -147,7 +147,7 @@ After `y` it:
   the only authorization. It asks only when HTTPS 443 serves nothing else and
   Funnel is off; otherwise it lists the conflict and changes nothing. It never
   enables Funnel;
-- after that, only when HTTPS 443 serves Phone Terminal, asks a **second,
+- after that, only when HTTPS 443 serves Termivoa, asks a **second,
   separate** question before it runs
   `tailscale serve --bg --https=8443 http://127.0.0.1:8789` for dev-server
   previews (see below). It changes nothing if HTTPS 8443 already serves
@@ -271,7 +271,7 @@ never as root. `pterm setup` shows the two unit files and every `systemctl
 
 ### Ubuntu desktop
 
-Run `pterm setup` in a terminal. Phone Terminal starts when you log in and
+Run `pterm setup` in a terminal. Termivoa starts when you log in and
 stops when you log out. Keep the computer awake while you use it from the
 phone (Settings > Power > Automatic Suspend: off).
 
@@ -282,7 +282,7 @@ services, and every session, when your last SSH login closes. `pterm setup`
 asks a separate question:
 
 ```text
-Keep Phone Terminal running when you log out, and start it at boot before anyone logs in?
+Keep Termivoa running when you log out, and start it at boot before anyone logs in?
 On a server (no desktop login) you need this, or your sessions end when your last SSH login closes.
 This runs: loginctl enable-linger <user> [y/N]
 ```
@@ -290,8 +290,8 @@ This runs: loginctl enable-linger <user> [y/N]
 Answer `y` on a server. pterm runs `loginctl enable-linger` only after that
 `y`, never with `sudo`. If your system refuses it (no polkit rule for you),
 setup prints `sudo loginctl enable-linger <user>` for you or an administrator
-to run. `pterm doctor` shows `linger: on` or `off`. With linger on, Phone
-Terminal starts at boot, and sessions survive logout. A reboot or a broker
+to run. `pterm doctor` shows `linger: on` or `off`. With linger on, Termivoa
+starts at boot, and sessions survive logout. A reboot or a broker
 crash still ends every session.
 
 Then install Tailscale on the server (`tailscale up`), make yourself the
@@ -300,7 +300,7 @@ questions and pairing.
 
 ### Without systemd (WSL without systemd, containers)
 
-If `systemctl --user` does not answer, nothing can start Phone Terminal at
+If `systemctl --user` does not answer, nothing can start Termivoa at
 login. `pterm setup` and `pterm doctor` say so. Setup then starts the broker
 and gateway in the background, as `pterm launch` does; they keep running
 after you close the terminal. Run `pterm launch` again after each restart.
@@ -379,7 +379,9 @@ v0 has no automatic updater. Nothing downloads code at startup.
      `...\Phone Terminal\versions\<new-version>\` and keeps the old directory for
      rollback. It never closes a running broker.
    - macOS: keep the old app (for example rename it
-     `Phone Terminal <old-version>.app`), then copy the new app to Applications.
+     `Termivoa <old-version>.app`), then copy the new app to Applications.
+     Before the rename the app was `Phone Terminal.app`; step 2 re-points
+     startup to `Termivoa.app`, then you can move the old app to the Trash.
    - Linux: keep the old file (for example `cp ~/.local/bin/pterm
      ~/.local/bin/pterm-<old-version>`), then run `scripts/install-linux.sh`
      with the new file. The unit files do not change, so setup restarts
@@ -422,16 +424,17 @@ it names first.
 
 Then remove the application:
 
-- macOS: move Phone Terminal.app to the Trash and delete any `~/.local/bin/pterm` link.
+- macOS: move Termivoa.app (or an older `Phone Terminal.app`) to the Trash and delete any `~/.local/bin/pterm` link.
 - Linux: `rm ~/.local/bin/pterm`. Uninstall already ran
   `systemctl --user disable --now` for both units, removed them and ran
   `daemon-reload`. It does not turn linger off; to do that, run
   `loginctl disable-linger`.
-- Windows: Settings > Apps > Phone Terminal > Uninstall. The uninstaller runs
+- Windows: Settings > Apps > Termivoa > Uninstall. The uninstaller runs
   `pterm uninstall`, asks whether to delete data (default: keep), and removes
   its PATH entry.
 
-Data locations:
+Data locations (they keep the old working name so existing installs keep
+their data; see [naming.md](naming.md)):
 
 - macOS: `~/Library/Application Support/Phone Terminal` and `~/Library/Caches/Phone Terminal`
 - Windows: `%LOCALAPPDATA%\Phone Terminal`
