@@ -1,14 +1,56 @@
 # Installing Termivoa
 
-> Status: private development. Only **unsigned** artifacts exist. Signed and
-> notarized releases need the owner's Apple Developer ID and Windows
-> code-signing identity. Nothing below has passed the release gate yet. No
-> release is published: build from source ([README quick start](../README.md#quick-start))
-> or build the artifacts with [`packaging/macos`](../packaging/macos/README.md),
+> Status: **private beta** (`v0.1.0-beta.1`). The binaries are **unsigned**.
+> Signed and notarized releases need the owner's Apple Developer ID and Windows
+> code-signing identity. Nothing below has passed the release gate yet. You can
+> also build from source ([README quick start](../README.md#quick-start)) or
+> build the artifacts with [`packaging/macos`](../packaging/macos/README.md),
 > [`packaging/windows`](../packaging/windows/README.md) and
 > [`packaging/linux/build.sh`](../packaging/linux/build.sh). Linux support is
 > written and tested in containers, but not yet on a real Linux computer. The
 > short version of this guide is [getting-started.md](getting-started.md).
+
+## Private beta
+
+The beta is a prerelease in the private repository, so only invited
+collaborators can download it. Use the [GitHub CLI](https://cli.github.com/)
+(`gh auth login` first). Files that `gh` downloads get no "downloaded from the
+internet" mark, so macOS and Windows do not block the unsigned binary. A
+browser download does get the mark: macOS then refuses to open it and Windows
+shows SmartScreen.
+
+You also need [Tailscale](https://tailscale.com/download) on the computer and
+the phone, signed in to the same account.
+
+macOS (Apple Silicon):
+
+```sh
+mkdir -p ~/.local/bin
+gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+chmod +x ~/.local/bin/pterm
+~/.local/bin/pterm setup
+```
+
+Linux (x86_64; use `pterm-linux-arm64` on arm64):
+
+```sh
+gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
+sh install-linux.sh ./pterm-linux-amd64
+```
+
+Windows 11 (x64, PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\Termivoa" | Out-Null
+cd "$env:LOCALAPPDATA\Programs\Termivoa"
+gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+.\pterm.exe setup
+```
+
+Keep the executable where it is after setup: the startup entries point to its
+path. `SHA256SUMS` in the release lists the checksum of every file
+(`shasum -a 256 -c SHA256SUMS --ignore-missing`). Then continue with
+[getting-started.md](getting-started.md) to pair your phone.
 
 Termivoa runs two per-user processes from one `pterm` executable:
 
