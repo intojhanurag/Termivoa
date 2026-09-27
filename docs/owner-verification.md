@@ -18,9 +18,10 @@ spending-limit problem. On 2026-09-27 the owner merged #27 (v0, which contains
 after the full local check passed on macOS. See `docs/progress.md`.
 
 - [ ] Fix billing: GitHub → Settings → Billing and plans.
-- [ ] Re-run CI on `main`. Native Windows tests, the Linux `/proc` path and
-      the packaging workflow have never run in CI. Fix any failure in a
-      follow-up PR.
+- [ ] Re-run CI on `main`. Native Windows tests, the Linux jobs
+      (`go-quality` now runs the broker, CLI and `/proc` tests on Ubuntu;
+      `linux-release-smoke`) and the packaging workflow have never run in
+      CI. Fix any failure in a follow-up PR.
 - [ ] The first CI run of `.github/workflows/packaging.yml` is the first real
       build of the Windows installer (`packaging/windows/*`). Check that it
       passes.
@@ -277,6 +278,74 @@ but billing blocked it.
 - [ ] Clean uninstall, with and without data deletion. With no active session,
       `pterm uninstall` leaves no `pterm.exe` running (Task Manager), and
       `--delete-data` succeeds.
+
+## 3a. Linux (VPS `t3-vps` and one Ubuntu desktop)
+
+The agent ran the Go suite as a normal user in `golang:1.27` (Debian, arm64)
+and a full systemd run in a privileged `ubuntu:24.04` container (arm64):
+`pterm setup --apply --yes`, doctor, a real bash session, `pterm stop` /
+`launch`, `kill -9` of the broker (systemd restarted it; the session became
+`lost` and its processes ended), `pterm shutdown`, a restart of the user
+manager with linger (both units came back), and `pterm uninstall
+--delete-data`. Not tested: real hardware, x86_64, a real SSH logout, polkit,
+Tailscale, a phone, zsh and fish.
+
+Install on each machine as your normal user (not root):
+
+```sh
+./packaging/linux/build.sh                 # on the build computer
+scp dist/linux/pterm-linux-amd64 t3-vps:   # use -arm64 for an arm64 VPS
+ssh t3-vps ./pterm-linux-amd64 help        # smoke test
+# on the host, in a source checkout or with the script copied next to the binary:
+./scripts/install-linux.sh ./pterm-linux-amd64
+```
+
+Server `t3-vps` (SSH only):
+
+- [ ] `pterm setup` shows the two unit files and the `systemctl --user`
+      commands before it asks. After `y`: `systemctl --user is-enabled
+      phone-terminal-broker phone-terminal-gateway` prints `enabled` twice,
+      and `pterm doctor` shows both registered.
+- [ ] The linger question appears (only when linger is off). Answer `y`:
+      `loginctl show-user $USER --property=Linger` shows `Linger=yes`. If it
+      fails with "Access denied", setup prints the `sudo loginctl
+      enable-linger` command; record which one happened.
+- [ ] Start a session from the phone (or `pterm new`), run `sleep 600`, log out
+      of every SSH session, wait 2 minutes, log in again: `pterm list` shows it
+      still `running`.
+- [ ] `sudo reboot`: after the boot, before you log in, the phone can reach
+      the page (linger starts the units). Old sessions show as `lost`.
+- [ ] Tailscale: with no operator set, `pterm setup` names
+      `sudo tailscale set --operator=$USER` and does not ask the Serve
+      questions. Run it, rerun `pterm setup`: both Serve questions appear and
+      work; `https://t3-vps.<tailnet>.ts.net/` pairs a phone.
+- [ ] Dev-server preview: in a session run `python3 -m http.server 3000
+      --bind 127.0.0.1`; the phone shows **Preview ready** without `lsof`
+      installed (`command -v lsof` prints nothing).
+- [ ] `kill -9` the broker: systemd starts it again within about 5 s
+      (`journalctl --user -u phone-terminal-broker`); sessions are `lost`.
+- [ ] `pterm stop` prints `systemctl --user disable --now
+      phone-terminal-gateway.service`; `pterm shutdown` stops both, and they
+      stay stopped (`systemctl --user is-active` prints `inactive`).
+- [ ] `pterm uninstall --delete-data` removes both units and
+      `~/.local/share/phone-terminal`, `~/.local/state/phone-terminal` and
+      `/run/user/<uid>/phone-terminal`, nothing else.
+
+Ubuntu desktop (22.04 or 24.04):
+
+- [ ] Same install and `pterm setup`. After logout and login both units run.
+- [ ] Profiles: `pterm profile list` shows your `$SHELL` first; with zsh and
+      fish installed (`sudo apt install zsh fish`, then `pterm profile
+      detect`) both appear as login shells. In a session, `echo
+      $XDG_RUNTIME_DIR` is set and `systemctl --user status` works.
+- [ ] `pterm launch` opens the page in the default browser.
+- [ ] Live folder: `cd /usr/share` in a session; the phone tab shows `share`.
+
+WSL (optional):
+
+- [ ] Ubuntu in WSL without systemd: `pterm setup` says startup is not
+      available, explains `/etc/wsl.conf`, and starts the processes. With
+      `systemd=true`, it registers the units like a desktop.
 
 ## 4. macOS startup and install
 

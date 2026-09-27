@@ -57,8 +57,26 @@ func bundledMigrations() ([]migration, error) {
 	return migrations, nil
 }
 
-func applyMigrations(ctx context.Context, database *sql.DB, migrations []migration, nowMillis int64) error {
-	transaction, err := database.BeginTx(ctx, nil)
+// applyMigrations applies every pending migration in one transaction. It
+// runs with foreign keys off, as SQLite's table-rebuild procedure requires
+// (migration 7), then checks every foreign key before it commits and turns
+// foreign keys on again. The caller must close database if this fails.
+func applyMigrations(ctx context.Context, database *sql.DB, migrations []migration, nowMillis int64) (returnErr error) {
+	connection, err := database.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("store: reserve migration connection: %w", err)
+	}
+	defer connection.Close()
+	// PRAGMA foreign_keys is a no-op inside a transaction, so it is set first.
+	if _, err := connection.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("store: disable foreign keys for migration: %w", err)
+	}
+	defer func() {
+		if _, err := connection.ExecContext(context.WithoutCancel(ctx), `PRAGMA foreign_keys = ON`); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("store: re-enable foreign keys: %w", err))
+		}
+	}()
+	transaction, err := connection.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("store: begin migration set: %w", err)
 	}
@@ -128,6 +146,13 @@ func applyMigrations(ctx context.Context, database *sql.DB, migrations []migrati
 		); err != nil {
 			return fmt.Errorf("store: record migration %d: %w", candidate.version, err)
 		}
+	}
+	var violations int
+	if err := transaction.QueryRowContext(ctx, `SELECT count(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil {
+		return fmt.Errorf("store: check foreign keys after migration: %w", err)
+	}
+	if violations != 0 {
+		return fmt.Errorf("store: migration left %d foreign key violation(s)", violations)
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("store: commit migration set: %w", err)

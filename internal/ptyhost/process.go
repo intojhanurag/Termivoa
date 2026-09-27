@@ -130,6 +130,16 @@ var unixInheritedNames = []string{
 	"__CF_USER_TEXT_ENCODING", "LANG", "LANGUAGE", "TZ",
 }
 
+// linuxInheritedNames are added on Linux. systemd gives the user manager the
+// login's runtime directory and session bus, a desktop adds its display, and
+// WSL adds its interop variables; without them systemctl --user, keyrings,
+// xdg-open and running Windows programs from WSL fail inside a session. On
+// macOS launchd provides these through other means.
+var linuxInheritedNames = []string{
+	"XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY",
+	"WSL_DISTRO_NAME", "WSL_INTEROP", "WSLENV",
+}
+
 // Windows names are case-insensitive and stored upper case; PROCESSOR_* is a
 // prefix. They are the per-machine and per-user variables Windows itself
 // defines for a logon, which programs and shells need to locate the system,
@@ -151,6 +161,9 @@ func inheritedEnvironment(environ []string, goos string) []string {
 	names, prefix, windows := unixInheritedNames, "LC_", goos == "windows"
 	if windows {
 		names, prefix = windowsInheritedNames, "PROCESSOR_"
+	}
+	if goos == "linux" {
+		names = slices.Concat(unixInheritedNames, linuxInheritedNames)
 	}
 	// Never nil: a nil exec.Cmd.Env (and conpty's Env) inherits everything.
 	kept := []string{}

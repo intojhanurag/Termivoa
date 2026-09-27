@@ -26,6 +26,9 @@ func ExecutableProblems(goos, path string) []string {
 	if goos == "windows" && strings.Contains(lower, "/appdata/local/temp/") {
 		problems = append(problems, "pterm is running from a temporary directory; install it first")
 	}
+	if goos == "linux" && (strings.HasPrefix(path, "/tmp/") || strings.HasPrefix(path, "/var/tmp/") || strings.HasPrefix(path, "/dev/shm/")) {
+		problems = append(problems, "pterm is running from a temporary directory; install it first (scripts/install-linux.sh puts it in ~/.local/bin)")
+	}
 	return problems
 }
 
@@ -129,4 +132,27 @@ func sortedKeys[V any](values map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// TailscaleOperatorCommand lets the current Linux user change Tailscale
+// Serve without root. The owner runs it once; pterm never runs sudo.
+const TailscaleOperatorCommand = "sudo tailscale set --operator=$USER"
+
+// TailscaleOperator returns OperatorUser from `tailscale debug prefs`, which
+// any local user may read. Empty means no operator is set.
+func TailscaleOperator(prefs []byte) (string, error) {
+	var raw struct{ OperatorUser string }
+	if err := json.Unmarshal(prefs, &raw); err != nil {
+		return "", fmt.Errorf("parse tailscale prefs: %w", err)
+	}
+	return raw.OperatorUser, nil
+}
+
+// NeedsTailscaleOperator reports whether `tailscale serve` output is the
+// Linux permission error: only root or the operator may change Serve.
+// tailscale prints "Access denied: serve config denied" and suggests
+// `sudo tailscale set --operator=$USER`.
+func NeedsTailscaleOperator(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "access denied") || strings.Contains(lower, "--operator")
 }

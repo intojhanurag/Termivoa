@@ -1,8 +1,9 @@
 // Package lifecycle models per-user startup registration for the separately
 // supervised broker and gateway processes. It generates macOS LaunchAgent
-// property lists and Windows Scheduled Task XML, plans install/uninstall steps
-// and applies them only through an injected command runner. Nothing here
-// requests elevation, registers a system-wide service, or changes Tailscale.
+// property lists, Windows Scheduled Task XML and Linux systemd user units,
+// plans install/uninstall steps and applies them only through an injected
+// command runner. Nothing here requests elevation, registers a system-wide
+// service, or changes Tailscale.
 package lifecycle
 
 import (
@@ -57,12 +58,19 @@ var Services = []Service{
 // Host describes the current user's installation. All fields are explicit so
 // cross-platform content can be generated and tested on either OS.
 type Host struct {
-	OS         string // "darwin" or "windows"
+	OS         string // "darwin", "windows" or "linux"
 	Executable string // absolute installed pterm path
 	DataDir    string // production data dir: logs (darwin), task XML (windows)
 	HomeDir    string // darwin: parent of Library/LaunchAgents
 	UID        int    // darwin: gui/<uid> launchd domain
-	User       string // windows: DOMAIN\user owning the tasks
+	User       string // windows: DOMAIN\user owning the tasks; linux: login name
+	// Logs overrides <DataDir>/logs; Linux keeps logs in $XDG_STATE_HOME.
+	Logs string
+	// ConfigDir is $XDG_CONFIG_HOME (linux); units go in <ConfigDir>/systemd/user.
+	ConfigDir string
+	// Systemd reports whether a systemd user manager answers (linux). Without
+	// one nothing is registered: WSL without systemd, containers.
+	Systemd bool
 }
 
 func (h Host) Validate() error {
@@ -77,6 +85,15 @@ func (h Host) Validate() error {
 	case "windows":
 		if h.User == "" || strings.ContainsAny(h.User, "/:*?\"<>|\x00") || strings.Count(h.User, `\`) > 1 {
 			return errors.New("lifecycle: Windows user must be DOMAIN\\user")
+		}
+	case "linux":
+		if h.User == "" || h.User[0] == '-' || strings.ContainsAny(h.User, "/:\\ \t\n\x00") {
+			return errors.New("lifecycle: Linux user name is not usable")
+		}
+		for kind, path := range map[string]string{"home": h.HomeDir, "config": h.ConfigDir, "log": h.Logs} {
+			if err := h.checkPath(kind, path); err != nil {
+				return err
+			}
 		}
 	default:
 		return fmt.Errorf("lifecycle: unsupported startup platform %q", h.OS)
@@ -100,6 +117,11 @@ func (h Host) checkPath(kind, path string) error {
 			return fmt.Errorf("lifecycle: %s path must not contain quotes", kind)
 		}
 	}
+	// systemd unit files would need quoting or %/$ escaping for these; an
+	// installed pterm and XDG directories never contain them.
+	if h.OS == "linux" && strings.ContainsAny(path, " \t\"'\\%$;") {
+		return fmt.Errorf("lifecycle: %s path %q must not contain spaces, quotes, backslashes, %%, $ or ;", kind, path)
+	}
 	if !absolute {
 		return fmt.Errorf("lifecycle: %s path must be absolute", kind)
 	}
@@ -121,18 +143,29 @@ func (h Host) join(elements ...string) string {
 	return strings.Join(elements, separator)
 }
 
-// LogDir holds macOS launchd stdout/stderr and detached-start logs.
-func (h Host) LogDir() string { return h.join(h.DataDir, "logs") }
+// LogDir holds launchd or systemd stdout/stderr and detached-start logs.
+func (h Host) LogDir() string {
+	if h.Logs != "" {
+		return h.Logs
+	}
+	return h.join(h.DataDir, "logs")
+}
 
 func (h Host) startupDir() string { return h.join(h.DataDir, "startup") }
 
 // File is the registration source file for a service.
 func (h Host) File(service Service) string {
-	if h.OS == "windows" {
+	switch h.OS {
+	case "windows":
 		return h.join(h.startupDir(), service.Name+".xml")
+	case "linux":
+		return h.join(h.ConfigDir, "systemd", "user", Unit(service))
 	}
 	return h.join(h.HomeDir, "Library", "LaunchAgents", service.Label+".plist")
 }
+
+// Unit is the systemd user unit name of a service.
+func Unit(service Service) string { return "phone-terminal-" + service.Name + ".service" }
 
 // TaskName is the per-user Windows task name. Root-folder task names are
 // machine-wide, so the account name keeps two users from colliding.
@@ -148,9 +181,13 @@ func (h Host) Content(service Service) (data []byte, text string, err error) {
 	if err := h.Validate(); err != nil {
 		return nil, "", err
 	}
-	if h.OS == "windows" {
+	switch h.OS {
+	case "windows":
 		text = h.taskXML(service)
 		return utf16File(text), text, nil
+	case "linux":
+		text = h.systemdUnit(service)
+		return []byte(text), text, nil
 	}
 	text = h.plist(service)
 	return []byte(text), text, nil
@@ -190,6 +227,35 @@ func (h Host) plist(service Service) string {
 	<string>` + log + `</string>
 </dict>
 </plist>
+`
+}
+
+// systemdUnit runs pterm for this user only. It restarts on failure but not
+// after a clean exit (pterm stop, pterm shutdown), like launchd's
+// SuccessfulExit=false. The gateway wants the broker and starts after it, and
+// itself waits for the broker. Output is appended to the same log files that
+// macOS uses; `journalctl --user -u <unit>` shows start and stop events.
+// Checked paths need no quoting (see checkPath).
+func (h Host) systemdUnit(service Service) string {
+	dependency := ""
+	if service.Mode == GatewayMode {
+		broker := Unit(Services[0])
+		dependency = "Wants=" + broker + "\nAfter=" + broker + "\n"
+	}
+	log := h.join(h.LogDir(), service.Name+".log")
+	return `[Unit]
+Description=Phone Terminal ` + service.Name + ` for this user
+` + dependency + `
+[Service]
+Type=simple
+ExecStart=` + h.Executable + ` ` + service.Mode + `
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:` + log + `
+StandardError=inherit
+
+[Install]
+WantedBy=default.target
 `
 }
 
@@ -301,11 +367,15 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) (string,
 	return string(output), err
 }
 
-// queryCommand is read-only: launchctl print / schtasks /Query. The Windows
-// task XML shows whether the task is disabled; a disabled task still exists.
+// queryCommand is read-only: launchctl print / schtasks /Query / systemctl
+// is-enabled. The Windows task XML shows whether the task is disabled; a
+// disabled task still exists.
 func (h Host) queryCommand(service Service) []string {
-	if h.OS == "windows" {
+	switch h.OS {
+	case "windows":
 		return []string{"schtasks", "/Query", "/TN", h.TaskName(service), "/XML"}
+	case "linux":
+		return systemctl("is-enabled", Unit(service))
 	}
 	return []string{"launchctl", "print", h.domain() + "/" + service.Label}
 }
@@ -313,8 +383,11 @@ func (h Host) queryCommand(service Service) []string {
 // StartCommand asks the supervisor to start an already registered service
 // without restarting a running instance.
 func (h Host) StartCommand(service Service) []string {
-	if h.OS == "windows" {
+	switch h.OS {
+	case "windows":
 		return []string{"schtasks", "/Run", "/TN", h.TaskName(service)}
+	case "linux":
+		return systemctl("start", Unit(service))
 	}
 	return []string{"launchctl", "kickstart", h.domain() + "/" + service.Label}
 }
@@ -323,8 +396,11 @@ func (h Host) StartCommand(service Service) []string {
 // starting it again until `pterm setup --apply` registers it again. pterm
 // only prints it; the owner decides whether to run it.
 func (h Host) UnloadCommand(service Service) []string {
-	if h.OS == "windows" {
+	switch h.OS {
+	case "windows":
 		return []string{"schtasks", "/Change", "/TN", h.TaskName(service), "/Disable"}
+	case "linux":
+		return systemctl("disable", "--now", Unit(service))
 	}
 	return []string{"launchctl", "bootout", h.domain() + "/" + service.Label}
 }
@@ -347,6 +423,10 @@ func (h Host) Inspect(ctx context.Context, runner Runner) ([]Status, error) {
 		case !errors.Is(err, os.ErrNotExist):
 			return nil, fmt.Errorf("lifecycle: read %s: %w", status.File, err)
 		}
+		if h.OS == "linux" && !h.Systemd {
+			statuses = append(statuses, status)
+			continue // Nothing can be registered without a user manager.
+		}
 		query := h.queryCommand(service)
 		output, err := runner.Run(ctx, query[0], query[1:]...)
 		// Dropping NULs also reads UTF-16 output. Only the task-level and the
@@ -354,6 +434,12 @@ func (h Host) Inspect(ctx context.Context, runner Runner) ([]Status, error) {
 		status.Disabled = err == nil && h.OS == "windows" &&
 			strings.Contains(strings.ReplaceAll(output, "\x00", ""), "<Enabled>false</Enabled>")
 		status.Registered = err == nil && !status.Disabled
+		if h.OS == "linux" {
+			// is-enabled prints the state and exits non-zero unless enabled.
+			state := strings.TrimSpace(output)
+			status.Registered = err == nil && state == "enabled"
+			status.Disabled = state == "disabled"
+		}
 		statuses = append(statuses, status)
 	}
 	return statuses, nil
@@ -382,6 +468,9 @@ type Plan struct {
 func (h Host) InstallPlan(statuses []Status) (Plan, error) {
 	if err := h.Validate(); err != nil {
 		return Plan{}, err
+	}
+	if h.OS == "linux" {
+		return h.systemdInstallPlan(statuses)
 	}
 	var plan Plan
 	if h.OS == "windows" {
@@ -425,9 +514,54 @@ func (h Host) InstallPlan(statuses []Status) (Plan, error) {
 	return plan, nil
 }
 
+// systemdInstallPlan writes changed units, reloads systemd once, enables each
+// unit for login (and boot, with linger), and starts it. A changed unit is
+// restarted so the new pterm runs; for the broker that ends its sessions, so
+// the caller refuses while sessions are active (ChangesRunningBroker).
+func (h Host) systemdInstallPlan(statuses []Status) (Plan, error) {
+	if !h.Systemd {
+		return Plan{}, errors.New("lifecycle: systemd user services are not available")
+	}
+	plan := Plan{Steps: []Step{{Mkdir: h.LogDir()}}}
+	var commands []Step
+	for _, status := range statuses {
+		if status.FileMatches && status.Registered {
+			continue
+		}
+		unit := Unit(status.Service)
+		start := "start"
+		if !status.FileMatches {
+			data, text, err := h.Content(status.Service)
+			if err != nil {
+				return Plan{}, err
+			}
+			plan.Steps = append(plan.Steps, Step{Write: status.File, Data: data, Text: text})
+			start = "restart"
+			if (status.Registered || status.Disabled) && status.Service.Mode == BrokerMode {
+				plan.ChangesRunningBroker = true
+			}
+		}
+		if !status.Registered {
+			commands = append(commands, Step{Command: systemctl("enable", unit)})
+		}
+		commands = append(commands, Step{Command: systemctl(start, unit)})
+	}
+	if len(commands) == 0 {
+		return Plan{}, nil // Everything is already registered and current.
+	}
+	if len(plan.Steps) > 1 {
+		plan.Steps = append(plan.Steps, Step{Command: systemctl("daemon-reload")})
+	}
+	plan.Steps = append(plan.Steps, commands...)
+	return plan, nil
+}
+
+func systemctl(args ...string) []string { return append([]string{"systemctl", "--user"}, args...) }
+
 // UninstallPlan stops and unregisters the gateway, then the broker, and
 // removes their registration files. deleteData lists data directories to
-// remove afterwards; each must be named "Phone Terminal".
+// remove afterwards; each must be named "Phone Terminal" (or "phone-terminal"
+// on Linux).
 func (h Host) UninstallPlan(statuses []Status, deleteData []string) (Plan, error) {
 	if err := h.Validate(); err != nil {
 		return Plan{}, err
@@ -439,12 +573,15 @@ func (h Host) UninstallPlan(statuses []Status, deleteData []string) (Plan, error
 			if status.Service.Mode == BrokerMode {
 				plan.ChangesRunningBroker = true
 			}
-			if h.OS == "windows" {
+			switch h.OS {
+			case "linux":
+				plan.Steps = append(plan.Steps, Step{Command: systemctl("disable", "--now", Unit(status.Service))})
+			case "windows":
 				name := h.TaskName(status.Service)
 				plan.Steps = append(plan.Steps,
 					Step{Command: []string{"schtasks", "/End", "/TN", name}, AllowFailure: true},
 					Step{Command: []string{"schtasks", "/Delete", "/TN", name, "/F"}})
-			} else {
+			default:
 				plan.Steps = append(plan.Steps, Step{Command: []string{"launchctl", "bootout", h.domain() + "/" + status.Service.Label}})
 			}
 		}
@@ -455,12 +592,15 @@ func (h Host) UninstallPlan(statuses []Status, deleteData []string) (Plan, error
 	if h.OS == "windows" && len(plan.Steps) > 0 {
 		plan.Steps = append(plan.Steps, Step{Remove: h.startupDir(), AllowFailure: true})
 	}
+	if h.OS == "linux" && h.Systemd && len(plan.Steps) > 0 {
+		plan.Steps = append(plan.Steps, Step{Command: systemctl("daemon-reload")})
+	}
 	for _, path := range deleteData {
 		if err := h.checkPath("data", path); err != nil {
 			return Plan{}, err
 		}
 		base := path[strings.LastIndexAny(path, `/\`)+1:]
-		if base != "Phone Terminal" {
+		if base != "Phone Terminal" && base != "phone-terminal" {
 			return Plan{}, fmt.Errorf("lifecycle: refusing to delete %q: not a Phone Terminal data directory", path)
 		}
 		plan.Steps = append(plan.Steps, Step{RemoveTree: path})

@@ -36,6 +36,7 @@ jobs:
           cache: true
       - run: test -z "$(gofmt -l ./cmd ./internal ./tests ./third_party/ansi ./third_party/vt ./third_party/xpty ./third_party/ultraviolet 2>/dev/null)"
       - run: go vet ./...
+      - run: CGO_ENABLED=0 GOARCH=arm64 go vet ./...
       - run: go test ./...
       - run: cd third_party/ansi && go test ./...
       - run: cd third_party/vt && go test ./...
@@ -91,6 +92,26 @@ jobs:
       - run: go test ./tests/integration/... ./internal/ptyhost/... ./internal/terminal/... ./internal/platform/...
       - run: cd third_party/xpty && go test ./...
       - run: go test ./internal/desktop/... github.com/charmbracelet/ultraviolet/...
+
+  linux-release-smoke:
+    name: linux-release-smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+      - name: Build static companions (amd64, arm64)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o pterm-linux-amd64 ./cmd/pterm
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o pterm-linux-arm64 ./cmd/pterm
+      - name: Doctor runs without systemd user services or Tailscale
+        run: |
+          home=$(mktemp -d)
+          HOME=$home XDG_RUNTIME_DIR= ./pterm-linux-amd64 doctor | tee doctor.txt || true
+          grep -q 'data directory: '"$home"'/.local/share/phone-terminal' doctor.txt
+          grep -q 'log directory: '"$home"'/.local/state/phone-terminal/logs' doctor.txt
+      - run: sh -n scripts/install-linux.sh && sh -n packaging/linux/build.sh
 
   release-smoke:
     name: release-smoke-${{ matrix.target }}

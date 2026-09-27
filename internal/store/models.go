@@ -16,6 +16,7 @@ const (
 	PlatformDarwin  Platform = "darwin"
 	PlatformWindows Platform = "windows"
 	PlatformWSL     Platform = "wsl"
+	PlatformLinux   Platform = "linux"
 )
 
 type SessionState string

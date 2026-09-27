@@ -11,6 +11,41 @@ No version has been released. Development history and evidence are in
 
 ### Added
 
+#### Linux host
+
+- Linux (Ubuntu 22.04/24.04 desktop, server/VPS and WSL; x86_64 and arm64) is
+  a supported host. Not yet verified on real hardware: see
+  `docs/owner-verification.md`.
+- `pterm setup` registers `phone-terminal-broker.service` and
+  `phone-terminal-gateway.service` as systemd **user** units in
+  `~/.config/systemd/user` (gateway `Wants=`/`After=` the broker,
+  `Restart=on-failure`) and shows the exact files and `systemctl --user`
+  commands first. `pterm uninstall` disables and removes them; `pterm stop` and
+  `pterm shutdown` print the exact `disable --now` command; `pterm launch` uses
+  `systemctl --user start`.
+- A separate setup question runs `loginctl enable-linger <user>` so a server
+  keeps sessions after logout and starts them at boot; never without `y`, never
+  with `sudo`. `pterm doctor` shows the linger state.
+- Without a systemd user manager (WSL without systemd, containers) setup and
+  doctor say so and start the processes like `pterm launch`. In WSL they
+  explain `/etc/wsl.conf` `[boot] systemd=true` and that WSL ends sessions when
+  its VM stops.
+- XDG paths: data in `~/.local/share/phone-terminal`, logs in
+  `~/.local/state/phone-terminal/logs`, sockets in
+  `/run/user/<uid>/phone-terminal`.
+- Linux shell profiles: `$SHELL`, bash, zsh and fish as login shells, when
+  listed in `/etc/shells`. Store migration 7 adds the `linux` platform.
+- Dev-server preview on Linux reads `/proc/net/tcp{,6}` and `/proc/<pid>/fd`;
+  `lsof` is no longer needed.
+- `tailscale` is also found in `/usr/bin` and `/usr/sbin`. When Linux allows
+  only root or the Tailscale operator to change Serve, setup and doctor name
+  `sudo tailscale set --operator=$USER` instead of asking.
+- `scripts/install-linux.sh` installs `~/.local/bin/pterm` and runs
+  `pterm setup`; `packaging/linux/build.sh` builds `pterm-linux-amd64` and
+  `pterm-linux-arm64` with the embedded web app. CI builds both and runs the
+  whole Go suite on Ubuntu; the packaging workflow uploads them as private
+  artifacts.
+
 #### Live folder
 
 - Tabs and the Sessions list show each running session's live folder name
@@ -150,6 +185,15 @@ No version has been released. Development history and evidence are in
   script, with separate owner-only signing scripts.
 
 ### Fixed
+
+- Linux: phone streams were held to about 2 MB/s, because the 16 KiB send
+  buffer of the live socket is below two loopback segments and every write
+  waited for a delayed ACK. Linux now uses 128 KiB.
+- A phone that started its next photo upload as soon as the previous one
+  finished could get "upload limit reached": the upload slot is now freed
+  before the final reply.
+- Store migrations run with foreign keys off and check every foreign key
+  before they commit, as SQLite's table-rebuild procedure requires.
 
 - The phone reconnects in seconds after a lock, backgrounding or network
   switch: the live link retries at most every 5 s and at once when the app

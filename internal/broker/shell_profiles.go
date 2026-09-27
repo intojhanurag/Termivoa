@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -21,9 +22,9 @@ type shellCandidate struct {
 }
 
 // hostShellCandidates lists absolute shell executables for the host. macOS
-// uses login shells; Windows uses resolved absolute PowerShell paths, then WSL
-// when wslDistroRegistered reports a distro. Other platforms are not v0
-// broker hosts and yield nothing.
+// and Linux use login shells; Windows uses resolved absolute PowerShell
+// paths, then WSL when wslDistroRegistered reports a distro. Other platforms
+// are not broker hosts and yield nothing.
 func hostShellCandidates(
 	platform store.Platform, getenv func(string) string, lookPath func(string) (string, error), wslDistroRegistered func() bool,
 ) []shellCandidate {
@@ -66,9 +67,55 @@ func hostShellCandidates(
 				filepath.Join(root, "System32", "wsl.exe"), []string{}, store.PlatformWSL})
 		}
 		return candidates
+	case store.PlatformLinux:
+		return linuxShellCandidates(getenv, readEtcShells())
 	default:
 		return nil
 	}
+}
+
+// linuxShellCandidates lists login shells for a Linux host, including one
+// inside WSL: the user's $SHELL first, then bash, zsh and fish. allowed is
+// the /etc/shells list; a shell must be on it, unless the list is missing
+// (minimal containers). The -l argument works for all three. saveShellProfiles
+// skips paths that do not exist. A built-in candidate is dropped when $SHELL
+// is the same program at another path, such as /bin/zsh and /usr/bin/zsh on
+// a merged-/usr system.
+func linuxShellCandidates(getenv func(string) string, allowed []string) []shellCandidate {
+	permitted := func(shell string) bool { return allowed == nil || slices.Contains(allowed, shell) }
+	var candidates []shellCandidate
+	login := path.Clean(getenv("SHELL"))
+	if path.IsAbs(login) && permitted(login) {
+		candidates = append(candidates, shellCandidate{path.Base(login) + " (login)", login, []string{"-l"}, store.PlatformLinux})
+	}
+	for _, shell := range []string{"/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"} {
+		if permitted(shell) && !slices.ContainsFunc(candidates, func(candidate shellCandidate) bool {
+			return path.Base(candidate.executable) == path.Base(shell)
+		}) {
+			candidates = append(candidates, shellCandidate{path.Base(shell) + " (login)", shell, []string{"-l"}, store.PlatformLinux})
+		}
+	}
+	return candidates
+}
+
+// readEtcShells returns the absolute shell paths in /etc/shells, or nil when
+// the file cannot be read.
+func readEtcShells() []string {
+	data, err := os.ReadFile("/etc/shells")
+	if err != nil {
+		return nil
+	}
+	return parseEtcShells(string(data))
+}
+
+func parseEtcShells(data string) []string {
+	shells := []string{}
+	for _, line := range strings.Split(data, "\n") {
+		if line = strings.TrimSpace(line); strings.HasPrefix(line, "/") {
+			shells = append(shells, path.Clean(line))
+		}
+	}
+	return shells
 }
 
 // DetectShellProfiles idempotently saves each existing host shell that is

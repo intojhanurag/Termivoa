@@ -110,7 +110,14 @@ func (server *ManagementServer) serveUpload(
 	if err != nil {
 		return writeGatewayReply(writer, begin, nil, err)
 	}
+	// The device's slot is freed before the final reply: once the gateway
+	// reads it, the phone may start its next upload at once.
+	release = sync.OnceFunc(release)
 	defer release()
+	finish := func(request protocol.GatewayRPCEnvelope, result any, err error) error {
+		release()
+		return writeGatewayReply(writer, request, result, err)
+	}
 	if err := writeGatewayReply(writer, begin, protocol.BrokerRPCEmptyPayload{}, nil); err != nil {
 		return err
 	}
@@ -136,10 +143,10 @@ func (server *ManagementServer) serveUpload(
 			}
 			bytes, err := protocol.DecodeUploadData(chunk.Data, protocol.MaxUploadChunkBytes)
 			if err != nil {
-				return writeGatewayReply(writer, request, nil, errors.Join(errUploadOrder, err))
+				return finish(request, nil, errors.Join(errUploadOrder, err))
 			}
 			if int64(len(data)+len(bytes)) > payload.Size {
-				return writeGatewayReply(writer, request, nil, errUploadSize)
+				return finish(request, nil, errUploadSize)
 			}
 			data = append(data, bytes...)
 			if err := writeGatewayReply(writer, request, protocol.BrokerRPCEmptyPayload{}, nil); err != nil {
@@ -151,9 +158,9 @@ func (server *ManagementServer) serveUpload(
 				return err
 			}
 			result, err := server.commitUpload(ctx, principal.DeviceID, commit.Credential, payload, data)
-			return writeGatewayReply(writer, request, result, err)
+			return finish(request, result, err)
 		default:
-			return writeGatewayReply(writer, request, nil, errUploadOrder)
+			return finish(request, nil, errUploadOrder)
 		}
 	}
 }

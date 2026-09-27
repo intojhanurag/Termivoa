@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin || linux
 
 package host
 
@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -59,7 +60,7 @@ func TestAdminShutdownEndsEverySessionTreeAndStopsBroker(t *testing.T) {
 		}),
 		// Each shell starts a descendant in its process group and records it.
 		state.Store.PutShellProfile(ctx, store.ShellProfile{
-			ID: shutdownProfileID, DisplayName: "sh", Platform: store.PlatformDarwin, ExecutablePath: "/bin/sh",
+			ID: shutdownProfileID, DisplayName: "sh", Platform: store.Platform(runtime.GOOS), ExecutablePath: "/bin/sh",
 			Arguments: []string{"-c", "sleep 600 & echo $! >> '" + children + "'; wait"}, CreatedAt: now, UpdatedAt: now,
 		}),
 	); err != nil {

@@ -92,12 +92,15 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 			config.HostPlatform = store.PlatformDarwin
 		case "windows":
 			config.HostPlatform = store.PlatformWindows
+		case "linux":
+			config.HostPlatform = store.PlatformLinux
 		default:
 			return nil, fmt.Errorf("broker: management host platform %q is not supported", runtime.GOOS)
 		}
 	}
-	if config.HostPlatform != store.PlatformDarwin && config.HostPlatform != store.PlatformWindows {
-		return nil, errors.New("broker: management host platform must be darwin or windows")
+	if config.HostPlatform != store.PlatformDarwin && config.HostPlatform != store.PlatformWindows &&
+		config.HostPlatform != store.PlatformLinux {
+		return nil, errors.New("broker: management host platform must be darwin, windows, or linux")
 	}
 	return &ManagementServer{
 		config: config, connections: make(map[net.Conn]struct{}),

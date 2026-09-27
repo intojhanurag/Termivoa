@@ -15,6 +15,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,6 +29,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -43,11 +45,15 @@ type lifecycleEnv struct {
 	runner    lifecycle.Runner
 	gateway   string // gateway base URL without trailing slash
 	tailscale string // tailscale CLI path, empty when not installed
+	// Linux only: why no systemd user manager answers (host.Systemd false),
+	// and whether this is WSL.
+	noSystemd string
+	wsl       bool
 }
 
 var loadLifecycleEnv = func() (lifecycleEnv, error) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
-		return lifecycleEnv{}, fmt.Errorf("startup registration supports macOS and Windows, not %s", runtime.GOOS)
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" && runtime.GOOS != "linux" {
+		return lifecycleEnv{}, fmt.Errorf("startup registration supports macOS, Windows and Linux, not %s", runtime.GOOS)
 	}
 	executable, err := os.Executable()
 	if err == nil {
@@ -68,19 +74,36 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 		target.UID = os.Getuid()
 	} else {
 		current, err := user.Current()
-		if err != nil {
+		switch {
+		case err == nil:
+			target.User = current.Username
+		case runtime.GOOS == "linux":
+			// Without cgo, users only in LDAP/SSSD are not in /etc/passwd;
+			// loginctl accepts the numeric ID as well.
+			target.User = strconv.Itoa(os.Getuid())
+		default:
 			return lifecycleEnv{}, err
 		}
-		target.User = current.Username
 	}
 	tailscale, _ := exec.LookPath("tailscale")
 	if tailscale == "" {
 		tailscale = installedTailscale(runtime.GOOS, os.Getenv)
 	}
-	return lifecycleEnv{
+	env := lifecycleEnv{
 		host: target, paths: paths, runner: lifecycle.ExecRunner{},
 		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale,
-	}, nil
+	}
+	if runtime.GOOS == "linux" {
+		env.host.Logs = paths.LogDir
+		if env.host.ConfigDir, err = os.UserConfigDir(); err != nil {
+			return lifecycleEnv{}, err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		env.host.Systemd, env.noSystemd = lifecycle.SystemdUser(ctx, env.runner)
+		env.wsl = platform.IsWSL()
+	}
+	return env, nil
 }
 
 // installedTailscale is the Tailscale CLI its installer puts off PATH, or "".
@@ -93,6 +116,13 @@ func installedTailscale(goos string, getenv func(string) string) string {
 		if programFiles := getenv("ProgramFiles"); filepath.IsAbs(programFiles) {
 			path = filepath.Join(programFiles, "Tailscale", "tailscale.exe")
 		}
+	case "linux":
+		// Distribution packages install here; sbin is often not on a user's PATH.
+		for _, candidate := range []string{"/usr/bin/tailscale", "/usr/sbin/tailscale"} {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				return candidate
+			}
+		}
 	}
 	if info, err := os.Stat(path); path == "" || err != nil || info.IsDir() {
 		return ""
@@ -102,6 +132,7 @@ func installedTailscale(goos string, getenv func(string) string) string {
 
 type hostReport struct {
 	statuses  []lifecycle.Status
+	lingerOff bool // Linux with systemd: services stop at logout
 	tailscale tailscaleReport
 	broker    bool  // answered, or holds its data or runtime lock
 	sessions  int   // active sessions of a broker that answered
@@ -121,7 +152,9 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 	for _, message := range lifecycle.ExecutableProblems(env.host.OS, env.host.Executable) {
 		problem("%s", message)
 	}
-	for _, directory := range []struct{ name, path string }{{"data", env.paths.DataDir}, {"runtime", env.paths.RuntimeDir}} {
+	for _, directory := range []struct{ name, path string }{
+		{"data", env.paths.DataDir}, {"runtime", env.paths.RuntimeDir}, {"log", env.host.LogDir()},
+	} {
 		state := "exists"
 		if _, err := os.Stat(directory.path); errors.Is(err, os.ErrNotExist) {
 			state = "not created yet"
@@ -149,8 +182,17 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 		return report, err
 	}
 	report.statuses = statuses
+	noStartup := env.host.OS == "linux" && !env.host.Systemd
+	if noStartup {
+		fmt.Fprintf(output, "  startup: not available: systemd user services are not running (%s); "+
+			"start Phone Terminal with `pterm launch` after each restart\n", env.noSystemd)
+		if env.wsl {
+			fmt.Fprintf(output, "  %s\n", wslSystemdHint)
+		}
+	}
 	for _, status := range report.statuses {
 		switch {
+		case noStartup:
 		case status.Registered && status.FileMatches:
 			fmt.Fprintf(output, "  startup %s: registered for this pterm\n", status.Service.Name)
 		case status.Registered:
@@ -161,17 +203,70 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 			problem("startup %s: not registered", status.Service.Name)
 		}
 	}
+	if env.host.OS == "linux" && env.host.Systemd {
+		switch enabled, known := env.host.Linger(ctx, env.runner); {
+		case !known:
+			fmt.Fprintln(output, "  linger: unknown (loginctl did not answer)")
+		case enabled:
+			fmt.Fprintln(output, "  linger: on; Phone Terminal keeps running after you log out and starts at boot")
+		default:
+			report.lingerOff = true
+			fmt.Fprintf(output, "  linger: off; Phone Terminal stops when you log out. On a server, turn it on: %s\n",
+				lifecycle.DisplayCommand(env.host.LingerCommand()))
+		}
+	}
+	if env.wsl {
+		fmt.Fprintf(output, "  WSL: %s\n", wslLifetimeNote)
+	}
 	fmt.Fprintf(output, "  shells: %s\n", strings.Join(detectShells(), ", "))
 	var problems int
 	report.tailscale, problems = inspectTailscale(ctx, env.tailscale, output)
 	report.problems += problems
+	if env.host.OS == "linux" && os.Geteuid() != 0 {
+		report.tailscale.needsOperator = needsTailscaleOperator(ctx, env, report.tailscale)
+		if report.tailscale.needsOperator {
+			fmt.Fprintf(output, "  ! tailscale serve: only root or the Tailscale operator may change Serve on Linux; run once: %s\n",
+				lifecycle.TailscaleOperatorCommand)
+		}
+	}
 	return report, nil
+}
+
+// wslLifetimeNote and wslSystemdHint explain WSL's limits. pterm never edits
+// /etc/wsl.conf; the owner does.
+const (
+	wslLifetimeNote = "Windows stops this Linux VM when no Windows program uses it, and every session ends then. " +
+		"For sessions that last, use the Windows app with its \"WSL bash\" profile (docs/install.md)."
+	wslSystemdHint = "To start Phone Terminal at login inside WSL, turn on systemd: add \"[boot]\" and \"systemd=true\" " +
+		"to /etc/wsl.conf, run `wsl --shutdown` in Windows, then open WSL and run `pterm setup` again."
+)
+
+// needsTailscaleOperator reports whether Serve still has to change and this
+// Linux user may not change it: only root and the operator may. `tailscale
+// debug prefs` is readable by every local user. An unreadable answer counts
+// as allowed; a real refusal is then explained when `tailscale serve` fails.
+func needsTailscaleOperator(ctx context.Context, env lifecycleEnv, report tailscaleReport) bool {
+	if !report.installed || report.statusErr != nil || report.serveErr != nil ||
+		report.serve.Configured && report.serve.PreviewConfigured {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	prefs, err := tailscaleRun(ctx, env.tailscale, nil, "debug", "prefs")
+	if err != nil {
+		return false
+	}
+	operator, err := lifecycle.TailscaleOperator(prefs)
+	return err == nil && operator != env.host.User
 }
 
 func detectShells() []string {
 	candidates := []string{os.Getenv("SHELL"), "/bin/zsh"}
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		candidates = []string{"powershell.exe", "pwsh.exe"}
+	case "linux":
+		candidates = []string{os.Getenv("SHELL"), "/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"}
 	}
 	var found []string
 	for _, candidate := range candidates {
@@ -208,11 +303,12 @@ var tailscaleRun = func(ctx context.Context, cli string, stream io.Writer, args 
 
 // tailscaleReport is what the read-only Tailscale checks found.
 type tailscaleReport struct {
-	installed bool
-	status    lifecycle.TailscaleStatus
-	statusErr error
-	serveErr  error
-	serve     lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
+	installed     bool
+	needsOperator bool // Linux: Serve changes need `tailscale set --operator` first
+	status        lifecycle.TailscaleStatus
+	statusErr     error
+	serveErr      error
+	serve         lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
 }
 
 // phoneOrigin is the private HTTPS origin Tailscale gives this computer. When
@@ -447,12 +543,17 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	if err != nil {
 		return err
 	}
-	plan, err := env.host.InstallPlan(report.statuses)
-	if err != nil {
-		return err
+	// Without a systemd user manager nothing can be registered; setup then
+	// starts the processes now, as `pterm launch` does, and says so.
+	noStartup := env.host.OS == "linux" && !env.host.Systemd
+	var plan lifecycle.Plan
+	if !noStartup {
+		if plan, err = env.host.InstallPlan(report.statuses); err != nil {
+			return err
+		}
 	}
 	origin, originProblem := report.tailscale.phoneOrigin()
-	describeSetup(env, plan, report.tailscale, origin, originProblem, yes, output)
+	describeSetup(env, plan, report, origin, originProblem, yes, output)
 	if !apply && input == nil {
 		fmt.Fprintln(output, "\nNo changes made. Run `pterm setup` in a terminal, or `pterm setup --apply --yes` to register startup without questions.")
 		return nil
@@ -483,6 +584,17 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	if len(plan.Steps) > 0 {
 		fmt.Fprintln(output, "\nRegistering startup:")
 		if err := lifecycle.Apply(ctx, env.runner, plan, output); err != nil {
+			return err
+		}
+	}
+	if noStartup {
+		fmt.Fprintln(output, "\nStarting Phone Terminal in the background (no startup registration):")
+		if err := startMissing(ctx, env, report.statuses, output); err != nil {
+			return err
+		}
+	}
+	if report.lingerOff && !yes {
+		if err := offerLinger(ctx, env, fileConfirmer{input: input, output: output}, output); err != nil {
 			return err
 		}
 	}
@@ -548,15 +660,25 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	}, output)
 }
 
-func describeSetup(env lifecycleEnv, plan lifecycle.Plan, tailscale tailscaleReport, origin, originProblem string,
+func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, origin, originProblem string,
 	yes bool, output io.Writer,
 ) {
+	tailscale := report.tailscale
 	fmt.Fprintln(output, "\npterm setup will:")
-	fmt.Fprintln(output, "1. Start Phone Terminal when you log in (current user only, no administrator rights):")
-	if len(plan.Steps) == 0 {
-		fmt.Fprintln(output, "  already registered for this pterm; nothing to change.")
-	} else {
-		_ = lifecycle.Describe(plan, output)
+	switch {
+	case env.host.OS == "linux" && !env.host.Systemd:
+		fmt.Fprintf(output, "1. Start Phone Terminal now in the background, as `pterm launch` does. It cannot start at login here:\n"+
+			"  systemd user services are not running (%s).\n  After each restart, run `pterm launch` again.\n", env.noSystemd)
+		if env.wsl {
+			fmt.Fprintf(output, "  %s\n", wslSystemdHint)
+		}
+	default:
+		fmt.Fprintln(output, "1. Start Phone Terminal when you log in (current user only, no administrator rights):")
+		if len(plan.Steps) == 0 {
+			fmt.Fprintln(output, "  already registered for this pterm; nothing to change.")
+		} else {
+			_ = lifecycle.Describe(plan, output)
+		}
 	}
 	fmt.Fprintln(output, "2. Wait until the broker and the gateway answer.")
 	if origin == "" {
@@ -564,25 +686,68 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, tailscale tailscaleRep
 	} else {
 		fmt.Fprintf(output, "3. Save the phone address %s (unless you set another one).\n", origin)
 	}
+	linger := lifecycle.DisplayCommand(env.host.LingerCommand())
 	if yes {
 		fmt.Fprintf(output, "Phone access over your tailnet (run it yourself): %s\n", lifecycle.ServeCommand)
 		fmt.Fprintf(output, "Dev-server previews over your tailnet (run it yourself): %s\n", lifecycle.PreviewServeCommand)
+		if report.lingerOff {
+			fmt.Fprintf(output, "To keep running after you log out (servers), run it yourself: %s\n", linger)
+		}
 	} else {
+		if report.lingerOff {
+			fmt.Fprintf(output, "After step 1 it asks separately whether to keep running after you log out: %s\n", linger)
+		}
 		fmt.Fprintf(output, "4. Add your home folder %s as project \"Home\" if you have no project.\n", env.host.HomeDir)
 		fmt.Fprintln(output, "5. Show a QR code for your phone and ask you to approve the code it shows.")
-		asksPhoneServe := origin != "" && tailscale.serveErr == nil && !tailscale.serve.Configured && len(tailscale.serve.Problems) == 0
+		asksPhoneServe := origin != "" && tailscale.serveErr == nil && !tailscale.needsOperator &&
+			!tailscale.serve.Configured && len(tailscale.serve.Problems) == 0
 		if asksPhoneServe {
 			fmt.Fprintf(output, "Before step 4 it asks separately whether to run: %s\n", lifecycle.ServeCommand)
 		}
 		// The second, separate preview question follows only once 443 is
 		// settled successfully: already configured, or about to be asked (and,
 		// if agreed to, applied) above.
-		if origin != "" && tailscale.serveErr == nil && !tailscale.serve.PreviewConfigured && len(tailscale.serve.PreviewProblems) == 0 &&
+		if origin != "" && tailscale.serveErr == nil && !tailscale.needsOperator &&
+			!tailscale.serve.PreviewConfigured && len(tailscale.serve.PreviewProblems) == 0 &&
 			(tailscale.serve.Configured || asksPhoneServe) {
 			fmt.Fprintf(output, "Before step 4 it also asks separately whether to run: %s\n", lifecycle.PreviewServeCommand)
 		}
 	}
+	if tailscale.needsOperator {
+		fmt.Fprintf(output, "Tailscale Serve is not changed: on Linux only root or the Tailscale operator may change it. Run this once yourself, then run `pterm setup` again: %s\n",
+			lifecycle.TailscaleOperatorCommand)
+	}
+	if env.wsl {
+		fmt.Fprintf(output, "WSL: %s\n", wslLifetimeNote)
+	}
 	fmt.Fprintln(output, "Never use Tailscale Funnel: it would put your terminal on the public internet.")
+}
+
+// offerLinger asks its own question before it runs `loginctl enable-linger`,
+// which keeps the user's systemd services, and so every session, running
+// after logout and starts them at boot. Servers need it. It never uses sudo;
+// if loginctl is refused, the owner gets the command to run.
+func offerLinger(ctx context.Context, env lifecycleEnv, confirmer fileConfirmer, output io.Writer) error {
+	command := env.host.LingerCommand()
+	approved, err := confirmer.Confirm(ctx, fmt.Sprintf(
+		"\nKeep Phone Terminal running when you log out, and start it at boot before anyone logs in?\n"+
+			"On a server (no desktop login) you need this, or your sessions end when your last SSH login closes.\n"+
+			"This runs: %s [y/N] ", lifecycle.DisplayCommand(command)))
+	if err != nil {
+		return err
+	}
+	if !approved {
+		fmt.Fprintf(output, "Linger not changed. Phone Terminal stops when you log out. To change it later, run: %s\n",
+			lifecycle.DisplayCommand(command))
+		return nil
+	}
+	if result, err := env.runner.Run(ctx, command[0], command[1:]...); err != nil {
+		fmt.Fprintf(output, "loginctl failed (%v: %s). Ask an administrator, or run it yourself: sudo %s\n",
+			err, strings.TrimSpace(result), lifecycle.DisplayCommand(command))
+		return nil
+	}
+	fmt.Fprintln(output, "Linger is on: Phone Terminal keeps running after you log out and starts at boot.")
+	return nil
 }
 
 // savePhoneOrigin saves origin unless the owner already chose another one.
@@ -615,6 +780,10 @@ func offerTailscaleServe(ctx context.Context, env lifecycleEnv, tailscale tailsc
 	case tailscale.serveErr != nil:
 		fmt.Fprintf(output, "Could not read the Tailscale Serve status; run it yourself: %s\n", lifecycle.ServeCommand)
 		return false, nil
+	case tailscale.needsOperator && !tailscale.serve.Configured:
+		fmt.Fprintf(output, "Tailscale Serve was not changed: on Linux only root or the Tailscale operator may change it.\n"+
+			"Run this once yourself, then run `pterm setup` again: %s\n", lifecycle.TailscaleOperatorCommand)
+		return false, nil
 	case tailscale.serve.Configured:
 		fmt.Fprintf(output, "Tailscale Serve already shares the page at %s/\n", origin)
 		return true, nil
@@ -636,10 +805,7 @@ func offerTailscaleServe(ctx context.Context, env lifecycleEnv, tailscale tailsc
 		fmt.Fprintf(output, "Tailscale Serve not changed. To share the page later, run: %s\n", lifecycle.ServeCommand)
 		return false, nil
 	}
-	serveCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer cancel()
-	if _, err := tailscaleRun(serveCtx, env.tailscale, output, strings.Fields(lifecycle.ServeCommand)[1:]...); err != nil {
-		fmt.Fprintf(output, "tailscale serve failed (%v). Fix it, then run it yourself: %s\n", err, lifecycle.ServeCommand)
+	if !runTailscaleServe(ctx, env, lifecycle.ServeCommand, output) {
 		return false, nil
 	}
 	fmt.Fprintf(output, "Tailscale Serve shares the page at %s/\n", origin)
@@ -657,6 +823,9 @@ func offerTailscalePreviewServe(ctx context.Context, env lifecycleEnv, tailscale
 	switch {
 	case tailscale.serve.PreviewConfigured:
 		fmt.Fprintf(output, "Tailscale Serve already shares dev-server previews at %s/\n", preview)
+		return nil
+	case tailscale.needsOperator:
+		fmt.Fprintf(output, "Dev-server previews not shared: run once yourself: %s\n", lifecycle.TailscaleOperatorCommand)
 		return nil
 	case len(tailscale.serve.PreviewProblems) > 0:
 		fmt.Fprintln(output, "Tailscale Serve was not changed for dev-server previews:")
@@ -676,15 +845,41 @@ func offerTailscalePreviewServe(ctx context.Context, env lifecycleEnv, tailscale
 		fmt.Fprintf(output, "Dev-server previews not shared. To share them later, run: %s\n", lifecycle.PreviewServeCommand)
 		return nil
 	}
-	serveCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer cancel()
-	if _, err := tailscaleRun(serveCtx, env.tailscale, output, strings.Fields(lifecycle.PreviewServeCommand)[1:]...); err != nil {
-		fmt.Fprintf(output, "tailscale serve failed (%v). Fix it, then run it yourself: %s\n", err, lifecycle.PreviewServeCommand)
+	if !runTailscaleServe(ctx, env, lifecycle.PreviewServeCommand, output) {
 		return nil
 	}
 	fmt.Fprintf(output, "Dev-server previews shared at %s/\n", preview)
 	return nil
 }
+
+// runTailscaleServe runs an approved `tailscale serve` command, showing its
+// output, which may include a link to enable Serve. When Linux refuses it
+// because this user is not the Tailscale operator, it names the one-time fix.
+func runTailscaleServe(ctx context.Context, env lifecycleEnv, command string, output io.Writer) bool {
+	serveCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	var captured boundedBuffer
+	if _, err := tailscaleRun(serveCtx, env.tailscale, io.MultiWriter(output, &captured), strings.Fields(command)[1:]...); err != nil {
+		if lifecycle.NeedsTailscaleOperator(captured.String()) {
+			fmt.Fprintf(output, "tailscale serve was refused: on Linux only root or the Tailscale operator may change Serve.\n"+
+				"Run this once yourself, then run `pterm setup` again: %s\n", lifecycle.TailscaleOperatorCommand)
+			return false
+		}
+		fmt.Fprintf(output, "tailscale serve failed (%v). Fix it, then run it yourself: %s\n", err, command)
+		return false
+	}
+	return true
+}
+
+// boundedBuffer keeps the first 4 KiB written to it.
+type boundedBuffer struct{ data []byte }
+
+func (buffer *boundedBuffer) Write(data []byte) (int, error) {
+	buffer.data = append(buffer.data, data[:min(len(data), max(0, 4096-len(buffer.data)))]...)
+	return len(data), nil
+}
+
+func (buffer *boundedBuffer) String() string { return string(buffer.data) }
 
 func runDoctorCommand(ctx context.Context, args []string, output io.Writer) error {
 	if _, err := parseLifecycleFlags("doctor", args); err != nil {
@@ -720,10 +915,7 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	}
 	var data []string
 	if *options["delete-data"] {
-		data = append(data, env.paths.DataDir)
-		if cache := filepath.Dir(env.paths.RuntimeDir); cache != env.paths.DataDir {
-			data = append(data, cache)
-		}
+		data = dataDirectories(env.paths)
 	}
 	plan, err := env.host.UninstallPlan(report.statuses, data)
 	if err != nil {
@@ -743,7 +935,12 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	if env.host.OS == "windows" && len(plan.Steps) > 0 {
 		fmt.Fprintln(output, "Then it stops the gateway and, if it has no active sessions, the broker.")
 	}
-	fmt.Fprintln(output, "The application itself stays: move Phone Terminal.app to the Trash, or remove it in Windows Settings > Apps.")
+	switch env.host.OS {
+	case "linux":
+		fmt.Fprintf(output, "The pterm program itself stays: delete %s yourself.\n", env.host.Executable)
+	default:
+		fmt.Fprintln(output, "The application itself stays: move Phone Terminal.app to the Trash, or remove it in Windows Settings > Apps.")
+	}
 
 	if plan.ChangesRunningBroker || len(data) > 0 {
 		if err := report.refuseActiveSessions("uninstall"); err != nil {
@@ -789,6 +986,29 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	return lifecycle.Apply(ctx, env.runner, lifecycle.Plan{Steps: plan.Steps[unregister:]}, output)
 }
 
+// dataDirectories lists the product directories --delete-data removes: the
+// data directory, and the nearest "Phone Terminal" / "phone-terminal"
+// directory holding the logs or the runtime directory when that is elsewhere
+// (macOS Caches, Linux $XDG_STATE_HOME and /run/user/<uid>). The nearest, so
+// a home directory that happens to have that name is never chosen.
+func dataDirectories(paths host.Paths) []string {
+	directories := []string{paths.DataDir}
+	for _, path := range []string{paths.LogDir, paths.RuntimeDir} {
+		root := ""
+		for current := path; root == "" && current != "" && current != filepath.Dir(current); current = filepath.Dir(current) {
+			if base := filepath.Base(current); base == "Phone Terminal" || base == "phone-terminal" {
+				root = current
+			}
+		}
+		inside, err := filepath.Rel(paths.DataDir, root)
+		if root == "" || err == nil && !strings.HasPrefix(inside, "..") || slices.Contains(directories, root) {
+			continue
+		}
+		directories = append(directories, root)
+	}
+	return directories
+}
+
 // stopUnregistered stops what the removed Windows tasks started: schtasks
 // /End ends the headless console host, which need not end pterm. The broker is
 // only stopped when uninstall already checked it had no active sessions, and
@@ -831,6 +1051,32 @@ func runLaunchCommand(ctx context.Context, args []string, output io.Writer) erro
 	if err != nil {
 		return err
 	}
+	if err := startMissing(ctx, env, statuses, io.Discard); err != nil {
+		return err
+	}
+	url := env.gateway + "/"
+	fmt.Fprintf(output, "Phone Terminal is running: %s\n", url)
+	if *options["no-open"] {
+		return nil
+	}
+	command := []string{"open", url}
+	switch runtime.GOOS {
+	case "windows":
+		command = []string{"rundll32", "url.dll,FileProtocolHandler", url}
+	case "linux":
+		// A server or an SSH login has no browser to open.
+		if _, err := exec.LookPath("xdg-open"); err != nil || os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+			return nil
+		}
+		command = []string{"xdg-open", url}
+	}
+	_, err = env.runner.Run(ctx, command[0], command[1:]...)
+	return err
+}
+
+// startMissing starts the broker, then the gateway, if it does not answer,
+// and waits until it does.
+func startMissing(ctx context.Context, env lifecycleEnv, statuses []lifecycle.Status, output io.Writer) error {
 	checks := []func() error{
 		func() error {
 			ctx, cancel := context.WithTimeout(ctx, ipc.HandshakeTimeout)
@@ -842,8 +1088,10 @@ func runLaunchCommand(ctx context.Context, args []string, output io.Writer) erro
 	}
 	for index, status := range statuses {
 		if checks[index]() == nil {
+			fmt.Fprintf(output, "  %s: already running\n", status.Service.Name)
 			continue
 		}
+		fmt.Fprintf(output, "  start the %s\n", status.Service.Name)
 		if err := startDetached(ctx, env, status); err != nil {
 			return err
 		}
@@ -851,17 +1099,7 @@ func runLaunchCommand(ctx context.Context, args []string, output io.Writer) erro
 			return fmt.Errorf("%s did not start (see %s): %w", status.Service.Name, env.host.LogDir(), err)
 		}
 	}
-	url := env.gateway + "/"
-	fmt.Fprintf(output, "Phone Terminal is running: %s\n", url)
-	if *options["no-open"] {
-		return nil
-	}
-	command := []string{"open", url}
-	if runtime.GOOS == "windows" {
-		command = []string{"rundll32", "url.dll,FileProtocolHandler", url}
-	}
-	_, err = env.runner.Run(ctx, command[0], command[1:]...)
-	return err
+	return nil
 }
 
 // startDetached asks the supervisor for a registered service, otherwise

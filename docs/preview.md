@@ -35,7 +35,7 @@ Tailscale) are ignored because the proxy dials loopback.
 | --- | --- | --- |
 | macOS | One `kern.proc.all` snapshot: members of the PTY session (`getsid`, the same rule the broker uses to end a session) plus all their descendants by parent PID, so a dev server that a coding agent detached with `setsid` still counts. | `/usr/sbin/lsof -w -a -nP -iTCP -sTCP:LISTEN -p <tree pids> -F ptn` (absolute path, `LC_ALL=C` only, 2 s timeout, 256 KiB output cap). |
 | Windows | The process IDs in the session's Job Object (`JobObjectBasicProcessIdList`). | `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_LISTENER)` for IPv4 and IPv6, owning PID per row. |
-| Linux (development only) | `/proc/<pid>/stat` session and parent fields. | `lsof`, when installed. |
+| Linux | `/proc/<pid>/stat` session and parent fields, the same rule as macOS. | LISTEN rows of `/proc/net/tcp` and `/proc/net/tcp6` (the broker's network namespace), matched by socket inode to the `socket:[inode]` links in `/proc/<pid>/fd` of the tree's processes. No `lsof`. Another user's `fd` directory cannot be read, which can only hide ports. |
 
 The ownership filter is a pure function (`ptyhost.PreviewablePorts`) over
 (listening sockets, tree PIDs). At most 8 ports per session. After the

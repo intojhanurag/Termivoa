@@ -6,12 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
 const (
 	applicationDirectoryName            = "Phone Terminal"
 	developmentApplicationDirectoryName = "Phone Terminal Development"
+	// Linux uses lower-case XDG directory names.
+	linuxApplicationDirectoryName            = "phone-terminal"
+	linuxDevelopmentApplicationDirectoryName = "phone-terminal-development"
 )
 
 // Profile identifies whether process paths belong to the installed product or
@@ -26,14 +30,71 @@ const (
 type Paths struct {
 	DataDir    string
 	RuntimeDir string
+	// LogDir holds the broker and gateway logs of the installed product. It is
+	// set by DefaultPaths and DevelopmentPaths only; ValidatePaths leaves it
+	// empty because only startup registration uses it.
+	LogDir string
 }
 
 func DefaultPaths() (Paths, error) {
+	if runtime.GOOS == "linux" {
+		return linuxDefaultPaths(linuxApplicationDirectoryName)
+	}
 	return pathsForDirectory(applicationDirectoryName)
 }
 
 func DevelopmentPaths() (Paths, error) {
+	if runtime.GOOS == "linux" {
+		return linuxDefaultPaths(linuxDevelopmentApplicationDirectoryName)
+	}
 	return pathsForDirectory(developmentApplicationDirectoryName)
+}
+
+func linuxDefaultPaths(directory string) (Paths, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Paths{}, fmt.Errorf("platform: resolve home directory: %w", err)
+	}
+	if !filepath.IsAbs(home) {
+		return Paths{}, fmt.Errorf("platform: home directory %q is not absolute", home)
+	}
+	return linuxPaths(directory, os.Getenv, home, os.Getuid(), func(path string) bool {
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}), nil
+}
+
+// linuxPaths follows the XDG Base Directory specification: data in
+// $XDG_DATA_HOME (~/.local/share) and logs in $XDG_STATE_HOME
+// (~/.local/state); relative values are ignored, as the specification says.
+// The runtime directory, which holds the sockets every pterm process must
+// agree on, prefers systemd's /run/user/<uid> over $XDG_RUNTIME_DIR: they are
+// normally the same, but su/sudo shells lack the variable and WSLg points it
+// elsewhere, while the systemd user service always uses /run/user/<uid>.
+// Without either, it falls back to a directory inside the private data
+// directory. The IPC layer checks ownership and permissions of whichever is
+// used when it opens it.
+func linuxPaths(directory string, getenv func(string) string, home string, uid int, isDir func(string) bool) Paths {
+	base := func(variable, fallback string) string {
+		if value := getenv(variable); filepath.IsAbs(value) {
+			return filepath.Clean(value)
+		}
+		return filepath.Join(home, fallback)
+	}
+	paths := Paths{
+		DataDir: filepath.Join(base("XDG_DATA_HOME", ".local/share"), directory),
+		LogDir:  filepath.Join(base("XDG_STATE_HOME", ".local/state"), directory, "logs"),
+	}
+	systemdRuntime := "/run/user/" + strconv.Itoa(uid)
+	switch runtimeBase := getenv("XDG_RUNTIME_DIR"); {
+	case uid >= 0 && isDir(systemdRuntime):
+		paths.RuntimeDir = filepath.Join(systemdRuntime, directory)
+	case filepath.IsAbs(runtimeBase):
+		paths.RuntimeDir = filepath.Join(filepath.Clean(runtimeBase), directory)
+	default:
+		paths.RuntimeDir = filepath.Join(paths.DataDir, "runtime")
+	}
+	return paths
 }
 
 func pathsForDirectory(directory string) (Paths, error) {
@@ -55,6 +116,7 @@ func pathsForDirectory(directory string) (Paths, error) {
 	return Paths{
 		DataDir:    filepath.Join(dataBase, directory),
 		RuntimeDir: filepath.Join(cacheDir, directory, "runtime"),
+		LogDir:     filepath.Join(dataBase, directory, "logs"),
 	}, nil
 }
 
