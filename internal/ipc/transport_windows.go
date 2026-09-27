@@ -92,11 +92,23 @@ func (lock *windowsBrokerLock) Close() error {
 }
 
 func platformEndpoint(runtimeDir string) (transport, address string, err error) {
+	return platformEndpointNamed(runtimeDir, defaultSocketName)
+}
+
+// platformEndpointNamed is platformEndpoint for a non-default SocketName. A
+// non-default name folds into the pipe-address digest so a second endpoint
+// (such as the gateway's stop control) sharing the runtime directory gets its
+// own pipe. The default broker pipe address is unchanged.
+func platformEndpointNamed(runtimeDir, name string) (transport, address string, err error) {
 	sid, err := currentUserSID()
 	if err != nil {
 		return "", "", fmt.Errorf("ipc: resolve current Windows user: %w", err)
 	}
-	digest := sha256.Sum256([]byte(strings.ToLower(runtimeDir) + "\x00" + sid.String()))
+	key := strings.ToLower(runtimeDir)
+	if name != defaultSocketName {
+		key += "\x00" + name
+	}
+	digest := sha256.Sum256([]byte(key + "\x00" + sid.String()))
 	return windowsPipeTransport, `\\.\pipe\pterm-` + hex.EncodeToString(digest[:16]), nil
 }
 

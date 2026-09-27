@@ -41,7 +41,7 @@ func TestGatewayControlStopsOnlyOnRequestAndIsSingleInstance(t *testing.T) {
 	}
 
 	// Any other admin request is refused without stopping the gateway.
-	admin, err := localclient.DialAdmin(ctx, localclient.GatewayControlDir(runtimeDir), "control-test")
+	admin, err := localclient.DialNamedAdmin(ctx, runtimeDir, localclient.GatewaySocketName, "control-test")
 	if err != nil {
 		t.Fatal(err)
 	}

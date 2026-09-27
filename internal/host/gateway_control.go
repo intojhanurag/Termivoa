@@ -15,10 +15,11 @@ import (
 const gatewayControlTimeout = 5 * time.Second
 
 // GatewayControl is a running gateway's stop endpoint, used by `pterm stop`
-// and `pterm shutdown`. It reuses the broker endpoint machinery in
-// localclient.GatewayControlDir: a current-user-only socket or pipe, a
-// single-instance OS lock and a descriptor carrying a random token that the
-// handshake returns. It accepts only admin.gateway.stop from a cli peer.
+// and `pterm shutdown`. It reuses the broker endpoint machinery under
+// localclient.GatewaySocketName: a current-user-only socket or pipe inside
+// the broker's own private runtime directory, a single-instance OS lock and
+// a descriptor carrying a random token that the handshake returns. It
+// accepts only admin.gateway.stop from a cli peer.
 type GatewayControl struct {
 	listener *ipc.BrokerListener
 	done     chan struct{}
@@ -35,7 +36,7 @@ func ListenGatewayControl(ctx context.Context, runtimeDir, hostBuild string, sto
 		return nil, err
 	}
 	listener, err := ipc.ListenBroker(ctx, ipc.ListenerConfig{
-		RuntimeDir: localclient.GatewayControlDir(runtimeDir), BrokerGeneration: token,
+		RuntimeDir: runtimeDir, BrokerGeneration: token, SocketName: localclient.GatewaySocketName,
 	})
 	if errors.Is(err, ipc.ErrBrokerAlreadyRunning) {
 		return nil, errors.New("host: a gateway is already running for this runtime directory")

@@ -27,9 +27,14 @@ secret is recorded here.
   the broker's serve context (`ManagementServerConfig.Shutdown`). The broker
   exits with status 0. The broker refuses `admin.gateway.stop`.
 - Gateway control endpoint (`internal/host/gateway_control.go`): the gateway
-  process publishes `<runtime>/gateway/` with the existing broker endpoint
-  machinery (current-user socket or pipe, single-instance OS lock, descriptor
-  with a random token that the handshake must return). It accepts one
+  process publishes `<runtime>/gw.sock` (with `gw.lock` and
+  `gw-endpoint.json`) in the private runtime directory, using the existing
+  broker endpoint machinery (current-user socket or pipe, single-instance OS
+  lock, descriptor with a random token that the handshake must return). The
+  socket path is shorter than `<runtime>/broker.sock`, so the gateway starts
+  whenever the broker socket fits the 103-byte Unix limit (fixed 2026-09-27;
+  it was `<runtime>/gateway/broker.sock`, 8 bytes longer; test
+  `TestGatewayControlFitsWhenBrokerSocketFits`). It accepts one
   `admin.gateway.stop` from a `cli` peer, answers, and the gateway exits with
   status 0. No PID is trusted and no process is found or signaled by name. A
   second gateway for the same runtime directory is refused.

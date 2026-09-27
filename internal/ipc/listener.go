@@ -18,10 +18,18 @@ import (
 
 const (
 	EndpointDescriptorVersion = 1
-	endpointDescriptorName    = "broker-endpoint.json"
 	maxEndpointDescriptorSize = 16 * 1024
 	staleProbeTimeout         = 750 * time.Millisecond
+
+	// defaultSocketName is the on-disk name family ("broker.sock",
+	// "broker.lock", "broker-endpoint.json") the primary broker endpoint
+	// uses. ListenerConfig.SocketName defaults to it.
+	defaultSocketName = "broker"
 )
+
+// descriptorFileName returns the endpoint descriptor's basename for one
+// socket-name family within a runtime directory.
+func descriptorFileName(name string) string { return name + "-endpoint.json" }
 
 var (
 	ErrBrokerAlreadyRunning       = errors.New("ipc: broker already owns the selected data or runtime location")
@@ -46,6 +54,15 @@ type EndpointDescriptor struct {
 type ListenerConfig struct {
 	RuntimeDir       string
 	BrokerGeneration string
+
+	// SocketName selects the on-disk name family ("<name>.sock",
+	// "<name>.lock", "<name>-endpoint.json") within RuntimeDir. Empty means
+	// "broker", the primary broker endpoint. A second short name lets an
+	// unrelated endpoint (such as the gateway's stop control) share the same
+	// private, already-hardened runtime directory without colliding with
+	// the broker's own files and without exceeding the broker socket's
+	// path length, since every name is bounded to the same directory.
+	SocketName string
 }
 
 // BrokerListener owns the platform listener, endpoint descriptor, and
@@ -54,6 +71,7 @@ type BrokerListener struct {
 	listener   net.Listener
 	descriptor EndpointDescriptor
 	runtimeDir string
+	name       string
 	lock       brokerLock
 	closeOnce  sync.Once
 	closeErr   error
@@ -143,10 +161,14 @@ func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, 
 	if !validUUID(config.BrokerGeneration) {
 		return nil, errors.New("ipc: broker generation must be a UUID")
 	}
+	name := config.SocketName
+	if name == "" {
+		name = defaultSocketName
+	}
 	if err := prepareRuntimeDir(runtimeDir); err != nil {
 		return nil, fmt.Errorf("ipc: prepare runtime directory: %w", err)
 	}
-	lock, err := acquireBrokerLock(runtimeDir, "broker.lock")
+	lock, err := acquireBrokerLock(runtimeDir, name+".lock")
 	if err != nil {
 		return nil, err
 	}
@@ -157,10 +179,10 @@ func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, 
 		}
 	}()
 
-	if err := recoverStaleEndpoint(ctx, runtimeDir); err != nil {
+	if err := recoverStaleEndpoint(ctx, runtimeDir, name); err != nil {
 		return nil, err
 	}
-	transport, address, err := platformEndpoint(runtimeDir)
+	transport, address, err := platformEndpointNamed(runtimeDir, name)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +199,7 @@ func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, 
 		Version: EndpointDescriptorVersion, Transport: transport, Address: address,
 		BrokerGeneration: config.BrokerGeneration, ProcessID: os.Getpid(),
 	}
-	if err := writeEndpointDescriptor(runtimeDir, descriptor); err != nil {
+	if err := writeEndpointDescriptorNamed(runtimeDir, name, descriptor); err != nil {
 		_ = listener.Close()
 		_ = removePlatformEndpoint(address)
 		return nil, err
@@ -185,7 +207,7 @@ func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, 
 
 	releaseLock = false
 	return &BrokerListener{
-		listener: listener, descriptor: descriptor, runtimeDir: runtimeDir, lock: lock,
+		listener: listener, descriptor: descriptor, runtimeDir: runtimeDir, name: name, lock: lock,
 	}, nil
 }
 
@@ -221,7 +243,7 @@ func (listener *BrokerListener) Descriptor() EndpointDescriptor {
 func (listener *BrokerListener) Close() error {
 	listener.closeOnce.Do(func() {
 		listenerErr := listener.listener.Close()
-		descriptorErr := removeOwnedDescriptor(listener.runtimeDir, listener.descriptor)
+		descriptorErr := removeOwnedDescriptor(listener.runtimeDir, listener.name, listener.descriptor)
 		endpointErr := removePlatformEndpoint(listener.descriptor.Address)
 		lockErr := listener.lock.Close()
 		listener.closeErr = errors.Join(listenerErr, descriptorErr, endpointErr, lockErr)
@@ -237,6 +259,19 @@ func DialBroker(
 	clientKind protocol.IPCClientKind,
 	clientBuild string,
 ) (net.Conn, EndpointDescriptor, protocol.IPCWelcomeClass, error) {
+	return DialNamedBroker(ctx, runtimeDir, defaultSocketName, clientKind, clientBuild)
+}
+
+// DialNamedBroker is DialBroker for an endpoint published under
+// ListenerConfig.SocketName rather than the default "broker" family, such as
+// the gateway's stop control endpoint sharing the broker's own runtime
+// directory.
+func DialNamedBroker(
+	ctx context.Context,
+	runtimeDir, name string,
+	clientKind protocol.IPCClientKind,
+	clientBuild string,
+) (net.Conn, EndpointDescriptor, protocol.IPCWelcomeClass, error) {
 	if ctx == nil {
 		return nil, EndpointDescriptor{}, protocol.IPCWelcomeClass{}, errors.New("ipc: dial context must not be nil")
 	}
@@ -244,11 +279,11 @@ func DialBroker(
 	if err != nil {
 		return nil, EndpointDescriptor{}, protocol.IPCWelcomeClass{}, err
 	}
-	descriptor, err := ReadEndpointDescriptor(runtimeDir)
+	descriptor, err := ReadNamedEndpointDescriptor(runtimeDir, name)
 	if err != nil {
 		return nil, EndpointDescriptor{}, protocol.IPCWelcomeClass{}, err
 	}
-	connection, welcome, err := dialDescriptor(ctx, runtimeDir, descriptor, clientKind, clientBuild)
+	connection, welcome, err := dialDescriptor(ctx, runtimeDir, name, descriptor, clientKind, clientBuild)
 	if err != nil {
 		return nil, descriptor, protocol.IPCWelcomeClass{}, err
 	}
@@ -272,12 +307,12 @@ func ValidateBrokerEndpoint(
 
 func dialDescriptor(
 	ctx context.Context,
-	runtimeDir string,
+	runtimeDir, name string,
 	descriptor EndpointDescriptor,
 	clientKind protocol.IPCClientKind,
 	clientBuild string,
 ) (net.Conn, protocol.IPCWelcomeClass, error) {
-	if err := validateEndpointDescriptor(runtimeDir, descriptor); err != nil {
+	if err := validateEndpointDescriptor(runtimeDir, name, descriptor); err != nil {
 		return nil, protocol.IPCWelcomeClass{}, err
 	}
 	connection, err := dialPlatform(ctx, descriptor.Address)
@@ -296,14 +331,14 @@ func dialDescriptor(
 	return connection, welcome, nil
 }
 
-func recoverStaleEndpoint(ctx context.Context, runtimeDir string) error {
+func recoverStaleEndpoint(ctx context.Context, runtimeDir, name string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	descriptor, err := ReadEndpointDescriptor(runtimeDir)
+	descriptor, err := ReadNamedEndpointDescriptor(runtimeDir, name)
 	if err == nil {
 		probeContext, cancel := context.WithTimeout(ctx, staleProbeTimeout)
-		connection, _, probeErr := dialDescriptor(probeContext, runtimeDir, descriptor, protocol.CLI, "endpoint-probe")
+		connection, _, probeErr := dialDescriptor(probeContext, runtimeDir, name, descriptor, protocol.CLI, "endpoint-probe")
 		cancel()
 		if connection != nil {
 			_ = connection.Close()
@@ -321,11 +356,11 @@ func recoverStaleEndpoint(ctx context.Context, runtimeDir string) error {
 		return err
 	}
 
-	_, address, endpointErr := platformEndpoint(runtimeDir)
+	_, address, endpointErr := platformEndpointNamed(runtimeDir, name)
 	if endpointErr != nil {
 		return endpointErr
 	}
-	if err := removeStaleDescriptor(runtimeDir); err != nil {
+	if err := removeStaleDescriptorNamed(runtimeDir, name); err != nil {
 		return err
 	}
 	if err := removePlatformEndpoint(address); err != nil {
@@ -335,15 +370,27 @@ func recoverStaleEndpoint(ctx context.Context, runtimeDir string) error {
 }
 
 func EndpointDescriptorPath(runtimeDir string) (string, error) {
+	return EndpointDescriptorPathNamed(runtimeDir, defaultSocketName)
+}
+
+// EndpointDescriptorPathNamed is EndpointDescriptorPath for a non-default
+// SocketName.
+func EndpointDescriptorPathNamed(runtimeDir, name string) (string, error) {
 	runtimeDir, err := checkedRuntimeDir(runtimeDir)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(runtimeDir, endpointDescriptorName), nil
+	return filepath.Join(runtimeDir, descriptorFileName(name)), nil
 }
 
 func ReadEndpointDescriptor(runtimeDir string) (EndpointDescriptor, error) {
-	path, err := EndpointDescriptorPath(runtimeDir)
+	return ReadNamedEndpointDescriptor(runtimeDir, defaultSocketName)
+}
+
+// ReadNamedEndpointDescriptor is ReadEndpointDescriptor for a non-default
+// SocketName.
+func ReadNamedEndpointDescriptor(runtimeDir, name string) (EndpointDescriptor, error) {
+	path, err := EndpointDescriptorPathNamed(runtimeDir, name)
 	if err != nil {
 		return EndpointDescriptor{}, err
 	}
@@ -377,17 +424,21 @@ func ReadEndpointDescriptor(runtimeDir string) (EndpointDescriptor, error) {
 	if err := ensureJSONEOF(decoder); err != nil {
 		return EndpointDescriptor{}, err
 	}
-	if err := validateEndpointDescriptor(runtimeDir, descriptor); err != nil {
+	if err := validateEndpointDescriptor(runtimeDir, name, descriptor); err != nil {
 		return EndpointDescriptor{}, err
 	}
 	return descriptor, nil
 }
 
 func writeEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) error {
-	if err := validateEndpointDescriptor(runtimeDir, descriptor); err != nil {
+	return writeEndpointDescriptorNamed(runtimeDir, defaultSocketName, descriptor)
+}
+
+func writeEndpointDescriptorNamed(runtimeDir, name string, descriptor EndpointDescriptor) error {
+	if err := validateEndpointDescriptor(runtimeDir, name, descriptor); err != nil {
 		return err
 	}
-	path := filepath.Join(runtimeDir, endpointDescriptorName)
+	path := filepath.Join(runtimeDir, descriptorFileName(name))
 	payload, err := json.Marshal(descriptor)
 	if err != nil {
 		return fmt.Errorf("ipc: encode endpoint descriptor: %w", err)
@@ -426,8 +477,8 @@ func writeEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) e
 	return syncRuntimeDir(runtimeDir)
 }
 
-func removeOwnedDescriptor(runtimeDir string, owned EndpointDescriptor) error {
-	descriptor, err := ReadEndpointDescriptor(runtimeDir)
+func removeOwnedDescriptor(runtimeDir, name string, owned EndpointDescriptor) error {
+	descriptor, err := ReadNamedEndpointDescriptor(runtimeDir, name)
 	if errors.Is(err, ErrEndpointMissing) {
 		return nil
 	}
@@ -437,11 +488,15 @@ func removeOwnedDescriptor(runtimeDir string, owned EndpointDescriptor) error {
 	if descriptor.BrokerGeneration != owned.BrokerGeneration || descriptor.Address != owned.Address {
 		return nil
 	}
-	return removeStaleDescriptor(runtimeDir)
+	return removeStaleDescriptorNamed(runtimeDir, name)
 }
 
 func removeStaleDescriptor(runtimeDir string) error {
-	path := filepath.Join(runtimeDir, endpointDescriptorName)
+	return removeStaleDescriptorNamed(runtimeDir, defaultSocketName)
+}
+
+func removeStaleDescriptorNamed(runtimeDir, name string) error {
+	path := filepath.Join(runtimeDir, descriptorFileName(name))
 	if err := validatePrivateFile(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -454,8 +509,8 @@ func removeStaleDescriptor(runtimeDir string) error {
 	return syncRuntimeDir(runtimeDir)
 }
 
-func validateEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) error {
-	transport, address, err := platformEndpoint(runtimeDir)
+func validateEndpointDescriptor(runtimeDir, name string, descriptor EndpointDescriptor) error {
+	transport, address, err := platformEndpointNamed(runtimeDir, name)
 	if err != nil {
 		return err
 	}

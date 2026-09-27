@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -12,22 +11,26 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
-// GatewayControlDir is the private runtime subdirectory that holds a running
-// gateway's stop endpoint. The gateway publishes it with the same machinery
-// as the broker endpoint: a current-user-only socket or pipe, an OS
-// single-instance lock, and a descriptor whose random token the handshake
-// must return. No process ID is trusted and no process is signaled.
-func GatewayControlDir(runtimeDir string) string { return filepath.Join(runtimeDir, "gateway") }
+// GatewaySocketName is the ipc.ListenerConfig.SocketName the gateway's stop
+// control endpoint publishes under, inside the broker's own private,
+// already-hardened runtime directory. It shares that directory (and its
+// prepare/lock/permission/peer-check machinery) with the broker's own
+// "broker.*" family rather than nesting in a subdirectory: ipc always names
+// a socket "<dir>/<name>.sock", so any subdirectory would make the control
+// socket longer than the broker's own "<runtimeDir>/broker.sock" and could
+// cross the platform's Unix-socket path limit for a long home directory even
+// when the broker still fits. "gw.sock" is 4 bytes shorter than
+// "broker.sock", so it never exceeds the broker's own budget.
+const GatewaySocketName = "gw"
 
 // StopGateway asks the gateway serving runtimeDir to exit and waits until it
 // has removed its endpoint. It reports false when no gateway is running,
 // including a stale endpoint left by a gateway that crashed.
 func StopGateway(ctx context.Context, runtimeDir, clientBuild string) (bool, error) {
-	directory := GatewayControlDir(runtimeDir)
-	if _, err := os.Stat(directory); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(runtimeDir); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	connection, _, _, err := ipc.DialBroker(ctx, directory, protocol.CLI, clientBuild)
+	connection, _, _, err := ipc.DialNamedBroker(ctx, runtimeDir, GatewaySocketName, protocol.CLI, clientBuild)
 	if errors.Is(err, ipc.ErrEndpointMissing) || errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
 		return false, nil
 	}
@@ -46,7 +49,7 @@ func StopGateway(ctx context.Context, runtimeDir, clientBuild string) (bool, err
 		return false, err
 	}
 	for {
-		if _, err := ipc.ReadEndpointDescriptor(directory); errors.Is(err, ipc.ErrEndpointMissing) {
+		if _, err := ipc.ReadNamedEndpointDescriptor(runtimeDir, GatewaySocketName); errors.Is(err, ipc.ErrEndpointMissing) {
 			return true, nil
 		}
 		select {

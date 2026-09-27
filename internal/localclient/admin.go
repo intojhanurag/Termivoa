@@ -22,7 +22,14 @@ type AdminClient struct {
 // DialAdmin authenticates as a local CLI. The broker accepts admin RPC only
 // from a cli peer, so no other role can reach these operations.
 func DialAdmin(ctx context.Context, runtimeDir, clientBuild string) (*AdminClient, error) {
-	connection, _, _, err := ipc.DialBroker(ctx, runtimeDir, protocol.CLI, clientBuild)
+	return DialNamedAdmin(ctx, runtimeDir, "broker", clientBuild)
+}
+
+// DialNamedAdmin is DialAdmin for an endpoint published under a SocketName
+// other than the default broker, such as the gateway's stop control endpoint
+// sharing the broker's own runtime directory (see GatewaySocketName).
+func DialNamedAdmin(ctx context.Context, runtimeDir, name, clientBuild string) (*AdminClient, error) {
+	connection, _, _, err := ipc.DialNamedBroker(ctx, runtimeDir, name, protocol.CLI, clientBuild)
 	if err != nil {
 		return nil, err
 	}
