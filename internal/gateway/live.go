@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -48,9 +49,19 @@ var defaultLiveLimits = liveLimits{
 	readAhead:      64 * 1024,
 	stallTimeout:   15 * time.Second,
 	writeTimeout:   15 * time.Second,
-	sendBuffer:     16 * 1024,
+	sendBuffer:     liveSendBuffer(runtime.GOOS),
 	pingInterval:   20 * time.Second,
 	pingTimeout:    10 * time.Second,
+}
+
+// liveSendBuffer is 16 KiB, except on Linux: its loopback segments are 64
+// KiB, and a send buffer below two segments makes every write wait for the
+// receiver's delayed ACK (40 ms), which capped a phone at about 2 MB/s.
+func liveSendBuffer(goos string) int {
+	if goos == "linux" {
+		return 128 * 1024
+	}
+	return 16 * 1024
 }
 
 // serveLive authenticates the cookie, binds a broker live stream and relays
