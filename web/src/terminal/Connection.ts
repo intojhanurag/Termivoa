@@ -1,4 +1,5 @@
 import type {
+  AgentStatus,
   HistoryChangedPayload,
   HistoryPagePayload,
   InputMousePayload,
@@ -46,6 +47,17 @@ export interface ConnectionStatus {
   readonly rows: number | undefined;
   readonly notice: string | undefined;
   readonly hostBuild: string | undefined;
+  /** The running agent's status. Question text is terminal output: render it as text only. */
+  readonly agent: AgentStatus | undefined;
+  /** The one answer this phone sent for the shown question. */
+  readonly answer: AnswerState | undefined;
+}
+
+export interface AnswerState {
+  readonly questionId: string;
+  readonly optionIndex: number;
+  /** sent: accepted, waiting for the next session.state. changed: refused as question_changed. */
+  readonly phase: 'pending' | 'sent' | 'changed';
 }
 
 export interface HistoryView {
@@ -101,6 +113,8 @@ export const INITIAL_STATUS: ConnectionStatus = {
   rows: undefined,
   notice: undefined,
   hostBuild: undefined,
+  agent: undefined,
+  answer: undefined,
 };
 
 /**
@@ -124,6 +138,7 @@ export class Connection {
   private brokerGeneration: string | undefined;
   private sender: InputSender | undefined;
   private lease: string | undefined;
+  private answerSequence: string | undefined;
   private readonly assembler = new SnapshotAssembler();
   private pendingSnapshot: PendingSnapshot | undefined;
   private pendingPatch: ScreenPatch | undefined;
@@ -209,6 +224,20 @@ export class Connection {
 
   sendPaste(text: string): boolean {
     return this.withSender((sender) => sender.sendPaste(text));
+  }
+
+  /** Sends one answer for one tap. A second answer waits until the first is acknowledged. */
+  sendAnswer(questionId: string, optionIndex: number): boolean {
+    if (this.status.answer?.phase === 'pending') {
+      return false;
+    }
+    let sequence: string | undefined;
+    if (!this.withSender((sender) => { sequence = sender.sendAnswer(questionId, optionIndex); })) {
+      return false;
+    }
+    this.answerSequence = sequence;
+    this.update({ answer: { questionId, optionIndex, phase: 'pending' } });
+    return true;
   }
 
   sendWheel(button: 'wheel-up' | 'wheel-down'): boolean {
@@ -385,14 +414,34 @@ export class Connection {
           });
           return;
         }
-        case 'input.accepted':
-          this.sender?.accepted(message.payload.inputSequence);
+        case 'input.accepted': {
+          const { inputSequence } = message.payload;
+          this.sender?.accepted(inputSequence);
+          const answer = this.status.answer;
+          if (answer !== undefined && inputSequence === this.answerSequence) {
+            this.answerSequence = undefined;
+            this.update({ answer: { ...answer, phase: 'sent' } });
+          }
           return;
+        }
         case 'input.rejected': {
           // The broker never advances its high-water mark for a rejected
           // sequence, so every later sequence on this lease is a gap. Stop
           // sending and require an explicit Take control for a fresh lease.
           const { code, inputSequence, message: text } = message.payload;
+          const answer = inputSequence !== undefined && inputSequence === this.answerSequence ? this.status.answer : undefined;
+          if (answer !== undefined) {
+            this.answerSequence = undefined;
+          }
+          // Exception: these are refused before the sequence is taken. If
+          // nothing was sent after it, reuse the sequence and keep control.
+          if ((code === 'question_changed' || code === 'invalid_request')
+            && inputSequence !== undefined && this.sender?.rewind(inputSequence) === true) {
+            this.update(code === 'question_changed' && answer !== undefined
+              ? { answer: { ...answer, phase: 'changed' } }
+              : { answer: undefined, notice: text });
+            return;
+          }
           this.sender?.rejected(inputSequence);
           const lease = this.lease;
           if (lease !== undefined && code !== 'stale_lease' && code !== 'not_controller') {
@@ -404,14 +453,24 @@ export class Connection {
           this.update({ notice: text });
           return;
         }
-        case 'session.state':
-          this.update({ sessionState: message.payload.state, exitCode: message.payload.exitCode });
+        case 'session.state': {
+          const { agent } = message.payload;
+          // A fresh state ends a sent answer; a "question changed" note stays while a question is up.
+          const answer = this.status.answer;
+          const keep = answer?.phase === 'pending' || (answer?.phase === 'changed' && agent?.state === 'waiting');
+          this.update({
+            sessionState: message.payload.state,
+            exitCode: message.payload.exitCode,
+            agent,
+            answer: keep ? answer : undefined,
+          });
           if (message.payload.state === 'lost') {
             this.lose();
           } else if (message.payload.state === 'exited' || message.payload.state === 'exiting') {
             this.dropControl(undefined);
           }
           return;
+        }
         default:
           return;
       }
@@ -699,9 +758,11 @@ export class Connection {
     this.sender = undefined;
     this.lease = undefined;
     this.requestedSize = undefined;
+    this.answerSequence = undefined;
     const message = uncertain.length > 0 ? DELIVERY_UNCERTAIN : notice;
     this.update({
       control: 'observer',
+      answer: undefined,
       ...(message === undefined ? {} : { notice: message }),
     });
   }
@@ -745,7 +806,8 @@ export class Connection {
     if (this.stopped) {
       return;
     }
-    this.update({ link: 'reconnecting', otherController: false, controllerLabel: undefined });
+    // The next attach sends a fresh session.state; never answer from an old one.
+    this.update({ link: 'reconnecting', otherController: false, controllerLabel: undefined, agent: undefined });
     const delay = RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => this.open(), delay);

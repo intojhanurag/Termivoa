@@ -125,6 +125,11 @@ The agent did not change Tailscale or startup settings on this Mac. Follow
       agent once, and never again after reconnecting.
 - [ ] VoiceOver / TalkBack read the key names ("Control C", "Shift Tab") and
       the pairing code.
+- [ ] iPhone: answer a Claude Code permission prompt from the answer card.
+      The card shows the command, one tap answers once, and the card closes.
+- [ ] iPhone: a question that changes just before the tap refuses the old
+      answer. The card says "The question changed — check the new one", and
+      the phone keeps control.
 
 ### Notifications (Web Push)
 

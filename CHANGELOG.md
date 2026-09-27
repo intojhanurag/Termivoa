@@ -55,6 +55,13 @@ No version has been released. Development history and evidence are in
 - One terminal-style layout for the offline, error, update-required and
   session-lost screens; a small **update** pill on Sessions replaces the
   full-width update banner.
+- Answer card on the Live screen: when the agent waits on a question, a
+  bottom card shows the question, what it approves and one big button per
+  option. One tap sends one `input.answer`; nothing answers or retries on its
+  own. A read-only phone sees **Take control to answer**. **terminal** folds
+  the card to an **↑ answer** pill (it also folds while the keyboard is up).
+  A `question_changed` or `invalid_request` rejection keeps control and
+  reuses the refused input sequence.
 
 #### Notifications
 

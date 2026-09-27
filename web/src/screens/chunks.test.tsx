@@ -46,7 +46,7 @@ describe('first-load split', () => {
     const reachable = [...staticImports(resolve(src, 'main.tsx'))];
     expect(reachable).toContain(resolve(src, 'screens/NewSession.tsx'));
     for (const file of ['screens/Dock.tsx', 'screens/Snippets.tsx', 'screens/SessionMenu.tsx', 'screens/Composer.tsx',
-      'screens/History.tsx', 'terminal/agentKeys.ts', 'terminal/snippets.ts', 'terminal/runFirst.ts']) {
+      'screens/History.tsx', 'screens/AnswerCard.tsx', 'terminal/agentKeys.ts', 'terminal/snippets.ts', 'terminal/runFirst.ts']) {
       expect(reachable).not.toContain(resolve(src, file));
     }
   });

@@ -84,6 +84,36 @@ describe('InputSender', () => {
     expect(() => input.sendMouse('press', 'none', 0, 0, modifiers)).toThrow('incompatible');
   });
 
+  it('answers by question id and option index, and reuses a sequence the broker refused', () => {
+    const messages: string[] = [];
+    const input = sender((message) => messages.push(message));
+    const questionId = 'ab'.repeat(16);
+
+    expect(input.sendAnswer(questionId, 1)).toBe('1');
+    expect(JSON.parse(messages[0] ?? '{}')).toMatchObject({
+      type: 'input.answer', sessionId, generation, payload: { questionId, optionIndex: 1, lease, inputSequence: '1' },
+    });
+    expect(() => input.sendAnswer('not-an-id', 0)).toThrow('question id');
+    expect(() => input.sendAnswer(questionId, 6)).toThrow('0 to 5');
+    expect(messages).toHaveLength(1);
+
+    expect(input.rewind('1')).toBe(true);
+    expect(input.disconnect()).toEqual([]);
+    const next = sender((message) => messages.push(message));
+    next.sendAnswer(questionId, 0);
+    next.sendText('x');
+    // Something was sent after 1, so 1 is no longer the last sequence: no rewind.
+    expect(next.rewind('1')).toBe(false);
+  });
+
+  it('sends the refused sequence again for the next input', () => {
+    const messages: string[] = [];
+    const input = sender((message) => messages.push(message));
+    input.sendAnswer('ab'.repeat(16), 0);
+    input.rewind('1');
+    expect(input.sendText('y')).toBe('1');
+  });
+
   it('stops and closes a transport whose acknowledgements stall', () => {
     let sent = 0;
     const closes: string[] = [];
