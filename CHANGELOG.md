@@ -16,6 +16,8 @@ No version has been released. Development history and evidence are in
 - Broker-owned PTY sessions that keep running while phones and desktop
   terminals connect and disconnect.
 - Several sessions at once, each started from a saved project and shell profile.
+- On Windows, a separate **WSL bash** shell profile when a WSL distro is
+  installed. It opens in the project folder and never replaces PowerShell.
 - Server-authoritative terminal state: clients receive screen snapshots and row
   patches, and send structured input through one writer per session.
 - One controller per session, with explicit **Take control** and release.

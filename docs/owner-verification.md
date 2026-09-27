@@ -138,6 +138,10 @@ but billing blocked it.
 
 - [ ] Broker, gateway and admin commands run natively. PowerShell and pwsh
       profiles are detected.
+- [ ] WSL: with a distro installed, `pterm profile detect` adds **WSL bash**
+      after the PowerShell profiles. A session from it opens the distro shell
+      in the project folder (`pwd` shows `/mnt/c/...`). Without a distro, or
+      without WSL, no WSL profile appears.
 - [ ] ConPTY: one response per terminal query; shutdown has no deadlock.
 - [ ] Broker starts: run `pterm.exe __broker` in a normal (not elevated)
       prompt and leave it in the foreground; it keeps running with no SQLite
