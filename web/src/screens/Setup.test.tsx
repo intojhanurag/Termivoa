@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
-import { pairingFailure, Setup } from './Setup';
+import { CodeTiles, pairingFailure, Setup } from './Setup';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -36,5 +36,15 @@ describe('Setup', () => {
     const html = render('/pair');
     expect(html).toContain('role="alert"');
     expect(html).toContain('Run <code>pterm pair</code> again on your computer');
+  });
+});
+
+describe('CodeTiles', () => {
+  // aria-label is not read on a paragraph, and the tiles are hidden from
+  // screen readers, so the code must be real (visually hidden) text.
+  it('gives screen readers the verification code as text', () => {
+    const html = renderToStaticMarkup(<CodeTiles code="485-431" />);
+    expect(html).toContain('<span class="visually-hidden">Verification code 485-431</span>');
+    expect(html).not.toContain('aria-label');
   });
 });

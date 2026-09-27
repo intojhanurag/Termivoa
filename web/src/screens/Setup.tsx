@@ -29,7 +29,8 @@ export function pairingFailure(error: unknown): string {
 export function CodeTiles({ code }: { readonly code: string }) {
   const groups = code.split('-');
   return (
-    <p className="code-tiles" aria-label={`Verification code ${code}`}>
+    <p className="code-tiles">
+      <span className="visually-hidden">Verification code {code}</span>
       {groups.map((group, index) => (
         <span key={index} className="code-group" aria-hidden="true">
           {index > 0 && <span className="code-dash" />}
