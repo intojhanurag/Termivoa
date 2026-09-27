@@ -27,8 +27,9 @@ Explain checked impacts and backward-compatibility handling.
 
 - [ ] Staged files contain no credentials, `.env` data, signing material, private terminal history, personal paths, or generated binaries
 - [ ] Logging and evidence use bounded non-secret metadata only
+- [ ] Screenshots and fixtures use synthetic data only (no pairing links, QR codes or real terminal content)
 - [ ] Input/output and authorization boundaries remain explicit
 
 ## Documentation and limitations
 
-List updated docs, known limitations, owner-dependent blockers, and the associated milestone/task. Do not mark unexecuted validation as passed.
+List updated docs (README, CHANGELOG, `docs/`), known limitations, owner-dependent blockers, and the related issue or milestone. Do not mark unexecuted validation as passed.
