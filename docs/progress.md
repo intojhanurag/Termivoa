@@ -4,6 +4,15 @@ Last updated: 2026-09-27
 
 ## Current status
 
+### First-run polish merge without CI (2026-09-27)
+
+The owner asked to merge PR #28 (3-step setup, origin fix, bandwidth pacing
+and compression, terminal/environment/desktop fixes, web polish) the same way:
+the Actions minutes were still used up, and every CI job was blocked before it
+started. "Include administrators" was turned off only for the squash merge and
+restored right after. The full local `./scripts/check` (117 web tests) and
+`go test -race ./internal/... ./cmd/...` passed on the merged head.
+
 ### v0 merge without CI (2026-09-29)
 
 The owner asked to merge the v0 stack without hosted CI: the account's 3,000
