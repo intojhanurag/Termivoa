@@ -375,9 +375,11 @@ func TestApplyRoundTripInTemporaryHome(t *testing.T) {
 
 func TestServeFindings(t *testing.T) {
 	for name, test := range map[string]struct {
-		json       string
-		configured bool
-		problems   int
+		json              string
+		configured        bool
+		problems          int
+		previewConfigured bool
+		previewProblems   int
 	}{
 		"empty":       {json: "{}"},
 		"no output":   {json: ""},
@@ -385,10 +387,29 @@ func TestServeFindings(t *testing.T) {
 		"conflict":    {json: `{"TCP":{"443":{"HTTPS":true}},"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, problems: 1},
 		"tcp forward": {json: `{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}`, problems: 1},
 		"funnel":      {json: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},"AllowFunnel":{"h.ts.net:443":true}}`, configured: true, problems: 1},
+		"preview configured": {
+			json:              `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
+			previewConfigured: true,
+		},
+		"preview conflict": {
+			json:            `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
+			previewProblems: 1,
+		},
+		"preview tcp forward": {
+			json:            `{"TCP":{"8443":{"TCPForward":"127.0.0.1:22"}}}`,
+			previewProblems: 1,
+		},
+		"both configured, independent": {
+			json: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}},"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
+			// A 443 conflict must not block 8443 being reported configured.
+			problems:          1,
+			previewConfigured: true,
+		},
 	} {
-		configured, problems, err := ServeFindings([]byte(test.json))
-		if err != nil || configured != test.configured || len(problems) != test.problems {
-			t.Errorf("%s: configured=%v problems=%q err=%v", name, configured, problems, err)
+		status, err := ServeFindings([]byte(test.json))
+		if err != nil || status.Configured != test.configured || len(status.Problems) != test.problems ||
+			status.PreviewConfigured != test.previewConfigured || len(status.PreviewProblems) != test.previewProblems {
+			t.Errorf("%s: status=%+v err=%v", name, status, err)
 		}
 	}
 	status, err := ParseTailscaleStatus([]byte(`{"BackendState":"Running","Self":{"DNSName":"mac.tail1234.ts.net."}}`))

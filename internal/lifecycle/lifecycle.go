@@ -32,6 +32,14 @@ const (
 	LocalURL = "http://127.0.0.1:8787/"
 	// ServeCommand is printed for the owner to run. pterm never runs it.
 	ServeCommand = "tailscale serve --bg --https=443 http://127.0.0.1:8787"
+
+	// PreviewLocalURL is the fixed dev-server preview listener loopback
+	// address, a second and separate origin from LocalURL.
+	PreviewLocalURL = "http://127.0.0.1:8789/"
+	// PreviewServeCommand is printed for the owner to run, or offered as a
+	// second, separate consent after ServeCommand. pterm never runs it
+	// without that explicit yes.
+	PreviewServeCommand = "tailscale serve --bg --https=8443 http://127.0.0.1:8789"
 )
 
 type Service struct {

@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/x/term"
 
 	"github.com/intojhanurag/phone-terminal/internal/cli"
+	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
@@ -207,12 +208,11 @@ var tailscaleRun = func(ctx context.Context, cli string, stream io.Writer, args 
 
 // tailscaleReport is what the read-only Tailscale checks found.
 type tailscaleReport struct {
-	installed       bool
-	status          lifecycle.TailscaleStatus
-	statusErr       error
-	serveErr        error
-	serveConfigured bool
-	serveFindings   []string // conflicts and Funnel exposure; never overwritten
+	installed bool
+	status    lifecycle.TailscaleStatus
+	statusErr error
+	serveErr  error
+	serve     lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
 }
 
 // phoneOrigin is the private HTTPS origin Tailscale gives this computer. When
@@ -234,6 +234,12 @@ func (report tailscaleReport) phoneOrigin() (origin, problem string) {
 		return "", "Tailscale reported an unusable DNS name " + strconv.Quote(report.status.DNSName) + "; set the address yourself with `pterm config origin https://<host>`."
 	}
 	return origin, ""
+}
+
+// previewOrigin is the dev-server preview origin: the same tailnet host as
+// origin, on the separate HTTPS 8443 Serve port.
+func previewOrigin(origin string) string {
+	return origin + ":8443"
 }
 
 // inspectTailscale runs only `status --json` and `serve status --json`.
@@ -260,22 +266,36 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		problems++
 	}
 	data, err = run("serve", "status", "--json")
-	report.serveConfigured, report.serveFindings, parseErr = lifecycle.ServeFindings(data)
+	report.serve, parseErr = lifecycle.ServeFindings(data)
 	switch {
 	case err != nil || parseErr != nil:
 		report.serveErr = errors.Join(err, parseErr)
 		fmt.Fprintf(output, "  ! tailscale serve: status unavailable: %v\n", report.serveErr)
 		return report, problems + 1
-	case report.serveConfigured:
+	case report.serve.Configured:
 		fmt.Fprintln(output, "  tailscale serve: HTTPS 443 proxies the Phone Terminal gateway")
 	default:
 		fmt.Fprintln(output, "  ! tailscale serve: not configured for Phone Terminal")
 		problems++
 	}
-	for _, finding := range report.serveFindings {
+	for _, finding := range report.serve.Problems {
 		fmt.Fprintf(output, "  ! tailscale serve: %s\n", finding)
 	}
-	return report, problems + len(report.serveFindings)
+	problems += len(report.serve.Problems)
+
+	// Dev-server previews (HTTPS 8443) are optional: unconfigured or
+	// conflicting never fails doctor, since only Phone Terminal itself (443)
+	// is required.
+	switch {
+	case report.serve.PreviewConfigured:
+		fmt.Fprintln(output, "  tailscale serve: HTTPS 8443 proxies dev-server previews")
+	case len(report.serve.PreviewProblems) == 0:
+		fmt.Fprintf(output, "  tailscale serve: dev-server previews not shared (optional): %s\n", lifecycle.PreviewServeCommand)
+	}
+	for _, finding := range report.serve.PreviewProblems {
+		fmt.Fprintf(output, "  ! tailscale serve: %s\n", finding)
+	}
+	return report, problems
 }
 
 // activeSessions reports whether a broker is running and how many of its
@@ -501,8 +521,14 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	}
 	confirmer := fileConfirmer{input: input, output: output}
 	if origin != "" {
-		if err := offerTailscaleServe(ctx, env, report.tailscale, origin, confirmer, output); err != nil {
+		phoneServeConfigured, err := offerTailscaleServe(ctx, env, report.tailscale, origin, confirmer, output)
+		if err != nil {
 			return err
+		}
+		if report.tailscale.serveErr == nil && phoneServeConfigured {
+			if err := offerTailscalePreviewServe(ctx, env, report.tailscale, origin, confirmer, output); err != nil {
+				return err
+			}
 		}
 	}
 	projects, err := admin.Projects(ctx)
@@ -540,11 +566,20 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, tailscale tailscaleRep
 	}
 	if yes {
 		fmt.Fprintf(output, "Phone access over your tailnet (run it yourself): %s\n", lifecycle.ServeCommand)
+		fmt.Fprintf(output, "Dev-server previews over your tailnet (run it yourself): %s\n", lifecycle.PreviewServeCommand)
 	} else {
 		fmt.Fprintf(output, "4. Add your home folder %s as project \"Home\" if you have no project.\n", env.host.HomeDir)
 		fmt.Fprintln(output, "5. Show a QR code for your phone and ask you to approve the code it shows.")
-		if origin != "" && tailscale.serveErr == nil && !tailscale.serveConfigured && len(tailscale.serveFindings) == 0 {
+		asksPhoneServe := origin != "" && tailscale.serveErr == nil && !tailscale.serve.Configured && len(tailscale.serve.Problems) == 0
+		if asksPhoneServe {
 			fmt.Fprintf(output, "Before step 4 it asks separately whether to run: %s\n", lifecycle.ServeCommand)
+		}
+		// The second, separate preview question follows only once 443 is
+		// settled successfully: already configured, or about to be asked (and,
+		// if agreed to, applied) above.
+		if origin != "" && tailscale.serveErr == nil && !tailscale.serve.PreviewConfigured && len(tailscale.serve.PreviewProblems) == 0 &&
+			(tailscale.serve.Configured || asksPhoneServe) {
+			fmt.Fprintf(output, "Before step 4 it also asks separately whether to run: %s\n", lifecycle.PreviewServeCommand)
 		}
 	}
 	fmt.Fprintln(output, "Never use Tailscale Funnel: it would put your terminal on the public internet.")
@@ -569,42 +604,85 @@ func savePhoneOrigin(ctx context.Context, admin *localclient.AdminClient, origin
 }
 
 // offerTailscaleServe runs `tailscale serve` only after its own explicit yes,
-// and only when HTTPS 443 serves nothing else and Funnel is off.
+// and only when HTTPS 443 serves nothing else and Funnel is off. configured
+// reports whether HTTPS 443 proxies the gateway afterwards (already did, or
+// this run made it so), which gates whether the separate preview question
+// in offerTailscalePreviewServe is asked at all.
 func offerTailscaleServe(ctx context.Context, env lifecycleEnv, tailscale tailscaleReport, origin string,
 	confirmer fileConfirmer, output io.Writer,
-) error {
+) (configured bool, err error) {
 	switch {
 	case tailscale.serveErr != nil:
 		fmt.Fprintf(output, "Could not read the Tailscale Serve status; run it yourself: %s\n", lifecycle.ServeCommand)
-		return nil
-	case tailscale.serveConfigured:
+		return false, nil
+	case tailscale.serve.Configured:
 		fmt.Fprintf(output, "Tailscale Serve already shares the page at %s/\n", origin)
-		return nil
-	case len(tailscale.serveFindings) > 0:
+		return true, nil
+	case len(tailscale.serve.Problems) > 0:
 		fmt.Fprintln(output, "Tailscale Serve was not changed:")
-		for _, finding := range tailscale.serveFindings {
+		for _, finding := range tailscale.serve.Problems {
 			fmt.Fprintf(output, "  ! %s\n", finding)
 		}
 		fmt.Fprintln(output, "Resolve this yourself, then run `pterm setup` again. Until then, only a browser on this computer can pair.")
-		return nil
+		return false, nil
 	}
 	approved, err := confirmer.Confirm(ctx, fmt.Sprintf(
 		"\nShare the page with your tailnet devices at %s/ ?\nThis runs: %s\nOnly devices in your tailnet can reach it; it never uses Funnel. [y/N] ",
 		origin, lifecycle.ServeCommand))
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !approved {
 		fmt.Fprintf(output, "Tailscale Serve not changed. To share the page later, run: %s\n", lifecycle.ServeCommand)
-		return nil
+		return false, nil
 	}
 	serveCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	if _, err := tailscaleRun(serveCtx, env.tailscale, output, strings.Fields(lifecycle.ServeCommand)[1:]...); err != nil {
 		fmt.Fprintf(output, "tailscale serve failed (%v). Fix it, then run it yourself: %s\n", err, lifecycle.ServeCommand)
-		return nil
+		return false, nil
 	}
 	fmt.Fprintf(output, "Tailscale Serve shares the page at %s/\n", origin)
+	return true, nil
+}
+
+// offerTailscalePreviewServe asks a second, separate consent to run
+// `tailscale serve` for the dev-server preview listener on HTTPS 8443, a
+// separate origin from the phone terminal's 443. It never runs without its
+// own explicit yes, and only when HTTPS 8443 serves nothing else.
+func offerTailscalePreviewServe(ctx context.Context, env lifecycleEnv, tailscale tailscaleReport, origin string,
+	confirmer fileConfirmer, output io.Writer,
+) error {
+	preview := previewOrigin(origin)
+	switch {
+	case tailscale.serve.PreviewConfigured:
+		fmt.Fprintf(output, "Tailscale Serve already shares dev-server previews at %s/\n", preview)
+		return nil
+	case len(tailscale.serve.PreviewProblems) > 0:
+		fmt.Fprintln(output, "Tailscale Serve was not changed for dev-server previews:")
+		for _, finding := range tailscale.serve.PreviewProblems {
+			fmt.Fprintf(output, "  ! %s\n", finding)
+		}
+		fmt.Fprintln(output, "Resolve this yourself, then run `pterm setup` again.")
+		return nil
+	}
+	approved, err := confirmer.Confirm(ctx, fmt.Sprintf(
+		"\nAlso share dev-server previews with your tailnet devices at %s/ ?\nThis runs: %s\nPreviews are a separate origin; only devices in your tailnet can reach them; it never uses Funnel. [y/N] ",
+		preview, lifecycle.PreviewServeCommand))
+	if err != nil {
+		return err
+	}
+	if !approved {
+		fmt.Fprintf(output, "Dev-server previews not shared. To share them later, run: %s\n", lifecycle.PreviewServeCommand)
+		return nil
+	}
+	serveCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	if _, err := tailscaleRun(serveCtx, env.tailscale, output, strings.Fields(lifecycle.PreviewServeCommand)[1:]...); err != nil {
+		fmt.Fprintf(output, "tailscale serve failed (%v). Fix it, then run it yourself: %s\n", err, lifecycle.PreviewServeCommand)
+		return nil
+	}
+	fmt.Fprintf(output, "Dev-server previews shared at %s/\n", preview)
 	return nil
 }
 
@@ -841,11 +919,12 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 	dataDir := flags.String("data-dir", "", "development data directory")
 	runtimeDir := flags.String("runtime-dir", "", "development runtime directory")
 	listen := flags.String("listen", devListenAddress, "development gateway loopback address")
+	previewListen := flags.String("preview-listen", gateway.DevelopmentPreviewListenAddress, `development dev-server preview address, or "off"`)
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("up options: %w", err)
 	}
 	if !*dev || flags.NArg() != 0 {
-		return errors.New("usage: pterm up --dev [--data-dir <dir>] [--runtime-dir <dir>] [--listen <addr>]; installed use relies on `pterm setup`")
+		return errors.New("usage: pterm up --dev [--data-dir <dir>] [--runtime-dir <dir>] [--listen <addr>] [--preview-listen <addr>|off]; installed use relies on `pterm setup`")
 	}
 	customRuntime := *runtimeDir != ""
 	if !customRuntime {
@@ -871,7 +950,7 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 	if *dataDir != "" {
 		brokerArgs = append(brokerArgs, "--data-dir", *dataDir)
 	}
-	gatewayArgs := []string{gatewayMode, "--dev", "--runtime-dir", validated, "--listen", *listen}
+	gatewayArgs := []string{gatewayMode, "--dev", "--runtime-dir", validated, "--listen", *listen, "--preview-listen", *previewListen}
 
 	type exited struct {
 		name string
