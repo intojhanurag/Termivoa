@@ -37,6 +37,30 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Linux host (2026-09-27, branch `feat/linux-host`)
+
+Linux (Ubuntu 22.04/24.04, x86_64 and arm64, including servers and WSL) is a
+supported host: `linux` shell-profile platform (store migration 7), XDG paths,
+systemd user units with a separate linger question, a no-systemd fallback,
+WSL notes, `/proc`-based preview ports, Tailscale operator detection,
+`scripts/install-linux.sh` and `packaging/linux/build.sh`. Docs:
+`docs/install.md#linux-desktop-server-and-wsl`.
+
+Evidence (commands run by the agent on the Mac and in Docker 29.2.1, arm64):
+
+- `gofmt`, `go vet ./...` for darwin, `CGO_ENABLED=0 GOOS=linux` amd64 and
+  arm64, and `GOOS=windows`; `go test ./...` on macOS; `./scripts/check`.
+- `go test ./...` as uid 1000 in `golang:1.27`: all packages pass. Before the
+  two fixes below, `internal/broker` (upload slot race) and
+  `internal/gateway` (Linux send buffer) failed there on `main` too.
+- Privileged `ubuntu:24.04` container with systemd as PID 1: setup, doctor,
+  a bash session, stop/launch, broker crash restart, shutdown, user-manager
+  restart with linger, uninstall with data deletion (details in
+  `owner-verification.md` section 3a).
+
+Pending owner: real VPS `t3-vps` and an Ubuntu desktop, x86_64, polkit linger,
+Tailscale operator and Serve, a phone over Tailscale, zsh and fish.
+
 ### Phone UI v2 (2026-09-27)
 
 The owner approved the Paper design "termivoa" (session tabs, agent keys,

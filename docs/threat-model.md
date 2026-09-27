@@ -4,7 +4,8 @@ Status: private development, updated 2026-09-27. This is a design and test map,
 **not a security certification**. Restricted local IPC, terminal replication,
 controller leases, process isolation, phone pairing, broker-side credential
 checks and revocation, and the authenticated loopback gateway are implemented
-with automated tests on macOS. Real phones, Tailscale HTTPS, native Windows 11
+with automated tests on macOS; the Linux host runs the same suite in
+containers. Real phones, Tailscale HTTPS, native Windows 11, real Linux hosts
 and signed installers are not yet verified; see
 [owner-verification.md](owner-verification.md). The P4 implementation map is in
 [p4-authentication-design.md](p4-authentication-design.md).

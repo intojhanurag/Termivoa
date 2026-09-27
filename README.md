@@ -10,8 +10,9 @@ used in the code and packaging; the final public name still needs the owner's
 confirmation (see [docs/release-checklist.md](docs/release-checklist.md)).
 
 > **Status:** private development, not released. The full flow is tested on an
-> Apple Silicon Mac. Windows support is written but not yet verified on a real
-> Windows machine. There are no signed builds.
+> Apple Silicon Mac. Windows and Linux support is written but not yet verified
+> on a real Windows or Linux machine (Linux ran in containers only). There are
+> no signed builds.
 
 <p align="center">
   <img src="docs/images/sessions.png" width="220" alt="Session list with project, shell, last output preview and a new-output dot">
@@ -56,7 +57,11 @@ go build -tags webdist -o bin/pterm ./cmd/pterm
 
 `pterm setup` registers the binary at its current path to start at login, so
 keep it at a stable path (or build the app with
-`./packaging/macos/build-app.sh` and move it to Applications).
+`./packaging/macos/build-app.sh` and move it to Applications). On Linux, run
+`./packaging/linux/build.sh`, then `./scripts/install-linux.sh
+dist/linux/pterm-linux-amd64` (or `-arm64`): it installs `~/.local/bin/pterm`
+and runs `pterm setup`. Servers, WSL and the Tailscale operator step:
+[docs/install.md](docs/install.md#linux-desktop-server-and-wsl).
 
 Then the three steps from [docs/getting-started.md](docs/getting-started.md):
 
@@ -111,14 +116,15 @@ the [threat model](docs/threat-model.md) and [SECURITY.md](SECURITY.md).
 | --- | --- | --- |
 | Host | macOS on Apple Silicon | Tested (automated suites and a real end-to-end run, macOS 26.5) |
 | Host | Windows 11 x64 | Written; cross-compiled only, not run natively yet |
-| Host | Linux | Development and CI checks only; not a supported host |
+| Host | Linux: Ubuntu 22.04/24.04 desktop, server/VPS and WSL (x86_64, arm64) | Supported; systemd user units, XDG paths. Tested in Ubuntu 24.04 containers (incl. real systemd); not yet on real hardware |
 | Phone | iPhone Safari and Home Screen app | Tested in desktop Chromium at 390×844; real iPhone pending |
 | Phone | Android Chrome | Real device pending |
 | Shell | zsh | Tested in isolated fixtures |
+| Shell | Linux bash, zsh, fish (login shells) | bash tested in containers; zsh and fish not tested |
 | Shell | Windows PowerShell / PowerShell 7 | Not tested |
 | Shell | WSL bash (if installed) | Not tested |
 | Network | Tailscale Serve HTTPS | Real tailnet run pending |
-| Packaging | macOS DMG, Windows installer | Unsigned builds only |
+| Packaging | macOS DMG, Windows installer, Linux binaries + `scripts/install-linux.sh` | Unsigned builds only |
 
 The full list of what still needs real hardware is in
 [docs/owner-verification.md](docs/owner-verification.md).

@@ -26,7 +26,10 @@ ln -s "/Applications/Phone Terminal.app/Contents/MacOS/pterm" ~/.local/bin/pterm
 
 Builds are not signed yet, so macOS may block the first launch. Windows 11
 steps are in [install.md](install.md#windows-11-x64); they are not yet verified
-on a real Windows machine.
+on a real Windows machine. Linux (Ubuntu desktop, server/VPS or WSL) steps are
+in [install.md](install.md#linux-ubuntu-2204-and-2404-x86_64-or-arm64): run
+`scripts/install-linux.sh`, which installs `~/.local/bin/pterm` and starts
+`pterm setup`. On a server, answer `y` to the linger question.
 
 ## 2. Run setup
 

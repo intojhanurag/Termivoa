@@ -44,8 +44,9 @@ The descriptor's PID is diagnostic only. Clients must
 complete the versioned handshake and confirm its broker generation before the
 endpoint is considered live. A lock owner may replace an endpoint only after
 that handshake probe fails. `pterm setup` registers separate per-user
-LaunchAgents (macOS) and Scheduled Tasks (Windows) for the broker and the
-gateway; real-login and native Windows runs are pending owner verification.
+LaunchAgents (macOS), Scheduled Tasks (Windows) and systemd user units
+(Linux) for the broker and the gateway; real-login, native Windows and real
+Linux runs are pending owner verification.
 
 The executable process bootstrap acquires the data lock and runtime lock before
 it opens the per-user SQLite database or begins a generation. It then

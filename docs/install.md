@@ -4,9 +4,11 @@
 > notarized releases need the owner's Apple Developer ID and Windows
 > code-signing identity. Nothing below has passed the release gate yet. No
 > release is published: build from source ([README quick start](../README.md#quick-start))
-> or build the artifacts with [`packaging/macos`](../packaging/macos/README.md)
-> and [`packaging/windows`](../packaging/windows/README.md). The short version
-> of this guide is [getting-started.md](getting-started.md).
+> or build the artifacts with [`packaging/macos`](../packaging/macos/README.md),
+> [`packaging/windows`](../packaging/windows/README.md) and
+> [`packaging/linux/build.sh`](../packaging/linux/build.sh). Linux support is
+> written and tested in containers, but not yet on a real Linux computer. The
+> short version of this guide is [getting-started.md](getting-started.md).
 
 Phone Terminal runs two per-user processes from one `pterm` executable:
 
@@ -73,6 +75,39 @@ To try a bare `pterm.exe` without the installer:
 Microsoft Defender or SmartScreen may warn about an unsigned `pterm.exe`.
 Signed builds are pending owner signing.
 
+### Linux (Ubuntu 22.04 and 24.04, x86_64 or arm64)
+
+Phone Terminal is one static `pterm` file. It needs no root, no packages and
+no Node.js on the host. Put it in `~/.local/bin` and run `pterm setup`:
+
+```sh
+# On a build computer with Go, Node 24 and pnpm (any OS), from a source checkout:
+pnpm install --frozen-lockfile
+./packaging/linux/build.sh            # dist/linux/pterm-linux-amd64, -arm64, SHA256SUMS
+
+# On the Linux host (copy the file first, for example with scp):
+./scripts/install-linux.sh ./pterm-linux-amd64    # or pterm-linux-arm64
+```
+
+`scripts/install-linux.sh` copies the file to `~/.local/bin/pterm` and runs
+`pterm setup`. Without an argument, in a source checkout on the host, it builds
+the binary first. It refuses to run as root: Phone Terminal runs as your user.
+If `~/.local/bin` is not on your PATH yet, Ubuntu adds it at your next login;
+until then use `~/.local/bin/pterm`. There is no download: nothing is published
+yet.
+
+Linux uses the XDG directories:
+
+| | Path |
+| --- | --- |
+| Data (database) | `$XDG_DATA_HOME/phone-terminal` (default `~/.local/share/phone-terminal`) |
+| Logs | `$XDG_STATE_HOME/phone-terminal/logs` (default `~/.local/state/phone-terminal/logs`) |
+| Sockets | `/run/user/<uid>/phone-terminal`; without it `$XDG_RUNTIME_DIR/phone-terminal`, else `<data>/runtime` |
+| Startup units | `$XDG_CONFIG_HOME/systemd/user` (default `~/.config/systemd/user`) |
+
+All of them are private to your user (directories `0700`, files `0600`).
+`pterm` also refuses to register a copy in `/tmp`, `/var/tmp` or `/dev/shm`.
+
 ## First run: three steps
 
 1. Install (above).
@@ -88,7 +123,7 @@ it will do and asks **once**:
 ```text
 pterm setup will:
 1. Start Phone Terminal when you log in (current user only, no administrator rights):
-   ...the exact files and launchctl / schtasks commands...
+   ...the exact files and launchctl / schtasks / systemctl --user commands...
 2. Wait until the broker and the gateway answer.
 3. Save the phone address https://<mac>.<tailnet>.ts.net (unless you set another one).
 4. Add your home folder /Users/you as project "Home" if you have no project.
@@ -134,17 +169,20 @@ process it names, then rerun.
 
 What startup registration adds:
 
-| | macOS | Windows |
-| --- | --- | --- |
-| Broker | `~/Library/LaunchAgents/dev.phone-terminal.broker.plist` | task `Phone Terminal Broker (<user>)` |
-| Gateway | `~/Library/LaunchAgents/dev.phone-terminal.gateway.plist` | task `Phone Terminal Gateway (<user>)` |
-| Start | at login (`RunAtLoad`) | at your logon (gateway 10 s later), normal priority |
-| Restart | on failure (`KeepAlive` / `SuccessfulExit=false`) | Task Scheduler "restart on failure" (every minute, up to 999 times); not yet verified through `conhost.exe --headless` |
-| Command | `launchctl bootstrap gui/<uid> <plist>` | `schtasks /Create /TN <name> /XML <file> /F`, then `/Run` |
-| Logs | `~/Library/Application Support/Phone Terminal/logs/` | `%LOCALAPPDATA%\Phone Terminal\logs\` (pterm writes them; the headless console shows nothing) |
+| | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| Broker | `~/Library/LaunchAgents/dev.phone-terminal.broker.plist` | task `Phone Terminal Broker (<user>)` | `~/.config/systemd/user/phone-terminal-broker.service` |
+| Gateway | `~/Library/LaunchAgents/dev.phone-terminal.gateway.plist` | task `Phone Terminal Gateway (<user>)` | `~/.config/systemd/user/phone-terminal-gateway.service` (`Wants=` and `After=` the broker) |
+| Start | at login (`RunAtLoad`) | at your logon (gateway 10 s later), normal priority | when your systemd user manager starts: at login, or at boot with linger (below) |
+| Restart | on failure (`KeepAlive` / `SuccessfulExit=false`) | Task Scheduler "restart on failure" (every minute, up to 999 times); not yet verified through `conhost.exe --headless` | on failure, after 5 s (`Restart=on-failure`) |
+| Command | `launchctl bootstrap gui/<uid> <plist>` | `schtasks /Create /TN <name> /XML <file> /F`, then `/Run` | `systemctl --user daemon-reload`, then `enable` and `start` (or `restart` for a changed unit) |
+| Logs | `~/Library/Application Support/Phone Terminal/logs/` | `%LOCALAPPDATA%\Phone Terminal\logs\` (pterm writes them; the headless console shows nothing) | `~/.local/state/phone-terminal/logs/`; `journalctl --user -u phone-terminal-broker` shows starts and stops |
 
-On both systems the gateway waits up to two minutes for the broker when it
+On all systems the gateway waits up to two minutes for the broker when it
 starts, so a slow broker start at login does not stop it.
+
+On Linux, setup also asks a **separate** question about linger, and on a
+server you need it; see [Linux: desktop, server and WSL](#linux-desktop-server-and-wsl).
 
 ### Pairing a phone
 
@@ -214,6 +252,80 @@ the app. Design and security: [preview.md](preview.md).
 **Never use Tailscale Funnel.** Funnel makes the page public on the internet.
 `pterm setup` and `pterm doctor` warn if Funnel is on.
 
+On Linux, only root or the Tailscale **operator** may change Serve. If you are
+not the operator, `pterm setup` and `pterm doctor` say so and do not ask the
+Serve questions. Run this once yourself, then run `pterm setup` again:
+
+```sh
+sudo tailscale set --operator=$USER
+```
+
+pterm never runs `sudo`. It finds `tailscale` on your PATH, in `/usr/bin` or in
+`/usr/sbin`.
+
+## Linux: desktop, server and WSL
+
+The broker and the gateway are systemd **user** services: they run as you,
+never as root. `pterm setup` shows the two unit files and every `systemctl
+--user` command before it runs them, as on macOS.
+
+### Ubuntu desktop
+
+Run `pterm setup` in a terminal. Phone Terminal starts when you log in and
+stops when you log out. Keep the computer awake while you use it from the
+phone (Settings > Power > Automatic Suspend: off).
+
+### Ubuntu server or VPS (SSH only)
+
+A server has no desktop login. Without **linger**, systemd stops your user
+services, and every session, when your last SSH login closes. `pterm setup`
+asks a separate question:
+
+```text
+Keep Phone Terminal running when you log out, and start it at boot before anyone logs in?
+On a server (no desktop login) you need this, or your sessions end when your last SSH login closes.
+This runs: loginctl enable-linger <user> [y/N]
+```
+
+Answer `y` on a server. pterm runs `loginctl enable-linger` only after that
+`y`, never with `sudo`. If your system refuses it (no polkit rule for you),
+setup prints `sudo loginctl enable-linger <user>` for you or an administrator
+to run. `pterm doctor` shows `linger: on` or `off`. With linger on, Phone
+Terminal starts at boot, and sessions survive logout. A reboot or a broker
+crash still ends every session.
+
+Then install Tailscale on the server (`tailscale up`), make yourself the
+Tailscale operator (above), and run `pterm setup` again for the Serve
+questions and pairing.
+
+### Without systemd (WSL without systemd, containers)
+
+If `systemctl --user` does not answer, nothing can start Phone Terminal at
+login. `pterm setup` and `pterm doctor` say so. Setup then starts the broker
+and gateway in the background, as `pterm launch` does; they keep running
+after you close the terminal. Run `pterm launch` again after each restart.
+pterm never falls back to this silently.
+
+### WSL (Windows Subsystem for Linux)
+
+pterm detects WSL. Windows stops the WSL virtual machine when no Windows
+program uses it (about a minute after the last WSL window closes), and every
+session ends then. Choose one:
+
+- **Option A (recommended):** install the **Windows** app. With a WSL distro
+  installed, it offers a **WSL bash** shell profile. The broker runs on
+  Windows, so sessions do not depend on a WSL window.
+- **Option B:** install the Linux `pterm` inside WSL. Turn on systemd in WSL
+  so it can start at login: add these lines to `/etc/wsl.conf`, run
+  `wsl --shutdown` in Windows, open WSL again, and run `pterm setup`:
+
+  ```ini
+  [boot]
+  systemd=true
+  ```
+
+  Sessions still end when Windows stops the WSL VM.
+
 ## Keep the host awake; broker lifetime
 
 Sessions live inside the broker on your computer. The phone only views and
@@ -221,7 +333,8 @@ controls them.
 
 - If the computer sleeps, the phone cannot reach it. Keep it awake and on
   power while you work from the phone (macOS: System Settings > Battery /
-  Energy options; Windows: Settings > System > Power).
+  Energy options; Windows: Settings > System > Power; Ubuntu desktop:
+  Settings > Power).
 - Logging out, rebooting, or a broker crash **ends every live session**. The
   broker restarts, marks those sessions lost, and never re-runs old commands.
 - Restarting only the gateway keeps sessions alive.
@@ -249,10 +362,10 @@ them on failure. If they are registered for startup, the supervisor starts them
 again at your next login (or `pterm launch` starts them). The command then
 prints the exact command that unloads the registration, but never runs it:
 
-| | macOS | Windows |
-| --- | --- | --- |
-| Gateway | `launchctl bootout gui/<uid>/dev.phone-terminal.gateway` | `schtasks /Change /TN "Phone Terminal Gateway (<user>)" /Disable` |
-| Broker | `launchctl bootout gui/<uid>/dev.phone-terminal.broker` | `schtasks /Change /TN "Phone Terminal Broker (<user>)" /Disable` |
+| | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| Gateway | `launchctl bootout gui/<uid>/dev.phone-terminal.gateway` | `schtasks /Change /TN "Phone Terminal Gateway (<user>)" /Disable` | `systemctl --user disable --now phone-terminal-gateway.service` |
+| Broker | `launchctl bootout gui/<uid>/dev.phone-terminal.broker` | `schtasks /Change /TN "Phone Terminal Broker (<user>)" /Disable` | `systemctl --user disable --now phone-terminal-broker.service` |
 
 `pterm setup --apply` registers them again. On Windows, `pterm doctor` reports
 a disabled task, and setup creates it again, enabled.
@@ -267,6 +380,12 @@ v0 has no automatic updater. Nothing downloads code at startup.
      rollback. It never closes a running broker.
    - macOS: keep the old app (for example rename it
      `Phone Terminal <old-version>.app`), then copy the new app to Applications.
+   - Linux: keep the old file (for example `cp ~/.local/bin/pterm
+     ~/.local/bin/pterm-<old-version>`), then run `scripts/install-linux.sh`
+     with the new file. The unit files do not change, so setup restarts
+     nothing: the running broker keeps the old version until it restarts.
+     Run `pterm shutdown` and `pterm launch` (after your sessions finish) to
+     use the new one now.
 2. The new pterm re-points startup with `pterm setup --apply` (the Windows
    installer does this). If the registered broker changes and the broker has
    **active sessions, setup refuses** and tells you to finish them or end them
@@ -304,6 +423,10 @@ it names first.
 Then remove the application:
 
 - macOS: move Phone Terminal.app to the Trash and delete any `~/.local/bin/pterm` link.
+- Linux: `rm ~/.local/bin/pterm`. Uninstall already ran
+  `systemctl --user disable --now` for both units, removed them and ran
+  `daemon-reload`. It does not turn linger off; to do that, run
+  `loginctl disable-linger`.
 - Windows: Settings > Apps > Phone Terminal > Uninstall. The uninstaller runs
   `pterm uninstall`, asks whether to delete data (default: keep), and removes
   its PATH entry.
@@ -312,6 +435,9 @@ Data locations:
 
 - macOS: `~/Library/Application Support/Phone Terminal` and `~/Library/Caches/Phone Terminal`
 - Windows: `%LOCALAPPDATA%\Phone Terminal`
+- Linux: `~/.local/share/phone-terminal`, `~/.local/state/phone-terminal` and
+  `/run/user/<uid>/phone-terminal` (`--delete-data` removes these three,
+  never their parents)
 
 If you enabled Tailscale Serve, remove it yourself (`tailscale serve reset`
 removes **all** Serve configuration; use `tailscale serve status` first).
