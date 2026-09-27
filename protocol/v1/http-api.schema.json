@@ -156,6 +156,15 @@
         "session": { "$ref": "broker-rpc.schema.json#/$defs/sessionRecord" }
       }
     },
+    "deviceRenameRequest": {
+      "title": "HTTPDeviceRenameRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": { "$ref": "#/$defs/deviceLabel" }
+      }
+    },
     "errorResponse": {
       "title": "HTTPErrorResponse",
       "type": "object",

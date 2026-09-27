@@ -49,6 +49,7 @@ type ProtocolTypes struct {
 	HistoryChanged                   HistoryChangedPayload                   `json:"historyChanged"`
 	HistoryPage                      HistoryPagePayload                      `json:"historyPage"`
 	HistoryRead                      HistoryReadPayload                      `json:"historyRead"`
+	HTTPDeviceRenameRequest          HTTPDeviceRenameRequest                 `json:"httpDeviceRenameRequest"`
 	HTTPDeviceSummary                HTTPDeviceSummary                       `json:"httpDeviceSummary"`
 	HTTPErrorResponse                HTTPErrorResponse                       `json:"httpErrorResponse"`
 	HTTPNamedOption                  HTTPNamedOption                         `json:"httpNamedOption"`
@@ -325,6 +326,10 @@ type GatewayRPCSessionTerminatePayload struct {
 type HTTPSessionTerminateRequest struct {
 	Generation  string `json:"generation"`
 	OperationID string `json:"operationId"`
+}
+
+type HTTPDeviceRenameRequest struct {
+	Label string `json:"label"`
 }
 
 type HTTPErrorResponse struct {

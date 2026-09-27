@@ -49,6 +49,7 @@ export type ProtocolTypes = {
     readonly historyChanged:                   HistoryChangedPayload;
     readonly historyPage:                      HistoryPagePayload;
     readonly historyRead:                      HistoryReadPayload;
+    readonly httpDeviceRenameRequest:          HTTPDeviceRenameRequest;
     readonly httpDeviceSummary:                HTTPDeviceSummary;
     readonly httpErrorResponse:                HTTPErrorResponse;
     readonly httpNamedOption:                  HTTPNamedOption;
@@ -442,6 +443,10 @@ export type HistoryReadPayload = {
     readonly historyRevision: string;
     readonly limit:           number;
     readonly offset:          number;
+}
+
+export type HTTPDeviceRenameRequest = {
+    readonly label: string;
 }
 
 export type HTTPErrorResponse = {

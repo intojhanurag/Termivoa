@@ -18,7 +18,7 @@
     "brokerRPCSessionRecord", "brokerRPCSessionListResult", "brokerRPCSessionResult",
     "brokerRPCSessionMutationResult",
     "brokerRPCError",
-    "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse",
+    "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse", "httpDeviceRenameRequest",
     "gatewayRPCMessageType", "gatewayRPCCredential", "gatewayRPCSessionCreate", "gatewayRPCSessionRename", "gatewayRPCSessionTerminate", "gatewayRPCPairPollResult", "gatewayRPCPrincipal",
     "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin", "adminRPCShutdownResult"
   ],
@@ -81,6 +81,7 @@
     "httpSessionTerminateRequest": { "$ref": "http-api.schema.json#/$defs/sessionTerminateRequest" },
     "httpSessionMutationResponse": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" },
     "httpErrorResponse": { "$ref": "http-api.schema.json#/$defs/errorResponse" },
+    "httpDeviceRenameRequest": { "$ref": "http-api.schema.json#/$defs/deviceRenameRequest" },
     "gatewayRPCMessageType": { "$ref": "gateway-rpc.schema.json#/$defs/messageType" },
     "gatewayRPCCredential": { "$ref": "gateway-rpc.schema.json#/$defs/credentialPayload" },
     "gatewayRPCSessionCreate": { "$ref": "gateway-rpc.schema.json#/$defs/sessionCreatePayload" },
