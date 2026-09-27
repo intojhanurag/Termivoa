@@ -1,4 +1,4 @@
-//go:build darwin || linux
+//go:build darwin
 
 package ptyhost
 
@@ -20,8 +20,8 @@ const (
 	maxLsofOutput = 256 << 10
 )
 
-// lsofPaths are absolute so a session cannot shadow lsof through PATH. Darwin
-// ships /usr/sbin/lsof; Linux distributions use either.
+// lsofPaths are absolute so a session cannot shadow lsof through PATH. macOS
+// ships /usr/sbin/lsof. Linux reads /proc instead (listen_linux.go).
 var lsofPaths = []string{"/usr/sbin/lsof", "/usr/bin/lsof"}
 
 // sessionListeners returns the session's process tree and the TCP listeners
