@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -36,14 +37,56 @@ func TestHostShellCandidatesAreAbsolutePerPlatform(t *testing.T) {
 	if len(windows) != 2 || windows[0].name != "Windows PowerShell" || windows[1].name != "PowerShell 7" {
 		t.Fatalf("windows candidates = %#v", windows)
 	}
-	if got := hostShellCandidates("linux", getenv, noPwsh, func() bool { return true }); got != nil {
+	if got := hostShellCandidates("freebsd", getenv, noPwsh, func() bool { return true }); got != nil {
 		t.Fatalf("unsupported host produced candidates: %#v", got)
 	}
 }
 
+func TestLinuxShellCandidatesPutLoginShellFirstAndRequireEtcShells(t *testing.T) {
+	names := func(candidates []shellCandidate) []string {
+		var result []string
+		for _, candidate := range candidates {
+			if candidate.platform != store.PlatformLinux || !reflect.DeepEqual(candidate.arguments, []string{"-l"}) {
+				t.Fatalf("candidate %#v is not a Linux login shell", candidate)
+			}
+			result = append(result, candidate.executable)
+		}
+		return result
+	}
+	etcShells := parseEtcShells("# /etc/shells: valid login shells\n/bin/sh\n/bin/bash\n/usr/bin/bash\n/bin/zsh\n/usr/bin/zsh\n/usr/bin/fish\n  \n")
+	env := map[string]string{"SHELL": "/bin/zsh"}
+	getenv := func(key string) string { return env[key] }
+	for _, test := range []struct {
+		shell   string
+		allowed []string
+		want    []string
+	}{
+		// zsh at /bin/zsh replaces /usr/bin/zsh: same program on merged /usr.
+		{"/bin/zsh", etcShells, []string{"/bin/zsh", "/bin/bash", "/usr/bin/fish"}},
+		{"/usr/bin/fish", etcShells, []string{"/usr/bin/fish", "/bin/bash", "/usr/bin/zsh"}},
+		{"", etcShells, []string{"/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"}},
+		{"relative", etcShells, []string{"/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"}},
+		// Not in /etc/shells: not a login shell the system accepts.
+		{"/tmp/evil-shell", etcShells, []string{"/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"}},
+		{"/bin/bash", []string{"/bin/bash"}, []string{"/bin/bash"}},
+		// No readable /etc/shells (minimal container): existence decides.
+		{"/opt/shells/nu", nil, []string{"/opt/shells/nu", "/bin/bash", "/usr/bin/zsh", "/usr/bin/fish"}},
+	} {
+		env["SHELL"] = test.shell
+		if got := names(linuxShellCandidates(getenv, test.allowed)); !reflect.DeepEqual(got, test.want) {
+			t.Errorf("SHELL=%q: candidates = %q, want %q", test.shell, got, test.want)
+		}
+	}
+}
+
 func TestDetectShellProfilesIsIdempotent(t *testing.T) {
-	if _, err := os.Stat("/bin/zsh"); err != nil {
-		t.Skip("requires the macOS system zsh")
+	// macOS always has /bin/zsh; every Linux host and CI image has /bin/bash.
+	platform, want := store.PlatformDarwin, "/bin/zsh"
+	if runtime.GOOS == "linux" {
+		platform, want = store.PlatformLinux, "/bin/bash"
+	}
+	if _, err := os.Stat(want); err != nil || (runtime.GOOS != "darwin" && runtime.GOOS != "linux") {
+		t.Skip("requires the macOS system zsh or the Linux system bash")
 	}
 	persistence, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "profiles.sqlite"))
 	if err != nil {
@@ -51,7 +94,7 @@ func TestDetectShellProfilesIsIdempotent(t *testing.T) {
 	}
 	defer persistence.Close()
 	for range 2 {
-		if err := DetectShellProfiles(context.Background(), persistence, store.PlatformDarwin, time.Now()); err != nil {
+		if err := DetectShellProfiles(context.Background(), persistence, platform, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -66,8 +109,8 @@ func TestDetectShellProfilesIsIdempotent(t *testing.T) {
 		}
 		seen[profile.ExecutablePath] = true
 	}
-	if !seen["/bin/zsh"] {
-		t.Fatal("zsh login profile was not detected")
+	if !seen[want] {
+		t.Fatalf("%s login profile was not detected", want)
 	}
 }
 

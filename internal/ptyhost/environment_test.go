@@ -19,6 +19,14 @@ func TestInheritedEnvironmentUnixAllowlist(t *testing.T) {
 	if got := inheritedEnvironment(host, "darwin"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("inherited = %q, want %q", got, want)
 	}
+	linux := []string{"XDG_RUNTIME_DIR=/run/user/1000", "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+		"DISPLAY=:0", "WAYLAND_DISPLAY=wayland-0", "WSL_DISTRO_NAME=Ubuntu", "WSL_INTEROP=/run/WSL/1_interop", "WSLENV=x"}
+	if got := inheritedEnvironment(append(append([]string(nil), host...), linux...), "linux"); !reflect.DeepEqual(got, append(append([]string(nil), want...), linux...)) {
+		t.Fatalf("linux inherited = %q", got)
+	}
+	if got := inheritedEnvironment(linux, "darwin"); len(got) != 0 {
+		t.Fatalf("darwin kept Linux-only variables %q", got)
+	}
 	if got := inheritedEnvironment(nil, "linux"); got == nil || len(got) != 0 {
 		t.Fatalf("empty host environment = %#v, want non-nil empty", got)
 	}

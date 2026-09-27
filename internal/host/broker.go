@@ -63,7 +63,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	if len(config.HostBuild) == 0 || len(config.HostBuild) > 128 {
 		return errors.New("host: broker build must be 1..128 bytes")
 	}
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" && runtime.GOOS != "linux" {
 		return fmt.Errorf("host: broker platform %q is not a supported v0 host", runtime.GOOS)
 	}
 
