@@ -627,7 +627,7 @@ func TestLiveStreamRelaysUntilAccessRevoked(t *testing.T) {
 	if _, err := stream.Receive(ctx); !errors.Is(err, ErrAccessRevoked) {
 		t.Fatalf("Receive after revocation = %v", err)
 	}
-	if err := stream.Send(ctx, hello); !errors.Is(err, ErrAccessRevoked) {
+	if err := stream.Send(ctx, hello); !errors.Is(err, ErrAccessRevoked) || !errors.Is(err, gatewayapi.ErrStreamEnded) {
 		t.Fatalf("Send after revocation = %v", err)
 	}
 	if err := stream.Close(); err != nil {

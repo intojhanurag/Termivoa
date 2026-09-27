@@ -26,8 +26,9 @@ var (
 	// may have consumed a one-time secret. Callers must not retry blindly.
 	ErrDeliveryUncertain = errors.New("gatewayclient: broker delivery is uncertain")
 	// ErrAccessRevoked is returned by a live stream after it relayed
-	// access.revoked, which is always the broker's last live message.
-	ErrAccessRevoked = errors.New("gatewayclient: live stream access was revoked")
+	// access.revoked, which is always the broker's last live message. It wraps
+	// gatewayapi.ErrStreamEnded.
+	ErrAccessRevoked = fmt.Errorf("gatewayclient: live stream access was revoked: %w", gatewayapi.ErrStreamEnded)
 )
 
 var (
