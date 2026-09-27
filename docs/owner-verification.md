@@ -131,6 +131,34 @@ The agent did not change Tailscale or startup settings on this Mac. Follow
       answer. The card says "The question changed — check the new one", and
       the phone keeps control.
 
+### Compose: photo and voice
+
+- [ ] iPhone Home Screen app, with control: Compose → **Photo** offers Take
+      Photo and Photo Library. Take a photo: the row shows "uploading…", then
+      "✓ on your computer · <size>", and the draft starts with
+      `@.termivoa/uploads/<name> `.
+- [ ] On the Mac, the file is in `<project>/.termivoa/uploads/`, mode 0600,
+      at most 2048 px on the long edge, with no GPS or other EXIF data
+      (`mdls` or `exiftool` show none), and `git status` in the project does
+      not list `.termivoa`.
+- [ ] Type "describe this image" after the path and tap **Send ⏎** in a Claude
+      Code session: Claude reads the image. Repeat with Codex.
+- [ ] A portrait photo is saved upright (EXIF orientation applied before the
+      metadata is dropped). A PNG screenshot stays PNG.
+- [ ] ✕ removes the row and the `@path` text and shows "Removed from this
+      message."; the file stays on the Mac.
+- [ ] Without control, **Photo** is off. After another device takes control
+      during an upload, the upload fails with "take control before attaching
+      a photo" and no file is written.
+- [ ] **Voice** in the Home Screen app: iOS asks for microphone and speech
+      permission once; words appear (unfinished words dimmed), the status
+      shows "LISTENING · 0:07", **Done · edit** adds the text and sends
+      nothing. **Cancel** drops it. Locking the phone stops listening.
+- [ ] Deny the microphone: the panel says "Microphone access is off…".
+- [ ] In a browser without the Web Speech API (for example Firefox), Voice is
+      hidden and the composer says "Tip: use the keyboard's mic to dictate."
+- [ ] With Reduce Motion on, the mic ring does not pulse.
+
 ### Notifications (Web Push)
 
 Real delivery cannot be tested without a phone. See `docs/notifications.md`.

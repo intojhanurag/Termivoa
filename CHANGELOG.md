@@ -62,6 +62,21 @@ No version has been released. Development history and evidence are in
   the card to an **↑ answer** pill (it also folds while the keyboard is up).
   A `question_changed` or `invalid_request` rejection keeps control and
   reuses the refused input sequence.
+- Compose sheet toolbar: **Photo**, **Voice** and **Send ⏎**. Send pastes
+  the draft and presses Enter in one tap, with the same 64 KiB limit and
+  multi-line confirmation as before.
+- **Photo** (controller only): the phone redraws the picked or taken photo
+  on a canvas, which drops EXIF and GPS data, and shrinks the long edge to
+  2048 px (PNG stays PNG, other photos become JPEG). The broker saves it as
+  `.termivoa/uploads/<time>-<random>.<ext>` in the session's project folder,
+  adds `.termivoa/.gitignore` (`*`) so uploads are never committed, and the
+  draft starts with `@.termivoa/uploads/<name> ` for Claude Code or Codex.
+  The ✕ removes it from the message only; the file stays on the computer.
+  New route `POST /api/v1/sessions/{id}/uploads`.
+- **Voice**: dictation with the browser's speech service (Web Speech API),
+  with live text, a listening clock and clear error messages. **Done · edit**
+  adds the words to the draft and never sends. Where the API is missing, the
+  composer shows "Tip: use the keyboard's mic to dictate."
 
 #### Notifications
 
@@ -134,6 +149,11 @@ No version has been released. Development history and evidence are in
 - `__Host-`, `HttpOnly`, `SameSite=Strict` session cookies, strict Origin and
   Host checks, and a content security policy.
 - Bounds on message sizes, paste, history, queues and viewers.
+- Photo uploads: controller-only, rechecked before the write; type from magic
+  bytes (JPEG, PNG, WebP, GIF) only; at most 5 MiB; server-chosen names
+  created with `O_EXCL` and mode 0600 (current-user ACL on Windows) inside the
+  project folder through `os.Root`; a symlinked or non-directory `.termivoa`
+  or `uploads` is refused; one upload per device at a time and 12 per minute.
 - Fixes from adversarial reviews before the v0 merge, including overlapping
   polls, duplicate snippet IDs, hidden SGR-8 text in previews and an
   unannounced pairing code for screen readers.

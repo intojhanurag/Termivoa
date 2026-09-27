@@ -64,7 +64,9 @@ app.
 - **Type:** tap **Take control**. The agent keys (esc, ⌃C, ⇧⇥, ↑, 1, 2, y, ⏎)
   answer coding-agent prompts in one tap. The key bar has Esc, Tab, Ctrl, Alt
   and arrows. Use **compose** for long text or multi-line prompts, and
-  **snips** for saved snippets.
+  **snips** for saved snippets. In compose, **Photo** sends a picture to the
+  project folder and adds its `@path` to the message, and **Voice** dictates.
+  Nothing is sent until you tap **Send ⏎**.
 - **Scroll back:** tap **history**. Select text and copy it.
 - **Leave:** close the app. The session keeps running. When you come back you
   see the current screen; tap **Take control** to type again.
