@@ -1,0 +1,3 @@
+# cursor=1,22 visible=true
+$ rm -i notes.txt
+remove notes.txt? (y/n) y

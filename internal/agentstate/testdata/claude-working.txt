@@ -1,0 +1,31 @@
+# cursor=27,2 visible=true
+
+ ▐▛███▛█   Claude Code v2.1.283
+▝▜██████▀  Fable 5.1 · Claude Max
+ ▝▝   ▝▝   /tmp/project · /rc connecting…
+
+⚠ Your login expires in 3 days · run /login to renew
+
+❯ run the shell command: date
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+✻ Ideating… (running SessionStart hooks… 6/7 · 0s)
+                                                                                  ● high · /effort
+────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
