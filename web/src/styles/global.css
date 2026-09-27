@@ -604,3 +604,25 @@ button.switch { flex-shrink: 0; display: grid; place-items: center; padding: 0; 
 .switch[aria-checked="true"] .switch-track { background: var(--accent); border-color: var(--accent); }
 .switch[aria-checked="true"] .switch-track::after { transform: translateX(20px); background: var(--on-accent); }
 @media (prefers-reduced-motion: reduce) { .switch-track, .switch-track::after { transition: none; } }
+
+/* Dev-server preview: the "Preview ready" chip above the dock, and the full-screen preview. */
+.preview-anchor { position: relative; height: 0; z-index: 1; }
+.preview-chip { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px 0 14px; border: 1px solid color-mix(in srgb, var(--green) 55%, transparent); border-radius: 22px; background: color-mix(in srgb, var(--green) 12%, var(--dock)); color: var(--green); font-size: 14px; font-weight: 600; }
+.preview-chip .dot { width: 7px; height: 7px; border-radius: 4px; }
+.preview-ready { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-port, .preview-more { font-family: var(--mono); font-size: 13px; }
+.preview-more { color: var(--muted); font-size: 12px; }
+button.preview-open { min-height: 36px; padding: 0 14px; border: 0; border-radius: 18px; background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 700; }
+
+/* .app already pads the status-bar safe area, so the bar sits just below it. */
+.preview-screen { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.preview-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 0 8px; background: var(--well); border-bottom: 1px solid var(--line); }
+.preview-back { justify-self: start; font-family: var(--mono); font-size: 14px; }
+.preview-reload { justify-self: end; font-size: 18px; }
+.preview-address { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--text); font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+.preview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
+.preview-status { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 14px; border: 1px solid var(--line); border-radius: 24px; background: color-mix(in srgb, var(--dock) 92%, transparent); box-shadow: 0 6px 24px rgb(0 0 0 / 45%); }
+.preview-agent { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; color: var(--text); font-family: var(--mono); font-size: 13px; }
+.preview-agent .spinner { width: 14px; height: 14px; }
+.preview-agent-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.preview-tell { flex-shrink: 0; min-height: 40px; padding: 0 14px; border-color: color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 20px; color: var(--accent); font-size: 14px; }

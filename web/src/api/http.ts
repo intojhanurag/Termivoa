@@ -6,6 +6,7 @@ import type {
   HTTPPairPollResponse,
   HTTPPairRedeemRequest,
   HTTPPairRedeemResponse,
+  HTTPPreviewConfigResponse,
   HTTPPushConfigResponse,
   HTTPPushSubscribeRequest,
   HTTPPushTestResponse,
@@ -114,6 +115,7 @@ export const api = {
     request<HTTPPairRedeemResponse>('POST', '/api/v1/pair/redeem', body),
   pairPoll: (body: HTTPPairPollRequest) =>
     request<HTTPPairPollResponse>('POST', '/api/v1/pair/poll', body),
+  previewConfig: () => request<HTTPPreviewConfigResponse>('GET', '/api/v1/preview'),
   pushConfig: () => request<HTTPPushConfigResponse>('GET', '/api/v1/push'),
   pushSubscribe: (body: HTTPPushSubscribeRequest) => request<undefined>('POST', '/api/v1/push/subscribe', body),
   pushUnsubscribe: (body: HTTPPushUnsubscribeRequest) => request<undefined>('POST', '/api/v1/push/unsubscribe', body),

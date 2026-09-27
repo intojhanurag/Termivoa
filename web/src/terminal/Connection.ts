@@ -5,6 +5,7 @@ import type {
   InputMousePayload,
   KeyName,
   Modifiers,
+  PreviewPort,
   ScreenResyncPayload,
   State as SessionLifecycle,
 } from '../generated/protocol';
@@ -49,6 +50,8 @@ export interface ConnectionStatus {
   readonly hostBuild: string | undefined;
   /** The running agent's status. Question text is terminal output: render it as text only. */
   readonly agent: AgentStatus | undefined;
+  /** Ports this session's processes listen on; undefined when none. */
+  readonly previews: ReadonlyArray<PreviewPort> | undefined;
   /** The one answer this phone sent for the shown question. */
   readonly answer: AnswerState | undefined;
 }
@@ -114,6 +117,7 @@ export const INITIAL_STATUS: ConnectionStatus = {
   notice: undefined,
   hostBuild: undefined,
   agent: undefined,
+  previews: undefined,
   answer: undefined,
 };
 
@@ -454,7 +458,7 @@ export class Connection {
           return;
         }
         case 'session.state': {
-          const { agent } = message.payload;
+          const { agent, previews } = message.payload;
           // A fresh state ends a sent answer; a "question changed" note stays while a question is up.
           const answer = this.status.answer;
           const keep = answer?.phase === 'pending' || (answer?.phase === 'changed' && agent?.state === 'waiting');
@@ -462,6 +466,7 @@ export class Connection {
             sessionState: message.payload.state,
             exitCode: message.payload.exitCode,
             agent,
+            previews,
             answer: keep ? answer : undefined,
           });
           if (message.payload.state === 'lost') {
@@ -807,7 +812,7 @@ export class Connection {
       return;
     }
     // The next attach sends a fresh session.state; never answer from an old one.
-    this.update({ link: 'reconnecting', otherController: false, controllerLabel: undefined, agent: undefined });
+    this.update({ link: 'reconnecting', otherController: false, controllerLabel: undefined, agent: undefined, previews: undefined });
     const delay = RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => this.open(), delay);

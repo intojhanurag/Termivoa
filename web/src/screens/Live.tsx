@@ -12,6 +12,7 @@ import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { Composer } from './Composer';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { History } from './History';
+import { PreviewChip } from './PreviewChip';
 import { useKeyboardOpen, websocketUrl } from './hooks';
 import type { RunFirstRequest } from './presets';
 import { SessionMenu } from './SessionMenu';
@@ -94,14 +95,16 @@ export function TabBar({ tabs, current, viewed, onOpen, onNew, onMenu }: {
 }
 
 export function Live({
-  session, sessions, settings, fontSize, runFirst,
-  onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onRevoked,
+  session, sessions, settings, fontSize, runFirst, openComposer,
+  onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onRevoked, onPreview,
 }: {
   readonly session: BrokerRPCSessionRecord;
   readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
   readonly settings: HTTPSettingsResponse | undefined;
   readonly fontSize: number;
   readonly runFirst?: RunFirstRequest;
+  /** Open the composer once the terminal is ready (from the preview's "Tell agent"). */
+  readonly openComposer?: boolean;
   readonly onOpen: (session: BrokerRPCSessionRecord) => void;
   readonly onNew: () => void;
   readonly onSessions: () => void;
@@ -109,6 +112,8 @@ export function Live({
   readonly onChanged: () => Promise<void>;
   readonly onStartNew: () => void;
   readonly onRevoked: (reason: string | undefined) => void;
+  /** Absent when this host serves no previews. */
+  readonly onPreview?: (port: number) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLDivElement>(null);
@@ -117,7 +122,7 @@ export function Live({
   const initialFont = useRef(fontSize);
   const touchStart = useRef<number | undefined>(undefined);
   const [runtime, setRuntime] = useState<Runtime>();
-  const [panel, setPanel] = useState<Panel>('none');
+  const [panel, setPanel] = useState<Panel>(openComposer === true ? 'composer' : 'none');
   const [composerVersion, setComposerVersion] = useState(0);
   const [latched, setLatched] = useState({ ctrl: false, alt: false });
   const [runFirstNotice, setRunFirstNotice] = useState<string>();
@@ -412,6 +417,10 @@ export function Live({
             <AnswerPill onOpen={() => { input.current?.blur(); setFoldedQuestion(undefined); }} />
           )}
         </div>
+      )}
+
+      {panel === 'none' && question === undefined && !keyboard && (
+        <PreviewChip previews={status.link === 'live' ? status.previews : current.previews} onOpen={onPreview} />
       )}
 
       {panel !== 'history' && (
