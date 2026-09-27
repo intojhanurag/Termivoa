@@ -35,6 +35,19 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.session.rename` | credential + `sessionId` + `HTTPSessionRenameRequest` | `HTTPSessionMutationResponse` |
 | `gateway.session.terminate` | credential + `sessionId` + `HTTPSessionTerminateRequest` | `HTTPSessionMutationResponse` |
 | `gateway.live.open` | `GatewayRPCCredentialPayload` | empty; the connection switches to live mode |
+| `gateway.device.rename` | credential + `HTTPDeviceRenameRequest` | `HTTPDeviceSummary` of the credential's own device |
+| `gateway.origin` | empty | `GatewayRPCOriginResultPayload`: the configured origin, if any |
+
+`gateway.origin` is the only request besides pairing that carries no
+credential: the configured origin is not a secret. The gateway asks for it at
+start and after every successful broker probe (once a second), and adds a
+valid result to its exact Host and Origin allow-list next to its `--origin`
+flags. A production gateway accepts only an `https` origin; a development
+gateway only a loopback one. It keeps the last known value while the broker
+does not answer. So `pterm config origin` takes effect without a restart.
+
+`gateway.device.rename` changes only the label of the device that owns the
+credential. Labels stay untrusted display text, never identity.
 
 Authorization precedes every other decision, including replay of an existing
 operation receipt. A poll result carries `credential` and
@@ -60,6 +73,7 @@ retracted.
 | `admin.pair.approve` | `pendingId` | `pendingId` |
 | `admin.device.list` | empty | at most 200 devices: `id`, `label`, `revoked`, `status`, `createdAt`, `lastUsedAt` |
 | `admin.device.revoke` | `deviceId` | `deviceId`, `closedStreams` |
+| `admin.device.rename` | `deviceId`, `label` | the saved `deviceId` and `label` |
 | `admin.project.add` | `path`, optional `name` | the saved project |
 | `admin.project.list` | empty | at most 200 projects |
 | `admin.profile.list` | empty | at most 64 shell profiles |

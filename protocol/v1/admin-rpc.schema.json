@@ -18,6 +18,7 @@
     { "$ref": "#/$defs/pairApproveMessage" },
     { "$ref": "#/$defs/deviceListMessage" },
     { "$ref": "#/$defs/deviceRevokeMessage" },
+    { "$ref": "#/$defs/deviceRenameMessage" },
     { "$ref": "#/$defs/projectAddMessage" },
     { "$ref": "#/$defs/projectListMessage" },
     { "$ref": "#/$defs/profileListMessage" },
@@ -30,6 +31,7 @@
     { "$ref": "#/$defs/pairApproveResultMessage" },
     { "$ref": "#/$defs/deviceListResultMessage" },
     { "$ref": "#/$defs/deviceRevokeResultMessage" },
+    { "$ref": "#/$defs/deviceRenameResultMessage" },
     { "$ref": "#/$defs/projectAddResultMessage" },
     { "$ref": "#/$defs/projectListResultMessage" },
     { "$ref": "#/$defs/profileListResultMessage" },
@@ -46,11 +48,12 @@
       "enum": [
         "admin.pair.grant", "admin.pair.pending", "admin.pair.approve", "admin.device.list",
         "admin.device.revoke", "admin.project.add", "admin.project.list", "admin.profile.list",
-        "admin.profile.detect", "admin.config.origin", "admin.shutdown", "admin.gateway.stop",
+        "admin.profile.detect", "admin.config.origin", "admin.shutdown", "admin.gateway.stop", "admin.device.rename",
         "admin.pair.grant.result", "admin.pair.pending.result", "admin.pair.approve.result",
         "admin.device.list.result", "admin.device.revoke.result", "admin.project.add.result",
         "admin.project.list.result", "admin.profile.list.result", "admin.profile.detect.result",
-        "admin.config.origin.result", "admin.shutdown.result", "admin.gateway.stop.result", "admin.error"
+        "admin.config.origin.result", "admin.shutdown.result", "admin.gateway.stop.result",
+        "admin.device.rename.result", "admin.error"
       ]
     },
     "timestamp": { "$ref": "http-api.schema.json#/$defs/timestamp" },
@@ -124,6 +127,17 @@
         "status": { "$ref": "#/$defs/deviceStatus" },
         "createdAt": { "$ref": "#/$defs/timestamp" },
         "lastUsedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "deviceRenamePayload": {
+      "title": "AdminRPCDeviceRenamePayload",
+      "description": "Sets a paired device's display label. The result echoes the saved values.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "label"],
+      "properties": {
+        "deviceId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "label": { "$ref": "http-api.schema.json#/$defs/deviceLabel" }
       }
     },
     "deviceListResultPayload": {
@@ -232,6 +246,7 @@
     "pairApproveMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
     "deviceListMessage": { "type": "object", "properties": { "type": { "const": "admin.device.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "deviceRevokeMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke" }, "payload": { "$ref": "#/$defs/deviceIdPayload" } } },
+    "deviceRenameMessage": { "type": "object", "properties": { "type": { "const": "admin.device.rename" }, "payload": { "$ref": "#/$defs/deviceRenamePayload" } } },
     "projectAddMessage": { "type": "object", "properties": { "type": { "const": "admin.project.add" }, "payload": { "$ref": "#/$defs/projectAddPayload" } } },
     "projectListMessage": { "type": "object", "properties": { "type": { "const": "admin.project.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "profileListMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
@@ -244,6 +259,7 @@
     "pairApproveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve.result" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
     "deviceListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.device.list.result" }, "payload": { "$ref": "#/$defs/deviceListResultPayload" } } },
     "deviceRevokeResultMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke.result" }, "payload": { "$ref": "#/$defs/deviceRevokeResultPayload" } } },
+    "deviceRenameResultMessage": { "type": "object", "properties": { "type": { "const": "admin.device.rename.result" }, "payload": { "$ref": "#/$defs/deviceRenamePayload" } } },
     "projectAddResultMessage": { "type": "object", "properties": { "type": { "const": "admin.project.add.result" }, "payload": { "$ref": "#/$defs/projectResultPayload" } } },
     "projectListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.project.list.result" }, "payload": { "$ref": "#/$defs/projectListResultPayload" } } },
     "profileListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.profile.list.result" }, "payload": { "$ref": "#/$defs/profileListResultPayload" } } },

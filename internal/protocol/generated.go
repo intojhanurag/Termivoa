@@ -8,6 +8,7 @@ type ProtocolTypes struct {
 	AdminRPCDevice                   AdminRPCDevice                          `json:"adminRPCDevice"`
 	AdminRPCDeviceID                 AdminRPCDeviceIDPayload                 `json:"adminRPCDeviceID"`
 	AdminRPCDeviceListResult         AdminRPCDeviceListResultPayload         `json:"adminRPCDeviceListResult"`
+	AdminRPCDeviceRename             AdminRPCDeviceRenamePayload             `json:"adminRPCDeviceRename"`
 	AdminRPCDeviceRevokeResult       AdminRPCDeviceRevokeResultPayload       `json:"adminRPCDeviceRevokeResult"`
 	AdminRPCMessageType              AdminRPCMessageType                     `json:"adminRPCMessageType"`
 	AdminRPCOrigin                   AdminRPCOriginPayload                   `json:"adminRPCOrigin"`
@@ -38,7 +39,9 @@ type ProtocolTypes struct {
 	Error                            ErrorPayload                            `json:"error"`
 	ErrorCode                        ErrorCode                               `json:"errorCode"`
 	GatewayRPCCredential             GatewayRPCCredentialPayload             `json:"gatewayRPCCredential"`
+	GatewayRPCDeviceRename           GatewayRPCDeviceRenamePayload           `json:"gatewayRPCDeviceRename"`
 	GatewayRPCMessageType            GatewayRPCMessageType                   `json:"gatewayRPCMessageType"`
+	GatewayRPCOriginResult           GatewayRPCOriginResultPayload           `json:"gatewayRPCOriginResult"`
 	GatewayRPCPairPollResult         GatewayRPCPairPollResultPayload         `json:"gatewayRPCPairPollResult"`
 	GatewayRPCPrincipal              GatewayRPCPrincipalPayload              `json:"gatewayRPCPrincipal"`
 	GatewayRPCSessionCreate          GatewayRPCSessionCreatePayload          `json:"gatewayRPCSessionCreate"`
@@ -108,6 +111,12 @@ type AdminRPCDeviceIDPayload struct {
 
 type AdminRPCDeviceListResultPayload struct {
 	Devices []AdminRPCDevice `json:"devices"`
+}
+
+// Sets a paired device's display label. The result echoes the saved values.
+type AdminRPCDeviceRenamePayload struct {
+	DeviceID string `json:"deviceId"`
+	Label    string `json:"label"`
 }
 
 // Sent only after the revocation is durable and every bound live stream has been closed.
@@ -267,6 +276,23 @@ type GatewayRPCCredentialPayload struct {
 	Credential string `json:"credential"`
 }
 
+// Renames only the device that owns the credential.
+type GatewayRPCDeviceRenamePayload struct {
+	Credential string                  `json:"credential"`
+	Request    HTTPDeviceRenameRequest `json:"request"`
+}
+
+type HTTPDeviceRenameRequest struct {
+	Label string `json:"label"`
+}
+
+// The browser origin configured with admin.config.origin, absent when none is set. It is
+// not a secret. The gateway adds it to its exact Host and Origin allow-list when it is
+// valid for the gateway's profile.
+type GatewayRPCOriginResultPayload struct {
+	Origin *string `json:"origin,omitempty"`
+}
+
 // credential and credentialExpiresAt appear exactly when response.status is approved. That
 // single response is the only delivery of the credential; it is never replayable.
 type GatewayRPCPairPollResultPayload struct {
@@ -326,10 +352,6 @@ type GatewayRPCSessionTerminatePayload struct {
 type HTTPSessionTerminateRequest struct {
 	Generation  string `json:"generation"`
 	OperationID string `json:"operationId"`
-}
-
-type HTTPDeviceRenameRequest struct {
-	Label string `json:"label"`
 }
 
 type HTTPErrorResponse struct {
@@ -631,6 +653,8 @@ const (
 	AdminConfigOriginResult  AdminRPCMessageType = "admin.config.origin.result"
 	AdminDeviceList          AdminRPCMessageType = "admin.device.list"
 	AdminDeviceListResult    AdminRPCMessageType = "admin.device.list.result"
+	AdminDeviceRename        AdminRPCMessageType = "admin.device.rename"
+	AdminDeviceRenameResult  AdminRPCMessageType = "admin.device.rename.result"
 	AdminDeviceRevoke        AdminRPCMessageType = "admin.device.revoke"
 	AdminDeviceRevokeResult  AdminRPCMessageType = "admin.device.revoke.result"
 	AdminError               AdminRPCMessageType = "admin.error"
@@ -712,9 +736,13 @@ const (
 	GatewayAuthCheckResult        GatewayRPCMessageType = "gateway.auth.check.result"
 	GatewayAuthLogout             GatewayRPCMessageType = "gateway.auth.logout"
 	GatewayAuthLogoutResult       GatewayRPCMessageType = "gateway.auth.logout.result"
+	GatewayDeviceRename           GatewayRPCMessageType = "gateway.device.rename"
+	GatewayDeviceRenameResult     GatewayRPCMessageType = "gateway.device.rename.result"
 	GatewayError                  GatewayRPCMessageType = "gateway.error"
 	GatewayLiveOpen               GatewayRPCMessageType = "gateway.live.open"
 	GatewayLiveOpenResult         GatewayRPCMessageType = "gateway.live.open.result"
+	GatewayOrigin                 GatewayRPCMessageType = "gateway.origin"
+	GatewayOriginResult           GatewayRPCMessageType = "gateway.origin.result"
 	GatewayPairPoll               GatewayRPCMessageType = "gateway.pair.poll"
 	GatewayPairPollResult         GatewayRPCMessageType = "gateway.pair.poll.result"
 	GatewayPairRedeem             GatewayRPCMessageType = "gateway.pair.redeem"
