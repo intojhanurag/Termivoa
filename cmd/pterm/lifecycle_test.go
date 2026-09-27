@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -338,5 +339,73 @@ func TestInstalledTailscaleUsesAbsoluteProgramFiles(t *testing.T) {
 		if got := installedTailscale("windows", env(value)); got != "" {
 			t.Errorf("ProgramFiles %q gave %q", value, got)
 		}
+	}
+}
+
+// TestInspectTailscaleReportsPreviewFindingsSeparately proves the dev-server
+// preview (HTTPS 8443) lines in `pterm doctor` output are independent of the
+// phone terminal's own HTTPS 443 status, and that a preview conflict never
+// counts as a doctor problem (previews are optional).
+func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
+	const status = `{"BackendState":"Running","Self":{"DNSName":"h.ts.net."}}`
+	for name, test := range map[string]struct {
+		serve    string
+		want     []string
+		lacks    []string
+		problems int
+	}{
+		"both configured": {
+			serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
+				`"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
+			want:     []string{"tailscale serve: HTTPS 443 proxies the Phone Terminal gateway", "tailscale serve: HTTPS 8443 proxies dev-server previews"},
+			problems: 0,
+		},
+		"neither configured": {
+			serve: `{}`,
+			want: []string{
+				"! tailscale serve: not configured for Phone Terminal",
+				"tailscale serve: dev-server previews not shared (optional): " + lifecycle.PreviewServeCommand,
+			},
+			problems: 1,
+		},
+		"preview conflict does not block or fail 443": {
+			serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
+				`"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
+			want: []string{
+				"tailscale serve: HTTPS 443 proxies the Phone Terminal gateway",
+				"! tailscale serve: HTTPS 8443 path / on h.ts.net:8443 already serves http://127.0.0.1:3000; pterm will not overwrite it",
+			},
+			lacks:    []string{"dev-server previews not shared"},
+			problems: 0,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			previous := tailscaleRun
+			t.Cleanup(func() { tailscaleRun = previous })
+			tailscaleRun = func(_ context.Context, _ string, _ io.Writer, args ...string) ([]byte, error) {
+				switch strings.Join(args, " ") {
+				case "status --json":
+					return []byte(status), nil
+				case "serve status --json":
+					return []byte(test.serve), nil
+				}
+				return nil, errors.New("unexpected tailscale command")
+			}
+			var output bytes.Buffer
+			_, problems := inspectTailscale(context.Background(), "tailscale-fake", &output)
+			for _, want := range test.want {
+				if !strings.Contains(output.String(), want) {
+					t.Errorf("output lacks %q:\n%s", want, output.String())
+				}
+			}
+			for _, lacks := range test.lacks {
+				if strings.Contains(output.String(), lacks) {
+					t.Errorf("output should not contain %q:\n%s", lacks, output.String())
+				}
+			}
+			if problems != test.problems {
+				t.Errorf("problems = %d, want %d", problems, test.problems)
+			}
+		})
 	}
 }

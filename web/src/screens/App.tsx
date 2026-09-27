@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, CONNECTION_UNAVAILABLE, isAuthFailure } from '../api/http';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { ChunkErrorBoundary, loadChunk } from './chunks';
@@ -6,6 +6,7 @@ import { useFontSize, useServiceWorkerUpdate, useSessionList, useVisualViewport 
 import { adoptFragmentGrant, type GrantSlot } from '../pairing/pairing';
 import { NewSession } from './NewSession';
 import { OfflineScreen } from './StateScreen';
+import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { Sessions } from './Sessions';
 import { Settings } from './Settings';
@@ -15,6 +16,7 @@ import { Setup } from './Setup';
 // so Setup and Sessions start without it.
 const loadLive = () => loadChunk(() => import('./Live'));
 const Live = lazy(() => loadLive().then((module) => ({ default: module.Live })));
+const Preview = lazy(() => loadChunk(() => import('./Preview')).then((module) => ({ default: module.Preview })));
 
 export type GrantHolder = GrantSlot;
 
@@ -24,7 +26,8 @@ type View =
   | { readonly name: 'setup'; readonly reason?: string }
   | { readonly name: 'sessions'; readonly message?: string }
   | { readonly name: 'new'; readonly back?: View }
-  | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest }
+  | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
+  | { readonly name: 'preview'; readonly session: BrokerRPCSessionRecord; readonly port: number }
   | { readonly name: 'settings' };
 
 /** While the host is unreachable, try again this often in seconds (and on network or focus changes). */
@@ -36,6 +39,7 @@ const APP_NAME = 'Phone Terminal';
 export function titleFor(view: View): string {
   switch (view.name) {
     case 'live': return `${view.session.title} · ${APP_NAME}`;
+    case 'preview': return `Preview :${view.port} · ${APP_NAME}`;
     case 'sessions': return `Sessions · ${APP_NAME}`;
     case 'new': return `New session · ${APP_NAME}`;
     case 'settings': return `Settings · ${APP_NAME}`;
@@ -45,9 +49,10 @@ export function titleFor(view: View): string {
   }
 }
 
-function pathFor(view: View): string {
+export function pathFor(view: View): string {
   switch (view.name) {
     case 'live': return `/sessions/${encodeURIComponent(view.session.id)}`;
+    case 'preview': return `/sessions/${encodeURIComponent(view.session.id)}/preview?port=${view.port}`;
     case 'settings': return '/settings';
     case 'new': return '/new';
     case 'setup': return window.location.pathname === '/pair' ? '/pair' : '/';
@@ -55,16 +60,26 @@ function pathFor(view: View): string {
   }
 }
 
+/** The port of a preview address's `?port=`, or undefined unless it is a plain valid port number. */
+export function previewPortParam(search: string): number | undefined {
+  const raw = new URLSearchParams(search).get('port');
+  const port = raw !== null && /^\d{1,5}$/u.test(raw) ? Number(raw) : undefined;
+  return isPreviewPort(port) ? port : undefined;
+}
+
 export function App({ grant }: { readonly grant: GrantHolder }) {
   const [view, setView] = useState<View>({ name: 'boot' });
   const [settings, setSettings] = useState<HTTPSettingsResponse>();
+  // Previews are optional: until (or unless) the config answers, there are none.
+  const [previewAt, setPreviewAt] = useState<string>();
+  const previewConfig = useRef<Promise<string | undefined>>(Promise.resolve(undefined));
   const [fontSize, setFontSize] = useFontSize();
   const update = useServiceWorkerUpdate();
   useVisualViewport();
 
   const navigate = useCallback((next: View) => {
     const path = pathFor(next);
-    if (path !== window.location.pathname) {
+    if (path !== window.location.pathname + window.location.search) {
       window.history.pushState(null, '', path);
     }
     setView(next);
@@ -95,7 +110,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     }
   }, [toSetup]);
 
-  const list = useSessionList(view.name === 'sessions' || view.name === 'live', handlePollFailure);
+  const list = useSessionList(view.name === 'sessions' || view.name === 'live' || view.name === 'preview', handlePollFailure);
 
   const route = useCallback(async () => {
     const path = window.location.pathname;
@@ -107,14 +122,21 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       setView({ name: 'new' });
       return;
     }
-    const match = /^\/sessions\/([^/]+)$/u.exec(path);
+    const match = /^\/sessions\/([^/]+)(\/preview)?$/u.exec(path);
     if (match?.[1] !== undefined) {
       const id = decodeURIComponent(match[1]);
       try {
         const session = (await api.sessions()).sessions.find((item) => item.id === id);
-        setView(session === undefined
-          ? { name: 'sessions', message: 'That session no longer exists.' }
-          : { name: 'live', session });
+        const port = match[2] === undefined ? undefined : previewPortParam(window.location.search);
+        if (session === undefined) {
+          setView({ name: 'sessions', message: 'That session no longer exists.' });
+        } else if (port !== undefined && await previewConfig.current !== undefined) {
+          setView({ name: 'preview', session, port });
+        } else {
+          // A bad port or no preview origin falls back to the terminal.
+          if (match[2] !== undefined) window.history.replaceState(null, '', pathFor({ name: 'live', session }));
+          setView({ name: 'live', session });
+        }
       } catch (error) {
         handleFailure(error);
       }
@@ -142,6 +164,9 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       }
       return;
     }
+    // Never blocks boot: a failed or empty answer means no previews.
+    previewConfig.current = api.previewConfig().then((config) => previewOrigin(config.origin), () => undefined);
+    void previewConfig.current.then(setPreviewAt);
     await route();
   }, [grant, route, toSetup]);
 
@@ -328,6 +353,11 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
               settings={settings}
               fontSize={fontSize}
               {...(view.runFirst === undefined ? {} : { runFirst: view.runFirst })}
+              {...(view.compose === true ? { openComposer: true } : {})}
+              {...(previewAt === undefined ? {} : { onPreview: (port: number) => {
+                void list.reload();
+                navigate({ name: 'preview', session: view.session, port });
+              } })}
               onOpen={openSession}
               onNew={() => navigate({ name: 'new', back: { name: 'live', session: view.session } })}
               onSessions={toSessions}
@@ -335,6 +365,20 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
               onChanged={list.reload}
               onStartNew={() => { void startNew(view.session); }}
               onRevoked={(reason) => toSetup(reason ?? 'Access to this computer was revoked.')}
+            />
+          </Suspense>
+        </ChunkErrorBoundary>
+      )}
+      {view.name === 'preview' && previewAt !== undefined && (
+        <ChunkErrorBoundary key={`${view.session.id}/${view.session.generation}/preview`}>
+          <Suspense fallback={<main className="page"><p role="status" className="muted">Opening preview…</p></main>}>
+            <Preview
+              session={view.session}
+              sessions={list.sessions}
+              origin={previewAt}
+              port={view.port}
+              onBack={() => navigate({ name: 'live', session: view.session })}
+              onTell={() => navigate({ name: 'live', session: view.session, compose: true })}
             />
           </Suspense>
         </ChunkErrorBoundary>

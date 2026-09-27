@@ -55,6 +55,8 @@ type ManagedSession interface {
 	Presence(context.Context, bool) (SessionPresence, error)
 	Terminate(context.Context) error
 	RevokeDevice(context.Context, string) (int, error)
+	// PreviewTarget re-verifies a dev-server port from the OS (devpreview.go).
+	PreviewTarget(context.Context, uint16) (string, error)
 }
 
 type registrySession interface {

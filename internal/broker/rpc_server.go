@@ -491,6 +491,7 @@ func (server *ManagementServer) withPresence(
 	if browser {
 		mine := controlled && presence.ControllerDevice == deviceID
 		record.ControllerIsYou = &mine
+		record.Previews = presence.Previews
 		if !presence.LastOutput.IsZero() {
 			value := presence.LastOutput.UTC().Format(millisecondRFC3339)
 			record.LastOutputAt = &value

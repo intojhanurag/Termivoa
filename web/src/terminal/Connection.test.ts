@@ -243,6 +243,19 @@ describe('Connection', () => {
       expect(socket().types()).not.toContain('input.answer');
     });
 
+    it('maps session.state previews, clears them when absent and on reconnect', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      const previews = [{ port: 5173, since: '2026-09-27T10:00:00Z' }];
+      socket().receive('session.state', { state: 'running', previews });
+      expect(connection.getStatus().previews).toEqual(previews);
+      socket().receive('session.state', { state: 'running' });
+      expect(connection.getStatus().previews).toBeUndefined();
+      socket().receive('session.state', { state: 'running', previews });
+      socket().close();
+      expect(connection.getStatus().previews).toBeUndefined();
+    });
+
     it('sends one answer with the lease and next sequence, then closes on input.accepted', async () => {
       const { connection, socket } = harness();
       await attachLive(socket());

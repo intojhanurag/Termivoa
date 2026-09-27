@@ -11,6 +11,25 @@ No version has been released. Development history and evidence are in
 
 ### Added
 
+#### Dev-server preview
+
+- The broker finds TCP ports that a session's own processes listen on
+  (macOS: process tree + `lsof`; Windows: Job Object + `GetExtendedTcpTable`)
+  and publishes them as `previews` on the session list and `session.state`.
+- The Live screen shows a **Preview ready** chip; **Open ↗** shows the page
+  full screen in the app with back, reload, the agent status and **Tell
+  agent**.
+- The gateway serves previews from a separate loopback listener
+  (127.0.0.1:8789; development 127.0.0.1:8790, `--preview-listen`) that never
+  serves the app. It re-checks the paired-device cookie and port ownership on
+  every request, rewrites Host to `localhost:<port>`, proxies WebSockets (HMR),
+  and never forwards Termivoa cookies or identity headers. The app frames only
+  that origin and refuses requests from it.
+- `pterm setup` asks a second, separate question before it runs
+  `tailscale serve --bg --https=8443 http://127.0.0.1:8789`; `pterm doctor`
+  reports it. See `docs/preview.md`.
+
+
 #### Sessions
 
 - Broker-owned PTY sessions that keep running while phones and desktop

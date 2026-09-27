@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
@@ -26,12 +27,15 @@ const (
 )
 
 type Config struct {
-	RuntimeDir      string
-	HostBuild       string
-	ListenAddress   string
-	Profile         platform.Profile
-	ProbeInterval   time.Duration
-	ShutdownTimeout time.Duration
+	RuntimeDir    string
+	HostBuild     string
+	ListenAddress string
+	// PreviewListenAddress is the loopback listener of the separate
+	// dev-server preview origin; "" serves no previews. See preview.go.
+	PreviewListenAddress string
+	Profile              platform.Profile
+	ProbeInterval        time.Duration
+	ShutdownTimeout      time.Duration
 
 	// BrokerWait bounds how long startup retries an unreachable broker; zero
 	// means two minutes. At logon the broker may start after the gateway.
@@ -61,6 +65,7 @@ type Config struct {
 
 type ReadyState struct {
 	Address          string
+	PreviewAddress   string
 	BrokerGeneration string
 }
 
@@ -89,6 +94,11 @@ func Run(ctx context.Context, config Config) error {
 	}
 	if err := ValidateListenAddress(config.Profile, config.ListenAddress); err != nil {
 		return err
+	}
+	if config.PreviewListenAddress != "" {
+		if err := ValidatePreviewListenAddress(config.Profile, config.PreviewListenAddress); err != nil {
+			return err
+		}
 	}
 	if config.ProbeInterval == 0 {
 		config.ProbeInterval = defaultProbeInterval
@@ -124,6 +134,33 @@ func Run(ctx context.Context, config Config) error {
 		_ = listener.Close()
 		return err
 	}
+	var preview *http.Server
+	var previewListener net.Listener
+	var previewHandle *previewHandler
+	if config.PreviewListenAddress != "" && handler.api != nil {
+		previewListener, err = net.Listen("tcp", config.PreviewListenAddress)
+		if err == nil {
+			err = requireIPv4Loopback(previewListener.Addr())
+		}
+		if err == nil {
+			previewHandle, err = newPreviewHandler(handler, previewListener.Addr().String())
+		}
+		if err != nil {
+			// Previews are optional: a busy port must not take the app down.
+			if previewListener != nil {
+				_ = previewListener.Close()
+			}
+			fmt.Fprintf(os.Stderr, "pterm gateway: dev-server previews are off: %v\n", err)
+		} else {
+			preview = &http.Server{
+				Handler:           previewHandle,
+				ReadHeaderTimeout: 5 * time.Second,
+				IdleTimeout:       60 * time.Second,
+				MaxHeaderBytes:    64 * 1024,
+			}
+			preview.RegisterOnShutdown(previewHandle.stop)
+		}
+	}
 	handler.refreshOrigin(ctx)
 	server := &http.Server{
 		Handler:           handler,
@@ -145,12 +182,24 @@ func Run(ctx context.Context, config Config) error {
 	}()
 	serveDone := make(chan error, 1)
 	go func() { serveDone <- server.Serve(listener) }()
+	ready := ReadyState{Address: listener.Addr().String(), BrokerGeneration: initial.BrokerGeneration}
+	previewDone := make(chan error, 1)
+	if preview != nil {
+		go func() { previewDone <- preview.Serve(previewListener) }()
+		ready.PreviewAddress = previewListener.Addr().String()
+	}
 	if config.Ready != nil {
-		config.Ready(ReadyState{Address: listener.Addr().String(), BrokerGeneration: initial.BrokerGeneration})
+		config.Ready(ready)
 	}
 
 	var serveErr error
 	select {
+	case serveErr = <-previewDone:
+		// The preview listener failed: stop the whole gateway rather than run
+		// half of it; the supervisor restarts it.
+		serveErr = errors.Join(errors.New("gateway: preview listener stopped"), filterServeError(serveErr), server.Close())
+		<-serveDone
+		preview = nil
 	case <-ctx.Done():
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
 		shutdownErr := server.Shutdown(shutdownCtx)
@@ -163,6 +212,15 @@ func Run(ctx context.Context, config Config) error {
 		serveErr = filterServeError(serveErr)
 		cancel()
 		_ = listener.Close()
+	}
+	if preview != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
+		if preview.Shutdown(shutdownCtx) != nil {
+			_ = preview.Close()
+		}
+		shutdownCancel()
+		previewHandle.stop()
+		<-previewDone
 	}
 	cancel()
 	<-monitorDone

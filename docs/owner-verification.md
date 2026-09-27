@@ -185,6 +185,30 @@ Real delivery cannot be tested without a phone. See `docs/notifications.md`.
 - [ ] Apple accepts the VAPID subject `https://github.com/intojhanurag/phone-terminal`
       (a `403 BadJwtToken` from Apple would mean it does not).
 
+### Dev-server preview (Tailscale Serve 8443)
+
+- [ ] Run `pterm setup` again (or `tailscale serve --bg --https=8443
+      http://127.0.0.1:8789` yourself). Check the second question shows that
+      exact command and changes nothing on `n`. `pterm doctor` shows
+      "HTTPS 8443 proxies dev-server previews".
+- [ ] On the iPhone, in a session, ask Claude to run `npm run dev` for a Vite
+      project. The **Preview ready** chip with `:5173` appears above the dock
+      within a few seconds.
+- [ ] Tap **Open ↗**: the page loads inside the app (this confirms that iOS
+      Safari sends the `__Host-` cookie to `:8443` in the frame, and that
+      Tailscale Serve passes `Host: <host>:8443`). If it shows "Unknown host"
+      or "Open the preview from your paired phone", note it: the gateway
+      needs a change.
+- [ ] Edit a file: Vite HMR updates the page live without reload.
+- [ ] Start an unrelated server in a normal Terminal window (outside pterm),
+      for example `python3 -m http.server 5288`: it is never offered, and
+      `https://<host>:8443/__termivoa/select?session=<id>&port=5288` shows
+      "No dev server of this session listens on that port".
+- [ ] **Tell agent** returns to the terminal with the composer open; **‹
+      terminal** returns without it.
+- [ ] Revoke the phone with `pterm revoke <device-id>` while the preview is
+      open: HMR stops within 5 s and reload shows "no longer paired".
+
 ### Revocation
 
 - [ ] `pterm devices`, then `pterm revoke <device-id>` while the phone has

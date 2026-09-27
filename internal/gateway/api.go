@@ -486,7 +486,7 @@ func brokerStatus(code protocol.ErrorCode) int {
 		return http.StatusGone
 	case protocol.LimitExceeded:
 		return http.StatusTooManyRequests
-	case protocol.SessionMissing, protocol.ProjectMissing, protocol.ShellProfileMissing:
+	case protocol.SessionMissing, protocol.ProjectMissing, protocol.ShellProfileMissing, protocol.PreviewMissing:
 		return http.StatusNotFound
 	case protocol.GenerationChanged, protocol.SessionLost, protocol.OperationConflict, protocol.PairingPending,
 		protocol.NotController, protocol.StaleLease, protocol.InputGap, protocol.HistoryChanged, protocol.ResyncRequired:
@@ -498,6 +498,15 @@ func brokerStatus(code protocol.ErrorCode) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// brokerErrorStatus is the HTTP status writeBrokerError would use.
+func brokerErrorStatus(err error) int {
+	var brokerErr *gatewayapi.Error
+	if !errors.As(err, &brokerErr) {
+		return http.StatusServiceUnavailable
+	}
+	return brokerStatus(brokerErr.Code)
 }
 
 // writeBrokerError maps a broker error to its public form. Untyped errors are

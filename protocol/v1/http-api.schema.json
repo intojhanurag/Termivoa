@@ -218,6 +218,15 @@
         "endpoint": { "$ref": "#/$defs/pushEndpoint" }
       }
     },
+    "previewConfigResponse": {
+      "title": "HTTPPreviewConfigResponse",
+      "description": "GET /api/v1/preview. origin is the separate preview origin that the phone app may frame (for example https://host:8443); it is absent when the gateway serves no previews.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": { "type": "string", "minLength": 8, "maxLength": 512, "pattern": "^https?://[^/?#@\\s]+$" }
+      }
+    },
     "pushTestResponse": {
       "title": "HTTPPushTestResponse",
       "description": "How many of the calling device's subscriptions accepted the test notification.",

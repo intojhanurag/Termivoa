@@ -46,54 +46,80 @@ func ParseTailscaleStatus(data []byte) (TailscaleStatus, error) {
 	return TailscaleStatus{BackendState: raw.BackendState, DNSName: strings.TrimSuffix(raw.Self.DNSName, ".")}, nil
 }
 
-// ServeFindings summarizes `tailscale serve status --json`. configured is
-// true when HTTPS 443 already proxies the local gateway; problems name
-// conflicts that pterm must not overwrite and any Funnel exposure.
-func ServeFindings(data []byte) (configured bool, problems []string, err error) {
-	var raw struct {
-		TCP map[string]struct {
-			TCPForward string
-		}
-		Web map[string]struct {
-			Handlers map[string]struct {
-				Proxy, Path, Text string
-			}
-		}
-		AllowFunnel map[string]bool
+// ServeStatus summarizes `tailscale serve status --json`. Configured is true
+// when HTTPS 443 already proxies the local gateway; Problems name conflicts
+// on 443 that pterm must not overwrite and any Funnel exposure (checked once,
+// not per port: Funnel anywhere is already a problem). PreviewConfigured and
+// PreviewProblems report the same for the separate HTTPS 8443 dev-server
+// preview listener; a preview conflict never blocks the 443 flow, and a 443
+// conflict never blocks the preview flow.
+type ServeStatus struct {
+	Configured        bool
+	Problems          []string
+	PreviewConfigured bool
+	PreviewProblems   []string
+}
+
+type rawServeStatus struct {
+	TCP map[string]struct {
+		TCPForward string
 	}
+	Web map[string]struct {
+		Handlers map[string]struct {
+			Proxy, Path, Text string
+		}
+	}
+	AllowFunnel map[string]bool
+}
+
+func ServeFindings(data []byte) (ServeStatus, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return false, nil, nil
+		return ServeStatus{}, nil
 	}
+	var raw rawServeStatus
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return false, nil, fmt.Errorf("parse tailscale serve status: %w", err)
+		return ServeStatus{}, fmt.Errorf("parse tailscale serve status: %w", err)
 	}
+	var status ServeStatus
 	for _, hostPort := range sortedKeys(raw.AllowFunnel) {
 		if raw.AllowFunnel[hostPort] {
-			problems = append(problems, "Tailscale Funnel is enabled for "+hostPort+"; Phone Terminal must never be public. Turn Funnel off before pairing.")
+			status.Problems = append(status.Problems, "Tailscale Funnel is enabled for "+hostPort+"; Phone Terminal must never be public. Turn Funnel off before pairing.")
 		}
 	}
-	if forward := raw.TCP["443"].TCPForward; forward != "" {
-		problems = append(problems, "port 443 already forwards TCP to "+forward+"; pterm will not overwrite it")
+	configured, problems := servePortFindings(raw, "443", LocalURL)
+	status.Configured = configured
+	status.Problems = append(status.Problems, problems...)
+	status.PreviewConfigured, status.PreviewProblems = servePortFindings(raw, "8443", PreviewLocalURL)
+	return status, nil
+}
+
+// servePortFindings reports whether target ("http://127.0.0.1:<port>/") is
+// already proxied at HTTPS port, and names any TCP forward or other handler
+// on that port that pterm must not overwrite.
+func servePortFindings(raw rawServeStatus, port, target string) (configured bool, problems []string) {
+	if forward := raw.TCP[port].TCPForward; forward != "" {
+		problems = append(problems, "port "+port+" already forwards TCP to "+forward+"; pterm will not overwrite it")
 	}
+	suffix := ":" + port
 	for _, hostPort := range sortedKeys(raw.Web) {
-		if !strings.HasSuffix(hostPort, ":443") {
+		if !strings.HasSuffix(hostPort, suffix) {
 			continue
 		}
 		handlers := raw.Web[hostPort].Handlers
 		for _, path := range sortedKeys(handlers) {
 			handler := handlers[path]
-			if path == "/" && strings.TrimSuffix(handler.Proxy, "/") == "http://127.0.0.1:8787" {
+			if path == "/" && strings.TrimSuffix(handler.Proxy, "/") == strings.TrimSuffix(target, "/") {
 				configured = true
 				continue
 			}
-			target := handler.Proxy
-			if target == "" {
-				target = "a static handler"
+			handlerTarget := handler.Proxy
+			if handlerTarget == "" {
+				handlerTarget = "a static handler"
 			}
-			problems = append(problems, "HTTPS 443 path "+path+" on "+hostPort+" already serves "+target+"; pterm will not overwrite it")
+			problems = append(problems, "HTTPS "+port+" path "+path+" on "+hostPort+" already serves "+handlerTarget+"; pterm will not overwrite it")
 		}
 	}
-	return configured, problems, nil
+	return configured, problems
 }
 
 func sortedKeys[V any](values map[string]V) []string {

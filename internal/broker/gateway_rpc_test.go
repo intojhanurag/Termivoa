@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -630,7 +631,7 @@ func TestSessionPresenceTracksControlAndViewers(t *testing.T) {
 	want := func(controller string, viewers int) {
 		t.Helper()
 		presence, err := session.Presence(ctx, false)
-		if err != nil || presence != (SessionPresence{ControllerDevice: controller, Viewers: viewers}) {
+		if err != nil || !reflect.DeepEqual(presence, SessionPresence{ControllerDevice: controller, Viewers: viewers}) {
 			t.Fatalf("presence = %#v, %v; want controller %q, %d viewers", presence, err, controller, viewers)
 		}
 	}

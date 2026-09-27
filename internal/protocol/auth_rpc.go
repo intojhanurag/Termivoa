@@ -56,6 +56,7 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayPushUnsubscribe: GatewayPushUnsubscribeResult, GatewayPushTest: GatewayPushTestResult,
 	GatewayUploadBegin: GatewayUploadBeginResult, GatewayUploadChunk: GatewayUploadChunkResult,
 	GatewayUploadCommit: GatewayUploadCommitResult,
+	GatewayPreviewCheck: GatewayPreviewCheckResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -267,6 +268,27 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 			return err
 		}
 		return validatePushKey(payload.PublicKey, PushPublicKeyText)
+	case GatewayPreviewCheck:
+		payload, err := DecodeRPCPayload[GatewayRPCPreviewCheckPayload](envelope)
+		if err != nil {
+			return err
+		}
+		if err := ValidateSecretText(payload.Credential); err != nil {
+			return err
+		}
+		if !validUUID(payload.SessionID) || !ValidPreviewPort(payload.Port) {
+			return errors.New("preview check needs a canonical session UUID and a port 1..65535")
+		}
+		return nil
+	case GatewayPreviewCheckResult:
+		payload, err := DecodeRPCPayload[GatewayRPCPreviewTargetPayload](envelope)
+		if err != nil {
+			return err
+		}
+		if payload.Host != "127.0.0.1" && payload.Host != "::1" {
+			return errors.New("preview host must be a loopback address")
+		}
+		return nil
 	case GatewayPushSubscribeResult, GatewayPushUnsubscribeResult:
 		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
 		return err

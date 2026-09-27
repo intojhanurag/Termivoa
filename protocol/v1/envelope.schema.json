@@ -83,7 +83,7 @@
         "limit_exceeded", "history_changed", "resync_required",
         "host_unavailable", "internal_error", "invalid_request",
         "operation_conflict", "project_missing", "shell_profile_missing",
-        "question_changed"
+        "question_changed", "preview_missing"
       ]
     },
     "sessionLifecycle": {
@@ -132,6 +132,19 @@
         "question": { "$ref": "#/$defs/agentQuestion" },
         "afterWork": { "type": "boolean" }
       }
+    },
+    "previewPort": {
+      "title": "PreviewPort",
+      "description": "A TCP port that a process in this session's process tree listens on, on a loopback or wildcard address, verified by the broker from the operating system. since is the RFC 3339 time the broker first saw it. The phone may open it through the gateway's separate preview origin; see docs/preview.md.",
+      "type": "object", "additionalProperties": false, "required": ["port", "since"],
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "since": { "type": "string", "minLength": 20, "maxLength": 35 }
+      }
+    },
+    "previewPorts": {
+      "description": "Previewable ports of a running session, sorted by port, unique. Absent when there are none.",
+      "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/previewPort" }
     },
     "emptyPayload": {
       "title": "EmptyPayload",
@@ -455,7 +468,8 @@
       "type": "object", "additionalProperties": false, "required": ["state"],
       "properties": {
         "state": { "$ref": "#/$defs/sessionLifecycle" }, "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
-        "agent": { "$ref": "#/$defs/agentStatus" }
+        "agent": { "$ref": "#/$defs/agentStatus" },
+        "previews": { "$ref": "#/$defs/previewPorts" }
       }
     },
     "accessRevokedPayload": {

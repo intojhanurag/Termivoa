@@ -32,6 +32,7 @@
     { "$ref": "#/$defs/uploadBeginMessage" },
     { "$ref": "#/$defs/uploadChunkMessage" },
     { "$ref": "#/$defs/uploadCommitMessage" },
+    { "$ref": "#/$defs/previewCheckMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -51,6 +52,7 @@
     { "$ref": "#/$defs/uploadBeginResultMessage" },
     { "$ref": "#/$defs/uploadChunkResultMessage" },
     { "$ref": "#/$defs/uploadCommitResultMessage" },
+    { "$ref": "#/$defs/previewCheckResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -63,13 +65,15 @@
         "gateway.session.terminate", "gateway.live.open", "gateway.origin", "gateway.device.rename",
         "gateway.push.config", "gateway.push.subscribe", "gateway.push.unsubscribe", "gateway.push.test",
         "gateway.upload.begin", "gateway.upload.chunk", "gateway.upload.commit",
+        "gateway.preview.check",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
         "gateway.session.terminate.result", "gateway.live.open.result", "gateway.origin.result",
         "gateway.device.rename.result", "gateway.push.config.result", "gateway.push.subscribe.result",
         "gateway.push.unsubscribe.result", "gateway.push.test.result",
-        "gateway.upload.begin.result", "gateway.upload.chunk.result", "gateway.upload.commit.result", "gateway.error"
+        "gateway.upload.begin.result", "gateway.upload.chunk.result", "gateway.upload.commit.result", "gateway.preview.check.result",
+        "gateway.error"
       ]
     },
     "credentialPayload": {
@@ -170,6 +174,28 @@
         "data": { "type": "string", "minLength": 4, "maxLength": 174764, "contentEncoding": "base64" }
       }
     },
+    "previewCheckPayload": {
+      "title": "GatewayRPCPreviewCheckPayload",
+      "description": "Asks whether the credential may preview port of session now. The broker re-authorizes the credential and re-verifies from the operating system (cached at most 2 s) that a process in the session's process tree listens on the port.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "sessionId", "port"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "sessionId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "previewTargetPayload": {
+      "title": "GatewayRPCPreviewTargetPayload",
+      "description": "The loopback address the gateway dials for an allowed preview port.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host"],
+      "properties": {
+        "host": { "title": "PreviewHost", "type": "string", "enum": ["127.0.0.1", "::1"] }
+      }
+    },
     "originResultPayload": {
       "title": "GatewayRPCOriginResultPayload",
       "description": "The browser origin configured with admin.config.origin, absent when none is set. It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it is valid for the gateway's profile.",
@@ -220,6 +246,7 @@
     "pushConfigMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.config" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "pushSubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.subscribe" }, "payload": { "$ref": "#/$defs/pushSubscribePayload" } } },
     "pushUnsubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.unsubscribe" }, "payload": { "$ref": "#/$defs/pushUnsubscribePayload" } } },
+    "previewCheckMessage": { "type": "object", "properties": { "type": { "const": "gateway.preview.check" }, "payload": { "$ref": "#/$defs/previewCheckPayload" } } },
     "pushTestMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.test" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "uploadBeginMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.begin" }, "payload": { "$ref": "#/$defs/uploadBeginPayload" } } },
     "uploadChunkMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.chunk" }, "payload": { "$ref": "#/$defs/uploadChunkPayload" } } },
