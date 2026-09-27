@@ -51,17 +51,22 @@ func TestBrowserLifetimeRejectsInvalidMetadataAndClockRollback(t *testing.T) {
 	for name, test := range map[string]struct {
 		lifetime BrowserLifetime
 		now      time.Time
+		rollback bool // valid metadata, host clock behind it
 	}{
-		"zero":                     {BrowserLifetime{}, created},
-		"zero clock":               {initial, time.Time{}},
-		"creation in future":       {initial, created.Add(-time.Second)},
-		"last use in future":       {used, created},
-		"last use before creation": {BrowserLifetime{CreatedAt: created, LastUsedAt: created.Add(-time.Second), ExpiresAt: initial.ExpiresAt}, created},
-		"extended expiry":          {BrowserLifetime{CreatedAt: created, LastUsedAt: created, ExpiresAt: initial.ExpiresAt.Add(time.Second)}, created},
+		"zero":                     {BrowserLifetime{}, created, false},
+		"zero clock":               {initial, time.Time{}, true},
+		"creation in future":       {initial, created.Add(-time.Second), true},
+		"last use in future":       {used, created, true},
+		"last use before creation": {BrowserLifetime{CreatedAt: created, LastUsedAt: created.Add(-time.Second), ExpiresAt: initial.ExpiresAt}, created, false},
+		"extended expiry":          {BrowserLifetime{CreatedAt: created, LastUsedAt: created, ExpiresAt: initial.ExpiresAt.Add(time.Second)}, created, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := test.lifetime.Check(test.now); !errors.Is(err, ErrInvalidLifetime) {
+			err := test.lifetime.Check(test.now)
+			if !errors.Is(err, ErrInvalidLifetime) {
 				t.Fatalf("invalid lifetime result: %v", err)
+			}
+			if errors.Is(err, ErrClockRollback) != test.rollback {
+				t.Fatalf("clock rollback = %v, want %v", err, test.rollback)
 			}
 			if _, err := test.lifetime.Used(test.now); !errors.Is(err, ErrInvalidLifetime) {
 				t.Fatal("invalid state was updated")

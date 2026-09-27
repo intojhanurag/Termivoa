@@ -68,6 +68,9 @@ settable flags are documented in Apple's
   canonical grid can deliberately close the viewer before the resized snapshot
   arrives. The session continues; enlarge and re-attach. Smooth controlled shrink
   remains a concrete desktop UX gate, not a claimed pass.
+- Desktop mouse forwarding is not enabled in v0. The outer terminal never gets
+  a mouse-reporting mode, so no desktop `mouse` message reaches the child.
+  Outer-terminal text selection keeps working.
 - During resnapshot, local input is disabled/discarded and the optional footer
   says Syncing. Exact-fit observers cannot show a status row without sacrificing
   canonical cells; the pre-attach instructions document read-only behavior.

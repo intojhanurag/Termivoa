@@ -238,3 +238,41 @@ Checks after the fixes: `pnpm typecheck` passed. `pnpm test:web` passed:
 11 files, 86 tests. `pnpm build:web` passed. `./scripts/check` exited 0: no protocol
 generation drift, gofmt and `go vet` clean, 22 Go test packages passed,
 and the web typecheck, 86 tests, and build passed.
+
+## PR #25 adversarial review 2026-09-27
+
+| Severity | Defect | Fix |
+| --- | --- | --- |
+| High | `FrameRenderer.paint()` awaited one xterm write per style run and width group. Each write costs a browser timer task (about 4 ms when clamped). A colorful 80x24 screen with 20 runs per row took 4.8 s in Chromium, 120x50 took 9.9 s. This is longer than the broker's 5 s `snapshot.applied` deadline, so the viewer was dropped and reconnected without end. | The frame is built as one drawing string per server cell width. A frame is 1 write (2 writes when it has wide cells). The sequences are unchanged: the same allowlist, rows erased before repaint, autowrap off while painting, cursor restored at the end. Width 1 and width 2 cells are still separate writes, because `ServerUnicodeAddon` applies the width while xterm parses. |
+| Medium | After `screen.resync` the broker answers `control.acquire` with `resync_required`. The page sent a resync but stayed in `acquiring`, so Take control stayed disabled. | On `resync_required` while acquiring, control goes back to `observer`. The user can tap again after the new snapshot. |
+| Low | A late heartbeat or resize after `session.state` `exiting`/`exited` gets `session_lost`. The page showed "Session lost … host restarted". | If the session already reported exiting or exited, `session_lost`/`session_missing` closes the link and keeps the exit screen ("Shell exited (code N)") and the last screen. No reconnect. |
+| Low | Frames were scheduled only with `requestAnimationFrame`. Hidden tabs do not run it, so `snapshot.applied` was not sent and the broker dropped the viewer every 5 s. | Each scheduled frame also has a 100 ms timer. The first of the two to run paints the frame. |
+
+xterm writes per frame (counted on a real xterm `Terminal` in Node):
+
+| Frame | Before | After |
+| --- | --- | --- |
+| 200x60, 20 runs per row, narrow cells | 2403 | 1 |
+| 80x24, 20 runs per row, narrow cells | 963 (computed: 2 + 24 x 20 x 2 + 1) | 1 |
+| Snapshot or patch with wide cells | per run | 2 |
+
+The 200x60 frame paints in about 10 ms in Node. The regression test
+requires at most 2 writes and less than 1 s. A real-browser timing run was
+not done: Playwright is not installed. The write-count test is the gate.
+
+New tests: `FrameRenderer.test.ts` (large colorful snapshot write count and
+time; mixed narrow/wide snapshot and patch with correct widths),
+`Connection.test.ts` (resync_required during Take control, session_lost
+after exit, session_lost while running still lost, snapshot acknowledged
+when animation frames never run). Each test failed before its fix.
+
+Checks after the fixes: `pnpm typecheck` passed. `pnpm test:web` passed:
+11 files, 92 tests. `pnpm build:web` passed. The first `./scripts/check`
+run failed two `internal/liveclient` tests
+(`TestWrongInputAcknowledgementDoesNotAdvanceSequence`,
+`TestStaleCorrelatedGrantCannotRestoreReleasedEpoch`: "read/write on closed
+pipe"). This branch did not change Go code. `go test -count=5
+./internal/liveclient/` then passed, and a second `./scripts/check` exited 0
+(24 Go packages ok, web typecheck, 92 tests, and build passed). The
+liveclient tests are flaky under parallel load; this is recorded, not fixed
+here (Go is outside this task's scope).

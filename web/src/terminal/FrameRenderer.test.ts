@@ -235,6 +235,97 @@ describe('FrameRenderer', () => {
     terminal.dispose();
   });
 
+  it('paints a large colorful snapshot in a bounded number of xterm writes', async () => {
+    const columns = 200;
+    const height = 60;
+    const terminal = new Terminal({
+      allowProposedApi: true,
+      cols: columns,
+      rows: height,
+      disableStdin: true,
+      scrollback: 0,
+    });
+    const unicode = new ServerUnicodeAddon();
+    terminal.loadAddon(unicode);
+    const renderer = new FrameRenderer(terminal, unicode);
+    let writes = 0;
+    const originalWrite = terminal.write.bind(terminal);
+    terminal.write = ((data: string | Uint8Array, callback?: () => void) => {
+      writes++;
+      originalWrite(data, callback);
+    }) as typeof terminal.write;
+
+    const runsPerRow = 20;
+    const runWidth = columns / runsPerRow;
+    const rows: TerminalRow[] = Array.from({ length: height }, (_, rowIndex) => ({
+      runs: Array.from({ length: runsPerRow }, (_, runIndex) => ({
+        column: runIndex * runWidth,
+        style: { ...style, foreground: { r: runIndex * 12, g: rowIndex, b: 200, a: 255 }, bold: runIndex % 2 === 0 },
+        cells: Array.from({ length: runWidth }, (_, offset) => ({
+          text: String.fromCharCode(97 + ((runIndex + offset) % 26)),
+          width: 1,
+          continuation: false,
+          contentClipped: false,
+        })),
+      })),
+    })) as unknown as TerminalRow[];
+
+    const started = performance.now();
+    await renderer.paintSnapshot({
+      generation: '00000000-0000-4000-8000-000000000001',
+      revision: '1',
+      screen: { ...metadata(), columns, rows: height },
+      rows,
+    });
+    const elapsed = performance.now() - started;
+
+    expect(writes).toBeLessThanOrEqual(2);
+    expect(elapsed).toBeLessThan(1000);
+    expect(terminal.buffer.active.getLine(59)?.getCell(199)?.getChars()).toBe('c');
+    expect(terminal.buffer.active.getLine(0)?.getCell(10)?.isBold()).toBe(0);
+    expect(terminal.buffer.active.getLine(0)?.getCell(0)?.isBold()).not.toBe(0);
+    terminal.dispose();
+  });
+
+  it('paints mixed narrow and wide cells and patches with at most two writes each', async () => {
+    const { terminal, renderer } = harness();
+    let writes = 0;
+    const originalWrite = terminal.write.bind(terminal);
+    terminal.write = ((data: string | Uint8Array, callback?: () => void) => {
+      writes++;
+      originalWrite(data, callback);
+    }) as typeof terminal.write;
+    const generation = '00000000-0000-4000-8000-000000000001';
+
+    await renderer.paintSnapshot({
+      generation,
+      revision: '1',
+      screen: metadata(2),
+      rows: [row('界', 2), row('e\u0301'), row('👩‍💻', 2), row('x'), row()],
+    });
+    expect(writes).toBeLessThanOrEqual(2);
+    expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getWidth()).toBe(2);
+    expect(terminal.buffer.active.getLine(0)?.getCell(2)?.getChars()).toBe(' ');
+    expect(terminal.buffer.active.getLine(1)?.getCell(0)?.getChars()).toBe('e\u0301');
+    expect(terminal.buffer.active.getLine(2)?.getCell(0)?.getChars()).toBe('👩‍💻');
+    expect(terminal.buffer.active.getLine(2)?.getCell(0)?.getWidth()).toBe(2);
+    expect(terminal.buffer.active.cursorX).toBe(2);
+
+    writes = 0;
+    await renderer.applyPatch({
+      generation,
+      baseRevision: '1',
+      revision: '2',
+      screen: metadata(),
+      rows: [{ index: 0, row: row('a') }, { index: 3, row: row('界', 2) }],
+    });
+    expect(writes).toBeLessThanOrEqual(2);
+    expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getChars()).toBe('a');
+    expect(terminal.buffer.active.getLine(0)?.getCell(1)?.getChars()).toBe(' ');
+    expect(terminal.buffer.active.getLine(3)?.getCell(0)?.getWidth()).toBe(2);
+    terminal.dispose();
+  });
+
   it('rejects escape and control content before painting', () => {
     const { terminal, renderer } = harness();
     expect(() => renderer.paintSnapshot({

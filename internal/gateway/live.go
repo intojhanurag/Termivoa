@@ -110,6 +110,12 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 				return
 			}
 			if err := stream.Send(ctx, data); err != nil {
+				if errors.Is(err, gatewayapi.ErrStreamEnded) {
+					// The broker ended the stream (access.revoked). Stop
+					// reading; Receive ends the outbox after the notice is
+					// queued, and the writer flushes it and closes with 1008.
+					return
+				}
 				var rejected *gatewayapi.Error
 				if errors.As(err, &rejected) && rejected.Code == protocol.InvalidRequest {
 					// Tell the phone why before the writer closes the socket.

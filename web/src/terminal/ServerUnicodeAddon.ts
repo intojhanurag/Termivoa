@@ -112,7 +112,8 @@ class CapturingUnicodeHandling implements IUnicodeHandling {
 /**
  * Loads the pinned grapheme addon, then adds a narrow provider that makes each
  * normalized server cell occupy its authoritative width in xterm. The painter
- * must serialize writes and bracket each printable cell with prepare/clear.
+ * must serialize writes and bracket each write of same-width cells with
+ * prepare/clear.
  */
 export class ServerUnicodeAddon implements ITerminalAddon {
   private readonly graphemes = new UnicodeGraphemesAddon();

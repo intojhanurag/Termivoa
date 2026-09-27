@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/desktop"
 	"github.com/intojhanurag/phone-terminal/internal/liveclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
@@ -17,6 +19,29 @@ type desktopDisplay struct {
 	screen         *protocol.ScreenMetadata
 	client         interface{ State() liveclient.State }
 	controlPending bool
+	notice         string // Static ASCII, shown in place of the control label.
+	noticeUntil    time.Time
+}
+
+const desktopNoticeDuration = 3 * time.Second
+
+// rejectInput briefly reports a dropped local action. The attachment continues.
+func (display *desktopDisplay) rejectInput(ctx context.Context, err *desktop.InvalidInputError) error {
+	display.mu.Lock()
+	defer display.mu.Unlock()
+	display.notice, display.noticeUntil = "Input not sent: invalid "+err.Kind+" | Ctrl+] detach", time.Now().Add(desktopNoticeDuration)
+	return display.statusLocked(ctx)
+}
+
+// expireNotice repaints the footer once a rejection notice has lapsed.
+func (display *desktopDisplay) expireNotice(ctx context.Context) error {
+	display.mu.Lock()
+	defer display.mu.Unlock()
+	if display.notice == "" || time.Now().Before(display.noticeUntil) {
+		return nil
+	}
+	display.notice = ""
+	return display.statusLocked(ctx)
 }
 
 func (display *desktopDisplay) setClient(client interface{ State() liveclient.State }) {
@@ -150,6 +175,9 @@ func (display *desktopDisplay) footerLocked() ([]byte, error) {
 		state := display.client.State()
 		if state.Controller {
 			label = "Control | Ctrl+] detach | Ctrl+V Ctrl+] sends literal"
+			if display.notice != "" {
+				label = display.notice
+			}
 		}
 		if !state.Ready || display.controlPending {
 			label = "Syncing | Input ignored | Ctrl+] detach"

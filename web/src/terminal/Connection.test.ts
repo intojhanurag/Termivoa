@@ -288,6 +288,70 @@ describe('Connection', () => {
     expect(socket().sent.at(-1)).toMatchObject({ type: 'screen.resync', payload: { reason: 'base-mismatch' } });
   });
 
+  it('returns to observer when the broker answers Take control with resync_required', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.takeControl();
+    expect(connection.getStatus().control).toBe('acquiring');
+    socket().receive('error', { code: 'resync_required', message: 'apply the current snapshot before taking control' });
+
+    expect(socket().sent.at(-1)).toMatchObject({ type: 'screen.resync', payload: { reason: 'invalid-state' } });
+    expect(connection.getStatus().control).toBe('observer');
+    snapshot(socket(), '2');
+    await vi.advanceTimersByTimeAsync(0);
+    connection.takeControl();
+    expect(socket().sent.at(-1)).toMatchObject({ type: 'control.acquire' });
+  });
+
+  it('keeps the exit screen when a late request reports session_lost after the shell exited', async () => {
+    const { connection, painted, socket } = harness();
+    await attachLive(socket());
+    socket().receive('session.state', { state: 'exited', exitCode: 3 });
+    socket().receive('error', { code: 'session_lost', message: 'session is gone' });
+
+    expect(connection.getStatus()).toMatchObject({ sessionState: 'exited', exitCode: 3 });
+    expect(connection.getStatus().link).not.toBe('lost');
+    expect(painted).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it('still reports a lost session when the shell had not exited', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    socket().receive('error', { code: 'session_lost', message: 'session is gone' });
+    expect(connection.getStatus().link).toBe('lost');
+  });
+
+  it('paints and acknowledges a snapshot when animation frames never run', async () => {
+    const painted: Array<ScreenSnapshot | ScreenPatch> = [];
+    const connection = new Connection({
+      url: 'wss://host.invalid/api/v1/ws',
+      sessionId,
+      generation,
+      display: {
+        paintSnapshot: async (value) => { painted.push(value); },
+        applyPatch: async (value) => { painted.push(value); },
+      },
+      createSocket: (url) => new FakeSocket(url) as unknown as WebSocket,
+      requestFrame: () => undefined,
+    });
+    connection.start();
+    const socket = FakeSocket.all.at(-1) as FakeSocket;
+    socket.open();
+    welcome(socket);
+    snapshot(socket, '1');
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(painted).toHaveLength(1);
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'snapshot.applied', payload: { revision: '1' } });
+    expect(connection.getStatus().link).toBe('live');
+
+    patch(socket, '1', '2', 0, 'a');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(painted).toHaveLength(2);
+  });
+
   it('bounds controller resize and ignores observers', async () => {
     const { connection, socket } = harness();
     await attachLive(socket());
