@@ -73,15 +73,30 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 		target.User = current.Username
 	}
 	tailscale, _ := exec.LookPath("tailscale")
-	if app := "/Applications/Tailscale.app/Contents/MacOS/Tailscale"; tailscale == "" && runtime.GOOS == "darwin" {
-		if _, err := os.Stat(app); err == nil {
-			tailscale = app
-		}
+	if tailscale == "" {
+		tailscale = installedTailscale(runtime.GOOS, os.Getenv)
 	}
 	return lifecycleEnv{
 		host: target, paths: paths, runner: lifecycle.ExecRunner{},
 		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale,
 	}, nil
+}
+
+// installedTailscale is the Tailscale CLI its installer puts off PATH, or "".
+func installedTailscale(goos string, getenv func(string) string) string {
+	var path string
+	switch goos {
+	case "darwin":
+		path = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+	case "windows":
+		if programFiles := getenv("ProgramFiles"); filepath.IsAbs(programFiles) {
+			path = filepath.Join(programFiles, "Tailscale", "tailscale.exe")
+		}
+	}
+	if info, err := os.Stat(path); path == "" || err != nil || info.IsDir() {
+		return ""
+	}
+	return path
 }
 
 type hostReport struct {
@@ -139,6 +154,8 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 			fmt.Fprintf(output, "  startup %s: registered for this pterm\n", status.Service.Name)
 		case status.Registered:
 			problem("startup %s: registered, but not for this pterm (%s)", status.Service.Name, status.File)
+		case status.Disabled:
+			problem("startup %s: registered, but disabled", status.Service.Name)
 		default:
 			problem("startup %s: not registered", status.Service.Name)
 		}
@@ -645,6 +662,9 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	} else {
 		fmt.Fprintln(output, "--delete-data permanently deletes paired devices, projects, settings and logs.")
 	}
+	if env.host.OS == "windows" && len(plan.Steps) > 0 {
+		fmt.Fprintln(output, "Then it stops the gateway and, if it has no active sessions, the broker.")
+	}
 	fmt.Fprintln(output, "The application itself stays: move Phone Terminal.app to the Trash, or remove it in Windows Settings > Apps.")
 
 	if plan.ChangesRunningBroker || len(data) > 0 {
@@ -653,7 +673,7 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 		}
 	}
 	refuseDelete := fmt.Errorf("refusing to delete data: a broker is running that removing startup registration does not stop; finish its sessions, %s, then rerun `pterm uninstall --delete-data`", stopBrokerHint(env.paths.RuntimeDir))
-	if len(data) > 0 && report.broker && !report.statuses[0].Registered {
+	if len(data) > 0 && report.broker && !report.statuses[0].Registered && !report.statuses[0].Disabled {
 		return refuseDelete
 	}
 	if *options["dry-run"] || len(plan.Steps) == 0 {
@@ -668,8 +688,16 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	// UninstallPlan puts data deletion last. Delete only once no broker
 	// runs: registration does not prove the live broker was the one stopped.
 	unregister := len(plan.Steps) - len(data)
-	if err := lifecycle.Apply(ctx, env.runner, lifecycle.Plan{Steps: plan.Steps[:unregister]}, output); err != nil || len(data) == 0 {
+	if err := lifecycle.Apply(ctx, env.runner, lifecycle.Plan{Steps: plan.Steps[:unregister]}, output); err != nil {
 		return err
+	}
+	if env.host.OS == "windows" {
+		if err := stopUnregistered(ctx, env, report, output); err != nil {
+			return err
+		}
+	}
+	if len(data) == 0 {
+		return nil
 	}
 	stopped := func() error {
 		if _, running, _ := activeSessions(ctx, env.paths); running {
@@ -681,6 +709,35 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 		return err
 	}
 	return lifecycle.Apply(ctx, env.runner, lifecycle.Plan{Steps: plan.Steps[unregister:]}, output)
+}
+
+// stopUnregistered stops what the removed Windows tasks started: schtasks
+// /End ends the headless console host, which need not end pterm. The broker is
+// only stopped when uninstall already checked it had no active sessions, and
+// it is checked again because the gateway ran until now.
+func stopUnregistered(ctx context.Context, env lifecycleEnv, report hostReport, output io.Writer) error {
+	broker, gateway := report.statuses[0], report.statuses[1]
+	if gateway.Registered || gateway.Disabled {
+		fmt.Fprintln(output, "  stop the gateway")
+		if _, err := stopGateway(ctx, env.paths.RuntimeDir); err != nil {
+			return err
+		}
+	}
+	if !broker.Registered && !broker.Disabled {
+		return nil
+	}
+	count, running, err := activeSessions(ctx, env.paths)
+	switch {
+	case !running:
+		return nil
+	case err != nil:
+		return fmt.Errorf("the broker keeps running: %w", err)
+	case count > 0:
+		return fmt.Errorf("the broker keeps running: it has %d active session(s) now; finish them, then run `pterm shutdown`", count)
+	}
+	fmt.Fprintln(output, "  shut down the broker")
+	_, err = shutdownBroker(ctx, env.paths.RuntimeDir)
+	return err
 }
 
 func runLaunchCommand(ctx context.Context, args []string, output io.Writer) error {

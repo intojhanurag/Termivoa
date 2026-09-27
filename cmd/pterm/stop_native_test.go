@@ -5,7 +5,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -122,5 +124,79 @@ func TestSupervisorNotePrintsUnloadCommandOnlyForRegisteredServices(t *testing.T
 	}
 	for _, call := range runner.mutations() {
 		t.Fatalf("supervisor note changed startup state: %s", call)
+	}
+}
+
+// schtasksFake models registered, enabled Windows tasks. /End would only end
+// the headless console host, so it leaves the processes running.
+type schtasksFake struct{ calls []string }
+
+func (fake *schtasksFake) Run(_ context.Context, name string, args ...string) (string, error) {
+	if args[0] != "/Query" {
+		fake.calls = append(fake.calls, name+" "+strings.Join(args, " "))
+	}
+	return "<Settings><Enabled>true</Enabled></Settings>", nil
+}
+
+func TestWindowsUninstallStopsProcessesOnlyWithoutSessions(t *testing.T) {
+	runtimeDir, client := startCommandBroker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fake := &schtasksFake{}
+	restore, restoreWait := loadLifecycleEnv, waitTimeout
+	t.Cleanup(func() { loadLifecycleEnv, waitTimeout = restore, restoreWait })
+	waitTimeout = 5 * time.Second
+	loadLifecycleEnv = func() (lifecycleEnv, error) {
+		return lifecycleEnv{runner: fake, gateway: "http://" + freeLoopbackAddress(t),
+			paths: host.Paths{DataDir: filepath.Join(filepath.Dir(runtimeDir), "data"), RuntimeDir: runtimeDir},
+			host: lifecycle.Host{OS: "windows", User: `PC\ada`, Executable: `C:\Users\ada\AppData\Local\Programs\Termivoa\pterm.exe`,
+				DataDir: `C:\Users\ada\AppData\Local\Phone Terminal`},
+		}, nil
+	}
+	gatewayReady, gatewayDone := make(chan struct{}), make(chan error, 1)
+	go func() {
+		gatewayDone <- runGateway(ctx, gateway.Config{
+			RuntimeDir: runtimeDir, HostBuild: buildID, ListenAddress: "127.0.0.1:0",
+			Profile: host.DevelopmentProfile, Ready: func(gateway.ReadyState) { close(gatewayReady) },
+		})
+	}()
+	<-gatewayReady
+	operationID, _ := cli.NewOperationID()
+	created, err := client.Create(ctx, operationID, commandProjectID, commandProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	err = runWithInput(ctx, []string{"uninstall", "--yes"}, nil, &output)
+	if err == nil || !strings.Contains(err.Error(), "1 active session(s)") || len(fake.calls) != 0 {
+		t.Fatalf("uninstall with a live session = %v, ran %q", err, fake.calls)
+	}
+
+	ref := localclient.SessionRef{ID: created.Session.ID, Generation: created.Session.Generation}
+	operationID, _ = cli.NewOperationID()
+	if _, err := client.Terminate(ctx, ref, operationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitFor(ctx, func() error {
+		if count, _, err := activeSessions(ctx, host.Paths{RuntimeDir: runtimeDir}); err != nil || count != 0 {
+			return errors.Join(err, errors.New("session still active"))
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close()
+	if err := runWithInput(ctx, []string{"uninstall", "--yes"}, nil, &output); err != nil {
+		t.Fatalf("uninstall = %v\n%s", err, output.String())
+	}
+	if !strings.Contains(output.String(), "  shut down the broker") || len(fake.calls) != 4 {
+		t.Fatalf("uninstall ran %q:\n%s", fake.calls, output.String())
+	}
+	if err := <-gatewayDone; err != nil {
+		t.Fatalf("gateway exit: %v", err)
+	}
+	if _, _, err := ipc.ValidateBrokerEndpoint(ctx, runtimeDir, protocol.CLI, buildID); err == nil {
+		t.Fatal("broker still answers after uninstall")
 	}
 }

@@ -186,8 +186,10 @@ func (h Host) plist(service Service) string {
 }
 
 // taskXML runs pterm through a headless console host so no console window
-// appears at logon. Restart-on-failure retries every minute; the gateway waits
-// briefly at logon because it exits when the broker is not yet reachable.
+// appears at logon, at normal priority (5) because sessions inherit it: the
+// default 7 is below normal. The gateway starts a little later and itself
+// waits for the broker. pterm writes its own log because the headless console
+// discards output.
 func (h Host) taskXML(service Service) string {
 	user := escape(h.User)
 	delay := ""
@@ -229,7 +231,7 @@ func (h Host) taskXML(service Service) string {
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <Priority>7</Priority>
+    <Priority>5</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
       <Count>999</Count>
@@ -275,7 +277,8 @@ type Status struct {
 	File        string
 	FileExists  bool
 	FileMatches bool
-	Registered  bool
+	Registered  bool // registered and enabled
+	Disabled    bool // registered, but its Windows task is disabled
 }
 
 // Runner executes one external command with an argument array.
@@ -290,10 +293,11 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) (string,
 	return string(output), err
 }
 
-// queryCommand is read-only: launchctl print / schtasks /Query.
+// queryCommand is read-only: launchctl print / schtasks /Query. The Windows
+// task XML shows whether the task is disabled; a disabled task still exists.
 func (h Host) queryCommand(service Service) []string {
 	if h.OS == "windows" {
-		return []string{"schtasks", "/Query", "/TN", h.TaskName(service)}
+		return []string{"schtasks", "/Query", "/TN", h.TaskName(service), "/XML"}
 	}
 	return []string{"launchctl", "print", h.domain() + "/" + service.Label}
 }
@@ -336,8 +340,12 @@ func (h Host) Inspect(ctx context.Context, runner Runner) ([]Status, error) {
 			return nil, fmt.Errorf("lifecycle: read %s: %w", status.File, err)
 		}
 		query := h.queryCommand(service)
-		_, err = runner.Run(ctx, query[0], query[1:]...)
-		status.Registered = err == nil
+		output, err := runner.Run(ctx, query[0], query[1:]...)
+		// Dropping NULs also reads UTF-16 output. Only the task-level and the
+		// trigger's <Enabled> exist; either false means it never starts.
+		status.Disabled = err == nil && h.OS == "windows" &&
+			strings.Contains(strings.ReplaceAll(output, "\x00", ""), "<Enabled>false</Enabled>")
+		status.Registered = err == nil && !status.Disabled
 		statuses = append(statuses, status)
 	}
 	return statuses, nil
@@ -384,9 +392,10 @@ func (h Host) InstallPlan(statuses []Status) (Plan, error) {
 				return Plan{}, err
 			}
 			plan.Steps = append(plan.Steps, Step{Write: status.File, Data: data, Text: text})
-			if status.Registered && service.Mode == BrokerMode {
-				plan.ChangesRunningBroker = true
-			}
+		}
+		// Recreating a disabled task may end the instance it still runs.
+		if (status.Registered && !status.FileMatches || status.Disabled) && service.Mode == BrokerMode {
+			plan.ChangesRunningBroker = true
 		}
 		if h.OS == "windows" {
 			// /Create /F replaces the definition; /Run is ignored for a running
@@ -418,7 +427,7 @@ func (h Host) UninstallPlan(statuses []Status, deleteData []string) (Plan, error
 	var plan Plan
 	for index := len(statuses) - 1; index >= 0; index-- {
 		status := statuses[index]
-		if status.Registered {
+		if status.Registered || status.Disabled {
 			if status.Service.Mode == BrokerMode {
 				plan.ChangesRunningBroker = true
 			}
