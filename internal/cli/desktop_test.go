@@ -491,3 +491,31 @@ func TestDesktopClosedMessageReportsSessionOutcome(t *testing.T) {
 		t.Fatalf("no connection: message = %q", got)
 	}
 }
+
+func TestConsoleKeyDetach(t *testing.T) {
+	t.Parallel()
+	const leftCtrl, rightCtrl, rightAlt, shift = 0x08, 0x04, 0x01, 0x10
+	for _, test := range []struct {
+		name       string
+		down       bool
+		virtualKey uint16
+		char       rune
+		state      uint32
+		want       bool
+	}{
+		{"control character", true, 0xdd, 0x1d, leftCtrl, true},
+		{"control character without key", true, 0, 0x1d, 0, true},
+		{"virtual key only", true, 0xdd, 0, rightCtrl, true},
+		{"key release", false, 0xdd, 0x1d, leftCtrl, false},
+		{"plain bracket", true, 0xdd, ']', 0, false},
+		{"bracket without ctrl", true, 0xdd, 0, 0, false},
+		{"altgr", true, 0xdd, 0, leftCtrl | rightAlt, false},
+		{"ctrl shift", true, 0xdd, 0, leftCtrl | shift, false},
+		{"other ctrl key", true, 'A', 0x01, leftCtrl, false},
+		{"escape", true, 0x1b, 0x1b, 0, false},
+	} {
+		if got := consoleKeyDetach(test.down, test.virtualKey, test.char, test.state); got != test.want {
+			t.Errorf("%s: consoleKeyDetach = %v, want %v", test.name, got, test.want)
+		}
+	}
+}

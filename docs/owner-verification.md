@@ -152,9 +152,10 @@ but billing blocked it.
       `Get-ChildItem env:`. `JAVA_HOME` and the user `Path` folder are there;
       `WT_SESSION`, `TERM_PROGRAM`, `VSCODE_*` and `CLAUDE_CODE_*` are not.
       Also run `go test ./internal/ptyhost/ -run HostEnvironment`.
-- [ ] Desktop attach: console modes are restored after exit. A Ctrl+] pressed
-      exactly at the startup handoff may be lost on Windows (known limit), so
-      press it again.
+- [ ] Desktop attach: console modes are restored after exit.
+- [ ] Desktop attach: press Ctrl+] right as the first screen appears (the
+      startup handoff). It detaches on the first press, and the session keeps
+      running.
 - [ ] Run the unsigned installer: per-user location, PATH opt-in (off by
       default), Start-menu shortcut, `pterm setup --apply --yes`.
 - [ ] Scheduled Tasks start at logon and restart on failure. `conhost.exe

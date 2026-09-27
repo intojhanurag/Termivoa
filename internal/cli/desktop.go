@@ -17,6 +17,33 @@ import (
 
 const desktopIOTimeout = 5 * time.Second
 
+// desktopDetachByte is Ctrl+], the byte the startup handoff drains scan for.
+const desktopDetachByte = 0x1d
+
+// Windows console KEY_EVENT values, defined here so the scan is tested on
+// every platform.
+const (
+	consoleVKRightBracket = 0xdd          // VK_OEM_6: ']' on a US layout.
+	consoleCtrlPressed    = 0x0008 | 0x04 // LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED
+	consoleAltShift       = 0x0002 | 0x01 | 0x10
+)
+
+// consoleKeyDetach reports whether one Windows console key record is Ctrl+].
+// The console normally puts 0x1d in the character field, in both VT and
+// legacy input modes. If a console leaves that field empty, the virtual key
+// and Ctrl state are checked. Alt excludes AltGr (reported as Ctrl+Alt), and
+// Shift matches the live decoder, which detaches only on a bare Ctrl.
+func consoleKeyDetach(down bool, virtualKey uint16, char rune, state uint32) bool {
+	if !down {
+		return false
+	}
+	if char == desktopDetachByte {
+		return true
+	}
+	return char == 0 && virtualKey == consoleVKRightBracket &&
+		state&consoleCtrlPressed != 0 && state&consoleAltShift == 0
+}
+
 // DesktopConfig attaches to an already resolved session generation. Input and
 // Output remain owned by the caller; only duplicate descriptors are closed.
 type DesktopConfig struct {

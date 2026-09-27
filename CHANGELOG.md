@@ -73,6 +73,11 @@ No version has been released. Development history and evidence are in
 - Unsigned macOS app and DMG build scripts and a Windows per-user installer
   script, with separate owner-only signing scripts.
 
+### Fixed
+
+- `pterm attach` on Windows: a Ctrl+] pressed during the startup handoff now
+  detaches, as on macOS and Linux. Before, it was lost.
+
 ### Security
 
 - Gateway bound to loopback; phone access only through private Tailscale Serve

@@ -25,7 +25,7 @@ func drainDesktopDetach(handle terminalFileHandle) (bool, error) {
 		if err != nil {
 			return detach, err
 		}
-		detach = detach || bytes.IndexByte(data[:n], 0x1d) >= 0
+		detach = detach || bytes.IndexByte(data[:n], desktopDetachByte) >= 0
 	}
 	return detach, nil
 }
