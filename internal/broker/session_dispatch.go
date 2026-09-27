@@ -192,8 +192,10 @@ func (stream *sessionConnection) attach(ctx context.Context, request protocol.En
 	}
 	stream.session, stream.sessionID, stream.generation = session, *request.SessionID, *request.Generation
 	// Retirement, a stalled viewer, or revocation must also interrupt a peer
-	// blocked in ReadFrame. This goroutine ends with the viewer on disconnect.
-	go func() { <-stream.viewer.Done(); _ = stream.writer.conn.Close() }()
+	// blocked in ReadFrame. Wait for the stop signal, not Done: a superseded
+	// frame may still hold the writer until its deadline. This goroutine ends
+	// with the viewer on disconnect.
+	go func() { <-stream.viewer.ctx.Done(); _ = stream.writer.conn.Close() }()
 	return nil
 }
 

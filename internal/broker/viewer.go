@@ -79,7 +79,7 @@ type ViewerSubscription struct {
 	cancel       context.CancelFunc
 
 	mu                 sync.Mutex
-	deliveryCancel     context.CancelFunc
+	deliveryCancel     context.CancelCauseFunc
 	deliveryEpochFloor uint64
 	err                error
 	budgetUsed         int
@@ -258,12 +258,15 @@ func (subscription *ViewerSubscription) run() {
 			continue
 		}
 
-		deliveryContext, cancel := context.WithTimeout(subscription.ctx, subscription.timeout)
+		timedContext, cancelTimeout := context.WithTimeout(subscription.ctx, subscription.timeout)
+		deliveryContext, cancel := context.WithCancelCause(timedContext)
 		if !subscription.setDeliveryCancel(plan.epoch, cancel) {
+			cancelTimeout()
 			continue
 		}
 		kind, snapshotID, clippedRows, deliveryErr := subscription.stream(deliveryContext, plan)
-		cancel()
+		cancel(nil)
+		cancelTimeout()
 		subscription.clearDeliveryCancel()
 
 		if errors.Is(deliveryErr, errViewerSnapshotRestart) {
@@ -572,11 +575,11 @@ func (subscription *ViewerSubscription) releaseBudget(size int) {
 	subscription.mu.Unlock()
 }
 
-func (subscription *ViewerSubscription) setDeliveryCancel(epoch uint64, cancel context.CancelFunc) bool {
+func (subscription *ViewerSubscription) setDeliveryCancel(epoch uint64, cancel context.CancelCauseFunc) bool {
 	subscription.mu.Lock()
 	if epoch < subscription.deliveryEpochFloor {
 		subscription.mu.Unlock()
-		cancel()
+		cancel(errViewerDeliveryStale)
 		return false
 	}
 	subscription.deliveryCancel = cancel
@@ -601,7 +604,8 @@ func (subscription *ViewerSubscription) invalidateDeliveriesBefore(epoch uint64)
 	subscription.deliveryCancel = nil
 	subscription.mu.Unlock()
 	if cancel != nil {
-		cancel()
+		// The stale cause lets a frame already on the wire finish intact.
+		cancel(errViewerDeliveryStale)
 	}
 }
 
@@ -612,7 +616,7 @@ func (subscription *ViewerSubscription) stop(err error) {
 		cancelDelivery := subscription.deliveryCancel
 		subscription.mu.Unlock()
 		if cancelDelivery != nil {
-			cancelDelivery()
+			cancelDelivery(nil)
 		}
 		subscription.cancel()
 	})
