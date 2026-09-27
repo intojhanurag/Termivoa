@@ -68,3 +68,30 @@ describe('request timeout', () => {
     expect((error as ApiError).code).toBe('network');
   });
 });
+
+describe('push API', () => {
+  it('reads the key, then posts subscribe, unsubscribe and test with the fixed header', async () => {
+    const fetch = vi.fn(async (path: string) => (path === '/api/v1/push'
+      ? json(200, { publicKey: 'B'.repeat(87) })
+      : path === '/api/v1/push/test' ? json(200, { sent: 1 }) : new Response(null, { status: 204 })));
+    vi.stubGlobal('fetch', fetch);
+    const endpoint = 'https://push.example/abc';
+
+    await expect(api.pushConfig()).resolves.toEqual({ publicKey: 'B'.repeat(87) });
+    await expect(api.pushSubscribe({ endpoint, keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } })).resolves.toBeUndefined();
+    await expect(api.pushUnsubscribe({ endpoint })).resolves.toBeUndefined();
+    await expect(api.pushTest()).resolves.toEqual({ sent: 1 });
+
+    const calls = fetch.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls.map(([path, init]) => `${init.method} ${path}`)).toEqual([
+      'GET /api/v1/push',
+      'POST /api/v1/push/subscribe',
+      'POST /api/v1/push/unsubscribe',
+      'POST /api/v1/push/test',
+    ]);
+    expect(calls[1]?.[1].headers).toEqual({ 'Content-Type': 'application/json', 'X-Pterm-Request': '1' });
+    expect(JSON.parse(calls[1]?.[1].body as string)).toEqual({ endpoint, keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } });
+    expect(JSON.parse(calls[2]?.[1].body as string)).toEqual({ endpoint });
+    expect(calls[3]?.[1].body).toBe('{}');
+  });
+});

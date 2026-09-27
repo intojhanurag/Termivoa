@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
+import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { hasNewOutput, readViewed } from './activity';
 import type { SessionList } from './hooks';
 import { NewSessionHelp } from './NewSession';
@@ -87,6 +88,56 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
   );
 }
 
+function BellGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M4.5 12.5V8a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5H3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M7.3 15.8a1.8 1.8 0 0 0 3.4 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** One-time offer to turn on push. Hidden for good after "Not now" or once push is on. */
+export function PushCard({ onClose, onFailure }: {
+  readonly onClose: () => void;
+  readonly onFailure: (error: unknown) => string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string>();
+
+  function turnOn() {
+    setBusy(true);
+    setNote(undefined);
+    // enablePush asks for permission before its first await, inside this tap (iOS needs that).
+    enablePush().then((result) => {
+      if (result.ok) {
+        onClose();
+        return;
+      }
+      setNote(result.message);
+      setBusy(false);
+    }, (failure: unknown) => {
+      setNote(onFailure(failure));
+      setBusy(false);
+    });
+  }
+
+  return (
+    <section className="card push-card" aria-labelledby="push-card-title">
+      <span className="tile accent" aria-hidden="true"><BellGlyph /></span>
+      <div className="push-card-body">
+        <h2 id="push-card-title" className="push-card-title">Get a buzz when an agent needs you</h2>
+        <p className="hint-text">Only the session name and status. Never terminal text.</p>
+        {note !== undefined && <p role="alert" className="error hint-text">{note}</p>}
+        <div className="push-card-actions">
+          <button type="button" className="primary" disabled={busy} onClick={turnOn}>Turn on</button>
+          <button type="button" disabled={busy} onClick={() => { dismissPushCard(); onClose(); }}>Not now</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function Sessions({ settings, list, message, onOpen, onNew, onSettings, onRefreshSettings, onFailure, onUpdate }: {
   readonly settings: HTTPSettingsResponse;
   readonly list: SessionList;
@@ -101,12 +152,19 @@ export function Sessions({ settings, list, message, onOpen, onNew, onSettings, o
 }) {
   const [error, setError] = useState<string | undefined>(message);
   const [busy, setBusy] = useState(false);
+  const [offerPush, setOfferPush] = useState(false);
   const canCreate = settings.projects.length > 0 && settings.shellProfiles.length > 0;
   const projectName = new Map(settings.projects.map((item) => [item.id, item.name]));
   const shellName = new Map(settings.shellProfiles.map((item) => [item.id, item.name]));
   const viewed = readViewed();
   const now = Date.now();
   const { sessions, reachable } = list;
+
+  useEffect(() => {
+    let live = true;
+    void shouldOfferPush().then((offer) => { if (live) setOfferPush(offer); });
+    return () => { live = false; };
+  }, []);
 
   async function refresh() {
     setBusy(true);
@@ -157,6 +215,8 @@ export function Sessions({ settings, list, message, onOpen, onNew, onSettings, o
           <button type="button" disabled={busy} onClick={() => { void refresh(); }}>Check again</button>
         </section>
       )}
+
+      {offerPush && <PushCard onClose={() => setOfferPush(false)} onFailure={onFailure} />}
 
       <section aria-label="Your sessions" className="list-section">
         {sessions === undefined && <p role="status" className="muted">Loading…</p>}

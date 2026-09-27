@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import type { SessionList } from './hooks';
 import { NewSession } from './NewSession';
-import { age, controllerText, SessionRow, Sessions } from './Sessions';
+import { age, controllerText, PushCard, SessionRow, Sessions } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -149,5 +149,24 @@ describe('New session', () => {
     expect(html).toContain('start session</button>');
     expect(html).toContain('save as preset');
     expect(html).not.toContain('Launch');
+  });
+});
+
+describe('PushCard', () => {
+  it('offers push with a short privacy note, Turn on and Not now', () => {
+    const html = renderToStaticMarkup(<PushCard onClose={() => undefined} onFailure={() => ''} />);
+    expect(html).toContain('Get a buzz when an agent needs you');
+    expect(html).toContain('Only the session name and status. Never terminal text.');
+    expect(html).toContain('<button type="button" class="primary">Turn on</button>');
+    expect(html).toContain('<button type="button">Not now</button>');
+    expect(html).toContain('<svg');
+  });
+
+  it('is not in the first render of Sessions; it appears only after push support is checked', () => {
+    const html = renderToStaticMarkup(
+      <Sessions settings={settings} list={list} onOpen={() => undefined} onNew={() => undefined} onSettings={() => undefined}
+        onRefreshSettings={async () => undefined} onFailure={() => ''} />,
+    );
+    expect(html).not.toContain('Get a buzz');
   });
 });

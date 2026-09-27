@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
 import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
+import { disablePush, enablePush, pushEnabled, pushSupport } from '../push';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 
 export type DeviceNameResult =
@@ -20,6 +21,69 @@ export async function saveDeviceName(draft: string, current: string): Promise<De
 type NameState =
   | { readonly kind: 'idle' | 'saving' | 'saved' }
   | { readonly kind: 'error'; readonly message: string };
+
+type Note = { readonly text: string; readonly error: boolean };
+
+/** Push on/off for this phone, plus a test send. */
+export function NotificationSettings({ onFailure }: { readonly onFailure: (error: unknown) => string }) {
+  const [support] = useState(pushSupport);
+  // undefined while the browser is asked whether this phone is subscribed.
+  const [enabled, setEnabled] = useState<boolean>();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<Note>();
+
+  useEffect(() => {
+    if (support !== 'available') return undefined;
+    let live = true;
+    pushEnabled().catch(() => false).then((value) => { if (live) setEnabled(value); });
+    return () => { live = false; };
+  }, [support]);
+
+  function run(work: Promise<void>) {
+    setBusy(true);
+    setNote(undefined);
+    work.catch((failure: unknown) => setNote({ text: onFailure(failure), error: true })).finally(() => setBusy(false));
+  }
+
+  // Called straight from the tap: enablePush asks for permission before any await (iOS needs that).
+  const toggle = () => run(enabled === true
+    ? disablePush().then(() => setEnabled(false))
+    : enablePush().then((result) => {
+      if (result.ok) setEnabled(true);
+      else setNote({ text: result.message, error: true });
+    }));
+
+  const sendTest = () => run(api.pushTest().then(({ sent }) => setNote(sent > 0
+    ? { text: 'Sent', error: false }
+    : { text: 'No subscription on this phone', error: true })));
+
+  return (
+    <section className="group stack" aria-labelledby="push-heading">
+      <h2 id="push-heading" className="caps">Notifications</h2>
+      {support === 'available' ? (
+        <>
+          <div className="spread">
+            <span id="push-label">Buzz when an agent needs you</span>
+            <button
+              type="button"
+              role="switch"
+              className="switch"
+              aria-checked={enabled === true}
+              aria-labelledby="push-label"
+              disabled={enabled === undefined || busy}
+              onClick={toggle}
+            ><span className="switch-track" aria-hidden="true" /></button>
+          </div>
+          <p className="hint-text">Only the session name and status. Never terminal text.</p>
+          <button type="button" disabled={enabled !== true || busy} onClick={sendTest}>Send a test notification</button>
+          <p role="status" className={note?.error === true ? 'error field-note' : 'muted field-note'}>{note?.text ?? ''}</p>
+        </>
+      ) : (
+        <p className="muted">{support === 'needs-home-screen' ? 'Add to Home Screen to get notifications' : 'Not supported in this browser'}</p>
+      )}
+    </section>
+  );
+}
 
 export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout }: {
   readonly settings: HTTPSettingsResponse;
@@ -111,6 +175,8 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
             onClick={() => onFontSize(fontSize + 1)}>A+</button>
         </div>
       </section>
+
+      <NotificationSettings onFailure={onFailure} />
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPSettingsResponse } from '../generated/protocol';
-import { saveDeviceName, Settings } from './Settings';
+import { NotificationSettings, saveDeviceName, Settings } from './Settings';
 
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },
@@ -64,5 +64,34 @@ describe('Settings device name field', () => {
     expect(html).toContain('aria-describedby="device-name-help device-name-status"');
     // Unchanged name: nothing to save yet.
     expect(html).toMatch(/<button type="submit" class="primary" disabled="">Save name<\/button>/u);
+  });
+});
+
+describe('Settings notifications', () => {
+  const render = () => renderToStaticMarkup(<NotificationSettings onFailure={() => ''} />);
+  const stubBrowser = (userAgent: string, standalone = false) => {
+    vi.stubGlobal('navigator', { userAgent, maxTouchPoints: 5, standalone, serviceWorker: {} });
+    vi.stubGlobal('PushManager', function PushManager() {});
+    vi.stubGlobal('Notification', { permission: 'default' });
+  };
+
+  it('shows an accessible switch and a test button that waits until push is on', () => {
+    stubBrowser('Mozilla/5.0 (Linux; Android 14) Chrome/130.0 Mobile');
+    const html = render();
+    expect(html).toContain('<h2 id="push-heading" class="caps">Notifications</h2>');
+    expect(html).toMatch(/<button type="button" role="switch" class="switch" aria-checked="false" aria-labelledby="push-label" disabled="">/u);
+    expect(html).toContain('<button type="button" disabled="">Send a test notification</button>');
+  });
+
+  it('tells an iPhone Safari tab to add the app to the Home Screen', () => {
+    stubBrowser('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1');
+    const html = render();
+    expect(html).toContain('Add to Home Screen to get notifications');
+    expect(html).not.toContain('role="switch"');
+  });
+
+  it('says when the browser has no push', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (X11; Linux) Firefox/130.0', maxTouchPoints: 0 });
+    expect(render()).toContain('Not supported in this browser');
   });
 });
