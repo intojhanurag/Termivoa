@@ -1,2 +1,4 @@
 _*.html
 README.md
+dist
+.astro
