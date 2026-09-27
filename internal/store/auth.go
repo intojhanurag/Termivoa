@@ -88,6 +88,11 @@ type PairingLimits struct {
 	// toward Devices only while it holds a credential that is unrevoked,
 	// before its absolute expiry, and used within this window.
 	CredentialIdle time.Duration
+	// PendingRevoked lists device IDs the caller has already revoked in
+	// memory (fail-closed for auth) but could not yet persist to SQLite. The
+	// cap count excludes them so a durability failure elsewhere cannot block
+	// a real pairing by holding a phantom "active" slot.
+	PendingRevoked []string
 }
 
 // CreatePairingGrant prunes expired grants and inserts a new one only while
@@ -300,7 +305,7 @@ func (store *Store) CompletePendingPairing(
 	if err := validateBrowserSession(session); err != nil || session.DeviceID != device.ID {
 		return Device{}, false, errors.New("store: invalid browser session")
 	}
-	if err := reserveDeviceCapacity(ctx, transaction, limits.Devices, when, when-limits.CredentialIdle.Milliseconds()); err != nil {
+	if err := reserveDeviceCapacity(ctx, transaction, limits.Devices, when, when-limits.CredentialIdle.Milliseconds(), limits.PendingRevoked); err != nil {
 		return Device{}, false, err
 	}
 	if _, err := transaction.ExecContext(ctx, `INSERT INTO devices(id, label, created_at_ms, last_used_at_ms)
@@ -323,21 +328,37 @@ func (store *Store) CompletePendingPairing(
 }
 
 // liveDevices selects devices holding a usable credential at ?1 (now) with
-// last use after ?2 (now minus the inactivity lifetime). It mirrors the auth
-// lifetime check on the same persisted fields, so an expired-but-unrevoked
-// device is not live.
+// last use after ?2 (now minus the inactivity lifetime). It mirrors
+// BrowserLifetime.Check on the same persisted fields exactly: created_at_ms
+// and last_used_at_ms must not be after now (a clock rollback fails closed,
+// just as Check does), last use must be within the inactivity lifetime, and
+// the credential must be before its absolute expiry.
 const liveDevices = `SELECT device_id FROM browser_sessions
-	WHERE revoked_at_ms IS NULL AND expires_at_ms > ?1 AND last_used_at_ms > ?2`
+	WHERE revoked_at_ms IS NULL AND created_at_ms <= ?1 AND last_used_at_ms <= ?1
+	AND last_used_at_ms > ?2 AND expires_at_ms > ?1`
 
 // reserveDeviceCapacity counts only live, unrevoked devices toward the limit.
-// When the table is full it removes inactive devices (cascading their
-// credentials) until one row is free: revoked devices first by revocation
-// time, then expired devices by last use. Live devices are never pruned.
-func reserveDeviceCapacity(ctx context.Context, transaction *sql.Tx, limit int, now, usedAfter int64) error {
+// pendingRevoked additionally excludes device IDs the caller has already
+// revoked in memory but failed to persist, so a durability failure cannot
+// hold a phantom "active" slot against the cap. When the table is full it
+// removes inactive devices (cascading their credentials) until one row is
+// free: revoked devices first by revocation time, then expired devices by
+// last use. Live devices are never pruned.
+func reserveDeviceCapacity(ctx context.Context, transaction *sql.Tx, limit int, now, usedAfter int64, pendingRevoked []string) error {
+	liveFilter := "revoked_at_ms IS NULL AND id IN (" + liveDevices + ")"
+	args := []any{now, usedAfter}
+	if len(pendingRevoked) > 0 {
+		placeholders := make([]string, len(pendingRevoked))
+		for i, id := range pendingRevoked {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		liveFilter += " AND id NOT IN (" + strings.Join(placeholders, ",") + ")"
+	}
 	var total, active int
-	if err := transaction.QueryRowContext(ctx, `SELECT count(*),
-		count(*) FILTER (WHERE revoked_at_ms IS NULL AND id IN (`+liveDevices+`)) FROM devices`,
-		now, usedAfter).Scan(&total, &active); err != nil {
+	if err := transaction.QueryRowContext(ctx,
+		`SELECT count(*), count(*) FILTER (WHERE `+liveFilter+`) FROM devices`, args...,
+	).Scan(&total, &active); err != nil {
 		return fmt.Errorf("store: count devices: %w", err)
 	}
 	if active >= limit {

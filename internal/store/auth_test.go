@@ -323,6 +323,91 @@ func TestDeviceCapacityIgnoresExpiredDevices(t *testing.T) {
 	listed(later, 4, 5)
 }
 
+// TestDeviceCapacityAndStatusRejectClockRolledBackDevice covers a clock
+// rollback: a device created "in the future" relative to a rolled-back now
+// must not be treated as live, matching BrowserLifetime.Check, which fails
+// closed when CreatedAt or LastUsedAt is after now. Before the fix,
+// liveDevices ignored the created_at_ms/last_used_at_ms upper bounds, so the
+// device wrongly reported active and wrongly occupied the device cap.
+func TestDeviceCapacityAndStatusRejectClockRolledBackDevice(t *testing.T) {
+	testStore := openTestStore(t, filepath.Join(t.TempDir(), "rollback.sqlite"))
+	defer testStore.Close()
+	ctx := context.Background()
+	limits := PairingLimits{FailedPolls: 3, Devices: 1, CredentialIdle: 7 * 24 * time.Hour}
+	pair := func(number int, now time.Time) error {
+		grant := PairingGrant{ID: testUUID(number), Hash: testHash(fmt.Sprint("grant", number)), CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+		pending := testPending(number, now)
+		if err := testStore.CreatePairingGrant(ctx, grant, 8); err != nil {
+			return err
+		}
+		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+			return err
+		}
+		if err := testStore.ApprovePendingPairing(ctx, pending.ID, now); err != nil {
+			return err
+		}
+		device, session := testIssue(number, now)
+		_, _, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, limits)
+		return err
+	}
+	if err := pair(1, testTime); err != nil {
+		t.Fatal(err)
+	}
+	rolledBack := testTime.Add(-time.Hour)
+
+	devices, err := testStore.ListDevices(ctx, rolledBack, limits.CredentialIdle, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].Status != DeviceExpired {
+		t.Fatalf("clock-rolled-back device status = %+v, want expired", devices)
+	}
+
+	if err := pair(2, rolledBack); err != nil {
+		t.Fatalf("clock-rolled-back device wrongly counted toward the cap: %v", err)
+	}
+}
+
+// TestDeviceCapacityExcludesPendingRevoked covers a revocation that could not
+// be persisted to SQLite: the device row still looks live there, but the
+// caller (auth.Service) already knows it is revoked in memory.
+// PairingLimits.PendingRevoked must let the cap count exclude it so a real
+// pairing is not blocked by a phantom active device.
+func TestDeviceCapacityExcludesPendingRevoked(t *testing.T) {
+	testStore := openTestStore(t, filepath.Join(t.TempDir(), "pending-revoked.sqlite"))
+	defer testStore.Close()
+	ctx := context.Background()
+	base := PairingLimits{FailedPolls: 3, Devices: 1, CredentialIdle: 7 * 24 * time.Hour}
+	pair := func(number int, pendingRevoked []string) error {
+		grant := PairingGrant{ID: testUUID(number), Hash: testHash(fmt.Sprint("grant", number)), CreatedAt: testTime, ExpiresAt: testTime.Add(time.Minute)}
+		pending := testPending(number, testTime)
+		if err := testStore.CreatePairingGrant(ctx, grant, 8); err != nil {
+			return err
+		}
+		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+			return err
+		}
+		if err := testStore.ApprovePendingPairing(ctx, pending.ID, testTime); err != nil {
+			return err
+		}
+		device, session := testIssue(number, testTime)
+		limits := base
+		limits.PendingRevoked = pendingRevoked
+		_, _, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, limits)
+		return err
+	}
+	if err := pair(1, nil); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := testIssue(1, testTime)
+	if err := pair(2, nil); !errors.Is(err, ErrDeviceCapacity) {
+		t.Fatalf("cap not enforced without exclusion = %v", err)
+	}
+	if err := pair(3, []string{first.ID}); err != nil {
+		t.Fatalf("pending-revoked device still counted toward the cap: %v", err)
+	}
+}
+
 // TestListDevicesStatus checks every status ListDevices reports: active,
 // expired by absolute expiry despite recent use, expired by 7-day inactivity
 // despite a distant absolute expiry, and revoked (which overrides a live

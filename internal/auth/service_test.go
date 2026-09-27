@@ -307,6 +307,39 @@ func TestRevocationFailureStaysFailClosed(t *testing.T) {
 	}
 }
 
+// TestDevicesReportsPendingRevokedAfterFailedPersistence covers a revocation
+// whose SQLite write failed: the store row still looks active, but the
+// service keeps the revocation fail-closed in memory. Devices() must report
+// that device as revoked (and exclude it from the cap; see the store-level
+// TestDeviceCapacityExcludesPendingRevoked), not surface the stale SQLite
+// status.
+func TestDevicesReportsPendingRevokedAfterFailedPersistence(t *testing.T) {
+	service, _ := newTestService(t)
+	issued := pair(t, service, "Phone")
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := service.RevokeDevice(canceled, issued.DeviceID); err == nil || errors.Is(err, ErrDeviceMissing) {
+		t.Fatalf("failed durable revocation reported %v", err)
+	}
+	devices, err := service.Devices(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status store.DeviceStatus
+	found := false
+	for _, device := range devices {
+		if device.ID == issued.DeviceID {
+			status, found = device.Status, true
+		}
+	}
+	if !found {
+		t.Fatalf("device %s missing from Devices()", issued.DeviceID)
+	}
+	if status != store.DeviceRevoked {
+		t.Fatalf("device status = %q, want revoked (in-memory revocation not consulted)", status)
+	}
+}
+
 func TestRevocationRacingBindNeverLeavesAnAuthorizedStream(t *testing.T) {
 	service, _ := newTestService(t)
 	ctx := context.Background()

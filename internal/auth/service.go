@@ -233,13 +233,24 @@ func (service *Service) Poll(ctx context.Context, pendingID, pollSecret string) 
 	if err != nil {
 		return PollResult{}, err
 	}
+	service.mu.Lock()
+	pendingRevoked := make([]string, 0, len(service.revokedDevices))
+	for id := range service.revokedDevices {
+		pendingRevoked = append(pendingRevoked, id)
+	}
+	service.mu.Unlock()
 	device, approved, err := service.store.CompletePendingPairing(ctx, pendingID, pollHash, now,
 		store.Device{ID: deviceID, CreatedAt: now, LastUsedAt: now},
 		store.BrowserSession{
 			ID: sessionID, DeviceID: deviceID, CredentialHash: credentialHash,
 			CreatedAt: lifetime.CreatedAt, LastUsedAt: lifetime.LastUsedAt, ExpiresAt: lifetime.ExpiresAt,
 		},
-		store.PairingLimits{FailedPolls: MaxFailedPolls, Devices: MaxDevices, CredentialIdle: BrowserInactivityLifetime})
+		store.PairingLimits{
+			FailedPolls: MaxFailedPolls, Devices: MaxDevices, CredentialIdle: BrowserInactivityLifetime,
+			// A device revoked in memory but not yet durably persisted must not
+			// hold a phantom active slot against the cap.
+			PendingRevoked: pendingRevoked,
+		})
 	if err != nil {
 		return PollResult{}, mapStoreError(err)
 	}
@@ -411,8 +422,23 @@ func (service *Service) RevokeDevice(ctx context.Context, deviceID string) (int,
 	return len(targets), errors.Join(err, waitReleased(ctx, targets, service.cleanupTimeout))
 }
 
+// Devices reports SQLite-persisted device state, overridden with any
+// in-memory revocation that failed to persist: such a device still looks
+// live in SQLite, but it is fail-closed for auth and must be reported and
+// counted as revoked here too.
 func (service *Service) Devices(ctx context.Context) ([]store.Device, error) {
-	return service.store.ListDevices(ctx, service.clock(), BrowserInactivityLifetime, protocol.MaxAdminDevices)
+	devices, err := service.store.ListDevices(ctx, service.clock(), BrowserInactivityLifetime, protocol.MaxAdminDevices)
+	if err != nil {
+		return nil, err
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	for i := range devices {
+		if _, revoked := service.revokedDevices[devices[i].ID]; revoked {
+			devices[i].Status = store.DeviceRevoked
+		}
+	}
+	return devices, nil
 }
 
 func (service *Service) revokeBindingsLocked(match func(*Binding) bool, reason error) []*Binding {
