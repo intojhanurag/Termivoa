@@ -138,6 +138,10 @@ but billing blocked it.
 
 - [ ] Broker, gateway and admin commands run natively. PowerShell and pwsh
       profiles are detected.
+- [ ] WSL: with a distro installed, `pterm profile detect` adds **WSL bash**
+      after the PowerShell profiles. A session from it opens the distro shell
+      in the project folder (`pwd` shows `/mnt/c/...`). Without a distro, or
+      without WSL, no WSL profile appears.
 - [ ] ConPTY: one response per terminal query; shutdown has no deadlock.
 - [ ] Session environment: set a user variable such as `JAVA_HOME` and add a
       folder to the user `Path` (System Properties, then sign out and in).
