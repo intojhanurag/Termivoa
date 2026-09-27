@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import type { AgentStatus, BrokerRPCSessionRecord } from '../generated/protocol';
 import { AGENT_KEYS } from '../terminal/agentKeys';
 import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
@@ -128,6 +128,18 @@ describe('session tabs', () => {
     expect(html).toMatch(/s2<\/span><span class="dot accent"/u);
     expect(html).toContain('aria-label="New session"');
     expect(html).toContain('aria-label="Session menu"');
+  });
+
+  it('shows an amber waiting dot instead of the new-output dot on another waiting tab', () => {
+    const agent: AgentStatus = { state: 'waiting', stateSince: '2026-09-27T10:05:00Z', question: { id: 'q', text: 'Proceed?', options: [{ label: 'Yes' }] } };
+    const open = record(1, { agent });
+    const other = record(2, { agent, lastOutputAt: '2026-09-27T10:05:00Z' });
+    const html = renderToStaticMarkup(
+      <TabBar tabs={[open, other]} current={open} viewed={{}} onOpen={noop} onNew={noop} onMenu={noop} />,
+    );
+    expect(html.match(/, waiting for you/gu)).toHaveLength(1);
+    expect(html).toMatch(/s2<\/span><span class="dot amber"/u);
+    expect(html).not.toContain(', new output');
   });
 });
 

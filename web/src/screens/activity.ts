@@ -56,3 +56,53 @@ export function hasNewOutput(session: SessionRef, viewed: ViewedTimes): boolean 
   const seen = viewed[viewedKey(session)];
   return seen === undefined || output > seen;
 }
+
+/** Compact time since `iso`: "12s", "2m", "1h 5m", "3d"; empty when unknown. */
+export function since(iso: string | undefined, now: number): string {
+  const then = Date.parse(iso ?? '');
+  if (Number.isNaN(then)) return '';
+  const seconds = Math.max(0, Math.floor((now - then) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours >= 24) return `${Math.floor(hours / 24)}d`;
+  return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
+}
+
+type AgentRef = Pick<BrokerRPCSessionRecord, 'id' | 'generation' | 'agent'>;
+
+/** Session generations this page load saw working or waiting. */
+const busySeen = new Set<string>();
+
+/** Called with every session list; remembers which sessions were busy. */
+export function noteBusy(sessions: ReadonlyArray<AgentRef>, seen: Set<string> = busySeen): void {
+  for (const session of sessions) {
+    if (session.agent !== undefined && session.agent.state !== 'idle') seen.add(viewedKey(session));
+  }
+}
+
+export interface AgentBadge {
+  readonly label: 'Waiting' | 'Working' | 'Your turn';
+  readonly tone: 'amber' | 'accent' | 'green';
+}
+
+/**
+ * The status pill for a running session, or undefined for the neutral look.
+ * The broker reports `idle` for any quiet program, and a plain shell at its
+ * prompt is always idle after its last output, so idle alone cannot tell "the
+ * agent finished" from "a shell sits there". Rule: "Your turn" only when this
+ * page load saw the session working or waiting AND it printed output this
+ * device has not viewed yet. After a reload, or once you open the session,
+ * an idle session goes back to the neutral look.
+ * ponytail: memory is per page load; a broker-side "was busy" flag would
+ * survive reloads if that matters.
+ */
+export function agentBadge(session: AgentRef, fresh: boolean, seen: ReadonlySet<string> = busySeen): AgentBadge | undefined {
+  switch (session.agent?.state) {
+    case 'waiting': return { label: 'Waiting', tone: 'amber' };
+    case 'working': return { label: 'Working', tone: 'accent' };
+    case 'idle': return fresh && seen.has(viewedKey(session)) ? { label: 'Your turn', tone: 'green' } : undefined;
+    default: return undefined;
+  }
+}

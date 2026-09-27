@@ -52,7 +52,9 @@ export function TabBar({ tabs, current, viewed, onOpen, onNew, onMenu }: {
       <div className="tab-scroll">
         {tabs.map((tab) => {
           const active = sameSession(tab, current);
-          const fresh = !active && hasNewOutput(tab, viewed);
+          // A waiting agent in another tab shows an amber dot instead of the new-output dot.
+          const waiting = !active && tab.agent?.state === 'waiting';
+          const fresh = !active && !waiting && hasNewOutput(tab, viewed);
           return (
             <button
               key={`${tab.id}/${tab.generation}`}
@@ -65,6 +67,7 @@ export function TabBar({ tabs, current, viewed, onOpen, onNew, onMenu }: {
                 {active && <span className="tab-prompt" aria-hidden="true">❯</span>}
                 <span className="tab-label">{tab.title}</span>
                 {fresh && <><span className="dot accent" aria-hidden="true" /><span className="visually-hidden">, new output</span></>}
+                {waiting && <><span className="dot amber" aria-hidden="true" /><span className="visually-hidden">, waiting for you</span></>}
               </span>
             </button>
           );
