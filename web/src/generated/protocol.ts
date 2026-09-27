@@ -255,6 +255,8 @@ export type BrokerRPCSessionRecord = {
     readonly exitCode?:        number;
     readonly generation:       string;
     readonly id:               string;
+    readonly lastOutputAt?:    string;
+    readonly preview?:         string;
     readonly projectId:        string;
     readonly rows:             number;
     readonly shellProfileId:   string;

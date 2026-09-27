@@ -228,6 +228,8 @@ type BrokerRPCSessionRecord struct {
 	ExitCode        *int64  `json:"exitCode,omitempty"`
 	Generation      string  `json:"generation"`
 	ID              string  `json:"id"`
+	LastOutputAt    *string `json:"lastOutputAt,omitempty"`
+	Preview         *string `json:"preview,omitempty"`
 	ProjectID       string  `json:"projectId"`
 	Rows            int64   `json:"rows"`
 	ShellProfileID  string  `json:"shellProfileId"`
