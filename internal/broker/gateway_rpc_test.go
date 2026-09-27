@@ -721,3 +721,83 @@ func TestWithPresenceSkipsEndedSessions(t *testing.T) {
 		t.Fatalf("running session lost presence: %#v", running)
 	}
 }
+
+// The gateway reads the configured origin without a credential; it is the
+// value `pterm config origin` saved, and absent until one is set.
+func TestGatewayOriginFollowsConfiguredOrigin(t *testing.T) {
+	fixture, _, _, _, _ := newAuthStreamFixture(t)
+	gateway := startRPCTestClient(t, fixture.server, protocol.Gateway)
+	local := startRPCTestClient(t, fixture.server, protocol.CLI)
+	read := func() *string {
+		t.Helper()
+		result, err := protocol.DecodeRPCPayload[protocol.GatewayRPCOriginResultPayload](
+			gateway.gateway(t, protocol.GatewayOrigin, protocol.BrokerRPCEmptyPayload{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.Origin
+	}
+	if origin := read(); origin != nil {
+		t.Fatalf("unset origin = %q", *origin)
+	}
+	want := "https://mac.example.ts.net"
+	if response := local.admin(t, protocol.AdminConfigOrigin, protocol.AdminRPCOriginPayload{Origin: &want}); response.Type != protocol.AdminConfigOriginResult {
+		t.Fatalf("set origin = %s", response.Type)
+	}
+	if origin := read(); origin == nil || *origin != want {
+		t.Fatalf("configured origin = %v", origin)
+	}
+}
+
+// A browser renames only the device its own credential belongs to.
+func TestGatewayDeviceRenameTargetsTheCallingDevice(t *testing.T) {
+	fixture, _, _, service, _ := newAuthStreamFixture(t)
+	gateway := startRPCTestClient(t, fixture.server, protocol.Gateway)
+	local := startRPCTestClient(t, fixture.server, protocol.CLI)
+	alpha := pairDevice(t, service, "Alpha")
+	bravo := pairDevice(t, service, "Bravo")
+
+	response := gateway.gateway(t, protocol.GatewayDeviceRename, protocol.GatewayRPCDeviceRenamePayload{
+		Credential: alpha.Credential, Request: protocol.HTTPDeviceRenameRequest{Label: "Work phone"},
+	})
+	summary, err := protocol.DecodeRPCPayload[protocol.HTTPDeviceSummary](response)
+	if err != nil || summary.ID != alpha.DeviceID || summary.Label != "Work phone" {
+		t.Fatalf("rename = %#v, %v", summary, err)
+	}
+	devices, _ := protocol.DecodeRPCPayload[protocol.AdminRPCDeviceListResultPayload](
+		local.admin(t, protocol.AdminDeviceList, protocol.BrokerRPCEmptyPayload{}))
+	labels := map[string]string{}
+	for _, device := range devices.Devices {
+		labels[device.ID] = device.Label
+	}
+	if labels[alpha.DeviceID] != "Work phone" || labels[bravo.DeviceID] != "Bravo" {
+		t.Fatalf("labels after rename = %v", labels)
+	}
+
+	unknown := gateway.gateway(t, protocol.GatewayDeviceRename, protocol.GatewayRPCDeviceRenamePayload{
+		Credential: strings.Repeat("A", 43), Request: protocol.HTTPDeviceRenameRequest{Label: "Evil"},
+	})
+	if code := gatewayErrorCode(t, unknown); code != protocol.Unauthorized {
+		t.Fatalf("unknown credential rename = %s", code)
+	}
+	if _, err := service.RevokeDevice(context.Background(), bravo.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	revoked := gateway.gateway(t, protocol.GatewayDeviceRename, protocol.GatewayRPCDeviceRenamePayload{
+		Credential: bravo.Credential, Request: protocol.HTTPDeviceRenameRequest{Label: "Evil"},
+	})
+	if code := gatewayErrorCode(t, revoked); code != protocol.ErrorCodeRevoked {
+		t.Fatalf("revoked credential rename = %s", code)
+	}
+
+	renamed, err := protocol.DecodeRPCPayload[protocol.AdminRPCDeviceRenamePayload](local.admin(t, protocol.AdminDeviceRename,
+		protocol.AdminRPCDeviceRenamePayload{DeviceID: bravo.DeviceID, Label: "Old phone"}))
+	if err != nil || renamed.DeviceID != bravo.DeviceID || renamed.Label != "Old phone" {
+		t.Fatalf("admin rename = %#v, %v", renamed, err)
+	}
+	missing := local.admin(t, protocol.AdminDeviceRename,
+		protocol.AdminRPCDeviceRenamePayload{DeviceID: "00000000-0000-4000-8000-000000009999", Label: "Ghost"})
+	if missing.Type != protocol.AdminError {
+		t.Fatalf("rename of a missing device = %s", missing.Type)
+	}
+}

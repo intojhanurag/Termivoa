@@ -483,3 +483,24 @@ func TestBindingExpiresWhenWallClockPassesDuringHostSleep(t *testing.T) {
 		t.Fatalf("expired binding check = %v", binding.Check())
 	}
 }
+
+func TestRenameDeviceValidatesLabelAndTarget(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+	issued := pair(t, service, "Phone")
+	if err := service.RenameDevice(ctx, issued.DeviceID, "Work phone"); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := service.Authenticate(ctx, issued.Credential)
+	if err != nil || principal.DeviceLabel != "Work phone" {
+		t.Fatalf("principal after rename = %#v, %v", principal, err)
+	}
+	for _, label := range []string{"", " padded", "bell\a", strings.Repeat("x", 65)} {
+		if err := service.RenameDevice(ctx, issued.DeviceID, label); !errors.Is(err, ErrInvalidLabel) {
+			t.Fatalf("label %q = %v", label, err)
+		}
+	}
+	if err := service.RenameDevice(ctx, "00000000-0000-4000-8000-000000009999", "Other"); !errors.Is(err, ErrDeviceMissing) {
+		t.Fatalf("missing device = %v", err)
+	}
+}
