@@ -9,7 +9,8 @@ The command-line tool is `pterm`. Some data folders and startup entries keep
 the old working name "Phone Terminal" so existing installs keep working (see
 [docs/naming.md](docs/naming.md)).
 
-> **Status:** private development, not released. The full flow is tested on an
+> **Status:** private beta (`v0.1.0-beta.1`, unsigned, invited testers only;
+> [install](docs/install.md#private-beta)). The full flow is tested on an
 > Apple Silicon Mac. Windows and Linux support is written but not yet verified
 > on a real Windows or Linux machine (Linux ran in containers only). There are
 > no signed builds.
@@ -44,7 +45,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 ## Quick start
 
-No release is published yet, so build from source first. You need Go 1.27.1,
+Beta testers can install the release binary
+([docs/install.md](docs/install.md#private-beta)). To build from source, you need Go 1.27.1,
 Node.js 24.11.0 and pnpm 10.33.0 (build tools only; the host does not need Node).
 
 ```sh

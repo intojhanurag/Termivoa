@@ -1,13 +1,18 @@
 # Changelog
 
 All notable changes are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project will
-use [Semantic Versioning](https://semver.org/) once releases begin.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-No version has been released. Development history and evidence are in
-[docs/progress.md](docs/progress.md) and [docs/evidence/](docs/evidence/README.md).
+## [0.1.0-beta.1] - 2026-09-28
+
+First **private beta**: unsigned binaries for invited testers only, published
+as a prerelease in the private repository. Install steps are in
+[docs/install.md](docs/install.md#private-beta). Development history and
+evidence are in [docs/progress.md](docs/progress.md) and
+[docs/evidence/](docs/evidence/README.md).
 
 ### Added
 
