@@ -46,11 +46,11 @@ broker error to carry either both fields or neither. The TypeScript Ajv factory
 implements the schema's `maxUtf8Bytes` and `safeDisplayText` annotations so
 non-ASCII request and record titles have the same byte boundaries as Go.
 
-These validators deliberately validate one message at a time. The future IPC
-client/dispatcher must retain in-flight request state and reject a response
-unless its `requestId` matches, its result type corresponds to the request
-type, and a mutation result's `operationId` matches the request. That
-cross-message correlation is not claimed by this protocol-only checkpoint.
+These validators deliberately validate one message at a time. The IPC
+client (`internal/localclient`) retains in-flight request state and rejects a
+response unless its `requestId` matches, its result type corresponds to the
+request type, and a mutation result's `operationId` matches the request. That
+cross-message correlation lives in the client, not in these validators.
 A protocol-valid request is not authorization: later dispatch must still apply
 the authenticated caller's permissions and resolve every saved ID inside the
 broker.

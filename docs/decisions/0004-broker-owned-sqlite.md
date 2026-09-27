@@ -1,6 +1,6 @@
 # ADR 0004: Broker-owned local SQLite persistence
 
-- Status: Accepted by the authoritative plan; implementation pending
+- Status: Accepted by the authoritative plan; implemented in v0 (2026-09-27, verified on the macOS development profile)
 - Date: 2026-09-20
 
 ## Context

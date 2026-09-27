@@ -1,9 +1,17 @@
 # P4 implementation boundary and acceptance map
 
-Status: preparation, 2026-09-21. This document refines the authoritative plan;
-it does not claim that pairing or authenticated browser access is implemented.
-The current gateway still exposes only health checks. No browser route may use
-the existing privileged local CLI identity as an authentication shortcut.
+Status: written 2026-09-21 as the P4 preparation map; updated 2026-09-27.
+Checkpoints 1–5 below are implemented and tested on macOS
+([pairing-broker evidence](evidence/p4/pairing-broker.md),
+[gateway-http evidence](evidence/p4/gateway-http.md)). Checkpoint 6 is partly
+done: `pterm setup` inspects Tailscale Serve and asks before it configures it,
+but private HTTPS and cellular evidence on a real phone are pending
+([owner-verification.md](owner-verification.md)). This document refines the
+authoritative plan and stays the acceptance map for P4. The wider threat model
+is in [threat-model.md](threat-model.md); the wire contracts are in
+[`protocol/v1/authentication-rpc.md`](../protocol/v1/authentication-rpc.md) and
+[`protocol/v1/http-api.md`](../protocol/v1/http-api.md). No browser route may use
+the privileged local CLI identity as an authentication shortcut.
 
 ## Ownership and message boundaries
 
@@ -70,8 +78,9 @@ boundary, and no browser-controlled role can cross it as local administration.
    Apply explicit capacity/rate limits before untrusted attempts allocate persistent
    rows. Device labels remain untrusted bounded display text, never identity.
 
-The exact pending-record limits, expiry and stable typed results must be recorded
-in the schemas and tests when implemented. These details must not be inferred
+The exact pending-record limits, expiry and stable typed results are recorded
+in [`protocol/v1/authentication-rpc.md`](../protocol/v1/authentication-rpc.md),
+the schemas and the tests. These details must not be inferred
 from a UI timeout or silently depend on a gateway process remaining alive.
 
 ## Revocation and actor ordering

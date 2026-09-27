@@ -1,10 +1,13 @@
 # v0 threat model and verification boundaries
 
-Status: private development, 2026-09-21. This is a design and test map, **not a
-security certification**. Restricted local IPC, terminal replication, controller
-leases, and process isolation have implemented checkpoints. Phone pairing,
-authenticated gateway routes, and the controls marked P4/P5 below are not yet
-implemented. The current gateway exposes only its loopback health bootstrap.
+Status: private development, updated 2026-09-27. This is a design and test map,
+**not a security certification**. Restricted local IPC, terminal replication,
+controller leases, process isolation, phone pairing, broker-side credential
+checks and revocation, and the authenticated loopback gateway are implemented
+with automated tests on macOS. Real phones, Tailscale HTTPS, native Windows 11
+and signed installers are not yet verified; see
+[owner-verification.md](owner-verification.md). The P4 implementation map is in
+[p4-authentication-design.md](p4-authentication-design.md).
 
 ## Assets and attacker capabilities
 
@@ -29,12 +32,12 @@ safe, and private networking does not replace application authentication.
 
 | Boundary | Required control | Current evidence or pending gate |
 | --- | --- | --- |
-| Phone network → gateway | Loopback listener behind explicitly configured private HTTPS; exact Host/Origin, strict JSON and request header, bounded traffic | Loopback/Host bootstrap exists; authenticated routes, rate limits and real HTTPS test are P4 pending |
-| Browser → broker authority | Random hashed credentials, local two-step approval, expiry and broker rechecks | P4 pending; no phone input route is enabled |
+| Phone network → gateway | Loopback listener behind explicitly configured private HTTPS; exact Host/Origin, strict JSON and request header, bounded traffic | Loopback listener, exact Host/Origin, authenticated routes and rate limits implemented with tests (`docs/evidence/p4/gateway-http.md`); real Tailscale HTTPS test pending owner |
+| Browser → broker authority | Random hashed credentials, local two-step approval, expiry and broker rechecks | Implemented with replay/concurrency/revocation tests (`docs/evidence/p4/pairing-broker.md`); real-phone pairing pending owner |
 | Local client → broker | Current-user socket/pipe permissions, peer check, live generation handshake | Restricted IPC tests; Windows 11 execution pending |
-| Viewer → session controller | Explicit lease, generation and epoch; sequential input acceptance; no implicit takeover | Actor/stream tests; actual desktop command integration in progress |
+| Viewer → session controller | Explicit lease, generation and epoch; sequential input acceptance; no implicit takeover | Actor/stream tests; `pterm attach`/`pterm new` integrated (`docs/evidence/p3/desktop-attach-command.md`) |
 | Child bytes → display | One canonical emulator, normalized cells, validated drawing allowlist, no child ANSI relay | Parser/frame/client fixtures; real application/device width evidence incomplete |
-| Slow viewer → child progress | Bounded queues and history, independent emulator/response writer, disconnect slow viewers | Automated fixtures; required sustained stress and 24-hour soak pending |
+| Slow viewer → child progress | Bounded queues and history, independent emulator/response writer, disconnect slow viewers | Automated fixtures and a Mac soak (`docs/evidence/p7/soak.md`); 10-minute stress run, 24-hour soak and Windows soak pending |
 | Gateway lifetime → child lifetime | Independent broker owns PTYs, process cleanup, SQLite | Mac process restart fixture; native Windows 11 pending |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
 
@@ -123,5 +126,5 @@ reported, not overwritten. Running processes remain unprivileged user processes.
 The private-to-public review must include source and reachable history, PR/issue
 discussions, logs, screenshots and build artifacts. A discovered credential is
 revoked/rotated before any cleanup proposal; deletion alone is not remediation.
-Only Anurag manually makes the repository public, and that action does not itself
+Only the owner manually makes the repository public, and that action does not itself
 authorize publishing installers or packages.

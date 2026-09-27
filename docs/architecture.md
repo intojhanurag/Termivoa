@@ -1,19 +1,25 @@
 # Architecture
 
-Status: private implementation in progress. Broker-owned terminal/runtime,
-restricted IPC, persistence, and the independent process-mode checkpoint are
-implemented; authenticated browser access and release installation remain
-incomplete.
+Status (2026-09-27): the v0 flow is implemented and verified on the macOS
+development profile: broker-owned terminal/runtime, restricted IPC,
+persistence, independent broker/gateway processes, desktop attach, phone
+pairing, the authenticated gateway, the embedded phone web app, per-user
+startup registration and unsigned packaging. Real phones, native Windows 11,
+Tailscale HTTPS and signed installers are not yet verified; see
+[owner-verification.md](owner-verification.md). Related documents:
+[threat-model.md](threat-model.md),
+[p4-authentication-design.md](p4-authentication-design.md) and the
+[decision records](decisions/).
 
 ## Product boundary
 
-Phone Terminal manages terminal sessions that it starts on one owner's Mac or Windows host. A session can be observed from a desktop attachment and a paired phone browser. Viewer disconnects and gateway restarts must not end a broker-owned shell. A broker crash, OS logout, or host reboot ends the live process boundary; v0 will report the session lost and will not silently rerun commands.
+Phone Terminal manages terminal sessions that it starts on one owner's Mac or Windows host. A session can be observed from a desktop attachment and a paired phone browser. Viewer disconnects and gateway restarts must not end a broker-owned shell. A broker crash, OS logout, or host reboot ends the live process boundary; v0 reports the session lost and does not silently rerun commands.
 
 The host must remain awake, logged in, and running the broker. Registered project roots simplify session creation but do not sandbox the shell from the owner's filesystem.
 
 ## Process ownership
 
-One Go executable will expose separate process modes:
+One Go executable (`pterm`) exposes separate process modes:
 
 ```text
 desktop CLI ───────┐
@@ -37,8 +43,9 @@ when two launches select different runtime paths for the same SQLite data.
 The descriptor's PID is diagnostic only. Clients must
 complete the versioned handshake and confirm its broker generation before the
 endpoint is considered live. A lock owner may replace an endpoint only after
-that handshake probe fails. Separate LaunchAgents and per-user Scheduled Tasks
-remain packaging work.
+that handshake probe fails. `pterm setup` registers separate per-user
+LaunchAgents (macOS) and Scheduled Tasks (Windows) for the broker and the
+gateway; real-login and native Windows runs are pending owner verification.
 
 The executable process bootstrap acquires the data lock and runtime lock before
 it opens the per-user SQLite database or begins a generation. It then
@@ -47,12 +54,15 @@ lifetime. Shutdown stops IPC acceptance first, waits for Registry
 mutation/session cleanup, and closes SQLite last; the data lock is released
 only after both are closed. The gateway process receives only the runtime
 endpoint location; it can handshake/probe the broker but has no Store,
-Registry, PTY, or shell capability. Its current HTTP bootstrap is an exact-Host,
-IPv4-loopback `/healthz` surface at `127.0.0.1:8787`. The configured listener must be a
-literal IPv4 loopback address before any bind occurs. Graceful shutdown has a
-bounded timeout and force-closes remaining connections while retaining the
-timeout as an operational error. Authenticated application routes and embedded
-assets are still pending.
+Registry, PTY, or shell capability. It listens on IPv4 loopback
+(`127.0.0.1:8787` in production) with exact Host checks and serves `/healthz`,
+the authenticated HTTP/WebSocket API in
+[`protocol/v1/http-api.md`](../protocol/v1/http-api.md), and the phone web
+assets embedded at build time (`-tags webdist`; other builds serve a
+placeholder page). The configured listener must be a literal IPv4 loopback
+address before any bind occurs. Graceful shutdown has a bounded timeout and
+force-closes remaining connections while retaining the timeout as an
+operational error.
 
 On Unix, the runtime path is canonicalized once through trusted root-owned
 system aliases. User-controlled symlink components, foreign-owned ancestors
@@ -61,7 +71,8 @@ descriptor is touched, preventing one configured path from resolving to two
 independent broker locks.
 
 The explicit development profile uses distinct data/runtime directory names
-and an ephemeral loopback listener by default. Bare or partial `--dev`
+and an ephemeral loopback gateway listener by default (the `pterm up --dev`
+harness uses `127.0.0.1:8788`). Bare or partial `--dev`
 invocations never inherit production locations, and canonical aliases or
 parent/child overlaps with the production profile are rejected.
 
@@ -85,7 +96,7 @@ Input is never replayed automatically after disconnect. A lost acknowledgement y
 
 ## Protocol boundaries
 
-JSON Schema Draft 2020-12 under `protocol/v1` will be canonical. quicktype will generate Go and TypeScript shapes; the browser will validate with Ajv, and Go will apply explicit semantic and bounds checks. WebSocket uses JSON text messages, while local IPC uses length-prefixed JSON with equivalent limits and chunking.
+JSON Schema Draft 2020-12 under `protocol/v1` is canonical. quicktype generates Go and TypeScript shapes (`scripts/generate-protocol.mjs`); the browser validates with Ajv, and Go applies explicit semantic and bounds checks. WebSocket uses JSON text messages, while local IPC uses length-prefixed JSON with equivalent limits and chunking.
 
 After the local IPC handshake, session list/create/rename/terminate/status use
 the canonical bounded broker-management RPC. Request IDs correlate replies;
@@ -122,7 +133,7 @@ The trust boundary excludes malware already running as the same OS user. The pro
 
 The broker is the sole SQLite owner. Persistent tables cover migrations, paired devices, browser sessions, pairing state, projects, shell profiles, session metadata, bounded mutation receipts, and settings. Session create, rename, and terminate requests use canonical UUID operation IDs and request fingerprints. A create fingerprint contains only the saved project and shell-profile IDs supplied by the client; mutable broker-resolved titles, paths, executables, arguments, and environment cannot change the identity of a retry. Each new metadata change and an immutable bounded session-result snapshot commit in one transaction, so a retry returns the original acknowledgement rather than rereading current session or saved-configuration state. Reuse for different request content is a conflict. Schema-v2 receipts predate those snapshots. Migration 003 rewrites their create fingerprints to the saved-ID identity, reconstructs only legacy rename results whose response fields are durably known, and marks legacy create/terminate results explicitly unavailable. A matching unavailable receipt produces a deterministic error before any process side effect; it is never filled with mutable current metadata or rerun. Broker shutdown closes the mutation admission gate before receipt lookup, waits for already-admitted mutations, and retains process-termination and cleanup failures as lifecycle diagnostics. A terminal event may precede the latest metadata mutation timestamp, so persistence keeps `updated_at` monotonic while recording the actual `ended_at`. Receipts for active sessions are never evicted. Terminal-session receipt history is pruned first, and the broker rejects a new unique mutation if active receipts alone reach the hard cap. WAL, foreign keys, transactions, prepared statements, and a bounded busy timeout are required. Raw terminal data, provider credentials, active process handles, and controller leases are not persisted.
 
-Migration failure must prevent startup without damaging the prior database. Release updates retain a previous signed version and must test schema backup/rollback compatibility.
+Migration failure must prevent startup without damaging the prior database. Release updates retain a previous signed version and must test schema backup/rollback compatibility. A database backup before migration is not yet implemented.
 
 ## Failure and resource boundaries
 
@@ -135,6 +146,6 @@ Migration failure must prevent startup without damaging the prior database. Rele
 
 ## Platform and release boundaries
 
-The intended releases are a signed/notarized macOS app/DMG and a signed per-user Windows installer. Unsigned development artifacts remain visibly distinct. Node.js is never required on an installed user's machine because production web assets are embedded in the Go binary.
+The intended releases are a signed/notarized macOS app/DMG and a signed per-user Windows installer. Unsigned build scripts exist under `packaging/macos` and `packaging/windows`; signing needs owner credentials and is not done. Unsigned development artifacts remain visibly distinct. Node.js is never required on an installed user's machine because production web assets are embedded in the Go binary.
 
 Technical completion never authorizes publication or a visibility change. The owner manually changes repository visibility only after the release checklist and history/artifact review are complete.

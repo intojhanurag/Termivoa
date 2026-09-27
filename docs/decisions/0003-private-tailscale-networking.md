@@ -1,6 +1,6 @@
 # ADR 0003: Loopback gateway with private Tailscale Serve access
 
-- Status: Accepted by the authoritative plan; implementation pending
+- Status: Accepted by the authoritative plan; implemented in v0 (2026-09-27). Loopback gateway and pairing are verified on the macOS development profile; Tailscale Serve HTTPS with a real phone is not yet verified
 - Date: 2026-09-20
 
 ## Context
