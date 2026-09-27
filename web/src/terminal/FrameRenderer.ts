@@ -15,6 +15,7 @@ const CONTROL_TEXT = /[\u0000-\u001f\u007f-\u009f]/u;
 const DECIMAL_COUNTER = /^(0|[1-9][0-9]{0,19})$/u;
 const MAX_CELL_BYTES = 1024;
 const MAX_PENDING_PAINTS = 2;
+const encoder = new TextEncoder();
 
 export type Color = ProtocolColor;
 export type CellStyle = ProtocolCellStyle;
@@ -156,6 +157,11 @@ export class FrameRenderer {
     return next;
   }
 
+  /**
+   * Builds the whole frame as one drawing string per authoritative cell
+   * width, so a frame costs at most two xterm writes. The width override is
+   * read while xterm parses, so each width group is its own awaited write.
+   */
   private async paint(rows: ReadonlyArray<PaintRow>, screen: ScreenMetadata): Promise<void> {
     this.terminal.options.theme = {
       foreground: colorHex(screen.foreground),
@@ -163,40 +169,49 @@ export class FrameRenderer {
       cursor: colorHex(screen.cursorColor),
     };
 
-    await write(this.terminal, '\u001b[?2026h\u001b[?25l\u001b[?7l');
-    try {
-      const erase = rows.map((row) => `${cup(row.index, 0)}\u001b[2K`).join('');
-      if (erase !== '') {
-        await write(this.terminal, erase);
-      }
-      for (const row of rows) {
-        for (const run of row.runs) {
-          await write(this.terminal, run.style);
-          for (const width of [1, 2] as const) {
-            const cells = run.cells.filter((cell) => cell.width === width);
-            if (cells.length === 0) {
-              continue;
-            }
-            this.unicode.prepareCell(width);
-            try {
-              const content = cells
-                .map((cell) => `${cup(row.index, cell.column)}${cell.text}`)
-                .join('');
-              await write(this.terminal, content);
-            } finally {
-              this.unicode.clearCell();
-            }
+    let narrow = '\u001b[?2026h\u001b[?25l\u001b[?7l';
+    for (const row of rows) {
+      narrow += `${cup(row.index, 0)}\u001b[2K`;
+    }
+    let wide = '';
+    for (const row of rows) {
+      for (const run of row.runs) {
+        let narrowRun = '';
+        let wideRun = '';
+        for (const cell of run.cells) {
+          const drawn = `${cup(row.index, cell.column)}${cell.text}`;
+          if (cell.width === 1) {
+            narrowRun += drawn;
+          } else {
+            wideRun += drawn;
           }
         }
+        if (narrowRun !== '') {
+          narrow += run.style + narrowRun;
+        }
+        if (wideRun !== '') {
+          wide += run.style + wideRun;
+        }
       }
+    }
+    const cursor = screen.cursor;
+    const cursorVisibility = cursor.visible ? '\u001b[?25h' : '\u001b[?25l';
+    const restore = `\u001b[0m${cup(cursor.row, cursor.column)}\u001b[${cursorStyle(cursor)} q${cursorVisibility}\u001b[?7h\u001b[?2026l`;
+
+    if (wide === '') {
+      await this.writeCells(1, narrow + restore);
+      return;
+    }
+    await this.writeCells(1, narrow);
+    await this.writeCells(2, wide + restore);
+  }
+
+  private async writeCells(width: 1 | 2, content: string): Promise<void> {
+    this.unicode.prepareCell(width);
+    try {
+      await write(this.terminal, content);
     } finally {
-      const cursor = screen.cursor;
-      const cursorShape = cursorStyle(cursor);
-      const cursorVisibility = cursor.visible ? '\u001b[?25h' : '\u001b[?25l';
-      await write(
-        this.terminal,
-        `\u001b[0m${cup(cursor.row, cursor.column)}\u001b[${cursorShape} q${cursorVisibility}\u001b[?7h\u001b[?2026l`,
-      );
+      this.unicode.clearCell();
     }
   }
 }
@@ -251,7 +266,7 @@ function validateCell(
   if (cell.text === '' || CONTROL_TEXT.test(cell.text)) {
     throw new ResyncRequiredError(`Row ${rowIndex} contains unsafe printable content`);
   }
-  if (new TextEncoder().encode(cell.text).byteLength > MAX_CELL_BYTES) {
+  if (encoder.encode(cell.text).byteLength > MAX_CELL_BYTES) {
     throw new ResyncRequiredError(`Row ${rowIndex} contains oversized cell content`);
   }
   if (cell.width === 2) {
