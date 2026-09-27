@@ -115,6 +115,12 @@ but billing blocked it.
 - [ ] Broker, gateway and admin commands run natively. PowerShell and pwsh
       profiles are detected.
 - [ ] ConPTY: one response per terminal query; shutdown has no deadlock.
+- [ ] Session environment: set a user variable such as `JAVA_HOME` and add a
+      folder to the user `Path` (System Properties, then sign out and in).
+      Start pterm from Windows Terminal or VS Code, create a session, and run
+      `Get-ChildItem env:`. `JAVA_HOME` and the user `Path` folder are there;
+      `WT_SESSION`, `TERM_PROGRAM`, `VSCODE_*` and `CLAUDE_CODE_*` are not.
+      Also run `go test ./internal/ptyhost/ -run HostEnvironment`.
 - [ ] Desktop attach: console modes are restored after exit. A Ctrl+] pressed
       exactly at the startup handoff may be lost on Windows (known limit), so
       press it again.
