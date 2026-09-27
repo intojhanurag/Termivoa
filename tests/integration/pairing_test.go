@@ -80,6 +80,7 @@ func TestPairedBrowserControlsSessionUntilRevoked(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLiveScreen(t, ctx, managed, "BOOT_QUERY_OK")
+	waitListedPreview(t, ctx, gateway, credential, "GRID 界 e\u0301 👩\u200d💻")
 
 	stream, err := gateway.OpenLive(ctx, credential)
 	if err != nil {
@@ -109,6 +110,7 @@ func TestPairedBrowserControlsSessionUntilRevoked(t *testing.T) {
 	live.send(protocol.InputKey, true, protocol.InputKeyPayload{Lease: *grantPayload.Lease, InputSequence: "2", Key: protocol.Enter})
 	live.await(protocol.InputAccepted)
 	waitLiveScreen(t, ctx, managed, liveReceipt(1, "PAIRED"))
+	waitListedPreview(t, ctx, gateway, credential, liveReceipt(1, "PAIRED"))
 
 	devices, err := admin.Devices(ctx)
 	if err != nil || len(devices) != 1 || devices[0].ID != principal.DeviceID {
@@ -133,6 +135,20 @@ func TestPairedBrowserControlsSessionUntilRevoked(t *testing.T) {
 	if err != nil || status.State != "running" {
 		t.Fatalf("revocation changed the managed child: %#v, %v", status, err)
 	}
+}
+
+// waitListedPreview polls the browser session list until the live session's
+// preview is the wanted last non-blank row and lastOutputAt is present.
+func waitListedPreview(t *testing.T, ctx context.Context, gateway *gatewayclient.Client, credential, want string) {
+	t.Helper()
+	waitLiveCondition(t, ctx, "session list preview "+want, func() bool {
+		list, err := gateway.ListSessions(ctx, credential)
+		if err != nil || len(list.Sessions) != 1 {
+			return false
+		}
+		record := list.Sessions[0]
+		return record.Preview != nil && *record.Preview == want && record.LastOutputAt != nil
+	})
 }
 
 type browserStream struct {

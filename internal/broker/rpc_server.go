@@ -456,7 +456,8 @@ func (server *ManagementServer) sessionStatus(
 
 // withPresence adds live, non-secret presence computed at request time.
 // deviceID is the requesting browser device; it is empty on local CLI paths,
-// where controllerIsYou stays absent. A session that is not live in this
+// where controllerIsYou, lastOutputAt and preview stay absent so terminal
+// content never appears in CLI output. A session that is not live in this
 // broker, or that already exited or was lost while still registered, keeps
 // every presence field absent.
 func (server *ManagementServer) withPresence(
@@ -469,19 +470,29 @@ func (server *ManagementServer) withPresence(
 	if err != nil {
 		return record
 	}
-	presence, err := session.Presence(ctx)
+	browser := deviceID != ""
+	presence, err := session.Presence(ctx, browser)
 	if err != nil {
 		return record
 	}
 	controlled := presence.ControllerDevice != ""
 	viewers := int64(presence.Viewers)
 	record.Controlled, record.ViewerCount = &controlled, &viewers
-	if deviceID != "" {
+	if browser {
 		mine := controlled && presence.ControllerDevice == deviceID
 		record.ControllerIsYou = &mine
+		if !presence.LastOutput.IsZero() {
+			value := presence.LastOutput.UTC().Format(millisecondRFC3339)
+			record.LastOutputAt = &value
+		}
+		if presence.Preview != "" {
+			record.Preview = &presence.Preview
+		}
 	}
 	return record
 }
+
+const millisecondRFC3339 = "2006-01-02T15:04:05.000Z07:00"
 
 func (server *ManagementServer) profileMatchesHost(platform store.Platform) bool {
 	if server.config.HostPlatform == store.PlatformWindows {

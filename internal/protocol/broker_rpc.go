@@ -16,6 +16,8 @@ const (
 	MaxBrokerRPCRenameTitleBytes  = 128
 	MaxBrokerRPCSessionTitleBytes = 256
 	MaxBrokerRPCErrorBytes        = 512
+	MaxBrokerRPCPreviewRunes      = 160
+	MaxBrokerRPCPreviewBytes      = 480
 )
 
 // BrokerRPCEnvelope is the canonical session-management message carried on a
@@ -341,6 +343,27 @@ func validateBrokerRPCSessionRecord(record BrokerRPCSessionRecord) error {
 	}
 	if record.ViewerCount != nil && (*record.ViewerCount < 0 || *record.ViewerCount > 16) {
 		return errors.New("viewerCount is outside bounds")
+	}
+	if (record.LastOutputAt != nil || record.Preview != nil) && terminal {
+		return errors.New("lastOutputAt and preview are only valid for a live session")
+	}
+	if _, err := parseOptionalBrokerRPCTime(record.LastOutputAt, "lastOutputAt"); err != nil {
+		return err
+	}
+	if record.Preview != nil {
+		return ValidatePreviewText(*record.Preview)
+	}
+	return nil
+}
+
+// ValidatePreviewText applies the schema's preview rule: safe display text of
+// at most 160 characters and 480 UTF-8 bytes.
+func ValidatePreviewText(value string) error {
+	if err := validateBrokerRPCText(value, MaxBrokerRPCPreviewBytes, "preview"); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(value) > MaxBrokerRPCPreviewRunes {
+		return errors.New("preview is outside bounds")
 	}
 	return nil
 }

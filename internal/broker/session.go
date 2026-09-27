@@ -154,6 +154,7 @@ type Session struct {
 	retirementRevision uint64
 	publishedControl   ControlState
 	publishedStatus    SessionStatus
+	lastOutput         time.Time           // Actor-owned: when child output was last applied.
 	termination        *sessionTermination // Actor-owned; one bounded attempt per session.
 }
 
@@ -207,6 +208,7 @@ type sessionRequest struct {
 	clippedRows   []bool
 	history       terminal.HistoryReadRequest
 	requestID     string
+	preview       bool
 	notice        *viewerNotice
 	reply         chan sessionResponse
 }
@@ -450,15 +452,27 @@ func (session *Session) Status(ctx context.Context) (SessionStatus, error) {
 
 // SessionPresence is a point-in-time, non-secret view of who is attached.
 // ControllerDevice is broker-internal: callers compare it with the requesting
-// device and must never send it to another device.
+// device and must never send it to another device. LastOutput is zero until
+// child output is applied. Preview is set only when requested and is empty
+// for a blank screen.
 type SessionPresence struct {
 	ControllerDevice string
 	Viewers          int
+	LastOutput       time.Time
+	Preview          string
 }
 
-func (session *Session) Presence(ctx context.Context) (SessionPresence, error) {
-	response, err := session.call(ctx, sessionRequest{kind: requestPresence})
-	return response.presence, err
+// Presence reads presence in one actor call. With preview, the actor also
+// copies the current screen; the text is extracted after the actor replies.
+func (session *Session) Presence(ctx context.Context, preview bool) (SessionPresence, error) {
+	response, err := session.call(ctx, sessionRequest{kind: requestPresence, preview: preview})
+	if err != nil {
+		return SessionPresence{}, err
+	}
+	if preview {
+		response.presence.Preview = screenPreview(response.frame)
+	}
+	return response.presence, nil
 }
 
 // Terminate explicitly ends the process tree while keeping the final terminal
@@ -811,6 +825,7 @@ func (session *Session) run(columns, rows int) {
 				if err := session.terminal.WriteOutput(session.ctx, event.data); err != nil {
 					session.markLost(&status)
 				} else {
+					session.lastOutput = time.Now()
 					schedulePublish()
 				}
 			}
@@ -993,6 +1008,10 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 	case requestPresence:
 		response.presence = SessionPresence{
 			ControllerDevice: session.controller.State().DeviceID, Viewers: len(session.viewers),
+			LastOutput: session.lastOutput,
+		}
+		if request.preview {
+			response.frame, response.err = session.terminal.ScreenSnapshot(session.ctx)
 		}
 	case requestTerminate:
 		if status.State != SessionRunning {

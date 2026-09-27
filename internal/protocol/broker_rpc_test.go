@@ -325,6 +325,69 @@ func TestBrokerRPCValidatesSessionRecords(t *testing.T) {
 	}
 }
 
+func TestBrokerRPCValidatesSessionActivity(t *testing.T) {
+	sessionID, generation := brokerRPCSessionID, brokerRPCGeneration
+	decode := func(mutate func(*BrokerRPCSessionRecord)) error {
+		record := validBrokerRPCSessionRecord()
+		mutate(&record)
+		message := encodeBrokerRPCTestMessage(t, BrokerRPCEnvelope{
+			Version: Version, Type: SessionStatusResult, RequestID: brokerRPCRequestID,
+			SessionID: &sessionID, Generation: &generation,
+		}, BrokerRPCSessionResultPayload{Session: record})
+		_, err := DecodeBrokerRPCResponse(message)
+		return err
+	}
+	for name, value := range map[string]string{
+		"ascii": "$ make test", "max runes": strings.Repeat("界", 160), "max bytes": strings.Repeat("€", 160),
+		"emoji": "👩\u200d💻 done", "replacement": "a\ufffdb",
+	} {
+		if err := decode(func(record *BrokerRPCSessionRecord) {
+			record.LastOutputAt = brokerRPCStringPointer("2026-09-20T10:00:01.234Z")
+			record.Preview = &value
+		}); err != nil {
+			t.Errorf("valid %s preview rejected: %v", name, err)
+		}
+	}
+	for name, value := range map[string]string{
+		"empty": "", "leading space": " x", "trailing space": "x ", "trailing nbsp": "x\u00a0",
+		"ideographic space": "\u3000x", "newline": "a\nb", "escape": "a\x1b[31mb", "tab": "a\tb",
+		"del": "a\x7fb", "c1": "a\u009bb", "too many runes": strings.Repeat("a", 161),
+		"too many bytes": strings.Repeat("😀", 121),
+	} {
+		if err := decode(func(record *BrokerRPCSessionRecord) { record.Preview = &value }); err == nil {
+			t.Errorf("%s preview was accepted", name)
+		}
+	}
+	for _, value := range []string{"", "yesterday", "2026-09-20", "2026-09-20T10:00:01.234567890123+00:00:00"} {
+		if err := decode(func(record *BrokerRPCSessionRecord) { record.LastOutputAt = &value }); err == nil {
+			t.Errorf("lastOutputAt %q was accepted", value)
+		}
+	}
+	for _, state := range []State{Exited, Lost} {
+		ended := func(record *BrokerRPCSessionRecord) {
+			record.State = state
+			record.EndedAt = brokerRPCStringPointer("2026-09-20T10:00:02Z")
+			record.UpdatedAt = "2026-09-20T10:00:02Z"
+		}
+		if err := decode(ended); err != nil {
+			t.Fatalf("%s record rejected: %v", state, err)
+		}
+		if err := decode(func(record *BrokerRPCSessionRecord) {
+			ended(record)
+			record.LastOutputAt = brokerRPCStringPointer("2026-09-20T10:00:01.234Z")
+		}); err == nil {
+			t.Errorf("%s record with lastOutputAt was accepted", state)
+		}
+		if err := decode(func(record *BrokerRPCSessionRecord) {
+			ended(record)
+			preview := "done"
+			record.Preview = &preview
+		}); err == nil {
+			t.Errorf("%s record with preview was accepted", state)
+		}
+	}
+}
+
 func TestBrokerRPCErrorCodesAreStableAndBounded(t *testing.T) {
 	codes := []ErrorCode{
 		Unauthorized, PairingExpired, PairingPending, ErrorCodeRevoked, ProtocolMismatch, SessionMissing,
