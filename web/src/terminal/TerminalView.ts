@@ -95,3 +95,24 @@ export function followCursor(
   }
   return scrollTop;
 }
+
+/**
+ * Finger travel, in CSS pixels, that sends one wheel step to a full-screen app.
+ * ponytail: one fixed step; tune per font size if real phones feel too fast or slow.
+ */
+export const WHEEL_STEP_PX = 36;
+
+/** At most this many wheel steps for one touch move, so a flick cannot flood input. */
+export const MAX_WHEEL_STEPS = 4;
+
+/**
+ * Turns vertical finger travel into wheel steps. A downward swipe (positive
+ * travel) shows earlier output, so it gives positive steps: wheel-up. The
+ * remainder carries over to the next move so slow swipes still scroll.
+ */
+export function wheelSteps(carry: number, travel: number, step = WHEEL_STEP_PX): { steps: number; carry: number } {
+  const total = carry + travel;
+  const whole = Math.trunc(total / step);
+  const steps = Math.max(-MAX_WHEEL_STEPS, Math.min(MAX_WHEEL_STEPS, whole));
+  return { steps, carry: whole === steps ? total - whole * step : 0 };
+}
