@@ -30,6 +30,18 @@ A sleeping computer cannot answer. Keep it on power and stop sleep:
 
 Sessions continue when the computer wakes.
 
+## It reconnects often
+
+Your phone pauses the browser when you switch apps or lock the screen. When you come back, Termivoa first checks the old connection. It reconnects only if the old one does not answer, which usually takes 1–2 seconds. A short amber dot is normal. Your sessions never stop.
+
+To make it steadier:
+
+- Keep the computer awake (see above).
+- In the Tailscale app on the phone, keep **VPN On Demand** turned on, so Tailscale reconnects by itself.
+- Add Termivoa to the Home Screen and open it from there.
+
+If it still drops often, look at `gateway.log` in the log folder that `pterm doctor` shows. It has one line for each phone connection, with its length and why it ended, for example `phone missed a ping`.
+
 ## "This pairing link expired or was already used"
 
 A pairing link works once, for two minutes. Run `pterm pair` again and scan the new QR code.

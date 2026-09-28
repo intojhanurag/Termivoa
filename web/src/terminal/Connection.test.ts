@@ -6,6 +6,7 @@ import {
   HEARTBEAT_MS,
   RECONNECT_DELAYS_MS,
   RESUME_CHECK_MS,
+  RESUME_PROBE_MS,
   rowText,
   type ScreenDisplay,
 } from './Connection';
@@ -716,6 +717,10 @@ describe('Connection resume', () => {
     setVisibility('hidden');
     await vi.advanceTimersByTimeAsync(RESUME_CHECK_MS + 1000);
     setVisibility('visible');
+    // First it checks the old socket; this one stays silent (half-open).
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(first.types().at(-1)).toBe('screen.resync');
+    await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
 
     const second = socket();
     expect(second).not.toBe(first);
@@ -727,6 +732,21 @@ describe('Connection resume', () => {
     expect(connection.getStatus()).toMatchObject({ link: 'live', control: 'observer' });
     expect(second.types().filter((type) => type.startsWith('input.') || type === 'control.acquire')).toEqual([]);
     expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it('keeps a live socket that answers the check after a long hide', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(RESUME_CHECK_MS + 1000);
+    setVisibility('visible');
+    expect(first.types().at(-1)).toBe('screen.resync');
+    snapshot(first, '2');
+    await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 2);
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(first.readyState).toBe(1);
+    expect(connection.getStatus().link).toBe('live');
   });
 
   it('reopens a live socket on bfcache restore and on online', async () => {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"runtime"
@@ -112,14 +113,19 @@ func (handler *gatewayHandler) serveLive(response http.ResponseWriter, request *
 		return
 	}
 	conn.SetReadLimit(protocol.MaxInboundMessageBytes)
-	relay(ctx, conn, stream, handler.liveLimits)
+	started := time.Now()
+	reason := relay(ctx, conn, stream, handler.liveLimits)
+	// One line per phone connection, without identities or terminal content,
+	// so unstable connections can be diagnosed from gateway.log.
+	// ponytail: the log file is not rotated; one short line per connection.
+	log.Printf("live: phone connection ended after %s: %s", time.Since(started).Round(time.Second), reason)
 }
 
-// relay runs until either side ends, then closes both. Close code 0 means the
-// socket closes without a handshake. coder/websocket closes the connection when
+// relay runs until either side ends, then closes both, and returns why it
+// ended. Close code 0 means the socket closes without a handshake. coder/websocket closes the connection when
 // a Read or Write context ends, so the reader uses no context and only the
 // writer's context is tied to relay cancellation (dropping a slow phone at once).
-func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveStream, limits liveLimits) {
+func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveStream, limits liveLimits) string {
 	ctx, cancel := context.WithCancel(parent)
 	var (
 		once   sync.Once
@@ -139,7 +145,7 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 		for {
 			kind, data, err := conn.Read(context.Background())
 			if err != nil {
-				finish(0, "")
+				finish(0, "phone closed or went away")
 				return
 			}
 			if kind != websocket.MessageText {
@@ -211,7 +217,7 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 				err := conn.Ping(pingCtx)
 				pingCancel()
 				if err != nil {
-					finish(0, "")
+					finish(0, "phone missed a ping")
 					return
 				}
 			}
@@ -238,7 +244,7 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 		writeCancel()
 		out.written(len(data))
 		if err != nil {
-			finish(0, "")
+			finish(0, "write to phone failed")
 		}
 	}
 	finish(websocket.StatusGoingAway, "gateway stopping")
@@ -249,6 +255,7 @@ func relay(parent context.Context, conn *websocket.Conn, stream gatewayapi.LiveS
 		_ = conn.Close(code, reason)
 	}
 	wait.Wait()
+	return reason
 }
 
 // streamEndStatus maps the broker's last message before its stream ended to

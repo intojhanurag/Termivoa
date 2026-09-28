@@ -33,6 +33,16 @@ export const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 3000, 5000] as const;
  * so reattaching as an observer costs the user nothing.
  */
 export const RESUME_CHECK_MS = 10_000;
+
+/**
+ * After a long hide the socket is checked, not replaced: it asks for the screen
+ * again and waits this long for any host message. A live socket answers well
+ * inside it; silence means the socket is half-open, and only then it reconnects.
+ */
+export const RESUME_PROBE_MS = 2_000;
+
+/** WebSocket.OPEN, without depending on the global in tests. */
+const SOCKET_OPEN = 1;
 const HISTORY_PAGE_ROWS = 200;
 const MAX_HISTORY_PAGES = 25;
 // Continuous output bumps the history revision on every scrolled line.
@@ -164,6 +174,7 @@ export class Connection {
   private stopped = false;
   private requestedSize: string | undefined;
   private hiddenAt: number | undefined;
+  private probeTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly createSocket: (url: string) => WebSocket;
   private readonly requestFrame: (callback: () => void) => void;
@@ -326,7 +337,11 @@ export class Connection {
     }
     const hiddenFor = this.hiddenAt === undefined ? 0 : Date.now() - this.hiddenAt;
     this.hiddenAt = undefined;
-    this.resume(hiddenFor > RESUME_CHECK_MS);
+    if (hiddenFor > RESUME_CHECK_MS) {
+      this.verify();
+    } else {
+      this.resume(false);
+    }
   };
 
   private readonly onPageShow = (event: PageTransitionEvent): void => this.resume(event.persisted);
@@ -371,6 +386,27 @@ export class Connection {
     this.reconnectAttempt = 0;
   }
 
+  /** Keeps a socket that still answers; replaces one that stays silent. */
+  private verify(): void {
+    const socket = this.socket;
+    if (this.stopped || this.status.link !== 'live' || socket === undefined || socket.readyState !== SOCKET_OPEN) {
+      this.resume(true);
+      return;
+    }
+    this.clearProbe();
+    this.probeTimer = setTimeout(() => {
+      this.probeTimer = undefined;
+      this.resume(true);
+    }, RESUME_PROBE_MS);
+    // The broker answers any resync with a full snapshot; the reason is informational.
+    this.requestResync('initial');
+  }
+
+  private clearProbe(): void {
+    clearTimeout(this.probeTimer);
+    this.probeTimer = undefined;
+  }
+
   private open(): void {
     this.clearReconnect();
     const epoch = ++this.socketEpoch;
@@ -399,6 +435,7 @@ export class Connection {
     };
     socket.onmessage = (event: MessageEvent) => {
       if (epoch === this.socketEpoch) {
+        this.clearProbe();
         this.handleMessage(event.data);
       }
     };
@@ -865,6 +902,7 @@ export class Connection {
     }
     this.socket = undefined;
     this.socketEpoch++;
+    this.clearProbe();
     this.stopHeartbeat();
     this.assembler.abort();
     this.pendingSnapshot = undefined;
@@ -892,6 +930,7 @@ export class Connection {
     this.stopped = true;
     this.listen(false);
     this.clearReconnect();
+    this.clearProbe();
     this.stopHeartbeat();
     this.dropControl(undefined);
     const socket = this.socket;
