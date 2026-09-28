@@ -27,6 +27,9 @@ interface Runtime {
 
 type Panel = 'none' | 'composer' | 'history' | 'snippets' | 'menu';
 
+/** A reconnect shorter than this shows only the amber dot, not the "Reconnecting…" text. */
+export const QUIET_RECONNECT_MS = 1_500;
+
 const noSubscribe = () => () => undefined;
 const initialStatus = () => INITIAL_STATUS;
 const sameSession = (a: BrokerRPCSessionRecord, b: BrokerRPCSessionRecord) => a.id === b.id && a.generation === b.generation;
@@ -145,6 +148,15 @@ export function Live({
     runtime?.connection.getStatus ?? initialStatus,
   );
   const canSend = canSendWith(status);
+  const [slowLink, setSlowLink] = useState(false);
+  useEffect(() => {
+    setSlowLink(false);
+    if (status.link === 'live') {
+      return undefined;
+    }
+    const timer = setTimeout(() => setSlowLink(true), QUIET_RECONNECT_MS);
+    return () => clearTimeout(timer);
+  }, [status.link]);
   const draft = draftKey(session.id, session.generation);
   const current = sessions?.find((item) => sameSession(item, session)) ?? session;
   const projectName = settings?.projects.find((item) => item.id === session.projectId)?.name;
@@ -362,7 +374,7 @@ export function Live({
           <div className="status-line" role="status">
             <span className="place">
               <span className={status.link === 'live' ? 'dot green' : 'dot amber'} aria-hidden="true" />
-              {status.link === 'live' ? place || 'Connected' : linkLabel(status)}
+              {status.link === 'live' ? place || 'Connected' : slowLink || place === '' ? linkLabel(status) : place}
             </span>
             <span className={`badge-text ${badge.tone}`}>{badge.text}</span>
           </div>
