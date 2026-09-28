@@ -9,7 +9,7 @@ import {
   rowText,
   type ScreenDisplay,
 } from './Connection';
-import { fitGrid, followCursor } from './TerminalView';
+import { fitGrid, followCursor, MAX_WHEEL_STEPS, wheelSteps } from './TerminalView';
 import type { CellStyle, ScreenMetadata, ScreenPatch, ScreenSnapshot, TerminalRow } from './FrameRenderer';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -758,5 +758,18 @@ describe('followCursor', () => {
     expect(followCursor(0, 300, { top: 100, bottom: 117 })).toBe(0);
     expect(followCursor(0, 300, { top: 580, bottom: 597 })).toBe(297);
     expect(followCursor(297, 300, { top: 34, bottom: 51 })).toBe(34);
+  });
+});
+
+describe('wheelSteps', () => {
+  it('sends one step per step of travel and carries the rest', () => {
+    expect(wheelSteps(0, 20, 36)).toEqual({ steps: 0, carry: 20 });
+    expect(wheelSteps(20, 20, 36)).toEqual({ steps: 1, carry: 4 });
+    expect(wheelSteps(0, -80, 36)).toEqual({ steps: -2, carry: -8 });
+  });
+
+  it('caps a flick and drops the overflow instead of queueing it', () => {
+    expect(wheelSteps(0, 1000, 36)).toEqual({ steps: MAX_WHEEL_STEPS, carry: 0 });
+    expect(wheelSteps(0, -1000, 36)).toEqual({ steps: -MAX_WHEEL_STEPS, carry: 0 });
   });
 });

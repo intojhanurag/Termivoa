@@ -355,6 +355,8 @@ textarea {
 .terminal-area::-webkit-scrollbar { display: none; }
 .terminal-area[hidden] { display: none; }
 .terminal-area.dim { opacity: 0.35; }
+/* The swipe scrolls the full-screen app, so the page must not pan or bounce. */
+.terminal-area.app-scroll { touch-action: none; }
 .terminal-host { display: inline-block; }
 .terminal-input {
   position: absolute;

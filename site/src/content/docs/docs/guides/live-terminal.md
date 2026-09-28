@@ -50,6 +50,13 @@ Snippets are saved prompts and commands. Tap **snips** to open them.
 
 Snippets are saved on this phone only.
 
+## Scroll
+
+- **Full-screen apps** such as Claude Code, Codex, `vim` or `less`: swipe up or down on the terminal. The app scrolls its own output. You need control.
+- **A normal shell:** pull down on the terminal, or tap **history**, to see earlier output.
+
+The `▲` and `▼` keys in the dock also scroll a full-screen app.
+
 ## History and copy
 
 1. Tap **history** to scroll back through earlier output.

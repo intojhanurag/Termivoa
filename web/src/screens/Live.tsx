@@ -6,7 +6,7 @@ import { canSendWith, Connection, INITIAL_STATUS } from '../terminal/Connection'
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
 import { runFirstCommand } from '../terminal/runFirst';
-import { followCursor, TerminalView } from '../terminal/TerminalView';
+import { followCursor, TerminalView, wheelSteps } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, type ViewedTimes } from './activity';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { Composer } from './Composer';
@@ -124,6 +124,8 @@ export function Live({
   const controller = useRef<InputController | undefined>(undefined);
   const initialFont = useRef(fontSize);
   const touchStart = useRef<number | undefined>(undefined);
+  const touchLast = useRef<number | undefined>(undefined);
+  const wheelCarry = useRef(0);
   const [runtime, setRuntime] = useState<Runtime>();
   const [panel, setPanel] = useState<Panel>(openComposer === true ? 'composer' : 'none');
   const [composerVersion, setComposerVersion] = useState(0);
@@ -302,6 +304,17 @@ export function Live({
   }
 
   const normalBuffer = status.buffer === 'normal';
+  // Full-screen apps (Claude Code, vim, less) scroll themselves: a swipe or
+  // trackpad scroll becomes wheel steps. Needs control, since wheel steps are input.
+  const appScroll = !normalBuffer && canSend && !keyboard;
+
+  function scrollApp(travel: number) {
+    const { steps, carry } = wheelSteps(wheelCarry.current, travel);
+    wheelCarry.current = carry;
+    for (let step = 0; step < Math.abs(steps); step++) {
+      runtime?.connection.sendWheel(steps > 0 ? 'wheel-up' : 'wheel-down');
+    }
+  }
   const historyEnabled = status.link === 'live';
   const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu';
   const question = panel === 'none' ? openQuestion(status) : undefined;
@@ -371,17 +384,30 @@ export function Live({
 
       <div
         ref={area}
-        className={sheet || cardOpen ? 'terminal-area dim' : 'terminal-area'}
+        className={`terminal-area${sheet || cardOpen ? ' dim' : ''}${appScroll ? ' app-scroll' : ''}`}
         hidden={panel === 'history'}
         onClick={() => {
           if (sheet) setPanel('none');
           else if (canSend) input.current?.focus();
         }}
-        onWheel={(event) => { if (event.deltaY < 0 && normalBuffer && area.current?.scrollTop === 0) openHistory(); }}
-        onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientY; }}
+        onWheel={(event) => {
+          if (appScroll) scrollApp(-event.deltaY);
+          else if (event.deltaY < 0 && normalBuffer && area.current?.scrollTop === 0) openHistory();
+        }}
+        onTouchStart={(event) => {
+          touchStart.current = event.touches[0]?.clientY;
+          touchLast.current = touchStart.current;
+          wheelCarry.current = 0;
+        }}
         onTouchMove={(event) => {
           const start = touchStart.current;
           const now = event.touches[0]?.clientY;
+          if (appScroll) {
+            const last = touchLast.current;
+            touchLast.current = now;
+            if (last !== undefined && now !== undefined) scrollApp(now - last);
+            return;
+          }
           if (start !== undefined && now !== undefined && now - start > 48 && normalBuffer && area.current?.scrollTop === 0) {
             touchStart.current = undefined;
             openHistory();
