@@ -19,7 +19,10 @@ if ($RootPlan -ne $DocsPlan) {
 
 $GoFiles = Get-ChildItem cmd, internal, tests, third_party/ansi, third_party/vt, third_party/xpty, third_party/ultraviolet -Recurse -Filter *.go -ErrorAction SilentlyContinue
 if ($GoFiles) {
-    $Unformatted = $GoFiles.FullName | ForEach-Object { gofmt -l $_ }
+    $Unformatted = $GoFiles.FullName | ForEach-Object {
+        gofmt -l $_
+        if ($LASTEXITCODE -ne 0) { throw "gofmt failed on $_." }
+    }
     if ($Unformatted) { throw "Go files require formatting: $($Unformatted -join ', ')" }
 }
 
