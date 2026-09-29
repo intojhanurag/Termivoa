@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { offlineRetry } from './App';
+import { offlineRetry, pathFor, titleFor } from './App';
 
 describe('offlineRetry', () => {
   it('keeps "connecting" for the first failure, then shows offline', () => {
@@ -10,5 +10,12 @@ describe('offlineRetry', () => {
 
   it('backs off 1, 2, 4, 8 seconds, then retries every 10', () => {
     expect([1, 2, 3, 4, 5, 6, 50].map((failures) => offlineRetry(failures).retryIn)).toEqual([1, 2, 4, 8, 10, 10, 10]);
+  });
+});
+
+describe('wall route', () => {
+  it('has its own address and tab title, so browser back works', () => {
+    expect(pathFor({ name: 'wall' })).toBe('/wall');
+    expect(titleFor({ name: 'wall' })).toBe('Wall · Termivoa');
   });
 });
