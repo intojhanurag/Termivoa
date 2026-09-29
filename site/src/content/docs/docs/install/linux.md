@@ -23,7 +23,7 @@ No root access, extra packages or Node.js are needed.
 1. Download the binary and the install script. On arm64, use `pterm-linux-arm64` in both commands.
 
    ```sh
-   gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
+   gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
    ```
 
 2. Run the install script:

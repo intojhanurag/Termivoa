@@ -5,7 +5,7 @@ Ask the agent to "do pending work" to complete them.
 
 ## Road to public beta (updated 2026-09-28)
 
-Done: private beta `v0.1.0-beta.1` released, website and docs live at
+Done: private betas `v0.1.0-beta.1` and `v0.1.0-beta.2` released, website and docs live at
 <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>.
 
 ### Before the public beta (the repo goes public)

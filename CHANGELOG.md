@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] - 2026-09-29
+
+Second private beta. Updating from beta.1 restarts Termivoa on the computer,
+which ends running sessions.
+
 ### Added
 
 - Wall on the phone: a **Wall** button on the Sessions list shows every

@@ -9,7 +9,7 @@ The command-line tool is `pterm`. Some data folders and startup entries keep
 the old working name "Phone Terminal" so existing installs keep working (see
 [docs/naming.md](docs/naming.md)).
 
-> **Status:** private beta (`v0.1.0-beta.1`, unsigned, invited testers only;
+> **Status:** private beta (`v0.1.0-beta.2`, unsigned, invited testers only;
 > [install](docs/install.md#private-beta)). The full flow is tested on an
 > Apple Silicon Mac. Windows and Linux support is written but not yet verified
 > on a real Windows or Linux machine (Linux ran in containers only). There are
