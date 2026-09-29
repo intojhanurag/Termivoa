@@ -378,7 +378,8 @@ func TestAgentTransitionsNotify(t *testing.T) {
 		t.Fatalf("done event = %#v", event)
 	}
 	idle = waitPresence(t, session, func(presence SessionPresence) bool { return presence.Agent.State == agentstate.Idle })
-	if payload := agentPayload(idle.Agent); payload.AfterWork == nil || !*payload.AfterWork {
+	if payload := agentPayload(idle.Agent); payload.AfterWork == nil || !*payload.AfterWork ||
+		payload.WorkedSeconds == nil || *payload.WorkedSeconds < int64(agentstate.IdleAfter/time.Second) {
 		t.Fatalf("idle after work = %#v", payload)
 	}
 

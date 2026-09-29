@@ -2,12 +2,12 @@ import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { sendAgentKey } from '../terminal/agentKeys';
-import { canSendWith, Connection, INITIAL_STATUS } from '../terminal/Connection';
+import { canSendWith, Connection, INITIAL_STATUS, type ChangesView } from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
 import { runFirstCommand } from '../terminal/runFirst';
 import { followCursor, TerminalView, wheelSteps } from '../terminal/TerminalView';
-import { hasNewOutput, markViewed, readViewed, type ViewedTimes } from './activity';
+import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey, type RecapFacts, type ViewedTimes } from './activity';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { askAboutFile, Changes } from './Changes';
 import { Composer } from './Composer';
@@ -15,6 +15,7 @@ import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } fr
 import { displayPath, sessionName } from './folder';
 import { History } from './History';
 import { PreviewChip } from './PreviewChip';
+import { autoDismiss, RecapCard } from './Recap';
 import { useKeyboardOpen, websocketUrl } from './hooks';
 import type { RunFirstRequest } from './presets';
 import { SessionMenu } from './SessionMenu';
@@ -28,11 +29,15 @@ interface Runtime {
 
 type Panel = 'none' | 'composer' | 'history' | 'changes' | 'snippets' | 'menu';
 
+/** The away recap, once per visit: decided when live, then its changes are read, then shown. */
+type Recap = { readonly phase: 'wait' | 'loading' | 'done' } | { readonly phase: 'shown'; readonly line: string };
+
 /** A reconnect shorter than this shows only the amber dot, not the "Reconnecting…" text. */
 export const QUIET_RECONNECT_MS = 1_500;
 
 const noSubscribe = () => () => undefined;
 const initialStatus = () => INITIAL_STATUS;
+const noChanges = (): ChangesView | undefined => undefined;
 const sameSession = (a: BrokerRPCSessionRecord, b: BrokerRPCSessionRecord) => a.id === b.id && a.generation === b.generation;
 
 /** Tabs: running sessions, plus the open one even after it exits. */
@@ -164,6 +169,16 @@ export function Live({
   const current = sessions?.find((item) => sameSession(item, session)) ?? session;
   const projectName = settings?.projects.find((item) => item.id === session.projectId)?.name;
   const shellName = settings?.shellProfiles.find((item) => item.id === session.shellProfileId)?.name;
+
+  // What this device saw last time, read before this visit marks the session viewed.
+  const [before] = useState(() => ({ viewed: readViewed(), worked: readWorked() }));
+  const [recap, setRecap] = useState<Recap>({ phase: 'wait' });
+  const recapFacts = useRef<RecapFacts>(undefined);
+  const recapCard = useRef<HTMLDivElement>(null);
+  const changesView = useSyncExternalStore(
+    runtime?.connection.subscribe ?? noSubscribe,
+    runtime?.connection.getChanges ?? noChanges,
+  );
 
   // This device is looking at the session: its output is not "new" here.
   const latest = useRef(current);
@@ -300,6 +315,57 @@ export function Live({
     };
   }, [runtime]);
 
+  // Once live, decide from broker facts only; a recap then reads the changes once.
+  useEffect(() => {
+    if (runtime === undefined || recap.phase !== 'wait' || status.link !== 'live') {
+      return;
+    }
+    const key = viewedKey(latest.current);
+    const facts: RecapFacts = {
+      now: Date.now(),
+      viewedAt: before.viewed[key],
+      workedBefore: before.worked[key],
+      agent: status.agent ?? latest.current.agent,
+      fresh: hasNewOutput(latest.current, before.viewed),
+    };
+    const line = recapLine(facts);
+    recapFacts.current = facts;
+    if (line === undefined) {
+      setRecap({ phase: 'done' });
+    } else {
+      setRecap(runtime.connection.openChanges() ? { phase: 'loading' } : { phase: 'shown', line });
+    }
+  }, [runtime, recap.phase, status.link, status.agent, before]);
+
+  useEffect(() => {
+    const facts = recapFacts.current;
+    if (recap.phase !== 'loading' || facts === undefined || changesView?.state === 'loading') {
+      return;
+    }
+    const summary = changesView?.summary;
+    const files = summary?.state === 'ready' ? summary.files : [];
+    const line = recapLine({
+      ...facts,
+      changes: {
+        files: files.length,
+        additions: files.reduce((sum, file) => sum + file.additions, 0),
+        deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+      },
+    });
+    setRecap(line === undefined ? { phase: 'done' } : { phase: 'shown', line });
+  }, [recap.phase, changesView]);
+
+  useEffect(() => {
+    if (recap.phase !== 'shown') {
+      return undefined;
+    }
+    return autoDismiss(
+      document,
+      (node) => node instanceof Node && recapCard.current?.contains(node) === true,
+      () => setRecap({ phase: 'done' }),
+    );
+  }, [recap.phase]);
+
   useEffect(() => {
     if (status.link === 'revoked') {
       onRevoked(status.notice);
@@ -414,6 +480,16 @@ export function Live({
         <div className="banner" role="alert">
           <span>{runFirstNotice}</span>
           <button type="button" onClick={() => setRunFirstNotice(undefined)}>Dismiss</button>
+        </div>
+      )}
+
+      {recap.phase === 'shown' && panel === 'none' && (
+        <div ref={recapCard} className="recap-anchor">
+          <RecapCard
+            line={recap.line}
+            onSeeChanges={() => { setRecap({ phase: 'done' }); openChanges(); }}
+            onDismiss={() => setRecap({ phase: 'done' })}
+          />
         </div>
       )}
 

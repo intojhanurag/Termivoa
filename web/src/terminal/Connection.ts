@@ -1,6 +1,8 @@
 import type {
   AgentStatus,
+  ChangesCommittedPayload,
   ChangesPatchPayload,
+  ChangesPushedPayload,
   ChangesSummaryPayload,
   HistoryChangedPayload,
   HistoryPagePayload,
@@ -25,6 +27,8 @@ import { DeliveryUncertainError, InputSender } from './InputSender';
 import { SnapshotAssembler } from './SnapshotAssembler';
 
 export const DELIVERY_UNCERTAIN = 'Delivery uncertain—check the terminal before sending again.';
+/** A commit or push was sent but its reply can no longer arrive. It is never resent. */
+export const WRITE_LOST = 'Connection lost — check the Changes list before trying again.';
 export const HEARTBEAT_MS = 5000;
 export const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 3000, 5000] as const;
 /**
@@ -115,6 +119,24 @@ export interface ChangesFileView {
   readonly patch: ChangesPatchPayload | undefined;
 }
 
+/** The one commit or push in flight, then its result until dismissed. */
+export interface ChangesWrite {
+  readonly kind: 'commit' | 'push';
+  /** error: the host refused it, or the connection closed before the reply. */
+  readonly state: 'pending' | 'done' | 'error';
+  readonly committed?: ChangesCommittedPayload;
+  readonly pushed?: ChangesPushedPayload;
+  readonly message?: string;
+}
+
+/** Plain words for the refusals a commit or push can get; others use the host's text. */
+const WRITE_ERRORS: Readonly<Record<string, string>> = {
+  not_controller: 'You no longer have control. Take control, then try again.',
+  stale_lease: 'You no longer have control. Take control, then try again.',
+  limit_exceeded: 'That is more than the computer allows. Select fewer files or shorten the message.',
+  operation_conflict: 'Another commit or push is running. Wait for it, then try again.',
+};
+
 /** FrameRenderer satisfies this; tests pass a fake. */
 export interface ScreenDisplay {
   paintSnapshot(snapshot: ScreenSnapshot): Promise<void>;
@@ -204,6 +226,9 @@ export class Connection {
   private screenRows: TerminalRow[] = [];
   private history: HistoryState | undefined;
   private changes: ChangesState | undefined;
+  private write: ChangesWrite | undefined;
+  /** The request ID of the pending write; only its reply counts. */
+  private writeRequest: string | undefined;
   private stopped = false;
   private requestedSize: string | undefined;
   private hiddenAt: number | undefined;
@@ -228,6 +253,8 @@ export class Connection {
   readonly getHistory = (): HistoryView | undefined => this.history?.view;
 
   readonly getChanges = (): ChangesView | undefined => this.changes?.view;
+
+  readonly getChangesWrite = (): ChangesWrite | undefined => this.write;
 
   get sessionId(): string {
     return this.options.sessionId;
@@ -436,6 +463,25 @@ export class Connection {
     this.emit();
   }
 
+  /** Controller only. Commits these paths from the latest list; the repository's hooks run. */
+  commitChanges(message: string, paths: ReadonlyArray<string>): boolean {
+    return paths.length > 0 && this.sendWrite('commit', 'changes.commit', (lease) => ({ lease, message, paths }));
+  }
+
+  /** Controller only. Pushes the current branch; the host never forces. */
+  pushChanges(): boolean {
+    return this.sendWrite('push', 'changes.push', (lease) => ({ lease }));
+  }
+
+  /** Clears a shown result. A pending write stays until its reply or a lost connection. */
+  dismissChangesWrite(): void {
+    if (this.write === undefined || this.write.state === 'pending') {
+      return;
+    }
+    this.write = undefined;
+    this.emit();
+  }
+
   private readonly onVisibility = (): void => {
     if (document.visibilityState === 'hidden') {
       this.hiddenAt ??= Date.now();
@@ -583,6 +629,14 @@ export class Connection {
         this.stop('revoked', message.payload.message);
         return;
       case 'error':
+        if (message.requestId === this.writeRequest) {
+          const { code, message: text } = message.payload;
+          if (code === 'not_controller' || code === 'stale_lease') {
+            this.dropControl(undefined);
+          }
+          this.finishWrite(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? text });
+          return;
+        }
         this.failChanges(message.requestId);
         this.handleError(message.payload.code, message.payload.message);
         return;
@@ -626,6 +680,12 @@ export class Connection {
           return;
         case 'changes.patch':
           this.handleChangesPatch(message.requestId, message.payload);
+          return;
+        case 'changes.committed':
+          this.finishWrite(message.requestId, { state: 'done', committed: message.payload });
+          return;
+        case 'changes.pushed':
+          this.finishWrite(message.requestId, { state: 'done', pushed: message.payload });
           return;
         case 'control.changed': {
           const { lease, controllerConnectionId, controllerLabel } = message.payload;
@@ -1031,6 +1091,34 @@ export class Connection {
     }
   }
 
+  /** One write at a time, with the current lease; never queued or resent. */
+  private sendWrite(kind: ChangesWrite['kind'], type: string, payload: (lease: string) => object): boolean {
+    const lease = this.lease;
+    if (this.writeRequest !== undefined || !canSendWith(this.status) || lease === undefined) {
+      return false;
+    }
+    const requestId = this.sendSession(type, payload(lease));
+    if (requestId === undefined) {
+      return false;
+    }
+    this.writeRequest = requestId;
+    this.write = { kind, state: 'pending' };
+    this.emit();
+    return true;
+  }
+
+  /** Shows the reply to the pending write, then reads the list again, since the tree may have changed. */
+  private finishWrite(requestId: string, result: Omit<ChangesWrite, 'kind'>): void {
+    const write = this.write;
+    if (write === undefined || requestId !== this.writeRequest) {
+      return;
+    }
+    this.writeRequest = undefined;
+    this.write = { kind: write.kind, ...result };
+    this.emit();
+    this.refreshChanges();
+  }
+
   private grantControl(lease: string): void {
     this.lease = lease;
     this.sender = new InputSender(
@@ -1105,6 +1193,11 @@ export class Connection {
     }
     // Replies to this socket's requests can no longer arrive.
     this.failChanges(undefined);
+    if (this.write !== undefined && this.writeRequest !== undefined) {
+      // The host may or may not have run it: say so, and never resend.
+      this.writeRequest = undefined;
+      this.write = { kind: this.write.kind, state: 'error', message: WRITE_LOST };
+    }
     if (this.stopped) {
       return;
     }

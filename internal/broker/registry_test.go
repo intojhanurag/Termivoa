@@ -1752,6 +1752,9 @@ func (session *fakeManagedSession) PreviewTarget(context.Context, uint16) (strin
 func (session *fakeManagedSession) ChangesFolder(context.Context) (string, error) {
 	return "", ErrSessionNotRunning
 }
+func (session *fakeManagedSession) AuthorizeControl(context.Context, MutationIdentity) error {
+	return ErrSessionNotRunning
+}
 func (session *fakeManagedSession) Close() error {
 	session.closed.Store(true)
 	session.mu.Lock()

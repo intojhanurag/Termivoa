@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -113,13 +114,13 @@ var clientMessageTypes = map[MessageType]bool{
 	Hello: true, SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
-	HistoryRead: true, ChangesList: true, ChangesFile: true, SessionDetach: true,
+	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true, SessionDetach: true,
 }
 
 var hostMessageTypes = map[MessageType]bool{
 	Welcome: true, SnapshotBegin: true, SnapshotRows: true, SnapshotEnd: true,
 	ScreenPatch: true, HistoryPage: true, MessageTypeHistoryChanged: true,
-	ChangesSummary: true, ChangesPatch: true,
+	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true,
 	ControlChanged: true, InputAccepted: true, InputRejected: true,
 	SessionState: true, AccessRevoked: true, Error: true,
 }
@@ -128,9 +129,10 @@ var sessionMessageTypes = map[MessageType]bool{
 	SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
-	HistoryRead: true, ChangesList: true, ChangesFile: true, SessionDetach: true, SnapshotBegin: true,
+	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true,
+	SessionDetach: true, SnapshotBegin: true,
 	SnapshotRows: true, SnapshotEnd: true, ScreenPatch: true, HistoryPage: true,
-	ChangesSummary: true, ChangesPatch: true,
+	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true,
 	MessageTypeHistoryChanged: true, ControlChanged: true, InputAccepted: true,
 	InputRejected: true, SessionState: true,
 }
@@ -263,6 +265,18 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return ValidateChangePath(payload.Path)
+	case ChangesCommit:
+		payload, err := strictPayload[ChangesCommitPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateChangesCommit(payload)
+	case ChangesPush:
+		payload, err := strictPayload[ChangesPushPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateSecret(payload.Lease)
 	case Welcome:
 		payload, err := strictPayload[WelcomePayload](envelope)
 		if err != nil {
@@ -348,6 +362,18 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return validateChangesPatch(payload)
+	case ChangesCommitted:
+		payload, err := strictPayload[ChangesCommittedPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateChangesCommitted(payload)
+	case ChangesPushed:
+		payload, err := strictPayload[ChangesPushedPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateChangesPushed(payload)
 	case MessageTypeHistoryChanged:
 		payload, err := strictPayload[HistoryChangedPayload](envelope)
 		if err != nil {
@@ -467,6 +493,10 @@ const (
 	MaxDiffLineRunes     = 1000
 	maxChangePathRunes   = 4096
 	maxChangeBranchRunes = 256
+	MaxCommitPaths       = 300
+	MaxCommitMessage     = 2000 // characters
+	MaxGitOutput         = 2000 // characters of git output in a failed result
+	maxLinkURLRunes      = 2048
 )
 
 // ValidateChangePath accepts a repository-relative path: 1..4096 characters
@@ -484,6 +514,90 @@ func ValidateChangePath(path string) error {
 		if segment == ".." {
 			return errors.New("change path must not contain a .. segment")
 		}
+	}
+	return nil
+}
+
+// ValidateCommitMessage accepts 1..2000 characters of UTF-8 without NUL.
+func ValidateCommitMessage(message string) error {
+	if message == "" || !utf8.ValidString(message) || utf8.RuneCountInString(message) > MaxCommitMessage || strings.IndexByte(message, 0) >= 0 {
+		return errors.New("commit message must be 1..2000 characters without NUL")
+	}
+	return nil
+}
+
+// ValidateLinkURL accepts an https URL with a host, of at most 2048
+// characters, without whitespace or control characters. The phone may open
+// it, so nothing else passes.
+func ValidateLinkURL(link string) error {
+	if !strings.HasPrefix(link, "https://") || !utf8.ValidString(link) || utf8.RuneCountInString(link) > maxLinkURLRunes ||
+		strings.IndexFunc(link, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return errors.New("link must be an https URL without spaces or control characters")
+	}
+	if parsed, err := url.Parse(link); err != nil || parsed.Host == "" || parsed.User != nil {
+		return errors.New("link must be an https URL with a host")
+	}
+	return nil
+}
+
+func validateChangesCommit(payload ChangesCommitPayload) error {
+	if err := validateSecret(payload.Lease); err != nil {
+		return err
+	}
+	if err := ValidateCommitMessage(payload.Message); err != nil {
+		return err
+	}
+	if len(payload.Paths) == 0 || len(payload.Paths) > MaxCommitPaths {
+		return errors.New("commit paths are outside bounds")
+	}
+	for _, path := range payload.Paths {
+		if err := ValidateChangePath(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validGitOutput(output *string) bool {
+	return output == nil || utf8.ValidString(*output) && utf8.RuneCountInString(*output) <= MaxGitOutput
+}
+
+func validateChangesCommitted(payload ChangesCommittedPayload) error {
+	if payload.State != Committed && payload.State != Nothing && payload.State != CommitStateFailed {
+		return errors.New("invalid commit state")
+	}
+	if (payload.Commit != nil) != (payload.State == Committed) {
+		return errors.New("commit is present only when committed")
+	}
+	if payload.Commit != nil {
+		hash := *payload.Commit
+		if len(hash) < 4 || len(hash) > 64 || strings.Trim(hash, "0123456789abcdef") != "" {
+			return errors.New("commit hash is invalid")
+		}
+	}
+	if !validGitOutput(payload.Output) {
+		return errors.New("commit output is outside bounds")
+	}
+	return nil
+}
+
+func validateChangesPushed(payload ChangesPushedPayload) error {
+	if payload.State != Pushed && payload.State != NoRemote && payload.State != PushStateFailed {
+		return errors.New("invalid push state")
+	}
+	if payload.State != Pushed && (payload.Branch != nil || payload.URL != nil) {
+		return errors.New("branch and url are present only when pushed")
+	}
+	if payload.Branch != nil && (*payload.Branch == "" || utf8.RuneCountInString(*payload.Branch) > maxChangeBranchRunes) {
+		return errors.New("branch is outside bounds")
+	}
+	if payload.URL != nil {
+		if err := ValidateLinkURL(*payload.URL); err != nil {
+			return err
+		}
+	}
+	if !validGitOutput(payload.Output) {
+		return errors.New("push output is outside bounds")
 	}
 	return nil
 }

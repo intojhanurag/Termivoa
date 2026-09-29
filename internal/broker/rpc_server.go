@@ -66,6 +66,9 @@ type ManagementServer struct {
 	connectionsWG sync.WaitGroup
 
 	uploads uploadLimits
+	// changesWrites holds the session IDs with a commit or push running
+	// (changes.go): one write per session, whoever asks.
+	changesWrites sync.Map
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a

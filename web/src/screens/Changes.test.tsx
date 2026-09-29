@@ -2,9 +2,9 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChangedFile, ChangesPatchPayload, ChangesSummaryPayload } from '../generated/protocol';
-import type { ChangesView } from '../terminal/Connection';
+import type { ChangesView, ChangesWrite } from '../terminal/Connection';
 import { readDraft, saveDraft } from '../terminal/composer';
-import { askAboutFile, ChangesPanel, splitPath } from './Changes';
+import { askAboutFile, ChangesPanel, httpsUrl, ShipFlow, splitPath, suggestMessage, type CommitControls } from './Changes';
 
 const noop = () => undefined;
 const files: ChangedFile[] = [
@@ -52,11 +52,13 @@ function buttons(node: ReactNode, found = new Map<string, () => void>()): Map<st
   if (Array.isArray(node)) {
     node.forEach((child: ReactNode) => buttons(child, found));
   } else if (isValidElement(node)) {
-    const { props } = node as ReactElement<{ children?: ReactNode; onClick?: () => void; 'aria-label'?: string }>;
+    const { props } = node as ReactElement<{ children?: ReactNode; onClick?: () => void; onChange?: () => void; 'aria-label'?: string }>;
     if (typeof node.type === 'function') {
       buttons((node.type as (props: unknown) => ReactNode)(props), found);
     } else if (node.type === 'button' && props.onClick !== undefined) {
       found.set(props['aria-label'] ?? renderToStaticMarkup(<>{props.children}</>).replace(/<[^>]+>/gu, ''), props.onClick);
+    } else if (node.type === 'input' && props.onChange !== undefined && props['aria-label'] !== undefined) {
+      found.set(props['aria-label'], props.onChange);
     }
     buttons(props.children, found);
   }
@@ -176,5 +178,150 @@ describe('ask agent about a file', () => {
   it('splits a path into its muted directory and its name', () => {
     expect(splitPath('src/app/main.ts')).toEqual({ dir: 'src/app/', name: 'main.ts' });
     expect(splitPath('README.md')).toEqual({ dir: '', name: 'README.md' });
+  });
+});
+
+describe('commit and push', () => {
+  const controls = (extra: Partial<CommitControls> = {}): CommitControls => ({
+    control: true, excluded: new Set(), pending: false, covered: false, onToggle: noop, onCommit: noop, ...extra,
+  });
+  const listHtml = (commit: CommitControls, view = list()) => renderToStaticMarkup(panel(view, { commit }));
+
+  it('suggests a message from the selected files', () => {
+    const file = (path: string, status: ChangedFile['status'] = 'modified') => ({ path, status });
+    expect(suggestMessage([file('src/app.js')])).toBe('Update app.js');
+    expect(suggestMessage([file('src/app.js'), file('lib/util.js')])).toBe('Update app.js, util.js');
+    expect(suggestMessage([file('a.js'), file('b.js'), file('c.js')])).toBe('Update a.js, b.js, c.js');
+    expect(suggestMessage(['app.js', 'b', 'c', 'd', 'e'].map((path) => file(path)))).toBe('Update app.js and 4 more files');
+    expect(suggestMessage([file('new.ts', 'untracked'), file('logo.png', 'added')])).toBe('Add new.ts, logo.png');
+    expect(suggestMessage([file('new.ts', 'untracked'), file('app.js')])).toBe('Update new.ts, app.js');
+    expect(suggestMessage([])).toBe('');
+  });
+
+  it('ticks every file by default and counts the ticked ones on the commit button', () => {
+    const markup = listHtml(controls());
+    expect(markup.match(/<input type="checkbox" aria-label="Include [^"]+" checked=""\/>/gu)).toHaveLength(4);
+    expect(markup).toContain('<button type="button" class="primary wide">Commit 4 files</button>');
+
+    const some = listHtml(controls({ excluded: new Set(['README.md', 'logo.png', 'docs/new.md']) }));
+    expect(some).toContain('<input type="checkbox" aria-label="Include README.md"/>');
+    expect(some).toContain('Commit 1 file</button>');
+    const none = listHtml(controls({ excluded: new Set(files.map((item) => item.path)) }));
+    expect(none).toContain('<button type="button" class="primary wide" disabled="">Commit 0 files</button>');
+    expect(listHtml(controls({ pending: true }))).toContain('disabled="">Working…</button>');
+    expect(listHtml(controls({ covered: true }))).toContain('aria-labelledby="changes-title" inert=""');
+
+    const onToggle = vi.fn();
+    const onCommit = vi.fn();
+    const found = buttons(panel(list(), { commit: controls({ onToggle, onCommit }) }));
+    found.get('Include README.md')?.();
+    found.get('Commit 4 files')?.();
+    expect(onToggle).toHaveBeenCalledWith('README.md');
+    expect(onCommit).toHaveBeenCalledOnce();
+  });
+
+  it('shows a hint instead of checkboxes and the button without control, and nothing for an empty list', () => {
+    const markup = listHtml(controls({ control: false }));
+    expect(markup).not.toContain('type="checkbox"');
+    expect(markup).not.toContain('Commit 4');
+    expect(markup).toContain('<p class="hint-text">Take control to commit</p>');
+    expect(listHtml(controls(), list({ summary: summary({ files: [] }) }))).not.toContain('changes-commit');
+    expect(html(list())).not.toContain('changes-commit');
+  });
+
+  const flow = (props: Partial<Parameters<typeof ShipFlow>[0]> = {}) => (
+    <ShipFlow
+      step="commit"
+      write={undefined}
+      control
+      message="Update app.js"
+      count={2}
+      branch="main"
+      onMessage={noop}
+      onCommit={noop}
+      onPush={noop}
+      onConfirmPush={noop}
+      onClose={noop}
+      {...props}
+    />
+  );
+  const flowHtml = (props: Partial<Parameters<typeof ShipFlow>[0]> = {}) => renderToStaticMarkup(flow(props));
+  const done = (extra: Partial<ChangesWrite>): ChangesWrite => ({ kind: 'commit', state: 'done', ...extra });
+
+  it('shows the message, the file count, Commit and Cancel, and waits while pending', () => {
+    const markup = flowHtml();
+    expect(markup).toContain('<label class="visually-hidden" for="commit-message">Commit message</label>');
+    expect(markup).toContain('>Update app.js</textarea>');
+    expect(markup).toContain('2 files selected');
+    expect(markup).toContain('<button type="button">Cancel</button><button type="button" class="primary">Commit</button>');
+    expect(flowHtml({ message: '  ' })).toContain('class="primary" disabled="">Commit</button>');
+    expect(flowHtml({ control: false })).toContain('Take control to commit');
+
+    const pending = flowHtml({ write: { kind: 'commit', state: 'pending' } });
+    expect(pending).toContain('<button type="button" disabled="">Cancel</button><button type="button" class="primary" disabled="">Committing…</button>');
+
+    const onCommit = vi.fn();
+    const onClose = vi.fn();
+    const found = buttons(flow({ onCommit, onClose }));
+    found.get('Commit')?.();
+    found.get('Cancel')?.();
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('says each commit result, shows failure output, and offers Push after a commit', () => {
+    const committed = flowHtml({ write: done({ committed: { state: 'committed', commit: 'abc1234' } }) });
+    expect(committed).toContain('<p class="ship-text" role="status">Committed <code>abc1234</code></p>');
+    expect(committed).toContain('<button type="button">Close</button><button type="button" class="primary">Push</button>');
+
+    const nothing = flowHtml({ write: done({ committed: { state: 'nothing' } }) });
+    expect(nothing).toContain('role="status">Nothing to commit. The selected files have no changes now.</p>');
+    expect(nothing).not.toContain('Push');
+
+    const failed = flowHtml({ write: done({ committed: { state: 'failed', output: 'husky - pre-commit hook exited with code 1' } }) });
+    expect(failed).toContain('role="status">The commit did not go through.</p>');
+    expect(failed).toContain('<pre class="ship-output" tabindex="0" aria-label="Output from git">husky - pre-commit hook exited with code 1</pre>');
+    expect(failed).toContain('<button type="button">Close</button></div>');
+
+    const refused = flowHtml({ write: { kind: 'commit', state: 'error', message: 'Connection lost — check the Changes list before trying again.' } });
+    expect(refused).toContain('role="status">Connection lost — check the Changes list before trying again.</p>');
+
+    const onPush = vi.fn();
+    buttons(flow({ write: done({ committed: { state: 'committed', commit: 'abc1234' } }), onPush })).get('Push')?.();
+    expect(onPush).toHaveBeenCalledOnce();
+  });
+
+  it('confirms before a push, then says each push result', () => {
+    const commitDone = done({ committed: { state: 'committed', commit: 'abc1234' } });
+    const confirm = flowHtml({ step: 'push', write: commitDone });
+    expect(confirm).toContain('<p class="ship-text">Push <code>main</code> to its remote? This does not force.</p>');
+    expect(confirm).toContain('<button type="button">Cancel</button><button type="button" class="primary">Push</button>');
+    const onConfirmPush = vi.fn();
+    buttons(flow({ step: 'push', write: commitDone, onConfirmPush })).get('Push')?.();
+    expect(onConfirmPush).toHaveBeenCalledOnce();
+
+    expect(flowHtml({ step: 'push', write: { kind: 'push', state: 'pending' } }))
+      .toContain('role="status">Pushing…</p><div class="ship-actions"><button type="button" disabled="">Close</button>');
+
+    const pushed = flowHtml({ step: 'push', write: { kind: 'push', state: 'done', pushed: { state: 'pushed', branch: 'feat/x', url: 'https://github.com/o/r/pull/new/feat/x' } } });
+    expect(pushed).toContain('role="status">Pushed <code>feat/x</code></p>');
+    expect(pushed).toContain('<a class="ship-link" href="https://github.com/o/r/pull/new/feat/x" target="_blank" rel="noopener noreferrer">Open pull request</a>');
+
+    const noRemote = flowHtml({ step: 'push', write: { kind: 'push', state: 'done', pushed: { state: 'no_remote', output: 'fatal: no remote' } } });
+    expect(noRemote).toContain('This repository has no remote to push to.');
+    expect(noRemote).toContain('>fatal: no remote</pre>');
+    const failed = flowHtml({ step: 'push', write: { kind: 'push', state: 'done', pushed: { state: 'failed', output: '! [rejected] main -> main (non-fast-forward)' } } });
+    expect(failed).toContain('The push did not go through.');
+    expect(failed).toContain('[rejected]');
+  });
+
+  it('ignores a pull request link that is not https', () => {
+    for (const url of ['http://github.com/o/r/pull/new/x', 'javascript:alert(1)', 'https//nope']) {
+      const markup = flowHtml({ step: 'push', write: { kind: 'push', state: 'done', pushed: { state: 'pushed', branch: 'x', url } } });
+      expect(markup).toContain('Pushed <code>x</code>');
+      expect(markup).not.toContain('<a ');
+    }
+    expect(httpsUrl('https://github.com/o/r/pull/1')).toBe('https://github.com/o/r/pull/1');
+    expect(httpsUrl(undefined)).toBeUndefined();
   });
 });

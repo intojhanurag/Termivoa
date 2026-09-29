@@ -221,6 +221,7 @@ const (
 	requestCompleteViewerNotice
 	requestPrepareViewerSnapshot
 	requestPresence
+	requestAuthorize
 )
 
 type sessionRequest struct {
@@ -459,6 +460,13 @@ func (session *Session) ReleaseControl(ctx context.Context, identity MutationIde
 func (session *Session) SubmitInput(ctx context.Context, identity MutationIdentity, sequence uint64, action InputAction) (InputAcceptance, error) {
 	response, err := session.call(ctx, sessionRequest{kind: requestSubmit, identity: identity, sequence: sequence, action: action})
 	return response.acceptance, err
+}
+
+// AuthorizeControl checks that identity holds the controller lease now,
+// without renewing it, for actions that run outside the actor (changes.go).
+func (session *Session) AuthorizeControl(ctx context.Context, identity MutationIdentity) error {
+	_, err := session.call(ctx, sessionRequest{kind: requestAuthorize, identity: identity})
+	return err
 }
 
 func (session *Session) Resize(ctx context.Context, identity MutationIdentity, columns, rows int) error {
@@ -1169,6 +1177,18 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			status.Columns, status.Rows = request.columns, request.rows
 			response.err = session.capturePublished()
 		}
+	case requestAuthorize:
+		if status.State != SessionRunning {
+			response.err = ErrSessionNotRunning
+			break
+		}
+		if response.err = checkAccess(request.identity.Access); response.err != nil {
+			break
+		}
+		_, response.err = session.controller.Authorize(
+			request.identity.Generation, request.identity.ConnectionID,
+			request.identity.DeviceID, request.identity.Lease,
+		)
 	case requestSnapshot:
 		response.frame, response.err = session.terminal.Snapshot(session.ctx)
 	case requestHistoryRead:

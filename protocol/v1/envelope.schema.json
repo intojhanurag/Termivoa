@@ -31,6 +31,8 @@
     { "$ref": "#/$defs/historyReadMessage" },
     { "$ref": "#/$defs/changesListMessage" },
     { "$ref": "#/$defs/changesFileMessage" },
+    { "$ref": "#/$defs/changesCommitMessage" },
+    { "$ref": "#/$defs/changesPushMessage" },
     { "$ref": "#/$defs/sessionDetachMessage" },
     { "$ref": "#/$defs/welcomeMessage" },
     { "$ref": "#/$defs/snapshotBeginMessage" },
@@ -41,6 +43,8 @@
     { "$ref": "#/$defs/historyChangedMessage" },
     { "$ref": "#/$defs/changesSummaryMessage" },
     { "$ref": "#/$defs/changesPatchMessage" },
+    { "$ref": "#/$defs/changesCommittedMessage" },
+    { "$ref": "#/$defs/changesPushedMessage" },
     { "$ref": "#/$defs/controlChangedMessage" },
     { "$ref": "#/$defs/inputAcceptedMessage" },
     { "$ref": "#/$defs/inputRejectedMessage" },
@@ -75,7 +79,8 @@
         "snapshot.rows", "snapshot.end", "screen.patch", "history.page",
         "history.changed", "control.changed", "input.accepted",
         "input.rejected", "session.state", "access.revoked", "error",
-        "changes.list", "changes.file", "changes.summary", "changes.patch"
+        "changes.list", "changes.file", "changes.summary", "changes.patch",
+        "changes.commit", "changes.push", "changes.committed", "changes.pushed"
       ]
     },
     "errorCode": {
@@ -129,13 +134,14 @@
     },
     "agentStatus": {
       "title": "AgentStatus",
-      "description": "Broker-computed activity of a running session. question is present exactly when state is waiting. stateSince is the RFC 3339 time of the last change of state or question. afterWork is true only on idle, when this idle ended a working period in this broker's lifetime (\"your turn\"); it is absent otherwise and resets when work starts again.",
+      "description": "Broker-computed activity of a running session. question is present exactly when state is waiting. stateSince is the RFC 3339 time of the last change of state or question. afterWork is true only on idle, when this idle ended a working period in this broker's lifetime (\"your turn\"); it is absent otherwise and resets when work starts again. workedSeconds is the total time in the working state during this broker's lifetime, up to now; phones compare it with the value they saw last.",
       "type": "object", "additionalProperties": false, "required": ["state", "stateSince"],
       "properties": {
         "state": { "$ref": "#/$defs/agentState" },
         "stateSince": { "type": "string", "minLength": 20, "maxLength": 35 },
         "question": { "$ref": "#/$defs/agentQuestion" },
-        "afterWork": { "type": "boolean" }
+        "afterWork": { "type": "boolean" },
+        "workedSeconds": { "type": "integer", "minimum": 0 }
       }
     },
     "previewPort": {
@@ -495,6 +501,43 @@
         "truncated": { "type": "boolean" }
       }
     },
+    "changesCommitPayload": {
+      "title": "ChangesCommitPayload",
+      "description": "Controller only. Commits exactly these paths from the latest changes.summary (paths not in a fresh listing are refused) with this message. The repository's own commit hooks run, as with any git commit.",
+      "type": "object", "additionalProperties": false, "required": ["lease", "message", "paths"],
+      "properties": {
+        "lease": { "$ref": "#/$defs/secret" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "paths": { "type": "array", "minItems": 1, "maxItems": 300, "items": { "type": "string", "minLength": 1, "maxLength": 4096 } }
+      }
+    },
+    "changesPushPayload": {
+      "title": "ChangesPushPayload",
+      "description": "Controller only. Pushes the current branch to its upstream, or to origin with a new upstream when it has none. Never forces.",
+      "type": "object", "additionalProperties": false, "required": ["lease"],
+      "properties": { "lease": { "$ref": "#/$defs/secret" } }
+    },
+    "changesCommittedPayload": {
+      "title": "ChangesCommittedPayload",
+      "description": "committed: commit is the short hash. nothing: no selected path had changes. failed: output holds the last lines git or a hook printed.",
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": {
+        "state": { "title": "CommitState", "type": "string", "enum": ["committed", "nothing", "failed"] },
+        "commit": { "type": "string", "minLength": 4, "maxLength": 64, "pattern": "^[0-9a-f]+$" },
+        "output": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "changesPushedPayload": {
+      "title": "ChangesPushedPayload",
+      "description": "pushed: branch is the pushed branch, and url is an https link that the remote printed (for example GitHub's new pull request page), when there was one. no_remote: nowhere to push. failed: output holds the last lines git printed.",
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": {
+        "state": { "title": "PushState", "type": "string", "enum": ["pushed", "no_remote", "failed"] },
+        "branch": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "url": { "type": "string", "minLength": 9, "maxLength": 2048, "pattern": "^https://" },
+        "output": { "type": "string", "maxLength": 2000 }
+      }
+    },
     "historyPagePayload": {
       "title": "HistoryPagePayload",
       "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "columns", "offset", "rows", "complete"],
@@ -581,6 +624,10 @@
     "changesFileMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.file" }, "payload": { "$ref": "#/$defs/changesFilePayload" } } },
     "changesSummaryMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.summary" }, "payload": { "$ref": "#/$defs/changesSummaryPayload" } } },
     "changesPatchMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.patch" }, "payload": { "$ref": "#/$defs/changesPatchPayload" } } },
+    "changesCommitMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.commit" }, "payload": { "$ref": "#/$defs/changesCommitPayload" } } },
+    "changesPushMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.push" }, "payload": { "$ref": "#/$defs/changesPushPayload" } } },
+    "changesCommittedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.committed" }, "payload": { "$ref": "#/$defs/changesCommittedPayload" } } },
+    "changesPushedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.pushed" }, "payload": { "$ref": "#/$defs/changesPushedPayload" } } },
     "historyChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.changed" }, "payload": { "$ref": "#/$defs/historyChangedPayload" } } },
     "controlChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.changed" }, "payload": { "$ref": "#/$defs/controlChangedPayload" } } },
     "inputAcceptedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.accepted" }, "payload": { "$ref": "#/$defs/inputAcceptedPayload" } } },

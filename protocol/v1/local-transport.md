@@ -74,7 +74,12 @@ pages and return either `history.page` or `history.changed`. `changes.list`
 returns `changes.summary` and `changes.file` returns `changes.patch` with the
 same request ID; they need no lease, run git off the session actor, allow one
 request in flight per viewer (another gets `limit_exceeded`), and are
-described in `docs/changes.md`. `session.detach`
+described in `docs/changes.md`. `changes.commit` and `changes.push` require
+the current lease, checked right before git runs (`not_controller` or
+`stale_lease` otherwise), and return `changes.committed` and `changes.pushed`
+with the same request ID. One of them runs per session at a time (another gets
+`limit_exceeded`); a started one finishes even if the viewer detaches, and
+only its reply is dropped. `session.detach`
 closes this viewing connection without ending the child; session switching
 uses a new connection. Termination is only the explicit management operation.
 
