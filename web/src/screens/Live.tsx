@@ -627,7 +627,7 @@ export function Live({
         <Snippets
           target={runtime.connection}
           canSend={canSend}
-          agent={status.agent !== undefined}
+          busy={!normalBuffer ? 'fullscreen' : status.agent?.state === 'working' || status.agent?.state === 'waiting' ? 'running' : undefined}
           tasks={tasks}
           onRetryTasks={() => runtime.connection.listTasks()}
           onRunTask={onStartNew}

@@ -118,14 +118,17 @@ describe('project commands', () => {
   });
 
   it('turns Type here off with a one-line reason; Run in new tab stays', () => {
-    expect(typeHereProblem(true, false)).toBeUndefined();
-    expect(typeHereProblem(true, true)).toBe('An agent is running here. Use Run in new tab.');
-    expect(typeHereProblem(false, true)).toBe('An agent is running here. Use Run in new tab.');
-    expect(typeHereProblem(false, false)).toBe('Take control to type here.');
+    // A plain shell at its prompt, with control: typing is fine.
+    expect(typeHereProblem(true, undefined)).toBeUndefined();
+    const fullscreen = 'A full-screen app, such as Claude Code, is open here. Use Run in new tab.';
+    expect(typeHereProblem(true, 'fullscreen')).toBe(fullscreen);
+    expect(typeHereProblem(false, 'fullscreen')).toBe(fullscreen);
+    expect(typeHereProblem(true, 'running')).toBe('Something is running here. Use Run in new tab.');
+    expect(typeHereProblem(false, undefined)).toBe('Take control to type here.');
 
-    const markup = html({ open: tasks[3], typeProblem: typeHereProblem(true, true) });
+    const markup = html({ open: tasks[3], typeProblem: typeHereProblem(true, 'fullscreen') });
     expect(markup).toContain('<button type="button" disabled="" aria-describedby="type-here-reason">Type here</button>');
-    expect(markup).toContain('<p id="type-here-reason" class="hint-text">An agent is running here. Use Run in new tab.</p>');
+    expect(markup).toContain(`<p id="type-here-reason" class="hint-text">${fullscreen}</p>`);
     expect(markup).toContain('<button type="button" class="primary">Run in new tab</button>');
   });
 
@@ -148,7 +151,7 @@ describe('project commands', () => {
       <Snippets
         target={{ sendPaste: () => true, sendKey: () => true }}
         canSend
-        agent={false}
+        busy={undefined}
         tasks={ready()}
         onRetryTasks={noop}
         onRunTask={noop}

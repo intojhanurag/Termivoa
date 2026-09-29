@@ -26,7 +26,7 @@ Termivoa only reads these files. Nothing runs until you tap an action.
    - **Run in new tab** starts a new session in the same project and shell, types the command there, and opens it. The command is typed once, and only if no one else has control. Your current session does not change.
    - **Type here** types the command in this session and presses Enter.
 
-**Type here** is off when an agent runs in this session, because the command would go to the agent. Use **Run in new tab** then. You also need control to use **Type here**.
+**Type here** works only at a normal shell prompt. It is off while a full-screen app such as Claude Code or Codex is open, or while something is running, because the command would go into that program. Use **Run in new tab** then. You also need control to use **Type here**.
 
 ## When no commands show
 

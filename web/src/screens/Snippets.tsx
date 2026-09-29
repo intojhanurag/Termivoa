@@ -83,9 +83,17 @@ export function taskGroups(tasks: ReadonlyArray<ProjectTask>): Array<{ readonly 
   return KINDS.map((kind) => ({ kind, tasks: tasks.filter((task) => task.kind === kind) })).filter((group) => group.tasks.length > 0);
 }
 
+/**
+ * What already holds the terminal: a full-screen app (Claude Code and Codex
+ * run in the alternate screen), or a program the broker sees working or
+ * waiting. Typing a command there would go into that program.
+ */
+export type TerminalBusy = 'fullscreen' | 'running';
+
 /** Why "Type here" is off, or undefined when this device can type into the session. */
-export function typeHereProblem(canSend: boolean, agent: boolean): string | undefined {
-  if (agent) return 'An agent is running here. Use Run in new tab.';
+export function typeHereProblem(canSend: boolean, busy: TerminalBusy | undefined): string | undefined {
+  if (busy === 'fullscreen') return 'A full-screen app, such as Claude Code, is open here. Use Run in new tab.';
+  if (busy === 'running') return 'Something is running here. Use Run in new tab.';
   if (!canSend) return 'Take control to type here.';
   return undefined;
 }
@@ -187,11 +195,11 @@ export function ProjectTasks({ view, open, more, typeProblem, onOpen, onMore, on
  * Saved snippets. Tap sends as a paste; multi-line text asks first, like the
  * composer. The project's own commands come first.
  */
-export function Snippets({ target, canSend, agent, tasks, onRetryTasks, onRunTask, onClose }: {
+export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask, onClose }: {
   readonly target: SnippetTarget;
   readonly canSend: boolean;
-  /** An agent is detected in this session, so "Type here" is off. */
-  readonly agent: boolean;
+  /** What holds the terminal, so "Type here" is off; undefined at a shell prompt. */
+  readonly busy: TerminalBusy | undefined;
   readonly tasks: TasksView | undefined;
   readonly onRetryTasks: () => void;
   /** Starts a new session in the same project and shell that runs this command first. */
@@ -301,7 +309,7 @@ export function Snippets({ target, canSend, agent, tasks, onRetryTasks, onRunTas
             view={tasks}
             open={openTask}
             more={more}
-            typeProblem={typeHereProblem(canSend, agent)}
+            typeProblem={typeHereProblem(canSend, busy)}
             onOpen={setOpenTask}
             onMore={() => setMore(true)}
             onRetry={onRetryTasks}
