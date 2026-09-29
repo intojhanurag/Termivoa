@@ -29,6 +29,8 @@
     { "$ref": "#/$defs/inputAnswerMessage" },
     { "$ref": "#/$defs/terminalResizeMessage" },
     { "$ref": "#/$defs/historyReadMessage" },
+    { "$ref": "#/$defs/changesListMessage" },
+    { "$ref": "#/$defs/changesFileMessage" },
     { "$ref": "#/$defs/sessionDetachMessage" },
     { "$ref": "#/$defs/welcomeMessage" },
     { "$ref": "#/$defs/snapshotBeginMessage" },
@@ -37,6 +39,8 @@
     { "$ref": "#/$defs/screenPatchMessage" },
     { "$ref": "#/$defs/historyPageMessage" },
     { "$ref": "#/$defs/historyChangedMessage" },
+    { "$ref": "#/$defs/changesSummaryMessage" },
+    { "$ref": "#/$defs/changesPatchMessage" },
     { "$ref": "#/$defs/controlChangedMessage" },
     { "$ref": "#/$defs/inputAcceptedMessage" },
     { "$ref": "#/$defs/inputRejectedMessage" },
@@ -70,7 +74,8 @@
         "history.read", "session.detach", "welcome", "snapshot.begin",
         "snapshot.rows", "snapshot.end", "screen.patch", "history.page",
         "history.changed", "control.changed", "input.accepted",
-        "input.rejected", "session.state", "access.revoked", "error"
+        "input.rejected", "session.state", "access.revoked", "error",
+        "changes.list", "changes.file", "changes.summary", "changes.patch"
       ]
     },
     "errorCode": {
@@ -434,6 +439,62 @@
         "rows": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/changedRow" } }, "historyReset": { "type": "boolean" }
       }
     },
+    "changesListPayload": {
+      "title": "ChangesListPayload",
+      "description": "Asks for the uncommitted changes of the git repository that holds the session's working folder.",
+      "type": "object", "additionalProperties": false, "properties": {}
+    },
+    "changesFilePayload": {
+      "title": "ChangesFilePayload",
+      "description": "Asks for the diff of one path from the latest changes.summary, relative to the repository root.",
+      "type": "object", "additionalProperties": false, "required": ["path"],
+      "properties": { "path": { "type": "string", "minLength": 1, "maxLength": 4096 } }
+    },
+    "changedFile": {
+      "title": "ChangedFile",
+      "type": "object", "additionalProperties": false, "required": ["path", "status", "additions", "deletions", "binary"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "oldPath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "status": { "title": "ChangeStatus", "type": "string", "enum": ["added", "modified", "deleted", "renamed", "untracked", "typechange"] },
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "binary": { "type": "boolean" }
+      }
+    },
+    "changesSummaryPayload": {
+      "title": "ChangesSummaryPayload",
+      "description": "ready: files lists the changes against HEAD, plus untracked files that git does not ignore. not_git: the folder is not in a repository. unavailable: git is missing or failed.",
+      "type": "object", "additionalProperties": false, "required": ["state", "files", "truncated"],
+      "properties": {
+        "state": { "title": "ChangesState", "type": "string", "enum": ["ready", "not_git", "unavailable"] },
+        "root": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "branch": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "files": { "type": "array", "maxItems": 300, "items": { "$ref": "#/$defs/changedFile" } },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "diffLine": {
+      "title": "DiffLine",
+      "type": "object", "additionalProperties": false, "required": ["kind", "text"],
+      "properties": {
+        "kind": { "title": "DiffLineKind", "type": "string", "enum": ["hunk", "context", "add", "remove"] },
+        "text": { "type": "string", "maxLength": 1000 },
+        "oldLine": { "type": "integer", "minimum": 1 },
+        "newLine": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "changesPatchPayload": {
+      "title": "ChangesPatchPayload",
+      "description": "ready: lines hold the unified diff without file headers, cut at a byte budget (truncated). binary, missing (no longer changed) and unavailable carry no lines.",
+      "type": "object", "additionalProperties": false, "required": ["path", "state", "lines", "truncated"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "state": { "title": "PatchState", "type": "string", "enum": ["ready", "binary", "missing", "unavailable"] },
+        "lines": { "type": "array", "maxItems": 2000, "items": { "$ref": "#/$defs/diffLine" } },
+        "truncated": { "type": "boolean" }
+      }
+    },
     "historyPagePayload": {
       "title": "HistoryPagePayload",
       "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "columns", "offset", "rows", "complete"],
@@ -516,6 +577,10 @@
     "snapshotEndMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "snapshot.end" }, "payload": { "$ref": "#/$defs/snapshotEndPayload" } } },
     "screenPatchMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "screen.patch" }, "payload": { "$ref": "#/$defs/screenPatchPayload" } } },
     "historyPageMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.page" }, "payload": { "$ref": "#/$defs/historyPagePayload" } } },
+    "changesListMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.list" }, "payload": { "$ref": "#/$defs/changesListPayload" } } },
+    "changesFileMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.file" }, "payload": { "$ref": "#/$defs/changesFilePayload" } } },
+    "changesSummaryMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.summary" }, "payload": { "$ref": "#/$defs/changesSummaryPayload" } } },
+    "changesPatchMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.patch" }, "payload": { "$ref": "#/$defs/changesPatchPayload" } } },
     "historyChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.changed" }, "payload": { "$ref": "#/$defs/historyChangedPayload" } } },
     "controlChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.changed" }, "payload": { "$ref": "#/$defs/controlChangedPayload" } } },
     "inputAcceptedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.accepted" }, "payload": { "$ref": "#/$defs/inputAcceptedPayload" } } },
