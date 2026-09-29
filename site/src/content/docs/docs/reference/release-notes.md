@@ -9,6 +9,7 @@ This page lists what is new in each release.
 
 These are on `main` and come in the next beta. Updating needs a restart of Termivoa on the computer, which ends running sessions.
 
+- **Wall.** Watch all running sessions at once as small live screens. Tiles only watch; tap one to open the session. See [Wall](/docs/guides/wall/).
 - **Changes view.** See what the agent changed: a list of changed files with +/− counts, and each file's diff in red and green. See [Changes](/docs/guides/changes/).
 - **Commit and push from the phone.** Pick files, edit the suggested message, commit, then push. It never forces, and it needs control.
 - **"While you were away" card.** When you open a session, see how long the agent worked, what changed, and whether it waits for you. See [Recap](/docs/guides/recap/).

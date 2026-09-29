@@ -650,6 +650,15 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   stack driven through Chrome DevTools: a commit of 2 of 3 changed files
   (`git show` confirmed the third stayed uncommitted) and a push to a local
   bare remote. The recap was checked by unit tests only.
+- **Agent wall** (web only, `feat/agent-wall`): `/wall` shows each running
+  session as a tile with its own read-only `Connection` and `TerminalView`,
+  scaled with CSS `transform: scale()` so the whole grid fits; waiting first,
+  then working. Tiles never take control, send input or resize, and detach on
+  leave. Checked with `npx tsc --noEmit -p .`, `npx vitest run` (ordering,
+  scale, tiles, empty state, tap to open) and `./scripts/check`. On an
+  isolated `pterm up --dev` stack at 390×844 with 4 shells: 2 columns, grids
+  at scale 0.26, tap opens the session, browser back returns to `/wall`, and
+  each session's `viewerCount` fell from 1 to 0 on leaving; 4 columns at 1024 px.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

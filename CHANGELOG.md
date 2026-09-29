@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Wall on the phone: a **Wall** button on the Sessions list shows every
+  running session as a small, scaled-down live screen with its name, status
+  badge and link dot. Waiting sessions come first. Tiles are read-only (they
+  never take control, type or resize) and connect only while the Wall is
+  open; a tap opens the session.
 - Changes view, host side: `changes.list` and `changes.file` on the live
   stream return the uncommitted `git` changes of the session's folder (a file
   list with +/− counts) and one file's diff, read with bounded, read-only git
