@@ -1,5 +1,7 @@
 import type {
   AgentStatus,
+  ChangesPatchPayload,
+  ChangesSummaryPayload,
   HistoryChangedPayload,
   HistoryPagePayload,
   InputMousePayload,
@@ -92,6 +94,20 @@ export interface HistoryView {
   readonly newOutput: boolean;
 }
 
+export interface ChangesView {
+  /** The summary request; a refresh keeps the last summary while it loads. */
+  readonly state: 'loading' | 'ready' | 'unavailable';
+  readonly summary: ChangesSummaryPayload | undefined;
+  /** The open file; patch is set once state is ready. */
+  readonly file: ChangesFileView | undefined;
+}
+
+export interface ChangesFileView {
+  readonly path: string;
+  readonly state: 'loading' | 'ready' | 'unavailable';
+  readonly patch: ChangesPatchPayload | undefined;
+}
+
 /** FrameRenderer satisfies this; tests pass a fake. */
 export interface ScreenDisplay {
   paintSnapshot(snapshot: ScreenSnapshot): Promise<void>;
@@ -122,6 +138,15 @@ interface HistoryState {
   history: string[];
   screen: string[];
   view: HistoryView;
+}
+
+interface ChangesState {
+  /** Only the reply to the latest request counts; older replies are stale. */
+  listRequest: string | undefined;
+  fileRequests: Map<string, string>;
+  /** Patches by path, kept until refresh. */
+  patches: Map<string, ChangesPatchPayload>;
+  view: ChangesView;
 }
 
 export const INITIAL_STATUS: ConnectionStatus = {
@@ -171,6 +196,7 @@ export class Connection {
   private screen: ScreenMetadata | undefined;
   private screenRows: TerminalRow[] = [];
   private history: HistoryState | undefined;
+  private changes: ChangesState | undefined;
   private stopped = false;
   private requestedSize: string | undefined;
   private hiddenAt: number | undefined;
@@ -192,6 +218,8 @@ export class Connection {
   readonly getStatus = (): ConnectionStatus => this.status;
 
   readonly getHistory = (): HistoryView | undefined => this.history?.view;
+
+  readonly getChanges = (): ChangesView | undefined => this.changes?.view;
 
   get sessionId(): string {
     return this.options.sessionId;
@@ -327,6 +355,76 @@ export class Connection {
 
   closeHistory(): void {
     this.history = undefined;
+    this.emit();
+  }
+
+  /** Reads the uncommitted changes. Any viewer may read; no lease is needed. */
+  openChanges(): boolean {
+    if (this.status.link !== 'live') {
+      return false;
+    }
+    this.changes = {
+      listRequest: undefined,
+      fileRequests: new Map(),
+      patches: new Map(),
+      view: { state: 'loading', summary: undefined, file: undefined },
+    };
+    this.readChanges();
+    this.emit();
+    return true;
+  }
+
+  /** Reads the list again, and the open file's diff; cached diffs are dropped. */
+  refreshChanges(): void {
+    const changes = this.changes;
+    if (changes === undefined) {
+      return;
+    }
+    changes.patches.clear();
+    changes.fileRequests.clear();
+    const path = changes.view.file?.path;
+    changes.view = { ...changes.view, state: 'loading' };
+    this.readChanges();
+    if (path === undefined) {
+      this.emit();
+    } else {
+      this.openChangesFile(path);
+    }
+  }
+
+  /** Shows one file's diff, from the cache when it was read since the last refresh. */
+  openChangesFile(path: string): void {
+    const changes = this.changes;
+    if (changes === undefined) {
+      return;
+    }
+    const patch = changes.patches.get(path);
+    if (patch !== undefined) {
+      changes.view = { ...changes.view, file: { path, state: 'ready', patch } };
+    } else {
+      const requestId = this.sendSession('changes.file', { path });
+      if (requestId !== undefined) {
+        changes.fileRequests.set(requestId, path);
+      }
+      changes.view = {
+        ...changes.view,
+        file: { path, state: requestId === undefined ? 'unavailable' : 'loading', patch: undefined },
+      };
+    }
+    this.emit();
+  }
+
+  closeChangesFile(): void {
+    const changes = this.changes;
+    if (changes?.view.file === undefined) {
+      return;
+    }
+    changes.view = { ...changes.view, file: undefined };
+    this.emit();
+  }
+
+  closeChanges(): void {
+    this.changes = undefined;
     this.emit();
   }
 
@@ -469,6 +567,7 @@ export class Connection {
         this.stop('revoked', message.payload.message);
         return;
       case 'error':
+        this.failChanges(message.requestId);
         this.handleError(message.payload.code, message.payload.message);
         return;
       default:
@@ -505,6 +604,12 @@ export class Connection {
           return;
         case 'history.changed':
           this.handleHistoryChanged(message.payload);
+          return;
+        case 'changes.summary':
+          this.handleChangesSummary(message.requestId, message.payload);
+          return;
+        case 'changes.patch':
+          this.handleChangesPatch(message.requestId, message.payload);
           return;
         case 'control.changed': {
           const { lease, controllerConnectionId, controllerLabel } = message.payload;
@@ -841,6 +946,75 @@ export class Connection {
     };
   }
 
+  private readChanges(): void {
+    const changes = this.changes;
+    if (changes === undefined) {
+      return;
+    }
+    changes.listRequest = this.sendSession('changes.list', {});
+    if (changes.listRequest === undefined) {
+      changes.view = { ...changes.view, state: 'unavailable' };
+    }
+  }
+
+  private handleChangesSummary(requestId: string, summary: ChangesSummaryPayload): void {
+    const changes = this.changes;
+    if (changes === undefined || requestId !== changes.listRequest) {
+      return;
+    }
+    changes.listRequest = undefined;
+    changes.view = { ...changes.view, state: 'ready', summary };
+    this.emit();
+  }
+
+  private handleChangesPatch(requestId: string, patch: ChangesPatchPayload): void {
+    const changes = this.changes;
+    const path = changes?.fileRequests.get(requestId);
+    if (changes === undefined || path === undefined) {
+      return;
+    }
+    changes.fileRequests.delete(requestId);
+    // unavailable is not cached, so opening the file again retries.
+    if (patch.state !== 'unavailable') {
+      changes.patches.set(path, patch);
+    }
+    if (changes.view.file?.path === path) {
+      changes.view = { ...changes.view, file: { path, state: 'ready', patch } };
+      this.emit();
+    }
+  }
+
+  /**
+   * Ends loading for a changes request the host refused, or for every pending
+   * one when requestId is undefined because the socket closed.
+   */
+  private failChanges(requestId: string | undefined): void {
+    const changes = this.changes;
+    if (changes === undefined) {
+      return;
+    }
+    let view = changes.view;
+    if (requestId === undefined || requestId === changes.listRequest) {
+      changes.listRequest = undefined;
+      if (view.state === 'loading') {
+        view = { ...view, state: 'unavailable' };
+      }
+    }
+    const failed = requestId === undefined ? view.file?.path : changes.fileRequests.get(requestId);
+    if (requestId === undefined) {
+      changes.fileRequests.clear();
+    } else {
+      changes.fileRequests.delete(requestId);
+    }
+    if (view.file?.state === 'loading' && view.file.path === failed) {
+      view = { ...view, file: { ...view.file, state: 'unavailable' } };
+    }
+    if (view !== changes.view) {
+      changes.view = view;
+      this.emit();
+    }
+  }
+
   private grantControl(lease: string): void {
     this.lease = lease;
     this.sender = new InputSender(
@@ -912,6 +1086,8 @@ export class Connection {
     if (this.history?.view.state === 'loading') {
       this.history.view = { ...this.history.view, state: 'unavailable' };
     }
+    // Replies to this socket's requests can no longer arrive.
+    this.failChanges(undefined);
     if (this.stopped) {
       return;
     }
@@ -958,16 +1134,19 @@ export class Connection {
     this.reconnectTimer = undefined;
   }
 
-  private sendSession(type: string, payload: object): void {
-    this.send({ type, sessionId: this.options.sessionId, generation: this.options.generation, payload });
+  private sendSession(type: string, payload: object): string | undefined {
+    return this.send({ type, sessionId: this.options.sessionId, generation: this.options.generation, payload });
   }
 
-  private send(message: { type: string; sessionId?: string; generation?: string; payload: object }): void {
+  /** Returns the request ID, or undefined when the socket is not open. */
+  private send(message: { type: string; sessionId?: string; generation?: string; payload: object }): string | undefined {
     const socket = this.socket;
     if (socket === undefined || socket.readyState !== OPEN) {
-      return;
+      return undefined;
     }
-    socket.send(JSON.stringify({ version: 1, requestId: crypto.randomUUID(), ...message }));
+    const requestId = crypto.randomUUID();
+    socket.send(JSON.stringify({ version: 1, requestId, ...message }));
+    return requestId;
   }
 
   private update(change: Partial<ConnectionStatus>): void {

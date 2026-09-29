@@ -9,6 +9,7 @@ import { runFirstCommand } from '../terminal/runFirst';
 import { followCursor, TerminalView, wheelSteps } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, type ViewedTimes } from './activity';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
+import { askAboutFile, Changes } from './Changes';
 import { Composer } from './Composer';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { displayPath, sessionName } from './folder';
@@ -25,7 +26,7 @@ interface Runtime {
   readonly view: TerminalView;
 }
 
-type Panel = 'none' | 'composer' | 'history' | 'snippets' | 'menu';
+type Panel = 'none' | 'composer' | 'history' | 'changes' | 'snippets' | 'menu';
 
 /** A reconnect shorter than this shows only the amber dot, not the "Reconnecting…" text. */
 export const QUIET_RECONNECT_MS = 1_500;
@@ -131,6 +132,8 @@ export function Live({
   const wheelCarry = useRef(0);
   const [runtime, setRuntime] = useState<Runtime>();
   const [panel, setPanel] = useState<Panel>(openComposer === true ? 'composer' : 'none');
+  // History and Changes replace the whole screen.
+  const fullPanel = panel === 'history' || panel === 'changes';
   const [composerVersion, setComposerVersion] = useState(0);
   const [latched, setLatched] = useState({ ctrl: false, alt: false });
   const [runFirstNotice, setRunFirstNotice] = useState<string>();
@@ -252,7 +255,7 @@ export function Live({
       observer.disconnect();
       clearTimeout(timer);
     };
-  }, [runtime, canSend, fontSize, panel === 'history', keyboard]);
+  }, [runtime, canSend, fontSize, fullPanel, keyboard]);
 
   // With the keyboard up the grid is taller than the view: keep the cursor row in sight.
   useEffect(() => {
@@ -315,6 +318,26 @@ export function Live({
     setPanel('none');
   }
 
+  function openChanges() {
+    if (runtime?.connection.openChanges() === true) {
+      input.current?.blur();
+      setPanel('changes');
+    }
+  }
+
+  function closeChanges() {
+    runtime?.connection.closeChanges();
+    setPanel('none');
+  }
+
+  // Only fills the draft; the user reads it and taps Send.
+  function askAbout(path: string) {
+    askAboutFile(draft, path);
+    runtime?.connection.closeChanges();
+    setComposerVersion((value) => value + 1);
+    setPanel('composer');
+  }
+
   const normalBuffer = status.buffer === 'normal';
   // Full-screen apps (Claude Code, vim, less) scroll themselves: a swipe or
   // trackpad scroll becomes wheel steps. Needs control, since wheel steps are input.
@@ -360,7 +383,7 @@ export function Live({
 
   return (
     <main className={keyboard ? 'live keyboard' : 'live'}>
-      {panel !== 'history' && (
+      {!fullPanel && (
         <>
           <TabBar
             tabs={liveTabs(sessions, session)}
@@ -397,7 +420,7 @@ export function Live({
       <div
         ref={area}
         className={`terminal-area${sheet || cardOpen ? ' dim' : ''}${appScroll ? ' app-scroll' : ''}`}
-        hidden={panel === 'history'}
+        hidden={fullPanel}
         onClick={() => {
           if (sheet) setPanel('none');
           else if (canSend) input.current?.focus();
@@ -445,6 +468,9 @@ export function Live({
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
       )}
+      {panel === 'changes' && runtime !== undefined && (
+        <Changes connection={runtime.connection} cwd={cwd} onAsk={askAbout} onReturn={closeChanges} />
+      )}
 
       {question !== undefined && status.agent !== undefined && (
         <div className="answer-anchor">
@@ -469,7 +495,7 @@ export function Live({
         <PreviewChip previews={status.link === 'live' ? status.previews : current.previews} onOpen={onPreview} />
       )}
 
-      {panel !== 'history' && (
+      {!fullPanel && (
         <div className={sheet ? 'dock-slot covered' : 'dock-slot'}>
           {status.control === 'controller' ? (
             <CockpitDock
@@ -486,6 +512,7 @@ export function Live({
               onCompose={() => setPanel('composer')}
               onSnippets={() => setPanel('snippets')}
               onHistory={openHistory}
+              onChanges={openChanges}
               onHideKeyboard={() => input.current?.blur()}
             />
           ) : (
@@ -494,6 +521,7 @@ export function Live({
               historyEnabled={historyEnabled}
               onTakeControl={() => runtime?.connection.takeControl()}
               onHistory={openHistory}
+              onChanges={openChanges}
               onSessions={onSessions}
             />
           )}

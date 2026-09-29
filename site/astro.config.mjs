@@ -34,6 +34,7 @@ export default defineConfig({
 						'docs/guides/sessions',
 						'docs/guides/live-terminal',
 						'docs/guides/answer-cards',
+						'docs/guides/changes',
 						'docs/guides/notifications',
 						'docs/guides/preview',
 						'docs/guides/photo-and-voice',
