@@ -31,6 +31,7 @@ With control, the dock under the terminal has:
 - **Agent keys:** `esc`, `⌃C`, `⇧⇥`, `↑`, `1`, `2`, `y` and `⏎`. These answer coding-agent prompts in one tap.
 - **Key bar:** `tab`, `ctrl`, `alt` and arrow keys. Tap `ctrl`, then a letter, to send for example Ctrl+C.
 - **Actions:** **type** opens the phone keyboard, **compose**, **snips** and **history**.
+- **changes** shows the files the agent changed and their diffs. See [Changes](/docs/guides/changes/).
 
 When the keyboard is open, all keys fold into one row that scrolls. The terminal keeps its size, so full-screen agents do not redraw.
 
