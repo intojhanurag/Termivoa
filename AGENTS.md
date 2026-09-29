@@ -22,6 +22,7 @@ These rules apply throughout this repository.
 18. Update `docs/progress.md` at every milestone with actual commands, evidence paths, defects, and owner-dependent blockers. Keep unexecuted tests pending.
 19. Store non-sensitive evidence under `docs/evidence/<milestone>/`. Never store production terminal history, credentials, or private test data.
 20. At the end of each work session, report the current branch, latest commit, push/PR status, checks run, uncommitted task work, and remaining blockers.
+21. Keep every pull request to its own task. If you find a bug or problem that is not part of the task (a flaky test, a wrong test, a tooling or doc defect, a behavior bug elsewhere), do not fix it in the same pull request. Open a GitHub issue in this repository with what you saw, how to reproduce it, the evidence (command, output, file and line), and its impact, then continue the task. Fix it later in its own pull request that references the issue. Only fix it inside the task when the task cannot pass without it; then say so in the pull request. This rule also applies to helper agents: their briefs must include it, and the coordinating agent files the issues they report.
 
 When access is missing, use this format:
 

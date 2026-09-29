@@ -30,6 +30,10 @@ Explain checked impacts and backward-compatibility handling.
 - [ ] Screenshots and fixtures use synthetic data only (no pairing links, QR codes or real terminal content)
 - [ ] Input/output and authorization boundaries remain explicit
 
+## Scope
+
+- [ ] This pull request does only its task. Unrelated problems found on the way are filed as issues (list them), not fixed here (AGENTS.md rule 21).
+
 ## Documentation and limitations
 
 List updated docs (README, CHANGELOG, `docs/`), known limitations, owner-dependent blockers, and the related issue or milestone. Do not mark unexecuted validation as passed.
