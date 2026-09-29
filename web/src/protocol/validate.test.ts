@@ -94,6 +94,68 @@ describe('parseHostMessage', () => {
     }
   });
 
+  it('accepts changes.summary and changes.patch', () => {
+    const summary = parseHostMessage(JSON.stringify({
+      version: 1,
+      type: 'changes.summary',
+      requestId,
+      sessionId: brokerGeneration,
+      generation: brokerGeneration,
+      payload: {
+        state: 'ready',
+        root: '/Users/me/app',
+        branch: 'main',
+        files: [{ path: 'src/b.ts', oldPath: 'src/a.ts', status: 'renamed', additions: 2, deletions: 1, binary: false }],
+        truncated: false,
+      },
+    }));
+    expect(summary.type === 'changes.summary' && summary.payload.files[0]?.status).toBe('renamed');
+
+    const patch = parseHostMessage(JSON.stringify({
+      version: 1,
+      type: 'changes.patch',
+      requestId,
+      sessionId: brokerGeneration,
+      generation: brokerGeneration,
+      payload: {
+        path: 'src/b.ts',
+        state: 'ready',
+        lines: [
+          { kind: 'hunk', text: '@@ -1,2 +1,2 @@' },
+          { kind: 'remove', text: 'old', oldLine: 1 },
+          { kind: 'add', text: 'new', newLine: 1 },
+          { kind: 'context', text: 'same', oldLine: 2, newLine: 2 },
+        ],
+        truncated: true,
+      },
+    }));
+    expect(patch.type === 'changes.patch' && patch.payload.lines.map((line) => line.kind))
+      .toEqual(['hunk', 'remove', 'add', 'context']);
+  });
+
+  it('rejects a changes reply outside the contract', () => {
+    const patch = (lines: unknown[]) => JSON.stringify({
+      version: 1,
+      type: 'changes.patch',
+      requestId,
+      sessionId: brokerGeneration,
+      generation: brokerGeneration,
+      payload: { path: 'a', state: 'ready', lines, truncated: false },
+    });
+    expect(() => parseHostMessage(patch([{ kind: 'delete', text: 'x' }]))).toThrow(InvalidProtocolMessageError);
+    expect(() => parseHostMessage(patch([{ kind: 'add', text: 'x', newLine: 0 }]))).toThrow(InvalidProtocolMessageError);
+    expect(() => parseHostMessage(patch(Array.from({ length: 2001 }, () => ({ kind: 'add', text: '' })))))
+      .toThrow(InvalidProtocolMessageError);
+    expect(() => parseHostMessage(JSON.stringify({
+      version: 1,
+      type: 'changes.list',
+      requestId,
+      sessionId: brokerGeneration,
+      generation: brokerGeneration,
+      payload: {},
+    }))).toThrow('not host-to-client');
+  });
+
   it('rejects client-to-host messages even when their schema is valid', () => {
     expect(() => parseHostMessage(JSON.stringify({
       version: 1,
