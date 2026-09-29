@@ -27,6 +27,12 @@ output and starts no busy period, so a fresh shell is plain `idle`. The phone
 shows **Your turn** for `idle` with `afterWork` and output it has not viewed;
 `afterWork` survives a page reload because the broker keeps it.
 
+`workedSeconds` is the total time the session spent `working` in this
+broker's lifetime, the current stretch included, rounded down to seconds. It
+is computed when a status is sent; a growing total never sends a
+`session.state` by itself. A phone compares it with the value it saw last to
+say how long the agent worked while it was away.
+
 Push notifications follow the same transitions: `waiting` once per new
 question id, and `done` when an idle ends a busy period of at least 20 s. See
 `docs/notifications.md`.

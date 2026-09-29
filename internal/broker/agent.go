@@ -155,6 +155,9 @@ func agentPayload(status agentstate.Status) *protocol.AgentStatus {
 	payload := &protocol.AgentStatus{
 		State: protocol.AgentState(status.State), StateSince: status.Since.UTC().Format(millisecondRFC3339),
 	}
+	// Computed when sent: a growing total alone never triggers a notice.
+	worked := int64(status.WorkedFor(time.Now()) / time.Second)
+	payload.WorkedSeconds = &worked
 	if status.Worked > 0 {
 		afterWork := true
 		payload.AfterWork = &afterWork

@@ -466,6 +466,18 @@ type Status struct {
 	// ended, from the first Working after the previous Idle. Zero when the
 	// idle ended no busy period (or only the session's startup output).
 	Worked time.Duration
+	// WorkedTotal is the time spent Working before Since, over the tracker's
+	// lifetime. WorkedFor adds the current stretch.
+	WorkedTotal time.Duration
+}
+
+// WorkedFor is the total time spent Working up to now, including the current
+// stretch when the state is Working.
+func (status Status) WorkedFor(now time.Time) time.Duration {
+	if status.State == Working && now.After(status.Since) {
+		return status.WorkedTotal + now.Sub(status.Since)
+	}
+	return status.WorkedTotal
 }
 
 // Tracker turns successive parses into a Status. It keeps no clock of its
@@ -503,6 +515,7 @@ func (tracker *Tracker) Observe(now time.Time, parsed Parsed, lastOutput time.Ti
 	}
 	changed := next.State != tracker.status.State || next.QuestionID != tracker.status.QuestionID
 	if changed {
+		next.WorkedTotal = tracker.status.WorkedFor(now)
 		switch {
 		// The first status of a session is its startup output (the shell
 		// prompt), not work anyone waits for, so it starts no busy period.

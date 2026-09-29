@@ -41,6 +41,9 @@ func validateAgentStatus(status AgentStatus) error {
 	if status.AfterWork != nil && status.State != Idle {
 		return errors.New("agent afterWork is present only while idle")
 	}
+	if status.WorkedSeconds != nil && *status.WorkedSeconds < 0 {
+		return errors.New("agent workedSeconds must not be negative")
+	}
 	if status.Question == nil {
 		return nil
 	}

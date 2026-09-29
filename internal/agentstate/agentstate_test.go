@@ -314,3 +314,28 @@ func TestDetailIsSanitizedAndCapped(t *testing.T) {
 		t.Fatalf("detail exceeds caps: %d runes %d bytes", utf8.RuneCountInString(detail), len(detail))
 	}
 }
+
+func TestStatusWorkedForSumsWorkingStretches(t *testing.T) {
+	start := time.Unix(1000, 0)
+	tracker := NewTracker("gen")
+	worked := func(at time.Time, want time.Duration) {
+		t.Helper()
+		if got := tracker.Status().WorkedFor(at); got != want {
+			t.Fatalf("worked at %v = %v, want %v", at.Sub(start), got, want)
+		}
+	}
+	tracker.Observe(start, Parsed{Busy: true}, start)
+	worked(start.Add(7*time.Second), 7*time.Second) // The live stretch counts.
+	tracker.Observe(start.Add(10*time.Second), Parsed{}, start)
+	worked(start.Add(time.Hour), 10*time.Second) // Idle adds nothing.
+	at := start.Add(time.Hour)
+	tracker.Observe(at, Parsed{Busy: true}, at)
+	worked(at.Add(5*time.Second), 15*time.Second)
+	// Staying Working reports no change, and the total keeps growing.
+	if changed, _ := tracker.Observe(at.Add(20*time.Second), Parsed{Busy: true}, at); changed {
+		t.Fatal("busy again reported a change")
+	}
+	worked(at.Add(20*time.Second), 30*time.Second)
+	tracker.Observe(at.Add(25*time.Second), Parsed{}, at)
+	worked(at.Add(2*time.Hour), 35*time.Second)
+}

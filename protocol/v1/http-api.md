@@ -101,6 +101,9 @@ non-authoritative display fields:
   - `afterWork`: `true` only on an `idle` that ended a working period in this
     broker's lifetime (not the session's startup output); absent otherwise.
     With output the device has not viewed, show "Your turn".
+  - `workedSeconds`: total seconds the session spent `working` in this
+    broker's lifetime, up to when the status was sent. The difference from
+    an earlier value is how long the agent worked in between.
   - `question`: present exactly while `waiting`. `text` is the question line
     (at most 160 characters). Optional `detail` says what is being approved,
     such as the tool and command: up to 6 lines joined with `\n`, each at
