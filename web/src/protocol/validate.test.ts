@@ -156,6 +156,33 @@ describe('parseHostMessage', () => {
     }))).toThrow('not host-to-client');
   });
 
+  it('accepts changes.committed and changes.pushed within the contract', () => {
+    const reply = (type: string, payload: object, extra: object = {}) => JSON.stringify({
+      version: 1, type, requestId, sessionId: brokerGeneration, generation: brokerGeneration, payload, ...extra,
+    });
+    const committed = parseHostMessage(reply('changes.committed', { state: 'committed', commit: 'abc1234' }));
+    expect(committed.type === 'changes.committed' && committed.payload.commit).toBe('abc1234');
+    expect(parseHostMessage(reply('changes.committed', { state: 'failed', output: 'hook failed' })).type).toBe('changes.committed');
+    const pushed = parseHostMessage(reply('changes.pushed', { state: 'pushed', branch: 'main', url: 'https://github.com/o/r/pull/new/main' }));
+    expect(pushed.type === 'changes.pushed' && pushed.payload.url).toBe('https://github.com/o/r/pull/new/main');
+    expect(parseHostMessage(reply('changes.pushed', { state: 'no_remote' })).type).toBe('changes.pushed');
+
+    for (const bad of [
+      reply('changes.committed', { state: 'done' }),
+      reply('changes.committed', { state: 'committed', commit: 'ABC1234' }),
+      reply('changes.committed', { state: 'failed', output: 'x'.repeat(2001) }),
+      reply('changes.pushed', { state: 'pushed', url: 'http://example.com/pull' }),
+      reply('changes.pushed', { state: 'pushed', url: 'javascript:alert(1)' }),
+      reply('changes.pushed', { state: 'pushed', force: true }),
+    ]) {
+      expect(() => parseHostMessage(bad)).toThrow(InvalidProtocolMessageError);
+    }
+    for (const type of ['changes.commit', 'changes.push']) {
+      expect(() => parseHostMessage(reply(type, { lease: 'L'.repeat(43), message: 'm', paths: ['a'] }))).toThrow(InvalidProtocolMessageError);
+    }
+    expect(() => parseHostMessage(reply('changes.push', { lease: 'L'.repeat(43) }))).toThrow('not host-to-client');
+  });
+
   it('rejects client-to-host messages even when their schema is valid', () => {
     expect(() => parseHostMessage(JSON.stringify({
       version: 1,
