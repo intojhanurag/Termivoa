@@ -9,6 +9,7 @@ import {
   RESUME_PROBE_MS,
   ATTACH_TIMEOUT_MS,
   rowText,
+  WRITE_LOST,
   type ScreenDisplay,
 } from './Connection';
 import { fitGrid, followCursor, MAX_WHEEL_STEPS, wheelSteps } from './TerminalView';
@@ -704,6 +705,96 @@ describe('Changes', () => {
     second.reply(last(second, 'changes.list'), 'changes.summary', summary());
     second.reply(last(second, 'changes.file'), 'changes.patch', patch());
     expect(connection.getChanges()).toMatchObject({ state: 'ready', file: { state: 'ready' } });
+  });
+});
+
+describe('Commit and push', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const last = (socket: FakeSocket, type: string) => socket.sent.filter((message) => message.type === type).at(-1);
+  const count = (socket: FakeSocket, type: string) => socket.types().filter((sent) => sent === type).length;
+
+  it('needs control, sends with the lease, allows one write at a time, and refreshes the list after the reply', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    expect(connection.commitChanges('Update a.ts', ['src/a.ts'])).toBe(false);
+    expect(connection.pushChanges()).toBe(false);
+    expect(socket().types()).not.toContain('changes.commit');
+
+    await takeControl(connection, socket());
+    connection.openChanges();
+    expect(connection.commitChanges('Update a.ts', [])).toBe(false);
+    expect(connection.commitChanges('Update a.ts', ['src/a.ts'])).toBe(true);
+    const request = last(socket(), 'changes.commit');
+    expect(request).toMatchObject({ sessionId, generation, payload: { lease, message: 'Update a.ts', paths: ['src/a.ts'] } });
+    expect(connection.getChangesWrite()).toEqual({ kind: 'commit', state: 'pending' });
+    expect(connection.commitChanges('again', ['src/a.ts'])).toBe(false);
+    expect(connection.pushChanges()).toBe(false);
+    expect(count(socket(), 'changes.commit')).toBe(1);
+    connection.dismissChangesWrite();
+    expect(connection.getChangesWrite()?.state).toBe('pending');
+
+    const lists = count(socket(), 'changes.list');
+    socket().receive('changes.committed', { state: 'committed', commit: 'fffffff' });
+    expect(connection.getChangesWrite()?.state).toBe('pending');
+    socket().reply(request, 'changes.committed', { state: 'committed', commit: 'abc1234' });
+    expect(connection.getChangesWrite()).toEqual({ kind: 'commit', state: 'done', committed: { state: 'committed', commit: 'abc1234' } });
+    expect(count(socket(), 'changes.list')).toBe(lists + 1);
+
+    expect(connection.pushChanges()).toBe(true);
+    const push = last(socket(), 'changes.push');
+    expect(push?.payload).toEqual({ lease });
+    socket().reply(push, 'changes.pushed', { state: 'pushed', branch: 'main', url: 'https://github.com/o/r/pull/new/main' });
+    expect(connection.getChangesWrite()).toMatchObject({ kind: 'push', state: 'done', pushed: { branch: 'main' } });
+    connection.dismissChangesWrite();
+    expect(connection.getChangesWrite()).toBeUndefined();
+  });
+
+  it('turns an error reply to the write into a clear message and keeps other errors apart', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    await takeControl(connection, socket());
+
+    connection.commitChanges('m', ['a']);
+    socket().reply(last(socket(), 'changes.commit'), 'error', { code: 'operation_conflict', message: 'busy' });
+    expect(connection.getChangesWrite()).toEqual({ kind: 'commit', state: 'error', message: 'Another commit or push is running. Wait for it, then try again.' });
+    expect(connection.getStatus()).toMatchObject({ control: 'controller', notice: undefined });
+
+    connection.pushChanges();
+    socket().reply(last(socket(), 'changes.push'), 'error', { code: 'internal_error', message: 'git is missing' });
+    expect(connection.getChangesWrite()).toMatchObject({ state: 'error', message: 'git is missing' });
+
+    connection.commitChanges('m', ['a']);
+    socket().reply(last(socket(), 'changes.commit'), 'error', { code: 'stale_lease', message: 'stale' });
+    expect(connection.getChangesWrite()).toMatchObject({ state: 'error', message: 'You no longer have control. Take control, then try again.' });
+    expect(connection.getStatus()).toMatchObject({ control: 'observer', notice: undefined });
+  });
+
+  it('says the connection was lost while a write was pending, never resends it, and drops replies to the old socket', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    await takeControl(connection, first);
+    connection.commitChanges('m', ['a']);
+    const request = last(first, 'changes.commit');
+    first.close();
+    expect(connection.getChangesWrite()).toEqual({ kind: 'commit', state: 'error', message: WRITE_LOST });
+
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    const second = socket();
+    await attachLive(second, '2');
+    expect(second.types()).not.toContain('changes.commit');
+    first.reply(request, 'changes.committed', { state: 'committed', commit: 'abc1234' });
+    second.reply(request, 'changes.committed', { state: 'committed', commit: 'abc1234' });
+    expect(connection.getChangesWrite()).toMatchObject({ state: 'error', message: WRITE_LOST });
+    // Control is never taken back on its own, so nothing can be sent until the user acts.
+    expect(connection.commitChanges('m', ['a'])).toBe(false);
   });
 });
 

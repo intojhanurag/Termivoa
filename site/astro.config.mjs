@@ -32,6 +32,7 @@ export default defineConfig({
 					label: 'Using Termivoa',
 					items: [
 						'docs/guides/sessions',
+						'docs/guides/recap',
 						'docs/guides/live-terminal',
 						'docs/guides/answer-cards',
 						'docs/guides/changes',
