@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -11,6 +12,12 @@ const brokerRPCSchema = path.join(root, 'protocol/v1/broker-rpc.schema.json');
 const httpAPISchema = path.join(root, 'protocol/v1/http-api.schema.json');
 const gatewayRPCSchema = path.join(root, 'protocol/v1/gateway-rpc.schema.json');
 const adminRPCSchema = path.join(root, 'protocol/v1/admin-rpc.schema.json');
+// Run quicktype's JS entry point with this Node binary. Spawning `pnpm` (a .cmd shim on
+// Windows) needs a shell there, so going through node keeps it the same on every OS.
+const require = createRequire(import.meta.url);
+const quicktypePackage = require.resolve('quicktype/package.json');
+const { bin } = require(quicktypePackage);
+const quicktypeCLI = path.join(path.dirname(quicktypePackage), typeof bin === 'string' ? bin : bin.quicktype);
 const outputs = [
   [
     'go',
@@ -27,10 +34,9 @@ const outputs = [
 for (const [language, output, extra] of outputs) {
   mkdirSync(path.dirname(output), { recursive: true });
   const result = spawnSync(
-    'pnpm',
+    process.execPath,
     [
-      'exec',
-      'quicktype',
+      quicktypeCLI,
       '--src-lang',
       'schema',
       '--lang',
