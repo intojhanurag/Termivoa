@@ -360,6 +360,15 @@ func buildSessionFixture(t *testing.T) string {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build PTY fixture: %v\n%s", err, output)
 	}
+	// On macOS the first exec of a newly built binary can wait many seconds
+	// at _dyld_start while the system checks it, longer under heavy load (see
+	// docs/evidence/p3/pty-fixture-activation.md). Pay that cost here, outside
+	// the session deadlines. Later execs of the same file start at once.
+	activation := exec.Command(path)
+	activation.Env = append(os.Environ(), "PTERM_PTY_FIXTURE_MODE=exit")
+	if output, err := activation.CombinedOutput(); err != nil {
+		t.Fatalf("first run of PTY fixture: %v\n%s", err, output)
+	}
 	return path
 }
 
