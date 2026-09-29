@@ -26,7 +26,12 @@ func TestMain(m *testing.M) {
 	os.Exit(runPTYTests(m.Run))
 }
 
-const fixtureActivationTimeout = 10 * time.Second
+// fixtureActivationTimeout only catches a fixture that never starts. The
+// first run of a newly built binary is setup, not behavior under test: on
+// macOS it was measured to wait up to 17.6 s at _dyld_start under parallel
+// cold-cache load (issue #89). The test binary's -timeout does not cover
+// TestMain before m.Run, so this bound is generous instead.
+const fixtureActivationTimeout = 2 * time.Minute
 
 func runPTYTests(run func() int) int {
 	temporaryDirectory, err := os.MkdirTemp("", "pterm-ptyhost-test-")
@@ -56,7 +61,7 @@ func runPTYTests(run func() int) int {
 
 	// A newly linked executable can still be waiting at _dyld_start on macOS
 	// while concurrently launched test binaries are activating. Validate this
-	// exact fixture once outside the PTY I/O deadline, with its own hard bound.
+	// exact fixture once outside the PTY I/O deadline, with its own generous bound.
 	// The probe uses no PTY, opens no project, and cannot spawn descendants.
 	started := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), fixtureActivationTimeout)
@@ -64,7 +69,7 @@ func runPTYTests(run func() int) int {
 	cancel()
 	fmt.Fprintf(os.Stderr, "PTY fixture activation: %s (limit %s)\n", time.Since(started).Round(time.Millisecond), fixtureActivationTimeout)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "activate PTY fixture: %v\n", err)
+		fmt.Fprintf(os.Stderr, "activate PTY fixture (limit %s): %v\n", fixtureActivationTimeout, err)
 		return 1
 	}
 	return run()
