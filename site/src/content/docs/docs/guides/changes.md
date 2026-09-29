@@ -9,9 +9,9 @@ This page helps you see what a coding agent changed in your project.
 
 **Changes** shows the uncommitted changes in the git project of the session's folder. These are the same changes that `git status` and `git diff` show on your computer, plus new files that git does not ignore.
 
-Changes only reads your files. It never changes, stages or commits them.
+To see changes, you do not need control. Changes also works when you only watch.
 
-You do not need control. Changes also works when you only watch.
+Changes does not change your files on its own. When you have control, you can commit and push. See [Commit and push](#commit-and-push).
 
 ## See the changed files
 
@@ -42,6 +42,27 @@ Binary files, such as images, are not shown.
 3. Write your question and tap **Send ⏎**.
 
 Nothing is sent until you tap **Send ⏎**. To send, you need control.
+
+## Commit and push
+
+You need control to commit. Without control, the list shows **Take control to commit**.
+
+1. Open **Changes**. Each file has a checkbox. All files are ticked.
+2. Untick the files that you do not want in the commit.
+3. Tap **Commit N files**.
+4. Read the message. Termivoa writes a first message from the file names, for example `Update app.js and 4 more files`. Change it if you want.
+5. Tap **Commit**. Wait for the result.
+6. After **Committed**, tap **Push** if you want to send the commit to the remote.
+7. Read the question and tap **Push** again.
+8. After **Pushed**, tap **Open pull request** to open the page that the remote gave, if there is one.
+
+If the commit or push fails, the sheet shows the output from git, for example an error from a hook. The list reads the changes again after each commit.
+
+If the connection stops while a commit or push runs, Termivoa does not send it again. Look at the Changes list before you try again.
+
+:::caution
+The commit runs your repository's own hooks, as a commit on your computer does. Push never forces, so it cannot overwrite commits on the remote. You need control to commit or push.
+:::
 
 ## Limits
 
