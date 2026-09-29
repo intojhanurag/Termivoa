@@ -28,12 +28,27 @@ export function wallSessions(sessions: ReadonlyArray<BrokerRPCSessionRecord>): {
   return { shown, ended: sessions.length - shown.length };
 }
 
-/** The factor that fits the whole grid in the tile's screen box. Never enlarges; 0 until both are measured. */
+/**
+ * The factor that fits the grid's width in the tile's screen box, so a tall
+ * grid does not shrink to a narrow column (tileOffset then picks the rows to
+ * show). Never enlarges; 0 until both are measured.
+ */
 export function tileScale(boxWidth: number, boxHeight: number, gridWidth: number, gridHeight: number): number {
   if (!(boxWidth > 0 && boxHeight > 0 && gridWidth > 0 && gridHeight > 0)) {
     return 0;
   }
-  return Math.min(1, boxWidth / gridWidth, boxHeight / gridHeight);
+  return Math.min(1, boxWidth / gridWidth);
+}
+
+/**
+ * How far to move a scaled grid up, in grid pixels, so the cursor row stays in
+ * the tile: 0 while everything above the cursor fits, then the newest rows.
+ */
+export function tileOffset(visibleHeight: number, gridHeight: number, cursorBottom: number | undefined): number {
+  if (!(visibleHeight > 0) || cursorBottom === undefined || gridHeight <= visibleHeight) {
+    return 0;
+  }
+  return Math.min(gridHeight - visibleHeight, Math.max(0, cursorBottom - visibleHeight));
 }
 
 /** The tile's spoken name, such as "claude, Waiting, open session". */
@@ -49,7 +64,7 @@ function MiniTerminal({ session }: { readonly session: BrokerRPCSessionRecord })
   const box = useRef<HTMLSpanElement>(null);
   const host = useRef<HTMLSpanElement>(null);
   const [connection, setConnection] = useState<Connection>();
-  const [scale, setScale] = useState(0);
+  const [fit, setFit] = useState({ scale: 0, offset: 0 });
   const status = useSyncExternalStore(
     connection?.subscribe ?? noSubscribe,
     connection?.getStatus ?? initialStatus,
@@ -72,16 +87,21 @@ function MiniTerminal({ session }: { readonly session: BrokerRPCSessionRecord })
     });
     next.start();
     setConnection(next);
-    // The grid changes size when the controller resizes the PTY; the tile when the layout changes.
+    // The grid changes size when the controller resizes the PTY, the tile when
+    // the layout changes, and the cursor row with output.
     const screen = element.querySelector<HTMLElement>('.xterm-screen');
-    const observer = new ResizeObserver(() => {
-      if (screen !== null) {
-        setScale(tileScale(frame.clientWidth, frame.clientHeight, screen.offsetWidth, screen.offsetHeight));
-      }
-    });
+    const measure = () => {
+      if (screen === null) return;
+      const scale = tileScale(frame.clientWidth, frame.clientHeight, screen.offsetWidth, screen.offsetHeight);
+      const offset = scale > 0 ? tileOffset(frame.clientHeight / scale, screen.offsetHeight, view.cursorBand()?.bottom) : 0;
+      setFit((last) => (last.scale === scale && last.offset === offset ? last : { scale, offset }));
+    };
+    const observer = new ResizeObserver(measure);
     observer.observe(frame);
     if (screen !== null) observer.observe(screen);
+    const written = view.terminal.onWriteParsed(measure);
     return () => {
+      written.dispose();
       observer.disconnect();
       next.detach();
       view.dispose();
@@ -91,7 +111,7 @@ function MiniTerminal({ session }: { readonly session: BrokerRPCSessionRecord })
 
   return (
     <span ref={box} className="wall-screen" aria-hidden="true">
-      <span ref={host} className="wall-host" style={{ transform: `scale(${scale})` }} />
+      <span ref={host} className="wall-host" style={{ transform: `scale(${fit.scale}) translateY(${-fit.offset}px)` }} />
       {status.link !== 'live' && <span className="dot amber wall-link" />}
     </span>
   );

@@ -7,7 +7,7 @@ This page helps you watch several agents at the same time.
 
 ## What the Wall shows
 
-The Wall shows each running session as a small live screen. The screen is made smaller so that it fits the tile. The text can be very small, but you can see output, colors and prompts.
+The Wall shows each running session as a small live screen. The screen is made smaller to fit the tile's width, and the tile follows the newest line, like the live screen. The text is small, but you can see output, colors and prompts.
 
 Each tile also shows:
 

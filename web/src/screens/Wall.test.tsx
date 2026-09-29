@@ -2,7 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { tileLabel, tileScale, Wall, wallSessions } from './Wall';
+import { tileLabel, tileOffset, tileScale, Wall, wallSessions } from './Wall';
 
 const session = (id: string, extra: Partial<BrokerRPCSessionRecord> = {}): BrokerRPCSessionRecord => ({
   id: `84444444-4444-4444-8444-44444444444${id}`,
@@ -55,7 +55,8 @@ describe('wallSessions', () => {
 describe('tileScale', () => {
   it('fits the whole grid in the tile and never enlarges it', () => {
     expect(tileScale(160, 120, 640, 240)).toBe(0.25);
-    expect(tileScale(160, 120, 320, 480)).toBe(0.25);
+    // A tall grid fills the width; tileOffset picks its rows.
+    expect(tileScale(160, 120, 320, 480)).toBe(0.5);
     expect(tileScale(400, 300, 200, 100)).toBe(1);
   });
 
@@ -104,5 +105,15 @@ describe('Wall', () => {
 
   it('labels a tile for screen readers', () => {
     expect(tileLabel(waiting, false)).toBe('claude, Waiting, open session');
+  });
+});
+
+describe('tileOffset', () => {
+  it('shows the top while the cursor fits, then follows the cursor to the end', () => {
+    expect(tileOffset(300, 800, 120)).toBe(0);
+    expect(tileOffset(300, 800, 500)).toBe(200);
+    expect(tileOffset(300, 800, 800)).toBe(500);
+    expect(tileOffset(300, 200, 150)).toBe(0);
+    expect(tileOffset(300, 800, undefined)).toBe(0);
   });
 });
