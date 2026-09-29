@@ -5,9 +5,15 @@ description: What is in each Termivoa release, and its known limits.
 
 This page lists what is new in each release.
 
-## Next beta (not released yet)
+## v0.1.0-beta.2 (2026-09-29) — private beta
 
-These are on `main` and come in the next beta. Updating needs a restart of Termivoa on the computer, which ends running sessions.
+The second private beta. The binaries are not signed.
+
+:::caution
+Updating from beta.1 restarts Termivoa on the computer and ends running sessions. Finish your work first. See [Update and uninstall](/docs/reference/update-and-uninstall/).
+:::
+
+### What is new
 
 - **Wall.** Watch all running sessions at once as small live screens. Tiles only watch; tap one to open the session. See [Wall](/docs/guides/wall/).
 - **Changes view.** See what the agent changed: a list of changed files with +/− counts, and each file's diff in red and green. See [Changes](/docs/guides/changes/).

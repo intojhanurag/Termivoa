@@ -1,6 +1,6 @@
 # Installing Termivoa
 
-> Status: **private beta** (`v0.1.0-beta.1`). The binaries are **unsigned**.
+> Status: **private beta** (`v0.1.0-beta.2`). The binaries are **unsigned**.
 > Signed and notarized releases need the owner's Apple Developer ID and Windows
 > code-signing identity. Nothing below has passed the release gate yet. You can
 > also build from source ([README quick start](../README.md#quick-start)) or
@@ -26,7 +26,7 @@ macOS (Apple Silicon):
 
 ```sh
 mkdir -p ~/.local/bin
-gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
 chmod +x ~/.local/bin/pterm
 ~/.local/bin/pterm setup
 ```
@@ -34,7 +34,7 @@ chmod +x ~/.local/bin/pterm
 Linux (x86_64; use `pterm-linux-arm64` on arm64):
 
 ```sh
-gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
+gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
 sh install-linux.sh ./pterm-linux-amd64
 ```
 
@@ -43,7 +43,7 @@ Windows 11 (x64, PowerShell):
 ```powershell
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\Termivoa" | Out-Null
 cd "$env:LOCALAPPDATA\Programs\Termivoa"
-gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
 .\pterm.exe setup
 ```
 

@@ -36,7 +36,7 @@ Run these commands in PowerShell.
 3. Download the beta:
 
    ```powershell
-   gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+   gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
    ```
 
 4. Run setup:

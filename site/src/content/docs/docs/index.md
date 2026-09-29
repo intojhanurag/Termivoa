@@ -18,7 +18,7 @@ The phone side is a web app. You do not install anything from an app store.
 The command-line tool on your computer is called `pterm`.
 
 :::note
-Termivoa is a **private beta** (`v0.1.0-beta.1`). Only invited testers can download it.
+Termivoa is a **private beta** (`v0.1.0-beta.2`). Only invited testers can download it.
 :::
 
 ## Who it is for

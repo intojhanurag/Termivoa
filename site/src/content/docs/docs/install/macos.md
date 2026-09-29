@@ -28,7 +28,7 @@ No Node.js, Go or other tools are needed on the Mac.
 2. Download the beta:
 
    ```sh
-   gh release download v0.1.0-beta.1 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+   gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
    ```
 
 3. Make it runnable:
