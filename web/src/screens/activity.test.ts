@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { agentBadge, hasNewOutput, markViewed, readViewed, since, VIEWED_KEY, viewedKey } from './activity';
+import {
+  agentBadge, hasNewOutput, markViewed, readViewed, readWorked, recapLine, since, span, VIEWED_KEY, viewedKey, WORKED_KEY,
+  type RecapFacts,
+} from './activity';
 import { loadPresets, MAX_PRESETS, presetFrom, PRESETS_KEY, runFirstProblem, savePresets } from './presets';
 
 function memory() {
@@ -83,6 +86,70 @@ describe('agent status', () => {
     const done = { ...session, agent: { state: 'idle' as const, stateSince, afterWork: true } };
     expect(agentBadge(done, true)).toEqual({ label: 'Your turn', tone: 'green' });
     expect(agentBadge(done, false)).toBeUndefined();
+  });
+});
+
+describe('while you were away', () => {
+  const stateSince = '2026-09-27T10:00:00Z';
+  const now = at('12:00:00');
+  const facts = (extra: Partial<RecapFacts>): RecapFacts => ({
+    now,
+    viewedAt: at('11:28:00'),
+    workedBefore: 100,
+    agent: { state: 'idle', stateSince, workedSeconds: 100 + 14 * 60 },
+    fresh: false,
+    ...extra,
+  });
+
+  it('stores the worked seconds next to the viewed time, by session and generation', () => {
+    const store = memory();
+    markViewed({ ...session, agent: { state: 'working', stateSince, workedSeconds: 42 } }, at('10:00:00'), store);
+    markViewed({ id: 'other', generation: 'g' }, at('10:01:00'), store);
+    expect(readWorked(store)).toEqual({ [viewedKey(session)]: 42 });
+    // A later view without a total keeps the last one seen.
+    markViewed(session, at('10:02:00'), store);
+    expect(readWorked(store)).toEqual({ [viewedKey(session)]: 42 });
+    store.setItem(WORKED_KEY, '{"a/b":"x"}');
+    expect(readWorked(store)).toEqual({});
+  });
+
+  it('formats spans in short words', () => {
+    expect(span(40.9)).toBe('40 s');
+    expect(span(14 * 60 + 5)).toBe('14 min');
+    expect(span(2 * 3600)).toBe('2 h');
+    expect(span(2 * 3600 + 5 * 60)).toBe('2 h 5 min');
+    expect(span(3 * 86400)).toBe('3 d');
+    expect(span(-5)).toBe('0 s');
+  });
+
+  it('tells how long ago you left, how long the agent worked, the changes and whose turn it is', () => {
+    expect(recapLine(facts({
+      agent: { state: 'waiting', stateSince, workedSeconds: 100 + 14 * 60 },
+      changes: { files: 5, additions: 120, deletions: 34 },
+    }))).toBe('Since you left 32 min ago · worked 14 min · 5 files changed +120 −34 · waiting for you');
+    expect(recapLine(facts({ changes: { files: 1, additions: 2, deletions: 0 } })))
+      .toBe('Since you left 32 min ago · worked 14 min · 1 file changed +2 −0');
+    expect(recapLine(facts({ agent: { state: 'idle', stateSince, afterWork: true, workedSeconds: 100 }, fresh: true })))
+      .toBe('Since you left 32 min ago · your turn');
+  });
+
+  it('stays quiet without a minute of work or a turn for you', () => {
+    expect(recapLine(facts({ agent: { state: 'working', stateSince, workedSeconds: 159 } }))).toBeUndefined();
+    expect(recapLine(facts({ agent: { state: 'idle', stateSince, workedSeconds: 160 } }))).toBe('Since you left 32 min ago · worked 1 min');
+    // Idle after work that this device already saw is not "your turn".
+    expect(recapLine(facts({ agent: { state: 'idle', stateSince, afterWork: true, workedSeconds: 100 } }))).toBeUndefined();
+    expect(recapLine(facts({ agent: undefined }))).toBeUndefined();
+  });
+
+  it('leaves out each part it has no facts for', () => {
+    // First visit on this device: no time, no worked total, but still waiting.
+    expect(recapLine(facts({ viewedAt: undefined, workedBefore: undefined, agent: { state: 'waiting', stateSince, workedSeconds: 900 } })))
+      .toBe('Waiting for you');
+    // No total from the broker, or a smaller one after a broker restart: no worked part.
+    expect(recapLine(facts({ agent: { state: 'waiting', stateSince } }))).toBe('Since you left 32 min ago · waiting for you');
+    expect(recapLine(facts({ workedBefore: 5000 }))).toBeUndefined();
+    // Not a repository or a clean tree: no changes part.
+    expect(recapLine(facts({ changes: { files: 0, additions: 0, deletions: 0 } }))).toBe('Since you left 32 min ago · worked 14 min');
   });
 });
 
