@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -249,5 +250,38 @@ func TestDesktopStartupDiscardDoesNotReplayEarlyTTYInput(t *testing.T) {
 	}
 	if _, err := term.GetState(slave.Fd()); err != nil {
 		t.Fatalf("caller TTY closed: %v", err)
+	}
+}
+
+// The startup decoder may be canceled after reading input and before turning
+// it into events. A Ctrl+] it read must still detach at the handoff.
+func TestDesktopStartupInputRecordsReadDetach(t *testing.T) {
+	for _, test := range []struct {
+		input  string
+		detach bool
+	}{{"typed", false}, {"typed\r\x1d", true}} {
+		input, output, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader, err := NewFileConfirmationReader(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := output.WriteString(test.input); err != nil {
+			t.Fatal(err)
+		}
+		startup := &startupDetachInput{reader: reader}
+		var data [64]byte
+		// The bytes read here are dropped, as a canceled decoder drops them.
+		if _, err := startup.ReadContext(context.Background(), data[:]); err != nil {
+			t.Fatal(err)
+		}
+		if startup.detach.Load() != test.detach {
+			t.Fatalf("input %q: recorded detach = %t, want %t", test.input, !test.detach, test.detach)
+		}
+		_ = reader.Close()
+		_ = input.Close()
+		_ = output.Close()
 	}
 }

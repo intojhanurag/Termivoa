@@ -55,7 +55,11 @@ func newOwnedTerminalFile(source *os.File) (*ownedTerminalFile, error) {
 }
 
 func (reader *FileConfirmationReader) ReadContext(ctx context.Context, data []byte) (int, error) {
-	n, err := reader.file.withContext(ctx, data, readConfirmationInput)
+	return reader.readWith(ctx, data, readConfirmationInput)
+}
+
+func (reader *FileConfirmationReader) readWith(ctx context.Context, data []byte, read func(context.Context, terminalFileHandle, []byte) (int, error)) (int, error) {
+	n, err := reader.file.withContext(ctx, data, read)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrClosed) {
 		return 0, err
 	}

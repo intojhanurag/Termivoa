@@ -9,6 +9,7 @@ This page lists what is new in each release.
 
 - **Project buttons.** The Snips sheet shows your project's own commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. Tap one to run it in a new tab or type it here. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).
 - **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines, then ask the agent about exactly those lines. See [Changes](/docs/guides/changes/#ask-about-specific-lines).
+- **Fix: Ctrl+] right after `pterm attach` connects.** Pressing Ctrl+] at the moment the desktop attach finished connecting was sometimes ignored. It now always detaches.
 
 ## v0.1.0-beta.2 (2026-09-29) — private beta
 
