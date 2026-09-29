@@ -2,12 +2,19 @@ $ErrorActionPreference = 'Stop'
 $RepoDir = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $RepoDir
 
+# $ErrorActionPreference does not stop on a native command that exits non-zero
+# (Windows PowerShell 5.1 never does), so check $LASTEXITCODE after each one.
+function Invoke-Checked([scriptblock]$Command) {
+    & $Command
+    if ($LASTEXITCODE -ne 0) { throw "$($Command.ToString().Trim()) failed with exit code $LASTEXITCODE in $((Get-Location).Path)." }
+}
+
 $NodeMajor = node -p "process.versions.node.split('.')[0]"
 if ($NodeMajor -ne '24') {
     throw "Termivoa checks require Node 24.11.0."
 }
 
-pnpm protocol:generate
+Invoke-Checked { pnpm protocol:generate }
 git diff --exit-code -- internal/protocol/generated.go web/src/generated/protocol.ts
 if ($LASTEXITCODE -ne 0) { throw 'Generated protocol files drifted.' }
 
@@ -27,15 +34,15 @@ if ($GoFiles) {
 }
 
 $env:GOTOOLCHAIN = 'go1.27.1'
-go vet ./...
-go test ./...
+Invoke-Checked { go vet ./... }
+Invoke-Checked { go test ./... }
 Push-Location third_party/ansi
-try { go test ./... } finally { Pop-Location }
+try { Invoke-Checked { go test ./... } } finally { Pop-Location }
 Push-Location third_party/vt
-try { go test ./... } finally { Pop-Location }
+try { Invoke-Checked { go test ./... } } finally { Pop-Location }
 Push-Location third_party/xpty
-try { go test ./... } finally { Pop-Location }
-go test github.com/charmbracelet/ultraviolet/...
-pnpm typecheck
-pnpm test:web
-pnpm build:web
+try { Invoke-Checked { go test ./... } } finally { Pop-Location }
+Invoke-Checked { go test github.com/charmbracelet/ultraviolet/... }
+Invoke-Checked { pnpm typecheck }
+Invoke-Checked { pnpm test:web }
+Invoke-Checked { pnpm build:web }
