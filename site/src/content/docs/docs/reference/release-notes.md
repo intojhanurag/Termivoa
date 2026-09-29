@@ -5,6 +5,11 @@ description: What is in each Termivoa release, and its known limits.
 
 This page lists what is new in each release.
 
+## Next beta (not released yet)
+
+- **Project buttons.** The Snips sheet shows your project's own commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. Tap one to run it in a new tab or type it here. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).
+- **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines, then ask the agent about exactly those lines. See [Changes](/docs/guides/changes/#ask-about-specific-lines).
+
 ## v0.1.0-beta.2 (2026-09-29) — private beta
 
 The second private beta. The binaries are not signed.
