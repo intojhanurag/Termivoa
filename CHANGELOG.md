@@ -19,6 +19,28 @@ All notable changes are documented here. The format follows
   the repository's hooks run. See [docs/changes.md](docs/changes.md#commit-and-push).
 - `agentStatus.workedSeconds`: total time a session spent working in this
   broker's lifetime, for the phone's "while you were away" recap.
+- Changes view on the phone: a **changes** action in both docks opens the file
+  list (status, +/− counts) and each file's diff with line numbers. **Ask
+  agent about this file** adds `@path` to the composer draft, never sending.
+- Commit and push on the phone: file checkboxes, a suggested message, result
+  states with git's own output, a push confirmation, and **Open pull request**
+  when the remote prints a link. A write in flight is never resent after a
+  reconnect.
+- "While you were away" card on the live screen: time away, time the agent
+  worked, changed files and waiting state, from broker data only.
+- Swipe (or trackpad scroll) on the live terminal scrolls full-screen apps
+  such as Claude Code, Codex, `vim` and `less`, as wheel steps. Controller
+  only, off while the keyboard is open, at most 4 steps per move.
+- `gateway.log` records one line per phone connection: its length and why it
+  ended. No identities or terminal content.
+
+### Changed
+
+- Reconnect after the phone was away: a socket that still answers a screen
+  resync within 2 s is kept; a connect that is not live within 5 s is dropped
+  and retried; no retries while the page is hidden (the visibility, pageshow
+  and online events reconnect at once); settings and session-list reads give
+  up after 6 s. A reconnect under 1.5 s shows only the amber dot.
 
 ## [0.1.0-beta.1] - 2026-09-28
 

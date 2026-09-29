@@ -34,6 +34,18 @@ the old working name "Phone Terminal" so existing installs keep working (see
   and start it in one tap.
 - **Composer.** Write long or multi-line text before you send it.
 - **History and copy.** Scroll back through bounded history and copy text.
+  In full-screen apps such as Claude Code, swipe on the terminal to scroll.
+- **Agent status and answer cards.** Sessions show **Working**, **Waiting** or
+  **Your turn**. Answer Claude Code and Codex questions with one tap; a
+  changed question is never answered by mistake.
+- **Notifications.** A buzz when an agent waits or finishes. Only the session
+  name and status, never terminal text.
+- **Changes view.** See the files the agent changed and each diff, then
+  commit the ones you pick and push (never forced) from the phone.
+- **"While you were away" recap.** On return, how long the agent worked, what
+  changed, and whether it waits for you.
+- **Dev-server preview, photo and voice.** Open the session's dev server on
+  the phone, send a photo without location data, or dictate a prompt.
 - **Desktop attach.** `pterm attach` opens the same session from any desktop
   terminal. Read-only by default; `--control` to type; Ctrl+] detaches.
 - **Sessions survive the phone.** Close the app or lose signal; the session

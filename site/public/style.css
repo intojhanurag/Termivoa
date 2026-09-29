@@ -154,8 +154,8 @@ h1 { display: inline-flex; flex-direction: column; gap: 6px; font-weight: 400; }
 
 /* Features */
 .features { border-top: 1px solid var(--line); padding-block: 100px 160px; display: flex; flex-direction: column; gap: 72px; }
-.columns { display: flex; justify-content: space-between; gap: 40px; }
-.columns article { max-width: 250px; display: flex; flex-direction: column; gap: 14px; }
+.columns { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 64px 40px; }
+.columns article { flex: 0 1 calc((100% - 80px) / 3); max-width: 340px; display: flex; flex-direction: column; gap: 14px; }
 .columns h3 { font-size: 26px; font-weight: 500; padding-top: 12px; line-height: 1.2; }
 .columns p { font-size: 19px; line-height: 29px; color: var(--soft); }
 .columns .hand { font-size: 24px; }

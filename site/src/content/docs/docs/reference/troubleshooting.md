@@ -124,6 +124,24 @@ See [Dev-server preview](/docs/guides/preview/).
 
 Turn on linger. Run `pterm setup` again and answer `y` to the linger question. See [Install on Linux](/docs/install/linux/#server-or-vps-ssh-only).
 
+## Changes says "not a git repository"
+
+The session's folder is not inside a git repository. `cd` into your project in the terminal, then tap **Refresh**.
+
+## Commit fails
+
+The phone shows git's own message. Common causes:
+
+- **No name or email.** Run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com` on the computer.
+- **A commit hook failed.** Your repository's hook (for example a linter) rejected the commit. Fix what it says, then try again.
+- **A merge or rebase is in progress.** Finish it in the terminal first.
+
+## Push fails or waits for a long time
+
+- **No remote.** Add one in the terminal, for example `git remote add origin <url>`.
+- **The ssh key has a passphrase.** Termivoa cannot type it. Add the key to your ssh agent (on macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`). A push that waits for a passphrase stops after 2 minutes.
+- **The remote rejected it.** The phone shows git's message. Termivoa never force-pushes.
+
 ## Where are the logs?
 
 | System | Logs |

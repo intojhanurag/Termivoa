@@ -625,3 +625,33 @@ cross-vet, web checks and the real-broker pairing integration test pass on
 macOS. `TestPtermDesktopAttachNativeOuterTTY` fails identically on the base
 commit and remains open. Native Windows, the HTTP gateway/web pairing path and
 a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
+
+## Private beta and post-beta features (2026-09-28 to 2026-09-29)
+
+- **Private beta `v0.1.0-beta.1`** (2026-09-28): GitHub prerelease in the
+  private repository with unsigned macOS, Linux and Windows binaries and
+  `SHA256SUMS` (#52). Downloaded with `gh` and checksum-verified; the macOS
+  binary carries no quarantine attribute.
+- **Website and docs** (#53–#57): landing page and Astro Starlight docs at
+  <https://termivoa.vercel.app> and `/docs`, sources in `site/`.
+- **Swipe to scroll full-screen apps** (#58): Claude Code enables the alternate
+  screen and SGR mouse tracking (captured in a pty), so a swipe now sends
+  wheel steps. Unit tests; owner confirmation on a real iPhone.
+- **Reconnect** (#59, #61): after a long hide the socket is checked with a
+  screen resync instead of replaced; 5 s attach timeout; no retries while
+  hidden; one `gateway.log` line per phone connection. The log showed
+  connections of 1–5 s in bursts before #61. The owner confirmed on the
+  iPhone after #61.
+- **Changes view** (#60): `changes.list/file` with bounded read-only git in
+  `internal/gitchanges`. End-to-end check on an isolated `pterm up --dev`
+  stack with a paired browser at 390×844.
+- **Recap and commit & push** (#62): `agentStatus.workedSeconds`,
+  controller-only `changes.commit/push`. End-to-end check on an isolated dev
+  stack driven through Chrome DevTools: a commit of 2 of 3 changed files
+  (`git show` confirmed the third stayed uncommitted) and a push to a local
+  bare remote. The recap was checked by unit tests only.
+
+Still pending: real Linux, Windows and Android devices; CI after the Actions
+minutes reset; the 24-hour soak; the history secret scan and licence audit
+(see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
+on the owner's Mac, which ends running sessions.

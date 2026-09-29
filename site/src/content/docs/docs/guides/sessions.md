@@ -50,6 +50,7 @@ pterm project add <folder>
 
 A plain shell that waits at its prompt shows no badge.
 Waiting sessions can also [notify your phone](/docs/guides/notifications/).
+When you open a session after some time away, a [recap card](/docs/guides/recap/) says what happened.
 
 ## Live folder name
 
