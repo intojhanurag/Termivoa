@@ -33,6 +33,7 @@
     { "$ref": "#/$defs/changesFileMessage" },
     { "$ref": "#/$defs/changesCommitMessage" },
     { "$ref": "#/$defs/changesPushMessage" },
+    { "$ref": "#/$defs/tasksListMessage" },
     { "$ref": "#/$defs/sessionDetachMessage" },
     { "$ref": "#/$defs/welcomeMessage" },
     { "$ref": "#/$defs/snapshotBeginMessage" },
@@ -45,6 +46,7 @@
     { "$ref": "#/$defs/changesPatchMessage" },
     { "$ref": "#/$defs/changesCommittedMessage" },
     { "$ref": "#/$defs/changesPushedMessage" },
+    { "$ref": "#/$defs/tasksListedMessage" },
     { "$ref": "#/$defs/controlChangedMessage" },
     { "$ref": "#/$defs/inputAcceptedMessage" },
     { "$ref": "#/$defs/inputRejectedMessage" },
@@ -80,7 +82,8 @@
         "history.changed", "control.changed", "input.accepted",
         "input.rejected", "session.state", "access.revoked", "error",
         "changes.list", "changes.file", "changes.summary", "changes.patch",
-        "changes.commit", "changes.push", "changes.committed", "changes.pushed"
+        "changes.commit", "changes.push", "changes.committed", "changes.pushed",
+        "tasks.list", "tasks.listed"
       ]
     },
     "errorCode": {
@@ -538,6 +541,31 @@
         "output": { "type": "string", "maxLength": 2000 }
       }
     },
+    "tasksListPayload": {
+      "title": "TasksListPayload",
+      "description": "Asks for the commands a project defines, read from files in the session's project folder. Nothing runs.",
+      "type": "object", "additionalProperties": false, "properties": {}
+    },
+    "projectTask": {
+      "title": "ProjectTask",
+      "type": "object", "additionalProperties": false, "required": ["name", "command", "source", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "command": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "source": { "title": "TaskSource", "type": "string", "enum": ["package.json", "Makefile", "Cargo.toml", "go.mod"] },
+        "kind": { "title": "TaskKind", "type": "string", "enum": ["test", "dev", "build", "lint", "other"] }
+      }
+    },
+    "tasksListedPayload": {
+      "title": "TasksListedPayload",
+      "description": "ready: tasks lists the project's commands, ready to type in the project folder (folder), most useful kinds first. none: no known project file. unavailable: the folder could not be read.",
+      "type": "object", "additionalProperties": false, "required": ["state", "tasks"],
+      "properties": {
+        "state": { "title": "TasksState", "type": "string", "enum": ["ready", "none", "unavailable"] },
+        "folder": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "tasks": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/projectTask" } }
+      }
+    },
     "historyPagePayload": {
       "title": "HistoryPagePayload",
       "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "columns", "offset", "rows", "complete"],
@@ -628,6 +656,8 @@
     "changesPushMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.push" }, "payload": { "$ref": "#/$defs/changesPushPayload" } } },
     "changesCommittedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.committed" }, "payload": { "$ref": "#/$defs/changesCommittedPayload" } } },
     "changesPushedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.pushed" }, "payload": { "$ref": "#/$defs/changesPushedPayload" } } },
+    "tasksListMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "tasks.list" }, "payload": { "$ref": "#/$defs/tasksListPayload" } } },
+    "tasksListedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "tasks.listed" }, "payload": { "$ref": "#/$defs/tasksListedPayload" } } },
     "historyChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.changed" }, "payload": { "$ref": "#/$defs/historyChangedPayload" } } },
     "controlChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.changed" }, "payload": { "$ref": "#/$defs/controlChangedPayload" } } },
     "inputAcceptedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.accepted" }, "payload": { "$ref": "#/$defs/inputAcceptedPayload" } } },

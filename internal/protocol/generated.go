@@ -112,6 +112,8 @@ type ProtocolTypes struct {
 	SnapshotBegin                    SnapshotBeginPayload                    `json:"snapshotBegin"`
 	SnapshotEnd                      SnapshotEndPayload                      `json:"snapshotEnd"`
 	SnapshotRows                     SnapshotRowsPayload                     `json:"snapshotRows"`
+	TasksList                        TasksListPayload                        `json:"tasksList"`
+	TasksListed                      TasksListedPayload                      `json:"tasksListed"`
 	TerminalResize                   TerminalResizePayload                   `json:"terminalResize"`
 	TerminalRow                      TerminalRow                             `json:"terminalRow"`
 	Welcome                          WelcomePayload                          `json:"welcome"`
@@ -860,6 +862,27 @@ type SnapshotRowsPayload struct {
 	StartRow   int64         `json:"startRow"`
 }
 
+// Asks for the commands a project defines, read from files in the session's project folder.
+// Nothing runs.
+type TasksListPayload struct {
+}
+
+// ready: tasks lists the project's commands, ready to type in the project folder (folder),
+// most useful kinds first. none: no known project file. unavailable: the folder could not
+// be read.
+type TasksListedPayload struct {
+	Folder *string       `json:"folder,omitempty"`
+	State  TasksState    `json:"state"`
+	Tasks  []ProjectTask `json:"tasks"`
+}
+
+type ProjectTask struct {
+	Command string     `json:"command"`
+	Kind    TaskKind   `json:"kind"`
+	Name    string     `json:"name"`
+	Source  TaskSource `json:"source"`
+}
+
 type TerminalResizePayload struct {
 	Columns int64  `json:"columns"`
 	Lease   string `json:"lease"`
@@ -1265,6 +1288,8 @@ const (
 	SnapshotBegin             MessageType = "snapshot.begin"
 	SnapshotEnd               MessageType = "snapshot.end"
 	SnapshotRows              MessageType = "snapshot.rows"
+	TasksList                 MessageType = "tasks.list"
+	TasksListed               MessageType = "tasks.listed"
 	TerminalResize            MessageType = "terminal.resize"
 	Welcome                   MessageType = "welcome"
 )
@@ -1298,4 +1323,31 @@ const (
 	Initial             Reason = "initial"
 	InterruptedSnapshot Reason = "interrupted-snapshot"
 	InvalidState        Reason = "invalid-state"
+)
+
+type TasksState string
+
+const (
+	TasksStateNone        TasksState = "none"
+	TasksStateReady       TasksState = "ready"
+	TasksStateUnavailable TasksState = "unavailable"
+)
+
+type TaskKind string
+
+const (
+	Build TaskKind = "build"
+	Dev   TaskKind = "dev"
+	Lint  TaskKind = "lint"
+	Other TaskKind = "other"
+	Test  TaskKind = "test"
+)
+
+type TaskSource string
+
+const (
+	CargoToml   TaskSource = "Cargo.toml"
+	GoMod       TaskSource = "go.mod"
+	Makefile    TaskSource = "Makefile"
+	PackageJSON TaskSource = "package.json"
 )

@@ -112,6 +112,8 @@ export type ProtocolTypes = {
     readonly snapshotBegin:                    SnapshotBeginPayload;
     readonly snapshotEnd:                      SnapshotEndPayload;
     readonly snapshotRows:                     SnapshotRowsPayload;
+    readonly tasksList:                        TasksListPayload;
+    readonly tasksListed:                      TasksListedPayload;
     readonly terminalResize:                   TerminalResizePayload;
     readonly terminalRow:                      TerminalRow;
     readonly welcome:                          WelcomePayload;
@@ -920,7 +922,7 @@ export type LeasePayload = {
     readonly lease: string;
 }
 
-export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed";
+export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed" | "tasks.list" | "tasks.listed";
 
 export type ScreenMetadata = {
     readonly background:      Color;
@@ -1001,6 +1003,37 @@ export type SnapshotRowsPayload = {
     readonly snapshotId: string;
     readonly startRow:   number;
 }
+
+/**
+ * Asks for the commands a project defines, read from files in the session's project folder.
+ * Nothing runs.
+ */
+export type TasksListPayload = {
+}
+
+/**
+ * ready: tasks lists the project's commands, ready to type in the project folder (folder),
+ * most useful kinds first. none: no known project file. unavailable: the folder could not
+ * be read.
+ */
+export type TasksListedPayload = {
+    readonly folder?: string;
+    readonly state:   TasksState;
+    readonly tasks:   ProjectTask[];
+}
+
+export type TasksState = "ready" | "none" | "unavailable";
+
+export type ProjectTask = {
+    readonly command: string;
+    readonly kind:    TaskKind;
+    readonly name:    string;
+    readonly source:  TaskSource;
+}
+
+export type TaskKind = "test" | "dev" | "build" | "lint" | "other";
+
+export type TaskSource = "package.json" | "Makefile" | "Cargo.toml" | "go.mod";
 
 export type TerminalResizePayload = {
     readonly columns: number;
