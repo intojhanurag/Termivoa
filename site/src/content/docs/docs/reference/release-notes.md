@@ -5,6 +5,17 @@ description: What is in each Termivoa release, and its known limits.
 
 This page lists what is new in each release.
 
+## Next beta (not released yet)
+
+These are on `main` and come in the next beta. Updating needs a restart of Termivoa on the computer, which ends running sessions.
+
+- **Changes view.** See what the agent changed: a list of changed files with +/− counts, and each file's diff in red and green. See [Changes](/docs/guides/changes/).
+- **Commit and push from the phone.** Pick files, edit the suggested message, commit, then push. It never forces, and it needs control.
+- **"While you were away" card.** When you open a session, see how long the agent worked, what changed, and whether it waits for you. See [Recap](/docs/guides/recap/).
+- **Swipe to scroll full-screen apps.** Swipe on the terminal to scroll Claude Code, Codex, `vim` or `less`.
+- **Much faster reconnect.** After you unlock the phone, it reconnects in seconds. A connection that still works is kept, and a stuck attempt is retried after 5 seconds.
+- **Connection log.** `gateway.log` gets one line for each phone connection, with its length and why it ended.
+
 ## v0.1.0-beta.1 (2026-09-28) — private beta
 
 The first private beta, for invited testers only. The binaries are not signed.

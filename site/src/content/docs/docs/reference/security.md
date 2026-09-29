@@ -35,6 +35,14 @@ This page explains how Termivoa protects your computer, in plain words.
 - Typing is never queued or resent after a lost connection.
 - Phones never receive the raw terminal byte stream, and cannot send raw bytes. They send only keys, text and pastes.
 
+## Changes, commit and push
+
+- The Changes view only **reads** git. It shows uncommitted changes and untracked files that git does not ignore, in the session's project.
+- **Any phone paired with this computer can see these diffs.** They can include secrets in files that are not ignored. Keep secrets in ignored files such as `.env`.
+- Commit and push need **control**. The computer checks the lease right before git starts.
+- A commit includes only the files you ticked, and only files that git lists as changed. Your repository's own commit hooks run, as with any commit.
+- Push **never forces**. It uses your normal git and ssh settings and never asks for a password on the phone.
+
 ## What is stored, and where
 
 | Stored | Not stored |
