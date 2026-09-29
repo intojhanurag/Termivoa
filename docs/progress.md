@@ -662,6 +662,12 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   tiles after the fix (checked again with 3 sessions printing output), tap opens the session, browser back returns to `/wall`, and
   each session's `viewerCount` fell from 1 to 0 on leaving; 4 columns at 1024 px.
 
+- **Private beta `v0.1.0-beta.2`** (2026-09-29, #65): GitHub prerelease at
+  `4421f2c` with unsigned macOS, Linux (amd64, arm64) and Windows binaries,
+  `install-linux.sh` and `SHA256SUMS`. Each binary carries the build ID and no
+  personal paths; the macOS and Linux arm64 binaries start. Downloaded with
+  `gh`: all checksums match and the macOS file has no quarantine attribute.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
