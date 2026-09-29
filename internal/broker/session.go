@@ -187,6 +187,7 @@ type Session struct {
 	cwdResults   chan string
 	cwd          cwdTracker
 	cwdRepublish bool
+	directory    string              // Project folder the process started in; immutable.
 	termination  *sessionTermination // Actor-owned; one bounded attempt per session.
 }
 
@@ -360,6 +361,7 @@ func startSessionRuntime(
 		previewResults:      make(chan previewScanResult, 1),
 		cwdRead:             readOSDirectory(process),
 		cwdResults:          make(chan string, 1),
+		directory:           config.Process.Directory,
 	}
 
 	session.pumpWG.Add(3)
