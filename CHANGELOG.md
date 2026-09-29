@@ -13,6 +13,12 @@ All notable changes are documented here. The format follows
   list with +/− counts) and one file's diff, read with bounded, read-only git
   commands off the session actor. Any paired device viewing a session can read
   these diffs. See [docs/changes.md](docs/changes.md).
+- Commit and push from the phone, host side: `changes.commit` commits exactly
+  the selected paths of a fresh listing (other staged files stay staged) and
+  `changes.push` pushes the current branch, never forced. Controller only;
+  the repository's hooks run. See [docs/changes.md](docs/changes.md#commit-and-push).
+- `agentStatus.workedSeconds`: total time a session spent working in this
+  broker's lifetime, for the phone's "while you were away" recap.
 
 ## [0.1.0-beta.1] - 2026-09-28
 

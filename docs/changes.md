@@ -3,8 +3,10 @@
 The phone can show the uncommitted `git` changes of a session's project: a
 file list with +/− counts, and the diff of one file. The wire format is in
 `protocol/v1`: `changes.list` → `changes.summary` and `changes.file` →
-`changes.patch` on the live stream. The code is `internal/gitchanges` (git)
-and `internal/broker/changes.go` (wiring).
+`changes.patch` on the live stream. The controller can also commit selected
+files (`changes.commit` → `changes.committed`) and push (`changes.push` →
+`changes.pushed`). The code is `internal/gitchanges` (git) and
+`internal/broker/changes.go` (wiring).
 
 ## Which folder
 
@@ -70,3 +72,61 @@ session's repository: every uncommitted change, and the full text of untracked
 files that git does not ignore (for example a new `.env` that is not in
 `.gitignore`). It cannot read unchanged or ignored files. No controller lease
 is needed, as for terminal history. Revoking a device stops it at once.
+
+## Commit and push
+
+Only the controller can commit or push: both messages carry the lease, and the
+session actor checks it right before git starts (`not_controller` or
+`stale_lease` otherwise). One write runs per session at a time, whoever asks;
+another gets `limit_exceeded`. A write that started finishes even if the
+viewer detaches, because a commit cut short is worse than a lost reply; only
+the reply is dropped. Reads keep their own per-viewer limit.
+
+For `changes.commit` (message: 1..2000 characters without NUL; 1..300 paths):
+
+1. Refuse (`failed`) while a merge, rebase, cherry-pick or revert is in
+   progress (`MERGE_HEAD`, `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`,
+   `REVERT_HEAD` in the git folder).
+2. List again. Every path must be in that fresh listing (a new path or the old
+   path of a rename); otherwise `failed` and git changes nothing. A rename
+   commits both of its paths.
+3. `git add -- :(literal)<path>…` for the untracked paths only.
+   `git commit --only` takes tracked paths (also deleted ones) from the
+   working tree itself, but refuses paths git does not know.
+4. `git diff --quiet --no-ext-diff --no-textconv <HEAD> -- <paths>`: no
+   difference → `nothing`, and no commit runs.
+5. `git commit --only -m <message> -- :(literal)<path>…`. `--only` with paths
+   commits exactly those paths as they are in the working tree; other staged
+   files stay staged and out of the commit.
+6. `git rev-parse --short HEAD` → `committed` with that hash.
+
+For `changes.push`:
+
+1. `git symbolic-ref -q --short HEAD`: a detached HEAD is `failed`.
+2. With an upstream (`git rev-parse --abbrev-ref --symbolic-full-name
+   @{upstream}`): `git push`.
+3. Without one: `git remote`. No remote → `no_remote`. A remote named
+   `origin` → `git push -u origin HEAD`. Other remotes only → `failed` with a
+   hint.
+4. `pushed` with the branch, and `url`: the first `https://` link in the
+   output that opens a new pull or merge request (`/pull/new/`,
+   `/merge_requests/new`, `/pull-requests/new`), when it is at most 2048
+   characters without whitespace or control characters.
+
+Safety:
+
+- Never a shell, and never `--force` or any force variant. A rejected push
+  is `failed` with git's words.
+- The repository's hooks run as for any commit or push, and git takes its
+  locks as usual (no `GIT_OPTIONAL_LOCKS=0`). Paths use `:(literal)` magic,
+  not `--literal-pathspecs`, which would reach the hooks' own git commands.
+  No `-c` overrides; the user's git and ssh settings apply.
+- Environment: inherited plus `GIT_TERMINAL_PROMPT=0`; stdin is the null
+  device, so git never waits for input.
+- 120 s per request (hooks and remotes can be slow), then git is killed and
+  the reply is `failed`.
+- `failed` carries `output`: the last 2000 characters of git's stdout and
+  stderr together (a hook's message, a missing `user.email`, a rejected
+  push), valid UTF-8 and trimmed.
+- If `git add` ran but the commit then failed (for example a hook said no),
+  the untracked files stay added, as after the same commands in a terminal.
