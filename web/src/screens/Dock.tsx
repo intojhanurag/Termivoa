@@ -33,16 +33,17 @@ const MODIFIER_ARROWS: ReadonlyArray<[KeyName, string, string]> = [
   ['arrow-right', '→', 'Right arrow'],
 ];
 
-/** The in-control dock: agent keys, modifiers and arrows, and the four actions. */
+/** The in-control dock: agent keys, modifiers and arrows, and the five actions. */
 export function CockpitDock({
   compact, disabled, latched, alternate, historyEnabled,
-  onAgentKey, onKey, onLatch, onWheel, onType, onCompose, onSnippets, onHistory, onHideKeyboard,
+  onAgentKey, onKey, onLatch, onWheel, onType, onCompose, onSnippets, onHistory, onChanges, onHideKeyboard,
 }: {
   /** The keyboard is up: one scrolling row of keys, so the terminal keeps its space. */
   readonly compact: boolean;
   readonly disabled: boolean;
   readonly latched: { readonly ctrl: boolean; readonly alt: boolean };
   readonly alternate: boolean;
+  /** History and changes read over the live socket. */
   readonly historyEnabled: boolean;
   readonly onAgentKey: (key: AgentKey) => void;
   readonly onKey: (key: KeyName) => void;
@@ -52,6 +53,7 @@ export function CockpitDock({
   readonly onCompose: () => void;
   readonly onSnippets: () => void;
   readonly onHistory: () => void;
+  readonly onChanges: () => void;
   readonly onHideKeyboard: () => void;
 }) {
   const agentKeys = AGENT_KEYS.map((key) => (
@@ -118,6 +120,9 @@ export function CockpitDock({
         <button type="button" className="action" disabled={!historyEnabled} onClick={onHistory}>
           <span aria-hidden="true" className="glyph">↺</span>history
         </button>
+        <button type="button" className="action" disabled={!historyEnabled} onClick={onChanges}>
+          <span aria-hidden="true" className="glyph">±</span>changes
+        </button>
       </div>
     </section>
   );
@@ -160,11 +165,12 @@ export function canTakeControl(status: ConnectionStatus): boolean {
 }
 
 /** The observer dock: who has control, what watching means, and Take control. */
-export function ReadOnlyDock({ status, historyEnabled, onTakeControl, onHistory, onSessions }: {
+export function ReadOnlyDock({ status, historyEnabled, onTakeControl, onHistory, onChanges, onSessions }: {
   readonly status: ConnectionStatus;
   readonly historyEnabled: boolean;
   readonly onTakeControl: () => void;
   readonly onHistory: () => void;
+  readonly onChanges: () => void;
   readonly onSessions: () => void;
 }) {
   const controller = controllerLine(status);
@@ -190,6 +196,7 @@ export function ReadOnlyDock({ status, historyEnabled, onTakeControl, onHistory,
       </button>
       <div className="spread">
         <button type="button" className="link" disabled={!historyEnabled} onClick={onHistory}>History</button>
+        <button type="button" className="link" disabled={!historyEnabled} onClick={onChanges}>Changes</button>
         <button type="button" className="link" onClick={onSessions}>Sessions</button>
       </div>
     </section>
