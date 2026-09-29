@@ -59,6 +59,8 @@ type ManagedSession interface {
 	PreviewTarget(context.Context, uint16) (string, error)
 	// ChangesFolder is the folder a changes request reads (changes.go).
 	ChangesFolder(context.Context) (string, error)
+	// ProjectFolder is the folder a tasks request reads (tasks.go).
+	ProjectFolder() string
 	// AuthorizeControl checks a controller lease without renewing it.
 	AuthorizeControl(context.Context, MutationIdentity) error
 }

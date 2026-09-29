@@ -668,6 +668,20 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   personal paths; the macOS and Linux arm64 binaries start. Downloaded with
   `gh`: all checksums match and the macOS file has no quarantine attribute.
 
+- **Project buttons and line comments** (`feat/tasks-and-comments`):
+  `tasks.list`/`tasks.listed` read the project folder's package.json scripts
+  (package manager from the lockfile), Makefile targets, and Cargo/Go defaults
+  through `os.Root`, never executing anything; the Snips sheet shows them with
+  **Run in new tab** (run-first in a new session) and **Type here**. Changes
+  lines can be selected to draft "Ask agent about lines N–M". In review,
+  **Type here** was always off (every session has an agent status), so it now
+  keys on the alternate screen (full-screen apps such as Claude Code) and a
+  working or waiting state. End to end on an isolated `pterm up --dev` stack
+  driven through Chrome DevTools at 390×844: the pnpm project showed
+  test/dev/build/lint/db:seed; Run in new tab printed `TESTS-RAN-OK` in a new
+  tab; Type here printed `BUILD-OK`; selecting 2 diff lines drafted
+  `@cart.js lines 3–4:` with both lines quoted, without sending.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

@@ -32,6 +32,7 @@ type sessionConnection struct {
 	session      ManagedSession
 	viewer       *ViewerSubscription
 	changesBusy  atomic.Bool // A changes request is running (changes.go).
+	tasksBusy    atomic.Bool // A tasks request is running (tasks.go).
 }
 
 // errStreamRevoked ends a browser stream after access.revoked was sent.
@@ -242,6 +243,8 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 		return stream.readChanges(ctx, request)
 	case protocol.ChangesCommit, protocol.ChangesPush:
 		return stream.writeChanges(ctx, request, identity)
+	case protocol.TasksList:
+		return stream.listTasks(ctx, request)
 	case protocol.SessionDetach:
 		return io.EOF // outer connection close releases the viewer, never the PTY
 	default:

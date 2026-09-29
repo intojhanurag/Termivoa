@@ -1,8 +1,8 @@
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { BrokerRPCSessionRecord, HTTPSettingsResponse, KeyName } from '../generated/protocol';
+import type { BrokerRPCSessionRecord, DiffLine, HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { sendAgentKey } from '../terminal/agentKeys';
-import { canSendWith, Connection, INITIAL_STATUS, type ChangesView } from '../terminal/Connection';
+import { canSendWith, Connection, INITIAL_STATUS, type ChangesView, type TasksView } from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
 import { runFirstCommand } from '../terminal/runFirst';
@@ -38,6 +38,7 @@ export const QUIET_RECONNECT_MS = 1_500;
 const noSubscribe = () => () => undefined;
 const initialStatus = () => INITIAL_STATUS;
 const noChanges = (): ChangesView | undefined => undefined;
+const noTasks = (): TasksView | undefined => undefined;
 const sameSession = (a: BrokerRPCSessionRecord, b: BrokerRPCSessionRecord) => a.id === b.id && a.generation === b.generation;
 
 /** Tabs: running sessions, plus the open one even after it exits. */
@@ -122,7 +123,8 @@ export function Live({
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onChanged: () => Promise<void>;
-  readonly onStartNew: () => void;
+  /** A new session in the same project and shell; `runFirst` is typed once when it opens. */
+  readonly onStartNew: (runFirst?: string) => void;
   readonly onRevoked: (reason: string | undefined) => void;
   /** Absent when this host serves no previews. */
   readonly onPreview?: (port: number) => void;
@@ -178,6 +180,10 @@ export function Live({
   const changesView = useSyncExternalStore(
     runtime?.connection.subscribe ?? noSubscribe,
     runtime?.connection.getChanges ?? noChanges,
+  );
+  const tasks = useSyncExternalStore(
+    runtime?.connection.subscribe ?? noSubscribe,
+    runtime?.connection.getTasks ?? noTasks,
   );
 
   // This device is looking at the session: its output is not "new" here.
@@ -397,8 +403,8 @@ export function Live({
   }
 
   // Only fills the draft; the user reads it and taps Send.
-  function askAbout(path: string) {
-    askAboutFile(draft, path);
+  function askAbout(path: string, selected: ReadonlyArray<DiffLine>) {
+    askAboutFile(draft, path, selected);
     runtime?.connection.closeChanges();
     setComposerVersion((value) => value + 1);
     setPanel('composer');
@@ -440,7 +446,7 @@ export function Live({
         actions={(
           <>
             <button type="button" className="state-pill" onClick={onSessions}>sessions</button>
-            <button type="button" className="primary" onClick={onStartNew}>New session</button>
+            <button type="button" className="primary" onClick={() => onStartNew()}>New session</button>
           </>
         )}
       />
@@ -586,7 +592,11 @@ export function Live({
               onWheel={(button) => runtime?.connection.sendWheel(button)}
               onType={() => { setPanel('none'); input.current?.focus(); }}
               onCompose={() => setPanel('composer')}
-              onSnippets={() => setPanel('snippets')}
+              onSnippets={() => {
+                // One read of the project's commands each time the sheet opens.
+                runtime?.connection.listTasks();
+                setPanel('snippets');
+              }}
               onHistory={openHistory}
               onChanges={openChanges}
               onHideKeyboard={() => input.current?.blur()}
@@ -614,7 +624,15 @@ export function Live({
         />
       )}
       {panel === 'snippets' && runtime !== undefined && (
-        <Snippets target={runtime.connection} canSend={canSend} onClose={() => setPanel('none')} />
+        <Snippets
+          target={runtime.connection}
+          canSend={canSend}
+          busy={!normalBuffer ? 'fullscreen' : status.agent?.state === 'working' || status.agent?.state === 'waiting' ? 'running' : undefined}
+          tasks={tasks}
+          onRetryTasks={() => runtime.connection.listTasks()}
+          onRunTask={onStartNew}
+          onClose={() => setPanel('none')}
+        />
       )}
       {panel === 'menu' && (
         <SessionMenu

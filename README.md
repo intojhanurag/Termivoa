@@ -30,8 +30,10 @@ the old working name "Phone Terminal" so existing installs keep working (see
   waiting agents first. Tiles only watch; tap one to open it.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
   for coding-agent prompts, plus a key bar with Esc, Tab, Ctrl, Alt and arrows.
-- **Snippets.** Save prompts and commands you send often; send them with or
-  without Enter.
+- **Snippets and project buttons.** Save prompts and commands you send often;
+  send them with or without Enter. The same sheet shows the project's own
+  commands (package.json scripts, Makefile targets, Cargo and Go) to run in a
+  new tab or type here. Nothing runs until you tap.
 - **Launch presets and "run first".** Save a project + shell + first command
   and start it in one tap.
 - **Composer.** Write long or multi-line text before you send it.
@@ -42,8 +44,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
   changed question is never answered by mistake.
 - **Notifications.** A buzz when an agent waits or finishes. Only the session
   name and status, never terminal text.
-- **Changes view.** See the files the agent changed and each diff, then
-  commit the ones you pick and push (never forced) from the phone.
+- **Changes view.** See the files the agent changed and each diff, ask the
+  agent about a file or picked lines, then commit the ones you pick and push
+  (never forced) from the phone.
 - **"While you were away" recap.** On return, how long the agent worked, what
   changed, and whether it waits for you.
 - **Dev-server preview, photo and voice.** Open the session's dev server on

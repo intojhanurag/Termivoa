@@ -1,10 +1,24 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { ChangedFile, ChangesPatchPayload, ChangesSummaryPayload } from '../generated/protocol';
+import type { ChangedFile, ChangesPatchPayload, ChangesSummaryPayload, DiffLine } from '../generated/protocol';
 import type { ChangesView, ChangesWrite } from '../terminal/Connection';
 import { readDraft, saveDraft } from '../terminal/composer';
-import { askAboutFile, ChangesPanel, httpsUrl, ShipFlow, splitPath, suggestMessage, type CommitControls } from './Changes';
+import {
+  askAboutFile,
+  ChangesPanel,
+  httpsUrl,
+  linesDraft,
+  linesLabel,
+  MAX_SELECTED_LINES,
+  selectedLines,
+  ShipFlow,
+  splitPath,
+  suggestMessage,
+  tapLine,
+  type CommitControls,
+  type LineSelection,
+} from './Changes';
 
 const noop = () => undefined;
 const files: ChangedFile[] = [
@@ -52,10 +66,10 @@ function buttons(node: ReactNode, found = new Map<string, () => void>()): Map<st
   if (Array.isArray(node)) {
     node.forEach((child: ReactNode) => buttons(child, found));
   } else if (isValidElement(node)) {
-    const { props } = node as ReactElement<{ children?: ReactNode; onClick?: () => void; onChange?: () => void; 'aria-label'?: string }>;
+    const { props } = node as ReactElement<{ children?: ReactNode; onClick?: () => void; onChange?: () => void; 'aria-label'?: string; role?: string }>;
     if (typeof node.type === 'function') {
       buttons((node.type as (props: unknown) => ReactNode)(props), found);
-    } else if (node.type === 'button' && props.onClick !== undefined) {
+    } else if ((node.type === 'button' || props.role === 'button') && props.onClick !== undefined) {
       found.set(props['aria-label'] ?? renderToStaticMarkup(<>{props.children}</>).replace(/<[^>]+>/gu, ''), props.onClick);
     } else if (node.type === 'input' && props.onChange !== undefined && props['aria-label'] !== undefined) {
       found.set(props['aria-label'], props.onChange);
@@ -130,9 +144,10 @@ describe('changes file', () => {
     expect(markup).toContain('<span>web/src/screens/ · </span><span class="change-add">+12</span><span class="change-del">−3</span>');
     expect(markup).toContain('style="--digits:2"');
     expect(markup).toContain('<div class="diff-line hunk"><span class="diff-text">@@ -9,3 +9,3 @@ export function Live</span></div>');
-    expect(markup).toContain('<div class="diff-line context"><span class="diff-num" aria-hidden="true">9</span><span class="diff-num" aria-hidden="true">9</span><span class="diff-sign"> </span><span class="diff-text">const a = 1;</span></div>');
-    expect(markup).toContain('<div class="diff-line remove"><span class="diff-num" aria-hidden="true">10</span><span class="diff-num" aria-hidden="true"></span><span class="diff-sign">-</span><span class="diff-text">const b = 2;</span></div>');
-    expect(markup).toContain('<div class="diff-line add"><span class="diff-num" aria-hidden="true"></span><span class="diff-num" aria-hidden="true">10</span><span class="diff-sign">+</span>');
+    const line = '<div class="diff-line %s" role="button" tabindex="0" aria-pressed="false">';
+    expect(markup).toContain(`${line.replace('%s', 'context')}<span class="diff-num" aria-hidden="true">9</span><span class="diff-num" aria-hidden="true">9</span><span class="diff-sign"> </span><span class="diff-text">const a = 1;</span></div>`);
+    expect(markup).toContain(`${line.replace('%s', 'remove')}<span class="diff-num" aria-hidden="true">10</span><span class="diff-num" aria-hidden="true"></span><span class="diff-sign">-</span><span class="diff-text">const b = 2;</span></div>`);
+    expect(markup).toContain(`${line.replace('%s', 'add')}<span class="diff-num" aria-hidden="true"></span><span class="diff-num" aria-hidden="true">10</span><span class="diff-sign">+</span>`);
     expect(markup).not.toContain('role="status"');
   });
 
@@ -158,7 +173,112 @@ describe('changes file', () => {
     found.get('Back to changed files')?.();
     found.get('@Ask agent about this file')?.();
     expect(onBack).toHaveBeenCalledOnce();
-    expect(onAsk).toHaveBeenCalledWith('web/src/screens/Live.tsx');
+    expect(onAsk).toHaveBeenCalledWith('web/src/screens/Live.tsx', []);
+  });
+
+  it('picks lines on tap, shows them, and asks about the picked lines', () => {
+    const ready = patch();
+    const view = open({ path: 'web/src/screens/Live.tsx', state: 'ready', patch: ready });
+    const onSelect = vi.fn();
+    buttons(panel(view, { onSelect })).get('99 const a = 1;')?.();
+    expect(onSelect).toHaveBeenCalledWith({ lines: ready.lines, anchor: 1, end: 1 });
+
+    const selection: LineSelection = { lines: ready.lines, anchor: 1, end: 3 };
+    const markup = renderToStaticMarkup(panel(view, { selection }));
+    expect(markup.match(/aria-pressed="true"/gu)).toHaveLength(3);
+    expect(markup).toContain('<div class="diff-line add picked" role="button" tabindex="0" aria-pressed="true">');
+    expect(markup).toContain('<div class="diff-line hunk">');
+    expect(markup).toContain('Ask agent about lines 9–10</button><button type="button">Clear</button>');
+    expect(markup).not.toContain('role="status"');
+
+    const onAsk = vi.fn();
+    const found = buttons(panel(view, { selection, onAsk, onSelect }));
+    found.get('@Ask agent about lines 9–10')?.();
+    expect(onAsk).toHaveBeenCalledWith('web/src/screens/Live.tsx', ready.lines.slice(1, 4));
+    found.get('Clear')?.();
+    expect(onSelect).toHaveBeenLastCalledWith(undefined);
+
+    // A selection from an older patch is not shown.
+    const stale = renderToStaticMarkup(panel(view, { selection: { ...selection, lines: patch().lines } }));
+    expect(stale).not.toContain('aria-pressed="true"');
+    expect(stale).toContain('Ask agent about this file');
+
+    const clamped = renderToStaticMarkup(panel(view, { selection: { ...selection, note: 'A range can have 20 lines at most.' } }));
+    expect(clamped).toContain('<p class="changes-note" role="status">A range can have 20 lines at most.</p>');
+  });
+});
+
+describe('line selection', () => {
+  const lines: DiffLine[] = [
+    { kind: 'hunk', text: '@@ -40,3 +40,4 @@' },
+    { kind: 'context', text: 'a', oldLine: 40, newLine: 40 },
+    { kind: 'remove', text: 'b', oldLine: 41 },
+    { kind: 'add', text: 'c', newLine: 41 },
+    { kind: 'add', text: 'd', newLine: 42 },
+    { kind: 'hunk', text: '@@ -90 +91 @@' },
+    { kind: 'remove', text: 'e', oldLine: 90 },
+  ];
+
+  it('picks a line, then a range either way, and clears on a picked line', () => {
+    const one = tapLine(undefined, lines, 1);
+    expect(one).toEqual({ lines, anchor: 1, end: 1 });
+    expect(tapLine(one, lines, 1)).toBeUndefined();
+    const range = tapLine(one, lines, 4);
+    expect(range).toEqual({ lines, anchor: 1, end: 4 });
+    expect(tapLine(tapLine(undefined, lines, 4), lines, 2)).toEqual({ lines, anchor: 4, end: 2 });
+    expect(tapLine(range, lines, 3)).toBeUndefined();
+    expect(tapLine(range, lines, 6)).toEqual({ lines, anchor: 6, end: 6 });
+  });
+
+  it('never picks a hunk line and keeps a range inside one hunk', () => {
+    expect(tapLine(undefined, lines, 0)).toBeUndefined();
+    const one = tapLine(undefined, lines, 2);
+    expect(tapLine(one, lines, 5)).toBe(one);
+    expect(tapLine(one, lines, 6)).toEqual({ lines, anchor: 2, end: 4, note: 'A range stays inside one part of the diff.' });
+    expect(tapLine(tapLine(undefined, lines, 6), lines, 1)).toEqual({ lines, anchor: 6, end: 6, note: 'A range stays inside one part of the diff.' });
+  });
+
+  it('clamps a range to 20 lines and says so', () => {
+    const long: DiffLine[] = Array.from({ length: 30 }, (_, index) => ({ kind: 'add', text: `${index}`, newLine: index + 1 }));
+    const range = tapLine(tapLine(undefined, long, 0), long, 29);
+    expect(range).toEqual({ lines: long, anchor: 0, end: MAX_SELECTED_LINES - 1, note: 'A range can have 20 lines at most.' });
+    expect(selectedLines(range, long)).toHaveLength(MAX_SELECTED_LINES);
+    expect(tapLine(tapLine(undefined, long, 29), long, 0)).toMatchObject({ anchor: 29, end: 10 });
+    expect(tapLine(tapLine(undefined, long, 0), long, 19)).toEqual({ lines: long, anchor: 0, end: 19 });
+  });
+
+  it('drops a selection from another patch', () => {
+    const one = tapLine(undefined, lines, 1);
+    const fresh = [...lines];
+    expect(selectedLines(one, fresh)).toEqual([]);
+    expect(tapLine(one, fresh, 3)).toEqual({ lines: fresh, anchor: 3, end: 3 });
+  });
+
+  it('names new line numbers, or old ones for removed lines only', () => {
+    expect(linesLabel(lines.slice(1, 2))).toBe('line 40');
+    expect(linesLabel(lines.slice(1, 5))).toBe('lines 40–42');
+    expect(linesLabel(lines.slice(2, 4))).toBe('line 41');
+    expect(linesLabel(lines.slice(2, 3))).toBe('line 41');
+    expect(linesLabel(lines.slice(6, 7))).toBe('line 90');
+    expect(linesLabel([
+      { kind: 'remove', text: 'x', oldLine: 7 },
+      { kind: 'remove', text: 'y', oldLine: 8 },
+    ])).toBe('lines 7–8');
+  });
+
+  it('quotes the lines with their signs under an @path line, then leaves a blank line', () => {
+    expect(linesDraft('app.js', lines.slice(1, 5))).toBe('@app.js lines 40–42:\n```\n a\n-b\n+c\n+d\n```\n\n');
+    expect(linesDraft('a.md', [{ kind: 'add', text: '```js', newLine: 3 }])).toBe('@a.md line 3:\n````\n+```js\n````\n\n');
+  });
+
+  it('appends the quote to the draft on its own line and sends nothing', () => {
+    const key = 'session/lines';
+    askAboutFile(key, 'app.js', lines.slice(3, 4));
+    expect(readDraft(key)).toBe('@app.js line 41:\n```\n+c\n```\n\n');
+    saveDraft(key, 'Look at this');
+    askAboutFile(key, 'app.js', lines.slice(1, 2));
+    expect(readDraft(key)).toBe('Look at this\n@app.js line 40:\n```\n a\n```\n\n');
+    saveDraft(key, '');
   });
 });
 

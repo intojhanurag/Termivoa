@@ -114,13 +114,13 @@ var clientMessageTypes = map[MessageType]bool{
 	Hello: true, SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
-	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true, SessionDetach: true,
+	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true, TasksList: true, SessionDetach: true,
 }
 
 var hostMessageTypes = map[MessageType]bool{
 	Welcome: true, SnapshotBegin: true, SnapshotRows: true, SnapshotEnd: true,
 	ScreenPatch: true, HistoryPage: true, MessageTypeHistoryChanged: true,
-	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true,
+	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true, TasksListed: true,
 	ControlChanged: true, InputAccepted: true, InputRejected: true,
 	SessionState: true, AccessRevoked: true, Error: true,
 }
@@ -129,10 +129,10 @@ var sessionMessageTypes = map[MessageType]bool{
 	SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
-	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true,
+	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true, TasksList: true,
 	SessionDetach: true, SnapshotBegin: true,
 	SnapshotRows: true, SnapshotEnd: true, ScreenPatch: true, HistoryPage: true,
-	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true,
+	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true, TasksListed: true,
 	MessageTypeHistoryChanged: true, ControlChanged: true, InputAccepted: true,
 	InputRejected: true, SessionState: true,
 }
@@ -277,6 +277,9 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return validateSecret(payload.Lease)
+	case TasksList:
+		_, err := strictPayload[TasksListPayload](envelope)
+		return err
 	case Welcome:
 		payload, err := strictPayload[WelcomePayload](envelope)
 		if err != nil {
@@ -374,6 +377,12 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return validateChangesPushed(payload)
+	case TasksListed:
+		payload, err := strictPayload[TasksListedPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateTasksListed(payload)
 	case MessageTypeHistoryChanged:
 		payload, err := strictPayload[HistoryChangedPayload](envelope)
 		if err != nil {
@@ -667,6 +676,63 @@ func validateChangesPatch(payload ChangesPatchPayload) error {
 		if (line.OldLine != nil) != wantOld || (line.NewLine != nil) != wantNew ||
 			(line.OldLine != nil && *line.OldLine < 1) || (line.NewLine != nil && *line.NewLine < 1) {
 			return errors.New("diff line numbers do not match the line kind")
+		}
+	}
+	return nil
+}
+
+// Project task bounds (tasks.listed).
+const (
+	MaxProjectTasks     = 50
+	maxTaskCommandRunes = 512
+	maxTaskNameRunes    = 128
+	maxTaskFolderRunes  = 4096
+)
+
+// ValidTaskName reports whether a script or target name is safe to type as
+// one shell word: 1..128 of [A-Za-z0-9:._/@+-], not starting with "-" so it
+// never reads as an option. The phone types the command, so nothing else
+// passes.
+func ValidTaskName(name string) bool {
+	if name == "" || len(name) > maxTaskNameRunes || name[0] == '-' {
+		return false
+	}
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune(":._/@+-", r)) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateTasksListed(payload TasksListedPayload) error {
+	if payload.State != TasksStateReady && payload.State != TasksStateNone && payload.State != TasksStateUnavailable {
+		return errors.New("invalid tasks state")
+	}
+	if payload.Tasks == nil || len(payload.Tasks) > MaxProjectTasks || (payload.State != TasksStateReady && len(payload.Tasks) > 0) {
+		return errors.New("tasks are outside bounds")
+	}
+	if payload.Folder != nil && (*payload.Folder == "" || !utf8.ValidString(*payload.Folder) || utf8.RuneCountInString(*payload.Folder) > maxTaskFolderRunes) {
+		return errors.New("folder is outside bounds")
+	}
+	for _, task := range payload.Tasks {
+		if !ValidTaskName(task.Name) {
+			return errors.New("task name is not a safe shell word")
+		}
+		command := task.Command
+		if command == "" || !utf8.ValidString(command) || utf8.RuneCountInString(command) > maxTaskCommandRunes ||
+			strings.IndexFunc(command, unicode.IsControl) >= 0 {
+			return errors.New("task command must be one line of 1..512 characters")
+		}
+		switch task.Source {
+		case PackageJSON, Makefile, CargoToml, GoMod:
+		default:
+			return errors.New("invalid task source")
+		}
+		switch task.Kind {
+		case Test, Dev, Build, Lint, Other:
+		default:
+			return errors.New("invalid task kind")
 		}
 	}
 	return nil
