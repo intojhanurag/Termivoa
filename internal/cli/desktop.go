@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -42,6 +43,25 @@ func consoleKeyDetach(down bool, virtualKey uint16, char rune, state uint32) boo
 	}
 	return char == 0 && virtualKey == consoleVKRightBracket &&
 		state&consoleCtrlPressed != 0 && state&consoleAltShift == 0
+}
+
+// startupDetachInput records a raw Ctrl+] as soon as the startup decoder reads
+// it. Canceling that decoder at the handoff can discard input it has already
+// read but not yet delivered as an event, so the handoff treats a recorded
+// byte like a drained one: the input is discarded and the attachment detaches.
+type startupDetachInput struct {
+	reader *FileConfirmationReader
+	detach atomic.Bool
+}
+
+func (input *startupDetachInput) ReadContext(ctx context.Context, data []byte) (int, error) {
+	return input.reader.readWith(ctx, data, func(ctx context.Context, handle terminalFileHandle, data []byte) (int, error) {
+		n, err := readConfirmationInput(ctx, handle, data)
+		if n > 0 && bytes.IndexByte(data[:n], desktopDetachByte) >= 0 {
+			input.detach.Store(true)
+		}
+		return n, err
+	})
 }
 
 // DesktopConfig attaches to an already resolved session generation. Input and
@@ -107,7 +127,8 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	if err != nil {
 		return err
 	}
-	startupEvents, err := desktop.NewBoundedInput(reader, os.Getenv("TERM"))
+	startupInput := &startupDetachInput{reader: reader}
+	startupEvents, err := desktop.NewBoundedInput(startupInput, os.Getenv("TERM"))
 	if err != nil {
 		return err
 	}
@@ -124,7 +145,7 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 			if err := discardDesktopInput(reader.file.handle); err != nil {
 				return err
 			}
-			if detach {
+			if detach || startupInput.detach.Load() {
 				return desktop.ErrDetached
 			}
 			return nil

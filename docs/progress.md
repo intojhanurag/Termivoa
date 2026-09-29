@@ -623,7 +623,8 @@ discovery, `internal/gatewayclient`, and the `pair`, `devices`, `revoke`,
 longer reach unauthenticated session management. Race tests, Windows
 cross-vet, web checks and the real-broker pairing integration test pass on
 macOS. `TestPtermDesktopAttachNativeOuterTTY` fails identically on the base
-commit and remains open. Native Windows, the HTTP gateway/web pairing path and
+commit; this was later traced to a lost Ctrl+] at the attach startup handoff
+and fixed (#68, see below). Native Windows, the HTTP gateway/web pairing path and
 a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
 
 ## Private beta and post-beta features (2026-09-28 to 2026-09-29)
@@ -681,6 +682,17 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   test/dev/build/lint/db:seed; Run in new tab printed `TESTS-RAN-OK` in a new
   tab; Type here printed `BUILD-OK`; selecting 2 diff lines drafted
   `@cart.js lines 3–4:` with both lines quoted, without sending.
+
+- **Lost Ctrl+] at desktop attach startup** (#68, `fix/issue-68`): the
+  flaky `TestPtermDesktopAttachNativeOuterTTY` failure (`attach executable did
+  not exit` at line 102) reproduced 11 times in 400 runs (8 copies of the test
+  binary in parallel, `-test.count=50`). Debug logging in a scratch copy showed
+  every hang was the observer's `IGNORED\r\x1d` read by the startup decoder and
+  then dropped when that decoder was canceled at the handoff (bounded
+  Ultraviolet drops undelivered reads and events on cancellation), so the
+  handoff drain saw nothing; a second Ctrl+] always detached. The startup
+  reader now records a raw Ctrl+] it reads, and the handoff detaches on it.
+  After the fix: 0 failures in 480 runs of the same stress.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

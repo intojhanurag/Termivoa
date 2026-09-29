@@ -22,6 +22,14 @@ All notable changes are documented here. The format follows
   `@path lines 40–42:` and the quoted lines to the composer draft, never
   sending.
 
+### Fixed
+
+- Desktop attach (host side): Ctrl+] pressed just as `pterm attach` finished
+  connecting could be ignored, so the attachment stayed open until Ctrl+] was
+  pressed again. The startup input reader could read the key and then drop it
+  when it stopped at the handoff to live input. A Ctrl+] it reads now always
+  detaches. No phone-side change (#68).
+
 ## [0.1.0-beta.2] - 2026-09-29
 
 Second private beta. Updating from beta.1 restarts Termivoa on the computer,
