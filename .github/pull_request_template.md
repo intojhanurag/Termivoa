@@ -36,4 +36,6 @@ Explain checked impacts and backward-compatibility handling.
 
 ## Documentation and limitations
 
-List updated docs (README, CHANGELOG, `docs/`), known limitations, owner-dependent blockers, and the related issue or milestone. Do not mark unexecuted validation as passed.
+- [ ] All docs updated per AGENTS.md rule 22 (CHANGELOG, README, `docs/progress.md`, docs site guide and release notes, landing page for major features)
+
+List updated docs (README, CHANGELOG, `docs/`, `site/`), known limitations, owner-dependent blockers, and the related issue or milestone. Do not mark unexecuted validation as passed.
