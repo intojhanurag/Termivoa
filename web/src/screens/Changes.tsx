@@ -131,7 +131,7 @@ function ChangeList({ view, cwd, hidden, onRefresh, onOpen, onReturn }: {
         {files.length > 0 && (
           <ul className="change-list" aria-label="Changed files">
             {files.map((item) => (
-              <li key={item.path}>
+              <li key={`${item.status}:${item.path}`}>
                 <ChangeRow file={item} onOpen={onOpen} />
               </li>
             ))}
