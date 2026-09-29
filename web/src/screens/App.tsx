@@ -16,6 +16,8 @@ import { Setup } from './Setup';
 // so Setup and Sessions start without it.
 const loadLive = () => loadChunk(() => import('./Live'));
 const Live = lazy(() => loadLive().then((module) => ({ default: module.Live })));
+// The wall draws live terminals too, so it also loads with xterm.
+const Wall = lazy(() => loadChunk(() => import('./Wall')).then((module) => ({ default: module.Wall })));
 const Preview = lazy(() => loadChunk(() => import('./Preview')).then((module) => ({ default: module.Preview })));
 
 export type GrantHolder = GrantSlot;
@@ -25,6 +27,7 @@ type View =
   | { readonly name: 'offline' }
   | { readonly name: 'setup'; readonly reason?: string }
   | { readonly name: 'sessions'; readonly message?: string }
+  | { readonly name: 'wall' }
   | { readonly name: 'new'; readonly back?: View }
   | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
   | { readonly name: 'preview'; readonly session: BrokerRPCSessionRecord; readonly port: number }
@@ -54,6 +57,7 @@ export function titleFor(view: View): string {
     case 'live': return `${view.session.title} · ${APP_NAME}`;
     case 'preview': return `Preview :${view.port} · ${APP_NAME}`;
     case 'sessions': return `Sessions · ${APP_NAME}`;
+    case 'wall': return `Wall · ${APP_NAME}`;
     case 'new': return `New session · ${APP_NAME}`;
     case 'settings': return `Settings · ${APP_NAME}`;
     case 'setup': return `Pair · ${APP_NAME}`;
@@ -67,6 +71,7 @@ export function pathFor(view: View): string {
     case 'live': return `/sessions/${encodeURIComponent(view.session.id)}`;
     case 'preview': return `/sessions/${encodeURIComponent(view.session.id)}/preview?port=${view.port}`;
     case 'settings': return '/settings';
+    case 'wall': return '/wall';
     case 'new': return '/new';
     case 'setup': return window.location.pathname === '/pair' ? '/pair' : '/';
     default: return '/';
@@ -123,12 +128,16 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     }
   }, [toSetup]);
 
-  const list = useSessionList(view.name === 'sessions' || view.name === 'live' || view.name === 'preview', handlePollFailure);
+  const list = useSessionList(view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview', handlePollFailure);
 
   const route = useCallback(async () => {
     const path = window.location.pathname;
     if (path === '/settings') {
       setView({ name: 'settings' });
+      return;
+    }
+    if (path === '/wall') {
+      setView({ name: 'wall' });
       return;
     }
     if (path === '/new') {
@@ -352,11 +361,24 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           {...(view.message === undefined ? {} : { message: view.message })}
           onOpen={openSession}
           onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}
+          onWall={() => navigate({ name: 'wall' })}
           onSettings={() => navigate({ name: 'settings' })}
           onRefreshSettings={refreshSettings}
           onFailure={handleFailure}
           {...(update.available ? { onUpdate: update.reload } : {})}
         />
+      )}
+      {view.name === 'wall' && (
+        <ChunkErrorBoundary>
+          <Suspense fallback={<main className="page"><p role="status" className="muted">Opening wall…</p></main>}>
+            <Wall
+              sessions={list.sessions}
+              onOpen={openSession}
+              onNew={() => navigate({ name: 'new', back: { name: 'wall' } })}
+              onList={toSessions}
+            />
+          </Suspense>
+        </ChunkErrorBoundary>
       )}
       {view.name === 'new' && settings !== undefined && (
         <NewSession

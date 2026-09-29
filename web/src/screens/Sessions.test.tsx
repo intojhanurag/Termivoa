@@ -179,6 +179,7 @@ describe('Sessions first use', () => {
       list={list}
       onOpen={() => undefined}
       onNew={() => undefined}
+      onWall={() => undefined}
       onSettings={() => undefined}
       onRefreshSettings={async () => undefined}
       onFailure={() => ''}
@@ -200,6 +201,7 @@ describe('Sessions first use', () => {
         list={{ ...list, sessions: [working, waiting] }}
         onOpen={() => undefined}
         onNew={() => undefined}
+        onWall={() => undefined}
         onSettings={() => undefined}
         onRefreshSettings={async () => undefined}
         onFailure={() => ''}
@@ -213,6 +215,7 @@ describe('Sessions first use', () => {
     const html = renderSessions({ ...settings, projects: [{ id: base.projectId, name: 'site' }] });
     expect(html).toContain('new session</button>');
     expect(html).toContain('aria-label="Settings"');
+    expect(html).toContain('<button type="button" class="round" aria-label="Wall">');
     expect(html).not.toContain('Check again');
   });
 });
@@ -261,7 +264,7 @@ describe('PushCard', () => {
 
   it('is not in the first render of Sessions; it appears only after push support is checked', () => {
     const html = renderToStaticMarkup(
-      <Sessions settings={settings} list={list} onOpen={() => undefined} onNew={() => undefined} onSettings={() => undefined}
+      <Sessions settings={settings} list={list} onOpen={() => undefined} onNew={() => undefined} onWall={() => undefined} onSettings={() => undefined}
         onRefreshSettings={async () => undefined} onFailure={() => ''} />,
     );
     expect(html).not.toContain('Get a buzz');

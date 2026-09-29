@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
-import { agentBadge, hasNewOutput, readViewed, since } from './activity';
+import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { sessionName } from './folder';
 import type { SessionList } from './hooks';
 import { NewSessionHelp } from './NewSession';
@@ -55,6 +55,16 @@ function CheckGlyph() {
   );
 }
 
+/** The agent status pill: Working, Waiting or Your turn, with how long. */
+export function StatusPill({ badge, duration }: { readonly badge: AgentBadge; readonly duration: string }) {
+  return (
+    <span className={`status-pill ${badge.tone}`}>
+      {badge.tone !== 'green' && <span className={`dot ${badge.tone}`} aria-hidden="true" />}
+      {badge.label}{duration !== '' && <span className="pill-time"> · {duration}</span>}
+    </span>
+  );
+}
+
 /**
  * One session. Title, preview and question are terminal-controlled text:
  * rendered as text only. A running agent gets one status pill at the top
@@ -99,12 +109,7 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
               {fresh && <><span className="dot accent" aria-hidden="true" /><span className="visually-hidden">, new output</span></>}
               {badge?.tone === 'amber' && <span className="visually-hidden">, waiting for you</span>}
             </span>
-            {badge !== undefined ? (
-              <span className={`status-pill ${badge.tone}`}>
-                {badge.tone !== 'green' && <span className={`dot ${badge.tone}`} aria-hidden="true" />}
-                {badge.label}{duration !== '' && <span className="pill-time"> · {duration}</span>}
-              </span>
-            ) : controller !== undefined && (
+            {badge !== undefined ? <StatusPill badge={badge} duration={duration} /> : controller !== undefined && (
               <span className={done ? 'status-pill plain muted' : `controller ${controller.tone}`}>{controller.text}</span>
             )}
           </span>
@@ -120,6 +125,18 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
         </span>
       </button>
     </li>
+  );
+}
+
+/** Four squares: the Wall. */
+export function WallGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+      <rect x="10.5" y="2" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+      <rect x="2" y="10.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+      <rect x="10.5" y="10.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
   );
 }
 
@@ -188,12 +205,13 @@ export function hostSummary(sessions: ReadonlyArray<BrokerRPCSessionRecord> | un
   return ['Your computer', ...(parts.length === 0 ? ['connected'] : parts)].join(' · ');
 }
 
-export function Sessions({ settings, list, message, onOpen, onNew, onSettings, onRefreshSettings, onFailure, onUpdate }: {
+export function Sessions({ settings, list, message, onOpen, onNew, onWall, onSettings, onRefreshSettings, onFailure, onUpdate }: {
   readonly settings: HTTPSettingsResponse;
   readonly list: SessionList;
   readonly message?: string;
   readonly onOpen: (session: BrokerRPCSessionRecord) => void;
   readonly onNew: () => void;
+  readonly onWall: () => void;
   readonly onSettings: () => void;
   readonly onRefreshSettings: () => Promise<void>;
   readonly onFailure: (error: unknown) => string;
@@ -248,6 +266,9 @@ export function Sessions({ settings, list, message, onOpen, onNew, onSettings, o
               update
             </button>
           )}
+          <button type="button" className="round" aria-label="Wall" onClick={onWall}>
+            <WallGlyph />
+          </button>
           <button type="button" className="round" aria-label="Settings" onClick={onSettings}>
             <svg width="20" height="18" viewBox="0 0 20 18" aria-hidden="true">
               <path d="M2 4h9M15 4h3M2 14h3M9 14h9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
