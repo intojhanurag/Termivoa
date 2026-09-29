@@ -240,6 +240,8 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 		}
 	case protocol.ChangesList, protocol.ChangesFile:
 		return stream.readChanges(ctx, request)
+	case protocol.ChangesCommit, protocol.ChangesPush:
+		return stream.writeChanges(ctx, request, identity)
 	case protocol.SessionDetach:
 		return io.EOF // outer connection close releases the viewer, never the PTY
 	default:
