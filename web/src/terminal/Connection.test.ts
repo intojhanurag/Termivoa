@@ -686,6 +686,8 @@ describe('Changes', () => {
     first.reply(last(first, 'changes.list'), 'error', { code: 'internal_error', message: 'git failed' });
     expect(connection.getChanges()?.state).toBe('unavailable');
     expect(first.readyState).toBe(1);
+    // The host's message is shown, and the session stays live.
+    expect(connection.getStatus()).toMatchObject({ link: 'live', notice: 'git failed' });
   });
 
   it('ends loading when the socket closes and ignores replies from the old socket', async () => {
