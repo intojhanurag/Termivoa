@@ -35,9 +35,13 @@ type ProtocolTypes struct {
 	BrokerRPCSessionRenameRequest    BrokerRPCSessionRenameRequestPayload    `json:"brokerRPCSessionRenameRequest"`
 	BrokerRPCSessionResult           BrokerRPCSessionResultPayload           `json:"brokerRPCSessionResult"`
 	BrokerRPCSessionTerminateRequest BrokerRPCSessionTerminateRequestPayload `json:"brokerRPCSessionTerminateRequest"`
+	ChangesCommit                    ChangesCommitPayload                    `json:"changesCommit"`
+	ChangesCommitted                 ChangesCommittedPayload                 `json:"changesCommitted"`
 	ChangesFile                      ChangesFilePayload                      `json:"changesFile"`
 	ChangesList                      ChangesListPayload                      `json:"changesList"`
 	ChangesPatch                     ChangesPatchPayload                     `json:"changesPatch"`
+	ChangesPush                      ChangesPushPayload                      `json:"changesPush"`
+	ChangesPushed                    ChangesPushedPayload                    `json:"changesPushed"`
 	ChangesSummary                   ChangesSummaryPayload                   `json:"changesSummary"`
 	ControlChanged                   ControlChangedPayload                   `json:"controlChanged"`
 	Empty                            EmptyPayload                            `json:"empty"`
@@ -215,10 +219,14 @@ type AdminRPCShutdownResultPayload struct {
 // afterWork is true only on idle, when this idle ended a working period in this broker's
 // lifetime ("your turn"); it is absent otherwise and resets when work starts again.
 type AgentStatus struct {
-	AfterWork  *bool          `json:"afterWork,omitempty"`
-	Question   *AgentQuestion `json:"question,omitempty"`
-	State      AgentState     `json:"state"`
-	StateSince string         `json:"stateSince"`
+	AfterWork                                                                                  *bool          `json:"afterWork,omitempty"`
+	Question                                                                                   *AgentQuestion `json:"question,omitempty"`
+	State                                                                                      AgentState     `json:"state"`
+	StateSince                                                                                 string         `json:"stateSince"`
+	// Total seconds this session has spent in the working state during this broker's lifetime,               
+	// up to now. A phone compares it with the value it saw last to say how long the agent                    
+	// worked while the phone was away.                                                                       
+	WorkedSeconds                                                                              *int64         `json:"workedSeconds,omitempty"`
 }
 
 // A recognized prompt. id is a stable hash of the session generation, text, the full dialog
@@ -325,6 +333,23 @@ type BrokerRPCSessionTerminateRequestPayload struct {
 	OperationID string `json:"operationId"`
 }
 
+// Controller only. Commits exactly these paths from the latest changes.summary (paths not
+// in a fresh listing are refused) with this message. The repository's own commit hooks run,
+// as with any git commit.
+type ChangesCommitPayload struct {
+	Lease   string   `json:"lease"`
+	Message string   `json:"message"`
+	Paths   []string `json:"paths"`
+}
+
+// committed: commit is the short hash. nothing: no selected path had changes. failed:
+// output holds the last lines git or a hook printed.
+type ChangesCommittedPayload struct {
+	Commit *string     `json:"commit,omitempty"`
+	Output *string     `json:"output,omitempty"`
+	State  CommitState `json:"state"`
+}
+
 // Asks for the diff of one path from the latest changes.summary, relative to the repository
 // root.
 type ChangesFilePayload struct {
@@ -350,6 +375,22 @@ type DiffLine struct {
 	NewLine *int64       `json:"newLine,omitempty"`
 	OldLine *int64       `json:"oldLine,omitempty"`
 	Text    string       `json:"text"`
+}
+
+// Controller only. Pushes the current branch to its upstream, or to origin with a new
+// upstream when it has none. Never forces.
+type ChangesPushPayload struct {
+	Lease string `json:"lease"`
+}
+
+// pushed: branch is the pushed branch, and url is an https link that the remote printed
+// (for example GitHub's new pull request page), when there was one. no_remote: nowhere to
+// push. failed: output holds the last lines git printed.
+type ChangesPushedPayload struct {
+	Branch *string   `json:"branch,omitempty"`
+	Output *string   `json:"output,omitempty"`
+	State  PushState `json:"state"`
+	URL    *string   `json:"url,omitempty"`
 }
 
 // ready: files lists the changes against HEAD, plus untracked files that git does not
@@ -951,6 +992,14 @@ const (
 	Starting State = "starting"
 )
 
+type CommitState string
+
+const (
+	CommitStateFailed CommitState = "failed"
+	Committed         CommitState = "committed"
+	Nothing           CommitState = "nothing"
+)
+
 type DiffLineKind string
 
 const (
@@ -967,6 +1016,14 @@ const (
 	Missing               PatchState = "missing"
 	PatchStateReady       PatchState = "ready"
 	PatchStateUnavailable PatchState = "unavailable"
+)
+
+type PushState string
+
+const (
+	NoRemote        PushState = "no_remote"
+	PushStateFailed PushState = "failed"
+	Pushed          PushState = "pushed"
 )
 
 type ChangeStatus string
@@ -1176,9 +1233,13 @@ type MessageType string
 
 const (
 	AccessRevoked             MessageType = "access.revoked"
+	ChangesCommit             MessageType = "changes.commit"
+	ChangesCommitted          MessageType = "changes.committed"
 	ChangesFile               MessageType = "changes.file"
 	ChangesList               MessageType = "changes.list"
 	ChangesPatch              MessageType = "changes.patch"
+	ChangesPush               MessageType = "changes.push"
+	ChangesPushed             MessageType = "changes.pushed"
 	ChangesSummary            MessageType = "changes.summary"
 	ControlAcquire            MessageType = "control.acquire"
 	ControlChanged            MessageType = "control.changed"

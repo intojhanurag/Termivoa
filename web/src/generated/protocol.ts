@@ -35,9 +35,13 @@ export type ProtocolTypes = {
     readonly brokerRPCSessionRenameRequest:    BrokerRPCSessionRenameRequestPayload;
     readonly brokerRPCSessionResult:           BrokerRPCSessionResultPayload;
     readonly brokerRPCSessionTerminateRequest: BrokerRPCSessionTerminateRequestPayload;
+    readonly changesCommit:                    ChangesCommitPayload;
+    readonly changesCommitted:                 ChangesCommittedPayload;
     readonly changesFile:                      ChangesFilePayload;
     readonly changesList:                      ChangesListPayload;
     readonly changesPatch:                     ChangesPatchPayload;
+    readonly changesPush:                      ChangesPushPayload;
+    readonly changesPushed:                    ChangesPushedPayload;
     readonly changesSummary:                   ChangesSummaryPayload;
     readonly controlChanged:                   ControlChangedPayload;
     readonly empty:                            EmptyPayload;
@@ -240,6 +244,12 @@ export type AgentStatus = {
     readonly question?:  AgentQuestion;
     readonly state:      AgentState;
     readonly stateSince: string;
+    /**
+     * Total seconds this session has spent in the working state during this broker's lifetime,
+     * up to now. A phone compares it with the value it saw last to say how long the agent
+     * worked while the phone was away.
+     */
+    readonly workedSeconds?: number;
 }
 
 /**
@@ -365,6 +375,29 @@ export type BrokerRPCSessionTerminateRequestPayload = {
 }
 
 /**
+ * Controller only. Commits exactly these paths from the latest changes.summary (paths not
+ * in a fresh listing are refused) with this message. The repository's own commit hooks run,
+ * as with any git commit.
+ */
+export type ChangesCommitPayload = {
+    readonly lease:   string;
+    readonly message: string;
+    readonly paths:   [string, ...string[]];
+}
+
+/**
+ * committed: commit is the short hash. nothing: no selected path had changes. failed:
+ * output holds the last lines git or a hook printed.
+ */
+export type ChangesCommittedPayload = {
+    readonly commit?: string;
+    readonly output?: string;
+    readonly state:   CommitState;
+}
+
+export type CommitState = "committed" | "nothing" | "failed";
+
+/**
  * Asks for the diff of one path from the latest changes.summary, relative to the repository
  * root.
  */
@@ -400,6 +433,28 @@ export type DiffLine = {
 export type DiffLineKind = "hunk" | "context" | "add" | "remove";
 
 export type PatchState = "ready" | "binary" | "missing" | "unavailable";
+
+/**
+ * Controller only. Pushes the current branch to its upstream, or to origin with a new
+ * upstream when it has none. Never forces.
+ */
+export type ChangesPushPayload = {
+    readonly lease: string;
+}
+
+/**
+ * pushed: branch is the pushed branch, and url is an https link that the remote printed
+ * (for example GitHub's new pull request page), when there was one. no_remote: nowhere to
+ * push. failed: output holds the last lines git printed.
+ */
+export type ChangesPushedPayload = {
+    readonly branch?: string;
+    readonly output?: string;
+    readonly state:   PushState;
+    readonly url?:    string;
+}
+
+export type PushState = "pushed" | "no_remote" | "failed";
 
 /**
  * ready: files lists the changes against HEAD, plus untracked files that git does not
@@ -868,7 +923,7 @@ export type LeasePayload = {
     readonly lease: string;
 }
 
-export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch";
+export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed";
 
 export type ScreenMetadata = {
     readonly background:      Color;
