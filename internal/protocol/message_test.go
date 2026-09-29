@@ -400,3 +400,83 @@ func TestChangesValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestChangesWriteValidation(t *testing.T) {
+	lease := strings.Repeat("A", 43)
+	valid := ChangesCommitPayload{Lease: lease, Message: "fix: " + strings.Repeat("é", MaxCommitMessage-5), Paths: []string{"a.go", "dir/b c"}}
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesCommit, valid, true)); err != nil {
+		t.Fatalf("valid commit: %v", err)
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesPush, ChangesPushPayload{Lease: lease}, true)); err != nil {
+		t.Fatalf("valid push: %v", err)
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesPush, ChangesPushPayload{Lease: "short"}, true)); err == nil {
+		t.Error("push with a short lease was accepted")
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesPush, ChangesPushPayload{Lease: lease}, false)); err == nil {
+		t.Error("push without session identity was accepted")
+	}
+	for name, payload := range map[string]ChangesCommitPayload{
+		"no lease":      {Message: "m", Paths: []string{"a"}},
+		"empty message": {Lease: lease, Paths: []string{"a"}},
+		"long message":  {Lease: lease, Message: strings.Repeat("m", MaxCommitMessage+1), Paths: []string{"a"}},
+		"nul message":   {Lease: lease, Message: "a\x00b", Paths: []string{"a"}},
+		"no paths":      {Lease: lease, Message: "m", Paths: []string{}},
+		"many paths":    {Lease: lease, Message: "m", Paths: make([]string, MaxCommitPaths+1)},
+		"outside path":  {Lease: lease, Message: "m", Paths: []string{"a", "../b"}},
+		"absolute path": {Lease: lease, Message: "m", Paths: []string{"/etc/passwd"}},
+	} {
+		if _, err := DecodeClient(encodeTestMessage(t, ChangesCommit, payload, true)); err == nil {
+			t.Errorf("%s commit was accepted", name)
+		}
+	}
+
+	hash, output := "0a1b2c3", strings.Repeat("é", MaxGitOutput)
+	for _, payload := range []ChangesCommittedPayload{
+		{State: Committed, Commit: &hash}, {State: Nothing}, {State: CommitStateFailed, Output: &output},
+	} {
+		if _, err := DecodeHost(encodeTestMessage(t, ChangesCommitted, payload, true)); err != nil {
+			t.Errorf("valid committed %#v: %v", payload.State, err)
+		}
+	}
+	long := output + "x"
+	for name, payload := range map[string]ChangesCommittedPayload{
+		"bad state":       {State: "done"},
+		"no hash":         {State: Committed},
+		"hash on failure": {State: CommitStateFailed, Commit: &hash},
+		"upper hash":      {State: Committed, Commit: stringPointer("ABCDEF")},
+		"short hash":      {State: Committed, Commit: stringPointer("abc")},
+		"long output":     {State: CommitStateFailed, Output: &long},
+	} {
+		if _, err := DecodeHost(encodeTestMessage(t, ChangesCommitted, payload, true)); err == nil {
+			t.Errorf("%s committed was accepted", name)
+		}
+	}
+
+	link := "https://github.com/o/r/pull/new/feat/x"
+	for _, payload := range []ChangesPushedPayload{
+		{State: Pushed, Branch: stringPointer("feat/x"), URL: &link}, {State: Pushed}, {State: NoRemote}, {State: PushStateFailed, Output: &output},
+	} {
+		if _, err := DecodeHost(encodeTestMessage(t, ChangesPushed, payload, true)); err != nil {
+			t.Errorf("valid pushed %#v: %v", payload, err)
+		}
+	}
+	for name, payload := range map[string]ChangesPushedPayload{
+		"bad state":      {State: "sent"},
+		"url on failure": {State: PushStateFailed, URL: &link},
+		"http url":       {State: Pushed, URL: stringPointer("http://github.com/o/r/pull/new/x")},
+		"space url":      {State: Pushed, URL: stringPointer("https://github.com/o/r/pull/new/a b")},
+		"control url":    {State: Pushed, URL: stringPointer("https://github.com/o/r/pull/new/x\x1b[K")},
+		"no host":        {State: Pushed, URL: stringPointer("https:///pull/new/x")},
+		"long url":       {State: Pushed, URL: stringPointer("https://h/" + strings.Repeat("a", 2039))},
+		"empty branch":   {State: Pushed, Branch: stringPointer("")},
+		"long output":    {State: PushStateFailed, Output: &long},
+	} {
+		if _, err := DecodeHost(encodeTestMessage(t, ChangesPushed, payload, true)); err == nil {
+			t.Errorf("%s pushed was accepted", name)
+		}
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesPushed, ChangesPushedPayload{State: NoRemote}, true)); err == nil {
+		t.Error("client sent changes.pushed")
+	}
+}
