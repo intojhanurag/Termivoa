@@ -526,6 +526,19 @@ button.mic.listening::after { content: ""; position: absolute; inset: -6px; bord
 .snippet-row .row-title { font-size: 15px; font-weight: 600; line-height: 18px; }
 .snippet-row .row-meta { font-family: var(--mono); font-size: 12px; font-weight: 400; }
 .snippet-glyph { width: 14px; flex-shrink: 0; font-size: 15px; font-weight: 800; }
+/* Snips sheet: the project's own commands */
+.project-tasks { gap: 8px; }
+.task-group { display: flex; flex-direction: column; gap: 6px; }
+.task-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.task-chips li { max-width: 100%; }
+.task-chip { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; max-width: 100%; padding: 6px 12px; border-radius: 10px; background: var(--key); text-align: left; }
+.task-chip.more { color: var(--muted); }
+.task-name { font-size: 14px; line-height: 18px; }
+.task-command { max-width: 100%; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-actions { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.task-title { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.task-actions .task-command { font-size: 12px; line-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-actions .link { align-self: flex-start; }
 .badge { flex-shrink: 0; padding: 3px 7px; border: 1px solid var(--dash); border-radius: 5px; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 14px; }
 .badge.accent { border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); }
 
@@ -629,6 +642,13 @@ button.answer-take { flex-shrink: 0; min-height: 54px; border-radius: 14px; font
 .diff-line.add .diff-sign { color: var(--green); }
 .diff-line.remove .diff-sign { color: var(--red); }
 .diff-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-line[role="button"] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.diff-line[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.diff-line.picked { background: color-mix(in srgb, var(--accent) 18%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.ask-row { display: flex; gap: 8px; width: 100%; }
+.ask-row .wide { flex: 1; min-width: 0; }
+.ask-row button:not(.wide) { min-height: 54px; border-radius: 10px; }
+.history-actions .changes-note { padding: 0; }
 
 /* Commit and push: only for the controller */
 .change-list li { display: flex; align-items: center; }

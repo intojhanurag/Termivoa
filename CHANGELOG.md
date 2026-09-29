@@ -6,6 +6,22 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Project buttons: the Snips sheet shows a **This project** section with the
+  commands the session's project folder defines, grouped as test, dev, build,
+  lint and other. **Run in new tab** starts a session in the same project and
+  shell that types the command once as its "run first" command; **Type here**
+  types it into the current session, only with control and when no agent is
+  detected. Host side: `tasks.list`/`tasks.listed` read the folder's
+  `package.json` scripts (npm, pnpm, yarn or bun, picked from the lockfile),
+  `Makefile` targets, and Cargo and Go defaults, with bounded file reads and
+  nothing executed. Any viewer may ask; no lease is needed.
+- Line comments in the Changes file view: tap a diff line, or two lines for a
+  range of up to 20, then **Ask agent about lines 40–42** appends
+  `@path lines 40–42:` and the quoted lines to the composer draft, never
+  sending.
+
 ## [0.1.0-beta.2] - 2026-09-29
 
 Second private beta. Updating from beta.1 restarts Termivoa on the computer,

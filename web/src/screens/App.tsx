@@ -78,6 +78,21 @@ export function pathFor(view: View): string {
   }
 }
 
+/**
+ * Starts a session in the same project and shell as `from` and returns its
+ * live view; `runFirst` is typed there once, only if no one else has control.
+ */
+export async function startLike(from: BrokerRPCSessionRecord, runFirst?: string): Promise<View> {
+  const created = await api.createSession({
+    operationId: crypto.randomUUID(),
+    projectId: from.projectId,
+    shellProfileId: from.shellProfileId,
+  });
+  return runFirst === undefined
+    ? { name: 'live', session: created.session }
+    : { name: 'live', session: created.session, runFirst: { command: runFirst, settled: false } };
+}
+
 /** The port of a preview address's `?port=`, or undefined unless it is a plain valid port number. */
 export function previewPortParam(search: string): number | undefined {
   const raw = new URLSearchParams(search).get('port');
@@ -308,18 +323,15 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
   const openSession = useCallback((session: BrokerRPCSessionRecord) => navigate({ name: 'live', session }), [navigate]);
   const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
 
-  const startNew = useCallback(async (from: BrokerRPCSessionRecord) => {
+  const reloadList = list.reload;
+  const startNew = useCallback(async (from: BrokerRPCSessionRecord, runFirst?: string) => {
     try {
-      const created = await api.createSession({
-        operationId: crypto.randomUUID(),
-        projectId: from.projectId,
-        shellProfileId: from.shellProfileId,
-      });
-      navigate({ name: 'live', session: created.session });
+      navigate(await startLike(from, runFirst));
+      void reloadList();
     } catch (error) {
       navigate({ name: 'sessions', message: handleFailure(error) });
     }
-  }, [handleFailure, navigate]);
+  }, [handleFailure, navigate, reloadList]);
 
   const logout = useCallback(async () => {
     try {
@@ -413,7 +425,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
               onSessions={toSessions}
               onSettings={() => navigate({ name: 'settings' })}
               onChanged={list.reload}
-              onStartNew={() => { void startNew(view.session); }}
+              onStartNew={(runFirst) => { void startNew(view.session, runFirst); }}
               onRevoked={(reason) => toSetup(reason ?? 'Access to this computer was revoked.')}
             />
           </Suspense>

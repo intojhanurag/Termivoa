@@ -51,6 +51,8 @@ Snippets are saved prompts and commands. Tap **snips** to open them.
 
 Snippets are saved on this phone only.
 
+The sheet also shows **This project** at the top: your project's own commands, such as `pnpm test` or `make build`. Tap one to run it in a new tab or type it here. See [Project buttons](/docs/guides/project-buttons/).
+
 ## Scroll
 
 - **Full-screen apps** such as Claude Code, Codex, `vim` or `less`: swipe up or down on the terminal. The app scrolls its own output. You need control.

@@ -43,6 +43,16 @@ Binary files, such as images, are not shown.
 
 Nothing is sent until you tap **Send ⏎**. To send, you need control.
 
+## Ask about specific lines
+
+1. Open a file.
+2. Tap a line in the diff. It is highlighted.
+3. To pick more lines, tap a second line. All lines between the two are picked. A range has 20 lines at most, and it stays in one part of the diff.
+4. Tap **Ask agent about line 42** or **Ask agent about lines 40–42**. The compose sheet opens with the path, the line numbers and the picked lines.
+5. Write your question under the lines and tap **Send ⏎**.
+
+To clear the lines, tap a picked line or tap **Clear**. The numbers are the new line numbers. When you pick only removed lines, they are the old line numbers.
+
 ## Commit and push
 
 You need control to commit. Without control, the list shows **Take control to commit**.

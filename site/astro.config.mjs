@@ -35,6 +35,7 @@ export default defineConfig({
 						'docs/guides/wall',
 						'docs/guides/recap',
 						'docs/guides/live-terminal',
+						'docs/guides/project-buttons',
 						'docs/guides/answer-cards',
 						'docs/guides/changes',
 						'docs/guides/notifications',

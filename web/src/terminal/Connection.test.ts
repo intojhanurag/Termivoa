@@ -708,6 +708,74 @@ describe('Changes', () => {
   });
 });
 
+describe('Project tasks', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const listed = (state = 'ready', tasks: object[] = [{ name: 'test', command: 'pnpm test', source: 'package.json', kind: 'test' }]) =>
+    ({ state, folder: '/Users/me/app', tasks });
+  const last = (socket: FakeSocket) => socket.sent.filter((message) => message.type === 'tasks.list').at(-1);
+
+  it('asks once per call as an observer and shows only the reply to the latest request', async () => {
+    const { connection, socket } = harness();
+    expect(connection.listTasks()).toBe(false);
+    expect(connection.getTasks()).toEqual({ state: 'unavailable', listed: undefined });
+    await attachLive(socket());
+    expect(connection.getStatus().control).toBe('observer');
+
+    expect(connection.listTasks()).toBe(true);
+    const first = last(socket());
+    expect(first).toMatchObject({ sessionId, generation, payload: {} });
+    expect(connection.getTasks()).toEqual({ state: 'loading', listed: undefined });
+    connection.listTasks();
+    const second = last(socket());
+    expect(socket().types().filter((type) => type === 'tasks.list')).toHaveLength(2);
+
+    socket().reply(first, 'tasks.listed', listed('none', []));
+    expect(connection.getTasks()?.state).toBe('loading');
+    socket().reply(second, 'tasks.listed', listed());
+    expect(connection.getTasks()).toMatchObject({ state: 'ready', listed: { state: 'ready', tasks: [{ command: 'pnpm test' }] } });
+    socket().reply(second, 'tasks.listed', listed('none', []));
+    expect(connection.getTasks()?.listed?.state).toBe('ready');
+
+    connection.listTasks();
+    socket().reply(last(socket()), 'tasks.listed', listed('unavailable', []));
+    expect(connection.getTasks()).toMatchObject({ state: 'ready', listed: { state: 'unavailable' } });
+  });
+
+  it('ends loading when the host refuses the request or the socket closes, and ignores the old socket', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    connection.listTasks();
+    first.reply(last(first), 'error', { code: 'internal_error', message: 'read failed' });
+    expect(connection.getTasks()).toEqual({ state: 'unavailable', listed: undefined });
+
+    connection.listTasks();
+    const request = last(first);
+    // A refusal of another request leaves this one loading.
+    first.receive('error', { code: 'internal_error', message: 'other' }, { sessionId, generation }, id(98));
+    expect(connection.getTasks()?.state).toBe('loading');
+    expect(first.readyState).toBe(1);
+    first.close();
+    expect(connection.getTasks()?.state).toBe('unavailable');
+
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    const second = socket();
+    await attachLive(second, '2');
+    second.reply(request, 'tasks.listed', listed());
+    expect(connection.getTasks()?.state).toBe('unavailable');
+    connection.listTasks();
+    second.reply(last(second), 'tasks.listed', listed());
+    expect(connection.getTasks()?.state).toBe('ready');
+  });
+});
+
 describe('Commit and push', () => {
   beforeEach(() => {
     vi.useFakeTimers();

@@ -12,6 +12,7 @@ import type {
   PreviewPort,
   ScreenResyncPayload,
   State as SessionLifecycle,
+  TasksListedPayload,
 } from '../generated/protocol';
 import { CLIENT_BUILD } from '../api/http';
 import { parseHostMessage, type ValidatedHostMessage } from '../protocol/validate';
@@ -117,6 +118,13 @@ export interface ChangesFileView {
   readonly path: string;
   readonly state: 'loading' | 'ready' | 'unavailable';
   readonly patch: ChangesPatchPayload | undefined;
+}
+
+/** The project's commands for the Snips sheet; listed is set once state is ready. */
+export interface TasksView {
+  /** unavailable: not sent, refused, or the connection closed before the reply. */
+  readonly state: 'loading' | 'ready' | 'unavailable';
+  readonly listed: TasksListedPayload | undefined;
 }
 
 /** The one commit or push in flight, then its result until dismissed. */
@@ -227,6 +235,9 @@ export class Connection {
   private history: HistoryState | undefined;
   private changes: ChangesState | undefined;
   private write: ChangesWrite | undefined;
+  private tasks: TasksView | undefined;
+  /** The request ID of the latest tasks.list; only its reply counts. */
+  private tasksRequest: string | undefined;
   /** The request ID of the pending write; only its reply counts. */
   private writeRequest: string | undefined;
   private stopped = false;
@@ -255,6 +266,8 @@ export class Connection {
   readonly getChanges = (): ChangesView | undefined => this.changes?.view;
 
   readonly getChangesWrite = (): ChangesWrite | undefined => this.write;
+
+  readonly getTasks = (): TasksView | undefined => this.tasks;
 
   get sessionId(): string {
     return this.options.sessionId;
@@ -473,6 +486,17 @@ export class Connection {
     return this.sendWrite('push', 'changes.push', (lease) => ({ lease }));
   }
 
+  /**
+   * Reads the commands the project defines, once per call. Any viewer may ask;
+   * no lease is needed and nothing runs on the host.
+   */
+  listTasks(): boolean {
+    this.tasksRequest = this.status.link === 'live' ? this.sendSession('tasks.list', {}) : undefined;
+    this.tasks = { state: this.tasksRequest === undefined ? 'unavailable' : 'loading', listed: undefined };
+    this.emit();
+    return this.tasksRequest !== undefined;
+  }
+
   /** Clears a shown result. A pending write stays until its reply or a lost connection. */
   dismissChangesWrite(): void {
     if (this.write === undefined || this.write.state === 'pending') {
@@ -638,6 +662,7 @@ export class Connection {
           return;
         }
         this.failChanges(message.requestId);
+        this.failTasks(message.requestId);
         this.handleError(message.payload.code, message.payload.message);
         return;
       default:
@@ -680,6 +705,13 @@ export class Connection {
           return;
         case 'changes.patch':
           this.handleChangesPatch(message.requestId, message.payload);
+          return;
+        case 'tasks.listed':
+          if (message.requestId === this.tasksRequest) {
+            this.tasksRequest = undefined;
+            this.tasks = { state: 'ready', listed: message.payload };
+            this.emit();
+          }
           return;
         case 'changes.committed':
           this.finishWrite(message.requestId, { state: 'done', committed: message.payload });
@@ -1091,6 +1123,16 @@ export class Connection {
     }
   }
 
+  /** Ends loading for a tasks.list the host refused, or for any when requestId is undefined (socket closed). */
+  private failTasks(requestId: string | undefined): void {
+    if (this.tasksRequest === undefined || (requestId !== undefined && requestId !== this.tasksRequest)) {
+      return;
+    }
+    this.tasksRequest = undefined;
+    this.tasks = { state: 'unavailable', listed: undefined };
+    this.emit();
+  }
+
   /** One write at a time, with the current lease; never queued or resent. */
   private sendWrite(kind: ChangesWrite['kind'], type: string, payload: (lease: string) => object): boolean {
     const lease = this.lease;
@@ -1193,6 +1235,7 @@ export class Connection {
     }
     // Replies to this socket's requests can no longer arrive.
     this.failChanges(undefined);
+    this.failTasks(undefined);
     if (this.write !== undefined && this.writeRequest !== undefined) {
       // The host may or may not have run it: say so, and never resend.
       this.writeRequest = undefined;
