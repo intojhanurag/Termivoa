@@ -6,7 +6,7 @@ Set-Location $RepoDir
 # (Windows PowerShell 5.1 never does), so check $LASTEXITCODE after each one.
 function Invoke-Checked([scriptblock]$Command) {
     & $Command
-    if ($LASTEXITCODE -ne 0) { throw "$($Command.ToString().Trim()) failed with exit code $LASTEXITCODE." }
+    if ($LASTEXITCODE -ne 0) { throw "$($Command.ToString().Trim()) failed with exit code $LASTEXITCODE in $((Get-Location).Path)." }
 }
 
 $NodeMajor = node -p "process.versions.node.split('.')[0]"
