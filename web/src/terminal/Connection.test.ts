@@ -678,15 +678,23 @@ describe('Changes', () => {
     expect(socket().types().filter((type) => type === 'changes.file')).toHaveLength(sent + 1);
   });
 
-  it('ends loading when the host refuses the request or the socket closes, and ignores the old socket', async () => {
+  it('ends loading when the host refuses the list request and keeps the socket open', async () => {
     const { connection, socket } = harness();
     const first = socket();
     await attachLive(first);
     connection.openChanges();
-    first.reply(last(first, 'changes.list'), 'error', { code: 'internal', message: 'git failed' });
+    first.reply(last(first, 'changes.list'), 'error', { code: 'internal_error', message: 'git failed' });
     expect(connection.getChanges()?.state).toBe('unavailable');
+    expect(first.readyState).toBe(1);
+    // The host's message is shown, and the session stays live.
+    expect(connection.getStatus()).toMatchObject({ link: 'live', notice: 'git failed' });
+  });
 
-    connection.refreshChanges();
+  it('ends loading when the socket closes and ignores replies from the old socket', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    connection.openChanges();
     connection.openChangesFile('src/a.ts');
     const list = last(first, 'changes.list');
     const request = last(first, 'changes.file');
