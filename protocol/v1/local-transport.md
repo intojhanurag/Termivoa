@@ -79,7 +79,11 @@ the current lease, checked right before git runs (`not_controller` or
 `stale_lease` otherwise), and return `changes.committed` and `changes.pushed`
 with the same request ID. One of them runs per session at a time (another gets
 `limit_exceeded`); a started one finishes even if the viewer detaches, and
-only its reply is dropped. `session.detach`
+only its reply is dropped. `tasks.list` returns `tasks.listed` with the same
+request ID: the commands the project folder's files define, read without
+running anything. It needs no lease, runs off the session actor, allows one
+request in flight per viewer (another gets `limit_exceeded`), and is described
+in `docs/project-tasks.md`. `session.detach`
 closes this viewing connection without ending the child; session switching
 uses a new connection. Termination is only the explicit management operation.
 

@@ -1752,6 +1752,7 @@ func (session *fakeManagedSession) PreviewTarget(context.Context, uint16) (strin
 func (session *fakeManagedSession) ChangesFolder(context.Context) (string, error) {
 	return "", ErrSessionNotRunning
 }
+func (session *fakeManagedSession) ProjectFolder() string { return "" }
 func (session *fakeManagedSession) AuthorizeControl(context.Context, MutationIdentity) error {
 	return ErrSessionNotRunning
 }

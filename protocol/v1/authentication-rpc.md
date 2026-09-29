@@ -100,7 +100,7 @@ Live mode is bound to the credential that opened it. The broker assigns the
 connection ID, uses the paired device ID as the viewer identity, and rechecks
 the credential at every admitted action (`session.attach`, `snapshot.applied`,
 `control.*`, `heartbeat`, `input.*`, `terminal.resize`, `history.read`,
-`changes.*`), again inside the session actor right before a `changes.commit`
+`changes.*`, `tasks.list`), again inside the session actor right before a `changes.commit`
 or `changes.push` starts git (with the controller lease), and again inside the
 session actor immediately before queued input is encoded.
 Revocation, logout, or expiry sends `access.revoked`, closes the viewer (which
