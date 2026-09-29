@@ -183,6 +183,31 @@ describe('parseHostMessage', () => {
     expect(() => parseHostMessage(reply('changes.push', { lease: 'L'.repeat(43) }))).toThrow('not host-to-client');
   });
 
+  it('accepts tasks.listed within the contract and refuses tasks.list from the host', () => {
+    const reply = (type: string, payload: object) => JSON.stringify({
+      version: 1, type, requestId, sessionId: brokerGeneration, generation: brokerGeneration, payload,
+    });
+    const task = { name: 'test', command: 'pnpm test', source: 'package.json', kind: 'test' };
+    const listed = parseHostMessage(reply('tasks.listed', { state: 'ready', folder: '/Users/me/app', tasks: [task] }));
+    expect(listed.type === 'tasks.listed' && listed.payload.tasks[0]?.command).toBe('pnpm test');
+    expect(parseHostMessage(reply('tasks.listed', { state: 'none', tasks: [] })).type).toBe('tasks.listed');
+    expect(parseHostMessage(reply('tasks.listed', { state: 'unavailable', tasks: [] })).type).toBe('tasks.listed');
+
+    for (const bad of [
+      reply('tasks.listed', { state: 'done', tasks: [] }),
+      reply('tasks.listed', { state: 'ready' }),
+      reply('tasks.listed', { state: 'ready', tasks: [{ ...task, kind: 'deploy' }] }),
+      reply('tasks.listed', { state: 'ready', tasks: [{ ...task, source: 'pyproject.toml' }] }),
+      reply('tasks.listed', { state: 'ready', tasks: [{ ...task, command: '' }] }),
+      reply('tasks.listed', { state: 'ready', tasks: [{ ...task, command: 'x'.repeat(513) }] }),
+      reply('tasks.listed', { state: 'ready', tasks: [{ ...task, run: true }] }),
+      reply('tasks.listed', { state: 'ready', tasks: Array.from({ length: 51 }, () => task) }),
+    ]) {
+      expect(() => parseHostMessage(bad)).toThrow(InvalidProtocolMessageError);
+    }
+    expect(() => parseHostMessage(reply('tasks.list', {}))).toThrow('not host-to-client');
+  });
+
   it('rejects client-to-host messages even when their schema is valid', () => {
     expect(() => parseHostMessage(JSON.stringify({
       version: 1,

@@ -16,11 +16,90 @@ const STATUS: Record<ChangeStatus, { readonly letter: string; readonly name: str
 
 const SIGN: Record<DiffLine['kind'], string> = { hunk: '', context: ' ', add: '+', remove: '-' };
 
-/** Adds "@path " to the session's composer draft. It never sends anything. */
-export function askAboutFile(key: string, path: string): void {
+/**
+ * Adds "@path " to the session's composer draft, or, with selected lines, a
+ * quote of them to ask about. It never sends anything.
+ */
+export function askAboutFile(key: string, path: string, selected: ReadonlyArray<DiffLine> = []): void {
   const draft = readDraft(key);
+  if (selected.length > 0) {
+    saveDraft(key, `${draft}${draft === '' || draft.endsWith('\n') ? '' : '\n'}${linesDraft(path, selected)}`);
+    return;
+  }
   const space = draft === '' || /\s$/u.test(draft) ? '' : ' ';
   saveDraft(key, `${draft}${space}@${path} `);
+}
+
+/** Lines in one range, at most. */
+export const MAX_SELECTED_LINES = 20;
+
+/** Selected diff lines, by index into the patch lines they were picked from. */
+export interface LineSelection {
+  /** A new patch (a refresh) makes the selection stale. */
+  readonly lines: ReadonlyArray<DiffLine>;
+  readonly anchor: number;
+  readonly end: number;
+  /** Why a range was cut short. */
+  readonly note?: string;
+}
+
+/**
+ * The selection after a tap on line `index`: the first tap picks a line, a
+ * second picks the range between them, and a tap on a picked line clears it.
+ * A range stops at MAX_SELECTED_LINES and at a hunk header, which is never picked.
+ */
+export function tapLine(current: LineSelection | undefined, lines: ReadonlyArray<DiffLine>, index: number): LineSelection | undefined {
+  const selection = current?.lines === lines ? current : undefined;
+  if (lines[index] === undefined || lines[index].kind === 'hunk') {
+    return selection;
+  }
+  if (selection === undefined || selection.anchor !== selection.end) {
+    if (selection !== undefined && index >= Math.min(selection.anchor, selection.end) && index <= Math.max(selection.anchor, selection.end)) {
+      return undefined;
+    }
+    return { lines, anchor: index, end: index };
+  }
+  const { anchor } = selection;
+  if (index === anchor) {
+    return undefined;
+  }
+  const step = index > anchor ? 1 : -1;
+  let end = anchor;
+  while (end !== index && lines[end + step]?.kind !== 'hunk' && Math.abs(end + step - anchor) < MAX_SELECTED_LINES) {
+    end += step;
+  }
+  if (end === index) {
+    return { lines, anchor, end };
+  }
+  const note = lines[end + step]?.kind === 'hunk'
+    ? 'A range stays inside one part of the diff.'
+    : `A range can have ${MAX_SELECTED_LINES} lines at most.`;
+  return { lines, anchor, end, note };
+}
+
+/** The picked lines in file order; none when the selection is from another patch. */
+export function selectedLines(selection: LineSelection | undefined, lines: ReadonlyArray<DiffLine>): ReadonlyArray<DiffLine> {
+  if (selection === undefined || selection.lines !== lines) {
+    return [];
+  }
+  return lines.slice(Math.min(selection.anchor, selection.end), Math.max(selection.anchor, selection.end) + 1);
+}
+
+/** "line 42" or "lines 40–42": new-file numbers when any line has one, else old ones. */
+export function linesLabel(selected: ReadonlyArray<DiffLine>): string {
+  const useNew = selected.some((line) => line.newLine !== undefined);
+  const numbers = selected.map((line) => (useNew ? line.newLine : line.oldLine)).filter((number) => number !== undefined);
+  const first = numbers[0];
+  const last = numbers.at(-1);
+  return first === last ? `line ${first}` : `lines ${first}–${last}`;
+}
+
+/** "@path lines 40–42:", the lines quoted with their signs, then a blank line for the question. */
+export function linesDraft(path: string, selected: ReadonlyArray<DiffLine>): string {
+  const body = selected.map((line) => `${SIGN[line.kind]}${line.text}`).join('\n');
+  // A fence longer than any backtick run in the lines, so the quote cannot end early.
+  const fence = '`'.repeat(Math.max(3, ...[...body.matchAll(/`+/gu)].map((run) => run[0].length + 1)));
+  return `@${path} ${linesLabel(selected)}:\n${fence}\n${body}\n${fence}\n\n`;
 }
 
 /** "src/app/" and "main.ts": the directory is shown muted, the name strong. */
@@ -61,7 +140,7 @@ export function Changes({ connection, cwd, onAsk, onReturn }: {
   readonly connection: Connection;
   /** The session's folder, shown when it is not in a repository. */
   readonly cwd: string | undefined;
-  readonly onAsk: (path: string) => void;
+  readonly onAsk: (path: string, selected: ReadonlyArray<DiffLine>) => void;
   readonly onReturn: () => void;
 }) {
   const view = useSyncExternalStore(connection.subscribe, connection.getChanges);
@@ -72,6 +151,7 @@ export function Changes({ connection, cwd, onAsk, onReturn }: {
   // A write still pending or unseen from an earlier visit shows its sheet again.
   const [step, setStep] = useState<ShipStep | undefined>(write?.kind);
   const [message, setMessage] = useState('');
+  const [picked, setPicked] = useState<LineSelection>();
   const selected = listed(view).filter((file) => !excluded.has(file.path));
   const pending = write?.state === 'pending';
   const control = status.control === 'controller';
@@ -87,9 +167,11 @@ export function Changes({ connection, cwd, onAsk, onReturn }: {
         view={view}
         cwd={cwd}
         onRefresh={() => connection.refreshChanges()}
-        onOpen={(path) => connection.openChangesFile(path)}
-        onBack={() => connection.closeChangesFile()}
+        onOpen={(path) => { setPicked(undefined); connection.openChangesFile(path); }}
+        onBack={() => { setPicked(undefined); connection.closeChangesFile(); }}
         onAsk={onAsk}
+        selection={picked}
+        onSelect={setPicked}
         onReturn={onReturn}
         commit={{
           control,
@@ -141,14 +223,17 @@ export interface CommitControls {
   readonly onCommit: () => void;
 }
 
-export function ChangesPanel({ view, cwd, commit, onRefresh, onOpen, onBack, onAsk, onReturn }: {
+export function ChangesPanel({ view, cwd, commit, selection, onRefresh, onOpen, onBack, onAsk, onSelect, onReturn }: {
   readonly view: ChangesView | undefined;
   readonly cwd: string | undefined;
   readonly commit?: CommitControls;
+  /** Picked lines in the open file. */
+  readonly selection?: LineSelection | undefined;
   readonly onRefresh: () => void;
   readonly onOpen: (path: string) => void;
   readonly onBack: () => void;
-  readonly onAsk: (path: string) => void;
+  readonly onAsk: (path: string, selected: ReadonlyArray<DiffLine>) => void;
+  readonly onSelect?: (selection: LineSelection | undefined) => void;
   readonly onReturn: () => void;
 }) {
   const file = view?.file;
@@ -160,9 +245,11 @@ export function ChangesPanel({ view, cwd, commit, onRefresh, onOpen, onBack, onA
         <FileDiff
           file={file}
           entry={view?.summary?.files.find((item) => item.path === file.path)}
+          selection={selection}
           onRefresh={onRefresh}
           onBack={onBack}
           onAsk={onAsk}
+          onSelect={onSelect ?? (() => undefined)}
         />
       )}
     </>
@@ -297,17 +384,22 @@ function Counts({ file }: { readonly file: ChangedFile }) {
   );
 }
 
-function FileDiff({ file, entry, onRefresh, onBack, onAsk }: {
+function FileDiff({ file, entry, selection, onRefresh, onBack, onAsk, onSelect }: {
   readonly file: ChangesFileView;
   /** The file's row in the current summary, for its counts. */
   readonly entry: ChangedFile | undefined;
+  readonly selection: LineSelection | undefined;
   readonly onRefresh: () => void;
   readonly onBack: () => void;
-  readonly onAsk: (path: string) => void;
+  readonly onAsk: (path: string, selected: ReadonlyArray<DiffLine>) => void;
+  readonly onSelect: (selection: LineSelection | undefined) => void;
 }) {
   const { dir, name } = splitPath(file.path);
   const patch = file.patch;
   const lines = patch?.state === 'ready' ? patch.lines : [];
+  const selected = selectedLines(selection, lines);
+  const note = selected.length > 0 ? selection?.note : undefined;
+  const from = selection === undefined ? 0 : Math.min(selection.anchor, selection.end);
   // Gutter width in digits, from the largest line number.
   const digits = String(lines.reduce((most, line) => Math.max(most, line.oldLine ?? 0, line.newLine ?? 0), 0)).length;
 
@@ -342,29 +434,48 @@ function FileDiff({ file, entry, onRefresh, onBack, onAsk }: {
       </header>
       <div className="changes-scroll diff" style={{ '--digits': digits } as CSSProperties}>
         {state}
-        {lines.map((line, index) => (
-          <div key={index} className={`diff-line ${line.kind}`}>
-            {line.kind === 'hunk' ? (
+        {lines.map((line, index) => {
+          if (line.kind === 'hunk') {
+            return <div key={index} className="diff-line hunk"><span className="diff-text">{line.text}</span></div>;
+          }
+          const picked = index >= from && index < from + selected.length;
+          const tap = () => onSelect(tapLine(selection, lines, index));
+          // A div, not a button, so the text can still be selected and copied.
+          return (
+            <div
+              key={index}
+              className={picked ? `diff-line ${line.kind} picked` : `diff-line ${line.kind}`}
+              role="button"
+              tabIndex={0}
+              aria-pressed={picked}
+              onClick={tap}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  tap();
+                }
+              }}
+            >
+              <span className="diff-num" aria-hidden="true">{line.oldLine}</span>
+              <span className="diff-num" aria-hidden="true">{line.newLine}</span>
+              <span className="diff-sign">{SIGN[line.kind]}</span>
               <span className="diff-text">{line.text}</span>
-            ) : (
-              <>
-                <span className="diff-num" aria-hidden="true">{line.oldLine}</span>
-                <span className="diff-num" aria-hidden="true">{line.newLine}</span>
-                <span className="diff-sign">{SIGN[line.kind]}</span>
-                <span className="diff-text">{line.text}</span>
-              </>
-            )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
         {patch?.truncated === true && (
           <p className="changes-note" role="status">The diff is cut short here. See the rest on your computer.</p>
         )}
       </div>
       <div className="history-actions">
-        <button type="button" className="primary wide" onClick={() => onAsk(file.path)}>
-          <span aria-hidden="true">@</span>
-          Ask agent about this file
-        </button>
+        {note !== undefined && <p className="changes-note" role="status">{note}</p>}
+        <div className="ask-row">
+          <button type="button" className="primary wide" onClick={() => onAsk(file.path, selected)}>
+            <span aria-hidden="true">@</span>
+            Ask agent about {selected.length > 0 ? linesLabel(selected) : 'this file'}
+          </button>
+          {selected.length > 0 && <button type="button" onClick={() => onSelect(undefined)}>Clear</button>}
+        </div>
       </div>
     </section>
   );

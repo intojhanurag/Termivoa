@@ -15,6 +15,7 @@ import type {
   SnapshotBeginPayload,
   SnapshotEndPayload,
   SnapshotRowsPayload,
+  TasksListedPayload,
   WelcomePayload,
 } from '../generated/protocol';
 // Standalone code generated at build/test time by vite.config.ts; no runtime compiler.
@@ -34,6 +35,7 @@ type HostPayloads = {
   readonly 'changes.patch': ChangesPatchPayload;
   readonly 'changes.committed': ChangesCommittedPayload;
   readonly 'changes.pushed': ChangesPushedPayload;
+  readonly 'tasks.listed': TasksListedPayload;
   readonly 'control.changed': ControlChangedPayload;
   readonly 'input.accepted': InputAcceptedPayload;
   readonly 'input.rejected': InputRejectedPayload;
@@ -65,6 +67,7 @@ const hostTypes = new Set<keyof HostPayloads>([
   'changes.patch',
   'changes.committed',
   'changes.pushed',
+  'tasks.listed',
   'control.changed',
   'input.accepted',
   'input.rejected',
