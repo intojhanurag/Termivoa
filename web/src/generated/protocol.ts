@@ -238,17 +238,14 @@ export type AdminRPCShutdownResultPayload = {
  * waiting. stateSince is the RFC 3339 time of the last change of state or question.
  * afterWork is true only on idle, when this idle ended a working period in this broker's
  * lifetime ("your turn"); it is absent otherwise and resets when work starts again.
+ * workedSeconds is the total time in the working state during this broker's lifetime, up to
+ * now; phones compare it with the value they saw last.
  */
 export type AgentStatus = {
-    readonly afterWork?: boolean;
-    readonly question?:  AgentQuestion;
-    readonly state:      AgentState;
-    readonly stateSince: string;
-    /**
-     * Total seconds this session has spent in the working state during this broker's lifetime,
-     * up to now. A phone compares it with the value it saw last to say how long the agent
-     * worked while the phone was away.
-     */
+    readonly afterWork?:     boolean;
+    readonly question?:      AgentQuestion;
+    readonly state:          AgentState;
+    readonly stateSince:     string;
     readonly workedSeconds?: number;
 }
 

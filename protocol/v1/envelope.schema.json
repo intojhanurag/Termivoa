@@ -134,14 +134,14 @@
     },
     "agentStatus": {
       "title": "AgentStatus",
-      "description": "Broker-computed activity of a running session. question is present exactly when state is waiting. stateSince is the RFC 3339 time of the last change of state or question. afterWork is true only on idle, when this idle ended a working period in this broker's lifetime (\"your turn\"); it is absent otherwise and resets when work starts again.",
+      "description": "Broker-computed activity of a running session. question is present exactly when state is waiting. stateSince is the RFC 3339 time of the last change of state or question. afterWork is true only on idle, when this idle ended a working period in this broker's lifetime (\"your turn\"); it is absent otherwise and resets when work starts again. workedSeconds is the total time in the working state during this broker's lifetime, up to now; phones compare it with the value they saw last.",
       "type": "object", "additionalProperties": false, "required": ["state", "stateSince"],
       "properties": {
         "state": { "$ref": "#/$defs/agentState" },
         "stateSince": { "type": "string", "minLength": 20, "maxLength": 35 },
         "question": { "$ref": "#/$defs/agentQuestion" },
         "afterWork": { "type": "boolean" },
-        "workedSeconds": { "type": "integer", "minimum": 0, "description": "Total seconds this session has spent in the working state during this broker's lifetime, up to now. A phone compares it with the value it saw last to say how long the agent worked while the phone was away." }
+        "workedSeconds": { "type": "integer", "minimum": 0 }
       }
     },
     "previewPort": {

@@ -218,15 +218,14 @@ type AdminRPCShutdownResultPayload struct {
 // waiting. stateSince is the RFC 3339 time of the last change of state or question.
 // afterWork is true only on idle, when this idle ended a working period in this broker's
 // lifetime ("your turn"); it is absent otherwise and resets when work starts again.
+// workedSeconds is the total time in the working state during this broker's lifetime, up to
+// now; phones compare it with the value they saw last.
 type AgentStatus struct {
-	AfterWork                                                                                  *bool          `json:"afterWork,omitempty"`
-	Question                                                                                   *AgentQuestion `json:"question,omitempty"`
-	State                                                                                      AgentState     `json:"state"`
-	StateSince                                                                                 string         `json:"stateSince"`
-	// Total seconds this session has spent in the working state during this broker's lifetime,               
-	// up to now. A phone compares it with the value it saw last to say how long the agent                    
-	// worked while the phone was away.                                                                       
-	WorkedSeconds                                                                              *int64         `json:"workedSeconds,omitempty"`
+	AfterWork     *bool          `json:"afterWork,omitempty"`
+	Question      *AgentQuestion `json:"question,omitempty"`
+	State         AgentState     `json:"state"`
+	StateSince    string         `json:"stateSince"`
+	WorkedSeconds *int64         `json:"workedSeconds,omitempty"`
 }
 
 // A recognized prompt. id is a stable hash of the session generation, text, the full dialog
