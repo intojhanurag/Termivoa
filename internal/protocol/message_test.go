@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -478,5 +479,58 @@ func TestChangesWriteValidation(t *testing.T) {
 	}
 	if _, err := DecodeClient(encodeTestMessage(t, ChangesPushed, ChangesPushedPayload{State: NoRemote}, true)); err == nil {
 		t.Error("client sent changes.pushed")
+	}
+}
+
+func TestTasksValidation(t *testing.T) {
+	if _, err := DecodeClient(encodeTestMessage(t, TasksList, TasksListPayload{}, true)); err != nil {
+		t.Fatalf("tasks.list: %v", err)
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, TasksList, TasksListPayload{}, false)); err == nil {
+		t.Fatal("tasks.list without session identity was accepted")
+	}
+	if _, err := DecodeClient([]byte(`{"version":1,"type":"tasks.list","requestId":"11111111-1111-4111-8111-111111111111","sessionId":"22222222-2222-4222-8222-222222222222","generation":"33333333-3333-4333-8333-333333333333","payload":{"folder":"/"}}`)); err == nil {
+		t.Fatal("tasks.list with an unknown field was accepted")
+	}
+	task := ProjectTask{Name: "test:e2e/@a+b.c_d-1", Command: "pnpm run test:e2e/@a+b.c_d-1", Source: PackageJSON, Kind: Test}
+	valid := TasksListedPayload{State: TasksStateReady, Folder: stringPointer("/src/é"), Tasks: []ProjectTask{task}}
+	if _, err := DecodeHost(encodeTestMessage(t, TasksListed, valid, true)); err != nil {
+		t.Fatalf("valid tasks.listed: %v", err)
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, TasksListed, valid, true)); err == nil {
+		t.Fatal("client sent tasks.listed")
+	}
+	for _, payload := range []TasksListedPayload{{State: TasksStateNone, Tasks: []ProjectTask{}}, {State: TasksStateUnavailable, Tasks: []ProjectTask{}}} {
+		if _, err := DecodeHost(encodeTestMessage(t, TasksListed, payload, true)); err != nil {
+			t.Errorf("%s: %v", payload.State, err)
+		}
+	}
+	with := func(change func(*ProjectTask)) []ProjectTask {
+		changed := task
+		change(&changed)
+		return []ProjectTask{changed}
+	}
+	for name, payload := range map[string]TasksListedPayload{
+		"bad state":     {State: "done", Tasks: []ProjectTask{}},
+		"tasks on none": {State: TasksStateNone, Tasks: []ProjectTask{task}},
+		"too many":      {State: TasksStateReady, Tasks: slices.Repeat([]ProjectTask{task}, MaxProjectTasks+1)},
+		"empty folder":  {State: TasksStateReady, Folder: stringPointer(""), Tasks: []ProjectTask{}},
+		"long folder":   {State: TasksStateReady, Folder: stringPointer("/" + strings.Repeat("a", 4096)), Tasks: []ProjectTask{}},
+		"space name":    {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Name = "a b" })},
+		"shell name":    {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Name = "a;rm" })},
+		"option name":   {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Name = "-f" })},
+		"long name":     {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Name = strings.Repeat("a", 129) })},
+		"two lines":     {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Command = "npm run a\nrm -rf ~" })},
+		"long command":  {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Command = strings.Repeat("a", 513) })},
+		"empty command": {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Command = "" })},
+		"bad source":    {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Source = "Rakefile" })},
+		"bad kind":      {State: TasksStateReady, Tasks: with(func(task *ProjectTask) { task.Kind = "deploy" })},
+	} {
+		if _, err := DecodeHost(encodeTestMessage(t, TasksListed, payload, true)); err == nil {
+			t.Errorf("%s tasks.listed was accepted", name)
+		}
+	}
+	if _, err := DecodeHost([]byte(`{"version":1,"type":"tasks.listed","requestId":"11111111-1111-4111-8111-111111111111","sessionId":"22222222-2222-4222-8222-222222222222","generation":"33333333-3333-4333-8333-333333333333","payload":{"state":"none","tasks":null}}`)); err == nil {
+		t.Error("null tasks were accepted")
 	}
 }
