@@ -37,7 +37,14 @@ jobs:
         with:
           go-version: 1.27.1
           cache: true
-      - run: test -z "$(gofmt -l ./cmd ./internal ./tests ./third_party/ansi ./third_party/vt ./third_party/xpty ./third_party/ultraviolet 2>/dev/null)"
+      - name: Check gofmt
+        run: |
+          out=$(gofmt -l ./cmd ./internal ./tests ./third_party/ansi ./third_party/vt ./third_party/xpty ./third_party/ultraviolet)
+          if [ -n "$out" ]; then
+            echo "These files need gofmt:"
+            echo "$out"
+            exit 1
+          fi
       - run: go vet ./...
       - run: CGO_ENABLED=0 GOARCH=arm64 go vet ./...
       - run: go test ./...
