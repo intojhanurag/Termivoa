@@ -321,3 +321,82 @@ func TestAnswerAndAgentStateValidation(t *testing.T) {
 		t.Fatalf("question_changed rejection: %v", err)
 	}
 }
+
+func TestChangesValidation(t *testing.T) {
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesList, ChangesListPayload{}, true)); err != nil {
+		t.Fatalf("changes.list: %v", err)
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesList, ChangesListPayload{}, false)); err == nil {
+		t.Fatal("changes.list without session identity was accepted")
+	}
+	for _, path := range []string{"a.go", "dir/with space/x\ny", "a:b", "..x/y..", strings.Repeat("é", 4096)} {
+		if _, err := DecodeClient(encodeTestMessage(t, ChangesFile, ChangesFilePayload{Path: path}, true)); err != nil {
+			t.Errorf("path %q: %v", path, err)
+		}
+	}
+	for _, path := range []string{"", "/etc/passwd", `\\server\share`, `C:\x`, "c:/x", "../x", "a/../b", `a\..\b`, "a/..", "nul\x00", strings.Repeat("a", 4097)} {
+		if _, err := DecodeClient(encodeTestMessage(t, ChangesFile, ChangesFilePayload{Path: path}, true)); err == nil {
+			t.Errorf("path %q was accepted", path)
+		}
+	}
+	invalidUTF8 := []byte(`{"version":1,"type":"changes.file","requestId":"11111111-1111-4111-8111-111111111111","sessionId":"22222222-2222-4222-8222-222222222222","generation":"33333333-3333-4333-8333-333333333333","payload":{"path":"\xff"}}`)
+	if _, err := DecodeClient(invalidUTF8); err == nil {
+		t.Error("invalid UTF-8 path was accepted")
+	}
+	if _, err := DecodeHost(encodeTestMessage(t, ChangesSummary, ChangesSummaryPayload{State: ChangesStateReady, Files: []ChangedFile{}}, true)); err != nil {
+		t.Fatalf("empty summary: %v", err)
+	}
+	if _, err := DecodeClient(encodeTestMessage(t, ChangesSummary, ChangesSummaryPayload{State: ChangesStateReady, Files: []ChangedFile{}}, true)); err == nil {
+		t.Fatal("client sent changes.summary")
+	}
+
+	file := ChangedFile{Path: "new.go", OldPath: stringPointer("old.go"), Status: Renamed, Additions: 1}
+	valid := ChangesSummaryPayload{State: ChangesStateReady, Root: stringPointer("/repo"), Branch: stringPointer("main"), Files: []ChangedFile{file}}
+	if _, err := DecodeHost(encodeTestMessage(t, ChangesSummary, valid, true)); err != nil {
+		t.Fatalf("valid summary: %v", err)
+	}
+	for name, payload := range map[string]ChangesSummaryPayload{
+		"bad state":      {State: "dirty", Files: []ChangedFile{}},
+		"files not git":  {State: NotGit, Files: []ChangedFile{file}},
+		"too many files": {State: ChangesStateReady, Files: make([]ChangedFile, MaxChangedFiles+1)},
+		"bad status":     {State: ChangesStateReady, Files: []ChangedFile{{Path: "a", Status: "copied"}}},
+		"negative count": {State: ChangesStateReady, Files: []ChangedFile{{Path: "a", Status: Modified, Deletions: -1}}},
+		"absolute path":  {State: ChangesStateReady, Files: []ChangedFile{{Path: "/a", Status: Modified}}},
+		"long branch":    {State: ChangesStateReady, Branch: stringPointer(strings.Repeat("b", 257)), Files: []ChangedFile{}},
+		"empty root":     {State: ChangesStateReady, Root: stringPointer(""), Files: []ChangedFile{}},
+	} {
+		if _, err := DecodeHost(encodeTestMessage(t, ChangesSummary, payload, true)); err == nil {
+			t.Errorf("%s summary was accepted", name)
+		}
+	}
+	if _, err := DecodeHost([]byte(`{"version":1,"type":"changes.summary","requestId":"11111111-1111-4111-8111-111111111111","sessionId":"22222222-2222-4222-8222-222222222222","generation":"33333333-3333-4333-8333-333333333333","payload":{"state":"ready","files":null,"truncated":false}}`)); err == nil {
+		t.Error("null files were accepted")
+	}
+
+	one, two := int64(1), int64(2)
+	lines := []DiffLine{
+		{Kind: Hunk, Text: "@@ -1 +1,2 @@"},
+		{Kind: Context, Text: "same", OldLine: &one, NewLine: &one},
+		{Kind: Remove, Text: "old", OldLine: &two},
+		{Kind: Add, Text: strings.Repeat("é", MaxDiffLineRunes), NewLine: &two},
+	}
+	if _, err := DecodeHost(encodeTestMessage(t, ChangesPatch, ChangesPatchPayload{Path: "a", State: PatchStateReady, Lines: lines}, true)); err != nil {
+		t.Fatalf("valid patch: %v", err)
+	}
+	zero := int64(0)
+	for name, payload := range map[string]ChangesPatchPayload{
+		"bad state":      {Path: "a", State: "gone", Lines: []DiffLine{}},
+		"binary lines":   {Path: "a", State: Binary, Lines: lines},
+		"too many lines": {Path: "a", State: PatchStateReady, Lines: make([]DiffLine, MaxDiffLines+1)},
+		"long text":      {Path: "a", State: PatchStateReady, Lines: []DiffLine{{Kind: Hunk, Text: strings.Repeat("x", MaxDiffLineRunes+1)}}},
+		"bad kind":       {Path: "a", State: PatchStateReady, Lines: []DiffLine{{Kind: "note", Text: "x"}}},
+		"add old line":   {Path: "a", State: PatchStateReady, Lines: []DiffLine{{Kind: Add, Text: "x", OldLine: &one, NewLine: &one}}},
+		"hunk numbers":   {Path: "a", State: PatchStateReady, Lines: []DiffLine{{Kind: Hunk, Text: "@@", NewLine: &one}}},
+		"zero line":      {Path: "a", State: PatchStateReady, Lines: []DiffLine{{Kind: Remove, Text: "x", OldLine: &zero}}},
+		"relative path":  {Path: "../a", State: Missing, Lines: []DiffLine{}},
+	} {
+		if _, err := DecodeHost(encodeTestMessage(t, ChangesPatch, payload, true)); err == nil {
+			t.Errorf("%s patch was accepted", name)
+		}
+	}
+}

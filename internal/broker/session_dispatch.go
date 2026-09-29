@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
@@ -30,6 +31,7 @@ type sessionConnection struct {
 	generation   string
 	session      ManagedSession
 	viewer       *ViewerSubscription
+	changesBusy  atomic.Bool // A changes request is running (changes.go).
 }
 
 // errStreamRevoked ends a browser stream after access.revoked was sent.
@@ -236,6 +238,8 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 			}
 			return stream.send(ctx, request, protocol.HistoryPage, page)
 		}
+	case protocol.ChangesList, protocol.ChangesFile:
+		return stream.readChanges(ctx, request)
 	case protocol.SessionDetach:
 		return io.EOF // outer connection close releases the viewer, never the PTY
 	default:

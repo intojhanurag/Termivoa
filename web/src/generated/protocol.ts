@@ -35,6 +35,10 @@ export type ProtocolTypes = {
     readonly brokerRPCSessionRenameRequest:    BrokerRPCSessionRenameRequestPayload;
     readonly brokerRPCSessionResult:           BrokerRPCSessionResultPayload;
     readonly brokerRPCSessionTerminateRequest: BrokerRPCSessionTerminateRequestPayload;
+    readonly changesFile:                      ChangesFilePayload;
+    readonly changesList:                      ChangesListPayload;
+    readonly changesPatch:                     ChangesPatchPayload;
+    readonly changesSummary:                   ChangesSummaryPayload;
     readonly controlChanged:                   ControlChangedPayload;
     readonly empty:                            EmptyPayload;
     readonly error:                            ErrorPayload;
@@ -359,6 +363,68 @@ export type BrokerRPCSessionResultPayload = {
 export type BrokerRPCSessionTerminateRequestPayload = {
     readonly operationId: string;
 }
+
+/**
+ * Asks for the diff of one path from the latest changes.summary, relative to the repository
+ * root.
+ */
+export type ChangesFilePayload = {
+    readonly path: string;
+}
+
+/**
+ * Asks for the uncommitted changes of the git repository that holds the session's working
+ * folder.
+ */
+export type ChangesListPayload = {
+}
+
+/**
+ * ready: lines hold the unified diff without file headers, cut at a byte budget
+ * (truncated). binary, missing (no longer changed) and unavailable carry no lines.
+ */
+export type ChangesPatchPayload = {
+    readonly lines:     DiffLine[];
+    readonly path:      string;
+    readonly state:     PatchState;
+    readonly truncated: boolean;
+}
+
+export type DiffLine = {
+    readonly kind:     DiffLineKind;
+    readonly newLine?: number;
+    readonly oldLine?: number;
+    readonly text:     string;
+}
+
+export type DiffLineKind = "hunk" | "context" | "add" | "remove";
+
+export type PatchState = "ready" | "binary" | "missing" | "unavailable";
+
+/**
+ * ready: files lists the changes against HEAD, plus untracked files that git does not
+ * ignore. not_git: the folder is not in a repository. unavailable: git is missing or failed.
+ */
+export type ChangesSummaryPayload = {
+    readonly branch?:   string;
+    readonly files:     ChangedFile[];
+    readonly root?:     string;
+    readonly state:     ChangesState;
+    readonly truncated: boolean;
+}
+
+export type ChangedFile = {
+    readonly additions: number;
+    readonly binary:    boolean;
+    readonly deletions: number;
+    readonly oldPath?:  string;
+    readonly path:      string;
+    readonly status:    ChangeStatus;
+}
+
+export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "untracked" | "typechange";
+
+export type ChangesState = "ready" | "not_git" | "unavailable";
 
 export type ControlChangedPayload = {
     readonly controllerConnectionId: null | string;
@@ -802,7 +868,7 @@ export type LeasePayload = {
     readonly lease: string;
 }
 
-export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error";
+export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch";
 
 export type ScreenMetadata = {
     readonly background:      Color;

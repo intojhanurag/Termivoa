@@ -57,6 +57,8 @@ type ManagedSession interface {
 	RevokeDevice(context.Context, string) (int, error)
 	// PreviewTarget re-verifies a dev-server port from the OS (devpreview.go).
 	PreviewTarget(context.Context, uint16) (string, error)
+	// ChangesFolder is the folder a changes request reads (changes.go).
+	ChangesFolder(context.Context) (string, error)
 }
 
 type registrySession interface {

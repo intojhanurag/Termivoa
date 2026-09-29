@@ -35,6 +35,10 @@ type ProtocolTypes struct {
 	BrokerRPCSessionRenameRequest    BrokerRPCSessionRenameRequestPayload    `json:"brokerRPCSessionRenameRequest"`
 	BrokerRPCSessionResult           BrokerRPCSessionResultPayload           `json:"brokerRPCSessionResult"`
 	BrokerRPCSessionTerminateRequest BrokerRPCSessionTerminateRequestPayload `json:"brokerRPCSessionTerminateRequest"`
+	ChangesFile                      ChangesFilePayload                      `json:"changesFile"`
+	ChangesList                      ChangesListPayload                      `json:"changesList"`
+	ChangesPatch                     ChangesPatchPayload                     `json:"changesPatch"`
+	ChangesSummary                   ChangesSummaryPayload                   `json:"changesSummary"`
 	ControlChanged                   ControlChangedPayload                   `json:"controlChanged"`
 	Empty                            EmptyPayload                            `json:"empty"`
 	Error                            ErrorPayload                            `json:"error"`
@@ -319,6 +323,52 @@ type BrokerRPCSessionResultPayload struct {
 
 type BrokerRPCSessionTerminateRequestPayload struct {
 	OperationID string `json:"operationId"`
+}
+
+// Asks for the diff of one path from the latest changes.summary, relative to the repository
+// root.
+type ChangesFilePayload struct {
+	Path string `json:"path"`
+}
+
+// Asks for the uncommitted changes of the git repository that holds the session's working
+// folder.
+type ChangesListPayload struct {
+}
+
+// ready: lines hold the unified diff without file headers, cut at a byte budget
+// (truncated). binary, missing (no longer changed) and unavailable carry no lines.
+type ChangesPatchPayload struct {
+	Lines     []DiffLine `json:"lines"`
+	Path      string     `json:"path"`
+	State     PatchState `json:"state"`
+	Truncated bool       `json:"truncated"`
+}
+
+type DiffLine struct {
+	Kind    DiffLineKind `json:"kind"`
+	NewLine *int64       `json:"newLine,omitempty"`
+	OldLine *int64       `json:"oldLine,omitempty"`
+	Text    string       `json:"text"`
+}
+
+// ready: files lists the changes against HEAD, plus untracked files that git does not
+// ignore. not_git: the folder is not in a repository. unavailable: git is missing or failed.
+type ChangesSummaryPayload struct {
+	Branch    *string       `json:"branch,omitempty"`
+	Files     []ChangedFile `json:"files"`
+	Root      *string       `json:"root,omitempty"`
+	State     ChangesState  `json:"state"`
+	Truncated bool          `json:"truncated"`
+}
+
+type ChangedFile struct {
+	Additions int64        `json:"additions"`
+	Binary    bool         `json:"binary"`
+	Deletions int64        `json:"deletions"`
+	OldPath   *string      `json:"oldPath,omitempty"`
+	Path      string       `json:"path"`
+	Status    ChangeStatus `json:"status"`
 }
 
 type ControlChangedPayload struct {
@@ -901,6 +951,43 @@ const (
 	Starting State = "starting"
 )
 
+type DiffLineKind string
+
+const (
+	Add     DiffLineKind = "add"
+	Context DiffLineKind = "context"
+	Hunk    DiffLineKind = "hunk"
+	Remove  DiffLineKind = "remove"
+)
+
+type PatchState string
+
+const (
+	Binary                PatchState = "binary"
+	Missing               PatchState = "missing"
+	PatchStateReady       PatchState = "ready"
+	PatchStateUnavailable PatchState = "unavailable"
+)
+
+type ChangeStatus string
+
+const (
+	Added      ChangeStatus = "added"
+	Deleted    ChangeStatus = "deleted"
+	Modified   ChangeStatus = "modified"
+	Renamed    ChangeStatus = "renamed"
+	Typechange ChangeStatus = "typechange"
+	Untracked  ChangeStatus = "untracked"
+)
+
+type ChangesState string
+
+const (
+	ChangesStateReady       ChangesState = "ready"
+	ChangesStateUnavailable ChangesState = "unavailable"
+	NotGit                  ChangesState = "not_git"
+)
+
 type GatewayRPCMessageType string
 
 const (
@@ -1089,6 +1176,10 @@ type MessageType string
 
 const (
 	AccessRevoked             MessageType = "access.revoked"
+	ChangesFile               MessageType = "changes.file"
+	ChangesList               MessageType = "changes.list"
+	ChangesPatch              MessageType = "changes.patch"
+	ChangesSummary            MessageType = "changes.summary"
 	ControlAcquire            MessageType = "control.acquire"
 	ControlChanged            MessageType = "control.changed"
 	ControlRelease            MessageType = "control.release"

@@ -1749,6 +1749,9 @@ func (session *fakeManagedSession) RevokeDevice(context.Context, string) (int, e
 func (session *fakeManagedSession) PreviewTarget(context.Context, uint16) (string, error) {
 	return "", ErrPreviewPort
 }
+func (session *fakeManagedSession) ChangesFolder(context.Context) (string, error) {
+	return "", ErrSessionNotRunning
+}
 func (session *fakeManagedSession) Close() error {
 	session.closed.Store(true)
 	session.mu.Lock()

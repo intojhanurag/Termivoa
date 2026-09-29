@@ -46,7 +46,7 @@ function row(text = ''): TerminalRow {
 class FakeSocket {
   static all: FakeSocket[] = [];
   readyState = 0;
-  sent: Array<{ type: string; payload: Record<string, unknown>; sessionId?: string; generation?: string }> = [];
+  sent: Array<{ type: string; requestId: string; payload: Record<string, unknown>; sessionId?: string; generation?: string }> = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
@@ -71,8 +71,13 @@ class FakeSocket {
     this.onopen?.();
   }
 
-  receive(type: string, payload: object, identity: { sessionId?: string; generation?: string } | null = { sessionId, generation }) {
-    this.onmessage?.({ data: JSON.stringify({ version: 1, type, requestId: id(99), ...(identity ?? {}), payload }) });
+  receive(type: string, payload: object, identity: { sessionId?: string; generation?: string } | null = { sessionId, generation }, requestId = id(99)) {
+    this.onmessage?.({ data: JSON.stringify({ version: 1, type, requestId, ...(identity ?? {}), payload }) });
+  }
+
+  /** Answers a sent request with its own requestId. */
+  reply(request: FakeSocket['sent'][number] | undefined, type: string, payload: object) {
+    this.receive(type, payload, { sessionId, generation }, request?.requestId);
   }
 
   types() {
@@ -567,6 +572,137 @@ describe('History/Selection', () => {
     expect(socket().types()).not.toContain('history.read');
     expect(connection.getHistory()).toMatchObject({ state: 'ready', historyRows: 0 });
     expect(rowText(row('vim'))).toBe('vim');
+  });
+});
+
+describe('Changes', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const file = { path: 'src/a.ts', status: 'modified', additions: 1, deletions: 1, binary: false };
+  const summary = (files: object[] = [file]) => ({ state: 'ready', root: '/Users/me/app', branch: 'main', files, truncated: false });
+  const patch = (path = 'src/a.ts', text = 'new') => ({
+    path, state: 'ready', truncated: false,
+    lines: [{ kind: 'hunk', text: '@@ -1 +1 @@' }, { kind: 'remove', text: 'old', oldLine: 1 }, { kind: 'add', text, newLine: 1 }],
+  });
+  const last = (socket: FakeSocket, type: string) => socket.sent.filter((message) => message.type === type).at(-1);
+
+  it('reads the list as an observer and shows the summary for its own request only', async () => {
+    const { connection, socket } = harness();
+    expect(connection.openChanges()).toBe(false);
+    await attachLive(socket());
+    expect(connection.getStatus().control).toBe('observer');
+    expect(connection.openChanges()).toBe(true);
+    const request = last(socket(), 'changes.list');
+    expect(request).toMatchObject({ sessionId, generation, payload: {} });
+    expect(connection.getChanges()).toEqual({ state: 'loading', summary: undefined, file: undefined });
+
+    socket().receive('changes.summary', summary([]));
+    expect(connection.getChanges()?.state).toBe('loading');
+    socket().reply(request, 'changes.summary', summary());
+    expect(connection.getChanges()).toMatchObject({ state: 'ready', summary: { branch: 'main', files: [file] } });
+
+    connection.closeChanges();
+    expect(connection.getChanges()).toBeUndefined();
+  });
+
+  it('keeps the last summary while a refresh loads and drops the reply to the older request', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openChanges();
+    const first = last(socket(), 'changes.list');
+    connection.refreshChanges();
+    const second = last(socket(), 'changes.list');
+    expect(second?.requestId).not.toBe(first?.requestId);
+    socket().reply(first, 'changes.summary', summary([]));
+    expect(connection.getChanges()?.state).toBe('loading');
+    socket().reply(second, 'changes.summary', summary());
+    expect(connection.getChanges()?.summary?.files).toHaveLength(1);
+
+    connection.refreshChanges();
+    expect(connection.getChanges()).toMatchObject({ state: 'loading', summary: { files: [file] } });
+  });
+
+  it('caches each patch until refresh and shows only the open file', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openChanges();
+    connection.openChangesFile('src/a.ts');
+    const request = last(socket(), 'changes.file');
+    expect(request?.payload).toEqual({ path: 'src/a.ts' });
+    expect(connection.getChanges()?.file).toEqual({ path: 'src/a.ts', state: 'loading', patch: undefined });
+    socket().reply(request, 'changes.patch', patch());
+    expect(connection.getChanges()?.file).toMatchObject({ path: 'src/a.ts', state: 'ready', patch: { lines: [{}, {}, { text: 'new' }] } });
+
+    connection.closeChangesFile();
+    expect(connection.getChanges()?.file).toBeUndefined();
+    const sent = socket().sent.length;
+    connection.openChangesFile('src/a.ts');
+    expect(socket().sent).toHaveLength(sent);
+    expect(connection.getChanges()?.file?.state).toBe('ready');
+
+    // A late reply for a file the user left is cached, not shown.
+    connection.openChangesFile('src/b.ts');
+    const other = last(socket(), 'changes.file');
+    connection.closeChangesFile();
+    socket().reply(other, 'changes.patch', patch('src/b.ts'));
+    expect(connection.getChanges()?.file).toBeUndefined();
+
+    connection.openChangesFile('src/a.ts');
+    connection.refreshChanges();
+    const again = last(socket(), 'changes.file');
+    expect(again?.requestId).not.toBe(request?.requestId);
+    expect(connection.getChanges()?.file).toEqual({ path: 'src/a.ts', state: 'loading', patch: undefined });
+    socket().reply(request, 'changes.patch', patch('src/a.ts', 'stale'));
+    expect(connection.getChanges()?.file?.state).toBe('loading');
+    socket().reply(again, 'changes.patch', patch('src/a.ts', 'fresh'));
+    expect(connection.getChanges()?.file?.patch?.lines[2]?.text).toBe('fresh');
+  });
+
+  it('does not cache an unavailable patch, so opening the file again retries', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openChanges();
+    connection.openChangesFile('src/a.ts');
+    socket().reply(last(socket(), 'changes.file'), 'changes.patch', { path: 'src/a.ts', state: 'unavailable', lines: [], truncated: false });
+    expect(connection.getChanges()?.file).toMatchObject({ state: 'ready', patch: { state: 'unavailable' } });
+    const sent = socket().types().filter((type) => type === 'changes.file').length;
+    connection.openChangesFile('src/a.ts');
+    expect(socket().types().filter((type) => type === 'changes.file')).toHaveLength(sent + 1);
+  });
+
+  it('ends loading when the host refuses the request or the socket closes, and ignores the old socket', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    connection.openChanges();
+    first.reply(last(first, 'changes.list'), 'error', { code: 'internal', message: 'git failed' });
+    expect(connection.getChanges()?.state).toBe('unavailable');
+
+    connection.refreshChanges();
+    connection.openChangesFile('src/a.ts');
+    const list = last(first, 'changes.list');
+    const request = last(first, 'changes.file');
+    first.close();
+    expect(connection.getChanges()).toMatchObject({ state: 'unavailable', file: { state: 'unavailable' } });
+
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    const second = socket();
+    await attachLive(second, '2');
+    first.reply(list, 'changes.summary', summary());
+    second.reply(list, 'changes.summary', summary());
+    second.reply(request, 'changes.patch', patch());
+    expect(connection.getChanges()).toMatchObject({ state: 'unavailable', file: { state: 'unavailable' } });
+
+    connection.refreshChanges();
+    second.reply(last(second, 'changes.list'), 'changes.summary', summary());
+    second.reply(last(second, 'changes.file'), 'changes.patch', patch());
+    expect(connection.getChanges()).toMatchObject({ state: 'ready', file: { state: 'ready' } });
   });
 });
 

@@ -26,6 +26,7 @@ function dock(disabled: boolean, latched = { ctrl: false, alt: false }, alternat
       onCompose={noop}
       onSnippets={noop}
       onHistory={noop}
+      onChanges={noop}
       onHideKeyboard={noop}
     />,
   );
@@ -44,7 +45,7 @@ describe('read-only state', () => {
 
     const html = renderToStaticMarkup(
       <ReadOnlyDock status={{ ...live, otherController: true, controllerLabel: 'MacBook' }} historyEnabled
-        onTakeControl={noop} onHistory={noop} onSessions={noop} />,
+        onTakeControl={noop} onHistory={noop} onChanges={noop} onSessions={noop} />,
     );
     expect(html).toContain('MacBook has control');
     expect(html).toContain('You are watching. The agent keeps working.');

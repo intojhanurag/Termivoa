@@ -70,7 +70,11 @@ never sent automatically.
 
 `screen.resync` schedules a new snapshot. `terminal.resize` requires the current
 lease and causes a full snapshot. History requests read immutable bounded actor
-pages and return either `history.page` or `history.changed`. `session.detach`
+pages and return either `history.page` or `history.changed`. `changes.list`
+returns `changes.summary` and `changes.file` returns `changes.patch` with the
+same request ID; they need no lease, run git off the session actor, allow one
+request in flight per viewer (another gets `limit_exceeded`), and are
+described in `docs/changes.md`. `session.detach`
 closes this viewing connection without ending the child; session switching
 uses a new connection. Termination is only the explicit management operation.
 

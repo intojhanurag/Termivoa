@@ -1,5 +1,7 @@
 import type {
   AccessRevokedPayload,
+  ChangesPatchPayload,
+  ChangesSummaryPayload,
   ControlChangedPayload,
   ErrorPayload,
   HistoryChangedPayload,
@@ -26,6 +28,8 @@ type HostPayloads = {
   readonly 'screen.patch': ScreenPatchPayload;
   readonly 'history.page': HistoryPagePayload;
   readonly 'history.changed': HistoryChangedPayload;
+  readonly 'changes.summary': ChangesSummaryPayload;
+  readonly 'changes.patch': ChangesPatchPayload;
   readonly 'control.changed': ControlChangedPayload;
   readonly 'input.accepted': InputAcceptedPayload;
   readonly 'input.rejected': InputRejectedPayload;
@@ -53,6 +57,8 @@ const hostTypes = new Set<keyof HostPayloads>([
   'screen.patch',
   'history.page',
   'history.changed',
+  'changes.summary',
+  'changes.patch',
   'control.changed',
   'input.accepted',
   'input.rejected',

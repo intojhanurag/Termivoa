@@ -113,12 +113,13 @@ var clientMessageTypes = map[MessageType]bool{
 	Hello: true, SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
-	HistoryRead: true, SessionDetach: true,
+	HistoryRead: true, ChangesList: true, ChangesFile: true, SessionDetach: true,
 }
 
 var hostMessageTypes = map[MessageType]bool{
 	Welcome: true, SnapshotBegin: true, SnapshotRows: true, SnapshotEnd: true,
 	ScreenPatch: true, HistoryPage: true, MessageTypeHistoryChanged: true,
+	ChangesSummary: true, ChangesPatch: true,
 	ControlChanged: true, InputAccepted: true, InputRejected: true,
 	SessionState: true, AccessRevoked: true, Error: true,
 }
@@ -127,8 +128,9 @@ var sessionMessageTypes = map[MessageType]bool{
 	SessionAttach: true, ScreenResync: true, SnapshotApplied: true,
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
-	HistoryRead: true, SessionDetach: true, SnapshotBegin: true,
+	HistoryRead: true, ChangesList: true, ChangesFile: true, SessionDetach: true, SnapshotBegin: true,
 	SnapshotRows: true, SnapshotEnd: true, ScreenPatch: true, HistoryPage: true,
+	ChangesSummary: true, ChangesPatch: true,
 	MessageTypeHistoryChanged: true, ControlChanged: true, InputAccepted: true,
 	InputRejected: true, SessionState: true,
 }
@@ -252,6 +254,15 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if payload.Offset < 0 || payload.Offset > 4999 || payload.Limit < 1 || payload.Limit > MaxHistoryPageRows {
 			return errors.New("history page is outside bounds")
 		}
+	case ChangesList:
+		_, err := strictPayload[ChangesListPayload](envelope)
+		return err
+	case ChangesFile:
+		payload, err := strictPayload[ChangesFilePayload](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateChangePath(payload.Path)
 	case Welcome:
 		payload, err := strictPayload[WelcomePayload](envelope)
 		if err != nil {
@@ -325,6 +336,18 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return validateHistoryPage(payload)
+	case ChangesSummary:
+		payload, err := strictPayload[ChangesSummaryPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateChangesSummary(payload)
+	case ChangesPatch:
+		payload, err := strictPayload[ChangesPatchPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateChangesPatch(payload)
 	case MessageTypeHistoryChanged:
 		payload, err := strictPayload[HistoryChangedPayload](envelope)
 		if err != nil {
@@ -435,6 +458,104 @@ func validateHistoryPage(payload HistoryPagePayload) error {
 		return errors.New("incomplete history page must advance nextOffset by its row count")
 	}
 	return validateRows(payload.Rows, payload.Columns)
+}
+
+// Changes view bounds (changes.summary and changes.patch).
+const (
+	MaxChangedFiles      = 300
+	MaxDiffLines         = 2000
+	MaxDiffLineRunes     = 1000
+	maxChangePathRunes   = 4096
+	maxChangeBranchRunes = 256
+)
+
+// ValidateChangePath accepts a repository-relative path: 1..4096 characters
+// of valid UTF-8 without NUL, not absolute, and without a ".." segment. Other
+// control characters are allowed because git allows them in file names.
+func ValidateChangePath(path string) error {
+	if path == "" || !utf8.ValidString(path) || utf8.RuneCountInString(path) > maxChangePathRunes || strings.IndexByte(path, 0) >= 0 {
+		return errors.New("change path is outside bounds")
+	}
+	drive := len(path) >= 3 && (path[0]|0x20 >= 'a' && path[0]|0x20 <= 'z') && path[1] == ':' && (path[2] == '\\' || path[2] == '/')
+	if path[0] == '/' || path[0] == '\\' || drive {
+		return errors.New("change path must be relative")
+	}
+	for _, segment := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if segment == ".." {
+			return errors.New("change path must not contain a .. segment")
+		}
+	}
+	return nil
+}
+
+func validateChangesSummary(payload ChangesSummaryPayload) error {
+	if payload.State != ChangesStateReady && payload.State != NotGit && payload.State != ChangesStateUnavailable {
+		return errors.New("invalid changes state")
+	}
+	if payload.Files == nil || len(payload.Files) > MaxChangedFiles || (payload.State != ChangesStateReady && len(payload.Files) > 0) {
+		return errors.New("changed files are outside bounds")
+	}
+	if payload.Root != nil && (*payload.Root == "" || utf8.RuneCountInString(*payload.Root) > maxChangePathRunes) {
+		return errors.New("root is outside bounds")
+	}
+	if payload.Branch != nil && (*payload.Branch == "" || utf8.RuneCountInString(*payload.Branch) > maxChangeBranchRunes) {
+		return errors.New("branch is outside bounds")
+	}
+	for _, file := range payload.Files {
+		if err := ValidateChangePath(file.Path); err != nil {
+			return err
+		}
+		if file.OldPath != nil {
+			if err := ValidateChangePath(*file.OldPath); err != nil {
+				return err
+			}
+		}
+		switch file.Status {
+		case Added, Modified, Deleted, Renamed, Untracked, Typechange:
+		default:
+			return errors.New("invalid change status")
+		}
+		if file.Additions < 0 || file.Deletions < 0 {
+			return errors.New("change counts must not be negative")
+		}
+	}
+	return nil
+}
+
+func validateChangesPatch(payload ChangesPatchPayload) error {
+	if err := ValidateChangePath(payload.Path); err != nil {
+		return err
+	}
+	if payload.State != PatchStateReady && payload.State != Binary && payload.State != Missing && payload.State != PatchStateUnavailable {
+		return errors.New("invalid patch state")
+	}
+	if payload.Lines == nil || len(payload.Lines) > MaxDiffLines || (payload.State != PatchStateReady && len(payload.Lines) > 0) {
+		return errors.New("diff lines are outside bounds")
+	}
+	for _, line := range payload.Lines {
+		if !utf8.ValidString(line.Text) || utf8.RuneCountInString(line.Text) > MaxDiffLineRunes {
+			return errors.New("diff line text is outside bounds")
+		}
+		// Line numbers follow the kind: a hunk has none, a removal only the
+		// old one, an addition only the new one, context both.
+		wantOld, wantNew := false, false
+		switch line.Kind {
+		case Hunk:
+		case Remove:
+			wantOld = true
+		case Add:
+			wantNew = true
+		case Context:
+			wantOld, wantNew = true, true
+		default:
+			return errors.New("invalid diff line kind")
+		}
+		if (line.OldLine != nil) != wantOld || (line.NewLine != nil) != wantNew ||
+			(line.OldLine != nil && *line.OldLine < 1) || (line.NewLine != nil && *line.NewLine < 1) {
+			return errors.New("diff line numbers do not match the line kind")
+		}
+	}
+	return nil
 }
 
 func strictPayload[T any](envelope Envelope) (T, error) {

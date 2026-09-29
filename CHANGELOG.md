@@ -6,6 +6,14 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Changes view, host side: `changes.list` and `changes.file` on the live
+  stream return the uncommitted `git` changes of the session's folder (a file
+  list with +/− counts) and one file's diff, read with bounded, read-only git
+  commands off the session actor. Any paired device viewing a session can read
+  these diffs. See [docs/changes.md](docs/changes.md).
+
 ## [0.1.0-beta.1] - 2026-09-28
 
 First **private beta**: unsigned binaries for invited testers only, published
