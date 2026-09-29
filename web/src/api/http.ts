@@ -25,6 +25,12 @@ export const CONNECTION_UNAVAILABLE = 'Connection unavailable';
 export const CLIENT_BUILD = 'phone-terminal-web/0.0.0-private';
 /** A request that has not answered by now is treated as a lost connection. */
 export const REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * Small reads answer in well under a second, even over a relay. Right after a
+ * phone wakes, one can hang on a network that is not back yet; give up sooner
+ * so the next try (which usually works) starts at once.
+ */
+export const READ_TIMEOUT_MS = 6_000;
 /** A photo of up to 5 MiB can take a while on a slow phone link. */
 export const UPLOAD_TIMEOUT_MS = 60_000;
 
@@ -100,8 +106,8 @@ async function request<T>(
 const sessionPath = (id: string) => `/api/v1/sessions/${encodeURIComponent(id)}`;
 
 export const api = {
-  settings: () => request<HTTPSettingsResponse>('GET', '/api/v1/settings'),
-  sessions: () => request<HTTPSessionListResponse>('GET', '/api/v1/sessions'),
+  settings: () => request<HTTPSettingsResponse>('GET', '/api/v1/settings', undefined, READ_TIMEOUT_MS),
+  sessions: () => request<HTTPSessionListResponse>('GET', '/api/v1/sessions', undefined, READ_TIMEOUT_MS),
   createSession: (body: HTTPSessionCreateRequest) =>
     request<HTTPSessionMutationResponse>('POST', '/api/v1/sessions', body),
   renameSession: (id: string, body: HTTPSessionRenameRequest) =>

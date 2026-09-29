@@ -7,6 +7,7 @@ import {
   RECONNECT_DELAYS_MS,
   RESUME_CHECK_MS,
   RESUME_PROBE_MS,
+  ATTACH_TIMEOUT_MS,
   rowText,
   type ScreenDisplay,
 } from './Connection';
@@ -830,7 +831,7 @@ describe('Connection resume', () => {
     expect(FakeSocket.all.at(-1)).not.toBe(stuck);
     expect(connection.getStatus().link).toBe('reconnecting');
     // The stuck socket's own close scheduled nothing more.
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(ATTACH_TIMEOUT_MS - 1000);
     expect(FakeSocket.all.at(-2)).toBe(stuck);
   });
 
@@ -867,6 +868,31 @@ describe('Connection resume', () => {
     await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
     expect(connection.getStatus()).toMatchObject({ link: 'live', control: 'observer' });
     expect(second.types().filter((type) => type.startsWith('input.') || type === 'control.acquire')).toEqual([]);
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it('drops a connect that is not live in time and retries at once', async () => {
+    const { connection } = harness();
+    const hanging = FakeSocket.all.at(-1) as FakeSocket;
+    await vi.advanceTimersByTimeAsync(ATTACH_TIMEOUT_MS - 1);
+    expect(FakeSocket.all).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(hanging.readyState).toBe(3);
+    expect(connection.getStatus().link).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it('does not retry while hidden and reconnects at once when visible', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    setVisibility('hidden');
+    first.close();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(connection.getStatus().link).toBe('reconnecting');
+    setVisibility('visible');
     expect(FakeSocket.all).toHaveLength(2);
   });
 

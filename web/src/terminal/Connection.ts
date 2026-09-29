@@ -43,6 +43,13 @@ export const RESUME_CHECK_MS = 10_000;
  */
 export const RESUME_PROBE_MS = 2_000;
 
+/**
+ * A new socket that is not live by then is dropped and retried. Right after a
+ * phone wakes, its network can take a moment to come back, and a connect
+ * started in that moment can otherwise hang for a minute or more.
+ */
+export const ATTACH_TIMEOUT_MS = 5_000;
+
 /** WebSocket.OPEN, without depending on the global in tests. */
 const SOCKET_OPEN = 1;
 const HISTORY_PAGE_ROWS = 200;
@@ -201,6 +208,7 @@ export class Connection {
   private requestedSize: string | undefined;
   private hiddenAt: number | undefined;
   private probeTimer: ReturnType<typeof setTimeout> | undefined;
+  private attachTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly createSocket: (url: string) => WebSocket;
   private readonly requestFrame: (callback: () => void) => void;
@@ -508,6 +516,14 @@ export class Connection {
   private open(): void {
     this.clearReconnect();
     const epoch = ++this.socketEpoch;
+    clearTimeout(this.attachTimer);
+    this.attachTimer = setTimeout(() => {
+      if (epoch === this.socketEpoch && this.status.link !== 'live') {
+        const stuck = this.socket;
+        this.handleClose(epoch);
+        stuck?.close(4003, 'attach timeout');
+      }
+    }, ATTACH_TIMEOUT_MS);
     let socket: WebSocket;
     try {
       socket = this.createSocket(this.options.url);
@@ -1077,6 +1093,7 @@ export class Connection {
     this.socket = undefined;
     this.socketEpoch++;
     this.clearProbe();
+    clearTimeout(this.attachTimer);
     this.stopHeartbeat();
     this.assembler.abort();
     this.pendingSnapshot = undefined;
@@ -1093,6 +1110,11 @@ export class Connection {
     }
     // The next attach sends a fresh session.state; never answer from an old one.
     this.update({ link: 'reconnecting', otherController: false, controllerLabel: undefined, agent: undefined, previews: undefined, cwd: undefined });
+    // A hidden page cannot keep a socket (phones freeze it), so it waits: the
+    // visibility, pageshow and online listeners reconnect at once on return.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return;
+    }
     const delay = RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => this.open(), delay);
@@ -1107,6 +1129,7 @@ export class Connection {
     this.listen(false);
     this.clearReconnect();
     this.clearProbe();
+    clearTimeout(this.attachTimer);
     this.stopHeartbeat();
     this.dropControl(undefined);
     const socket = this.socket;
