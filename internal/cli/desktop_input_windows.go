@@ -5,22 +5,24 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// This one-time ownership boundary intentionally discards pending console input
-// records after startup decoding joins. It is not used during live input or resizing.
+// The handoff drain's last resort: it discards pending console input records
+// after startup decoding joins. It is not used during live input or resizing.
 // Native Windows validation of console access rights remains a separate gate.
 func discardDesktopInput(handle terminalFileHandle) error {
 	return windows.FlushConsoleInputBuffer(windows.Handle(handle))
 }
 
-// drainDesktopDetach reads console input records still queued at the
-// startup/live decoder handoff and reports a Ctrl+] key press. The records are
-// discarded, never sent. A console handle has no non-blocking ReadFile, so it
-// reads only the records the console reports as pending. The startup decoder
-// is already joined, so nothing else consumes them and the read cannot block.
+// drainDesktopDetach discards the console input records still queued at the
+// startup/live decoder handoff and reports a Ctrl+] key press in them. It
+// reads until none are pending, so every discarded record is scanned; a key
+// that arrives later stays queued for the live decoder. Nothing is sent. A
+// console handle has no non-blocking ReadFile, so it reads only the records
+// the console reports as pending. The startup decoder is already joined, so
+// nothing else consumes them and the read cannot block.
 func drainDesktopDetach(handle terminalFileHandle) (bool, error) {
 	var records [256]xwindows.InputRecord
 	detach := false
-	for range 16 { // ponytail: bounded like Unix; the following flush discards any remainder.
+	for range 256 {
 		var pending, n uint32
 		if err := windows.GetNumberOfConsoleInputEvents(windows.Handle(handle), &pending); err != nil || pending == 0 {
 			return detach, err
@@ -35,5 +37,7 @@ func drainDesktopDetach(handle terminalFileHandle) (bool, error) {
 			}
 		}
 	}
-	return detach, nil
+	// ponytail: only input that never stops arriving gets here; the flush
+	// drops it unscanned, so a Ctrl+] inside it is lost.
+	return detach, discardDesktopInput(handle)
 }

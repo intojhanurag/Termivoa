@@ -42,6 +42,11 @@ All notable changes are documented here. The format follows
   handler finished. The grace period started before the host had listed the
   session and sent the hangup, which took up to about 0.5 s under heavy load.
   It now starts after the signals are sent. No phone-side change (#88).
+- Desktop attach (host side): a Ctrl+] that arrived in the short moment
+  between the handoff's scan of queued input and its flush was discarded
+  unscanned. The handoff now reads the queued input until it is empty and
+  scans all of it, instead of flushing; a key that arrives later goes to live
+  input, which detaches on Ctrl+]. No phone-side change (#90).
 
 ## [0.1.0-beta.2] - 2026-09-29
 
