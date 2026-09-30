@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/xpty"
 )
 
 func TestChildOwnsSessionAndControllingTerminal(t *testing.T) {
@@ -301,4 +303,30 @@ func TestChildDoesNotInheritLaunchingProgramEnvironment(t *testing.T) {
 		}
 	}
 	_ = process.Wait(context.Background())
+}
+
+// A session leader that exits after Close must not free its terminal before
+// macOS revokes it, or the revoke can kill the next session's PTY (#100).
+func TestCloseKeepsSlaveOpenUntilChildIsReaped(t *testing.T) {
+	process := startFixture(t, context.Background(), "sleep")
+	slave := process.pty.(*xpty.UnixPty).Slave()
+	if err := process.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	// Closing the master hangs up the child, whose exit may already have
+	// revoked the slave; only a closed file means Close released it.
+	if _, err := slave.Stat(); errors.Is(err, os.ErrClosed) {
+		t.Fatal("slave closed before the child was reaped")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = process.Terminate(ctx)
+	_ = process.Wait(ctx)
+	for _, err := slave.Stat(); !errors.Is(err, os.ErrClosed); _, err = slave.Stat() {
+		if ctx.Err() != nil {
+			t.Fatal("slave still open after the child was reaped")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }

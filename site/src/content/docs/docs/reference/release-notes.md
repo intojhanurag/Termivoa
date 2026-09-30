@@ -13,6 +13,7 @@ This page lists what is new in each release.
 - **Fix: finished sessions shown as lost.** A finished session is no longer shown as lost when the computer is busy. It shows its exit code.
 - **Fix: background jobs get their full cleanup time.** When a session ends, programs you started in the background get half a second to clean up. On a very busy computer most of that time could be used up before they were told to stop. The time now starts only after they are told.
 - **Fix: first key after `pterm attach --control` shows Control.** A key typed at the moment the footer changed to "Control" could be lost. It is now sent. A key that the host reads while the footer still says "Syncing" is dropped.
+- **Fix: a new session could fail to start on a Mac.** Under heavy load, a new session sometimes failed with "bad file descriptor", or started with a terminal that did not work. This happened when another session had just ended. It now starts reliably.
 
 ## v0.1.0-beta.2 (2026-09-29) — private beta
 

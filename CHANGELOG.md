@@ -63,6 +63,14 @@ All notable changes are documented here. The format follows
   steps run under the same terminal I/O lock, so a key read before the footer
   is always dropped and a key read after it is always sent. Nothing is queued.
   No phone-side change (#104).
+- Starting a session on macOS (host side) could fail with `fork/exec ...:
+  bad file descriptor`, or start with a dead terminal, when another session's
+  terminal had just been closed while its program was still exiting. macOS
+  takes the terminal away from an exiting program at the very end of its
+  exit; if the host had already closed both ends of that terminal, macOS could
+  give it to the new session first. The host now keeps its end of a session's
+  terminal open until the program has fully exited. No phone-side change
+  (#100).
 
 ## [0.1.0-beta.2] - 2026-09-29
 

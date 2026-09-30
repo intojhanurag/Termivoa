@@ -775,6 +775,28 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `ReadFile`/`WriteFile` (there is no shared lock there), which is no weaker
   than before; native Windows validation stays pending.
 
+- **New PTY revoked by an older session's exit on macOS** (#100,
+  `fix/issue-100`, 2026-09-30): `TestConcurrentResizeAndSize` failed twice in
+  the #89 stress with `fork/exec .../ptychild: bad file descriptor`. Cause: a
+  macOS session leader revokes its controlling terminal (`VNOP_REVOKE`,
+  `REVOKEALL`) at the end of its exit, and before that it blocks while the
+  terminal has unread output and the master is open (seen as `E` state).
+  `Process.Close` closed master and slave together, so when it ran before the
+  child was reaped (in the tests, a cleanup whose 1 s `Terminate` ran out,
+  in this or another parallel test binary), the PTY number was freed, the
+  next `Start` got the same `/dev/ttysNNN`, and the late revoke killed it: `TIOCSCTTY` in the child failed with `EBADF`, or
+  the new session started with a dead terminal (the parent's slave copy
+  answered `TIOCGWINSZ` with `ENOTTY`). `Close` now closes the master at once
+  and the slave only after the child is reaped, so the PTY stays allocated
+  until the revoke is done. A repro that runs the flaky test's cleanup in a
+  loop (sleep fixture with unread `READY`, `Terminate` with a 30 ms context,
+  `Close`, next `Start`; 3 copies x 4 workers, 3 cold-cache `go build -a ./...`
+  loops and 6 CPU burners): before 59 `EBADF` starts and 18 dead terminals in
+  13,417 starts, after 0 and 0 in 47,171. The flaky test itself did not fail
+  in 3,060 runs before or after the fix (6 x `-test.count=100` and 4 x
+  full-package `-test.count=3` binaries, 5 rounds, with `go test ./...`
+  load). New `TestCloseKeepsSlaveOpenUntilChildIsReaped` fails before the fix.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

@@ -391,9 +391,31 @@ func ignoreProcessDone(err error) error {
 
 // Close releases PTY handles. It does not terminate a live command; callers
 // must explicitly terminate and wait before closing a live session.
+//
+// On Unix the PTY slave stays open until the child is reaped. A macOS session
+// leader revokes its controlling terminal at the end of its exit, and before
+// that it waits while the terminal has unread output and the master is open.
+// If both ends closed first, the kernel could give the freed terminal to the
+// next Start, and the late revoke would kill it: fork/exec fails with EBADF,
+// or the new session's terminal is dead. The open slave keeps this terminal
+// allocated until the revoke is done.
 func (p *Process) Close() error {
 	p.closeOnce.Do(func() {
-		p.closeErr = p.pty.Close()
+		unixPTY, ok := p.pty.(*xpty.UnixPty)
+		if !ok {
+			p.closeErr = p.pty.Close()
+			return
+		}
+		p.closeErr = unixPTY.Master().Close()
+		select {
+		case <-p.exited:
+			p.closeErr = errors.Join(p.closeErr, unixPTY.Slave().Close())
+		default:
+			go func() {
+				<-p.exited
+				_ = unixPTY.Slave().Close()
+			}()
+		}
 	})
 	return p.closeErr
 }
