@@ -274,6 +274,15 @@ func buildProcessFixture(t *testing.T, root string) string {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture: %v\n%s", err, output)
 	}
+	// On macOS the first exec of a newly built binary can wait many seconds
+	// at _dyld_start while the system checks it, longer under heavy load (see
+	// docs/evidence/p3/pty-fixture-activation.md). Pay that cost here, before
+	// the broker starts the fixture inside the counter-frame deadlines.
+	activation := exec.Command(path)
+	activation.Env = append(os.Environ(), "PTERM_PTY_FIXTURE_MODE=exit")
+	if output, err := activation.CombinedOutput(); err != nil {
+		t.Fatalf("first run of fixture: %v\n%s", err, output)
+	}
 	return path
 }
 
