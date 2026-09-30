@@ -585,6 +585,8 @@ func TestAttachDesktopDropsKeyReadDuringBlockedControlFooter(t *testing.T) {
 	}
 	defer master.Close()
 	defer slave.Close()
+	// Restart output even when the test fails while it is stopped.
+	defer func() { _ = stopTerminalOutput(slave.Fd(), false) }()
 	// One spare row, so the attachment draws a footer below the 80x24 grid.
 	if err := pty.Setsize(master, &pty.Winsize{Cols: 80, Rows: 25}); err != nil {
 		t.Fatal(err)
