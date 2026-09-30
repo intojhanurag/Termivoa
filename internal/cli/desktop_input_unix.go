@@ -36,7 +36,8 @@ func drainDesktopDetach(handle terminalFileHandle) (bool, error) {
 		}
 		detach = detach || bytes.IndexByte(data[:n], desktopDetachByte) >= 0
 	}
-	// ponytail: only input that never stops arriving (1 MiB of reads) gets
-	// here; the flush drops it unscanned, so a Ctrl+] inside it is lost.
+	// ponytail: only input still arriving after 256 reads gets here (at most
+	// 1 MiB; a macOS terminal read returns about 1 KiB, so about 256 KiB).
+	// The flush drops it unscanned, so a Ctrl+] inside it is lost.
 	return detach, discardDesktopInput(handle)
 }

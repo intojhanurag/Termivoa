@@ -9,7 +9,7 @@ This page lists what is new in each release.
 
 - **Project buttons.** The Snips sheet shows your project's own commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. Tap one to run it in a new tab or type it here. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).
 - **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines, then ask the agent about exactly those lines. See [Changes](/docs/guides/changes/#ask-about-specific-lines).
-- **Fix: Ctrl+] right after `pterm attach` connects.** Pressing Ctrl+] at the moment the desktop attach finished connecting was sometimes ignored. It now always detaches.
+- **Fix: Ctrl+] right after `pterm attach` connects.** Pressing Ctrl+] at the moment the desktop attach finished connecting was sometimes ignored. It now detaches reliably.
 - **Fix: finished sessions shown as lost.** A finished session is no longer shown as lost when the computer is busy. It shows its exit code.
 - **Fix: background jobs get their full cleanup time.** When a session ends, programs you started in the background get half a second to clean up. On a very busy computer most of that time could be used up before they were told to stop. The time now starts only after they are told.
 
