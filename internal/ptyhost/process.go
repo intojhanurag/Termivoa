@@ -342,7 +342,8 @@ func (p *Process) Exited() bool {
 // and every other process in that session, such as an interactive shell's
 // background jobs in their own process groups. Processes that called setsid
 // have left the session and are never signaled. Terminate first sends a hangup
-// and a termination request, then forcibly ends processes still in the boundary
+// and a termination request (once per process: a repeated call waits for that
+// first request instead of sending again), then forcibly ends processes still in the boundary
 // after a short grace period or when ctx expires. On Unix the grace period
 // also covers session members that remain after the leader exits, whether the
 // leader exited on request or on its own. Reaping continues in the background

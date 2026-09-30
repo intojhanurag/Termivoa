@@ -26,18 +26,20 @@ type platformProcessTree struct {
 type sessionHangup struct {
 	once   sync.Once
 	sentAt time.Time
-	err    error
 }
 
 // send signals the session on the first call. Every call returns when those
-// signals were sent, waiting for a first call that is still sending.
+// signals were sent, waiting for a first call that is still sending. Only the
+// call that sent them reports a signaling error: a later caller must not fail
+// (and mark a session lost) because of an error the first caller already had.
 func (h *sessionHangup) send(sessionID int) (time.Time, error) {
+	var err error
 	h.once.Do(func() {
 		// Hang up first, as closing a real terminal does, then ask to terminate.
-		h.err = errors.Join(signalSession(sessionID, syscall.SIGHUP), signalSession(sessionID, syscall.SIGTERM))
+		err = errors.Join(signalSession(sessionID, syscall.SIGHUP), signalSession(sessionID, syscall.SIGTERM))
 		h.sentAt = time.Now()
 	})
-	return h.sentAt, h.err
+	return h.sentAt, err
 }
 
 func configureCommand(cmd *exec.Cmd) {
