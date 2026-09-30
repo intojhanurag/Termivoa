@@ -78,8 +78,9 @@ startup registration, Tailscale setting, credential, or publication changed.
 ## Update: generous activation bound (issue #89)
 
 Later parallel cold-cache runs measured the same first-launch wait at up to
-14.1 s (PR #86) and saw this probe fail with `PTY fixture activation: 10.002s
-(limit 10s)` and `context deadline exceeded`. Activation is setup, not behavior
+14.1 s (PR #86), and up to 17.6 s in the #78 test, and saw this probe
+fail with `PTY fixture activation: 10.002s (limit 10s)` and
+`context deadline exceeded`. Activation is setup, not behavior
 under test, so its bound is now two minutes. It only catches a fixture that
 never starts. The test binary's `-timeout` does not cover `TestMain` before
 `m.Run`, so a bound is still needed. The PTY I/O deadlines are unchanged.

@@ -29,8 +29,9 @@ func TestMain(m *testing.M) {
 // fixtureActivationTimeout only catches a fixture that never starts. The
 // first run of a newly built binary is setup, not behavior under test: on
 // macOS it was measured to wait up to 17.6 s at _dyld_start under parallel
-// cold-cache load (issue #89). The test binary's -timeout does not cover
-// TestMain before m.Run, so this bound is generous instead.
+// cold-cache load (in the #78 test; see issue #89). The test binary's
+// -timeout does not cover TestMain before m.Run, so this bound is generous
+// instead.
 const fixtureActivationTimeout = 2 * time.Minute
 
 func runPTYTests(run func() int) int {
