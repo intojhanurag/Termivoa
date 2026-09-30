@@ -37,6 +37,11 @@ All notable changes are documented here. The format follows
   as exiting), so it ends as exited with its exit code. A program that
   closes its terminal but keeps running is still marked lost and stopped
   after 1 second (#92). Phone side: no change.
+- Ending a session (host side): background jobs could lose most of their
+  500 ms cleanup time on a busy computer and be killed before their hangup
+  handler finished. The grace period started before the host had listed the
+  session and sent the hangup, which took up to about 0.5 s under heavy load.
+  It now starts after the signals are sent. No phone-side change (#88).
 
 ## [0.1.0-beta.2] - 2026-09-29
 

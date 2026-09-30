@@ -708,6 +708,21 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   sessions waited past the grace and ended `exited`). New test
   `TestSessionExitGraceWaitsOnlyForExitedChild` fails before the fix.
 
+- **Background jobs lost their grace period under load** (#88, `fix/issue-88`):
+  `TestSessionJobsGetGracePeriod` failed 52 times in 3200 subtests (8 copies of
+  the ptyhost test binary, `-test.run 'TestSessionJobsGetGracePeriod'
+  -test.count=200`, with parallel cold-cache `go test ./...` load). Two causes.
+  Test: the shell printed the job PID before the job's subshell had set its
+  HUP trap, so the hangup could arrive first (all 25 of 25 failures in a
+  diagnostic run had no trap yet). Product: `terminateProcessTree` stamped the
+  grace start before `signalSession` listed the session and sent SIGHUP, which
+  took up to 597 ms under load; each of the 10 remaining failures in two
+  diagnostic runs had its handler start 436–628 ms after that stamp and was
+  killed at the 500 ms deadline. The job now reports readiness through a FIFO before the shell prints its PID, and
+  the grace period runs from the time the signals were sent (a concurrent
+  Terminate and leader exit wait for one shared hangup). After the fix: 0
+  failures in 4800 subtests of the same stress (8 × `-test.count=300`).
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
