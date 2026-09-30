@@ -27,7 +27,8 @@ process samples and local paths are not committed.
 ## Correction and unchanged gates
 
 After building the exact fixture, `TestMain` now performs one explicit native
-activation probe with its own ten-second deadline. It executes only the existing
+activation probe with its own deadline (ten seconds at first; two minutes since
+issue #89, see below). It executes only the existing
 `args` fixture mode, with a fixed marker verified in the JSON response. This
 uses ordinary pipes, no PTY, no project, and no descendant process. The duration
 and bound are reported in test output. Missing executable, wrong response,
@@ -73,3 +74,13 @@ leftover directories from earlier runs were not deleted.
 
 No host runtime implementation, dependency, protocol, release artifact,
 startup registration, Tailscale setting, credential, or publication changed.
+
+## Update: generous activation bound (issue #89)
+
+Later parallel cold-cache runs measured the same first-launch wait at up to
+14.1 s (PR #86), and up to 17.6 s in the #78 test, and saw this probe
+fail with `PTY fixture activation: 10.002s (limit 10s)` and
+`context deadline exceeded`. Activation is setup, not behavior
+under test, so its bound is now two minutes. It only catches a fixture that
+never starts. The test binary's `-timeout` does not cover `TestMain` before
+`m.Run`, so a bound is still needed. The PTY I/O deadlines are unchanged.
