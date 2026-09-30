@@ -129,6 +129,7 @@ type Client struct {
 	reader       *ipc.FrameReader
 	writer       *ipc.FrameWriter
 	frames       *desktop.FrameClient
+	parent       context.Context
 	ctx          context.Context
 	cancel       context.CancelFunc
 	stopParent   func() bool
@@ -204,7 +205,7 @@ func start(parent context.Context, conn net.Conn, welcome protocol.IPCWelcomeCla
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(parent)
-	client := &Client{config: config, conn: conn, ctx: ctx, cancel: cancel,
+	client := &Client{config: config, conn: conn, parent: parent, ctx: ctx, cancel: cancel,
 		done: make(chan struct{}), changed: make(chan struct{}, 1), statePulse: make(chan struct{}),
 		writeGate: make(chan struct{}, 1), userGate: make(chan struct{}, 1), resizeGate: make(chan struct{}, 1), paintWake: make(chan struct{}, 1), frameQueue: make(chan frameMessage, 64), readFinished: make(chan error, 1),
 		state: State{Connected: true, LeaseEpoch: "0"}}
@@ -412,6 +413,12 @@ func (client *Client) changedLocked() {
 
 func (client *Client) closedError() error {
 	if err := client.Err(); err != nil {
+		return err
+	}
+	// A parent cancellation ends client.ctx at once, but stop records it
+	// later from an AfterFunc goroutine. Report it, not a spurious ErrClosed
+	// that a painter or heartbeat would then record as the close reason.
+	if err := client.parent.Err(); err != nil {
 		return err
 	}
 	return ErrClosed

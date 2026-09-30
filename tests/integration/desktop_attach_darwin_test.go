@@ -71,6 +71,12 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build attach executable: %v\n%s", err, output)
 	}
+	// On macOS the first exec of a newly built binary can wait many seconds
+	// at _dyld_start while the system checks it (#93). Pay that cost here,
+	// before the test context and the observer's startup begin.
+	if output, err := exec.Command(executable, "help").CombinedOutput(); err != nil {
+		t.Fatalf("first run of attach executable: %v\n%s", err, output)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 	runtimeDir, state := startLiveBroker(t, ctx)
