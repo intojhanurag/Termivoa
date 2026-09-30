@@ -371,14 +371,23 @@ func startOuterAttach(t *testing.T, ctx context.Context, name, executable string
 func (outer *outerAttach) logFailure(t *testing.T, name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	status := "exited"
+	running := true
 	select {
 	case <-outer.exited:
+		running = false
 		if outer.result.ExitCode == 0 && outer.result.Error == "" {
 			t.Logf("%s attach exited cleanly %v after start", name, outer.exitedAt.Sub(outer.started).Round(time.Millisecond))
 			return
 		}
 	default:
+	}
+	status := "exited"
+	var frame terminal.Frame
+	var err error
+	if running {
+		// Take the screen first: the attach turned line wrap off, so the
+		// goroutine dump would overwrite the last column of every row.
+		frame, err = outer.display.Snapshot(ctx)
 		status = "was still running at the failure"
 		if outer.target != nil && outer.target.Signal(syscall.SIGQUIT) == nil {
 			status += "; sent SIGQUIT, then exited"
@@ -391,11 +400,34 @@ func (outer *outerAttach) logFailure(t *testing.T, name string) {
 		status += "; did not exit"
 	}
 	time.Sleep(200 * time.Millisecond) // Let the reader take output written just before exit.
-	frame, err := outer.display.Snapshot(ctx)
+	if !running {
+		frame, err = outer.display.Snapshot(ctx)
+	}
 	outer.displayMu.Lock()
-	output := strings.NewReplacer("\x1b", `\e`, "\r", "").Replace(string(outer.output))
+	output := visibleControls(outer.output)
 	outer.displayMu.Unlock()
 	t.Logf("%s attach %s\n--- %s screen (%v):\n%s--- %s raw output tail:\n%s\n--- end %s", name, status, name, err, trimScreen(liveScreenText(frame)), name, output, name)
+}
+
+// visibleControls shows raw terminal output in a log: ESC as \e, other C0
+// controls and DEL as \xNN. Newlines and tabs stay; CRs before LF are dropped
+// (output processing turns a CRLF written before raw mode into CR CR LF).
+func visibleControls(data []byte) string {
+	raw := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r\n", "\n")
+	var text strings.Builder
+	for _, b := range []byte(raw) {
+		switch {
+		case b == '\n' || b == '\t':
+			text.WriteByte(b)
+		case b == 0x1b:
+			text.WriteString(`\e`)
+		case b < 0x20 || b == 0x7f:
+			fmt.Fprintf(&text, `\x%02x`, b)
+		default:
+			text.WriteByte(b)
+		}
+	}
+	return text.String()
 }
 
 func (outer *outerAttach) write(t *testing.T, ctx context.Context, data string) {
