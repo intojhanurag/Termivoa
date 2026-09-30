@@ -174,4 +174,11 @@ describe('keyboard-up dock', () => {
     for (const key of AGENT_KEYS) expect(labels).toContain(key.name);
     expect(labels).toEqual(expect.arrayContaining(['Tab', 'Control modifier', 'Left arrow', 'Scroll application up', 'Snippets', 'Hide keyboard']));
   });
+
+  it('puts Down next to Up, once, so both are in reach while typing', () => {
+    const labels = keyButtons(dock(false, { ctrl: false, alt: false }, false, true)).map((match) => match[1]);
+    expect(labels.slice(0, 6)).toEqual(['Escape', 'Control C', 'Shift Tab', 'Up arrow', 'Down arrow', '1']);
+    expect(labels.filter((label) => label === 'Down arrow')).toHaveLength(1);
+    expect(labels).toEqual(expect.arrayContaining(['Left arrow', 'Right arrow']));
+  });
 });

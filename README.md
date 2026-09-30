@@ -30,7 +30,7 @@ the old working name "Phone Terminal" so existing installs keep working (see
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
-  for coding-agent prompts, plus a key bar with Esc, Tab, Ctrl, Alt and arrows.
+  for coding-agent prompts (Down sits next to Up while you type), plus a key bar with Esc, Tab, Ctrl, Alt and arrows.
 - **Snippets and project buttons.** Save prompts and commands you send often;
   send them with or without Enter. The same sheet shows the project's own
   commands (package.json scripts, Makefile targets, Cargo and Go) to run in a
