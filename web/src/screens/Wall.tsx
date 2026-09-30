@@ -268,7 +268,9 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
     droppedAt.current = performance.now();
     setDragging(undefined);
     setDragIds(undefined);
-    if (idsRef.current.join() !== current.before.join()) save(idsRef.current);
+    // A drag whose session ended saves nothing: only the others moved.
+    const moved = idsRef.current.includes(current.id) && idsRef.current.join() !== current.before.join();
+    if (moved) save(idsRef.current);
   };
 
   const move = (x: number, y: number) => {
@@ -403,7 +405,13 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
       </ul>
       <p className="visually-hidden" role="status">{announcement}</p>
       {shown.length > 1 && shown.some((session) => order.includes(session.id)) && (
-        <button type="button" className="link wall-reset" onClick={() => { setOrder([]); saveWallOrder([]); setAnnouncement('Default order'); }}>
+        <button type="button" className="link wall-reset" onClick={() => {
+          setOrder([]);
+          saveWallOrder([]);
+          setAnnouncement('Default order');
+          // The button goes away; keep keyboard focus on the Wall.
+          grid.current?.querySelector<HTMLButtonElement>('.wall-tile')?.focus();
+        }}>
           Reset order
         </button>
       )}
