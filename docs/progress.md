@@ -774,6 +774,26 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `GOOS=linux` and `GOOS=windows`. Windows runs the hook right after
   `ReadFile`/`WriteFile` (there is no shared lock there), which is no weaker
   than before; native Windows validation stays pending.
+- **Blocked Control footer covered through the real attach path** (#107,
+  `fix/issue-107`, 2026-09-30, test only): new
+  `TestAttachDesktopDropsKeyReadDuringBlockedControlFooter` in
+  `internal/cli/desktop_unix_test.go` runs `AttachDesktop` with `--control`
+  semantics against a disposable in-process broker (`/bin/cat` child) and a
+  real pty as the outer terminal. At the handoff drain (`desktopDrainEmpty`)
+  it stops the outer terminal's output (`tcflow` TCOOFF; macOS also needs
+  IXANY cleared and the queue filled) so the Control footer write blocks;
+  goroutine stacks confirm the write is in progress. A key typed then is read
+  during the block and never reaches the child; after output restarts and
+  "Control |" shows, a second key reaches the child; Ctrl+] detaches with no
+  error. No product code changed. Fail-proof: admitting at the start of the
+  footer write (`admit()` before `statusLocked`) fails it 10/10 on macOS and
+  10/10 on Linux (`key typed during the blocked Control footer reached the
+  child`). Evidence: `go test -race -count=50` of the test passes on macOS;
+  `-count=30` plus `go test -race ./internal/cli ./internal/desktop` pass on
+  Linux (`golang:1.27.1` in Docker, non-root user; as root the broker
+  correctly refuses the world-writable `/tmp`); `go test -race ./internal/cli
+  ./internal/desktop` and `./scripts/check` pass on macOS; `go vet
+  ./internal/cli/` passes for `GOOS=linux` and `GOOS=windows`.
 
 - **New PTY revoked by an older session's exit on macOS** (#100,
   `fix/issue-100`, 2026-09-30): `TestConcurrentResizeAndSize` failed twice in
