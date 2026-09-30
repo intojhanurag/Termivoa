@@ -11,6 +11,7 @@ This page lists what is new in each release.
 - **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines, then ask the agent about exactly those lines. See [Changes](/docs/guides/changes/#ask-about-specific-lines).
 - **Fix: Ctrl+] right after `pterm attach` connects.** Pressing Ctrl+] at the moment the desktop attach finished connecting was sometimes ignored. It now detaches in almost all cases; one rare remaining gap is tracked.
 - **Fix: finished sessions shown as lost.** A finished session is no longer shown as lost when the computer is busy. It shows its exit code.
+- **Fix: background jobs get their full cleanup time.** When a session ends, programs you started in the background get half a second to clean up. On a very busy computer most of that time could be used up before they were told to stop. The time now starts only after they are told.
 
 ## v0.1.0-beta.2 (2026-09-29) — private beta
 

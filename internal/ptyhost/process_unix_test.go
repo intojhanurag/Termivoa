@@ -212,7 +212,11 @@ func TestSessionJobsGetGracePeriod(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer process.Close()
-			job := `(trap 'sleep 0.1; echo ok > ` + marker + `; exit 0' HUP TERM; while :; do sleep 0.05; done) & echo JOB=$!=E""ND` + "\n"
+			// The job starts with the default hangup action. It signals through
+			// the FIFO once its trap is set, and only then does the shell print
+			// the job PID, so the test never ends the session before the trap.
+			armed := filepath.Join(filepath.Dir(marker), "armed")
+			job := `mkfifo ` + armed + `; (trap 'sleep 0.1; echo ok > ` + marker + `; exit 0' HUP TERM; echo > ` + armed + `; while :; do sleep 0.05; done) & read < ` + armed + `; echo JOB=$!=E""ND` + "\n"
 			if _, err := process.Write([]byte(job)); err != nil {
 				t.Fatal(err)
 			}

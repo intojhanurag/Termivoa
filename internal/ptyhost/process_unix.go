@@ -5,7 +5,7 @@ package ptyhost
 import (
 	"errors"
 	"os/exec"
-	"sync/atomic"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -16,9 +16,28 @@ const sessionPollInterval = 10 * time.Millisecond
 
 type platformProcessTree struct {
 	processGroupID int
-	// hangupAt is when the session was first asked to end, in Unix
-	// nanoseconds. Zero means no request yet. The grace period runs from it.
-	hangupAt *atomic.Int64
+	hangup         *sessionHangup
+}
+
+// sessionHangup asks the session to end once. The grace period runs from the
+// time its signals were sent, not from the request: listing the session can
+// take hundreds of milliseconds on a loaded machine, and that time must not
+// come out of the members' grace period.
+type sessionHangup struct {
+	once   sync.Once
+	sentAt time.Time
+	err    error
+}
+
+// send signals the session on the first call. Every call returns when those
+// signals were sent, waiting for a first call that is still sending.
+func (h *sessionHangup) send(sessionID int) (time.Time, error) {
+	h.once.Do(func() {
+		// Hang up first, as closing a real terminal does, then ask to terminate.
+		h.err = errors.Join(signalSession(sessionID, syscall.SIGHUP), signalSession(sessionID, syscall.SIGTERM))
+		h.sentAt = time.Now()
+	})
+	return h.sentAt, h.err
 }
 
 func configureCommand(cmd *exec.Cmd) {
@@ -34,7 +53,7 @@ func configureCommand(cmd *exec.Cmd) {
 }
 
 func attachProcessTree(cmd *exec.Cmd) (platformProcessTree, error) {
-	return platformProcessTree{processGroupID: cmd.Process.Pid, hangupAt: new(atomic.Int64)}, nil
+	return platformProcessTree{processGroupID: cmd.Process.Pid, hangup: new(sessionHangup)}, nil
 }
 
 func cleanupUnattachedProcess(cmd *exec.Cmd) (bool, error) {
@@ -43,9 +62,8 @@ func cleanupUnattachedProcess(cmd *exec.Cmd) (bool, error) {
 }
 
 func terminateProcessTree(tree platformProcessTree) error {
-	tree.hangupAt.CompareAndSwap(0, time.Now().UnixNano())
-	// Hang up first, as closing a real terminal does, then ask to terminate.
-	return errors.Join(signalSession(tree.processGroupID, syscall.SIGHUP), signalSession(tree.processGroupID, syscall.SIGTERM))
+	_, err := tree.hangup.send(tree.processGroupID)
+	return err
 }
 
 func forceTerminateProcessTree(tree platformProcessTree) error {
@@ -94,16 +112,14 @@ func signalProcessGroup(processGroupID int, signal syscall.Signal) error {
 // closeProcessTree runs after the session leader was reaped. Remaining session
 // members, such as background jobs, get the same grace period as a Terminate
 // request: they are hung up (unless Terminate already did), then killed when
-// they are still present once the grace period from the first request ends.
+// they are still present once the grace period after that hangup ends.
 func closeProcessTree(tree platformProcessTree) error {
 	// The leader's exit may already have caused the kernel to hang up the
 	// controlling terminal and remove the process group. Darwin can report
 	// EPERM while that teardown is in flight, so these are best-effort sweeps.
 	// Explicit cancellation and Terminate surface their signal errors.
-	if tree.hangupAt.Load() == 0 {
-		_ = terminateProcessTree(tree)
-	}
-	deadline := time.Unix(0, tree.hangupAt.Load()).Add(terminationGracePeriod)
+	sentAt, _ := tree.hangup.send(tree.processGroupID)
+	deadline := sentAt.Add(terminationGracePeriod)
 	for time.Now().Before(deadline) {
 		if members, err := sessionMembers(tree.processGroupID); err != nil || len(members) == 0 {
 			break
