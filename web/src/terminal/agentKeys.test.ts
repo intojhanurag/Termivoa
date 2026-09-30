@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_KEYS, sendAgentKey } from './agentKeys';
+import { AGENT_KEYS, DOWN_KEY, sendAgentKey } from './agentKeys';
 import { InputSender } from './InputSender';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
@@ -23,6 +23,12 @@ const envelope = (type: string, payload: object, inputSequence: string) => ({
 });
 
 describe('agent keys', () => {
+  it('send Down as a plain arrow, like Up, without the Ctrl/Alt latch', () => {
+    const { sent, target } = harness();
+    expect(sendAgentKey(target, DOWN_KEY)).toBe(true);
+    expect(sent).toEqual([envelope('input.key', { key: 'arrow-down', modifiers: none }, '1')]);
+  });
+
   it('send the exact protocol envelopes', () => {
     const { sent, target } = harness();
     for (const key of AGENT_KEYS) {
