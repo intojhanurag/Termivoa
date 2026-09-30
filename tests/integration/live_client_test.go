@@ -254,7 +254,9 @@ func startLiveBroker(t *testing.T, parent context.Context) (string, host.BrokerR
 	if err := persistence.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(parent)
+	// Cleanup, not parent's deadline, ends the broker, so a failure log can
+	// still read the managed session after the test context expired.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 	ready, done := make(chan host.BrokerReady, 1), make(chan error, 1)
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
