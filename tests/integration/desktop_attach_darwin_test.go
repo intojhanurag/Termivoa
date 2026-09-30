@@ -86,8 +86,11 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 	boot := fmt.Sprintf("BOOT_QUERY_OK pid=%d", initial.PID)
 	defer func() {
 		if t.Failed() {
-			frame, snapshotErr := managed.Snapshot(ctx)
-			t.Logf("synthetic child state: %v\n%s", snapshotErr, liveScreenText(frame))
+			// ctx has usually expired by now; the broker lives until cleanup.
+			logContext, cancelLog := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelLog()
+			frame, snapshotErr := managed.Snapshot(logContext)
+			t.Logf("synthetic child state: %v\n%s", snapshotErr, trimScreen(liveScreenText(frame)))
 		}
 	}()
 	waitLiveScreen(t, ctx, managed, boot)
@@ -95,7 +98,7 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 
 	// An exact-fit observer gets the complete grid, never takes control, and
 	// discards typing. A subsequent receipt proves ignored input never arrived.
-	observer := startOuterAttach(t, ctx, executable, append(args, created.Session.ID), 80, 24)
+	observer := startOuterAttach(t, ctx, "observer", executable, append(args, created.Session.ID), 80, 24)
 	observer.waitText(t, ctx, boot, true)
 	observer.assertRaw(t)
 	observer.write(t, ctx, "IGNORED\r\x1d")
@@ -107,13 +110,7 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 	}
 
 	controlArgs := append(append([]string(nil), args...), "--control", created.Session.ID)
-	controller := startOuterAttach(t, ctx, executable, controlArgs, 120, 40)
-	defer func() {
-		if t.Failed() {
-			frame, snapshotErr := controller.display.Snapshot(ctx)
-			t.Logf("synthetic outer state: %v\n%s", snapshotErr, liveScreenText(frame))
-		}
-	}()
+	controller := startOuterAttach(t, ctx, "controller", executable, controlArgs, 120, 40)
 	// The old 80x24 frame can briefly display Control before its requested
 	// resize snapshot starts. Require the footer on the final physical row:
 	// the replacement grid has then been painted and acknowledged.
@@ -149,7 +146,7 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 
 	// A second command explicitly takes control. The first becomes read-only;
 	// detaching it must preserve both the child and the new controller.
-	takeover := startOuterAttach(t, ctx, executable, controlArgs, 120, 40)
+	takeover := startOuterAttach(t, ctx, "takeover", executable, controlArgs, 120, 40)
 	takeover.waitStatus(t, ctx, "Control |")
 	controller.waitStatus(t, ctx, "Read-only |")
 	controller.write(t, ctx, "STALE\r\x1d")
@@ -165,7 +162,7 @@ func TestPtermDesktopAttachNativeOuterTTY(t *testing.T) {
 
 	// Fresh observer attachment restores the current screen, not replayed raw
 	// bytes or an automatically restarted shell. It does not reacquire a lease.
-	reconnected := startOuterAttach(t, ctx, executable, append(args, created.Session.ID), 120, 40)
+	reconnected := startOuterAttach(t, ctx, "reconnected", executable, append(args, created.Session.ID), 120, 40)
 	reconnected.waitText(t, ctx, liveReceipt(8, "TAKEOVER"), true)
 	reconnected.waitStatus(t, ctx, "Read-only |")
 	reconnected.write(t, ctx, "\x1d")
@@ -184,13 +181,20 @@ type outerAttach struct {
 	writer    *cli.FileTerminalWriter
 	display   *terminal.Core
 	displayMu sync.Mutex
+	output    []byte // Tail of raw PTY output, guarded by displayMu.
 	before    unix.Termios
+	started   time.Time
 	exited    chan struct{}
 	result    outerGuardianEvent // Published by closing exited.
+	exitedAt  time.Time          // Published by closing exited.
 	replies   atomic.Int64
 }
 
-func startOuterAttach(t *testing.T, ctx context.Context, executable string, args []string, columns, rows int) *outerAttach {
+// outerOutputTail bounds the raw output kept for a failure log. It is large
+// enough for a goroutine dump of the attach command.
+const outerOutputTail = 64 * 1024
+
+func startOuterAttach(t *testing.T, ctx context.Context, name, executable string, args []string, columns, rows int) *outerAttach {
 	t.Helper()
 	pty, err := xpty.NewUnixPty(columns, rows)
 	if err != nil {
@@ -211,7 +215,10 @@ func startOuterAttach(t *testing.T, ctx context.Context, executable string, args
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = writer.Close() })
-	display, err := terminal.New(ctx, terminal.Config{Columns: columns, Rows: rows})
+	// The display and its reader live until cleanup, not until ctx expires, so
+	// a failure log can still show the screen and late process output.
+	lifetime := context.WithoutCancel(ctx)
+	display, err := terminal.New(lifetime, terminal.Config{Columns: columns, Rows: rows})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +230,7 @@ func startOuterAttach(t *testing.T, ctx context.Context, executable string, args
 			outer.replies.Add(1) // Never forward these to the outer PTY or child.
 		}
 	}()
-	readContext, stopReader := context.WithCancel(ctx)
+	readContext, stopReader := context.WithCancel(lifetime)
 	readDone := make(chan error, 1)
 	go func() {
 		buffer := make([]byte, 32*1024)
@@ -231,6 +238,10 @@ func startOuterAttach(t *testing.T, ctx context.Context, executable string, args
 			n, readErr := reader.ReadContext(readContext, buffer)
 			if n > 0 {
 				outer.displayMu.Lock()
+				outer.output = append(outer.output, buffer[:n]...)
+				if len(outer.output) > outerOutputTail {
+					outer.output = outer.output[len(outer.output)-outerOutputTail:]
+				}
 				writeErr := display.WriteOutput(readContext, buffer[:n])
 				outer.displayMu.Unlock()
 				if writeErr != nil {
@@ -278,6 +289,7 @@ func startOuterAttach(t *testing.T, ctx context.Context, executable string, args
 	if err := pty.Start(outer.command); err != nil {
 		t.Fatal(err)
 	}
+	outer.started = time.Now()
 	_ = statusWrite.Close()
 	_ = releaseRead.Close()
 	guardianDone := make(chan error, 1)
@@ -293,6 +305,7 @@ func startOuterAttach(t *testing.T, ctx context.Context, executable string, args
 		if err := decoder.Decode(&outer.result); err != nil {
 			outer.result = outerGuardianEvent{ExitCode: -1, Error: err.Error()}
 		}
+		outer.exitedAt = time.Now()
 		close(outer.exited)
 	}()
 	t.Cleanup(func() {
@@ -343,7 +356,78 @@ func startOuterAttach(t *testing.T, ctx context.Context, executable string, args
 	case <-ctx.Done():
 		t.Fatal("outer guardian startup: ", ctx.Err())
 	}
+	// Runs before the cleanups above kill the command and stop the reader.
+	t.Cleanup(func() {
+		if t.Failed() {
+			outer.logFailure(t, name)
+		}
+	})
 	return outer
+}
+
+// logFailure reports the attach command's exit status, its screen, and its
+// raw output (stdout and stderr share the outer PTY). A command that is still
+// running gets SIGQUIT, so the output ends with its goroutine dump.
+func (outer *outerAttach) logFailure(t *testing.T, name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	running := true
+	select {
+	case <-outer.exited:
+		running = false
+		if outer.result.ExitCode == 0 && outer.result.Error == "" {
+			t.Logf("%s attach exited cleanly %v after start", name, outer.exitedAt.Sub(outer.started).Round(time.Millisecond))
+			return
+		}
+	default:
+	}
+	status := "exited"
+	var frame terminal.Frame
+	var err error
+	if running {
+		// Take the screen first: the attach turned line wrap off, so the
+		// goroutine dump would overwrite the last column of every row.
+		frame, err = outer.display.Snapshot(ctx)
+		status = "was still running at the failure"
+		if outer.target != nil && outer.target.Signal(syscall.SIGQUIT) == nil {
+			status += "; sent SIGQUIT, then exited"
+		}
+	}
+	select {
+	case <-outer.exited:
+		status += fmt.Sprintf(" %v after start: %#v", outer.exitedAt.Sub(outer.started).Round(time.Millisecond), outer.result)
+	case <-ctx.Done():
+		status += "; did not exit"
+	}
+	time.Sleep(200 * time.Millisecond) // Let the reader take output written just before exit.
+	if !running {
+		frame, err = outer.display.Snapshot(ctx)
+	}
+	outer.displayMu.Lock()
+	output := visibleControls(outer.output)
+	outer.displayMu.Unlock()
+	t.Logf("%s attach %s\n--- %s screen (%v):\n%s--- %s raw output tail:\n%s\n--- end %s", name, status, name, err, trimScreen(liveScreenText(frame)), name, output, name)
+}
+
+// visibleControls shows raw terminal output in a log: ESC as \e, other C0
+// controls and DEL as \xNN. Newlines and tabs stay; CRs before LF are dropped
+// (output processing turns a CRLF written before raw mode into CR CR LF).
+func visibleControls(data []byte) string {
+	raw := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r\n", "\n")
+	var text strings.Builder
+	for _, b := range []byte(raw) {
+		switch {
+		case b == '\n' || b == '\t':
+			text.WriteByte(b)
+		case b == 0x1b:
+			text.WriteString(`\e`)
+		case b < 0x20 || b == 0x7f:
+			fmt.Fprintf(&text, `\x%02x`, b)
+		default:
+			text.WriteByte(b)
+		}
+	}
+	return text.String()
 }
 
 func (outer *outerAttach) write(t *testing.T, ctx context.Context, data string) {
@@ -461,4 +545,13 @@ func waitOuterWrappedReceipt(t *testing.T, ctx context.Context, managed broker.M
 		// terminal. Join normalized rows only for this synthetic receipt check.
 		return err == nil && strings.Contains(strings.ReplaceAll(liveScreenText(frame), "\n", ""), expected)
 	})
+}
+
+// trimScreen drops trailing blanks so a failure log shows only painted text.
+func trimScreen(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " ")
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n") + "\n"
 }
