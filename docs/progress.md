@@ -846,6 +846,17 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   without a move, Alt+Left on the first tile and a release off the tiles
   (18/18 pass).
 
+- **Down next to Up in the keyboard-up key row** (`feat/compact-down-key`,
+  2026-09-30): the owner had to hide the keyboard to reach `↓`, because the
+  scrolling row put it at about key 13. The compact row now inserts
+  `DOWN_KEY` (an agent key, no latch, like `↑`) after `↑` and drops the arrow
+  row's `↓`; the full dock is unchanged. Evidence: `pnpm --dir web test`
+  (new Live test: order and a single Down), `./scripts/check`, and a headless
+  Chrome run on an isolated `pterm up --dev` stack (390x844, viewport cut to
+  480 px to open the keyboard row, session running `cat -v`): `↓` is key 5,
+  on screen (right edge 245 px), once, and ↑ ↓ ↓ Enter printed
+  `^[[A^[[B^[[B`.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

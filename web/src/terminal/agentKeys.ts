@@ -41,6 +41,12 @@ export const AGENT_KEYS: ReadonlyArray<AgentKey> = [
   { id: 'enter', glyph: '⏎', name: 'Enter', tone: 'enter', weight: 1.2, action: key('enter') },
 ];
 
+/**
+ * Down arrow as an agent key. Only the keyboard-up row shows it, next to ↑,
+ * because that row scrolls and the arrow row's ↓ would be out of reach.
+ */
+export const DOWN_KEY: AgentKey = { id: 'down', glyph: '↓', name: 'Down arrow', weight: 1, action: key('arrow-down') };
+
 export interface KeyTarget {
   sendKey(key: KeyName, modifiers: Modifiers, character?: string): boolean;
   sendText(text: string): boolean;

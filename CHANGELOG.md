@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Down arrow next to Up while typing (phone side): with the keyboard open, the
+  one-row key bar now shows `↓` right after `↑`, so both arrows are in reach
+  without scrolling the row or hiding the keyboard. The row's second `↓`
+  (after `←`) is gone. Like `↑`, it ignores the Ctrl/Alt latch. No host-side
+  change.
 - Arrange the Wall on the phone: hold a tile for a moment, then drag it to a
   new place. The other tiles move out of the way, and dragging to the top or
   bottom edge scrolls the page. The order is saved on this device only

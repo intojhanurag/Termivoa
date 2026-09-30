@@ -33,7 +33,7 @@ With control, the dock under the terminal has:
 - **Actions:** **type** opens the phone keyboard, **compose**, **snips** and **history**.
 - **changes** shows the files the agent changed and their diffs. See [Changes](/docs/guides/changes/).
 
-When the keyboard is open, all keys fold into one row that scrolls. The terminal keeps its size, so full-screen agents do not redraw.
+When the keyboard is open, all keys fold into one row that scrolls. `↓` is right after `↑` in that row, so you can use both without hiding the keyboard. The terminal keeps its size, so full-screen agents do not redraw.
 
 ## Compose
 

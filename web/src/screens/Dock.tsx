@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { KeyName } from '../generated/protocol';
-import { AGENT_KEYS, type AgentKey } from '../terminal/agentKeys';
+import { AGENT_KEYS, DOWN_KEY, type AgentKey } from '../terminal/agentKeys';
 import type { ConnectionStatus } from '../terminal/Connection';
 
 /** A keycap that never takes focus from the input textarea, so the keyboard stays up. */
@@ -56,7 +56,10 @@ export function CockpitDock({
   readonly onChanges: () => void;
   readonly onHideKeyboard: () => void;
 }) {
-  const agentKeys = AGENT_KEYS.map((key) => (
+  // With the keyboard up the row scrolls, so ↓ sits next to ↑ and leaves the arrows.
+  const shownAgentKeys = compact ? AGENT_KEYS.flatMap((key) => (key.id === 'up' ? [key, DOWN_KEY] : [key])) : AGENT_KEYS;
+  const arrows = compact ? MODIFIER_ARROWS.filter(([name]) => name !== 'arrow-down') : MODIFIER_ARROWS;
+  const agentKeys = shownAgentKeys.map((key) => (
     <KeyButton
       key={key.id}
       label={key.name}
@@ -74,7 +77,7 @@ export function CockpitDock({
       <KeyButton label="Tab" disabled={disabled} onPress={() => onKey('tab')}>tab</KeyButton>
       <KeyButton label="Control modifier" disabled={disabled} pressed={latched.ctrl} onPress={() => onLatch('ctrl')}>ctrl</KeyButton>
       <KeyButton label="Alt modifier" disabled={disabled} pressed={latched.alt} onPress={() => onLatch('alt')}>alt</KeyButton>
-      {MODIFIER_ARROWS.map(([name, glyph, label]) => (
+      {arrows.map(([name, glyph, label]) => (
         <KeyButton key={name} label={label} disabled={disabled} weight={0.8} onPress={() => onKey(name)}>{glyph}</KeyButton>
       ))}
       {alternate && (
