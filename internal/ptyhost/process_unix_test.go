@@ -313,9 +313,9 @@ func TestCloseKeepsSlaveOpenUntilChildIsReaped(t *testing.T) {
 	if err := process.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	// Closing the master hangs up the child, whose exit may already have
-	// revoked the slave; only a closed file means Close released it.
-	if _, err := slave.Stat(); errors.Is(err, os.ErrClosed) {
+	// Closing the master hangs up the child, which may exit and be reaped
+	// before this check; then Close correctly released the slave.
+	if _, err := slave.Stat(); errors.Is(err, os.ErrClosed) && !process.Exited() {
 		t.Fatal("slave closed before the child was reaped")
 	}
 

@@ -784,7 +784,8 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `Process.Close` closed master and slave together, so when it ran before the
   child was reaped (in the tests, a cleanup whose 1 s `Terminate` ran out,
   in this or another parallel test binary), the PTY number was freed, the
-  next `Start` got the same `/dev/ttysNNN`, and the late revoke killed it: `TIOCSCTTY` in the child failed with `EBADF`, or
+  next `Start` got the same `/dev/ttysNNN`, and the late revoke killed it:
+  `TIOCSCTTY` in the child failed with `EBADF`, or
   the new session started with a dead terminal (the parent's slave copy
   answered `TIOCGWINSZ` with `ENOTTY`). `Close` now closes the master at once
   and the slave only after the child is reaped, so the PTY stays allocated
@@ -796,6 +797,10 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   in 3,060 runs before or after the fix (6 x `-test.count=100` and 4 x
   full-package `-test.count=3` binaries, 5 rounds, with `go test ./...`
   load). New `TestCloseKeepsSlaveOpenUntilChildIsReaped` fails before the fix.
+  Only tests hit this: the broker, the one caller of `ptyhost.Start`, calls
+  `Close` after the reap. Review: the new test first failed 28/6,000 under
+  load when the hung-up child was reaped before its check; it now accepts a
+  closed slave after `Exited()`, 0/6,000.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
