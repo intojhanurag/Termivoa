@@ -733,6 +733,24 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   through a test hook exactly when the drain finds the queue empty; with the
   old drain-then-flush order it fails (`""`, deadline exceeded), and it passes
   200/200 with the fix.
+- **Desktop attach flake closed** (#68, `fix/issue-68`, 2026-09-30): with the
+  readable failure logs from #91 and the #90 fix, 8 parallel copies of the
+  test binary (`-test.count=40`) plus a looped `go test ./... -p 16` failed
+  1 of 320: the observer exited with status 1 and printed `pterm: desktop:
+  connect terminal: context canceled` / `liveclient: connection closed`
+  after its Ctrl+] arrived while it was still connecting. Cause: canceling
+  the connection ends the client context at once, but `stop` records the
+  reason later from an `AfterFunc` goroutine; a snapshot acknowledgement
+  written in between got `ErrClosed` from `closedError()`, the painter
+  recorded that as the close reason, and `Close` joined it to the
+  cancellation. `closedError()` now returns the parent's cancellation; the new
+  `TestClosedErrorReportsParentCancellationBeforeStop` fails before the fix.
+  The test also runs the freshly built `pterm` once before its deadline (as
+  #94 did): that first run took 0.27–9.2 s (median 0.8 s, p99 8.3 s) in 320
+  stressed runs. The activate-before-admit gap was checked and is not a cause
+  here: widening it by 50 ms fails the test 5/5 at the `CONTROL` receipt, a
+  failure never seen in 800 stressed runs. After the fix: 0 failures in 320
+  (8 × 40) and 480 (8 × 60) runs of the same stress.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

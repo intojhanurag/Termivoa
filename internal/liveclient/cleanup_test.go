@@ -71,6 +71,27 @@ func TestCloseIgnoresPureOutputCancellationAfterShutdown(t *testing.T) {
 	}
 }
 
+// A detach cancels the parent while the painter may still be writing its
+// snapshot acknowledgement. Before stop records the cancellation, that write
+// must report it, not ErrClosed: Close then returned "connection closed" and
+// pterm attach exited 1 on a normal startup Ctrl+] (#68).
+func TestClosedErrorReportsParentCancellationBeforeStop(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	ctx, stop := context.WithCancel(parent)
+	defer stop()
+	client := &Client{parent: parent, ctx: ctx}
+	cancel() // No AfterFunc is registered, so stop has not run.
+	if err := client.closedError(); err != context.Canceled {
+		t.Fatalf("closed by parent cancellation: %v", err)
+	}
+	closed, closeClient := context.WithCancel(context.Background())
+	closeClient()
+	client = &Client{parent: context.Background(), ctx: closed}
+	if err := client.closedError(); err != ErrClosed {
+		t.Fatalf("closed without a reason: %v", err)
+	}
+}
+
 func TestOnlyContextCancellation(t *testing.T) {
 	failure := errors.New("synthetic cleanup failure")
 	for _, testCase := range []struct {

@@ -47,6 +47,13 @@ All notable changes are documented here. The format follows
   unscanned. The handoff now reads the queued input until it is empty and
   scans all of it, instead of flushing; a key that arrives later goes to live
   input, which detaches on Ctrl+]. No phone-side change (#90).
+- Desktop attach (host side): Ctrl+] pressed while `pterm attach` was still
+  connecting could print `pterm: desktop: connect terminal: context canceled`
+  and `liveclient: connection closed` and exit with status 1, although the
+  detach worked and the session kept running. When the attach canceled its
+  connection, a screen acknowledgement still being sent reported a false
+  "connection closed" before the cancellation was recorded. It now reports
+  the cancellation, so the detach exits cleanly. No phone-side change (#68).
 
 ## [0.1.0-beta.2] - 2026-09-29
 
