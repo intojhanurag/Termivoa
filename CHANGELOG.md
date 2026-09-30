@@ -63,6 +63,14 @@ All notable changes are documented here. The format follows
   steps run under the same terminal I/O lock, so a key read before the footer
   is always dropped and a key read after it is always sent. Nothing is queued.
   No phone-side change (#104).
+- PTY hardening on macOS (host side): `ptyhost` now keeps its end of a
+  session's terminal open until the program has fully exited. macOS takes the
+  terminal away from an exiting program at the very end of its exit; if both
+  ends were already closed, macOS could give the same terminal to the next
+  session first, which then failed with `fork/exec ...: bad file descriptor`
+  or started with a dead terminal. Termivoa's broker already closed a
+  terminal only after its program exited, so this mainly fixes a flaky test
+  and guards future callers. No phone-side change (#100).
 
 ## [0.1.0-beta.2] - 2026-09-29
 
