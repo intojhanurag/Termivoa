@@ -174,8 +174,12 @@ interface Drag {
   y: number;
   timer?: number;
   scroll?: number | undefined;
+  /** Removes the window listeners that follow this pointer. */
+  release?: () => void;
   /** Set when the hold ends and the tile starts to move. */
   li?: HTMLLIElement;
+  /** The order when the tile started to move; an unchanged order is not saved. */
+  before: ReadonlyArray<string>;
   grabX: number;
   grabY: number;
   /** The page's scroll end before the tile moved; the moving tile would stretch it. */
@@ -196,10 +200,11 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
   // The live order while a tile moves; saved when it is dropped.
   const [dragIds, setDragIds] = useState<string[]>();
   const [dragging, setDragging] = useState<string>();
+  const [announcement, setAnnouncement] = useState('');
   const grid = useRef<HTMLUListElement>(null);
   const drag = useRef<Drag>(undefined);
   const idsRef = useRef<string[]>([]);
-  const droppedAt = useRef(0);
+  const droppedAt = useRef(Number.NEGATIVE_INFINITY);
   const ordered = orderTiles(shown, order);
   const tiles = dragIds === undefined ? ordered : orderTiles(shown, dragIds);
   const ids = tiles.map((session) => session.id);
@@ -239,13 +244,10 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
     const current = drag.current;
     const page = grid.current?.closest('.page');
     if (current?.li === undefined || page === null || page === undefined) return;
-    const step = current.y < EDGE_PX ? -SCROLL_STEP_PX : current.y > window.innerHeight - EDGE_PX ? SCROLL_STEP_PX : 0;
-    if (step === 0) {
-      current.scroll = undefined;
-      return;
-    }
+    const box = page.getBoundingClientRect();
+    const step = current.y < box.top + EDGE_PX ? -SCROLL_STEP_PX : current.y > box.bottom - EDGE_PX ? SCROLL_STEP_PX : 0;
     const next = Math.min(current.maxScroll, Math.max(0, page.scrollTop + step));
-    if (next === page.scrollTop) {
+    if (step === 0 || next === page.scrollTop) {
       current.scroll = undefined;
       return;
     }
@@ -254,12 +256,61 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
     current.scroll = requestAnimationFrame(edgeScroll);
   };
 
+  const end = () => {
+    const current = drag.current;
+    drag.current = undefined;
+    if (current === undefined) return;
+    current.release?.();
+    window.clearTimeout(current.timer);
+    if (current.scroll !== undefined) cancelAnimationFrame(current.scroll);
+    if (current.li === undefined) return;
+    current.li.style.transform = '';
+    droppedAt.current = performance.now();
+    setDragging(undefined);
+    setDragIds(undefined);
+    if (idsRef.current.join() !== current.before.join()) save(idsRef.current);
+  };
+
+  const move = (x: number, y: number) => {
+    const current = drag.current;
+    if (current === undefined) return;
+    current.x = x;
+    current.y = y;
+    if (current.li === undefined) {
+      // Moved before the hold ended: a scroll, not a drag.
+      if (Math.hypot(x - current.startX, y - current.startY) > SLOP_PX) end();
+      return;
+    }
+    follow();
+    if (current.scroll === undefined) current.scroll = requestAnimationFrame(edgeScroll);
+  };
+
+  // Window listeners call the handlers of the latest render.
+  const handlers = useRef({ move, end });
+
   const start = (event: PointerEvent<HTMLButtonElement>, id: string) => {
     if (drag.current !== undefined || (event.pointerType === 'mouse' && event.button !== 0)) return;
-    const button = event.currentTarget;
-    const li = button.closest('li');
+    const li = event.currentTarget.closest('li');
     const current: Drag = {
-      id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, grabX: 0, grabY: 0, maxScroll: 0,
+      id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
+      before: [], grabX: 0, grabY: 0, maxScroll: 0,
+    };
+    // The window, not the tile, follows the pointer: moving the tile in the
+    // list can drop the tile's pointer capture, and a release off the tiles
+    // must still end the drag.
+    const onMove = (next: globalThis.PointerEvent) => {
+      if (next.pointerId === current.pointerId) handlers.current.move(next.clientX, next.clientY);
+    };
+    const onEnd = (next: globalThis.PointerEvent) => {
+      if (next.pointerId === current.pointerId) handlers.current.end();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    current.release = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
     };
     current.timer = window.setTimeout(() => {
       if (drag.current !== current || li === null) return;
@@ -268,12 +319,8 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
       current.grabY = current.y - box.top;
       const page = li.closest('.page');
       current.maxScroll = page === null ? 0 : page.scrollHeight - page.clientHeight;
+      current.before = idsRef.current;
       current.li = li;
-      try {
-        button.setPointerCapture(current.pointerId);
-      } catch {
-        // The pointer already ended; pointerup cleans up.
-      }
       setDragIds(idsRef.current);
       setDragging(id);
       navigator.vibrate?.(10);
@@ -281,46 +328,25 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
     drag.current = current;
   };
 
-  const end = () => {
-    const current = drag.current;
-    drag.current = undefined;
-    if (current === undefined) return;
-    window.clearTimeout(current.timer);
-    if (current.scroll !== undefined) cancelAnimationFrame(current.scroll);
-    if (current.li === undefined) return;
-    current.li.style.transform = '';
-    droppedAt.current = performance.now();
-    setDragging(undefined);
-    setDragIds(undefined);
-    save(idsRef.current);
-  };
-
-  const move = (event: PointerEvent<HTMLButtonElement>) => {
-    const current = drag.current;
-    if (current === undefined || event.pointerId !== current.pointerId) return;
-    current.x = event.clientX;
-    current.y = event.clientY;
-    if (current.li === undefined) {
-      // Moved before the hold ended: a scroll, not a drag.
-      if (Math.hypot(current.x - current.startX, current.y - current.startY) > SLOP_PX) end();
-      return;
-    }
-    follow();
-    if (current.scroll === undefined) current.scroll = requestAnimationFrame(edgeScroll);
-  };
-
-  const keyMove = (event: KeyboardEvent<HTMLButtonElement>, id: string) => {
+  const keyMove = (event: KeyboardEvent<HTMLButtonElement>, session: BrokerRPCSessionRecord) => {
     const step = !event.altKey ? 0
       : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1
         : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : 0;
-    const from = ids.indexOf(id);
-    if (step === 0 || from + step < 0 || from + step >= ids.length) return;
+    if (step === 0) return;
+    // Alt+arrow also means Back and Forward in the browser; never leave the Wall.
     event.preventDefault();
-    save(moveTile(ids, from, from + step));
+    const from = ids.indexOf(session.id);
+    const to = from + step;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    save(moveTile(ids, from, to));
+    setAnnouncement(`${sessionName(session)} moved to place ${to + 1} of ${ids.length}`);
   };
 
   useLayoutEffect(() => {
     idsRef.current = ids;
+    handlers.current = { move, end };
+    // The moving tile's session ended: drop the drag.
+    if (drag.current?.li !== undefined && !ids.includes(drag.current.id)) end();
     place();
   });
 
@@ -334,8 +360,11 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
     list.addEventListener('touchmove', hold, { passive: false });
     return () => {
       list.removeEventListener('touchmove', hold);
-      window.clearTimeout(drag.current?.timer);
-      if (drag.current?.scroll !== undefined) cancelAnimationFrame(drag.current.scroll);
+      const current = drag.current;
+      drag.current = undefined;
+      current?.release?.();
+      window.clearTimeout(current?.timer);
+      if (current?.scroll !== undefined) cancelAnimationFrame(current.scroll);
     };
   }, []);
 
@@ -352,19 +381,16 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
                 type="button"
                 className={badge?.tone === 'amber' ? 'wall-tile asking' : 'wall-tile'}
                 aria-label={tileLabel(session, fresh)}
-                aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+                aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
                 onClick={() => {
                   // A drop ends with a click on the tile; it must not open it.
                   if (performance.now() - droppedAt.current > 400) onOpen(session);
                 }}
                 onPointerDown={(event) => start(event, session.id)}
-                onPointerMove={move}
-                onPointerUp={end}
-                onPointerCancel={end}
                 onContextMenu={(event) => {
                   if (drag.current !== undefined) event.preventDefault();
                 }}
-                onKeyDown={(event) => keyMove(event, session.id)}
+                onKeyDown={(event) => keyMove(event, session)}
               >
                 <span className="wall-name">{sessionName(session)}</span>
                 <MiniTerminal session={session} />
@@ -375,8 +401,9 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
           );
         })}
       </ul>
-      {order.length > 0 && shown.length > 1 && (
-        <button type="button" className="link wall-reset" onClick={() => { setOrder([]); saveWallOrder([]); }}>
+      <p className="visually-hidden" role="status">{announcement}</p>
+      {shown.length > 1 && shown.some((session) => order.includes(session.id)) && (
+        <button type="button" className="link wall-reset" onClick={() => { setOrder([]); saveWallOrder([]); setAnnouncement('Default order'); }}>
           Reset order
         </button>
       )}
