@@ -102,17 +102,29 @@ func (display *desktopDisplay) status(ctx context.Context) error {
 // The live decoder already drains gated input. Nothing is flushed or reset
 // after the final status is written; admission begins before releasing this
 // display lock so another paint cannot advertise a premature ready footer.
+// An owned terminal writer admits at the footer's last byte, not after the
+// write returns: a key read in between would otherwise be dropped (#104).
+// A key read while the footer write is still blocked stays dropped. A write
+// that fails after its last byte (a cancellation) still ends the attachment.
 func (display *desktopDisplay) activate(ctx context.Context, admit func()) error {
 	display.mu.Lock()
 	defer display.mu.Unlock()
 	display.controlPending = false
-	if err := display.statusLocked(ctx); err != nil {
+	admit = sync.OnceFunc(admit)
+	if err := display.statusLocked(withTerminalIOHook(ctx, admit)); err != nil {
 		display.controlPending = true
 		return err
 	}
-	admit()
+	if desktopReadyFooterWritten != nil {
+		desktopReadyFooterWritten()
+	}
+	admit() // No footer was needed, or the writer has no I/O hook.
 	return nil
 }
+
+// desktopReadyFooterWritten, when set by a test, runs after the ready footer
+// write returns and before activate returns.
+var desktopReadyFooterWritten func()
 
 func (display *desktopDisplay) statusLocked(ctx context.Context) error {
 	footer, err := display.footerLocked()

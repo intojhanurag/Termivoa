@@ -54,6 +54,15 @@ All notable changes are documented here. The format follows
   connection, a screen acknowledgement still being sent reported a false
   "connection closed" before the cancellation was recorded. It now reports
   the cancellation, so the detach exits cleanly. No phone-side change (#68).
+- Desktop attach with `--control` (host side): a key typed just as the footer
+  changed to "Control" could be lost, because input was admitted only after
+  the footer write returned. The other way round, a key typed while the
+  footer still said "Syncing" could reach the program if the input reader was
+  slow to tag it. Input is now admitted at the footer's last written byte,
+  and each key is checked at the moment it is read. On macOS and Linux both
+  steps run under the same terminal I/O lock, so a key read before the footer
+  is always dropped and a key read after it is always sent. Nothing is queued.
+  No phone-side change (#104).
 
 ## [0.1.0-beta.2] - 2026-09-29
 

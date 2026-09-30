@@ -79,7 +79,13 @@ func readConfirmationInput(ctx context.Context, handle terminalFileHandle, data 
 		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
-		n, err := nonblockingTerminalIO(handle, func(fd int) (int, error) { return unix.Read(fd, data) })
+		n, err := nonblockingTerminalIO(handle, func(fd int) (int, error) {
+			n, err := unix.Read(fd, data)
+			if n > 0 {
+				runTerminalIOHook(ctx)
+			}
+			return n, err
+		})
 		if errors.Is(err, errTerminalIORestore) {
 			return 0, err
 		}

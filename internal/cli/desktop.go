@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/term"
 	"github.com/intojhanurag/phone-terminal/internal/desktop"
 	"github.com/intojhanurag/phone-terminal/internal/liveclient"
@@ -123,7 +124,7 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 		return err
 	}
 	admission := &desktopAdmission{}
-	events, err := desktop.NewAdmittedInput(reader, os.Getenv("TERM"), admission.epoch)
+	events, err := newDesktopLiveInput(reader, os.Getenv("TERM"), admission)
 	if err != nil {
 		return err
 	}
@@ -243,6 +244,35 @@ func finishDesktopStartup(ctx context.Context, client interface{ WaitReady(conte
 type desktopAdmission struct {
 	enabled atomic.Bool
 	client  desktopConnection
+}
+
+// newDesktopLiveInput tags each read with the admission its own read saw, not
+// the admission when the decoder asks afterwards. Activate admits at the
+// footer's last byte under the same terminal I/O lock, so a key read before
+// the Control footer is written is never admitted, and one read after it is.
+func newDesktopLiveInput(input uv.ContextReader, terminalType string, admission *desktopAdmission) (*desktop.BoundedInput, error) {
+	live := &desktopLiveInput{input: input, admission: admission}
+	return desktop.NewAdmittedInput(live, terminalType, live.epoch)
+}
+
+type desktopLiveInput struct {
+	input     uv.ContextReader
+	admission *desktopAdmission
+	// Written by ReadContext and read by epoch. The decoder calls both, in
+	// that order, from its one read goroutine.
+	admitted bool
+}
+
+func (live *desktopLiveInput) ReadContext(ctx context.Context, data []byte) (int, error) {
+	live.admitted = false
+	return live.input.ReadContext(withTerminalIOHook(ctx, func() { live.admitted = live.admission.enabled.Load() }), data)
+}
+
+func (live *desktopLiveInput) epoch() uint64 {
+	if !live.admitted {
+		return 0
+	}
+	return live.admission.epoch()
 }
 
 func (admission *desktopAdmission) epoch() uint64 {

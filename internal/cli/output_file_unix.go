@@ -17,7 +17,13 @@ func writeTerminalOutput(ctx context.Context, handle terminalFileHandle, data []
 		if err := ctx.Err(); err != nil {
 			return written, err
 		}
-		n, err := nonblockingTerminalIO(handle, func(fd int) (int, error) { return unix.Write(fd, data[written:]) })
+		n, err := nonblockingTerminalIO(handle, func(fd int) (int, error) {
+			n, err := unix.Write(fd, data[written:])
+			if n == len(data)-written {
+				runTerminalIOHook(ctx)
+			}
+			return n, err
+		})
 		if n > 0 {
 			written += n
 		}
