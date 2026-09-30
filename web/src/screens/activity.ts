@@ -8,10 +8,10 @@ export const VIEWED_KEY = 'pterm.lastViewed';
 export const WORKED_KEY = 'pterm.lastWorked';
 const MAX_VIEWED = 100;
 
-type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
+export type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 type SessionRef = Pick<BrokerRPCSessionRecord, 'id' | 'generation' | 'lastOutputAt' | 'agent'>;
 
-function storage(): StorageLike | undefined {
+export function storage(): StorageLike | undefined {
   try {
     return globalThis.localStorage;
   } catch {

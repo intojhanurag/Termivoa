@@ -253,8 +253,11 @@ textarea {
 
 /* Wall: every running session as a small live screen. Tiles only watch; a tap opens the session. */
 .page.wall { max-width: 72rem; }
-.wall-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.wall-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; height: 100%; padding: 10px; border-color: var(--line); border-radius: 14px; background: var(--surface); text-align: left; }
+.wall-grid { position: relative; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.wall-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; height: 100%; padding: 10px; border-color: var(--line); border-radius: 14px; background: var(--surface); text-align: left; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.wall-grid li.dragging { position: relative; z-index: 2; }
+.wall-grid li.dragging .wall-tile { border-color: var(--text); box-shadow: 0 12px 32px rgb(0 0 0 / 35%); transform: scale(1.04); }
+.wall-reset { align-self: flex-start; }
 .wall-tile.asking { border-color: var(--amber); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 45%, transparent); }
 .wall-name { max-width: 100%; font-size: 15px; font-weight: 700; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The grid is drawn at full size, scaled to the tile's width from its top-left corner, and moved up to keep the cursor row in view. */

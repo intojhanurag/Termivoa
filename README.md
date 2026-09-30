@@ -27,7 +27,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **Many live sessions.** Start shells or coding agents on your computer and
   switch between them with tabs. A dot shows new output.
 - **Wall.** Watch all running sessions at once as small live screens, with
-  waiting agents first. Tiles only watch; tap one to open it.
+  waiting agents first. Tiles only watch; tap one to open it, or hold and
+  drag it to arrange the Wall your way.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
   for coding-agent prompts, plus a key bar with Esc, Tab, Ctrl, Alt and arrows.
 - **Snippets and project buttons.** Save prompts and commands you send often;
