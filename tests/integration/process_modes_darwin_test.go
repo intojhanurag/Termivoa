@@ -58,6 +58,13 @@ func TestPtermBrokerAndGatewayExecutableModesRestartIndependently(t *testing.T) 
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build pterm: %v\n%s", err, output)
 	}
+	// On macOS the first exec of a newly built binary can wait many seconds
+	// at _dyld_start while the system checks it, longer under heavy load (see
+	// docs/evidence/p3/pty-fixture-activation.md). Pay that cost here, before
+	// the broker handshake and gateway health deadlines start.
+	if output, err := exec.Command(pterm, "help").CombinedOutput(); err != nil {
+		t.Fatalf("first run of pterm: %v\n%s", err, output)
+	}
 
 	brokerProcess := startCommand(t, pterm,
 		"__broker", "--dev", "--data-dir", dataDir, "--runtime-dir", runtimeDir)
