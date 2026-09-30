@@ -1,15 +1,24 @@
 import '@xterm/xterm/css/xterm.css';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from 'react';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { Connection, INITIAL_STATUS } from '../terminal/Connection';
 import { TerminalView } from '../terminal/TerminalView';
-import { agentBadge, hasNewOutput, readViewed, since } from './activity';
+import { agentBadge, hasNewOutput, readViewed, since, storage, type StorageLike, type ViewedTimes } from './activity';
 import { sessionName } from './folder';
 import { websocketUrl } from './hooks';
 import { StatusPill } from './Sessions';
 
 /** Tiles draw at this font size, then shrink to fit the tile. */
 export const TILE_FONT = 12;
+/** This device's tile order, as session ids. Not secret. */
+export const WALL_ORDER_KEY = 'pterm.wallOrder';
+const MAX_ORDER = 100;
+/** A tile moves after a finger holds it this long; a move before that scrolls. */
+const HOLD_MS = 300;
+const SLOP_PX = 8;
+/** Dragging this close to the top or bottom edge scrolls the page. */
+const EDGE_PX = 56;
+const SCROLL_STEP_PX = 10;
 
 const noSubscribe = () => () => undefined;
 const initialStatus = () => INITIAL_STATUS;
@@ -26,6 +35,45 @@ const rank = (session: BrokerRPCSessionRecord) => {
 export function wallSessions(sessions: ReadonlyArray<BrokerRPCSessionRecord>): { shown: BrokerRPCSessionRecord[]; ended: number } {
   const shown = sessions.filter((session) => !ended(session)).sort((a, b) => rank(a) - rank(b));
   return { shown, ended: sessions.length - shown.length };
+}
+
+export function readWallOrder(store: StorageLike | undefined = storage()): string[] {
+  try {
+    const parsed: unknown = JSON.parse(store?.getItem(WALL_ORDER_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_ORDER) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveWallOrder(ids: ReadonlyArray<string>, store: StorageLike | undefined = storage()): void {
+  try {
+    store?.setItem(WALL_ORDER_KEY, JSON.stringify(ids.slice(0, MAX_ORDER)));
+  } catch {
+    // Private browsing may refuse storage; the order then lasts for this visit.
+  }
+}
+
+/** Tiles in the saved order; tiles it does not name follow in their own order. */
+export function orderTiles<T extends { readonly id: string }>(shown: ReadonlyArray<T>, order: ReadonlyArray<string>): T[] {
+  const place = new Map(order.map((id, index) => [id, index]));
+  const at = (session: T) => place.get(session.id) ?? order.length;
+  return shown.map((session, index) => ({ session, index }))
+    .sort((a, b) => at(a.session) - at(b.session) || a.index - b.index)
+    .map(({ session }) => session);
+}
+
+/** The ids with the one at `from` moved to `to`. */
+export function moveTile(ids: ReadonlyArray<string>, from: number, to: number): string[] {
+  const next = [...ids];
+  const [moved] = next.splice(from, 1);
+  if (moved !== undefined) next.splice(to, 0, moved);
+  return next;
+}
+
+/** The new order first, then saved ids of sessions not on the Wall now. */
+export function mergeOrder(ids: ReadonlyArray<string>, saved: ReadonlyArray<string>): string[] {
+  return [...ids, ...saved.filter((id) => !ids.includes(id))].slice(0, MAX_ORDER);
 }
 
 /**
@@ -117,6 +165,225 @@ function MiniTerminal({ session }: { readonly session: BrokerRPCSessionRecord })
   );
 }
 
+interface Drag {
+  readonly id: string;
+  readonly pointerId: number;
+  readonly startX: number;
+  readonly startY: number;
+  x: number;
+  y: number;
+  timer?: number;
+  scroll?: number | undefined;
+  /** Set when the hold ends and the tile starts to move. */
+  li?: HTMLLIElement;
+  grabX: number;
+  grabY: number;
+  /** The page's scroll end before the tile moved; the moving tile would stretch it. */
+  maxScroll: number;
+}
+
+/**
+ * The tiles. Hold one and drag it to a new place; Alt+arrow keys move the
+ * focused tile. The order is saved on this device only.
+ */
+export function WallGrid({ shown, viewed, now, onOpen }: {
+  readonly shown: ReadonlyArray<BrokerRPCSessionRecord>;
+  readonly viewed: ViewedTimes;
+  readonly now: number;
+  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+}) {
+  const [order, setOrder] = useState(readWallOrder);
+  // The live order while a tile moves; saved when it is dropped.
+  const [dragIds, setDragIds] = useState<string[]>();
+  const [dragging, setDragging] = useState<string>();
+  const grid = useRef<HTMLUListElement>(null);
+  const drag = useRef<Drag>(undefined);
+  const idsRef = useRef<string[]>([]);
+  const droppedAt = useRef(0);
+  const ordered = orderTiles(shown, order);
+  const tiles = dragIds === undefined ? ordered : orderTiles(shown, dragIds);
+  const ids = tiles.map((session) => session.id);
+
+  const save = (next: string[]) => {
+    const merged = mergeOrder(next, order);
+    setOrder(merged);
+    saveWallOrder(merged);
+  };
+
+  // Keep the moving tile under the finger; its grid slot changes as it moves.
+  const place = () => {
+    const current = drag.current;
+    const list = grid.current;
+    if (current?.li === undefined || list === null) return;
+    const box = list.getBoundingClientRect();
+    const x = current.x - current.grabX - box.left - current.li.offsetLeft;
+    const y = current.y - current.grabY - box.top - current.li.offsetTop;
+    current.li.style.transform = `translate(${x}px, ${y}px)`;
+  };
+
+  // Move the tile into the slot of the tile under the finger.
+  const follow = () => {
+    const current = drag.current;
+    if (current?.li === undefined) return;
+    place();
+    const target = document.elementsFromPoint(current.x, current.y)
+      .map((element) => element.closest<HTMLElement>('[data-tile]'))
+      .find((element) => element !== null && element.dataset.tile !== current.id);
+    const live = idsRef.current;
+    const from = live.indexOf(current.id);
+    const to = target?.dataset.tile === undefined ? -1 : live.indexOf(target.dataset.tile);
+    if (from >= 0 && to >= 0) setDragIds(moveTile(live, from, to));
+  };
+
+  const edgeScroll = () => {
+    const current = drag.current;
+    const page = grid.current?.closest('.page');
+    if (current?.li === undefined || page === null || page === undefined) return;
+    const step = current.y < EDGE_PX ? -SCROLL_STEP_PX : current.y > window.innerHeight - EDGE_PX ? SCROLL_STEP_PX : 0;
+    if (step === 0) {
+      current.scroll = undefined;
+      return;
+    }
+    const next = Math.min(current.maxScroll, Math.max(0, page.scrollTop + step));
+    if (next === page.scrollTop) {
+      current.scroll = undefined;
+      return;
+    }
+    page.scrollTop = next;
+    follow();
+    current.scroll = requestAnimationFrame(edgeScroll);
+  };
+
+  const start = (event: PointerEvent<HTMLButtonElement>, id: string) => {
+    if (drag.current !== undefined || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const button = event.currentTarget;
+    const li = button.closest('li');
+    const current: Drag = {
+      id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, grabX: 0, grabY: 0, maxScroll: 0,
+    };
+    current.timer = window.setTimeout(() => {
+      if (drag.current !== current || li === null) return;
+      const box = li.getBoundingClientRect();
+      current.grabX = current.x - box.left;
+      current.grabY = current.y - box.top;
+      const page = li.closest('.page');
+      current.maxScroll = page === null ? 0 : page.scrollHeight - page.clientHeight;
+      current.li = li;
+      try {
+        button.setPointerCapture(current.pointerId);
+      } catch {
+        // The pointer already ended; pointerup cleans up.
+      }
+      setDragIds(idsRef.current);
+      setDragging(id);
+      navigator.vibrate?.(10);
+    }, HOLD_MS);
+    drag.current = current;
+  };
+
+  const end = () => {
+    const current = drag.current;
+    drag.current = undefined;
+    if (current === undefined) return;
+    window.clearTimeout(current.timer);
+    if (current.scroll !== undefined) cancelAnimationFrame(current.scroll);
+    if (current.li === undefined) return;
+    current.li.style.transform = '';
+    droppedAt.current = performance.now();
+    setDragging(undefined);
+    setDragIds(undefined);
+    save(idsRef.current);
+  };
+
+  const move = (event: PointerEvent<HTMLButtonElement>) => {
+    const current = drag.current;
+    if (current === undefined || event.pointerId !== current.pointerId) return;
+    current.x = event.clientX;
+    current.y = event.clientY;
+    if (current.li === undefined) {
+      // Moved before the hold ended: a scroll, not a drag.
+      if (Math.hypot(current.x - current.startX, current.y - current.startY) > SLOP_PX) end();
+      return;
+    }
+    follow();
+    if (current.scroll === undefined) current.scroll = requestAnimationFrame(edgeScroll);
+  };
+
+  const keyMove = (event: KeyboardEvent<HTMLButtonElement>, id: string) => {
+    const step = !event.altKey ? 0
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1
+        : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : 0;
+    const from = ids.indexOf(id);
+    if (step === 0 || from + step < 0 || from + step >= ids.length) return;
+    event.preventDefault();
+    save(moveTile(ids, from, from + step));
+  };
+
+  useLayoutEffect(() => {
+    idsRef.current = ids;
+    place();
+  });
+
+  useEffect(() => {
+    const list = grid.current;
+    if (list === null) return undefined;
+    // A moving tile must not scroll the page under it.
+    const hold = (event: TouchEvent) => {
+      if (drag.current?.li !== undefined) event.preventDefault();
+    };
+    list.addEventListener('touchmove', hold, { passive: false });
+    return () => {
+      list.removeEventListener('touchmove', hold);
+      window.clearTimeout(drag.current?.timer);
+      if (drag.current?.scroll !== undefined) cancelAnimationFrame(drag.current.scroll);
+    };
+  }, []);
+
+  return (
+    <>
+      <ul ref={grid} className="wall-grid">
+        {tiles.map((session) => {
+          const fresh = hasNewOutput(session, viewed);
+          const badge = agentBadge(session, fresh);
+          const question = session.agent?.state === 'waiting' ? session.agent.question?.text : undefined;
+          return (
+            <li key={`${session.id}/${session.generation}`} data-tile={session.id} className={dragging === session.id ? 'dragging' : undefined}>
+              <button
+                type="button"
+                className={badge?.tone === 'amber' ? 'wall-tile asking' : 'wall-tile'}
+                aria-label={tileLabel(session, fresh)}
+                aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+                onClick={() => {
+                  // A drop ends with a click on the tile; it must not open it.
+                  if (performance.now() - droppedAt.current > 400) onOpen(session);
+                }}
+                onPointerDown={(event) => start(event, session.id)}
+                onPointerMove={move}
+                onPointerUp={end}
+                onPointerCancel={end}
+                onContextMenu={(event) => {
+                  if (drag.current !== undefined) event.preventDefault();
+                }}
+                onKeyDown={(event) => keyMove(event, session.id)}
+              >
+                <span className="wall-name">{sessionName(session)}</span>
+                <MiniTerminal session={session} />
+                {badge !== undefined && <StatusPill badge={badge} duration={since(session.agent?.stateSince, now)} />}
+                {question !== undefined && <span className="wall-question">{question}</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {order.length > 0 && shown.length > 1 && (
+        <button type="button" className="link wall-reset" onClick={() => { setOrder([]); saveWallOrder([]); }}>
+          Reset order
+        </button>
+      )}
+    </>
+  );
+}
+
 export function Wall({ sessions, onOpen, onNew, onList }: {
   readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
   readonly onOpen: (session: BrokerRPCSessionRecord) => void;
@@ -132,7 +399,7 @@ export function Wall({ sessions, onOpen, onNew, onList }: {
       <header className="screen-header">
         <div>
           <h1 className="display">Wall</h1>
-          <p className="subtitle">Watch only. Tap a session to open it.</p>
+          <p className="subtitle">Watch only. Tap a session to open it. Hold and drag to move it.</p>
         </div>
         <button type="button" className="round" aria-label="Session list" onClick={onList}>
           <svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true">
@@ -150,28 +417,7 @@ export function Wall({ sessions, onOpen, onNew, onList }: {
           </button>
         </section>
       )}
-      <ul className="wall-grid">
-        {wall.shown.map((session) => {
-          const fresh = hasNewOutput(session, viewed);
-          const badge = agentBadge(session, fresh);
-          const question = session.agent?.state === 'waiting' ? session.agent.question?.text : undefined;
-          return (
-            <li key={`${session.id}/${session.generation}`}>
-              <button
-                type="button"
-                className={badge?.tone === 'amber' ? 'wall-tile asking' : 'wall-tile'}
-                aria-label={tileLabel(session, fresh)}
-                onClick={() => onOpen(session)}
-              >
-                <span className="wall-name">{sessionName(session)}</span>
-                <MiniTerminal session={session} />
-                {badge !== undefined && <StatusPill badge={badge} duration={since(session.agent?.stateSince, now)} />}
-                {question !== undefined && <span className="wall-question">{question}</span>}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      <WallGrid shown={wall.shown} viewed={viewed} now={now} onOpen={onOpen} />
       {wall.ended > 0 && (
         <p className="hint-text">{wall.ended} ended {wall.ended === 1 ? 'session is' : 'sessions are'} on the list.</p>
       )}

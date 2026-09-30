@@ -8,6 +8,14 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Arrange the Wall on the phone: hold a tile for a moment, then drag it to a
+  new place. The other tiles move out of the way, and dragging to the top or
+  bottom edge scrolls the page. The order is saved on this device only
+  (`pterm.wallOrder` in browser storage, session ids only); new sessions go
+  after the arranged ones. A quick swipe still scrolls, a tap still opens the
+  session, and **Reset order** brings back the default order (waiting agents
+  first). With a keyboard, Alt+arrow keys move the focused tile. No host-side
+  change.
 - Project buttons: the Snips sheet shows a **This project** section with the
   commands the session's project folder defines, grouped as test, dev, build,
   lint and other. **Run in new tab** starts a session in the same project and

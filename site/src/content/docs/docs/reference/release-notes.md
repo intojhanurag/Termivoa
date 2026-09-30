@@ -7,6 +7,7 @@ This page lists what is new in each release.
 
 ## Next beta (not released yet)
 
+- **Arrange the Wall.** Hold a tile, then drag it to a new place. The order is saved on your phone. **Reset order** brings back the default order. See [Wall](/docs/guides/wall/#arrange-the-tiles).
 - **Project buttons.** The Snips sheet shows your project's own commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. Tap one to run it in a new tab or type it here. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).
 - **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines, then ask the agent about exactly those lines. See [Changes](/docs/guides/changes/#ask-about-specific-lines).
 - **Fix: Ctrl+] right after `pterm attach` connects.** Pressing Ctrl+] at the moment the desktop attach finished connecting was sometimes ignored, or ended with a false "connection closed" error. It now detaches reliably and cleanly.

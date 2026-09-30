@@ -822,6 +822,22 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   load when the hung-up child was reaped before its check; it now accepts a
   closed slave after `Exited()`, 0/6,000.
 
+- **Arrange the Wall** (`feat/wall-drag`, 2026-09-30): hold a tile for 300 ms,
+  then drag it; the grid reorders live, the page scrolls at the top and bottom
+  edges (stopped at the page's end measured when the drag starts, because the
+  moving tile would stretch it), and the order is saved per device in
+  `localStorage` (`pterm.wallOrder`, up to 100 session ids). A move before the
+  hold ends is a scroll; a drop does not open the tile; Alt+arrow keys move the
+  focused tile; **Reset order** clears the saved order. Web only; no protocol
+  or host change. Evidence: `pnpm --dir web test` (Wall tests for the order
+  helpers and storage), `./scripts/check` exit 0, and a headless Chrome run
+  against an isolated `pterm up --dev` stack (390x844 touch emulation, four
+  sessions): hold-and-drag touch and mouse moves, drop stays on `/wall`, quick
+  swipe and quick tap unchanged, order kept after reload, Alt+Left, Reset
+  order, and an edge drag on a 390x380 screen that scrolled to the page end
+  (116 px) and no further. The first edge run found the tile stretching the
+  page (it scrolled 800 px into empty space); fixed before merge.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

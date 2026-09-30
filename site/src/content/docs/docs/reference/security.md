@@ -53,7 +53,7 @@ This page explains how Termivoa protects your computer, in plain words.
 
 All data is private to your user account. See [Where data lives](/docs/reference/update-and-uninstall/#where-data-lives).
 
-Photos you send are saved in your project folder, in `.termivoa/uploads/`. Snippets are saved on the phone.
+Photos you send are saved in your project folder, in `.termivoa/uploads/`. Snippets and your Wall tile order (session IDs only) are saved on the phone.
 
 ## Other features
 

@@ -2,7 +2,9 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { tileLabel, tileOffset, tileScale, Wall, wallSessions } from './Wall';
+import {
+  mergeOrder, moveTile, orderTiles, readWallOrder, saveWallOrder, tileLabel, tileOffset, tileScale, Wall, WALL_ORDER_KEY, WallGrid, wallSessions,
+} from './Wall';
 
 const session = (id: string, extra: Partial<BrokerRPCSessionRecord> = {}): BrokerRPCSessionRecord => ({
   id: `84444444-4444-4444-8444-44444444444${id}`,
@@ -42,6 +44,54 @@ function buttons(node: ReactNode, found = new Map<string, () => void>()): Map<st
   }
   return found;
 }
+
+/** The first element of this component type in an element tree. */
+function find(node: ReactNode, type: unknown): ReactElement<Record<string, unknown>> | undefined {
+  if (Array.isArray(node)) {
+    for (const child of node as ReactNode[]) {
+      const found = find(child, type);
+      if (found !== undefined) return found;
+    }
+  } else if (isValidElement(node)) {
+    if (node.type === type) return node as ReactElement<Record<string, unknown>>;
+    return find((node.props as { children?: ReactNode }).children, type);
+  }
+  return undefined;
+}
+
+const memoryStore = (value?: string) => {
+  const items = new Map<string, string>(value === undefined ? [] : [[WALL_ORDER_KEY, value]]);
+  return { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, next: string) => { items.set(key, next); } };
+};
+
+describe('wall order', () => {
+  it('puts tiles in the saved order and keeps the others after them in their own order', () => {
+    const shown = [waiting, working, idle];
+    expect(orderTiles(shown, []).map((item) => item.id)).toEqual([waiting.id, working.id, idle.id]);
+    expect(orderTiles(shown, [idle.id, 'gone', waiting.id]).map((item) => item.id)).toEqual([idle.id, waiting.id, working.id]);
+  });
+
+  it('moves one tile to a new place', () => {
+    expect(moveTile(['a', 'b', 'c', 'd'], 0, 2)).toEqual(['b', 'c', 'a', 'd']);
+    expect(moveTile(['a', 'b', 'c', 'd'], 3, 0)).toEqual(['d', 'a', 'b', 'c']);
+    expect(moveTile(['a', 'b'], 1, 1)).toEqual(['a', 'b']);
+  });
+
+  it('keeps saved places of sessions that are not on the Wall now, up to 100', () => {
+    expect(mergeOrder(['b', 'a'], ['a', 'x', 'b', 'y'])).toEqual(['b', 'a', 'x', 'y']);
+    expect(mergeOrder([], Array.from({ length: 150 }, (_, index) => `${index}`))).toHaveLength(100);
+  });
+
+  it('saves the order on this device and ignores a damaged value', () => {
+    const store = memoryStore();
+    saveWallOrder(['b', 'a'], store);
+    expect(readWallOrder(store)).toEqual(['b', 'a']);
+    expect(readWallOrder(memoryStore('{"a":1}'))).toEqual([]);
+    expect(readWallOrder(memoryStore('not json'))).toEqual([]);
+    expect(readWallOrder(memoryStore('["a",2,"b"]'))).toEqual(['a', 'b']);
+    expect(readWallOrder(undefined)).toEqual([]);
+  });
+});
 
 describe('wallSessions', () => {
   it('shows running sessions: waiting, then working, then the rest in list order', () => {
@@ -93,13 +143,14 @@ describe('Wall', () => {
     expect(onNew).toHaveBeenCalledOnce();
   });
 
-  it('opens the tapped session, and goes back to the list', () => {
+  it('gives the running sessions and onOpen to the tiles, and goes back to the list', () => {
     const onOpen = vi.fn();
     const onList = vi.fn();
-    const found = buttons(Wall({ sessions: [idle, waiting], onOpen, onNew: noop, onList }));
-    found.get('shell 1, open session')?.();
-    expect(onOpen).toHaveBeenCalledWith(idle);
-    found.get('Session list')?.();
+    const tree = Wall({ sessions: [idle, waiting, exited], onOpen, onNew: noop, onList });
+    const grid = find(tree, WallGrid);
+    expect(grid?.props.shown).toEqual([waiting, idle]);
+    expect(grid?.props.onOpen).toBe(onOpen);
+    buttons(tree).get('Session list')?.();
     expect(onList).toHaveBeenCalledOnce();
   });
 
