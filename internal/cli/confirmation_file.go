@@ -68,6 +68,23 @@ func (reader *FileConfirmationReader) readWith(ctx context.Context, data []byte,
 
 func (reader *FileConfirmationReader) Close() error { return reader.file.Close() }
 
+type terminalIOHookKey struct{}
+
+// withTerminalIOHook asks the owned terminal read or write that receives ctx
+// to run hook when its data has been transferred: after a read returns bytes,
+// or after a write's last byte. On Unix the hook runs under terminalIOMu, so
+// it is ordered exactly against every other owned terminal read and write.
+// Like net/http/httptrace, the hook rides the context to reach the syscall.
+func withTerminalIOHook(ctx context.Context, hook func()) context.Context {
+	return context.WithValue(ctx, terminalIOHookKey{}, hook)
+}
+
+func runTerminalIOHook(ctx context.Context) {
+	if hook, _ := ctx.Value(terminalIOHookKey{}).(func()); hook != nil {
+		hook()
+	}
+}
+
 func (reader *ownedTerminalFile) withContext(
 	ctx context.Context,
 	data []byte,

@@ -118,6 +118,9 @@ func readConfirmationInput(ctx context.Context, handle terminalFileHandle, data 
 	read, err := interruptibleWindowsTerminalIO(ctx, func() (int, error) {
 		var count uint32
 		err := windows.ReadFile(windows.Handle(handle), data, &count, nil)
+		if count > 0 {
+			runTerminalIOHook(ctx)
+		}
 		return int(count), err
 	})
 	if errors.Is(err, windows.ERROR_BROKEN_PIPE) || (err == nil && read == 0) {

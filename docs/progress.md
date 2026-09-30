@@ -751,6 +751,29 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   here: widening it by 50 ms fails the test 5/5 at the `CONTROL` receipt, a
   failure never seen in 800 stressed runs. After the fix: 0 failures in 320
   (8 × 40) and 480 (8 × 60) runs of the same stress.
+- **Desktop attach input admitted at the Control footer** (#104,
+  `fix/issue-104`, 2026-09-30): `desktopDisplay.activate` wrote the Control
+  footer and only then admitted input, so a key read in between was tagged
+  epoch 0 and dropped. The mirror case also existed: the live decoder tags a
+  read after `ReadContext` returns, so a key read while the footer still said
+  "Syncing" was admitted if `admit()` ran before the tag. Fix: a context hook
+  (`withTerminalIOHook`) runs at the exact read or write syscall. Activate
+  admits at the footer's last written byte, and each live read records the
+  admission it saw at its own syscall. On Unix both run under `terminalIOMu`,
+  so the order is exact; a read during a blocked footer write stays dropped;
+  nothing is buffered. Two new tests fail before the fix:
+  `TestDesktopKeyAfterReadyFooterIsAdmitted` (key injected through the new
+  `desktopReadyFooterWritten` hook, after the footer write and before
+  `admit()`: epoch 0) and `TestDesktopKeyReadBeforeReadyFooterIsDropped`
+  (footer written between the read and its tag: epoch 1). Evidence:
+  `go test -race -count=50` of the desktop tests in `internal/cli` and all of
+  `internal/desktop` pass; `TestPtermDesktopAttachNativeOuterTTY` passes
+  160/160 (4 parallel copies × `-test.count=40`); with a 50 ms sleep before
+  `admit()` it fails 5/5 at the `CONTROL` receipt without the fix and passes
+  5/5 with it; `./scripts/check` passes; `go vet ./internal/cli/` passes for
+  `GOOS=linux` and `GOOS=windows`. Windows runs the hook right after
+  `ReadFile`/`WriteFile` (there is no shared lock there), which is no weaker
+  than before; native Windows validation stays pending.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

@@ -27,6 +27,7 @@ func writeTerminalOutput(ctx context.Context, handle terminalFileHandle, data []
 				return written, io.ErrShortWrite
 			}
 		}
+		runTerminalIOHook(ctx)
 		return written, nil
 	})
 }
