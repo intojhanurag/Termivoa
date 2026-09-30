@@ -66,7 +66,9 @@ Look at the terminal before you send it again.
 
 ## "This session is gone"
 
-The computer restarted or logged out, or the broker crashed. A lost session cannot come back. Start a new one.
+The computer restarted or logged out, or the broker crashed. A session is also lost when its program closes the terminal but keeps running. A lost session cannot come back. Start a new one.
+
+A program that ends normally is not lost: it shows its exit code, even when the computer is busy.
 
 ## "A new version is ready"
 

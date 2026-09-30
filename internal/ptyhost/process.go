@@ -55,6 +55,7 @@ type Process struct {
 	tree platformProcessTree
 
 	done    chan struct{}
+	exited  chan struct{}
 	waitErr error
 
 	writeMu     sync.Mutex
@@ -108,10 +109,11 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 	}
 
 	p := &Process{
-		pty:  terminal,
-		cmd:  cmd,
-		tree: tree,
-		done: make(chan struct{}),
+		pty:    terminal,
+		cmd:    cmd,
+		tree:   tree,
+		done:   make(chan struct{}),
+		exited: make(chan struct{}),
 	}
 	go p.reap()
 	go p.watchSession(ctx)
@@ -237,10 +239,9 @@ func (p *Process) reap() {
 	// to exec.Cmd.Wait. Session cancellation is therefore handled separately
 	// by watchSession, which terminates the isolated process tree. On Windows,
 	// using the helper is mandatory because exec.Cmd.Wait is not ConPTY-safe.
-	p.waitErr = errors.Join(
-		xpty.WaitProcess(context.Background(), p.cmd),
-		closeProcessTree(p.tree),
-	)
+	waitErr := xpty.WaitProcess(context.Background(), p.cmd)
+	close(p.exited)
+	p.waitErr = errors.Join(waitErr, closeProcessTree(p.tree))
 	close(p.done)
 }
 
@@ -321,6 +322,18 @@ func (p *Process) Wait(ctx context.Context) error {
 		return p.waitErr
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// Exited reports whether the direct child has been reaped. Wait returns
+// later: first the rest of the child's session is cleaned up, which on Unix
+// can take terminationGracePeriod and longer on a busy computer.
+func (p *Process) Exited() bool {
+	select {
+	case <-p.exited:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -239,6 +239,48 @@ func TestSessionReadFailureMarksLostAndTerminatesChild(t *testing.T) {
 	}
 }
 
+// After PTY EOF the broker waits processExitGrace for the process wait. A
+// busy computer can delay the wait of a child that exited past that grace
+// (#92): it must end exited with its code, not lost. A child that is not
+// reaped when the grace ends still becomes lost and is terminated.
+func TestSessionExitGraceWaitsOnlyForExitedChild(t *testing.T) {
+	for name, exited := range map[string]bool{"reaped child": true, "unreaped child": false} {
+		t.Run(name, func(t *testing.T) {
+			runtimeContext, cancel := context.WithCancel(context.Background())
+			process := &slowWaitProcess{instrumentedProcess: newInstrumentedProcess(nil), exitedChild: exited, waitRelease: make(chan struct{})}
+			session, err := startSessionRuntime(runtimeContext, cancel, nil, SessionConfig{
+				ID: testSessionID, Generation: testGeneration,
+				Process:            ptyhost.Spec{Columns: 80, Rows: 24},
+				InputQueueCapacity: DefaultInputQueueCapacity,
+				PTYOutputQueue:     DefaultPTYOutputQueue,
+			}, process, newStubTerminal())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			if !exited {
+				status := waitForSessionState(t, session, SessionLost)
+				// markLost starts termination off the actor.
+				deadline := time.Now().Add(time.Second)
+				for !process.terminated.Load() && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				if status.ExitCode != nil || !process.terminated.Load() {
+					t.Fatalf("unreaped child status = %#v, terminated=%v", status, process.terminated.Load())
+				}
+				return
+			}
+			// Exiting, not lost, means the grace ended with the wait pending.
+			waitForSessionState(t, session, SessionExiting)
+			close(process.waitRelease)
+			status := waitForSessionState(t, session, SessionExited)
+			if status.ExitCode == nil || *status.ExitCode != 0 || process.terminated.Load() {
+				t.Fatalf("exited child status = %#v, terminated=%v", status, process.terminated.Load())
+			}
+		})
+	}
+}
+
 func TestSessionCloseReturnsErrorWhenTerminationCannotComplete(t *testing.T) {
 	runtimeContext, cancel := context.WithCancel(context.Background())
 	process := newInstrumentedProcess(nil)
@@ -520,6 +562,26 @@ func (process *instrumentedProcess) Close() error {
 
 func (process *instrumentedProcess) release() {
 	process.exitOnce.Do(func() { close(process.exited) })
+}
+
+// slowWaitProcess has closed its PTY. Its Wait result waits for waitRelease,
+// or for termination, as on a busy computer.
+type slowWaitProcess struct {
+	*instrumentedProcess
+	exitedChild bool
+	waitRelease chan struct{}
+}
+
+func (process *slowWaitProcess) Read([]byte) (int, error) { return 0, io.EOF }
+func (process *slowWaitProcess) Exited() bool             { return process.exitedChild }
+
+func (process *slowWaitProcess) Wait(context.Context) error {
+	select {
+	case <-process.waitRelease:
+	case <-process.exited:
+	}
+	process.waited.Store(true)
+	return nil
 }
 
 type stubTerminal struct {

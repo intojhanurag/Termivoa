@@ -693,6 +693,20 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   handoff drain saw nothing; a second Ctrl+] always detached. The startup
   reader now records a raw Ctrl+] it reads, and the handoff detaches on it.
   After the fix: 0 failures in 480 runs of the same stress.
+- **Finished session shown as lost under load** (#92, `fix/issue-92`,
+  2026-09-30): after PTY EOF the broker waited `processExitGrace` (1 s) for
+  the process wait, but ptyhost returns Wait only after the session cleanup
+  (`closeProcessTree`: up to the 500 ms member grace plus full process-table
+  scans). Temporary logs showed that delay alone reached 878 ms at p100 in 400
+  `-race` runs, and 2.3 s under extra CPU load. ptyhost now reports `Exited()`
+  once the child is reaped; when the grace ends and the child has exited, the
+  session shows `exiting` and keeps waiting, so it ends `exited` with its code.
+  A child that is not reaped is still `lost` and terminated. Stress (8 copies
+  of each `go test -c -race` binary, `-test.count=50`, one cold-`GOCACHE`
+  `go test ./... -p 16`, 12 CPU burners for 4 minutes, same load for both):
+  before 8 wrong `lost` results in 1,200 test runs, after 0 in 1,200 (13
+  sessions waited past the grace and ended `exited`). New test
+  `TestSessionExitGraceWaitsOnlyForExitedChild` fails before the fix.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

@@ -118,6 +118,14 @@ type terminalRuntime interface {
 	Close() error
 }
 
+// exitReporter reports that the direct child has been reaped while its Wait
+// result is still pending. Test fakes may omit it.
+type exitReporter interface {
+	Exited() bool
+}
+
+var _ exitReporter = (*ptyhost.Process)(nil)
+
 type processRuntime interface {
 	PID() int
 	Read([]byte) (int, error)
@@ -998,6 +1006,21 @@ func (session *Session) run(columns, rows int) {
 			counterpartDeadline = nil
 			counterpartTimer = nil
 			if readDone && !waitSeen {
+				if reporter, ok := session.process.(exitReporter); ok && reporter.Exited() {
+					// The child has exited. Its Wait result follows once the
+					// session cleanup ends, which a busy computer can delay
+					// past the grace. Keep waiting, so it ends as exited with
+					// its code; lost is only for a child that cannot be waited.
+					// This wait stays bounded only because ptyhost's cleanup is
+					// bounded (closeProcessTree kills remaining members after its
+					// grace and does not wait on them). Keep that true.
+					if status.State == SessionRunning {
+						session.markExiting(&status)
+					}
+					counterpartTimer = time.NewTimer(processExitGrace)
+					counterpartDeadline = counterpartTimer.C
+					continue
+				}
 				session.markLost(&status)
 			} else if waitSeen && !readDone && !processClosed {
 				if session.termination != nil && !session.termination.finished {
