@@ -29,6 +29,14 @@ All notable changes are documented here. The format follows
   pressed again. The startup input reader could read the key and then drop it
   when it stopped at the handoff to live input. A Ctrl+] it reads now always
   detaches. No phone-side change (#68).
+- A session whose program ended normally is no longer shown as lost when the
+  computer is busy. Host side: after the terminal closes, the broker kept
+  waiting only 1 second for the process result, and the cleanup of the
+  program's session can take longer under load. It now keeps waiting while
+  the program has exited and its result is still coming (the session shows
+  as exiting), so it ends as exited with its exit code. A program that
+  closes its terminal but keeps running is still marked lost and stopped
+  after 1 second (#92). Phone side: no change.
 
 ## [0.1.0-beta.2] - 2026-09-29
 

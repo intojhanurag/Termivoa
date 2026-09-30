@@ -214,6 +214,9 @@ func TestWaitReportsExitStatus(t *testing.T) {
 	if exitError.ExitCode() != 7 {
 		t.Fatalf("exit code = %d, want 7", exitError.ExitCode())
 	}
+	if !process.Exited() {
+		t.Fatal("reaped child not reported as exited")
+	}
 }
 
 func TestTerminateAfterNaturalExitIsNoop(t *testing.T) {
@@ -247,6 +250,9 @@ func TestWaitContextDoesNotTerminateSession(t *testing.T) {
 	case <-process.done:
 		t.Fatal("wait context terminated session")
 	default:
+	}
+	if process.Exited() {
+		t.Fatal("running child reported as exited")
 	}
 
 	cancelSession()
