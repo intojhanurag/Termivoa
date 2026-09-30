@@ -3,11 +3,14 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -16,9 +19,14 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/term"
 	"github.com/creack/pty"
+	"github.com/intojhanurag/phone-terminal/internal/broker"
 	"github.com/intojhanurag/phone-terminal/internal/desktop"
+	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/liveclient"
+	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/store"
+	"golang.org/x/sys/unix"
 )
 
 func TestAttachDesktopFailedConnectionRestoresOwnedTTY(t *testing.T) {
@@ -452,5 +460,259 @@ func TestDesktopKeyReadBeforeReadyFooterIsDropped(t *testing.T) {
 	}
 	if admission.epoch() == 0 {
 		t.Fatal("footer write did not admit later input")
+	}
+}
+
+// startDesktopBroker runs a disposable broker whose one saved profile is
+// /bin/cat, and starts that session. It seeds the store like cmd/pterm's
+// startCommandBroker; test packages cannot share that helper.
+func startDesktopBroker(t *testing.T) (string, broker.ManagedSession, protocol.BrokerRPCSessionRecord) {
+	t.Helper()
+	const projectID, profileID = "d1111111-1111-4111-8111-111111111111", "d2222222-2222-4222-8222-222222222222"
+	tempParent := ""
+	if runtime.GOOS == "darwin" {
+		tempParent = "/tmp" // Keep the Unix socket path within the OS byte limit.
+	}
+	root, err := os.MkdirTemp(tempParent, "pterm-desktop-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	dataDir, runtimeDir := filepath.Join(root, "data"), filepath.Join(root, "runtime")
+	if err := os.Mkdir(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	persistence, err := store.Open(context.Background(), filepath.Join(dataDir, "phone-terminal.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	err = persistence.PutProject(context.Background(), store.Project{
+		ID: projectID, DisplayName: "Desktop fixture", CanonicalPath: root, CreatedAt: now, UpdatedAt: now,
+	})
+	if err == nil {
+		err = persistence.PutShellProfile(context.Background(), store.ShellProfile{
+			ID: profileID, DisplayName: "cat", Platform: store.Platform(runtime.GOOS),
+			ExecutablePath: "/bin/cat", CreatedAt: now, UpdatedAt: now,
+		})
+	}
+	if err := errors.Join(err, persistence.Close()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ready := make(chan host.BrokerReady, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- host.RunBroker(ctx, host.BrokerConfig{
+			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "desktop-test", Profile: host.DevelopmentProfile,
+			Ready: func(value host.BrokerReady) { ready <- value },
+		})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("broker shutdown: %v", err)
+			}
+		case <-time.After(8 * time.Second):
+			t.Error("fixture broker did not shut down")
+		}
+	})
+	var state host.BrokerReady
+	select {
+	case state = <-ready:
+	case err := <-done:
+		done <- err // Preserve the result for cleanup.
+		t.Fatalf("broker failed before ready: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("broker was not ready")
+	}
+	client, err := localclient.DialManagement(ctx, runtimeDir, "desktop-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	operationID, err := NewOperationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := client.Create(ctx, operationID, projectID, profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed, err := state.Registry.Get(created.Session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runtimeDir, managed, created.Session
+}
+
+// desktopFooterWriteBlocked reports whether a goroutine is inside the ready
+// footer's terminal write. It reads goroutine stacks, so the test needs no
+// hook in activate.
+func desktopFooterWriteBlocked() bool {
+	stacks := make([]byte, 1<<20)
+	stacks = stacks[:runtime.Stack(stacks, true)]
+	for _, stack := range bytes.Split(stacks, []byte("\n\n")) {
+		if bytes.Contains(stack, []byte("(*desktopDisplay).activate")) && bytes.Contains(stack, []byte("writeTerminalOutput")) {
+			return true
+		}
+	}
+	return false
+}
+
+func waitDesktop(t *testing.T, ctx context.Context, what string, ready func() bool) {
+	t.Helper()
+	for !ready() {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("waiting for %s: %v", what, ctx.Err())
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// Through the real AttachDesktop wiring, with a real broker and the real pty
+// reader and writer: while the Control footer write is blocked (the outer
+// terminal stops its output), a typed key is dropped. A key typed after the
+// footer's last byte reaches the child, and Ctrl+] still detaches (#107).
+func TestAttachDesktopDropsKeyReadDuringBlockedControlFooter(t *testing.T) {
+	runtimeDir, managed, session := startDesktopBroker(t)
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	// Restart output even when the test fails while it is stopped.
+	defer func() { _ = stopTerminalOutput(slave.Fd(), false) }()
+	// One spare row, so the attachment draws a footer below the 80x24 grid.
+	if err := pty.Setsize(master, &pty.Winsize{Cols: 80, Rows: 25}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TERM", "xterm-256color")
+
+	// The outer terminal. It reads all output until the test stops it.
+	var outputMu sync.Mutex
+	var output []byte
+	shown := func(text string) bool {
+		outputMu.Lock()
+		defer outputMu.Unlock()
+		return bytes.Contains(output, []byte(text))
+	}
+	go func() {
+		buffer := make([]byte, 4096)
+		for {
+			n, err := master.Read(buffer)
+			outputMu.Lock()
+			output = append(output, buffer[:n]...)
+			outputMu.Unlock()
+			if err != nil {
+				return
+			}
+		}
+	}()
+	outer := terminalFileHandle(slave.Fd())
+	inputQueued := func() bool {
+		// Under terminalIOMu, so a read that took the input has also tagged it.
+		// On Linux, poll first moves pty input that is still in transit.
+		n, err := nonblockingTerminalIO(outer, func(fd int) (int, error) {
+			return unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, 0)
+		})
+		if err != nil && !errors.Is(err, unix.EINTR) {
+			t.Error(err)
+		}
+		return n != 0
+	}
+
+	// The handoff drain runs just before Activate writes the Control footer;
+	// every earlier footer said Syncing. There, stop the outer terminal's
+	// output (tcflow TCOOFF, like XOFF) and fill its queue, so the next
+	// write blocks. Linux blocks as soon as output stops; macOS still queues
+	// output up to a limit.
+	blocked := make(chan struct{})
+	desktopDrainEmpty = func() {
+		desktopDrainEmpty = nil
+		defer close(blocked)
+		if err := stopTerminalOutput(slave.Fd(), true); err != nil {
+			t.Error(err)
+			return
+		}
+		filler := bytes.Repeat([]byte("x"), 1024)
+		for {
+			_, err := nonblockingTerminalIO(outer, func(fd int) (int, error) { return unix.Write(fd, filler) })
+			if errors.Is(err, unix.EAGAIN) {
+				return
+			}
+			if err != nil && !errors.Is(err, unix.EINTR) {
+				t.Error(err)
+				return
+			}
+		}
+	}
+	defer func() { desktopDrainEmpty = nil }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- AttachDesktop(ctx, DesktopConfig{RuntimeDir: runtimeDir, ClientBuild: "desktop-test",
+			Session: session, Input: slave, Output: slave, Control: true})
+	}()
+	select {
+	case <-blocked:
+	case err := <-result:
+		t.Fatalf("attachment ended before the handoff: %v", err)
+	case <-ctx.Done():
+		t.Fatal("attachment did not reach the handoff")
+	}
+	waitDesktop(t, ctx, "the Control footer write to block", desktopFooterWriteBlocked)
+
+	if _, err := master.Write([]byte("EARLY\r")); err != nil {
+		t.Fatal(err)
+	}
+	waitDesktop(t, ctx, "the live decoder to read the early key", func() bool { return !inputQueued() })
+	if !desktopFooterWriteBlocked() || shown("Control |") {
+		t.Fatal("the early key was not read during the blocked Control footer write")
+	}
+	if err := stopTerminalOutput(slave.Fd(), false); err != nil {
+		t.Fatal(err)
+	}
+	waitDesktop(t, ctx, "the Control footer", func() bool { return shown("Control |") })
+
+	if _, err := master.Write([]byte("LATE\r")); err != nil {
+		t.Fatal(err)
+	}
+	var screen string
+	waitDesktop(t, ctx, "the late key in the child", func() bool {
+		frame, err := managed.Snapshot(ctx)
+		if err != nil {
+			return false
+		}
+		var text strings.Builder
+		for _, row := range frame.Screen {
+			for _, cell := range row.Cells {
+				text.WriteString(cell.Text)
+			}
+			text.WriteByte('\n')
+		}
+		screen = text.String()
+		return strings.Contains(screen, "LATE")
+	})
+	if strings.Contains(screen, "EARLY") {
+		t.Fatalf("key typed during the blocked Control footer reached the child:\n%s", screen)
+	}
+
+	if _, err := master.Write([]byte{desktopDetachByte}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Ctrl+] did not detach")
 	}
 }
