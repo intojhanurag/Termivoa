@@ -146,7 +146,8 @@ func TestDesktopStartupBlockedControlWriteNeverReplaysInput(t *testing.T) {
 					return transport, nil
 				},
 				BeforeInput: func(context.Context) error {
-					return discardDesktopInput(reader.file.handle)
+					_, err := drainDesktopDetach(reader.file.handle)
+					return err
 				},
 				Activate: func(ctx context.Context) error {
 					return display.activate(ctx, func() {
@@ -250,6 +251,48 @@ func TestDesktopStartupDiscardDoesNotReplayEarlyTTYInput(t *testing.T) {
 	}
 	if _, err := term.GetState(slave.Fd()); err != nil {
 		t.Fatalf("caller TTY closed: %v", err)
+	}
+}
+
+// The handoff drain scans every queued byte it discards. A key that arrives
+// just after the drain found the queue empty is not flushed: it stays queued
+// for the live decoder, which detaches on Ctrl+] itself. The old flush after
+// the drain dropped it unscanned (#90).
+func TestDesktopHandoffDrainKeepsLateDetach(t *testing.T) {
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	state, err := term.MakeRaw(slave.Fd())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer term.Restore(slave.Fd(), state)
+	reader, err := NewFileConfirmationReader(slave)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := master.Write([]byte("typed while connecting\r\x1d")); err != nil {
+		t.Fatal(err)
+	}
+	desktopDrainEmpty = func() {
+		desktopDrainEmpty = nil
+		if _, err := master.Write([]byte{desktopDetachByte}); err != nil {
+			t.Error(err)
+		}
+	}
+	defer func() { desktopDrainEmpty = nil }()
+	if detach, err := drainDesktopDetach(reader.file.handle); !detach || err != nil {
+		t.Fatalf("drain of queued Ctrl+]: detach=%t err=%v", detach, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var data [64]byte
+	if n, err := reader.ReadContext(ctx, data[:]); err != nil || string(data[:n]) != "\x1d" {
+		t.Fatalf("late Ctrl+] after the drain: %q %v", data[:n], err)
 	}
 }
 

@@ -138,11 +138,10 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 				return err
 			}
 			// Queued bytes are never sent, but the local detach chord still works.
+			// The drain reads the queue empty instead of flushing it, so no key
+			// is discarded without being scanned (#90).
 			detach, err := drainDesktopDetach(reader.file.handle)
 			if err != nil {
-				return err
-			}
-			if err := discardDesktopInput(reader.file.handle); err != nil {
 				return err
 			}
 			if detach || startupInput.detach.Load() {

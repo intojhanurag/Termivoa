@@ -722,6 +722,17 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   the grace period runs from the time the signals were sent (a concurrent
   Terminate and leader exit wait for one shared hangup). After the fix: 0
   failures in 4800 subtests of the same stress (8 × `-test.count=300`).
+- **Ctrl+] between the handoff drain and flush** (#90, `fix/issue-90`): the
+  handoff drained queued input for Ctrl+] and then flushed the terminal input
+  queue (`TIOCFLUSH`/`TCFLSH`/`FlushConsoleInputBuffer`), so a key that
+  arrived between the two was dropped unscanned. The drain now reads until the
+  queue is empty and no longer flushes; the flush remains only as a last
+  resort for input that never stops (256 reads). A key that arrives after the
+  drain goes to the live decoder, which detaches on Ctrl+] even before input
+  is admitted. `TestDesktopHandoffDrainKeepsLateDetach` injects a Ctrl+]
+  through a test hook exactly when the drain finds the queue empty; with the
+  old drain-then-flush order it fails (`""`, deadline exceeded), and it passes
+  200/200 with the fix.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

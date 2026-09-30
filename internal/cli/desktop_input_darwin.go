@@ -2,7 +2,8 @@ package cli
 
 import "golang.org/x/sys/unix"
 
-// Called once after joining the startup decoder, before live input. TIOCFLUSH
+// The handoff drain's last resort, used only when input never stops arriving.
+// TIOCFLUSH
 // takes a pointer to the BSD FREAD bit, not the integer argument used on Linux.
 // This discards input only; output and the caller-owned handle are untouched.
 func discardDesktopInput(handle terminalFileHandle) error {
