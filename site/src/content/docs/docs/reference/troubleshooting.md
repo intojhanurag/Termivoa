@@ -121,27 +121,27 @@ Run `pterm setup` again and answer `y` to the linger question. More in [Keep ses
 
 `cd` into your project in the terminal, then tap **Refresh**. The session's folder is not in a git repository.
 
-## New worktree says "not in a git repository" (next beta)
+## New worktree says "not in a git repository" (Next beta)
 
 `cd` into your repository, open the session menu (**⋯**) and tap **New worktree…** again. The session's folder is not in a git repository.
 
-## New worktree says the name "already exists" (next beta)
+## New worktree says the name "already exists" (Next beta)
 
 Tap 🎲 or type another name. The folder `~/termivoa/worktrees/<repository>/<name>` or branch `termivoa/<name>` exists. A removed worktree keeps its branch (and name) until you run `git branch -d termivoa/<name>`.
 
-## New worktree says there are too many worktrees (next beta)
+## New worktree says there are too many worktrees (Next beta)
 
 Remove finished worktrees with **Remove worktree…** in their session menu (**⋯**), or run `git worktree remove <folder>`. The limit is 50 per repository in `~/termivoa/worktrees`.
 
-## New worktree says "git worktree add failed" (next beta)
+## New worktree says "git worktree add failed" (Next beta)
 
 Fix the cause in git's message, then reuse the same name; Termivoa cleans up what it made. Often a repository hook (for example husky or lefthook) fails on checkout.
 
-## Remove worktree asks about uncommitted changes or ignored files (next beta)
+## Remove worktree asks about uncommitted changes or ignored files (Next beta)
 
 Tap **Remove anyway** only if you do not need those files, else **Keep it**. Uncommitted changes and ignored files (such as `node_modules`, `.env`) are deleted with the folder; the branch is kept.
 
-## Remove worktree fails (next beta)
+## Remove worktree fails (Next beta)
 
 Fix the cause in git's message, or run `git worktree remove <folder>` on the computer. On Windows, first close any program that uses the folder.
 

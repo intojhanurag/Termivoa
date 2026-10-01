@@ -6,7 +6,7 @@ lastUpdated: 2026-10-01
 
 Termivoa shows every session on your computer in the Sessions list, the first screen after pairing. A session is one running shell or coding agent, such as Claude Code or Codex.
 
-![The Sessions list: acme-web waits for an answer to "Run the test suite?", a worktree session shows its ⎇ badge (next beta), and billing-api is working.](../../../../assets/docs/phone-sessions.webp)
+![The Sessions list: acme-web waits for an answer to "Run the test suite?", a worktree session shows its ⎇ badge (Next beta), and billing-api is working.](../../../../assets/docs/phone-sessions.webp)
 
 ## Read the Sessions list
 
@@ -17,7 +17,7 @@ Each row shows:
 - the last line of output, or the question when an agent waits for you;
 - a dot for new output since this phone last opened it.
 
-Sessions that wait for you are at the top. Tap a row to open it in the [live terminal](/docs/guides/live-terminal/).
+Sessions that wait for you are at the top. Tap a row to open it in the [live terminal](/docs/guides/live-terminal/), which shows the session's full folder path.
 
 ## Start a session
 

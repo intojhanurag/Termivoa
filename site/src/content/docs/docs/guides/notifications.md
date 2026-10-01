@@ -8,7 +8,7 @@ Termivoa sends a notification to your phone when a coding agent waits for you or
 
 ## Turn on notifications
 
-1. On iPhone or iPad, add Termivoa to the Home Screen (**Share → Add to Home Screen**) and open it there. Notifications need the Home Screen app and iOS 16.4 or later.
+1. On iPhone or iPad, add Termivoa to the Home Screen (**Share → Add to Home Screen**) and open it there. Notifications need the Home Screen app and iOS 16.4 or later. Until then, Termivoa shows **Add to Home Screen to get notifications**.
 2. On the Sessions list, in the card **Get a buzz when an agent needs you**, tap **Turn on**, then allow notifications.
 
 **Settings → Notifications** has the same switch and a **Send a test notification** button.
@@ -19,8 +19,9 @@ Termivoa sends a notification to your phone when a coding agent waits for you or
 | --- | --- | --- |
 | An agent asks a question | `<session> is waiting for you` | `<project> · tap to answer` |
 | An agent finished work | `<session> is done · your turn` | `Worked for N min` |
+| You tap **Send a test notification** | `Termivoa` | `Notifications are on.` |
 
-It has only the session name, project name and status, never terminal text (no output, question, path or command). The content is encrypted to your phone. Tapping it opens that session.
+It has only the session name, project name, status and work time, never terminal text (no output, question, path or command). The content is encrypted to your phone. Tapping it opens that session.
 
 ## When do notifications come?
 

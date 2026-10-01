@@ -4,13 +4,13 @@ description: Termivoa reads your project's package.json, Makefile, Cargo.toml or
 lastUpdated: 2026-10-01
 ---
 
-Termivoa finds your project's own commands, such as tests or the dev server, and shows them as one-tap buttons in the Snips sheet.
+Termivoa finds your project's own commands, such as tests or the dev server, and shows them as one-tap buttons in the Snippets sheet.
 
 :::note[Next beta]
 Not released yet. This is not in `v0.1.0-beta.2`.
 :::
 
-![The Snips sheet lists the project's own commands, such as test, dev, build and lint, above the saved snippets.](../../../../assets/docs/phone-project-buttons.webp)
+![The Snippets sheet lists the project's own commands, such as test, dev, build and lint, above the saved snippets.](../../../../assets/docs/phone-project-buttons.webp)
 
 ## Which commands does Termivoa find?
 

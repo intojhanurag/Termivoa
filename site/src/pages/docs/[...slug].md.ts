@@ -14,6 +14,8 @@ function markdownSlug(id: string): string {
 
 export const GET: APIRoute = ({ props }) => {
 	const { entry } = props as { entry: CollectionEntry<'docs'> };
-	const body = `# ${entry.data.title}\n\n> ${entry.data.description ?? ''}\n\n${entry.body ?? ''}`;
+	// Image files are served under hashed names, so name each image by its alt text instead.
+	const text = (entry.body ?? '').replace(/!\[([^\]]*)\]\([^)]*\)/g, '[Image: $1]');
+	const body = `# ${entry.data.title}\n\n> ${entry.data.description ?? ''}\n\n${text}`;
 	return new Response(body, { headers: { 'Content-Type': 'text/markdown; charset=utf-8' } });
 };

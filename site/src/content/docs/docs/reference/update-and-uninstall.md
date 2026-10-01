@@ -16,7 +16,7 @@ An update ends all sessions, so finish your work first.
    pterm shutdown
    ```
 
-2. Download the new version over the old file. For example, on macOS:
+2. Download the new version to the same path, over the old file. For example, on macOS:
 
    ```sh
    gh release download <new-version> -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm --clobber

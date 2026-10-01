@@ -16,7 +16,7 @@ The card sits at the bottom of the live terminal:
 
 Other programs' numbered menus and `[y/N]` prompts get cards too.
 
-![An answer card asks "Run the test suite?" and offers three one-tap answers: Yes, Yes and don't ask again, and No.](../../../../assets/docs/phone-answer-card.webp)
+![An answer card asks "Run the test suite?" and offers three one-tap answers: Yes; Yes, and don't ask again; and No, tell the agent what to do.](../../../../assets/docs/phone-answer-card.webp)
 
 ## Answer a question
 

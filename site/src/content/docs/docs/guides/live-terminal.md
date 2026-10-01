@@ -41,7 +41,7 @@ With control, the dock under the terminal shows one-tap agent keys and a key bar
 
 The action buttons are **type** (opens the phone keyboard), **compose**, **snips**, **history** and **changes** (see [Changes](/docs/guides/changes/)).
 
-With the phone keyboard open, all keys fold into one scrolling row, and the terminal keeps its size so full-screen agents do not redraw. `↓` follows `↑` there (next beta).
+With the phone keyboard open, all keys fold into one scrolling row, and the terminal keeps its size so full-screen agents do not redraw. `↓` follows `↑` there (Next beta).
 
 ![With the keyboard open, one row of keys stays under the terminal: esc, ^C, mode, ↑, ↓, 1, 2 and hide keyboard.](../../../../assets/docs/key-row.webp)
 
@@ -51,12 +51,12 @@ Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**,
 
 ## Save and send snippets
 
-Snippets are prompts and commands you send with one tap, saved on this phone only. Tap **snips** to open the Snips sheet.
+Snippets are prompts and commands you send with one tap, saved on this phone only. Tap **snips** to open the Snippets sheet.
 
 - Save: tap **+ new**, fill in **Title** and **Text to send**, pick **Press Enter after pasting** to run it at once, and tap **save**.
 - Send: tap it (needs control). A snippet with more than one line asks first.
 - Change or delete: tap **edit**, then the snippet.
-- **This project** (next beta): your project's own commands. See [Project buttons](/docs/guides/project-buttons/).
+- **This project** (Next beta): your project's own commands. See [Project buttons](/docs/guides/project-buttons/).
 
 ## Scroll the terminal
 
