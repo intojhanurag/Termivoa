@@ -9,6 +9,7 @@ The latest Termivoa release is the private beta `v0.1.0-beta.2` (2026-09-29).
 ## Next beta (not released yet)
 
 - **Files.** The Changes screen has a **Files** tab: browse the session's project, search file names and read any text file, read-only and without control. Tap a path such as `src/app.ts:42` in the terminal to open that line. See [Files](/docs/guides/files/).
+- **Fix: project buttons cannot get stuck.** A special file (a named pipe) with the name of a project file could make the list of project commands wait forever. Termivoa now reads only normal files.
 - **Fix: `pterm uninstall` names the right file.** On macOS and Windows it told you to remove an app that the beta does not install. It now names the `pterm` file to delete.
 - **Worktrees.** In a session inside a git repository, open the session menu (**⋯**) and tap **New worktree…** to start a task in its own folder and branch (`~/termivoa/worktrees/<repository>/<name>` on `termivoa/<name>`), from the default branch or one you pick. Claude or Codex can start in it at once. **Remove worktree…** deletes the folder and keeps the branch. See [Worktrees](/docs/guides/worktrees/).
 - **Down next to Up while you type.** With the keyboard open, the key bar shows `↓` after `↑`, so you need not hide the keyboard to press Down. See [Use the agent keys and key bar](/docs/guides/live-terminal/#use-the-agent-keys-and-key-bar).
