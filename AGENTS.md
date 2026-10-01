@@ -32,6 +32,8 @@ These rules apply throughout this repository.
     - Keep `llms.txt`, the per-page `.md` copies and `robots.txt` working. Do not add FAQPage/HowTo schema, hidden text or bot-only content.
     - Before merging, `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` must pass; it fails on a broken docs link or anchor (starlight-links-validator).
 
+24. Critical features need the owner's review before merge. A feature is critical when it changes authentication, pairing, trust between computers, the network surface, the protocol in a breaking way, or stored secrets (for example multi-computer). For such a feature: write the architecture first (an ADR in `docs/decisions/` and a design document) and open it as a draft pull request marked "DO NOT MERGE without owner review"; run independent adversarial reviews (at least security, and feasibility with alternatives) and record how each finding is resolved; then report to the owner in short, simple words and wait. Do not merge the design or any implementation pull request of a critical feature until the owner approves it, even when other rules allow autonomous merges. Pick the stack for performance and simplicity on evidence; a change from Go (rule 2) needs its own ADR and the owner's approval.
+
 When access is missing, use this format:
 
 > I need [access/action] for [specific milestone]. It permits [scope] and will change/use [resource]. Please configure it through [secure location/action]. Until then, I can complete [independent work]; [specific gate] remains blocked.
