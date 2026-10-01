@@ -7,7 +7,7 @@ import {
 } from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
-import { rootRelative, type PathLink } from '../terminal/pathLinks';
+import { tapTarget, type PathLink } from '../terminal/pathLinks';
 import { runFirstCommand } from '../terminal/runFirst';
 import { followCursor, TerminalView, wheelSteps } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey, type RecapFacts, type ViewedTimes } from './activity';
@@ -173,11 +173,9 @@ export function Live({
   const keyboard = useKeyboardOpen();
   const keyboardRef = useRef(keyboard);
   keyboardRef.current = keyboard;
-  // Terminal links: the latest handler, whether links act now, and a tap that a link took.
-  const openPath = useRef<(link: PathLink) => void>(() => undefined);
-  const linksOn = useRef(false);
+  // Terminal links: the latest handler, and a tap that a link took.
+  const openPath = useRef<(link: PathLink) => boolean>(() => false);
   const linkTapped = useRef(false);
-  const latestRuntime = useRef<Runtime | undefined>(undefined);
   // PTY rows measured without the keyboard. The keyboard never shrinks the
   // PTY, so full-screen programs do not redraw each time it opens or closes.
   const restRows = useRef<number | undefined>(undefined);
@@ -262,14 +260,16 @@ export function Live({
   useEffect(() => { runtime?.view.setFontSize(fontSize); }, [runtime, fontSize]);
 
   useEffect(() => {
-    latestRuntime.current = runtime;
     const links = runtime?.view.linkPaths((link) => {
-      if (!linksOn.current) return;
-      linkTapped.current = true;
-      openPath.current(link);
+      if (openPath.current(link)) linkTapped.current = true;
     });
     return () => links?.dispose();
   }, [runtime]);
+
+  // A tapped path is resolved inside the tap, so the files root is read ahead, on attach and on each cwd change.
+  useEffect(() => {
+    if (status.link === 'live') void runtime?.connection.filesRoot();
+  }, [runtime, status.link, status.cwd]);
 
   useEffect(() => {
     const element = input.current;
@@ -475,27 +475,6 @@ export function Live({
     setPanel('composer');
   }
 
-  /** A tapped path in the terminal: Files opens at that file and line when it is inside the files root. */
-  async function openTerminalPath(link: PathLink) {
-    const connection = runtime?.connection;
-    const cwd = status.link === 'live' ? status.cwd : undefined;
-    if (connection === undefined) {
-      return;
-    }
-    const root = await connection.filesRoot();
-    const path = root === undefined ? undefined : rootRelative(root, cwd, link.path);
-    // The screen may have moved on while the root was read.
-    if (path === undefined || !linksOn.current || connection !== latestRuntime.current?.connection) {
-      return;
-    }
-    connection.closeFiles();
-    if (connection.openFilesFile(path, link.line)) {
-      showTab('files');
-      input.current?.blur();
-      setPanel('changes');
-    }
-  }
-
   const normalBuffer = status.buffer === 'normal';
   // Full-screen apps (Claude Code, vim, less) scroll themselves: a swipe or
   // trackpad scroll becomes wheel steps. Needs control, since wheel steps are input.
@@ -513,9 +492,20 @@ export function Live({
   const question = panel === 'none' ? openQuestion(status) : undefined;
   // With the keyboard up the card folds to its pill, so typing and keys keep working.
   const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
-  // A dimmed terminal (a sheet or question card on top) keeps its taps for closing them.
-  linksOn.current = panel === 'none' && !cardOpen;
-  openPath.current = (link) => { void openTerminalPath(link); };
+  // A tapped path inside the files root opens in Files at its line. Any other
+  // tap, and any tap on a dimmed terminal (a sheet or question card on top),
+  // acts as before.
+  openPath.current = (link) => {
+    const connection = runtime?.connection;
+    const target = tapTarget(panel === 'none' && !cardOpen, connection?.knownFilesRoot(), status.link === 'live' ? status.cwd : undefined, link);
+    if (connection === undefined || target === undefined) return false;
+    connection.closeFiles();
+    if (!connection.openFilesFile(target.path, target.line)) return false;
+    showTab('files');
+    input.current?.blur();
+    setPanel('changes');
+    return true;
+  };
   const badge = controlBadge(status);
   const liveCwd = status.link === 'live' ? status.cwd : undefined;
   const cwd = liveCwd ?? current.cwd;

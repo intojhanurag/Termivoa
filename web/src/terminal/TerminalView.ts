@@ -1,7 +1,7 @@
 import { Terminal, type IBufferCell, type IDisposable } from '@xterm/xterm';
 import { clampGrid } from './Connection';
 import { FrameRenderer } from './FrameRenderer';
-import { findPathLinks, rowCells, type PathLink } from './pathLinks';
+import { rowLinks, type PathLink } from './pathLinks';
 import { ServerUnicodeAddon } from './ServerUnicodeAddon';
 
 export const MONOSPACE = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
@@ -66,9 +66,12 @@ export class TerminalView {
   }
 
   /**
-   * Makes path-like text a link; a tap on one calls onOpen. xterm activates a
-   * link only when the press and release land on it with no move between, so
-   * a swipe that starts on a link scrolls as before. A selection wins too.
+   * Makes path-like text a link; a tap on one calls onOpen.
+   * xterm activates a link on mouseup when the mousedown was on the same link
+   * and the mouseup is still inside it. A touch that scrolls or swipes sends
+   * no mouse events, so it never activates one; a mouse drag inside a link
+   * would, so a selection wins. On a touch screen there is no hover
+   * decoration: iOS would spend the first tap on the hover change.
    */
   linkPaths(onOpen: (link: PathLink) => void): IDisposable {
     const { terminal } = this;
@@ -84,12 +87,11 @@ export class TerminalView {
           const cell = row.getCell(x);
           if (cell !== undefined) cells.push(cell);
         }
-        const { text, columns } = rowCells(cells);
-        const links = findPathLinks(text).map((link) => ({
-          // 1-based cells, end inclusive.
-          range: { start: { x: (columns[link.start] ?? 0) + 1, y }, end: { x: columns[link.end] ?? terminal.cols, y } },
-          text: text.slice(link.start, link.end),
-          decorations: { pointerCursor: true, underline: true },
+        const hover = globalThis.matchMedia?.('(pointer: coarse)').matches !== true;
+        const links = rowLinks(cells, y).map(({ link, text, range }) => ({
+          range,
+          text,
+          decorations: { pointerCursor: hover, underline: hover },
           activate: () => {
             if (!terminal.hasSelection()) onOpen(link);
           },

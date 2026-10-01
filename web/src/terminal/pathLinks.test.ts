@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findPathLinks, rootRelative, rowCells, type Cell } from './pathLinks';
+import { findPathLinks, rootRelative, rowCells, rowLinks, tapTarget, type Cell } from './pathLinks';
 
 describe('findPathLinks', () => {
   it('finds a relative path, with and without "./"', () => {
@@ -135,5 +135,65 @@ describe('rowCells', () => {
 
   it('is empty for no cells', () => {
     expect(rowCells([])).toEqual({ text: '', columns: [0] });
+  });
+});
+
+describe('findPathLinks, stricter names', () => {
+  it('needs a letter in the extension and no leading dot', () => {
+    for (const text of ['1/2.5', 'react/18.2', 'node_modules/.bin', 'see 3/4.0 here']) {
+      expect(findPathLinks(text), text).toEqual([]);
+    }
+    expect(findPathLinks('./.env').map((link) => link.path)).toEqual(['./.env']);
+  });
+
+  it('takes letters beyond ASCII as part of one name', () => {
+    expect(findPathLinks('docs/résumé.md')).toEqual([{ start: 0, end: 14, path: 'docs/résumé.md' }]);
+  });
+
+  it('takes a dotted folder that is not a lower-case domain', () => {
+    expect(findPathLinks('MyApp.Api/Controllers/X.cs').map((link) => link.path)).toEqual(['MyApp.Api/Controllers/X.cs']);
+    expect(findPathLinks('golang.org/x/tools.go')).toEqual([]);
+  });
+
+  it('reads tsc\'s "(line,column)"', () => {
+    expect(findPathLinks('src/app.ts(10,5): error')).toEqual([{ start: 0, end: 16, path: 'src/app.ts', line: 10, column: 5 }]);
+    expect(findPathLinks('src/app.ts(7)')).toEqual([{ start: 0, end: 13, path: 'src/app.ts', line: 7 }]);
+  });
+});
+
+describe('tapTarget', () => {
+  const link = findPathLinks('src/a.ts:9')[0]!;
+  const root = '/Users/me/app';
+  const cwd = '/Users/me/app/web';
+
+  it('opens a path inside the root at its line', () => {
+    expect(tapTarget(true, root, cwd, link)).toEqual({ path: 'web/src/a.ts', line: 9 });
+  });
+
+  it('leaves the tap alone when links are off, the root is not known, or the path is outside it', () => {
+    expect(tapTarget(false, root, cwd, link)).toBeUndefined();
+    expect(tapTarget(true, undefined, cwd, link)).toBeUndefined();
+    expect(tapTarget(true, root, cwd, findPathLinks('/dev/null')[0]!)).toBeUndefined();
+    expect(tapTarget(true, root, undefined, link)).toBeUndefined();
+  });
+});
+
+describe('rowLinks', () => {
+  const cells = (text: string): Cell[] => Array.from(text).flatMap((char) => {
+    const wide = /[\u3000-\u9fff]/u.test(char);
+    const cell = { getChars: () => char, getWidth: () => (wide ? 2 : 1) };
+    return wide ? [cell, { getChars: () => '', getWidth: () => 0 }] : [cell];
+  });
+
+  it('gives 1-based cell ranges with an inclusive end', () => {
+    expect(rowLinks(cells('at src/a.ts:3 x'), 4)).toEqual([
+      { link: { start: 3, end: 13, path: 'src/a.ts', line: 3 }, text: 'src/a.ts:3', range: { start: { x: 4, y: 4 }, end: { x: 13, y: 4 } } },
+    ]);
+  });
+
+  it('places a link after wide characters by cell, not by character', () => {
+    const [found] = rowLinks(cells('漢字 src/w.ts'), 1);
+    expect(found?.text).toBe('src/w.ts');
+    expect(found?.range).toEqual({ start: { x: 6, y: 1 }, end: { x: 13, y: 1 } });
   });
 });

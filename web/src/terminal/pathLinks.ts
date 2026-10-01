@@ -17,14 +17,17 @@ const EXTENSIONS = new Set([
 ]);
 
 /**
- * A run of path characters with an optional ":line" and ":line:column". It
- * never starts inside a word, a path or after ":" (so not inside a URL), and
- * may start with "./", "../", "/" or a Windows drive.
+ * A run of path characters, then an optional ":line", ":line:column" or tsc's
+ * "(line,column)". It never starts inside a word, a path or after ":" (so not
+ * inside a URL), and may start with "./", "../", "/" or a Windows drive.
  */
-const TOKEN = /(?<![\w.@+~:/\\-])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|\/)?[\w.@+-]+(?:[\\/][\w.@+-]+)*)(?::(\d{1,7}))?(?::(\d{1,5}))?/gu;
+const TOKEN = /(?<![\p{L}\p{N}_.@+~:/\\-])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|\/)?[\p{L}\p{N}_.@+-]+(?:[\\/][\p{L}\p{N}_.@+-]+)*)(?::(\d{1,7})(?::(\d{1,5}))?|\((\d{1,7})(?:,(\d{1,5}))?\))?/gu;
 
-/** A relative first folder named like a domain, as in "github.com/owner/repo". */
-const DOMAIN = /^[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}$/u;
+/** A relative first folder named like a domain, as in "github.com/owner/repo"; domains are lower case. */
+const DOMAIN = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/u;
+
+/** A file extension has a letter, so "2.5" and "18.2" are not file names. */
+const EXTENSION = /\.([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)$/u;
 
 /**
  * Path-like tokens in one line of terminal text. Conservative: a token needs a
@@ -39,16 +42,17 @@ export function findPathLinks(text: string): PathLink[] {
     const whole = path === match[1];
     const parts = path.split(/[\\/]/u);
     const name = parts.at(-1) ?? '';
-    const extension = /\.([A-Za-z0-9]{1,10})$/u.exec(name)?.[1];
+    // A dot file (".env", ".bin") has no extension.
+    const extension = name.startsWith('.') ? undefined : EXTENSION.exec(name)?.[1];
     const anchored = /^(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|\/)/u.test(path);
     const link = parts.length > 1
-      ? name !== '' && (anchored || (extension !== undefined && !DOMAIN.test(parts[0] ?? '')))
+      ? name !== '' && (anchored || (extension !== undefined && extension.length <= 10 && !DOMAIN.test(parts[0] ?? '')))
       : extension !== undefined && EXTENSIONS.has(extension.toLowerCase());
     if (!link) {
       continue;
     }
-    const line = whole ? Number(match[2] ?? 0) : 0;
-    const column = whole ? Number(match[3] ?? 0) : 0;
+    const line = whole ? Number(match[2] ?? match[4] ?? 0) : 0;
+    const column = whole ? Number(match[3] ?? match[5] ?? 0) : 0;
     links.push({
       start: match.index,
       end: match.index + (whole ? match[0].length : path.length),
@@ -58,6 +62,22 @@ export function findPathLinks(text: string): PathLink[] {
     });
   }
   return links;
+}
+
+/**
+ * Where a tap on a terminal link goes: the root-relative path and line, or
+ * undefined when the tap is not for a link (links off, root not known yet,
+ * outside the root), so it acts as a plain tap. Decided at once, inside the
+ * tap, since iOS raises the keyboard only during the gesture.
+ */
+export function tapTarget(
+  linksOn: boolean,
+  root: string | undefined,
+  cwd: string | undefined,
+  link: PathLink,
+): { readonly path: string; readonly line: number | undefined } | undefined {
+  const path = linksOn && root !== undefined ? rootRelative(root, cwd, link.path) : undefined;
+  return path === undefined ? undefined : { path, line: link.line };
 }
 
 /** "/a/b/../c" as ["/", "a", "c"] style: the prefix ("/", "C:/" or "") and the clean segments; undefined above the top. */
@@ -128,4 +148,22 @@ export function rowCells(cells: ReadonlyArray<Cell>): { readonly text: string; r
   }
   columns.push(column);
   return { text, columns };
+}
+
+/** A link in one buffer row, with its xterm range: 1-based cells, end inclusive. */
+export interface RowLink {
+  readonly link: PathLink;
+  readonly text: string;
+  readonly range: { readonly start: { readonly x: number; readonly y: number }; readonly end: { readonly x: number; readonly y: number } };
+}
+
+/** The path links in buffer row y (1-based), placed by cell, so wide characters before a link do not shift it. */
+export function rowLinks(cells: ReadonlyArray<Cell>, y: number): RowLink[] {
+  const { text, columns } = rowCells(cells);
+  return findPathLinks(text).map((link) => ({
+    link,
+    text: text.slice(link.start, link.end),
+    // The end column is where the next character starts, which is the last cell 1-based.
+    range: { start: { x: (columns[link.start] ?? 0) + 1, y }, end: { x: columns[link.end] ?? 0, y } },
+  }));
 }
