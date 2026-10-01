@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -150,16 +152,16 @@ func TestCreateAndRemoveWorktree(t *testing.T) {
 
 	// Dirty: refused without force, removed with force; branches stay.
 	write(t, created.Path, "new.txt", "new\n")
-	if got := RemoveWorktree(ctx, created.Path, false); got.State != protocol.Dirty {
+	if got := RemoveWorktree(ctx, created.Path, false, nil); got.State != protocol.Dirty {
 		t.Fatalf("dirty remove = %+v", got)
 	}
 	if _, err := os.Stat(created.Path); err != nil {
 		t.Fatal("dirty worktree was removed")
 	}
-	if got := RemoveWorktree(ctx, created.Path, true); got.State != protocol.Removed {
+	if got := RemoveWorktree(ctx, created.Path, true, nil); got.State != protocol.Removed {
 		t.Fatalf("forced remove = %+v", got)
 	}
-	if got := RemoveWorktree(ctx, second.Path, false); got.State != protocol.Removed {
+	if got := RemoveWorktree(ctx, second.Path, false, nil); got.State != protocol.Removed {
 		t.Fatalf("clean remove = %+v", got)
 	}
 	for _, path := range []string{created.Path, second.Path} {
@@ -169,7 +171,7 @@ func TestCreateAndRemoveWorktree(t *testing.T) {
 	}
 	output(t, dir, "rev-parse", "--verify", "termivoa/brave-otter")
 	output(t, dir, "rev-parse", "--verify", "termivoa/calm-fox")
-	if got := RemoveWorktree(ctx, dir, true); got.State != protocol.WorktreeRemoveStateFailed {
+	if got := RemoveWorktree(ctx, dir, true, nil); got.State != protocol.WorktreeRemoveStateFailed {
 		t.Errorf("removing the main worktree = %+v", got)
 	}
 }
@@ -222,5 +224,90 @@ func TestWorktreeOf(t *testing.T) {
 	}
 	if _, _, ok := WorktreeOf("", filepath.Join("proj", "x")); ok {
 		t.Error("an empty root matched")
+	}
+}
+
+func TestRemoveTreatsIgnoredFilesAsDirty(t *testing.T) {
+	dir := repoWithOrigin(t)
+	write(t, dir, ".gitignore", ".env\n")
+	git(t, dir, "add", ".gitignore")
+	git(t, dir, "commit", "-q", "-m", "ignore")
+	ctx := context.Background()
+	created, err := CreateWorktree(ctx, dir, t.TempDir(), "keep-env", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, created.Path, ".env", "SECRET=1\n")
+	called := false
+	if got := RemoveWorktree(ctx, created.Path, false, func() { called = true }); got.State != protocol.Dirty || called {
+		t.Fatalf("remove with an ignored .env = %+v (beforeRemove ran: %v)", got, called)
+	}
+	if _, err := os.Stat(filepath.Join(created.Path, ".env")); err != nil {
+		t.Fatalf("the ignored .env was deleted: %v", err)
+	}
+	if got := RemoveWorktree(ctx, created.Path, true, func() { called = true }); got.State != protocol.Removed || !called {
+		t.Fatalf("forced remove = %+v (beforeRemove ran: %v)", got, called)
+	}
+}
+
+func TestFailedAddLeavesNothing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the hook is a shell script")
+	}
+	dir := repoWithOrigin(t)
+	hook := filepath.Join(dir, ".git", "hooks", "post-checkout")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'lefthook: lint failed' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	_, err := CreateWorktree(context.Background(), dir, root, "hooked", "main")
+	var failure *AddError
+	if !errors.As(err, &failure) || !strings.Contains(failure.Output, "lefthook: lint failed") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "proj", "hooked")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the folder is left: %v", err)
+	}
+	if out := output(t, dir, "branch", "--list", "termivoa/hooked"); out != "" {
+		t.Errorf("the branch is left: %q", out)
+	}
+	if out := output(t, dir, "worktree", "list", "--porcelain"); strings.Contains(out, "hooked") {
+		t.Errorf("git still lists the worktree: %s", out)
+	}
+}
+
+func TestRepositoryFolderNamesStayInsideTheRoot(t *testing.T) {
+	newRepo(t) // git config isolation
+	root := filepath.Join(t.TempDir(), "root")
+	for _, name := range []string{"..git", "...git"} {
+		bare := filepath.Join(t.TempDir(), name)
+		git(t, filepath.Dir(bare), "init", "-q", "--bare", name)
+		if _, err := CreateWorktree(context.Background(), bare, root, "x", "main"); !errors.Is(err, ErrWorktreeName) {
+			t.Errorf("bare repository %q: err = %v", name, err)
+		}
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("something was made: %v", err)
+	}
+}
+
+func TestRollBackKeepsAMovedBranch(t *testing.T) {
+	dir := repoWithOrigin(t)
+	ctx := context.Background()
+	created, err := CreateWorktree(ctx, dir, t.TempDir(), "moved", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, created.Path, "work.txt", "work\n")
+	git(t, created.Path, "add", "work.txt")
+	git(t, created.Path, "commit", "-q", "-m", "work")
+	if err := RollBack(ctx, created); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(created.Path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("folder still exists: %v", err)
+	}
+	if got := output(t, dir, "log", "-1", "--format=%s", "termivoa/moved"); got != "work" {
+		t.Errorf("moved branch = %q, want it kept at the new commit", got)
 	}
 }

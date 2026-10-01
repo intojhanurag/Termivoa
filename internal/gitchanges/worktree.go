@@ -1,8 +1,10 @@
 package gitchanges
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,9 +101,12 @@ func defaultBranch(ctx context.Context, main string, refs []branchRef, current s
 // branchRefs lists every branch with a name the protocol can carry, sorted by
 // full ref name, so refs/heads come before refs/remotes.
 func branchRefs(ctx context.Context, main string) ([]branchRef, error) {
-	out, _, err := run(ctx, main, "for-each-ref", "--format=%(refname)%00%(refname:short)", "refs/heads", "refs/remotes")
+	out, truncated, err := run(ctx, main, "for-each-ref", "--format=%(refname)%00%(refname:short)", "refs/heads", "refs/remotes")
 	if err != nil {
 		return nil, err
+	}
+	if truncated { // Drop the last line, which the output limit may have cut.
+		out = out[:max(0, bytes.LastIndexByte(out, '\n'))]
 	}
 	var refs []branchRef
 	for _, line := range strings.Split(string(out), "\n") {
@@ -143,6 +148,13 @@ type Created struct {
 	Path, Repo, Main, Commit string
 }
 
+// AddError is a git worktree add that failed (a hook, the timeout, git
+// itself). What it made was rolled back; Output is the end of what git
+// printed.
+type AddError struct{ Output string }
+
+func (err *AddError) Error() string { return "gitchanges: git worktree add failed: " + err.Output }
+
 // CreateWorktree adds the worktree <root>/<repo>/<name> on the new branch
 // termivoa/<name> from base, a branch of the repository that holds dir. The
 // new branch tracks nothing, so a push makes its own remote branch.
@@ -165,6 +177,9 @@ func CreateWorktree(ctx context.Context, dir, root, name, base string) (Created,
 	}
 	parent := filepath.Join(root, created.Repo)
 	created.Path = filepath.Join(parent, name)
+	if gotName, gotRepo, ok := WorktreeOf(root, created.Path); !ok || gotName != name || gotRepo != created.Repo {
+		return Created{}, ErrWorktreeName // The path must stay <root>/<repo>/<name>.
+	}
 	if _, err := os.Lstat(created.Path); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return Created{}, ErrWorktreeExists
 	}
@@ -197,23 +212,34 @@ func CreateWorktree(ctx context.Context, dir, root, name, base string) (Created,
 		return Created{}, err
 	}
 	if output, err := runWrite(ctx, main, "worktree", "add", "--no-track", "-b", BranchPrefix+name, created.Path, created.Commit); err != nil {
-		return Created{}, errors.New("gitchanges: git worktree add failed: " + failureText(ctx, output, err))
+		failure := &AddError{Output: failureText(ctx, output, err)}
+		// A failing post-checkout hook or the timeout can leave the folder
+		// and the branch; the path did not exist before, so all of it is ours.
+		return Created{}, errors.Join(failure, RollBack(context.WithoutCancel(ctx), created))
 	}
 	return created, nil
 }
 
-// RollBack undoes a create whose session did not start: it removes the
-// worktree and deletes its branch only while that still points at the commit
-// the create made it at.
+// RollBack undoes a create whose session did not start, or a git worktree
+// add that failed part way. The folder did not exist before the create, so
+// whatever is there now is removed. The branch is deleted only while it still
+// points at the commit the create made it at; a branch that moved is kept.
 func RollBack(ctx context.Context, created Created) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
-	output, err := runWrite(ctx, created.Main, "worktree", "remove", "--force", created.Path)
-	if err != nil {
+	_, _ = runWrite(ctx, created.Main, "worktree", "remove", "--force", created.Path)
+	if err := os.RemoveAll(created.Path); err != nil {
+		return fmt.Errorf("gitchanges: remove %s: %w", created.Path, err)
+	}
+	if output, err := runWrite(ctx, created.Main, "worktree", "prune"); err != nil {
 		return errors.New("gitchanges: " + failureText(ctx, output, err))
 	}
-	name := filepath.Base(created.Path)
-	if output, err := runWrite(ctx, created.Main, "update-ref", "-d", "refs/heads/"+BranchPrefix+name, created.Commit); err != nil {
+	branch := "refs/heads/" + BranchPrefix + filepath.Base(created.Path)
+	out, _, err := run(ctx, created.Main, "rev-parse", "-q", "--verify", branch)
+	if err != nil || strings.TrimSpace(string(out)) != created.Commit {
+		return nil // Not made, or it moved: keep it.
+	}
+	if output, err := runWrite(ctx, created.Main, "update-ref", "-d", branch, created.Commit); err != nil {
 		return errors.New("gitchanges: " + failureText(ctx, output, err))
 	}
 	return nil
@@ -237,9 +263,11 @@ func WorktreeOf(root, dir string) (name, repo string, ok bool) {
 }
 
 // RemoveWorktree removes the linked worktree at path with git worktree
-// remove. Without force, a worktree with changes or untracked files is kept
-// (dirty). The branch is kept.
-func RemoveWorktree(ctx context.Context, path string, force bool) protocol.WorktreeRemovedPayload {
+// remove. Without force, a worktree with changes, untracked files or ignored
+// files (git worktree remove deletes those, such as a .env) is kept (dirty).
+// beforeRemove, when set, runs after the checks and right before git removes
+// anything. The branch is kept.
+func RemoveWorktree(ctx context.Context, path string, force bool, beforeRemove func()) protocol.WorktreeRemovedPayload {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 	main, state := openMain(ctx, path)
@@ -251,13 +279,16 @@ func RemoveWorktree(ctx context.Context, path string, force bool) protocol.Workt
 		return removeFailed("the session folder is not a linked git worktree")
 	}
 	if !force {
-		out, truncated, err := run(ctx, path, "status", "--porcelain", "--untracked-files=normal")
+		out, truncated, err := run(ctx, path, "status", "--porcelain", "--untracked-files=normal", "--ignored=matching")
 		if err != nil {
 			return removeFailed("could not read the worktree status: " + err.Error())
 		}
 		if truncated || len(strings.TrimSpace(string(out))) > 0 {
 			return protocol.WorktreeRemovedPayload{State: protocol.Dirty}
 		}
+	}
+	if beforeRemove != nil {
+		beforeRemove()
 	}
 	args := []string{"worktree", "remove"}
 	if force {
