@@ -26,6 +26,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 - **Many live sessions.** Start shells or coding agents on your computer and
   switch between them with tabs. A dot shows new output.
+- **Worktrees.** Start a task in its own folder and branch from `main` (or
+  any branch) with one tap, with a random name you can edit, and Claude or
+  Codex already running in it.
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way.

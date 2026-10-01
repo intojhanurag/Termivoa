@@ -874,6 +874,23 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   on screen (right edge 245 px), once, and ↑ ↓ ↓ Enter printed
   `^[[A^[[B^[[B`.
 
+- **Worktrees, phone side and end to end** (`feat/worktrees`, 2026-10-01):
+  **⋯ → New worktree…** sheet (random editable name, base branch picker with
+  the default branch first, start with Shell/Claude/Codex), the `⎇ name`
+  badge on session rows and the status line, and **Remove worktree…** with a
+  confirm step and a second confirm for uncommitted changes. Evidence:
+  `pnpm --dir web test`, `./scripts/check` exit 0, and a headless Chrome run
+  (`~/phone-terminal-worktrees/e2e/worktrees.mjs`, not in the repo) against
+  `pterm up --dev` with `HOME=/tmp/wth`, a repository with `main` and
+  `feat/x` and a bare `origin`: 19/19 checks pass. The sheet opens with base
+  `main` and lists `main`, `feat/x`, `origin/main`, `origin/feat/x` (no
+  `origin/HEAD`); Create makes the folder and `termivoa/<name>` at `main`'s
+  commit with no upstream and opens the new session with its badge; a second
+  worktree made from inside the first uses base `feat/x` and the main
+  repository's name; a duplicate name is refused with a clear message; a
+  folder outside git shows the `cd` hint; a dirty worktree asks before
+  **Remove anyway**, then the folder is gone and the branch stays.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

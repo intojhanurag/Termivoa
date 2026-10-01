@@ -38,6 +38,7 @@ export default defineConfig({
 						'docs/guides/project-buttons',
 						'docs/guides/answer-cards',
 						'docs/guides/changes',
+						'docs/guides/worktrees',
 						'docs/guides/notifications',
 						'docs/guides/preview',
 						'docs/guides/photo-and-voice',
