@@ -76,6 +76,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): project buttons could hang. Reading `package.json`, a
+  `Makefile`, `Cargo.toml` or `go.mod` checked the file and then opened it;
+  a FIFO (named pipe) put at that name between the two steps made the open
+  wait forever for a writer, so `tasks.list` never answered. The host now
+  opens the file without blocking and refuses anything that is not a
+  regular file. No phone-side change (#125).
 - Fix (host side): `pterm uninstall` on macOS and Windows told users to
   remove `Termivoa.app` or a Windows app entry, which the beta never
   installs. It now names the `pterm` file to delete, as on Linux; only a

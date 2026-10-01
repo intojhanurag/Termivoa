@@ -14,6 +14,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -115,15 +116,34 @@ func readFile(root *os.Root, name string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errSkipped
 	}
-	file, err := root.Open(name)
+	file, opened, err := openRegular(root, name)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	if opened, err := file.Stat(); err != nil || !os.SameFile(info, opened) {
+	if !os.SameFile(info, opened) {
 		return nil, errSkipped // Replaced between the check and the open.
 	}
 	return io.ReadAll(io.LimitReader(file, maxFileBytes+1))
+}
+
+// openRegular opens a regular file without blocking: a FIFO swapped in after
+// the caller's Lstat opens at once (O_NONBLOCK) and is refused with
+// errSkipped. Windows ignores O_NONBLOCK and has no FIFOs in folders.
+func openRegular(root *os.Root, name string) (*os.File, fs.FileInfo, error) {
+	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := file.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = errSkipped
+	}
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	return file, info, nil
 }
 
 // parsePackageJSON returns the safe script names in file order and the

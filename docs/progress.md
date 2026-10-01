@@ -898,6 +898,18 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   folder outside git shows the `cd` hint; a dirty worktree asks before
   **Remove anyway**, then the folder is gone and the branch stays.
 
+- **Project buttons never block on a FIFO** (#125, `fix/issue-125`,
+  2026-10-01): `projecttasks.readFile` checked the file with `Lstat` and
+  then called `root.Open`, which waits forever for a writer when a FIFO is
+  swapped in between. The open is now `openRegular` (the same approach as
+  `internal/projectfiles`): `O_RDONLY|syscall.O_NONBLOCK`, then `Stat` on
+  the open file must be regular; the `SameFile` check stays, because the
+  open follows a symlink swapped in after `Lstat`. Evidence:
+  `TestAFIFONeverBlocksARead` (`mkfifo` at `go.mod`, 3 s timeout) failed
+  with "opening a FIFO blocked" before the fix and passes after;
+  `go test -race ./internal/projecttasks ./internal/projectfiles
+  ./internal/broker`, Linux and Windows cross-vet, `./scripts/check`.
+
 - **`pterm uninstall` leftover message** (#116, `fix/issue-116`,
   2026-10-01): macOS and Windows printed "move Termivoa.app to the Trash, or
   remove it in Windows Settings > Apps", but the beta installs one `pterm`
