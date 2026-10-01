@@ -62,6 +62,11 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): `pterm uninstall` on macOS and Windows told users to
+  remove `Termivoa.app` or a Windows app entry, which the beta never
+  installs. It now names the `pterm` file to delete, as on Linux; only a
+  real macOS app bundle is still moved to the Trash. No phone-side change
+  (#116).
 - Desktop attach (host side): Ctrl+] pressed just as `pterm attach` finished
   connecting could be ignored, so the attachment stayed open until Ctrl+] was
   pressed again. The startup input reader could read the key and then drop it

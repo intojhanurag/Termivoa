@@ -409,3 +409,17 @@ func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
 		})
 	}
 }
+
+func TestProgramLeftoverNamesWhatToDelete(t *testing.T) {
+	cases := []struct{ os, executable, want string }{
+		{"darwin", "/Users/ada/.local/bin/pterm", "The pterm program itself stays: delete /Users/ada/.local/bin/pterm yourself."},
+		{"darwin", "/Applications/Termivoa.app/Contents/MacOS/pterm", "The application itself stays: move /Applications/Termivoa.app to the Trash."},
+		{"linux", "/home/ada/.local/bin/pterm", "The pterm program itself stays: delete /home/ada/.local/bin/pterm yourself."},
+		{"windows", `C:\Users\ada\AppData\Local\Programs\Termivoa\pterm.exe`, `The pterm program itself stays: delete C:\Users\ada\AppData\Local\Programs\Termivoa\pterm.exe yourself.`},
+	}
+	for _, c := range cases {
+		if got := programLeftover(c.os, c.executable); got != c.want {
+			t.Errorf("programLeftover(%q, %q) = %q, want %q", c.os, c.executable, got, c.want)
+		}
+	}
+}

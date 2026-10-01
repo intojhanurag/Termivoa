@@ -935,12 +935,7 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	if env.host.OS == "windows" && len(plan.Steps) > 0 {
 		fmt.Fprintln(output, "Then it stops the gateway and, if it has no active sessions, the broker.")
 	}
-	switch env.host.OS {
-	case "linux":
-		fmt.Fprintf(output, "The pterm program itself stays: delete %s yourself.\n", env.host.Executable)
-	default:
-		fmt.Fprintln(output, "The application itself stays: move Termivoa.app to the Trash, or remove it in Windows Settings > Apps.")
-	}
+	fmt.Fprintln(output, programLeftover(env.host.OS, env.host.Executable))
 
 	if plan.ChangesRunningBroker || len(data) > 0 {
 		if err := report.refuseActiveSessions("uninstall"); err != nil {
@@ -1285,4 +1280,16 @@ func exitText(err error) string {
 		return "exit status 0"
 	}
 	return err.Error()
+}
+
+// programLeftover says how to delete the program itself, which uninstall
+// keeps. Only a macOS app bundle is moved to the Trash as a whole; the beta
+// installs a single pterm file on every platform.
+func programLeftover(osName, executable string) string {
+	if osName == "darwin" {
+		if bundle, _, found := strings.Cut(executable, ".app/Contents/MacOS/"); found {
+			return fmt.Sprintf("The application itself stays: move %s.app to the Trash.", bundle)
+		}
+	}
+	return fmt.Sprintf("The pterm program itself stays: delete %s yourself.", executable)
 }
