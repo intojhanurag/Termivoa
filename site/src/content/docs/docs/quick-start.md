@@ -43,6 +43,8 @@ The link works once and expires after two minutes. Run `pterm pair` for a new on
 The phone shows a code, such as `485-431`. Your computer shows its code and asks `Approve? [y/N]`.
 Type `y` if the codes match, `n` if not.
 
+![Your computer prints "Phone 'My iPhone' shows code 482-913. Approve? [y/N]" and your phone asks "Does your computer show this code?" above the same six digits; a hand-written note says: same six digits? type y. Below it: No match? Type n.](../../../assets/docs/illo-pairing.webp)
+
 On iPhone, tap **Share**, then **Add to Home Screen**, to get notifications.
 
 ## 5. Start your first session
@@ -54,6 +56,8 @@ On iPhone, tap **Share**, then **Add to Home Screen**, to get notifications.
 5. Tap **Take control** to type.
 
 Closing the app does not stop the session.
+
+![The Sessions screen shows "Your computer · connected" with two sessions, acme-web and billing-api, and a new session button; a hand-written note says: you're set, your terminal in your pocket.](../../../assets/docs/illo-youre-set.webp)
 
 ## Common questions
 
