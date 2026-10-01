@@ -1,90 +1,63 @@
 ---
 title: Sessions
-description: Start, read, rename and close terminal sessions from the Sessions list on your phone.
+description: Use the Termivoa Sessions list on your phone to start, read, rename and end the shells and coding agents that run on your computer.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you start, follow and close sessions from your phone.
+Termivoa shows every session on your computer in the Sessions list, the first screen after pairing. A session is one running shell or coding agent, such as Claude Code or Codex.
 
-## What a session is
+![The Sessions list: acme-web waits for an answer to "Run the test suite?", a worktree session shows its ⎇ badge (Next beta), and billing-api is working.](../../../../assets/docs/phone-sessions.webp)
 
-A session is one terminal on your computer, such as a shell or a coding agent.
-It runs on your computer, not on the phone. It keeps running when you close the app or lose signal.
+## Read the Sessions list
 
-## The Sessions list
+Each row shows:
 
-The Sessions list is the first screen after pairing. Each row shows:
+- the session name, which follows the folder after `cd` unless you renamed the session;
+- the project, shell and age, for example "Home · zsh · 35 min";
+- the last line of output, or the question when an agent waits for you;
+- a dot for new output since this phone last opened it.
 
-- the session name;
-- the project and the shell, for example "Home · zsh";
-- the last line of output;
-- a dot when there is new output.
-
-Sessions that wait for you are at the top.
+Sessions that wait for you are at the top. Tap a row to open it in the [live terminal](/docs/guides/live-terminal/), which shows the session's full folder path.
 
 ## Start a session
 
-1. Tap **New session**.
-2. Pick a project. A project is a folder where new sessions start.
-3. Pick a shell.
-4. Optional: in **run first**, type one command, such as `claude` or `codex`.
-5. Tap **start session**.
+1. Tap **new session**, or **+** in the live terminal tab bar.
+2. Pick a project (a folder where new sessions start) and a shell.
+3. Optional: in **run first**, type one command, such as `claude` or `codex`.
+4. Tap **start session**.
 
-The **run first** command is typed once, with Enter, when the session opens. It is typed only if no one else has control.
+The **run first** command is typed once, with Enter, only if no one else has control. Otherwise Termivoa sends nothing and says why. **save as preset** keeps your choices under **Launch** for a one-tap start. Add projects on the computer with `pterm project add <folder>`.
 
-To reuse the same choices, tap **save as preset**. The preset shows under **Launch**, and one tap starts it.
-
-To add more projects, run this on your computer:
-
-```sh
-pterm project add <folder>
-```
-
-## Status badges
+## What do the status badges mean?
 
 | Badge | Meaning |
 | --- | --- |
-| **Working** | The program is busy, or it printed output in the last few seconds. |
-| **Waiting** | A coding agent or a `[y/N]` prompt waits for your answer. The row shows the question. |
-| **Your turn** | An agent finished its work and you have not looked yet. |
-| **Exited** | The shell ended. The exit code shows when there is one. |
+| **Working** | Busy, or printed output in the last few seconds. |
+| **Waiting** | An agent or `[y/N]` prompt waits for you. The row shows the question and **Answer ›**. |
+| **Your turn** | An agent finished and you have not opened the session since. |
+| **Exited** | The shell ended, with its exit code if any, for example **Exited · 1**. |
+| **Lost** | The computer restarted, you logged out, or the broker (the background process that owns sessions) stopped. |
 
-A plain shell that waits at its prompt shows no badge.
-Waiting sessions can also [notify your phone](/docs/guides/notifications/).
-When you open a session after some time away, a [recap card](/docs/guides/recap/) says what happened.
-
-## Live folder name
-
-When you `cd` to another folder, the session name changes to that folder name.
-The live terminal also shows the full path, for example `~/src/app`.
-The row still shows the project on its second line.
-
-If you rename a session, it keeps your name.
+A plain shell at its prompt shows no badge. Waiting sessions can [notify your phone](/docs/guides/notifications/). After time away, a [recap card](/docs/guides/recap/) says what happened.
 
 ## Rename a session
 
-1. Open the session.
-2. Tap the session menu (the button next to the tabs).
-3. Tap **Rename…**, type a new title and tap **Save title**.
+1. In the session, open the session menu (**⋯**).
+2. Tap **Rename…**, type a new title and tap **Save title**.
 
-## Close a session
+## End a session
 
-1. Open the session.
-2. Tap the session menu.
-3. Tap **Terminate…**.
-4. Tap **Terminate session**. Tap **Keep running** to cancel.
+1. Open the session menu (**⋯**) and tap **Terminate…**.
+2. Tap **Terminate session**, or **Keep running** to cancel.
 
-This ends the program and everything it started.
+This stops the program and everything it started. On the computer, get the ID from `pterm list` and run `pterm terminate <session-id>`.
 
-On your computer, you can also run:
+## Common questions
 
-```sh
-pterm terminate <session-id>
-```
+### Does a session stop when I close Termivoa?
 
-Get the session ID from `pterm list`.
+No. It runs on the computer until the program exits, you end it, or it is lost.
 
-## When a session is lost
+### Why does it say "This session is gone"?
 
-A session ends if your computer restarts, you log out, or the broker (the background process that owns sessions) crashes.
-The phone then says "This session is gone". A lost session cannot come back. Tap **New session** to start again.
-Termivoa never re-runs old commands on its own.
+The session ended and cannot come back or open. It stays on the list as **Exited** or **Lost**. Start a new session. Termivoa never runs old commands again.

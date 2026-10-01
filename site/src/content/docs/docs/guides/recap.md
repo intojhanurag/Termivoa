@@ -1,36 +1,33 @@
 ---
 title: While you were away
-description: When you open a session, a short card tells you what the agent did while your phone was away.
+description: Termivoa shows a one-line recap card when you open a session, with the time the agent worked, the changed files and if it waits for you.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you see, at a glance, what happened in a session while you were away.
-
-## What the card shows
-
-When you open a session, a small card can show at the top of the terminal. For example:
+When you open a session after time away, Termivoa can show a recap card at the top of the live terminal that says what the agent did, for example:
 
 **Since you left 32 min ago · worked 14 min · 5 files changed +120 −34 · waiting for you**
 
-The card shows only when one of these is true:
+## When does the recap card show?
 
-- the agent worked for one minute or more while this phone was away;
-- the agent waits for you now, or it finished and it is your turn.
+The card shows only when:
 
-Each part comes from facts that Termivoa knows:
+- the agent worked one minute or more while this phone was away; or
+- the agent waits for you, or finished and it is your turn.
 
-- **Since you left**: the last time that this phone showed the session.
-- **worked**: the time that the agent was busy, from your computer.
-- **files changed**: the uncommitted changes in the session's git project.
+It shows once per visit, and each phone tracks its own visits.
+
+![A recap card above a waiting question says "Since you left 1 min ago · worked 1 min · 3 files changed +27 −1 · waiting for you".](../../../../assets/docs/phone-recap.webp)
+
+## What does each part mean?
+
+- **Since you left**: the last time this phone showed the session.
+- **worked**: the agent's busy time, as your computer saw it.
+- **files changed**: uncommitted changes in the session's git project.
 - **waiting for you** or **your turn**: the agent's state.
 
-If a fact is not known, the card leaves that part out. For example, a folder that is not a git project shows no file count. Termivoa never reads the terminal text to write the card.
+Unknown parts are left out, such as the file count in a folder outside git. Termivoa never reads terminal text for the card.
 
-## Use the card
+## Use the recap card
 
-1. Open the session.
-2. Read the card.
-3. Tap **See changes** to open [Changes](/docs/guides/changes/). Or tap **✕** to close the card.
-
-The card also closes when you tap somewhere else, or after 12 seconds. It shows one time for each visit.
-
-Each phone keeps its own "last visit". A second phone gets its own card.
+Tap **See changes** to open [Changes](/docs/guides/changes/), or tap **✕** to close the card. It also closes when you tap elsewhere, or after 12 seconds.

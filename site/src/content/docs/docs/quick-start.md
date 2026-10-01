@@ -1,76 +1,76 @@
 ---
 title: Quick start
-description: Install pterm, run setup, pair your phone and open your first session in about five minutes.
+description: Install Termivoa's pterm program, run setup, pair your phone with a QR code and start your first terminal session in about five minutes.
+lastUpdated: 2026-10-01
 ---
 
-This page takes you from zero to a paired phone and a first session.
+Termivoa takes about five minutes to set up, from install to your first session on the phone.
+
+Status: Private beta (`v0.1.0-beta.2`). You need an invite to download it.
 
 ## Before you start
 
-- Install [Tailscale](https://tailscale.com/download) on your computer and your phone. Sign in to the same account on both.
-- Install the [GitHub CLI](https://cli.github.com/) (`gh`) on your computer and run `gh auth login`. The beta is in a private repository, so you need an invite.
+- Install [Tailscale](https://tailscale.com/download) on your computer and your phone, signed in to the same account.
+- Install the [GitHub CLI](https://cli.github.com/) (`gh`) and run `gh auth login`.
 
 ## 1. Install pterm
 
-Follow the page for your computer. Each page ends with `pterm setup`.
-
-- [macOS](/docs/install/macos/)
-- [Linux](/docs/install/linux/)
-- [Windows](/docs/install/windows/)
+Follow [Install on macOS](/docs/install/macos/), [Install on Linux](/docs/install/linux/) or [Install on Windows](/docs/install/windows/).
 
 ## 2. Run setup
 
-If the install page did not start it, run:
+If the install steps did not start it, run `pterm setup`.
+Setup checks first and changes nothing. Then it lists its changes and asks `Continue? [y/N]`.
 
-```sh
-pterm setup
-```
+1. Read the list, type `y` and press Enter.
+2. A separate question asks to share the page with your Tailscale devices. Type `y` if the command shown is correct.
+3. An optional third question is about dev-server previews (port 8443).
 
-Setup first checks your computer and changes nothing.
-Then it shows a list of what it will do and asks once: `Continue? [y/N]`.
-
-1. Read the list.
-2. Type `y` and press Enter.
-3. Setup asks a separate question before it shares the page with your Tailscale devices. Type `y` if the command it shows is correct.
-4. Setup may ask a second, separate question about dev-server previews (port 8443). This one is optional.
-
-Setup starts Termivoa at every login and adds your home folder as the project **Home**.
-It never uses Tailscale Funnel, so the page never goes on the public internet.
+Setup starts Termivoa at every login. If you have no project yet, it adds your home folder as the project **Home**.
+It never uses Tailscale Funnel; the page is never public.
 
 ## 3. Scan the QR code
 
-At the end, setup shows a QR code.
+Setup ends with a QR code.
 
-1. Scan the QR code with your phone camera and open the link.
+1. Scan it with the phone camera and open the link.
 2. Type a name for the phone and tap **Pair this device**.
 
-The link works once and expires after two minutes.
-If it expires, run `pterm pair` to get a new one.
+The link works once and expires after two minutes. Run `pterm pair` for a new one.
 
 ## 4. Approve the code
 
-The phone shows a code, such as `485-431`. Your computer asks:
+The phone shows a code, such as `485-431`. Your computer shows its code and asks `Approve? [y/N]`.
+Type `y` if the codes match, `n` if not.
 
-```text
-Phone "My iPhone" shows code 485-431. Approve? [y/N]
-```
-
-If the codes are the same, type `y`. If they are different, type `n`.
-
-On iPhone, tap **Share**, then **Add to Home Screen**. You need this for notifications.
+On iPhone, tap **Share**, then **Add to Home Screen**, to get notifications.
 
 ## 5. Start your first session
 
-1. On the phone, tap **New session**.
+1. Tap **new session**.
 2. Pick a project and a shell.
 3. Optional: in **run first**, type a command such as `claude`.
 4. Tap **start session**.
 5. Tap **Take control** to type.
 
-Close the app when you like. The session keeps running on your computer.
+Closing the app does not stop the session.
+
+## Common questions
+
+### I answered no to the Tailscale question. How do I share the page later?
+
+Run `pterm setup` again and answer `y`, or run:
+
+```sh
+tailscale serve --bg --https=443 http://127.0.0.1:8787
+```
+
+### How do I check that everything works?
+
+Run `pterm doctor`. It changes nothing and never prints secrets.
 
 ## Next steps
 
-- [Pair your phone](/docs/pair-your-phone/): more phones, removing a phone.
-- [Sessions](/docs/guides/sessions/) and [the live terminal](/docs/guides/live-terminal/).
-- [Troubleshooting](/docs/reference/troubleshooting/) if something does not work.
+- [Pair your phone](/docs/pair-your-phone/): add or remove phones.
+- [Sessions](/docs/guides/sessions/) and [Live terminal](/docs/guides/live-terminal/).
+- [Troubleshooting](/docs/reference/troubleshooting/) if something fails.

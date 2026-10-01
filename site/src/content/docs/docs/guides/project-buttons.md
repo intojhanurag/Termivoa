@@ -1,36 +1,44 @@
 ---
 title: Project buttons
-description: Run your project's own test, dev, build and lint commands from the Snips sheet, in a new tab or in the current session.
+description: Termivoa reads your project's package.json, Makefile, Cargo.toml or go.mod and shows its test, dev, build and lint commands as one-tap buttons.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you run your project's own commands, such as tests or the dev server, with one tap.
+Termivoa finds your project's own commands, such as tests or the dev server, and shows them as one-tap buttons in the Snippets sheet.
 
-## What Termivoa finds
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`.
+:::
 
-Termivoa reads the files in the session's project folder on your computer. It finds:
+![The Snippets sheet lists the project's own commands, such as test, dev, build and lint, above the saved snippets.](../../../../assets/docs/phone-project-buttons.webp)
 
-- **package.json** scripts. The command uses npm, pnpm, yarn or bun. Termivoa picks the tool from the lockfile in the folder, for example `pnpm-lock.yaml` gives `pnpm test`.
+## Which commands does Termivoa find?
+
+Termivoa reads these project files:
+
+- **package.json** scripts, with npm, pnpm, yarn or bun picked from the lockfile (`pnpm-lock.yaml` gives `pnpm test`).
 - **Makefile** targets, for example `make test`.
 - **Cargo.toml** (Rust): `cargo test`, `cargo run`, `cargo build` and `cargo clippy`.
 - **go.mod** (Go): `go test ./...` and `go build ./...`.
 
-Termivoa only reads these files. Nothing runs until you tap an action.
+It only reads them; nothing runs until you tap an action.
 
 ## Run a project command
 
-1. Open the session and take control.
-2. Tap **snips** in the dock. The sheet shows **This project** at the top.
-3. Find the command. Commands are in groups: **test**, **dev**, **build**, **lint**, then **other**. Each button shows the name and the exact command. When there are many other commands, tap **More**.
-4. Tap the command. Two actions show.
-5. Tap an action:
-   - **Run in new tab** starts a new session in the same project and shell, types the command there, and opens it. The command is typed once, and only if no one else has control. Your current session does not change.
-   - **Type here** types the command in this session and presses Enter.
+1. In the session, take control.
+2. Tap **snips**. **This project** is at the top.
+3. Find the command in its group: **test**, **dev**, **build**, **lint** or **other** (tap **More** for more).
+4. Tap the command, then an action:
+   - **Run in new tab** starts a new session in the same project and shell, types the command once (only if no one else has control), and opens it.
+   - **Type here** types it in this session and presses Enter.
 
-**Type here** works only at a normal shell prompt. It is off while a full-screen app such as Claude Code or Codex is open, or while something is running, because the command would go into that program. Use **Run in new tab** then. You also need control to use **Type here**.
+## Why is Type here off?
+
+**Type here** needs control and a normal shell prompt. It is off while a full-screen app like Claude Code is open, or something runs, because the command would go into that program. Use **Run in new tab**.
 
 ## When no commands show
 
-- **No project commands found in** a folder: the folder has none of the files above.
+- **No project commands found in** a folder: it has none of the files above.
 - **Could not read the project**: tap **Retry**.
 
-Your saved snippets are still below the project commands. See [Snippets](/docs/guides/live-terminal/#snippets).
+Saved snippets stay below the project commands; see [Save and send snippets](/docs/guides/live-terminal/#save-and-send-snippets).

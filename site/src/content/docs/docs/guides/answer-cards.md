@@ -1,46 +1,38 @@
 ---
 title: Answer cards
-description: Answer Claude Code and Codex questions with one tap, and why a tap never answers the wrong question.
+description: Termivoa turns Claude Code and Codex questions into one-tap answer cards, and checks the screen again so a tap never answers the wrong question.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you answer coding-agent questions with one tap.
+When Claude Code or Codex asks a question, such as "Do you want to proceed?", Termivoa shows a one-tap answer card on your phone.
 
-## What an answer card is
+## What does an answer card show?
 
-Claude Code and Codex often stop and ask, for example "Do you want to proceed?".
-When this happens, the live screen shows a card at the bottom. The card shows:
+The card sits at the bottom of the live terminal:
 
 - the question;
 - what you approve, such as the exact command;
-- one big button for each option.
+- a button for each option.
 
-Termivoa also knows numbered menus from other programs, and `[y/N]` prompts.
+Other programs' numbered menus and `[y/N]` prompts get cards too.
+
+![An answer card asks "Run the test suite?" and offers three one-tap answers: Yes; Yes, and don't ask again; and No, tell the agent what to do.](../../../../assets/docs/phone-answer-card.webp)
 
 ## Answer a question
 
-1. Open the session. A waiting session has the **Waiting** badge.
+1. Open a session with the **Waiting** badge.
 2. Read the question and what it approves.
-3. Tap one option.
+3. Tap one option. Without control, tap **Take control to answer** first.
 
-One tap sends one answer. Termivoa never answers or retries on its own.
+One tap sends one answer. Termivoa never answers or retries on its own. Tap **terminal** to fold the card into an **↑ answer** pill and see the terminal; tap the pill to reopen it.
 
-If you do not have control, the card shows **Take control to answer**. Tap it first.
+## Why can a tap not answer the wrong question?
 
-To see the terminal behind the card, tap **terminal**. The card folds into an **↑ answer** pill. Tap the pill to open it again.
+Before your answer reaches the program, your computer checks that the same question, approving the same thing, is still on screen. It checks again just before it types. If the question changed, the answer is dropped and you keep control. The card shows the question that is on screen now; when the first check finds the change, it also says **The question changed — check the new one**.
 
-## Why it is safe
+Prompts that ask the same thing about different commands are different questions. The same prompt and command twice in a row count as one, so an answer for the first can answer the second.
 
-Before your answer reaches the program, your computer checks the screen again:
+## When does no card show?
 
-- The same question must still be on screen.
-- What it approves must be the same. Two prompts that ask the same thing about different commands count as different questions.
-
-If the question changed, your answer is not sent. The card says **The question changed — check the new one**. You keep control and can decide again.
-
-Your computer checks one more time just before it types the keys. If the question changed in that moment, it drops the answer and shows the new state.
-
-## Limits
-
-- Menus without numbers, such as Claude Code's folder-trust dialog, get no card. Use the arrow keys and `⏎` in the key bar.
-- If the same prompt, with the same command, shows twice in a row, an answer for the first can answer the second. Both approve exactly the same thing.
-- New agent versions can change their screens. If a question gets no card, answer it with the [agent keys](/docs/guides/live-terminal/#keys).
+- Menus without numbers, like Claude Code's folder-trust dialog, get no card; use the arrow keys and `⏎`.
+- Agent updates can change screens. Without a card, answer with the [agent keys and key bar](/docs/guides/live-terminal/#use-the-agent-keys-and-key-bar).

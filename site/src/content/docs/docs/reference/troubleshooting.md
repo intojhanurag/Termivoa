@@ -1,9 +1,10 @@
 ---
 title: Troubleshooting
-description: Short fixes for the most common Termivoa problems, from an unreachable computer to missing notifications.
+description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you fix common problems. Start with `pterm doctor` on your computer. It checks everything and never prints secrets.
+Most Termivoa problems start with one check on the computer. It never prints secrets.
 
 ```sh
 pterm doctor
@@ -11,40 +12,36 @@ pterm doctor
 
 ## "Can't reach your computer"
 
-The phone cannot talk to your computer. Your sessions are safe and keep running.
-
-1. Check that Tailscale is on, on the phone and on the computer.
+1. Turn Tailscale on, on both phone and computer.
 2. Check that the computer is awake and logged in.
 3. Run `pterm doctor` on the computer.
-4. Tap **Retry now**, or wait. The phone retries on its own.
+4. Tap **Retry now**, or wait for the automatic retry.
 
-Any network works (home Wi-Fi, other Wi-Fi, mobile data) while Tailscale is on.
+Your sessions keep running. Any network works while Tailscale is on.
 
 ## It stops working when the computer sleeps
 
-A sleeping computer cannot answer. Keep it on power and stop sleep:
+Keep the computer on power and stop sleep:
 
 - macOS: **System Settings → Battery → Options → Prevent automatic sleeping on power adapter when the display is off**.
 - Ubuntu desktop: turn off **Settings → Power → Automatic Suspend**.
 - Windows: check **Settings → System → Power**.
 
-Sessions continue when the computer wakes.
+Sessions continue when it wakes.
 
 ## It reconnects often
 
-Your phone pauses the browser when you switch apps or lock the screen. When you come back, Termivoa first checks the old connection. It reconnects only if the old one does not answer, which usually takes 1–2 seconds. A short amber dot is normal. Your sessions never stop.
+- Keep the computer awake.
+- In the phone's Tailscale app, keep **VPN On Demand** on.
+- Open Termivoa from the Home Screen icon.
 
-To make it steadier:
+After you switch apps or lock the screen, a 1–2 second reconnect (short amber dot) is normal. Sessions never stop.
 
-- Keep the computer awake (see above).
-- In the Tailscale app on the phone, keep **VPN On Demand** turned on, so Tailscale reconnects by itself.
-- Add Termivoa to the Home Screen and open it from there.
-
-If it still drops often, look at `gateway.log` in the log folder that `pterm doctor` shows. It has one line for each phone connection, with its length and why it ended, for example `phone missed a ping`.
+Still dropping? `gateway.log`, in the log folder that `pterm doctor` shows, logs each phone connection, its length and why it ended (for example `phone missed a ping`).
 
 ## "This pairing link expired or was already used"
 
-A pairing link works once, for two minutes. Run `pterm pair` again and scan the new QR code.
+Run `pterm pair` again and scan the new QR code. A pairing link works once, for two minutes.
 
 ## "Too many pairing attempts"
 
@@ -52,59 +49,54 @@ Wait a minute, then run `pterm pair` again.
 
 ## The phone shows the pairing screen again
 
-The phone was removed with `pterm revoke`, logged out, or its access expired (30 days, or 7 days without use).
-Run `pterm pair` and [pair it again](/docs/pair-your-phone/).
+Run `pterm pair` and [pair your phone](/docs/pair-your-phone/) again. The phone was revoked (`pterm revoke`), logged out, or expired (30 days, or 7 days unused).
 
 ## "READ-ONLY" and you cannot type
 
-Another device has control, or the phone reconnected. Tap **Take control**.
+Tap **Take control**. Another device has control, or the phone reconnected and now only watches.
 
 ## "Delivery uncertain"
 
-The connection broke while you typed. Termivoa does not know if your input arrived, and never resends it on its own.
-Look at the terminal before you send it again.
+Check the terminal before you send again. The connection broke while you typed; Termivoa never resends input itself.
 
 ## "This session is gone"
 
-The computer restarted or logged out, or the broker crashed. A session is also lost when its program closes the terminal but keeps running. A lost session cannot come back. Start a new one.
+Start a new session; a lost one cannot come back. Causes: the computer restarted or logged out, the broker (the background process that owns sessions) crashed, or the program closed the terminal but kept running.
 
-A program that ends normally is not lost: it shows its exit code, even when the computer is busy.
+A program that ends normally shows its exit code. On a busy computer, `v0.1.0-beta.2` can still show it as lost; the next beta fixes this.
 
 ## "A new version is ready"
 
-The app on your computer changed. Tap **Reload**. Your sessions keep running.
-A small **update** pill on the Sessions list means the same thing.
+Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **update** pill on the Sessions list means the same.
 
 ## Notifications do not arrive
 
-1. On iPhone, open Termivoa from the Home Screen icon, not from a Safari tab. You need iOS 16.4 or later.
-2. Check that the switch in **Settings → Notifications** is on.
-3. Check that the phone allows notifications for Termivoa in its own settings.
+1. On iPhone (iOS 16.4 or later), open Termivoa from the Home Screen icon, not a Safari tab.
+2. Turn on the switch in **Settings → Notifications**.
+3. Allow Termivoa notifications in the phone's settings.
 4. Tap **Send a test notification** in Settings.
-5. Check that the computer is awake. It sends the notifications.
+5. Keep the computer awake; it sends them.
 
-A "done" notification comes only after at least 20 seconds of agent work. See [Notifications](/docs/guides/notifications/).
+A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
 
 ## macOS blocks pterm (Gatekeeper)
 
-The beta is not signed. macOS blocks unsigned files that come from a browser.
-Download the file again with `gh release download`, as on the [macOS install page](/docs/install/macos/). Files from `gh` are not blocked.
+Download again with `gh release download`, as in [Install on macOS](/docs/install/macos/). macOS blocks the unsigned beta only when a browser downloads it.
 
 ## Windows shows a SmartScreen or Defender warning
 
-The beta is not signed. Download the file again with `gh release download`, as on the [Windows install page](/docs/install/windows/).
-Microsoft Defender may still warn about an unsigned `pterm.exe`.
+Download again with `gh release download`, as in [Install on Windows](/docs/install/windows/). Defender may still warn, because the beta is not signed.
 
 ## `pterm: command not found`
 
-The program folder is not on your PATH. Type the full path in its place:
+Its folder is not on your PATH. Type the full path:
 
 - macOS and Linux: `~/.local/bin/pterm`
 - Windows: go to `%LOCALAPPDATA%\Programs\Termivoa` and type `.\pterm.exe`
 
 ## Setup does not ask the Tailscale questions (Linux)
 
-You are not the Tailscale operator. Run this once, then run `pterm setup` again:
+Make yourself the Tailscale operator, then run `pterm setup` again:
 
 ```sh
 sudo tailscale set --operator=$USER
@@ -112,63 +104,62 @@ sudo tailscale set --operator=$USER
 
 ## Setup says port 443 serves something else
 
-Tailscale Serve already shares another service on HTTPS port 443. Setup changes nothing, so it does not break that service.
-Fix the conflict yourself. Then run `pterm setup` again.
+Fix the conflict, then run `pterm setup` again. Tailscale Serve already shares another service on HTTPS port 443, and setup leaves it alone.
 
 ## No "Preview ready" chip
 
-- Check that you said `y` to the preview question in setup. `pterm doctor` shows if previews are set up.
-- Only servers that the session itself started are shown. A server from another terminal window is never offered.
+- Answer `y` to the preview question in setup. `pterm doctor` shows if previews are set up.
+- Only servers that the session started are offered, not ones from another terminal window.
 
-See [Dev-server preview](/docs/guides/preview/).
+More in [Dev-server preview](/docs/guides/preview/).
 
 ## Sessions end when you log out of a server
 
-Turn on linger. Run `pterm setup` again and answer `y` to the linger question. See [Install on Linux](/docs/install/linux/#server-or-vps-ssh-only).
+Run `pterm setup` again and answer `y` to the linger question. More in [Keep sessions running on a server or VPS](/docs/install/linux/#keep-sessions-running-on-a-server-or-vps).
 
 ## Changes says "not a git repository"
 
-The session's folder is not inside a git repository. `cd` into your project in the terminal, then tap **Refresh**.
+`cd` into your project in the terminal, then tap **Refresh**. The session's folder is not in a git repository.
 
-## New worktree says "not in a git repository"
+## New worktree says "not in a git repository" (Next beta)
 
-The session's folder is not inside a git repository. `cd` into your repository in the terminal, then tap **⋯ → New worktree…** again.
+`cd` into your repository, open the session menu (**⋯**) and tap **New worktree…** again. The session's folder is not in a git repository.
 
-## New worktree says the name "already exists"
+## New worktree says the name "already exists" (Next beta)
 
-A folder `~/termivoa/worktrees/<repository>/<name>` or a branch `termivoa/<name>` already exists. Tap 🎲 for a new name, or type another one. A removed worktree keeps its branch, so its name stays taken until you delete the branch (`git branch -d termivoa/<name>`).
+Tap 🎲 or type another name. The folder `~/termivoa/worktrees/<repository>/<name>` or branch `termivoa/<name>` exists. A removed worktree keeps its branch (and name) until you run `git branch -d termivoa/<name>`.
 
-## New worktree says there are too many worktrees
+## New worktree says there are too many worktrees (Next beta)
 
-One repository can have up to 50 worktrees in `~/termivoa/worktrees`. Remove the ones you finished (**⋯ → Remove worktree…** in their session), or run `git worktree remove <folder>` on the computer.
+Remove finished worktrees with **Remove worktree…** in their session menu (**⋯**), or run `git worktree remove <folder>`. The limit is 50 per repository in `~/termivoa/worktrees`.
 
-## New worktree says "git worktree add failed"
+## New worktree says "git worktree add failed" (Next beta)
 
-git itself refused, and the phone shows the end of git's message. A common cause is a git hook in your repository (for example husky or lefthook) that fails when a new folder is checked out. Termivoa removes what it made, so you can fix the cause and use the same name again.
+Fix the cause in git's message, then reuse the same name; Termivoa cleans up what it made. Often a repository hook (for example husky or lefthook) fails on checkout.
 
-## Remove worktree asks about ignored files
+## Remove worktree asks about uncommitted changes or ignored files (Next beta)
 
-Files that git ignores, such as `node_modules` or `.env`, are deleted with the folder, so Termivoa asks first. If you do not need them, tap **Remove anyway**.
+Tap **Remove anyway** only if you do not need those files, else **Keep it**. Uncommitted changes and ignored files (such as `node_modules`, `.env`) are deleted with the folder; the branch is kept.
 
-## Remove worktree fails
+## Remove worktree fails (Next beta)
 
-The phone shows git's message. On Windows, a folder that a program still uses cannot be deleted; close that program, then try again. You can also run `git worktree remove <folder>` on the computer.
+Fix the cause in git's message, or run `git worktree remove <folder>` on the computer. On Windows, first close any program that uses the folder.
 
-On Windows, Termivoa ends the session before it deletes the folder, because a running shell keeps its folder open. The phone can then show "Connection lost" in place of "Worktree removed". Check the Sessions list: if the session ended and the folder is gone, the remove worked.
+On Windows, "Connection lost" in place of "Worktree removed" can be normal, because the session ends first. If the session ended and the folder is gone, it worked.
 
 ## Commit fails
 
-The phone shows git's own message. Common causes:
+The phone shows git's message. Usual causes:
 
 - **No name or email.** Run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com` on the computer.
-- **A commit hook failed.** Your repository's hook (for example a linter) rejected the commit. Fix what it says, then try again.
-- **A merge or rebase is in progress.** Finish it in the terminal first.
+- **A commit hook failed.** Fix what the hook (for example a linter) says.
+- **A merge or rebase is in progress.** Finish it in the terminal.
 
 ## Push fails or waits for a long time
 
-- **No remote.** Add one in the terminal, for example `git remote add origin <url>`.
-- **The ssh key has a passphrase.** Termivoa cannot type it. Add the key to your ssh agent (on macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`). A push that waits for a passphrase stops after 2 minutes.
-- **The remote rejected it.** The phone shows git's message. Termivoa never force-pushes.
+- **No remote.** Add one, for example `git remote add origin <url>`.
+- **The ssh key has a passphrase.** Add the key to your ssh agent (macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`). Termivoa cannot type a passphrase; the push stops after 2 minutes.
+- **The remote rejected it.** Read git's message. Termivoa never force-pushes.
 
 ## Where are the logs?
 
