@@ -49,6 +49,16 @@ export function displayPath(cwd: string, maxChars = 48): string {
 }
 
 /**
+ * Splits a display path before its last folder, so the status line can cut the
+ * parent first. dir + name === path. A one-character parent ("/var") is not
+ * worth cutting and stays with the name.
+ */
+export function splitPath(path: string): { readonly dir: string; readonly name: string } {
+  const match = /^(.+[\\/])([^\\/]+[\\/]*)$/u.exec(path);
+  return match === null ? { dir: '', name: path } : { dir: match[1] ?? '', name: match[2] ?? '' };
+}
+
+/**
  * The name to show for a session. A user-set title always wins; otherwise the
  * live folder's basename stands in for the default project-name title.
  * liveCwd is the current tab's live session.state cwd, which is fresher than

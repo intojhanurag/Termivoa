@@ -120,6 +120,12 @@ All notable changes are documented here. The format follows
   open session changes, when the screen opens, and when the session list
   arrives later and moves it; smoothly, or at once with reduced motion. The
   page does not scroll and focus does not move. No host-side change (#114).
+- Live status line (phone side): a long folder path was cut off at its end
+  with no `…`, so the folder name and the `· shell · size` part were lost.
+  The path is now cut first, from its start with a `…`, then the shell and
+  size, and only then the last folder (from its start). The badges and
+  CONTROL stay whole, and the worktree badge rules are unchanged. No
+  host-side change (#115).
 
 ## [0.1.0-beta.2] - 2026-09-29
 
