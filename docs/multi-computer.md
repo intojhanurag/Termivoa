@@ -1,6 +1,6 @@
 # Multi-computer: architecture
 
-Status: **proposed, version 2 after two adversarial reviews; owner review required** (ADR [0005](decisions/0005-multi-computer.md)). Nothing here is implemented. Section 7 lists every review finding and how it is resolved.
+Status: **proposed, version 3 after two adversarial reviews in two rounds each; owner review required** (ADR [0005](decisions/0005-multi-computer.md)). Nothing here is implemented. Sections 7 and 8 list every review finding and how it is resolved.
 
 One phone uses several computers (for example a Mac, a Linux server and a VPS) from one Home Screen app: one Sessions list, one Wall, new sessions on any computer. This document fixes the architecture, the trust model and the build order before any code is written.
 
@@ -38,6 +38,14 @@ Also rejected: one origin through Tailscale Serve path mapping (every `Path=/` `
 
 **If the home computer is compromised, every computer paired through it is compromised too.** A compromised home serves the app and its service worker, so it can wake the worker with its own push and drive peers with no app open, and it can show the user a fake "pair again" to capture a new pairing. The design narrows this (per-device binding, bound grants, owner checks, `pterm revoke --via`) but cannot remove it: a peer that accepts an app from home trusts home's code. Option D is chosen over B for per-phone identity, leases and direct links, not because it removes this risk. Pick as home the **least exposed always-on** computer (for example a small server you do not run untrusted code on), not the laptop that runs `npm install`, agents and dev previews. Same-user malware on home moves into scope for every peer (`docs/threat-model.md`).
 
+What a compromised home can also do, and how to recover:
+
+- **It can leave code on the phone.** It can register an extra service worker with its own push key; that worker keeps running after home is cleaned (verified in Chrome). The app removes any service-worker registration that is not on a fixed list on every load, and replaces its stored computer list on every load from home, but full recovery needs the steps below.
+- **It can get a cookie that works without the phone.** It sees the pairing grant and controls the code the phone shows, so it can redeem the grant from a non-browser client that fakes the `Origin` header and keep a raw peer cookie for up to 30 days.
+- **A compromised peer can break the app for all computers** by setting large `Domain=tailX.ts.net` cookies through its responses (every request then grows too large).
+
+**Recovery after a home compromise (required, documented):** run `pterm revoke --via <home origin>` on every peer; delete the Home Screen app (this clears its storage, service workers and cookies); clean or replace home; add the app and pair again.
+
 ### Roles
 
 - **Home**: the computer whose origin serves the app. Its origin must serve only `pterm`: setup and `pterm doctor` refuse other Tailscale Serve handlers on that origin, because any other handler there would control every peer.
@@ -47,26 +55,34 @@ Also rejected: one origin through Tailscale Serve path mapping (every `Path=/` `
 
 The gateway forwards the request `Origin` with every authenticated call. The broker accepts it only if it is the peer's own origin, or **the app origin bound to that exact credential** (`devices.app_origin`). The gateway keeps a union of bound origins only to emit CORS headers. So a device that paired directly with the peer can never be driven from another computer's app it never approved, and revocation takes effect on the next request, not the next probe. Existing devices migrate with `app_origin = NULL`, meaning "own origin only".
 
+Requests without an `Origin` header are not trusted as "own origin": browsers omit `Origin` on same-origin GETs and on cross-origin `no-cors` GETs, and a `no-cors` GET from any same-site page reaches the peer with its cookie (verified). API requests must carry `Sec-Fetch-Site: same-origin` or a bound `Origin`; `Sec-Fetch-Mode: no-cors` is rejected on `/api`.
+
 Origin parsing is strict: `https` only, default port only (an explicit `:443` is rejected), no trailing dot, no control characters, never `null`, exact host match (near misses such as `xtailX.ts.net` or `tailX.ts.net.evil.com` are rejected), punycode shown as is. WebSocket origin patterns become per request (today they are fixed at start, `handler.go:112-125`, `live.go:109`); `InsecureSkipVerify` is never used. Preflight `OPTIONS` is answered only for exact bound origins.
 
 ### Same tailnet is not same owner
 
-Team tailnets, Funnel nodes and reused MagicDNS names all share the site `tailX.ts.net`. At approval the peer looks up the app host in `tailscale status --json`, requires the **same owner** as itself, and stores that node's **stable node ID**. On each probe, if the node is gone or its ID changed, the peer drops the origin. This only narrows access; it is never used as authentication (`plan.md:230`). The approval prompt shows the owner and machine name.
+Team tailnets, Funnel nodes and reused MagicDNS names all share the site `tailX.ts.net`. At `pterm pair --via`, the peer looks up the app host in `tailscale status --json` and **pins its stable node ID**; the approval prompt shows the machine name, owner and tags.
+
+- **Owner:** for user-owned nodes, the app node must have the same owner as the peer. **Tagged nodes** have no user owner (all tagged nodes share one placeholder), so owners are never compared when either node is tagged; instead the node ID is pinned and pairing requires `--allow-tagged` after the prompt shows the tags. (A tagged server is a good home, so this matters.)
+- **Checking later:** the broker caches the status result for about 60 seconds and checks the cached result on **every request** from a bound origin. If the node ID changed, every device bound to that origin is revoked (never re-bound automatically). If status cannot be read, the last good result is kept for a 10-minute grace period; after that, bound-origin requests are refused (not revoked) until a check succeeds. Requests from the peer's own origin are never affected.
+- **Finding `tailscale`:** reuse `installedTailscale` (`cmd/pterm/lifecycle.go:110`) and add the Homebrew paths, because launchd's `PATH` has neither `/usr/local/bin` nor `/opt/homebrew/bin`. Under WSL, Tailscale usually runs on the Windows host, so a WSL computer cannot be a peer (documented).
+
+This only narrows access; it is never used as authentication (`plan.md:230`).
 
 ### Pairing a second computer (bound grant)
 
-1. On the new computer, the user runs `pterm pair --via https://mac.tailX.ts.net`. The grant is **bound to that exact app origin** at creation. Redeem and poll accept only that origin; there is no candidate-origin CORS and no prompt to misread.
-2. In the home app: **Settings → Computers → Add computer**, then paste the link. (The iPhone camera opens links in Safari, a different cookie jar, so the MVP is paste-only; add-to-app links use a distinct marker so the peer's own pair page never consumes them.)
-3. The app opens `/computers/add#…` and removes the fragment at once (the existing pairing pattern; the grant never goes to storage or a query).
+1. On the new computer, the user runs `pterm pair --via mac` (a short name, resolved through `tailscale status`, or a full origin). The grant is **bound to that exact app origin** at creation. Redeem and poll accept only that origin; there is no candidate-origin CORS and no prompt to misread.
+2. The link reaches the home app in one of two ways. **Best:** the user runs that command inside a Termivoa session on home (for example after `ssh vps`); the app recognises the add-computer link in the terminal output (link detection already exists for file paths) and shows **Add this computer** — no camera, no clipboard. **Otherwise:** **Settings → Computers → Add computer**, then paste. (The iPhone camera opens links in Safari, a different cookie jar, so there is no camera flow in the MVP; add-to-app links use a distinct marker so the peer's own pair page never consumes them.)
+3. The app asks home to record the peer as a **pending** computer for this device (short expiry, shown nowhere) — without this, home's CSP `connect-src` would block the redeem — then opens `/computers/add#…` and removes the fragment at once (the existing pairing pattern; the grant never goes to storage or a query). The reload picks up a CSP that allows the pending origin.
 4. The app redeems the grant on the peer with `credentials: 'include'`. The peer checks the bound origin, the owner and the node ID, then its CLI asks: `Phone "iPhone" shows code 123-456 and will use this computer from the Termivoa app at mac (https://mac.tailX.ts.net, owner ada@example.com). Approve? [y/N]`
 5. On approval the peer sets its cookie and records `devices.app_origin` and the node ID.
-6. Only after the app's first authenticated `GET /api/v1/settings` on the peer succeeds does home add the computer — **to this device's list** (`computers` keyed by device ID), never a global list. Unconfirmed entries are shown nowhere; abandoned adds leave nothing behind.
+6. Only after the app's first authenticated `GET /api/v1/settings` on the peer succeeds does home confirm the computer — **in this device's list** (`computers` keyed by device ID), never a global list. Pending entries that are not confirmed expire and are deleted; they are shown nowhere.
 
 Peer CORS, for bound origins only: exact `Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials: true`, `Vary: Origin`; preflight allows `GET, POST, PATCH, DELETE`, headers `Content-Type, X-Pterm-Request`, `Max-Age: 600`.
 
 ### Keeping the cookie alive (7-day cap)
 
-The peer refreshes its cookie on an authenticated read (for example `GET /api/v1/settings`), at most once a day, with `Max-Age` up to the credential's remaining lifetime. With daily use, the WebKit 7-day cap never ends a session. This is in the MVP.
+The peer sends its cookie again on every authenticated `GET /api/v1/settings` (the app reads it at start and on return to the foreground), so the WebKit 7-day cap never ends a session with regular use. Rules: the **same value** (never a new one, so parallel requests cannot race); `Max-Age` no longer than the credential's **remaining absolute lifetime**; the server never extends any expiry; only on requests that passed every check above; never on a 401. A test proves a revoked or expired credential never gets a `Set-Cookie`. This is in the MVP.
 
 ### One list, one Wall
 
@@ -79,24 +95,25 @@ The peer refreshes its cookie on an authenticated read (for example `GET /api/v1
 
 ### Peer responses are untrusted
 
-Every HTTP response from a peer is validated with precompiled (standalone) Ajv validators — never `'unsafe-eval'` — in a lenient mode that drops unknown fields but rejects wrong types. Requests use `redirect: 'error'` and size limits. Peer error messages are replaced with generic text, so a peer cannot show phishing text in the home app. No previews from peers in the MVP.
+Every message from every computer (HTTP responses and WebSocket frames) is validated with one lenient set of precompiled (standalone) Ajv validators — never `'unsafe-eval'` — that drops unknown fields but rejects wrong types. Plain `removeAdditional` breaks today's WebSocket envelope (its top-level `oneOf` strips fields while trying branches; verified on the real schemas), so the envelope gains `"discriminator": {"propertyName": "type"}` and Ajv runs with `discriminator: true` and `removeAdditional: true` (verified to keep known fields and drop unknown ones, also in standalone output). Lists are validated **per item**, so one bad session does not hide the whole list. Requests use `redirect: 'error'` and size limits. Peer error messages are replaced with generic text, so a peer cannot show phishing text in the home app. No previews from peers in the MVP.
 
 ### Home offline, and one computer offline
 
-- Navigation becomes network-first with a cached app shell (the cached response keeps its CSP). The computer list (origins and labels, not secret) is kept in `localStorage`. If home is unreachable, the app still opens and reaches the peers; home is treated as one more computer.
+- Navigation becomes network-first with a **2–3 second timeout** and a cached app shell; the shell is re-cached on every successful navigation, so its CSP follows added and removed computers. (`index.html` and its CSP now depend on the device cookie.) The computer list (origins and labels, not secret) is kept in `localStorage` and replaced on every load from home. If home is unreachable, the app still opens and reaches the peers; home is treated as one more computer.
 - Each computer loads independently (`Promise.allSettled`, per-computer timeouts). An unreachable computer shows **"vps · can't reach"** with Retry; session lists are not cached (titles and folders are private).
 - A 401 from a peer shows **"vps · pair again"** and never logs the app out of home or of other peers.
 - Changing which computer is home means a new Home Screen icon (a new cookie jar), so every peer must be paired again. Documented.
 
 ### Versions
 
-`HTTPSettingsResponse.protocolRevision` (an integer) plus a minimum supported revision. Because rule 6 keeps v1 changes additive and peer responses are validated leniently, computers can be updated one at a time; the app refuses only a peer below the minimum ("Update Termivoa on vps").
+`HTTPSettingsResponse.protocolRevision` (an integer) plus a minimum supported revision. Computers can be updated one at a time, with three rules: unknown response fields are dropped (lenient validation); a newer app sends a **new request field only to peers whose revision supports it** (Go decodes requests strictly, `api.go:450`, `internal/protocol/message.go:818`); and a **new enum value** that older apps must parse either raises `minProtocolRevision` or is mapped to `unknown` before validation. The app refuses only a peer below the minimum ("Update Termivoa on vps").
 
 ### Removing a computer, and a lost phone
 
 - **Remove computer** first calls `POST /api/v1/logout` on the peer (revoking this device's credential there), then removes it from the list. If the peer is unreachable, the app says to run `pterm revoke` on it.
 - `pterm revoke --via <origin>` on a peer revokes every device bound to that app origin (for example after home is compromised).
 - `pterm revoke` on home prints the computers that phone was using, so a lost phone can be revoked everywhere.
+- `pterm computers remove` on home cannot log the phone out on the peer, so it prints "run `pterm revoke` on <peer>"; the app drops the computer on its next load from home.
 
 ### Notifications
 
@@ -108,11 +125,11 @@ All additive within v1, regenerated Go and TypeScript types:
 
 - `http-api.schema.json`: `protocolRevision`, `minProtocolRevision`; `HTTPComputer {origin, label}`; `GET/POST /api/v1/computers`, `DELETE /api/v1/computers/{host}` (per device).
 - `gateway-rpc.schema.json`: forwarded request `origin` on authenticated calls; `boundOrigins[]` (at most 64) on the origin probe result for CORS headers; `gateway.computers.*`.
-- `admin-rpc.schema.json`: `appOrigin`, owner and node ID on pairing grants, pending pairings and devices; `admin.computers.list/remove`; `revoke` by `via`.
-- WebSocket envelope: unchanged.
-- Store migration `008_multi_computer.sql`: `pairing_grants.app_origin`, `pending_pairings.app_origin`, `devices.app_origin`, `devices.app_node_id` (NULL = own origin only); `computers(device_id, origin, label, created_at_ms, PRIMARY KEY (device_id, origin))`.
+- `admin-rpc.schema.json`: `appOrigin`, owner, tags and node ID on pairing grants, pending pairings and devices; `allowTagged` on grant creation; `admin.computers.list/remove`; `revoke` by `via`.
+- WebSocket envelope: a `discriminator` on `type` (validation only; no wire change).
+- Store migration `008_multi_computer.sql`: `pairing_grants.app_origin`, `pending_pairings.app_origin`, `devices.app_origin`, `devices.app_node_id` (NULL = own origin only); `computers(device_id, origin, label, state ('pending'|'confirmed'), expires_at_ms, created_at_ms, PRIMARY KEY (device_id, origin))`.
 
-CLI: `pterm pair --via <origin>`; `pterm computers` and `pterm computers remove <origin>` on home; `pterm devices` gains a **Via** column; `pterm revoke --via <origin>`; `pterm doctor` reports bound origins, the CORS list, the protocol revision, tailnet and owner mismatches, and other Serve handlers on home's origin.
+CLI: `pterm pair --via <name|origin> [--allow-tagged]`; `pterm computers` and `pterm computers remove <origin>` on home; `pterm devices` gains a **Via** column; `pterm revoke --via <origin>`; `pterm doctor` reports bound origins, the CORS list, the protocol revision, tailnet and owner mismatches, and other Serve handlers on home's origin.
 
 ## 5. Stack review: which language is best here?
 
@@ -149,11 +166,11 @@ The 7-day cap is not a stop condition (rolling refresh covers it). If checks 1 o
 
 | Track | Owns | After |
 | --- | --- | --- |
-| P. Protocol | `protocol/v1/*`, generated Go and TypeScript, protocol revision | Gate 0 |
-| H1. Broker | store migration and store, `internal/auth/service.go`, broker gateway and admin RPC (origin binding, owner and node checks, `revoke --via`), `internal/gatewayclient`, `internal/gatewayapi` | P |
-| H2. Gateway and CLI | `internal/gateway/handler.go`, `api.go`, `live.go` (CORS, per-request WebSocket origins, cookie refresh, forwarded Origin), `internal/cli/admin.go`, `cmd/pterm` (`pair --via`, `computers`, `devices`, `doctor`, Serve-handler check) | P (fakes until H1) |
+| P. Protocol | `protocol/v1/*` (including the envelope discriminator), generated Go and TypeScript, protocol revision | Gate 0 |
+| H1. Broker | store migration and store, `internal/auth/service.go`, broker gateway and admin RPC (origin binding, owner and node checks, `revoke --via`), `internal/gatewayclient`, `internal/gatewayapi`, new `internal/tailnet` (status lookup and cache, moved out of `internal/lifecycle/checks.go` and `installedTailscale`) | P |
+| H2. Gateway and CLI | `internal/gateway/handler.go`, `api.go`, `live.go`, `server.go` (CORS, per-request WebSocket origins, `Sec-Fetch` checks, cookie refresh, forwarded Origin, probe loop and bound-origin union), `internal/cli/admin.go`, `cmd/pterm` (`pair --via`, `computers`, `devices`, `doctor`, Serve-handler check) | P (fakes until H1) |
 | W1. Web core | `web/src/api/http.ts`, `web/src/computers.ts`, `web/src/pairing/*`, `web/src/screens/hooks.ts`, `web/src/terminal/Connection.ts`, `web/src/protocol/validate.ts`, `web/vite.config.ts` (lenient peer validators) | P |
-| W2. Screens and app shell | `App.tsx` (per-computer auth and offline), `Sessions.tsx`, `Wall.tsx` (visible-only tiles), `NewSession.tsx`, `Settings.tsx` (Computers: add, rename, remove, retry), `Live.tsx`, `web/src/sw.js` (network-first shell), `web/src/push.ts` | W1 |
+| W2. Screens and app shell | `App.tsx` (per-computer auth and offline), `Sessions.tsx`, `Wall.tsx` (visible-only tiles), `NewSession.tsx`, `Settings.tsx` (Computers: add, rename, remove, retry), `Live.tsx`, `web/src/sw.js` (network-first shell, service-worker allow-list cleanup), `web/src/push.ts`, `Composer.tsx` (uploads), `SessionMenu.tsx`, `Worktree.tsx`, `web/src/screens/activity.ts` (keys become `host/id`) | W1 |
 | D. Docs | guide `computers.md`, security, CLI, troubleshooting, pairing, release notes, `docs/threat-model.md` (new trust boundaries), HTTP API doc, CHANGELOG, README, progress, landing page | drafts now, final after integration |
 
 ### Integration tests
@@ -162,7 +179,7 @@ Cookies ignore ports, so two loopback dev stacks would overwrite each other's co
 
 ### MVP and follow-up
 
-**MVP:** bound-grant pairing with owner and node checks; per-device origin binding; per-device computer list; one Sessions list with labels and colours; Live (control, compose, history, Files and Changes, uploads); new session on any computer; Wall with visible-only tiles; per-computer offline and "pair again"; home-offline app shell; lenient validated peer responses; protocol revision gate; rolling cookie refresh; remove-with-logout and `revoke --via`; push from home only; no previews from peers.
+**MVP, in two milestones before release.** **M1:** bound-grant pairing (in-app link and paste), owner and node checks, per-device origin binding and `Sec-Fetch` checks, rolling cookie refresh, per-device computer list, one Sessions list, Live, new session on any computer, per-computer "can't reach" and "pair again", lenient validation and protocol revision. **M2:** the home-offline app shell, the cross-computer Wall, remove-with-logout and `revoke --via`, service-worker cleanup. Full MVP list: bound-grant pairing with owner and node checks; per-device origin binding; per-device computer list; one Sessions list with labels and colours; Live (control, compose, history, Files and Changes, uploads); new session on any computer; Wall with visible-only tiles; per-computer offline and "pair again"; home-offline app shell; lenient validated peer responses; protocol revision gate; rolling cookie refresh; remove-with-logout and `revoke --via`; push from home only; no previews from peers.
 
 **Follow-up:** push from peers (if Gate 0 check 5 passes); previews from peers; QR scanning inside the app. Different tailnets stay out of scope.
 
@@ -193,6 +210,27 @@ Two independent reviews (security; feasibility and alternatives) ran on version 
 | 19 | Malicious peer text in the home app (low) | Generic peer errors, `redirect: 'error'`, size limits, standalone validators |
 | 20 | WebSocket origins fixed at start; origin parsing traps (low) | Per-request WebSocket origins; strict origin parsing rules |
 | 21 | One reason for rejecting Serve path proxying was wrong (low) | Corrected in section 2 |
+
+## 8. Round 2 reviews: findings and resolutions
+
+Both reviewers attacked version 2. Security: "sound with changes". Feasibility: "keep D with changes". Resolved in this version 3:
+
+| # | Finding (severity) | Resolution |
+| --- | --- | --- |
+| 22 | A compromised home can leave a service worker on the phone that survives cleanup (verified) (high) | Service-worker allow-list cleanup on every load; stored list replaced from home; required recovery steps (revoke via, delete the app, pair again) |
+| 23 | v2 pairing could not work: home's CSP blocked the redeem (high) | Pending computer per device (short expiry) before the reload and redeem |
+| 24 | Lenient Ajv broke the WebSocket envelope (verified) (high) | Envelope discriminator, `discriminator: true` with `removeAdditional: true`, one lenient set for HTTP and WebSocket |
+| 25 | A new enum value or request field still forced updating all computers (verified) (high) | Per-item validation; request fields gated by peer revision; enum-widening rule |
+| 26 | A stolen grant gives a cookie that works without the phone (medium) | Stated in the trust statement; `revoke --via` is a required recovery step |
+| 27 | Owner check breaks on tagged nodes (medium) | Owners not compared when tagged; node ID pinned; `--allow-tagged` after showing tags |
+| 28 | Tailscale check failures undefined; `status` runs every second (medium) | 60 s cache, checked per request; 10-minute grace then refuse; revoke only on a definite ID change; PATH fallback; WSL not supported as a peer |
+| 29 | GETs without `Origin` bypass binding (verified) (low-medium) | `Sec-Fetch-Site`/bound `Origin` required; `no-cors` rejected on `/api`; refresh only on passing requests |
+| 30 | Cookie refresh rules unwritten; per-credential state missing (low) | Same value, capped `Max-Age`, never server-side extension, never on 401, sent on each settings read; test |
+| 31 | `pair --via` is hard from SSH on Linux (medium) | Short names; in-app **Add this computer** from the link in a Termivoa session |
+| 32 | Stale CSP or list after removal; slow launch when home sleeps (low-medium) | Re-cache the shell on each navigation; replace the list on each load; 2–3 s navigation timeout; CLI remove prints the revoke hint |
+| 33 | A compromised peer can bloat cookies for all computers (low) | In the trust statement; recovery is deleting the app |
+| 34 | Track gaps and overlap (`server.go`, Tailscale status code, `Composer`, `SessionMenu`, `Worktree`, `activity`) (medium) | Assigned to H2, H1 (`internal/tailnet`) and W2 |
+| 35 | MVP too large for one step (low) | Split into M1 and M2, both before release |
 
 ## Sources
 
