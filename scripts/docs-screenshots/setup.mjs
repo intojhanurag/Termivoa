@@ -2,7 +2,7 @@
 // three small demo repos with history, and the stand-in agent.
 // Usage: node setup.mjs   (then start the stack, see capture.mjs)
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 export const HOME = '/tmp/demo-home';
@@ -10,6 +10,27 @@ export const HOME = '/tmp/demo-home';
 // (it shortens only /Users/<name> and /home/<name>). A marker file guards the removal.
 export const CODE = '/Users/Shared/code';
 const MARKER = join(CODE, '.termivoa-demo');
+export const PTERM = '/tmp/pterm-demo';
+// capture.mjs writes the PID of the `up --dev` process it starts here (inside HOME, so setup() wipes it).
+export const PIDFILE = join(HOME, '.capture-pid');
+
+/**
+ * Stops the demo stack that capture.mjs started: SIGINT to the one recorded PID, so `pterm up --dev`
+ * stops its own gateway and broker. Never matches by name. The PID is only signalled when its command
+ * line still contains `expect` (guards against a recycled PID). Waits up to waitMs, then SIGKILL.
+ */
+export async function stopStack(pidFile = PIDFILE, expect = `${PTERM} up --dev`, waitMs = 15000) {
+  if (!existsSync(pidFile)) return;
+  const pid = Number(readFileSync(pidFile, 'utf8').trim());
+  rmSync(pidFile, { force: true });
+  let command = '';
+  try { command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { stdio: ['ignore', 'pipe', 'ignore'] }).toString(); } catch {}
+  if (!Number.isInteger(pid) || pid <= 1 || !command.includes(expect)) return;
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  process.kill(pid, 'SIGINT');
+  for (let end = Date.now() + waitMs; alive() && Date.now() < end;) await new Promise((r) => setTimeout(r, 100));
+  if (alive()) { console.log(`pid ${pid} ignored SIGINT for ${waitMs} ms; sending SIGKILL (its broker and gateway may still run)`); try { process.kill(pid, 'SIGKILL'); } catch {} }
+}
 
 /** Removes the demo repos, only when this script made the folder. */
 export function removeCode() {
@@ -265,5 +286,5 @@ export function clearCache(): void {
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  if (process.argv[2] === 'clean') { removeCode(); try { execFileSync('chmod', ['-R', 'u+w', HOME], { stdio: 'ignore' }); } catch {} rmSync(HOME, { recursive: true, force: true }); } else setup();
+  if (process.argv[2] === 'clean') { await stopStack(); removeCode(); try { execFileSync('chmod', ['-R', 'u+w', HOME], { stdio: 'ignore' }); } catch {} rmSync(HOME, { recursive: true, force: true }); } else setup();
 }
