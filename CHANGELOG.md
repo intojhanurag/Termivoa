@@ -114,6 +114,12 @@ All notable changes are documented here. The format follows
   or started with a dead terminal. Termivoa's broker already closed a
   terminal only after its program exited, so this mainly fixes a flaky test
   and guards future callers. No phone-side change (#100).
+- Live tab bar (phone side): opening a session whose tab was past the
+  visible part of the tab strip left that tab hidden, so the open session
+  could not be seen at a glance. The open tab now scrolls into view when the
+  open session changes, when the screen opens, and when the session list
+  arrives later and moves it; smoothly, or at once with reduced motion. The
+  page does not scroll and focus does not move. No host-side change (#114).
 
 ## [0.1.0-beta.2] - 2026-09-29
 

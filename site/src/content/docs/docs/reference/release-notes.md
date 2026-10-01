@@ -18,6 +18,7 @@ This page lists what is new in each release.
 - **Fix: background jobs get their full cleanup time.** When a session ends, programs you started in the background get half a second to clean up. On a very busy computer most of that time could be used up before they were told to stop. The time now starts only after they are told.
 - **Fix: first key after `pterm attach --control` shows Control.** A key typed at the moment the footer changed to "Control" could be lost. It is now sent. A key that the host reads while the footer still says "Syncing" is dropped.
 - **Fix: a rare test failure on macOS when a terminal was reused.** The host now keeps its end of a terminal open until the program has fully exited, so macOS cannot give a closing terminal to a new session. Sessions started by Termivoa were not affected.
+- **Fix: the open tab is always in view.** With many sessions, opening one whose tab was off to the right left its tab hidden. The tab strip now scrolls to show the open tab.
 
 ## v0.1.0-beta.2 (2026-09-29) — private beta
 
