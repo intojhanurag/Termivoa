@@ -147,7 +147,7 @@ func Patch(ctx context.Context, dir, path string) protocol.ChangesPatchPayload {
 	}
 	lines, binary, cut := parseDiff(out)
 	if binary && len(lines) == 0 {
-		patch.State = protocol.Binary
+		patch.State = protocol.PatchStateBinary
 		return patch
 	}
 	patch.State, patch.Lines, patch.Truncated = protocol.PatchStateReady, lines, cut || truncated

@@ -116,7 +116,7 @@ func TestSummaryAndPatch(t *testing.T) {
 		patch.Lines[2].Text != "y" || *patch.Lines[2].NewLine != 2 {
 		t.Errorf("untracked patch = %#v", patch)
 	}
-	if patch := Patch(context.Background(), dir, "bin.dat"); patch.State != protocol.Binary || len(patch.Lines) != 0 {
+	if patch := Patch(context.Background(), dir, "bin.dat"); patch.State != protocol.PatchStateBinary || len(patch.Lines) != 0 {
 		t.Errorf("binary patch = %#v", patch)
 	}
 	for _, path := range []string{"new.txt", "old.txt", "del.txt"} {

@@ -387,7 +387,7 @@ func TestChangesValidation(t *testing.T) {
 	zero := int64(0)
 	for name, payload := range map[string]ChangesPatchPayload{
 		"bad state":      {Path: "a", State: "gone", Lines: []DiffLine{}},
-		"binary lines":   {Path: "a", State: Binary, Lines: lines},
+		"binary lines":   {Path: "a", State: PatchStateBinary, Lines: lines},
 		"too many lines": {Path: "a", State: PatchStateReady, Lines: make([]DiffLine, MaxDiffLines+1)},
 		"long text":      {Path: "a", State: PatchStateReady, Lines: []DiffLine{{Kind: Hunk, Text: strings.Repeat("x", MaxDiffLineRunes+1)}}},
 		"bad kind":       {Path: "a", State: PatchStateReady, Lines: []DiffLine{{Kind: "note", Text: "x"}}},

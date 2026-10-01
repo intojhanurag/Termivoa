@@ -97,7 +97,7 @@ func List(ctx context.Context, dir string) protocol.TasksListedPayload {
 	}
 	// Stable: source order within a kind. "other" sorts last, so the cap
 	// drops it first.
-	rank := []protocol.TaskKind{protocol.Test, protocol.Dev, protocol.Build, protocol.Lint, protocol.Other}
+	rank := []protocol.TaskKind{protocol.Test, protocol.Dev, protocol.Build, protocol.Lint, protocol.TaskKindOther}
 	slices.SortStableFunc(tasks, func(a, b protocol.ProjectTask) int {
 		return slices.Index(rank, a.Kind) - slices.Index(rank, b.Kind)
 	})
@@ -272,6 +272,6 @@ func kindOf(name string) protocol.TaskKind {
 		slices.Contains([]string{"fmt", "typecheck", "check"}, head):
 		return protocol.Lint
 	default:
-		return protocol.Other
+		return protocol.TaskKindOther
 	}
 }
