@@ -113,6 +113,7 @@ Every message from every computer (HTTP responses and WebSocket frames) is valid
 - **Remove computer** first calls `POST /api/v1/logout` on the peer (revoking this device's credential there), then removes it from the list. If the peer is unreachable, the app says to run `pterm revoke` on it.
 - `pterm revoke --via <origin>` on a peer revokes every device bound to that app origin (for example after home is compromised).
 - `pterm revoke` on home prints the computers that phone was using, so a lost phone can be revoked everywhere.
+- Reinstalling Tailscale on home gives it a new node ID, so each peer revokes the phones bound to home and they must pair again (documented in troubleshooting).
 - `pterm computers remove` on home cannot log the phone out on the peer, so it prints "run `pterm revoke` on <peer>"; the app drops the computer on its next load from home.
 
 ### Notifications
@@ -167,10 +168,10 @@ The 7-day cap is not a stop condition (rolling refresh covers it). If checks 1 o
 | Track | Owns | After |
 | --- | --- | --- |
 | P. Protocol | `protocol/v1/*` (including the envelope discriminator), generated Go and TypeScript, protocol revision | Gate 0 |
-| H1. Broker | store migration and store, `internal/auth/service.go`, broker gateway and admin RPC (origin binding, owner and node checks, `revoke --via`), `internal/gatewayclient`, `internal/gatewayapi`, new `internal/tailnet` (status lookup and cache, moved out of `internal/lifecycle/checks.go` and `installedTailscale`) | P |
-| H2. Gateway and CLI | `internal/gateway/handler.go`, `api.go`, `live.go`, `server.go` (CORS, per-request WebSocket origins, `Sec-Fetch` checks, cookie refresh, forwarded Origin, probe loop and bound-origin union), `internal/cli/admin.go`, `cmd/pterm` (`pair --via`, `computers`, `devices`, `doctor`, Serve-handler check) | P (fakes until H1) |
+| H1. Broker | store migration and store, `internal/auth/service.go`, broker gateway and admin RPC (origin binding, owner and node checks, `revoke --via`), `internal/gatewayclient`, `internal/gatewayapi`, new `internal/tailnet` (status lookup and cache) and the move of the status parsing out of `internal/lifecycle/checks.go` into it | P |
+| H2. Gateway and CLI | `internal/gateway/handler.go`, `api.go`, `live.go`, `server.go` (CORS, per-request WebSocket origins, `Sec-Fetch` checks, cookie refresh, forwarded Origin, probe loop and bound-origin union), `internal/cli/admin.go`, `cmd/pterm` (`pair --via`, `computers`, `devices`, `doctor`, Serve-handler check; replaces `installedTailscale` with a call to `internal/tailnet` after H1 lands) | P (fakes until H1) |
 | W1. Web core | `web/src/api/http.ts`, `web/src/computers.ts`, `web/src/pairing/*`, `web/src/screens/hooks.ts`, `web/src/terminal/Connection.ts`, `web/src/protocol/validate.ts`, `web/vite.config.ts` (lenient peer validators) | P |
-| W2. Screens and app shell | `App.tsx` (per-computer auth and offline), `Sessions.tsx`, `Wall.tsx` (visible-only tiles), `NewSession.tsx`, `Settings.tsx` (Computers: add, rename, remove, retry), `Live.tsx`, `web/src/sw.js` (network-first shell, service-worker allow-list cleanup), `web/src/push.ts`, `Composer.tsx` (uploads), `SessionMenu.tsx`, `Worktree.tsx`, `web/src/screens/activity.ts` (keys become `host/id`) | W1 |
+| W2. Screens and app shell | `App.tsx` (per-computer auth and offline), `Sessions.tsx`, `Wall.tsx` (visible-only tiles), `NewSession.tsx`, `Settings.tsx` (Computers: add, rename, remove, retry), `Live.tsx`, `web/src/sw.js` (network-first shell, service-worker allow-list cleanup), `web/src/push.ts`, `Composer.tsx` (uploads), `SessionMenu.tsx`, `Worktree.tsx`, `web/src/screens/activity.ts` (keys become `host/id`), `web/src/terminal/pathLinks.ts` and `TerminalView.ts` (the add-computer link) | W1 |
 | D. Docs | guide `computers.md`, security, CLI, troubleshooting, pairing, release notes, `docs/threat-model.md` (new trust boundaries), HTTP API doc, CHANGELOG, README, progress, landing page | drafts now, final after integration |
 
 ### Integration tests
@@ -232,7 +233,7 @@ Both reviewers attacked version 2. Security: "sound with changes". Feasibility: 
 | 34 | Track gaps and overlap (`server.go`, Tailscale status code, `Composer`, `SessionMenu`, `Worktree`, `activity`) (medium) | Assigned to H2, H1 (`internal/tailnet`) and W2 |
 | 35 | MVP too large for one step (low) | Split into M1 and M2, both before release |
 
-**Final confirmation round (version 3):** security — confirmed with two notes, both resolved: (36, medium) a program printing a fake add-computer link to its own server could add a fake computer → home checks the host in its own `tailscale status` (same tailnet and owner), pins the node ID, and always asks in a confirm sheet drawn outside the terminal; (37, low-medium) short `--via` names could match the wrong node → match only `DNSName` first labels in the peer's own tailnet, refuse ambiguity, always show the full origin.
+**Final confirmation round (version 3):** feasibility — confirmed with notes, all resolved: the `internal/tailnet` move is split between H1 (new package, `checks.go`) and H2 (`cmd/pterm` call site); `pathLinks.ts` and `TerminalView.ts` go to W2; a home reinstall changes the node ID (documented). Security — confirmed with two notes, both resolved: (36, medium) a program printing a fake add-computer link to its own server could add a fake computer → home checks the host in its own `tailscale status` (same tailnet and owner), pins the node ID, and always asks in a confirm sheet drawn outside the terminal; (37, low-medium) short `--via` names could match the wrong node → match only `DNSName` first labels in the peer's own tailnet, refuse ambiguity, always show the full origin.
 
 ## Sources
 
