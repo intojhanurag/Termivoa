@@ -1,6 +1,7 @@
 // The landing page is plain HTML in public/; Starlight serves the docs under /docs/.
 import { defineConfig, passthroughImageService } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 
 export default defineConfig({
@@ -18,6 +19,8 @@ export default defineConfig({
 			// Each docs page also links its plain-Markdown copy (src/pages/docs/[...slug].md.ts) for AI tools.
 			routeMiddleware: './src/routeData.ts',
 			plugins: [
+				// Fails the build on a broken docs link or #anchor (AGENTS.md rule 23).
+				starlightLinksValidator(),
 				starlightLlmsTxt({
 					projectName: 'Termivoa',
 					description:
