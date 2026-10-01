@@ -683,6 +683,23 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   tab; Type here printed `BUILD-OK`; selecting 2 diff lines drafted
   `@cart.js lines 3–4:` with both lines quoted, without sending.
 
+- **Worktrees, host side** (`feat/worktrees-host`, 2026-10-01): protocol
+  `branches.list`/`branches.listed`, `worktree.remove`/`worktree.removed`, an
+  optional `worktree` object on session create (HTTP and broker RPC) and on
+  session records, and the error codes `worktree_exists` and
+  `not_a_repository`. `internal/gitchanges/worktree.go` lists branches and
+  runs `git worktree add --no-track -b termivoa/<name>
+  ~/termivoa/worktrees/<repo>/<name> <base commit>` and `git worktree remove`,
+  with timeouts. The base must be in a fresh listing. Limit: 50 per
+  repository. A create whose session fails to start is rolled back. Branches
+  are never deleted. Checks: `go test -race` on `internal/{protocol,gitchanges,broker,gateway}`,
+  `./scripts/check`, and `go vet ./...` with `GOOS=linux` and `GOOS=windows`
+  (`CGO_ENABLED=0`). The end-to-end check on an isolated `pterm up --dev`
+  stack with a temporary HOME is in
+  [evidence/worktrees/host-e2e.md](evidence/worktrees/host-e2e.md). The
+  phone UI is pending. Windows removal while the shell is inside the
+  worktree is not tested on Windows.
+
 - **Lost Ctrl+] at desktop attach startup** (#68, `fix/issue-68`): the
   flaky `TestPtermDesktopAttachNativeOuterTTY` failure (`attach executable did
   not exit` at line 102) reproduced 11 times in 400 runs (8 copies of the test
