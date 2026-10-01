@@ -1217,3 +1217,355 @@ describe('wheelSteps', () => {
     expect(wheelSteps(0, -1000, 36)).toEqual({ steps: -MAX_WHEEL_STEPS, carry: 0 });
   });
 });
+
+describe('Files', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const root = '/Users/me/app';
+  const listed = (path = '', extra: object = {}) => ({
+    state: 'ready', root, path, entries: [{ name: 'src', kind: 'dir' }, { name: 'a.ts', kind: 'file', size: 12 }], truncated: false, ...extra,
+  });
+  const content = (path = 'a.ts', text = 'const a = 1;\n') => ({ state: 'ready', path, size: text.length, text, truncated: false });
+  const found = (query = 'q', paths: string[] = ['a.ts']) => ({ state: 'ready', query, paths, truncated: false });
+  /** The files requests sent so far, as "type payload-value". */
+  const asked = (socket: FakeSocket) => socket.sent
+    .filter((message) => message.type.startsWith('files.'))
+    .map((message) => `${message.type} ${String(message.payload.path ?? message.payload.query)}`);
+  const last = (socket: FakeSocket, type: string) => socket.sent.filter((message) => message.type === type).at(-1);
+
+  it('returns false when it is not live and sends nothing', async () => {
+    const { connection, socket } = harness();
+    expect(connection.openFilesFolder('')).toBe(false);
+    expect(connection.openFilesFile('a.ts')).toBe(false);
+    expect(connection.getFiles()).toBeUndefined();
+    socket().open();
+    expect(connection.openFilesFolder('')).toBe(false);
+    expect(asked(socket())).toEqual([]);
+  });
+
+  it('lists the root as an observer and shows the reply for its own request only', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    expect(connection.getStatus().control).toBe('observer');
+    expect(connection.openFilesFolder('')).toBe(true);
+    const request = last(socket(), 'files.list');
+    expect(request).toMatchObject({ sessionId, generation, payload: { path: '' } });
+    expect(connection.getFiles()).toEqual({
+      root: undefined, folder: { path: '', state: 'loading', listed: undefined }, file: undefined, search: undefined,
+    });
+
+    socket().receive('files.listed', listed());
+    expect(connection.getFiles()?.folder.state).toBe('loading');
+    expect(connection.getFiles()?.root).toBeUndefined();
+    expect(asked(socket())).toEqual(['files.list ']);
+
+    socket().reply(request, 'files.listed', listed());
+    expect(connection.getFiles()).toMatchObject({ root, folder: { path: '', state: 'ready', listed: { entries: [{ name: 'src' }, { name: 'a.ts' }] } } });
+
+    connection.closeFiles();
+    expect(connection.getFiles()).toBeUndefined();
+  });
+
+  it('sends one files request at a time, then the next wanted one: file, search, folder', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    connection.openFilesFolder('web');
+    connection.openFilesFile('web/a.ts', 3);
+    connection.searchFiles('q');
+    expect(asked(socket())).toEqual(['files.list ']);
+
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+    expect(asked(socket())).toEqual(['files.list ', 'files.read web/a.ts']);
+    expect(connection.getFiles()?.folder).toMatchObject({ path: 'web', state: 'loading' });
+
+    socket().reply(last(socket(), 'files.read'), 'files.content', content('web/a.ts'));
+    expect(asked(socket())).toEqual(['files.list ', 'files.read web/a.ts', 'files.search q']);
+    expect(connection.getFiles()?.file).toMatchObject({ path: 'web/a.ts', line: 3, state: 'ready', content: { text: 'const a = 1;\n' } });
+
+    socket().reply(last(socket(), 'files.search'), 'files.found', found());
+    expect(asked(socket())).toEqual(['files.list ', 'files.read web/a.ts', 'files.search q', 'files.list web']);
+    expect(connection.getFiles()?.search).toMatchObject({ query: 'q', state: 'ready', found: { paths: ['a.ts'] } });
+
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed('web'));
+    expect(connection.getFiles()?.folder).toMatchObject({ path: 'web', state: 'ready' });
+    expect(asked(socket())).toHaveLength(4);
+  });
+
+  it('keeps only the latest file: a reply for an older path is dropped and the newer one is sent', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+    connection.openFilesFile('a.ts');
+    const first = last(socket(), 'files.read');
+    connection.openFilesFile('b.ts');
+    expect(asked(socket())).toEqual(['files.list ', 'files.read a.ts']);
+
+    socket().reply(first, 'files.content', content('a.ts', 'old'));
+    expect(connection.getFiles()?.file).toEqual({ path: 'b.ts', line: undefined, state: 'loading', content: undefined });
+    expect(asked(socket())).toEqual(['files.list ', 'files.read a.ts', 'files.read b.ts']);
+    socket().reply(last(socket(), 'files.read'), 'files.content', content('b.ts', 'new'));
+    expect(connection.getFiles()?.file).toMatchObject({ path: 'b.ts', state: 'ready', content: { text: 'new' } });
+  });
+
+  it('keeps only the latest search and the latest folder the same way', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+    connection.searchFiles('q');
+    connection.searchFiles('qu');
+    socket().reply(last(socket(), 'files.search'), 'files.found', found('q', ['old.ts']));
+    expect(connection.getFiles()?.search).toEqual({ query: 'qu', state: 'loading', found: undefined });
+    expect(asked(socket()).at(-1)).toBe('files.search qu');
+    socket().reply(last(socket(), 'files.search'), 'files.found', found('qu', ['new.ts']));
+    expect(connection.getFiles()?.search).toMatchObject({ query: 'qu', state: 'ready', found: { paths: ['new.ts'] } });
+
+    connection.openFilesFolder('a');
+    connection.openFilesFolder('b');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed('a'));
+    expect(connection.getFiles()?.folder).toMatchObject({ path: 'b', state: 'loading' });
+    expect(asked(socket()).at(-1)).toBe('files.list b');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed('b'));
+    expect(connection.getFiles()?.folder).toMatchObject({ path: 'b', state: 'ready' });
+  });
+
+  it('ends a search with an empty query and forgets it', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+    connection.searchFiles('q');
+    socket().reply(last(socket(), 'files.search'), 'files.found', found());
+    connection.searchFiles('');
+    expect(connection.getFiles()?.search).toBeUndefined();
+    expect(asked(socket())).toHaveLength(2);
+  });
+
+  it('closes the open file without a request, and Back shows the folder', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('src');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed('src'));
+    connection.openFilesFile('src/a.ts');
+    socket().reply(last(socket(), 'files.read'), 'files.content', content('src/a.ts'));
+    connection.closeFilesFile();
+    expect(connection.getFiles()).toMatchObject({ file: undefined, folder: { path: 'src', state: 'ready' } });
+    expect(asked(socket())).toHaveLength(2);
+  });
+
+  it('lists the folder of a file opened without a Files view, and keeps the line', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    expect(connection.openFilesFile('src/a/b.ts', 7)).toBe(true);
+    expect(last(socket(), 'files.read')?.payload).toEqual({ path: 'src/a/b.ts' });
+    expect(connection.getFiles()).toEqual({
+      root: undefined,
+      folder: { path: 'src/a', state: 'loading', listed: undefined },
+      file: { path: 'src/a/b.ts', line: 7, state: 'loading', content: undefined },
+      search: undefined,
+    });
+    socket().reply(last(socket(), 'files.read'), 'files.content', content('src/a/b.ts'));
+    expect(asked(socket())).toEqual(['files.read src/a/b.ts', 'files.list src/a']);
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed('src/a'));
+    expect(connection.getFiles()).toMatchObject({
+      root,
+      folder: { path: 'src/a', state: 'ready' },
+      file: { path: 'src/a/b.ts', line: 7, state: 'ready' },
+    });
+  });
+
+  it('lists the root for a file in the root', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFile('a.ts');
+    expect(connection.getFiles()?.folder).toMatchObject({ path: '', state: 'loading' });
+  });
+
+  it('stores the root a listing names, even when it names no folder of the view', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed('', { root: 'C:/Users/me/app' }));
+    expect(connection.getFiles()?.root).toBe('C:/Users/me/app');
+    // A listing that does not name the root keeps the known one.
+    connection.openFilesFolder('src');
+    socket().reply(last(socket(), 'files.list'), 'files.listed', { state: 'unavailable', path: 'src', entries: [], truncated: false });
+    expect(connection.getFiles()).toMatchObject({ root: 'C:/Users/me/app', folder: { state: 'ready', listed: { state: 'unavailable' } } });
+  });
+
+  it('marks only the refused request unavailable, keeps the socket open and sends the next', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    connection.openFilesFolder('');
+    connection.openFilesFile('a.ts');
+    connection.searchFiles('q');
+    expect(asked(first)).toEqual(['files.list ']);
+
+    first.reply(last(first, 'files.list'), 'error', { code: 'limit_exceeded', message: 'busy' });
+    expect(connection.getFiles()).toMatchObject({
+      folder: { state: 'unavailable' }, file: { state: 'loading' }, search: { state: 'loading' },
+    });
+    expect(first.readyState).toBe(1);
+    expect(connection.getStatus()).toMatchObject({ link: 'live', notice: 'busy' });
+    expect(asked(first)).toEqual(['files.list ', 'files.read a.ts']);
+
+    first.reply(last(first, 'files.read'), 'error', { code: 'internal_error', message: 'read failed' });
+    expect(connection.getFiles()).toMatchObject({
+      folder: { state: 'unavailable' }, file: { state: 'unavailable' }, search: { state: 'loading' },
+    });
+    expect(asked(first)).toEqual(['files.list ', 'files.read a.ts', 'files.search q']);
+
+    first.reply(last(first, 'files.search'), 'error', { code: 'internal_error', message: 'search failed' });
+    expect(connection.getFiles()).toMatchObject({
+      folder: { state: 'unavailable' }, file: { state: 'unavailable' }, search: { state: 'unavailable' },
+    });
+    expect(first.readyState).toBe(1);
+    expect(asked(first)).toHaveLength(3);
+  });
+
+  it('does not end loading for an error to another request', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    socket().receive('error', { code: 'internal_error', message: 'other' });
+    expect(connection.getFiles()?.folder.state).toBe('loading');
+  });
+
+  it('can load again after a refused request', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    socket().reply(last(socket(), 'files.list'), 'error', { code: 'internal_error', message: 'x' });
+    connection.openFilesFolder('');
+    expect(asked(socket())).toEqual(['files.list ', 'files.list ']);
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+    expect(connection.getFiles()?.folder.state).toBe('ready');
+  });
+
+  it('ends loading when the socket closes and ignores replies from the old socket', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    connection.openFilesFolder('');
+    connection.openFilesFile('a.ts');
+    connection.searchFiles('q');
+    const request = last(first, 'files.list');
+    first.close();
+    expect(connection.getFiles()).toMatchObject({
+      folder: { state: 'unavailable' }, file: { state: 'unavailable' }, search: { state: 'unavailable' },
+    });
+
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    const second = socket();
+    await attachLive(second, '2');
+    first.reply(request, 'files.listed', listed());
+    second.reply(request, 'files.listed', listed());
+    expect(connection.getFiles()?.folder.state).toBe('unavailable');
+    expect(connection.getFiles()?.root).toBeUndefined();
+    expect(asked(second)).toEqual([]);
+
+    connection.openFilesFolder('');
+    second.reply(last(second, 'files.list'), 'files.listed', listed());
+    expect(connection.getFiles()).toMatchObject({ root, folder: { state: 'ready' }, file: undefined });
+  });
+
+  describe('filesRoot', () => {
+    it('asks for a root listing when the root is unknown and resolves with the root', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      const answer = connection.filesRoot();
+      expect(last(socket(), 'files.list')).toMatchObject({ sessionId, generation, payload: { path: '' } });
+      expect(connection.getFiles()).toBeUndefined();
+      socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+      await expect(answer).resolves.toBe(root);
+    });
+
+    it('answers from the last listing without a request while the cwd is unchanged', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      socket().receive('session.state', { state: 'running', cwd: `${root}/web` });
+      const first = connection.filesRoot();
+      socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+      await expect(first).resolves.toBe(root);
+      expect(asked(socket())).toHaveLength(1);
+
+      await expect(connection.filesRoot()).resolves.toBe(root);
+      socket().receive('session.state', { state: 'running', cwd: `${root}/web` });
+      await expect(connection.filesRoot()).resolves.toBe(root);
+      expect(asked(socket())).toHaveLength(1);
+    });
+
+    it('asks again after the session changes its cwd', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      socket().receive('session.state', { state: 'running', cwd: `${root}/web` });
+      const first = connection.filesRoot();
+      socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+      await first;
+
+      socket().receive('session.state', { state: 'running', cwd: '/Users/me/other' });
+      const second = connection.filesRoot();
+      expect(asked(socket())).toHaveLength(2);
+      socket().reply(last(socket(), 'files.list'), 'files.listed', listed('', { root: '/Users/me/other' }));
+      await expect(second).resolves.toBe('/Users/me/other');
+    });
+
+    it('gives the known root to a view opened later', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      const answer = connection.filesRoot();
+      socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+      await answer;
+      connection.openFilesFolder('');
+      expect(connection.getFiles()?.root).toBe(root);
+    });
+
+    it('waits for the request in flight, then asks for the root', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      connection.openFilesFile('a.ts');
+      connection.closeFiles();
+      const answer = connection.filesRoot();
+      expect(asked(socket())).toEqual(['files.read a.ts']);
+      socket().reply(last(socket(), 'files.read'), 'files.content', content());
+      expect(asked(socket())).toEqual(['files.read a.ts', 'files.list ']);
+      socket().reply(last(socket(), 'files.list'), 'files.listed', listed());
+      await expect(answer).resolves.toBe(root);
+    });
+
+    it('resolves undefined when the host refuses the listing', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      const answer = connection.filesRoot();
+      socket().reply(last(socket(), 'files.list'), 'error', { code: 'internal_error', message: 'x' });
+      await expect(answer).resolves.toBeUndefined();
+    });
+
+    it('resolves undefined when the listing names no root', async () => {
+      const { connection, socket } = harness();
+      await attachLive(socket());
+      const answer = connection.filesRoot();
+      socket().reply(last(socket(), 'files.list'), 'files.listed', { state: 'unavailable', path: '', entries: [], truncated: false });
+      await expect(answer).resolves.toBeUndefined();
+    });
+
+    it('resolves undefined when the socket closes, and when it is not live', async () => {
+      const { connection, socket } = harness();
+      await expect(connection.filesRoot()).resolves.toBeUndefined();
+      await attachLive(socket());
+      const answer = connection.filesRoot();
+      socket().close();
+      await expect(answer).resolves.toBeUndefined();
+      await expect(connection.filesRoot()).resolves.toBeUndefined();
+    });
+  });
+});
