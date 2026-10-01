@@ -154,6 +154,8 @@ Files that git ignores, such as `node_modules` or `.env`, are deleted with the f
 
 The phone shows git's message. On Windows, a folder that a program still uses cannot be deleted; close that program, then try again. You can also run `git worktree remove <folder>` on the computer.
 
+On Windows, Termivoa ends the session before it deletes the folder, because a running shell keeps its folder open. The phone can then show "Connection lost" in place of "Worktree removed". Check the Sessions list: if the session ended and the folder is gone, the remove worked.
+
 ## Commit fails
 
 The phone shows git's own message. Common causes:
