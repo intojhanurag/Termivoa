@@ -1024,6 +1024,24 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   carry `/tmp/pterm-demo up --dev` in their command line (only the recorded one
   stopped). `node --check` on all scripts; `./scripts/check` exit 0.
 
+- **Linux XDG paths no longer depend on the build host** (`fix/issue-130`,
+  2026-10-01, fixes #130, no behavior change on Linux):
+  `TestLinuxPathsFollowXDG` failed in all four cases on Windows because
+  `linuxPaths` (`internal/platform/paths.go`) modelled Linux paths with the
+  host's `filepath`: on Windows, `filepath.IsAbs("/data/")` is false (no
+  volume), so XDG values were ignored, and `filepath.Join` gave
+  `\home\ada\.local\share\phone-terminal`. It now uses the slash-only `path`
+  package. Production only calls it on Linux, where `filepath` and `path`
+  agree, so Linux output is unchanged; the test stays on for every OS.
+  Evidence: `linuxPaths` now calls only `path` (slash-only on every OS) and
+  `strconv`, so its output cannot depend on the host. The Windows test
+  binary was not run: Wine in Docker on Apple Silicon failed (Wine 8 lacks
+  `bcryptprimitives.dll`; amd64 under Rosetta: `invalid gdt selector`; arm64
+  Wine 10 hung in `wineboot`). Native Windows stays pending (CI is off).
+  `go test -race ./internal/platform/...`, `CGO_ENABLED=0 GOOS=windows go vet
+  ./...`, `GOOS=windows go test -c ./internal/platform` and `./scripts/check`
+  exit 0.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -76,25 +77,28 @@ func linuxDefaultPaths(directory string) (Paths, error) {
 // Without either, it falls back to a directory inside the private data
 // directory. The IPC layer checks ownership and permissions of whichever is
 // used when it opens it.
+//
+// It models Linux paths, so it uses the slash-only path package, not the
+// host's filepath: the result is the same on every build host.
 func linuxPaths(directory string, getenv func(string) string, home string, uid int, isDir func(string) bool) Paths {
 	base := func(variable, fallback string) string {
-		if value := getenv(variable); filepath.IsAbs(value) {
-			return filepath.Clean(value)
+		if value := getenv(variable); path.IsAbs(value) {
+			return path.Clean(value)
 		}
-		return filepath.Join(home, fallback)
+		return path.Join(home, fallback)
 	}
 	paths := Paths{
-		DataDir: filepath.Join(base("XDG_DATA_HOME", ".local/share"), directory),
-		LogDir:  filepath.Join(base("XDG_STATE_HOME", ".local/state"), directory, "logs"),
+		DataDir: path.Join(base("XDG_DATA_HOME", ".local/share"), directory),
+		LogDir:  path.Join(base("XDG_STATE_HOME", ".local/state"), directory, "logs"),
 	}
 	systemdRuntime := "/run/user/" + strconv.Itoa(uid)
 	switch runtimeBase := getenv("XDG_RUNTIME_DIR"); {
 	case uid >= 0 && isDir(systemdRuntime):
-		paths.RuntimeDir = filepath.Join(systemdRuntime, directory)
-	case filepath.IsAbs(runtimeBase):
-		paths.RuntimeDir = filepath.Join(filepath.Clean(runtimeBase), directory)
+		paths.RuntimeDir = path.Join(systemdRuntime, directory)
+	case path.IsAbs(runtimeBase):
+		paths.RuntimeDir = path.Join(path.Clean(runtimeBase), directory)
 	default:
-		paths.RuntimeDir = filepath.Join(paths.DataDir, "runtime")
+		paths.RuntimeDir = path.Join(paths.DataDir, "runtime")
 	}
 	return paths
 }
