@@ -590,13 +590,13 @@ export type FileKind = "dir" | "file" | "link" | "other";
 /**
  * ready: text is the file as UTF-8. At most 262144 bytes are read; a longer file is cut at
  * the last line break inside them (truncated). The text is also cut, the same way, if its
- * JSON form would pass 786432 bytes. Invalid UTF-8 is replaced with U+FFFD when it is at
- * most 1% of the bytes read. binary: a NUL byte in the first 8192 bytes, or more invalid
- * UTF-8 than that. too_large: the file is over 52428800 bytes (50 MiB) and was not opened.
- * not_found: the file does not exist, is outside the root (a symlink that escapes), or is
- * inside .git. not_file: a folder or another kind of non-regular file. unavailable: the
- * file could not be read. size is the file size in bytes, for ready, binary and too_large.
- * Only ready carries text.
+ * JSON form would pass 786432 bytes. Invalid UTF-8, and a NUL byte after the first 8192
+ * bytes, is replaced with U+FFFD when it is at most 1% of the bytes read. binary: a NUL
+ * byte in the first 8192 bytes, or more invalid UTF-8 than that. too_large: the file is
+ * over 52428800 bytes (50 MiB) and was not opened. not_found: the file does not exist, is
+ * outside the root (a symlink that escapes), or is inside .git. not_file: a folder or
+ * another kind of non-regular file. unavailable: the file could not be read. size is the
+ * file size in bytes, for ready, binary and too_large. Only ready carries text.
  */
 export type FilesContentPayload = {
     readonly path:      string;
