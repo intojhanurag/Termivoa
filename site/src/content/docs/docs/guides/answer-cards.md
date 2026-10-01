@@ -16,7 +16,7 @@ The card sits at the bottom of the live terminal:
 
 Other programs' numbered menus and `[y/N]` prompts get cards too.
 
-<!-- image: a Claude Code answer card with the question, the exact command it approves, and one button per option -->
+![An answer card asks "Run the test suite?" and offers three one-tap answers: Yes, Yes and don't ask again, and No.](../../../../assets/docs/phone-answer-card.webp)
 
 ## Answer a question
 

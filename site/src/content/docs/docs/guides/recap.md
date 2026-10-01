@@ -17,6 +17,8 @@ The card shows only when:
 
 It shows once per visit, and each phone tracks its own visits.
 
+![A recap card above a waiting question says "Since you left 1 min ago · worked 1 min · 3 files changed +27 −1 · waiting for you".](../../../../assets/docs/phone-recap.webp)
+
 ## What does each part mean?
 
 - **Since you left**: the last time this phone showed the session.

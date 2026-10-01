@@ -6,7 +6,7 @@ lastUpdated: 2026-10-01
 
 Termivoa shows every session on your computer in the Sessions list, the first screen after pairing. A session is one running shell or coding agent, such as Claude Code or Codex.
 
-<!-- image: the Sessions list with Waiting and Working rows -->
+![The Sessions list: acme-web waits for an answer to "Run the test suite?", a worktree session shows its ⎇ badge, and billing-api is working.](../../../../assets/docs/phone-sessions.webp)
 
 ## Read the Sessions list
 

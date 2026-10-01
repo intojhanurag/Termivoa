@@ -20,7 +20,7 @@ People who run long terminal jobs or coding agents and want to check on them awa
 
 ## How does it work?
 
-<!-- image: diagram of the phone browser connecting over Tailscale to pterm on the computer, which runs the sessions -->
+![Diagram: the Termivoa web app on your phone connects over Tailscale to pterm on your computer; the pterm gateway serves the app to paired phones and the pterm broker runs your shells and coding agents.](../../../assets/docs/how-it-works.webp)
 
 1. **Your computer runs `pterm`.** It keeps sessions alive and serves a private web page.
 2. **Tailscale links your devices** in a private network. Only your own devices can reach the page.

@@ -29,7 +29,7 @@ Each row shows a change letter, the path, and the lines added (green) and remove
 
 **Refresh** reads the changes again. **Done** goes back to the live terminal.
 
-<!-- image: the Changes list with file rows, status letters, and green and red line counts -->
+![The Changes view lists three changed files with their added and removed line counts, and a Commit 3 files button.](../../../../assets/docs/phone-changes-list.webp)
 
 ## See one file
 
@@ -67,7 +67,7 @@ You need control. Without it, the list shows **Take control to commit**.
 
 If git fails, the sheet shows its output, such as a hook error. The list reloads after each commit. If the connection stops during a commit or push, Termivoa does not send it again. Check the list before you retry.
 
-<!-- image: the Commit sheet with the suggested message, the file count, and the Commit button -->
+![The commit sheet shows the message "feat: rate limit the /api routes", 3 files selected, and the Commit button.](../../../../assets/docs/phone-commit.webp)
 
 :::caution
 The commit runs your repository's own hooks, as a commit on your computer does. Push never forces, so it cannot overwrite commits on the remote.

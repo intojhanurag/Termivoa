@@ -24,7 +24,7 @@ Termivoa makes the folder `~/termivoa/worktrees/<repository>/<name>` and the bra
 
 The new branch does not track a remote. A push from [Changes](/docs/guides/changes/#commit-and-push) sends it to `origin` as a new branch, ready for a pull request.
 
-<!-- image: the New worktree sheet with the name, from and start with fields and the Create button -->
+![The New worktree sheet shows the name fix-cache-headers, the base branch main, Shell as the start command, and the folder and branch it creates.](../../../../assets/docs/phone-worktree-sheet.webp)
 
 :::tip
 Start from `main` for a new task. To continue another task, pick its branch in **from**.

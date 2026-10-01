@@ -10,7 +10,7 @@ Termivoa finds your project's own commands, such as tests or the dev server, and
 Not released yet. This is not in `v0.1.0-beta.2`.
 :::
 
-<!-- image: the This project part of the Snips sheet -->
+![The Snips sheet lists the project's own commands, such as test, dev, build and lint, above the saved snippets.](../../../../assets/docs/phone-project-buttons.webp)
 
 ## Which commands does Termivoa find?
 

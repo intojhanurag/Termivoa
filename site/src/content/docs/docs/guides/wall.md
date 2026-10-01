@@ -6,7 +6,7 @@ lastUpdated: 2026-10-01
 
 Termivoa shows every running session as a small live screen on one page, the Wall.
 
-<!-- image: the Wall with three tiles, the top one Waiting with an amber border -->
+![The Wall shows four live session tiles; the waiting session has an amber border and is first.](../../../../assets/docs/phone-wall.webp)
 
 ## Open the Wall
 

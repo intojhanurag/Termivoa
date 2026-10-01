@@ -26,7 +26,7 @@ The tab bar at the top shows your running sessions. Tap a tab to switch; each op
 
 With control, the dock under the terminal shows one-tap agent keys and a key bar with keys a phone keyboard lacks.
 
-<!-- image: the dock with control: agent keys, key bar, and the type, compose, snips, history and changes buttons -->
+![A session with control: the terminal shows the agent working, and the dock below has the agent keys, the key bar and the type, compose, snips, history and changes buttons.](../../../../assets/docs/phone-live-terminal.webp)
 
 | Key | What it sends |
 | --- | --- |
@@ -42,6 +42,8 @@ With control, the dock under the terminal shows one-tap agent keys and a key bar
 The action buttons are **type** (opens the phone keyboard), **compose**, **snips**, **history** and **changes** (see [Changes](/docs/guides/changes/)).
 
 With the phone keyboard open, all keys fold into one scrolling row, and the terminal keeps its size so full-screen agents do not redraw. `↓` follows `↑` there (next beta).
+
+![With the keyboard open, one row of keys stays under the terminal: esc, ^C, mode, ↑, ↓, 1, 2 and hide keyboard.](../../../../assets/docs/key-row.webp)
 
 ## Write longer text with compose
 

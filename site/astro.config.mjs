@@ -1,11 +1,13 @@
 // The landing page is plain HTML in public/; Starlight serves the docs under /docs/.
-import { defineConfig } from 'astro/config';
+import { defineConfig, passthroughImageService } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightLlmsTxt from 'starlight-llms-txt';
 
 export default defineConfig({
 	site: 'https://termivoa.vercel.app',
 	trailingSlash: 'ignore',
+	// Docs images are already small WebP files; serve them as they are (no sharp).
+	image: { service: passthroughImageService() },
 	integrations: [
 		starlight({
 			title: 'Termivoa Docs',

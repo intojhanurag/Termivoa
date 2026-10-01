@@ -21,7 +21,7 @@ Termivoa pairs a phone with a one-time QR code from `pterm pair` and a 6-digit c
 
 4. If the codes match, type `y` and press Enter. The phone opens the Sessions list.
 
-<!-- image: the Sessions list on the phone right after pairing -->
+![The Sessions screen after pairing shows "Your computer · connected" and the sessions on the computer.](../../../assets/docs/phone-pair-done.webp)
 
 If the codes are different, type `n`, then tap **Codes don't match? Cancel** on the phone. The phone stays unpaired.
 `pterm` never approves a phone without your answer.
