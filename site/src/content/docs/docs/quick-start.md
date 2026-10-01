@@ -57,7 +57,7 @@ On iPhone, tap **Share**, then **Add to Home Screen**, to get notifications.
 
 Closing the app does not stop the session.
 
-![The Sessions screen shows "Your computer · connected" with two sessions and a new session button; a hand-written note says: you're set, your terminal in your pocket.](../../../assets/docs/illo-youre-set.webp)
+![The Sessions screen shows "Your computer · connected" with two sessions, acme-web and billing-api, and a new session button; a hand-written note says: you're set, your terminal in your pocket.](../../../assets/docs/illo-youre-set.webp)
 
 ## Common questions
 
