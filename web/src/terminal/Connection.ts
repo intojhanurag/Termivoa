@@ -161,7 +161,7 @@ const WRITE_ERRORS: Readonly<Record<string, string>> = {
   not_controller: 'You no longer have control. Take control, then try again.',
   stale_lease: 'You no longer have control. Take control, then try again.',
   limit_exceeded: 'That is more than the computer allows. Select fewer files or shorten the message.',
-  operation_conflict: 'Another commit or push is running. Wait for it, then try again.',
+  operation_conflict: 'Another commit, push or worktree remove is running. Wait for it, then try again.',
 };
 
 /** FrameRenderer satisfies this; tests pass a fake. */

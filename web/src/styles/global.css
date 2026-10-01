@@ -367,10 +367,10 @@ textarea {
 }
 .place { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-weight: 500; letter-spacing: 0.02em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .badge-text { flex-shrink: 0; font-weight: 700; letter-spacing: 0.06em; }
-/* "⎇ name": the session started in a Termivoa worktree. Gives way to the path and badge. */
-.worktree-badge { min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); font-family: var(--mono); font-weight: 600; }
-.row-meta .worktree-badge { max-width: none; }
-.status-line .worktree-badge { margin-left: auto; }
+/* "⎇ name": the session started in a Termivoa worktree. In the status line the path gives way first. */
+.worktree-badge { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); font-family: var(--mono); font-weight: 600; }
+.status-line .place { flex: 1 1 0; }
+.status-line .worktree-badge { flex: 0 1 auto; max-width: 50%; }
 
 /* Scrollbars take no layout space, so the measured grid never depends on them. Panning still works. */
 .terminal-area { position: relative; flex: 1; min-height: 0; overflow: auto; background: var(--bg); scrollbar-width: none; }

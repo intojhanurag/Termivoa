@@ -105,7 +105,7 @@ describe('NewWorktreeSheet', () => {
       expect(html).not.toContain('<form');
     }
     const html = sheet({ state: 'ready', listed: { state: 'not_git', branches: [], truncated: false } });
-    expect(html).toContain('<p role="status">This folder is not in a git repository. cd into a repo first.</p>');
+    expect(html).toContain('<p role="alert">This folder is not in a git repository. cd into a repo first.</p>');
     expect(html).not.toContain('Create');
   });
 
@@ -197,7 +197,7 @@ describe('session menu', () => {
       removal={undefined}
       onRelease={() => undefined}
       onNewWorktree={() => undefined}
-      onRemoveWorktree={() => undefined}
+      onRemoveWorktree={() => false}
       onSessions={() => undefined}
       onSettings={() => undefined}
       onChanged={async () => undefined}

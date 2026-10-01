@@ -852,7 +852,7 @@ describe('Worktrees', () => {
 
     connection.removeWorktree(false);
     socket().reply(last(socket(), 'worktree.remove'), 'error', { code: 'operation_conflict', message: 'busy' });
-    expect(connection.getWorktreeRemoval()).toEqual({ state: 'error', message: 'Another commit or push is running. Wait for it, then try again.' });
+    expect(connection.getWorktreeRemoval()).toEqual({ state: 'error', message: 'Another commit, push or worktree remove is running. Wait for it, then try again.' });
     expect(connection.getStatus()).toMatchObject({ control: 'controller', notice: undefined });
 
     connection.removeWorktree(false);
@@ -934,7 +934,7 @@ describe('Commit and push', () => {
 
     connection.commitChanges('m', ['a']);
     socket().reply(last(socket(), 'changes.commit'), 'error', { code: 'operation_conflict', message: 'busy' });
-    expect(connection.getChangesWrite()).toEqual({ kind: 'commit', state: 'error', message: 'Another commit or push is running. Wait for it, then try again.' });
+    expect(connection.getChangesWrite()).toEqual({ kind: 'commit', state: 'error', message: 'Another commit, push or worktree remove is running. Wait for it, then try again.' });
     expect(connection.getStatus()).toMatchObject({ control: 'controller', notice: undefined });
 
     connection.pushChanges();

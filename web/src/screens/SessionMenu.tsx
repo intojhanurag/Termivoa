@@ -20,7 +20,8 @@ export function SessionMenu({
   readonly removal: WorktreeRemoval | undefined;
   readonly onRelease: () => void;
   readonly onNewWorktree: () => void;
-  readonly onRemoveWorktree: (force: boolean) => void;
+  /** False when nothing was sent (no control, no link, or a remove in flight). */
+  readonly onRemoveWorktree: (force: boolean) => boolean;
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onChanged: () => Promise<void>;
@@ -32,6 +33,7 @@ export function SessionMenu({
   const [removing, setRemoving] = useState<SessionWorktree>();
   // Only a remove sent from this menu shows its reply; an older one is not news.
   const [removeSent, setRemoveSent] = useState(false);
+  const [notSent, setNotSent] = useState(false);
   const [title, setTitle] = useState(session.title);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -105,12 +107,19 @@ export function SessionMenu({
         </div>
       )}
       {mode === 'remove' && removing !== undefined && (
-        <RemoveWorktree
-          worktree={removing}
-          removal={removeSent ? removal : undefined}
-          onRemove={(force) => { onRemoveWorktree(force); setRemoveSent(true); }}
-          onCancel={() => { setRemoveSent(false); setMode('menu'); }}
-        />
+        <>
+          {notSent && <p role="alert" className="error">Not sent. Take control, then try again.</p>}
+          <RemoveWorktree
+            worktree={removing}
+            removal={removeSent ? removal : undefined}
+            onRemove={(force) => {
+              const sent = onRemoveWorktree(force);
+              setRemoveSent(sent);
+              setNotSent(!sent);
+            }}
+            onCancel={() => { setRemoveSent(false); setNotSent(false); setMode('menu'); }}
+          />
+        </>
       )}
       {mode === 'menu' && (
         <ul className="menu-list">

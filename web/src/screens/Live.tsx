@@ -662,7 +662,7 @@ export function Live({
             runtime?.connection.listBranches();
             setPanel('worktree');
           }}
-          onRemoveWorktree={(force) => runtime?.connection.removeWorktree(force)}
+          onRemoveWorktree={(force) => runtime?.connection.removeWorktree(force) ?? false}
           onSessions={onSessions}
           onSettings={onSettings}
           onChanged={onChanged}

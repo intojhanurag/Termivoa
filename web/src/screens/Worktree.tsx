@@ -105,12 +105,12 @@ export function NewWorktreeSheet({
   } else if (listed === undefined || listed.state === 'unavailable') {
     body = (
       <div className="row">
-        <p role="status" className="muted">Could not read the branches.</p>
+        <p role="alert" className="error">Could not read the branches.</p>
         <button type="button" onClick={onRetry}>Retry</button>
       </div>
     );
   } else if (listed.state === 'not_git') {
-    body = <p role="status">{NOT_GIT}</p>;
+    body = <p role="alert">{NOT_GIT}</p>;
   } else {
     const repo = listed.repo ?? 'repo';
     const { options, base } = branchChoices(listed, chosenBase);
@@ -144,7 +144,13 @@ export function NewWorktreeSheet({
               spellCheck={false}
               aria-invalid={problem !== undefined}
               aria-describedby="worktree-name-help"
-              onChange={(event) => onName(event.target.value.toLowerCase())}
+              onChange={(event) => {
+                // Lowercasing keeps the length, so the cursor can stay where it was.
+                const input = event.target;
+                const cursor = input.selectionStart;
+                onName(input.value.toLowerCase());
+                requestAnimationFrame(() => input.setSelectionRange(cursor, cursor));
+              }}
             />
             <button type="button" className="link" aria-label="New random name" onClick={onShuffle}>
               <span aria-hidden="true">🎲</span>
