@@ -5,6 +5,7 @@ import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './
 import { sessionName } from './folder';
 import type { SessionList } from './hooks';
 import { NewSessionHelp } from './NewSession';
+import { WorktreeBadge } from './Worktree';
 
 type Tone = 'accent' | 'amber' | 'muted';
 
@@ -113,7 +114,10 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
               <span className={done ? 'status-pill plain muted' : `controller ${controller.tone}`}>{controller.text}</span>
             )}
           </span>
-          <span className="row-meta">{meta.filter((part) => part !== '').join(' · ')}</span>
+          <span className="row-meta">
+            {session.worktree !== undefined && <><WorktreeBadge worktree={session.worktree} /> · </>}
+            {meta.filter((part) => part !== '').join(' · ')}
+          </span>
           {question !== undefined ? (
             <>
               <span className="question">{question}</span>

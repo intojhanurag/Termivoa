@@ -2,7 +2,9 @@ import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { BrokerRPCSessionRecord, DiffLine, HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { sendAgentKey } from '../terminal/agentKeys';
-import { canSendWith, Connection, INITIAL_STATUS, type ChangesView, type TasksView } from '../terminal/Connection';
+import {
+  canSendWith, Connection, INITIAL_STATUS, type BranchesView, type ChangesView, type TasksView, type WorktreeRemoval,
+} from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
 import { runFirstCommand } from '../terminal/runFirst';
@@ -21,13 +23,14 @@ import type { RunFirstRequest } from './presets';
 import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
 import { StateScreen, WindowArt } from './StateScreen';
+import { NewWorktree, WorktreeBadge } from './Worktree';
 
 interface Runtime {
   readonly connection: Connection;
   readonly view: TerminalView;
 }
 
-type Panel = 'none' | 'composer' | 'history' | 'changes' | 'snippets' | 'menu';
+type Panel = 'none' | 'composer' | 'history' | 'changes' | 'snippets' | 'menu' | 'worktree';
 
 /** The away recap, once per visit: decided when live, then its changes are read, then shown. */
 type Recap = { readonly phase: 'wait' | 'loading' | 'done' } | { readonly phase: 'shown'; readonly line: string };
@@ -39,6 +42,8 @@ const noSubscribe = () => () => undefined;
 const initialStatus = () => INITIAL_STATUS;
 const noChanges = (): ChangesView | undefined => undefined;
 const noTasks = (): TasksView | undefined => undefined;
+const noBranches = (): BranchesView | undefined => undefined;
+const noRemoval = (): WorktreeRemoval | undefined => undefined;
 const sameSession = (a: BrokerRPCSessionRecord, b: BrokerRPCSessionRecord) => a.id === b.id && a.generation === b.generation;
 
 /** Tabs: running sessions, plus the open one even after it exits. */
@@ -109,7 +114,7 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
 
 export function Live({
   session, sessions, settings, fontSize, runFirst, openComposer,
-  onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onRevoked, onPreview,
+  onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
 }: {
   readonly session: BrokerRPCSessionRecord;
   readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
@@ -125,6 +130,8 @@ export function Live({
   readonly onChanged: () => Promise<void>;
   /** A new session in the same project and shell; `runFirst` is typed once when it opens. */
   readonly onStartNew: (runFirst?: string) => void;
+  /** Like onStartNew, in a new git worktree of this session's repository; rejects with the API error. */
+  readonly onStartWorktree: (worktree: { readonly name: string; readonly base: string }, runFirst: string | undefined) => Promise<void>;
   readonly onRevoked: (reason: string | undefined) => void;
   /** Absent when this host serves no previews. */
   readonly onPreview?: (port: number) => void;
@@ -184,6 +191,14 @@ export function Live({
   const tasks = useSyncExternalStore(
     runtime?.connection.subscribe ?? noSubscribe,
     runtime?.connection.getTasks ?? noTasks,
+  );
+  const branches = useSyncExternalStore(
+    runtime?.connection.subscribe ?? noSubscribe,
+    runtime?.connection.getBranches ?? noBranches,
+  );
+  const removal = useSyncExternalStore(
+    runtime?.connection.subscribe ?? noSubscribe,
+    runtime?.connection.getWorktreeRemoval ?? noRemoval,
   );
 
   // This device is looking at the session: its output is not "new" here.
@@ -423,7 +438,7 @@ export function Live({
     }
   }
   const historyEnabled = status.link === 'live';
-  const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu';
+  const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu' || panel === 'worktree';
   const question = panel === 'none' ? openQuestion(status) : undefined;
   // With the keyboard up the card folds to its pill, so typing and keys keep working.
   const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
@@ -471,6 +486,7 @@ export function Live({
               <span className={status.link === 'live' ? 'dot green' : 'dot amber'} aria-hidden="true" />
               {status.link === 'live' ? place || 'Connected' : slowLink || place === '' ? linkLabel(status) : place}
             </span>
+            {current.worktree !== undefined && <WorktreeBadge worktree={current.worktree} />}
             <span className={`badge-text ${badge.tone}`}>{badge.text}</span>
           </div>
         </>
@@ -638,10 +654,27 @@ export function Live({
         <SessionMenu
           session={current}
           controlling={status.control === 'controller'}
+          running={(status.sessionState ?? current.state) === 'running'}
+          removal={removal}
           onRelease={() => runtime?.connection.releaseControl()}
+          onNewWorktree={() => {
+            // One read of the repository's branches each time the sheet opens.
+            runtime?.connection.listBranches();
+            setPanel('worktree');
+          }}
+          onRemoveWorktree={(force) => runtime?.connection.removeWorktree(force)}
           onSessions={onSessions}
           onSettings={onSettings}
           onChanged={onChanged}
+          onAuthFailure={() => onRevoked('This phone is no longer paired with your computer.')}
+          onClose={() => setPanel('none')}
+        />
+      )}
+      {panel === 'worktree' && runtime !== undefined && (
+        <NewWorktree
+          view={branches}
+          onRetry={() => runtime.connection.listBranches()}
+          onCreate={onStartWorktree}
           onAuthFailure={() => onRevoked('This phone is no longer paired with your computer.')}
           onClose={() => setPanel('none')}
         />

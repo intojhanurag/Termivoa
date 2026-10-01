@@ -36,4 +36,16 @@ describe('run in new tab', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-1', shellProfileId: 'zsh' }));
     expect(await startLike(from)).toEqual({ name: 'live', session: created });
   });
+
+  it('asks for a worktree of the source session only when one is given', async () => {
+    const create = vi.spyOn(api, 'createSession').mockResolvedValue({ session: created } as Awaited<ReturnType<typeof api.createSession>>);
+    expect(await startLike(from, 'claude', { name: 'brave-otter', base: 'main' })).toEqual({
+      name: 'live', session: created, runFirst: { command: 'claude', settled: false },
+    });
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({
+      projectId: 'project-1', shellProfileId: 'zsh', worktree: { sourceSessionId: 'old', name: 'brave-otter', base: 'main' },
+    }));
+    await startLike(from);
+    expect(create.mock.lastCall?.[0]).not.toHaveProperty('worktree');
+  });
 });

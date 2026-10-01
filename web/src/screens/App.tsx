@@ -81,12 +81,19 @@ export function pathFor(view: View): string {
 /**
  * Starts a session in the same project and shell as `from` and returns its
  * live view; `runFirst` is typed there once, only if no one else has control.
+ * With `worktree`, the host first creates a git worktree from the repository
+ * of `from`'s folder and starts the session in it.
  */
-export async function startLike(from: BrokerRPCSessionRecord, runFirst?: string): Promise<View> {
+export async function startLike(
+  from: BrokerRPCSessionRecord,
+  runFirst?: string,
+  worktree?: { readonly name: string; readonly base: string },
+): Promise<View> {
   const created = await api.createSession({
     operationId: crypto.randomUUID(),
     projectId: from.projectId,
     shellProfileId: from.shellProfileId,
+    ...(worktree === undefined ? {} : { worktree: { sourceSessionId: from.id, ...worktree } }),
   });
   return runFirst === undefined
     ? { name: 'live', session: created.session }
@@ -332,6 +339,15 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
       navigate({ name: 'sessions', message: handleFailure(error) });
     }
   }, [handleFailure, navigate, reloadList]);
+  // The sheet shows a failure itself, so it can suggest another name.
+  const startWorktree = useCallback(async (
+    from: BrokerRPCSessionRecord,
+    worktree: { readonly name: string; readonly base: string },
+    runFirst: string | undefined,
+  ) => {
+    navigate(await startLike(from, runFirst, worktree));
+    void reloadList();
+  }, [navigate, reloadList]);
 
   const logout = useCallback(async () => {
     try {
@@ -426,6 +442,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
               onSettings={() => navigate({ name: 'settings' })}
               onChanged={list.reload}
               onStartNew={(runFirst) => { void startNew(view.session, runFirst); }}
+              onStartWorktree={(worktree, runFirst) => startWorktree(view.session, worktree, runFirst)}
               onRevoked={(reason) => toSetup(reason ?? 'Access to this computer was revoked.')}
             />
           </Suspense>

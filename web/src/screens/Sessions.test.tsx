@@ -68,6 +68,13 @@ describe('SessionRow', () => {
     expect(html).not.toContain('>Home<');
   });
 
+  it('shows a worktree badge before the meta line only for a worktree session', () => {
+    const html = row({ ...base, cwd: '/Users/me/termivoa/worktrees/app/brave-otter', worktree: { name: 'brave-otter', repo: 'app' } });
+    expect(html).toContain('<span class="worktree-badge" title="Worktree brave-otter of app"><span aria-hidden="true">⎇ </span>'
+      + '<span class="visually-hidden">worktree </span>brave-otter</span> · api · zsh');
+    expect(row(base)).not.toContain('worktree');
+  });
+
   it('keeps a custom title over the cwd basename', () => {
     const html = row({ ...base, title: 'My shell', titleIsCustom: true, cwd: '/Users/me/src/app' });
     expect(html).toContain('<span class="row-title">My shell');
