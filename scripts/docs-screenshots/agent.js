@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Neutral stand-in for a coding agent, used only for the docs screenshots.
+// Its busy line ("esc to interrupt") and numbered question follow the common
+// agent prompt shape on purpose, so the host detects Working and Waiting.
 // capture.mjs copies it to $HOME/bin/agent in the demo home.
 // Usage: agent work            works forever (busy line with "esc to interrupt")
 //        agent ask [seconds]   works for some seconds, then asks a numbered question

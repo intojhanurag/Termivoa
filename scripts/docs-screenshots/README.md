@@ -2,6 +2,8 @@
 
 Takes the phone screenshots in `site/src/assets/docs/` against an isolated dev stack with demo data only (AGENTS.md rule 23).
 
+macOS only: it uses Google Chrome, `/Users/Shared` and `pkill`. It writes outside the repository, to `/tmp/demo-home`, `/tmp/pterm-demo`, `/tmp/demo-chrome-*` and `/Users/Shared/code` (removed again by the clean step, and only when its own marker file is there).
+
 1. Build a test binary with your normal `HOME`:
 
    ```sh
