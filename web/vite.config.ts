@@ -37,7 +37,27 @@ function protocolValidators(): Plugin {
       }
       const ajv = createProtocolAjv({ standalone: true });
       ajv.addSchema(envelopeSchema, 'envelope');
-      return standaloneCode(ajv, { validateEnvelope: 'envelope' });
+      // Even with `code.esm`, Ajv emits its runtime helpers (e.g. ucs2length for
+      // maxLength) as CommonJS `require("ajv/dist/runtime/…").default`. The build
+      // bundler resolves that, but the dev server serves this module to the
+      // browser as-is (#123), so hoist each one into an ES import. The default
+      // import is `module.exports` in dev but `exports.default` in the build, so
+      // rebuild what `require()` returns in both cases.
+      const imports: string[] = [];
+      const code = standaloneCode(ajv, { validateEnvelope: 'envelope' }).replace(
+        /require\(("[^"]+")\)/g,
+        (_match, specifier: string) => {
+          const name = `ajvRuntime${imports.length}`;
+          imports.push(
+            `import ${name}Import from ${specifier}; const ${name} = ${name}Import?.__esModule ? ${name}Import : { default: ${name}Import };`,
+          );
+          return name;
+        },
+      );
+      if (code.includes('require(')) {
+        throw new Error('protocol validators: Ajv emitted a require() this plugin does not convert');
+      }
+      return `${imports.join('\n')}\n${code}`;
     },
   };
 }
