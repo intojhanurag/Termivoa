@@ -75,6 +75,8 @@ export function createProblem(failure: unknown, name: string): string {
     case 'worktree_exists': return `“${name}” already exists in this repository. Pick another name, or tap 🎲 for a new one.`;
     case 'not_a_repository': return NOT_GIT;
     case 'limit_exceeded': return 'This repository has too many Termivoa worktrees. Remove one first.';
+    // The host cleaned up, so the same name works again.
+    case 'worktree_failed': return `${failure.message}. Nothing was left behind, so you can try again.`;
     default: return failure.message;
   }
 }
@@ -275,7 +277,7 @@ export function RemoveWorktree({ worktree, removal, onRemove, onCancel }: {
     case 'dirty':
       return (
         <div role="alertdialog" aria-labelledby="worktree-dirty" className="confirm stack">
-          <p id="worktree-dirty">It has uncommitted changes. Remove anyway deletes them for good. The branch {branch} is kept.</p>
+          <p id="worktree-dirty">It has uncommitted changes or ignored files, such as <code>node_modules</code> or <code>.env</code>. Remove anyway deletes them for good. The branch {branch} is kept.</p>
           <div className="row">
             <button type="button" className="danger" onClick={() => onRemove(true)}>Remove anyway</button>
             <button type="button" onClick={onCancel}>Keep it</button>

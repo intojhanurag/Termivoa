@@ -49,7 +49,7 @@ When the task is done and pushed:
 
 Termivoa deletes the folder and ends the session. The branch `termivoa/<name>` stays, so no commit is lost.
 
-If the folder has uncommitted changes or new files, Termivoa stops and asks first. **Remove anyway** deletes those changes for good. **Keep it** stops.
+If the folder has uncommitted changes, new files, or files that git ignores (such as `node_modules` or `.env`), Termivoa stops and asks first. **Remove anyway** deletes them for good. **Keep it** stops.
 
 ## Limits
 

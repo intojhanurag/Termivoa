@@ -149,6 +149,8 @@ describe('createProblem', () => {
       .toBe('This folder is not in a git repository. cd into a repo first.');
     expect(createProblem(new ApiError(429, 'limit_exceeded', 'too many'), 'a'))
       .toBe('This repository has too many Termivoa worktrees. Remove one first.');
+    expect(createProblem(new ApiError(422, 'worktree_failed', 'git worktree add failed: husky - post-checkout failed'), 'a'))
+      .toBe('git worktree add failed: husky - post-checkout failed. Nothing was left behind, so you can try again.');
     expect(createProblem(new ApiError(0, 'network', 'Connection unavailable'), 'a')).toBe('Connection unavailable');
   });
 });
@@ -167,7 +169,7 @@ describe('RemoveWorktree', () => {
     expect(remove({ state: 'done', removed: { state: 'removed' } }))
       .toBe('<p role="status">Worktree removed. The branch <code>termivoa/brave-otter</code> is kept.</p>');
     const dirty = remove({ state: 'done', removed: { state: 'dirty' } });
-    expect(dirty).toContain('It has uncommitted changes.');
+    expect(dirty).toContain('It has uncommitted changes or ignored files');
     expect(dirty).toContain('<button type="button" class="danger">Remove anyway</button>');
     const failed = remove({ state: 'done', removed: { state: 'failed', output: 'fatal: <locked>' } });
     expect(failed).toContain('<p role="alert" class="error">Could not remove the worktree.</p>');

@@ -26,8 +26,13 @@ All notable changes are documented here. The format follows
   per repository; the phone never sends a path. If the session cannot start,
   the worktree is removed again. Remove runs `git worktree remove` (with
   `--force` only after the second confirmation), keeps the branch, and ends
-  the session. New error codes `worktree_exists` and `not_a_repository`
-  (HTTP 409).
+  the session (on Windows the session ends first, because a running shell
+  keeps its folder open). Ignored files such as `node_modules` and `.env`
+  count as changes, so they are never deleted without the second
+  confirmation. A failed `git worktree add` (for example a failing hook)
+  leaves nothing behind. New error codes `worktree_exists` and
+  `not_a_repository` (HTTP 409) and `worktree_failed` (HTTP 422, with the
+  end of git's message).
 - Down arrow next to Up while typing (phone side): with the keyboard open, the
   one-row key bar now shows `↓` right after `↑`, so both arrows are in reach
   without scrolling the row or hiding the keyboard. The row's second `↓`

@@ -142,6 +142,14 @@ A folder `~/termivoa/worktrees/<repository>/<name>` or a branch `termivoa/<name>
 
 One repository can have up to 50 worktrees in `~/termivoa/worktrees`. Remove the ones you finished (**⋯ → Remove worktree…** in their session), or run `git worktree remove <folder>` on the computer.
 
+## New worktree says "git worktree add failed"
+
+git itself refused, and the phone shows the end of git's message. A common cause is a git hook in your repository (for example husky or lefthook) that fails when a new folder is checked out. Termivoa removes what it made, so you can fix the cause and use the same name again.
+
+## Remove worktree asks about ignored files
+
+Files that git ignores, such as `node_modules` or `.env`, are deleted with the folder, so Termivoa asks first. If you do not need them, tap **Remove anyway**.
+
 ## Remove worktree fails
 
 The phone shows git's message. On Windows, a folder that a program still uses cannot be deleted; close that program, then try again. You can also run `git worktree remove <folder>` on the computer.
