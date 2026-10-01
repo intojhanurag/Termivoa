@@ -3,6 +3,7 @@ import {
   clampGrid,
   Connection,
   DELIVERY_UNCERTAIN,
+  FILES_TIMEOUT_MS,
   HEARTBEAT_MS,
   RECONNECT_DELAYS_MS,
   RESUME_CHECK_MS,
@@ -1567,5 +1568,50 @@ describe('Files', () => {
       await expect(answer).resolves.toBeUndefined();
       await expect(connection.filesRoot()).resolves.toBeUndefined();
     });
+  });
+
+  it('fails a request with no reply after the timeout and sends the next one', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFolder('');
+    connection.openFilesFile('a.ts', 4);
+    expect(asked(socket())).toEqual(['files.list ']);
+    await vi.advanceTimersByTimeAsync(FILES_TIMEOUT_MS - 1);
+    expect(connection.getFiles()?.folder.state).toBe('loading');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(connection.getFiles()?.folder.state).toBe('unavailable');
+    expect(asked(socket())).toEqual(['files.list ', 'files.read a.ts']);
+    // A late reply to the old request changes nothing.
+    socket().reply(socket().sent.find((message) => message.type === 'files.list'), 'files.listed', listed());
+    expect(connection.getFiles()?.folder.state).toBe('unavailable');
+    socket().reply(last(socket(), 'files.read'), 'files.content', content());
+    expect(connection.getFiles()?.file).toMatchObject({ state: 'ready', line: 4 });
+    await vi.advanceTimersByTimeAsync(FILES_TIMEOUT_MS);
+    expect(connection.getFiles()?.file?.state).toBe('ready');
+  });
+
+  it('lists a tapped path that turns out to be a folder', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openFilesFile('src', 3);
+    socket().reply(last(socket(), 'files.read'), 'files.content', { state: 'not_file', path: 'src', truncated: false });
+    expect(connection.getFiles()).toMatchObject({ file: undefined, folder: { path: 'src', state: 'loading' } });
+    expect(asked(socket()).at(-1)).toBe('files.list src');
+  });
+
+  it('ties a root to the cwd the request was sent with', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    socket().receive('session.state', { state: 'running', cwd: `${root}/web` });
+    const answer = connection.filesRoot();
+    const old = last(socket(), 'files.list');
+    socket().receive('session.state', { state: 'running', cwd: '/Users/me/other' });
+    socket().reply(old, 'files.listed', listed());
+    // The reply is for the old cwd: not known for the new one, and asked again.
+    expect(connection.knownFilesRoot()).toBeUndefined();
+    expect(asked(socket())).toEqual(['files.list ', 'files.list ']);
+    socket().reply(last(socket(), 'files.list'), 'files.listed', listed('', { root: '/Users/me/other' }));
+    await expect(answer).resolves.toBe('/Users/me/other');
+    expect(connection.knownFilesRoot()).toBe('/Users/me/other');
   });
 });

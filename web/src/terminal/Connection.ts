@@ -62,6 +62,12 @@ export const RESUME_PROBE_MS = 2_000;
  */
 export const ATTACH_TIMEOUT_MS = 5_000;
 
+/**
+ * A files request with no reply by then counts as failed (Retry), so a lost
+ * reply does not hold back the next request until a reconnect.
+ */
+export const FILES_TIMEOUT_MS = 15_000;
+
 /** WebSocket.OPEN, without depending on the global in tests. */
 const SOCKET_OPEN = 1;
 const HISTORY_PAGE_ROWS = 200;
@@ -168,6 +174,8 @@ interface FilesRequest {
   readonly kind: 'list' | 'read' | 'search';
   /** The path, or the query for a search. */
   readonly key: string;
+  /** The session's cwd when it was sent; the host finds the files root from it. */
+  readonly cwd: string | undefined;
 }
 
 /** The project's commands for the Snips sheet; listed is set once state is ready. */
@@ -315,6 +323,7 @@ export class Connection {
    * sent when its reply comes: whatever the view then still waits for.
    */
   private filesRequest: FilesRequest | undefined;
+  private filesTimer: ReturnType<typeof setTimeout> | undefined;
   /** The last root a listing named, for the cwd the session had then. */
   private lastRoot: { readonly root: string; readonly cwd: string | undefined } | undefined;
   private rootWaiters: Array<(root: string | undefined) => void> = [];
@@ -568,7 +577,7 @@ export class Connection {
       return false;
     }
     this.files = {
-      root: this.files?.root ?? this.knownRoot(),
+      root: this.files?.root ?? this.knownFilesRoot(),
       folder: { path, state: 'loading', listed: undefined },
       file: undefined,
       search: this.files?.search,
@@ -584,7 +593,7 @@ export class Connection {
       return false;
     }
     const files = this.files ?? {
-      root: this.knownRoot(),
+      root: this.knownFilesRoot(),
       folder: { path: path.slice(0, Math.max(0, path.lastIndexOf('/'))), state: 'loading', listed: undefined },
       file: undefined,
       search: undefined,
@@ -624,7 +633,7 @@ export class Connection {
    * else asked for with a listing of the root. Undefined when it cannot be read.
    */
   filesRoot(): Promise<string | undefined> {
-    const known = this.knownRoot();
+    const known = this.knownFilesRoot();
     if (known !== undefined || this.status.link !== 'live') {
       return Promise.resolve(known);
     }
@@ -912,9 +921,12 @@ export class Connection {
           }
           const { root } = message.payload;
           if (root !== undefined) {
-            this.lastRoot = { root, cwd: this.status.cwd };
+            this.lastRoot = { root, cwd: request.cwd };
           }
-          this.resolveRoot(root);
+          // A root for an older cwd answers no one; the next request asks again.
+          if (request.cwd === this.status.cwd) {
+            this.resolveRoot(root);
+          }
           const files = this.files;
           if (files !== undefined) {
             const { folder } = files;
@@ -934,7 +946,10 @@ export class Connection {
           const request = this.takeFilesReply(message.requestId);
           const file = this.files?.file;
           if (request !== undefined && this.files !== undefined && file?.state === 'loading' && request.kind === 'read' && file.path === request.key) {
-            this.files = { ...this.files, file: { ...file, state: 'ready', content: message.payload } };
+            this.files = message.payload.state === 'not_file'
+              // A tapped path can be a folder: list it instead.
+              ? { ...this.files, file: undefined, folder: { path: file.path, state: 'loading', listed: undefined } }
+              : { ...this.files, file: { ...file, state: 'ready', content: message.payload } };
           }
           this.pumpFiles();
           this.emit();
@@ -1377,7 +1392,8 @@ export class Connection {
     }
   }
 
-  private knownRoot(): string | undefined {
+  /** The files root for the session's current cwd, when a listing named it; undefined until then. */
+  knownFilesRoot(): string | undefined {
     return this.lastRoot?.cwd === this.status.cwd ? this.lastRoot?.root : undefined;
   }
 
@@ -1395,7 +1411,7 @@ export class Connection {
       return;
     }
     const files = this.files;
-    let next: Omit<FilesRequest, 'id'> | undefined;
+    let next: Omit<FilesRequest, 'id' | 'cwd'> | undefined;
     if (files?.file?.state === 'loading') {
       next = { kind: 'read', key: files.file.path };
     } else if (files?.search?.state === 'loading') {
@@ -1413,7 +1429,8 @@ export class Connection {
       this.failFiles(undefined);
       return;
     }
-    this.filesRequest = { id, ...next };
+    this.filesRequest = { id, ...next, cwd: this.status.cwd };
+    this.filesTimer = setTimeout(() => this.failFiles(id), FILES_TIMEOUT_MS);
   }
 
   /** The request this reply answers, or undefined for a stale one. */
@@ -1423,6 +1440,7 @@ export class Connection {
       return undefined;
     }
     this.filesRequest = undefined;
+    clearTimeout(this.filesTimer);
     return request;
   }
 
@@ -1436,6 +1454,7 @@ export class Connection {
       return;
     }
     this.filesRequest = undefined;
+    clearTimeout(this.filesTimer);
     const fails = (kind: FilesRequest['kind'], key: string) => requestId === undefined || (request?.kind === kind && request.key === key);
     const files = this.files;
     if (files !== undefined) {
