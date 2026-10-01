@@ -43,7 +43,7 @@ The link works once and expires after two minutes. Run `pterm pair` for a new on
 The phone shows a code, such as `485-431`. Your computer shows its code and asks `Approve? [y/N]`.
 Type `y` if the codes match, `n` if not.
 
-![Your computer prints "Phone 'My iPhone' shows code 482-913. Approve? [y/N]" and your phone asks "Does your computer show this code?" above the same six digits; a hand-written note says: same six digits? type y.](../../../assets/docs/illo-pairing.webp)
+![Your computer prints "Phone 'My iPhone' shows code 482-913. Approve? [y/N]" and your phone asks "Does your computer show this code?" above the same six digits; a hand-written note says: same six digits? type y. Below it: No match? Type n.](../../../assets/docs/illo-pairing.webp)
 
 On iPhone, tap **Share**, then **Add to Home Screen**, to get notifications.
 

@@ -10,7 +10,7 @@ Termivoa can start a new task in a git worktree: a second folder of your reposit
 Not released yet. This is not in `v0.1.0-beta.2`.
 :::
 
-![main stays untouched while two worktrees branch off it: brave-otter, where Claude fixes the cache headers, and clever-marten, where Codex writes the tests, each in its own folder under ~/termivoa/worktrees/acme-web; a hand-written note says: one task, one branch.](../../../../assets/docs/illo-worktrees.webp)
+![main stays untouched while two worktrees branch off it: brave-otter, where Claude fixes the cache headers, and clever-marten, where Codex writes the tests, each in its own folder under …/worktrees/acme-web; a hand-written note says: one task, one branch. nobody steps on anybody's files.](../../../../assets/docs/illo-worktrees.webp)
 
 ## Make a worktree
 
