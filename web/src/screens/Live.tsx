@@ -14,7 +14,7 @@ import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { askAboutFile, Changes } from './Changes';
 import { Composer } from './Composer';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
-import { displayPath, sessionName } from './folder';
+import { displayPath, sessionName, splitPath } from './folder';
 import { History } from './History';
 import { PreviewChip } from './PreviewChip';
 import { autoDismiss, RecapCard } from './Recap';
@@ -460,8 +460,10 @@ export function Live({
   const cwd = liveCwd ?? current.cwd;
   // The path is the priority once known; it stands in for the project name.
   const path = cwd === undefined ? undefined : displayPath(cwd);
-  const place = [path ?? projectName, shellName, status.columns === undefined ? undefined : `${status.columns}×${status.rows}`]
+  const placeHead = splitPath(path ?? projectName ?? '');
+  const placeTail = [shellName, status.columns === undefined ? undefined : `${status.columns}×${status.rows}`]
     .filter((part) => part !== undefined).join(' · ');
+  const showPlace = (placeHead.name !== '' || placeTail !== '') && (status.link === 'live' || !slowLink);
 
   if (status.link === 'lost') {
     return (
@@ -497,7 +499,16 @@ export function Live({
           <div className="status-line" role="status">
             <span className="place">
               <span className={status.link === 'live' ? 'dot green' : 'dot amber'} aria-hidden="true" />
-              {status.link === 'live' ? place || 'Connected' : slowLink || place === '' ? linkLabel(status) : place}
+              {showPlace ? (
+                // Cut order: the parent folders (from their start), then shell and size, then the last folder.
+                <span className="place-text">
+                  {placeHead.dir !== '' && <span className="place-dir"><span dir="ltr">{placeHead.dir}</span></span>}
+                  <span className="place-end">
+                    {placeHead.name !== '' && <span className="place-name"><span dir="ltr">{placeHead.name}</span></span>}
+                    {placeTail !== '' && <span className="place-tail">{placeHead.name === '' ? placeTail : ` · ${placeTail}`}</span>}
+                  </span>
+                </span>
+              ) : status.link === 'live' ? 'Connected' : linkLabel(status)}
             </span>
             {current.worktree !== undefined && <WorktreeBadge worktree={current.worktree} />}
             <span className={`badge-text ${badge.tone}`}>{badge.text}</span>

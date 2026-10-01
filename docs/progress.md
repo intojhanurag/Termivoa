@@ -918,6 +918,18 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   and at 163-272 (fully visible, `scrollLeft` 879) after; `scrollY` 0 and
   focus on `BODY` in both. A direct page load with reduced motion also
   shows the open tab (`scrollLeft` 779).
+- **Status line keeps the folder name** (`fix/issue-115`, 2026-10-01,
+  #115): the path is split by a new pure `splitPath` helper into its parent
+  and last folder, and CSS cuts them in order: the parent (from its start,
+  `direction: rtl` with a `dir="ltr"` isolate inside so `~/` and `/`
+  keep their order), then `· shell · size` (from its end), then the last
+  folder. Evidence: `pnpm --dir web test` (new `splitPath` tests),
+  `./scripts/check`, and a headless Chrome run (390x844) on an isolated
+  `pterm up --dev` stack (`HOME=/tmp/fixdemo`, port 8798). Before:
+  `…/tmp/fixdemo/code/billing-api/serv` with no folder, shell or size.
+  After: `…es/payments · zsh (login) · 46×35`; a 23-character folder shows
+  as `…/payments-reconciliation · zsh (…`. At widths of 390, 320, 250 and
+  150 px and with a long worktree badge the path part never overflows.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

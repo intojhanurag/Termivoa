@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { displayPath, folderName, sessionName } from './folder';
+import { displayPath, folderName, sessionName, splitPath } from './folder';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -66,6 +66,23 @@ describe('displayPath', () => {
     expect(result.endsWith('a'.repeat(47))).toBe(true);
     // Counts code points: an emoji at the cut is kept whole.
     expect(displayPath(`/var/${'😀'.repeat(50)}`, 10)).toBe(`…${'😀'.repeat(9)}`);
+  });
+});
+
+describe('splitPath', () => {
+  it('splits before the last folder, POSIX and Windows', () => {
+    expect(splitPath('~/code/billing-api/services/payments')).toEqual({ dir: '~/code/billing-api/services/', name: 'payments' });
+    expect(splitPath('~\\code\\app')).toEqual({ dir: '~\\code\\', name: 'app' });
+    expect(splitPath('\\\\server\\share')).toEqual({ dir: '\\\\server\\', name: 'share' });
+    expect(splitPath('…ces/payments')).toEqual({ dir: '…ces/', name: 'payments' });
+    expect(splitPath('~/app')).toEqual({ dir: '~/', name: 'app' });
+  });
+
+  it('keeps a trailing separator with the name and roots whole', () => {
+    expect(splitPath('/a/b/')).toEqual({ dir: '/a/', name: 'b/' });
+    for (const whole of ['~', '/', '/var', 'C:\\', 'app', '']) {
+      expect(splitPath(whole)).toEqual({ dir: '', name: whole });
+    }
   });
 });
 
