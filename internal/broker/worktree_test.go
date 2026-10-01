@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 )
@@ -153,6 +154,15 @@ func TestWorktreeCreateStartsTheSessionInTheWorktree(t *testing.T) {
 		if got := classifyManagementError(err).code; err == nil || got != test.code {
 			t.Errorf("%s: %v (%s), want %s", name, err, got, test.code)
 		}
+		if message := classifyManagementError(err).message; name == "missing source" && !strings.Contains(message, "the worktree is made from") {
+			t.Errorf("missing source message = %q", message)
+		}
+	}
+	// The same operation ID with another worktree is a different request.
+	conflict := request
+	conflict.Worktree = &protocol.WorktreeCreate{SourceSessionID: sourceSessionID, Name: "other-name", Base: "main"}
+	if _, err := fixture.server.createSession(ctx, conflict); classifyManagementError(err).code != protocol.OperationConflict {
+		t.Errorf("reused operation ID with another worktree: %v", err)
 	}
 	// A session that fails to start rolls its new worktree and branch back.
 	source.directory = repo
@@ -224,5 +234,74 @@ func TestWorktreeRemoveRefusesOtherSessions(t *testing.T) {
 	listed, _ := protocol.DecodePayload[protocol.BranchesListedPayload](client.await(t, protocol.BranchesListed, request))
 	if listed.State == protocol.ChangesStateReady {
 		t.Fatalf("branches of a folder outside git = %+v", listed)
+	}
+}
+
+// On Windows the session ends before git removes its folder.
+func TestWorktreeRemoveStopsTheSessionFirstWhenAsked(t *testing.T) {
+	fixture, sessions, mu := worktreeFixture(t)
+	ctx := context.Background()
+	repo := filepath.Join(t.TempDir(), "proj")
+	if err := os.Mkdir(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "init", "-q", "-b", "main")
+	gitIn(t, repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "first")
+	if _, err := fixture.server.createSession(ctx, protocol.BrokerRPCSessionCreateRequestPayload{
+		OperationID: "87777777-7777-4777-8777-777777777781", ProjectID: rpcProjectID, ShellProfileID: rpcProfileID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	sessions[sourceSessionID].directory = repo
+	mu.Unlock()
+	if _, err := fixture.server.createSession(ctx, protocol.BrokerRPCSessionCreateRequestPayload{
+		OperationID: "87777777-7777-4777-8777-777777777782", ProjectID: rpcProjectID, ShellProfileID: rpcProfileID,
+		Worktree: &protocol.WorktreeCreate{SourceSessionID: sourceSessionID, Name: "win-order", Base: "main"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	previousOrder, previousRemove := stopSessionFirst, removeWorktree
+	stateAtRemove := make(chan string, 1)
+	stopSessionFirst = true
+	removeWorktree = func(ctx context.Context, path string, force bool, before func()) protocol.WorktreeRemovedPayload {
+		return previousRemove(ctx, path, force, func() {
+			before()
+			metadata, _ := fixture.persistence.GetSession(ctx, rpcSessionID)
+			stateAtRemove <- string(metadata.State)
+		})
+	}
+	t.Cleanup(func() { stopSessionFirst, removeWorktree = previousOrder, previousRemove })
+
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attach(t)
+	grant := client.acquire(t)
+	client.action(t, protocol.WorktreeRemove, protocol.WorktreeRemovePayload{Lease: *grant.Lease, Force: true})
+	select {
+	case state := <-stateAtRemove:
+		if state == "running" {
+			t.Fatal("git removed the folder while the session was still running")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the remove never reached git")
+	}
+	path := filepath.Join(fixture.server.config.WorktreeRoot, "proj", "win-order")
+	deadline := time.Now().Add(5 * time.Second)
+	for _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist); _, err = os.Stat(path) {
+		if time.Now().After(deadline) {
+			t.Fatalf("worktree folder still exists: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestWorktreeAddFailureMessage(t *testing.T) {
+	failure := classifyManagementError(errors.Join(&gitchanges.AddError{Output: "Preparing worktree\nhusky - post-checkout\n\tfailed\x1b[0m"}, errors.New("rollback")))
+	if failure.code != protocol.WorktreeFailed || failure.message != "git worktree add failed: Preparing worktree husky - post-checkout failed [0m" {
+		t.Fatalf("failure = %+v", failure)
+	}
+	long := classifyManagementError(&gitchanges.AddError{Output: strings.Repeat("é", 400) + " END"}).message
+	if len(long) > 512 || !strings.HasSuffix(long, " END") || protocol.ValidateDisplayText(long, 512) != nil {
+		t.Fatalf("long message = %d bytes %q", len(long), long[len(long)-10:])
 	}
 }

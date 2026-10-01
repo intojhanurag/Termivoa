@@ -493,6 +493,8 @@ func brokerStatus(code protocol.ErrorCode) int {
 		protocol.NotController, protocol.StaleLease, protocol.InputGap, protocol.HistoryChanged, protocol.ResyncRequired,
 		protocol.WorktreeExists, protocol.NotARepository:
 		return http.StatusConflict
+	case protocol.WorktreeFailed:
+		return http.StatusUnprocessableEntity
 	case protocol.HostUnavailable:
 		return http.StatusServiceUnavailable
 	case protocol.InvalidRequest, protocol.ProtocolMismatch:

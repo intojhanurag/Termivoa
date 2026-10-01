@@ -332,7 +332,8 @@ func TestAuthenticatedRoutes(t *testing.T) {
 	if response := do(handler, http.MethodPost, "/api/v1/sessions", strings.Replace(worktreeBody, "%s", "../x", 1), requestOptions{cookie: prodCookie}); response.Code != 400 {
 		t.Fatalf("bad worktree name = %d", response.Code)
 	}
-	if brokerStatus(protocol.WorktreeExists) != http.StatusConflict || brokerStatus(protocol.NotARepository) != http.StatusConflict {
+	if brokerStatus(protocol.WorktreeExists) != http.StatusConflict || brokerStatus(protocol.NotARepository) != http.StatusConflict ||
+		brokerStatus(protocol.WorktreeFailed) != http.StatusUnprocessableEntity {
 		t.Fatal("worktree errors are not 409")
 	}
 	if response := do(handler, http.MethodPost, "/api/v1/sessions", createBody, requestOptions{cookie: prodCookie, omitOrigin: true}); response.Code != 403 {

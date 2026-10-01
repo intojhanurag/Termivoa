@@ -391,7 +391,7 @@ func (server *ManagementServer) createSession(
 		defer server.worktreeCreates.Unlock()
 	}
 	replayed, found, err := server.config.Registry.ReplayCreate(
-		ctx, payload.OperationID, payload.ProjectID, payload.ShellProfileID,
+		ctx, payload.OperationID, payload.ProjectID, payload.ShellProfileID, payload.Worktree,
 	)
 	if err != nil {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
@@ -428,7 +428,7 @@ func (server *ManagementServer) createSession(
 	}
 	created, err := server.config.Registry.Create(ctx, CreateSessionRequest{
 		OperationID: payload.OperationID, Title: title,
-		ProjectID: payload.ProjectID, ShellProfileID: payload.ShellProfileID,
+		ProjectID: payload.ProjectID, ShellProfileID: payload.ShellProfileID, Worktree: payload.Worktree,
 		Process: ptyhost.Spec{
 			Executable: profile.ExecutablePath,
 			Args:       withDirectoryHook(profile.Platform, profile.ExecutablePath, profile.Arguments),
@@ -612,7 +612,12 @@ func classifyManagementError(err error) managementFailure {
 	if failure, ok := classifyAuthError(err); ok {
 		return failure
 	}
+	var addFailure *gitchanges.AddError
 	switch {
+	case errors.As(err, &addFailure):
+		return managementFailure{protocol.WorktreeFailed, worktreeAddMessage(addFailure.Output)}
+	case errors.Is(err, errWorktreeSource):
+		return managementFailure{protocol.SessionMissing, "the session the worktree is made from is not running"}
 	case errors.Is(err, store.ErrProjectMissing):
 		return managementFailure{protocol.ProjectMissing, "saved project is unavailable"}
 	case errors.Is(err, store.ErrShellProfileMissing):

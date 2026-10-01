@@ -5,7 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -21,6 +25,23 @@ var (
 )
 
 const branchesTimeout = 5 * time.Second
+
+var errWorktreeSource = errors.New("broker: the worktree source session is not running")
+
+// worktreeAddMessage is a failed git worktree add as one line of display
+// text of at most 512 bytes, keeping the end of what git printed.
+func worktreeAddMessage(output string) string {
+	const prefix, limit = "git worktree add failed: ", 512
+	text := strings.Join(strings.FieldsFunc(output, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }), " ")
+	for len(prefix)+len(text) > limit {
+		_, size := utf8.DecodeRuneInString(text)
+		text = text[size:]
+	}
+	if text == "" {
+		text = "git printed nothing"
+	}
+	return prefix + text
+}
 
 // defaultWorktreeRoot is <home>/termivoa/worktrees, or "" without a home
 // folder (worktree creates then fail).
@@ -62,7 +83,7 @@ func (server *ManagementServer) prepareWorktree(
 	}
 	source, err := server.config.Registry.Get(worktree.SourceSessionID)
 	if err != nil {
-		return gitchanges.Created{}, err
+		return gitchanges.Created{}, errors.Join(errWorktreeSource, err)
 	}
 	folder, err := source.ChangesFolder(ctx)
 	if err != nil {
@@ -100,10 +121,18 @@ func (stream *sessionConnection) listBranches(ctx context.Context, request proto
 	return nil
 }
 
+// stopSessionFirst ends the session before git removes its worktree. On
+// Windows the shell holds its working folder open, so the folder cannot be
+// deleted while it runs; ending the session also closes this live stream, so
+// the reply is usually lost there. Elsewhere the folder is removed first, the
+// phone gets the real result, and a failed remove keeps the session.
+var stopSessionFirst = runtime.GOOS == "windows"
+
 // removeWorktreeOfSession runs worktree.remove for the controller. It shares
 // the one-write-per-session slot with commit and push. A started remove
 // finishes even if the viewer leaves. After a removal the reply goes out
-// first, then the session is terminated as the management operation does.
+// first, then the session is terminated as the management operation does
+// (on Windows the session ends before the removal; see stopSessionFirst).
 func (stream *sessionConnection) removeWorktreeOfSession(
 	ctx context.Context, request protocol.Envelope, identity func(string) MutationIdentity,
 ) error {
@@ -123,20 +152,28 @@ func (stream *sessionConnection) removeWorktreeOfSession(
 	viewer, registry := stream.viewer, stream.server.config.Registry
 	go func() {
 		work := context.WithoutCancel(viewer.ctx)
-		result := removeWorktree(work, folder, payload.Force)
+		stopped := false
+		stop := func() {
+			if operationID, err := randomUUID(); err == nil && !stopped {
+				stopped = true
+				_, _ = registry.Terminate(work, TerminateSessionRequest{
+					OperationID: operationID, SessionID: sessionID, Generation: generation,
+				})
+			}
+		}
+		var beforeRemove func()
+		if stopSessionFirst {
+			beforeRemove = stop
+		}
+		result := removeWorktree(work, folder, payload.Force, beforeRemove)
 		writes.Delete(sessionID)
 		if viewer.ctx.Err() == nil && !stream.revoked() {
 			if err := stream.send(viewer.ctx, request, protocol.WorktreeRemoved, result); err != nil {
 				_ = stream.writer.conn.Close()
 			}
 		}
-		if result.State != protocol.Removed {
-			return
-		}
-		if operationID, err := randomUUID(); err == nil {
-			_, _ = registry.Terminate(work, TerminateSessionRequest{
-				OperationID: operationID, SessionID: sessionID, Generation: generation,
-			})
+		if result.State == protocol.Removed {
+			stop()
 		}
 	}()
 	return nil
