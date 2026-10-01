@@ -7,6 +7,9 @@ import type {
   ChangesSummaryPayload,
   ControlChangedPayload,
   ErrorPayload,
+  FilesContentPayload,
+  FilesFoundPayload,
+  FilesListedPayload,
   HistoryChangedPayload,
   HistoryPagePayload,
   InputAcceptedPayload,
@@ -40,6 +43,9 @@ type HostPayloads = {
   readonly 'tasks.listed': TasksListedPayload;
   readonly 'branches.listed': BranchesListedPayload;
   readonly 'worktree.removed': WorktreeRemovedPayload;
+  readonly 'files.listed': FilesListedPayload;
+  readonly 'files.content': FilesContentPayload;
+  readonly 'files.found': FilesFoundPayload;
   readonly 'control.changed': ControlChangedPayload;
   readonly 'input.accepted': InputAcceptedPayload;
   readonly 'input.rejected': InputRejectedPayload;
@@ -74,6 +80,9 @@ const hostTypes = new Set<keyof HostPayloads>([
   'tasks.listed',
   'branches.listed',
   'worktree.removed',
+  'files.listed',
+  'files.content',
+  'files.found',
   'control.changed',
   'input.accepted',
   'input.rejected',

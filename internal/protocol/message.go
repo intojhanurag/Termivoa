@@ -115,14 +115,14 @@ var clientMessageTypes = map[MessageType]bool{
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
 	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true, TasksList: true,
-	BranchesList: true, WorktreeRemove: true, SessionDetach: true,
+	BranchesList: true, WorktreeRemove: true, FilesList: true, FilesRead: true, FilesSearch: true, SessionDetach: true,
 }
 
 var hostMessageTypes = map[MessageType]bool{
 	Welcome: true, SnapshotBegin: true, SnapshotRows: true, SnapshotEnd: true,
 	ScreenPatch: true, HistoryPage: true, MessageTypeHistoryChanged: true,
 	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true, TasksListed: true,
-	BranchesListed: true, WorktreeRemoved: true,
+	BranchesListed: true, WorktreeRemoved: true, FilesListed: true, FilesContent: true, FilesFound: true,
 	ControlChanged: true, InputAccepted: true, InputRejected: true,
 	SessionState: true, AccessRevoked: true, Error: true,
 }
@@ -132,10 +132,10 @@ var sessionMessageTypes = map[MessageType]bool{
 	ControlAcquire: true, ControlRelease: true, Heartbeat: true, InputKey: true,
 	InputText: true, InputPaste: true, InputMouse: true, InputAnswer: true, TerminalResize: true,
 	HistoryRead: true, ChangesList: true, ChangesFile: true, ChangesCommit: true, ChangesPush: true, TasksList: true,
-	BranchesList: true, WorktreeRemove: true, SessionDetach: true, SnapshotBegin: true,
+	BranchesList: true, WorktreeRemove: true, FilesList: true, FilesRead: true, FilesSearch: true, SessionDetach: true, SnapshotBegin: true,
 	SnapshotRows: true, SnapshotEnd: true, ScreenPatch: true, HistoryPage: true,
 	ChangesSummary: true, ChangesPatch: true, ChangesCommitted: true, ChangesPushed: true, TasksListed: true,
-	BranchesListed: true, WorktreeRemoved: true, MessageTypeHistoryChanged: true, ControlChanged: true, InputAccepted: true,
+	BranchesListed: true, WorktreeRemoved: true, FilesListed: true, FilesContent: true, FilesFound: true, MessageTypeHistoryChanged: true, ControlChanged: true, InputAccepted: true,
 	InputRejected: true, SessionState: true,
 }
 
@@ -406,6 +406,42 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			return err
 		}
 		return validateWorktreeRemoved(payload)
+	case FilesList:
+		payload, err := strictPayload[FilesListPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateFilesList(payload)
+	case FilesRead:
+		payload, err := strictPayload[FilesReadPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateFilesRead(payload)
+	case FilesSearch:
+		payload, err := strictPayload[FilesSearchPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateFilesSearch(payload)
+	case FilesListed:
+		payload, err := strictPayload[FilesListedPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateFilesListed(payload)
+	case FilesContent:
+		payload, err := strictPayload[FilesContentPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateFilesContent(payload)
+	case FilesFound:
+		payload, err := strictPayload[FilesFoundPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validateFilesFound(payload)
 	case MessageTypeHistoryChanged:
 		payload, err := strictPayload[HistoryChangedPayload](envelope)
 		if err != nil {
@@ -672,7 +708,7 @@ func validateChangesPatch(payload ChangesPatchPayload) error {
 	if err := ValidateChangePath(payload.Path); err != nil {
 		return err
 	}
-	if payload.State != PatchStateReady && payload.State != Binary && payload.State != Missing && payload.State != PatchStateUnavailable {
+	if payload.State != PatchStateReady && payload.State != PatchStateBinary && payload.State != Missing && payload.State != PatchStateUnavailable {
 		return errors.New("invalid patch state")
 	}
 	if payload.Lines == nil || len(payload.Lines) > MaxDiffLines || (payload.State != PatchStateReady && len(payload.Lines) > 0) {
@@ -753,7 +789,7 @@ func validateTasksListed(payload TasksListedPayload) error {
 			return errors.New("invalid task source")
 		}
 		switch task.Kind {
-		case Test, Dev, Build, Lint, Other:
+		case Test, Dev, Build, Lint, TaskKindOther:
 		default:
 			return errors.New("invalid task kind")
 		}

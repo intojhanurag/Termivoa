@@ -235,6 +235,34 @@ describe('parseHostMessage', () => {
     expect(() => parseHostMessage(reply('worktree.remove', { lease: 'L'.repeat(43), force: false }))).toThrow('not host-to-client');
   });
 
+  it('accepts files.listed, files.content and files.found within the contract and refuses their requests from the host', () => {
+    const reply = (type: string, payload: object) => JSON.stringify({
+      version: 1, type, requestId, sessionId: brokerGeneration, generation: brokerGeneration, payload,
+    });
+    const listed = { state: 'ready', root: '/Users/me/app', path: 'src', entries: [{ name: 'a', kind: 'dir' }, { name: 'b.ts', kind: 'file', size: 12 }, { name: 'l', kind: 'link' }], truncated: false };
+    const parsed = parseHostMessage(reply('files.listed', listed));
+    expect(parsed.type === 'files.listed' && parsed.payload.entries[1]?.size).toBe(12);
+    expect(parseHostMessage(reply('files.listed', { state: 'not_found', path: 'gone', entries: [], truncated: false })).type).toBe('files.listed');
+    expect(parseHostMessage(reply('files.content', { state: 'ready', path: 'a.ts', size: 3, text: 'abc', truncated: false })).type).toBe('files.content');
+    expect(parseHostMessage(reply('files.content', { state: 'binary', path: 'a.png', size: 3, truncated: false })).type).toBe('files.content');
+    expect(parseHostMessage(reply('files.found', { state: 'ready', query: 'q', paths: Array.from({ length: 200 }, () => 'a.ts'), truncated: true })).type).toBe('files.found');
+    expect(parseHostMessage(reply('files.found', { state: 'unavailable', query: 'q', paths: [], truncated: false })).type).toBe('files.found');
+
+    for (const bad of [
+      reply('files.listed', { ...listed, entries: [{ name: 'a', kind: 'socket' }] }),
+      reply('files.listed', { ...listed, state: 'gone' }),
+      reply('files.content', { state: 'ready', path: '', text: 'abc', truncated: false }),
+      reply('files.content', { state: 'ready', path: 'a.ts', truncated: false, extra: 1 }),
+      reply('files.found', { state: 'ready', query: 'q', paths: Array.from({ length: 201 }, () => 'a.ts'), truncated: true }),
+      reply('files.found', { state: 'ready', query: '', paths: [], truncated: false }),
+    ]) {
+      expect(() => parseHostMessage(bad)).toThrow(InvalidProtocolMessageError);
+    }
+    expect(() => parseHostMessage(reply('files.list', { path: '' }))).toThrow('not host-to-client');
+    expect(() => parseHostMessage(reply('files.read', { path: 'a.ts' }))).toThrow('not host-to-client');
+    expect(() => parseHostMessage(reply('files.search', { query: 'q' }))).toThrow('not host-to-client');
+  });
+
   it('rejects client-to-host messages even when their schema is valid', () => {
     expect(() => parseHostMessage(JSON.stringify({
       version: 1,

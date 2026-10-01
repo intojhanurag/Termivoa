@@ -49,6 +49,13 @@ type ProtocolTypes struct {
 	Empty                            EmptyPayload                            `json:"empty"`
 	Error                            ErrorPayload                            `json:"error"`
 	ErrorCode                        ErrorCode                               `json:"errorCode"`
+	FileEntry                        FileEntry                               `json:"fileEntry"`
+	FilesContent                     FilesContentPayload                     `json:"filesContent"`
+	FilesFound                       FilesFoundPayload                       `json:"filesFound"`
+	FilesList                        FilesListPayload                        `json:"filesList"`
+	FilesListed                      FilesListedPayload                      `json:"filesListed"`
+	FilesRead                        FilesReadPayload                        `json:"filesRead"`
+	FilesSearch                      FilesSearchPayload                      `json:"filesSearch"`
 	GatewayRPCCredential             GatewayRPCCredentialPayload             `json:"gatewayRPCCredential"`
 	GatewayRPCDeviceRename           GatewayRPCDeviceRenamePayload           `json:"gatewayRPCDeviceRename"`
 	GatewayRPCMessageType            GatewayRPCMessageType                   `json:"gatewayRPCMessageType"`
@@ -487,6 +494,83 @@ type EmptyPayload struct {
 type ErrorPayload struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
+}
+
+// One folder entry. name is the base name (bytes that are not UTF-8 become U+FFFD). kind is
+// dir, file (a regular file), link (a symlink that points outside the files root or
+// nowhere; a symlink inside the root shows as its target's kind) or other (device, socket,
+// pipe). size is the file size in bytes, only for file.
+type FileEntry struct {
+	Kind FileKind `json:"kind"`
+	Name string   `json:"name"`
+	Size *int64   `json:"size,omitempty"`
+}
+
+// ready: text is the file as UTF-8. At most 262144 bytes are read; a longer file is cut at
+// the last line break inside them (truncated). The text is also cut, the same way, if its
+// JSON form would pass 786432 bytes. Invalid UTF-8, and a NUL byte after the first 8192
+// bytes, is replaced with U+FFFD when it is at most 1% of the bytes read. binary: a NUL
+// byte in the first 8192 bytes, or more invalid UTF-8 than that. too_large: the file is
+// over 52428800 bytes (50 MiB) and was not opened. not_found: the file does not exist, is
+// outside the root (a symlink that escapes), or is inside .git. not_file: a folder or
+// another kind of non-regular file. unavailable: the file could not be read. size is the
+// file size in bytes, for ready, binary and too_large. Only ready carries text.
+type FilesContentPayload struct {
+	Path      string         `json:"path"`
+	Size      *int64         `json:"size,omitempty"`
+	State     FilesReadState `json:"state"`
+	Text      *string        `json:"text,omitempty"`
+	Truncated bool           `json:"truncated"`
+}
+
+// ready: paths are the matching relative paths with / separators, names that match first,
+// then shorter paths, then by path, at most 200. truncated: more paths matched, or the
+// candidates were cut (git output limit, time limit or the walk limit). unavailable: the
+// root could not be read or git failed. Only ready carries paths.
+type FilesFoundPayload struct {
+	Paths     []string         `json:"paths"`
+	Query     string           `json:"query"`
+	State     FilesSearchState `json:"state"`
+	Truncated bool             `json:"truncated"`
+}
+
+// Asks for the entries of one folder in the files root: the git top level of the session's
+// working folder (the same folder as changes.list) when that folder is in a repository,
+// else the folder itself. path is relative to the root with / separators; an empty path is
+// the root. An absolute path or a .. segment gets an invalid_request error and the stream
+// stays open. Read-only: any viewer may ask, no control lease is needed. One files request
+// runs per viewer at a time; another gets limit_exceeded.
+type FilesListPayload struct {
+	Path string `json:"path"`
+}
+
+// ready: entries lists the folder, folders first, then by name ignoring case, at most 1000
+// (truncated). A .git entry is never listed. not_found: the folder does not exist, is
+// outside the root, or is inside .git. not_dir: path is not a folder. unavailable: the root
+// could not be opened or read. root is the absolute files root with / separators
+// (C:/Users/me/app on Windows), absent only when the root is not known. path is the
+// normalized relative path with / separators (empty for the root). Only ready carries
+// entries.
+type FilesListedPayload struct {
+	Entries   []FileEntry    `json:"entries"`
+	Path      string         `json:"path"`
+	Root      *string        `json:"root,omitempty"`
+	State     FilesListState `json:"state"`
+	Truncated bool           `json:"truncated"`
+}
+
+// Asks for the text of one file in the files root (see files.list). path is relative to the
+// root with / separators. An absolute path or a .. segment gets an invalid_request error.
+type FilesReadPayload struct {
+	Path string `json:"path"`
+}
+
+// Asks for the files in the files root (see files.list) whose relative path contains query,
+// ignoring case. In a repository the candidates are the tracked files and the untracked
+// files git does not ignore. Outside one, a walk of at most 20000 entries that skips .git
+// and node_modules.
+type FilesSearchPayload struct {
+	Query string `json:"query"`
 }
 
 // The raw browser cookie value. It is never logged, persisted, or echoed.
@@ -1125,8 +1209,8 @@ const (
 type PatchState string
 
 const (
-	Binary                PatchState = "binary"
 	Missing               PatchState = "missing"
+	PatchStateBinary      PatchState = "binary"
 	PatchStateReady       PatchState = "ready"
 	PatchStateUnavailable PatchState = "unavailable"
 )
@@ -1148,6 +1232,42 @@ const (
 	Renamed    ChangeStatus = "renamed"
 	Typechange ChangeStatus = "typechange"
 	Untracked  ChangeStatus = "untracked"
+)
+
+type FileKind string
+
+const (
+	Dir           FileKind = "dir"
+	File          FileKind = "file"
+	FileKindOther FileKind = "other"
+	Link          FileKind = "link"
+)
+
+type FilesReadState string
+
+const (
+	FilesReadStateBinary      FilesReadState = "binary"
+	FilesReadStateNotFound    FilesReadState = "not_found"
+	FilesReadStateReady       FilesReadState = "ready"
+	FilesReadStateUnavailable FilesReadState = "unavailable"
+	NotFile                   FilesReadState = "not_file"
+	TooLarge                  FilesReadState = "too_large"
+)
+
+type FilesSearchState string
+
+const (
+	FilesSearchStateReady       FilesSearchState = "ready"
+	FilesSearchStateUnavailable FilesSearchState = "unavailable"
+)
+
+type FilesListState string
+
+const (
+	FilesListStateNotFound    FilesListState = "not_found"
+	FilesListStateReady       FilesListState = "ready"
+	FilesListStateUnavailable FilesListState = "unavailable"
+	NotDir                    FilesListState = "not_dir"
 )
 
 type GatewayRPCMessageType string
@@ -1352,6 +1472,12 @@ const (
 	ControlChanged            MessageType = "control.changed"
 	ControlRelease            MessageType = "control.release"
 	Error                     MessageType = "error"
+	FilesContent              MessageType = "files.content"
+	FilesFound                MessageType = "files.found"
+	FilesList                 MessageType = "files.list"
+	FilesListed               MessageType = "files.listed"
+	FilesRead                 MessageType = "files.read"
+	FilesSearch               MessageType = "files.search"
 	Heartbeat                 MessageType = "heartbeat"
 	Hello                     MessageType = "hello"
 	HistoryPage               MessageType = "history.page"
@@ -1423,11 +1549,11 @@ const (
 type TaskKind string
 
 const (
-	Build TaskKind = "build"
-	Dev   TaskKind = "dev"
-	Lint  TaskKind = "lint"
-	Other TaskKind = "other"
-	Test  TaskKind = "test"
+	Build         TaskKind = "build"
+	Dev           TaskKind = "dev"
+	Lint          TaskKind = "lint"
+	TaskKindOther TaskKind = "other"
+	Test          TaskKind = "test"
 )
 
 type TaskSource string

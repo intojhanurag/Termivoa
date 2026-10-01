@@ -49,6 +49,13 @@ export type ProtocolTypes = {
     readonly empty:                            EmptyPayload;
     readonly error:                            ErrorPayload;
     readonly errorCode:                        ErrorCode;
+    readonly fileEntry:                        FileEntry;
+    readonly filesContent:                     FilesContentPayload;
+    readonly filesFound:                       FilesFoundPayload;
+    readonly filesList:                        FilesListPayload;
+    readonly filesListed:                      FilesListedPayload;
+    readonly filesRead:                        FilesReadPayload;
+    readonly filesSearch:                      FilesSearchPayload;
     readonly gatewayRPCCredential:             GatewayRPCCredentialPayload;
     readonly gatewayRPCDeviceRename:           GatewayRPCDeviceRenamePayload;
     readonly gatewayRPCMessageType:            GatewayRPCMessageType;
@@ -567,6 +574,105 @@ export type ErrorPayload = {
 }
 
 /**
+ * One folder entry. name is the base name (bytes that are not UTF-8 become U+FFFD). kind is
+ * dir, file (a regular file), link (a symlink that points outside the files root or
+ * nowhere; a symlink inside the root shows as its target's kind) or other (device, socket,
+ * pipe). size is the file size in bytes, only for file.
+ */
+export type FileEntry = {
+    readonly kind:  FileKind;
+    readonly name:  string;
+    readonly size?: number;
+}
+
+export type FileKind = "dir" | "file" | "link" | "other";
+
+/**
+ * ready: text is the file as UTF-8. At most 262144 bytes are read; a longer file is cut at
+ * the last line break inside them (truncated). The text is also cut, the same way, if its
+ * JSON form would pass 786432 bytes. Invalid UTF-8, and a NUL byte after the first 8192
+ * bytes, is replaced with U+FFFD when it is at most 1% of the bytes read. binary: a NUL
+ * byte in the first 8192 bytes, or more invalid UTF-8 than that. too_large: the file is
+ * over 52428800 bytes (50 MiB) and was not opened. not_found: the file does not exist, is
+ * outside the root (a symlink that escapes), or is inside .git. not_file: a folder or
+ * another kind of non-regular file. unavailable: the file could not be read. size is the
+ * file size in bytes, for ready, binary and too_large. Only ready carries text.
+ */
+export type FilesContentPayload = {
+    readonly path:      string;
+    readonly size?:     number;
+    readonly state:     FilesReadState;
+    readonly text?:     string;
+    readonly truncated: boolean;
+}
+
+export type FilesReadState = "ready" | "binary" | "too_large" | "not_found" | "not_file" | "unavailable";
+
+/**
+ * ready: paths are the matching relative paths with / separators, names that match first,
+ * then shorter paths, then by path, at most 200. truncated: more paths matched, or the
+ * candidates were cut (git output limit, time limit or the walk limit). unavailable: the
+ * root could not be read or git failed. Only ready carries paths.
+ */
+export type FilesFoundPayload = {
+    readonly paths:     string[];
+    readonly query:     string;
+    readonly state:     FilesSearchState;
+    readonly truncated: boolean;
+}
+
+export type FilesSearchState = "ready" | "unavailable";
+
+/**
+ * Asks for the entries of one folder in the files root: the git top level of the session's
+ * working folder (the same folder as changes.list) when that folder is in a repository,
+ * else the folder itself. path is relative to the root with / separators; an empty path is
+ * the root. An absolute path or a .. segment gets an invalid_request error and the stream
+ * stays open. Read-only: any viewer may ask, no control lease is needed. One files request
+ * runs per viewer at a time; another gets limit_exceeded.
+ */
+export type FilesListPayload = {
+    readonly path: string;
+}
+
+/**
+ * ready: entries lists the folder, folders first, then by name ignoring case, at most 1000
+ * (truncated). A .git entry is never listed. not_found: the folder does not exist, is
+ * outside the root, or is inside .git. not_dir: path is not a folder. unavailable: the root
+ * could not be opened or read. root is the absolute files root with / separators
+ * (C:/Users/me/app on Windows), absent only when the root is not known. path is the
+ * normalized relative path with / separators (empty for the root). Only ready carries
+ * entries.
+ */
+export type FilesListedPayload = {
+    readonly entries:   FileEntry[];
+    readonly path:      string;
+    readonly root?:     string;
+    readonly state:     FilesListState;
+    readonly truncated: boolean;
+}
+
+export type FilesListState = "ready" | "not_found" | "not_dir" | "unavailable";
+
+/**
+ * Asks for the text of one file in the files root (see files.list). path is relative to the
+ * root with / separators. An absolute path or a .. segment gets an invalid_request error.
+ */
+export type FilesReadPayload = {
+    readonly path: string;
+}
+
+/**
+ * Asks for the files in the files root (see files.list) whose relative path contains query,
+ * ignoring case. In a repository the candidates are the tracked files and the untracked
+ * files git does not ignore. Outside one, a walk of at most 20000 entries that skips .git
+ * and node_modules.
+ */
+export type FilesSearchPayload = {
+    readonly query: string;
+}
+
+/**
  * The raw browser cookie value. It is never logged, persisted, or echoed.
  */
 export type GatewayRPCCredentialPayload = {
@@ -994,7 +1100,7 @@ export type LeasePayload = {
     readonly lease: string;
 }
 
-export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed" | "tasks.list" | "tasks.listed" | "branches.list" | "branches.listed" | "worktree.remove" | "worktree.removed";
+export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed" | "tasks.list" | "tasks.listed" | "branches.list" | "branches.listed" | "worktree.remove" | "worktree.removed" | "files.list" | "files.listed" | "files.read" | "files.content" | "files.search" | "files.found";
 
 export type ScreenMetadata = {
     readonly background:      Color;

@@ -5,6 +5,9 @@ import type {
   ChangesPatchPayload,
   ChangesPushedPayload,
   ChangesSummaryPayload,
+  FilesContentPayload,
+  FilesFoundPayload,
+  FilesListedPayload,
   HistoryChangedPayload,
   HistoryPagePayload,
   InputMousePayload,
@@ -58,6 +61,12 @@ export const RESUME_PROBE_MS = 2_000;
  * started in that moment can otherwise hang for a minute or more.
  */
 export const ATTACH_TIMEOUT_MS = 5_000;
+
+/**
+ * A files request with no reply by then counts as failed (Retry), so a lost
+ * reply does not hold back the next request until a reconnect.
+ */
+export const FILES_TIMEOUT_MS = 15_000;
 
 /** WebSocket.OPEN, without depending on the global in tests. */
 const SOCKET_OPEN = 1;
@@ -122,6 +131,51 @@ export interface ChangesFileView {
   readonly path: string;
   readonly state: 'loading' | 'ready' | 'unavailable';
   readonly patch: ChangesPatchPayload | undefined;
+}
+
+/**
+ * The Files view: one folder, the open file and a search, each with the reply
+ * to its latest request. Read-only; any viewer may read.
+ */
+export interface FilesView {
+  /** The files root, absolute with "/" separators, once a listing named it. */
+  readonly root: string | undefined;
+  readonly folder: FilesFolderView;
+  readonly file: FilesFileView | undefined;
+  readonly search: FilesSearchView | undefined;
+}
+
+/** A folder by its root-relative path ("" is the root); listed is set once state is ready. */
+export interface FilesFolderView {
+  readonly path: string;
+  readonly state: 'loading' | 'ready' | 'unavailable';
+  readonly listed: FilesListedPayload | undefined;
+}
+
+/** A file by its root-relative path; content is set once state is ready. */
+export interface FilesFileView {
+  readonly path: string;
+  /** The 1-based line to show, from a tapped "path:line" in the terminal. */
+  readonly line: number | undefined;
+  readonly state: 'loading' | 'ready' | 'unavailable';
+  readonly content: FilesContentPayload | undefined;
+}
+
+/** A path search; found is set once state is ready. */
+export interface FilesSearchView {
+  readonly query: string;
+  readonly state: 'loading' | 'ready' | 'unavailable';
+  readonly found: FilesFoundPayload | undefined;
+}
+
+/** The one files request in flight, by what it asked for. */
+interface FilesRequest {
+  readonly id: string;
+  readonly kind: 'list' | 'read' | 'search';
+  /** The path, or the query for a search. */
+  readonly key: string;
+  /** The session's cwd when it was sent; the host finds the files root from it. */
+  readonly cwd: string | undefined;
 }
 
 /** The project's commands for the Snips sheet; listed is set once state is ready. */
@@ -263,6 +317,16 @@ export class Connection {
   /** The request ID of the latest branches.list; only its reply counts. */
   private branchesRequest: string | undefined;
   private removal: WorktreeRemoval | undefined;
+  private files: FilesView | undefined;
+  /**
+   * The host takes one files request per viewer at a time, so the next one is
+   * sent when its reply comes: whatever the view then still waits for.
+   */
+  private filesRequest: FilesRequest | undefined;
+  private filesTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The last root a listing named, for the cwd the session had then. */
+  private lastRoot: { readonly root: string; readonly cwd: string | undefined } | undefined;
+  private rootWaiters: Array<(root: string | undefined) => void> = [];
   /** The request ID of the pending worktree.remove; only its reply counts. */
   private removalRequest: string | undefined;
   private stopped = false;
@@ -297,6 +361,8 @@ export class Connection {
   readonly getBranches = (): BranchesView | undefined => this.branches;
 
   readonly getWorktreeRemoval = (): WorktreeRemoval | undefined => this.removal;
+
+  readonly getFiles = (): FilesView | undefined => this.files;
 
   get sessionId(): string {
     return this.options.sessionId;
@@ -503,6 +569,78 @@ export class Connection {
   closeChanges(): void {
     this.changes = undefined;
     this.emit();
+  }
+
+  /** Lists one folder of the files root ("" is the root). Any viewer may read; no lease is needed. */
+  openFilesFolder(path: string): boolean {
+    if (this.status.link !== 'live') {
+      return false;
+    }
+    this.files = {
+      root: this.files?.root ?? this.knownFilesRoot(),
+      folder: { path, state: 'loading', listed: undefined },
+      file: undefined,
+      search: this.files?.search,
+    };
+    this.pumpFiles();
+    this.emit();
+    return true;
+  }
+
+  /** Reads one file; without an open Files view, its folder is listed too, for Back. */
+  openFilesFile(path: string, line?: number): boolean {
+    if (this.status.link !== 'live') {
+      return false;
+    }
+    const files = this.files ?? {
+      root: this.knownFilesRoot(),
+      folder: { path: path.slice(0, Math.max(0, path.lastIndexOf('/'))), state: 'loading', listed: undefined },
+      file: undefined,
+      search: undefined,
+    };
+    this.files = { ...files, file: { path, line, state: 'loading', content: undefined } };
+    this.pumpFiles();
+    this.emit();
+    return true;
+  }
+
+  closeFilesFile(): void {
+    if (this.files?.file === undefined) {
+      return;
+    }
+    this.files = { ...this.files, file: undefined };
+    this.emit();
+  }
+
+  /** Searches paths in the files root; an empty query ends the search. */
+  searchFiles(query: string): void {
+    const files = this.files;
+    if (files === undefined) {
+      return;
+    }
+    this.files = { ...files, search: query === '' ? undefined : { query, state: 'loading', found: undefined } };
+    this.pumpFiles();
+    this.emit();
+  }
+
+  closeFiles(): void {
+    this.files = undefined;
+    this.emit();
+  }
+
+  /**
+   * The files root for the session's current cwd: known from the last listing,
+   * else asked for with a listing of the root. Undefined when it cannot be read.
+   */
+  filesRoot(): Promise<string | undefined> {
+    const known = this.knownFilesRoot();
+    if (known !== undefined || this.status.link !== 'live') {
+      return Promise.resolve(known);
+    }
+    return new Promise((resolve) => {
+      this.rootWaiters.push(resolve);
+      this.pumpFiles();
+    });
   }
 
   /** Controller only. Commits these paths from the latest list; the repository's hooks run. */
@@ -730,6 +868,7 @@ export class Connection {
           return;
         }
         this.failChanges(message.requestId);
+        this.failFiles(message.requestId);
         this.failTasks(message.requestId);
         this.failBranches(message.requestId);
         this.handleError(message.payload.code, message.payload.message);
@@ -775,6 +914,57 @@ export class Connection {
         case 'changes.patch':
           this.handleChangesPatch(message.requestId, message.payload);
           return;
+        case 'files.listed': {
+          const request = this.takeFilesReply(message.requestId);
+          if (request === undefined) {
+            return;
+          }
+          const { root } = message.payload;
+          if (root !== undefined) {
+            this.lastRoot = { root, cwd: request.cwd };
+          }
+          // A root for an older cwd answers no one; the next request asks again.
+          if (request.cwd === this.status.cwd) {
+            this.resolveRoot(root);
+          }
+          const files = this.files;
+          if (files !== undefined) {
+            const { folder } = files;
+            this.files = {
+              ...files,
+              root: root ?? files.root,
+              folder: folder.state === 'loading' && request.kind === 'list' && folder.path === request.key
+                ? { ...folder, state: 'ready', listed: message.payload }
+                : folder,
+            };
+          }
+          this.pumpFiles();
+          this.emit();
+          return;
+        }
+        case 'files.content': {
+          const request = this.takeFilesReply(message.requestId);
+          const file = this.files?.file;
+          if (request !== undefined && this.files !== undefined && file?.state === 'loading' && request.kind === 'read' && file.path === request.key) {
+            this.files = message.payload.state === 'not_file'
+              // A tapped path can be a folder: list it instead.
+              ? { ...this.files, file: undefined, folder: { path: file.path, state: 'loading', listed: undefined } }
+              : { ...this.files, file: { ...file, state: 'ready', content: message.payload } };
+          }
+          this.pumpFiles();
+          this.emit();
+          return;
+        }
+        case 'files.found': {
+          const request = this.takeFilesReply(message.requestId);
+          const search = this.files?.search;
+          if (request !== undefined && this.files !== undefined && search?.state === 'loading' && request.kind === 'search' && search.query === request.key) {
+            this.files = { ...this.files, search: { ...search, state: 'ready', found: message.payload } };
+          }
+          this.pumpFiles();
+          this.emit();
+          return;
+        }
         case 'tasks.listed':
           if (message.requestId === this.tasksRequest) {
             this.tasksRequest = undefined;
@@ -1202,6 +1392,89 @@ export class Connection {
     }
   }
 
+  /** The files root for the session's current cwd, when a listing named it; undefined until then. */
+  knownFilesRoot(): string | undefined {
+    return this.lastRoot?.cwd === this.status.cwd ? this.lastRoot?.root : undefined;
+  }
+
+  private resolveRoot(root: string | undefined): void {
+    const waiters = this.rootWaiters;
+    this.rootWaiters = [];
+    for (const resolve of waiters) {
+      resolve(root);
+    }
+  }
+
+  /** Sends what the Files view waits for next, unless a files request is in flight. */
+  private pumpFiles(): void {
+    if (this.filesRequest !== undefined) {
+      return;
+    }
+    const files = this.files;
+    let next: Omit<FilesRequest, 'id' | 'cwd'> | undefined;
+    if (files?.file?.state === 'loading') {
+      next = { kind: 'read', key: files.file.path };
+    } else if (files?.search?.state === 'loading') {
+      next = { kind: 'search', key: files.search.query };
+    } else if (files?.folder.state === 'loading') {
+      next = { kind: 'list', key: files.folder.path };
+    } else if (this.rootWaiters.length > 0) {
+      next = { kind: 'list', key: '' };
+    }
+    if (next === undefined) {
+      return;
+    }
+    const id = this.sendSession(`files.${next.kind}`, next.kind === 'search' ? { query: next.key } : { path: next.key });
+    if (id === undefined) {
+      this.failFiles(undefined);
+      return;
+    }
+    this.filesRequest = { id, ...next, cwd: this.status.cwd };
+    this.filesTimer = setTimeout(() => this.failFiles(id), FILES_TIMEOUT_MS);
+  }
+
+  /** The request this reply answers, or undefined for a stale one. */
+  private takeFilesReply(requestId: string): FilesRequest | undefined {
+    const request = this.filesRequest;
+    if (request?.id !== requestId) {
+      return undefined;
+    }
+    this.filesRequest = undefined;
+    clearTimeout(this.filesTimer);
+    return request;
+  }
+
+  /**
+   * Ends loading for the files request the host refused, then sends the next;
+   * or, when requestId is undefined because the socket closed, for all of them.
+   */
+  private failFiles(requestId: string | undefined): void {
+    const request = this.filesRequest;
+    if (requestId !== undefined && request?.id !== requestId) {
+      return;
+    }
+    this.filesRequest = undefined;
+    clearTimeout(this.filesTimer);
+    const fails = (kind: FilesRequest['kind'], key: string) => requestId === undefined || (request?.kind === kind && request.key === key);
+    const files = this.files;
+    if (files !== undefined) {
+      const { folder, file, search } = files;
+      this.files = {
+        ...files,
+        folder: folder.state === 'loading' && fails('list', folder.path) ? { ...folder, state: 'unavailable' } : folder,
+        file: file?.state === 'loading' && fails('read', file.path) ? { ...file, state: 'unavailable' } : file,
+        search: search?.state === 'loading' && fails('search', search.query) ? { ...search, state: 'unavailable' } : search,
+      };
+    }
+    if (requestId === undefined || request?.kind === 'list') {
+      this.resolveRoot(undefined);
+    }
+    if (requestId !== undefined) {
+      this.pumpFiles();
+    }
+    this.emit();
+  }
+
   /** Ends loading for a tasks.list the host refused, or for any when requestId is undefined (socket closed). */
   private failTasks(requestId: string | undefined): void {
     if (this.tasksRequest === undefined || (requestId !== undefined && requestId !== this.tasksRequest)) {
@@ -1333,6 +1606,7 @@ export class Connection {
     }
     // Replies to this socket's requests can no longer arrive.
     this.failChanges(undefined);
+    this.failFiles(undefined);
     this.failTasks(undefined);
     this.failBranches(undefined);
     if (this.removalRequest !== undefined) {

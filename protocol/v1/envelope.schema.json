@@ -36,6 +36,9 @@
     { "$ref": "#/$defs/tasksListMessage" },
     { "$ref": "#/$defs/branchesListMessage" },
     { "$ref": "#/$defs/worktreeRemoveMessage" },
+    { "$ref": "#/$defs/filesListMessage" },
+    { "$ref": "#/$defs/filesReadMessage" },
+    { "$ref": "#/$defs/filesSearchMessage" },
     { "$ref": "#/$defs/sessionDetachMessage" },
     { "$ref": "#/$defs/welcomeMessage" },
     { "$ref": "#/$defs/snapshotBeginMessage" },
@@ -51,6 +54,9 @@
     { "$ref": "#/$defs/tasksListedMessage" },
     { "$ref": "#/$defs/branchesListedMessage" },
     { "$ref": "#/$defs/worktreeRemovedMessage" },
+    { "$ref": "#/$defs/filesListedMessage" },
+    { "$ref": "#/$defs/filesContentMessage" },
+    { "$ref": "#/$defs/filesFoundMessage" },
     { "$ref": "#/$defs/controlChangedMessage" },
     { "$ref": "#/$defs/inputAcceptedMessage" },
     { "$ref": "#/$defs/inputRejectedMessage" },
@@ -88,7 +94,9 @@
         "changes.list", "changes.file", "changes.summary", "changes.patch",
         "changes.commit", "changes.push", "changes.committed", "changes.pushed",
         "tasks.list", "tasks.listed", "branches.list", "branches.listed",
-        "worktree.remove", "worktree.removed"
+        "worktree.remove", "worktree.removed",
+        "files.list", "files.listed", "files.read", "files.content",
+        "files.search", "files.found"
       ]
     },
     "errorCode": {
@@ -617,6 +625,69 @@
         "output": { "type": "string", "maxLength": 2000 }
       }
     },
+    "filesListPayload": {
+      "title": "FilesListPayload",
+      "description": "Asks for the entries of one folder in the files root: the git top level of the session's working folder (the same folder as changes.list) when that folder is in a repository, else the folder itself. path is relative to the root with / separators; an empty path is the root. An absolute path or a .. segment gets an invalid_request error and the stream stays open. Read-only: any viewer may ask, no control lease is needed. One files request runs per viewer at a time; another gets limit_exceeded.",
+      "type": "object", "additionalProperties": false, "required": ["path"],
+      "properties": { "path": { "type": "string", "maxLength": 4096 } }
+    },
+    "fileEntry": {
+      "title": "FileEntry",
+      "description": "One folder entry. name is the base name (bytes that are not UTF-8 become U+FFFD). kind is dir, file (a regular file), link (a symlink that points outside the files root or nowhere; a symlink inside the root shows as its target's kind) or other (device, socket, pipe). size is the file size in bytes, only for file.",
+      "type": "object", "additionalProperties": false, "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "kind": { "title": "FileKind", "type": "string", "enum": ["dir", "file", "link", "other"] },
+        "size": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "filesListedPayload": {
+      "title": "FilesListedPayload",
+      "description": "ready: entries lists the folder, folders first, then by name ignoring case, at most 1000 (truncated). A .git entry is never listed. not_found: the folder does not exist, is outside the root, or is inside .git. not_dir: path is not a folder. unavailable: the root could not be opened or read. root is the absolute files root with / separators (C:/Users/me/app on Windows), absent only when the root is not known. path is the normalized relative path with / separators (empty for the root). Only ready carries entries.",
+      "type": "object", "additionalProperties": false, "required": ["state", "path", "entries", "truncated"],
+      "properties": {
+        "state": { "title": "FilesListState", "type": "string", "enum": ["ready", "not_found", "not_dir", "unavailable"] },
+        "root": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "path": { "type": "string", "maxLength": 4096 },
+        "entries": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/fileEntry" } },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "filesReadPayload": {
+      "title": "FilesReadPayload",
+      "description": "Asks for the text of one file in the files root (see files.list). path is relative to the root with / separators. An absolute path or a .. segment gets an invalid_request error.",
+      "type": "object", "additionalProperties": false, "required": ["path"],
+      "properties": { "path": { "type": "string", "minLength": 1, "maxLength": 4096 } }
+    },
+    "filesContentPayload": {
+      "title": "FilesContentPayload",
+      "description": "ready: text is the file as UTF-8. At most 262144 bytes are read; a longer file is cut at the last line break inside them (truncated). The text is also cut, the same way, if its JSON form would pass 786432 bytes. Invalid UTF-8, and a NUL byte after the first 8192 bytes, is replaced with U+FFFD when it is at most 1% of the bytes read. binary: a NUL byte in the first 8192 bytes, or more invalid UTF-8 than that. too_large: the file is over 52428800 bytes (50 MiB) and was not opened. not_found: the file does not exist, is outside the root (a symlink that escapes), or is inside .git. not_file: a folder or another kind of non-regular file. unavailable: the file could not be read. size is the file size in bytes, for ready, binary and too_large. Only ready carries text.",
+      "type": "object", "additionalProperties": false, "required": ["state", "path", "truncated"],
+      "properties": {
+        "state": { "title": "FilesReadState", "type": "string", "enum": ["ready", "binary", "too_large", "not_found", "not_file", "unavailable"] },
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "size": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string", "maxLength": 262144 },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "filesSearchPayload": {
+      "title": "FilesSearchPayload",
+      "description": "Asks for the files in the files root (see files.list) whose relative path contains query, ignoring case. In a repository the candidates are the tracked files and the untracked files git does not ignore. Outside one, a walk of at most 20000 entries that skips .git and node_modules.",
+      "type": "object", "additionalProperties": false, "required": ["query"],
+      "properties": { "query": { "type": "string", "minLength": 1, "maxLength": 200 } }
+    },
+    "filesFoundPayload": {
+      "title": "FilesFoundPayload",
+      "description": "ready: paths are the matching relative paths with / separators, names that match first, then shorter paths, then by path, at most 200. truncated: more paths matched, or the candidates were cut (git output limit, time limit or the walk limit). unavailable: the root could not be read or git failed. Only ready carries paths.",
+      "type": "object", "additionalProperties": false, "required": ["state", "query", "paths", "truncated"],
+      "properties": {
+        "state": { "title": "FilesSearchState", "type": "string", "enum": ["ready", "unavailable"] },
+        "query": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "paths": { "type": "array", "maxItems": 200, "items": { "type": "string", "minLength": 1, "maxLength": 4096 } },
+        "truncated": { "type": "boolean" }
+      }
+    },
     "historyPagePayload": {
       "title": "HistoryPagePayload",
       "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "columns", "offset", "rows", "complete"],
@@ -713,6 +784,12 @@
     "branchesListedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "branches.listed" }, "payload": { "$ref": "#/$defs/branchesListedPayload" } } },
     "worktreeRemoveMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "worktree.remove" }, "payload": { "$ref": "#/$defs/worktreeRemovePayload" } } },
     "worktreeRemovedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "worktree.removed" }, "payload": { "$ref": "#/$defs/worktreeRemovedPayload" } } },
+    "filesListMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.list" }, "payload": { "$ref": "#/$defs/filesListPayload" } } },
+    "filesReadMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.read" }, "payload": { "$ref": "#/$defs/filesReadPayload" } } },
+    "filesSearchMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.search" }, "payload": { "$ref": "#/$defs/filesSearchPayload" } } },
+    "filesListedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.listed" }, "payload": { "$ref": "#/$defs/filesListedPayload" } } },
+    "filesContentMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.content" }, "payload": { "$ref": "#/$defs/filesContentPayload" } } },
+    "filesFoundMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.found" }, "payload": { "$ref": "#/$defs/filesFoundPayload" } } },
     "historyChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.changed" }, "payload": { "$ref": "#/$defs/historyChangedPayload" } } },
     "controlChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.changed" }, "payload": { "$ref": "#/$defs/controlChangedPayload" } } },
     "inputAcceptedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.accepted" }, "payload": { "$ref": "#/$defs/inputAcceptedPayload" } } },

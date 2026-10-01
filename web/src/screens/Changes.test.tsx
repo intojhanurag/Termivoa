@@ -445,3 +445,11 @@ describe('commit and push', () => {
     expect(httpsUrl(undefined)).toBeUndefined();
   });
 });
+
+describe('changes switcher', () => {
+  it('shows the switch and keeps the title for screen readers only', () => {
+    const markup = renderToStaticMarkup(panel(list(), { switcher: <nav id="switch">switch</nav> }));
+    expect(markup).toContain('<h2 id="changes-title" class="visually-hidden">Changes</h2><nav id="switch">switch</nav>');
+    expect(html(list())).not.toContain('visually-hidden">Changes</h2>');
+  });
+});

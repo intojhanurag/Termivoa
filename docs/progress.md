@@ -930,6 +930,55 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   After: `…es/payments · zsh (login) · 46×35`; a 23-character folder shows
   as `…/payments-reconciliation · zsh (…`. At widths of 390, 320, 250 and
   150 px and with a long worktree badge the path part never overflows.
+- **Files view, host side** (`feat/files-host`, 2026-10-01): protocol v1
+  gains `files.list`/`files.listed`, `files.read`/`files.content` and
+  `files.search`/`files.found` (read-only, any viewer, no lease). The new
+  `internal/projectfiles` reads the files root (git top level of the
+  session's working folder, else that folder) only through an `os.Root`;
+  `.git` is never listed or read (case, trailing dots and `GIT~1` too).
+  Bounds: 1000 entries per folder (20000 scanned), 256 KiB of text cut at a
+  line break and at 768 KiB of JSON, files over 50 MiB not opened, binary
+  on a NUL in the first 8 KiB or over 1% invalid UTF-8, 200 search results
+  from `git ls-files -co --exclude-standard -z` (5 s, 4 MiB) or a walk of
+  20000 entries without `.git` and `node_modules`; one files request per
+  viewer, 10 s. Bad paths (absolute, `..`) get `invalid_request` and the
+  stream stays open. quicktype renamed two Go constants
+  (`PatchStateBinary`, `TaskKindOther`); wire values are unchanged.
+  Evidence: `go test -race` on `internal/projectfiles` (traversal, symlink
+  escape, sorting, `.git`, 1000-entry cut, binary, invalid UTF-8, line cut,
+  JSON budget, sparse 50 MiB file, repo and walk search, subfolder root),
+  `internal/protocol`, `internal/gitchanges`, `internal/projecttasks` and
+  `internal/broker` (live-socket list/read/search, `invalid_request`,
+  `limit_exceeded`, cancel on detach); Linux and Windows cross-vet;
+  `./scripts/check`. The phone UI is separate work.
+  Host review fixes (2026-10-01): a symlink into `.git` (`gl -> .git`,
+  `cfg -> .git/config`) is resolved and refused (`not_found`, listed as
+  `link`); `files.listed` entries and `files.found` paths stop at 900 KiB
+  of JSON (truncated), so 1000 names of 200 `<` no longer make a 1.2 MiB
+  message that closed the stream; `files.read` opens with `O_NONBLOCK` and
+  rechecks the open file, so a FIFO cannot block it; search drops submodule
+  entries and deleted files. Evidence: new `TestSymlinksCannotReachGit`,
+  `TestListAndSearchKeepRepliesUnderTheMessageLimit` (fails without the fix
+  at 1239384 bytes), `TestAFIFONeverBlocksARead` (mkfifo),
+  `TestWorktreeRootWithAGitFile`, `TestSearchDropsSubmodulesAndDeletedFiles`;
+  `go test -race`, cross-vet, `./scripts/check`. The same FIFO problem in
+  projecttasks is #125.
+
+- **Files view, phone side and end to end** (`feat/files`, 2026-10-01): the
+  Changes screen gains a **Changes | Files** switch; Files lists folders,
+  searches paths, reads text files in a virtualized viewer with line numbers,
+  and a terminal link provider opens `path:line` tokens. Evidence: `pnpm
+  --dir web test` (482 tests), `./scripts/check` exit 0, the web helper's
+  touch harness (27/27: tap opens, swipe, pull-to-history and selection do
+  not), and a headless Chrome run against `pterm up --dev` with `HOME=/tmp/fh`
+  and a repository with nested folders, a binary file, a 300 KB file, an
+  ignored `node_modules` and a symlink to `/etc/hosts`: 12/12 checks pass. A
+  touch tap on `src/app.ts:42` printed in a real session opens the file with
+  line 42 centred; a tap on plain text does nothing; the root lists folders
+  first and hides `.git`; the outside link is dimmed; the binary file says it
+  is not text; the big file is cut with a note; search finds
+  `src/lib/util.ts`, opens it, and skips the ignored `node_modules`; the
+  Changes tab still works.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

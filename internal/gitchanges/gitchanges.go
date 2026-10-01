@@ -147,7 +147,7 @@ func Patch(ctx context.Context, dir, path string) protocol.ChangesPatchPayload {
 	}
 	lines, binary, cut := parseDiff(out)
 	if binary && len(lines) == 0 {
-		patch.State = protocol.Binary
+		patch.State = protocol.PatchStateBinary
 		return patch
 	}
 	patch.State, patch.Lines, patch.Truncated = protocol.PatchStateReady, lines, cut || truncated
@@ -157,21 +157,52 @@ func Patch(ctx context.Context, dir, path string) protocol.ChangesPatchPayload {
 // open finds the repository root and HEAD. A folder outside any repository is
 // not_git; a missing git or any other failure is unavailable.
 func open(ctx context.Context, dir string) (repository, protocol.ChangesState) {
-	out, _, err := run(ctx, dir, "rev-parse", "--show-toplevel")
-	if err != nil {
-		if strings.Contains(err.Error(), "not a git repository") {
-			return repository{}, protocol.NotGit
-		}
-		return repository{}, protocol.ChangesStateUnavailable
+	root, state := topLevel(ctx, dir)
+	if state != protocol.ChangesStateReady {
+		return repository{}, state
 	}
-	repo := repository{root: strings.TrimSuffix(string(out), "\n")}
-	if repo.root == "" {
-		return repository{}, protocol.ChangesStateUnavailable
-	}
+	repo := repository{root: root}
 	if out, _, err := run(ctx, repo.root, "rev-parse", "-q", "--verify", "--short", "HEAD"); err == nil {
 		repo.head = strings.TrimSpace(string(out))
 	}
 	return repo, protocol.ChangesStateReady
+}
+
+// TopLevel returns the root of the repository that holds dir (ready), or
+// not_git, or unavailable when git is missing or failed.
+func TopLevel(ctx context.Context, dir string) (string, protocol.ChangesState) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return topLevel(ctx, dir)
+}
+
+func topLevel(ctx context.Context, dir string) (string, protocol.ChangesState) {
+	out, _, err := run(ctx, dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		if strings.Contains(err.Error(), "not a git repository") {
+			return "", protocol.NotGit
+		}
+		return "", protocol.ChangesStateUnavailable
+	}
+	root := strings.TrimSuffix(string(out), "\n")
+	if root == "" {
+		return "", protocol.ChangesStateUnavailable
+	}
+	return root, protocol.ChangesStateReady
+}
+
+// Files lists the tracked files and the untracked files git does not ignore
+// under root, relative to root with / separators, as git prints them (not
+// always UTF-8). An untracked nested repository is one "path/" entry.
+// truncated means the output limit cut the list.
+func Files(ctx context.Context, root string) ([]string, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	out, truncated, err := run(ctx, root, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, false, err
+	}
+	return nulFields(out), truncated, nil
 }
 
 // diffBase is HEAD, or the empty tree of the repository's hash before the

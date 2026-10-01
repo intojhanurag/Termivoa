@@ -7,12 +7,14 @@ import {
 } from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
+import { tapTarget, type PathLink } from '../terminal/pathLinks';
 import { runFirstCommand } from '../terminal/runFirst';
 import { followCursor, TerminalView, wheelSteps } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey, type RecapFacts, type ViewedTimes } from './activity';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { askAboutFile, Changes } from './Changes';
 import { Composer } from './Composer';
+import { ChangesTabs, Files, type ChangesTab } from './Files';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { displayPath, sessionName, splitPath } from './folder';
 import { History } from './History';
@@ -44,6 +46,8 @@ const noChanges = (): ChangesView | undefined => undefined;
 const noTasks = (): TasksView | undefined => undefined;
 const noBranches = (): BranchesView | undefined => undefined;
 const noRemoval = (): WorktreeRemoval | undefined => undefined;
+/** The Changes screen's last tab per session, while the app is open. */
+const lastTabs = new Map<string, ChangesTab>();
 const sameSession = (a: BrokerRPCSessionRecord, b: BrokerRPCSessionRecord) => a.id === b.id && a.generation === b.generation;
 
 /** Tabs: running sessions, plus the open one even after it exits. */
@@ -169,6 +173,9 @@ export function Live({
   const keyboard = useKeyboardOpen();
   const keyboardRef = useRef(keyboard);
   keyboardRef.current = keyboard;
+  // Terminal links: the latest handler, and a tap that a link took.
+  const openPath = useRef<(link: PathLink) => boolean>(() => false);
+  const linkTapped = useRef(false);
   // PTY rows measured without the keyboard. The keyboard never shrinks the
   // PTY, so full-screen programs do not redraw each time it opens or closes.
   const restRows = useRef<number | undefined>(undefined);
@@ -188,6 +195,7 @@ export function Live({
     return () => clearTimeout(timer);
   }, [status.link]);
   const draft = draftKey(session.id, session.generation);
+  const [tab, setTab] = useState<ChangesTab>(() => lastTabs.get(draft) ?? 'changes');
   const current = sessions?.find((item) => sameSession(item, session)) ?? session;
   const projectName = settings?.projects.find((item) => item.id === session.projectId)?.name;
   const shellName = settings?.shellProfiles.find((item) => item.id === session.shellProfileId)?.name;
@@ -250,6 +258,18 @@ export function Live({
   }, [runtime, runFirst]);
 
   useEffect(() => { runtime?.view.setFontSize(fontSize); }, [runtime, fontSize]);
+
+  useEffect(() => {
+    const links = runtime?.view.linkPaths((link) => {
+      if (openPath.current(link)) linkTapped.current = true;
+    });
+    return () => links?.dispose();
+  }, [runtime]);
+
+  // A tapped path is resolved inside the tap, so the files root is read ahead, on attach and on each cwd change.
+  useEffect(() => {
+    if (status.link === 'live') void runtime?.connection.filesRoot();
+  }, [runtime, status.link, status.cwd]);
 
   useEffect(() => {
     const element = input.current;
@@ -418,22 +438,39 @@ export function Live({
     setPanel('none');
   }
 
-  function openChanges() {
-    if (runtime?.connection.openChanges() === true) {
+  function showTab(next: ChangesTab) {
+    lastTabs.set(draft, next);
+    setTab(next);
+  }
+
+  /** Opens the Changes screen on a tab; the dock opens it on the last one. */
+  function openChanges(on: ChangesTab = tab) {
+    const connection = runtime?.connection;
+    if (connection !== undefined && (on === 'changes' ? connection.openChanges() : connection.openFilesFolder(''))) {
+      showTab(on);
       input.current?.blur();
       setPanel('changes');
     }
   }
 
+  function switchTab(next: ChangesTab) {
+    const connection = runtime?.connection;
+    showTab(next);
+    if (next === 'changes' && connection?.getChanges() === undefined) connection?.openChanges();
+    if (next === 'files' && connection?.getFiles() === undefined) connection?.openFilesFolder('');
+  }
+
   function closeChanges() {
     runtime?.connection.closeChanges();
+    runtime?.connection.closeFiles();
     setPanel('none');
   }
 
   // Only fills the draft; the user reads it and taps Send.
-  function askAbout(path: string, selected: ReadonlyArray<DiffLine>) {
+  function askAbout(path: string, selected: ReadonlyArray<DiffLine> = []) {
     askAboutFile(draft, path, selected);
     runtime?.connection.closeChanges();
+    runtime?.connection.closeFiles();
     setComposerVersion((value) => value + 1);
     setPanel('composer');
   }
@@ -455,6 +492,20 @@ export function Live({
   const question = panel === 'none' ? openQuestion(status) : undefined;
   // With the keyboard up the card folds to its pill, so typing and keys keep working.
   const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
+  // A tapped path inside the files root opens in Files at its line. Any other
+  // tap, and any tap on a dimmed terminal (a sheet or question card on top),
+  // acts as before.
+  openPath.current = (link) => {
+    const connection = runtime?.connection;
+    const target = tapTarget(panel === 'none' && !cardOpen, connection?.knownFilesRoot(), status.link === 'live' ? status.cwd : undefined, link);
+    if (connection === undefined || target === undefined) return false;
+    connection.closeFiles();
+    if (!connection.openFilesFile(target.path, target.line)) return false;
+    showTab('files');
+    input.current?.blur();
+    setPanel('changes');
+    return true;
+  };
   const badge = controlBadge(status);
   const liveCwd = status.link === 'live' ? status.cwd : undefined;
   const cwd = liveCwd ?? current.cwd;
@@ -533,7 +584,7 @@ export function Live({
         <div ref={recapCard} className="recap-anchor">
           <RecapCard
             line={recap.line}
-            onSeeChanges={() => { setRecap({ phase: 'done' }); openChanges(); }}
+            onSeeChanges={() => { setRecap({ phase: 'done' }); openChanges('changes'); }}
             onDismiss={() => setRecap({ phase: 'done' })}
           />
         </div>
@@ -544,8 +595,10 @@ export function Live({
         className={`terminal-area${sheet || cardOpen ? ' dim' : ''}${appScroll ? ' app-scroll' : ''}`}
         hidden={fullPanel}
         onClick={() => {
+          const link = linkTapped.current;
+          linkTapped.current = false;
           if (sheet) setPanel('none');
-          else if (canSend) input.current?.focus();
+          else if (canSend && !link) input.current?.focus();
         }}
         onWheel={(event) => {
           if (appScroll) scrollApp(-event.deltaY);
@@ -590,9 +643,11 @@ export function Live({
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
       )}
-      {panel === 'changes' && runtime !== undefined && (
-        <Changes connection={runtime.connection} cwd={cwd} onAsk={askAbout} onReturn={closeChanges} />
-      )}
+      {panel === 'changes' && runtime !== undefined && (tab === 'changes' ? (
+        <Changes connection={runtime.connection} cwd={cwd} switcher={<ChangesTabs tab={tab} onTab={switchTab} />} onAsk={askAbout} onReturn={closeChanges} />
+      ) : (
+        <Files connection={runtime.connection} switcher={<ChangesTabs tab={tab} onTab={switchTab} />} onAsk={askAbout} onReturn={closeChanges} />
+      ))}
 
       {question !== undefined && status.agent !== undefined && (
         <div className="answer-anchor">
@@ -638,7 +693,7 @@ export function Live({
                 setPanel('snippets');
               }}
               onHistory={openHistory}
-              onChanges={openChanges}
+              onChanges={() => openChanges()}
               onHideKeyboard={() => input.current?.blur()}
             />
           ) : (
@@ -647,7 +702,7 @@ export function Live({
               historyEnabled={historyEnabled}
               onTakeControl={() => runtime?.connection.takeControl()}
               onHistory={openHistory}
-              onChanges={openChanges}
+              onChanges={() => openChanges()}
               onSessions={onSessions}
             />
           )}

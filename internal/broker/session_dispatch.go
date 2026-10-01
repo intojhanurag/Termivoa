@@ -34,6 +34,7 @@ type sessionConnection struct {
 	changesBusy  atomic.Bool // A changes request is running (changes.go).
 	tasksBusy    atomic.Bool // A tasks request is running (tasks.go).
 	branchesBusy atomic.Bool // A branches request is running (worktree.go).
+	filesBusy    atomic.Bool // A files request is running (files.go).
 }
 
 // errStreamRevoked ends a browser stream after access.revoked was sent.
@@ -248,6 +249,8 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 		return stream.listTasks(ctx, request)
 	case protocol.BranchesList:
 		return stream.listBranches(ctx, request)
+	case protocol.FilesList, protocol.FilesRead, protocol.FilesSearch:
+		return stream.readFiles(ctx, request)
 	case protocol.WorktreeRemove:
 		return stream.removeWorktreeOfSession(ctx, request, identity)
 	case protocol.SessionDetach:

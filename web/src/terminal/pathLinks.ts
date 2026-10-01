@@ -1,0 +1,169 @@
+/** A path-like token in terminal text, by UTF-16 offsets into that text. */
+export interface PathLink {
+  readonly start: number;
+  /** Exclusive; covers the ":line:column" suffix too. */
+  readonly end: number;
+  readonly path: string;
+  readonly line?: number;
+  readonly column?: number;
+}
+
+/** File extensions that make a token without a slash a link, like "README.md". */
+const EXTENSIONS = new Set([
+  'c', 'cc', 'cfg', 'cjs', 'conf', 'cpp', 'cs', 'css', 'cts', 'dart', 'ex', 'exs', 'go', 'gradle', 'h', 'hpp', 'html',
+  'ini', 'java', 'js', 'json', 'jsonc', 'jsx', 'kt', 'kts', 'less', 'lock', 'lua', 'md', 'mdx', 'mjs', 'mod', 'mts', 'php',
+  'pl', 'proto', 'ps1', 'py', 'rb', 'rs', 'sass', 'scss', 'sh', 'sql', 'sum', 'svelte', 'svg', 'swift', 'toml', 'ts',
+  'tsx', 'txt', 'vue', 'xml', 'yaml', 'yml', 'zig', 'zsh',
+]);
+
+/**
+ * A run of path characters, then an optional ":line", ":line:column" or tsc's
+ * "(line,column)". It never starts inside a word, a path or after ":" (so not
+ * inside a URL), and may start with "./", "../", "/" or a Windows drive.
+ */
+const TOKEN = /(?<![\p{L}\p{N}_.@+~:/\\-])((?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|\/)?[\p{L}\p{N}_.@+-]+(?:[\\/][\p{L}\p{N}_.@+-]+)*)(?::(\d{1,7})(?::(\d{1,5}))?|\((\d{1,7})(?:,(\d{1,5}))?\))?/gu;
+
+/** A relative first folder named like a domain, as in "github.com/owner/repo"; domains are lower case. */
+const DOMAIN = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/u;
+
+/** A file extension has a letter, so "2.5" and "18.2" are not file names. */
+const EXTENSION = /\.([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)$/u;
+
+/**
+ * Path-like tokens in one line of terminal text. Conservative: a token needs a
+ * slash and a file name with an extension (or a "./", "../", "/" or drive
+ * start), or, without a slash, a known extension. URLs are not links.
+ */
+export function findPathLinks(text: string): PathLink[] {
+  const links: PathLink[] = [];
+  for (const match of text.matchAll(TOKEN)) {
+    // A sentence may end right after a path: "see src/app.ts."
+    const path = (match[1] ?? '').replace(/\.+$/u, '');
+    const whole = path === match[1];
+    const parts = path.split(/[\\/]/u);
+    const name = parts.at(-1) ?? '';
+    // A dot file (".env", ".bin") has no extension.
+    const extension = name.startsWith('.') ? undefined : EXTENSION.exec(name)?.[1];
+    const anchored = /^(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|\/)/u.test(path);
+    const link = parts.length > 1
+      ? name !== '' && (anchored || (extension !== undefined && extension.length <= 10 && !DOMAIN.test(parts[0] ?? '')))
+      : extension !== undefined && EXTENSIONS.has(extension.toLowerCase());
+    if (!link) {
+      continue;
+    }
+    const line = whole ? Number(match[2] ?? match[4] ?? 0) : 0;
+    const column = whole ? Number(match[3] ?? match[5] ?? 0) : 0;
+    links.push({
+      start: match.index,
+      end: match.index + (whole ? match[0].length : path.length),
+      path,
+      ...(line > 0 ? { line } : {}),
+      ...(line > 0 && column > 0 ? { column } : {}),
+    });
+  }
+  return links;
+}
+
+/**
+ * Where a tap on a terminal link goes: the root-relative path and line, or
+ * undefined when the tap is not for a link (links off, root not known yet,
+ * outside the root), so it acts as a plain tap. Decided at once, inside the
+ * tap, since iOS raises the keyboard only during the gesture.
+ */
+export function tapTarget(
+  linksOn: boolean,
+  root: string | undefined,
+  cwd: string | undefined,
+  link: PathLink,
+): { readonly path: string; readonly line: number | undefined } | undefined {
+  const path = linksOn && root !== undefined ? rootRelative(root, cwd, link.path) : undefined;
+  return path === undefined ? undefined : { path, line: link.line };
+}
+
+/** "/a/b/../c" as ["/", "a", "c"] style: the prefix ("/", "C:/" or "") and the clean segments; undefined above the top. */
+function normalize(path: string): { readonly prefix: string; readonly parts: string[] } | undefined {
+  const slashed = path.replace(/\\/gu, '/');
+  const prefix = /^[A-Za-z]:\//u.exec(slashed)?.[0] ?? (slashed.startsWith('/') ? '/' : '');
+  const parts: string[] = [];
+  for (const part of slashed.slice(prefix.length).split('/')) {
+    if (part === '..') {
+      if (parts.pop() === undefined) return undefined;
+    } else if (part !== '' && part !== '.') {
+      parts.push(part);
+    }
+  }
+  return { prefix, parts };
+}
+
+/**
+ * The path relative to the files root, with "/" separators, for a token the
+ * terminal shows. A relative token is relative to the session's cwd. Returns
+ * undefined when it is outside the root, is the root itself, or cannot be
+ * resolved. Windows roots ("C:/Users/me/app") compare without case.
+ */
+export function rootRelative(root: string, cwd: string | undefined, token: string): string | undefined {
+  const absolute = /^(?:[A-Za-z]:)?[\\/]/u.test(token);
+  if (!absolute && cwd === undefined) {
+    return undefined;
+  }
+  const full = normalize(absolute ? token : `${cwd}/${token}`);
+  const top = normalize(root);
+  if (full === undefined || top === undefined || full.prefix === '' || full.parts.length <= top.parts.length) {
+    return undefined;
+  }
+  const windows = top.prefix.length > 1;
+  const same = (a: string, b: string) => (windows ? a.toLowerCase() === b.toLowerCase() : a === b);
+  if (!same(full.prefix, top.prefix) || top.parts.some((part, index) => !same(part, full.parts[index] ?? ''))) {
+    return undefined;
+  }
+  return full.parts.slice(top.parts.length).join('/');
+}
+
+/** One xterm buffer cell, as far as link ranges need it. */
+export interface Cell {
+  getChars(): string;
+  getWidth(): number;
+}
+
+/**
+ * A row's text and, for each UTF-16 offset in it, the 0-based cell column it
+ * starts in, plus one entry past the end. Wide characters take two columns,
+ * so offsets and columns differ after them.
+ */
+export function rowCells(cells: ReadonlyArray<Cell>): { readonly text: string; readonly columns: number[] } {
+  let text = '';
+  const columns: number[] = [];
+  let column = 0;
+  for (const [x, cell] of cells.entries()) {
+    const width = cell.getWidth();
+    if (width === 0) {
+      continue;
+    }
+    const chars = cell.getChars() || ' ';
+    for (let unit = 0; unit < chars.length; unit++) {
+      columns.push(x);
+    }
+    text += chars;
+    column = x + width;
+  }
+  columns.push(column);
+  return { text, columns };
+}
+
+/** A link in one buffer row, with its xterm range: 1-based cells, end inclusive. */
+export interface RowLink {
+  readonly link: PathLink;
+  readonly text: string;
+  readonly range: { readonly start: { readonly x: number; readonly y: number }; readonly end: { readonly x: number; readonly y: number } };
+}
+
+/** The path links in buffer row y (1-based), placed by cell, so wide characters before a link do not shift it. */
+export function rowLinks(cells: ReadonlyArray<Cell>, y: number): RowLink[] {
+  const { text, columns } = rowCells(cells);
+  return findPathLinks(text).map((link) => ({
+    link,
+    text: text.slice(link.start, link.end),
+    // The end column is where the next character starts, which is the last cell 1-based.
+    range: { start: { x: (columns[link.start] ?? 0) + 1, y }, end: { x: columns[link.end] ?? 0, y } },
+  }));
+}
