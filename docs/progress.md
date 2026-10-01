@@ -980,6 +980,21 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `src/lib/util.ts`, opens it, and skips the ignored `node_modules`; the
   Changes tab still works.
 
+- **Docs screenshots clean step stops only its own stack** (`fix/issue-124`,
+  2026-10-01, fixes #124): `capture.mjs` saves the PID of the `pterm up --dev`
+  it starts in `/tmp/demo-home/.capture-pid`; `node setup.mjs clean` (and the
+  next capture run) sends SIGINT to that PID only, waits up to 15 s, then
+  SIGKILL, and checks the PID's command line first. `pterm up --dev` stops
+  its own gateway and broker on SIGINT (`runUpCommand`). The `pkill -f`
+  pattern is gone. Evidence: a dummy-process test (not the real capture run,
+  port 8788 untouched): the recorded PID stops, a second process with the
+  same command line keeps running, a PID with a different command line is
+  left alone, a process that ignores SIGINT is killed after the bounded
+  wait. A bare `node setup.mjs` (no `clean`) also stops the recorded stack
+  before it wipes `/tmp/demo-home`; checked with two dummy processes that
+  carry `/tmp/pterm-demo up --dev` in their command line (only the recorded one
+  stopped). `node --check` on all scripts; `./scripts/check` exit 0.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

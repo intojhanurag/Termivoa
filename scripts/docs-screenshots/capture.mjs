@@ -7,15 +7,14 @@
 //                        # with HOME=/tmp/demo-home, adds the projects, takes PNGs in ./png,
 //                        # then writes WebP next to this file
 //    node capture.mjs convert                # only redo the WebP conversion
-// 3. pkill -INT -f "/tmp/pterm-demo up --dev"; node setup.mjs clean
-//    (removes /Users/Shared/code and /tmp/demo-home)
+// 3. node setup.mjs clean   # stops the stack this script started (by the PID in /tmp/demo-home/.capture-pid),
+//    then removes /Users/Shared/code and /tmp/demo-home
 //
 // The stand-in agent (agent.js) is neutral: no vendor name or logo.
 import { execFileSync, spawn } from 'node:child_process';
 import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { agentEdits, CODE, HOME, setup } from './setup.mjs';
+import { agentEdits, CODE, HOME, PIDFILE, PTERM, setup, stopStack } from './setup.mjs';
 
-const PTERM = '/tmp/pterm-demo';
 const BASE = 'http://127.0.0.1:8788';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const DIR = new URL('.', import.meta.url).pathname;
@@ -125,10 +124,11 @@ async function newSession(b, project, runFirst) {
 
 // A clean demo HOME and dev stack with the three projects.
 async function freshStack() {
-  try { execFileSync('pkill', ['-INT', '-f', `${PTERM} up --dev`]); } catch {}
-  await sleep(2500);
+  await stopStack(); // only the stack an earlier run of this script recorded
   setup();
-  spawn(PTERM, ['up', '--dev'], { env: ENV, cwd: HOME, detached: true, stdio: 'ignore' }).unref();
+  const up = spawn(PTERM, ['up', '--dev'], { env: ENV, cwd: HOME, detached: true, stdio: 'ignore' });
+  writeFileSync(PIDFILE, `${up.pid}\n`);
+  up.unref();
   for (let i = 0; i < 50; i++) { try { await fetch(BASE); break; } catch { await sleep(200); } }
   await sleep(1000);
   for (const name of ['acme-web', 'billing-api', 'docs-site']) execFileSync(PTERM, ['project', 'add', '--dev', '--name', name, `${CODE}/${name}`], { env: ENV });
