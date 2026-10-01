@@ -124,7 +124,8 @@ func (handler *gatewayHandler) sessions(response http.ResponseWriter, request *h
 	if !ok {
 		return
 	}
-	if !validUUID(body.OperationID) || !validUUID(body.ProjectID) || !validUUID(body.ShellProfileID) {
+	if !validUUID(body.OperationID) || !validUUID(body.ProjectID) || !validUUID(body.ShellProfileID) ||
+		protocol.ValidateWorktreeCreate(body.Worktree) != nil {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid session request")
 		return
 	}
@@ -489,7 +490,8 @@ func brokerStatus(code protocol.ErrorCode) int {
 	case protocol.SessionMissing, protocol.ProjectMissing, protocol.ShellProfileMissing, protocol.PreviewMissing:
 		return http.StatusNotFound
 	case protocol.GenerationChanged, protocol.SessionLost, protocol.OperationConflict, protocol.PairingPending,
-		protocol.NotController, protocol.StaleLease, protocol.InputGap, protocol.HistoryChanged, protocol.ResyncRequired:
+		protocol.NotController, protocol.StaleLease, protocol.InputGap, protocol.HistoryChanged, protocol.ResyncRequired,
+		protocol.WorktreeExists, protocol.NotARepository:
 		return http.StatusConflict
 	case protocol.HostUnavailable:
 		return http.StatusServiceUnavailable

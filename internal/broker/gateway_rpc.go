@@ -178,7 +178,7 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		}
 		result, err := server.createSession(ctx, protocol.BrokerRPCSessionCreateRequestPayload{
 			OperationID: payload.Request.OperationID, ProjectID: payload.Request.ProjectID,
-			ShellProfileID: payload.Request.ShellProfileID,
+			ShellProfileID: payload.Request.ShellProfileID, Worktree: payload.Request.Worktree,
 		})
 		return protocol.HTTPSessionMutationResponse{OperationID: result.OperationID, Session: result.Session}, nil, err
 	case protocol.GatewaySessionRename:

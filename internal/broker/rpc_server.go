@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
+	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
@@ -49,6 +50,9 @@ type ManagementServerConfig struct {
 	// Shutdown stops the broker's serve loop after an admin.shutdown result
 	// is written. Without it, admin.shutdown fails as host_unavailable.
 	Shutdown func()
+	// WorktreeRoot holds the worktrees that session creates make, as
+	// <root>/<repo>/<name>. Empty means <home>/termivoa/worktrees.
+	WorktreeRoot string
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -69,6 +73,9 @@ type ManagementServer struct {
 	// changesWrites holds the session IDs with a commit or push running
 	// (changes.go): one write per session, whoever asks.
 	changesWrites sync.Map
+	// worktreeCreates runs one worktree create at a time, so a replayed
+	// operation finds the first one's receipt instead of making a second.
+	worktreeCreates sync.Mutex
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -104,6 +111,9 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	if config.HostPlatform != store.PlatformDarwin && config.HostPlatform != store.PlatformWindows &&
 		config.HostPlatform != store.PlatformLinux {
 		return nil, errors.New("broker: management host platform must be darwin, windows, or linux")
+	}
+	if config.WorktreeRoot == "" {
+		config.WorktreeRoot = defaultWorktreeRoot()
 	}
 	return &ManagementServer{
 		config: config, connections: make(map[net.Conn]struct{}),
@@ -373,6 +383,13 @@ func (server *ManagementServer) createSession(
 	ctx context.Context,
 	payload protocol.BrokerRPCSessionCreateRequestPayload,
 ) (protocol.BrokerRPCSessionMutationResultPayload, error) {
+	if payload.Worktree != nil {
+		// git must not be cut short by a closed request; a replay (checked
+		// again under the lock) never makes a second worktree.
+		ctx = context.WithoutCancel(ctx)
+		server.worktreeCreates.Lock()
+		defer server.worktreeCreates.Unlock()
+	}
 	replayed, found, err := server.config.Registry.ReplayCreate(
 		ctx, payload.OperationID, payload.ProjectID, payload.ShellProfileID,
 	)
@@ -381,7 +398,7 @@ func (server *ManagementServer) createSession(
 	}
 	if found {
 		return protocol.BrokerRPCSessionMutationResultPayload{
-			OperationID: payload.OperationID, Session: managementMutationSessionRecord(replayed.Snapshot),
+			OperationID: payload.OperationID, Session: server.withWorktree(managementMutationSessionRecord(replayed.Snapshot)),
 		}, nil
 	}
 	project, err := server.config.Store.GetProject(ctx, payload.ProjectID)
@@ -398,9 +415,16 @@ func (server *ManagementServer) createSession(
 	if profile.DisabledAt != nil || !server.profileMatchesHost(profile.Platform) {
 		return protocol.BrokerRPCSessionMutationResultPayload{}, store.ErrShellProfileMissing
 	}
-	title := project.DisplayName
+	title, directory := project.DisplayName, project.CanonicalPath
 	if !validManagementTitle(title) {
 		title = defaultSessionTitle
+	}
+	var worktree gitchanges.Created
+	if payload.Worktree != nil {
+		if worktree, err = server.prepareWorktree(ctx, *payload.Worktree); err != nil {
+			return protocol.BrokerRPCSessionMutationResultPayload{}, err
+		}
+		title, directory = payload.Worktree.Name, worktree.Path
 	}
 	created, err := server.config.Registry.Create(ctx, CreateSessionRequest{
 		OperationID: payload.OperationID, Title: title,
@@ -408,17 +432,21 @@ func (server *ManagementServer) createSession(
 		Process: ptyhost.Spec{
 			Executable: profile.ExecutablePath,
 			Args:       withDirectoryHook(profile.Platform, profile.ExecutablePath, profile.Arguments),
-			Directory:  project.CanonicalPath,
+			Directory:  directory,
 			Env:        []string{"TERM=" + terminalType, "COLORTERM=" + terminalColorMode},
 			Columns:    ptyhost.DefaultColumns,
 			Rows:       ptyhost.DefaultRows,
 		},
 	})
 	if err != nil {
+		if payload.Worktree != nil && created.Snapshot.ID == "" {
+			// No session started there: do not leave a worktree nobody asked to keep.
+			err = errors.Join(err, rollBackCreate(ctx, worktree))
+		}
 		return protocol.BrokerRPCSessionMutationResultPayload{}, err
 	}
 	return protocol.BrokerRPCSessionMutationResultPayload{
-		OperationID: payload.OperationID, Session: managementMutationSessionRecord(created.Snapshot),
+		OperationID: payload.OperationID, Session: server.withWorktree(managementMutationSessionRecord(created.Snapshot)),
 	}, nil
 }
 
@@ -508,6 +536,7 @@ func (server *ManagementServer) withPresence(
 		}
 		record.Agent = agentPayload(presence.Agent)
 	}
+	record.Worktree = server.sessionWorktree(session)
 	return record
 }
 
@@ -599,6 +628,16 @@ func classifyManagementError(err error) managementFailure {
 	case errors.Is(err, ErrSessionLimit), errors.Is(err, ErrOperationLimit),
 		errors.Is(err, store.ErrOperationReceiptLimit):
 		return managementFailure{protocol.LimitExceeded, "broker resource limit reached"}
+	case errors.Is(err, gitchanges.ErrWorktreeExists):
+		return managementFailure{protocol.WorktreeExists, "a worktree or branch with this name already exists"}
+	case errors.Is(err, gitchanges.ErrNotRepository):
+		return managementFailure{protocol.NotARepository, "the session folder is not in a git repository"}
+	case errors.Is(err, gitchanges.ErrWorktreeLimit):
+		return managementFailure{protocol.LimitExceeded, "this repository already has the most worktrees allowed"}
+	case errors.Is(err, gitchanges.ErrWorktreeBase):
+		return managementFailure{protocol.InvalidRequest, "the base is not a branch of this repository"}
+	case errors.Is(err, gitchanges.ErrWorktreeName):
+		return managementFailure{protocol.InvalidRequest, "the worktree or repository name is not allowed"}
 	case errors.Is(err, ErrOperationID), errors.Is(err, errInvalidSessionCursor):
 		return managementFailure{protocol.InvalidRequest, "request is invalid"}
 	case errors.Is(err, ErrOperationResultUnavailable), errors.Is(err, store.ErrMutationResultUnavailable):
