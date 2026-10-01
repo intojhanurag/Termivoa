@@ -1,52 +1,48 @@
 ---
 title: Wall
-description: Watch all your running sessions at once as small live screens, and tap one to open it.
+description: The Termivoa Wall puts all running sessions on one page as small live screens, so you can watch several coding agents and open one with a tap.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you watch several agents at the same time.
+Termivoa shows every running session as a small live screen on one page, the Wall.
 
-## What the Wall shows
+<!-- image: the Wall with three tiles, the top one Waiting with an amber border -->
 
-The Wall shows each running session as a small live screen. The screen is made smaller to fit the tile's width, and the tile follows the newest line, like the live screen. The text is small, but you can see output, colors and prompts.
+## Open the Wall
 
-Each tile also shows:
-
-- the session name;
-- the status badge: **Working**, **Waiting** or **Your turn** (see [Status badges](/docs/guides/sessions/#status-badges));
-- the question, when an agent waits for you;
-- an amber dot in the corner while the tile reconnects.
-
-Tiles that wait for you have an amber border and are at the top. Working sessions come next. You can change this order yourself (see [Arrange the tiles](#arrange-the-tiles)).
-
-Sessions that ended are not on the Wall. A short line under the tiles tells you how many ended sessions are on the Sessions list.
-
-## Use the Wall
-
-1. On the Sessions list, tap the **Wall** button (the grid icon) at the top.
-2. Look at the tiles. They update live.
-3. Tap a tile to open that session in the live terminal.
-4. To go back to the list, tap the list button at the top, or use the back gesture.
+1. On the Sessions list, tap **Wall** (the grid icon) at the top. The tiles update live.
+2. Tap a tile to open that session in the [live terminal](/docs/guides/live-terminal/).
+3. To go back, tap the list button at the top, or use the back gesture.
 
 If no session runs, the Wall shows **No running sessions** and a **new session** button.
 
+## What does a tile show?
+
+Each tile shows the session's screen, scaled to fit and following the newest line. You can see output, colors and prompts. Each tile also shows:
+
+- the session name;
+- the [status badge](/docs/guides/sessions/#what-do-the-status-badges-mean): **Working**, **Waiting** or **Your turn**;
+- the question, when an agent waits for you;
+- an amber dot in the corner while the tile reconnects.
+
+## Which tiles come first?
+
+Tiles that wait for you come first, with an amber border. Working sessions come next, then the rest. Ended sessions are not shown; a line under the tiles counts them.
+
 ## Arrange the tiles
 
-You can put the tiles in the order you want.
-
-1. Touch a tile and hold it for a moment. The tile lifts up.
-2. Drag it to its new place. The other tiles move out of the way. To move a tile past the screen, drag it to the top or bottom edge, and the page scrolls.
-3. Let go.
-
-A quick swipe still scrolls the Wall, and a quick tap still opens the session.
-
-Your order is saved on this phone only. Another phone or browser keeps its own order. New sessions go after the tiles you arranged.
-
-To go back to the default order (waiting agents first), tap **Reset order** under the tiles.
-
-With a keyboard, focus a tile and press Alt and an arrow key to move it one place.
-
-:::note
-Tiles only watch. They never take control, type, or change the terminal size. To type, tap the tile to open the session, then take control.
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`.
 :::
 
-The Wall connects to your sessions only while it is open. When you leave the Wall, the tiles disconnect.
+1. Touch and hold a tile until it lifts.
+2. Drag it to its new place. Drag to the top or bottom edge to scroll.
+3. Let go.
+
+A quick swipe still scrolls, and a quick tap still opens the session. With a keyboard, focus a tile and press Alt and an arrow key to move it one place.
+
+The order is saved on this phone only. New sessions go after the tiles you arranged. To go back to the default order, tap **Reset order** under the tiles.
+
+## Why can I not type on the Wall?
+
+Tiles only watch. They never take control, type, or change the terminal size. To type, tap the tile, then tap **Take control**. The tiles connect only while the Wall is open.

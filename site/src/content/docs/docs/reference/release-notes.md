@@ -1,23 +1,24 @@
 ---
 title: Release notes
-description: What is in each Termivoa release, and its known limits.
+description: Termivoa private beta release history, with the new features, fixes and known limits of each version, and what is coming in the next beta.
+lastUpdated: 2026-10-01
 ---
 
-This page lists what is new in each release.
+The latest Termivoa release is the private beta `v0.1.0-beta.2` (2026-09-29).
 
 ## Next beta (not released yet)
 
-- **Fix: `pterm uninstall` names the right file.** On macOS and Windows it told you to remove an app that the beta does not install. It now tells you which `pterm` file to delete.
-- **Worktrees.** In a session inside a git repository, tap **⋯ → New worktree…** to start a task in its own folder and branch: `~/termivoa/worktrees/<repository>/<name>` on `termivoa/<name>`, from `main` or any branch you pick. The random name can be edited, and Claude or Codex can start in it at once. **Remove worktree** deletes the folder and keeps the branch. See [Worktrees](/docs/guides/worktrees/).
-- **Down next to Up while you type.** With the keyboard open, the key row shows `↓` right after `↑`. You no longer need to hide the keyboard to press Down. See [Keys](/docs/guides/live-terminal/#keys).
-- **Arrange the Wall.** Hold a tile, then drag it to a new place. The order is saved on your phone. **Reset order** brings back the default order. See [Wall](/docs/guides/wall/#arrange-the-tiles).
-- **Project buttons.** The Snips sheet shows your project's own commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. Tap one to run it in a new tab or type it here. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).
-- **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines, then ask the agent about exactly those lines. See [Changes](/docs/guides/changes/#ask-about-specific-lines).
-- **Fix: Ctrl+] right after `pterm attach` connects.** Pressing Ctrl+] at the moment the desktop attach finished connecting was sometimes ignored, or ended with a false "connection closed" error. It now detaches reliably and cleanly.
-- **Fix: finished sessions shown as lost.** A finished session is no longer shown as lost when the computer is busy. It shows its exit code.
-- **Fix: background jobs get their full cleanup time.** When a session ends, programs you started in the background get half a second to clean up. On a very busy computer most of that time could be used up before they were told to stop. The time now starts only after they are told.
-- **Fix: first key after `pterm attach --control` shows Control.** A key typed at the moment the footer changed to "Control" could be lost. It is now sent. A key that the host reads while the footer still says "Syncing" is dropped.
-- **Fix: a rare test failure on macOS when a terminal was reused.** The host now keeps its end of a terminal open until the program has fully exited, so macOS cannot give a closing terminal to a new session. Sessions started by Termivoa were not affected.
+- **Fix: `pterm uninstall` names the right file.** On macOS and Windows it told you to remove an app that the beta does not install. It now names the `pterm` file to delete.
+- **Worktrees.** In a session inside a git repository, open the session menu (**⋯**) and tap **New worktree…** to start a task in its own folder and branch (`~/termivoa/worktrees/<repository>/<name>` on `termivoa/<name>`), from the default branch or one you pick. Claude or Codex can start in it at once. **Remove worktree…** deletes the folder and keeps the branch. See [Worktrees](/docs/guides/worktrees/).
+- **Down next to Up while you type.** With the keyboard open, the key bar shows `↓` after `↑`, so you need not hide the keyboard to press Down. See [Use the agent keys and key bar](/docs/guides/live-terminal/#use-the-agent-keys-and-key-bar).
+- **Arrange the Wall.** Hold a tile and drag it. The order is saved on your phone; **Reset order** restores the default. See [Arrange the tiles](/docs/guides/wall/#arrange-the-tiles).
+- **Project buttons.** The Snips sheet shows your project's commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. **Run in new tab** runs one in a new session; **Type here** types it into the current one. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).
+- **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines and ask the agent about them. See [Ask about specific lines](/docs/guides/changes/#ask-about-specific-lines).
+- **Fix: Ctrl+] right after `pterm attach` connects.** It was sometimes ignored or ended with a false "connection closed" error. It now detaches cleanly.
+- **Fix: finished sessions shown as lost.** On a busy computer, a finished session now shows its exit code, not lost.
+- **Fix: background jobs get their full cleanup time.** When a session ends, background programs get half a second to clean up. On a very busy computer, most of it could pass before they were told to stop; now it starts when they are told.
+- **Fix: first key after `pterm attach --control` shows Control.** A key typed just as the footer changed to "Control" could be lost; it is now sent. A key read while the footer says "Syncing" is still dropped.
+- **Fix: a rare macOS test failure when a terminal was reused.** The host keeps its end of a terminal open until the program fully exits. Sessions started by Termivoa were not affected.
 - **Fix: the open tab is always in view.** With many sessions, opening one whose tab was off to the right left its tab hidden. The tab strip now scrolls to show the open tab.
 - **Fix: the folder name stays in the status line.** A long folder path was cut at its end, so the folder name was lost. Now the start of the path is cut with `…`, so the folder name and the shell stay in view.
 
@@ -26,27 +27,27 @@ This page lists what is new in each release.
 The second private beta. The binaries are not signed.
 
 :::caution
-Updating from beta.1 restarts Termivoa on the computer and ends running sessions. Finish your work first. See [Update and uninstall](/docs/reference/update-and-uninstall/).
+Updating from beta.1 ends running sessions. Finish your work first. See [Update and uninstall](/docs/reference/update-and-uninstall/).
 :::
 
 ### What is new
 
-- **Wall.** Watch all running sessions at once as small live screens. Tiles only watch; tap one to open the session. See [Wall](/docs/guides/wall/).
-- **Changes view.** See what the agent changed: a list of changed files with +/− counts, and each file's diff in red and green. See [Changes](/docs/guides/changes/).
-- **Commit and push from the phone.** Pick files, edit the suggested message, commit, then push. It never forces, and it needs control.
+- **Wall.** Watch all running sessions as small live screens. Tiles only watch; tap one to open it. See [Wall](/docs/guides/wall/).
+- **Changes view.** See what the agent changed: changed files with +/− counts, and each file's diff in red and green. See [Changes](/docs/guides/changes/).
+- **Commit and push from the phone.** Pick files, edit the suggested message, commit, then push. It never force-pushes and needs control.
 - **"While you were away" card.** When you open a session, see how long the agent worked, what changed, and whether it waits for you. See [Recap](/docs/guides/recap/).
 - **Swipe to scroll full-screen apps.** Swipe on the terminal to scroll Claude Code, Codex, `vim` or `less`.
-- **Much faster reconnect.** After you unlock the phone, it reconnects in seconds. A connection that still works is kept, and a stuck attempt is retried after 5 seconds.
-- **Connection log.** `gateway.log` gets one line for each phone connection, with its length and why it ended.
+- **Much faster reconnect.** After you unlock the phone, it reconnects in seconds. A working connection is kept; a stuck attempt is retried after 5 seconds.
+- **Connection log.** `gateway.log` logs each phone connection, its length and why it ended.
 
 ## v0.1.0-beta.1 (2026-09-28) — private beta
 
 The first private beta, for invited testers only. The binaries are not signed.
-See [Quick start](/docs/quick-start/) to install it.
+Install it with [Quick start](/docs/quick-start/).
 
 ### What you can do
 
-- **Run sessions from your phone.** Start shells and coding agents on your computer. They keep running when the phone is away.
+- **Run sessions from your phone.** Start shells and coding agents on your computer; they keep running when the phone is away.
 - **Many sessions at once.** Switch with tabs. A dot shows new output.
 - **Status badges.** See which sessions are **Working**, **Waiting** or **Your turn**.
 - **Answer cards.** Answer Claude Code and Codex questions with one tap. A changed question is never answered by mistake.
@@ -54,7 +55,7 @@ See [Quick start](/docs/quick-start/) to install it.
 - **Dev-server preview.** Open a page from `npm run dev` inside the app.
 - **Photo and voice.** Send a photo to the agent without location data, or dictate a prompt.
 - **Agent keys, snippets and presets.** One-tap keys for agent prompts, saved prompts, and one-tap session starts.
-- **Live folder name.** Tabs show the folder the session is in now.
+- **Live folder name.** A session's name shows its current folder, unless you renamed it.
 - **Desktop attach.** Open the same session in a terminal on your computer with `pterm attach`.
 - **Safe pairing.** Scan a QR code, compare a code, approve on the computer. Remove a phone at any time.
 - **Three platforms.** macOS (Apple Silicon), Linux (Ubuntu desktop, server and WSL) and Windows 11.
@@ -66,7 +67,7 @@ See [Quick start](/docs/quick-start/) to install it.
 - The binaries are not signed. Download them with `gh`, not with a browser.
 - There is no automatic updater. See [Update and uninstall](/docs/reference/update-and-uninstall/).
 - The computer must stay awake and logged in. A restart, a logout or a broker crash ends all sessions. They are marked lost and never re-run.
-- Termivoa cannot take over terminals that you started outside it. Only sessions it starts can be shared.
+- Termivoa shares only sessions it starts, not terminals started outside it.
 - Menus without numbers, such as Claude Code's folder-trust dialog, get no answer card.
 - The Sessions list does not show which device has control.
 - There is no independent security audit yet.

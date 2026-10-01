@@ -1,45 +1,54 @@
 ---
 title: Introduction
-description: What Termivoa is, who it is for, and how it links your phone to the terminal on your own computer.
+description: Termivoa is a phone web app plus the pterm host program that runs terminal sessions and coding agents on your own computer, with no cloud.
+lastUpdated: 2026-10-01
 ---
 
-This page tells you what Termivoa is and what you need to start.
+Termivoa lets you use the terminal sessions on your own computer from your phone's browser, privately over Tailscale.
+A session can be a shell or a coding agent, such as Claude Code or Codex.
 
-## What Termivoa is
+Status: Private beta (`v0.1.0-beta.2`). Only invited testers can download it.
 
-Termivoa lets you use the terminal sessions on your computer from your phone's browser.
-A session can be a normal shell or an AI coding agent, such as Claude Code or Codex.
+## What is Termivoa?
 
-Your sessions run on your computer, not in a cloud.
-When you close the phone app or lose signal, the sessions keep running.
+Termivoa is a phone web app plus a host program, `pterm`, that runs your sessions on your computer, not in a cloud.
 There is no account, no cloud service and no telemetry (usage data sent to a company).
 
-The phone side is a web app. You do not install anything from an app store.
-The command-line tool on your computer is called `pterm`.
+## Who is it for?
 
-:::note
-Termivoa is a **private beta** (`v0.1.0-beta.2`). Only invited testers can download it.
-:::
+People who run long terminal jobs or coding agents and want to check on them away from the desk, for example to answer a Claude Code question from the sofa.
 
-## Who it is for
+## How does it work?
 
-Termivoa is for people who run long terminal jobs or coding agents and want to check on them away from the desk.
-For example, you can answer a Claude Code question from the sofa, or watch a build from another room.
+<!-- image: diagram of the phone browser connecting over Tailscale to pterm on the computer, which runs the sessions -->
 
-## How it works
-
-1. **Your computer runs `pterm`.** It keeps your sessions alive and serves a private web page.
-2. **Tailscale links your devices.** Tailscale is a free app that joins your devices in a private network. Only your own devices can reach the page.
-3. **Your phone opens the page in its browser.** You pair the phone once. Then you can watch, type and answer from anywhere.
+1. **Your computer runs `pterm`.** It keeps sessions alive and serves a private web page.
+2. **Tailscale links your devices** in a private network. Only your own devices can reach the page.
+3. **Your phone opens the page.** Pair it once, then watch, type and answer from anywhere.
 
 ## What you need
 
-- A computer that runs macOS (Apple Silicon), Linux (Ubuntu 22.04 or 24.04) or Windows 11 (x64).
-- A phone with a modern browser: iPhone (Safari) or Android (Chrome).
-- [Tailscale](https://tailscale.com/download) on the computer and on the phone, signed in to the same account.
-- The computer must stay awake and logged in while you use it from the phone.
+| Part | Requirement |
+| --- | --- |
+| Computer | macOS (Apple Silicon), Linux (Ubuntu 22.04 or 24.04) or Windows 11 (x64). It must stay awake and logged in. |
+| Phone | iPhone with Safari, or Android with Chrome. |
+| Network | [Tailscale](https://tailscale.com/download) on the computer and the phone, signed in to the same account. |
+
+## Common questions
+
+### Do my sessions stop when I close the phone app?
+
+No. They keep running when you close the app, lock the phone or lose signal.
+
+### Do I install an app from an app store?
+
+No. The phone side is a web page. On iPhone, add it to the Home Screen for notifications.
+
+### Can I use it away from home Wi-Fi?
+
+Yes. Tailscale works from any network.
 
 ## Next steps
 
-- [Quick start](/docs/quick-start/): go from zero to a paired phone.
-- [Install on macOS](/docs/install/macos/), [Linux](/docs/install/linux/) or [Windows](/docs/install/windows/).
+- [Quick start](/docs/quick-start/): from zero to a paired phone.
+- [Install on macOS](/docs/install/macos/), [Install on Linux](/docs/install/linux/) or [Install on Windows](/docs/install/windows/).

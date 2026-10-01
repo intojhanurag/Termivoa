@@ -1,98 +1,94 @@
 ---
 title: Live terminal
-description: Type in a session from your phone, take control, use agent keys, snippets and history, and move between desktop and phone.
+description: Read and type in a Termivoa session from your phone, with control, agent keys, snippets, history and copy, and a desktop attach on your computer.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you read and type in a live session on your phone.
+Termivoa's live terminal is the screen of one session, where you read output and type from your phone. Open it from the Sessions list or Wall.
 
-## Control and read-only
+## Take control to type
 
-Many devices can watch a session at the same time. Only one device can type. That device has **control**.
+Many devices can watch a session; only the one with **control** can type.
 
-- When you open a session, you only watch. The screen shows **READ-ONLY** and who has control.
-- Tap **Take control** to type. The screen then shows **● CONTROL**.
-- Control moves to you at once. The other device becomes read-only.
-- To give control away, open the session menu and tap **Release control**.
-
-When the phone reconnects, for example after you lock it, it comes back read-only. Tap **Take control** again.
+- A session opens read-only, showing **READ-ONLY** and who has control.
+- Tap **Take control**. The screen shows **● CONTROL**; the other device becomes read-only.
+- To give it away, open the session menu (**⋯**) and tap **Release control**.
 
 :::note
-Termivoa never queues or resends your typing on its own. If the connection breaks while you type, you see "Delivery uncertain—check the terminal before sending again". Look at the terminal before you send it again.
+Termivoa never queues or resends typing. If the connection breaks while you type, you see "Delivery uncertain—check the terminal before sending again". Look at the terminal before you send it again.
 :::
 
-## Tabs
+## Switch sessions with the tabs
 
-Open sessions show as tabs at the top. Tap a tab to switch. A dot marks new output.
+The tab bar at the top shows your running sessions. Tap a tab to switch; each opens read-only. A dot marks new output; an amber dot means it waits for you. **+** starts a new session.
 
-## Keys
+## Use the agent keys and key bar
 
-With control, the dock under the terminal has:
+With control, the dock under the terminal shows one-tap agent keys and a key bar with keys a phone keyboard lacks.
 
-- **Agent keys:** `esc`, `⌃C`, `⇧⇥`, `↑`, `1`, `2`, `y` and `⏎`. These answer coding-agent prompts in one tap.
-- **Key bar:** `tab`, `ctrl`, `alt` and arrow keys. Tap `ctrl`, then a letter, to send for example Ctrl+C.
-- **Actions:** **type** opens the phone keyboard, **compose**, **snips** and **history**.
-- **changes** shows the files the agent changed and their diffs. See [Changes](/docs/guides/changes/).
+<!-- image: the dock with control: agent keys, key bar, and the type, compose, snips, history and changes buttons -->
 
-When the keyboard is open, all keys fold into one row that scrolls. `↓` is right after `↑` in that row, so you can use both without hiding the keyboard. The terminal keeps its size, so full-screen agents do not redraw.
+| Key | What it sends |
+| --- | --- |
+| `esc` | Escape. Stops a coding agent. |
+| `⌃C` | Only Ctrl+C, even when `ctrl` is on. |
+| `⇧⇥` | Shift+Tab. Changes the agent's mode. |
+| `1`, `2`, `y` | That character. Picks an agent option. |
+| `⏎`, `tab` | Enter, Tab. |
+| `ctrl`, `alt` | Holds Ctrl or Alt for the next key. |
+| `↑`, `←`, `↓`, `→` | Arrow keys. |
+| `▲`, `▼` | Scrolls a full-screen app. Shows only while one is open. |
 
-## Compose
+The action buttons are **type** (opens the phone keyboard), **compose**, **snips**, **history** and **changes** (see [Changes](/docs/guides/changes/)).
 
-Tap **compose** to write long or multi-line text before you send it.
-Nothing is sent until you tap **Send ⏎**. It pastes the text and presses Enter.
-Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
+With the phone keyboard open, all keys fold into one scrolling row, and the terminal keeps its size so full-screen agents do not redraw. `↓` follows `↑` there (next beta).
 
-## Snippets
+## Write longer text with compose
 
-Snippets are saved prompts and commands. Tap **snips** to open them.
+Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**, which pastes it and presses Enter. Text with many lines asks before it sends. Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
 
-- Tap **+ new** to save one. Choose **Press Enter after pasting** if it should run at once.
-- Tap a snippet to send it. You need control.
-- A snippet with many lines asks before it pastes.
+## Save and send snippets
 
-Snippets are saved on this phone only.
+Snippets are prompts and commands you send with one tap, saved on this phone only. Tap **snips** to open the Snips sheet.
 
-The sheet also shows **This project** at the top: your project's own commands, such as `pnpm test` or `make build`. Tap one to run it in a new tab or type it here. See [Project buttons](/docs/guides/project-buttons/).
+- Save: tap **+ new**, fill in **Title** and **Text to send**, pick **Press Enter after pasting** to run it at once, and tap **save**.
+- Send: tap it (needs control). Many lines ask first.
+- Change or delete: tap **edit**, then the snippet.
+- **This project** (next beta): your project's own commands. See [Project buttons](/docs/guides/project-buttons/).
 
-## Scroll
+## Scroll the terminal
 
-- **Full-screen apps** such as Claude Code, Codex, `vim` or `less`: swipe up or down on the terminal. The app scrolls its own output. You need control.
-- **A normal shell:** pull down on the terminal, or tap **history**, to see earlier output.
+- **Full-screen apps** such as Claude Code, Codex, `vim` or `less`: swipe on the terminal or tap `▲`/`▼` (needs control).
+- **A normal shell:** pull down, or tap **history**.
 
-The `▲` and `▼` keys in the dock also scroll a full-screen app.
+## Copy from history
 
-## History and copy
-
-1. Tap **history** to scroll back through earlier output.
+1. Tap **history**.
 2. Select text.
-3. Tap **Copy N lines** (for example **Copy 3 lines**).
-4. Tap **Done** to go back to the live screen.
+3. Tap **Copy N lines**, for example **Copy 3 lines**.
+4. Tap **Done**.
 
-## Text size
+## Change the text size
 
-Open **Settings**. Under **Terminal text size**, tap **A−** or **A+**.
+In the session menu (**⋯**), open **Settings** and tap **A−** or **A+** under **Terminal text size**.
 
 ## Move between desktop and phone
 
-You can open the same session in a terminal on your computer.
+Open the same session in a terminal on your computer. `pterm list` shows the IDs:
 
-1. List your sessions:
+```sh
+pterm attach <session-id>             # watch
+pterm attach --control <session-id>   # type
+```
 
-   ```sh
-   pterm list
-   ```
+Press Ctrl+] to leave; the session keeps running. When you take control on the phone, the desktop becomes read-only, and the other way around.
 
-2. Open one to watch:
+## Common questions
 
-   ```sh
-   pterm attach <session-id>
-   ```
+### Why did I lose control?
 
-3. To type, open it with control:
+Another device took control, or you locked the phone or switched apps. Tap **Take control** again.
 
-   ```sh
-   pterm attach --control <session-id>
-   ```
+### How do I send Ctrl+C?
 
-4. Press Ctrl+] to leave. The session keeps running.
-
-When you take control on the phone, the desktop becomes read-only, and the other way around.
+Tap `⌃C`, or tap `ctrl` and then type `c`.

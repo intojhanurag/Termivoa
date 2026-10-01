@@ -1,85 +1,94 @@
 ---
 title: Changes
-description: See what the agent changed in your project from your phone, as a list of files and a red and green diff for each file.
+description: Use the Termivoa Changes view to review an agent's uncommitted edits on your phone, ask about a file or lines, then commit and push.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you see what a coding agent changed in your project.
+The Termivoa **Changes** view shows what a coding agent changed in your project: the changed files and a red and green diff for each.
 
-## What Changes shows
+## What does Changes show?
 
-**Changes** shows the uncommitted changes in the git project of the session's folder. These are the same changes that `git status` and `git diff` show on your computer, plus new files that git does not ignore.
-
-To see changes, you do not need control. Changes also works when you only watch.
-
-Changes does not change your files on its own. When you have control, you can commit and push. See [Commit and push](#commit-and-push).
+The uncommitted changes in the session folder's git project: what `git status` and `git diff` show, plus new files that git does not ignore. You can see them without control. Changes never edits files; with control, you can [commit and push](#commit-and-push).
 
 ## See the changed files
 
 1. Open the session.
 2. Tap **changes** in the dock. When you only watch, tap **Changes** under **Take control**.
-3. Read the list. The line at the top shows the folder, the branch, the number of files and the total lines added and removed.
+3. The top line of the list shows the folder, branch, file count, and lines added and removed.
 
-Each row shows one file:
+Each row shows a change letter, the path, and the lines added (green) and removed (red).
 
-- a letter for the change: **M** modified, **A** added, **D** deleted, **R** renamed, **U** new and not yet added to git, **T** type changed;
-- the file path;
-- the lines added in green and the lines removed in red.
+| Letter | Meaning |
+| --- | --- |
+| **M** | Modified |
+| **A** | Added |
+| **D** | Deleted |
+| **R** | Renamed |
+| **U** | New, not yet added to git (untracked) |
+| **T** | Type changed |
 
-Tap **Refresh** to read the changes again. Tap **Done** to go back to the live screen.
+**Refresh** reads the changes again. **Done** goes back to the live terminal.
+
+<!-- image: the Changes list with file rows, status letters, and green and red line counts -->
 
 ## See one file
 
-1. Tap a file in the list.
-2. Read the diff. Added lines are green. Removed lines are red. The small numbers at the left are the old and new line numbers.
-3. Tap the back arrow to go back to the list.
-
-Binary files, such as images, are not shown.
+Tap a file to see its diff. Added lines are green, removed lines are red, and the numbers at the left are the old and new line numbers. The back arrow returns to the list.
 
 ## Ask the agent about a file
 
 1. Open a file.
-2. Tap **Ask agent about this file**. The compose sheet opens with `@` and the file path in it.
-3. Write your question and tap **Send ⏎**.
-
-Nothing is sent until you tap **Send ⏎**. To send, you need control.
+2. Tap **Ask agent about this file**. The compose sheet opens with `@` and the file path.
+3. Write your question and tap **Send ⏎**. Sending needs control.
 
 ## Ask about specific lines
 
-1. Open a file.
-2. Tap a line in the diff. It is highlighted.
-3. To pick more lines, tap a second line. All lines between the two are picked. A range has 20 lines at most, and it stays in one part of the diff.
-4. Tap **Ask agent about line 42** or **Ask agent about lines 40–42**. The compose sheet opens with the path, the line numbers and the picked lines.
-5. Write your question under the lines and tap **Send ⏎**.
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`.
+:::
 
-To clear the lines, tap a picked line or tap **Clear**. The numbers are the new line numbers. When you pick only removed lines, they are the old line numbers.
+1. Open a file and tap a line in the diff.
+2. To pick a range, tap a second line. A range has 20 lines at most and stays in one part of the diff.
+3. Tap **Ask agent about line 42** or **Ask agent about lines 40–42**. The compose sheet opens with the path, line numbers and picked lines.
+4. Write your question under the lines and tap **Send ⏎**.
+
+To clear, tap a picked line or **Clear**. The numbers are the new line numbers, or the old ones when you pick only removed lines.
 
 ## Commit and push
 
-You need control to commit. Without control, the list shows **Take control to commit**.
+You need control. Without it, the list shows **Take control to commit**.
 
-1. Open **Changes**. Each file has a checkbox. All files are ticked.
-2. Untick the files that you do not want in the commit.
-3. Tap **Commit N files**.
-4. Read the message. Termivoa writes a first message from the file names, for example `Update app.js and 4 more files`. Change it if you want.
-5. Tap **Commit**. Wait for the result.
-6. After **Committed**, tap **Push** if you want to send the commit to the remote.
-7. Read the question and tap **Push** again.
-8. After **Pushed**, tap **Open pull request** to open the page that the remote gave, if there is one.
+1. Open **Changes**. All files are ticked. Untick the ones you do not want in the commit.
+2. Tap **Commit N files**.
+3. Check the message. Termivoa writes a first message from the file names, for example `Update app.js and 4 more files`.
+4. Tap **Commit**.
+5. After **Committed**, tap **Push**, then **Push** again to confirm.
+6. After **Pushed**, tap **Open pull request** if the remote gave a link.
 
-If the commit or push fails, the sheet shows the output from git, for example an error from a hook. The list reads the changes again after each commit.
+If git fails, the sheet shows its output, such as a hook error. The list reloads after each commit. If the connection stops during a commit or push, Termivoa does not send it again. Check the list before you retry.
 
-If the connection stops while a commit or push runs, Termivoa does not send it again. Look at the Changes list before you try again.
+<!-- image: the Commit sheet with the suggested message, the file count, and the Commit button -->
 
 :::caution
-The commit runs your repository's own hooks, as a commit on your computer does. Push never forces, so it cannot overwrite commits on the remote. You need control to commit or push.
+The commit runs your repository's own hooks, as a commit on your computer does. Push never forces, so it cannot overwrite commits on the remote.
 :::
 
-## Limits
+## What are the limits?
 
-- A project with very many changes shows only the first 300 files.
-- A very long diff is cut short. The screen tells you when this happens. See the rest on your computer.
+- Only the first 300 changed files are shown. Run `git status` to see all.
+- A very long diff is cut short, and the screen says so.
 - If the folder is not in a git project, Changes says so.
 
 :::caution
 Any phone paired with this computer can see these diffs, also when it only watches. Diffs can contain secrets, such as keys in a changed `.env` file.
 :::
+
+## Common questions
+
+### Why does a file show no diff?
+
+Binary files, such as images, are not shown. If the file has no changes anymore, tap **Refresh**.
+
+### Does push ask for a password on the phone?
+
+No. Push uses your normal git and ssh settings on the computer.

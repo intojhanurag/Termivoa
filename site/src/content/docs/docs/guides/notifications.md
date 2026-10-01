@@ -1,54 +1,41 @@
 ---
 title: Notifications
-description: Get a phone notification when an agent waits for you or finishes, without terminal text leaving your computer.
+description: Termivoa sends a phone notification when a coding agent waits for you or finishes, with only names and status, never any terminal text.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you get a notification when a coding agent needs you.
+Termivoa sends a notification to your phone when a coding agent waits for you or finishes.
 
 ## Turn on notifications
 
-1. On iPhone, first add Termivoa to the Home Screen (**Share → Add to Home Screen**). Then open it from there.
-2. On the Sessions list, find the card **Get a buzz when an agent needs you**.
-3. Tap **Turn on**.
-4. Allow notifications when the phone asks.
+1. On iPhone or iPad, add Termivoa to the Home Screen (**Share → Add to Home Screen**) and open it there. Notifications need the Home Screen app and iOS 16.4 or later.
+2. On the Sessions list, in the card **Get a buzz when an agent needs you**, tap **Turn on**, then allow notifications.
 
-You can also use the switch in **Settings → Notifications**.
-To check that it works, tap **Send a test notification** in Settings.
+**Settings → Notifications** has the same switch and a **Send a test notification** button.
 
-:::note
-iPhone and iPad show notifications only for the Home Screen app, on iOS 16.4 or later. In a normal Safari tab, Settings shows "Add to Home Screen to get notifications".
-:::
-
-## What a notification says
+## What does a notification say?
 
 | When | Title | Text |
 | --- | --- | --- |
 | An agent asks a question | `<session> is waiting for you` | `<project> · tap to answer` |
 | An agent finished work | `<session> is done · your turn` | `Worked for N min` |
-| Test | `Termivoa` | `Notifications are on.` |
 
-A notification never has terminal text. It has no output, no question text, no path and no command.
-It has only the session name, the project name and the status. The content is encrypted to your phone.
+It has only the session name, project name and status, never terminal text (no output, question, path or command). The content is encrypted to your phone. Tapping it opens that session.
 
-Tap a notification to open that session.
+## When do notifications come?
 
-## When notifications come
-
-- **Waiting:** once for each new question.
+- **Waiting:** once per new question.
 - **Done:** when an agent stops after at least 20 seconds of work. Short shell commands do not notify.
-- At most one notification per session and kind every 60 seconds.
-- Sessions that exited or were lost never notify.
+- At most one per session and kind every 60 seconds, and 12 per minute in total.
+- Exited or lost sessions never notify.
+- They come even when the session is open on the phone.
 
-You get a notification even when the session is open on the phone.
+## How are notifications sent?
 
-## How it works
-
-Your computer sends notifications through your phone's normal push service (Apple, Google, Mozilla or Microsoft).
-There is no Termivoa cloud service. Your computer must be awake to send them.
+Your computer, which must be awake, sends them through your phone's normal push service (Apple, Google, Mozilla or Microsoft). There is no Termivoa cloud service.
 
 ## Turn notifications off
 
-- Turn off the switch in **Settings → Notifications**.
-- Removing the phone with `pterm revoke`, or **Log out** on the phone, also stops notifications to that phone.
+Turn off the switch in **Settings → Notifications**. Removing the phone (`pterm revoke` or **Log out** on the phone) also stops them.
 
-If notifications do not arrive, see [Troubleshooting](/docs/reference/troubleshooting/#notifications-do-not-arrive).
+If they do not arrive, see [Notifications do not arrive](/docs/reference/troubleshooting/#notifications-do-not-arrive).

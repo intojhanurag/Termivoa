@@ -1,44 +1,37 @@
 ---
 title: Dev-server preview
-description: Open a web page that a session serves, such as a Vite dev server on port 5173, inside the app on your phone.
+description: Termivoa opens a dev server from a session, such as Vite on port 5173, full screen on your phone over a private Tailscale address.
+lastUpdated: 2026-10-01
 ---
 
-This page helps you see a dev server from a session, such as `npm run dev`, on your phone.
+Termivoa opens the web page of a dev server that a session runs, full screen in the app on your phone.
 
-## Turn it on
+## Turn on previews
 
-Previews need a second, private Tailscale address on port 8443.
-`pterm setup` asks about it in a separate question. Answer `y` if the command is correct.
-
-To set it up yourself later, run this on your computer:
+Previews are optional and need a second, private Tailscale address on port 8443. `pterm setup` asks about it: answer `y` if the command is correct. To set it up later, run:
 
 ```sh
 tailscale serve --bg --https=8443 http://127.0.0.1:8789
 ```
 
-`pterm doctor` tells you if previews are set up. They are optional.
+`pterm doctor` checks the preview setup.
 
 ## Open a preview
 
-1. In a session, start a dev server. For example, run `npm run dev`, or ask Claude Code to start it.
-2. Within a few seconds, the live screen shows a **Preview ready** chip with the port, such as `:5173`.
-3. Tap **Open ↗**. The page opens full screen inside the app.
+1. Start a dev server in a session, such as `npm run dev`, or ask Claude Code to start it.
+2. Within a few seconds, the live terminal shows a **Preview ready** chip with the port, such as `:5173`.
+3. Tap **Open ↗**.
 
-On the preview screen:
+**‹ terminal** goes back. **Tell agent** goes back with the compose sheet open, to describe what you see.
 
-- **‹ terminal** goes back to the terminal.
-- **Tell agent** goes back with the composer open, so you can describe what you see.
-- The agent status stays at the bottom.
+Live reload works. A stopped server shows "Dev server stopped".
 
-Live reload works. When you edit a file, the page updates.
-If the server stops, the preview shows "Dev server stopped".
+## How are previews kept private?
 
-## Privacy rules
-
-- Only ports that the session's own programs listen on are shown. Other servers on your computer, such as databases, are never offered, even if you type their port by hand.
-- The preview runs on a separate address from the app. The dev site cannot read the app, your terminal or your sessions.
-- Every preview request checks that the phone is still paired. A removed phone loses the preview within 5 seconds.
-- Termivoa never sends its own cookies or your Tailscale identity to the dev server.
+- Only ports that the session's own programs listen on are shown. Other servers, such as databases, are never offered, even if you type their port.
+- The preview runs on a separate address, so the dev site cannot read the app, the terminal or your sessions.
+- Every request checks that the phone is still paired, so a removed phone loses the preview within 5 seconds.
+- The dev server never gets Termivoa's cookies or your Tailscale identity.
 - The preview is private to your Tailscale devices. Termivoa never uses Tailscale Funnel.
 
 :::note
