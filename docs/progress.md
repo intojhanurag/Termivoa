@@ -697,8 +697,15 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   (`CGO_ENABLED=0`). The end-to-end check on an isolated `pterm up --dev`
   stack with a temporary HOME is in
   [evidence/worktrees/host-e2e.md](evidence/worktrees/host-e2e.md). The
-  phone UI is pending. Windows removal while the shell is inside the
-  worktree is not tested on Windows.
+  phone UI is pending. Host review fixes: ignored files (such as `.env`)
+  count as changes, so remove without force never deletes them; a failed
+  `git worktree add` (a failing `post-checkout` hook or the timeout) is rolled
+  back and returns `worktree_failed` (HTTP 422) with the end of git's output;
+  a repository folder name of `.`, `..` or one with a slash is refused, and
+  the path must stay `<root>/<repo>/<name>`; a reused operation ID with a
+  different worktree is `operation_conflict`. On Windows the session ends
+  before `git worktree remove`, because the shell holds its folder open; that
+  order is tested on macOS through a switch, not on Windows itself.
 
 - **Lost Ctrl+] at desktop attach startup** (#68, `fix/issue-68`): the
   flaky `TestPtermDesktopAttachNativeOuterTTY` failure (`attach executable did
