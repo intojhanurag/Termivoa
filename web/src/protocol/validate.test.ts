@@ -208,6 +208,33 @@ describe('parseHostMessage', () => {
     expect(() => parseHostMessage(reply('tasks.list', {}))).toThrow('not host-to-client');
   });
 
+  it('accepts branches.listed and worktree.removed within the contract and refuses their requests from the host', () => {
+    const reply = (type: string, payload: object) => JSON.stringify({
+      version: 1, type, requestId, sessionId: brokerGeneration, generation: brokerGeneration, payload,
+    });
+    const ready = {
+      state: 'ready', repo: 'termivoa', defaultBranch: 'main', current: 'feat/x', truncated: false,
+      branches: [{ name: 'main', remote: false }, { name: 'origin/main', remote: true }],
+    };
+    const listed = parseHostMessage(reply('branches.listed', ready));
+    expect(listed.type === 'branches.listed' && listed.payload.branches[1]?.remote).toBe(true);
+    expect(parseHostMessage(reply('branches.listed', { state: 'not_git', branches: [], truncated: false })).type).toBe('branches.listed');
+    expect(parseHostMessage(reply('worktree.removed', { state: 'dirty' })).type).toBe('worktree.removed');
+    expect(parseHostMessage(reply('worktree.removed', { state: 'failed', output: 'fatal: locked' })).type).toBe('worktree.removed');
+
+    for (const bad of [
+      reply('branches.listed', { state: 'ready', branches: [] }),
+      reply('branches.listed', { ...ready, branches: [{ name: '', remote: false }] }),
+      reply('branches.listed', { ...ready, branches: Array.from({ length: 201 }, () => ({ name: 'a', remote: false })) }),
+      reply('worktree.removed', { state: 'gone' }),
+      reply('worktree.removed', { state: 'failed', output: 'x'.repeat(2001) }),
+    ]) {
+      expect(() => parseHostMessage(bad)).toThrow(InvalidProtocolMessageError);
+    }
+    expect(() => parseHostMessage(reply('branches.list', {}))).toThrow('not host-to-client');
+    expect(() => parseHostMessage(reply('worktree.remove', { lease: 'L'.repeat(43), force: false }))).toThrow('not host-to-client');
+  });
+
   it('rejects client-to-host messages even when their schema is valid', () => {
     expect(() => parseHostMessage(JSON.stringify({
       version: 1,

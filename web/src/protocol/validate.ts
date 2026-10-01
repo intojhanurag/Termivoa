@@ -1,5 +1,6 @@
 import type {
   AccessRevokedPayload,
+  BranchesListedPayload,
   ChangesCommittedPayload,
   ChangesPatchPayload,
   ChangesPushedPayload,
@@ -17,6 +18,7 @@ import type {
   SnapshotRowsPayload,
   TasksListedPayload,
   WelcomePayload,
+  WorktreeRemovedPayload,
 } from '../generated/protocol';
 // Standalone code generated at build/test time by vite.config.ts; no runtime compiler.
 import { validateEnvelope } from 'virtual:protocol-validators';
@@ -36,6 +38,8 @@ type HostPayloads = {
   readonly 'changes.committed': ChangesCommittedPayload;
   readonly 'changes.pushed': ChangesPushedPayload;
   readonly 'tasks.listed': TasksListedPayload;
+  readonly 'branches.listed': BranchesListedPayload;
+  readonly 'worktree.removed': WorktreeRemovedPayload;
   readonly 'control.changed': ControlChangedPayload;
   readonly 'input.accepted': InputAcceptedPayload;
   readonly 'input.rejected': InputRejectedPayload;
@@ -68,6 +72,8 @@ const hostTypes = new Set<keyof HostPayloads>([
   'changes.committed',
   'changes.pushed',
   'tasks.listed',
+  'branches.listed',
+  'worktree.removed',
   'control.changed',
   'input.accepted',
   'input.rejected',

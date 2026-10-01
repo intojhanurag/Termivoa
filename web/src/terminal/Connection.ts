@@ -1,5 +1,6 @@
 import type {
   AgentStatus,
+  BranchesListedPayload,
   ChangesCommittedPayload,
   ChangesPatchPayload,
   ChangesPushedPayload,
@@ -13,6 +14,7 @@ import type {
   ScreenResyncPayload,
   State as SessionLifecycle,
   TasksListedPayload,
+  WorktreeRemovedPayload,
 } from '../generated/protocol';
 import { CLIENT_BUILD } from '../api/http';
 import { parseHostMessage, type ValidatedHostMessage } from '../protocol/validate';
@@ -30,6 +32,8 @@ import { SnapshotAssembler } from './SnapshotAssembler';
 export const DELIVERY_UNCERTAIN = 'Delivery uncertain—check the terminal before sending again.';
 /** A commit or push was sent but its reply can no longer arrive. It is never resent. */
 export const WRITE_LOST = 'Connection lost — check the Changes list before trying again.';
+/** A worktree remove was sent but its reply can no longer arrive. It is never resent. */
+export const REMOVE_LOST = 'Connection lost — check the session list before trying again.';
 export const HEARTBEAT_MS = 5000;
 export const RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 3000, 5000] as const;
 /**
@@ -125,6 +129,21 @@ export interface TasksView {
   /** unavailable: not sent, refused, or the connection closed before the reply. */
   readonly state: 'loading' | 'ready' | 'unavailable';
   readonly listed: TasksListedPayload | undefined;
+}
+
+/** The repository's branches for the New worktree sheet; listed is set once state is ready. */
+export interface BranchesView {
+  /** unavailable: not sent, refused, or the connection closed before the reply. */
+  readonly state: 'loading' | 'ready' | 'unavailable';
+  readonly listed: BranchesListedPayload | undefined;
+}
+
+/** The one worktree remove in flight, then its result until the next one. */
+export interface WorktreeRemoval {
+  /** error: the host refused it, or the connection closed before the reply. */
+  readonly state: 'pending' | 'done' | 'error';
+  readonly removed?: WorktreeRemovedPayload;
+  readonly message?: string;
 }
 
 /** The one commit or push in flight, then its result until dismissed. */
@@ -240,6 +259,12 @@ export class Connection {
   private tasksRequest: string | undefined;
   /** The request ID of the pending write; only its reply counts. */
   private writeRequest: string | undefined;
+  private branches: BranchesView | undefined;
+  /** The request ID of the latest branches.list; only its reply counts. */
+  private branchesRequest: string | undefined;
+  private removal: WorktreeRemoval | undefined;
+  /** The request ID of the pending worktree.remove; only its reply counts. */
+  private removalRequest: string | undefined;
   private stopped = false;
   private requestedSize: string | undefined;
   private hiddenAt: number | undefined;
@@ -268,6 +293,10 @@ export class Connection {
   readonly getChangesWrite = (): ChangesWrite | undefined => this.write;
 
   readonly getTasks = (): TasksView | undefined => this.tasks;
+
+  readonly getBranches = (): BranchesView | undefined => this.branches;
+
+  readonly getWorktreeRemoval = (): WorktreeRemoval | undefined => this.removal;
 
   get sessionId(): string {
     return this.options.sessionId;
@@ -497,6 +526,37 @@ export class Connection {
     return this.tasksRequest !== undefined;
   }
 
+  /**
+   * Reads the branches of the session folder's repository, once per call, to
+   * pick the base of a new worktree. Any viewer may ask; no lease is needed.
+   */
+  listBranches(): boolean {
+    this.branchesRequest = this.status.link === 'live' ? this.sendSession('branches.list', {}) : undefined;
+    this.branches = { state: this.branchesRequest === undefined ? 'unavailable' : 'loading', listed: undefined };
+    this.emit();
+    return this.branchesRequest !== undefined;
+  }
+
+  /**
+   * Controller only. Removes the Termivoa worktree this session started in;
+   * the host keeps the branch and, on success, ends the session. One at a
+   * time, with the current lease; never queued or resent.
+   */
+  removeWorktree(force: boolean): boolean {
+    const lease = this.lease;
+    if (this.removalRequest !== undefined || !canSendWith(this.status) || lease === undefined) {
+      return false;
+    }
+    const requestId = this.sendSession('worktree.remove', { lease, force });
+    if (requestId === undefined) {
+      return false;
+    }
+    this.removalRequest = requestId;
+    this.removal = { state: 'pending' };
+    this.emit();
+    return true;
+  }
+
   /** Clears a shown result. A pending write stays until its reply or a lost connection. */
   dismissChangesWrite(): void {
     if (this.write === undefined || this.write.state === 'pending') {
@@ -661,8 +721,17 @@ export class Connection {
           this.finishWrite(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? text });
           return;
         }
+        if (message.requestId === this.removalRequest) {
+          const { code, message: text } = message.payload;
+          if (code === 'not_controller' || code === 'stale_lease') {
+            this.dropControl(undefined);
+          }
+          this.finishRemoval(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? text });
+          return;
+        }
         this.failChanges(message.requestId);
         this.failTasks(message.requestId);
+        this.failBranches(message.requestId);
         this.handleError(message.payload.code, message.payload.message);
         return;
       default:
@@ -712,6 +781,16 @@ export class Connection {
             this.tasks = { state: 'ready', listed: message.payload };
             this.emit();
           }
+          return;
+        case 'branches.listed':
+          if (message.requestId === this.branchesRequest) {
+            this.branchesRequest = undefined;
+            this.branches = { state: 'ready', listed: message.payload };
+            this.emit();
+          }
+          return;
+        case 'worktree.removed':
+          this.finishRemoval(message.requestId, { state: 'done', removed: message.payload });
           return;
         case 'changes.committed':
           this.finishWrite(message.requestId, { state: 'done', committed: message.payload });
@@ -1133,6 +1212,25 @@ export class Connection {
     this.emit();
   }
 
+  /** Ends loading for a branches.list the host refused, or for any when requestId is undefined (socket closed). */
+  private failBranches(requestId: string | undefined): void {
+    if (this.branchesRequest === undefined || (requestId !== undefined && requestId !== this.branchesRequest)) {
+      return;
+    }
+    this.branchesRequest = undefined;
+    this.branches = { state: 'unavailable', listed: undefined };
+    this.emit();
+  }
+
+  private finishRemoval(requestId: string, result: WorktreeRemoval): void {
+    if (requestId !== this.removalRequest) {
+      return;
+    }
+    this.removalRequest = undefined;
+    this.removal = result;
+    this.emit();
+  }
+
   /** One write at a time, with the current lease; never queued or resent. */
   private sendWrite(kind: ChangesWrite['kind'], type: string, payload: (lease: string) => object): boolean {
     const lease = this.lease;
@@ -1236,6 +1334,12 @@ export class Connection {
     // Replies to this socket's requests can no longer arrive.
     this.failChanges(undefined);
     this.failTasks(undefined);
+    this.failBranches(undefined);
+    if (this.removalRequest !== undefined) {
+      // As with a write: the host may have removed it; never resend.
+      this.removalRequest = undefined;
+      this.removal = { state: 'error', message: REMOVE_LOST };
+    }
     if (this.write !== undefined && this.writeRequest !== undefined) {
       // The host may or may not have run it: say so, and never resend.
       this.writeRequest = undefined;

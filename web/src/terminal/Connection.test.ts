@@ -8,6 +8,7 @@ import {
   RESUME_CHECK_MS,
   RESUME_PROBE_MS,
   ATTACH_TIMEOUT_MS,
+  REMOVE_LOST,
   rowText,
   WRITE_LOST,
   type ScreenDisplay,
@@ -781,6 +782,100 @@ describe('Project tasks', () => {
     connection.listTasks();
     second.reply(last(second), 'tasks.listed', listed());
     expect(connection.getTasks()?.state).toBe('ready');
+  });
+});
+
+describe('Worktrees', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const last = (socket: FakeSocket, type: string) => socket.sent.filter((message) => message.type === type).at(-1);
+  const ready = {
+    state: 'ready', repo: 'app', defaultBranch: 'main', current: 'main', truncated: false,
+    branches: [{ name: 'main', remote: false }, { name: 'origin/main', remote: true }],
+  };
+
+  it('lists branches as an observer and shows only the reply to the latest request', async () => {
+    const { connection, socket } = harness();
+    expect(connection.listBranches()).toBe(false);
+    expect(connection.getBranches()).toEqual({ state: 'unavailable', listed: undefined });
+    await attachLive(socket());
+
+    expect(connection.listBranches()).toBe(true);
+    const first = last(socket(), 'branches.list');
+    expect(first).toMatchObject({ sessionId, generation, payload: {} });
+    expect(connection.getBranches()).toEqual({ state: 'loading', listed: undefined });
+    connection.listBranches();
+    const second = last(socket(), 'branches.list');
+
+    socket().reply(first, 'branches.listed', { state: 'not_git', branches: [], truncated: false });
+    expect(connection.getBranches()?.state).toBe('loading');
+    socket().reply(second, 'branches.listed', ready);
+    expect(connection.getBranches()).toEqual({ state: 'ready', listed: ready });
+
+    connection.listBranches();
+    socket().reply(last(socket(), 'branches.list'), 'error', { code: 'internal_error', message: 'git failed' });
+    expect(connection.getBranches()).toEqual({ state: 'unavailable', listed: undefined });
+
+    connection.listBranches();
+    socket().close();
+    expect(connection.getBranches()?.state).toBe('unavailable');
+  });
+
+  it('removes with the lease, one at a time, and shows the reply', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    expect(connection.removeWorktree(false)).toBe(false);
+    await takeControl(connection, socket());
+
+    expect(connection.removeWorktree(false)).toBe(true);
+    const request = last(socket(), 'worktree.remove');
+    expect(request).toMatchObject({ sessionId, generation, payload: { lease, force: false } });
+    expect(connection.getWorktreeRemoval()).toEqual({ state: 'pending' });
+    expect(connection.removeWorktree(true)).toBe(false);
+
+    socket().receive('worktree.removed', { state: 'removed' });
+    expect(connection.getWorktreeRemoval()?.state).toBe('pending');
+    socket().reply(request, 'worktree.removed', { state: 'dirty' });
+    expect(connection.getWorktreeRemoval()).toEqual({ state: 'done', removed: { state: 'dirty' } });
+
+    expect(connection.removeWorktree(true)).toBe(true);
+    const forced = last(socket(), 'worktree.remove');
+    expect(forced?.payload).toEqual({ lease, force: true });
+    socket().reply(forced, 'worktree.removed', { state: 'failed', output: 'fatal: locked' });
+    expect(connection.getWorktreeRemoval()).toEqual({ state: 'done', removed: { state: 'failed', output: 'fatal: locked' } });
+
+    connection.removeWorktree(false);
+    socket().reply(last(socket(), 'worktree.remove'), 'error', { code: 'operation_conflict', message: 'busy' });
+    expect(connection.getWorktreeRemoval()).toEqual({ state: 'error', message: 'Another commit or push is running. Wait for it, then try again.' });
+    expect(connection.getStatus()).toMatchObject({ control: 'controller', notice: undefined });
+
+    connection.removeWorktree(false);
+    socket().reply(last(socket(), 'worktree.remove'), 'error', { code: 'stale_lease', message: 'stale' });
+    expect(connection.getStatus().control).toBe('observer');
+  });
+
+  it('says the connection was lost while a remove was pending and never resends it', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    await takeControl(connection, first);
+    connection.removeWorktree(false);
+    const request = last(first, 'worktree.remove');
+    first.close();
+    expect(connection.getWorktreeRemoval()).toEqual({ state: 'error', message: REMOVE_LOST });
+
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    const second = socket();
+    await attachLive(second, '2');
+    expect(second.types()).not.toContain('worktree.remove');
+    second.reply(request, 'worktree.removed', { state: 'removed' });
+    expect(connection.getWorktreeRemoval()?.state).toBe('error');
   });
 });
 
