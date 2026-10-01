@@ -19,6 +19,19 @@ func TestWorktreeName(t *testing.T) {
 	}
 }
 
+func TestWorktreeRepo(t *testing.T) {
+	for _, repo := range []string{"proj", "my repo", "a.b", "...", ".git"} {
+		if err := ValidateWorktreeRepo(repo); err != nil {
+			t.Errorf("%q: %v", repo, err)
+		}
+	}
+	for _, repo := range []string{"", ".", "..", "/", "a/b", `a\b`, `\`, " a", strings.Repeat("a", 129)} {
+		if ValidateWorktreeRepo(repo) == nil {
+			t.Errorf("%q was accepted", repo)
+		}
+	}
+}
+
 func TestWorktreeCreateValidation(t *testing.T) {
 	good := WorktreeCreate{SourceSessionID: "22222222-2222-4222-8222-222222222222", Name: "brave-otter", Base: "origin/main"}
 	if err := ValidateWorktreeCreate(&good); err != nil {

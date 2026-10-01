@@ -324,7 +324,7 @@ export type BrokerRPCErrorPayload = {
     readonly message: string;
 }
 
-export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed" | "preview_missing" | "worktree_exists" | "not_a_repository";
+export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed" | "preview_missing" | "worktree_exists" | "not_a_repository" | "worktree_failed";
 
 export type BrokerRPCMessageType = "session.list.request" | "session.create.request" | "session.rename.request" | "session.terminate.request" | "session.status.request" | "session.list.result" | "session.create.result" | "session.rename.result" | "session.terminate.result" | "session.status.result" | "broker.error";
 
@@ -347,8 +347,10 @@ export type BrokerRPCSessionCreateRequestPayload = {
  * termivoa/<name> <home>/termivoa/worktrees/<repo>/<name> <base> without upstream tracking.
  * The session starts in that folder with name as its title. worktree_exists: the folder or
  * the branch already exists. not_a_repository: the source folder is not in a git
- * repository. limit_exceeded: the repository already has 50 worktrees there. A replayed
- * operationId never creates a second worktree.
+ * repository. worktree_failed: git worktree add failed (for example a post-checkout hook or
+ * the timeout); the message ends with what git printed, and nothing is left behind.
+ * limit_exceeded: the repository already has 50 worktrees there. A replayed operationId
+ * never creates a second worktree.
  */
 export type WorktreeCreate = {
     readonly base:            string;

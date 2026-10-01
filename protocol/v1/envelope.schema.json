@@ -101,7 +101,8 @@
         "limit_exceeded", "history_changed", "resync_required",
         "host_unavailable", "internal_error", "invalid_request",
         "operation_conflict", "project_missing", "shell_profile_missing",
-        "question_changed", "preview_missing", "worktree_exists", "not_a_repository"
+        "question_changed", "preview_missing", "worktree_exists", "not_a_repository",
+        "worktree_failed"
       ]
     },
     "sessionLifecycle": {
@@ -591,7 +592,7 @@
       "type": "object", "additionalProperties": false, "required": ["state", "branches", "truncated"],
       "properties": {
         "state": { "$ref": "#/$defs/changesSummaryPayload/properties/state" },
-        "repo": { "type": "string", "minLength": 1, "maxLength": 128, "maxUtf8Bytes": 384, "safeDisplayText": true },
+        "repo": { "type": "string", "minLength": 1, "maxLength": 128, "maxUtf8Bytes": 384, "safeDisplayText": true, "pattern": "^(?!\\.{1,2}$)[^/\\\\]+$" },
         "defaultBranch": { "type": "string", "minLength": 1, "maxLength": 256 },
         "current": { "type": "string", "minLength": 1, "maxLength": 256 },
         "branches": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/branchRef" } },

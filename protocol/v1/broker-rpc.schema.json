@@ -98,7 +98,7 @@
     },
     "worktreeCreate": {
       "title": "WorktreeCreate",
-      "description": "Creates a git worktree for the new session. The broker reads the folder of the live session sourceSessionId (as changes.list does), finds its main repository root, checks that base is a branch from a fresh branches listing, and runs git worktree add -b termivoa/<name> <home>/termivoa/worktrees/<repo>/<name> <base> without upstream tracking. The session starts in that folder with name as its title. worktree_exists: the folder or the branch already exists. not_a_repository: the source folder is not in a git repository. limit_exceeded: the repository already has 50 worktrees there. A replayed operationId never creates a second worktree.",
+      "description": "Creates a git worktree for the new session. The broker reads the folder of the live session sourceSessionId (as changes.list does), finds its main repository root, checks that base is a branch from a fresh branches listing, and runs git worktree add -b termivoa/<name> <home>/termivoa/worktrees/<repo>/<name> <base> without upstream tracking. The session starts in that folder with name as its title. worktree_exists: the folder or the branch already exists. not_a_repository: the source folder is not in a git repository. worktree_failed: git worktree add failed (for example a post-checkout hook or the timeout); the message ends with what git printed, and nothing is left behind. limit_exceeded: the repository already has 50 worktrees there. A replayed operationId never creates a second worktree.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sourceSessionId", "name", "base"],
@@ -116,7 +116,7 @@
       "required": ["name", "repo"],
       "properties": {
         "name": { "$ref": "#/$defs/worktreeName" },
-        "repo": { "type": "string", "minLength": 1, "maxLength": 128, "maxUtf8Bytes": 384, "safeDisplayText": true }
+        "repo": { "type": "string", "minLength": 1, "maxLength": 128, "maxUtf8Bytes": 384, "safeDisplayText": true, "pattern": "^(?!\\.{1,2}$)[^/\\\\]+$" }
       }
     },
     "sessionRenameRequestPayload": {

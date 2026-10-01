@@ -50,6 +50,9 @@ func ValidateWorktreeRepo(repo string) error {
 	if utf8.RuneCountInString(repo) > maxWorktreeRepoRunes {
 		return errors.New("repo is outside bounds")
 	}
+	if repo == "." || repo == ".." || strings.ContainsAny(repo, `/\`) {
+		return errors.New("repo must be one folder name")
+	}
 	return nil
 }
 

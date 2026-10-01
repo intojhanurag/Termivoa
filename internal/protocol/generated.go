@@ -305,8 +305,10 @@ type BrokerRPCSessionCreateRequestPayload struct {
 // termivoa/<name> <home>/termivoa/worktrees/<repo>/<name> <base> without upstream tracking.
 // The session starts in that folder with name as its title. worktree_exists: the folder or
 // the branch already exists. not_a_repository: the source folder is not in a git
-// repository. limit_exceeded: the repository already has 50 worktrees there. A replayed
-// operationId never creates a second worktree.
+// repository. worktree_failed: git worktree add failed (for example a post-checkout hook or
+// the timeout); the message ends with what git printed, and nothing is left behind.
+// limit_exceeded: the repository already has 50 worktrees there. A replayed operationId
+// never creates a second worktree.
 type WorktreeCreate struct {
 	Base            string `json:"base"`
 	Name            string `json:"name"`
@@ -1074,6 +1076,7 @@ const (
 	StaleLease          ErrorCode = "stale_lease"
 	Unauthorized        ErrorCode = "unauthorized"
 	WorktreeExists      ErrorCode = "worktree_exists"
+	WorktreeFailed      ErrorCode = "worktree_failed"
 )
 
 type BrokerRPCMessageType string
