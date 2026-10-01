@@ -31,6 +31,7 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 ## Who can see changes, commit and push?
 
 - Changes only **reads** git: uncommitted changes and untracked files that git does not ignore.
+- [Files](/docs/guides/files/) (Next beta) only **reads** the session's project: the top of its git repository, or its folder. Paths cannot leave that folder, not even through a link, and `.git` is never shown. Any paired phone that watches the session can read it, as it could read the terminal.
 - **Any paired phone can see these diffs**, including secrets in files that are not ignored. Keep secrets in ignored files such as `.env`.
 - Commit and push need **control**, which the computer checks right before git starts.
 - A commit includes only ticked files that git lists as changed, and runs your repository's own hooks.

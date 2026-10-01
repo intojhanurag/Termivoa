@@ -8,6 +8,20 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Files view. Phone side: the Changes screen has a **Changes | Files** switch;
+  **Files** shows the session's project as folders (folders first, sizes,
+  links that leave the project dimmed), searches file paths, and reads text
+  files with line numbers, **Copy path** and **Ask agent about this file**.
+  Tapping a path such as `src/app.ts:42` in the terminal opens that file at
+  that line; swipes, pull-to-history and selection are unchanged. Host side:
+  new read-only `files.list`/`files.listed`, `files.read`/`files.content` and
+  `files.search`/`files.found` messages for any viewer (no lease). The root is
+  the git top level of the session folder, or the folder itself; every access
+  goes through `os.Root`, so `..` and symlinks cannot leave it, and `.git` is
+  never listed or read. Limits: 1000 entries per folder, 256 KiB of text per
+  file (cut at a line break), no files over 50 MiB, binary files detected,
+  200 search results from `git ls-files` (ignored files skipped) or a bounded
+  walk, one request at a time per viewer.
 - Worktrees. Phone side: in a running session whose folder is in a git
   repository, **⋯ → New worktree…** opens a sheet with a random name that can
   be edited (🎲 for another), a base branch picker (default: the repository's

@@ -952,6 +952,22 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `limit_exceeded`, cancel on detach); Linux and Windows cross-vet;
   `./scripts/check`. The phone UI is separate work.
 
+- **Files view, phone side and end to end** (`feat/files`, 2026-10-01): the
+  Changes screen gains a **Changes | Files** switch; Files lists folders,
+  searches paths, reads text files in a virtualized viewer with line numbers,
+  and a terminal link provider opens `path:line` tokens. Evidence: `pnpm
+  --dir web test` (482 tests), `./scripts/check` exit 0, the web helper's
+  touch harness (27/27: tap opens, swipe, pull-to-history and selection do
+  not), and a headless Chrome run against `pterm up --dev` with `HOME=/tmp/fh`
+  and a repository with nested folders, a binary file, a 300 KB file, an
+  ignored `node_modules` and a symlink to `/etc/hosts`: 12/12 checks pass. A
+  touch tap on `src/app.ts:42` printed in a real session opens the file with
+  line 42 centred; a tap on plain text does nothing; the root lists folders
+  first and hides `.git`; the outside link is dimmed; the binary file says it
+  is not text; the big file is cut with a note; search finds
+  `src/lib/util.ts`, opens it, and skips the ignored `node_modules`; the
+  Changes tab still works.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
