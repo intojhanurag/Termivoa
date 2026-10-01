@@ -1,6 +1,7 @@
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type IBufferCell, type IDisposable } from '@xterm/xterm';
 import { clampGrid } from './Connection';
 import { FrameRenderer } from './FrameRenderer';
+import { findPathLinks, rowCells, type PathLink } from './pathLinks';
 import { ServerUnicodeAddon } from './ServerUnicodeAddon';
 
 export const MONOSPACE = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
@@ -62,6 +63,40 @@ export class TerminalView {
     const cellHeight = screen.clientHeight / this.terminal.rows;
     const row = this.terminal.buffer.active.cursorY;
     return { top: row * cellHeight, bottom: (row + 1) * cellHeight };
+  }
+
+  /**
+   * Makes path-like text a link; a tap on one calls onOpen. xterm activates a
+   * link only when the press and release land on it with no move between, so
+   * a swipe that starts on a link scrolls as before. A selection wins too.
+   */
+  linkPaths(onOpen: (link: PathLink) => void): IDisposable {
+    const { terminal } = this;
+    return terminal.registerLinkProvider({
+      provideLinks(y, callback) {
+        const row = terminal.buffer.active.getLine(y - 1);
+        if (row === undefined) {
+          callback(undefined);
+          return;
+        }
+        const cells: IBufferCell[] = [];
+        for (let x = 0; x < row.length; x++) {
+          const cell = row.getCell(x);
+          if (cell !== undefined) cells.push(cell);
+        }
+        const { text, columns } = rowCells(cells);
+        const links = findPathLinks(text).map((link) => ({
+          // 1-based cells, end inclusive.
+          range: { start: { x: (columns[link.start] ?? 0) + 1, y }, end: { x: columns[link.end] ?? terminal.cols, y } },
+          text: text.slice(link.start, link.end),
+          decorations: { pointerCursor: true, underline: true },
+          activate: () => {
+            if (!terminal.hasSelection()) onOpen(link);
+          },
+        }));
+        callback(links.length > 0 ? links : undefined);
+      },
+    });
   }
 
   dispose(): void {

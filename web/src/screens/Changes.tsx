@@ -1,4 +1,4 @@
-import { Fragment, useState, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react';
+import { Fragment, useState, useSyncExternalStore, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import type { ChangedFile, ChangeStatus, DiffLine } from '../generated/protocol';
 import type { ChangesFileView, ChangesView, ChangesWrite, Connection } from '../terminal/Connection';
 import { readDraft, saveDraft } from '../terminal/composer';
@@ -136,10 +136,12 @@ function listed(view: ChangesView | undefined): ReadonlyArray<ChangedFile> {
 }
 
 /** The uncommitted git changes in the session's project, with commit and push for the controller. */
-export function Changes({ connection, cwd, onAsk, onReturn }: {
+export function Changes({ connection, cwd, switcher, onAsk, onReturn }: {
   readonly connection: Connection;
   /** The session's folder, shown when it is not in a repository. */
   readonly cwd: string | undefined;
+  /** The Changes | Files switch, in place of the title. */
+  readonly switcher?: ReactNode;
   readonly onAsk: (path: string, selected: ReadonlyArray<DiffLine>) => void;
   readonly onReturn: () => void;
 }) {
@@ -166,6 +168,7 @@ export function Changes({ connection, cwd, onAsk, onReturn }: {
       <ChangesPanel
         view={view}
         cwd={cwd}
+        switcher={switcher}
         onRefresh={() => connection.refreshChanges()}
         onOpen={(path) => { setPicked(undefined); connection.openChangesFile(path); }}
         onBack={() => { setPicked(undefined); connection.closeChangesFile(); }}
@@ -223,9 +226,10 @@ export interface CommitControls {
   readonly onCommit: () => void;
 }
 
-export function ChangesPanel({ view, cwd, commit, selection, onRefresh, onOpen, onBack, onAsk, onSelect, onReturn }: {
+export function ChangesPanel({ view, cwd, switcher, commit, selection, onRefresh, onOpen, onBack, onAsk, onSelect, onReturn }: {
   readonly view: ChangesView | undefined;
   readonly cwd: string | undefined;
+  readonly switcher?: ReactNode;
   readonly commit?: CommitControls;
   /** Picked lines in the open file. */
   readonly selection?: LineSelection | undefined;
@@ -240,7 +244,7 @@ export function ChangesPanel({ view, cwd, commit, selection, onRefresh, onOpen, 
   return (
     <>
       {/* Hidden, not unmounted, so the list keeps its scroll position. */}
-      <ChangeList view={view} cwd={cwd} hidden={file !== undefined} commit={commit} onRefresh={onRefresh} onOpen={onOpen} onReturn={onReturn} />
+      <ChangeList view={view} cwd={cwd} switcher={switcher} hidden={file !== undefined} commit={commit} onRefresh={onRefresh} onOpen={onOpen} onReturn={onReturn} />
       {file !== undefined && (
         <FileDiff
           file={file}
@@ -256,9 +260,10 @@ export function ChangesPanel({ view, cwd, commit, selection, onRefresh, onOpen, 
   );
 }
 
-function ChangeList({ view, cwd, hidden, commit, onRefresh, onOpen, onReturn }: {
+function ChangeList({ view, cwd, switcher, hidden, commit, onRefresh, onOpen, onReturn }: {
   readonly view: ChangesView | undefined;
   readonly cwd: string | undefined;
+  readonly switcher: ReactNode;
   readonly hidden: boolean;
   readonly commit: CommitControls | undefined;
   readonly onRefresh: () => void;
@@ -298,7 +303,8 @@ function ChangeList({ view, cwd, hidden, commit, onRefresh, onOpen, onReturn }: 
     <section className="history changes" aria-labelledby="changes-title" hidden={hidden} inert={commit?.covered === true}>
       <header className="history-bar changes-bar">
         <div className="changes-heading">
-          <h2 id="changes-title">Changes</h2>
+          <h2 id="changes-title" className={switcher === undefined ? undefined : 'visually-hidden'}>Changes</h2>
+          {switcher}
           {subtitle !== undefined && <p className="subtitle changes-subtitle">{subtitle}</p>}
         </div>
         <div className="changes-tools">
@@ -371,7 +377,7 @@ function ChangeRow({ file, onOpen }: { readonly file: ChangedFile; readonly onOp
 }
 
 /** Long directories wrap after a slash, not inside a folder name. */
-function breakable(dir: string) {
+export function breakable(dir: string) {
   return dir.split('/').slice(0, -1).map((part, index) => <Fragment key={index}>{part}/<wbr /></Fragment>);
 }
 
@@ -481,15 +487,17 @@ function FileDiff({ file, entry, selection, onRefresh, onBack, onAsk, onSelect }
   );
 }
 
-function StateText({ text, detail, action, onAction }: {
+export function StateText({ text, detail, action, alert = false, onAction }: {
   readonly text: string;
   readonly detail?: string | undefined;
   readonly action?: string;
+  /** A failure: read out at once. */
+  readonly alert?: boolean;
   readonly onAction?: () => void;
 }) {
   return (
     <div className="changes-state">
-      <p role="status">{text}</p>
+      <p role={alert ? 'alert' : 'status'}>{text}</p>
       {detail !== undefined && <p className="changes-detail">{detail}</p>}
       {action !== undefined && <button type="button" onClick={onAction}>{action}</button>}
     </div>
