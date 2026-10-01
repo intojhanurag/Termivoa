@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
@@ -27,8 +28,15 @@ const (
 	// textBudget bounds the JSON-escaped text so a files.content reply stays
 	// under protocol.MaxOutboundMessageBytes (1 MiB) whatever the content:
 	// 768 KiB of text plus a path of at most 4096 escaped runes.
-	textBudget  = 768 << 10
-	binaryProbe = 8 << 10 // a NUL byte in the first 8 KiB means binary
+	textBudget = 768 << 10
+	// replyBudget bounds the JSON of the entries of a files.listed and the
+	// paths of a files.found (truncated beyond), leaving room under 1 MiB for
+	// a root and a path of at most 4096 escaped runes each.
+	replyBudget = 900 << 10
+	// entryOverhead is the JSON of one entry without its name:
+	// {"name":"","kind":"other","size":<20 digits>},
+	entryOverhead = 64
+	binaryProbe   = 8 << 10 // a NUL byte in the first 8 KiB means binary
 	// invalidShare: more than 1 in 100 bytes of invalid UTF-8 means binary;
 	// fewer are replaced with U+FFFD.
 	invalidShare = 100
@@ -83,6 +91,22 @@ func inGit(name string) bool {
 	return false
 }
 
+// intoGit reports whether name, with its symlinks resolved, is in a .git of
+// the root (realRoot, itself resolved). os.Root follows symlinks that stay
+// inside the root, so a link such as gl -> .git is caught only here. It fails
+// closed: a path it cannot resolve counts as in .git, and os.Root would not
+// open a missing one anyway.
+// ponytail: a link swapped between this check and the open is not caught;
+// that needs someone who can already write in the project.
+func intoGit(realRoot, name string) bool {
+	target, err := filepath.EvalSymlinks(filepath.Join(realRoot, filepath.FromSlash(name)))
+	if err != nil {
+		return true
+	}
+	rel, err := filepath.Rel(realRoot, target)
+	return err != nil || inGit(filepath.ToSlash(rel))
+}
+
 // findRoot returns the files root of folder: the top level of its git
 // repository, else folder itself (also when git is missing).
 func findRoot(ctx context.Context, folder string) (root string, repo bool) {
@@ -118,7 +142,11 @@ func List(ctx context.Context, folder, name string) protocol.FilesListedPayload 
 	reply := protocol.FilesListedPayload{State: protocol.FilesListStateUnavailable, Path: name, Entries: []protocol.FileEntry{}}
 	root, _ := findRoot(ctx, folder)
 	reply.Root = slashRoot(root)
-	if inGit(name) {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return reply
+	}
+	if inGit(name) || intoGit(realRoot, name) {
 		reply.State = protocol.FilesListStateNotFound
 		return reply
 	}
@@ -141,7 +169,7 @@ func List(ctx context.Context, folder, name string) protocol.FilesListedPayload 
 		reply.State = protocol.NotDir
 		return reply
 	}
-	entries, truncated, err := readEntries(ctx, files, dir, name)
+	entries, truncated, err := readEntries(ctx, files, realRoot, dir, name)
 	if err != nil {
 		return reply
 	}
@@ -155,14 +183,18 @@ func List(ctx context.Context, folder, name string) protocol.FilesListedPayload 
 		}
 		return a.Name < b.Name
 	})
-	if len(entries) > protocol.MaxFileEntries {
-		entries, truncated = entries[:protocol.MaxFileEntries], true
+	cost := 0
+	for index, entry := range entries {
+		if cost += jsonLen(entry.Name) + entryOverhead; index == protocol.MaxFileEntries || cost > replyBudget {
+			entries, truncated = entries[:index], true
+			break
+		}
 	}
 	reply.State, reply.Entries, reply.Truncated = protocol.FilesListStateReady, entries, truncated
 	return reply
 }
 
-func readEntries(ctx context.Context, files *os.Root, dir *os.File, name string) ([]protocol.FileEntry, bool, error) {
+func readEntries(ctx context.Context, files *os.Root, realRoot string, dir *os.File, name string) ([]protocol.FileEntry, bool, error) {
 	entries := []protocol.FileEntry{}
 	truncated, scanned := false, 0
 	for {
@@ -174,7 +206,7 @@ func readEntries(ctx context.Context, files *os.Root, dir *os.File, name string)
 			if gitName(item.Name()) {
 				continue
 			}
-			entry, ok := fileEntry(files, path.Join(name, item.Name()), item)
+			entry, ok := fileEntry(files, realRoot, path.Join(name, item.Name()), item)
 			if !ok {
 				truncated = true
 				continue
@@ -195,9 +227,9 @@ func readEntries(ctx context.Context, files *os.Root, dir *os.File, name string)
 }
 
 // fileEntry describes one folder entry. A symlink shows as its target's kind
-// when the target is inside the root, else as link. ok is false for a name
-// the protocol cannot carry or an entry that vanished.
-func fileEntry(files *os.Root, name string, item fs.DirEntry) (protocol.FileEntry, bool) {
+// when the target is inside the root and not in .git, else as link. ok is
+// false for a name the protocol cannot carry or an entry that vanished.
+func fileEntry(files *os.Root, realRoot, name string, item fs.DirEntry) (protocol.FileEntry, bool) {
 	entry := protocol.FileEntry{Name: strings.ToValidUTF8(item.Name(), string(utf8.RuneError)), Kind: protocol.FileKindOther}
 	if utf8.RuneCountInString(entry.Name) > 255 {
 		return entry, false
@@ -208,6 +240,9 @@ func fileEntry(files *os.Root, name string, item fs.DirEntry) (protocol.FileEntr
 	switch {
 	case mode&fs.ModeSymlink != 0:
 		entry.Kind = protocol.Link
+		if intoGit(realRoot, name) {
+			return entry, true
+		}
 		if info, err = files.Stat(name); err != nil {
 			return entry, true // Points outside the root, or nowhere.
 		}
@@ -232,7 +267,11 @@ func fileEntry(files *os.Root, name string, item fs.DirEntry) (protocol.FileEntr
 func Read(ctx context.Context, folder, name string) protocol.FilesContentPayload {
 	reply := protocol.FilesContentPayload{State: protocol.FilesReadStateUnavailable, Path: name}
 	root, _ := findRoot(ctx, folder)
-	if inGit(name) {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return reply
+	}
+	if inGit(name) || intoGit(realRoot, name) {
 		reply.State = protocol.FilesReadStateNotFound
 		return reply
 	}
@@ -258,13 +297,19 @@ func Read(ctx context.Context, folder, name string) protocol.FilesContentPayload
 		reply.State = protocol.TooLarge
 		return reply
 	}
-	// ponytail: a file swapped for a FIFO between Stat and Open would block
-	// this read until its viewer leaves; the same holds for projecttasks.
-	file, err := files.Open(name)
+	file, info, err := openRegular(files, name)
 	if err != nil {
+		if errors.Is(err, errNotFile) {
+			reply.State, reply.Size = protocol.NotFile, nil
+		}
 		return reply
 	}
 	defer file.Close()
+	if size = info.Size(); size > MaxFileBytes {
+		reply.State, reply.Size = protocol.TooLarge, &size
+		return reply
+	}
+	reply.Size = &size
 	data, err := io.ReadAll(io.LimitReader(file, protocol.MaxFileTextBytes+1))
 	if err != nil {
 		return reply
@@ -286,6 +331,27 @@ func Read(ctx context.Context, folder, name string) protocol.FilesContentPayload
 	text, cut := fitText(text)
 	reply.State, reply.Text, reply.Truncated = protocol.FilesReadStateReady, &text, truncated || cut
 	return reply
+}
+
+var errNotFile = errors.New("projectfiles: not a regular file")
+
+// openRegular opens a regular file without blocking: a FIFO swapped in after
+// the caller's Stat opens at once (O_NONBLOCK) and is refused with
+// errNotFile. Windows ignores O_NONBLOCK and has no FIFOs in folders.
+func openRegular(files *os.Root, name string) (*os.File, fs.FileInfo, error) {
+	file, err := files.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := file.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = errNotFile
+	}
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	return file, info, nil
 }
 
 // cutAtLine keeps data up to and including its last line break, or, with
@@ -319,21 +385,12 @@ func invalidBytes(data []byte) int {
 
 // fitText cuts valid UTF-8 text at a line break so it has at most
 // MaxFileTextBytes bytes and its JSON form at most textBudget bytes. U+FFFD
-// replacements can grow the text, and encoding/json escapes some runes to six
-// bytes (control characters, <, >, &, U+2028, U+2029).
+// replacements can grow the text.
 func fitText(text string) (string, bool) {
 	cost, lastLine := 0, -1
 	for index, r := range text {
-		size := utf8.RuneLen(r)
-		switch {
-		case r == '"' || r == '\\' || r == '\n' || r == '\r' || r == '\t':
-			cost += 2
-		case r < 0x20 || r == '<' || r == '>' || r == '&' || r == ' ' || r == ' ':
-			cost += 6
-		default:
-			cost += size
-		}
-		if cost > textBudget || index+size > protocol.MaxFileTextBytes {
+		cost += runeCost(r)
+		if cost > textBudget || index+utf8.RuneLen(r) > protocol.MaxFileTextBytes {
 			if lastLine >= 0 {
 				return text[:lastLine+1], true
 			}
@@ -344,6 +401,27 @@ func fitText(text string) (string, bool) {
 		}
 	}
 	return text, false
+}
+
+// runeCost is the size of r in a JSON string as encoding/json writes it: it
+// escapes control characters, <, >, &, U+2028 and U+2029 to six bytes.
+func runeCost(r rune) int {
+	switch {
+	case r == '"' || r == '\\' || r == '\n' || r == '\r' || r == '\t':
+		return 2
+	case r < 0x20 || r == '<' || r == '>' || r == '&' || r == '\u2028' || r == '\u2029':
+		return 6
+	}
+	return utf8.RuneLen(r)
+}
+
+// jsonLen is the size of valid UTF-8 text as a JSON string with its quotes.
+func jsonLen(text string) int {
+	cost := 2
+	for _, r := range text {
+		cost += runeCost(r)
+	}
+	return cost
 }
 
 // Search finds files of the files root whose relative path contains query,
@@ -392,10 +470,22 @@ func Search(ctx context.Context, folder, query string) protocol.FilesFoundPayloa
 		}
 		return a.path < b.path
 	})
-	if len(matches) > protocol.MaxFoundPaths {
-		matches, truncated = matches[:protocol.MaxFoundPaths], true
+	files, err := os.OpenRoot(root)
+	if err != nil {
+		return reply
 	}
+	defer files.Close()
+	cost := 0
 	for _, found := range matches {
+		// Drop what files.read cannot open: a submodule (a folder git lists
+		// as one entry) or a tracked file deleted from the folder.
+		if info, err := files.Lstat(found.path); err != nil || info.IsDir() {
+			continue
+		}
+		if cost += jsonLen(found.path) + 1; len(reply.Paths) == protocol.MaxFoundPaths || cost > replyBudget {
+			truncated = true
+			break
+		}
 		reply.Paths = append(reply.Paths, found.path)
 	}
 	reply.State, reply.Truncated = protocol.FilesSearchStateReady, truncated

@@ -951,6 +951,18 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `internal/broker` (live-socket list/read/search, `invalid_request`,
   `limit_exceeded`, cancel on detach); Linux and Windows cross-vet;
   `./scripts/check`. The phone UI is separate work.
+  Host review fixes (2026-10-01): a symlink into `.git` (`gl -> .git`,
+  `cfg -> .git/config`) is resolved and refused (`not_found`, listed as
+  `link`); `files.listed` entries and `files.found` paths stop at 900 KiB
+  of JSON (truncated), so 1000 names of 200 `<` no longer make a 1.2 MiB
+  message that closed the stream; `files.read` opens with `O_NONBLOCK` and
+  rechecks the open file, so a FIFO cannot block it; search drops submodule
+  entries and deleted files. Evidence: new `TestSymlinksCannotReachGit`,
+  `TestListAndSearchKeepRepliesUnderTheMessageLimit` (fails without the fix
+  at 1239384 bytes), `TestAFIFONeverBlocksARead` (mkfifo),
+  `TestWorktreeRootWithAGitFile`, `TestSearchDropsSubmodulesAndDeletedFiles`;
+  `go test -race`, cross-vet, `./scripts/check`. The same FIFO problem in
+  projecttasks is #125.
 
 - **Files view, phone side and end to end** (`feat/files`, 2026-10-01): the
   Changes screen gains a **Changes | Files** switch; Files lists folders,

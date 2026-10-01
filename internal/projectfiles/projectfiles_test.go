@@ -391,3 +391,105 @@ func TestRootIsTheRepositoryTopLevel(t *testing.T) {
 		t.Fatalf("missing folder = %#v", gone)
 	}
 }
+
+func TestSymlinksCannotReachGit(t *testing.T) {
+	repo := newRepo(t)
+	write(t, repo, ".git/config", "[remote \"origin\"]\n\turl = https://token@example.com/x.git\n")
+	write(t, repo, "src/main.go", "package main\n")
+	for target, link := range map[string]string{".git": "gl", ".git/config": "cfg", ".": "up", "src": "code"} {
+		if err := os.Symlink(target, filepath.Join(repo, link)); err != nil {
+			t.Skipf("symlinks are not available: %v", err)
+		}
+	}
+	ctx := context.Background()
+	for _, name := range []string{"gl/config", "cfg", "up/.git/config", "up/gl/config", "up/cfg"} {
+		if got := Read(ctx, repo, name); got.State != protocol.FilesReadStateNotFound || got.Text != nil {
+			t.Fatalf("read %q = %#v", name, got)
+		}
+	}
+	for _, name := range []string{"gl", "up/gl", "gl/refs"} {
+		if got := List(ctx, repo, name); got.State != protocol.FilesListStateNotFound || len(got.Entries) != 0 {
+			t.Fatalf("list %q = %#v", name, got)
+		}
+	}
+	kinds := map[string]protocol.FileKind{}
+	for _, entry := range List(ctx, repo, "").Entries {
+		kinds[entry.Name] = entry.Kind
+	}
+	want := map[string]protocol.FileKind{"gl": protocol.Link, "cfg": protocol.Link, "up": protocol.Dir, "code": protocol.Dir, "src": protocol.Dir}
+	if !reflect.DeepEqual(kinds, want) {
+		t.Fatalf("kinds = %v, want %v", kinds, want)
+	}
+	if got := Read(ctx, repo, "code/main.go"); got.State != protocol.FilesReadStateReady {
+		t.Fatalf("a link inside the root = %#v", got)
+	}
+}
+
+func TestListAndSearchKeepRepliesUnderTheMessageLimit(t *testing.T) {
+	dir := plainDir(t)
+	// Each < is six bytes of JSON: 1000 names of 204 characters would make a
+	// 1.2 MiB files.listed.
+	for index := range protocol.MaxFileEntries {
+		write(t, dir, fmt.Sprintf("%s%04d", strings.Repeat("<", 200), index), "")
+	}
+	listed := List(context.Background(), dir, "")
+	valid(t, protocol.FilesListed, listed)
+	entries, _ := json.Marshal(listed.Entries)
+	if listed.State != protocol.FilesListStateReady || !listed.Truncated || len(listed.Entries) < 500 || len(entries) > replyBudget {
+		t.Fatalf("listed %d entries in %d bytes, truncated %v", len(listed.Entries), len(entries), listed.Truncated)
+	}
+
+	// 200 paths of 848 characters of < would be about 1 MB of JSON.
+	deep := strings.TrimSuffix(strings.Repeat(strings.Repeat("<", 200)+"/", 4), "/")
+	for index := range protocol.MaxFoundPaths {
+		write(t, dir, fmt.Sprintf("%s/%s%03d", deep, strings.Repeat("<", 40), index), "")
+	}
+	found := Search(context.Background(), dir, strings.Repeat("<", 40))
+	valid(t, protocol.FilesFound, found)
+	paths, _ := json.Marshal(found.Paths)
+	if found.State != protocol.FilesSearchStateReady || !found.Truncated || len(found.Paths) < 100 || len(paths) > replyBudget {
+		t.Fatalf("found %d paths in %d bytes, truncated %v", len(found.Paths), len(paths), found.Truncated)
+	}
+}
+
+func TestWorktreeRootWithAGitFile(t *testing.T) {
+	repo := newRepo(t)
+	write(t, repo, "a.txt", "a\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "init")
+	worktree := filepath.Join(realDir(t), "wt")
+	git(t, repo, "worktree", "add", "-q", "-b", "wt", worktree)
+	write(t, worktree, "sub/b.txt", "b\n")
+
+	ctx := context.Background()
+	listed := List(ctx, filepath.Join(worktree, "sub"), "")
+	if listed.Root == nil || *listed.Root != filepath.ToSlash(worktree) || !reflect.DeepEqual(names(listed.Entries), []string{"sub", "a.txt"}) {
+		t.Fatalf("listed = %#v", listed)
+	}
+	if got := Read(ctx, worktree, ".git"); got.State != protocol.FilesReadStateNotFound || got.Text != nil {
+		t.Fatalf("read .git file = %#v", got)
+	}
+	if found := Search(ctx, worktree, "txt"); !reflect.DeepEqual(found.Paths, []string{"a.txt", "sub/b.txt"}) {
+		t.Fatalf("found = %#v", found)
+	}
+}
+
+func TestSearchDropsSubmodulesAndDeletedFiles(t *testing.T) {
+	repo := newRepo(t)
+	write(t, repo, "lib/libmod.go", "x\n")
+	write(t, repo, "gone-lib.txt", "x\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "init")
+	// A gitlink entry, as a submodule leaves in the index.
+	git(t, repo, "update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("1", 40)+",libsub")
+	if err := os.Mkdir(filepath.Join(repo, "libsub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(repo, "gone-lib.txt")); err != nil {
+		t.Fatal(err)
+	}
+	found := Search(context.Background(), repo, "lib")
+	if want := []string{"lib/libmod.go"}; !reflect.DeepEqual(found.Paths, want) {
+		t.Fatalf("found = %q, want %q", found.Paths, want)
+	}
+}
