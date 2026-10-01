@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { FilesContentPayload, FilesFoundPayload, FilesListedPayload, FileEntry } from '../generated/protocol';
 import type { FilesFileView, FilesView } from '../terminal/Connection';
-import { ChangesTabs, crumbs, fileLines, FilesPanel, formatSize, sortEntries } from './Files';
+import { ChangesTabs, copyText, CopyNote, crumbs, fileLines, FilesPanel, formatSize, SEARCH_DEBOUNCE_MS, searchSoon, sortEntries } from './Files';
 
 const noop = () => undefined;
 const root = '/Users/me/app';
@@ -142,10 +142,10 @@ describe('fileLines', () => {
 describe('ChangesTabs', () => {
   it('marks the active tab only', () => {
     const changes = renderToStaticMarkup(<ChangesTabs tab="changes" onTab={noop} />);
-    expect(changes).toContain('<button type="button" aria-current="page">Changes</button><button type="button">Files</button>');
+    expect(changes).toContain('role="group" aria-label="Show"');
+    expect(changes).toContain('<button type="button" aria-pressed="true" autofocus="">Changes</button><button type="button" aria-pressed="false">Files</button>');
     const files = renderToStaticMarkup(<ChangesTabs tab="files" onTab={noop} />);
-    expect(files).toContain('<button type="button">Changes</button><button type="button" aria-current="page">Files</button>');
-    expect(files.match(/aria-current/gu)).toHaveLength(1);
+    expect(files).toContain('<button type="button" aria-pressed="false">Changes</button><button type="button" aria-pressed="true" autofocus="">Files</button>');
   });
 
   it('switches only to the other tab', () => {
@@ -460,5 +460,63 @@ describe('file viewer', () => {
     expect(markup).toContain('Ask agent about this file</button>');
     expect(markup).toContain('<button type="button" class="link file-copy">Copy path</button>');
     expect(markup).not.toContain('Path copied.');
+  });
+});
+
+describe('searchSoon', () => {
+  const target = (query?: string) => {
+    const searchFiles = vi.fn();
+    const view = query === undefined ? undefined : { search: { query } } as unknown as FilesView;
+    return { searchFiles, getFiles: () => view };
+  };
+
+  it('sends the search once typing pauses, and a newer query cancels the older one', () => {
+    vi.useFakeTimers();
+    try {
+      const files = target();
+      const cancel = searchSoon(files, 'ap');
+      vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS - 1);
+      cancel();
+      searchSoon(files, ' app ');
+      vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS - 1);
+      expect(files.searchFiles).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(files.searchFiles.mock.calls).toEqual([['app']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ends a search at once when the field is cleared, and sends nothing for the shown query', () => {
+    vi.useFakeTimers();
+    try {
+      const shown = target('app');
+      searchSoon(shown, 'app ');
+      searchSoon(shown, '');
+      vi.advanceTimersByTime(0);
+      expect(shown.searchFiles.mock.calls).toEqual([['']]);
+      const idle = target();
+      searchSoon(idle, '   ');
+      vi.runAllTimers();
+      expect(idle.searchFiles).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('Copy path', () => {
+  it('copies, and fails when the clipboard refuses or is missing', async () => {
+    const writeText = vi.fn(async () => undefined);
+    await expect(copyText('src/a.ts', { writeText })).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith('src/a.ts');
+    await expect(copyText('src/a.ts', { writeText: async () => { throw new Error('denied'); } })).resolves.toBe('failed');
+    await expect(copyText('src/a.ts', undefined)).resolves.toBe('failed');
+  });
+
+  it('reads out a failure as an alert', () => {
+    expect(renderToStaticMarkup(<CopyNote copied="copied" />)).toBe('<p role="status" class="muted">Path copied.</p>');
+    expect(renderToStaticMarkup(<CopyNote copied="failed" />))
+      .toBe('<p role="alert" class="error">Copy did not work. Select the path above and use your phone’s Copy action.</p>');
   });
 });

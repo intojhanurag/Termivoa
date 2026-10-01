@@ -53,22 +53,56 @@ export function fileLines(text: string): string[] {
   return lines.map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
 }
 
-/** The Changes | Files switch at the top of the Changes screen. */
+/**
+ * The Changes | Files switch at the top of the Changes screen. A switch
+ * replaces the screen, so the shown tab takes the focus.
+ */
 export function ChangesTabs({ tab, onTab }: { readonly tab: ChangesTab; readonly onTab: (tab: ChangesTab) => void }) {
   return (
-    <nav className="segmented" aria-label="Changes or files">
+    <div className="segmented" role="group" aria-label="Show">
       {(['changes', 'files'] as const).map((name) => (
         <button
           key={name}
           type="button"
-          {...(tab === name ? { 'aria-current': 'page' as const } : {})}
+          aria-pressed={tab === name}
+          autoFocus={tab === name}
           onClick={() => { if (tab !== name) onTab(name); }}
         >
           {name === 'changes' ? 'Changes' : 'Files'}
         </button>
       ))}
-    </nav>
+    </div>
   );
+}
+
+/** Sends the search once typing pauses; a cleared field ends it at once. Returns the cancel. */
+export function searchSoon(files: Pick<Connection, 'getFiles' | 'searchFiles'>, query: string): () => void {
+  const wanted = query.trim();
+  if (wanted === (files.getFiles()?.search?.query ?? '')) {
+    return () => undefined;
+  }
+  const timer = setTimeout(() => files.searchFiles(wanted), wanted === '' ? 0 : SEARCH_DEBOUNCE_MS);
+  return () => clearTimeout(timer);
+}
+
+/** Copies text; "failed" when the clipboard is missing or refuses. */
+export async function copyText(text: string, clipboard: Pick<Clipboard, 'writeText'> | undefined = globalThis.navigator?.clipboard): Promise<'copied' | 'failed'> {
+  if (clipboard === undefined) {
+    return 'failed';
+  }
+  try {
+    await clipboard.writeText(text);
+    return 'copied';
+  } catch {
+    return 'failed';
+  }
+}
+
+/** The result of Copy path; a failure is read out at once. */
+export function CopyNote({ copied }: { readonly copied: 'copied' | 'failed' }) {
+  return copied === 'copied'
+    ? <p role="status" className="muted">Path copied.</p>
+    : <p role="alert" className="error">Copy did not work. Select the path above and use your phone’s Copy action.</p>;
 }
 
 /** Read-only browsing of the session's project files. */
@@ -81,14 +115,7 @@ export function Files({ connection, switcher, onAsk, onReturn }: {
   const view = useSyncExternalStore(connection.subscribe, connection.getFiles);
   const [query, setQuery] = useState(() => view?.search?.query ?? '');
 
-  useEffect(() => {
-    const wanted = query.trim();
-    if (wanted === (connection.getFiles()?.search?.query ?? '')) {
-      return undefined;
-    }
-    const timer = setTimeout(() => connection.searchFiles(wanted), wanted === '' ? 0 : SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [connection, query]);
+  useEffect(() => searchSoon(connection, query), [connection, query]);
 
   return (
     <FilesPanel
@@ -97,7 +124,7 @@ export function Files({ connection, switcher, onAsk, onReturn }: {
       switcher={switcher}
       onQuery={setQuery}
       onFolder={(path) => connection.openFilesFolder(path)}
-      onOpen={(path) => connection.openFilesFile(path)}
+      onOpen={(path, line) => connection.openFilesFile(path, line)}
       onSearch={(wanted) => connection.searchFiles(wanted)}
       onBack={() => connection.closeFilesFile()}
       onAsk={onAsk}
@@ -110,7 +137,7 @@ export interface FilesHandlers {
   readonly onQuery: (query: string) => void;
   /** Lists a folder: a crumb, a folder row, Refresh or Retry. */
   readonly onFolder: (path: string) => void;
-  readonly onOpen: (path: string) => void;
+  readonly onOpen: (path: string, line?: number) => void;
   /** Sends the search again: Refresh or Retry. */
   readonly onSearch: (query: string) => void;
   readonly onBack: () => void;
@@ -341,18 +368,13 @@ function FileViewer({ file, onFolder, onOpen, onBack, onAsk }: Pick<FilesHandler
   }, [lines, target]);
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(file.path);
-      setCopied('copied');
-    } catch {
-      setCopied('failed');
-    }
+    setCopied(await copyText(file.path));
   }
 
   const { name } = splitPath(file.path);
   let state: ReactElement | undefined;
   if (file.state === 'unavailable' || content?.state === 'unavailable') {
-    state = <StateText alert text="Could not read this file." action="Retry" onAction={() => onOpen(file.path)} />;
+    state = <StateText alert text="Could not read this file." action="Retry" onAction={() => onOpen(file.path, file.line)} />;
   } else if (content === undefined) {
     state = <StateText text="Loading file…" />;
   } else if (content.state === 'binary') {
@@ -371,7 +393,8 @@ function FileViewer({ file, onFolder, onOpen, onBack, onAsk }: Pick<FilesHandler
   return (
     <section className="history changes" aria-labelledby="files-file-title">
       <header className="history-bar changes-file-bar">
-        <button type="button" className="link changes-back" aria-label="Back to files" onClick={onBack}>
+        {/* A new file takes the focus, so a screen reader starts at its header. */}
+        <button type="button" className="link changes-back" aria-label="Back to files" autoFocus onClick={onBack}>
           <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
             <path d="M8 2L2 8l6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -412,11 +435,7 @@ function FileViewer({ file, onFolder, onOpen, onBack, onAsk }: Pick<FilesHandler
         )}
       </div>
       <div className="history-actions">
-        {copied !== undefined && (
-          <p role="status" className={copied === 'copied' ? 'muted' : 'error'}>
-            {copied === 'copied' ? 'Path copied.' : 'Copy did not work. Select the path above and use your phone’s Copy action.'}
-          </p>
-        )}
+        {copied !== undefined && <CopyNote copied={copied} />}
         <button type="button" className="primary wide" onClick={() => onAsk(file.path)}>
           <span aria-hidden="true">@</span>
           Ask agent about this file
