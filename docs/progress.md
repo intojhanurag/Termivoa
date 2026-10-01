@@ -907,6 +907,18 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   checked `delete /opt/pterm/bin/pterm yourself`, Linux and Windows
   cross-vet, `./scripts/check`.
 
+- **Live tab bar shows the open tab** (`fix/issue-114`, 2026-10-01, #114):
+  `TabBar` scrolls the open tab into view with `scrollIntoView({ inline:
+  'nearest', block: 'nearest' })` (smooth, or `auto` with reduced motion)
+  when the open session or its place in the strip changes. Evidence: `pnpm
+  --dir web test` (new `revealTab` tests), `./scripts/check`, and a
+  headless Chrome run (390x844) on an isolated `pterm up --dev` stack
+  (`HOME=/tmp/fixdemo`, port 8798) with 6 sessions: opening the last one
+  from Sessions put its tab at x 1042-1151 in a 12-272 strip before the fix
+  and at 163-272 (fully visible, `scrollLeft` 879) after; `scrollY` 0 and
+  focus on `BODY` in both. A direct page load with reduced motion also
+  shows the open tab (`scrollLeft` 779).
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

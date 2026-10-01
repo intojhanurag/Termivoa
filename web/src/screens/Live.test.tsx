@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentStatus, BrokerRPCSessionRecord } from '../generated/protocol';
 import { AGENT_KEYS } from '../terminal/agentKeys';
 import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
 import { canTakeControl, CockpitDock, controlBadge, controllerLine, ReadOnlyDock } from './Dock';
-import { liveTabs, TabBar } from './Live';
+import { liveTabs, revealTab, TabBar } from './Live';
 
 const live: ConnectionStatus = { ...INITIAL_STATUS, link: 'live', control: 'observer', sessionState: 'running' };
 const noop = () => undefined;
@@ -161,6 +161,24 @@ describe('session tabs', () => {
     expect(html.match(/, waiting for you/gu)).toHaveLength(1);
     expect(html).toMatch(/s2<\/span><span class="dot amber"/u);
     expect(html).not.toContain(', new output');
+  });
+
+  describe('revealTab', () => {
+    afterEach(() => { vi.unstubAllGlobals(); });
+    const reveal = (reduce: boolean) => {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query === '(prefers-reduced-motion: reduce)' }));
+      const scrollIntoView = vi.fn();
+      revealTab({ scrollIntoView });
+      return scrollIntoView.mock.calls;
+    };
+
+    it('scrolls only as far as needed, smoothly', () => {
+      expect(reveal(false)).toEqual([[{ inline: 'nearest', block: 'nearest', behavior: 'smooth' }]]);
+    });
+
+    it('jumps without animation when the user prefers reduced motion', () => {
+      expect(reveal(true)).toEqual([[{ inline: 'nearest', block: 'nearest', behavior: 'auto' }]]);
+    });
   });
 });
 

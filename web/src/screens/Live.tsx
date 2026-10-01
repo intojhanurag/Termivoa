@@ -56,6 +56,12 @@ export function liveTabs(
   return running.some((item) => sameSession(item, current)) ? running : [current, ...running];
 }
 
+/** Scrolls the open tab into the strip's view: no vertical page scroll, no focus change. */
+export function revealTab(tab: Pick<Element, 'scrollIntoView'>): void {
+  const still = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+  tab.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: still ? 'auto' : 'smooth' });
+}
+
 /** Session tabs. Switching opens a new read-only connection; nothing carries over. */
 export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }: {
   readonly tabs: ReadonlyArray<BrokerRPCSessionRecord>;
@@ -67,6 +73,12 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
   readonly onNew: () => void;
   readonly onMenu: () => void;
 }) {
+  const open = useRef<HTMLButtonElement>(null);
+  // Also when the open tab moves, e.g. the session list arrives after the screen opened.
+  const openIndex = tabs.findIndex((tab) => sameSession(tab, current));
+  useEffect(() => {
+    if (open.current !== null) revealTab(open.current);
+  }, [current.id, current.generation, openIndex]);
   return (
     <nav className="tabs" aria-label="Open sessions">
       <div className="tab-scroll">
@@ -78,6 +90,7 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
           return (
             <button
               key={`${tab.id}/${tab.generation}`}
+              ref={active ? open : undefined}
               type="button"
               className={active ? 'tab active' : 'tab'}
               {...(active ? { 'aria-current': 'page' as const } : {})}
