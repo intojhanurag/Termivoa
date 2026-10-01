@@ -898,6 +898,15 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   folder outside git shows the `cd` hint; a dirty worktree asks before
   **Remove anyway**, then the folder is gone and the branch stays.
 
+- **`pterm uninstall` leftover message** (#116, `fix/issue-116`,
+  2026-10-01): macOS and Windows printed "move Termivoa.app to the Trash, or
+  remove it in Windows Settings > Apps", but the beta installs one `pterm`
+  file. `programLeftover` now says `delete <path> yourself` everywhere, and
+  names the bundle only when `pterm` runs inside a macOS `.app`. Evidence:
+  `TestProgramLeftoverNamesWhatToDelete`, the Linux host test that already
+  checked `delete /opt/pterm/bin/pterm yourself`, Linux and Windows
+  cross-vet, `./scripts/check`.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
