@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import standaloneCode from 'ajv/dist/standalone';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import envelopeSchema from '../protocol/v1/envelope.schema.json';
-import { createProtocolAjv } from './src/protocol/ajv';
+import envelopeSchema from '../protocol/v1/envelope.schema.json' with { type: 'json' };
+import { createProtocolAjv } from './src/protocol/ajv.ts';
 
 /** Emits /sw.js with a cache name derived from this build's hashed assets. */
 function serviceWorker(): Plugin {
