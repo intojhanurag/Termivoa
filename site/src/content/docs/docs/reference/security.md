@@ -4,7 +4,7 @@ description: How Termivoa keeps your computer's terminal private over Tailscale,
 lastUpdated: 2026-10-01
 ---
 
-Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no cloud service.
+Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted.
 
 ## Who can reach the page?
 
@@ -24,9 +24,9 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 ## Who can type in a session?
 
 - Only one device at a time controls a session, by holding a lease (a short-lived permission to type).
-- Taking control is always your explicit action, never automatic.
+- Control never moves to a device by itself. A reconnect always starts read-only. Termivoa takes control by itself only to type the start command of a session you just started, and only when no other device has control.
 - Typing is never queued or resent after a lost connection.
-- Phones never receive the raw terminal byte stream and cannot send raw bytes, only keys, text and pastes.
+- Phones never receive the raw terminal byte stream and cannot send raw bytes, only keys, text, pastes, scroll steps and answer-card choices.
 
 ## Who can see changes, commit and push?
 
@@ -44,7 +44,7 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 | Notification subscriptions | Your typing |
 | Logs | Pairing links and login secrets in clear text (only a one-way hash is kept) |
 
-All data is private to your user account ([Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)). Photos go to the project's `.termivoa/uploads/`. Snippets and the Wall tile order (session IDs only) stay on the phone.
+All data is private to your user account ([Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)). Photos go to the project's `.termivoa/uploads/`. Snippets and, from the next beta, the Wall tile order (session IDs only) stay on the phone.
 
 ## Can a worktree escape its folder?
 
@@ -56,7 +56,7 @@ No. [Worktree](/docs/guides/worktrees/) requests send only a session, a name and
 
 ## How do other features stay private?
 
-[Notifications](/docs/guides/notifications/) carry only session name, project name and status, encrypted to your phone. [Dev-server previews](/docs/guides/preview/) use a separate address and show only that session's servers. Only the device in control can send [photos](/docs/guides/photo-and-voice/).
+[Notifications](/docs/guides/notifications/) carry only the session name, project name, status, how long the agent worked and the session ID, encrypted to your phone. [Dev-server previews](/docs/guides/preview/) use a separate address and show only that session's servers. Only the device in control can send [photos](/docs/guides/photo-and-voice/).
 
 ## What is not protected?
 

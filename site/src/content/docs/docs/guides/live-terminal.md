@@ -47,14 +47,14 @@ With the phone keyboard open, all keys fold into one scrolling row, and the term
 
 ## Write longer text with compose
 
-Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**, which pastes it and presses Enter. Text with many lines asks before it sends. Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
+Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**, which pastes it and presses Enter. Text with more than one line asks before it sends. Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
 
 ## Save and send snippets
 
 Snippets are prompts and commands you send with one tap, saved on this phone only. Tap **snips** to open the Snips sheet.
 
 - Save: tap **+ new**, fill in **Title** and **Text to send**, pick **Press Enter after pasting** to run it at once, and tap **save**.
-- Send: tap it (needs control). Many lines ask first.
+- Send: tap it (needs control). A snippet with more than one line asks first.
 - Change or delete: tap **edit**, then the snippet.
 - **This project** (next beta): your project's own commands. See [Project buttons](/docs/guides/project-buttons/).
 

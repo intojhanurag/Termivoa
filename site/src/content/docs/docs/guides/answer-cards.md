@@ -28,7 +28,7 @@ One tap sends one answer. Termivoa never answers or retries on its own. Tap **te
 
 ## Why can a tap not answer the wrong question?
 
-Before your answer reaches the program, your computer checks that the same question, approving the same thing, is still on screen. It checks again just before it types. If the question changed, the answer is dropped, the card says **The question changed — check the new one**, and you keep control.
+Before your answer reaches the program, your computer checks that the same question, approving the same thing, is still on screen. It checks again just before it types. If the question changed, the answer is dropped and you keep control. The card shows the question that is on screen now; when the first check finds the change, it also says **The question changed — check the new one**.
 
 Prompts that ask the same thing about different commands are different questions. The same prompt and command twice in a row count as one, so an answer for the first can answer the second.
 

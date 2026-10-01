@@ -21,7 +21,7 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | `pterm stop` | Stops only the gateway. Sessions keep running, but phones cannot connect. |
 | `pterm shutdown` | Asks first, ends all sessions, and stops the broker and gateway. |
 | `pterm uninstall [--dry-run] [--yes] [--delete-data]` | Removes startup at login. Deletes data only with `--delete-data`. |
-| `pterm up --dev [--listen <addr>]` | Development only: an isolated test copy that leaves your real setup alone. |
+| `pterm up --dev [--data-dir <dir>] [--runtime-dir <dir>] [--listen <addr>] [--preview-listen <addr>\|off]` | Development only: an isolated test copy that leaves your real setup alone. |
 
 `--dev` and `--runtime-dir <folder>` are for development tests only.
 
