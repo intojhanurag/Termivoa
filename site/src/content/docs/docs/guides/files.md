@@ -43,7 +43,7 @@ Tap a file to read it with line numbers. Long lines scroll sideways and never wr
 | **This file is over 50 MiB, too large to show.** | Termivoa does not open it. |
 | **This file is not there anymore.** | It was moved or deleted. Tap **Show its folder**. |
 
-**Copy path** copies the file's path in the project. **Ask agent about this file** opens compose with `@path`, so you can ask the agent about it. Nothing is sent until you tap **Send ⏎**.
+**Copy path** (top right) copies the file's path in the project. **Ask agent about this file** opens compose with `@path`, so you can ask the agent about it. Nothing is sent until you tap **Send ⏎**.
 
 ## Search for a file
 
@@ -53,10 +53,10 @@ In a git repository, search skips files that git ignores, such as `node_modules`
 
 ## Open a file from the terminal
 
-Tap a file path in the terminal, such as `src/app.ts:42`, to open that file at that line. This works for paths with a line and column (`src/app.ts:42:7`), relative paths (`./src/app.ts`) and full paths inside the project.
+Tap a file path in the terminal, such as `src/app.ts:42`, to open that file at that line. This works for paths with a line and column (`src/app.ts:42:7`), the TypeScript form (`src/app.ts(42,7)`), relative paths (`./src/app.ts`) and full paths inside the project. A tapped folder opens in the list.
 
 - A swipe that starts on a path scrolls as usual; only a tap opens it.
-- Web addresses and paths outside the project do nothing.
+- Web addresses, version numbers and paths outside the project are not links; a tap there works as a normal tap.
 
 ## Common questions
 
@@ -66,7 +66,7 @@ No. Files only lists, searches and reads. To change a file, ask the agent or typ
 
 ### Why do I not see a file that is on my computer?
 
-Files shows the project of this session only. Check that the session is in the right folder (the path above the terminal), then tap **Refresh**. Search skips files that git ignores; browse the folder to see them.
+Files shows the project of this session only. Check that the session is in the right folder (the path above the terminal), then tap **Refresh**. If your computer does not answer within 15 seconds, Files says it could not read the folder; tap **Retry**. Search skips files that git ignores; browse the folder to see them.
 
 ### Who can read my files?
 
