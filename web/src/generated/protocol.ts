@@ -24,6 +24,8 @@ export type ProtocolTypes = {
     readonly adminRPCShellProfile:             AdminRPCShellProfile;
     readonly adminRPCShutdownResult:           AdminRPCShutdownResultPayload;
     readonly agentStatus:                      AgentStatus;
+    readonly branchesList:                     BranchesListPayload;
+    readonly branchesListed:                   BranchesListedPayload;
     readonly brokerRPCEmpty:                   BrokerRPCEmptyPayload;
     readonly brokerRPCError:                   BrokerRPCErrorPayload;
     readonly brokerRPCMessageType:             BrokerRPCMessageType;
@@ -117,6 +119,8 @@ export type ProtocolTypes = {
     readonly terminalResize:                   TerminalResizePayload;
     readonly terminalRow:                      TerminalRow;
     readonly welcome:                          WelcomePayload;
+    readonly worktreeRemove:                   WorktreeRemovePayload;
+    readonly worktreeRemoved:                  WorktreeRemovedPayload;
 }
 
 export type AccessRevokedPayload = {
@@ -274,6 +278,44 @@ export type AgentOption = {
 
 export type AgentState = "working" | "waiting" | "idle";
 
+/**
+ * Asks for the branches of the git repository that holds the session's working folder (the
+ * same folder as changes.list), to pick the base of a new worktree.
+ */
+export type BranchesListPayload = {
+}
+
+/**
+ * ready: branches lists the local branches (refs/heads) first, then the remote-tracking
+ * branches (refs/remotes, without * /HEAD), each group sorted by name, at most 200
+ * (truncated). repo is the base name of the main repository root, also when the folder is
+ * in a linked worktree. defaultBranch is the suggested base: the local branch that
+ * refs/remotes/origin/HEAD names, else that remote branch (origin/main), else main, else
+ * master, else the current branch; absent when none exists. current is the checked-out
+ * branch, absent when HEAD is detached. not_git: the folder is not in a repository.
+ * unavailable: git is missing or failed. Only ready carries repo, defaultBranch, current
+ * and branches.
+ */
+export type BranchesListedPayload = {
+    readonly branches:       BranchRef[];
+    readonly current?:       string;
+    readonly defaultBranch?: string;
+    readonly repo?:          string;
+    readonly state:          ChangesState;
+    readonly truncated:      boolean;
+}
+
+/**
+ * One branch. name is the short name git prints (main, origin/main). remote is true for a
+ * remote-tracking branch (refs/remotes).
+ */
+export type BranchRef = {
+    readonly name:   string;
+    readonly remote: boolean;
+}
+
+export type ChangesState = "ready" | "not_git" | "unavailable";
+
 export type BrokerRPCEmptyPayload = {
 }
 
@@ -282,18 +324,36 @@ export type BrokerRPCErrorPayload = {
     readonly message: string;
 }
 
-export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed" | "preview_missing";
+export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed" | "preview_missing" | "worktree_exists" | "not_a_repository";
 
 export type BrokerRPCMessageType = "session.list.request" | "session.create.request" | "session.rename.request" | "session.terminate.request" | "session.status.request" | "session.list.result" | "session.create.result" | "session.rename.result" | "session.terminate.result" | "session.status.result" | "broker.error";
 
 /**
  * References broker-saved configuration only. Executable paths, arguments, workdirs and
- * environment values are deliberately absent.
+ * environment values are deliberately absent. With worktree, the broker first creates a git
+ * worktree and starts the session there (see worktreeCreate).
  */
 export type BrokerRPCSessionCreateRequestPayload = {
     readonly operationId:    string;
     readonly projectId:      string;
     readonly shellProfileId: string;
+    readonly worktree?:      WorktreeCreate;
+}
+
+/**
+ * Creates a git worktree for the new session. The broker reads the folder of the live
+ * session sourceSessionId (as changes.list does), finds its main repository root, checks
+ * that base is a branch from a fresh branches listing, and runs git worktree add -b
+ * termivoa/<name> <home>/termivoa/worktrees/<repo>/<name> <base> without upstream tracking.
+ * The session starts in that folder with name as its title. worktree_exists: the folder or
+ * the branch already exists. not_a_repository: the source folder is not in a git
+ * repository. limit_exceeded: the repository already has 50 worktrees there. A replayed
+ * operationId never creates a second worktree.
+ */
+export type WorktreeCreate = {
+    readonly base:            string;
+    readonly name:            string;
+    readonly sourceSessionId: string;
 }
 
 export type BrokerRPCSessionListRequestPayload = {
@@ -312,7 +372,8 @@ export type BrokerRPCSessionListResultPayload = {
  * gateway list, for the requesting device. Lease secrets, connection IDs and other device
  * labels are never included. titleIsCustom is true when a user renamed the session; clients
  * show the basename of cwd (the live folder) as the title only when it is absent or false.
- * cwd is present only while the session is running.
+ * cwd is present only while the session is running. worktree is present only while the
+ * session is live in this broker and started in a Termivoa worktree.
  */
 export type BrokerRPCSessionRecord = {
     readonly agent?:           AgentStatus;
@@ -337,6 +398,7 @@ export type BrokerRPCSessionRecord = {
     readonly titleIsCustom?:   boolean;
     readonly updatedAt:        string;
     readonly viewerCount?:     number;
+    readonly worktree?:        SessionWorktree;
 }
 
 /**
@@ -354,6 +416,15 @@ export type PreviewPort = {
 }
 
 export type State = "starting" | "running" | "exiting" | "exited" | "lost";
+
+/**
+ * Present when the folder the session started in is a Termivoa worktree,
+ * <home>/termivoa/worktrees/<repo>/<name>. Only such a session accepts worktree.remove.
+ */
+export type SessionWorktree = {
+    readonly name: string;
+    readonly repo: string;
+}
 
 export type BrokerRPCSessionMutationResultPayload = {
     readonly operationId: string;
@@ -477,8 +548,6 @@ export type ChangedFile = {
 }
 
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "untracked" | "typechange";
-
-export type ChangesState = "ready" | "not_git" | "unavailable";
 
 export type ControlChangedPayload = {
     readonly controllerConnectionId: null | string;
@@ -619,6 +688,7 @@ export type HTTPSessionCreateRequest = {
     readonly operationId:    string;
     readonly projectId:      string;
     readonly shellProfileId: string;
+    readonly worktree?:      WorktreeCreate;
 }
 
 export type GatewayRPCSessionRenamePayload = {
@@ -922,7 +992,7 @@ export type LeasePayload = {
     readonly lease: string;
 }
 
-export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed" | "tasks.list" | "tasks.listed";
+export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed" | "tasks.list" | "tasks.listed" | "branches.list" | "branches.listed" | "worktree.remove" | "worktree.removed";
 
 export type ScreenMetadata = {
     readonly background:      Color;
@@ -1061,3 +1131,27 @@ export type ProtocolLimits = {
     readonly outboundMessageBytes: number;
     readonly outgoingQueueBytes:   number;
 }
+
+/**
+ * Controller only. Removes the git worktree the session started in (only a Termivoa
+ * worktree, created with a session create worktree request) with git worktree remove, then
+ * ends the session. Without force, a worktree with changes or untracked files is kept and
+ * the reply is dirty. The branch is always kept. One commit, push or remove runs per
+ * session at a time.
+ */
+export type WorktreeRemovePayload = {
+    readonly force: boolean;
+    readonly lease: string;
+}
+
+/**
+ * removed: the worktree folder is gone, the branch is kept, and the session ends next.
+ * dirty: force was false and the worktree has changes; nothing was removed. failed: nothing
+ * more happens; output holds the last lines git printed or why it was refused.
+ */
+export type WorktreeRemovedPayload = {
+    readonly output?: string;
+    readonly state:   WorktreeRemoveState;
+}
+
+export type WorktreeRemoveState = "removed" | "dirty" | "failed";

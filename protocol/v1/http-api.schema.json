@@ -122,7 +122,8 @@
       "properties": {
         "operationId": { "$ref": "#/$defs/uuid" },
         "projectId": { "$ref": "#/$defs/uuid" },
-        "shellProfileId": { "$ref": "#/$defs/uuid" }
+        "shellProfileId": { "$ref": "#/$defs/uuid" },
+        "worktree": { "$ref": "broker-rpc.schema.json#/$defs/worktreeCreate" }
       }
     },
     "sessionRenameRequest": {

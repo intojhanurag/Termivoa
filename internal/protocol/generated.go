@@ -24,6 +24,8 @@ type ProtocolTypes struct {
 	AdminRPCShellProfile             AdminRPCShellProfile                    `json:"adminRPCShellProfile"`
 	AdminRPCShutdownResult           AdminRPCShutdownResultPayload           `json:"adminRPCShutdownResult"`
 	AgentStatus                      AgentStatus                             `json:"agentStatus"`
+	BranchesList                     BranchesListPayload                     `json:"branchesList"`
+	BranchesListed                   BranchesListedPayload                   `json:"branchesListed"`
 	BrokerRPCEmpty                   BrokerRPCEmptyPayload                   `json:"brokerRPCEmpty"`
 	BrokerRPCError                   BrokerRPCErrorPayload                   `json:"brokerRPCError"`
 	BrokerRPCMessageType             BrokerRPCMessageType                    `json:"brokerRPCMessageType"`
@@ -117,6 +119,8 @@ type ProtocolTypes struct {
 	TerminalResize                   TerminalResizePayload                   `json:"terminalResize"`
 	TerminalRow                      TerminalRow                             `json:"terminalRow"`
 	Welcome                          WelcomePayload                          `json:"welcome"`
+	WorktreeRemove                   WorktreeRemovePayload                   `json:"worktreeRemove"`
+	WorktreeRemoved                  WorktreeRemovedPayload                  `json:"worktreeRemoved"`
 }
 
 type AccessRevokedPayload struct {
@@ -247,6 +251,36 @@ type AgentOption struct {
 	Label string `json:"label"`
 }
 
+// Asks for the branches of the git repository that holds the session's working folder (the
+// same folder as changes.list), to pick the base of a new worktree.
+type BranchesListPayload struct {
+}
+
+// ready: branches lists the local branches (refs/heads) first, then the remote-tracking
+// branches (refs/remotes, without */HEAD), each group sorted by name, at most 200
+// (truncated). repo is the base name of the main repository root, also when the folder is
+// in a linked worktree. defaultBranch is the suggested base: the local branch that
+// refs/remotes/origin/HEAD names, else that remote branch (origin/main), else main, else
+// master, else the current branch; absent when none exists. current is the checked-out
+// branch, absent when HEAD is detached. not_git: the folder is not in a repository.
+// unavailable: git is missing or failed. Only ready carries repo, defaultBranch, current
+// and branches.
+type BranchesListedPayload struct {
+	Branches      []BranchRef  `json:"branches"`
+	Current       *string      `json:"current,omitempty"`
+	DefaultBranch *string      `json:"defaultBranch,omitempty"`
+	Repo          *string      `json:"repo,omitempty"`
+	State         ChangesState `json:"state"`
+	Truncated     bool         `json:"truncated"`
+}
+
+// One branch. name is the short name git prints (main, origin/main). remote is true for a
+// remote-tracking branch (refs/remotes).
+type BranchRef struct {
+	Name   string `json:"name"`
+	Remote bool   `json:"remote"`
+}
+
 type BrokerRPCEmptyPayload struct {
 }
 
@@ -256,11 +290,27 @@ type BrokerRPCErrorPayload struct {
 }
 
 // References broker-saved configuration only. Executable paths, arguments, workdirs and
-// environment values are deliberately absent.
+// environment values are deliberately absent. With worktree, the broker first creates a git
+// worktree and starts the session there (see worktreeCreate).
 type BrokerRPCSessionCreateRequestPayload struct {
-	OperationID    string `json:"operationId"`
-	ProjectID      string `json:"projectId"`
-	ShellProfileID string `json:"shellProfileId"`
+	OperationID    string          `json:"operationId"`
+	ProjectID      string          `json:"projectId"`
+	ShellProfileID string          `json:"shellProfileId"`
+	Worktree       *WorktreeCreate `json:"worktree,omitempty"`
+}
+
+// Creates a git worktree for the new session. The broker reads the folder of the live
+// session sourceSessionId (as changes.list does), finds its main repository root, checks
+// that base is a branch from a fresh branches listing, and runs git worktree add -b
+// termivoa/<name> <home>/termivoa/worktrees/<repo>/<name> <base> without upstream tracking.
+// The session starts in that folder with name as its title. worktree_exists: the folder or
+// the branch already exists. not_a_repository: the source folder is not in a git
+// repository. limit_exceeded: the repository already has 50 worktrees there. A replayed
+// operationId never creates a second worktree.
+type WorktreeCreate struct {
+	Base            string `json:"base"`
+	Name            string `json:"name"`
+	SourceSessionID string `json:"sourceSessionId"`
 }
 
 type BrokerRPCSessionListRequestPayload struct {
@@ -278,30 +328,32 @@ type BrokerRPCSessionListResultPayload struct {
 // gateway list, for the requesting device. Lease secrets, connection IDs and other device
 // labels are never included. titleIsCustom is true when a user renamed the session; clients
 // show the basename of cwd (the live folder) as the title only when it is absent or false.
-// cwd is present only while the session is running.
+// cwd is present only while the session is running. worktree is present only while the
+// session is live in this broker and started in a Termivoa worktree.
 type BrokerRPCSessionRecord struct {
-	Agent           *AgentStatus  `json:"agent,omitempty"`
-	Columns         int64         `json:"columns"`
-	Controlled      *bool         `json:"controlled,omitempty"`
-	ControllerIsYou *bool         `json:"controllerIsYou,omitempty"`
-	CreatedAt       string        `json:"createdAt"`
-	Cwd             *string       `json:"cwd,omitempty"`
-	EndedAt         *string       `json:"endedAt,omitempty"`
-	ExitCode        *int64        `json:"exitCode,omitempty"`
-	Generation      string        `json:"generation"`
-	ID              string        `json:"id"`
-	LastOutputAt    *string       `json:"lastOutputAt,omitempty"`
-	Preview         *string       `json:"preview,omitempty"`
-	Previews        []PreviewPort `json:"previews,omitempty"`
-	ProjectID       string        `json:"projectId"`
-	Rows            int64         `json:"rows"`
-	ShellProfileID  string        `json:"shellProfileId"`
-	StartedAt       *string       `json:"startedAt,omitempty"`
-	State           State         `json:"state"`
-	Title           string        `json:"title"`
-	TitleIsCustom   *bool         `json:"titleIsCustom,omitempty"`
-	UpdatedAt       string        `json:"updatedAt"`
-	ViewerCount     *int64        `json:"viewerCount,omitempty"`
+	Agent           *AgentStatus     `json:"agent,omitempty"`
+	Columns         int64            `json:"columns"`
+	Controlled      *bool            `json:"controlled,omitempty"`
+	ControllerIsYou *bool            `json:"controllerIsYou,omitempty"`
+	CreatedAt       string           `json:"createdAt"`
+	Cwd             *string          `json:"cwd,omitempty"`
+	EndedAt         *string          `json:"endedAt,omitempty"`
+	ExitCode        *int64           `json:"exitCode,omitempty"`
+	Generation      string           `json:"generation"`
+	ID              string           `json:"id"`
+	LastOutputAt    *string          `json:"lastOutputAt,omitempty"`
+	Preview         *string          `json:"preview,omitempty"`
+	Previews        []PreviewPort    `json:"previews,omitempty"`
+	ProjectID       string           `json:"projectId"`
+	Rows            int64            `json:"rows"`
+	ShellProfileID  string           `json:"shellProfileId"`
+	StartedAt       *string          `json:"startedAt,omitempty"`
+	State           State            `json:"state"`
+	Title           string           `json:"title"`
+	TitleIsCustom   *bool            `json:"titleIsCustom,omitempty"`
+	UpdatedAt       string           `json:"updatedAt"`
+	ViewerCount     *int64           `json:"viewerCount,omitempty"`
+	Worktree        *SessionWorktree `json:"worktree,omitempty"`
 }
 
 // Previewable ports of a running session, sorted by port, unique. Absent when there are
@@ -314,6 +366,13 @@ type BrokerRPCSessionRecord struct {
 type PreviewPort struct {
 	Port  int64  `json:"port"`
 	Since string `json:"since"`
+}
+
+// Present when the folder the session started in is a Termivoa worktree,
+// <home>/termivoa/worktrees/<repo>/<name>. Only such a session accepts worktree.remove.
+type SessionWorktree struct {
+	Name string `json:"name"`
+	Repo string `json:"repo"`
 }
 
 type BrokerRPCSessionMutationResultPayload struct {
@@ -523,9 +582,10 @@ type GatewayRPCSessionCreatePayload struct {
 }
 
 type HTTPSessionCreateRequest struct {
-	OperationID    string `json:"operationId"`
-	ProjectID      string `json:"projectId"`
-	ShellProfileID string `json:"shellProfileId"`
+	OperationID    string          `json:"operationId"`
+	ProjectID      string          `json:"projectId"`
+	ShellProfileID string          `json:"shellProfileId"`
+	Worktree       *WorktreeCreate `json:"worktree,omitempty"`
 }
 
 type GatewayRPCSessionRenamePayload struct {
@@ -910,6 +970,24 @@ type ProtocolLimits struct {
 	OutgoingQueueBytes   int64 `json:"outgoingQueueBytes"`
 }
 
+// Controller only. Removes the git worktree the session started in (only a Termivoa
+// worktree, created with a session create worktree request) with git worktree remove, then
+// ends the session. Without force, a worktree with changes or untracked files is kept and
+// the reply is dirty. The branch is always kept. One commit, push or remove runs per
+// session at a time.
+type WorktreeRemovePayload struct {
+	Force bool   `json:"force"`
+	Lease string `json:"lease"`
+}
+
+// removed: the worktree folder is gone, the branch is kept, and the session ends next.
+// dirty: force was false and the worktree has changes; nothing was removed. failed: nothing
+// more happens; output holds the last lines git printed or why it was refused.
+type WorktreeRemovedPayload struct {
+	Output *string             `json:"output,omitempty"`
+	State  WorktreeRemoveState `json:"state"`
+}
+
 // active: not revoked, holding a credential that is unrevoked, before its absolute expiry,
 // and used within the inactivity window. expired: not revoked, but no such credential.
 // revoked: the device itself is revoked.
@@ -961,6 +1039,14 @@ const (
 	Working AgentState = "working"
 )
 
+type ChangesState string
+
+const (
+	ChangesStateReady       ChangesState = "ready"
+	ChangesStateUnavailable ChangesState = "unavailable"
+	NotGit                  ChangesState = "not_git"
+)
+
 type ErrorCode string
 
 const (
@@ -972,6 +1058,7 @@ const (
 	InternalError       ErrorCode = "internal_error"
 	InvalidRequest      ErrorCode = "invalid_request"
 	LimitExceeded       ErrorCode = "limit_exceeded"
+	NotARepository      ErrorCode = "not_a_repository"
 	NotController       ErrorCode = "not_controller"
 	OperationConflict   ErrorCode = "operation_conflict"
 	PairingExpired      ErrorCode = "pairing_expired"
@@ -986,6 +1073,7 @@ const (
 	ShellProfileMissing ErrorCode = "shell_profile_missing"
 	StaleLease          ErrorCode = "stale_lease"
 	Unauthorized        ErrorCode = "unauthorized"
+	WorktreeExists      ErrorCode = "worktree_exists"
 )
 
 type BrokerRPCMessageType string
@@ -1057,14 +1145,6 @@ const (
 	Renamed    ChangeStatus = "renamed"
 	Typechange ChangeStatus = "typechange"
 	Untracked  ChangeStatus = "untracked"
-)
-
-type ChangesState string
-
-const (
-	ChangesStateReady       ChangesState = "ready"
-	ChangesStateUnavailable ChangesState = "unavailable"
-	NotGit                  ChangesState = "not_git"
 )
 
 type GatewayRPCMessageType string
@@ -1255,6 +1335,8 @@ type MessageType string
 
 const (
 	AccessRevoked             MessageType = "access.revoked"
+	BranchesList              MessageType = "branches.list"
+	BranchesListed            MessageType = "branches.listed"
 	ChangesCommit             MessageType = "changes.commit"
 	ChangesCommitted          MessageType = "changes.committed"
 	ChangesFile               MessageType = "changes.file"
@@ -1292,6 +1374,8 @@ const (
 	TasksListed               MessageType = "tasks.listed"
 	TerminalResize            MessageType = "terminal.resize"
 	Welcome                   MessageType = "welcome"
+	WorktreeRemove            MessageType = "worktree.remove"
+	WorktreeRemoved           MessageType = "worktree.removed"
 )
 
 type Buffer string
@@ -1350,4 +1434,12 @@ const (
 	GoMod       TaskSource = "go.mod"
 	Makefile    TaskSource = "Makefile"
 	PackageJSON TaskSource = "package.json"
+)
+
+type WorktreeRemoveState string
+
+const (
+	Dirty                     WorktreeRemoveState = "dirty"
+	Removed                   WorktreeRemoveState = "removed"
+	WorktreeRemoveStateFailed WorktreeRemoveState = "failed"
 )

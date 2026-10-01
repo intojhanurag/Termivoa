@@ -34,6 +34,8 @@
     { "$ref": "#/$defs/changesCommitMessage" },
     { "$ref": "#/$defs/changesPushMessage" },
     { "$ref": "#/$defs/tasksListMessage" },
+    { "$ref": "#/$defs/branchesListMessage" },
+    { "$ref": "#/$defs/worktreeRemoveMessage" },
     { "$ref": "#/$defs/sessionDetachMessage" },
     { "$ref": "#/$defs/welcomeMessage" },
     { "$ref": "#/$defs/snapshotBeginMessage" },
@@ -47,6 +49,8 @@
     { "$ref": "#/$defs/changesCommittedMessage" },
     { "$ref": "#/$defs/changesPushedMessage" },
     { "$ref": "#/$defs/tasksListedMessage" },
+    { "$ref": "#/$defs/branchesListedMessage" },
+    { "$ref": "#/$defs/worktreeRemovedMessage" },
     { "$ref": "#/$defs/controlChangedMessage" },
     { "$ref": "#/$defs/inputAcceptedMessage" },
     { "$ref": "#/$defs/inputRejectedMessage" },
@@ -83,7 +87,8 @@
         "input.rejected", "session.state", "access.revoked", "error",
         "changes.list", "changes.file", "changes.summary", "changes.patch",
         "changes.commit", "changes.push", "changes.committed", "changes.pushed",
-        "tasks.list", "tasks.listed"
+        "tasks.list", "tasks.listed", "branches.list", "branches.listed",
+        "worktree.remove", "worktree.removed"
       ]
     },
     "errorCode": {
@@ -96,7 +101,7 @@
         "limit_exceeded", "history_changed", "resync_required",
         "host_unavailable", "internal_error", "invalid_request",
         "operation_conflict", "project_missing", "shell_profile_missing",
-        "question_changed", "preview_missing"
+        "question_changed", "preview_missing", "worktree_exists", "not_a_repository"
       ]
     },
     "sessionLifecycle": {
@@ -566,6 +571,51 @@
         "tasks": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/projectTask" } }
       }
     },
+    "branchesListPayload": {
+      "title": "BranchesListPayload",
+      "description": "Asks for the branches of the git repository that holds the session's working folder (the same folder as changes.list), to pick the base of a new worktree.",
+      "type": "object", "additionalProperties": false, "properties": {}
+    },
+    "branchRef": {
+      "title": "BranchRef",
+      "description": "One branch. name is the short name git prints (main, origin/main). remote is true for a remote-tracking branch (refs/remotes).",
+      "type": "object", "additionalProperties": false, "required": ["name", "remote"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "remote": { "type": "boolean" }
+      }
+    },
+    "branchesListedPayload": {
+      "title": "BranchesListedPayload",
+      "description": "ready: branches lists the local branches (refs/heads) first, then the remote-tracking branches (refs/remotes, without */HEAD), each group sorted by name, at most 200 (truncated). repo is the base name of the main repository root, also when the folder is in a linked worktree. defaultBranch is the suggested base: the local branch that refs/remotes/origin/HEAD names, else that remote branch (origin/main), else main, else master, else the current branch; absent when none exists. current is the checked-out branch, absent when HEAD is detached. not_git: the folder is not in a repository. unavailable: git is missing or failed. Only ready carries repo, defaultBranch, current and branches.",
+      "type": "object", "additionalProperties": false, "required": ["state", "branches", "truncated"],
+      "properties": {
+        "state": { "$ref": "#/$defs/changesSummaryPayload/properties/state" },
+        "repo": { "type": "string", "minLength": 1, "maxLength": 128, "maxUtf8Bytes": 384, "safeDisplayText": true },
+        "defaultBranch": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "current": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "branches": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/branchRef" } },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "worktreeRemovePayload": {
+      "title": "WorktreeRemovePayload",
+      "description": "Controller only. Removes the git worktree the session started in (only a Termivoa worktree, created with a session create worktree request) with git worktree remove, then ends the session. Without force, a worktree with changes or untracked files is kept and the reply is dirty. The branch is always kept. One commit, push or remove runs per session at a time.",
+      "type": "object", "additionalProperties": false, "required": ["lease", "force"],
+      "properties": {
+        "lease": { "$ref": "#/$defs/secret" },
+        "force": { "type": "boolean" }
+      }
+    },
+    "worktreeRemovedPayload": {
+      "title": "WorktreeRemovedPayload",
+      "description": "removed: the worktree folder is gone, the branch is kept, and the session ends next. dirty: force was false and the worktree has changes; nothing was removed. failed: nothing more happens; output holds the last lines git printed or why it was refused.",
+      "type": "object", "additionalProperties": false, "required": ["state"],
+      "properties": {
+        "state": { "title": "WorktreeRemoveState", "type": "string", "enum": ["removed", "dirty", "failed"] },
+        "output": { "type": "string", "maxLength": 2000 }
+      }
+    },
     "historyPagePayload": {
       "title": "HistoryPagePayload",
       "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "columns", "offset", "rows", "complete"],
@@ -658,6 +708,10 @@
     "changesPushedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "changes.pushed" }, "payload": { "$ref": "#/$defs/changesPushedPayload" } } },
     "tasksListMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "tasks.list" }, "payload": { "$ref": "#/$defs/tasksListPayload" } } },
     "tasksListedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "tasks.listed" }, "payload": { "$ref": "#/$defs/tasksListedPayload" } } },
+    "branchesListMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "branches.list" }, "payload": { "$ref": "#/$defs/branchesListPayload" } } },
+    "branchesListedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "branches.listed" }, "payload": { "$ref": "#/$defs/branchesListedPayload" } } },
+    "worktreeRemoveMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "worktree.remove" }, "payload": { "$ref": "#/$defs/worktreeRemovePayload" } } },
+    "worktreeRemovedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "worktree.removed" }, "payload": { "$ref": "#/$defs/worktreeRemovedPayload" } } },
     "historyChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.changed" }, "payload": { "$ref": "#/$defs/historyChangedPayload" } } },
     "controlChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.changed" }, "payload": { "$ref": "#/$defs/controlChangedPayload" } } },
     "inputAcceptedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.accepted" }, "payload": { "$ref": "#/$defs/inputAcceptedPayload" } } },

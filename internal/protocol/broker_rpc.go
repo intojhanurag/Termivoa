@@ -147,7 +147,7 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 		if !validUUID(payload.ProjectID) || !validUUID(payload.ShellProfileID) {
 			return errors.New("projectId and shellProfileId must be canonical UUIDs")
 		}
-		return nil
+		return ValidateWorktreeCreate(payload.Worktree)
 	case SessionRenameRequest:
 		payload, err := brokerRPCPayload[BrokerRPCSessionRenameRequestPayload](envelope)
 		if err != nil {
@@ -351,6 +351,9 @@ func validateBrokerRPCSessionRecord(record BrokerRPCSessionRecord) error {
 		return err
 	}
 	if err := validateOptionalWorkingDirectory(record.Cwd); err != nil {
+		return err
+	}
+	if err := validateSessionWorktree(record.Worktree); err != nil {
 		return err
 	}
 	if record.Agent != nil {
