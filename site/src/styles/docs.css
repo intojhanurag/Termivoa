@@ -86,4 +86,5 @@ h1#_top { font-size: clamp(2.2rem, 5vw, 2.9rem); line-height: 1.1; }
 	border: 1px solid var(--sl-color-gray-5);
 	border-radius: 24px;
 }
-.sl-markdown-content img[src*='how-it-works'] { display: block; width: 100%; max-width: 520px; margin-inline: auto; }
+/* Diagrams and illustrations: centered, at a size where their text stays readable. */
+.sl-markdown-content :is(img[src*='how-it-works'], img[src*='illo-']) { display: block; width: 100%; max-width: 520px; margin-inline: auto; }
