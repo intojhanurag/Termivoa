@@ -1,22 +1,39 @@
 import { useState } from 'react';
 import { api, isAuthFailure } from '../api/http';
-import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import type { BrokerRPCSessionRecord, SessionWorktree } from '../generated/protocol';
+import type { WorktreeRemoval } from '../terminal/Connection';
 import { Sheet, SheetHeader } from './Sheet';
+import { RemoveWorktree } from './Worktree';
 
 const SAFE_TITLE = /^[^\p{Cc}\s](?:[^\p{Cc}]{0,126}[^\p{Cc}\s])?$/u;
 
-/** The "…" menu: control, rename, terminate, and the way out to other screens. */
-export function SessionMenu({ session, controlling, onRelease, onSessions, onSettings, onChanged, onAuthFailure, onClose }: {
+/** The "…" menu: control, worktrees, rename, terminate, and the way out to other screens. */
+export function SessionMenu({
+  session, controlling, running, removal,
+  onRelease, onNewWorktree, onRemoveWorktree, onSessions, onSettings, onChanged, onAuthFailure, onClose,
+}: {
   readonly session: BrokerRPCSessionRecord;
   readonly controlling: boolean;
+  /** The shell is running now, so its folder can be read. */
+  readonly running: boolean;
+  /** The latest worktree remove on this connection. */
+  readonly removal: WorktreeRemoval | undefined;
   readonly onRelease: () => void;
+  readonly onNewWorktree: () => void;
+  /** False when nothing was sent (no control, no link, or a remove in flight). */
+  readonly onRemoveWorktree: (force: boolean) => boolean;
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onChanged: () => Promise<void>;
   readonly onAuthFailure: () => void;
   readonly onClose: () => void;
 }) {
-  const [mode, setMode] = useState<'menu' | 'rename' | 'terminate'>('menu');
+  const [mode, setMode] = useState<'menu' | 'rename' | 'terminate' | 'remove'>('menu');
+  // Kept while removing: the record loses it once the session ends.
+  const [removing, setRemoving] = useState<SessionWorktree>();
+  // Only a remove sent from this menu shows its reply; an older one is not news.
+  const [removeSent, setRemoveSent] = useState(false);
+  const [notSent, setNotSent] = useState(false);
   const [title, setTitle] = useState(session.title);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -89,12 +106,40 @@ export function SessionMenu({ session, controlling, onRelease, onSessions, onSet
           </div>
         </div>
       )}
+      {mode === 'remove' && removing !== undefined && (
+        <>
+          {notSent && <p role="alert" className="error">Not sent. Take control, then try again.</p>}
+          <RemoveWorktree
+            worktree={removing}
+            removal={removeSent ? removal : undefined}
+            onRemove={(force) => {
+              const sent = onRemoveWorktree(force);
+              setRemoveSent(sent);
+              setNotSent(!sent);
+            }}
+            onCancel={() => { setRemoveSent(false); setNotSent(false); setMode('menu'); }}
+          />
+        </>
+      )}
       {mode === 'menu' && (
         <ul className="menu-list">
           {controlling && (
             <li><button type="button" onClick={() => { onRelease(); onClose(); }}>Release control</button></li>
           )}
+          {running && (
+            <li><button type="button" onClick={onNewWorktree}>New worktree…</button></li>
+          )}
           <li><button type="button" disabled={ended} onClick={() => setMode('rename')}>Rename…</button></li>
+          {session.worktree !== undefined && controlling && (
+            <li>
+              <button
+                type="button"
+                className="danger"
+                disabled={ended}
+                onClick={() => { setRemoving(session.worktree); setMode('remove'); }}
+              >Remove worktree…</button>
+            </li>
+          )}
           <li><button type="button" className="danger" disabled={ended} onClick={() => setMode('terminate')}>Terminate…</button></li>
           <li><button type="button" onClick={onSessions}>All sessions</button></li>
           <li><button type="button" onClick={onSettings}>Settings</button></li>

@@ -683,6 +683,30 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   tab; Type here printed `BUILD-OK`; selecting 2 diff lines drafted
   `@cart.js lines 3–4:` with both lines quoted, without sending.
 
+- **Worktrees, host side** (`feat/worktrees-host`, 2026-10-01): protocol
+  `branches.list`/`branches.listed`, `worktree.remove`/`worktree.removed`, an
+  optional `worktree` object on session create (HTTP and broker RPC) and on
+  session records, and the error codes `worktree_exists` and
+  `not_a_repository`. `internal/gitchanges/worktree.go` lists branches and
+  runs `git worktree add --no-track -b termivoa/<name>
+  ~/termivoa/worktrees/<repo>/<name> <base commit>` and `git worktree remove`,
+  with timeouts. The base must be in a fresh listing. Limit: 50 per
+  repository. A create whose session fails to start is rolled back. Branches
+  are never deleted. Checks: `go test -race` on `internal/{protocol,gitchanges,broker,gateway}`,
+  `./scripts/check`, and `go vet ./...` with `GOOS=linux` and `GOOS=windows`
+  (`CGO_ENABLED=0`). The end-to-end check on an isolated `pterm up --dev`
+  stack with a temporary HOME is in
+  [evidence/worktrees/host-e2e.md](evidence/worktrees/host-e2e.md). The
+  phone UI is pending. Host review fixes: ignored files (such as `.env`)
+  count as changes, so remove without force never deletes them; a failed
+  `git worktree add` (a failing `post-checkout` hook or the timeout) is rolled
+  back and returns `worktree_failed` (HTTP 422) with the end of git's output;
+  a repository folder name of `.`, `..` or one with a slash is refused, and
+  the path must stay `<root>/<repo>/<name>`; a reused operation ID with a
+  different worktree is `operation_conflict`. On Windows the session ends
+  before `git worktree remove`, because the shell holds its folder open; that
+  order is tested on macOS through a switch, not on Windows itself.
+
 - **Lost Ctrl+] at desktop attach startup** (#68, `fix/issue-68`): the
   flaky `TestPtermDesktopAttachNativeOuterTTY` failure (`attach executable did
   not exit` at line 102) reproduced 11 times in 400 runs (8 copies of the test
@@ -856,6 +880,23 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   480 px to open the keyboard row, session running `cat -v`): `↓` is key 5,
   on screen (right edge 245 px), once, and ↑ ↓ ↓ Enter printed
   `^[[A^[[B^[[B`.
+
+- **Worktrees, phone side and end to end** (`feat/worktrees`, 2026-10-01):
+  **⋯ → New worktree…** sheet (random editable name, base branch picker with
+  the default branch first, start with Shell/Claude/Codex), the `⎇ name`
+  badge on session rows and the status line, and **Remove worktree…** with a
+  confirm step and a second confirm for uncommitted changes. Evidence:
+  `pnpm --dir web test`, `./scripts/check` exit 0, and a headless Chrome run
+  (`~/phone-terminal-worktrees/e2e/worktrees.mjs`, not in the repo) against
+  `pterm up --dev` with `HOME=/tmp/wth`, a repository with `main` and
+  `feat/x` and a bare `origin`: 19/19 checks pass. The sheet opens with base
+  `main` and lists `main`, `feat/x`, `origin/main`, `origin/feat/x` (no
+  `origin/HEAD`); Create makes the folder and `termivoa/<name>` at `main`'s
+  commit with no upstream and opens the new session with its badge; a second
+  worktree made from inside the first uses base `feat/x` and the main
+  repository's name; a duplicate name is refused with a clear message; a
+  folder outside git shows the `cd` hint; a dirty worktree asks before
+  **Remove anyway**, then the folder is gone and the branch stays.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

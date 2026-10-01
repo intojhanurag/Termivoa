@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
@@ -104,7 +105,10 @@ type CreateSessionRequest struct {
 	Title          string
 	ProjectID      string
 	ShellProfileID string
-	Process        ptyhost.Spec
+	// Worktree is the client's worktree request; it is part of the operation
+	// identity, unlike the broker-resolved process settings.
+	Worktree *protocol.WorktreeCreate
+	Process  ptyhost.Spec
 }
 
 // CreateSessionResult is safe to retain for operation deduplication. Session
@@ -273,7 +277,7 @@ func (registry *Registry) Create(ctx context.Context, request CreateSessionReque
 // a retry because those settings can change after the operation commits.
 func (registry *Registry) ReplayCreate(
 	ctx context.Context,
-	operationID, projectID, shellProfileID string,
+	operationID, projectID, shellProfileID string, worktree *protocol.WorktreeCreate,
 ) (CreateSessionResult, bool, error) {
 	if ctx == nil {
 		return CreateSessionResult{}, false, errors.New("broker: create replay context must not be nil")
@@ -292,7 +296,7 @@ func (registry *Registry) ReplayCreate(
 		return CreateSessionResult{}, false, err
 	}
 	fingerprint, err := createRequestFingerprint(CreateSessionRequest{
-		OperationID: operationID, ProjectID: projectID, ShellProfileID: shellProfileID,
+		OperationID: operationID, ProjectID: projectID, ShellProfileID: shellProfileID, Worktree: worktree,
 	})
 	if err != nil {
 		return CreateSessionResult{}, false, err
@@ -764,8 +768,19 @@ func (registry *Registry) operationResult(operation *createOperation) CreateSess
 	return result
 }
 
+// createRequestFingerprint is the saved-IDs fingerprint, extended with the
+// worktree request when there is one, so creates without a worktree keep
+// their existing receipts.
 func createRequestFingerprint(request CreateSessionRequest) ([sha256.Size]byte, error) {
-	return store.SessionCreateFingerprint(request.ProjectID, request.ShellProfileID)
+	fingerprint, err := store.SessionCreateFingerprint(request.ProjectID, request.ShellProfileID)
+	if err != nil || request.Worktree == nil {
+		return fingerprint, err
+	}
+	worktree, err := json.Marshal(request.Worktree)
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("broker: fingerprint worktree create: %w", err)
+	}
+	return sha256.Sum256(append(fingerprint[:], worktree...)), nil
 }
 
 func renameRequestFingerprint(request RenameSessionRequest) ([sha256.Size]byte, error) {

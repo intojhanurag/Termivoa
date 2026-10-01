@@ -192,7 +192,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if !validUUID(payload.Request.OperationID) || !validUUID(payload.Request.ProjectID) || !validUUID(payload.Request.ShellProfileID) {
 			return errors.New("create request contains a non-canonical UUID")
 		}
-		return nil
+		return ValidateWorktreeCreate(payload.Request.Worktree)
 	case GatewaySessionRename:
 		payload, err := DecodeRPCPayload[GatewayRPCSessionRenamePayload](envelope)
 		if err != nil {

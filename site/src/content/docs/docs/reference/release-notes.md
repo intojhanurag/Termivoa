@@ -7,6 +7,7 @@ This page lists what is new in each release.
 
 ## Next beta (not released yet)
 
+- **Worktrees.** In a session inside a git repository, tap **⋯ → New worktree…** to start a task in its own folder and branch: `~/termivoa/worktrees/<repository>/<name>` on `termivoa/<name>`, from `main` or any branch you pick. The random name can be edited, and Claude or Codex can start in it at once. **Remove worktree** deletes the folder and keeps the branch. See [Worktrees](/docs/guides/worktrees/).
 - **Down next to Up while you type.** With the keyboard open, the key row shows `↓` right after `↑`. You no longer need to hide the keyboard to press Down. See [Keys](/docs/guides/live-terminal/#keys).
 - **Arrange the Wall.** Hold a tile, then drag it to a new place. The order is saved on your phone. **Reset order** brings back the default order. See [Wall](/docs/guides/wall/#arrange-the-tiles).
 - **Project buttons.** The Snips sheet shows your project's own commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. Tap one to run it in a new tab or type it here. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).

@@ -8,6 +8,31 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Worktrees. Phone side: in a running session whose folder is in a git
+  repository, **⋯ → New worktree…** opens a sheet with a random name that can
+  be edited (🎲 for another), a base branch picker (default: the repository's
+  default branch; any local or remote branch), and **start with** Shell,
+  Claude or Codex; **Create** opens the new session as a tab and types the
+  agent command once. Sessions in a worktree show a `⎇ name` badge on the
+  Sessions list and in the status line. **Remove worktree…** (with control)
+  asks first, and asks again before it deletes uncommitted changes. Host
+  side: new `branches.list`/`branches.listed` (any viewer) and
+  `worktree.remove`/`worktree.removed` (controller) messages, an optional
+  `worktree { sourceSessionId, name, base }` on session create, and an
+  optional `worktree { name, repo }` on session records. The broker runs
+  `git worktree add --no-track -b termivoa/<name>
+  ~/termivoa/worktrees/<repo>/<name> <base>` after checking the name and
+  that the base is a real branch, with time limits and at most 50 worktrees
+  per repository; the phone never sends a path. If the session cannot start,
+  the worktree is removed again. Remove runs `git worktree remove` (with
+  `--force` only after the second confirmation), keeps the branch, and ends
+  the session (on Windows the session ends first, because a running shell
+  keeps its folder open). Ignored files such as `node_modules` and `.env`
+  count as changes, so they are never deleted without the second
+  confirmation. A failed `git worktree add` (for example a failing hook)
+  leaves nothing behind. New error codes `worktree_exists` and
+  `not_a_repository` (HTTP 409) and `worktree_failed` (HTTP 422, with the
+  end of git's message).
 - Down arrow next to Up while typing (phone side): with the keyboard open, the
   one-row key bar now shows `↓` right after `↑`, so both arrows are in reach
   without scrolling the row or hiding the keyboard. The row's second `↓`

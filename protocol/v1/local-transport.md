@@ -83,7 +83,17 @@ only its reply is dropped. `tasks.list` returns `tasks.listed` with the same
 request ID: the commands the project folder's files define, read without
 running anything. It needs no lease, runs off the session actor, allows one
 request in flight per viewer (another gets `limit_exceeded`), and is described
-in `docs/project-tasks.md`. `session.detach`
+in `docs/project-tasks.md`. `branches.list` returns `branches.listed` with
+the same request ID: the branches of the repository that holds the session's
+folder (the same folder as `changes.list`), to pick the base of a new
+worktree. It needs no lease, runs git off the session actor and allows one
+request in flight per viewer. `worktree.remove` requires the current lease and
+is valid only for a session that started in a Termivoa worktree
+(`<home>/termivoa/worktrees/<repo>/<name>`); it shares the one-write-per-session
+slot with `changes.commit` and `changes.push`, runs `git worktree remove`
+(with `--force` only when asked), replies `worktree.removed`, and on `removed`
+then terminates the session as the management operation does. Branches are
+never deleted. `session.detach`
 closes this viewing connection without ending the child; session switching
 uses a new connection. Termination is only the explicit management operation.
 

@@ -82,14 +82,41 @@
     },
     "sessionCreateRequestPayload": {
       "title": "BrokerRPCSessionCreateRequestPayload",
-      "description": "References broker-saved configuration only. Executable paths, arguments, workdirs and environment values are deliberately absent.",
+      "description": "References broker-saved configuration only. Executable paths, arguments, workdirs and environment values are deliberately absent. With worktree, the broker first creates a git worktree and starts the session there (see worktreeCreate).",
       "type": "object",
       "additionalProperties": false,
       "required": ["operationId", "projectId", "shellProfileId"],
       "properties": {
         "operationId": { "$ref": "#/$defs/uuid" },
         "projectId": { "$ref": "#/$defs/uuid" },
-        "shellProfileId": { "$ref": "#/$defs/uuid" }
+        "shellProfileId": { "$ref": "#/$defs/uuid" },
+        "worktree": { "$ref": "#/$defs/worktreeCreate" }
+      }
+    },
+    "worktreeName": {
+      "type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "worktreeCreate": {
+      "title": "WorktreeCreate",
+      "description": "Creates a git worktree for the new session. The broker reads the folder of the live session sourceSessionId (as changes.list does), finds its main repository root, checks that base is a branch from a fresh branches listing, and runs git worktree add -b termivoa/<name> <home>/termivoa/worktrees/<repo>/<name> <base> without upstream tracking. The session starts in that folder with name as its title. worktree_exists: the folder or the branch already exists. not_a_repository: the source folder is not in a git repository. worktree_failed: git worktree add failed (for example a post-checkout hook or the timeout); the message ends with what git printed, and nothing is left behind. limit_exceeded: the repository already has 50 worktrees there. A replayed operationId never creates a second worktree.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceSessionId", "name", "base"],
+      "properties": {
+        "sourceSessionId": { "$ref": "#/$defs/uuid" },
+        "name": { "$ref": "#/$defs/worktreeName" },
+        "base": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "sessionWorktree": {
+      "title": "SessionWorktree",
+      "description": "Present when the folder the session started in is a Termivoa worktree, <home>/termivoa/worktrees/<repo>/<name>. Only such a session accepts worktree.remove.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "repo"],
+      "properties": {
+        "name": { "$ref": "#/$defs/worktreeName" },
+        "repo": { "type": "string", "minLength": 1, "maxLength": 128, "maxUtf8Bytes": 384, "safeDisplayText": true, "pattern": "^(?!\\.{1,2}$)[^/\\\\]+$" }
       }
     },
     "sessionRenameRequestPayload": {
@@ -116,7 +143,7 @@
     },
     "sessionRecord": {
       "title": "BrokerRPCSessionRecord",
-      "description": "controlled and viewerCount are live presence computed by the broker at request time and are absent when the session is not live. controllerIsYou is set only on the browser gateway list, for the requesting device. Lease secrets, connection IDs and other device labels are never included. titleIsCustom is true when a user renamed the session; clients show the basename of cwd (the live folder) as the title only when it is absent or false. cwd is present only while the session is running.",
+      "description": "controlled and viewerCount are live presence computed by the broker at request time and are absent when the session is not live. controllerIsYou is set only on the browser gateway list, for the requesting device. Lease secrets, connection IDs and other device labels are never included. titleIsCustom is true when a user renamed the session; clients show the basename of cwd (the live folder) as the title only when it is absent or false. cwd is present only while the session is running. worktree is present only while the session is live in this broker and started in a Termivoa worktree.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -151,7 +178,8 @@
         "agent": { "$ref": "envelope.schema.json#/$defs/agentStatus" },
         "previews": { "$ref": "envelope.schema.json#/$defs/previewPorts" },
         "cwd": { "$ref": "envelope.schema.json#/$defs/workingDirectory" },
-        "titleIsCustom": { "type": "boolean" }
+        "titleIsCustom": { "type": "boolean" },
+        "worktree": { "$ref": "#/$defs/sessionWorktree" }
       }
     },
     "sessionListResultPayload": {

@@ -55,6 +55,8 @@ All data is private to your user account. See [Where data lives](/docs/reference
 
 Photos you send are saved in your project folder, in `.termivoa/uploads/`. Snippets and your Wall tile order (session IDs only) are saved on the phone.
 
+[Worktrees](/docs/guides/worktrees/) are made in `~/termivoa/worktrees` on your computer. The phone sends only a session, a name and a branch; the computer checks both and builds the folder path itself, so the phone cannot pick another folder. Removing a worktree needs control of its session, never deletes its branch, and asks before it deletes uncommitted changes.
+
 ## Other features
 
 - **Notifications** carry only the session name, project name and status, encrypted to your phone. See [Notifications](/docs/guides/notifications/).

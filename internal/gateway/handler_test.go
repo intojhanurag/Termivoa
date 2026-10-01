@@ -325,6 +325,17 @@ func TestAuthenticatedRoutes(t *testing.T) {
 	if response := do(handler, http.MethodPost, "/api/v1/sessions", strings.Replace(createBody, uuidC, strings.ToUpper(uuidC), 1), requestOptions{cookie: prodCookie}); response.Code != 400 {
 		t.Fatalf("uppercase uuid = %d", response.Code)
 	}
+	worktreeBody := strings.TrimSuffix(createBody, "}") + `,"worktree":{"sourceSessionId":"` + uuidB + `","name":"%s","base":"main"}}`
+	if response := do(handler, http.MethodPost, "/api/v1/sessions", strings.Replace(worktreeBody, "%s", "brave-otter", 1), requestOptions{cookie: prodCookie}); response.Code != 200 {
+		t.Fatalf("worktree create = %d %s", response.Code, response.Body)
+	}
+	if response := do(handler, http.MethodPost, "/api/v1/sessions", strings.Replace(worktreeBody, "%s", "../x", 1), requestOptions{cookie: prodCookie}); response.Code != 400 {
+		t.Fatalf("bad worktree name = %d", response.Code)
+	}
+	if brokerStatus(protocol.WorktreeExists) != http.StatusConflict || brokerStatus(protocol.NotARepository) != http.StatusConflict ||
+		brokerStatus(protocol.WorktreeFailed) != http.StatusUnprocessableEntity {
+		t.Fatal("worktree errors are not 409")
+	}
 	if response := do(handler, http.MethodPost, "/api/v1/sessions", createBody, requestOptions{cookie: prodCookie, omitOrigin: true}); response.Code != 403 {
 		t.Fatalf("create without origin = %d", response.Code)
 	}

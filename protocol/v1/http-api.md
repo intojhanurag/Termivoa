@@ -50,9 +50,17 @@ is not live. Lease secrets, connection IDs and other devices' labels are never
 included. Local CLI list and status results carry `controlled` and
 `viewerCount` only.
 
+`POST /api/v1/sessions` may carry `worktree: { sourceSessionId, name, base }`.
+The broker then creates a git worktree from the live session's repository at
+`<home>/termivoa/worktrees/<repo>/<name>` on the new branch `termivoa/<name>`
+from `base` (a branch from a fresh listing) and starts the session there; see
+`WorktreeCreate` in `broker-rpc.schema.json`. Records of live sessions that
+started in such a worktree carry `worktree: { name, repo }`.
+
 Status mapping: `unauthorized`/`revoked` → 401, `pairing_expired` → 410,
 `pairing_pending` is not an error (poll returns `pending`), `limit_exceeded` →
 429, `session_missing`/`preview_missing` → 404, `generation_changed`/`session_lost` → 409,
+`worktree_exists`/`not_a_repository` → 409, `worktree_failed` → 422 (the message ends with what git printed),
 `host_unavailable` → 503, malformed input → 400 with `internal_error` never
 used for client mistakes. Only `unauthorized` and `revoked` clear the cookie.
 A host clock step back behind the credential's creation or last use is
