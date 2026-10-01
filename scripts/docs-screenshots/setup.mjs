@@ -286,5 +286,6 @@ export function clearCache(): void {
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  if (process.argv[2] === 'clean') { await stopStack(); removeCode(); try { execFileSync('chmod', ['-R', 'u+w', HOME], { stdio: 'ignore' }); } catch {} rmSync(HOME, { recursive: true, force: true }); } else setup();
+  await stopStack(); // setup() wipes HOME, and the PID file with it: stop the old stack first
+  if (process.argv[2] === 'clean') { removeCode(); try { execFileSync('chmod', ['-R', 'u+w', HOME], { stdio: 'ignore' }); } catch {} rmSync(HOME, { recursive: true, force: true }); } else setup();
 }

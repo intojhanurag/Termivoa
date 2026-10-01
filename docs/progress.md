@@ -990,7 +990,10 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   port 8788 untouched): the recorded PID stops, a second process with the
   same command line keeps running, a PID with a different command line is
   left alone, a process that ignores SIGINT is killed after the bounded
-  wait; `node --check` on all scripts; `./scripts/check` exit 0.
+  wait. A bare `node setup.mjs` (no `clean`) also stops the recorded stack
+  before it wipes `/tmp/demo-home`; checked with two dummy processes that
+  carry `/tmp/pterm-demo up --dev` in their command line (only the recorded one
+  stopped). `node --check` on all scripts; `./scripts/check` exit 0.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
