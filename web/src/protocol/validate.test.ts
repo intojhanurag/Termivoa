@@ -263,6 +263,13 @@ describe('parseHostMessage', () => {
     expect(() => parseHostMessage(reply('files.search', { query: 'q' }))).toThrow('not host-to-client');
   });
 
+  it('counts maxLength in code points through the hoisted Ajv runtime helper', () => {
+    const error = (message: string) => JSON.stringify({ version: 1, type: 'error', requestId, payload: { code: 'internal_error', message } });
+    // 512 emoji are 1024 UTF-16 units; Ajv's ucs2length counts them as 512 (#123).
+    expect(parseHostMessage(error('\u{1F600}'.repeat(512))).type).toBe('error');
+    expect(() => parseHostMessage(error('\u{1F600}'.repeat(513)))).toThrow(InvalidProtocolMessageError);
+  });
+
   it('rejects client-to-host messages even when their schema is valid', () => {
     expect(() => parseHostMessage(JSON.stringify({
       version: 1,

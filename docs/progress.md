@@ -991,6 +991,23 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   is not text; the big file is cut with a note; search finds
   `src/lib/util.ts`, opens it, and skips the ignored `node_modules`; the
   Changes tab still works.
+- **Vite dev server loads the protocol validators** (`fix/issue-123`,
+  2026-10-01, #123, developer tooling only): even with `code.esm`, Ajv's
+  standalone output calls its runtime helper as
+  `require("ajv/dist/runtime/ucs2length").default` (for `maxLength`). The
+  build bundler resolved that; the dev server sent it to the browser as-is.
+  The `virtual:protocol-validators` plugin in `web/vite.config.ts` now hoists
+  each `require` into an ES import that gives what `require` gave in dev and
+  build, and fails the build if a `require(` is left. Evidence: headless
+  Chrome on `pnpm --dir web dev --port 5197` with `/api/*` answered 401.
+  Before: importing `src/screens/Live.tsx` threw `ReferenceError: require is
+  not defined at …virtual:protocol-validators:1:46206`. After: it loads, the
+  pairing screen renders ("Pair this phone"), and bad messages are still
+  rejected. The same `maxLength` cases (512 and 513 ASCII characters and
+  emoji) give equal results in the dev browser and in production bundles of
+  `origin/main` and this branch. New code-point `maxLength` test in
+  `validate.test.ts`; `pnpm build:web`, `pnpm --dir web test` (498 tests),
+  `tsc --noEmit -p web`, `./scripts/check` exit 0.
 
 - **Docs screenshots clean step stops only its own stack** (`fix/issue-124`,
   2026-10-01, fixes #124): `capture.mjs` saves the PID of the `pterm up --dev`
