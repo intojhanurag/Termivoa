@@ -1,9 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, ApiError, client, CONNECTION_UNAVAILABLE, firstLabel, homeOrigin, isAuthFailure } from '../api/http';
-import { logoutNote, logoutPeers, refreshComputers, storedComputers, type Computer } from '../computers';
+import { logOut, refreshComputers, storedComputers, type Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import {
-  ADD_COMPUTER_PATH, PEER_ADD_PATH, takeAddComputerFragment, type AddComputerLink, type AppLocation,
+  ADD_COMPUTER_PATH, cancelAdd, currentAdd, dismissAdd, PEER_ADD_PATH, subscribeAdd, takeAddComputerFragment,
+  type AddComputerLink, type AddTask, type AppLocation,
 } from '../pairing/addComputer';
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
 import { workersSafe } from '../push';
@@ -233,26 +234,111 @@ function sessionStore(): SessionStore | undefined {
 export function guardStartup(
   slots: { readonly grant: GrantSlot; readonly add: { value: AddComputerLink | undefined } },
   safe: boolean,
-  store: SessionStore | undefined,
+  given: SessionStore | undefined,
 ): StrayCheck {
+  // Storage that throws (some private modes) is no storage: no reload, but the same message.
+  let store = given;
+  let before: string | null = null;
   try {
-    const before = store?.getItem(STRAY_RELOAD_KEY) ?? null;
-    const remembered = before === 'pair' || before === 'add' ? before : undefined;
-    if (safe) {
-      store?.removeItem(STRAY_RELOAD_KEY);
-      return { safe, reload: false, refused: remembered };
-    }
-    const refused = slots.grant.value !== undefined ? 'pair' : slots.add.value !== undefined ? 'add' : remembered;
-    slots.grant.value = undefined;
-    slots.add.value = undefined;
-    if (store === undefined || before !== null) return { safe, reload: false, refused };
-    store.setItem(STRAY_RELOAD_KEY, refused ?? '');
-    return { safe, reload: true, refused };
+    before = store?.getItem(STRAY_RELOAD_KEY) ?? null;
   } catch {
-    slots.grant.value = undefined;
-    slots.add.value = undefined;
-    return { safe, reload: false, refused: undefined };
+    store = undefined;
   }
+  const remembered = before === 'pair' || before === 'add' ? before : undefined;
+  if (safe) {
+    try {
+      store?.removeItem(STRAY_RELOAD_KEY);
+    } catch {
+      // Nothing to forget.
+    }
+    return { safe, reload: false, refused: remembered };
+  }
+  const refused = slots.grant.value !== undefined ? 'pair' : slots.add.value !== undefined ? 'add' : remembered;
+  slots.grant.value = undefined;
+  slots.add.value = undefined;
+  if (store === undefined || before !== null) return { safe, reload: false, refused };
+  try {
+    store.setItem(STRAY_RELOAD_KEY, refused ?? '');
+  } catch {
+    return { safe, reload: false, refused };
+  }
+  return { safe, reload: true, refused };
+}
+
+/**
+ * A pairing link opened later in this same tab (only the fragment changes,
+ * no load). After an unsafe start the workers are checked again, so the link
+ * is used once no stray worker controls the page any more, without waiting
+ * for a full reload.
+ */
+export async function guardLink(
+  slots: Parameters<typeof guardStartup>[0],
+  unsafe: boolean,
+  check: () => Promise<boolean> = workersSafe,
+  store: SessionStore | undefined = sessionStore(),
+): Promise<StrayCheck> {
+  return unsafe ? guardStartup(slots, await check(), store) : { safe: true, reload: false, refused: undefined };
+}
+
+/** Home's preview origin. read() starts a fresh read (home answered); origin() waits for it, or starts one (a preview link opened before home answered). A failed read means no previews. */
+export function homePreview(
+  onOrigin: (origin: string | undefined) => void,
+  load: () => Promise<{ readonly origin?: string | undefined }> = () => api.previewConfig(),
+): { readonly read: () => Promise<string | undefined>; readonly origin: () => Promise<string | undefined> } {
+  let current: Promise<string | undefined> | undefined;
+  const read = () => {
+    const next = load().then((config) => previewOrigin(config.origin), () => undefined);
+    current = next;
+    void next.then(onOrigin);
+    return next;
+  };
+  return { read, origin: () => current ?? read() };
+}
+
+/**
+ * Home's first good answer in a visit, or after a re-pair or log out in the
+ * same tab (reset): its settings once, and its computer list until one read
+ * of it works (a failed read is tried again on the next good answer).
+ */
+export function homeAdoption(deps: {
+  readonly settings: (answer: HTTPSettingsResponse) => void;
+  readonly list: (computers: Computer[]) => void;
+  readonly readList?: () => Promise<Computer[]>;
+}): { readonly answer: (answer: HTTPSettingsResponse) => void; readonly reset: () => void } {
+  let adopted = false;
+  let list: 'unread' | 'reading' | 'read' = 'unread';
+  // A read started before a reset never lands after it.
+  let epoch = 0;
+  return {
+    answer(answer) {
+      if (!adopted) {
+        adopted = true;
+        deps.settings(answer);
+      }
+      if (list !== 'unread') return;
+      list = 'reading';
+      const at = epoch;
+      (deps.readList ?? refreshComputers)().then(
+        (computers) => {
+          if (at !== epoch) return;
+          list = 'read';
+          deps.list(computers);
+        },
+        () => { if (at === epoch) list = 'unread'; },
+      );
+    },
+    reset() {
+      adopted = false;
+      list = 'unread';
+      epoch += 1;
+    },
+  };
+}
+
+/** Home's new list dropped the computer of the open Live view: go to Sessions with a short notice. */
+export function leaveRemoved(view: View, computers: ReadonlyArray<Computer>): View | undefined {
+  if (view.name !== 'live' || computers.some((computer) => computer.origin === view.session.computer.origin)) return undefined;
+  return { name: 'sessions', message: `${view.session.computer.label} is no longer in your list.` };
 }
 
 export interface StartDeps {
@@ -299,6 +385,31 @@ export async function startApp(deps: StartDeps): Promise<void> {
   await deps.route();
 }
 
+/**
+ * The add of this load while the user is on another screen (for example in a
+ * terminal, to type y on the new computer): waiting, added, or not added.
+ * Nothing after a Cancel or once closed.
+ */
+export function AddBanner({ task, onOpen }: { readonly task: AddTask; readonly onOpen: () => void }) {
+  const { label, phase } = task;
+  if (task.dismissed === true || phase.kind === 'cancelled') return null;
+  const running = phase.kind === 'redeeming' || phase.kind === 'waiting';
+  return (
+    <div className="banner" role="status">
+      <span>{running ? `Adding ${label}… approve on ${label}` : phase.kind === 'done' ? `${label} is added` : `${label} was not added`}</span>
+      <span className="row">
+        {phase.kind !== 'done' && <button type="button" className="link" onClick={onOpen}>Open</button>}
+        {running
+          ? <button type="button" className="link" onClick={cancelAdd}>Cancel</button>
+          : <button type="button" className="link" onClick={dismissAdd}>Dismiss</button>}
+      </span>
+    </div>
+  );
+}
+
+/** Screens that show the add banner: the app's own screens, not pairing, start-up or the add page itself. */
+const BANNER_VIEWS: ReadonlySet<View['name']> = new Set(['sessions', 'wall', 'new', 'live', 'preview', 'settings']);
+
 export function App({ grant, add, peerLink }: StartupLinks) {
   const [view, setView] = useState<View>({ name: 'boot' });
   // The add-computer link, dropped when this load is not safe (guardStartup).
@@ -313,7 +424,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   computersRef.current = computers;
   // Previews are optional: until (or unless) the config answers, there are none.
   const [previewAt, setPreviewAt] = useState<string>();
-  const previewConfig = useRef<Promise<string | undefined>>(Promise.resolve(undefined));
+  const [preview] = useState(() => homePreview(setPreviewAt));
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const adding = useSyncExternalStore(subscribeAdd, currentAdd, currentAdd);
   const [fontSize, setFontSize] = useFontSize();
   const update = useServiceWorkerUpdate();
   useVisualViewport();
@@ -339,17 +453,30 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     setView(next);
   }, []);
 
-  // Home's first good answer in this visit was used (adoptHome); a new pairing starts over.
-  const homeAdopted = useRef(false);
+  // Home's first good answer in this visit (at start, or when it comes back
+  // later): its settings, its computer list and its preview origin. A new
+  // pairing or log out starts over (reset).
+  const [home] = useState(() => homeAdoption({
+    settings: (answer) => {
+      setSettings(answer);
+      void preview.read();
+    },
+    // The stored list is used until home answers; then home's list replaces it.
+    list: (list) => {
+      setComputers(list);
+      const next = leaveRemoved(viewRef.current, list);
+      if (next !== undefined) navigate(next);
+    },
+  }));
 
   const toSetup = useCallback((reason?: string) => {
-    homeAdopted.current = false;
+    home.reset();
     if (window.location.pathname !== '/pair') {
       window.history.replaceState(null, '', '/');
     }
     setSettings(undefined);
     setView(reason === undefined ? { name: 'setup' } : { name: 'setup', reason });
-  }, []);
+  }, [home]);
 
   /**
    * The message for a failed request. Only home's 401 ends the app's access;
@@ -382,22 +509,12 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   /** Reads one computer again after a change; a failed read shows on its row, not here. */
   const refresh = useCallback((origin: string) => reload(origin).catch(() => undefined), [reload]);
 
-  // Home's first good answer in this visit (at start, or when it comes back
-  // later): its settings, its computer list and its preview origin.
-  const adoptHome = useCallback((answer: HTTPSettingsResponse) => {
-    if (homeAdopted.current) return;
-    homeAdopted.current = true;
-    setSettings(answer);
-    // The stored list is used until home answers; then home's list replaces it.
-    refreshComputers().then(setComputers, () => undefined);
-    // Never blocks: a failed or empty answer means no previews.
-    previewConfig.current = api.previewConfig().then((config) => previewOrigin(config.origin), () => undefined);
-    void previewConfig.current.then(setPreviewAt);
-  }, []);
+  // Each good home poll (`at` changes; settings are cached between polls).
   const homeAnswer = homeSettings(all.entries);
+  const homeAt = homeEntry?.status.kind === 'ok' ? homeEntry.status.at : undefined;
   useEffect(() => {
-    if (homeAnswer !== undefined) adoptHome(homeAnswer);
-  }, [homeAnswer, adoptHome]);
+    if (homeAnswer !== undefined) home.answer(homeAnswer);
+  }, [homeAnswer, homeAt, home]);
 
   const route = useCallback(async () => {
     const target = parseRoute(window.location.pathname);
@@ -429,7 +546,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         return;
       }
       const session = hosted(found, computer);
-      if (port !== undefined && await previewConfig.current !== undefined) {
+      // A preview link may open before home's first answer (peers stored): read the config now.
+      if (port !== undefined && await preview.origin() !== undefined) {
         setView({ name: 'preview', session, port });
       } else {
         // A bad port or no preview origin falls back to the terminal.
@@ -440,7 +558,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       const message = handleFailure(error, computer);
       if (!isAuthFailure(error) || !computer.home) setView({ name: 'sessions', message });
     }
-  }, [handleFailure]);
+  }, [handleFailure, preview]);
 
   const boot = useCallback(async () => {
     // Before anything else, and before any pairing request: drop service
@@ -469,13 +587,13 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     await startApp({
       computers: computersRef.current.length,
       homeSettings: () => api.settings(),
-      onHome: adoptHome,
+      onHome: home.answer,
       onSetup: () => toSetup(),
       onOffline: () => setView({ name: 'offline' }),
       route,
       sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
     });
-  }, [addSlot, adoptHome, grant, peerLink, route, toSetup]);
+  }, [addSlot, home, grant, peerLink, route, toSetup]);
 
   // A new pairing link opened in this same tab only changes the fragment, so
   // the page does not reload. Browsers fire popstate and then hashchange for
@@ -485,16 +603,20 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     if (!adoptFragmentGrant(grant, window.location, window.history)) {
       return false;
     }
-    if (unsafe.current) {
-      // A stray worker may still see this page: never redeem here.
-      grant.value = undefined;
-      setView({ name: 'setup', reason: STRAY_PAIR });
-      return true;
-    }
-    setGrantEpoch((epoch) => epoch + 1);
-    setView({ name: 'setup' });
+    void guardLink({ grant, add: addSlot }, unsafe.current).then((check) => {
+      unsafe.current = !check.safe;
+      if (check.reload) {
+        window.location.reload();
+      } else if (!check.safe) {
+        // A stray worker still sees this page: the grant was not used.
+        setView({ name: 'setup', reason: STRAY_PAIR });
+      } else {
+        setGrantEpoch((epoch) => epoch + 1);
+        setView({ name: 'setup' });
+      }
+    });
     return true;
-  }, [grant]);
+  }, [addSlot, grant]);
 
   useEffect(() => {
     void boot();
@@ -588,6 +710,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const openSession = useCallback((session: HostedSession) => navigate({ name: 'live', session }), [navigate]);
   const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
   const reloadComputers = useCallback(() => setComputers(storedComputers()), []);
+  // An add that finished in the background: its computer joins the list.
+  const added = adding?.phase.kind === 'done';
+  useEffect(() => { if (added) reloadComputers(); }, [added, reloadComputers]);
 
   const startNew = useCallback(async (from: HostedSession, runFirst?: string) => {
     try {
@@ -620,17 +745,12 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   // Home's Log out does not reach the peers, so sign out there first.
   const entries = all.entries;
   const logout = useCallback(async () => {
-    const left = await logoutPeers(entries.filter((entry) => !entry.computer.home)
+    cancelAdd();
+    const note = await logOut(entries.filter((entry) => !entry.computer.home)
       .map((entry) => ({ computer: entry.computer, reachable: entry.status.kind !== 'unreachable' })));
-    try {
-      await api.logout();
-    } catch (error) {
-      if (!isAuthFailure(error)) {
-        throw error;
-      }
-    }
+    setComputers(storedComputers());
     window.history.replaceState(null, '', '/');
-    toSetup(logoutNote(left));
+    toSetup(note);
   }, [entries, toSetup]);
 
   const liveComputer = view.name === 'live' ? view.session.computer : undefined;
@@ -638,6 +758,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
 
   return (
     <div className="app">
+      {adding !== undefined && BANNER_VIEWS.has(view.name) && (
+        <AddBanner task={adding} onOpen={() => navigate({ name: 'add-computer' })} />
+      )}
       {view.name === 'boot' && (
         <main className="page state-screen">
           <p className="state-label" role="status"><span className="dot accent pulse" aria-hidden="true" />Termivoa · connecting</p>
@@ -652,6 +775,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           grant={grant}
           {...(view.reason === undefined ? {} : { reason: view.reason })}
           onPaired={() => {
+            // A new pairing in this tab: home's answer is used again.
+            home.reset();
             window.history.replaceState(null, '', '/');
             void boot();
           }}

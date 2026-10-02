@@ -3,8 +3,11 @@ import { api, client } from '../api/http';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { hosted } from './allSessions';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  guardStartup, offlineRetry, parseRoute, pathFor, sessionPath, startApp, startLike, STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
+  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, offlineRetry, parseRoute, pathFor, sessionPath, startApp, startLike,
+  STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
 } from './App';
 import { ApiError } from '../api/http';
 import type { HTTPSettingsResponse } from '../generated/protocol';
@@ -166,6 +169,104 @@ describe('stray service worker at start (guardStartup)', () => {
   });
 });
 
+describe('no sessionStorage (guardStartup, guardLink)', () => {
+  const broken = {
+    getItem: () => { throw new DOMException('denied', 'SecurityError'); },
+    setItem: () => { throw new DOMException('denied', 'SecurityError'); },
+    removeItem: () => { throw new DOMException('denied', 'SecurityError'); },
+  };
+  const slots = (grant?: string) => ({ grant: { value: grant }, add: { value: undefined } });
+
+  it('storage that throws still names the link that was not used, and never reloads', () => {
+    const unsafe = slots('g'.repeat(43));
+    expect(guardStartup(unsafe, false, broken)).toEqual({ safe: false, reload: false, refused: 'pair' });
+    expect(unsafe.grant.value).toBeUndefined();
+  });
+
+  it('storage that throws keeps the grant on a safe load', () => {
+    const safe = slots('g'.repeat(43));
+    expect(guardStartup(safe, true, broken)).toEqual({ safe: true, reload: false, refused: undefined });
+    expect(safe.grant.value).toBe('g'.repeat(43));
+  });
+
+  it('a new link in the same tab after an unsafe start is used once the workers are safe, without a reload', async () => {
+    const later = slots('h'.repeat(43));
+    expect(await guardLink(later, true, async () => true, undefined)).toEqual({ safe: true, reload: false, refused: undefined });
+    expect(later.grant.value).toBe('h'.repeat(43));
+    const still = slots('h'.repeat(43));
+    expect(await guardLink(still, true, async () => false, undefined)).toEqual({ safe: false, reload: false, refused: 'pair' });
+    expect(still.grant.value).toBeUndefined();
+    const check = vi.fn(async () => false);
+    expect(await guardLink(slots('h'.repeat(43)), false, check, undefined)).toMatchObject({ safe: true });
+    expect(check).not.toHaveBeenCalled();
+  });
+});
+
+describe('preview link before home answered (homePreview)', () => {
+  it('reads the preview config when a preview link asks first, once, and a failed read means no previews', async () => {
+    const seen: Array<string | undefined> = [];
+    const load = vi.fn(async () => ({ origin: 'https://mac.tailx.ts.net:8443/' }));
+    const preview = homePreview((origin) => seen.push(origin), load);
+    expect(await preview.origin()).toBe('https://mac.tailx.ts.net:8443');
+    expect(await preview.origin()).toBe('https://mac.tailx.ts.net:8443');
+    expect(load).toHaveBeenCalledOnce();
+    expect(seen).toEqual(['https://mac.tailx.ts.net:8443']);
+    const down = homePreview(() => undefined, async () => { throw new ApiError(0, 'network', 'x'); });
+    expect(await down.origin()).toBeUndefined();
+  });
+});
+
+describe('home adoption (homeAdoption)', () => {
+  const answer = { device: { id: 'd', label: 'Phone' } } as unknown as HTTPSettingsResponse;
+  const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+
+  it('uses the settings once, and reads the list again on the next good answer after a failed read', async () => {
+    const settings = vi.fn();
+    const list = vi.fn();
+    const readList = vi.fn().mockRejectedValueOnce(new ApiError(0, 'network', 'x')).mockResolvedValue([home, vps]);
+    const adoption = homeAdoption({ settings, list, readList });
+    adoption.answer(answer);
+    await flush();
+    expect(list).not.toHaveBeenCalled();
+    adoption.answer(answer);
+    await flush();
+    expect(list).toHaveBeenCalledWith([home, vps]);
+    adoption.answer(answer);
+    await flush();
+    expect(readList).toHaveBeenCalledTimes(2);
+    expect(settings).toHaveBeenCalledOnce();
+  });
+
+  it('after a re-pair or log out (reset), adopts home again; a read from before the reset is dropped', async () => {
+    const settings = vi.fn();
+    const list = vi.fn();
+    let finish: ((value: Computer[]) => void) | undefined;
+    const readList = vi.fn(() => new Promise<Computer[]>((resolve) => { finish = resolve; }));
+    const adoption = homeAdoption({ settings, list, readList });
+    adoption.answer(answer);
+    const stale = finish;
+    adoption.reset();
+    adoption.answer(answer);
+    stale?.([home, vps]);
+    await flush();
+    expect(list).not.toHaveBeenCalled();
+    finish?.([home]);
+    await flush();
+    expect(list).toHaveBeenCalledWith([home]);
+    expect(settings).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('leaveRemoved', () => {
+  const session = hosted({ id: 's1' } as BrokerRPCSessionRecord, vps);
+
+  it('leaves a Live view whose computer home\'s new list dropped, with a short notice', () => {
+    expect(leaveRemoved({ name: 'live', session }, [home])).toEqual({ name: 'sessions', message: 'vps is no longer in your list.' });
+    expect(leaveRemoved({ name: 'live', session }, [home, vps])).toBeUndefined();
+    expect(leaveRemoved({ name: 'settings' }, [home])).toBeUndefined();
+  });
+});
+
 describe('startApp', () => {
   const answer = { device: { id: 'd', label: 'Phone' } } as unknown as HTTPSettingsResponse;
   const deps = (computers: number, homeSettings: () => Promise<HTTPSettingsResponse>) => {
@@ -202,5 +303,26 @@ describe('startApp', () => {
     const down = deps(1, async () => { throw new ApiError(0, 'network', 'x'); });
     await down.run;
     expect(down.calls).toEqual(['sleep', 'offline']);
+  });
+});
+
+describe('add banner (AddBanner)', () => {
+  const banner = (task: Parameters<typeof AddBanner>[0]['task']) => renderToStaticMarkup(createElement(AddBanner, { task, onOpen: () => undefined }));
+  const pending = { pendingId: 'p', verificationCode: '123-456', expiresAt: 0 };
+
+  it('while the add waits on another screen: says where to approve, with Open and Cancel', () => {
+    const html = banner({ origin: vps.origin, label: 'vps', phase: { kind: 'waiting', pending } });
+    expect(html).toContain('Adding vps… approve on vps');
+    expect(html).toContain('>Open</button>');
+    expect(html).toContain('>Cancel</button>');
+  });
+
+  it('says when it finished in the background, and hides once dismissed or cancelled', () => {
+    const done = { origin: vps.origin, label: 'vps', phase: { kind: 'done' as const, computer: vps } };
+    expect(banner(done)).toContain('vps is added');
+    expect(banner(done)).not.toContain('>Open</button>');
+    expect(banner({ ...done, dismissed: true })).toBe('');
+    expect(banner({ origin: vps.origin, label: 'vps', phase: { kind: 'cancelled' } })).toBe('');
+    expect(banner({ origin: vps.origin, label: 'vps', phase: { kind: 'expired' } })).toContain('vps was not added');
   });
 });

@@ -213,27 +213,38 @@ export function Settings({
       </section>
 
       {settings !== undefined && (
-      <section className="group stack" aria-labelledby="logout-heading">
-        <h2 id="logout-heading" className="caps">Log out</h2>
-        <p className="muted">
-          {multi
-            ? 'Signs this phone out of every computer. Running sessions keep running.'
-            : 'Removes this browser\'s access. Running sessions keep running on your computer.'}
-        </p>
-        <button
-          type="button"
-          className="danger"
-          disabled={busy}
-          onClick={() => {
+        <LogoutSection
+          multi={multi}
+          busy={busy}
+          onLogout={() => {
             setBusy(true);
             onLogout().catch((failure: unknown) => {
               setError(failure instanceof Error ? failure.message : 'Logout failed');
               setBusy(false);
             });
           }}
-        >Log out</button>
-      </section>
+        />
       )}
     </main>
+  );
+}
+
+/** Log out; while it runs (each peer may take a few seconds), the button is off and says why. */
+export function LogoutSection({ multi, busy, onLogout }: {
+  readonly multi: boolean;
+  readonly busy: boolean;
+  readonly onLogout: () => void;
+}) {
+  return (
+    <section className="group stack" aria-labelledby="logout-heading">
+      <h2 id="logout-heading" className="caps">Log out</h2>
+      <p className="muted">
+        {multi
+          ? 'Signs this phone out of every computer. Running sessions keep running.'
+          : 'Removes this browser\'s access. Running sessions keep running on your computer.'}
+      </p>
+      <button type="button" className="danger" disabled={busy} onClick={onLogout}>Log out</button>
+      <p role="status" className="muted field-note">{busy ? 'Signing out…' : ''}</p>
+    </section>
   );
 }

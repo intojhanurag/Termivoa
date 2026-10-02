@@ -194,12 +194,15 @@ describe('tile budget marks', () => {
   it('shows Paused for a tile beyond the live budget, and the amber dot only for a live tile that is not connected', () => {
     expect(tileMark('paused', 'connecting')).toBe('paused');
     expect(tileMark('paused', 'live')).toBe('paused');
+    // Never live: no last frame to keep, so the name and Paused fill the tile.
+    expect(tileMark('paused', 'connecting', false)).toBe('blank');
+    expect(tileMark('live', 'live', false)).toBeUndefined();
     expect(tileMark('live', 'reconnecting')).toBe('reconnecting');
     expect(tileMark('live', 'live')).toBeUndefined();
   });
 
-  it('draws every tile paused until the scheduler gives it a live slot', () => {
+  it('draws every tile paused until the scheduler gives it a live slot; a never-live tile shows its name and Paused', () => {
     const html = renderToStaticMarkup(<Wall sessions={[idle]} onOpen={noop} onNew={noop} onList={noop} />);
-    expect(html).toContain('<span class="wall-paused">Paused</span>');
+    expect(html).toMatch(/<span class="wall-blank"><span>[^<]+<\/span><span class="wall-paused-text">Paused<\/span><\/span>/u);
   });
 });

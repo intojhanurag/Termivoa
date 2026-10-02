@@ -63,7 +63,9 @@ Then:
 
 7. If the codes match, type `y` and press Enter. The app shows **vps is added**. Tap **Open sessions**.
 
-If the codes are different, type `n`, then tap **Codes don't match? Cancel** in the app. **Cancel** on the sheet or the **Add a computer** page also stops the add: home deletes its note of the computer.
+You can leave the page to type `y`, for example in your `ssh vps` session in the app. The add goes on, and a bar at the top says **Adding vps… approve on vps**, with **Open** and **Cancel**. When vps approves, the bar says **vps is added**. If the add fails, it says **vps was not added**; tap **Open** to see why.
+
+If the codes are different, type `n`, then tap **Codes don't match? Cancel** in the app. **Cancel** on the sheet, the **Add a computer** page or the bar also stops the add: home deletes its note of the computer. If you cancel after you typed `y`, the app also signs this phone out of vps.
 
 A tap on the link never adds a computer by itself. A program can print a false link, so you always see the sheet and the full address, and home always checks the computer first.
 
@@ -83,7 +85,7 @@ With more than one computer:
 | --- | --- |
 | "2 computers · 1 waiting · 1 working" | The top line counts all computers. |
 | **All**, **mac**, **vps** chips | Tap a chip to show one computer only. **All** shows every computer. |
-| A colour dot and a name in each row | The computer the session runs on. The colour never stands alone; the name is always there. |
+| A colour dot and a name in each row | The computer the session runs on. Up to 8 computers, each has its own colour; home always has the first one. The colour never stands alone; the name is always there. |
 | **❯ new session on…** | Start a session on any computer. |
 
 Sessions that wait for you come first, from all computers. Tap a session to open it. The live terminal, control, the composer, [Changes](/docs/guides/changes/), [Files](/docs/guides/files/) and photos work the same on every computer.
@@ -92,7 +94,7 @@ Sessions that wait for you come first, from all computers. Tap a session to open
 
 The [Wall](/docs/guides/wall/) shows sessions from all computers, and each tile shows its computer's name.
 
-To keep the phone fast, at most 4 tiles are live at a time, with up to 5 updates per second each. The other tiles keep their last screen and show **Paused** until a live place is free. All tiles pause while a session is open or the app is in the background.
+To keep the phone fast, at most 4 tiles are live at a time, with up to 5 updates per second each. The other tiles keep their last screen and show **Paused** until a live place is free. A tile that was not live yet shows the session name and **Paused**. All tiles pause while a session is open or the app is in the background.
 
 ## What changes in New session?
 
@@ -132,9 +134,9 @@ Tap **Remove vps**, or **Keep**. If the app cannot reach vps, it says "vps is re
 
 Home cannot be renamed or removed here.
 
-**Settings → Log out** signs this phone out of every computer it can reach. With 2 or more computers, it says "Signs this phone out of every computer. Running sessions keep running." If a computer cannot be reached, the app names it: "You logged out. This phone no longer has access. Could not sign out of vps. Run pterm revoke there to remove this phone." Then run `pterm revoke <device-id>` on that computer.
+**Settings → Log out** signs this phone out of every computer it can reach. With 2 or more computers, it says "Signs this phone out of every computer. Running sessions keep running." If a computer cannot be reached, the app names it: "You logged out. This phone no longer has access. Could not sign out of vps. Run pterm revoke there to remove this phone." Then run `pterm revoke <device-id>` on that computer. While it works, the app says **Signing out…**; it waits at most about 6 seconds for each computer. The phone also forgets its list of computers.
 
-On home, `pterm computers` lists each phone's computers. `pterm computers remove https://vps.tailx.ts.net` removes vps from every phone's list. It cannot sign the phones out on vps, so it tells you to run `pterm revoke` there.
+On home, `pterm computers` lists each phone's computers. `pterm computers remove https://vps.tailx.ts.net` removes vps from every phone's list. It cannot sign the phones out on vps, so it tells you to run `pterm revoke` there. The phone reads home's list when the app opens. If a vps session is already open then (for example from a link), the app goes to Sessions and says "vps is no longer in your list."
 
 ## What do I do if home was hacked?
 

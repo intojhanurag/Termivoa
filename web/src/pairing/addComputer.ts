@@ -1,5 +1,5 @@
 import { ApiError, client, firstLabel } from '../api/http';
-import { confirmComputer, recordPending, type Computer } from '../computers';
+import { confirmComputer, forgetPending, recordPending, removeComputer, storedComputers, type Computer } from '../computers';
 import type { HTTPComputerAddResponse } from '../generated/protocol';
 import { parseHttpBody } from '../protocol/httpBody';
 import { GRANT, PairingFlow, type HistoryLike, type LocationLike, type PendingPairing } from './pairing';
@@ -19,7 +19,9 @@ import { GRANT, PairingFlow, type HistoryLike, type LocationLike, type PendingPa
  *    (show the verification code), then AddComputerFlow.finish polls until
  *    approved, makes the first authenticated `GET /api/v1/settings` on the
  *    peer (which also checks its protocol revision; a network error is
- *    retried for FIRST_READ_RETRY_MS) and confirms it on home.
+ *    retried for FIRST_READ_RETRY_MS) and confirms it on home. Cancel at any
+ *    point wins: after approval it signs out on the peer and deletes the
+ *    entry on home.
  *
  * The grant never goes to storage or a query string.
  */
@@ -148,15 +150,20 @@ export type AddOutcome =
   | { readonly kind: 'expired' }
   | { readonly kind: 'cancelled' };
 
+const CANCELLED: AddOutcome = { kind: 'cancelled' };
+
 /** Step 4. One flow per link; the grant and poll secret stay in memory only. */
 export class AddComputerFlow {
   private grant: string | undefined;
   private cancelled = false;
   private readonly pairing: PairingFlow;
+  /** Already in the list (the same link added again): a cancel never touches its entry or cookie. */
+  private readonly listed: boolean;
 
   constructor(readonly origin: string, grant: string, private readonly label = firstLabel(origin)) {
     this.grant = grant;
     this.pairing = new PairingFlow(client(origin));
+    this.listed = storedComputers().some((computer) => computer.origin === origin);
   }
 
   /** Redeems the grant on the peer once; show the returned verification code. */
@@ -171,23 +178,25 @@ export class AddComputerFlow {
    * Waits for approval on the peer, reads its settings with its new cookie,
    * then confirms it on home. Throws ApiError from the settings read (for
    * example `computer_outdated`) or from home; the peer then stays pending
-   * on home and expires.
+   * on home and expires. After cancel the outcome is always `cancelled`, and
+   * a cancel after approval undoes it (abandon).
    */
   async finish(pending: PendingPairing): Promise<AddOutcome> {
-    const outcome = await this.pairing.poll(pending);
-    if (outcome !== 'approved') return { kind: outcome };
-    const deadline = Date.now() + FIRST_READ_RETRY_MS;
-    for (;;) {
-      try {
-        await client(this.origin).settings();
-        break;
-      } catch (error) {
-        if (!(error instanceof ApiError && error.code === 'network') || Date.now() >= deadline) throw error;
-        await new Promise((resolve) => { setTimeout(resolve, FIRST_READ_STEP_MS); });
-        if (this.cancelled) return { kind: 'cancelled' };
+    let approved = false;
+    try {
+      const outcome = await this.pairing.poll(pending);
+      if (outcome !== 'approved') return this.cancelled ? CANCELLED : { kind: outcome };
+      approved = true;
+      if (!this.cancelled) await this.firstRead();
+      if (!this.cancelled) {
+        const computer = await confirmComputer(this.origin, this.label);
+        if (!this.cancelled) return { kind: 'confirmed', computer };
       }
+    } catch (error) {
+      if (!this.cancelled) throw error;
     }
-    return { kind: 'confirmed', computer: await confirmComputer(this.origin, this.label) };
+    if (approved) await this.abandon();
+    return CANCELLED;
   }
 
   cancel(): void {
@@ -195,4 +204,113 @@ export class AddComputerFlow {
     this.grant = undefined;
     this.pairing.cancel();
   }
+
+  /** The first settings read; a network error is retried for FIRST_READ_RETRY_MS, unless cancelled. */
+  private async firstRead(): Promise<void> {
+    const deadline = Date.now() + FIRST_READ_RETRY_MS;
+    for (;;) {
+      try {
+        await client(this.origin).settings();
+        return;
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === 'network') || Date.now() >= deadline) throw error;
+        await new Promise((resolve) => { setTimeout(resolve, FIRST_READ_STEP_MS); });
+        if (this.cancelled) return;
+      }
+    }
+  }
+
+  /**
+   * Cancelled after the peer approved: this phone holds a new cookie there.
+   * Signs out on the peer and deletes the entry on home (pending or, if the
+   * confirm already went through, confirmed). Best effort: a pending entry
+   * also expires on home, and the peer's device can be revoked there.
+   */
+  private async abandon(): Promise<void> {
+    if (this.listed) return;
+    await removeComputer({ origin: this.origin, host: new URL(this.origin).host, label: this.label }).catch(() => undefined);
+  }
+}
+
+/** Where an add stands. */
+export type AddPhase =
+  | { readonly kind: 'redeeming' }
+  | { readonly kind: 'waiting'; readonly pending: PendingPairing }
+  | { readonly kind: 'done'; readonly computer: Computer }
+  | { readonly kind: 'expired' | 'cancelled' }
+  | { readonly kind: 'error'; readonly error: unknown };
+
+export interface AddTask {
+  readonly origin: string;
+  readonly label: string;
+  readonly phase: AddPhase;
+  /** The user closed its banner after it ended. */
+  readonly dismissed?: boolean;
+}
+
+/*
+ * The add of this load, kept outside any screen: the user may leave the add
+ * page to type y in a terminal of this same app (ssh to the new computer),
+ * and the poll must go on. It stops only on Cancel, expiry or log out. An add
+ * link always arrives with a full load, so there is at most one per load.
+ */
+let task: AddTask | undefined;
+let running: AddComputerFlow | undefined;
+const listeners = new Set<() => void>();
+
+function publish(next: AddTask | undefined): void {
+  task = next;
+  for (const listener of listeners) listener();
+}
+
+/** The add of this load, running or ended; undefined until one starts. For useSyncExternalStore. */
+export const currentAdd = (): AddTask | undefined => task;
+
+export function subscribeAdd(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+/**
+ * Redeems the link, shows the code, waits for approval and confirms, in the
+ * background. Once per load: the grant works once. Outcomes after a Cancel
+ * are ignored; the flow, its grant and its poll secret are dropped when it
+ * ends.
+ */
+export async function startAdd(link: AddComputerLink, deviceLabel: string): Promise<void> {
+  if (task !== undefined) return;
+  const flow = new AddComputerFlow(link.origin, link.grant);
+  running = flow;
+  const label = firstLabel(link.origin);
+  const update = (phase: AddPhase) => { if (running === flow) publish({ origin: link.origin, label, phase }); };
+  update({ kind: 'redeeming' });
+  try {
+    const pending = await flow.redeem(deviceLabel);
+    update({ kind: 'waiting', pending });
+    const outcome = await flow.finish(pending);
+    update(outcome.kind === 'confirmed' ? { kind: 'done', computer: outcome.computer } : { kind: outcome.kind });
+  } catch (error) {
+    update({ kind: 'error', error });
+  } finally {
+    if (running === flow) running = undefined;
+  }
+}
+
+/**
+ * Cancel (the user, or log out): stops the running add and deletes its
+ * pending entry on home; after approval the flow also signs out on the new
+ * computer (AddComputerFlow.finish). Does nothing when no add runs.
+ */
+export function cancelAdd(): void {
+  const flow = running;
+  if (flow === undefined || task === undefined) return;
+  running = undefined;
+  flow.cancel();
+  void forgetPending(flow.origin);
+  publish({ ...task, phase: { kind: 'cancelled' } });
+}
+
+/** Hides the banner of an add that ended. A running add keeps its banner. */
+export function dismissAdd(): void {
+  if (running === undefined && task !== undefined && task.dismissed !== true) publish({ ...task, dismissed: true });
 }

@@ -38,6 +38,45 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Multi-computer confirming-review fixes, web side (2026-10-02, branch `feat/mc-fix-web2`)
+
+Fixes the confirming-review and E2E findings on the phone app of
+`feat/multi-computer` (d44f1cd). The host side has its own track. Every fix
+has a vitest test (no jsdom); each new or changed test was run against
+d44f1cd and failed there (20 tests).
+
+- Add flow: a Cancel wins at every step. After approval it skips the
+  confirm, signs out on the new computer and deletes its entry on home; a
+  computer already in the list keeps its entry and cookie
+  (`AddComputerFlow.finish`, `abandon`). The add now runs outside the page
+  (`startAdd`, `cancelAdd`, `currentAdd`), so the user can leave
+  `/computers/add` to type y in a terminal of this app; a bar shows
+  "Adding vps… approve on vps" (**Open**, **Cancel**), then "vps is added"
+  or "vps was not added" (**Dismiss**). Only Cancel, expiry or Log out stop
+  it; the flow, grant and poll secret are dropped when it ends.
+- Start-up: a preview link reads home's preview config itself when it opens
+  before home answered (`homePreview`). Home's answer is adopted again after
+  a re-pair or log out in the same tab, and a failed list read is tried again
+  on the next good home poll (`homeAdoption`). When home's list drops the
+  computer of the open Live view, the app goes to Sessions with "vps is no
+  longer in your list." (`leaveRemoved`).
+- Stray-worker guard: storage that throws still shows "this link was not
+  used" and keeps the grant on a safe load; a later link in the same tab is
+  checked again (`guardLink`) instead of being refused until a reload.
+- Log out: a peer's logout waits at most `READ_TIMEOUT_MS` (6 s), all
+  peers at once; the button says "Signing out…" (`LogoutSection`); the
+  stored list (`pterm.computers`) is cleared (`logOut`).
+- Terminal: a wrapped add-computer link is a tap target again after a
+  resize to fewer columns (`bufferRow` reads only `cols` cells).
+- Colours: by place in the list, home first, so no two of 8 computers
+  share one (`toComputer(…, place)`; `colorFor` removed).
+- Wall: a paused tile that was never live shows the session name and
+  "Paused" (`tileMark` `blank`).
+- Evidence: `pnpm --dir web test` (47 files, 656 tests), `cd web && npx tsc
+  --noEmit -p .`, `pnpm build:web` and `./scripts/check` exit 0.
+- Docs for the host track: `docs/multi-computer.md` still says "Colour from
+  a fixed palette by origin hash"; it is now by place in the list.
+
 ### Multi-computer review fixes, web side (2026-10-02, branch `feat/mc-fix-web`)
 
 Fixes the review findings on the phone app of `feat/multi-computer`
