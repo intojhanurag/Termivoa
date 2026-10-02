@@ -841,11 +841,11 @@ export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" 
  * origin: the browser origin configured with admin.config.origin, absent when none is set.
  * It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it
  * is valid for the gateway's profile. boundOrigins: the union of origins of devices bound
- * to an app origin whose node is still trusted, revoked or expired included (so their app
- * can read the 401 and offer pairing again), used only for CORS headers (the broker still
- * checks each request's origin against its own credential). pairingOrigins: app origins of
- * unexpired bound grants and pending pairings, admitted only on /api/v1/pair/ *. Both are
- * sorted, unique, and absent when empty.
+ * to an app origin whose node is still trusted or has changed since pairing, revoked or
+ * expired included (so their app can read the refusal and offer pairing again), used only
+ * for CORS headers (the broker still checks each request's origin against its own
+ * credential). pairingOrigins: app origins of unexpired bound grants and pending pairings,
+ * admitted only on /api/v1/pair/ *. Both are sorted, unique, and absent when empty.
  */
 export type GatewayRPCOriginResultPayload = {
     readonly boundOrigins?:   [string, ...string[]];
