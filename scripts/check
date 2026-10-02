@@ -18,11 +18,6 @@ fi
 pnpm protocol:generate
 git diff --exit-code -- internal/protocol/generated.go web/src/generated/protocol.ts
 
-if ! cmp -s plan.md docs/implementation-plan.md; then
-  echo "docs/implementation-plan.md must be an exact copy of plan.md." >&2
-  exit 1
-fi
-
 if ! unformatted=$(find cmd internal tests third_party/ansi third_party/vt third_party/xpty third_party/ultraviolet -name '*.go' -type f -print 2>/dev/null | xargs gofmt -l); then
   echo "gofmt failed; see the errors above." >&2
   exit 1

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Termivoa is in private pre-release development. There is no supported release, published package, installer, or public security-support window yet. This file will be updated with supported versions before v0.1.0 is published.
+Termivoa is in private beta. The unsigned prereleases `v0.1.0-beta.1` and `v0.1.0-beta.2` are shared only with invited collaborators. There is no public release, signed installer, or security-support window yet. Report problems against the latest beta or `main`. This file will be updated with supported versions before v0.1.0 is published.
 
 ## Reporting a vulnerability
 
@@ -29,7 +29,9 @@ Never send real secrets, even by email. If a credential was exposed, revoke or r
 
 ## Security boundaries
 
-The v0 design is single-owner and single-host. Browser authentication does not
+The v0 design is single-owner. With multi-computer (next beta), a home
+computer serves the phone app for its peer computers, so a compromised home
+computer can control every computer paired through it. Browser authentication does not
 protect against malware already running as the same host user. Tailscale
 connectivity does not replace application authentication. The host shell
 keeps the owner's filesystem permissions; registered projects are convenience
@@ -43,7 +45,7 @@ What is implemented (see [docs/threat-model.md](docs/threat-model.md) and
   and `pterm setup` / `pterm doctor` warn when Funnel is on;
 - pairing uses a single-use, two-minute link plus owner approval after comparing
   a code; paired devices use `HttpOnly`, `SameSite=Strict` session cookies and
-  can be revoked at once with `pterm revoke`;
+  can be revoked at once with `pterm revoke` (on each computer the phone uses);
 - clients receive normalized screen frames, never raw terminal bytes, and send
   only structured input;
 - terminal content is not written to the database; there is no telemetry.

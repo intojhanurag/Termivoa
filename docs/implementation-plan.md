@@ -1,5 +1,7 @@
 # Phone Terminal — authoritative Go implementation plan
 
+> Historical: the original v0 specification (20 September 2026), kept as written. Its design rules still apply (AGENTS.md rule 1); for the current state read [architecture.md](architecture.md) and [pending-work.md](pending-work.md).
+
 Owner: Anurag Kumar Ojha. Revised: 20 September 2026. Intended implementer: Codex, using the owner's chosen model configuration. Status: researched implementation specification; the application has not been built or benchmarked as part of this document.
 
 Private development is mandatory until Anurag manually makes the repository public. The implementation agent must never change repository visibility to public; Anurag owns that manual action. The first remote project action is to create and verify a private repository, before implementation code is pushed. Sections 17–20 define the required repository, commit, CI and open-source release workflow.

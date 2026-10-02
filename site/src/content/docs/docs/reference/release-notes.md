@@ -17,6 +17,7 @@ The latest Termivoa release is the private beta `v0.1.0-beta.2` (2026-09-29).
 - **Fix: `pterm uninstall` names the right file.** On macOS and Windows it told you to remove an app that the beta does not install. It now names the `pterm` file to delete.
 - **Worktrees.** In a session inside a git repository, open the session menu (**⋯**) and tap **New worktree…** to start a task in its own folder and branch (`~/termivoa/worktrees/<repository>/<name>` on `termivoa/<name>`), from the default branch or one you pick. Claude or Codex can start in it at once. **Remove worktree…** deletes the folder and keeps the branch. See [Worktrees](/docs/guides/worktrees/).
 - **Down next to Up while you type.** With the keyboard open, the key bar shows `↓` after `↑`, so you need not hide the keyboard to press Down. See [Use the agent keys and key bar](/docs/guides/live-terminal/#use-the-agent-keys-and-key-bar).
+- **A lighter Wall.** At most 4 tiles are live at once, each up to 5 updates per second; the others show **Paused**. See [What does a tile show?](/docs/guides/wall/#what-does-a-tile-show)
 - **Arrange the Wall.** Hold a tile and drag it. The order is saved on your phone; **Reset order** restores the default. See [Arrange the tiles](/docs/guides/wall/#arrange-the-tiles).
 - **Project buttons.** The Snippets sheet shows your project's commands from `package.json`, a `Makefile`, `Cargo.toml` or `go.mod`. **Run in new tab** runs one in a new session; **Type here** types it into the current one. Nothing runs until you tap. See [Project buttons](/docs/guides/project-buttons/).
 - **Ask about specific lines.** In a file's diff, tap one line or a range of up to 20 lines and ask the agent about them. See [Ask about specific lines](/docs/guides/changes/#ask-about-specific-lines).
@@ -24,7 +25,6 @@ The latest Termivoa release is the private beta `v0.1.0-beta.2` (2026-09-29).
 - **Fix: finished sessions shown as lost.** On a busy computer, a finished session now shows its exit code, not lost.
 - **Fix: background jobs get their full cleanup time.** When a session ends, background programs get half a second to clean up. On a very busy computer, most of it could pass before they were told to stop; now it starts when they are told.
 - **Fix: first key after `pterm attach --control` shows Control.** A key typed just as the footer changed to "Control" could be lost; it is now sent. A key read while the footer says "Syncing" is still dropped.
-- **Fix: a rare macOS test failure when a terminal was reused.** The host keeps its end of a terminal open until the program fully exits. Sessions started by Termivoa were not affected.
 - **Fix: the open tab is always in view.** With many sessions, opening one whose tab was off to the right left its tab hidden. The tab strip now scrolls to show the open tab.
 - **Fix: the folder name stays in the status line.** A long folder path was cut at its end, so the folder name was lost. Now the start of the path is cut with `…`, so the folder name and the shell stay in view.
 

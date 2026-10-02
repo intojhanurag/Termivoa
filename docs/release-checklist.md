@@ -7,16 +7,17 @@ This checklist prepares a reviewable v0.1.0 candidate. It does not authorize pub
 - [ ] Source commit SHA is recorded and all intended changes are committed.
 - [ ] Candidate uses a documented prerelease identifier while private.
 - [ ] Exact reproducible build commands and build environments are recorded.
-- [ ] macOS and Windows artifacts, checksums, and SBOMs identify the same source commit.
+- [ ] macOS, Windows and Linux artifacts, checksums, and SBOMs identify the same source commit.
 - [ ] Unsigned/test and signed/release artifacts are unambiguously labeled.
 - [ ] Proposed public version is `v0.1.0`, not a claim of 1.0 stability.
 
 ## Technical acceptance
 
 - [ ] P0–P7 exit criteria in the authoritative implementation plan are complete.
-- [ ] Go runtime works on tested Apple Silicon macOS and Windows 11 x64 versions.
+- [ ] Go runtime works on tested Apple Silicon macOS, Windows 11 x64 and Ubuntu (22.04, 24.04; x86_64 and arm64) versions.
 - [ ] Native zsh, Windows PowerShell, and available PowerShell 7 evidence is recorded; WSL is separate.
 - [ ] Physical iPhone Safari/Home Screen and Android Chrome checklists are complete, with executor and exact versions.
+- [ ] Multi-computer Gate 0 (`scripts/gate0/README.md`) passes on a real iPhone (iOS 16.4 or later) and Android phone.
 - [ ] Private cellular access through approved Tailscale HTTPS is demonstrated without Funnel.
 - [ ] Multiple sessions, desktop handoff, reconnect, normalized terminal display, structured input, bounded history, pairing, and revocation meet their fixtures.
 - [ ] Gateway restart preserves child identity; broker restart reports sessions lost without replay.
@@ -30,6 +31,7 @@ This checklist prepares a reviewable v0.1.0 candidate. It does not authorize pub
 - [ ] Fresh macOS installation works without Go, Node.js, or compiler tooling.
 - [ ] macOS `.app` and DMG are signed with the approved Developer ID and notarized/stapled; identities are referenced by name only.
 - [ ] Fresh per-user Windows installation works without Go, Node.js, or compiler tooling.
+- [ ] Fresh Ubuntu installation (`scripts/install-linux.sh`) works on a real Linux computer without Go, Node.js, or compiler tooling.
 - [ ] Windows executable and Inno Setup installer are signed with the owner-approved trusted identity.
 - [ ] No root daemon, SYSTEM service, Defender/SmartScreen bypass, or disabled certificate validation is introduced.
 - [ ] Startup registration changes are described before consent and tested per user.

@@ -45,6 +45,10 @@ and a same-origin path.
   is sent with `Urgency: high` and a 5-minute TTL; `done` with `normal` and
   2 minutes.
 
+**Several computers.** The phone subscribes on home only
+([multi-computer.md](multi-computer.md)), so only home's sessions send push.
+Peer sessions show Waiting and Your turn only while the app is open.
+
 ## Browser API
 
 | Method and path | Request | Success |

@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for your interest. The project is still in private development and
-has no release yet, so expect changes. Please open an issue before large
-changes. [AGENTS.md](AGENTS.md) and the
+Thanks for your interest. The project is in private beta (`v0.1.0-beta.2`,
+unsigned, for invited collaborators only), so expect changes. Please open an
+issue before large changes. [AGENTS.md](AGENTS.md) and the
 [implementation plan](docs/implementation-plan.md) describe the design rules
 that every change must keep (for example: the broker owns all PTYs, clients get
 normalized frames, input is never queued or resent).
@@ -27,7 +27,7 @@ Go's toolchain selection downloads Go 1.27.1 if your default Go is older
 ./scripts/check             # Windows: ./scripts/check.ps1
 ```
 
-This runs protocol generation drift, the `plan.md` copy check, Go formatting,
+This runs protocol generation drift, Go formatting,
 `go vet` and tests (including the patched `third_party` modules), TypeScript
 checks, web unit tests and the production web build.
 
@@ -57,9 +57,11 @@ behavior, and WSL does not replace native Windows.
 | `protocol/v1` | canonical JSON Schemas and capability docs |
 | `web/` | strict TypeScript + React phone app |
 | `tests/` | deterministic fixtures, integration and soak tests |
-| `packaging/` | macOS and Windows packaging and signing scripts |
+| `packaging/` | macOS, Windows and Linux packaging scripts; macOS and Windows signing scripts |
 | `third_party/` | patched upstream Go modules ([docs/dependency-patches.md](docs/dependency-patches.md)) |
 | `docs/` | architecture, decisions, progress, evidence and release material |
+| `scripts/` | checks, protocol generation, Linux install, soak, docs screenshots, test harnesses |
+| `site/` | landing page and public docs site (Astro Starlight) |
 
 ## Branches, commits and pull requests
 

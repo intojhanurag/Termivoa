@@ -137,4 +137,4 @@ Every step matters: a hacked home can leave a hidden background script on the ph
 
 ## Is it tested on a real phone?
 
-Not yet. Chrome and WebKit pass all 59 checks with two test computers, but the real iPhone and Android check (Gate 0, `scripts/gate0/`) has not run. If it fails on iPhone, the design changes before release.
+Not yet. Chrome and WebKit pass all 59 checks with two test computers, but the check on a real iPhone and Android phone has not run. If it fails on iPhone, the design changes before release.

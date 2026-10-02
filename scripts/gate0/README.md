@@ -25,7 +25,7 @@ The Go code uses no new dependency. It uses the repository's own `internal/webpu
 | Flag | Role | Meaning |
 | --- | --- | --- |
 | `-role home\|peer` | both | Which side to run. |
-| `-peer https://…` | home | The peer origin, for example `https://peer.tailX.ts.net:8443`. |
+| `-peer https://…` | home | The peer origin, for example `https://peer.tailX.ts.net:10000`. |
 | `-home https://…` | peer | The home origin. Only this exact origin gets credentialed CORS and the WebSocket. Use commas for more than one. |
 | `-port N` | both | Port on 127.0.0.1. Default 8441 (home), 8442 (peer). |
 | `-tls-self-signed` | both | HTTPS with a throwaway certificate. For the local check only. Do not use it behind Tailscale Serve. |
@@ -36,7 +36,7 @@ Both roles listen on **127.0.0.1 only**. Nothing is reachable from the network u
 
 You need two computers in **one** tailnet: **home** (H) and **peer** (P). Below, `H.tailX.ts.net` and `P.tailX.ts.net` are their MagicDNS names (see `tailscale status`). Both need this branch and Go 1.27, or copy a binary: `GOOS=linux GOARCH=amd64 go build -o gate0 ./scripts/gate0`.
 
-The steps change Tailscale Serve (AGENTS.md rule 12). Only the owner runs them. They use HTTPS port **8443**, so your `pterm` on port 443 does not change.
+The steps change Tailscale Serve (AGENTS.md rule 12). Only the owner runs them. They use HTTPS port **10000**, so your `pterm` on port 443 does not change.
 
 1. On each computer, look at the Serve setup now and write it down:
 
@@ -44,23 +44,23 @@ The steps change Tailscale Serve (AGENTS.md rule 12). Only the owner runs them. 
    tailscale serve status
    ```
 
-   If port 8443 is already in use, use `--https=10000` below and `:10000` in the origins.
+   Port 8443 is Termivoa's dev-server preview, so these steps use port 10000. If 10000 is in use, pick another free port and use it everywhere below.
 
 2. On P, start the peer, then expose it:
 
    ```sh
-   go run ./scripts/gate0 -role peer -home https://H.tailX.ts.net:8443
-   tailscale serve --bg --https=8443 http://127.0.0.1:8442      # in a second terminal
+   go run ./scripts/gate0 -role peer -home https://H.tailX.ts.net:10000
+   tailscale serve --bg --https=10000 http://127.0.0.1:8442      # in a second terminal
    ```
 
 3. On H, start home, then expose it:
 
    ```sh
-   go run ./scripts/gate0 -role home -peer https://P.tailX.ts.net:8443
-   tailscale serve --bg --https=8443 http://127.0.0.1:8441      # in a second terminal
+   go run ./scripts/gate0 -role home -peer https://P.tailX.ts.net:10000
+   tailscale serve --bg --https=10000 http://127.0.0.1:8441      # in a second terminal
    ```
 
-4. **iPhone:** open `https://H.tailX.ts.net:8443` in Safari → Share → **Add to Home Screen**. Close Safari. Open **Gate 0** from the Home Screen. The top line must say `installed app: yes`.
+4. **iPhone:** open `https://H.tailX.ts.net:10000` in Safari → Share → **Add to Home Screen**. Close Safari. Open **Gate 0** from the Home Screen. The top line must say `installed app: yes`.
 5. Tap **Run checks 1, 2 and 4**. Then do check 3 (kill the app, open it; restart the phone, open it). Then checks 5 and 6 if you want them.
 6. **Android:** do the same in Chrome (see check 7).
 7. Tap **Copy results** on each phone and report (see "How to report").
@@ -70,7 +70,7 @@ The steps change Tailscale Serve (AGENTS.md rule 12). Only the owner runs them. 
 On **each** computer:
 
 ```sh
-tailscale serve --https=8443 off     # or --https=10000 off
+tailscale serve --https=10000 off
 tailscale serve status               # must match what you wrote down in step 1
 ```
 
@@ -86,7 +86,7 @@ The design (section 6) numbers its checks a little differently; the last column 
 | --- | --- | --- | --- | --- | --- |
 | 1 | A credentialed `fetch` to the peer sets its cookie | Button. `GET /set`, then `GET /echo`. | The second request carried the cookie the peer set. | The phone did not store or did not send the cookie. **Stop: plan B.** | 1 |
 | 2 | Later requests and a WebSocket send it | Same button. A preflighted `POST /echo` and a WebSocket to `/ws`. | Both carried the same cookie, and the WebSocket echoed `ping`. | One of them did not carry it. **Stop: plan B.** | 1 |
-| 3 | The cookie survives an app kill and a phone restart | Runs by itself on each open; each open adds a line. iPhone: also open `https://P.tailX.ts.net:8443/echo` in Safari. | Every line says `sent: yes` (`WAIT` until two opens). Safari shows `"received": ""`, so the app keeps its own cookie jar. | A line says `NO`: the cookie was lost. **Stop: plan B.** | 2 |
+| 3 | The cookie survives an app kill and a phone restart | Runs by itself on each open; each open adds a line. iPhone: also open `https://P.tailX.ts.net:10000/echo` in Safari. | Every line says `sent: yes` (`WAIT` until two opens). Safari shows `"received": ""`, so the app keeps its own cookie jar. | A line says `NO`: the cookie was lost. **Stop: plan B.** | 2 |
 | 4 | The cookie's expiry | Same button. The peer asks for `Max-Age` 30 days. Read the real expiry by hand (see below). | The peer set the cookie. Then report the expiry you read. | The peer did not set it. | 3 |
 | 5 | A push-woken service worker sends the cookie (optional) | Button, then close the app within 15 s. | The worker's request to the peer carried the cookie. `openPages: 0` means it woke with no app open. This is the threat in the design; report it either way. | The worker's request had no cookie, or the push failed (the details say why). | 4 |
 | 6 | Two scoped service workers, each with its own push key (optional) | Button. Registers `/a/` and `/b/`, each with its own VAPID key, and pushes both. | Both workers reported back. Peer push can work. | Only one or none reported. Peer push needs another plan. | 5 |
@@ -116,18 +116,18 @@ Cookies ignore ports, so this check gives each server its own host name: `--host
 
 ```sh
 go build -o /tmp/gate0 ./scripts/gate0
-/tmp/gate0 -role peer -tls-self-signed -home https://home.tailx.ts.net:8441,https://control.taily.ts.net:8443 &
+/tmp/gate0 -role peer -tls-self-signed -home https://home.tailx.ts.net:8441,https://control.taily.ts.net:10000 &
 /tmp/gate0 -role home -tls-self-signed -peer https://peer.tailx.ts.net:8442 &
-/tmp/gate0 -role home -tls-self-signed -port 8443 -peer https://peer.tailx.ts.net:8442 &   # the control
+/tmp/gate0 -role home -tls-self-signed -port 10000 -peer https://peer.tailx.ts.net:8442 &   # the control
 
 rm -rf /tmp/gate0-chrome
 node scripts/gate0/local-check.mjs chrome 'https://home.tailx.ts.net:8441/?auto=1' \
-  'https://control.taily.ts.net:8443/?auto=1' 'https://home.tailx.ts.net:8441/'
+  'https://control.taily.ts.net:10000/?auto=1' 'https://home.tailx.ts.net:8441/'
 node scripts/gate0/local-check.mjs chrome 'https://home.tailx.ts.net:8441/'          # new browser process, same profile
 
 # WebKit needs a playwright-core whose WebKit build is installed (here 1.59.1 with webkit-2272):
 PW=/path/to/node_modules/playwright-core node scripts/gate0/local-check.mjs webkit \
-  'https://home.tailx.ts.net:8441/?auto=1' 'https://control.taily.ts.net:8443/?auto=1' 'https://home.tailx.ts.net:8441/'
+  'https://home.tailx.ts.net:8441/?auto=1' 'https://control.taily.ts.net:10000/?auto=1' 'https://home.tailx.ts.net:8441/'
 kill %1 %2 %3
 ```
 

@@ -123,7 +123,7 @@ same time. Zero-limit upstream error normalization remains unchanged.
 
 `internal/desktop.NewBoundedInput` configures both bounds to 64 KiB, using the
 shared protocol paste limit. The adapter does not own or close the source. The
-eventual command owns native input and terminal modes; it must join decoding
+`pterm attach` command (`internal/cli/desktop.go`) owns native input and terminal modes; it must join decoding
 before closing input or restoring the TTY. Native Windows console encoding and
 console cancellation require separate platform evidence.
 
