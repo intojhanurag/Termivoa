@@ -23,17 +23,19 @@ const adminProfileFlags = "[--dev] [--runtime-dir <directory>]"
 // Administration commands take subcommand words first; flags and positional
 // arguments may follow in any order (see parseInterspersed).
 var adminUsages = map[string]string{
-	"pair":           "pterm pair " + adminProfileFlags + " [--origin <https-origin>] [--no-qr] [--no-wait]",
-	"pair pending":   "pterm pair pending " + adminProfileFlags,
-	"pair approve":   "pterm pair approve " + adminProfileFlags + " <pending-id>",
-	"devices":        "pterm devices " + adminProfileFlags,
-	"devices rename": "pterm devices rename " + adminProfileFlags + " <device-id> <label>",
-	"revoke":         "pterm revoke " + adminProfileFlags + " <device-id>",
-	"project add":    "pterm project add " + adminProfileFlags + " [--name <name>] <path>",
-	"project list":   "pterm project list " + adminProfileFlags,
-	"profile list":   "pterm profile list " + adminProfileFlags,
-	"profile detect": "pterm profile detect " + adminProfileFlags,
-	"config origin":  "pterm config origin " + adminProfileFlags + " [<https-origin>]",
+	"pair":             "pterm pair " + adminProfileFlags + " [--origin <https-origin>] [--no-qr] [--no-wait] [--via <name|https-origin> [--allow-tagged]]",
+	"pair pending":     "pterm pair pending " + adminProfileFlags,
+	"pair approve":     "pterm pair approve " + adminProfileFlags + " <pending-id>",
+	"devices":          "pterm devices " + adminProfileFlags,
+	"devices rename":   "pterm devices rename " + adminProfileFlags + " <device-id> <label>",
+	"revoke":           "pterm revoke " + adminProfileFlags + " <device-id> | --via <https-origin>",
+	"computers":        "pterm computers " + adminProfileFlags,
+	"computers remove": "pterm computers remove " + adminProfileFlags + " <https-origin>",
+	"project add":      "pterm project add " + adminProfileFlags + " [--name <name>] <path>",
+	"project list":     "pterm project list " + adminProfileFlags,
+	"profile list":     "pterm profile list " + adminProfileFlags,
+	"profile detect":   "pterm profile detect " + adminProfileFlags,
+	"config origin":    "pterm config origin " + adminProfileFlags + " [<https-origin>]",
 }
 
 var adminSubcommands = map[string][]string{
@@ -51,12 +53,16 @@ type adminCommandConfig struct {
 	noQR       bool
 	noWait     bool
 	name       *string
+	// via is --via: the app origin (or short name for pair) to bind to.
+	via         string
+	allowTagged bool
 }
 
 func parseAdminCommand(command string, args []string) (adminCommandConfig, error) {
 	action := command
 	if command == "pair" && len(args) > 0 && (args[0] == "pending" || args[0] == "approve") ||
-		command == "devices" && len(args) > 0 && args[0] == "rename" {
+		command == "devices" && len(args) > 0 && args[0] == "rename" ||
+		command == "computers" && len(args) > 0 && args[0] == "remove" {
 		action, args = command+" "+args[0], args[1:]
 	}
 	if subcommands, ok := adminSubcommands[command]; ok {
@@ -86,6 +92,10 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 		flags.StringVar(&config.origin, "origin", "", "https origin for this pairing link")
 		flags.BoolVar(&config.noQR, "no-qr", false, "print only the link, without a terminal QR code")
 		flags.BoolVar(&config.noWait, "no-wait", false, "print the link and return without waiting to approve")
+		flags.BoolVar(&config.allowTagged, "allow-tagged", false, "accept a tagged node as the app computer")
+	}
+	if action == "pair" || action == "revoke" {
+		flags.StringVar(&config.via, "via", "", "the computer whose Termivoa app the phone uses")
 	}
 	if action == "project add" {
 		flags.Func("name", "project display name", func(value string) error {
@@ -105,8 +115,12 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 	}
 	minimum, maximum := 0, 0
 	switch action {
-	case "pair approve", "revoke", "project add":
+	case "pair approve", "project add", "computers remove":
 		minimum, maximum = 1, 1
+	case "revoke":
+		if config.via == "" {
+			minimum, maximum = 1, 1
+		}
 	case "config origin":
 		maximum = 1
 	case "devices rename":
@@ -128,12 +142,37 @@ func parseAdminCommand(command string, args []string) (adminCommandConfig, error
 			return adminCommandConfig{}, fmt.Errorf("invalid pairing origin: %w", err)
 		}
 	}
+	if err := validateComputerFlags(config, arguments, usage); err != nil {
+		return adminCommandConfig{}, err
+	}
 	validated, err := adminRuntimeDir(*dev, *runtimeDir)
 	if err != nil {
 		return adminCommandConfig{}, err
 	}
 	config.runtimeDir, config.dev, config.arguments = validated, *dev, arguments
 	return config, nil
+}
+
+// validateComputerFlags rejects a malformed --via, --allow-tagged without
+// --via, or a malformed computer origin before the broker is contacted.
+func validateComputerFlags(config adminCommandConfig, arguments []string, usage string) error {
+	switch {
+	case config.allowTagged && config.via == "":
+		return fmt.Errorf("--allow-tagged needs --via; usage: %s", usage)
+	case config.action == "pair" && config.via != "":
+		if err := protocol.ValidatePairVia(config.via); err != nil {
+			return fmt.Errorf("invalid --via: %w", err)
+		}
+	case config.action == "revoke" && config.via != "":
+		if err := protocol.ValidateComputerOrigin(config.via); err != nil {
+			return fmt.Errorf("invalid --via: %w", err)
+		}
+	case config.action == "computers remove":
+		if err := protocol.ValidateComputerOrigin(arguments[0]); err != nil {
+			return fmt.Errorf("invalid computer origin: %w", err)
+		}
+	}
+	return nil
 }
 
 // parseInterspersed parses flags that appear before, between or after
@@ -213,7 +252,10 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	defer func() { returnErr = errors.Join(returnErr, client.Close()) }()
 	switch config.action {
 	case "pair":
-		options := cli.PairOptions{Origin: config.origin, Fallback: localOrigin(config.dev), ShowQR: showQR}
+		options := cli.PairOptions{
+			Origin: config.origin, Fallback: localOrigin(config.dev), ShowQR: showQR,
+			Via: config.via, AllowTagged: config.allowTagged,
+		}
 		if !config.noWait && input != nil {
 			options.Confirmer = fileConfirmer{input: input, output: output}
 		}
@@ -227,7 +269,14 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	case "devices rename":
 		return cli.RenameDevice(ctx, client, config.arguments[0], config.arguments[1], output)
 	case "revoke":
+		if config.via != "" {
+			return cli.RevokeVia(ctx, client, config.via, fileConfirmer{input: input, output: output}, output)
+		}
 		return cli.Revoke(ctx, client, config.arguments[0], fileConfirmer{input: input, output: output}, output)
+	case "computers":
+		return cli.Computers(ctx, client, output)
+	case "computers remove":
+		return cli.RemoveComputer(ctx, client, config.arguments[0], output)
 	case "project add":
 		return cli.ProjectAdd(ctx, client, config.arguments[0], config.name, output)
 	case "project list":

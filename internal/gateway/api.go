@@ -99,7 +99,101 @@ func (handler *gatewayHandler) settings(response http.ResponseWriter, request *h
 	if !ok {
 		return
 	}
+	principal, err := handler.api.Authenticate(request.Context(), credential)
+	if err != nil {
+		handler.respond(response, request, nil, err)
+		return
+	}
 	result, err := handler.api.Settings(request.Context(), credential)
+	if err == nil {
+		handler.refreshCookie(response, credential, principal.ExpiresAt)
+	}
+	handler.respond(response, request, result, err)
+}
+
+// refreshCookie sends the same cookie value again so WebKit's 7-day cap on
+// cookies of other computers never ends a session in regular use. Max-Age is
+// at most the credential's remaining absolute lifetime (rounded down); the
+// server never extends any expiry. Only for requests that passed every check.
+func (handler *gatewayHandler) refreshCookie(response http.ResponseWriter, credential string, expiresAt time.Time) {
+	if maxAge := int(time.Until(expiresAt) / time.Second); maxAge > 0 {
+		handler.setCookie(response, credential, maxAge)
+	}
+}
+
+// computerList lists (GET) or adds, confirms or renames (POST) a computer in
+// the calling device's own list on this (home) computer.
+func (handler *gatewayHandler) computerList(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodGet, http.MethodPost) {
+		return
+	}
+	if request.Method == http.MethodGet {
+		credential, ok := handler.credential(response, request)
+		if !ok {
+			return
+		}
+		list, err := handler.computers.ListComputers(request.Context(), credential)
+		result := protocol.HTTPComputerListResponse{Computers: list.Computers}
+		if result.Computers == nil {
+			result.Computers = []protocol.HTTPComputer{}
+		}
+		handler.respondGeneric(response, request, result, err)
+		return
+	}
+	var body protocol.HTTPComputerAddRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	if protocol.ValidateComputerOrigin(body.Origin) != nil || protocol.ValidateComputerLabel(body.Label) != nil ||
+		body.State != protocol.Confirmed && body.State != protocol.HTTPComputerStatePending {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid computer")
+		return
+	}
+	result, err := handler.computers.AddComputer(request.Context(), credential, body)
+	handler.respondGeneric(response, request, result, err)
+}
+
+// removeComputer removes https://{host} from the calling device's list. It
+// has no body; the app signs out on that computer first.
+func (handler *gatewayHandler) removeComputer(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodDelete) {
+		return
+	}
+	if !handler.mutationHeaders(response, request) {
+		return
+	}
+	if request.ContentLength != 0 {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "request has no body")
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	origin := "https://" + request.PathValue("host")
+	if protocol.ValidateComputerOrigin(origin) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid computer")
+		return
+	}
+	err := handler.computers.RemoveComputer(request.Context(), credential, origin)
+	if err != nil {
+		handler.respondGeneric(response, request, nil, err)
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+// respondGeneric is respond with the broker's message replaced by the status
+// text: computer errors may carry names another computer chose.
+func (handler *gatewayHandler) respondGeneric(response http.ResponseWriter, request *http.Request, result any, err error) {
+	var brokerErr *gatewayapi.Error
+	if errors.As(err, &brokerErr) {
+		err = &gatewayapi.Error{Code: brokerErr.Code, Message: http.StatusText(brokerStatus(brokerErr.Code))}
+	}
 	handler.respond(response, request, result, err)
 }
 
@@ -398,12 +492,7 @@ func (handler *gatewayHandler) mutation(response http.ResponseWriter, request *h
 func (handler *gatewayHandler) mutationLimit(
 	response http.ResponseWriter, request *http.Request, destination any, limit int64,
 ) bool {
-	if !handler.originAllowed(request) {
-		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
-		return false
-	}
-	if values := request.Header.Values(requestHeaderName); len(values) != 1 || values[0] != "1" {
-		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "missing request header")
+	if !handler.mutationHeaders(response, request) {
 		return false
 	}
 	if !jsonContentType(request.Header.Values("Content-Type")) {
@@ -422,6 +511,19 @@ func (handler *gatewayHandler) mutationLimit(
 	}
 	if err := decodeStrict(data, destination); err != nil {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "malformed request body")
+		return false
+	}
+	return true
+}
+
+// mutationHeaders requires an exact Origin and the fixed request header.
+func (handler *gatewayHandler) mutationHeaders(response http.ResponseWriter, request *http.Request) bool {
+	if !handler.originAllowed(request) {
+		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
+		return false
+	}
+	if values := request.Header.Values(requestHeaderName); len(values) != 1 || values[0] != "1" {
+		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "missing request header")
 		return false
 	}
 	return true

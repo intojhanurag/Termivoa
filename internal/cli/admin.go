@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -31,6 +32,26 @@ type Admin interface {
 	PairingOrigin(context.Context, *string) (*string, error)
 }
 
+// ComputerAdmin is the multi-computer administration surface
+// (docs/multi-computer.md). localclient.AdminClient implements it once the
+// broker side lands; until then the commands below say this build cannot.
+type ComputerAdmin interface {
+	CreateBoundPairingGrant(ctx context.Context, request protocol.AdminRPCPairGrantPayload) (protocol.AdminRPCPairGrantResultPayload, error)
+	RevokeDevicesVia(ctx context.Context, appOrigin string) (protocol.AdminRPCRevokeViaResultPayload, error)
+	Computers(ctx context.Context) ([]protocol.AdminRPCComputer, error)
+	RemoveComputer(ctx context.Context, origin string) (protocol.AdminRPCComputerRemoveResultPayload, error)
+}
+
+// computerAdmin returns admin's multi-computer surface, or an error that says
+// the broker is too old for it.
+func computerAdmin(admin Admin) (ComputerAdmin, error) {
+	computers, ok := admin.(ComputerAdmin)
+	if !ok {
+		return nil, errors.New("this broker does not support multi-computer yet; update Termivoa")
+	}
+	return computers, nil
+}
+
 const setOriginHint = "run `pterm config origin https://<your-private-host>`"
 
 // PairOptions selects the link origin and whether Pair waits for the phone.
@@ -47,6 +68,11 @@ type PairOptions struct {
 	Confirmer Confirmer
 	// PollInterval is how often pending pairings are read; zero is 1s.
 	PollInterval time.Duration
+	// Via binds the grant to the Termivoa app served by another computer
+	// (--via <name|origin>): Pair prints an add-computer link for that app
+	// instead of a pairing link. AllowTagged accepts a tagged app node.
+	Via         string
+	AllowTagged bool
 }
 
 // Pair creates one grant and prints it only inside the pairing link and,
@@ -59,6 +85,22 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 			return fmt.Errorf("invalid --origin: %w", err)
 		}
 	}
+	var computers ComputerAdmin
+	if options.AllowTagged && options.Via == "" {
+		return errors.New("--allow-tagged needs --via")
+	}
+	if options.Via != "" {
+		if err := protocol.ValidatePairVia(options.Via); err != nil {
+			return fmt.Errorf("invalid --via: %w", err)
+		}
+		if options.Origin != "" && protocol.ValidateComputerOrigin(options.Origin) != nil {
+			return errors.New("the add-computer link needs this computer's tailnet https address as --origin")
+		}
+		var err error
+		if computers, err = computerAdmin(admin); err != nil {
+			return err
+		}
+	}
 	// Pending pairings that exist before this grant belong to someone else.
 	seen := map[string]bool{}
 	if options.Confirmer != nil {
@@ -69,6 +111,9 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 		for _, item := range pending {
 			seen[item.ID] = true
 		}
+	}
+	if computers != nil {
+		return pairVia(ctx, admin, computers, options, seen, output)
 	}
 	grant, err := admin.CreatePairingGrant(ctx)
 	if err != nil {
@@ -120,12 +165,128 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 		code, grant.ExpiresAt, link, instruction, where, next)); err != nil || options.Confirmer == nil {
 		return err
 	}
-	return waitForPhone(ctx, admin, options, grant.ExpiresAt, seen, output)
+	return waitForPhone(ctx, admin, options, grant.ExpiresAt, "", seen, output)
+}
+
+// pairVia creates a grant bound to the app named by options.Via and prints it
+// only inside an add-computer link that the app at that origin opens. There
+// is no QR code: a phone camera opens links in the browser, whose cookies are
+// not the installed app's. The link needs this computer's own https origin,
+// never the loopback fallback, because the phone's app calls it directly.
+func pairVia(ctx context.Context, admin Admin, computers ComputerAdmin, options PairOptions,
+	seen map[string]bool, output io.Writer,
+) error {
+	request := protocol.AdminRPCPairGrantPayload{Via: &options.Via}
+	if options.AllowTagged {
+		allow := true
+		request.AllowTagged = &allow
+	}
+	grant, err := computers.CreateBoundPairingGrant(ctx, request)
+	if err != nil {
+		return err
+	}
+	appOrigin, err := boundAppOrigin(options.Via, grant)
+	if err != nil {
+		return err
+	}
+	origin := options.Origin
+	if origin == "" && grant.Origin != nil {
+		origin = *grant.Origin
+	}
+	if protocol.ValidateComputerOrigin(origin) != nil {
+		return errors.New("the add-computer link needs this computer's tailnet https address; run `pterm setup` or pass --origin")
+	}
+	if protocol.ValidateSecretText(grant.Grant) != nil {
+		return errors.New("broker returned a malformed pairing grant")
+	}
+	link := origin + "/add-computer#grant=" + grant.Grant + "&via=" + url.QueryEscape(appOrigin)
+	next := "Then run `pterm pair pending` and approve with `pterm pair approve <pending-id>` after comparing the code."
+	if options.Confirmer != nil {
+		next = "Waiting for the phone (Ctrl+C stops waiting)."
+	}
+	if err := writeString(output, fmt.Sprintf(
+		"Add-computer link (expires %s):\n%s\n"+
+			"Open it within 2 minutes in the Termivoa app at %s: run this command inside a Termivoa session "+
+			"in that app and tap \"Add this computer\", or paste the link in Settings → Computers → Add computer. %s\n"+
+			"The link is a single-use secret: do not share it in chats, issues, screenshots or logs.\n",
+		grant.ExpiresAt, link, describeApp(appOrigin, grant.AppNode), next)); err != nil || options.Confirmer == nil {
+		return err
+	}
+	return waitForPhone(ctx, admin, options, grant.ExpiresAt, appOrigin, seen, output)
+}
+
+// boundAppOrigin checks that the broker bound the grant to the app the owner
+// named: exactly that origin, or the node whose first DNS label is the short
+// name. Anything else is refused before the grant is shown.
+func boundAppOrigin(via string, grant protocol.AdminRPCPairGrantResultPayload) (string, error) {
+	if grant.AppOrigin == nil || grant.AppNode == nil || protocol.ValidateComputerOrigin(*grant.AppOrigin) != nil {
+		return "", errors.New("broker did not bind the grant to a valid app origin")
+	}
+	origin, want := *grant.AppOrigin, machineName(*grant.AppOrigin)
+	if strings.HasPrefix(via, "https://") {
+		want = origin
+	}
+	if want != via {
+		return "", fmt.Errorf("broker bound the grant to %s, not %s", origin, via)
+	}
+	return origin, nil
+}
+
+// machineName is the first DNS label of a computer origin's host.
+func machineName(origin string) string {
+	name, _, _ := strings.Cut(strings.TrimPrefix(origin, "https://"), ".")
+	return name
+}
+
+// describeApp names the computer that serves a Termivoa app: machine name,
+// full origin, and its Tailscale owner or, for a tagged node, its tags.
+func describeApp(origin string, node *protocol.TailnetNode) string {
+	if protocol.ValidateComputerOrigin(origin) != nil {
+		return displayText(origin)
+	}
+	who := "owner unknown"
+	switch {
+	case node != nil && len(node.Tags) > 0:
+		tags := make([]string, len(node.Tags))
+		for index, tag := range node.Tags {
+			tags[index] = plainText(tag)
+		}
+		who = "tags " + strings.Join(tags, ", ")
+	case node != nil && node.Owner != nil:
+		who = "owner " + plainText(*node.Owner)
+	}
+	return fmt.Sprintf("%s (%s, %s)", machineName(origin), origin, who)
+}
+
+// plainText prints a nonempty printable-ASCII word as is and escapes
+// anything else, as displayText does.
+func plainText(value string) string {
+	for index := 0; index < len(value); index++ {
+		if value[index] < '!' || value[index] > '~' {
+			return displayText(value)
+		}
+	}
+	if value == "" {
+		return displayText(value)
+	}
+	return value
+}
+
+// pairingPrompt asks the owner to compare the phone's code. A pairing bound to
+// another computer's app also names that app, from the pending item itself.
+func pairingPrompt(item protocol.AdminRPCPendingPairing) string {
+	app := ""
+	if item.AppOrigin != nil {
+		app = " and will use this computer from the Termivoa app at " + describeApp(*item.AppOrigin, item.AppNode)
+	}
+	return fmt.Sprintf("Approve only if the phone shows exactly this code.\nPhone %s shows code %s%s. Approve? [y/N] ",
+		displayText(item.DeviceLabel), item.VerificationCode, app)
 }
 
 // waitForPhone approves at most one new pending pairing, and only after the
 // owner confirms that the phone shows the same code. It never auto-approves.
-func waitForPhone(ctx context.Context, admin Admin, options PairOptions, expiresAt string,
+// With appOrigin set, only pairings bound to that app are offered.
+func waitForPhone(ctx context.Context, admin Admin, options PairOptions, expiresAt, appOrigin string,
 	seen map[string]bool, output io.Writer,
 ) error {
 	expires, err := time.Parse(time.RFC3339Nano, expiresAt)
@@ -148,9 +309,10 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, expires
 				continue
 			}
 			seen[item.ID] = true
-			approve, err := options.Confirmer.Confirm(ctx, fmt.Sprintf(
-				"Approve only if the phone shows exactly this code.\nPhone %s shows code %s. Approve? [y/N] ",
-				displayText(item.DeviceLabel), item.VerificationCode))
+			if appOrigin != "" && (item.AppOrigin == nil || *item.AppOrigin != appOrigin) {
+				continue
+			}
+			approve, err := options.Confirmer.Confirm(ctx, pairingPrompt(item))
 			if err != nil {
 				return err
 			}
@@ -178,10 +340,10 @@ func PairPending(ctx context.Context, admin Admin, output io.Writer) error {
 	if len(pending) == 0 {
 		return writeString(output, "No pending pairings.\n")
 	}
-	return writeTable(output, "PENDING ID\tCODE\tLABEL\tEXPIRES", len(pending), func(index int) string {
+	return writeTable(output, "PENDING ID\tCODE\tLABEL\tEXPIRES\tVIA", len(pending), func(index int) string {
 		item := pending[index]
 		return strings.Join([]string{item.ID, item.VerificationCode,
-			displayText(item.DeviceLabel), item.ExpiresAt}, "\t")
+			displayText(item.DeviceLabel), item.ExpiresAt, viaText(item.AppOrigin)}, "\t")
 	})
 }
 
@@ -208,11 +370,29 @@ func Devices(ctx context.Context, admin Admin, output io.Writer) error {
 	if len(devices) == 0 {
 		return writeString(output, "No paired devices.\n")
 	}
-	return writeTable(output, "DEVICE ID\tLABEL\tSTATUS\tLAST USED", len(devices), func(index int) string {
+	return writeTable(output, "DEVICE ID\tLABEL\tSTATUS\tLAST USED\tVIA", len(devices), func(index int) string {
 		device := devices[index]
 		return strings.Join([]string{device.ID, displayText(device.Label),
-			deviceStatus(device), device.LastUsedAt}, "\t")
+			deviceStatus(device), device.LastUsedAt, viaText(device.AppOrigin)}, "\t")
 	})
+}
+
+// viaText is the app origin a phone uses this computer from, or "-" when it
+// uses this computer's own page.
+func viaText(appOrigin *string) string {
+	if appOrigin == nil {
+		return "-"
+	}
+	return originText(*appOrigin)
+}
+
+// originText prints a canonical computer origin as is and escapes anything
+// else; origins were validated by the protocol decoder.
+func originText(origin string) string {
+	if protocol.ValidateComputerOrigin(origin) != nil {
+		return displayText(origin)
+	}
+	return origin
 }
 
 // RenameDevice sets a device's display label. Surrounding spaces are removed.
@@ -271,6 +451,9 @@ func Revoke(ctx context.Context, admin Admin, deviceID string, confirmer Confirm
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// On home, the phone's other computers are read first: revocation may
+	// delete its computer list.
+	others := phoneComputers(ctx, admin, deviceID)
 	result, err := admin.RevokeDevice(ctx, deviceID)
 	if err != nil {
 		if localclient.IsDeliveryUncertain(err) {
@@ -281,7 +464,128 @@ func Revoke(ctx context.Context, admin Admin, deviceID string, confirmer Confirm
 	if result.DeviceID != deviceID {
 		return errors.New("broker revocation acknowledgement has the wrong device ID")
 	}
-	return writeString(output, fmt.Sprintf("Revoked %s; closed %d live connection(s).\n", deviceID, result.ClosedStreams))
+	text := fmt.Sprintf("Revoked %s; closed %d live connection(s).\n", deviceID, result.ClosedStreams)
+	if len(others) > 0 {
+		text += "This phone also used these computers. Run `pterm revoke` on each:\n"
+		for _, computer := range others {
+			text += fmt.Sprintf("  %s (%s)\n", displayText(computer.Label), originText(computer.Origin))
+		}
+	}
+	return writeString(output, text)
+}
+
+// phoneComputers lists the other computers one phone uses through this home
+// computer. It is a hint only: an older broker or a failed read gives none.
+func phoneComputers(ctx context.Context, admin Admin, deviceID string) []protocol.AdminRPCComputer {
+	computers, err := computerAdmin(admin)
+	if err != nil {
+		return nil
+	}
+	all, err := computers.Computers(ctx)
+	if err != nil {
+		return nil
+	}
+	var mine []protocol.AdminRPCComputer
+	for _, computer := range all {
+		if computer.DeviceID == deviceID {
+			mine = append(mine, computer)
+		}
+	}
+	return mine
+}
+
+// RevokeVia revokes every device that uses this computer from the Termivoa
+// app at appOrigin, for example after that home computer was compromised.
+func RevokeVia(ctx context.Context, admin Admin, appOrigin string, confirmer Confirmer, output io.Writer) error {
+	if err := protocol.ValidateComputerOrigin(appOrigin); err != nil {
+		return fmt.Errorf("invalid --via: %w", err)
+	}
+	computers, err := computerAdmin(admin)
+	if err != nil {
+		return err
+	}
+	devices, err := admin.Devices(ctx)
+	if err != nil {
+		return err
+	}
+	count := 0
+	for _, device := range devices {
+		if !device.Revoked && device.AppOrigin != nil && *device.AppOrigin == appOrigin {
+			count++
+		}
+	}
+	if count == 0 {
+		return writeString(output, fmt.Sprintf("No device uses the app at %s; no request was sent.\n", appOrigin))
+	}
+	confirmed, err := confirmer.Confirm(ctx, fmt.Sprintf(
+		"Revoke browser access for %d device(s) that use this computer from the Termivoa app at %s? Their live connections close now. [y/N] ",
+		count, appOrigin))
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		return writeString(output, "Revocation cancelled.\n")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result, err := computers.RevokeDevicesVia(ctx, appOrigin)
+	if err != nil {
+		if localclient.IsDeliveryUncertain(err) {
+			return fmt.Errorf("revocation outcome is uncertain—run pterm devices and check the devices bound to %s before trying again: %w", appOrigin, err)
+		}
+		return err
+	}
+	if result.AppOrigin != appOrigin {
+		return errors.New("broker revocation acknowledgement has the wrong app origin")
+	}
+	return writeString(output, fmt.Sprintf("Revoked %d device(s) bound to %s; closed %d live connection(s).\n",
+		len(result.DeviceIDS), appOrigin, result.ClosedStreams))
+}
+
+// Computers lists, on the home computer, the other computers each phone uses.
+func Computers(ctx context.Context, admin Admin, output io.Writer) error {
+	computers, err := computerAdmin(admin)
+	if err != nil {
+		return err
+	}
+	list, err := computers.Computers(ctx)
+	if err != nil {
+		return err
+	}
+	if len(list) == 0 {
+		return writeString(output, "No computers.\n")
+	}
+	return writeTable(output, "DEVICE ID\tLABEL\tORIGIN\tADDED", len(list), func(index int) string {
+		computer := list[index]
+		return strings.Join([]string{computer.DeviceID, displayText(computer.Label),
+			originText(computer.Origin), computer.CreatedAt}, "\t")
+	})
+}
+
+// RemoveComputer drops a computer from every phone's list on this home
+// computer. It cannot sign a phone out on that computer, so it says how.
+func RemoveComputer(ctx context.Context, admin Admin, origin string, output io.Writer) error {
+	if err := protocol.ValidateComputerOrigin(origin); err != nil {
+		return fmt.Errorf("invalid computer origin: %w", err)
+	}
+	computers, err := computerAdmin(admin)
+	if err != nil {
+		return err
+	}
+	result, err := computers.RemoveComputer(ctx, origin)
+	if err != nil {
+		if localclient.IsDeliveryUncertain(err) {
+			return fmt.Errorf("outcome is uncertain—run pterm computers to check: %w", err)
+		}
+		return err
+	}
+	if result.Origin != origin {
+		return errors.New("broker acknowledgement has the wrong computer origin")
+	}
+	return writeString(output, fmt.Sprintf(
+		"Removed %s from %d device list(s). This does not sign the phone out there: run `pterm revoke` on %s (%s).\n",
+		origin, result.Removed, machineName(origin), origin))
 }
 
 // ProjectAdd sends an absolute path; the broker checks that it is an existing
