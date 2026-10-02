@@ -68,15 +68,20 @@ gateway only a loopback one. It keeps the last known value while the broker
 does not answer. So `pterm config origin` takes effect without a restart.
 
 The same result carries two sorted, unique origin sets, each absent when
-empty. `boundOrigins` (at most 64) is the union of app origins bound to
-unrevoked devices; the gateway uses it only to emit CORS headers, because the
-broker checks every request's `origin` against its own credential.
+empty. `boundOrigins` (at most 64) is the union of app origins bound to any
+device, revoked and expired ones included, whose pinned Tailscale node the
+broker still trusts: an app whose credential was revoked or expired must read
+the 401 to offer pairing again. The gateway uses it only to emit CORS headers,
+because the broker checks every request's `origin` against its own credential.
+The gateway also probes right after an approved `gateway.pair.poll` from an
+app origin, so the app's next request is admitted at once.
 `pairingOrigins` (at most 16) are the app origins of unexpired bound grants
 and pending pairings; the gateway admits them, and answers their preflight,
 only on `/api/v1/pair/*`.
 
 The `gateway.computers.*` requests act only on the list of the device that
-owns the credential; see `http-api.md`, Computers.
+owns the credential, and only from this computer's own origin (never a bound
+app origin); see `http-api.md`, Computers.
 
 `gateway.device.rename` changes only the label of the device that owns the
 credential. Labels stay untrusted display text, never identity.

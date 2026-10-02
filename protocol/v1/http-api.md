@@ -46,7 +46,7 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `POST /api/v1/logout` | cookie | `{}` | `204`; clears cookie |
 | `GET /api/v1/computers` | cookie | – | `200 HTTPComputerListResponse`: the calling device's confirmed computers |
 | `POST /api/v1/computers` | cookie | `HTTPComputerAddRequest` | `200 HTTPComputerAddResponse`; see Computers |
-| `DELETE /api/v1/computers/{host}` | cookie | – | `204`; removes `https://{host}` from the calling device's list |
+| `DELETE /api/v1/computers/{host}` | cookie | `{}` | `204`; removes `https://{host}` from the calling device's list |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -140,17 +140,23 @@ computers on the home computer. Entries are keyed by `HTTPComputer.origin`,
 a canonical origin: `https`, lowercase DNS host, default port, no trailing
 dot. At most 8 per device, pending and confirmed together.
 
+These routes accept only this computer's own origin, never a bound app
+origin.
+
 - `POST` with `state: "pending"` records or refreshes a short-lived pending
   entry before pairing, after the home computer finds the host in its own
-  tailscale status (same tailnet; same owner unless either node is tagged).
-  Pending entries only widen the app's CSP `connect-src` for that device;
-  they are never listed and expire.
+  tailscale status (same tailnet; same owner unless either node is tagged)
+  and pins that node's ID. Pending entries only widen the app's CSP
+  `connect-src` for that device; they are never listed and expire.
 - `POST` with `state: "confirmed"` confirms the entry after the app's first
   authenticated `GET /api/v1/settings` on the peer succeeded, or renames a
-  confirmed entry.
+  confirmed entry. The host must still be the pinned node; otherwise the
+  request fails with `invalid_request` and the computer must be added again.
+- Once home has read its tailscale status, an entry whose pinned node no
+  longer holds its name is left out of the list and of the CSP.
 - The response echoes the saved entry and the peer's `TailnetNode` (`id`,
   `owner` when user-owned, `tags`) for the app's confirm sheet.
-- `DELETE /api/v1/computers/{host}` removes the entry. It does not log the
+- `DELETE /api/v1/computers/{host}` with body `{}` removes the entry. It does not log the
   phone out on the peer: the app calls the peer's `POST /api/v1/logout`
   first.
 
