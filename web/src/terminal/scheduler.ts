@@ -82,7 +82,10 @@ export interface TileHandle {
 }
 
 export interface TileOptions {
-  /** True when the computer has no thumbnail mode, so the tile streams at full rate. */
+  /**
+   * True when the computer has no thumbnail mode, so the tile streams at full rate.
+   * A guard only: every supported computer has thumbnail mode (FEATURE_REVISION.thumbnail is revision 1).
+   */
   readonly fullRate?: boolean;
   /** Called (in a microtask) when the state changes; not for the initial state. */
   readonly onChange: (state: TileState) => void;
@@ -150,7 +153,10 @@ export class Scheduler {
     this.random = deps.random ?? Math.random;
   }
 
-  /** Asks for a live Wall tile slot. Read `state()` at once; later changes go to onChange. */
+  /**
+   * Asks for a live Wall tile slot. A new tile counts as offscreen (paused)
+   * until setVisible(true). Read `state()` at once; later changes go to onChange.
+   */
   requestLiveTile(key: string, options: TileOptions): TileHandle {
     // Asking again for a key replaces the old request (its handle stops working).
     this.tiles.delete(key);
@@ -158,7 +164,9 @@ export class Scheduler {
       key,
       cost: options.fullRate === true ? this.limits.fullRateTileCost : 1,
       onChange: options.onChange,
-      visible: true,
+      // Offscreen until the IntersectionObserver says otherwise, so tiles
+      // below the fold never take the first live slots.
+      visible: false,
       state: 'paused',
       notified: 'paused',
       pausedUntil: 0,
@@ -244,7 +252,8 @@ export class Scheduler {
     return new Promise<T>((resolve, reject) => {
       this.readQueue.push(() => {
         this.reading++;
-        load().then(resolve, reject).finally(() => {
+        // Promise.resolve().then: a load that throws at once still frees its slot.
+        Promise.resolve().then(load).then(resolve, reject).finally(() => {
           this.reading--;
           this.pumpReads();
         });

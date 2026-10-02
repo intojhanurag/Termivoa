@@ -8,7 +8,6 @@ import {
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
 import { workersSafe } from '../push';
 import { scheduler } from '../terminal/scheduler';
-import { AddComputerPage, PeerAddPage } from './AddComputer';
 import {
   forgetSettings, homeSettings, hosted, keyOf, mergeSessions, pairAgain, ReadFailure, useAllSessions, type HostedSession,
 } from './allSessions';
@@ -29,6 +28,10 @@ const Live = lazy(() => loadLive().then((module) => ({ default: module.Live })))
 // The wall draws live terminals too, so it also loads with xterm.
 const Wall = lazy(() => loadChunk(() => import('./Wall')).then((module) => ({ default: module.Wall })));
 const Preview = lazy(() => loadChunk(() => import('./Preview')).then((module) => ({ default: module.Preview })));
+// Adding a computer is rare, so its pages load only when opened.
+const loadAddComputer = () => loadChunk(() => import('./AddComputer'));
+const AddComputerPage = lazy(() => loadAddComputer().then((module) => ({ default: module.AddComputerPage })));
+const PeerAddPage = lazy(() => loadAddComputer().then((module) => ({ default: module.PeerAddPage })));
 
 export type GrantHolder = GrantSlot;
 
@@ -654,18 +657,23 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           }}
         />
       )}
-      {view.name === 'peer-add' && <PeerAddPage link={peerLink} />}
-      {view.name === 'add-computer' && (
-        <AddComputerPage
-          link={addSlot.value}
-          {...(refusedAdd ? { notice: strayAdd(firstLabel(homeOrigin())) } : {})}
-          deviceLabel={settings?.device.label}
-          onDone={() => {
-            reloadComputers();
-            navigate({ name: 'sessions' });
-          }}
-          onSettings={() => navigate({ name: 'settings' })}
-        />
+      {(view.name === 'peer-add' || view.name === 'add-computer') && (
+        <ChunkErrorBoundary>
+          <Suspense fallback={<main className="page"><p role="status" className="muted">Opening…</p></main>}>
+            {view.name === 'peer-add' ? <PeerAddPage link={peerLink} /> : (
+              <AddComputerPage
+                link={addSlot.value}
+                {...(refusedAdd ? { notice: strayAdd(firstLabel(homeOrigin())) } : {})}
+                deviceLabel={settings?.device.label}
+                onDone={() => {
+                  reloadComputers();
+                  navigate({ name: 'sessions' });
+                }}
+                onSettings={() => navigate({ name: 'settings' })}
+              />
+            )}
+          </Suspense>
+        </ChunkErrorBoundary>
       )}
       {view.name === 'sessions' && (
         <Sessions

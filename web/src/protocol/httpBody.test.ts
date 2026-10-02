@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { httpValidators } from 'virtual:http-validators';
+import { describe, expect, it, vi } from 'vitest';
 import { InvalidResponseError, parseHttpBody } from './httpBody';
 
 const brokerGeneration = '00000000-0000-4000-8000-000000000002';
@@ -25,6 +26,16 @@ describe('parseHttpBody', () => {
       computers: [{ origin: 'https://vps.tailx.ts.net', label: 'vps' }, { origin: 'http://evil.tailx.ts.net', label: 'x' }],
     });
     expect(computers.computers).toEqual([{ origin: 'https://vps.tailx.ts.net', label: 'vps' }]);
+  });
+
+  it('validates each session once when the list is valid, and item by item only after a failure', () => {
+    const perItem = vi.spyOn(httpValidators, 'sessionRecord');
+    parseHttpBody('sessionListResponse', { sessions: [session(id(1)), session(id(2)), session(id(3))] });
+    expect(perItem).not.toHaveBeenCalled();
+    const body = parseHttpBody('sessionListResponse', { sessions: [session(id(1)), session(id(2), { state: 'teleporting' })] });
+    expect(body.sessions.map((item) => item.id)).toEqual([id(1)]);
+    expect(perItem).toHaveBeenCalledTimes(2);
+    perItem.mockRestore();
   });
 
   it('rejects wrong types outside lists', () => {

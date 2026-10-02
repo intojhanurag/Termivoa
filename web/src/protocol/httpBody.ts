@@ -58,17 +58,24 @@ export class InvalidResponseError extends Error {
 
 /**
  * Validates an HTTP response body in place (unknown fields are removed) and
- * returns it typed. Lists in ITEMS are filtered item by item first, so one
- * session with, say, a new state value hides only that session.
+ * returns it typed. Each item is validated once: the whole body first, and
+ * only when that fails are the lists in ITEMS filtered item by item and the
+ * body checked again, so one session with, say, a new state value hides only
+ * that session.
  */
 export function parseHttpBody<Name extends HttpSchema>(name: Name, value: unknown): HttpBodies[Name] {
-  if (typeof value === 'object' && value !== null) {
-    const record = value as Record<string, unknown>;
-    for (const [field, item] of ITEMS[name] ?? []) {
-      const list = record[field];
-      if (Array.isArray(list)) {
-        record[field] = list.filter((entry) => httpValidators[item](entry));
-      }
+  if (httpValidators[name](value)) {
+    return value as HttpBodies[Name];
+  }
+  const lists = ITEMS[name] ?? [];
+  if (lists.length === 0 || typeof value !== 'object' || value === null) {
+    throw new InvalidResponseError(name);
+  }
+  const record = value as Record<string, unknown>;
+  for (const [field, item] of lists) {
+    const list = record[field];
+    if (Array.isArray(list)) {
+      record[field] = list.filter((entry) => httpValidators[item](entry));
     }
   }
   if (!httpValidators[name](value)) {
