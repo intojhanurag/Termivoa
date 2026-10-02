@@ -176,6 +176,8 @@ const settings: HTTPSettingsResponse = {
   hostBuild: 'pterm/test',
   projects: [],
   shellProfiles: [{ id: base.shellProfileId, name: 'zsh' }],
+  protocolRevision: 1,
+  minProtocolRevision: 1,
 };
 const list: SessionList = { sessions: [], reachable: true, reload: async () => undefined };
 

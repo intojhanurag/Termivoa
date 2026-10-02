@@ -124,7 +124,7 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		response := protocol.GatewayRPCPairPollResultPayload{Response: protocol.HTTPPairPollResponse{Status: protocol.Pending}}
+		response := protocol.GatewayRPCPairPollResultPayload{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}}
 		if result.Approved {
 			expires := formatRPCTime(result.ExpiresAt)
 			response.Response = protocol.HTTPPairPollResponse{Status: protocol.Approved,
@@ -333,11 +333,13 @@ func (server *ManagementServer) browserSettings(ctx context.Context, principal a
 		return protocol.HTTPSettingsResponse{}, err
 	}
 	result := protocol.HTTPSettingsResponse{
-		Device:           protocol.HTTPDeviceSummary{ID: principal.DeviceID, Label: principal.DeviceLabel},
-		Projects:         []protocol.HTTPNamedOption{},
-		ShellProfiles:    []protocol.HTTPNamedOption{},
-		HostBuild:        server.config.HostBuild,
-		BrokerGeneration: server.config.BrokerGeneration,
+		Device:              protocol.HTTPDeviceSummary{ID: principal.DeviceID, Label: principal.DeviceLabel},
+		Projects:            []protocol.HTTPNamedOption{},
+		ShellProfiles:       []protocol.HTTPNamedOption{},
+		HostBuild:           server.config.HostBuild,
+		BrokerGeneration:    server.config.BrokerGeneration,
+		ProtocolRevision:    protocol.ProtocolRevision,
+		MinProtocolRevision: protocol.MinProtocolRevision,
 	}
 	for _, project := range projects {
 		result.Projects = append(result.Projects, namedOption(project.ID, project.DisplayName))

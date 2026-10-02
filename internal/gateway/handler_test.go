@@ -217,7 +217,7 @@ func TestPollSetsCookieOnlyOnceOnApproval(t *testing.T) {
 			expires := time.Now().Add(30 * 24 * time.Hour)
 			device := &protocol.HTTPDeviceSummary{ID: uuidA, Label: "phone"}
 			broker.pollResults = []gatewayapi.PollResult{
-				{Response: protocol.HTTPPairPollResponse{Status: protocol.Pending}},
+				{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}},
 				{Response: protocol.HTTPPairPollResponse{Status: protocol.Approved, Device: device}, Credential: validCredential, CredentialExpiresAt: expires},
 			}
 			broker.pollErr = &gatewayapi.Error{Code: protocol.PairingExpired, Message: "pairing expired"}
@@ -255,7 +255,7 @@ func TestPollRejectsBrokerContractViolations(t *testing.T) {
 	broker := newFakeBroker()
 	broker.pollResults = []gatewayapi.PollResult{
 		{Response: protocol.HTTPPairPollResponse{Status: protocol.Approved}},
-		{Response: protocol.HTTPPairPollResponse{Status: protocol.Pending}, Credential: validCredential, CredentialExpiresAt: time.Now().Add(time.Hour)},
+		{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}, Credential: validCredential, CredentialExpiresAt: time.Now().Add(time.Hour)},
 		{Response: protocol.HTTPPairPollResponse{Status: protocol.Approved}, Credential: validCredential, CredentialExpiresAt: time.Now().Add(-time.Hour)},
 		// Expired by under a second: Max-Age would round to 0, which omits
 		// the attribute and yields a non-expiring session cookie.

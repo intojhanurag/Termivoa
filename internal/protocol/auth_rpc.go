@@ -31,11 +31,13 @@ const (
 
 // RPCEnvelope is the shared correlated envelope of the gateway and local
 // administration RPC schemas. It carries no session identity: every
-// session-scoped field lives in a validated payload.
+// session-scoped field lives in a validated payload. Origin is the browser
+// request's Origin, forwarded by the gateway; only gateway requests carry it.
 type RPCEnvelope[T ~string] struct {
 	Version   int             `json:"version"`
 	Type      T               `json:"type"`
 	RequestID string          `json:"requestId"`
+	Origin    *string         `json:"origin,omitempty"`
 	Payload   json.RawMessage `json:"payload"`
 }
 
@@ -55,8 +57,10 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayPushConfig: GatewayPushConfigResult, GatewayPushSubscribe: GatewayPushSubscribeResult,
 	GatewayPushUnsubscribe: GatewayPushUnsubscribeResult, GatewayPushTest: GatewayPushTestResult,
 	GatewayUploadBegin: GatewayUploadBeginResult, GatewayUploadChunk: GatewayUploadChunkResult,
-	GatewayUploadCommit: GatewayUploadCommitResult,
-	GatewayPreviewCheck: GatewayPreviewCheckResult,
+	GatewayUploadCommit:  GatewayUploadCommitResult,
+	GatewayPreviewCheck:  GatewayPreviewCheckResult,
+	GatewayComputersList: GatewayComputersListResult, GatewayComputersAdd: GatewayComputersAddResult,
+	GatewayComputersRemove: GatewayComputersRemoveResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -67,23 +71,24 @@ var AdminRPCResults = map[AdminRPCMessageType]AdminRPCMessageType{
 	AdminProjectList: AdminProjectListResult, AdminProfileList: AdminProfileListResult,
 	AdminProfileDetect: AdminProfileDetectResult, AdminConfigOrigin: AdminConfigOriginResult,
 	AdminShutdown: AdminShutdownResult, AdminGatewayStop: AdminGatewayStopResult,
-	AdminDeviceRename: AdminDeviceRenameResult,
+	AdminDeviceRename: AdminDeviceRenameResult, AdminDeviceRevokeVia: AdminDeviceRevokeViaResult,
+	AdminComputersList: AdminComputersListResult, AdminComputersRemove: AdminComputersRemoveResult,
 }
 
 func DecodeGatewayRPCRequest(data []byte) (GatewayRPCEnvelope, error) {
-	return decodeRPC(data, true, gatewayRPCRequestTypes(), GatewayError, validateGatewayRPCPayload)
+	return decodeRPC(data, true, true, gatewayRPCRequestTypes(), GatewayError, validateGatewayRPCPayload)
 }
 
 func DecodeGatewayRPCResponse(data []byte) (GatewayRPCEnvelope, error) {
-	return decodeRPC(data, false, gatewayRPCRequestTypes(), GatewayError, validateGatewayRPCPayload)
+	return decodeRPC(data, false, false, gatewayRPCRequestTypes(), GatewayError, validateGatewayRPCPayload)
 }
 
 func DecodeAdminRPCRequest(data []byte) (AdminRPCEnvelope, error) {
-	return decodeRPC(data, true, adminRPCRequestTypes(), AdminError, validateAdminRPCPayload)
+	return decodeRPC(data, true, false, adminRPCRequestTypes(), AdminError, validateAdminRPCPayload)
 }
 
 func DecodeAdminRPCResponse(data []byte) (AdminRPCEnvelope, error) {
-	return decodeRPC(data, false, adminRPCRequestTypes(), AdminError, validateAdminRPCPayload)
+	return decodeRPC(data, false, false, adminRPCRequestTypes(), AdminError, validateAdminRPCPayload)
 }
 
 // DecodeRPCPayload strictly decodes a payload from an already validated envelope.
@@ -112,7 +117,7 @@ func adminRPCRequestTypes() map[AdminRPCMessageType]bool {
 }
 
 func decodeRPC[T ~string](
-	data []byte, request bool, requests map[T]bool, errorType T,
+	data []byte, request, allowOrigin bool, requests map[T]bool, errorType T,
 	validate func(RPCEnvelope[T]) error,
 ) (RPCEnvelope[T], error) {
 	limit := MaxOutboundMessageBytes
@@ -134,6 +139,14 @@ func decodeRPC[T ~string](
 	}
 	if !validUUID(envelope.RequestID) {
 		return RPCEnvelope[T]{}, errors.New("protocol: RPC requestId must be a canonical UUID")
+	}
+	if envelope.Origin != nil {
+		if !allowOrigin {
+			return RPCEnvelope[T]{}, errors.New("protocol: only gateway requests carry an origin")
+		}
+		if err := ValidatePairingOrigin(*envelope.Origin); err != nil {
+			return RPCEnvelope[T]{}, fmt.Errorf("protocol: RPC origin: %w", err)
+		}
 	}
 	isRequest := requests[envelope.Type]
 	isResponse := envelope.Type == errorType
@@ -175,7 +188,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		}
 		return ValidateSecretText(payload.PollSecret)
 	case GatewayAuthCheck, GatewayAuthLogout, GatewaySettings, GatewaySessionList, GatewayLiveOpen,
-		GatewayPushConfig, GatewayPushTest:
+		GatewayPushConfig, GatewayPushTest, GatewayComputersList:
 		payload, err := DecodeRPCPayload[GatewayRPCCredentialPayload](envelope)
 		if err != nil {
 			return err
@@ -222,10 +235,20 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		return err
 	case GatewayOriginResult:
 		payload, err := DecodeRPCPayload[GatewayRPCOriginResultPayload](envelope)
-		if err != nil || payload.Origin == nil {
+		if err != nil {
 			return err
 		}
-		return ValidatePairingOrigin(*payload.Origin)
+		if payload.Origin != nil {
+			if err := ValidatePairingOrigin(*payload.Origin); err != nil {
+				return err
+			}
+		}
+		if err := validateOriginSet(payload.BoundOrigins, MaxBoundOrigins, true, "boundOrigins"); err != nil {
+			return err
+		}
+		return validateOriginSet(payload.PairingOrigins, MaxPairingOrigins, true, "pairingOrigins")
+	case GatewayComputersAdd, GatewayComputersRemove, GatewayComputersListResult, GatewayComputersAddResult:
+		return validateGatewayComputerPayload(envelope)
 	case GatewayDeviceRename:
 		payload, err := DecodeRPCPayload[GatewayRPCDeviceRenamePayload](envelope)
 		if err != nil {
@@ -336,7 +359,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		}
 		_, err = parseBrokerRPCTime(payload.ExpiresAt, "expiresAt")
 		return err
-	case GatewayAuthLogoutResult, GatewayLiveOpenResult:
+	case GatewayAuthLogoutResult, GatewayLiveOpenResult, GatewayComputersRemoveResult:
 		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
 		return err
 	case GatewaySettingsResult:
@@ -377,7 +400,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 
 func validateGatewayPollResult(payload GatewayRPCPairPollResultPayload) error {
 	switch payload.Response.Status {
-	case Pending:
+	case HTTPPairPollStatusPending:
 		if payload.Response.Device != nil || payload.Credential != nil || payload.CredentialExpiresAt != nil {
 			return errors.New("pending poll must not carry a device or credential")
 		}
@@ -412,6 +435,9 @@ func validateSettings(payload HTTPSettingsResponse) error {
 	if len(payload.HostBuild) == 0 || len(payload.HostBuild) > 128 {
 		return errors.New("hostBuild is outside bounds")
 	}
+	if payload.MinProtocolRevision < 1 || payload.ProtocolRevision < payload.MinProtocolRevision || payload.ProtocolRevision > 1000000 {
+		return errors.New("protocol revisions need 1 <= minProtocolRevision <= protocolRevision <= 1000000")
+	}
 	if payload.Projects == nil || payload.ShellProfiles == nil ||
 		len(payload.Projects) > MaxSettingsProjects || len(payload.ShellProfiles) > MaxSettingsShellProfiles {
 		return errors.New("settings lists are outside bounds")
@@ -429,7 +455,10 @@ func validateSettings(payload HTTPSettingsResponse) error {
 
 func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 	switch envelope.Type {
-	case AdminPairGrant, AdminPairPending, AdminDeviceList, AdminProjectList, AdminProfileList, AdminProfileDetect,
+	case AdminPairGrant, AdminDeviceRevokeVia, AdminDeviceRevokeViaResult, AdminComputersListResult,
+		AdminComputersRemove, AdminComputersRemoveResult:
+		return validateAdminComputerPayload(envelope)
+	case AdminComputersList, AdminPairPending, AdminDeviceList, AdminProjectList, AdminProfileList, AdminProfileDetect,
 		AdminShutdown, AdminGatewayStop, AdminGatewayStopResult:
 		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
 		return err
@@ -503,6 +532,9 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 				return err
 			}
 		}
+		if err := validateAppBinding(payload.AppOrigin, payload.AppNode); err != nil {
+			return err
+		}
 		_, err = parseBrokerRPCTime(payload.ExpiresAt, "expiresAt")
 		return err
 	case AdminPairPendingResult:
@@ -524,6 +556,9 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 				return err
 			}
 			if _, err := parseBrokerRPCTime(pending.ExpiresAt, "expiresAt"); err != nil {
+				return err
+			}
+			if err := validateAppBinding(pending.AppOrigin, pending.AppNode); err != nil {
 				return err
 			}
 		}
@@ -549,6 +584,9 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 				}
 			}
 			if err := validateDeviceStatus(device.Status, device.Revoked); err != nil {
+				return err
+			}
+			if err := validateAppBinding(device.AppOrigin, device.AppNode); err != nil {
 				return err
 			}
 		}

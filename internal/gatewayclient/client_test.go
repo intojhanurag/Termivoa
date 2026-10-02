@@ -126,7 +126,8 @@ func TestMethodsRoundTripPayloads(t *testing.T) {
 	settings := protocol.HTTPSettingsResponse{
 		BrokerGeneration: testBroker, Device: protocol.HTTPDeviceSummary{ID: testDevice, Label: "Phone"},
 		HostBuild: "host-test", Projects: []protocol.HTTPNamedOption{{ID: testProject, Name: "repo"}},
-		ShellProfiles: []protocol.HTTPNamedOption{{ID: testProfile, Name: "zsh"}},
+		ShellProfiles:    []protocol.HTTPNamedOption{{ID: testProfile, Name: "zsh"}},
+		ProtocolRevision: protocol.ProtocolRevision, MinProtocolRevision: protocol.MinProtocolRevision,
 	}
 	cases := []struct {
 		name        string
@@ -152,11 +153,11 @@ func TestMethodsRoundTripPayloads(t *testing.T) {
 		{
 			name: "poll pending", requestType: protocol.GatewayPairPoll,
 			payload: protocol.HTTPPairPollRequest{PendingID: testPending, PollSecret: testPollSecret},
-			result:  protocol.GatewayRPCPairPollResultPayload{Response: protocol.HTTPPairPollResponse{Status: protocol.Pending}},
+			result:  protocol.GatewayRPCPairPollResultPayload{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}},
 			call: func(ctx context.Context, client *Client) (any, error) {
 				return client.PollPairing(ctx, protocol.HTTPPairPollRequest{PendingID: testPending, PollSecret: testPollSecret})
 			},
-			want: gatewayapi.PollResult{Response: protocol.HTTPPairPollResponse{Status: protocol.Pending}},
+			want: gatewayapi.PollResult{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}},
 		},
 		{
 			name: "poll approved", requestType: protocol.GatewayPairPoll,

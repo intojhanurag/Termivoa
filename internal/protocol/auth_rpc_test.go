@@ -64,8 +64,8 @@ func TestGatewayRPCValidatesDirectionCredentialsAndPollInvariants(t *testing.T) 
 	}
 	for name, payload := range map[string]GatewayRPCPairPollResultPayload{
 		"approved without credential": {Response: HTTPPairPollResponse{Status: Approved, Device: device}},
-		"pending with credential":     {Response: HTTPPairPollResponse{Status: Pending}, Credential: &secret, CredentialExpiresAt: &expires},
-		"pending with device":         {Response: HTTPPairPollResponse{Status: Pending, Device: device}},
+		"pending with credential":     {Response: HTTPPairPollResponse{Status: HTTPPairPollStatusPending}, Credential: &secret, CredentialExpiresAt: &expires},
+		"pending with device":         {Response: HTTPPairPollResponse{Status: HTTPPairPollStatusPending, Device: device}},
 	} {
 		if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.pair.poll.result", payload)); err == nil {
 			t.Fatalf("%s accepted", name)

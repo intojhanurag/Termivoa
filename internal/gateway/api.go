@@ -81,7 +81,7 @@ func (handler *gatewayHandler) pairPoll(response http.ResponseWriter, request *h
 	// leave a browser-session cookie with no expiry.
 	maxAge := int(math.Ceil(time.Until(result.CredentialExpiresAt).Seconds()))
 	switch {
-	case result.Response.Status == protocol.Pending && result.Credential == "":
+	case result.Response.Status == protocol.HTTPPairPollStatusPending && result.Credential == "":
 	case result.Response.Status == protocol.Approved && validSecret(result.Credential) && maxAge > 0:
 		handler.setCookie(response, result.Credential, maxAge)
 	default:

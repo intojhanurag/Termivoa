@@ -11,6 +11,7 @@ export function createProtocolAjv(options: { readonly standalone?: boolean } = {
   const ajv = new Ajv2020({
     allErrors: true,
     strict: true,
+    discriminator: true,
     ...(options.standalone === true ? { code: { source: true, esm: true } } : {}),
   });
   ajv.addKeyword({

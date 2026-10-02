@@ -240,7 +240,7 @@ func TestGatewayPairingAndCredentialAuthorizedSessionRPC(t *testing.T) {
 	}
 	poll := protocol.HTTPPairPollRequest{PendingID: redeemed.PendingID, PollSecret: redeemed.PollSecret}
 	pollResult, _ := protocol.DecodeRPCPayload[protocol.GatewayRPCPairPollResultPayload](gateway.gateway(t, protocol.GatewayPairPoll, poll))
-	if pollResult.Response.Status != protocol.Pending || pollResult.Credential != nil {
+	if pollResult.Response.Status != protocol.HTTPPairPollStatusPending || pollResult.Credential != nil {
 		t.Fatalf("pending poll = %#v", pollResult)
 	}
 	pending, _ := protocol.DecodeRPCPayload[protocol.AdminRPCPairPendingResultPayload](

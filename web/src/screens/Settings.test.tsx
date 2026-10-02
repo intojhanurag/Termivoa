@@ -10,6 +10,8 @@ const settings: HTTPSettingsResponse = {
   hostBuild: 'pterm/test',
   projects: [],
   shellProfiles: [],
+  protocolRevision: 1,
+  minProtocolRevision: 1,
 };
 
 function json(status: number, body: unknown) {

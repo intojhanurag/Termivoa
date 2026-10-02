@@ -40,6 +40,9 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `POST /api/v1/sessions/{id}/uploads` | cookie, controller | `HTTPUploadRequest` (body up to 7 MiB) | `200 HTTPUploadResponse`; see Image uploads |
 | `GET /api/v1/preview` | cookie | – | `200 HTTPPreviewConfigResponse`: the preview origin to frame, absent when previews are off |
 | `POST /api/v1/logout` | cookie | `{}` | `204`; clears cookie |
+| `GET /api/v1/computers` | cookie | – | `200 HTTPComputerListResponse`: the calling device's confirmed computers |
+| `POST /api/v1/computers` | cookie | `HTTPComputerAddRequest` | `200 HTTPComputerAddResponse`; see Computers |
+| `DELETE /api/v1/computers/{host}` | cookie | – | `204`; removes `https://{host}` from the calling device's list |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -66,6 +69,54 @@ used for client mistakes. Only `unauthorized` and `revoked` clear the cookie.
 A host clock step back behind the credential's creation or last use is
 `host_unavailable` ("host clock changed; retry"): the request is rejected but
 the cookie is kept, because the credential cannot be delivered again.
+
+## Protocol revision
+
+`HTTPSettingsResponse` carries `protocolRevision`, this computer's additive
+revision of protocol v1, and `minProtocolRevision`, the oldest app revision
+it still serves. The single source is `protocol/v1/revision.json`
+(`revision`, `minRevision`); generation emits it as `ProtocolRevision` /
+`MinProtocolRevision` in Go and `PROTOCOL_REVISION` /
+`MIN_PROTOCOL_REVISION` in TypeScript. The app refuses a computer whose
+`protocolRevision` is below the app's `MIN_PROTOCOL_REVISION` ("Update
+Termivoa on vps"), and one whose `minProtocolRevision` is above the app's
+`PROTOCOL_REVISION`.
+
+Computers update one at a time, so every change within v1 follows these
+rules:
+
+- Bump `revision` by one for every change a peer can observe: a new message,
+  field, route or enum value.
+- Responses are read leniently (unknown fields are dropped), so a new
+  response field needs only the bump.
+- Go decodes requests strictly, so the app sends a new request field or
+  message only to a computer whose `protocolRevision` is at least the
+  revision that added it.
+- A new enum value that older apps must parse either raises `minRevision`,
+  or the app maps unknown values to `unknown` before validation.
+- Raise `minRevision` only when an older app can no longer work with this
+  computer.
+
+## Computers
+
+Multi-computer (`docs/multi-computer.md`) keeps a per-device list of peer
+computers on the home computer. Entries are keyed by `HTTPComputer.origin`,
+a canonical origin: `https`, lowercase DNS host, default port, no trailing
+dot. At most 8 per device, pending and confirmed together.
+
+- `POST` with `state: "pending"` records or refreshes a short-lived pending
+  entry before pairing, after the home computer finds the host in its own
+  tailscale status (same tailnet; same owner unless either node is tagged).
+  Pending entries only widen the app's CSP `connect-src` for that device;
+  they are never listed and expire.
+- `POST` with `state: "confirmed"` confirms the entry after the app's first
+  authenticated `GET /api/v1/settings` on the peer succeeded, or renames a
+  confirmed entry.
+- The response echoes the saved entry and the peer's `TailnetNode` (`id`,
+  `owner` when user-owned, `tags`) for the app's confirm sheet.
+- `DELETE /api/v1/computers/{host}` removes the entry. It does not log the
+  phone out on the peer: the app calls the peer's `POST /api/v1/logout`
+  first.
 
 ## Pairing flow
 

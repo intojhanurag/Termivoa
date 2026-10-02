@@ -111,6 +111,7 @@ func (broker *fakeBroker) Settings(_ context.Context, credential string) (protoc
 	return protocol.HTTPSettingsResponse{
 		Device: protocol.HTTPDeviceSummary{ID: uuidA, Label: "phone"}, Projects: []protocol.HTTPNamedOption{},
 		ShellProfiles: []protocol.HTTPNamedOption{}, HostBuild: "test", BrokerGeneration: uuidC,
+		ProtocolRevision: protocol.ProtocolRevision, MinProtocolRevision: protocol.MinProtocolRevision,
 	}, broker.authorize(credential)
 }
 
