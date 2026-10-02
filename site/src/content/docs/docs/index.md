@@ -1,7 +1,7 @@
 ---
 title: Introduction
 description: Termivoa is a phone web app plus the pterm host program that runs terminal sessions and coding agents on your own computer, with no cloud.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-02
 ---
 
 Termivoa lets you use the terminal sessions on your own computer from your phone's browser, privately over Tailscale.
@@ -31,7 +31,7 @@ People who run long terminal jobs or coding agents and want to check on them awa
 | Part | Requirement |
 | --- | --- |
 | Computer | macOS (Apple Silicon), Linux (Ubuntu 22.04 or 24.04) or Windows 11 (x64). It must stay awake and logged in. |
-| Phone | iPhone with Safari, or Android with Chrome. |
+| Phone | iPhone with Safari, or Android with Chrome. From the next beta, iPhone needs iOS 16.4 or later. |
 | Network | [Tailscale](https://tailscale.com/download) on the computer and the phone, signed in to the same account. |
 
 ## Common questions

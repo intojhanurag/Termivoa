@@ -10,6 +10,10 @@ Termivoa lets one phone app use several computers, for example a Mac, a Linux se
 Not released yet. This is not in `v0.1.0-beta.2`. It is also not tested on a real iPhone or Android phone yet. See [Is it tested on a real phone?](#is-it-tested-on-a-real-phone)
 :::
 
+:::caution[iOS 16.4 or later]
+From the next beta, every Termivoa app needs iOS 16.4 or later on iPhone and iPad, also with one computer. Older Safari does not tell the computer where a request comes from, so the computer refuses it. See [The app cannot load after the update](/docs/reference/troubleshooting/#the-app-cannot-load-after-the-update-iphone-next-beta).
+:::
+
 ## What is multi-computer?
 
 Each computer runs its own `pterm`. One computer, **home**, serves the app on your phone. The app talks directly to each other computer over your tailnet. Nothing goes through home.
@@ -30,7 +34,7 @@ Choose a computer that is **always on** and **safe**: for example a small server
 If home is hacked, every computer that you added through it is hacked too. Home serves the app's code, so bad code from home can use every peer, also when the app is closed. Termivoa makes this risk smaller, but it cannot remove it. See [What do I do if home was hacked?](#what-do-i-do-if-home-was-hacked)
 :::
 
-On home, Tailscale Serve must share only Termivoa on its HTTPS address. `pterm doctor` and `pterm setup` warn when other handlers share it, because each of them could control every peer.
+On home, Tailscale Serve must share only Termivoa on its HTTPS address (port 443). Any other handler there could control every peer. `pterm setup` refuses to run while other handlers share it, and `pterm doctor` reports them as a problem, with the commands to move them. This is true on every computer, not only on home. See [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers-next-beta).
 
 To change home later, you need a new Home Screen app, and you must add every peer again.
 
@@ -48,19 +52,20 @@ Then:
    - **Tap it:** run the command in a Termivoa session in the app (for example after `ssh vps`), then tap the link in the terminal.
    - **Paste it:** in the app, open **Settings**. Under **Computers**, tap **+ Add a computer**, paste the link and tap **Check link**.
 3. The sheet **Add this computer?** shows the **Address**, the **Machine**, and the **Owner** (or the **Tags**). Home checks the computer in its own Tailscale status first. If all is correct, tap **Add vps**.
-4. The app shows **Connecting to vps…**, then **Does vps show this code?** with a code.
-5. The new computer asks:
+4. The **Add a computer** page shows the full **Address** again: "Continue only if you just ran pterm pair --via on vps. Next, this phone shows a code. Check it on vps." Tap **Continue**. Nothing is sent to vps before you tap it.
+5. The app shows **Connecting to vps…**, then **Does vps show this code?** with a code.
+6. The new computer asks:
 
    ```text
    Approve only if the phone shows exactly this code.
    Phone "My iPhone" shows code 123-456 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner you@example.com). Approve? [y/N]
    ```
 
-6. If the codes match, type `y` and press Enter. The app shows **vps is added**. Tap **Open sessions**.
+7. If the codes match, type `y` and press Enter. The app shows **vps is added**. Tap **Open sessions**.
 
-If the codes are different, type `n`, then tap **Codes don't match? Cancel** in the app.
+If the codes are different, type `n`, then tap **Codes don't match? Cancel** in the app. **Cancel** on the sheet or the **Add a computer** page also stops the add: home deletes its note of the computer.
 
-A tap on the link never adds a computer by itself. A program can print a false link, so you always see the sheet, and home always checks the computer first.
+A tap on the link never adds a computer by itself. A program can print a false link, so you always see the sheet and the full address, and home always checks the computer first.
 
 | Case | What to do |
 | --- | --- |
@@ -102,8 +107,8 @@ The other computers keep working. Each computer that does not answer gets its ow
 | Line | What it means | What to do |
 | --- | --- | --- |
 | "vps · can't reach · last seen 5 min ago" | The phone cannot reach vps now. | Check that vps is on and in your tailnet, then tap **Retry**. |
-| "vps · pair again" | vps does not accept this phone now. It was revoked, it expired, or Tailscale changed on home. | Tap **Computers**. Run `pterm pair --via mac` on vps again and add it again. |
-| "Update Termivoa on vps" | Termivoa on vps is too old for this app. | Update Termivoa on vps. |
+| "vps · pair again · Run pterm pair --via mac on vps" | vps does not accept this phone now. It was revoked or logged out, it expired, or Tailscale changed on home. | Tap **Computers**. Run `pterm pair --via mac` on vps again and add it again. |
+| "Update Termivoa on vps" | Termivoa on vps is too old for this app, or too old to tell its version. The line uses the name you gave vps on this phone. | Update Termivoa on vps. |
 
 In **Settings → Computers**, each computer shows **online**, **checking**, **offline** or **needs you**. Home also shows **this computer**.
 
@@ -113,7 +118,7 @@ If home is offline, the app still opens and reaches the peers. The app keeps a f
 
 Update them one at a time, in any order. Each computer tells the app its protocol version, and the app refuses only a computer that is too old for it ("Update Termivoa on vps"). `pterm doctor` shows the version, for example `protocol revision 1 (oldest supported 1)`.
 
-The app comes from home. After you update home, tap **update** on the Sessions list to load the new app.
+The app comes from home. After you update home, tap **update** on the Sessions list, or close and open the app, to load the new app. An app that stays open from before the update may fail to read settings until you reload it.
 
 ## How do I rename or remove a computer?
 
@@ -127,7 +132,7 @@ Tap **Remove vps**, or **Keep**. If the app cannot reach vps, it says "vps is re
 
 Home cannot be renamed or removed here.
 
-**Settings → Log out** signs this phone out of home only. To sign it out of the other computers too, remove each of them first, or run `pterm revoke` on each.
+**Settings → Log out** signs this phone out of every computer it can reach. With 2 or more computers, it says "Signs this phone out of every computer. Running sessions keep running." If a computer cannot be reached, the app names it: "You logged out. This phone no longer has access. Could not sign out of vps. Run pterm revoke there to remove this phone." Then run `pterm revoke <device-id>` on that computer.
 
 On home, `pterm computers` lists each phone's computers. `pterm computers remove https://vps.tailx.ts.net` removes vps from every phone's list. It cannot sign the phones out on vps, so it tells you to run `pterm revoke` there.
 
@@ -163,6 +168,8 @@ Revoke it on **each** computer:
 | At most 8 computers plus home | For each phone. |
 | A new home means pairing again | A new home is a new app with its own cookies, so you add every peer again. |
 | Reinstalling Tailscale on home | Home gets a new Tailscale node ID. Each peer then revokes the phones that use it, and shows "vps · pair again". |
+| Reinstalling Tailscale on a peer | The peer gets a new Tailscale node ID. Home drops it from the list. Add it again with `pterm pair --via mac` on the peer. |
+| iOS 16.4 or later | Older Safari does not send the headers that the computer checks. This is true for every Termivoa app, also with one computer. |
 
 ## Is it tested on a real phone?
 

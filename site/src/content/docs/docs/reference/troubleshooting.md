@@ -106,6 +106,31 @@ sudo tailscale set --operator=$USER
 
 Fix the conflict, then run `pterm setup` again. Tailscale Serve already shares another service on HTTPS port 443, and setup leaves it alone.
 
+## Setup refuses other Tailscale Serve handlers (Next beta)
+
+Move the other handlers off this computer's Termivoa address, then run `pterm setup` again. From the next beta, setup stops before it changes anything:
+
+```text
+refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (/grafana); move them as shown above, then run `pterm setup` again
+```
+
+Any other handler on `https://<this-computer>` (port 443) is the same origin as the Termivoa app, so it could control this computer and, if it is home, every computer added to it. This also applies with one computer: if you run `pterm setup` again after the update, it refuses a setup that it accepted before. `pterm doctor` reports the same handlers as a problem.
+
+The checks above the message print the commands. For each handler:
+
+1. Serve it on another HTTPS port, for example `tailscale serve --bg --https=8444 http://127.0.0.1:3000`, or on another computer.
+2. Remove it from port 443: `tailscale serve --https=443 --set-path=/grafana off`. For a TCP forward, run `tailscale serve --tcp=443 off`.
+
+The Windows installer runs the same check. If startup registration fails there, run `pterm setup --apply` to see the handlers.
+
+## The app cannot load after the update (iPhone, Next beta)
+
+Update the iPhone or iPad to iOS 16.4 or later. From the next beta, the computer accepts a request from the app only when the browser says where it comes from (the `Origin` or `Sec-Fetch-Site` header). Safari before iOS 16.4 sends neither on reads, so the computer refuses them. This is true for every Termivoa app, also with one computer. Android Chrome is not affected.
+
+## The app cannot read settings after the update (Next beta)
+
+Close the app fully and open it again, or tap **update** on the Sessions list. An app that was open while you updated the computer can fail to read settings until it reloads.
+
 ## No "Preview ready" chip
 
 - Answer `y` to the preview question in setup. `pterm doctor` shows if previews are set up.
@@ -171,11 +196,19 @@ Check that vps is on, awake and in your tailnet, then tap **Retry**. The other c
 
 ### "vps · pair again" (Next beta)
 
-vps no longer accepts this phone: it was revoked or logged out, it expired (30 days, or 7 days unused), or home's Tailscale node changed (for example after you reinstalled Tailscale on home). Run `pterm pair --via <home>` on vps and add it again.
+The full line is "vps · pair again · Run pterm pair --via mac on vps". vps no longer accepts this phone: it was revoked or logged out, it expired (30 days, or 7 days unused), or home's Tailscale node changed (for example after you reinstalled Tailscale on home). Run `pterm pair --via <home>` on vps and add it again.
 
 ### "Update Termivoa on vps" (Next beta)
 
-Update Termivoa on that computer. Computers can be updated one at a time; the app refuses only one that is too old.
+Update Termivoa on that computer. Computers can be updated one at a time; the app refuses only one that is too old, or one so old that it does not tell its version. The line uses the name you gave the computer on this phone.
+
+### A computer is gone from the list (Next beta)
+
+Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. If you add it while this happens, the app says "this name now belongs to another Tailscale machine; add the computer again".
+
+### Log out says "Could not sign out of vps" (Next beta)
+
+Run `pterm devices`, then `pterm revoke <device-id>` on vps. **Log out** signs the phone out of every computer it can reach; it lists the ones it could not reach.
 
 ### `pterm pair --via` says "no computer with that name is in this tailnet" (Next beta)
 
@@ -220,9 +253,13 @@ Run `pterm pair --via <home>` on that computer again and paste the new link. Ans
 
 You opened the add-computer link with the camera or in Safari. Tap **Copy link**, open the Termivoa app from the Home Screen, and paste it in **Settings → Computers → + Add a computer**.
 
-### `pterm doctor` warns that other handlers share this computer's origin (Next beta)
+### `pterm doctor` says the tailnet is unknown (Next beta)
 
-Tailscale Serve shares more than Termivoa on this computer's HTTPS address. On home, each of them could control every computer added through it. Remove them, or choose another computer as home.
+Log in to Tailscale on this computer, then run `pterm doctor` again. The line is `this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked`. A short Tailscale restart or logout does not end the sessions of phones that use this computer through home: the computer keeps its last good Tailscale status for up to 10 minutes.
+
+### `pterm doctor` says "tags changed since pairing" (Next beta)
+
+Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tailscale tags were added or removed after pairing, so the owner rule for it changed. This computer refuses phones from that home until you pair again.
 
 ### Peer sessions send no notifications (Next beta)
 

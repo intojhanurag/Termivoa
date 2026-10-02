@@ -134,7 +134,8 @@ begin
   begin
     if not RunPterm('setup --apply --yes', Code) or (Code <> 0) then
       SuppressibleMsgBox('Termivoa is installed, but startup registration did not complete (exit code ' + IntToStr(Code) + '). ' +
-        'The broker may have active sessions, or Termivoa may already be running without startup registration. ' +
+        'The broker may have active sessions, Termivoa may already be running without startup registration, ' +
+        'or other Tailscale Serve handlers may share this computer''s Termivoa address (port 443). ' +
         'Run "pterm setup --apply" to see why and what to stop first.', mbError, MB_OK, IDOK);
   end
   else if not RunPterm('uninstall --yes', Code) or (Code <> 0) then

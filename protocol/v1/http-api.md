@@ -13,7 +13,9 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 - Every `/api` request needs exactly one `Origin` that is this computer's
   own or an admitted app origin (see Cross-origin requests), or no `Origin`
   and exactly `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is
-  refused with `403`.
+  refused with `403`. This applies to every client, with one computer too:
+  Safari before iOS 16.4 sends neither header on `GET`, so iOS 16.4 is the
+  minimum.
 - HTTP mutations require `Content-Type: application/json` and the fixed header
   `X-Pterm-Request: 1`. Request bodies are limited to 64 KiB, except an image
   upload (about 7 MiB, see Image uploads).
@@ -79,7 +81,8 @@ the cookie is kept, because the credential cannot be delivered again.
 Multi-computer (`docs/multi-computer.md`, section 3) lets the app served by
 another computer (its app origin) call this computer. The gateway learns two
 origin sets from the broker's origin probe: **bound** origins (app origins of
-unrevoked devices, at most 64) and **pairing** origins (app origins of
+devices whose pinned Tailscale node is still trusted, revoked and expired
+devices included, so their app can read the 401; at most 64) and **pairing** origins (app origins of
 unexpired bound grants and pending pairings, at most 16). Invalid entries are dropped.
 
 - An `/api` request whose single `Origin` exactly matches a bound origin, or

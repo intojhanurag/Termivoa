@@ -704,11 +704,12 @@ type HTTPDeviceRenameRequest struct {
 
 // origin: the browser origin configured with admin.config.origin, absent when none is set.
 // It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it
-// is valid for the gateway's profile. boundOrigins: the union of app origins bound to
-// unrevoked devices, used only for CORS headers (the broker still checks each request's
-// origin against its own credential). pairingOrigins: app origins of unexpired bound grants
-// and pending pairings, admitted only on /api/v1/pair/*. Both are sorted, unique, and
-// absent when empty.
+// is valid for the gateway's profile. boundOrigins: the union of origins of devices bound
+// to an app origin whose node is still trusted, revoked or expired included (so their app
+// can read the 401 and offer pairing again), used only for CORS headers (the broker still
+// checks each request's origin against its own credential). pairingOrigins: app origins of
+// unexpired bound grants and pending pairings, admitted only on /api/v1/pair/*. Both are
+// sorted, unique, and absent when empty.
 type GatewayRPCOriginResultPayload struct {
 	BoundOrigins   []string `json:"boundOrigins,omitempty"`
 	Origin         *string  `json:"origin,omitempty"`

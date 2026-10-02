@@ -17,11 +17,17 @@ All notable changes are documented here. The format follows
   **Remove** (signs this phone out there first). **+ Add a computer** takes
   the link from `pterm pair --via`, or the link is tapped in a terminal; both
   open the **Add this computer?** sheet (Address, Machine, Owner or Tags)
-  before **Add vps**, then the code check. The Sessions list merges all
+  before **Add vps**; the add page shows the full **Address** again and
+  waits for **Continue**, and **Cancel** deletes the pending entry on home;
+  then the code check. The Sessions list merges all
   computers with **All** and per-computer chips, a colour dot and label per
   row, "2 computers · 1 waiting · 1 working", **❯ new session on…**, and per
-  computer "vps · can't reach" (**Retry**), "vps · pair again" and "Update
-  Termivoa on vps". New session picks the computer first ("Runs on vps").
+  computer "vps · can't reach" (**Retry**), "vps · pair again · Run pterm
+  pair --via mac on vps" (also for a revoked or expired phone) and "Update
+  Termivoa on vps" (the phone's label; also for a peer that reports no
+  `protocolRevision`). **Log out** signs out of every reachable computer and
+  names the rest ("Could not sign out of vps. Run pterm revoke there to
+  remove this phone."). New session picks the computer first ("Runs on vps").
   The Wall shows tiles from all computers, at most 4 live at 5 updates per
   second under one phone-wide budget; the rest show **Paused**. Live, the
   composer, uploads, Changes and Files work on every computer; previews and
@@ -32,13 +38,22 @@ All notable changes are documented here. The format follows
   app's own on every load. Host side: `pterm pair --via <name|origin>
   [--allow-tagged]` prints a two-minute add-computer link bound to that app
   origin; the peer pins the app's Tailscale node ID and requires the same
-  owner (or `--allow-tagged` for tagged nodes). Per-device origin binding:
+  owner, compared by stable Tailscale user ID, never login name (or
+  `--allow-tagged` for tagged nodes; a node whose tags changed since pairing
+  is refused). The command says to tap the link and confirm "Add this
+  computer?", or to tap "+ Add a computer" in Settings → Computers and
+  paste it. Per-device origin binding:
   a peer accepts a cross-origin request only from the app origin bound to
   that request's own credential, grant or pending pairing, and only while
   its Tailscale snapshot (60 s cache, 10-minute grace) still shows the pinned
-  node; a changed node ID revokes the devices bound to it, and a 15 s sweep
-  closes open streams that lost trust. The gateway sends exact credentialed
-  CORS headers to bound origins only, refuses `Sec-Fetch-Mode: no-cors` and
+  node; a changed node ID revokes the devices bound to it, a new snapshot
+  closes open streams that lost trust at once, and a Tailscale status that
+  is not `Running` (restart, logout) keeps the last good snapshot. Home pins
+  each peer's node too (store migration 9): a peer whose node changed leaves
+  the list and the CSP, and confirm fails with "this name now belongs to
+  another Tailscale machine; add the computer again". The gateway sends
+  exact credentialed CORS headers to bound origins (devices whose node is
+  still trusted, revoked and expired ones included) only, refuses `Sec-Fetch-Mode: no-cors` and
   Origin-less requests without `Sec-Fetch-Site: same-origin` on `/api`,
   refreshes the cookie (same value, never past its expiry) on
   `GET /api/v1/settings`, and adds the device's computers to the app's CSP
@@ -47,11 +62,15 @@ All notable changes are documented here. The format follows
   `minProtocolRevision` in settings; read-only `session.attach` thumbnail
   viewers whose frame rate the broker enforces. New commands
   `pterm computers`, `pterm computers remove <origin>` and
-  `pterm revoke --via <origin>`; a **VIA** column in `pterm devices` and
+  `pterm revoke --via <origin>` (always sent, also with no device: it also
+  deletes that app's pairing links and pending pairings); a **VIA** column in `pterm devices` and
   `pterm pair pending`; `pterm revoke <device>` on home lists the phone's
   other computers; `pterm doctor` shows the protocol revision, the CORS
-  lists, tailnet and owner mismatches, and other Tailscale Serve handlers on
-  home's origin. Store migration 8. A compromised home compromises every
+  lists, tailnet and owner mismatches, "tags changed since pairing", an
+  unknown tailnet (Tailscale logged out), and other Tailscale Serve handlers
+  on this computer's origin as a problem with the commands to move them.
+  Store migrations 8 and 9. Known limit: a cached offline shell keeps the
+  CSP from when it was cached. A compromised home compromises every
   computer paired through it; see the threat model and the recovery steps.
 - Files view. Phone side: the Changes screen has a **Changes | Files** switch;
   **Files** shows the session's project as folders (folders first, sizes,
@@ -118,6 +137,20 @@ All notable changes are documented here. The format follows
   range of up to 20, then **Ask agent about lines 40–42** appends
   `@path lines 40–42:` and the quoted lines to the composer draft, never
   sending.
+
+### Changed
+
+- Breaking (all users, one computer too): every `/api` request needs an
+  exact `Origin`, or no `Origin` and `Sec-Fetch-Site: same-origin`. Safari
+  before iOS 16.4 sends neither on `GET`, so iPhone and iPad need iOS 16.4
+  or later.
+- Breaking (all users, one computer too): `pterm setup`, also
+  `--apply --yes` from the Windows installer, refuses before any change
+  while other Tailscale Serve handlers share this computer's Termivoa
+  origin (port 443), and prints the commands to move them; `pterm doctor`
+  reports them as a problem.
+- An app tab left open across a host update may fail to read settings until
+  it is reloaded.
 
 ### Fixed
 

@@ -11,6 +11,8 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 - The page listens only on loopback (`127.0.0.1`), so other machines cannot reach it directly.
 - Tailscale Serve offers it as private HTTPS in your tailnet (your private Tailscale network).
 - `pterm setup` asks before it changes Tailscale Serve settings, and never overwrites another service.
+- From the next beta, `pterm setup` refuses to run while other Tailscale Serve handlers share the Termivoa address (port 443), and `pterm doctor` reports them. Such a handler is the same origin as the app, so it could act as the app.
+- From the next beta, an `/api` request must say where it comes from (`Origin` or `Sec-Fetch-Site: same-origin`), so a page on another computer in your tailnet cannot read your API with your cookie. This needs iOS 16.4 or later on iPhone, also with one computer.
 - Termivoa **never** uses Tailscale Funnel or any public tunnel, which would put your terminal on the public internet. `pterm setup` and `pterm doctor` warn if Funnel is on.
 
 ## How does pairing work?
@@ -31,10 +33,13 @@ With [several computers](/docs/guides/computers/), one computer (home) serves th
 
 - **Each peer decides for itself.** You approve the phone on the peer with `pterm pair --via <home>` after you compare codes. Each peer gives the phone its own cookie, which scripts cannot read and no other computer can use.
 - **A peer accepts the phone only from that home.** The approval binds the phone's access to home's exact address. The same phone cannot use the peer from another app address.
-- **Same tailnet is not enough.** At pairing, the peer looks up home in its own Tailscale status: home must have the same Tailscale owner, or, for a tagged node, you must allow it with `--allow-tagged`. The peer saves home's node ID. If that ID changes (for example a reused name, or Tailscale reinstalled on home), the peer revokes the phones that used it. If the peer cannot read its Tailscale status for 10 minutes, it refuses requests from home's app until it can.
+- **Same tailnet is not enough.** At pairing, the peer looks up home in its own Tailscale status: home must have the same Tailscale owner (compared by Tailscale user ID, not by login name), or, for a tagged node, you must allow it with `--allow-tagged`. The peer saves home's node ID and whether home was tagged. If that ID changes (for example a reused name, or Tailscale reinstalled on home), the peer revokes the phones that used it. If home's tags change, the peer refuses those phones until they pair again.
+- **Trust loss closes connections at once.** When the peer reads a new Tailscale status that no longer trusts home, it closes the live connections from home's app at once. If Tailscale restarts or logs out, the peer keeps its last good status; after 10 minutes without one, it refuses requests from home's app until it can read it again.
+- **Home pins each peer too.** Home saves each peer's Tailscale node ID. If another machine takes the peer's name, home drops the peer from the list and from the app's allowed addresses, and you must add it again.
 - **Nothing goes through home.** Home stores only each phone's list of computer addresses and names. It holds no peer secret.
 - **Peers cannot fool the app.** The app checks every answer from a peer, never shows a peer's error text, and never shows dev-server previews from peers.
-- **You can cut a home off.** `pterm revoke --via <home address>` on a peer ends the access of every phone that uses it from that home.
+- **You can cut a home off.** `pterm revoke --via <home address>` on a peer ends the access of every phone that uses it from that home, and deletes that home's pairing links and pending pairings.
+- **Log out reaches every computer.** **Settings → Log out** signs the phone out of every computer it can reach, and names the ones it could not (run `pterm revoke` there).
 
 :::caution
 **If home is hacked, every computer you added through it is hacked too.** Home serves the app's code, so it can use every peer, even with the app closed, and it can trick you into pairing again. Choose as home an always-on computer where you do not run untrusted code. If it happens, follow [What do I do if home was hacked?](/docs/guides/computers/#what-do-i-do-if-home-was-hacked)
@@ -85,6 +90,7 @@ No. [Worktree](/docs/guides/worktrees/) requests send only a session, a name and
 - A session runs with your normal user permissions. A project folder is not a sandbox (a closed-off area).
 - Malware already running as your user is not covered.
 - With several computers (next beta), malware or a hacked account on home reaches every computer added through it.
+- The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home is offline, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
 - The controls have automated tests, but no independent security audit yet.
 
 ## Common questions
