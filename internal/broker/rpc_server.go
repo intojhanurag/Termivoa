@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -22,6 +25,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/store"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
@@ -53,6 +57,12 @@ type ManagementServerConfig struct {
 	// WorktreeRoot holds the worktrees that session creates make, as
 	// <root>/<repo>/<name>. Empty means <home>/termivoa/worktrees.
 	WorktreeRoot string
+	// Tailnet publishes this computer's Tailscale status for multi-computer
+	// trust checks. Nil uses the installed tailscale CLI; it runs only when
+	// an app origin, pairing via or computer list needs it.
+	Tailnet *tailnet.Monitor
+	// Now is the clock for computer lists and origin probes. Nil is time.Now.
+	Now func() time.Time
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -76,6 +86,13 @@ type ManagementServer struct {
 	// worktreeCreates runs one worktree create at a time, so a replayed
 	// operation finds the first one's receipt instead of making a second.
 	worktreeCreates sync.Mutex
+	// ownOrigin caches the configured origin, so authorization never reads
+	// SQLite for it. It is refreshed whenever the origin is read or set.
+	ownOrigin atomic.Pointer[string]
+	// trustMu serializes sweepTrust; sweptStatus is the snapshot whose node
+	// changes it already turned into revocations.
+	trustMu     sync.Mutex
+	sweptStatus *tailnet.Status
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -115,6 +132,14 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	if config.WorktreeRoot == "" {
 		config.WorktreeRoot = defaultWorktreeRoot()
 	}
+	if config.Tailnet == nil {
+		config.Tailnet = tailnet.NewMonitor(tailnet.Config{
+			Source: tailnet.CommandSource(tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)),
+		})
+	}
+	if config.Now == nil {
+		config.Now = time.Now
+	}
 	return &ManagementServer{
 		config: config, connections: make(map[net.Conn]struct{}),
 	}, nil
@@ -142,6 +167,10 @@ func (server *ManagementServer) Serve(ctx context.Context, listener *ipc.BrokerL
 	server.serving = true
 	server.mu.Unlock()
 
+	_, _ = server.pairingOrigin(ctx) // Warm the own-origin cache.
+	stopTrust := make(chan struct{})
+	go server.watchTrust(ctx, stopTrust)
+	defer close(stopTrust)
 	var shutdownOnce sync.Once
 	shutdown := func() {
 		shutdownOnce.Do(func() {
@@ -262,6 +291,11 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 		if peer.ClientKind == protocol.Gateway {
 			// An upload owns the rest of its dedicated connection.
 			if request, err := protocol.DecodeGatewayRPCRequest(data); err == nil && request.Type == protocol.GatewayUploadBegin {
+				// Origin binding is checked once for the whole upload; commit
+				// re-authorizes the same device.
+				if err := server.admitUpload(ctx, request); err != nil {
+					return writeGatewayReply(writer, request, nil, err)
+				}
 				return server.serveUpload(ctx, connection, reader, writer, request)
 			}
 			binding, err := server.serveGatewayRequest(ctx, writer, data)
@@ -607,6 +641,26 @@ type managementFailure struct {
 }
 
 var errInvalidSessionCursor = errors.New("broker: invalid session-list cursor")
+
+func (server *ManagementServer) now() time.Time {
+	return server.config.Now().UTC().Truncate(time.Millisecond)
+}
+
+// admitUpload applies origin binding to gateway.upload.begin.
+func (server *ManagementServer) admitUpload(ctx context.Context, request protocol.GatewayRPCEnvelope) error {
+	if server.config.Auth == nil {
+		return errAuthUnavailable
+	}
+	payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCUploadBeginPayload](request)
+	if err != nil {
+		return err
+	}
+	principal, err := server.config.Auth.Authenticate(ctx, payload.Credential)
+	if err != nil {
+		return err
+	}
+	return server.admitDevice(request.Origin, principal)
+}
 
 func classifyManagementError(err error) managementFailure {
 	if failure, ok := classifyAuthError(err); ok {
