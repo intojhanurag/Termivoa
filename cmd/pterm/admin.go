@@ -10,11 +10,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/term"
-
 	"github.com/intojhanurag/phone-terminal/internal/cli"
-	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -205,14 +204,14 @@ func localOrigin(dev bool) string {
 // adminRuntimeDir applies the same profile rules as parseLocalCommand: a
 // runtime-dir override is accepted only inside an explicit --dev profile.
 func adminRuntimeDir(dev bool, runtimeDir string) (string, error) {
-	profile := host.ProductionProfile
-	defaults, err := host.DefaultPaths()
+	profile := platform.ProductionProfile
+	defaults, err := platform.DefaultPaths()
 	if err != nil {
 		return "", err
 	}
 	if dev {
-		profile = host.DevelopmentProfile
-		defaults, err = host.DevelopmentPaths()
+		profile = platform.DevelopmentProfile
+		defaults, err = platform.DevelopmentPaths()
 		if err != nil {
 			return "", err
 		}
@@ -220,7 +219,7 @@ func adminRuntimeDir(dev bool, runtimeDir string) (string, error) {
 	if runtimeDir == "" {
 		runtimeDir = defaults.RuntimeDir
 	}
-	validated, err := host.ValidateRuntimeDir(profile, runtimeDir)
+	validated, err := platform.ValidateRuntimeDir(profile, runtimeDir)
 	if err != nil {
 		return "", fmt.Errorf("invalid local command profile: %w", err)
 	}

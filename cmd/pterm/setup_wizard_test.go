@@ -16,9 +16,9 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
-	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -113,7 +113,7 @@ func TestSetupWizardGoesFromInstallToPairedPhone(t *testing.T) {
 	go func() {
 		gatewayDone <- runGateway(gatewayCtx, gateway.Config{
 			RuntimeDir: env.paths.RuntimeDir, HostBuild: buildID, ListenAddress: strings.TrimPrefix(env.gateway, "http://"),
-			Profile: host.DevelopmentProfile,
+			Profile: platform.DevelopmentProfile,
 		})
 	}()
 	t.Cleanup(func() {

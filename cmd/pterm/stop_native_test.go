@@ -14,10 +14,10 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
-	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -38,7 +38,7 @@ func TestStopKeepsSessionsAndShutdownEndsEverything(t *testing.T) {
 		go func() {
 			done <- runGateway(ctx, gateway.Config{
 				RuntimeDir: runtimeDir, HostBuild: buildID, ListenAddress: "127.0.0.1:0",
-				Profile: host.DevelopmentProfile, Ready: func(gateway.ReadyState) { close(ready) },
+				Profile: platform.DevelopmentProfile, Ready: func(gateway.ReadyState) { close(ready) },
 			})
 		}()
 		select {
@@ -145,7 +145,7 @@ func TestWindowsUninstallStopsProcessesOnlyWithoutSessions(t *testing.T) {
 	waitTimeout = 5 * time.Second
 	loadLifecycleEnv = func() (lifecycleEnv, error) {
 		return lifecycleEnv{runner: fake, gateway: "http://" + freeLoopbackAddress(t),
-			paths: host.Paths{DataDir: filepath.Join(filepath.Dir(runtimeDir), "data"), RuntimeDir: runtimeDir},
+			paths: platform.Paths{DataDir: filepath.Join(filepath.Dir(runtimeDir), "data"), RuntimeDir: runtimeDir},
 			host: lifecycle.Host{OS: "windows", User: `PC\ada`, Executable: `C:\Users\ada\AppData\Local\Programs\Termivoa\pterm.exe`,
 				DataDir: `C:\Users\ada\AppData\Local\Phone Terminal`},
 		}, nil
@@ -154,7 +154,7 @@ func TestWindowsUninstallStopsProcessesOnlyWithoutSessions(t *testing.T) {
 	go func() {
 		gatewayDone <- runGateway(ctx, gateway.Config{
 			RuntimeDir: runtimeDir, HostBuild: buildID, ListenAddress: "127.0.0.1:0",
-			Profile: host.DevelopmentProfile, Ready: func(gateway.ReadyState) { close(gatewayReady) },
+			Profile: platform.DevelopmentProfile, Ready: func(gateway.ReadyState) { close(gatewayReady) },
 		})
 	}()
 	<-gatewayReady
@@ -176,7 +176,7 @@ func TestWindowsUninstallStopsProcessesOnlyWithoutSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := waitFor(ctx, func() error {
-		if count, _, err := activeSessions(ctx, host.Paths{RuntimeDir: runtimeDir}); err != nil || count != 0 {
+		if count, _, err := activeSessions(ctx, platform.Paths{RuntimeDir: runtimeDir}); err != nil || count != 0 {
 			return errors.Join(err, errors.New("session still active"))
 		}
 		return nil

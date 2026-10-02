@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 func processGroup(t *testing.T, pid int) int {
@@ -89,7 +89,7 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 	if !strings.HasPrefix(lines.Text(), "gateway exited:") {
 		t.Fatalf("harness did not report the gateway exit: %q", lines.Text())
 	}
-	if _, reachable, _ := activeSessions(context.Background(), host.Paths{DataDir: dataDir, RuntimeDir: runtimeDir}); !reachable {
+	if _, reachable, _ := activeSessions(context.Background(), platform.Paths{DataDir: dataDir, RuntimeDir: runtimeDir}); !reachable {
 		t.Fatal("killing the gateway's process group stopped the broker")
 	}
 
@@ -99,7 +99,7 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 	if err := up.Wait(); err != nil {
 		t.Fatalf("harness exit after Ctrl+C: %v", err)
 	}
-	if _, reachable, _ := activeSessions(context.Background(), host.Paths{DataDir: dataDir, RuntimeDir: runtimeDir}); reachable {
+	if _, reachable, _ := activeSessions(context.Background(), platform.Paths{DataDir: dataDir, RuntimeDir: runtimeDir}); reachable {
 		t.Fatal("broker still running after Ctrl+C")
 	}
 }

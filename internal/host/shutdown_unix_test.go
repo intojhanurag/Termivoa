@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 )
 
@@ -41,7 +42,7 @@ func TestAdminShutdownEndsEverySessionTreeAndStopsBroker(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- RunBroker(context.Background(), BrokerConfig{
-			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "shutdown-test", Profile: DevelopmentProfile,
+			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "shutdown-test", Profile: platform.DevelopmentProfile,
 			Ready: func(state BrokerReady) { ready <- state },
 		})
 	}()

@@ -8,15 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 func TestLocalCommandProfileIsolation(t *testing.T) {
-	production, err := host.DefaultPaths()
+	production, err := platform.DefaultPaths()
 	if err != nil {
 		t.Fatal(err)
 	}
-	development, err := host.DevelopmentPaths()
+	development, err := platform.DevelopmentPaths()
 	if err != nil {
 		t.Fatal(err)
 	}

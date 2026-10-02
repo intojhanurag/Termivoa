@@ -17,6 +17,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 )
@@ -213,7 +214,7 @@ func startCommandBroker(t *testing.T) (string, *localclient.ManagementClient) {
 	})
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
-			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "command-test", Profile: host.DevelopmentProfile,
+			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "command-test", Profile: platform.DevelopmentProfile,
 			Ready: func(host.BrokerReady) { close(ready) },
 		})
 	}()

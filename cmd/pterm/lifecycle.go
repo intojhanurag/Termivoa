@@ -22,10 +22,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/term"
-
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
-	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
@@ -42,7 +40,7 @@ var waitTimeout = 10 * time.Second // tests shorten it
 // process, so tests can substitute a temporary home and a fake runner.
 type lifecycleEnv struct {
 	host      lifecycle.Host
-	paths     host.Paths
+	paths     platform.Paths
 	runner    lifecycle.Runner
 	gateway   string // gateway base URL without trailing slash
 	tailscale string // tailscale CLI path, empty when not installed or refused
@@ -65,7 +63,7 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 	if err != nil {
 		return lifecycleEnv{}, fmt.Errorf("locate pterm executable: %w", err)
 	}
-	paths, err := host.DefaultPaths()
+	paths, err := platform.DefaultPaths()
 	if err != nil {
 		return lifecycleEnv{}, err
 	}
@@ -397,7 +395,7 @@ func inspectTailscale(ctx context.Context, cli string, refused []string, output 
 // its data or runtime lock but does not answer (hung, starting, or another
 // protocol version) is running with err set. Only no answer and no held lock
 // means no broker.
-func activeSessions(ctx context.Context, paths host.Paths) (count int, running bool, err error) {
+func activeSessions(ctx context.Context, paths platform.Paths) (count int, running bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, ipc.HandshakeTimeout+2*time.Second)
 	defer cancel()
 	client, dialErr := localclient.DialManagement(ctx, paths.RuntimeDir, buildID)
@@ -992,7 +990,7 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 // directory holding the logs or the runtime directory when that is elsewhere
 // (macOS Caches, Linux $XDG_STATE_HOME and /run/user/<uid>). The nearest, so
 // a home directory that happens to have that name is never chosen.
-func dataDirectories(paths host.Paths) []string {
+func dataDirectories(paths platform.Paths) []string {
 	directories := []string{paths.DataDir}
 	for _, path := range []string{paths.LogDir, paths.RuntimeDir} {
 		root := ""
@@ -1167,13 +1165,13 @@ func runUpCommand(ctx context.Context, args []string, output io.Writer) error {
 	}
 	customRuntime := *runtimeDir != ""
 	if !customRuntime {
-		development, err := host.DevelopmentPaths()
+		development, err := platform.DevelopmentPaths()
 		if err != nil {
 			return err
 		}
 		*runtimeDir = development.RuntimeDir
 	}
-	validated, err := host.ValidateRuntimeDir(host.DevelopmentProfile, *runtimeDir)
+	validated, err := platform.ValidateRuntimeDir(platform.DevelopmentProfile, *runtimeDir)
 	if err != nil {
 		return err
 	}

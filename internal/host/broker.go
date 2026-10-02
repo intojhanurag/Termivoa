@@ -12,6 +12,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/broker"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
@@ -22,7 +23,7 @@ type BrokerConfig struct {
 	DataDir    string
 	RuntimeDir string
 	HostBuild  string
-	Profile    Profile
+	Profile    platform.Profile
 
 	// Ready is an internal integration-test observation point. It receives no
 	// ownership: the broker remains solely responsible for every value and the
@@ -66,7 +67,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 		return fmt.Errorf("host: broker platform %q is not a supported v0 host", runtime.GOOS)
 	}
 
-	validated, err := ValidatePaths(config.Profile, Paths{
+	validated, err := platform.ValidatePaths(config.Profile, platform.Paths{
 		DataDir: config.DataDir, RuntimeDir: config.RuntimeDir,
 	})
 	if err != nil {
@@ -148,7 +149,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	server, err := broker.NewManagementServer(broker.ManagementServerConfig{
 		Registry: registry, Store: persistence,
 		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority, Push: notifier,
-		Shutdown: shutdown, Development: config.Profile == DevelopmentProfile,
+		Shutdown: shutdown, Development: config.Profile == platform.DevelopmentProfile,
 	})
 	if err != nil {
 		return err
