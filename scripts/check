@@ -10,16 +10,11 @@ if [ "$node_major" != "24" ]; then
   exit 1
 fi
 
-if ! command -v gofmt >/dev/null 2>&1; then
-  echo "gofmt is not on PATH; install Go and put its bin directory on PATH." >&2
-  exit 1
-fi
+export GOTOOLCHAIN=go1.27.1
+pnpm protocol:check
 
-pnpm protocol:generate
-git diff --exit-code -- internal/protocol/generated.go web/src/generated/protocol.ts
-
-if ! unformatted=$(find cmd internal tests third_party/ansi third_party/vt third_party/xpty third_party/ultraviolet -name '*.go' -type f -print 2>/dev/null | xargs gofmt -l); then
-  echo "gofmt failed; see the errors above." >&2
+if ! unformatted=$(gofmt -l cmd internal tests third_party/ansi third_party/vt third_party/xpty third_party/ultraviolet); then
+  echo "gofmt failed; install Go and put gofmt on PATH." >&2
   exit 1
 fi
 if [ -n "$unformatted" ]; then
@@ -28,12 +23,12 @@ if [ -n "$unformatted" ]; then
   exit 1
 fi
 
-GOTOOLCHAIN=go1.27.1 go vet ./...
-GOTOOLCHAIN=go1.27.1 go test ./...
-(cd third_party/ansi && GOTOOLCHAIN=go1.27.1 go test ./...)
-(cd third_party/vt && GOTOOLCHAIN=go1.27.1 go test ./...)
-(cd third_party/xpty && GOTOOLCHAIN=go1.27.1 go test ./...)
-GOTOOLCHAIN=go1.27.1 go test github.com/charmbracelet/ultraviolet/...
+go vet ./...
+go test ./...
+(cd third_party/ansi && go test ./...)
+(cd third_party/vt && go test ./...)
+(cd third_party/xpty && go test ./...)
+go test github.com/charmbracelet/ultraviolet/...
 pnpm typecheck
 pnpm test:web
 pnpm build:web
