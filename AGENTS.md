@@ -2,7 +2,7 @@
 
 These rules apply throughout this repository.
 
-1. Read and follow `plan.md` and `docs/implementation-plan.md` completely. They are the authoritative implementation specification. Preserve unrelated user work.
+1. Before you work, read `docs/architecture.md` (how Termivoa works today) and `docs/pending-work.md` (the roadmap). `docs/implementation-plan.md` is the original v0 specification; follow it where it still applies. Preserve unrelated user work.
 2. Use Go for all shipped host runtime code. Node.js and pnpm are build-time tools only; do not introduce a Node runtime, Rust backend, SSH-only gateway, cloud shell, or hosted service.
 3. Keep the repository private. Never change repository visibility to public. The owner alone performs the manual private-to-public transition.
 4. Never publish code, packages, installers, images, previews, logs, or artifacts outside the approved private repository without explicit authorization.
@@ -33,6 +33,13 @@ These rules apply throughout this repository.
     - Before merging, `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` must pass; it fails on a broken docs link or anchor (starlight-links-validator).
 
 24. Critical features need the owner's review before merge. A feature is critical when it changes authentication, pairing, trust between computers, the network surface, the protocol in a breaking way, or stored secrets (for example multi-computer). For such a feature: write the architecture first (an ADR in `docs/decisions/` and a design document) and open it as a draft pull request marked "DO NOT MERGE without owner review"; run independent adversarial reviews (at least security, and feasibility with alternatives) and record how each finding is resolved; then report to the owner in short, simple words and wait. Do not merge the design or any implementation pull request of a critical feature until the owner approves it, even when other rules allow autonomous merges. Pick the stack for performance and simplicity on evidence; a change from Go (rule 2) needs its own ADR and the owner's approval.
+
+25. Keep the architecture and the docs up to date. The internal architecture lives only in this private repository: `docs/architecture.md` (the map) and the design documents in `docs/`. Every pull request that adds a feature or improves one updates, in the same pull request:
+    - `docs/architecture.md` and the feature's design document (internal: how it works);
+    - the docs site (rule 22; public: how to use it);
+    - `docs/pending-work.md` (move the item to Done, or add new follow-ups).
+
+    Never put internal architecture (package names, internal file paths, how security checks work inside) on the public docs site. When you find a doc that is out of date or repeats another, fix it or delete it.
 
 When access is missing, use this format:
 
