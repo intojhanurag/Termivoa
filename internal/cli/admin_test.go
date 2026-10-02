@@ -626,6 +626,9 @@ func TestPairPendingAndDevicesShowVia(t *testing.T) {
 	}
 }
 
+// RevokeVia always sends the request after confirmation, even when no device
+// uses the app: the broker also removes that app's pairing links and pending
+// pairings. The device count only changes the prompt.
 func TestRevokeViaCountsConfirmsAndChecksTheAcknowledgement(t *testing.T) {
 	home, other := homeOrigin, "https://other.tailx.ts.net"
 	devices := []protocol.AdminRPCDevice{
@@ -634,29 +637,33 @@ func TestRevokeViaCountsConfirmsAndChecksTheAcknowledgement(t *testing.T) {
 	}
 	ack := protocol.AdminRPCRevokeViaResultPayload{AppOrigin: homeOrigin, DeviceIDS: []string{adminDevice, adminPending}, ClosedStreams: 3}
 	prompt := "Revoke browser access for 2 device(s) that use this computer from the Termivoa app at https://mac.tailx.ts.net? Their live connections close now. [y/N] "
+	nonePrompt := "No device uses this computer from the Termivoa app at https://mac.tailx.ts.net now, but its pending pairings " +
+		"and pairing links will be removed. Continue? [y/N] "
 	for name, test := range map[string]struct {
 		devices []protocol.AdminRPCDevice
 		answer  bool
 		ack     protocol.AdminRPCRevokeViaResultPayload
 		ackErr  error
-		prompts int
+		prompt  string
 		sends   int
 		output  string
 		err     string
 	}{
-		"no device": {devices: devices[2:], prompts: 0, output: "No device uses the app at https://mac.tailx.ts.net; no request was sent.\n"},
-		"cancelled": {devices: devices, prompts: 1, output: "Revocation cancelled.\n"},
-		"revoked":   {devices: devices, answer: true, ack: ack, prompts: 1, sends: 1, output: "Revoked 2 device(s) bound to https://mac.tailx.ts.net; closed 3 live connection(s).\n"},
-		"wrong ack": {devices: devices, answer: true, ack: protocol.AdminRPCRevokeViaResultPayload{AppOrigin: other}, prompts: 1, sends: 1, err: "wrong app origin"},
-		"uncertain": {devices: devices, answer: true, ackErr: uncertainTestError{}, prompts: 1, sends: 1, err: "uncertain—run pterm devices"},
+		"no device": {devices: devices[2:], answer: true, ack: protocol.AdminRPCRevokeViaResultPayload{AppOrigin: homeOrigin},
+			prompt: nonePrompt, sends: 1, output: "Revoked 0 device(s) bound to https://mac.tailx.ts.net; closed 0 live connection(s).\n"},
+		"no device cancelled": {devices: devices[2:], prompt: nonePrompt, output: "Revocation cancelled.\n"},
+		"cancelled":           {devices: devices, prompt: prompt, output: "Revocation cancelled.\n"},
+		"revoked":             {devices: devices, answer: true, ack: ack, prompt: prompt, sends: 1, output: "Revoked 2 device(s) bound to https://mac.tailx.ts.net; closed 3 live connection(s).\n"},
+		"wrong ack":           {devices: devices, answer: true, ack: protocol.AdminRPCRevokeViaResultPayload{AppOrigin: other}, prompt: prompt, sends: 1, err: "wrong app origin"},
+		"uncertain":           {devices: devices, answer: true, ackErr: uncertainTestError{}, prompt: prompt, sends: 1, err: "uncertain—run pterm devices"},
 	} {
 		fake := &fakeAdmin{devices: test.devices, revokeVia: test.ack, revokeViaErr: test.ackErr}
 		confirmer := &fakeConfirmer{answer: test.answer}
 		var output bytes.Buffer
 		err := RevokeVia(context.Background(), fake, homeOrigin, confirmer, &output)
 		if (err == nil) != (test.err == "") || err != nil && !strings.Contains(err.Error(), test.err) ||
-			confirmer.calls != test.prompts || len(fake.revokedVia) != test.sends || output.String() != test.output ||
-			test.prompts > 0 && confirmer.prompt != prompt {
+			confirmer.calls != 1 || len(fake.revokedVia) != test.sends || output.String() != test.output ||
+			confirmer.prompt != test.prompt {
 			t.Fatalf("%s: err=%v prompts=%d %q sends=%d output=%q", name, err, confirmer.calls, confirmer.prompt, len(fake.revokedVia), output.String())
 		}
 	}

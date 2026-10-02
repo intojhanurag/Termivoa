@@ -469,7 +469,8 @@ func phoneComputers(ctx context.Context, admin Admin, deviceID string) []protoco
 }
 
 // RevokeVia revokes every device that uses this computer from the Termivoa
-// app at appOrigin, for example after that home computer was compromised.
+// app at appOrigin, and that app's pairing links and pending pairings, for
+// example after that home computer was compromised.
 func RevokeVia(ctx context.Context, admin Admin, appOrigin string, confirmer Confirmer, output io.Writer) error {
 	if err := protocol.ValidateComputerOrigin(appOrigin); err != nil {
 		return fmt.Errorf("invalid --via: %w", err)
@@ -484,12 +485,16 @@ func RevokeVia(ctx context.Context, admin Admin, appOrigin string, confirmer Con
 			count++
 		}
 	}
-	if count == 0 {
-		return writeString(output, fmt.Sprintf("No device uses the app at %s; no request was sent.\n", appOrigin))
-	}
-	confirmed, err := confirmer.Confirm(ctx, fmt.Sprintf(
+	// The request also removes the app's pairing links and pending pairings,
+	// so it is sent even when no device uses the app now.
+	prompt := fmt.Sprintf(
 		"Revoke browser access for %d device(s) that use this computer from the Termivoa app at %s? Their live connections close now. [y/N] ",
-		count, appOrigin))
+		count, appOrigin)
+	if count == 0 {
+		prompt = fmt.Sprintf("No device uses this computer from the Termivoa app at %s now, but its pending pairings "+
+			"and pairing links will be removed. Continue? [y/N] ", appOrigin)
+	}
+	confirmed, err := confirmer.Confirm(ctx, prompt)
 	if err != nil {
 		return err
 	}
