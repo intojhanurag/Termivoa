@@ -105,7 +105,10 @@ export function Settings({
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const current = settings?.device.label ?? '';
-  const [name, setName] = useState(current);
+  // Follows home's label (home may answer after this screen opened) until the user types.
+  const [draft, setDraft] = useState<string>();
+  const name = draft ?? current;
+  const multi = entries.length > 1;
   const [nameState, setNameState] = useState<NameState>({ kind: 'idle' });
   const nameProblem = deviceLabelProblem(name.trim());
   const unchanged = name.trim() === current;
@@ -119,7 +122,7 @@ export function Settings({
         return;
       }
       if (result.kind === 'saved') {
-        setName(result.device.label);
+        setDraft(undefined);
         onRenamed(result.device);
       }
       setNameState({ kind: 'saved' });
@@ -160,7 +163,7 @@ export function Settings({
             aria-describedby="device-name-help device-name-status"
             aria-invalid={nameProblem !== undefined}
             onChange={(event) => {
-              setName(event.target.value);
+              setDraft(event.target.value);
               setNameState({ kind: 'idle' });
             }}
           />
@@ -205,7 +208,11 @@ export function Settings({
       {settings !== undefined && (
       <section className="group stack" aria-labelledby="logout-heading">
         <h2 id="logout-heading" className="caps">Log out</h2>
-        <p className="muted">Removes this browser's access. Running sessions keep running on your computer.</p>
+        <p className="muted">
+          {multi
+            ? 'Signs this phone out of every computer. Running sessions keep running.'
+            : 'Removes this browser\'s access. Running sessions keep running on your computer.'}
+        </p>
         <button
           type="button"
           className="danger"

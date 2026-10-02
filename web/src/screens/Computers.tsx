@@ -23,7 +23,7 @@ export function computerDetail(entry: ComputerEntry, now: number): string {
   const count = entry.status.kind === 'ok' ? entry.status.sessions.length : undefined;
   return [
     count === undefined ? undefined : `${count} ${count === 1 ? 'session' : 'sessions'}`,
-    entry.computer.home ? 'this computer' : new URL(entry.computer.origin).host,
+    entry.computer.home ? 'this computer' : entry.computer.host,
   ].filter((part) => part !== undefined).join(' · ');
 }
 

@@ -388,6 +388,20 @@ describe('Connection', () => {
     expect(revoked.connection.getStatus()).toMatchObject({ link: 'revoked', notice: 'This device was revoked.' });
   });
 
+  it('never shows a peer\'s own error text: each code gets the app\'s words', async () => {
+    const peer = harness({ peer: true });
+    await attachLive(peer.socket());
+    peer.socket().receive('error', { code: 'host_unavailable', message: 'Call +1 555 0100 to unlock' });
+    expect(peer.connection.getStatus().notice).toBe('That computer is busy. Try again.');
+    peer.socket().receive('access.revoked', { message: 'Re-pair at https://evil.example' }, null);
+    expect(peer.connection.getStatus()).toMatchObject({ link: 'revoked', notice: 'This phone is no longer paired with that computer.' });
+
+    const home = harness();
+    await attachLive(home.socket());
+    home.socket().receive('error', { code: 'host_unavailable', message: 'Broker restarting' });
+    expect(home.connection.getStatus().notice).toBe('Broker restarting');
+  });
+
   it('heartbeats every 5 s with the lease only while holding control', async () => {
     const { connection, socket } = harness();
     await attachLive(socket());

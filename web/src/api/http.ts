@@ -240,11 +240,21 @@ function createClient(origin: string, home: boolean): Client {
     method: Method, path: string, schema: Name, options: RequestOptions = {},
   ): Promise<HttpBodies[Name]> {
     const { status, text } = await call(method, path, options);
+    return parse(schema, status, text);
+  }
+
+  function parse<Name extends HttpSchema>(schema: Name, status: number, text: string): HttpBodies[Name] {
     try {
       return parseHttpBody(schema, JSON.parse(text));
     } catch {
       throw new ApiError(status, 'invalid_response', INVALID_RESPONSE);
     }
+  }
+
+  function refuse(problem: 'computer_outdated' | 'app_outdated'): never {
+    revision = undefined;
+    refusal = new ApiError(0, problem, updateText(firstLabel(problem === 'computer_outdated' ? origin : homeOrigin())));
+    throw refusal;
   }
 
   /** For routes that answer 204: the body, if any, is ignored. */
@@ -279,13 +289,12 @@ function createClient(origin: string, home: boolean): Client {
       return supports(this.revision(), feature);
     },
     async settings() {
-      const settings = await request('GET', '/api/v1/settings', 'settingsResponse', { ...read, gated: false });
+      const { status, text } = await call('GET', '/api/v1/settings', { ...read, gated: false });
+      // A peer from before multi-computer sends no protocolRevision: it needs an update, not "can't reach".
+      if (!home && !hasRevision(text)) refuse('computer_outdated');
+      const settings = parse('settingsResponse', status, text);
       const problem = home ? undefined : revisionProblem(settings);
-      if (problem !== undefined) {
-        revision = undefined;
-        refusal = new ApiError(0, problem, updateText(firstLabel(problem === 'computer_outdated' ? origin : homeOrigin())));
-        throw refusal;
-      }
+      if (problem !== undefined) refuse(problem);
       revision = settings.protocolRevision;
       refusal = undefined;
       return settings;
@@ -311,6 +320,16 @@ function createClient(origin: string, home: boolean): Client {
   };
 }
 
+/** True when a settings body is a JSON object with a numeric protocolRevision. */
+function hasRevision(text: string): boolean {
+  try {
+    const body: unknown = JSON.parse(text);
+    return typeof body === 'object' && body !== null && typeof (body as { protocolRevision?: unknown }).protocolRevision === 'number';
+  } catch {
+    return true; // Not JSON: the schema check reports it as invalid_response.
+  }
+}
+
 const clients = new Map<string, Client>();
 
 /**
@@ -327,6 +346,11 @@ export function client(origin?: string): Client {
     clients.set(key, found);
   }
   return found;
+}
+
+/** Drops a removed peer's client (and its revision). Home's client is kept. */
+export function forgetClient(origin: string): void {
+  if (origin !== homeOrigin()) clients.delete(origin);
 }
 
 /** The home computer's client: same-origin, as before multi-computer. */

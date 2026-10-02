@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { ApiError } from '../api/http';
+import { describe, expect, it, vi } from 'vitest';
+import { ApiError, client } from '../api/http';
+import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
-import { byChip, chipsFor, hosted, keyOf, mergeSessions, nextStatus, sameSession, type ComputerEntry, type ComputerStatus } from './allSessions';
+import {
+  byChip, chipsFor, forgetComputer, homeSettings, hosted, keyOf, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  type ComputerEntry, type ComputerStatus,
+} from './allSessions';
 
 const mac: Computer = { origin: 'https://mac.tailx.ts.net', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
 const vps: Computer = { origin: 'https://vps.tailx.ts.net', host: 'vps.tailx.ts.net', label: 'vps', color: '#9B8CFF', home: false };
@@ -65,11 +69,83 @@ describe('nextStatus', () => {
     expect(nextStatus({ kind: 'loading' }, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: undefined });
   });
 
+  it('with one computer, says not reachable after the first failure, as before multi-computer', () => {
+    const seen = nextStatus({ kind: 'loading' }, mac, loaded, false, 42);
+    expect(nextStatus(seen, mac, fail(network), false, 50, true)).toEqual({ kind: 'unreachable', lastSeen: 42 });
+  });
+
+  it('names an outdated computer by the user\'s label', () => {
+    const renamed = { ...vps, label: 'Build box' };
+    expect(nextStatus({ kind: 'loading' }, renamed, fail(new ApiError(0, 'computer_outdated', 'Update Termivoa on vps')), false, 0))
+      .toEqual({ kind: 'outdated', message: 'Update Termivoa on Build box' });
+  });
+
   it('turns a 401 into pair again, and an outdated revision into its update text', () => {
     expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(401, 'unauthorized', 'x')), false, 0)).toEqual({ kind: 'pair' });
     expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(0, 'computer_outdated', 'Update Termivoa on vps')), false, 0))
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on vps' });
     expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(0, 'app_outdated', 'Update Termivoa on mac')), false, 0))
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on mac' });
+  });
+});
+
+describe('readNow (Check again, and reloads after a change)', () => {
+  it('publishes every computer, then rejects with the first failure and its computer', async () => {
+    const published: string[] = [];
+    const down = new ApiError(0, 'network', 'Connection unavailable');
+    const read = readNow(
+      [mac, vps],
+      async (origin) => { if (origin === vps.origin) throw down; return { settings, sessions: [] }; },
+      (origin, outcome) => published.push(`${origin} ${outcome.ok}`),
+    );
+    const failure = await read.catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ReadFailure);
+    expect(failure).toMatchObject({ computer: vps, error: down, message: 'Connection unavailable' });
+    expect(published).toEqual([`${mac.origin} true`, `${vps.origin} false`]);
+    await expect(readNow([mac], async () => ({ settings, sessions: [] }), () => undefined)).resolves.toBeUndefined();
+  });
+
+  it('never overlaps two reads of one computer', async () => {
+    let open = 0;
+    let most = 0;
+    const load = vi.fn(async () => {
+      most = Math.max(most, ++open);
+      await Promise.resolve();
+      open--;
+      return { settings, sessions: [] };
+    });
+    await Promise.all([readNow([vps], load, () => undefined), readNow([vps], load, () => undefined)]);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(most).toBe(1);
+  });
+});
+
+describe('pruneStatuses', () => {
+  it('drops a removed computer\'s status, so adding it again starts fresh', () => {
+    const statuses = new Map<string, ComputerStatus>([[mac.origin, { kind: 'loading' }], [vps.origin, { kind: 'pair' }]]);
+    expect([...pruneStatuses(statuses, new Set([mac.origin])).keys()]).toEqual([mac.origin]);
+    expect(pruneStatuses(statuses, new Set([mac.origin, vps.origin]))).toBe(statuses);
+  });
+});
+
+describe('homeSettings (home comes back during the visit)', () => {
+  it('gives home\'s settings once home answers, whatever the peers do', () => {
+    expect(homeSettings([{ computer: mac, status: { kind: 'unreachable' } }, ok(vps, [])])).toBeUndefined();
+    expect(homeSettings([ok(mac, []), { computer: vps, status: { kind: 'pair' } }])).toBe(settings);
+  });
+});
+
+describe('forgetComputer', () => {
+  it('drops the removed computer\'s client and backoff', () => {
+    const origin = 'https://removed.tailx.ts.net';
+    const before = client(origin);
+    const gate = scheduler.connectGate(origin);
+    gate.wait(() => undefined);
+    gate.done('failed');
+    forgetComputer(origin);
+    expect(client(origin)).not.toBe(before);
+    let started = false;
+    scheduler.connectGate(origin).wait(() => { started = true; });
+    expect(started).toBe(true);
   });
 });

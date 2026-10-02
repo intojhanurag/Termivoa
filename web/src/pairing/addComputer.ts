@@ -1,4 +1,4 @@
-import { client, firstLabel } from '../api/http';
+import { ApiError, client, firstLabel } from '../api/http';
 import { confirmComputer, recordPending, type Computer } from '../computers';
 import type { HTTPComputerAddResponse } from '../generated/protocol';
 import { parseHttpBody } from '../protocol/httpBody';
@@ -18,7 +18,8 @@ import { GRANT, PairingFlow, type HistoryLike, type LocationLike, type PendingPa
  * 4. AddComputerFlow.redeem redeems the grant on the peer with credentials
  *    (show the verification code), then AddComputerFlow.finish polls until
  *    approved, makes the first authenticated `GET /api/v1/settings` on the
- *    peer (which also checks its protocol revision) and confirms it on home.
+ *    peer (which also checks its protocol revision; a network error is
+ *    retried for FIRST_READ_RETRY_MS) and confirms it on home.
  *
  * The grant never goes to storage or a query string.
  */
@@ -134,6 +135,14 @@ export function takeAddComputerFragment(
   return { origin, grant };
 }
 
+/**
+ * Right after approval the peer may not yet allow this app's origin (it
+ * refreshes its CORS list on its own schedule), so the first settings read
+ * can fail as a network error. Retry it for this long.
+ */
+export const FIRST_READ_RETRY_MS = 3_000;
+const FIRST_READ_STEP_MS = 500;
+
 export type AddOutcome =
   | { readonly kind: 'confirmed'; readonly computer: Computer }
   | { readonly kind: 'expired' }
@@ -142,6 +151,7 @@ export type AddOutcome =
 /** Step 4. One flow per link; the grant and poll secret stay in memory only. */
 export class AddComputerFlow {
   private grant: string | undefined;
+  private cancelled = false;
   private readonly pairing: PairingFlow;
 
   constructor(readonly origin: string, grant: string, private readonly label = firstLabel(origin)) {
@@ -166,11 +176,22 @@ export class AddComputerFlow {
   async finish(pending: PendingPairing): Promise<AddOutcome> {
     const outcome = await this.pairing.poll(pending);
     if (outcome !== 'approved') return { kind: outcome };
-    await client(this.origin).settings();
+    const deadline = Date.now() + FIRST_READ_RETRY_MS;
+    for (;;) {
+      try {
+        await client(this.origin).settings();
+        break;
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === 'network') || Date.now() >= deadline) throw error;
+        await new Promise((resolve) => { setTimeout(resolve, FIRST_READ_STEP_MS); });
+        if (this.cancelled) return { kind: 'cancelled' };
+      }
+    }
     return { kind: 'confirmed', computer: await confirmComputer(this.origin, this.label) };
   }
 
   cancel(): void {
+    this.cancelled = true;
     this.grant = undefined;
     this.pairing.cancel();
   }

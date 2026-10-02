@@ -443,6 +443,9 @@ describe('commit and push', () => {
     }
     expect(httpsUrl('https://github.com/o/r/pull/1')).toBe('https://github.com/o/r/pull/1');
     expect(httpsUrl(undefined)).toBeUndefined();
+    // A computer picks this URL: it never opens one of this app's own routes.
+    expect(httpsUrl(`https://mac.tailx.ts.net/computers/add#grant=${'G'.repeat(43)}`, 'https://mac.tailx.ts.net')).toBeUndefined();
+    expect(httpsUrl('https://github.com/o/r/pull/1', 'https://mac.tailx.ts.net')).toBe('https://github.com/o/r/pull/1');
   });
 });
 

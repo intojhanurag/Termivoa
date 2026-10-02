@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, deviceLabelProblem, firstLabel } from '../api/http';
-import type { Computer } from '../computers';
+import { forgetPending, type Computer } from '../computers';
 import type { TailnetNode } from '../generated/protocol';
 import { AddComputerFlow, addComputerUrl, prepareAddComputer, type AddComputerLink } from '../pairing/addComputer';
 import type { PendingPairing } from '../pairing/pairing';
@@ -11,7 +11,8 @@ import { Sheet, SheetHeader } from './Sheet';
  * Adding a computer (docs/multi-computer.md, "Pairing a second computer"):
  * a pasted or tapped link opens the confirm sheet, which never adds in one
  * tap; Add loads /computers/add (so home's CSP allows the new computer),
- * where the page redeems the link, shows the code and waits for approval.
+ * where the page shows the full origin again and, only after Continue,
+ * redeems the link, shows the code and waits for approval.
  */
 
 /** Plain words for a failed step. Home's own words are shown; a peer's never are (the client replaces them). */
@@ -31,7 +32,7 @@ export function ownerText(node: TailnetNode): { readonly term: 'Owner' | 'Tags';
   return node.owner !== undefined ? { term: 'Owner', value: node.owner } : { term: 'Tags', value: node.tags.join(', ') || 'none' };
 }
 
-/** The confirm step: full origin, machine name and owner or tags, then an explicit Add. */
+/** The confirm step: full origin, machine name and owner or tags, then an explicit Add. Cancel deletes the pending entry on home. */
 export function AddComputerConfirm({ link, node, onConfirm, onCancel }: {
   readonly link: AddComputerLink;
   readonly node: TailnetNode;
@@ -52,11 +53,42 @@ export function AddComputerConfirm({ link, node, onConfirm, onCancel }: {
       </p>
       <div className="row">
         <button type="button" className="primary" onClick={onConfirm}>Add {label}</button>
-        <button type="button" onClick={onCancel}>Cancel</button>
+        <button type="button" onClick={() => { void forgetPending(link.origin); onCancel(); }}>Cancel</button>
       </div>
     </>
   );
 }
+
+/**
+ * The first step on /computers/add: the full origin, then an explicit
+ * Continue before anything is sent to the computer. A link can reach this
+ * page in other ways than the confirm sheet, so the page never redeems on
+ * load. Cancel deletes the pending entry on home.
+ */
+export function AddComputerContinue({ link, onContinue, onCancel }: {
+  readonly link: AddComputerLink;
+  readonly onContinue: () => void;
+  readonly onCancel: () => void;
+}) {
+  const label = firstLabel(link.origin);
+  return (
+    <>
+      <dl className="facts">
+        <dt>Address</dt><dd>{link.origin}</dd>
+      </dl>
+      <p className="hint-text">
+        Continue only if you just ran <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
+      </p>
+      <div className="row">
+        <button type="button" className="primary" onClick={onContinue}>Continue</button>
+        <button type="button" onClick={() => { void forgetPending(link.origin); onCancel(); }}>Cancel</button>
+      </div>
+    </>
+  );
+}
+
+/** The add page's unmount cleanup: stops the flow (its poll) when the user leaves the page. */
+export const cancelOnUnmount = (flow: { readonly current: Pick<AddComputerFlow, 'cancel'> | undefined }) => () => flow.current?.cancel();
 
 type Check =
   | { readonly kind: 'checking' }
@@ -80,16 +112,21 @@ export function AddComputerSheet({ link, onClose, go = (url) => window.location.
   useEffect(() => {
     let live = true;
     prepareAddComputer(link).then(
-      (answer) => { if (live) setCheck({ kind: 'ready', node: answer.node }); },
+      // Closed while home was checking: the pending entry is not needed.
+      (answer) => { if (live) setCheck({ kind: 'ready', node: answer.node }); else void forgetPending(link.origin); },
       (error: unknown) => { if (live) setCheck({ kind: 'error', message: addFailure(error, 'your home computer') }); },
     );
     return () => { live = false; };
   }, [link]);
+  const close = () => {
+    if (check.kind === 'ready') void forgetPending(link.origin);
+    onClose();
+  };
   return (
     <div className="sheet-backdrop">
-      <Sheet labelledBy="add-computer-title" onClose={onClose}>
+      <Sheet labelledBy="add-computer-title" onClose={close}>
         <SheetHeader id="add-computer-title" title="Add this computer?">
-          <button type="button" className="link" onClick={onClose}>Close</button>
+          <button type="button" className="link" onClick={close}>Close</button>
         </SheetHeader>
         {check.kind === 'checking' && <p role="status" className="muted">Checking {label}…</p>}
         {check.kind === 'error' && <p role="alert" className="error">{check.message}</p>}
@@ -102,42 +139,46 @@ export function AddComputerSheet({ link, onClose, go = (url) => window.location.
 }
 
 type Phase =
+  | { readonly kind: 'confirm' }
   | { readonly kind: 'redeeming' }
   | { readonly kind: 'waiting'; readonly pending: PendingPairing }
   | { readonly kind: 'done'; readonly computer: Computer }
   | { readonly kind: 'expired' | 'cancelled' }
   | { readonly kind: 'error'; readonly message: string };
 
-/** The /computers/add page: redeem, show the code, wait for approval, confirm. */
-export function AddComputerPage({ link, deviceLabel, onDone, onSettings }: {
+/** The /computers/add page: Continue, redeem, show the code, wait for approval, confirm. */
+export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings }: {
   /** Undefined when the page was opened without a valid link (or reloaded: the link is used once). */
   readonly link: AddComputerLink | undefined;
+  /** Shown instead of the usual text when there is no link (the app refused it on this load). */
+  readonly notice?: string | undefined;
   /** This phone's name on home, sent to the new computer. */
   readonly deviceLabel: string | undefined;
   readonly onDone: () => void;
   readonly onSettings: () => void;
 }) {
-  const [phase, setPhase] = useState<Phase>({ kind: 'redeeming' });
+  const [phase, setPhase] = useState<Phase>({ kind: 'confirm' });
   const flow = useRef<AddComputerFlow>(undefined);
   const label = link === undefined ? '' : firstLabel(link.origin);
   const name = deviceLabel !== undefined && deviceLabelProblem(deviceLabel) === undefined ? deviceLabel : 'Phone';
 
-  useEffect(() => {
-    // Once per link, also when React runs effects twice in development.
-    if (link === undefined || flow.current !== undefined) return;
-    const next = new AddComputerFlow(link.origin, link.grant);
+  useEffect(() => cancelOnUnmount(flow), []);
+
+  async function start(chosen: AddComputerLink) {
+    // Once per link: the grant works once.
+    if (flow.current !== undefined) return;
+    const next = new AddComputerFlow(chosen.origin, chosen.grant);
     flow.current = next;
-    void (async () => {
-      try {
-        const pending = await next.redeem(name);
-        setPhase({ kind: 'waiting', pending });
-        const outcome = await next.finish(pending);
-        setPhase(outcome.kind === 'confirmed' ? { kind: 'done', computer: outcome.computer } : { kind: outcome.kind });
-      } catch (error) {
-        setPhase({ kind: 'error', message: addFailure(error, label) });
-      }
-    })();
-  }, [label, link, name]);
+    setPhase({ kind: 'redeeming' });
+    try {
+      const pending = await next.redeem(name);
+      setPhase({ kind: 'waiting', pending });
+      const outcome = await next.finish(pending);
+      setPhase(outcome.kind === 'confirmed' ? { kind: 'done', computer: outcome.computer } : { kind: outcome.kind });
+    } catch (error) {
+      setPhase({ kind: 'error', message: addFailure(error, label) });
+    }
+  }
 
   const title = phase.kind === 'waiting' ? `Does ${label} show this code?`
     : phase.kind === 'done' ? `${phase.computer.label} is added` : 'Add a computer';
@@ -148,9 +189,12 @@ export function AddComputerPage({ link, deviceLabel, onDone, onSettings }: {
       <h1>{title}</h1>
       {link === undefined && (
         <>
-          <p role="alert" className="error">This add-computer link is used or incomplete. Paste the link again in Settings, under Computers.</p>
+          <p role="alert" className="error">{notice ?? 'This add-computer link is used or incomplete. Paste the link again in Settings, under Computers.'}</p>
           <button type="button" className="primary" onClick={onSettings}>Settings</button>
         </>
+      )}
+      {link !== undefined && phase.kind === 'confirm' && (
+        <AddComputerContinue link={link} onContinue={() => { void start(link); }} onCancel={onSettings} />
       )}
       {link !== undefined && phase.kind === 'redeeming' && <p role="status" className="muted">Connecting to {label}…</p>}
       {phase.kind === 'waiting' && (
@@ -159,7 +203,15 @@ export function AddComputerPage({ link, deviceLabel, onDone, onSettings }: {
           <p className="muted">If it matches, type y in the terminal on {label}.</p>
           <div className="waiting">
             <p role="status"><span className="dots" aria-hidden="true"><span /><span /><span /></span>Waiting for {label}</p>
-            <button type="button" className="link" onClick={() => { flow.current?.cancel(); setPhase({ kind: 'cancelled' }); }}>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                flow.current?.cancel();
+                if (link !== undefined) void forgetPending(link.origin);
+                setPhase({ kind: 'cancelled' });
+              }}
+            >
               Codes don't match? Cancel
             </button>
           </div>

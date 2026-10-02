@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError, client, isAuthFailure } from '../api/http';
+import { ApiError, client, forgetClient, isAuthFailure, updateText } from '../api/http';
 import { sessionKey, type Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { scheduler, type PollOutcome } from '../terminal/scheduler';
@@ -49,9 +49,10 @@ interface Loaded {
 }
 
 /**
- * The next status after one poll. A network failure only shows "can't reach"
- * once the scheduler counts the computer offline; before that the last
- * answer stays on screen.
+ * The next status after one poll. With several computers, a network failure
+ * only shows "can't reach" once the scheduler counts the computer offline;
+ * before that the last answer stays on screen. With one computer (`single`)
+ * it shows after the first failure, as before multi-computer.
  */
 export function nextStatus(
   previous: ComputerStatus,
@@ -59,16 +60,16 @@ export function nextStatus(
   outcome: PollOutcome<Loaded>,
   offline: boolean,
   now: number,
+  single = false,
 ): ComputerStatus {
   if (outcome.ok) {
     return { kind: 'ok', settings: outcome.value.settings, sessions: outcome.value.sessions.map((item) => hosted(item, computer)), at: now };
   }
   const { error } = outcome;
   if (isAuthFailure(error)) return { kind: 'pair' };
-  if (error instanceof ApiError && (error.code === 'computer_outdated' || error.code === 'app_outdated')) {
-    return { kind: 'outdated', message: error.message };
-  }
-  if (!offline) return previous;
+  if (error instanceof ApiError && error.code === 'computer_outdated') return { kind: 'outdated', message: updateText(computer.label) };
+  if (error instanceof ApiError && error.code === 'app_outdated') return { kind: 'outdated', message: error.message };
+  if (!offline && !single) return previous;
   const lastSeen = previous.kind === 'ok' ? previous.at : previous.kind === 'unreachable' ? previous.lastSeen : undefined;
   return { kind: 'unreachable', lastSeen };
 }
@@ -82,6 +83,12 @@ export function waitingFirst<T extends BrokerRPCSessionRecord>(sessions: Readonl
 /** Every answered computer's sessions in one list, waiting first. */
 export function mergeSessions(entries: ReadonlyArray<ComputerEntry>): HostedSession[] {
   return waitingFirst(entries.flatMap((entry) => (entry.status.kind === 'ok' ? entry.status.sessions : [])));
+}
+
+/** Home's settings from its latest good answer, or undefined while it has none. */
+export function homeSettings(entries: ReadonlyArray<ComputerEntry>): HTTPSettingsResponse | undefined {
+  const home = entries.find((entry) => entry.computer.home)?.status;
+  return home?.kind === 'ok' ? home.settings : undefined;
 }
 
 /** "All" plus one chip per computer; none with a single computer. */
@@ -102,6 +109,47 @@ export function forgetSettings(): void {
   settingsCache.clear();
 }
 
+/** A computer left the list (removed, or gone from home's list): drop everything kept for its origin. */
+export function forgetComputer(origin: string): void {
+  settingsCache.delete(origin);
+  scheduler.forget(origin);
+  forgetClient(origin);
+}
+
+/** A read in reload() failed: the error and the computer it came from (a peer's 401 is not home's). */
+export class ReadFailure extends Error {
+  constructor(readonly computer: Computer, readonly error: unknown) {
+    super(error instanceof Error ? error.message : 'Request failed');
+    this.name = 'ReadFailure';
+  }
+}
+
+/**
+ * Reads each computer now (settings included), one read per computer at a
+ * time through the scheduler, and publishes every result. Rejects with a
+ * ReadFailure for the first computer that failed, after all have finished,
+ * so "Check again" can say what went wrong.
+ */
+export async function readNow(
+  computers: ReadonlyArray<Computer>,
+  load: (origin: string) => Promise<Loaded>,
+  publish: (origin: string, outcome: PollOutcome<Loaded>) => void,
+): Promise<void> {
+  const failures = await Promise.all(computers.map((computer) => scheduler.serial(computer.origin, () => load(computer.origin)).then(
+    (value) => { publish(computer.origin, { ok: true, value }); return undefined; },
+    (error: unknown) => { publish(computer.origin, { ok: false, error }); return new ReadFailure(computer, error); },
+  )));
+  const first = failures.find((failure) => failure !== undefined);
+  if (first !== undefined) throw first;
+}
+
+/** Statuses only for the computers still listed. */
+export function pruneStatuses(statuses: ReadonlyMap<string, ComputerStatus>, origins: ReadonlySet<string>): ReadonlyMap<string, ComputerStatus> {
+  return [...statuses.keys()].every((origin) => origins.has(origin))
+    ? statuses
+    : new Map([...statuses].filter(([origin]) => origins.has(origin)));
+}
+
 async function load(origin: string, fresh: boolean): Promise<Loaded> {
   const http = client(origin);
   let settings = fresh ? undefined : settingsCache.get(origin);
@@ -115,7 +163,7 @@ async function load(origin: string, fresh: boolean): Promise<Loaded> {
 export interface AllSessions {
   /** One entry per computer, in the computers' order. */
   readonly entries: ReadonlyArray<ComputerEntry>;
-  /** Reads these computers (all when omitted) now, settings included. */
+  /** Reads these computers (all when omitted) now, settings included; rejects with a ReadFailure (readNow). */
   readonly reload: (origin?: string) => Promise<void>;
   /** The user pressed Retry. */
   readonly retry: (origin: string) => void;
@@ -141,24 +189,31 @@ export function useAllSessions(active: boolean, computers: ReadonlyArray<Compute
       homeAuth.current();
       return;
     }
+    const single = byOrigin.current.size < 2;
     setStatuses((current) => {
       const next = new Map(current);
-      next.set(origin, nextStatus(current.get(origin) ?? { kind: 'loading' }, computer, outcome, scheduler.offline(origin), Date.now()));
+      next.set(origin, nextStatus(current.get(origin) ?? { kind: 'loading' }, computer, outcome, scheduler.offline(origin), Date.now(), single));
       return next;
     });
   }, []);
+
+  // A computer that left the list leaves nothing behind (status, settings, backoff, client).
+  const listed = useRef(new Set<string>());
+  useEffect(() => {
+    const now = new Set(origins === '' ? [] : origins.split(' '));
+    for (const origin of listed.current) if (!now.has(origin)) forgetComputer(origin);
+    listed.current = now;
+    setStatuses((current) => pruneStatuses(current, now));
+  }, [origins]);
 
   useEffect(() => {
     if (!active || origins === '') return undefined;
     return scheduler.poll(origins.split(' '), (origin) => load(origin, false), publish);
   }, [active, origins, publish]);
 
-  const reload = useCallback(async (origin?: string) => {
-    const list = origin === undefined ? [...byOrigin.current.keys()] : [origin];
-    await Promise.all(list.map((item) => scheduler.read(() => load(item, true)).then(
-      (value) => publish(item, { ok: true, value }),
-      (error: unknown) => publish(item, { ok: false, error }),
-    )));
+  const reload = useCallback((origin?: string) => {
+    const list = [...byOrigin.current.values()].filter((computer) => origin === undefined || computer.origin === origin);
+    return readNow(list, (item) => load(item, true), publish);
   }, [publish]);
 
   const retry = useCallback((origin: string) => {

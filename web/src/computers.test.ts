@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  colorFor, COMPUTERS_KEY, PALETTE, parseSessionKey, refreshComputers, removeComputer, renameComputer, sessionKey,
-  storedComputers, toComputer,
+  colorFor, COMPUTERS_KEY, forgetPending, logoutNote, logoutPeers, PALETTE, refreshComputers, removeComputer, renameComputer,
+  sessionKey, storedComputers, toComputer,
 } from './computers';
 
 const home = 'https://mac.tailx.ts.net';
@@ -27,10 +27,6 @@ describe('computer model', () => {
     expect(computer).toMatchObject({ host: 'vps.tailx.ts.net', label: 'vps', home: false });
     const key = sessionKey(computer, '00000000-0000-4000-8000-000000000001');
     expect(key).toBe('vps.tailx.ts.net/00000000-0000-4000-8000-000000000001');
-    expect(parseSessionKey(key)).toEqual({ host: 'vps.tailx.ts.net', sessionId: '00000000-0000-4000-8000-000000000001' });
-    expect(parseSessionKey('no-slash')).toBeUndefined();
-    expect(parseSessionKey('/id')).toBeUndefined();
-    expect(parseSessionKey('host/')).toBeUndefined();
   });
 
   it('gives each origin a fixed palette colour', () => {
@@ -113,5 +109,54 @@ describe('removeComputer', () => {
       ? new Response(null, { status: 204 }) : json(500, { error: { code: 'internal_error', message: 'x' } }))));
     await expect(removeComputer(toComputer(vps), storage)).rejects.toMatchObject({ status: 500 });
     expect(JSON.parse(store.get(COMPUTERS_KEY) ?? '')).toEqual([vps]);
+  });
+});
+
+describe('forgetPending', () => {
+  it('deletes the pending entry on home, but never a computer already in the list', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      return new Response(null, { status: 204 });
+    }));
+    store.set(COMPUTERS_KEY, JSON.stringify([pi]));
+    await forgetPending(vps.origin, storage);
+    await forgetPending(pi.origin, storage);
+    expect(calls).toEqual(['DELETE /api/v1/computers/vps.tailx.ts.net']);
+  });
+
+  it('never rejects: the entry expires on home', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
+    await expect(forgetPending(vps.origin, storage)).resolves.toBeUndefined();
+  });
+});
+
+describe('logoutPeers', () => {
+  it('signs out on each reachable peer, skips unreachable ones, and names every peer still signed in', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      if (url.startsWith('https://down.')) throw new TypeError('offline');
+      if (url.startsWith('https://gone.')) return json(401, { error: { code: 'revoked', message: 'x' } });
+      return new Response(null, { status: 204 });
+    }));
+    const peer = (name: string, label = name) => toComputer({ origin: `https://${name}.tailx.ts.net`, label });
+    const left = await logoutPeers([
+      { computer: toComputer({ origin: home, label: 'mac' }, true), reachable: true },
+      { computer: peer('vps'), reachable: true },
+      { computer: peer('gone'), reachable: true },
+      { computer: peer('down', 'Build box'), reachable: true },
+      { computer: peer('pi', 'Kitchen Pi'), reachable: false },
+    ]);
+    expect(left).toEqual(['Build box', 'Kitchen Pi']);
+    expect(calls).toEqual([
+      'POST https://vps.tailx.ts.net/api/v1/logout',
+      'POST https://gone.tailx.ts.net/api/v1/logout',
+      'POST https://down.tailx.ts.net/api/v1/logout',
+    ]);
+    expect(logoutNote([])).toBe('You logged out. This phone no longer has access.');
+    expect(logoutNote(left)).toBe(
+      'You logged out. This phone no longer has access. Could not sign out of Build box, Kitchen Pi. Run pterm revoke there to remove this phone.',
+    );
   });
 });

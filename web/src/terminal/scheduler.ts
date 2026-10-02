@@ -139,6 +139,8 @@ export class Scheduler {
   private reading = 0;
   private readonly readQueue: Array<() => void> = [];
   private readonly health = new Map<string, Health>();
+  /** The last read queued per computer; the next one starts after it. */
+  private readonly flights = new Map<string, Promise<unknown>>();
   /** Each running poll's kick: polls one computer now, or all when undefined. */
   private readonly polls = new Set<(origin?: string) => void>();
 
@@ -252,6 +254,22 @@ export class Scheduler {
   }
 
   /**
+   * Like read, but one at a time per computer: `load` starts only after every
+   * earlier serial read of `origin` has settled. Polls, reloads and route
+   * reads all pass here, so at most one request per computer is in flight.
+   */
+  serial<T>(origin: string, load: () => Promise<T>): Promise<T> {
+    const after = this.flights.get(origin) ?? Promise.resolve();
+    const next = after.then(() => this.read(load));
+    const settled = next.then(() => undefined, () => undefined);
+    this.flights.set(origin, settled);
+    void settled.then(() => {
+      if (this.flights.get(origin) === settled) this.flights.delete(origin);
+    });
+    return next;
+  }
+
+  /**
    * Polls each computer (the first `maxComputers`) with `load` every
    * `pollIntervalMs`: one outstanding poll per computer, reads limited by
    * read, and each result published as soon as it arrives. A failing
@@ -272,7 +290,7 @@ export class Scheduler {
       timers.delete(origin);
       if (stopped || open.has(origin) || !this.foreground) return;
       open.add(origin);
-      this.read(() => load(origin)).then(
+      this.serial(origin, () => load(origin)).then(
         (value) => {
           this.record(origin, true);
           if (!stopped) publish(origin, { ok: true, value });
@@ -306,6 +324,11 @@ export class Scheduler {
     this.health.delete(origin);
     this.pumpConnects();
     for (const kick of this.polls) kick(origin);
+  }
+
+  /** A computer was removed: drop its failure count and backoff. */
+  forget(origin: string): void {
+    this.health.delete(origin);
   }
 
   /** True after `offlineAfterFailures` failures in a row: show "<label> · can't reach". */

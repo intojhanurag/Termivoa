@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
+import type { Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
+import type { ComputerEntry } from './allSessions';
 import { NotificationSettings, saveDeviceName, Settings } from './Settings';
 
 const settings: HTTPSettingsResponse = {
@@ -69,6 +71,31 @@ describe('Settings device name field', () => {
     expect(html).toContain('aria-describedby="device-name-help device-name-status"');
     // Unchanged name: nothing to save yet.
     expect(html).toMatch(/<button type="submit" class="primary" disabled="">Save name<\/button>/u);
+  });
+});
+
+describe('Settings log out', () => {
+  const page = (entries: ComputerEntry[]) => renderToStaticMarkup(
+    <Settings
+      settings={settings}
+      fontSize={14}
+      onFontSize={() => undefined}
+      onBack={() => undefined}
+      onRenamed={() => undefined}
+      onFailure={() => ''}
+      onLogout={async () => undefined}
+      entries={entries}
+      onRetry={() => undefined}
+      onComputersChanged={() => undefined}
+    />,
+  );
+  const mac: Computer = { origin: 'https://mac.tailx.ts.net', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
+  const vps: Computer = { origin: 'https://vps.tailx.ts.net', host: 'vps.tailx.ts.net', label: 'vps', color: '#9B8CFF', home: false };
+
+  it('says it signs out of every computer only when there are several', () => {
+    expect(page([{ computer: mac, status: { kind: 'loading' } }])).toContain('Removes this browser&#x27;s access.');
+    const multi = page([{ computer: mac, status: { kind: 'loading' } }, { computer: vps, status: { kind: 'loading' } }]);
+    expect(multi).toContain('Signs this phone out of every computer. Running sessions keep running.');
   });
 });
 

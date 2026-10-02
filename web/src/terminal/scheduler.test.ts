@@ -173,3 +173,62 @@ describe('polling across computers', () => {
     expect(seen.size).toBe(9);
   });
 });
+
+describe('one read in flight per computer', () => {
+  it('runs serial reads of one computer one after another, other computers in parallel', async () => {
+    const scheduler = new Scheduler();
+    const open = new Map<string, number>();
+    let most = 0;
+    const load = (origin: string, ms: number) => () => {
+      open.set(origin, (open.get(origin) ?? 0) + 1);
+      most = Math.max(most, open.get(origin) ?? 0);
+      return new Promise<string>((resolve) => setTimeout(() => {
+        open.set(origin, (open.get(origin) ?? 1) - 1);
+        resolve(origin);
+      }, ms));
+    };
+    const done: string[] = [];
+    const reads = [
+      scheduler.serial('a', load('a', 100)).then(() => done.push('a1')),
+      scheduler.serial('a', load('a', 10)).then(() => done.push('a2')),
+      scheduler.serial('b', load('b', 50)).then(() => done.push('b1')),
+    ];
+    await vi.advanceTimersByTimeAsync(200);
+    await Promise.all(reads);
+    expect(most).toBe(1);
+    expect(done).toEqual(['b1', 'a1', 'a2']);
+  });
+
+  it('keeps the order after a failed read, and poll shares the line with reloads', async () => {
+    const scheduler = new Scheduler();
+    const order: string[] = [];
+    const failing = scheduler.serial('a', async () => { order.push('fail'); throw new Error('down'); });
+    const next = scheduler.serial('a', async () => { order.push('next'); return 1; });
+    await expect(failing).rejects.toThrow('down');
+    await expect(next).resolves.toBe(1);
+    let release!: () => void;
+    const slow = scheduler.serial('c', () => new Promise<void>((resolve) => { release = resolve; }));
+    const polled: string[] = [];
+    const stop = scheduler.poll(['c'], async () => { polled.push('poll'); }, () => undefined);
+    await flush();
+    expect(polled).toEqual([]);
+    release();
+    await slow;
+    await flush();
+    expect(polled).toEqual(['poll']);
+    stop();
+    expect(order).toEqual(['fail', 'next']);
+  });
+
+  it('forgets a removed computer\'s failures', () => {
+    const scheduler = new Scheduler({ retryBaseMs: 0, offlineCooldownMs: 0 });
+    const gate = scheduler.connectGate('https://gone.t.ts.net');
+    for (let index = 0; index < DEFAULT_LIMITS.offlineAfterFailures; index++) {
+      gate.wait(() => undefined);
+      gate.done('failed');
+    }
+    expect(scheduler.offline('https://gone.t.ts.net')).toBe(true);
+    scheduler.forget('https://gone.t.ts.net');
+    expect(scheduler.offline('https://gone.t.ts.net')).toBe(false);
+  });
+});

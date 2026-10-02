@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   disablePush, dismissPushCard, enablePush, fromBase64Url, PUSH_BLOCKED, PUSH_CARD_KEY, pushEnabled, pushSupport,
-  removeStrayWorkers, shouldOfferPush, toBase64Url,
+  removeStrayWorkers, shouldOfferPush, toBase64Url, workersSafe,
 } from './push';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
@@ -186,12 +186,26 @@ describe('removeStrayWorkers', () => {
       registration(`${ORIGIN}/peer/`, `${ORIGIN}/sw.js`),
       registration(`${ORIGIN}/`, 'https://evil.example/sw.js', 'installing'),
       registration(`${ORIGIN}/`, `${ORIGIN}/sw.js?v=2`),
-      registration(`${ORIGIN}/`, null),
+      registration(`${ORIGIN}/x/`, null),
     ];
     await expect(removeStrayWorkers(container([own, ownWaiting, ...strays]))).resolves.toBe(strays.length);
     expect(own.unregister).not.toHaveBeenCalled();
     expect(ownWaiting.unregister).not.toHaveBeenCalled();
     for (const stray of strays) expect(stray.unregister).toHaveBeenCalledOnce();
+  });
+
+  it('removes a registration when ANY of its workers is not /sw.js', async () => {
+    vi.stubGlobal('location', { origin: ORIGIN });
+    const mixed = { ...registration(`${ORIGIN}/`, `${ORIGIN}/sw.js`), waiting: { scriptURL: `${ORIGIN}/evil.js` } };
+    const installing = { ...registration(`${ORIGIN}/`, `${ORIGIN}/sw.js`, 'waiting'), installing: { scriptURL: 'https://evil.example/sw.js' } };
+    await expect(removeStrayWorkers(container([mixed, installing]))).resolves.toBe(2);
+  });
+
+  it('keeps a fresh registration of its own scope that has no worker yet (first install)', async () => {
+    vi.stubGlobal('location', { origin: ORIGIN });
+    const fresh = registration(`${ORIGIN}/`, null);
+    await expect(removeStrayWorkers(container([fresh]))).resolves.toBe(0);
+    expect(fresh.unregister).not.toHaveBeenCalled();
   });
 
   it('never rejects: no support, a failed list, or a failed unregister', async () => {
@@ -204,5 +218,32 @@ describe('removeStrayWorkers', () => {
     await expect(removeStrayWorkers(container([stuck, stray]))).resolves.toBe(1);
     vi.stubGlobal('navigator', {});
     await expect(removeStrayWorkers()).resolves.toBe(0);
+  });
+});
+
+describe('workersSafe', () => {
+  const ORIGIN = 'https://host.example';
+  const own = { scope: `${ORIGIN}/`, active: { scriptURL: `${ORIGIN}/sw.js` }, waiting: null, installing: null, unregister: vi.fn(async () => true) };
+  const stray = { scope: `${ORIGIN}/`, active: { scriptURL: `${ORIGIN}/evil.js` }, waiting: null, installing: null, unregister: vi.fn(async () => true) };
+  const container = (registrations: unknown[], controller: string | null) => ({
+    getRegistrations: vi.fn(async () => registrations),
+    controller: controller === null ? null : { scriptURL: controller },
+  }) as unknown as ServiceWorkerContainer;
+
+  it('refuses a load still controlled by a stray worker, so no grant is redeemed on it', async () => {
+    vi.stubGlobal('location', { origin: ORIGIN });
+    // unregister() ran, but the stray still controls this page until the next load.
+    await expect(workersSafe(container([stray], `${ORIGIN}/evil.js`))).resolves.toBe(false);
+    // Already unregistered elsewhere, yet still in control.
+    await expect(workersSafe(container([own], `${ORIGIN}/evil.js`))).resolves.toBe(false);
+    // Removed a stray that did not control the page: still not this load.
+    await expect(workersSafe(container([own, stray], `${ORIGIN}/sw.js`))).resolves.toBe(false);
+  });
+
+  it('allows the app\'s own controller, or none (the first visit, or no support)', async () => {
+    vi.stubGlobal('location', { origin: ORIGIN });
+    await expect(workersSafe(container([own], `${ORIGIN}/sw.js`))).resolves.toBe(true);
+    await expect(workersSafe(container([], null))).resolves.toBe(true);
+    await expect(workersSafe(undefined)).resolves.toBe(true);
   });
 });

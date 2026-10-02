@@ -3,13 +3,12 @@ import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
+import { firstLabel, homeOrigin } from '../api/http';
 import {
-  byChip, cantReach, chipsFor, keyOf, pairAgain, waitingFirst, type ComputerEntry, type HostedSession,
+  byChip, cantReach, chipsFor, keyOf, pairAgain, type ComputerEntry, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
-
-export { waitingFirst };
 import { WorktreeBadge } from './Worktree';
 
 type Tone = 'accent' | 'amber' | 'muted';
@@ -71,11 +70,6 @@ export function StatusPill({ badge, duration }: { readonly badge: AgentBadge; re
   );
 }
 
-/**
- * One session. Title, preview and question are terminal-controlled text:
- * rendered as text only. A running agent gets one status pill at the top
- * right; the controller then moves into the meta line.
- */
 /** The colour dot and label of a computer; the colour is never the only cue. */
 export function ComputerTag({ computer }: { readonly computer: Pick<Computer, 'label' | 'color'> }) {
   return (
@@ -86,6 +80,11 @@ export function ComputerTag({ computer }: { readonly computer: Pick<Computer, 'l
   );
 }
 
+/**
+ * One session. Title, preview and question are terminal-controlled text:
+ * rendered as text only. A running agent gets one status pill at the top
+ * right; the controller then moves into the meta line.
+ */
 export function SessionRow<T extends BrokerRPCSessionRecord>({ session, computer, project, shell, fresh, now, onOpen }: {
   readonly session: T;
   /** Shown in the meta line when the phone uses more than one computer. */
@@ -227,13 +226,18 @@ function ago(at: number, now: number): string {
   return text === 'now' || text === 'yesterday' ? `last seen ${text === 'now' ? 'just now' : text}` : `last seen ${text} ago`;
 }
 
+/** What to run so a peer accepts this phone again: "Run pterm pair --via mac on vps". */
+export function pairHint(label: string, home = firstLabel(homeOrigin())): string {
+  return `Run pterm pair --via ${home} on ${label}`;
+}
+
 /** The line for a computer whose sessions cannot be listed, or undefined when it answered (or is still loading). */
 export function problemText(entry: ComputerEntry, now: number): string | undefined {
   const { computer, status } = entry;
   switch (status.kind) {
     case 'unreachable':
       return status.lastSeen === undefined ? cantReach(computer.label) : `${cantReach(computer.label)} · ${ago(status.lastSeen, now)}`;
-    case 'pair': return pairAgain(computer.label);
+    case 'pair': return `${pairAgain(computer.label)} · ${pairHint(computer.label)}`;
     case 'outdated': return status.message;
     default: return undefined;
   }
@@ -418,7 +422,7 @@ export function Sessions({
               />
             );
           })}
-          {shown.map((entry) => (
+          {multi && shown.map((entry) => (
             <ComputerProblem key={entry.computer.origin} entry={entry} now={now} onRetry={onRetry} onSettings={onSettings} />
           ))}
         </ul>

@@ -1,15 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError, client, CONNECTION_UNAVAILABLE, isAuthFailure } from '../api/http';
-import { refreshComputers, storedComputers, type Computer } from '../computers';
+import { api, ApiError, client, CONNECTION_UNAVAILABLE, firstLabel, homeOrigin, isAuthFailure } from '../api/http';
+import { logoutNote, logoutPeers, refreshComputers, storedComputers, type Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import {
   ADD_COMPUTER_PATH, PEER_ADD_PATH, takeAddComputerFragment, type AddComputerLink, type AppLocation,
 } from '../pairing/addComputer';
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
-import { removeStrayWorkers } from '../push';
+import { workersSafe } from '../push';
 import { scheduler } from '../terminal/scheduler';
 import { AddComputerPage, PeerAddPage } from './AddComputer';
-import { forgetSettings, hosted, mergeSessions, pairAgain, useAllSessions, type HostedSession } from './allSessions';
+import {
+  forgetSettings, homeSettings, hosted, keyOf, mergeSessions, pairAgain, ReadFailure, useAllSessions, type HostedSession,
+} from './allSessions';
 import { ChunkErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
 import { NewSession } from './NewSession';
@@ -191,8 +193,116 @@ export function previewPortParam(search: string): number | undefined {
 
 const UNPAIRED = 'This phone is no longer paired with your computer.';
 
+/** sessionStorage: this tab already reloaded once to drop a stray service worker (the loop guard), and which link it refused. */
+export const STRAY_RELOAD_KEY = 'pterm.strayReload';
+export const STRAY_PAIR = 'For safety, this pairing link was not used. Run pterm pair on your computer again.';
+export const strayAdd = (home: string): string =>
+  `For safety, this add-computer link was not used. Run pterm pair --via ${home} on the new computer again, then paste the new link.`;
+
+export interface StrayCheck {
+  /** False when a stray service worker was removed or still controls this page. */
+  readonly safe: boolean;
+  /** Reload now, so the stray no longer controls the page. */
+  readonly reload: boolean;
+  /** The link this load (or the load before the reload) did not use. */
+  readonly refused: 'pair' | 'add' | undefined;
+}
+
+type SessionStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+function sessionStore(): SessionStore | undefined {
+  try {
+    return globalThis.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Runs after the stray-worker cleanup and before any pairing request. A stray
+ * worker that controls this page sees every request until the next load, so
+ * when the load is not safe, no grant of this load is redeemed: the pairing
+ * grant and the add-computer link are dropped (they are already stripped from
+ * the URL, so they are lost, which is the safe failure). Then the tab reloads
+ * once; a second unsafe load in the same tab does not reload again (loop
+ * guard), and storage that cannot remember the reload means no reload.
+ */
+export function guardStartup(
+  slots: { readonly grant: GrantSlot; readonly add: { value: AddComputerLink | undefined } },
+  safe: boolean,
+  store: SessionStore | undefined,
+): StrayCheck {
+  try {
+    const before = store?.getItem(STRAY_RELOAD_KEY) ?? null;
+    const remembered = before === 'pair' || before === 'add' ? before : undefined;
+    if (safe) {
+      store?.removeItem(STRAY_RELOAD_KEY);
+      return { safe, reload: false, refused: remembered };
+    }
+    const refused = slots.grant.value !== undefined ? 'pair' : slots.add.value !== undefined ? 'add' : remembered;
+    slots.grant.value = undefined;
+    slots.add.value = undefined;
+    if (store === undefined || before !== null) return { safe, reload: false, refused };
+    store.setItem(STRAY_RELOAD_KEY, refused ?? '');
+    return { safe, reload: true, refused };
+  } catch {
+    slots.grant.value = undefined;
+    slots.add.value = undefined;
+    return { safe, reload: false, refused: undefined };
+  }
+}
+
+export interface StartDeps {
+  /** Computers in the stored list, home included. */
+  readonly computers: number;
+  readonly homeSettings: () => Promise<HTTPSettingsResponse>;
+  /** Home answered: use its settings, its computer list and its preview origin. */
+  readonly onHome: (settings: HTTPSettingsResponse) => void;
+  readonly onSetup: () => void;
+  readonly onOffline: () => void;
+  readonly route: () => Promise<void>;
+  readonly sleep: (ms: number) => Promise<void>;
+}
+
+/**
+ * Opens the app. With one computer, as before multi-computer: wait for home
+ * (Setup on a 401, the offline screen after a short grace), then route. With
+ * peers stored, home is one more computer: route at once (so the app and a
+ * deep link to a peer open even while home sleeps), and home's settings come
+ * from its first poll.
+ */
+export async function startApp(deps: StartDeps): Promise<void> {
+  if (deps.computers > 1) {
+    await deps.route();
+    return;
+  }
+  for (let failures = 1; ; failures++) {
+    try {
+      deps.onHome(await deps.homeSettings());
+      break;
+    } catch (error) {
+      if (isAuthFailure(error)) {
+        deps.onSetup();
+        return;
+      }
+      const next = offlineRetry(failures);
+      if (next.offline) {
+        deps.onOffline();
+        return;
+      }
+      await deps.sleep(next.retryIn * 1000);
+    }
+  }
+  await deps.route();
+}
+
 export function App({ grant, add, peerLink }: StartupLinks) {
   const [view, setView] = useState<View>({ name: 'boot' });
+  // The add-computer link, dropped when this load is not safe (guardStartup).
+  const [addSlot] = useState(() => ({ value: add }));
+  const [refusedAdd, setRefusedAdd] = useState(false);
+  // True after a load that was not safe and did not reload: grants that arrive later are dropped too.
+  const unsafe = useRef(false);
   const [settings, setSettings] = useState<HTTPSettingsResponse>();
   // Home first, then the peers; replaced from home on every load.
   const [computers, setComputers] = useState<ReadonlyArray<Computer>>(storedComputers);
@@ -226,7 +336,11 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     setView(next);
   }, []);
 
+  // Home's first good answer in this visit was used (adoptHome); a new pairing starts over.
+  const homeAdopted = useRef(false);
+
   const toSetup = useCallback((reason?: string) => {
+    homeAdopted.current = false;
     if (window.location.pathname !== '/pair') {
       window.history.replaceState(null, '', '/');
     }
@@ -238,7 +352,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
    * The message for a failed request. Only home's 401 ends the app's access;
    * a peer's 401 means "pair again" for that computer alone.
    */
-  const handleFailure = useCallback((error: unknown, computer?: Computer): string => {
+  const handleFailure = useCallback((failure: unknown, from?: Computer): string => {
+    // A failed reload names the computer it came from.
+    const error = failure instanceof ReadFailure ? failure.error : failure;
+    const computer = failure instanceof ReadFailure ? failure.computer : from;
     const peer = computer !== undefined && !computer.home ? computer : undefined;
     if (isAuthFailure(error)) {
       if (peer !== undefined) return pairAgain(peer.label);
@@ -251,12 +368,33 @@ export function App({ grant, add, peerLink }: StartupLinks) {
 
   const onHomeAuth = useCallback(() => toSetup(UNPAIRED), [toSetup]);
   const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
-    || view.name === 'new' || view.name === 'settings';
+    || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer';
   const all = useAllSessions(polling, computers, onHomeAuth);
   // Sessions and the Wall sort waiting first; Live's tabs keep each computer's own order.
   const sessions = mergeSessions(all.entries);
   const tabs = all.entries.flatMap((entry) => (entry.status.kind === 'ok' ? entry.status.sessions : []));
   const answered = all.entries.some((entry) => entry.status.kind === 'ok');
+  const homeEntry = all.entries.find((entry) => entry.computer.home);
+  const reload = all.reload;
+  /** Reads one computer again after a change; a failed read shows on its row, not here. */
+  const refresh = useCallback((origin: string) => reload(origin).catch(() => undefined), [reload]);
+
+  // Home's first good answer in this visit (at start, or when it comes back
+  // later): its settings, its computer list and its preview origin.
+  const adoptHome = useCallback((answer: HTTPSettingsResponse) => {
+    if (homeAdopted.current) return;
+    homeAdopted.current = true;
+    setSettings(answer);
+    // The stored list is used until home answers; then home's list replaces it.
+    refreshComputers().then(setComputers, () => undefined);
+    // Never blocks: a failed or empty answer means no previews.
+    previewConfig.current = api.previewConfig().then((config) => previewOrigin(config.origin), () => undefined);
+    void previewConfig.current.then(setPreviewAt);
+  }, []);
+  const homeAnswer = homeSettings(all.entries);
+  useEffect(() => {
+    if (homeAnswer !== undefined) adoptHome(homeAnswer);
+  }, [homeAnswer, adoptHome]);
 
   const route = useCallback(async () => {
     const target = parseRoute(window.location.pathname);
@@ -280,7 +418,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       return;
     }
     try {
-      const found = (await client(computer.origin).sessions()).sessions.find((item) => item.id === target.id);
+      const list = await scheduler.serial(computer.origin, () => client(computer.origin).sessions());
+      const found = list.sessions.find((item) => item.id === target.id);
       const port = target.preview ? previewPortParam(window.location.search) : undefined;
       if (found === undefined) {
         setView({ name: 'sessions', message: 'That session no longer exists.' });
@@ -302,49 +441,38 @@ export function App({ grant, add, peerLink }: StartupLinks) {
 
   const boot = useCallback(async () => {
     // Before anything else, and before any pairing request: drop service
-    // workers that this app did not register (a compromised home may have).
-    await removeStrayWorkers();
+    // workers that this app did not register (a compromised home may have),
+    // and use no grant on a load that one of them may still see.
+    const check = guardStartup({ grant, add: addSlot }, await workersSafe(), sessionStore());
+    unsafe.current = !check.safe;
+    if (check.reload) {
+      window.location.reload();
+      return;
+    }
     if (peerLink !== undefined || window.location.pathname === PEER_ADD_PATH) {
       setView({ name: 'peer-add' });
       return;
     }
+    if (check.refused === 'pair') {
+      setView({ name: 'setup', reason: STRAY_PAIR });
+      return;
+    }
+    if (check.refused === 'add') setRefusedAdd(true);
     if (grant.value !== undefined) {
       setView({ name: 'setup' });
       return;
     }
     setView({ name: 'boot' });
-    let homeReachable = true;
-    for (let failures = 1; ; failures++) {
-      try {
-        setSettings(await api.settings());
-        break;
-      } catch (error) {
-        if (isAuthFailure(error)) {
-          toSetup();
-          return;
-        }
-        const next = offlineRetry(failures);
-        if (next.offline) {
-          // With other computers, a sleeping home is one more computer that cannot be reached.
-          if (computersRef.current.length < 2) {
-            setView({ name: 'offline' });
-            return;
-          }
-          homeReachable = false;
-          break;
-        }
-        await new Promise((resolve) => { setTimeout(resolve, next.retryIn * 1000); });
-      }
-    }
-    if (homeReachable) {
-      // The stored list is used until home answers; then home's list replaces it.
-      refreshComputers().then(setComputers, () => undefined);
-      // Never blocks boot: a failed or empty answer means no previews.
-      previewConfig.current = api.previewConfig().then((config) => previewOrigin(config.origin), () => undefined);
-      void previewConfig.current.then(setPreviewAt);
-    }
-    await route();
-  }, [grant, peerLink, route, toSetup]);
+    await startApp({
+      computers: computersRef.current.length,
+      homeSettings: () => api.settings(),
+      onHome: adoptHome,
+      onSetup: () => toSetup(),
+      onOffline: () => setView({ name: 'offline' }),
+      route,
+      sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
+    });
+  }, [addSlot, adoptHome, grant, peerLink, route, toSetup]);
 
   // A new pairing link opened in this same tab only changes the fragment, so
   // the page does not reload. Browsers fire popstate and then hashchange for
@@ -353,6 +481,12 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const adoptLinkGrant = useCallback(() => {
     if (!adoptFragmentGrant(grant, window.location, window.history)) {
       return false;
+    }
+    if (unsafe.current) {
+      // A stray worker may still see this page: never redeem here.
+      grant.value = undefined;
+      setView({ name: 'setup', reason: STRAY_PAIR });
+      return true;
     }
     setGrantEpoch((epoch) => epoch + 1);
     setView({ name: 'setup' });
@@ -450,17 +584,16 @@ export function App({ grant, add, peerLink }: StartupLinks) {
 
   const openSession = useCallback((session: HostedSession) => navigate({ name: 'live', session }), [navigate]);
   const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
-  const reloadAll = all.reload;
   const reloadComputers = useCallback(() => setComputers(storedComputers()), []);
 
   const startNew = useCallback(async (from: HostedSession, runFirst?: string) => {
     try {
       navigate(await startLike(from, runFirst));
-      void reloadAll(from.computer.origin);
+      void refresh(from.computer.origin);
     } catch (error) {
       navigate({ name: 'sessions', message: handleFailure(error, from.computer) });
     }
-  }, [handleFailure, navigate, reloadAll]);
+  }, [handleFailure, navigate, refresh]);
   // The sheet shows a failure itself, so it can suggest another name.
   const startWorktree = useCallback(async (
     from: HostedSession,
@@ -468,8 +601,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     runFirst: string | undefined,
   ) => {
     navigate(await startLike(from, runFirst, worktree));
-    void reloadAll(from.computer.origin);
-  }, [navigate, reloadAll]);
+    void refresh(from.computer.origin);
+  }, [navigate, refresh]);
 
   // Access to one computer ended. Only home's ends the app's access.
   const revoked = useCallback((computer: Computer, reason: string | undefined) => {
@@ -478,10 +611,14 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       return;
     }
     navigate({ name: 'sessions', message: pairAgain(computer.label) });
-    void reloadAll(computer.origin);
-  }, [navigate, reloadAll, toSetup]);
+    void refresh(computer.origin);
+  }, [navigate, refresh, toSetup]);
 
+  // Home's Log out does not reach the peers, so sign out there first.
+  const entries = all.entries;
   const logout = useCallback(async () => {
+    const left = await logoutPeers(entries.filter((entry) => !entry.computer.home)
+      .map((entry) => ({ computer: entry.computer, reachable: entry.status.kind !== 'unreachable' })));
     try {
       await api.logout();
     } catch (error) {
@@ -490,10 +627,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       }
     }
     window.history.replaceState(null, '', '/');
-    toSetup('You logged out. This phone no longer has access.');
-  }, [toSetup]);
+    toSetup(logoutNote(left));
+  }, [entries, toSetup]);
 
-  const homeEntry = all.entries.find((entry) => entry.computer.home);
   const liveComputer = view.name === 'live' ? view.session.computer : undefined;
   const liveStatus = liveComputer === undefined ? undefined : all.entries.find((entry) => entry.computer.origin === liveComputer.origin)?.status;
 
@@ -521,7 +657,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       {view.name === 'peer-add' && <PeerAddPage link={peerLink} />}
       {view.name === 'add-computer' && (
         <AddComputerPage
-          link={add}
+          link={addSlot.value}
+          {...(refusedAdd ? { notice: strayAdd(firstLabel(homeOrigin())) } : {})}
           deviceLabel={settings?.device.label}
           onDone={() => {
             reloadComputers();
@@ -565,7 +702,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           {...(view.back?.name === 'live' ? { initial: view.back.session.computer } : {})}
           onCancel={() => navigate(view.back ?? { name: 'sessions' })}
           onStarted={(session, command) => {
-            void all.reload(session.computer.origin);
+            void refresh(session.computer.origin);
             navigate(command === undefined
               ? { name: 'live', session }
               : { name: 'live', session, runFirst: { command, settled: false } });
@@ -575,7 +712,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         />
       )}
       {view.name === 'live' && (
-        <ChunkErrorBoundary key={`${view.session.computer.host}/${view.session.id}/${view.session.generation}`}>
+        <ChunkErrorBoundary key={`${keyOf(view.session)}/${view.session.generation}`}>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening terminal…</p></main>}>
             <Live
               session={view.session}
@@ -586,14 +723,14 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               {...(view.runFirst === undefined ? {} : { runFirst: view.runFirst })}
               {...(view.compose === true ? { openComposer: true } : {})}
               {...(previewAt === undefined || !view.session.computer.home ? {} : { onPreview: (port: number) => {
-                void all.reload(view.session.computer.origin);
+                void refresh(view.session.computer.origin);
                 navigate({ name: 'preview', session: view.session, port });
               } })}
               onOpen={openSession}
               onNew={() => navigate({ name: 'new', back: { name: 'live', session: view.session } })}
               onSessions={toSessions}
               onSettings={() => navigate({ name: 'settings' })}
-              onChanged={() => all.reload(view.session.computer.origin)}
+              onChanged={() => refresh(view.session.computer.origin)}
               onStartNew={(runFirst) => { void startNew(view.session, runFirst); }}
               onStartWorktree={(worktree, runFirst) => startWorktree(view.session, worktree, runFirst)}
               onRevoked={(reason) => revoked(view.session.computer, reason)}

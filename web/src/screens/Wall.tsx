@@ -1,6 +1,7 @@
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from 'react';
-import { client, homeOrigin } from '../api/http';
+import { client } from '../api/http';
+import { homeComputer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { Connection, INITIAL_STATUS, type LinkState } from '../terminal/Connection';
 import { scheduler, THUMBNAIL_UPDATES_PER_SECOND, type TileHandle, type TileState } from '../terminal/scheduler';
@@ -40,20 +41,12 @@ export function wallSessions<T extends BrokerRPCSessionRecord>(sessions: Readonl
   return { shown, ended: sessions.length - shown.length };
 }
 
-function homeHost(): string {
-  try {
-    return new URL(homeOrigin()).host;
-  } catch {
-    return '';
-  }
-}
-
 /** The saved order as session keys; an older bare id means a home session. */
-export function readWallOrder(store: StorageLike | undefined = storage(), home = homeHost()): string[] {
+export function readWallOrder(store: StorageLike | undefined = storage(), home?: string): string[] {
   try {
     const parsed: unknown = JSON.parse(store?.getItem(WALL_ORDER_KEY) ?? '[]');
     return Array.isArray(parsed)
-      ? parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_ORDER).map((id) => (id.includes('/') ? id : `${home}/${id}`))
+      ? parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_ORDER).map((id) => (id.includes('/') ? id : `${home ?? homeComputer().host}/${id}`))
       : [];
   } catch {
     return [];
@@ -212,6 +205,7 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
       ...(thumbnail ? { thumbnail: { maxUpdatesPerSecond: THUMBNAIL_UPDATES_PER_SECOND } } : {}),
       onMessageBytes: (bytes) => handle.current?.bytes(bytes),
       gate: scheduler.connectGate(origin),
+      peer: !session.computer.home,
     });
     next.start();
     setConnection(next);
@@ -219,7 +213,7 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
       next.detach();
       setConnection(undefined);
     };
-  }, [view, tile, origin, session.id, session.generation]);
+  }, [view, tile, origin, session.computer.home, session.id, session.generation]);
 
   const mark = tileMark(tile, status.link);
   return (

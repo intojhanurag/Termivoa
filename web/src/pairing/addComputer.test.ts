@@ -119,4 +119,41 @@ describe('AddComputerFlow', () => {
     ]);
     expect(JSON.parse(store.get(COMPUTERS_KEY) ?? '')).toEqual([{ origin: 'https://vps.tailx.ts.net', label: 'vps' }]);
   });
+
+  it('retries the first peer settings read on a network error, for when the peer has not yet allowed this app', async () => {
+    let refused = 2;
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      if (url.endsWith('/pair/redeem')) {
+        return json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      }
+      if (url.endsWith('/pair/poll')) return json(200, { status: 'approved' });
+      if (url.endsWith('/settings')) {
+        if (refused-- > 0) throw new TypeError('CORS');
+        return json(200, settings);
+      }
+      return json(200, { computer: { origin: 'https://lag.tailx.ts.net', label: 'lag' }, state: 'confirmed', node: { id: 'n1', tags: [] } });
+    }));
+    const flow = new AddComputerFlow('https://lag.tailx.ts.net', grant);
+    const done = flow.finish(await flow.redeem('Phone'));
+    await vi.advanceTimersByTimeAsync(4000);
+    await expect(done).resolves.toMatchObject({ kind: 'confirmed' });
+    expect(calls.filter((call) => call.endsWith('/settings'))).toHaveLength(3);
+  });
+
+  it('gives up after about 3 s of network errors', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/pair/redeem')) {
+        return json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      }
+      if (url.endsWith('/pair/poll')) return json(200, { status: 'approved' });
+      throw new TypeError('CORS');
+    }));
+    const flow = new AddComputerFlow('https://never.tailx.ts.net', grant);
+    const done = flow.finish(await flow.redeem('Phone'));
+    const caught = done.catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await caught).toMatchObject({ code: 'network' });
+  });
 });

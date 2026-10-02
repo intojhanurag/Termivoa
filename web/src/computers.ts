@@ -63,12 +63,6 @@ export function sessionKey(computer: Pick<Computer, 'host'>, sessionId: string):
   return `${computer.host}/${sessionId}`;
 }
 
-/** Splits `host/sessionId`; undefined when the key has no host or no id. */
-export function parseSessionKey(key: string): { readonly host: string; readonly sessionId: string } | undefined {
-  const slash = key.indexOf('/');
-  return slash > 0 && slash < key.length - 1 ? { host: key.slice(0, slash), sessionId: key.slice(slash + 1) } : undefined;
-}
-
 /** Validated, de-duplicated peers without home, at most MAX_PEERS. */
 function cleanPeers(entries: unknown): HTTPComputer[] {
   let list: HTTPComputer[];
@@ -129,6 +123,21 @@ export function recordPending(origin: string, label = firstLabel(origin)): Promi
   return client().saveComputer({ origin, label, state: 'pending' });
 }
 
+/**
+ * Cancel before the computer was added: deletes its pending entry on home, so
+ * home's CSP stops allowing it. A computer already in the list is never
+ * touched (home keeps a confirmed entry when the same link is added again).
+ * Best effort: a pending entry also expires on home.
+ */
+export async function forgetPending(origin: string, storage = defaultStorage()): Promise<void> {
+  if (readPeers(storage).some((entry) => entry.origin === origin)) return;
+  try {
+    await client().deleteComputer(new URL(origin).host);
+  } catch {
+    // It expires on home.
+  }
+}
+
 /** Confirms a computer on home (after its first authenticated settings read) and stores it. */
 export async function confirmComputer(origin: string, label = firstLabel(origin), storage = defaultStorage()): Promise<Computer> {
   const saved = await client().saveComputer({ origin, label, state: 'confirmed' });
@@ -163,4 +172,31 @@ export async function removeComputer(computer: Pick<Computer, 'origin' | 'host' 
   await client().deleteComputer(computer.host);
   writePeers(readPeers(storage).filter((entry) => entry.origin !== computer.origin), storage);
   return loggedOut ? { loggedOut } : { loggedOut, hint: `Run pterm revoke on ${computer.label} to sign this phone out there.` };
+}
+
+/**
+ * Log out, before home: signs this phone out on each peer (best effort, all
+ * at once). A peer that is not reachable now is skipped, so log out never
+ * waits for a timeout. A 401 means it is already signed out. Returns the
+ * labels of the peers where this phone may still be signed in.
+ */
+export async function logoutPeers(peers: ReadonlyArray<{ readonly computer: Computer; readonly reachable: boolean }>): Promise<string[]> {
+  const left = await Promise.all(peers.map(async ({ computer, reachable }) => {
+    if (computer.home) return undefined;
+    if (!reachable) return computer.label;
+    try {
+      await client(computer.origin).logout();
+      return undefined;
+    } catch (error) {
+      return isAuthFailure(error) ? undefined : computer.label;
+    }
+  }));
+  return left.filter((label) => label !== undefined);
+}
+
+/** What Log out says: signed out, plus the peers to revoke by hand. */
+export function logoutNote(left: ReadonlyArray<string>): string {
+  const done = 'You logged out. This phone no longer has access.';
+  if (left.length === 0) return done;
+  return `${done} Could not sign out of ${left.join(', ')}. Run pterm revoke there to remove this phone.`;
 }

@@ -4,7 +4,8 @@ import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/
 import type { Computer } from '../computers';
 import { hosted, type ComputerEntry, type ComputerStatus } from './allSessions';
 import { NewSession } from './NewSession';
-import { age, ComputerChips, controllerText, hostSummary, problemText, PushCard, SessionRow, Sessions, waitingFirst } from './Sessions';
+import { waitingFirst } from './allSessions';
+import { age, ComputerChips, controllerText, hostSummary, pairHint, problemText, PushCard, SessionRow, Sessions } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -267,7 +268,8 @@ describe('Sessions across computers', () => {
   it('shows one line per computer that did not answer, and its sessions are gone', () => {
     expect(problemText(entry(vps, { kind: 'unreachable' }), NOW)).toBe("vps · can't reach");
     expect(problemText(entry(vps, { kind: 'unreachable', lastSeen: NOW - 3 * 3_600_000 }), NOW)).toBe("vps · can't reach · last seen 3 h ago");
-    expect(problemText(entry(vps, { kind: 'pair' }), NOW)).toBe('vps · pair again');
+    expect(problemText(entry(vps, { kind: 'pair' }), NOW)).toBe(`vps · pair again · ${pairHint('vps')}`);
+    expect(pairHint('Build box', 'mac')).toBe('Run pterm pair --via mac on Build box');
     expect(problemText(entry(vps, { kind: 'outdated', message: 'Update Termivoa on vps' }), NOW)).toBe('Update Termivoa on vps');
     expect(problemText(entry(vps, { kind: 'loading' }), NOW)).toBeUndefined();
     expect(problemText(entry(vps, ok(settings)), NOW)).toBeUndefined();
@@ -277,6 +279,13 @@ describe('Sessions across computers', () => {
     const pair = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'pair' })]);
     expect(pair).toContain('vps · pair again');
     expect(pair).not.toContain('Retry');
+  });
+
+  it('keeps the one-computer screen as before: no computer rows, "not reachable" in the header', () => {
+    const html = renderSessions([entry(mac, { kind: 'unreachable' })]);
+    expect(html).toContain('Your computer · not reachable, retrying');
+    expect(html).not.toContain('computer-problem');
+    expect(html).not.toContain('can&#x27;t reach');
   });
 
   it('shows the other computers while one is still loading', () => {

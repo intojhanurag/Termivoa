@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_PROTOCOL_REVISION, PROTOCOL_REVISION } from '../generated/protocol';
 import {
-  api, ApiError, blobToBase64, client, deviceLabelProblem, firstLabel, MAX_RESPONSE_BYTES, PEER_REQUEST_FAILED,
+  api, ApiError, blobToBase64, client, deviceLabelProblem, firstLabel, forgetClient, MAX_RESPONSE_BYTES, PEER_REQUEST_FAILED,
   REQUEST_TIMEOUT_MS, revisionProblem, supports, UPLOAD_TIMEOUT_MS,
 } from './http';
 
@@ -217,6 +217,20 @@ describe('client(origin) for a peer', () => {
     body = settings();
     await peer.settings();
     await expect(peer.sessions()).resolves.toEqual({ sessions: [] });
+  });
+
+  it('asks to update a peer that sends no protocolRevision (it predates multi-computer), not "can\'t reach"', async () => {
+    const { protocolRevision: _, minProtocolRevision: __, ...old } = settings();
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, old)));
+    await expect(client('https://legacy.tailx.ts.net').settings()).rejects.toMatchObject({ code: 'computer_outdated', message: 'Update Termivoa on legacy' });
+  });
+
+  it('forgets a removed peer\'s client, but never home\'s', () => {
+    const peer = client('https://removed.tailx.ts.net');
+    forgetClient('https://removed.tailx.ts.net');
+    expect(client('https://removed.tailx.ts.net')).not.toBe(peer);
+    forgetClient('');
+    expect(client()).toBe(api);
   });
 
   it('asks to update home when a peer needs a newer app', async () => {

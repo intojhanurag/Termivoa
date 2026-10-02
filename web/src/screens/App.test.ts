@@ -3,7 +3,11 @@ import { api, client } from '../api/http';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { hosted } from './allSessions';
-import { offlineRetry, parseRoute, pathFor, sessionPath, startLike, takeStartupLinks, titleFor } from './App';
+import {
+  guardStartup, offlineRetry, parseRoute, pathFor, sessionPath, startApp, startLike, STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
+} from './App';
+import { ApiError } from '../api/http';
+import type { HTTPSettingsResponse } from '../generated/protocol';
 
 // Outside a browser the home origin is '', so the home client is client('').
 const home: Computer = { origin: '', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
@@ -121,5 +125,82 @@ describe('start on the same computer', () => {
     expect(create).toHaveBeenCalledOnce();
     expect(onHome).not.toHaveBeenCalled();
     expect(view).toMatchObject({ name: 'live', session: { id: 'n', computer: vps } });
+  });
+});
+
+describe('stray service worker at start (guardStartup)', () => {
+  const memory = () => {
+    const map = new Map<string, string>();
+    return { map, getItem: (key: string) => map.get(key) ?? null, setItem: (key: string, value: string) => { map.set(key, value); }, removeItem: (key: string) => { map.delete(key); } };
+  };
+  const addLink = { origin: 'https://vps.tailx.ts.net', grant: 'G'.repeat(43) };
+
+  it('a stray controller means no redeem: drops the grant and the add link, then reloads once', () => {
+    const store = memory();
+    const slots = { grant: { value: 'g'.repeat(43) as string | undefined }, add: { value: undefined as typeof addLink | undefined } };
+    expect(guardStartup(slots, false, store)).toEqual({ safe: false, reload: true, refused: 'pair' });
+    expect(slots.grant.value).toBeUndefined();
+    expect(store.map.get(STRAY_RELOAD_KEY)).toBe('pair');
+
+    const add = { grant: { value: undefined as string | undefined }, add: { value: addLink as typeof addLink | undefined } };
+    expect(guardStartup(add, false, memory())).toMatchObject({ reload: true, refused: 'add' });
+    expect(add.add.value).toBeUndefined();
+  });
+
+  it('after the reload: says which link was not used, and never reloads twice in a row', () => {
+    const store = memory();
+    store.setItem(STRAY_RELOAD_KEY, 'add');
+    const empty = () => ({ grant: { value: undefined }, add: { value: undefined } });
+    expect(guardStartup(empty(), false, store)).toEqual({ safe: false, reload: false, refused: 'add' });
+    expect(guardStartup(empty(), true, store)).toEqual({ safe: true, reload: false, refused: 'add' });
+    expect(store.map.has(STRAY_RELOAD_KEY)).toBe(false);
+    expect(guardStartup(empty(), true, store)).toEqual({ safe: true, reload: false, refused: undefined });
+  });
+
+  it('keeps the grant on a safe load, and never reloads without storage for the guard', () => {
+    const slots = { grant: { value: 'g'.repeat(43) as string | undefined }, add: { value: undefined } };
+    expect(guardStartup(slots, true, memory())).toEqual({ safe: true, reload: false, refused: undefined });
+    expect(slots.grant.value).toBe('g'.repeat(43));
+    expect(guardStartup(slots, false, undefined)).toEqual({ safe: false, reload: false, refused: 'pair' });
+    expect(slots.grant.value).toBeUndefined();
+  });
+});
+
+describe('startApp', () => {
+  const answer = { device: { id: 'd', label: 'Phone' } } as unknown as HTTPSettingsResponse;
+  const deps = (computers: number, homeSettings: () => Promise<HTTPSettingsResponse>) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      run: startApp({
+        computers,
+        homeSettings,
+        onHome: () => calls.push('home'),
+        onSetup: () => calls.push('setup'),
+        onOffline: () => calls.push('offline'),
+        route: async () => { calls.push('route'); },
+        sleep: async () => { calls.push('sleep'); },
+      }),
+    };
+  };
+
+  it('with peers stored, opens at once even while home never answers', async () => {
+    const homeSettings = vi.fn(() => new Promise<HTTPSettingsResponse>(() => undefined));
+    const { calls, run } = deps(2, homeSettings);
+    await run;
+    expect(calls).toEqual(['route']);
+    expect(homeSettings).not.toHaveBeenCalled();
+  });
+
+  it('with one computer, waits for home as before: Setup on 401, offline after the grace', async () => {
+    const ok = deps(1, async () => answer);
+    await ok.run;
+    expect(ok.calls).toEqual(['home', 'route']);
+    const auth = deps(1, async () => { throw new ApiError(401, 'unauthorized', 'x'); });
+    await auth.run;
+    expect(auth.calls).toEqual(['setup']);
+    const down = deps(1, async () => { throw new ApiError(0, 'network', 'x'); });
+    await down.run;
+    expect(down.calls).toEqual(['sleep', 'offline']);
   });
 });

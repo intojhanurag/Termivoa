@@ -5,7 +5,9 @@ import { ApiError } from '../api/http';
 import type { Computer } from '../computers';
 import { parseAddComputerLink } from '../pairing/addComputer';
 import { findAddComputerLinks } from '../terminal/pathLinks';
-import { AddComputerConfirm, AddComputerPage, AddComputerSheet, addFailure, ownerText, PeerAddPage, viaLabel } from './AddComputer';
+import {
+  AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, cancelOnUnmount, ownerText, PeerAddPage, viaLabel,
+} from './AddComputer';
 import type { ComputerEntry } from './allSessions';
 import { computerDetail, ComputersSection, onlineText } from './Computers';
 
@@ -57,6 +59,25 @@ describe('add-computer confirm sheet', () => {
   });
 });
 
+describe('Cancel before adding', () => {
+  it('deletes the pending entry on home, from the confirm sheet and from the add page', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('location', { origin: app.origin });
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: noop });
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      return new Response(null, { status: 204 });
+    }));
+    const onCancel = vi.fn();
+    buttons(AddComputerConfirm({ link, node: { id: 'n1', tags: [] }, onConfirm: noop, onCancel })).get('Cancel')?.();
+    buttons(AddComputerContinue({ link, onContinue: noop, onCancel })).get('Cancel')?.();
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls).toEqual(['DELETE /api/v1/computers/vps.tailx.ts.net', 'DELETE /api/v1/computers/vps.tailx.ts.net']);
+    expect(onCancel).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('add-computer link in the terminal', () => {
   it('turns only a link for this app into a tap target', () => {
     const [found] = findAddComputerLinks(`run this: ${printed}.`);
@@ -74,9 +95,31 @@ describe('add-computer page', () => {
     expect(html).toContain('This add-computer link is used or incomplete.');
   });
 
-  it('starts by connecting to the new computer', () => {
-    expect(renderToStaticMarkup(<AddComputerPage link={link} deviceLabel="iPhone" onDone={noop} onSettings={noop} />))
-      .toContain('Connecting to vps…');
+  it('shows the full origin and waits for Continue before it sends anything', () => {
+    const fetch = vi.fn(() => new Promise(noop));
+    vi.stubGlobal('fetch', fetch);
+    const html = renderToStaticMarkup(<AddComputerPage link={link} deviceLabel="iPhone" onDone={noop} onSettings={noop} />);
+    expect(html).toContain('<dt>Address</dt><dd>https://vps.tailx.ts.net</dd>');
+    expect(html).toContain('<button type="button" class="primary">Continue</button>');
+    expect(html).not.toContain('Connecting to vps…');
+    expect(fetch).not.toHaveBeenCalled();
+    const onContinue = vi.fn();
+    buttons(AddComputerContinue({ link, onContinue, onCancel: noop })).get('Continue')?.();
+    expect(onContinue).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows why the app refused a link on this load', () => {
+    const html = renderToStaticMarkup(<AddComputerPage link={undefined} notice="Not used." deviceLabel="iPhone" onDone={noop} onSettings={noop} />);
+    expect(html).toContain('Not used.');
+    expect(html).not.toContain('used or incomplete');
+  });
+
+  it('stops the flow when the page goes away', () => {
+    const cancel = vi.fn();
+    cancelOnUnmount({ current: { cancel } })();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(() => cancelOnUnmount({ current: undefined })()).not.toThrow();
   });
 
   it('says what went wrong in plain words, never a peer\'s own text', () => {

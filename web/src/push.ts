@@ -127,12 +127,17 @@ export async function disablePush(): Promise<void> {
   await subscription.unsubscribe();
 }
 
-/** The app's own worker: /sw.js on this origin with scope /. Nothing else is allowed. */
+/**
+ * The app's own registration: scope / on this origin, and EVERY worker in it
+ * (installing, waiting, active) is /sw.js. A fresh registration at scope /
+ * that has no worker yet (the first install) is ours too.
+ */
 function ownWorker(registration: ServiceWorkerRegistration, origin: string): boolean {
   try {
-    const script = (registration.active ?? registration.waiting ?? registration.installing)?.scriptURL;
     const scope = new URL(registration.scope);
-    return script !== undefined && scope.origin === origin && scope.pathname === '/' && new URL(script).href === `${origin}/sw.js`;
+    if (scope.origin !== origin || scope.pathname !== '/') return false;
+    return [registration.installing, registration.waiting, registration.active]
+      .every((worker) => worker === null || worker === undefined || new URL(worker.scriptURL).href === `${origin}/sw.js`);
   } catch {
     return false;
   }
@@ -160,4 +165,18 @@ export async function removeStrayWorkers(container: ServiceWorkerContainer | und
     // No service worker support here, or the browser refused the list.
   }
   return removed;
+}
+
+/**
+ * Runs removeStrayWorkers, then says whether this load may redeem a grant.
+ * unregister() does not stop a worker that already controls the page: until
+ * the next load it still sees every request, including a redeem body. So a
+ * load is safe only when nothing was removed and the page is not controlled
+ * by a worker other than /sw.js (no controller at all, as on the first
+ * visit, is safe). Never rejects.
+ */
+export async function workersSafe(container: ServiceWorkerContainer | undefined = globalThis.navigator?.serviceWorker): Promise<boolean> {
+  const removed = await removeStrayWorkers(container);
+  const script = container?.controller?.scriptURL;
+  return removed === 0 && (script === undefined || script === `${globalThis.location.origin}/sw.js`);
 }

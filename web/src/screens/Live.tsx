@@ -51,7 +51,7 @@ const noChanges = (): ChangesView | undefined => undefined;
 const noTasks = (): TasksView | undefined => undefined;
 const noBranches = (): BranchesView | undefined => undefined;
 const noRemoval = (): WorktreeRemoval | undefined => undefined;
-/** The Changes screen's last tab per session, while the app is open. */
+/** The Changes screen's last tab per session (keyed like drafts: host/id/generation), while the app is open. */
 const lastTabs = new Map<string, ChangesTab>();
 
 /** Tabs: running sessions of every computer, plus the open one even after it exits. */
@@ -205,7 +205,7 @@ export function Live({
     const timer = setTimeout(() => setSlowLink(true), QUIET_RECONNECT_MS);
     return () => clearTimeout(timer);
   }, [status.link]);
-  const draft = draftKey(session.id, session.generation);
+  const draft = draftKey(session);
   const [tab, setTab] = useState<ChangesTab>(() => lastTabs.get(draft) ?? 'changes');
   const current = sessions?.find((item) => sameSession(item, session)) ?? session;
   const projectName = settings?.projects.find((item) => item.id === session.projectId)?.name;
@@ -247,6 +247,7 @@ export function Live({
   }, [activeKey]);
 
   const origin = session.computer.origin;
+  const peer = !session.computer.home;
   useEffect(() => {
     const element = host.current;
     if (element === null) {
@@ -260,6 +261,7 @@ export function Live({
       generation: session.generation,
       display: view.renderer,
       gate: scheduler.connectGate(origin, true),
+      peer,
     });
     connection.start();
     setRuntime({ connection, view });
@@ -268,7 +270,7 @@ export function Live({
       view.dispose();
       setRuntime(undefined);
     };
-  }, [origin, session.id, session.generation]);
+  }, [origin, peer, session.id, session.generation]);
 
   useEffect(() => {
     if (runtime === undefined || runFirst === undefined || runFirst.settled) {
