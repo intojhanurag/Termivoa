@@ -8,7 +8,8 @@
 > [`packaging/windows`](../packaging/windows/README.md) and
 > [`packaging/linux/build.sh`](../packaging/linux/build.sh). Linux support is
 > written and tested in containers, but not yet on a real Linux computer. The
-> short version of this guide is [getting-started.md](getting-started.md).
+> short version of this guide is the
+> [quick start](https://termivoa.vercel.app/docs/quick-start/).
 
 ## Private beta
 
@@ -50,7 +51,7 @@ gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-windows-amd6
 Keep the executable where it is after setup: the startup entries point to its
 path. `SHA256SUMS` in the release lists the checksum of every file
 (`shasum -a 256 -c SHA256SUMS --ignore-missing`). Then continue with
-[getting-started.md](getting-started.md) to pair your phone.
+[Pair your phone](https://termivoa.vercel.app/docs/pair-your-phone/).
 
 Termivoa runs two per-user processes from one `pterm` executable:
 
@@ -135,8 +136,8 @@ pnpm install --frozen-lockfile
 `pterm setup`. Without an argument, in a source checkout on the host, it builds
 the binary first. It refuses to run as root: Termivoa runs as your user.
 If `~/.local/bin` is not on your PATH yet, Ubuntu adds it at your next login;
-until then use `~/.local/bin/pterm`. There is no download: nothing is published
-yet.
+until then use `~/.local/bin/pterm`. Invited beta testers can download the
+binary instead of building it; see [Private beta](#private-beta).
 
 Linux uses the XDG directories:
 
@@ -272,6 +273,10 @@ tailscale serve --bg --https=443 http://127.0.0.1:8787
 Then open `https://<host>.<tailnet>.ts.net/` on your phone (on the same
 tailnet). If HTTPS 443 already serves something else, setup reports it and
 does not change it: resolve that yourself; do not overwrite another service.
+From the next beta, `pterm setup` (also with `--apply`) refuses to run while
+other Serve handlers share this computer's HTTPS origin, because they would be
+same-origin with the app. It names each handler and the command that removes
+it.
 If you set up Serve by hand under another name, tell pterm with
 `pterm config origin https://<that-name>`; the gateway accepts it at once.
 
@@ -464,16 +469,19 @@ Your data stays unless you pass
 one started by `pterm launch` without startup registration); stop the broker
 it names first.
 
-Then remove the application:
+Then remove the application. `pterm uninstall` prints the exact file to
+delete:
 
 - macOS: move Termivoa.app (or an older `Phone Terminal.app`) to the Trash and delete any `~/.local/bin/pterm` link.
+  With the beta download, delete `~/.local/bin/pterm`.
 - Linux: `rm ~/.local/bin/pterm`. Uninstall already ran
   `systemctl --user disable --now` for both units, removed them and ran
   `daemon-reload`. It does not turn linger off; to do that, run
   `loginctl disable-linger`.
 - Windows: Settings > Apps > Termivoa > Uninstall. The uninstaller runs
   `pterm uninstall`, asks whether to delete data (default: keep), and removes
-  its PATH entry.
+  its PATH entry. With the beta download (a single `pterm.exe`), delete that
+  file.
 
 Data locations (they keep the old working name so existing installs keep
 their data; see [naming.md](naming.md)):
