@@ -472,9 +472,10 @@ func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
 	}
 }
 
-// The home-origin warning explains findings that ServeFindings already
-// counts, so the problem count does not change.
-func TestInspectTailscaleWarnsAboutOtherHandlersOnce(t *testing.T) {
+// Doctor reports other handlers on this computer's own origin as a problem
+// line that says how to move them. ServeFindings already counts each one, so
+// the explanation does not count it twice.
+func TestDoctorReportsOtherHandlersAsAProblem(t *testing.T) {
 	previous := tailscaleRun
 	t.Cleanup(func() { tailscaleRun = previous })
 	tailscaleRun = func(_ context.Context, _ string, _ io.Writer, args ...string) ([]byte, error) {
@@ -488,15 +489,22 @@ func TestInspectTailscaleWarnsAboutOtherHandlersOnce(t *testing.T) {
 	}
 	var output bytes.Buffer
 	report, problems := inspectTailscale(context.Background(), "tailscale-fake", &output)
-	want := "  ! tailscale serve: other handlers share this computer's origin (h.ts.net): /admin. As the home computer, " +
-		"any of them would control every computer paired through it; remove them before using this computer as home.\n"
-	if problems != 1 || !strings.Contains(output.String(), want) || report.tailnet == nil ||
+	want := "  ! tailscale serve: other handlers share this computer's Termivoa origin https://h.ts.net: /admin. " +
+		"Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, " +
+		"every computer added to it. Move each one to another HTTPS port (for example `tailscale serve --bg --https=8444 <target>`) " +
+		"or to another computer, then remove it here: `tailscale serve --https=443 --set-path=/admin off`.\n"
+	if problems != 1 || strings.Count(output.String(), want) != 1 || report.tailnet == nil ||
 		report.tailnet.Suffix != "ts.net" || strings.Join(report.otherHandlers, ",") != "/admin" {
 		t.Fatalf("problems=%d report=%+v output:\n%s", problems, report, output.String())
 	}
-	var setup bytes.Buffer
-	configured, err := offerTailscaleServe(context.Background(), lifecycleEnv{}, report, "https://h.ts.net", fileConfirmer{}, &setup)
-	if err != nil || !configured || !strings.Contains(setup.String(), want) {
-		t.Fatalf("setup configured=%v err=%v output:\n%s", configured, err, setup.String())
+}
+
+func TestOtherHandlersProblemNamesTheRemoveCommands(t *testing.T) {
+	got := otherHandlersProblem("h.ts.net.", []string{"/", "TCP forward to 127.0.0.1:22"})
+	for _, want := range []string{"origin https://h.ts.net: /, TCP forward to 127.0.0.1:22.",
+		"remove it here: `tailscale serve --https=443 --set-path=/ off`, `tailscale serve --tcp=443 off`."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("problem lacks %q:\n%s", want, got)
+		}
 	}
 }

@@ -63,7 +63,7 @@ func tailnetFindings(status *tailnet.Status, devices []protocol.AdminRPCDevice) 
 // otherServeHandlers lists what else Tailscale Serve offers on this
 // computer's own HTTPS origin: handlers on <host>:443 other than "/" proxying
 // the gateway, and a TCP forward on 443. lifecycle.ServeFindings already
-// counts each as a problem; this names them for the home-computer warning.
+// counts each as a problem; this names them so setup can refuse them.
 func otherServeHandlers(data []byte, dnsName string) []string {
 	var raw struct {
 		TCP map[string]struct{ TCPForward string }
@@ -76,7 +76,7 @@ func otherServeHandlers(data []byte, dnsName string) []string {
 	}
 	var found []string
 	if forward := raw.TCP["443"].TCPForward; forward != "" {
-		found = append(found, "TCP forward to "+forward)
+		found = append(found, tcpForwardPrefix+forward)
 	}
 	for hostPort, web := range raw.Web {
 		if strings.ToLower(hostPort) != dnsHost(dnsName)+":443" {
@@ -92,12 +92,23 @@ func otherServeHandlers(data []byte, dnsName string) []string {
 	return found
 }
 
-// otherHandlersWarning explains why other Serve handlers on this origin
-// matter once this computer serves the app for other computers.
-func otherHandlersWarning(dnsName string, handlers []string) string {
-	return fmt.Sprintf("tailscale serve: other handlers share this computer's origin (%s): %s. "+
-		"As the home computer, any of them would control every computer paired through it; "+
-		"remove them before using this computer as home.", dnsHost(dnsName), strings.Join(handlers, ", "))
+const tcpForwardPrefix = "TCP forward to "
+
+// otherHandlersProblem explains why other Serve handlers on this computer's
+// origin are refused (docs/multi-computer.md, "Roles") and how to move them.
+func otherHandlersProblem(dnsName string, handlers []string) string {
+	remove := make([]string, len(handlers))
+	for index, handler := range handlers {
+		remove[index] = "`tailscale serve --https=443 --set-path=" + handler + " off`"
+		if strings.HasPrefix(handler, tcpForwardPrefix) {
+			remove[index] = "`tailscale serve --tcp=443 off`"
+		}
+	}
+	return fmt.Sprintf("tailscale serve: other handlers share this computer's Termivoa origin https://%s: %s. "+
+		"Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, "+
+		"every computer added to it. Move each one to another HTTPS port (for example `tailscale serve --bg --https=8444 <target>`) "+
+		"or to another computer, then remove it here: %s.",
+		dnsHost(dnsName), strings.Join(handlers, ", "), strings.Join(remove, ", "))
 }
 
 // inspectMultiComputer prints the protocol revision and, when the broker

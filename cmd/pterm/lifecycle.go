@@ -358,9 +358,10 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		fmt.Fprintf(output, "  ! tailscale serve: %s\n", finding)
 	}
 	problems += len(report.serve.Problems)
-	// Already counted in serve.Problems; this only explains the home risk.
+	// Each one is already counted in serve.Problems; this says why it
+	// matters and how to move it. Setup refuses them.
 	if report.otherHandlers = otherServeHandlers(data, status.DNSName); len(report.otherHandlers) > 0 {
-		fmt.Fprintf(output, "  ! %s\n", otherHandlersWarning(status.DNSName, report.otherHandlers))
+		fmt.Fprintf(output, "  ! %s\n", otherHandlersProblem(status.DNSName, report.otherHandlers))
 	}
 
 	// Dev-server previews (HTTPS 8443) are optional: unconfigured or
@@ -513,6 +514,8 @@ func parseLifecycleFlags(command string, args []string, bools ...string) (map[st
 // before it changes Tailscale Serve, adds a Home project if there is none, and
 // pairs a phone. --apply --yes is the non-interactive installer path: it only
 // registers startup and saves the phone address when no other one is set.
+// Both refuse, before any change, while other Tailscale Serve handlers share
+// this computer's origin.
 func runSetupCommand(ctx context.Context, args []string, input *os.File, output io.Writer) error {
 	options, err := parseLifecycleFlags("setup", args, "apply", "yes")
 	if err != nil {
@@ -526,6 +529,12 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	report, err := inspectHost(ctx, env, output)
 	if err != nil {
 		return err
+	}
+	// Any other handler on this computer's origin is same-origin with the
+	// app, so setup changes nothing until they move (the checks say how).
+	if handlers := report.tailscale.otherHandlers; len(handlers) > 0 {
+		return fmt.Errorf("refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (%s); "+
+			"move them as shown above, then run `pterm setup` again", strings.Join(handlers, ", "))
 	}
 	// Without a systemd user manager nothing can be registered; setup then
 	// starts the processes now, as `pterm launch` does, and says so.
@@ -770,9 +779,6 @@ func offerTailscaleServe(ctx context.Context, env lifecycleEnv, tailscale tailsc
 		return false, nil
 	case tailscale.serve.Configured:
 		fmt.Fprintf(output, "Tailscale Serve already shares the page at %s/\n", origin)
-		if len(tailscale.otherHandlers) > 0 {
-			fmt.Fprintf(output, "  ! %s\n", otherHandlersWarning(tailscale.status.DNSName, tailscale.otherHandlers))
-		}
 		return true, nil
 	case len(tailscale.serve.Problems) > 0:
 		fmt.Fprintln(output, "Tailscale Serve was not changed:")
