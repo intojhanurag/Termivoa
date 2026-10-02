@@ -305,7 +305,8 @@ function createClient(origin: string, home: boolean): Client {
     terminateSession: (id, body) => request('POST', `${sessionPath(id)}/terminate`, 'sessionMutationResponse', send(body)),
     renameDevice: (body) => request('PATCH', '/api/v1/device', 'deviceSummary', send(body)),
     // Logout and pairing work on an outdated peer, so it can always be removed or paired.
-    logout: () => empty('POST', '/api/v1/logout', { body: {}, gated: false }),
+    // A peer's logout waits only READ_TIMEOUT_MS: Log out and Remove wait for it.
+    logout: () => empty('POST', '/api/v1/logout', { body: {}, gated: false, ...(home ? {} : read) }),
     pairRedeem: (body) => request('POST', '/api/v1/pair/redeem', 'pairRedeemResponse', { body, gated: false }),
     pairPoll: (body) => request('POST', '/api/v1/pair/poll', 'pairPollResponse', { body, gated: false }),
     previewConfig: () => request('GET', '/api/v1/preview', 'previewConfigResponse'),

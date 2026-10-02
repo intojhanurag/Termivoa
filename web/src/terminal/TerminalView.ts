@@ -1,7 +1,7 @@
-import { Terminal, type IBufferCell, type IDisposable } from '@xterm/xterm';
+import { Terminal, type IDisposable } from '@xterm/xterm';
 import { clampGrid } from './Connection';
 import { FrameRenderer } from './FrameRenderer';
-import { joinedRowLinks, rowLinks, overlaps, type Cell, type PathLink } from './pathLinks';
+import { bufferRow, joinedRowLinks, rowLinks, overlaps, type Cell, type PathLink } from './pathLinks';
 import { ServerUnicodeAddon } from './ServerUnicodeAddon';
 
 export const MONOSPACE = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
@@ -77,7 +77,7 @@ export class TerminalView {
     const { terminal } = this;
     return terminal.registerLinkProvider({
       provideLinks(y, callback) {
-        const cells = rowCellsAt(terminal, y);
+        const cells = bufferRow(terminal, y);
         if (cells === undefined) {
           callback(undefined);
           return;
@@ -129,18 +129,6 @@ export class TerminalView {
   }
 }
 
-/** The cells of buffer row y (1-based), or undefined past the buffer. */
-function rowCellsAt(terminal: Terminal, y: number): IBufferCell[] | undefined {
-  const row = terminal.buffer.active.getLine(y - 1);
-  if (row === undefined) return undefined;
-  const cells: IBufferCell[] = [];
-  for (let x = 0; x < row.length; x++) {
-    const cell = row.getCell(x);
-    if (cell !== undefined) cells.push(cell);
-  }
-  return cells;
-}
-
 /** Rows a wrapped link through row y can span. ponytail: 7 rows each way covers a 140-character link at 20 columns. */
 const LINK_ROWS = 7;
 
@@ -149,7 +137,7 @@ function rowsAround(terminal: Terminal, y: number): [Cell[][], number] {
   const first = Math.max(1, y - LINK_ROWS);
   const rows: Cell[][] = [];
   for (let at = first; at <= y + LINK_ROWS; at++) {
-    const cells = rowCellsAt(terminal, at);
+    const cells = bufferRow(terminal, at);
     if (cells === undefined) break;
     rows.push(cells);
   }

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ApiError, deviceLabelProblem, firstLabel } from '../api/http';
 import { forgetPending, type Computer } from '../computers';
 import type { TailnetNode } from '../generated/protocol';
-import { AddComputerFlow, addComputerUrl, prepareAddComputer, type AddComputerLink } from '../pairing/addComputer';
-import type { PendingPairing } from '../pairing/pairing';
+import {
+  addComputerUrl, cancelAdd, currentAdd, dismissAdd, prepareAddComputer, startAdd, subscribeAdd, type AddComputerLink,
+} from '../pairing/addComputer';
 import { CodeTiles } from './Setup';
 import { Sheet, SheetHeader } from './Sheet';
 
@@ -87,9 +88,6 @@ export function AddComputerContinue({ link, onContinue, onCancel }: {
   );
 }
 
-/** The add page's unmount cleanup: stops the flow (its poll) when the user leaves the page. */
-export const cancelOnUnmount = (flow: { readonly current: Pick<AddComputerFlow, 'cancel'> | undefined }) => () => flow.current?.cancel();
-
 type Check =
   | { readonly kind: 'checking' }
   | { readonly kind: 'ready'; readonly node: TailnetNode }
@@ -138,15 +136,11 @@ export function AddComputerSheet({ link, onClose, go = (url) => window.location.
   );
 }
 
-type Phase =
-  | { readonly kind: 'confirm' }
-  | { readonly kind: 'redeeming' }
-  | { readonly kind: 'waiting'; readonly pending: PendingPairing }
-  | { readonly kind: 'done'; readonly computer: Computer }
-  | { readonly kind: 'expired' | 'cancelled' }
-  | { readonly kind: 'error'; readonly message: string };
-
-/** The /computers/add page: Continue, redeem, show the code, wait for approval, confirm. */
+/**
+ * The /computers/add page: Continue, then the add runs outside the page
+ * (startAdd), so the user can leave to type y in a terminal of this app and
+ * come back; App shows a banner meanwhile.
+ */
 export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings }: {
   /** Undefined when the page was opened without a valid link (or reloaded: the link is used once). */
   readonly link: AddComputerLink | undefined;
@@ -157,81 +151,54 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings 
   readonly onDone: () => void;
   readonly onSettings: () => void;
 }) {
-  const [phase, setPhase] = useState<Phase>({ kind: 'confirm' });
-  const flow = useRef<AddComputerFlow>(undefined);
-  const label = link === undefined ? '' : firstLabel(link.origin);
+  const task = useSyncExternalStore(subscribeAdd, currentAdd, currentAdd);
+  const phase = task?.phase;
+  const label = task?.label ?? (link === undefined ? '' : firstLabel(link.origin));
   const name = deviceLabel !== undefined && deviceLabelProblem(deviceLabel) === undefined ? deviceLabel : 'Phone';
+  const leave = (then: () => void) => () => { dismissAdd(); then(); };
 
-  useEffect(() => cancelOnUnmount(flow), []);
-
-  async function start(chosen: AddComputerLink) {
-    // Once per link: the grant works once.
-    if (flow.current !== undefined) return;
-    const next = new AddComputerFlow(chosen.origin, chosen.grant);
-    flow.current = next;
-    setPhase({ kind: 'redeeming' });
-    try {
-      const pending = await next.redeem(name);
-      setPhase({ kind: 'waiting', pending });
-      const outcome = await next.finish(pending);
-      setPhase(outcome.kind === 'confirmed' ? { kind: 'done', computer: outcome.computer } : { kind: outcome.kind });
-    } catch (error) {
-      setPhase({ kind: 'error', message: addFailure(error, label) });
-    }
-  }
-
-  const title = phase.kind === 'waiting' ? `Does ${label} show this code?`
-    : phase.kind === 'done' ? `${phase.computer.label} is added` : 'Add a computer';
+  const title = phase?.kind === 'waiting' ? `Does ${label} show this code?`
+    : phase?.kind === 'done' ? `${phase.computer.label} is added` : 'Add a computer';
 
   return (
     <main className="page screen setup">
       <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
       <h1>{title}</h1>
-      {link === undefined && (
+      {phase === undefined && link === undefined && (
         <>
           <p role="alert" className="error">{notice ?? 'This add-computer link is used or incomplete. Paste the link again in Settings, under Computers.'}</p>
           <button type="button" className="primary" onClick={onSettings}>Settings</button>
         </>
       )}
-      {link !== undefined && phase.kind === 'confirm' && (
-        <AddComputerContinue link={link} onContinue={() => { void start(link); }} onCancel={onSettings} />
+      {phase === undefined && link !== undefined && (
+        <AddComputerContinue link={link} onContinue={() => { void startAdd(link, name); }} onCancel={onSettings} />
       )}
-      {link !== undefined && phase.kind === 'redeeming' && <p role="status" className="muted">Connecting to {label}…</p>}
-      {phase.kind === 'waiting' && (
+      {phase?.kind === 'redeeming' && <p role="status" className="muted">Connecting to {label}…</p>}
+      {phase?.kind === 'waiting' && (
         <section className="stack pair-wait" aria-live="polite">
           <CodeTiles code={phase.pending.verificationCode} />
           <p className="muted">If it matches, type y in the terminal on {label}.</p>
           <div className="waiting">
             <p role="status"><span className="dots" aria-hidden="true"><span /><span /><span /></span>Waiting for {label}</p>
-            <button
-              type="button"
-              className="link"
-              onClick={() => {
-                flow.current?.cancel();
-                if (link !== undefined) void forgetPending(link.origin);
-                setPhase({ kind: 'cancelled' });
-              }}
-            >
-              Codes don't match? Cancel
-            </button>
+            <button type="button" className="link" onClick={cancelAdd}>Codes don't match? Cancel</button>
           </div>
         </section>
       )}
-      {phase.kind === 'done' && (
+      {phase?.kind === 'done' && (
         <>
           <p className="muted">Its sessions now show in your list.</p>
-          <button type="button" className="primary wide" onClick={onDone}>Open sessions</button>
+          <button type="button" className="primary wide" onClick={leave(onDone)}>Open sessions</button>
         </>
       )}
-      {phase.kind === 'expired' && (
+      {phase?.kind === 'expired' && (
         <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again and paste the new link.</p>
       )}
-      {phase.kind === 'cancelled' && (
+      {phase?.kind === 'cancelled' && (
         <p role="alert" className="error">Adding {label} was cancelled. If {label} asks, answer N.</p>
       )}
-      {phase.kind === 'error' && <p role="alert" className="error">{phase.message}</p>}
-      {(phase.kind === 'expired' || phase.kind === 'cancelled' || phase.kind === 'error') && (
-        <button type="button" onClick={onSettings}>Settings</button>
+      {phase?.kind === 'error' && <p role="alert" className="error">{addFailure(phase.error, label)}</p>}
+      {(phase?.kind === 'expired' || phase?.kind === 'cancelled' || phase?.kind === 'error') && (
+        <button type="button" onClick={leave(onSettings)}>Settings</button>
       )}
     </main>
   );

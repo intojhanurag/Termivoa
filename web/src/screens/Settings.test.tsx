@@ -4,7 +4,7 @@ import { ApiError } from '../api/http';
 import type { Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import type { ComputerEntry } from './allSessions';
-import { NotificationSettings, saveDeviceName, Settings } from './Settings';
+import { LogoutSection, NotificationSettings, saveDeviceName, Settings } from './Settings';
 
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },
@@ -125,5 +125,16 @@ describe('Settings notifications', () => {
   it('says when the browser has no push', () => {
     vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (X11; Linux) Firefox/130.0', maxTouchPoints: 0 });
     expect(render()).toContain('Not supported in this browser');
+  });
+});
+
+describe('LogoutSection', () => {
+  it('says "Signing out…" and turns the button off while log out runs', () => {
+    const idle = renderToStaticMarkup(<LogoutSection multi busy={false} onLogout={() => undefined} />);
+    expect(idle).not.toContain('Signing out');
+    expect(idle).not.toContain('disabled');
+    const busy = renderToStaticMarkup(<LogoutSection multi busy onLogout={() => undefined} />);
+    expect(busy).toContain('<p role="status" class="muted field-note">Signing out…</p>');
+    expect(busy).toMatch(/<button[^>]*disabled[^>]*>Log out<\/button>/u);
   });
 });

@@ -11,7 +11,9 @@ import { parseHttpBody } from './protocol/httpBody';
  *   different computers never collide.
  * - The label defaults to the first DNS label and can be renamed; it comes
  *   from the origin the phone dialled (or the user), never from the peer.
- * - The colour is fixed per origin; always show it with the label.
+ * - The colour comes from the computer's place in the list (home first), so
+ *   no two of up to PALETTE.length computers share one; always show it with
+ *   the label.
  * - The peer list is kept in localStorage (origins and labels, not secret) and
  *   replaced on every load from home (refreshComputers). Pending entries are
  *   never listed or stored.
@@ -28,12 +30,12 @@ export interface Computer {
 export const COMPUTERS_KEY = 'pterm.computers';
 /** Peers per device, as on home (pending and confirmed together). */
 export const MAX_PEERS = 8;
-/** Fixed colours on the dark theme, picked by origin hash. Never the only cue: show the label too. */
+/** Fixed colours on the dark theme, by place in the list; home always has the first. Never the only cue: show the label too. */
 export const PALETTE = ['#64D8E8', '#F2B544', '#9B8CFF', '#5FD68A', '#FF7A8A', '#4FA3FF', '#FF9F5A', '#C7D36F'] as const;
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
-function defaultStorage(): StorageLike | undefined {
+function defaultStorage(): Storage | undefined {
   try {
     return globalThis.localStorage;
   } catch {
@@ -41,17 +43,14 @@ function defaultStorage(): StorageLike | undefined {
   }
 }
 
-/** FNV-1a over the origin, so a computer keeps its colour on every phone and load. */
-export function colorFor(origin: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < origin.length; index++) {
-    hash = Math.imul(hash ^ origin.charCodeAt(index), 0x01000193);
-  }
-  return PALETTE[(hash >>> 0) % PALETTE.length] ?? PALETTE[0];
+/** `place` is the computer's index in the list: 0 for home, then each peer in list order. */
+export function toComputer(entry: Pick<HTTPComputer, 'origin' | 'label'>, home = false, place = home ? 0 : 1): Computer {
+  return { origin: entry.origin, host: new URL(entry.origin).host, label: entry.label, color: PALETTE[place % PALETTE.length] ?? PALETTE[0], home };
 }
 
-export function toComputer(entry: Pick<HTTPComputer, 'origin' | 'label'>, home = false): Computer {
-  return { origin: entry.origin, host: new URL(entry.origin).host, label: entry.label, color: colorFor(entry.origin), home };
+/** Home first, then the peers, each coloured by its place. */
+function listed(peers: ReadonlyArray<HTTPComputer>): Computer[] {
+  return [homeComputer(), ...peers.map((peer, index) => toComputer(peer, false, index + 1))];
 }
 
 export function homeComputer(): Computer {
@@ -92,8 +91,8 @@ function writePeers(peers: ReadonlyArray<HTTPComputer>, storage: StorageLike | u
 }
 
 /** Home first, then the stored peers. Use at start, before (or without) a home answer. */
-export function storedComputers(storage = defaultStorage()): Computer[] {
-  return [homeComputer(), ...readPeers(storage).map((peer) => toComputer(peer))];
+export function storedComputers(storage: StorageLike | undefined = defaultStorage()): Computer[] {
+  return listed(readPeers(storage));
 }
 
 /**
@@ -101,10 +100,10 @@ export function storedComputers(storage = defaultStorage()): Computer[] {
  * it (a removed computer disappears; a compromised home's old entries do not
  * linger). Throws ApiError when home cannot answer; the stored list stays.
  */
-export async function refreshComputers(storage = defaultStorage()): Promise<Computer[]> {
+export async function refreshComputers(storage: StorageLike | undefined = defaultStorage()): Promise<Computer[]> {
   const peers = cleanPeers((await client().computers()).computers);
   writePeers(peers, storage);
-  return [homeComputer(), ...peers.map((peer) => toComputer(peer))];
+  return listed(peers);
 }
 
 function savePeer(peer: HTTPComputer, storage: StorageLike | undefined): void {
@@ -129,7 +128,7 @@ export function recordPending(origin: string, label = firstLabel(origin)): Promi
  * touched (home keeps a confirmed entry when the same link is added again).
  * Best effort: a pending entry also expires on home.
  */
-export async function forgetPending(origin: string, storage = defaultStorage()): Promise<void> {
+export async function forgetPending(origin: string, storage: StorageLike | undefined = defaultStorage()): Promise<void> {
   if (readPeers(storage).some((entry) => entry.origin === origin)) return;
   try {
     await client().deleteComputer(new URL(origin).host);
@@ -139,10 +138,10 @@ export async function forgetPending(origin: string, storage = defaultStorage()):
 }
 
 /** Confirms a computer on home (after its first authenticated settings read) and stores it. */
-export async function confirmComputer(origin: string, label = firstLabel(origin), storage = defaultStorage()): Promise<Computer> {
+export async function confirmComputer(origin: string, label = firstLabel(origin), storage: StorageLike | undefined = defaultStorage()): Promise<Computer> {
   const saved = await client().saveComputer({ origin, label, state: 'confirmed' });
   savePeer(saved.computer, storage);
-  return toComputer(saved.computer);
+  return toComputer(saved.computer, false, readPeers(storage).findIndex((entry) => entry.origin === saved.computer.origin) + 1);
 }
 
 /** Renames a confirmed computer on home and here. Check the label with deviceLabelProblem first (same rules). */
@@ -161,7 +160,7 @@ export type RemoveResult =
  * to run `pterm revoke` there. Throws ApiError when home cannot remove it;
  * nothing is removed then, and a retry is safe.
  */
-export async function removeComputer(computer: Pick<Computer, 'origin' | 'host' | 'label'>, storage = defaultStorage()): Promise<RemoveResult> {
+export async function removeComputer(computer: Pick<Computer, 'origin' | 'host' | 'label'>, storage: StorageLike | undefined = defaultStorage()): Promise<RemoveResult> {
   let loggedOut: boolean;
   try {
     await client(computer.origin).logout();
@@ -176,8 +175,9 @@ export async function removeComputer(computer: Pick<Computer, 'origin' | 'host' 
 
 /**
  * Log out, before home: signs this phone out on each peer (best effort, all
- * at once). A peer that is not reachable now is skipped, so log out never
- * waits for a timeout. A 401 means it is already signed out. Returns the
+ * at once). A peer already known as not reachable is skipped; any other peer
+ * gets at most READ_TIMEOUT_MS (a peer's logout timeout), so log out waits
+ * at most that long. A 401 means it is already signed out. Returns the
  * labels of the peers where this phone may still be signed in.
  */
 export async function logoutPeers(peers: ReadonlyArray<{ readonly computer: Computer; readonly reachable: boolean }>): Promise<string[]> {
@@ -192,6 +192,29 @@ export async function logoutPeers(peers: ReadonlyArray<{ readonly computer: Comp
     }
   }));
   return left.filter((label) => label !== undefined);
+}
+
+/**
+ * Log out of every computer: the peers first (logoutPeers), then home, then
+ * this phone forgets its stored list. Throws when home cannot log out (a 401
+ * means it already did); the list is kept then. Returns what to say.
+ */
+export async function logOut(
+  peers: ReadonlyArray<{ readonly computer: Computer; readonly reachable: boolean }>,
+  storage: Pick<Storage, 'removeItem'> | undefined = defaultStorage(),
+): Promise<string> {
+  const left = await logoutPeers(peers);
+  try {
+    await client().logout();
+  } catch (error) {
+    if (!isAuthFailure(error)) throw error;
+  }
+  try {
+    storage?.removeItem(COMPUTERS_KEY);
+  } catch {
+    // Storage refused: home's list replaces it after the next pairing.
+  }
+  return logoutNote(left);
 }
 
 /** What Log out says: signed out, plus the peers to revoke by hand. */

@@ -130,6 +130,32 @@ export interface Cell {
   getWidth(): number;
 }
 
+/** The parts of an xterm Terminal that bufferRow reads. */
+export interface BufferLike {
+  readonly cols: number;
+  readonly buffer: {
+    readonly active: {
+      getLine(y: number): { readonly length: number; getCell(x: number): Cell | undefined } | undefined;
+    };
+  };
+}
+
+/**
+ * The cells of buffer row y (1-based), or undefined past the buffer. Only the
+ * first `cols` cells: after a narrower resize a line keeps its old length,
+ * and that blank tail would hide that the row is full (a wrapped link).
+ */
+export function bufferRow(terminal: BufferLike, y: number): Cell[] | undefined {
+  const row = terminal.buffer.active.getLine(y - 1);
+  if (row === undefined) return undefined;
+  const cells: Cell[] = [];
+  for (let x = 0; x < Math.min(row.length, terminal.cols); x++) {
+    const cell = row.getCell(x);
+    if (cell !== undefined) cells.push(cell);
+  }
+  return cells;
+}
+
 /**
  * A row's text and, for each UTF-16 offset in it, the 0-based cell column it
  * starts in, plus one entry past the end. Wide characters take two columns,

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { READ_TIMEOUT_MS } from './api/http';
 import {
-  colorFor, COMPUTERS_KEY, forgetPending, logoutNote, logoutPeers, PALETTE, refreshComputers, removeComputer, renameComputer,
+  COMPUTERS_KEY, forgetPending, logOut, logoutNote, logoutPeers, PALETTE, refreshComputers, removeComputer, renameComputer,
   sessionKey, storedComputers, toComputer,
 } from './computers';
 
@@ -29,11 +30,15 @@ describe('computer model', () => {
     expect(key).toBe('vps.tailx.ts.net/00000000-0000-4000-8000-000000000001');
   });
 
-  it('gives each origin a fixed palette colour', () => {
-    expect(colorFor(vps.origin)).toBe(colorFor(vps.origin));
-    expect(PALETTE).toContain(colorFor(vps.origin));
-    const colours = new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((name) => colorFor(`https://${name}.tailx.ts.net`)));
-    expect(colours.size).toBeGreaterThan(1);
+  it('colours computers by place: home keeps the first colour, and no two of 8 computers share one', () => {
+    const peers = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => ({ origin: `https://${name}.tailx.ts.net`, label: name }));
+    store.set(COMPUTERS_KEY, JSON.stringify(peers));
+    const computers = storedComputers(storage);
+    expect(computers).toHaveLength(8);
+    expect(computers[0]).toMatchObject({ home: true, color: PALETTE[0] });
+    expect(new Set(computers.map((computer) => computer.color)).size).toBe(8);
+    store.set(COMPUTERS_KEY, JSON.stringify([]));
+    expect(storedComputers(storage)[0]?.color).toBe(PALETTE[0]);
   });
 
   it('lists home first, then stored peers; drops bad, duplicate and home entries', () => {
@@ -158,5 +163,38 @@ describe('logoutPeers', () => {
     expect(logoutNote(left)).toBe(
       'You logged out. This phone no longer has access. Could not sign out of Build box, Kitchen Pi. Run pterm revoke there to remove this phone.',
     );
+  });
+});
+
+describe('log out', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('waits at most READ_TIMEOUT_MS for a peer that never answers, and signs out of the peers at once', async () => {
+    vi.useFakeTimers();
+    const started: string[] = [];
+    vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
+      started.push(url);
+      return new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    }));
+    const peer = (name: string) => toComputer({ origin: `https://${name}.tailx.ts.net`, label: name });
+    let left: string[] | undefined;
+    void logoutPeers([{ computer: peer('vps'), reachable: true }, { computer: peer('pi'), reachable: true }]).then((labels) => { left = labels; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(started).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS);
+    expect(left).toEqual(['vps', 'pi']);
+  });
+
+  it('forgets the stored computer list once home logged out, and keeps it when home could not', async () => {
+    const local = new Map([[COMPUTERS_KEY, JSON.stringify([vps])]]);
+    const memory = { removeItem: (key: string) => { local.delete(key); } };
+    vi.stubGlobal('fetch', vi.fn(async () => json(500, { error: { code: 'internal', message: 'Home failed' } })));
+    await expect(logOut([], memory)).rejects.toMatchObject({ status: 500 });
+    expect(local.has(COMPUTERS_KEY)).toBe(true);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
+    await expect(logOut([], memory)).resolves.toBe('You logged out. This phone no longer has access.');
+    expect(local.has(COMPUTERS_KEY)).toBe(false);
   });
 });

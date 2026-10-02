@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findAddComputerLinks, findPathLinks, joinedRowLinks, overlaps, rootRelative, rowCells, rowLinks, tapTarget, type Cell } from './pathLinks';
+import { bufferRow, findAddComputerLinks, findPathLinks, joinedRowLinks, overlaps, rootRelative, rowCells, rowLinks, tapTarget, type Cell } from './pathLinks';
 
 describe('findPathLinks', () => {
   it('finds a relative path, with and without "./"', () => {
@@ -249,6 +249,22 @@ describe('joinedRowLinks', () => {
     // 122 characters: 50 + 50 + 22.
     expect(LINK.length).toBe(122);
     expect(joinedRowLinks(wrap(LINK, 50), 10)).toEqual([{ url: LINK, range: { start: { x: 1, y: 10 }, end: { x: 22, y: 12 } } }]);
+  });
+
+  it('joins a wrapped link after a resize to fewer columns (buffer lines longer than cols)', () => {
+    // 80 columns, then 46: each line keeps 80 cells; the 34 past cols are blank.
+    const lines = wrap(LINK, 46).map((row) => [...row, ...cells('', 34)]);
+    const terminal = {
+      cols: 46,
+      buffer: { active: { getLine: (y: number) => {
+        const line = lines[y];
+        return line === undefined ? undefined : { length: line.length, getCell: (x: number) => line[x] };
+      } } },
+    };
+    expect(bufferRow(terminal, 1)).toHaveLength(46);
+    expect(bufferRow(terminal, 9)).toBeUndefined();
+    const rows = [1, 2, 3].map((y) => bufferRow(terminal, y) ?? []);
+    expect(joinedRowLinks(rows, 1).map((found) => found.url)).toEqual([LINK]);
   });
 
   it('places a link on one row', () => {

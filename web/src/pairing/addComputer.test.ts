@@ -142,6 +142,108 @@ describe('AddComputerFlow', () => {
     expect(calls.filter((call) => call.endsWith('/settings'))).toHaveLength(3);
   });
 
+  it('a Cancel during the first settings read wins: no confirm, signs out on the peer, deletes the entry on home', async () => {
+    const calls: string[] = [];
+    let answerSettings: (() => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      if (url.endsWith('/pair/redeem')) {
+        return json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      }
+      if (url.endsWith('/pair/poll')) return json(200, { status: 'approved' });
+      if (url.endsWith('/settings')) {
+        await new Promise<void>((resolve) => { answerSettings = resolve; });
+        return json(200, settings);
+      }
+      if (url.endsWith('/logout')) return new Response(null, { status: 204 });
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      return json(200, { computer: { origin: 'https://vps.tailx.ts.net', label: 'vps' }, state: 'confirmed', node: { id: 'n1', tags: [] } });
+    }));
+    const flow = new AddComputerFlow('https://vps.tailx.ts.net', grant);
+    const done = flow.finish(await flow.redeem('Phone'));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(answerSettings).toBeDefined();
+    flow.cancel();
+    answerSettings?.();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(done).resolves.toEqual({ kind: 'cancelled' });
+    expect(calls).not.toContain('POST /api/v1/computers');
+    expect(calls).toContain('POST https://vps.tailx.ts.net/api/v1/logout');
+    expect(calls).toContain('DELETE /api/v1/computers/vps.tailx.ts.net');
+    expect(store.has(COMPUTERS_KEY) ? JSON.parse(store.get(COMPUTERS_KEY) ?? '[]') : []).toEqual([]);
+  });
+
+  it('after Cancel, a failed read is not reported; a computer already in the list keeps its entry and cookie', async () => {
+    store.set(COMPUTERS_KEY, JSON.stringify([{ origin: 'https://vps.tailx.ts.net', label: 'vps' }]));
+    const calls: string[] = [];
+    let failSettings: (() => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      if (url.endsWith('/pair/redeem')) {
+        return json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      }
+      if (url.endsWith('/pair/poll')) return json(200, { status: 'approved' });
+      await new Promise<void>((resolve) => { failSettings = resolve; });
+      return json(500, { error: { code: 'internal', message: 'x' } });
+    }));
+    const flow = new AddComputerFlow('https://vps.tailx.ts.net', grant);
+    const done = flow.finish(await flow.redeem('Phone'));
+    await vi.advanceTimersByTimeAsync(2000);
+    flow.cancel();
+    failSettings?.();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(done).resolves.toEqual({ kind: 'cancelled' });
+    expect(calls.filter((call) => call.includes('/logout') || call.startsWith('DELETE'))).toEqual([]);
+  });
+
+  it('keeps adding when the user leaves the add page (startAdd), ends as added, and runs once per load', async () => {
+    vi.resetModules();
+    const add = await import('./addComputer');
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      if (url.endsWith('/pair/redeem')) {
+        return json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      }
+      if (url.endsWith('/pair/poll')) return json(200, { status: calls.length > 4 ? 'approved' : 'pending' });
+      if (url.endsWith('/settings')) return json(200, settings);
+      return json(200, { computer: { origin: 'https://vps.tailx.ts.net', label: 'vps' }, state: 'confirmed', node: { id: 'n1', tags: [] } });
+    }));
+    const seen: string[] = [];
+    add.subscribeAdd(() => { seen.push(add.currentAdd()?.phase.kind ?? 'none'); });
+    void add.startAdd({ origin: 'https://vps.tailx.ts.net', grant }, 'Phone');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(add.currentAdd()).toMatchObject({ label: 'vps', phase: { kind: 'done', computer: { origin: 'https://vps.tailx.ts.net' } } });
+    expect(seen).toEqual(['redeeming', 'waiting', 'done']);
+    await add.startAdd({ origin: 'https://vps.tailx.ts.net', grant }, 'Phone');
+    expect(calls.filter((call) => call.endsWith('/pair/redeem'))).toHaveLength(1);
+    add.dismissAdd();
+    expect(add.currentAdd()?.dismissed).toBe(true);
+  });
+
+  it('Cancel stops a background add, deletes the pending entry on home, and ignores later outcomes', async () => {
+    vi.resetModules();
+    const add = await import('./addComputer');
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      if (url.endsWith('/pair/redeem')) {
+        return json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      }
+      if (url.endsWith('/pair/poll')) return json(410, { error: { code: 'pairing_expired', message: 'x' } });
+      return new Response(null, { status: 204 });
+    }));
+    const done = add.startAdd({ origin: 'https://vps.tailx.ts.net', grant }, 'Phone');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(add.currentAdd()?.phase.kind).toBe('waiting');
+    add.cancelAdd();
+    expect(add.currentAdd()?.phase.kind).toBe('cancelled');
+    await vi.advanceTimersByTimeAsync(5_000);
+    await done;
+    expect(add.currentAdd()?.phase.kind).toBe('cancelled');
+    expect(calls).toContain('DELETE /api/v1/computers/vps.tailx.ts.net');
+  });
+
   it('gives up after about 3 s of network errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url.endsWith('/pair/redeem')) {

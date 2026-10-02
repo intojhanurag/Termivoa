@@ -6,7 +6,7 @@ import type { Computer } from '../computers';
 import { parseAddComputerLink } from '../pairing/addComputer';
 import { findAddComputerLinks } from '../terminal/pathLinks';
 import {
-  AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, cancelOnUnmount, ownerText, PeerAddPage, viaLabel,
+  AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, ownerText, PeerAddPage, viaLabel,
 } from './AddComputer';
 import type { ComputerEntry } from './allSessions';
 import { computerDetail, ComputersSection, onlineText } from './Computers';
@@ -115,12 +115,6 @@ describe('add-computer page', () => {
     expect(html).not.toContain('used or incomplete');
   });
 
-  it('stops the flow when the page goes away', () => {
-    const cancel = vi.fn();
-    cancelOnUnmount({ current: { cancel } })();
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(() => cancelOnUnmount({ current: undefined })()).not.toThrow();
-  });
 
   it('says what went wrong in plain words, never a peer\'s own text', () => {
     expect(addFailure(new ApiError(0, 'network', 'x'), 'vps')).toBe('This phone cannot reach vps. Check that it is on and in your tailnet.');

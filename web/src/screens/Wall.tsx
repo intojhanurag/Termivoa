@@ -111,9 +111,13 @@ export function tileLabel(session: BrokerRPCSessionRecord, fresh: boolean): stri
   return [sessionName(session), agentBadge(session, fresh)?.label, 'open session'].filter((part) => part !== undefined).join(', ');
 }
 
-/** The mark over a tile: Paused beyond the live budget, a dot while a live tile reconnects. */
-export function tileMark(tile: TileState, link: LinkState): 'paused' | 'reconnecting' | undefined {
-  if (tile === 'paused') return 'paused';
+/**
+ * The mark over a tile: Paused beyond the live budget, a dot while a live
+ * tile reconnects. A paused tile that was never live has no frame to keep:
+ * `blank` shows the session name and Paused in its place.
+ */
+export function tileMark(tile: TileState, link: LinkState, wasLive = true): 'paused' | 'blank' | 'reconnecting' | undefined {
+  if (tile === 'paused') return wasLive ? 'paused' : 'blank';
   return link === 'live' ? undefined : 'reconnecting';
 }
 
@@ -133,6 +137,8 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
   const [view, setView] = useState<TerminalView>();
   const [connection, setConnection] = useState<Connection>();
   const [tile, setTile] = useState<TileState>('paused');
+  const [wasLive, setWasLive] = useState(false);
+  useEffect(() => { if (tile === 'live') setWasLive(true); }, [tile]);
   const [fit, setFit] = useState({ scale: 0, offset: 0 });
   const status = useSyncExternalStore(
     connection?.subscribe ?? noSubscribe,
@@ -215,12 +221,13 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
     };
   }, [view, tile, origin, session.computer.home, session.id, session.generation]);
 
-  const mark = tileMark(tile, status.link);
+  const mark = tileMark(tile, status.link, wasLive);
   return (
     <span ref={box} className="wall-screen" aria-hidden="true">
       <span ref={host} className="wall-host" style={{ transform: `scale(${fit.scale}) translateY(${-fit.offset}px)` }} />
       {mark === 'reconnecting' && <span className="dot amber wall-link" />}
       {mark === 'paused' && <span className="wall-paused">Paused</span>}
+      {mark === 'blank' && <span className="wall-blank"><span>{sessionName(session)}</span><span className="wall-paused-text">Paused</span></span>}
     </span>
   );
 }
