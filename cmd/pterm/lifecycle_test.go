@@ -451,6 +451,27 @@ func TestTailnetFindingsReportBindingMismatches(t *testing.T) {
 	}
 }
 
+// Logged out, Tailscale reports no MagicDNS suffix: doctor says so once
+// instead of calling every bound app "different tailnet".
+func TestTailnetFindingsWithUnknownTailnet(t *testing.T) {
+	status, err := tailnet.ParseStatus([]byte(`{"BackendState":"NeedsLogin"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin, other := "https://mac.tailx.ts.net", "https://srv.tailx.ts.net"
+	devices := []protocol.AdminRPCDevice{
+		{AppOrigin: &origin, AppNode: &protocol.TailnetNode{ID: "nMac"}},
+		{AppOrigin: &other, AppNode: &protocol.TailnetNode{ID: "nSrv"}},
+	}
+	want := "this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked"
+	if got := tailnetFindings(status, devices); strings.Join(got, "\n") != want {
+		t.Fatalf("findings = %q", got)
+	}
+	if got := tailnetFindings(status, []protocol.AdminRPCDevice{{}}); len(got) != 0 {
+		t.Fatalf("own-origin device findings = %q", got)
+	}
+}
+
 func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
 	const gateway = `"/":{"Proxy":"http://127.0.0.1:8787"}`
 	for name, test := range map[string]struct {

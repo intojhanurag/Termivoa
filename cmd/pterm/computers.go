@@ -23,12 +23,17 @@ func dnsHost(name string) string { return strings.ToLower(strings.TrimSuffix(nam
 // current tailnet: the app host must be in this tailnet, its pinned node must
 // still exist and still own that name, and, when neither node is tagged, it
 // must have this computer's owner. Each origin and node pair is reported once.
+// Without a MagicDNS suffix (logged out) nothing can be checked; that is
+// reported once.
 func tailnetFindings(status *tailnet.Status, devices []protocol.AdminRPCDevice) []string {
 	checked := map[string]bool{}
 	var findings []string
 	for _, device := range devices {
 		if device.Revoked || device.AppOrigin == nil || device.AppNode == nil {
 			continue
+		}
+		if status.Suffix == "" {
+			return []string{"this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked"}
 		}
 		origin, pinned := *device.AppOrigin, device.AppNode.ID
 		if checked[origin+" "+pinned] {
@@ -38,7 +43,7 @@ func tailnetFindings(status *tailnet.Status, devices []protocol.AdminRPCDevice) 
 		host := strings.TrimPrefix(origin, "https://")
 		peer, found := status.Peer(host)
 		switch {
-		case status.Suffix == "" || !strings.HasSuffix(host, "."+status.Suffix):
+		case !strings.HasSuffix(host, "."+status.Suffix):
 			findings = append(findings, origin+": different tailnet; not supported")
 		case !found:
 			findings = append(findings, fmt.Sprintf("%s: pinned node %s is gone; phones bound to it stop working", origin, pinned))
