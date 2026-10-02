@@ -15,58 +15,13 @@ var testApp = AppBinding{
 	Origin: "https://mac.tailx.ts.net", NodeID: "nMac1CNTRL", NodeOwner: "ada@example.com", NodeTags: []string{},
 }
 
-// Migration 8 adds app bindings and the computer list. Existing grants,
-// pending pairings, devices and credentials survive with no binding, which
-// means "own origin only", and still work.
-func TestMultiComputerMigrationKeepsExistingRowsUnbound(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "upgrade.sqlite")
-	database, err := openDatabase(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	migrations, err := bundledMigrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := applyMigrations(ctx, database, migrations[:7], testTime.UnixMilli()); err != nil {
-		t.Fatal(err)
-	}
-	now := testTime.UnixMilli()
-	for _, statement := range []string{
-		`INSERT INTO pairing_grants VALUES ('` + testUUID(1) + `', zeroblob(32), ` + itoa(now) + `, ` + itoa(now+120000) + `, NULL)`,
-		`INSERT INTO pending_pairings VALUES ('` + testUUID(2) + `', '` + testUUID(9) + `', randomblob(32), '123-456', 'Old', ` +
-			itoa(now) + `, ` + itoa(now+300000) + `, NULL, 0)`,
-		`INSERT INTO devices VALUES ('` + testUUID(3) + `', 'Phone', ` + itoa(now) + `, ` + itoa(now) + `, NULL)`,
-		`INSERT INTO browser_sessions VALUES ('` + testUUID(4) + `', '` + testUUID(3) + `', X'` + hexOf(testHash("old")) + `', ` +
-			itoa(now) + `, ` + itoa(now) + `, ` + itoa(now+30*24*3600*1000) + `, NULL)`,
-	} {
-		if _, err := database.ExecContext(ctx, statement); err != nil {
-			t.Fatalf("%s: %v", statement, err)
-		}
-	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	upgraded := openTestStore(t, path)
-	defer upgraded.Close()
-	_, device, err := upgraded.LookupCredential(ctx, testHash("old"))
-	if err != nil || device.ID != testUUID(3) || device.App.Bound() {
-		t.Fatalf("old credential = %+v, %v", device, err)
-	}
-	pending, err := upgraded.ListPendingPairings(ctx, testTime, 16)
-	if err != nil || len(pending) != 1 || pending[0].App.Bound() {
-		t.Fatalf("old pending = %+v, %v", pending, err)
-	}
-	if origins, err := upgraded.PairingOrigins(ctx, testTime, 16); err != nil || len(origins) != 0 {
-		t.Fatalf("old rows produced pairing origins %v, %v", origins, err)
-	}
-	if bound, err := upgraded.ListBoundDevices(ctx, testTime, time.Hour, false); err != nil || len(bound) != 0 {
-		t.Fatalf("old devices bound = %v, %v", bound, err)
-	}
-	// A node without an origin is refused by the schema itself.
-	if _, err := upgraded.database.ExecContext(ctx, `UPDATE devices SET app_node_id = 'nX' WHERE id = ?`, testUUID(3)); err == nil {
+// A node without an origin is refused by the schema itself.
+func TestSchemaRefusesAppNodeWithoutOrigin(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "unbound.sqlite"))
+	defer store.Close()
+	now := itoa(testTime.UnixMilli())
+	if _, err := store.database.Exec(`INSERT INTO devices(id, label, created_at_ms, last_used_at_ms, app_node_id)
+		VALUES ('` + testUUID(3) + `', 'Phone', ` + now + `, ` + now + `, 'nX')`); err == nil {
 		t.Fatal("app node without app origin accepted")
 	}
 }

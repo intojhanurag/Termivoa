@@ -704,9 +704,6 @@ func classifyManagementError(err error) managementFailure {
 		return managementFailure{protocol.InvalidRequest, "the worktree or repository name is not allowed"}
 	case errors.Is(err, ErrOperationID), errors.Is(err, errInvalidSessionCursor):
 		return managementFailure{protocol.InvalidRequest, "request is invalid"}
-	case errors.Is(err, ErrOperationResultUnavailable), errors.Is(err, store.ErrMutationResultUnavailable):
-		return managementFailure{protocol.InternalError,
-			"operation completed, but its original result is unavailable after a local data upgrade"}
 	case errors.Is(err, ErrRegistryClosed), errors.Is(err, context.Canceled),
 		errors.Is(err, context.DeadlineExceeded):
 		return managementFailure{protocol.HostUnavailable, "broker is unavailable"}

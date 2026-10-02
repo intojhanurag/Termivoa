@@ -468,72 +468,15 @@ func TestListDevicesStatus(t *testing.T) {
 	}
 }
 
-func TestAuthenticationMigrationUpgradesAndRollsBackOnConflict(t *testing.T) {
-	migrations, err := bundledMigrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	// A version-3 database with a conflicting table cannot be upgraded; the
-	// failure leaves its schema and data exactly as before.
-	path := filepath.Join(t.TempDir(), "conflict.sqlite")
-	database, err := openDatabase(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := applyMigrations(ctx, database, migrations[:3], testTime.UnixMilli()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(`CREATE TABLE settings (key TEXT PRIMARY KEY) STRICT;
-		INSERT INTO projects(id, display_name, canonical_path, created_at_ms, updated_at_ms)
-		VALUES ('` + testProject + `', 'kept', '/tmp/kept', 1, 1)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Open(ctx, path); err == nil {
-		t.Fatal("conflicting authentication migration succeeded")
-	}
-	database, err = openDatabase(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-	var applied, devices int
-	var name string
-	if err := database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil || applied != 3 {
-		t.Fatalf("applied after failed upgrade = %d, %v", applied, err)
-	}
-	if err := database.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name = 'devices'`).Scan(&devices); err != nil || devices != 0 {
-		t.Fatalf("failed upgrade left devices table: %d, %v", devices, err)
-	}
-	if err := database.QueryRow(`SELECT display_name FROM projects`).Scan(&name); err != nil || name != "kept" {
-		t.Fatalf("prior data after failed upgrade = %q, %v", name, err)
-	}
-	// Removing the conflict allows the same database to upgrade in place.
-	if _, err := database.Exec(`DROP TABLE settings`); err != nil {
-		t.Fatal(err)
-	}
-	_ = database.Close()
-	upgraded := openTestStore(t, path)
-	defer upgraded.Close()
-	if err := upgraded.PutSetting(ctx, "pairing_origin", "https://mac.example.ts.net", testTime); err != nil {
-		t.Fatal(err)
-	}
-	if value, ok, err := upgraded.GetSetting(ctx, "pairing_origin"); err != nil || !ok || value != "https://mac.example.ts.net" {
-		t.Fatalf("setting = %q, %v, %v", value, ok, err)
-	}
-	projects, err := upgraded.ListProjects(ctx, 10)
-	if err != nil || len(projects) != 1 || projects[0].DisplayName != "kept" {
-		t.Fatalf("projects after upgrade = %#v, %v", projects, err)
-	}
+func TestSecretColumnsAcceptOnlyHashes(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "hashes.sqlite"))
+	defer store.Close()
 	// Only fixed-size hashes are accepted for secret-derived columns.
 	for _, statement := range []string{
 		`INSERT INTO pairing_grants(id, grant_hash, created_at_ms, expires_at_ms) VALUES ('` + testUUID(1) + `', x'00', 1, 2)`,
 		`INSERT INTO pairing_grants(id, grant_hash, created_at_ms, expires_at_ms) VALUES ('` + testUUID(1) + `', 'plaintext-secret-value-000000000', 1, 2)`,
 	} {
-		if _, err := upgraded.database.Exec(statement); err == nil {
+		if _, err := store.database.Exec(statement); err == nil {
 			t.Fatalf("non-hash secret column accepted: %s", statement)
 		}
 	}
