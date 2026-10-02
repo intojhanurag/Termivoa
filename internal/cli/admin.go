@@ -185,7 +185,8 @@ func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[str
 	if err := writeString(output, fmt.Sprintf(
 		"Add-computer link (expires %s):\n%s\n"+
 			"Open it within 2 minutes in the Termivoa app at %s: run this command inside a Termivoa session "+
-			"in that app and tap \"Add this computer\", or paste the link in Settings → Computers → Add computer. %s\n"+
+			"in that app and tap the link, then confirm \"Add this computer?\"; "+
+			"or in Settings → Computers tap \"+ Add a computer\" and paste the link. %s\n"+
 			"The link is a single-use secret: do not share it in chats, issues, screenshots or logs.\n",
 		grant.ExpiresAt, link, describeApp(appOrigin, grant.AppNode), next)); err != nil || options.Confirmer == nil {
 		return err
