@@ -1,12 +1,12 @@
 # ADR 0005: Multi-computer through direct same-site links
 
-- Status: Accepted by the owner on 2026-10-02 (version 4). Implementation in progress; Gate 0 (real iPhone and Android) must pass before release, and the implementation pull request needs the owner's approval before merge
+- Status: Accepted by the owner on 2026-10-02 (version 4). Implemented in #135 (merged 2026-10-02 with the owner's approval); Gate 0 (real iPhone and Android) must pass before release
 - Date: 2026-10-01
 - Design: [`docs/multi-computer.md`](../multi-computer.md)
 
 ## Context
 
-One phone should use several computers (for example a Mac, a Linux server and a VPS) from one Home Screen app, with one Sessions list and one Wall. Today each computer runs its own `pterm` gateway at its own `https://<machine>.<tailnet>.ts.net` origin, and a phone pairs with one computer through an HttpOnly `__Host-` cookie scoped to that origin. `plan.md` lists multiple computers as reserved future work; the owner authorized it on 2026-10-01 as a critical, owner-reviewed feature.
+One phone should use several computers (for example a Mac, a Linux server and a VPS) from one Home Screen app, with one Sessions list and one Wall. Today each computer runs its own `pterm` gateway at its own `https://<machine>.<tailnet>.ts.net` origin, and a phone pairs with one computer through an HttpOnly `__Host-` cookie scoped to that origin. `docs/implementation-plan.md` lists multiple computers as reserved future work; the owner authorized it on 2026-10-01 as a critical, owner-reviewed feature.
 
 ## Decision
 
@@ -14,7 +14,7 @@ The phone keeps one app, served by a chosen "home" computer. That app talks **di
 
 A peer accepts a cross-origin request only when its `Origin` is the app origin bound to **that exact device credential**, approved on the peer for a grant created with `pterm pair --via <origin>`, owned by the same Tailscale user and still the same Tailscale node. Peer responses are schema-validated in the app; computers update independently against a minimum protocol revision; the peer refreshes its cookie so WebKit's 7-day cap does not end sessions.
 
-The host runtime stays Go, with a profiling requirement before any component is rewritten (see the stack review). The phone, not the host, is the measured bottleneck, so the design adds a phone-wide terminal-work budget with broker-enforced thumbnail rates, and performance release gates that keep `plan.md` §13 targets (p95 under 30 ms app-added latency, p95 under 2 s reconnect).
+The host runtime stays Go, with a profiling requirement before any component is rewritten (see the stack review). The phone, not the host, is the measured bottleneck, so the design adds a phone-wide terminal-work budget with broker-enforced thumbnail rates, and performance release gates that keep `docs/implementation-plan.md` §13 targets (p95 under 30 ms app-added latency, p95 under 2 s reconnect).
 
 Build work starts only after Gate 0: a real iPhone and Android check that a Home Screen app on one tailnet origin can get, keep and send another tailnet origin's `SameSite=Strict` `__Host-` cookie on credentialed `fetch` and WebSocket requests.
 

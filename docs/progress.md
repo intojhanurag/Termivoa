@@ -1,8 +1,20 @@
 # Implementation progress
 
-Last updated: 2026-09-27
+Last updated: 2026-10-02
 
-## Current status
+## Start here
+
+- **State on 2026-10-02:** latest tag `v0.1.0-beta.2` (private beta,
+  unsigned). `main` is beta.2 plus project buttons and line comments, Wall
+  drag, the Down key, worktrees, the Files view, multi-computer (#135; Gate 0
+  on real phones is still open) and the docs overhaul.
+- **Read first:** [`AGENTS.md`](../AGENTS.md) →
+  [`docs/architecture.md`](architecture.md) →
+  [`docs/pending-work.md`](pending-work.md) (the single roadmap).
+- **This file** is the evidence log (rule 18). Dated entries describe the
+  state on their own date; add new entries, do not rewrite old ones.
+
+## Log
 
 ### Summary (2026-09-27)
 
@@ -682,7 +694,7 @@ Commands used for this read-only preflight included `gh api user`, `gh repo view
 - [x] Verify the destination is private before first push.
 - [x] Create truthful open-source preparation and repository-policy documents.
 - [x] Record architecture and fixed decisions without claiming implementation.
-- [x] Add the authoritative plan at `plan.md` and `docs/implementation-plan.md`.
+- [x] Add the authoritative plan at `plan.md` and `docs/implementation-plan.md` (the root `plan.md` copy was removed on 2026-10-02).
 - [x] Add Apache-2.0 `LICENSE` text.
 - [x] Add editor, ignore, and attributes policy files.
 - [x] Resolve and pin exact Go/web/tool dependencies and commit lockfiles.

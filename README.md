@@ -96,7 +96,7 @@ dist/linux/pterm-linux-amd64` (or `-arm64`): it installs `~/.local/bin/pterm`
 and runs `pterm setup`. Servers, WSL and the Tailscale operator step:
 [docs/install.md](docs/install.md#linux-desktop-server-and-wsl).
 
-Then the three steps from [docs/getting-started.md](docs/getting-started.md):
+Then the three steps from the [quick start](https://termivoa.vercel.app/docs/quick-start/):
 
 1. Install [Tailscale](https://tailscale.com/download) on the computer and the
    phone, signed in to the same account.
@@ -136,7 +136,8 @@ a time. Details: [docs/architecture.md](docs/architecture.md).
 - A new phone needs a single-use, two-minute pairing link and your approval on
   the computer after you compare its code.
 - Paired phones use a `__Host-`, `HttpOnly`, `SameSite=Strict` session cookie.
-  `pterm revoke <device-id>` ends a phone's access at once.
+  `pterm revoke <device-id>` ends a phone's access to that computer at once;
+  with several computers, revoke it on each one.
 - Clients never receive raw terminal bytes and cannot send arbitrary bytes.
 - Terminal content is not stored on disk. No telemetry.
 
@@ -170,8 +171,10 @@ The full list of what still needs real hardware is in
 | `pterm doctor` | Read-only diagnostics. Never prints secrets. |
 | `pterm pair` | Print a pairing link and QR code, then approve the phone after you compare codes. |
 | `pterm pair pending` / `pair approve <id>` | Approve a phone later (with `pair --no-wait`). |
+| `pterm pair --via <name\|url>` | Next beta: add this computer to the phone app on another computer (home). |
 | `pterm devices` | List paired phones. `devices rename <id> <label>` renames one. |
-| `pterm revoke <device-id>` | Remove a phone's access at once. |
+| `pterm revoke <device-id>` | Remove a phone's access at once. `revoke --via <url>` (next beta) removes every phone that uses this computer through that home. |
+| `pterm computers` / `computers remove <url>` | Next beta, on home: show each phone's computers, or remove one from every phone's list. |
 | `pterm project add [--name <n>] <path>` / `project list` | Save or list project folders. |
 | `pterm list` | List sessions and their state. |
 | `pterm attach [--control] <session-id>` | Open a session in this terminal. Ctrl+] detaches. |
@@ -186,36 +189,18 @@ development harness `pterm up --dev`. Run `pterm help` for all flags.
 
 ## Development
 
-Prerequisites: Go 1.27.1, Node.js 24.11.0 (`.nvmrc`) and pnpm 10.33.0 (via
-Corepack).
-
-```sh
-pnpm install --frozen-lockfile
-./scripts/check        # Windows: ./scripts/check.ps1
-```
-
-`./scripts/check` runs protocol generation drift, Go format/vet/tests, the
-patched `third_party` modules, TypeScript checks, web unit tests and the
-production web build.
-
-| Path | Contents |
-| --- | --- |
-| `cmd/pterm` | CLI entry point and process modes |
-| `internal/` | broker, PTY host, terminal, IPC, gateway, auth, store, lifecycle |
-| `web/` | React + TypeScript phone app |
-| `protocol/v1` | JSON Schemas; Go and TypeScript types are generated from them |
-| `tests/` | fixtures, integration and soak tests |
-| `packaging/` | macOS app/DMG and Windows installer scripts |
-| `third_party/` | patched upstream Go modules ([notes](docs/dependency-patches.md)) |
-| `docs/` | architecture, decisions, evidence, release material |
+You need Go 1.27.1, Node.js 24.11.0 and pnpm 10.33.0. Run
+`pnpm install --frozen-lockfile`, then `./scripts/check` (Windows:
+`./scripts/check.ps1`). Setup, narrower checks and the code layout are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md) — the three-step first run
+- [User docs](https://termivoa.vercel.app/docs/) — quick start, guides, CLI and troubleshooting
 - [Install, update and uninstall](docs/install.md)
-- [Architecture](docs/architecture.md) and [decision records](docs/decisions/)
+- [Architecture](docs/architecture.md), [decision records](docs/decisions/) and [multi-computer design](docs/multi-computer.md)
 - [Threat model](docs/threat-model.md) and [authentication design](docs/p4-authentication-design.md)
-- [Progress log](docs/progress.md) and [milestone evidence](docs/evidence/README.md)
+- [Roadmap](docs/pending-work.md), [progress log](docs/progress.md) and [milestone evidence](docs/evidence/README.md)
 - [Owner verification checklist](docs/owner-verification.md)
 - [Release checklist](docs/release-checklist.md)
 - [Dependencies](docs/dependencies.md) and [dependency patches](docs/dependency-patches.md)
@@ -232,8 +217,8 @@ production web build.
   never restarted.
 - Existing terminal processes cannot be adopted; only sessions started by the
   broker can be shared.
-- No automatic updater. Open defects and risks are tracked in
-  [docs/progress.md](docs/progress.md).
+- No automatic updater. Open work is in [docs/pending-work.md](docs/pending-work.md);
+  defects and risks are tracked in [docs/progress.md](docs/progress.md).
 
 ## Contributing
 

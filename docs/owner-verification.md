@@ -1,6 +1,6 @@
 # Owner verification checklist (v0)
 
-Date: 2026-09-27. Host used for agent testing: Apple Silicon Mac, macOS 26.5.2,
+Date: 2026-09-27, updated 2026-10-02. Host used for agent testing: Apple Silicon Mac, macOS 26.5.2,
 Go 1.27.1, Node 24.11.0.
 
 This file lists every v0 item that the agent could not test. Each item needs
@@ -12,12 +12,13 @@ OS and browser version) next to it.
 
 ## 0. Run hosted CI on `main`
 
-GitHub Actions does not start any job, because the account has a billing or
-spending-limit problem. On 2026-09-27 the owner merged #27 (v0, which contains
+GitHub Actions is off until the repository goes public (see
+[pending-work.md](pending-work.md)); PRs merge after the local
+`./scripts/check`. It first stopped on a billing or spending-limit problem: on 2026-09-27 the owner merged #27 (v0, which contains
 #23–#26), #28 (first run) and #30 (phone UI v2) into `main` without hosted CI,
 after the full local check passed on macOS. See `docs/progress.md`.
 
-- [ ] Fix billing: GitHub → Settings → Billing and plans.
+- [ ] Re-enable GitHub Actions when the repository goes public.
 - [ ] Re-run CI on `main`. Native Windows tests, the Linux jobs
       (`go-quality` now runs the broker, CLI and `/proc` tests on Ubuntu;
       `linux-release-smoke`) and the packaging workflow have never run in
@@ -56,7 +57,7 @@ In a second terminal:
 ## 2. Real phone over Tailscale (the 3-step first run)
 
 The agent did not change Tailscale or startup settings on this Mac. Follow
-[getting-started.md](getting-started.md):
+the [quick start](https://termivoa.vercel.app/docs/quick-start/):
 
 - [ ] Build and install (DMG or from source), then run `pterm setup`.
       Check the plan it prints, answer `y` once, and answer `y` to the separate
@@ -227,6 +228,16 @@ Real delivery cannot be tested without a phone. See `docs/notifications.md`.
 - [ ] `pterm devices`, then `pterm revoke <device-id>` while the phone has
       control. The phone goes back to Setup and cannot send more input.
 
+## 2b. Multi-computer (Gate 0)
+
+Multi-computer is merged (#135) but not yet tested on a real phone. Gate 0
+needs a second computer and your approval for a Tailscale Serve port. Steps:
+[`scripts/gate0/README.md`](../scripts/gate0/README.md). Port 8443 is already
+used by the dev-server preview, so use another free port.
+
+- [ ] iPhone Home Screen app: Gate 0 checks pass.
+- [ ] Android Chrome: Gate 0 checks pass.
+
 ## 3. Windows 11 x64
 
 Only cross-compiled `go vet` and PE checks ran here. CI has a native Windows job,
@@ -382,8 +393,8 @@ WSL (optional):
 
 - Two earlier unexplained timeouts (real-session retirement, executable broker
   readiness). See `docs/progress.md`.
-- The session list does not show which device has control. The HTTP session
-  record has no field for it.
+- The session list shows whether you, another device or no one has control,
+  but not which other device.
 - `pterm setup` and `pterm uninstall` refuse to replace the broker while
   sessions are active, but the broker itself cannot yet refuse an update (no
   update RPC; documented in `docs/install.md` as pending). A database backup
