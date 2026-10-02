@@ -203,11 +203,14 @@ func (server *ManagementServer) lookupComputer(ctx context.Context, origin strin
 	return node, status, status.CheckOwner(node, true)
 }
 
-// hiddenComputer reports an entry whose pinned node no longer holds its name
-// in status. The app never sees it, so its user cannot remove it.
+// hiddenComputer reports an entry whose name now belongs to another node. The
+// app never sees it, so its user cannot remove it, and a full list drops it
+// for room. A name merely missing from status (a machine removed from the
+// tailnet, or a peer ParseStatus skipped) stays listed: nothing answers
+// there, the app shows it as unreachable, and its user can remove it.
 func hiddenComputer(status *tailnet.Status, computer store.Computer) bool {
 	node, ok := status.Peer(strings.TrimPrefix(computer.Origin, "https://"))
-	return !ok || node.ID != computer.NodeID
+	return ok && node.ID != computer.NodeID
 }
 
 // listComputers lists the device's computers. Once a snapshot exists, an

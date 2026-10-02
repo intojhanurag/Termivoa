@@ -137,7 +137,7 @@ begin
       this computer's Termivoa address (exitOtherServeHandlers). }
     Ran := RunPterm('setup --apply --yes', Code);
     if Ran and (Code = 3) then
-      SuppressibleMsgBox('Termivoa is installed, but startup was not registered: other Tailscale Serve handlers share ' +
+      SuppressibleMsgBox('Termivoa is installed, but startup was not updated (the previous version, if any, keeps starting at login): other Tailscale Serve handlers share ' +
         'this computer''s Termivoa address (HTTPS port 443), and any of them could control Termivoa. ' +
         'Move each one to another computer or to its own Tailscale Service hostname, or stop serving it ' +
         '(another port on this computer does not help: browsers send the Termivoa cookie to every port). ' +

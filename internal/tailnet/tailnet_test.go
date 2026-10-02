@@ -422,8 +422,32 @@ func TestFindBinaryRefusesWritableOrForeignFiles(t *testing.T) {
 	if err := os.Symlink(middle, chain); err != nil {
 		t.Fatal(err)
 	}
+	// A relative link in a folder reached through a symlink: the kernel
+	// follows ".." from the real folder, where the target sits in an open one.
+	base := t.TempDir()
+	for _, folder := range []string{"real/bin", "real/lib", "lib"} {
+		if err := os.MkdirAll(filepath.Join(base, folder), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []string{"real/lib/tailscale", "lib/tailscale"} {
+		if err := os.WriteFile(filepath.Join(base, file), nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(filepath.Join(base, "real/lib"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../lib/tailscale", filepath.Join(base, "real/bin/tailscale")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base, "real/bin"), filepath.Join(base, "bin")); err != nil {
+		t.Fatal(err)
+	}
+	relative := filepath.Join(base, "bin", "tailscale")
 	for name, path := range map[string]string{
-		"group-writable file": groupWritable, "world-writable folder": openFolder,
+		"relative link through a linked folder": relative,
+		"group-writable file":                   groupWritable, "world-writable folder": openFolder,
 		"symlink to a writable file": link, "folder": t.TempDir(),
 		"world-writable grandparent": deep, "link in a world-writable folder": chain,
 	} {

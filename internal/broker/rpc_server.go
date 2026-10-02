@@ -145,9 +145,18 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 		config: config, connections: make(map[net.Conn]struct{}), trustWake: make(chan struct{}, 1),
 	}
 	if server.config.Tailnet == nil {
+		var lastRefused string
 		server.config.Tailnet = tailnet.NewMonitor(tailnet.Config{
 			Source: tailnet.CommandSource(func() string {
-				path, _ := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+				path, refused := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+				// Log why a tailscale was refused once per change, so broker.log
+				// explains a multi-computer outage without pterm doctor.
+				if reasons := strings.Join(refused, "; "); reasons != lastRefused {
+					lastRefused = reasons
+					if reasons != "" {
+						fmt.Fprintf(os.Stderr, "broker: %s\n", reasons)
+					}
+				}
 				return path
 			}),
 			OnUpdate: server.TrustUpdated,

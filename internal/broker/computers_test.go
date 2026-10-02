@@ -794,10 +794,17 @@ func TestComputerListPinsTheNode(t *testing.T) {
 	if got := list(); len(got.Computers) != 1 {
 		t.Fatalf("confirmed list = %#v", got)
 	}
+	// A machine removed from the tailnet stays listed, so its user can
+	// remove it; only a name taken by another node hides the entry.
 	fixture.tailscale.set("mac", "", nil)
 	fixture.refresh(t)
+	if got := list(); len(got.Computers) != 1 {
+		t.Fatalf("entry of a gone node hidden: %#v", got)
+	}
+	fixture.tailscale.set("mac", "nOtherMac", nil)
+	fixture.refresh(t)
 	if got := list(); len(got.Computers) != 0 {
-		t.Fatalf("entry of a gone node still listed: %#v", got)
+		t.Fatalf("entry whose name moved to another node still listed: %#v", got)
 	}
 }
 
@@ -827,8 +834,9 @@ func TestComputerAddAgainAfterNodeChange(t *testing.T) {
 			}
 		}
 	}
-	fixture.tailscale.set("pc0", "nPc0New", nil) // pc0 reinstalled Tailscale
-	fixture.tailscale.set("pc1", "", nil)        // pc1 left the tailnet
+	fixture.tailscale.set("pc0", "nPc0New", nil)   // pc0 reinstalled Tailscale
+	fixture.tailscale.set("pc1", "nPc1Other", nil) // another machine took pc1's name
+	fixture.tailscale.set("pc2", "", nil)          // pc2 left the tailnet
 	fixture.refresh(t)
 	added, err := protocol.DecodeRPCPayload[protocol.HTTPComputerAddResponse](add("https://pc0.tailx.ts.net", protocol.HTTPComputerStatePending))
 	if err != nil || added.State != protocol.HTTPComputerStatePending || added.Node.ID != "nPc0New" {
@@ -840,12 +848,19 @@ func TestComputerAddAgainAfterNodeChange(t *testing.T) {
 	if response := add("https://pc0.tailx.ts.net", protocol.Confirmed); response.Type != protocol.GatewayComputersAddResult {
 		t.Fatalf("confirm the new node = %s", response.Payload)
 	}
-	// The list is full, but pc1's hidden entry gives up its slot.
+	// The list is full, but pc1's hidden entry gives up its slot. pc2, merely
+	// missing from status, keeps its own: it may be a peer ParseStatus
+	// skipped, and its user can still remove it.
 	if response := add("https://pc8.tailx.ts.net", protocol.HTTPComputerStatePending); response.Type != protocol.GatewayComputersAddResult {
 		t.Fatalf("hidden entry still holds a slot: %s", response.Payload)
 	}
-	if got := list(); len(got.Computers) != protocol.MaxComputers-1 || !reflect.DeepEqual(got.PendingOrigins, []string{"https://pc8.tailx.ts.net"}) {
+	got := list()
+	if len(got.Computers) != protocol.MaxComputers-1 || !reflect.DeepEqual(got.PendingOrigins, []string{"https://pc8.tailx.ts.net"}) ||
+		!slices.ContainsFunc(got.Computers, func(computer protocol.HTTPComputer) bool { return computer.Origin == "https://pc2.tailx.ts.net" }) {
 		t.Fatalf("list = %#v", got)
+	}
+	if response := add("https://pc9.tailx.ts.net", protocol.HTTPComputerStatePending); response.Type == protocol.GatewayComputersAddResult {
+		t.Fatal("a missing peer's entry was dropped for room")
 	}
 }
 

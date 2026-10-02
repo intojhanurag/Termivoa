@@ -224,7 +224,7 @@ Update Termivoa on that computer. Computers can be updated one at a time; the ap
 
 ### A computer is gone from the list (Next beta)
 
-Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; from the next beta this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again".
+Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; from the next beta this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again". A computer you removed from your tailnet stays in the list as "can't reach"; remove it in **Settings → Computers**.
 
 ### Log out says "Could not sign out of vps" (Next beta)
 

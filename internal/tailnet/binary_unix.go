@@ -50,7 +50,8 @@ func checkBinary(path string) error {
 			return err
 		}
 		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(path), target)
+			// The kernel follows ".." from the real folder, not the listed one.
+			target = filepath.Join(resolved(filepath.Dir(path)), target)
 		}
 		path = target
 	}
