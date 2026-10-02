@@ -108,7 +108,6 @@ A small stream on the wire can still be large work on the phone: an outside revi
 - **The active terminal comes first**: it keeps today's limits; Wall tiles and background observers are suspended when offscreen or when the app is in the background.
 - **Thumbnail streams are throttled at the source:** starting point **4 live Wall thumbnails at 5 updates per second, enforced by the broker** for read-only thumbnail viewers. This stays revision-correct because each patch is built from that viewer's last delivered frame to the latest (`internal/broker/viewer.go:322`, `:709-735`); history notices use their own path and are not throttled. A skipped delivery arms a **trailing timer** that delivers when the next slot opens, so output that stops mid-burst still paints (tested). The numbers are tuned on real phones.
 - **Tiles beyond the live limit** show their last frame with a **Paused** mark (a tile that was never live shows the session name and Paused) and go live again when they become one of the live tiles.
-- **Older peers** that do not support the `thumbnail` mode (attached without it, by revision gating) count as full-rate streams in the budget, or show a static tile.
 - Every limit has a test, and the release gates in section 6 measure it.
 
 ### Peer responses are untrusted
