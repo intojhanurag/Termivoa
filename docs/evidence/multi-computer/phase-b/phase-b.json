@@ -5,7 +5,7 @@
    "id": "B1",
    "name": "Pair the phone with mac (home)",
    "result": "PASS",
-   "evidence": "code 118-487 matched, 1124 ms"
+   "evidence": "code 284-743 matched, 1164 ms"
   },
   {
    "id": "B2-sheet",
@@ -17,7 +17,7 @@
    "id": "B2-code",
    "name": "Same code on the app and on the vps CLI",
    "result": "PASS",
-   "evidence": "app 023-070, CLI 023-070"
+   "evidence": "app 138-502, CLI 138-502"
   },
   {
    "id": "B2",
@@ -35,19 +35,19 @@
    "id": "B3-echo",
    "name": "Open a vps session from the mac app and echo round-trip",
    "result": "PASS",
-   "evidence": "/c/vps.tailx.ts.net/sessions/9bea52d3-58c0-413e-9e19-271ade25bfb0; output e2e-2004-42"
+   "evidence": "/c/vps.tailx.ts.net/sessions/4a5a4bd3-4be8-435b-8784-d384da5f8907; output e2e-52405-42"
   },
   {
    "id": "B3-new",
    "name": "Start a new session on vps from the mac app (\"Runs on vps\")",
    "result": "PASS",
-   "evidence": "new session a8cb3713-f289-44e7-a493-936a5b57d75d is in vps pterm list"
+   "evidence": "new session 8f9bcae9-11cd-4e20-96ea-40d2095ec4d0 is in vps pterm list"
   },
   {
    "id": "B8-shell",
    "name": "The cached app opens while home is offline",
    "result": "PASS",
-   "evidence": "service workers [\"https://mac.tailx.ts.net/sw.js\"]; load 12 ms; problems []"
+   "evidence": "service workers [\"https://mac.tailx.ts.net/sw.js\"]; load 13 ms; problems []"
   },
   {
    "id": "B8-vps",
@@ -65,7 +65,7 @@
    "id": "B4-both",
    "name": "Wall shows tiles from both computers",
    "result": "PASS",
-   "evidence": "mac-4@mac, mac-3@mac, mac-2@mac (Paused), vps-2@vps, demo@vps, vps-1@vps (Paused)"
+   "evidence": "mac-4@mac (Paused), mac-3@mac (Paused), mac-2@mac, vps-2@vps, demo@vps, vps-1@vps"
   },
   {
    "id": "B4-paused",
@@ -77,7 +77,7 @@
    "id": "B4-thumb",
    "name": "Thumbnails stay correct: a live tile follows its session, a paused tile stays still",
    "result": "PASS",
-   "evidence": "vps-2 live: tick 5 → 8 in 3 s; vps-1 Paused"
+   "evidence": "vps-2 live: tick 5 → 8 in 3 s; vps-1 shows e2e-52405-42: true"
   },
   {
    "id": "B5-down",
@@ -113,19 +113,19 @@
    "id": "B2b-tap",
    "name": "Tapping the add-computer link in the terminal opens the confirm sheet",
    "result": "FAIL",
-   "evidence": "a tap on the wrapped link (46 columns) did nothing; a tap on a file path in the same terminal opens Files. Continued by pasting the link"
+   "evidence": "the sheet opens on mouseup, then the click that follows the tap closes it again; continued by pasting the link"
+  },
+  {
+   "id": "B2b-back",
+   "name": "After Back from the waiting add page, the add keeps running (banner \"Adding vps… approve on vps\")",
+   "result": "FAIL",
+   "evidence": "Back went to /settings (the add page was a separate page load); banner: none; code was 281-508; terminal /sessions/1446dcc4-4174-406d-8542-217effe2f3a5"
   },
   {
    "id": "B2b-same",
-   "name": "Approved by typing y in the same app's terminal: vps is usable afterwards",
-   "result": "FAIL",
-   "evidence": "problems [\"vps · pair again · Run pterm pair --via mac on vps Computers\"]; vps rows 0; vps devices: no active device for mac"
-  },
-  {
-   "id": "B2b",
-   "name": "Terminal link, approved on vps, ends with \"vps is added\"",
+   "name": "Approved by typing y in the same app's terminal (in-app navigation): vps is added and usable",
    "result": "PASS",
-   "evidence": "code 649-228; outcome: added"
+   "evidence": "banner while waiting: Adding vps… approve on vps Open Cancel; after y: vps is added Dismiss; problems []; vps rows 4"
   },
   {
    "id": "B7-direct",
@@ -137,49 +137,55 @@
    "id": "B7-node",
    "name": "Changing mac's node ID on vps revokes the bound devices",
    "result": "PASS",
-   "evidence": "refused (TypeError: Failed to fetch) 24 s and revoked 54 s after the change; before: 4b958e68-9832-4ea1-a977-f1fcae7f08cf \"Demo phone\" active 2026-10-02T10:07:40.748Z https://mac.tailx.ts.net / 1a7f867c-2117-47de-96c2-cc7f502321a1 \"Demo phone\" revoked 2026-10-02T10:06:40.645Z https://mac.tailx.ts.net; after: 4b958e68-9832-4ea1-a977-f1fcae7f08cf \"Demo phone\" revoked 2026-10-02T10:07:40.748Z https://mac.tailx.ts.net / 1a7f867c-2117-47de-96c2-cc7f502321a1 \"Demo phone\" revoked 2026-10-02T10:06:40.645Z https://mac.tailx.ts.net; app: [\"vps · can't reach Retry\"]"
+   "evidence": "refused (401) 24 s and revoked 24 s after the change; before: 85e5a28f-0762-4730-8d69-a37ac06d699a \"Demo phone\" active 2026-10-02T10:35:07.222Z https://mac.tailx.ts.net / c2d6599b-d6e9-4aff-a4fa-74aefdbdc3c1 \"Demo phone\" revoked 2026-10-02T10:34:11.022Z https://mac.tailx.ts.net; after: 85e5a28f-0762-4730-8d69-a37ac06d699a \"Demo phone\" revoked 2026-10-02T10:35:07.222Z https://mac.tailx.ts.net / c2d6599b-d6e9-4aff-a4fa-74aefdbdc3c1 \"Demo phone\" revoked 2026-10-02T10:34:11.022Z https://mac.tailx.ts.net; app: [\"vps · pair again · Run pterm pair --via mac on vps Computers\"]"
+  },
+  {
+   "id": "B7-readd",
+   "name": "Re-adding vps after the node ID change works (new node pinned, sessions back)",
+   "result": "PASS",
+   "evidence": "outcome added; problems []; vps rows 4; active bound devices on vps 1"
   }
  ],
  "timings": [
   {
    "what": "pairing with home (link opened → Sessions)",
-   "ms": 1124
+   "ms": 1164
   },
   {
    "what": "add computer by paste (pterm pair --via → outcome)",
-   "ms": 4643
+   "ms": 4024
   },
   {
    "what": "Sessions list load (navigation → rows from both computers)",
-   "ms": 219
+   "ms": 217
   },
   {
    "what": "open vps session → live prompt",
-   "ms": 517
+   "ms": 522
   },
   {
    "what": "echo round-trip on vps (Enter → output painted)",
-   "ms": 207
+   "ms": 208
   },
   {
    "what": "cold open with home offline (navigation → vps rows)",
-   "ms": 217
+   "ms": 221
   },
   {
    "what": "vps recovery (Retry → no problem row)",
    "ms": 1
   },
   {
-   "what": "add through the terminal, approved in the same app (link → list)",
-   "ms": 12203
+   "what": "add from the terminal, approved in the same app (link → \"vps is added\")",
+   "ms": 7315
   },
   {
-   "what": "add from the terminal link, approved on vps (link → outcome)",
-   "ms": 7027
+   "what": "node ID change → bound device revoked",
+   "ms": 24089
   },
   {
-   "what": "node ID change → bound device revoked (whole seconds)",
-   "ms": 24000
+   "what": "re-add vps after a node change (pterm pair --via → outcome)",
+   "ms": 3975
   }
  ]
 }
