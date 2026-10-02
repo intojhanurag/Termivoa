@@ -63,7 +63,7 @@ Then:
 
 7. If the codes match, type `y` and press Enter. The app shows **vps is added**. Tap **Open sessions**.
 
-You can leave the page to type `y`, for example in your `ssh vps` session in the app. The add goes on, and a bar at the top says **Adding vps… approve on vps**, with **Open** and **Cancel**. When vps approves, the bar says **vps is added**. If the add fails, it says **vps was not added**; tap **Open** to see why.
+You can leave the page to type `y`, for example in your `ssh vps` session in the app: tap **Back to terminal** (or **Sessions** when you did not start from a terminal), or go back. The add goes on, and a bar at the top says **Adding vps… approve on vps**, with **Open** and **Cancel**. When vps approves, the bar says **vps is added**. If the add fails, it says **vps was not added**; tap **Open** to see why.
 
 If the codes are different, type `n`, then tap **Codes don't match? Cancel** in the app. **Cancel** on the sheet, the **Add a computer** page or the bar also stops the add: home deletes its note of the computer. If you cancel after you typed `y`, the app also signs this phone out of vps.
 

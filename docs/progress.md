@@ -42,6 +42,25 @@ on their own date.
 
 Two isolated dev stacks reached as `https://mac.tailx.ts.net` and `https://vps.tailx.ts.net` through `scripts/e2e-multicomputer/` (loopback CONNECT proxy with in-process TLS, fake `tailscale` status, every harness `pterm` in a `sandbox-exec` profile that hides the real Tailscale, port 8787 and launchctl). On 88742e3: Phase A 31/31, Phase B (Chrome 154, 390×844, touch) 22/24, WebKit 26.5 4/4. Open: a tap on an add-computer link in the terminal is closed again by the click that follows it (B2b-tap), and Back from the waiting add page loses the add (B2b-back). Commands and evidence: `docs/evidence/multi-computer/results.md`.
 
+### Multi-computer E2E fixes, web side (2026-10-02, branch `feat/mc-fix-web3`)
+
+Two bugs from the E2E re-run on `feat/multi-computer` (1c4857c). Each fix
+has a vitest test (no jsdom); the 6 new or changed tests fail on 1c4857c.
+
+- A link tap in the terminal consumes the click of the same tap
+  (`areaClick` in `Live.tsx`), so the add-computer sheet no longer closes
+  at once. Path taps still open Files.
+- Back from the waiting add page keeps the add. The add page stays a full
+  load (home's CSP for a document only allows the pending origin from the
+  next load), but that load now puts the path the add started from (`back`
+  in the fragment, or `/`) before the add page in its own history, so Back
+  stays in the same document. The waiting page has **Back to terminal**
+  (from a session) or **Sessions** (`LeaveAdd`). The grant is still
+  stripped at once, and redeemed only after Continue, after the boot
+  stray-worker guard of this load.
+- Evidence: `pnpm --dir web test` (47 files, 660 tests), `cd web && npx tsc
+  --noEmit -p .`, `pnpm build:web` and `./scripts/check` exit 0.
+
 ### Multi-computer confirming-review fixes, web side (2026-10-02, branch `feat/mc-fix-web2`)
 
 Fixes the confirming-review and E2E findings on the phone app of
