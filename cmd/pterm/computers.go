@@ -43,10 +43,15 @@ func tailnetFindings(status *tailnet.Status, devices []protocol.AdminRPCDevice) 
 		case !found:
 			findings = append(findings, fmt.Sprintf("%s: pinned node %s is gone; phones bound to it stop working", origin, pinned))
 		default:
-			switch status.Trust(origin, pinned) {
+			tagged := len(device.AppNode.Tags) > 0
+			switch status.Trust(origin, pinned, tagged) {
 			case tailnet.Changed:
 				findings = append(findings, origin+": node ID changed (reused name?)")
 			case tailnet.Untrusted:
+				if peer.Tagged() != tagged {
+					findings = append(findings, origin+": tags changed since pairing; phones bound to it are refused until paired again")
+					break
+				}
 				findings = append(findings, fmt.Sprintf("%s: owner mismatch (%s; this computer: %s)",
 					origin, strconv.QuoteToGraphic(peer.Owner), strconv.QuoteToGraphic(status.Self.Owner)))
 			}

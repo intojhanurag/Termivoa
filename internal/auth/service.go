@@ -446,6 +446,12 @@ func (service *Service) Logout(ctx context.Context, credential string) error {
 	if err != nil {
 		return err
 	}
+	return service.LogoutPrincipal(ctx, principal)
+}
+
+// LogoutPrincipal is Logout for a principal the caller has just
+// authenticated (and, for the gateway, admitted from its origin).
+func (service *Service) LogoutPrincipal(ctx context.Context, principal Principal) error {
 	service.mu.Lock()
 	service.revokedCredentials[principal.CredentialID] = struct{}{}
 	targets := service.revokeBindingsLocked(func(binding *Binding) bool {
@@ -541,7 +547,7 @@ func (service *Service) RevokeVia(ctx context.Context, origin string) ([]string,
 	revoked, closed := []string{}, 0
 	var errs []error
 	for _, device := range bound {
-		if device.Origin != origin {
+		if device.App.Origin != origin {
 			continue
 		}
 		count, err := service.RevokeDevice(ctx, device.DeviceID)
@@ -567,16 +573,16 @@ func (service *Service) HasAppStreams() bool {
 	return false
 }
 
-// CloseUntrusted ends every live stream opened from an app origin for which
-// trusted(origin, pinned node ID) is false, exactly like a revocation: the
-// stream refuses input, releases control and closes with access.revoked. The
-// device is not revoked, and streams from this computer's own origin are never
+// CloseUntrusted ends every live stream opened from an app origin whose
+// device's app binding trusted refuses, exactly like a revocation: the stream
+// refuses input, releases control and closes with access.revoked. The device
+// is not revoked, and streams from this computer's own origin are never
 // affected. trusted runs under the service lock and must only read memory.
-func (service *Service) CloseUntrusted(trusted func(origin, nodeID string) bool) int {
+func (service *Service) CloseUntrusted(trusted func(app store.AppBinding) bool) int {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	return len(service.revokeBindingsLocked(func(binding *Binding) bool {
-		return binding.origin != "" && !trusted(binding.origin, binding.principal.App.NodeID)
+		return binding.origin != "" && !trusted(binding.principal.App)
 	}, ErrRevoked))
 }
 

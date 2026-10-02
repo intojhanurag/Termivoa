@@ -416,18 +416,18 @@ func TestTailnetFindingsReportBindingMismatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	device := func(origin, node string, revoked bool) protocol.AdminRPCDevice {
-		return protocol.AdminRPCDevice{AppOrigin: &origin, AppNode: &protocol.TailnetNode{ID: node, Tags: []string{}}, Revoked: revoked}
+	device := func(origin, node string, revoked bool, tags ...string) protocol.AdminRPCDevice {
+		return protocol.AdminRPCDevice{AppOrigin: &origin, AppNode: &protocol.TailnetNode{ID: node, Tags: append([]string{}, tags...)}, Revoked: revoked}
 	}
 	devices := []protocol.AdminRPCDevice{
-		device("https://mac.tailx.ts.net", "nMac", false),   // same owner: fine
-		device("https://mac.tailx.ts.net", "nMac", false),   // duplicate: checked once
-		device("https://srv.tailx.ts.net", "nSrv", false),   // tagged: owners not compared
-		device("https://eve.tailx.ts.net", "nEve", false),   // another user
-		device("https://gone.tailx.ts.net", "nGone", false), // node removed
-		device("https://old.tailx.ts.net", "nOld", false),   // name now on another node
-		device("https://mac.other.ts.net", "nX", false),     // another tailnet
-		device("https://eve.tailx.ts.net", "nEve2", true),   // revoked: skipped
+		device("https://mac.tailx.ts.net", "nMac", false),               // same owner: fine
+		device("https://mac.tailx.ts.net", "nMac", false),               // duplicate: checked once
+		device("https://srv.tailx.ts.net", "nSrv", false, "tag:server"), // tagged: owners not compared
+		device("https://eve.tailx.ts.net", "nEve", false),               // another user
+		device("https://gone.tailx.ts.net", "nGone", false),             // node removed
+		device("https://old.tailx.ts.net", "nOld", false),               // name now on another node
+		device("https://mac.other.ts.net", "nX", false),                 // another tailnet
+		device("https://eve.tailx.ts.net", "nEve2", true),               // revoked: skipped
 		{}, // own origin: skipped
 	}
 	got := tailnetFindings(status, devices)
@@ -439,6 +439,11 @@ func TestTailnetFindingsReportBindingMismatches(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("findings:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// A node pinned untagged that is tagged now is refused (SL4).
+	if got := tailnetFindings(status, []protocol.AdminRPCDevice{device("https://srv.tailx.ts.net", "nSrv", false)}); len(got) != 1 ||
+		got[0] != "https://srv.tailx.ts.net: tags changed since pairing; phones bound to it are refused until paired again" {
+		t.Fatalf("tag change findings = %v", got)
 	}
 	status.Self.Tags = []string{"tag:server"} // a tagged home never compares owners
 	if got := tailnetFindings(status, devices[3:4]); len(got) != 0 {

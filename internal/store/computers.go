@@ -13,6 +13,9 @@ import (
 var (
 	ErrComputerMissing  = errors.New("store: computer is not in this device's list")
 	ErrComputerCapacity = errors.New("store: this device's computer list is full")
+	// ErrComputerNode refuses to confirm an entry that was added for another
+	// Tailscale node: the name now belongs to a different machine.
+	ErrComputerNode = errors.New("store: the computer is not the node it was added as")
 )
 
 // AppBinding is the app origin a grant, pending pairing or device is bound to
@@ -77,18 +80,17 @@ func (app AppBinding) columns() ([4]any, error) {
 	return [4]any{app.Origin, app.NodeID, owner, string(encoded)}, nil
 }
 
-// BoundDevice is one live device bound to an app origin.
+// BoundDevice is one device bound to an app origin.
 type BoundDevice struct {
 	DeviceID string
-	Origin   string
-	NodeID   string
+	App      AppBinding
 }
 
 // ListBoundDevices returns unrevoked devices bound to an app origin, ordered
 // by origin. live limits them to devices holding a usable credential at now
 // (the same rule as the device cap); otherwise every unrevoked one is listed.
 func (store *Store) ListBoundDevices(ctx context.Context, now time.Time, credentialIdle time.Duration, live bool) ([]BoundDevice, error) {
-	query := `SELECT id, app_origin, app_node_id FROM devices WHERE app_origin IS NOT NULL AND revoked_at_ms IS NULL`
+	query := `SELECT id, ` + appSelect + ` FROM devices WHERE app_origin IS NOT NULL AND revoked_at_ms IS NULL`
 	args := []any{}
 	if live {
 		query += ` AND id IN (` + liveDevices + `)`
@@ -102,12 +104,41 @@ func (store *Store) ListBoundDevices(ctx context.Context, now time.Time, credent
 	var devices []BoundDevice
 	for rows.Next() {
 		var device BoundDevice
-		if err := rows.Scan(&device.DeviceID, &device.Origin, &device.NodeID); err != nil {
+		var app appColumns
+		if err := rows.Scan(append([]any{&device.DeviceID}, app.targets()...)...); err != nil {
 			return nil, fmt.Errorf("store: scan bound device: %w", err)
+		}
+		if device.App, err = app.binding(); err != nil {
+			return nil, err
 		}
 		devices = append(devices, device)
 	}
 	return devices, rows.Err()
+}
+
+// BoundApps returns each distinct app binding of any device, revoked and
+// expired ones included, ordered by origin: the origins whose app may still
+// hold a cookie of this computer and must be able to read its 401.
+func (store *Store) BoundApps(ctx context.Context) ([]AppBinding, error) {
+	rows, err := store.database.QueryContext(ctx, `SELECT DISTINCT `+appSelect+` FROM devices
+		WHERE app_origin IS NOT NULL ORDER BY 1, 2`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list bound apps: %w", err)
+	}
+	defer rows.Close()
+	var apps []AppBinding
+	for rows.Next() {
+		var columns appColumns
+		if err := rows.Scan(columns.targets()...); err != nil {
+			return nil, fmt.Errorf("store: scan bound app: %w", err)
+		}
+		app, err := columns.binding()
+		if err != nil {
+			return nil, err
+		}
+		apps = append(apps, app)
+	}
+	return apps, rows.Err()
 }
 
 // PairingOrigins returns the distinct app origins of unexpired, unredeemed
@@ -158,9 +189,12 @@ const (
 )
 
 // Computer is one entry of a device's computer list on the home computer.
+// NodeID is the Tailscale node home found at that origin when it was added;
+// empty for entries from before node pinning.
 type Computer struct {
 	DeviceID  string
 	Origin    string
+	NodeID    string
 	Label     string
 	State     ComputerState
 	ExpiresAt *time.Time // Set only while pending.
@@ -172,14 +206,15 @@ type Computer struct {
 //
 //   - Pending inserts or refreshes a pending entry until expires. If the
 //     origin is already confirmed, the confirmed entry is kept unchanged.
-//   - Confirmed needs an existing entry (pending or confirmed): it confirms it
-//     and sets its label (a rename when already confirmed).
+//   - Confirmed needs an existing entry (pending or confirmed) pinned to the
+//     same nodeID: it confirms it and sets its label (a rename when already
+//     confirmed). Another node is ErrComputerNode.
 //
 // A new entry needs room: at most limit entries per device, both states.
 func (store *Store) PutComputer(
-	ctx context.Context, deviceID, origin, label string, state ComputerState, now, expires time.Time, limit int,
+	ctx context.Context, deviceID, origin, nodeID, label string, state ComputerState, now, expires time.Time, limit int,
 ) (Computer, error) {
-	if !validUUID(deviceID) || origin == "" || len(origin) > 261 || label == "" || len(label) > 64 ||
+	if !validUUID(deviceID) || origin == "" || len(origin) > 261 || nodeID == "" || len(nodeID) > 64 || label == "" || len(label) > 64 ||
 		!utf8.ValidString(label) || limit < 1 || (state == ComputerPending && !expires.After(now)) ||
 		(state != ComputerPending && state != ComputerConfirmed) {
 		return Computer{}, errors.New("store: invalid computer")
@@ -204,6 +239,8 @@ func (store *Store) PutComputer(
 		return current, commit(transaction, "computer update")
 	case state == ComputerConfirmed && !exists:
 		return Computer{}, ErrComputerMissing
+	case state == ComputerConfirmed && current.NodeID != nodeID:
+		return Computer{}, ErrComputerNode
 	case !exists:
 		var count int
 		if err := transaction.QueryRowContext(ctx, `SELECT count(*) FROM computers WHERE device_id = ?`,
@@ -214,7 +251,7 @@ func (store *Store) PutComputer(
 			return Computer{}, ErrComputerCapacity
 		}
 	}
-	saved := Computer{DeviceID: deviceID, Origin: origin, Label: label, State: state, CreatedAt: now.UTC().Truncate(time.Millisecond)}
+	saved := Computer{DeviceID: deviceID, Origin: origin, NodeID: nodeID, Label: label, State: state, CreatedAt: now.UTC().Truncate(time.Millisecond)}
 	if exists {
 		saved.CreatedAt = current.CreatedAt
 	}
@@ -223,43 +260,34 @@ func (store *Store) PutComputer(
 		expiresAt = millis(expires)
 		saved.ExpiresAt = timePointer(fromMillis(millis(expires)))
 	}
-	if _, err := transaction.ExecContext(ctx, `INSERT INTO computers(device_id, origin, label, state, expires_at_ms, created_at_ms)
-		VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(device_id, origin) DO UPDATE SET
-		label = excluded.label, state = excluded.state, expires_at_ms = excluded.expires_at_ms`,
-		deviceID, origin, label, string(state), expiresAt, millis(saved.CreatedAt)); err != nil {
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO computers(device_id, origin, node_id, label, state, expires_at_ms, created_at_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(device_id, origin) DO UPDATE SET
+		node_id = excluded.node_id, label = excluded.label, state = excluded.state, expires_at_ms = excluded.expires_at_ms`,
+		deviceID, origin, nodeID, label, string(state), expiresAt, millis(saved.CreatedAt)); err != nil {
 		return Computer{}, fmt.Errorf("store: save computer: %w", err)
 	}
 	return saved, commit(transaction, "computer update")
 }
 
-// ListComputers deletes the device's expired pending entries, then returns
-// the rest in creation order.
+// ListComputers returns the device's confirmed and unexpired pending entries
+// in creation order. It only reads: it runs on every app load, and PutComputer
+// deletes expired pending entries.
 func (store *Store) ListComputers(ctx context.Context, deviceID string, now time.Time) ([]Computer, error) {
-	transaction, err := store.database.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("store: begin computer list: %w", err)
-	}
-	defer transaction.Rollback() //nolint:errcheck
-	if err := pruneComputers(ctx, transaction, deviceID, millis(now)); err != nil {
-		return nil, err
-	}
-	rows, err := transaction.QueryContext(ctx, `SELECT `+computerColumns+` FROM computers
-		WHERE device_id = ? ORDER BY created_at_ms, origin`, deviceID)
+	rows, err := store.database.QueryContext(ctx, `SELECT `+computerColumns+` FROM computers
+		WHERE device_id = ? AND (state = 'confirmed' OR expires_at_ms > ?) ORDER BY created_at_ms, origin`,
+		deviceID, millis(now))
 	if err != nil {
 		return nil, fmt.Errorf("store: list computers: %w", err)
 	}
-	computers, err := scanComputers(rows)
-	if err != nil {
-		return nil, err
-	}
-	return computers, commit(transaction, "computer list")
+	return scanComputers(rows)
 }
 
-// ListConfirmedComputers returns the confirmed entries of every device, at
-// most limit, for local administration.
+// ListConfirmedComputers returns the confirmed entries of every unrevoked
+// device, at most limit, for local administration.
 func (store *Store) ListConfirmedComputers(ctx context.Context, limit int) ([]Computer, error) {
 	rows, err := store.database.QueryContext(ctx, `SELECT `+computerColumns+` FROM computers
-		WHERE state = 'confirmed' ORDER BY created_at_ms, device_id, origin LIMIT ?`, limit)
+		WHERE state = 'confirmed' AND device_id IN (SELECT id FROM devices WHERE revoked_at_ms IS NULL)
+		ORDER BY created_at_ms, device_id, origin LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list all computers: %w", err)
 	}
@@ -282,7 +310,7 @@ func (store *Store) RemoveComputer(ctx context.Context, deviceID, origin string)
 	return int(removed), err
 }
 
-const computerColumns = `device_id, origin, label, state, expires_at_ms, created_at_ms`
+const computerColumns = `device_id, origin, node_id, label, state, expires_at_ms, created_at_ms`
 
 func pruneComputers(ctx context.Context, transaction *sql.Tx, deviceID string, now int64) error {
 	if _, err := transaction.ExecContext(ctx, `DELETE FROM computers
@@ -295,12 +323,13 @@ func pruneComputers(ctx context.Context, transaction *sql.Tx, deviceID string, n
 func scanComputer(scanner rowScanner) (Computer, error) {
 	var computer Computer
 	var state string
+	var node sql.NullString
 	var expires sql.NullInt64
 	var created int64
-	if err := scanner.Scan(&computer.DeviceID, &computer.Origin, &computer.Label, &state, &expires, &created); err != nil {
+	if err := scanner.Scan(&computer.DeviceID, &computer.Origin, &node, &computer.Label, &state, &expires, &created); err != nil {
 		return Computer{}, err
 	}
-	computer.State, computer.ExpiresAt, computer.CreatedAt = ComputerState(state), timeFromNull(expires), fromMillis(created)
+	computer.NodeID, computer.State, computer.ExpiresAt, computer.CreatedAt = node.String, ComputerState(state), timeFromNull(expires), fromMillis(created)
 	return computer, nil
 }
 

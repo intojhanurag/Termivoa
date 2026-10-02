@@ -120,7 +120,7 @@ func TestAppBindingFlowsFromGrantToDevice(t *testing.T) {
 		t.Fatalf("devices = %+v, %v", devices, err)
 	}
 	bound, err := store.ListBoundDevices(ctx, testTime, time.Hour, true)
-	if err != nil || len(bound) != 1 || bound[0] != (BoundDevice{DeviceID: device.ID, Origin: testApp.Origin, NodeID: testApp.NodeID}) {
+	if err != nil || len(bound) != 1 || !reflect.DeepEqual(bound[0], BoundDevice{DeviceID: device.ID, App: testApp}) {
 		t.Fatalf("bound = %+v, %v", bound, err)
 	}
 	if bound, _ := store.ListBoundDevices(ctx, testTime.Add(2*time.Hour), time.Hour, true); len(bound) != 0 {
@@ -167,7 +167,7 @@ func TestComputerListPendingConfirmLimitAndExpiry(t *testing.T) {
 	insertDevice(t, store, other, otherSession)
 	expires := testTime.Add(10 * time.Minute)
 	put := func(deviceID, origin, label string, state ComputerState, now time.Time) (Computer, error) {
-		return store.PutComputer(ctx, deviceID, origin, label, state, now, now.Add(10*time.Minute), 8)
+		return store.PutComputer(ctx, deviceID, origin, "nNode", label, state, now, now.Add(10*time.Minute), 8)
 	}
 
 	if _, err := put(device.ID, "https://vps.tailx.ts.net", "vps", ComputerConfirmed, testTime); !errors.Is(err, ErrComputerMissing) {
@@ -186,8 +186,13 @@ func TestComputerListPendingConfirmLimitAndExpiry(t *testing.T) {
 		saved.State != ComputerConfirmed || saved.Label != "server" {
 		t.Fatalf("pending over confirmed = %+v, %v", saved, err)
 	}
-	if saved, _ = put(device.ID, "https://vps.tailx.ts.net", "box", ComputerConfirmed, testTime); saved.Label != "box" {
+	if saved, _ = put(device.ID, "https://vps.tailx.ts.net", "box", ComputerConfirmed, testTime); saved.Label != "box" || saved.NodeID != "nNode" {
 		t.Fatalf("rename = %+v", saved)
+	}
+	// Confirming needs the node the entry was added for (SM2).
+	if _, err := store.PutComputer(ctx, device.ID, "https://vps.tailx.ts.net", "nOther", "vps", ComputerConfirmed,
+		testTime, expires, 8); !errors.Is(err, ErrComputerNode) {
+		t.Fatalf("confirm as another node = %v", err)
 	}
 	// The list is per device and holds at most 8 entries, both states.
 	for index := range 7 {
@@ -201,17 +206,26 @@ func TestComputerListPendingConfirmLimitAndExpiry(t *testing.T) {
 	if _, err := put(other.ID, "https://ninth.tailx.ts.net", "ninth", ComputerPending, testTime); err != nil {
 		t.Fatalf("other device's list is separate: %v", err)
 	}
-	// Expired pending entries are deleted and free their slots.
+	// Expired pending entries are not listed. Listing only reads (L3); the
+	// next PutComputer deletes them and frees their slots.
 	listed, err := store.ListComputers(ctx, device.ID, expires)
-	if err != nil || len(listed) != 1 || listed[0].Origin != "https://vps.tailx.ts.net" {
+	if err != nil || len(listed) != 1 || listed[0].Origin != "https://vps.tailx.ts.net" || listed[0].NodeID != "nNode" {
 		t.Fatalf("after expiry = %+v, %v", listed, err)
 	}
-	var count int
-	if err := store.database.QueryRow(`SELECT count(*) FROM computers WHERE device_id = ?`, device.ID).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("expired rows kept: %d, %v", count, err)
+	countRows := func() (count int) {
+		if err := store.database.QueryRow(`SELECT count(*) FROM computers WHERE device_id = ?`, device.ID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
+	if count := countRows(); count != 8 {
+		t.Fatalf("listing wrote: %d rows", count)
 	}
 	if _, err := put(device.ID, "https://ninth.tailx.ts.net", "ninth", ComputerPending, expires); err != nil {
 		t.Fatalf("slot not freed: %v", err)
+	}
+	if count := countRows(); count != 2 {
+		t.Fatalf("expired rows kept: %d", count)
 	}
 	if _, err := put(other.ID, "https://vps.tailx.ts.net", "vps", ComputerPending, expires); err != nil {
 		t.Fatal(err)
@@ -222,6 +236,13 @@ func TestComputerListPendingConfirmLimitAndExpiry(t *testing.T) {
 	all, err := store.ListConfirmedComputers(ctx, 512)
 	if err != nil || len(all) != 2 {
 		t.Fatalf("confirmed of all devices = %+v, %v", all, err)
+	}
+	// A revoked device's list is not shown to local administration (L2).
+	if _, err := store.database.Exec(`UPDATE devices SET revoked_at_ms = ? WHERE id = ?`, millis(expires), other.ID); err != nil {
+		t.Fatal(err)
+	}
+	if all, err := store.ListConfirmedComputers(ctx, 512); err != nil || len(all) != 1 || all[0].DeviceID != device.ID {
+		t.Fatalf("confirmed after revoking a device = %+v, %v", all, err)
 	}
 	if removed, err := store.RemoveComputer(ctx, device.ID, "https://ninth.tailx.ts.net"); err != nil || removed != 1 {
 		t.Fatalf("remove one = %d, %v", removed, err)

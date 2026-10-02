@@ -3,7 +3,6 @@ package tailnet
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -131,6 +130,12 @@ func (monitor *Monitor) startLocked() chan struct{} {
 		if err == nil {
 			status, err = ParseStatus(data)
 		}
+		// While Tailscale starts, restarts or is logged out its status lists
+		// no usable peers. That is a failed read, not a new truth: the last
+		// good snapshot stays under the grace rules.
+		if err == nil && status.BackendState != "Running" {
+			err = ErrUnavailable
+		}
 		if err == nil {
 			monitor.mu.Lock()
 			monitor.current, monitor.readAt = status, monitor.config.Now()
@@ -147,43 +152,63 @@ func (monitor *Monitor) startLocked() chan struct{} {
 	return done
 }
 
-// CommandSource runs `<binary> status --json`. The context's deadline kills
-// the process; WaitDelay bounds a child that keeps its output pipe open.
-func CommandSource(binary string) Source {
+// lookupRetry spaces lookups of a Tailscale CLI that was not found, so one
+// installed later is used without a restart.
+var lookupRetry = time.Minute
+
+// CommandSource runs `<binary> status --json` with the binary find returns.
+// While find returns "", it is asked again at most once per lookupRetry; a
+// found binary is kept. The context's deadline kills the process; WaitDelay
+// bounds a child that keeps its output pipe open.
+func CommandSource(find func() string) Source {
+	var mu sync.Mutex
+	var binary string
+	var lookedAt time.Time
 	return func(ctx context.Context) ([]byte, error) {
-		if binary == "" {
+		mu.Lock()
+		if binary == "" && (lookedAt.IsZero() || time.Since(lookedAt) >= lookupRetry) {
+			binary, lookedAt = find(), time.Now()
+		}
+		path := binary
+		mu.Unlock()
+		if path == "" {
 			return nil, ErrUnavailable
 		}
-		command := exec.CommandContext(ctx, binary, "status", "--json")
+		command := exec.CommandContext(ctx, path, "status", "--json")
 		command.WaitDelay = time.Second
 		return command.Output()
 	}
 }
 
-// FindBinary returns the Tailscale CLI: on PATH, else where its installers put
-// it. Homebrew paths are checked because launchd's PATH has neither
-// /opt/homebrew/bin nor /usr/local/bin. It returns "" when none exists.
+// FindBinary returns the Tailscale CLI, or "" when none is usable. Fixed
+// install locations come first and PATH last, so a writable folder early on
+// PATH cannot plant a fake tailscale. The order is most to least protected:
+// /usr/bin and /usr/sbin (owned by the system package manager; read-only
+// under macOS SIP), the macOS app bundle (the CLI of the Tailscale app that
+// runs the daemon), /usr/local/bin, and Homebrew's /opt/homebrew/bin last on
+// macOS (often owned by the user). launchd's PATH has neither Homebrew
+// folder, so they must be listed. Every candidate must pass safeBinary.
 func FindBinary(goos string, getenv func(string) string, lookPath func(string) (string, error)) string {
-	if path, err := lookPath("tailscale"); err == nil && path != "" {
-		return path
-	}
 	var candidates []string
 	switch goos {
 	case "darwin":
 		candidates = []string{
+			"/usr/bin/tailscale", "/usr/sbin/tailscale",
 			"/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-			"/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale",
+			"/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale",
 		}
+	case "linux":
+		candidates = []string{"/usr/bin/tailscale", "/usr/sbin/tailscale", "/usr/local/bin/tailscale"}
 	case "windows":
 		if programFiles := getenv("ProgramFiles"); filepath.IsAbs(programFiles) {
 			candidates = []string{filepath.Join(programFiles, "Tailscale", "tailscale.exe")}
 		}
-	case "linux":
-		// Distribution packages install here; sbin is often not on a user's PATH.
-		candidates = []string{"/usr/bin/tailscale", "/usr/sbin/tailscale", "/usr/local/bin/tailscale"}
+	}
+	if path, err := lookPath("tailscale"); err == nil && filepath.IsAbs(path) {
+		candidates = append(candidates, path)
 	}
 	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		if safeBinary(candidate) {
 			return candidate
 		}
 	}

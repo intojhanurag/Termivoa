@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -25,12 +24,16 @@ var (
 )
 
 // Node is one Tailscale node. Host is its MagicDNS name without the trailing
-// dot, in lowercase. Owner is the owner's login name, empty for tagged nodes.
+// dot, in lowercase. UserID is the owner's stable Tailscale user ID, the only
+// value owners are compared by. Owner is the owner's login name, for display
+// and storage only: it is not unique across identity providers. Owner is
+// empty for tagged nodes.
 type Node struct {
-	ID    string
-	Host  string
-	Owner string
-	Tags  []string
+	ID     string
+	Host   string
+	UserID int64
+	Owner  string
+	Tags   []string
 }
 
 // Tagged reports a tagged node. Tagged nodes share one placeholder owner, so
@@ -94,7 +97,8 @@ func ParseStatus(data []byte) (*Status, error) {
 		if len(peer.Tags) == 0 {
 			owner = raw.User[strconv.FormatInt(peer.UserID, 10)].LoginName
 		}
-		return Node{ID: peer.ID, Host: strings.ToLower(strings.TrimSuffix(peer.DNSName, ".")), Owner: owner, Tags: peer.Tags}
+		return Node{ID: peer.ID, Host: strings.ToLower(strings.TrimSuffix(peer.DNSName, ".")),
+			UserID: peer.UserID, Owner: owner, Tags: peer.Tags}
 	}
 	if raw.Self != nil {
 		status.Self = node(*raw.Self)
@@ -120,7 +124,7 @@ func validNode(node Node) error {
 	if node.ID == "" || len(node.ID) > 64 || strings.Trim(node.ID, idCharacters) != "" ||
 		len(node.Owner) > protocol.MaxTailnetOwnerBytes || strings.TrimSpace(node.Owner) != node.Owner ||
 		!utf8.ValidString(node.Owner) || strings.ContainsFunc(node.Owner, unicode.IsControl) ||
-		(!node.Tagged() && node.Owner == "") || len(node.Tags) > protocol.MaxTailnetTags {
+		(!node.Tagged() && (node.Owner == "" || node.UserID == 0)) || len(node.Tags) > protocol.MaxTailnetTags {
 		return errors.New("tailnet: node is outside protocol bounds")
 	}
 	for _, tag := range node.Tags {
@@ -172,8 +176,10 @@ func (status *Status) Resolve(via string) (Node, error) {
 }
 
 // CheckOwner applies the owner rule to an app node: a user-owned node must
-// have this computer's owner. When either node is tagged, owners are never
-// compared and the node is accepted only with allowTagged.
+// have this computer's owner, compared by stable user ID (login names are
+// display text and not unique across identity providers). When either node
+// is tagged, owners are never compared and the node is accepted only with
+// allowTagged.
 func (status *Status) CheckOwner(node Node, allowTagged bool) error {
 	if node.Tagged() || status.Self.Tagged() {
 		if !allowTagged {
@@ -181,7 +187,7 @@ func (status *Status) CheckOwner(node Node, allowTagged bool) error {
 		}
 		return nil
 	}
-	if node.Owner == "" || node.Owner != status.Self.Owner {
+	if node.UserID == 0 || node.UserID != status.Self.UserID {
 		return ErrOtherOwner
 	}
 	return nil
@@ -201,28 +207,20 @@ const (
 	Untrusted
 )
 
-// Trust checks a bound app origin against its pinned node ID. Tagged nodes
-// were accepted with an explicit allowTagged at pairing, so only the pinned ID
-// matters for them.
-func (status *Status) Trust(origin, nodeID string) Verdict {
+// Trust checks a bound app origin against its pinned node ID and whether
+// that node was tagged when it was pinned. Tagged nodes were accepted with an
+// explicit allowTagged at pairing, so only the pinned ID matters for them; a
+// node that gained or lost tags since then is refused, because its owner
+// rule changed without the owner's approval.
+func (status *Status) Trust(origin, nodeID string, tagged bool) Verdict {
 	node, ok := status.peers[strings.TrimPrefix(origin, "https://")]
 	switch {
 	case !ok || !strings.HasPrefix(origin, "https://"):
 		return Untrusted
 	case node.ID != nodeID:
 		return Changed
-	case status.CheckOwner(node, true) != nil:
+	case node.Tagged() != tagged, status.CheckOwner(node, true) != nil:
 		return Untrusted
 	}
 	return Trusted
-}
-
-// Peers returns the own-tailnet nodes sorted by host, for diagnostics.
-func (status *Status) Peers() []Node {
-	nodes := make([]Node, 0, len(status.peers))
-	for _, node := range status.peers {
-		nodes = append(nodes, node)
-	}
-	slices.SortFunc(nodes, func(a, b Node) int { return strings.Compare(a.Host, b.Host) })
-	return nodes
 }

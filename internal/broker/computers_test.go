@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
+	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
@@ -26,9 +29,10 @@ const (
 // fakeTailscale serves `tailscale status --json` for this computer (vps,
 // owned by ada) from mutable peers.
 type fakeTailscale struct {
-	mu    sync.Mutex
-	peers map[string]string // host label -> node ID
-	err   error
+	mu     sync.Mutex
+	peers  map[string]string // host label -> node ID; "" removes the node
+	tagged map[string]bool   // labels tagged besides ci
+	err    error
 }
 
 func (fake *fakeTailscale) read(context.Context) ([]byte, error) {
@@ -39,9 +43,12 @@ func (fake *fakeTailscale) read(context.Context) ([]byte, error) {
 	}
 	peers := map[string]any{}
 	for label, id := range fake.peers {
+		if id == "" {
+			continue
+		}
 		peer := map[string]any{"ID": id, "DNSName": label + ".tailx.ts.net.", "UserID": 1}
 		switch {
-		case label == "ci":
+		case label == "ci" || fake.tagged[label]:
 			peer["UserID"], peer["Tags"] = 9, []string{"tag:server"}
 		case label == "pi":
 			peer["UserID"] = 2
@@ -84,7 +91,7 @@ func newTrustFixture(t *testing.T) *trustFixture {
 	for index := range 9 {
 		fake.peers[fmt.Sprint("pc", index)] = fmt.Sprint("nPc", index)
 	}
-	monitor := tailnet.NewMonitor(tailnet.Config{Source: fake.read, Now: clock.Now})
+	monitor := tailnet.NewMonitor(tailnet.Config{Source: fake.read, Now: clock.Now, OnUpdate: fixture.server.TrustUpdated})
 	fixture.server.config.Tailnet, fixture.server.config.Now = monitor, clock.Now
 	trust := &trustFixture{
 		managementFixture: fixture, session: session, service: service, clock: clock, tailscale: fake, monitor: monitor,
@@ -354,7 +361,7 @@ func TestPerDeviceOriginBinding(t *testing.T) {
 		{viaMac.Credential, macOrigin, ""},
 		{viaMac.Credential, "", ""},
 		{viaMac.Credential, homeOrigin, ""},
-		{viaMac.Credential, "http://127.0.0.1:8787", ""}, // the development gateway's own origin
+		{viaMac.Credential, "http://127.0.0.1:8787", protocol.InvalidRequest}, // loopback is own only in development (SL6)
 		{viaMac.Credential, ciOrigin, protocol.InvalidRequest},
 		{viaMac.Credential, "https://mac.tailx.ts.net.evil.com", protocol.InvalidRequest},
 		{viaMac.Credential, "https://xmac.tailx.ts.net", protocol.InvalidRequest},
@@ -369,6 +376,14 @@ func TestPerDeviceOriginBinding(t *testing.T) {
 			}
 		}
 	}
+	// In the development profile the gateway's loopback origins are its own.
+	fixture.server.config.Development = true
+	for _, origin := range []string{"http://127.0.0.1:8787", "http://localhost:8787"} {
+		if code := fixture.code(t, origin, protocol.GatewaySettings, credentialPayload(direct.Credential)); code != "" {
+			t.Errorf("development loopback %q = %q", origin, code)
+		}
+	}
+	fixture.server.config.Development = false
 	// A refused live stream, logout and upload change nothing.
 	if code := fixture.code(t, ciOrigin, protocol.GatewayLiveOpen, credentialPayload(viaMac.Credential)); code != protocol.InvalidRequest {
 		t.Fatalf("live open from another app origin = %q", code)
@@ -513,7 +528,8 @@ func TestRevokeViaClosesStreamsAndDropsPairings(t *testing.T) {
 		protocol.HTTPPairRedeemRequest{Grant: waiting.Grant, DeviceLabel: "Phone"}); code != protocol.PairingExpired {
 		t.Fatalf("grant via the revoked origin = %q", code)
 	}
-	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{ciOrigin}) || probe.PairingOrigins != nil {
+	// The app at mac keeps CORS so it can read its 401 and say "pair again" (H1).
+	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{ciOrigin, macOrigin}) || probe.PairingOrigins != nil {
 		t.Fatalf("probe after revoke via = %#v", probe)
 	}
 	devices := fixture.devices(t)
@@ -611,4 +627,227 @@ func TestComputerListPerDevice(t *testing.T) {
 	if removed.Removed != 1 {
 		t.Fatalf("admin remove = %#v", removed)
 	}
+}
+
+// A revoked or expired phone must still read this computer's 401 to show
+// "pair again", so its app origin keeps CORS while its node is trusted (H1).
+func TestBoundOriginsKeepRevokedAndExpiredDevicesWhileTrusted(t *testing.T) {
+	fixture := newTrustFixture(t)
+	viaMac := fixture.pairVia(t, "mac", macOrigin, false)
+	if _, err := fixture.service.RevokeDevice(context.Background(), viaMac.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{macOrigin}) {
+		t.Fatalf("revoked device's origin = %v", probe.BoundOrigins)
+	}
+	viaCi := fixture.pairVia(t, "ci", ciOrigin, true)
+	fixture.clock.Set(fixture.clock.Now().Add(auth.BrowserAbsoluteLifetime + time.Hour))
+	fixture.refresh(t)
+	if code := fixture.code(t, ciOrigin, protocol.GatewaySettings, credentialPayload(viaCi.Credential)); code != protocol.Unauthorized {
+		t.Fatalf("expired credential = %q", code)
+	}
+	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{ciOrigin, macOrigin}) {
+		t.Fatalf("expired device's origin = %v", probe.BoundOrigins)
+	}
+	// A name held by another node, or a gone name, gets no CORS.
+	fixture.tailscale.set("mac", "nNewMac", nil)
+	fixture.tailscale.set("ci", "", nil)
+	fixture.refresh(t)
+	if probe := fixture.probe(t); probe.BoundOrigins != nil {
+		t.Fatalf("untrusted origins in CORS: %v", probe.BoundOrigins)
+	}
+}
+
+// A node that became tagged (or lost its tags) after pairing is refused
+// without revoking: its owner rule changed without approval (SL4).
+func TestTaggedStateChangeRefuses(t *testing.T) {
+	fixture := newTrustFixture(t)
+	viaMac := fixture.pairVia(t, "mac", macOrigin, false)
+	fixture.tailscale.mu.Lock()
+	fixture.tailscale.tagged = map[string]bool{"mac": true}
+	fixture.tailscale.mu.Unlock()
+	fixture.refresh(t)
+	if code := fixture.code(t, macOrigin, protocol.GatewaySettings, credentialPayload(viaMac.Credential)); code != protocol.InvalidRequest {
+		t.Fatalf("request after mac became tagged = %q", code)
+	}
+	if probe := fixture.probe(t); probe.BoundOrigins != nil {
+		t.Fatalf("retagged origin in CORS: %v", probe.BoundOrigins)
+	}
+	if devices := fixture.devices(t); devices[viaMac.DeviceID].Revoked {
+		t.Fatal("a tag change revoked the device")
+	}
+}
+
+// A new snapshot that no longer trusts an app origin closes its streams at
+// once, not at the next 15 s tick (M2).
+func TestNewSnapshotClosesUntrustedStreamsAtOnce(t *testing.T) {
+	fixture := newTrustFixture(t)
+	viaMac := fixture.pairVia(t, "mac", macOrigin, false)
+	fromMac := startBrowserFrom(t, fixture.server, viaMac.Credential, macOrigin)
+	fromMac.attach(t)
+	ownStream := startBrowserFrom(t, fixture.server, viaMac.Credential, "")
+	ownStream.attach(t)
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		fixture.server.watchTrust(context.Background(), stop)
+	}()
+	t.Cleanup(func() { close(stop); <-done })
+
+	fixture.tailscale.set("mac", "", nil) // mac left the tailnet
+	fixture.refresh(t)
+	fromMac.await(t, protocol.AccessRevoked, "")
+	awaitClosed(t, fromMac)
+	ownStream.acquire(t)
+	if devices := fixture.devices(t); devices[viaMac.DeviceID].Revoked {
+		t.Fatal("an untrusted name revoked the device")
+	}
+}
+
+// The computer list belongs to the app this computer serves: a bound app
+// origin can use the device's credential for everything else, never for the
+// list (SL5).
+func TestComputerRoutesOnlyFromOwnOrigin(t *testing.T) {
+	fixture := newTrustFixture(t)
+	viaMac := fixture.pairVia(t, "mac", macOrigin, false)
+	add := protocol.GatewayRPCComputerAddPayload{Credential: viaMac.Credential,
+		Request: protocol.HTTPComputerAddRequest{Origin: ciOrigin, Label: "ci", State: protocol.HTTPComputerStatePending}}
+	remove := protocol.GatewayRPCComputerRemovePayload{Credential: viaMac.Credential, Origin: ciOrigin}
+	for messageType, payload := range map[protocol.GatewayRPCMessageType]any{
+		protocol.GatewayComputersList: credentialPayload(viaMac.Credential), protocol.GatewayComputersAdd: add,
+		protocol.GatewayComputersRemove: remove,
+	} {
+		if code := fixture.code(t, macOrigin, messageType, payload); code != protocol.InvalidRequest {
+			t.Errorf("%s from the bound app origin = %q", messageType, code)
+		}
+		if code := fixture.code(t, "", messageType, payload); code != "" {
+			t.Errorf("%s from the own origin = %q", messageType, code)
+		}
+	}
+	if code := fixture.code(t, macOrigin, protocol.GatewaySettings, credentialPayload(viaMac.Credential)); code != "" {
+		t.Fatalf("settings from the bound app origin = %q", code)
+	}
+}
+
+// Home pins the node of each listed computer: confirm needs the same node,
+// and an entry whose node no longer holds its name leaves the CSP list (SM2).
+func TestComputerListPinsTheNode(t *testing.T) {
+	fixture := newTrustFixture(t)
+	phone := pairDevice(t, fixture.service, "Phone")
+	add := func(state protocol.HTTPComputerState) protocol.GatewayRPCEnvelope {
+		return fixture.from(t, "", protocol.GatewayComputersAdd, protocol.GatewayRPCComputerAddPayload{
+			Credential: phone.Credential, Request: protocol.HTTPComputerAddRequest{Origin: macOrigin, Label: "mac", State: state}})
+	}
+	list := func() protocol.GatewayRPCComputerListResultPayload {
+		result, err := protocol.DecodeRPCPayload[protocol.GatewayRPCComputerListResultPayload](
+			fixture.from(t, "", protocol.GatewayComputersList, credentialPayload(phone.Credential)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if response := add(protocol.HTTPComputerStatePending); response.Type != protocol.GatewayComputersAddResult {
+		t.Fatalf("pending = %s", response.Payload)
+	}
+	fixture.tailscale.set("mac", "nOtherMac", nil) // another machine took the name
+	fixture.refresh(t)
+	if got := list(); len(got.PendingOrigins) != 0 {
+		t.Fatalf("pending entry of a replaced node still listed: %#v", got)
+	}
+	if code := gatewayErrorCode(t, add(protocol.Confirmed)); code != protocol.InvalidRequest {
+		t.Fatalf("confirm as another node = %q", code)
+	}
+	fixture.tailscale.set("mac", "nMac", nil)
+	fixture.refresh(t)
+	if response := add(protocol.Confirmed); response.Type != protocol.GatewayComputersAddResult {
+		t.Fatalf("confirm as the pinned node = %s", response.Payload)
+	}
+	if got := list(); len(got.Computers) != 1 {
+		t.Fatalf("confirmed list = %#v", got)
+	}
+	fixture.tailscale.set("mac", "", nil)
+	fixture.refresh(t)
+	if got := list(); len(got.Computers) != 0 {
+		t.Fatalf("entry of a gone node still listed: %#v", got)
+	}
+}
+
+// Upload commit re-checks the origin binding: trust lost while the chunks
+// arrived refuses the file (SL7).
+func TestUploadCommitChecksOriginBinding(t *testing.T) {
+	fixture := newTrustFixture(t)
+	uploadProject(t, fixture.managementFixture)
+	viaMac := fixture.pairVia(t, "mac", macOrigin, false)
+	viewer := attachPresenceViewer(t, fixture.session, "8ccccccc-cccc-4ccc-8ccc-ccccccccccc9", viaMac.DeviceID)
+	if _, err := fixture.session.AcquireControl(context.Background(), viewer); err != nil {
+		t.Fatal(err)
+	}
+	upload := startRPCTestClient(t, fixture.server, protocol.Gateway)
+	data, err := exchangeFrom(t, upload, macOrigin, string(protocol.GatewayUploadBegin), protocol.GatewayRPCUploadBeginPayload{
+		Credential: viaMac.Credential, SessionID: rpcSessionID, Generation: rpcSessionGen, Size: int64(len(testPNG))})
+	if response, _ := protocol.DecodeGatewayRPCResponse(data); err != nil || response.Type != protocol.GatewayUploadBeginResult {
+		t.Fatalf("begin = %s, %v", data, err)
+	}
+	if data, err := exchangeFrom(t, upload, macOrigin, string(protocol.GatewayUploadChunk), uploadChunk(testPNG)); err != nil {
+		t.Fatalf("chunk = %s, %v", data, err)
+	}
+	fixture.tailscale.set("mac", "", nil)
+	fixture.refresh(t)
+	data, err = exchangeFrom(t, upload, macOrigin, string(protocol.GatewayUploadCommit), credentialPayload(viaMac.Credential))
+	if response, _ := protocol.DecodeGatewayRPCResponse(data); err != nil || gatewayErrorCode(t, response) != protocol.InvalidRequest {
+		t.Fatalf("commit after trust was lost = %s, %v", data, err)
+	}
+}
+
+// The sweep reads only devices that can still connect: a device whose
+// credential is long expired is not revoked on a node change (L4).
+func TestSweepReadsOnlyDevicesThatCanConnect(t *testing.T) {
+	fixture := newTrustFixture(t)
+	idle := fixture.pairVia(t, "mac", macOrigin, false)
+	fixture.clock.Set(fixture.clock.Now().Add(auth.BrowserAbsoluteLifetime + time.Hour))
+	fresh := fixture.pairVia(t, "mac", macOrigin, false)
+	fixture.tailscale.set("mac", "nNewMac", nil)
+	fixture.refresh(t)
+	fixture.server.sweepTrust(context.Background())
+	devices := fixture.devices(t)
+	if !devices[fresh.DeviceID].Revoked || devices[idle.DeviceID].Revoked {
+		t.Fatalf("sweep revoked fresh=%v idle=%v", devices[fresh.DeviceID].Revoked, devices[idle.DeviceID].Revoked)
+	}
+}
+
+// Serve returns only after its trust sweeper stopped, so no sweep reads the
+// store after the broker closed it (L1).
+func TestServeWaitsForTheTrustSweeper(t *testing.T) {
+	fixture := newTrustFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	runtimeDir, err := os.MkdirTemp("/tmp", "pterm-trust-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(runtimeDir) })
+	listener, err := ipc.ListenBroker(ctx, ipc.ListenerConfig{RuntimeDir: runtimeDir, BrokerGeneration: registryBrokerGeneration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- fixture.server.Serve(ctx, listener) }()
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(goroutines(), "watchTrust") {
+		if time.Now().After(deadline) {
+			t.Fatal("trust sweeper did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	if err := <-served; err != nil {
+		t.Fatal(err)
+	}
+	if stacks := goroutines(); strings.Contains(stacks, "watchTrust") {
+		t.Fatalf("trust sweeper outlived Serve:\n%s", stacks)
+	}
+}
+
+func goroutines() string {
+	buffer := make([]byte, 1<<20)
+	return string(buffer[:runtime.Stack(buffer, true)])
 }

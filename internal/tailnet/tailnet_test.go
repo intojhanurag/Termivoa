@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -45,11 +47,11 @@ func TestParseStatusKeepsOnlyOwnTailnetPeers(t *testing.T) {
 		t.Fatalf("status = %+v", status)
 	}
 	var hosts []string
-	for _, node := range status.Peers() {
-		hosts = append(hosts, node.Host)
+	for host := range status.peers {
+		hosts = append(hosts, host)
 	}
-	if want := []string{"ci.tailx.ts.net", "mac.tailx.ts.net", "pi.tailx.ts.net"}; len(hosts) != 3 ||
-		hosts[0] != want[0] || hosts[1] != want[1] || hosts[2] != want[2] {
+	slices.Sort(hosts)
+	if want := []string{"ci.tailx.ts.net", "mac.tailx.ts.net", "pi.tailx.ts.net"}; !slices.Equal(hosts, want) {
 		t.Fatalf("peers = %v, want %v (no shared-in, other-tailnet or invalid nodes)", hosts, want)
 	}
 	ci, _ := status.Peer("ci.tailx.ts.net")
@@ -60,7 +62,7 @@ func TestParseStatusKeepsOnlyOwnTailnetPeers(t *testing.T) {
 		t.Fatalf("user node = %+v", mac)
 	}
 	// A logged-out client still parses for setup and doctor.
-	if empty := mustParse(t, `{"BackendState":"NeedsLogin"}`); empty.BackendState != "NeedsLogin" || len(empty.Peers()) != 0 {
+	if empty := mustParse(t, `{"BackendState":"NeedsLogin"}`); empty.BackendState != "NeedsLogin" || len(empty.peers) != 0 {
 		t.Fatalf("logged out = %+v", empty)
 	}
 	if _, err := ParseStatus([]byte(`{`)); err == nil {
@@ -120,19 +122,43 @@ func TestOwnerRuleAndTrustVerdicts(t *testing.T) {
 
 	for name, test := range map[string]struct {
 		origin, node string
+		tagged       bool
 		want         Verdict
 	}{
-		"same node":      {"https://mac.tailx.ts.net", "nMac1CNTRL", Trusted},
-		"tagged pinned":  {"https://ci.tailx.ts.net", "nCi1CNTRL", Trusted},
-		"node replaced":  {"https://mac.tailx.ts.net", "nOldMacCNTRL", Changed},
-		"name gone":      {"https://old.tailx.ts.net", "nMac1CNTRL", Untrusted},
-		"other owner":    {"https://pi.tailx.ts.net", "nPi1CNTRL", Untrusted},
-		"near miss":      {"https://mac.tailx.ts.net.evil.com", "nMac1CNTRL", Untrusted},
-		"shared-in node": {"https://shared.tailx.ts.net", "nShared1CNTRL", Untrusted},
+		"same node":      {"https://mac.tailx.ts.net", "nMac1CNTRL", false, Trusted},
+		"tagged pinned":  {"https://ci.tailx.ts.net", "nCi1CNTRL", true, Trusted},
+		"node replaced":  {"https://mac.tailx.ts.net", "nOldMacCNTRL", false, Changed},
+		"name gone":      {"https://old.tailx.ts.net", "nMac1CNTRL", false, Untrusted},
+		"other owner":    {"https://pi.tailx.ts.net", "nPi1CNTRL", false, Untrusted},
+		"near miss":      {"https://mac.tailx.ts.net.evil.com", "nMac1CNTRL", false, Untrusted},
+		"shared-in node": {"https://shared.tailx.ts.net", "nShared1CNTRL", false, Untrusted},
+		// The tagged state must match the pinned one (SL4).
+		"tagged since pairing":   {"https://ci.tailx.ts.net", "nCi1CNTRL", false, Untrusted},
+		"untagged since pairing": {"https://mac.tailx.ts.net", "nMac1CNTRL", true, Untrusted},
 	} {
-		if got := status.Trust(test.origin, test.node); got != test.want {
+		if got := status.Trust(test.origin, test.node, test.tagged); got != test.want {
 			t.Errorf("%s: Trust = %v, want %v", name, got, test.want)
 		}
+	}
+}
+
+// Owners are compared by stable user ID. Two identity providers can give
+// two different users the same login name.
+func TestOwnerComparedByUserIDNotLoginName(t *testing.T) {
+	status := mustParse(t, `{"BackendState":"Running","MagicDNSSuffix":"tailx.ts.net",
+		"Self":{"ID":"nS","DNSName":"vps.tailx.ts.net.","UserID":1},
+		"User":{"1":{"LoginName":"ada@example.com"},"2":{"LoginName":"ada@example.com"}},
+		"Peer":{"a":{"ID":"nA","DNSName":"mac.tailx.ts.net.","UserID":2},"b":{"ID":"nB","DNSName":"pi.tailx.ts.net.","UserID":1}}}`)
+	mac, _ := status.Peer("mac.tailx.ts.net")
+	if mac.Owner != "ada@example.com" || !errors.Is(status.CheckOwner(mac, false), ErrOtherOwner) {
+		t.Fatalf("same login name, other user ID = %+v, %v", mac, status.CheckOwner(mac, false))
+	}
+	if got := status.Trust("https://mac.tailx.ts.net", "nA", false); got != Untrusted {
+		t.Fatalf("trust of another user with the same login name = %v", got)
+	}
+	pi, _ := status.Peer("pi.tailx.ts.net")
+	if status.CheckOwner(pi, false) != nil || status.Trust("https://pi.tailx.ts.net", "nB", false) != Trusted {
+		t.Fatal("same user ID refused")
 	}
 }
 
@@ -233,6 +259,33 @@ func TestMonitorRefreshesAsyncSingleFlightWithGrace(t *testing.T) {
 	}
 }
 
+// A Tailscale restart or logout is a failed refresh: the last good snapshot
+// stays (under the grace rules) instead of an empty one that untrusts all.
+func TestMonitorKeepsLastGoodSnapshotWhileTailscaleIsNotRunning(t *testing.T) {
+	source := &fakeSource{data: statusJSON}
+	clock := &fakeClock{now: time.Unix(1_800_000_000, 0)}
+	updates := atomic.Int32{}
+	monitor := NewMonitor(Config{Source: source.read, Now: clock.Now, OnUpdate: func(*Status) { updates.Add(1) }})
+	good, err := monitor.Fresh(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"Starting", "NeedsLogin", "Stopped"} {
+		source.set(`{"BackendState":"`+state+`","MagicDNSSuffix":"tailx.ts.net"}`, nil)
+		clock.Add(DefaultMaxAge)
+		if monitor.Snapshot() != good {
+			t.Fatalf("%s: last good snapshot dropped", state)
+		}
+		waitIdle(t, monitor)
+		if monitor.Snapshot() != good {
+			t.Fatalf("%s published as a good snapshot", state)
+		}
+	}
+	if updates.Load() != 1 {
+		t.Fatalf("OnUpdate ran %d times; a status that is not Running is no update", updates.Load())
+	}
+}
+
 func TestMonitorRetriesFailuresAtMostEveryRetryDelay(t *testing.T) {
 	source := &fakeSource{err: errors.New("down")}
 	clock := &fakeClock{now: time.Unix(1_800_000_000, 0)}
@@ -279,16 +332,24 @@ func waitIdle(t *testing.T, monitor *Monitor) {
 	t.Fatal("refresh did not finish")
 }
 
-func TestFindBinary(t *testing.T) {
-	missing := func(string) (string, error) { return "", errors.New("not found") }
-	if got := FindBinary("linux", os.Getenv, func(string) (string, error) { return "/x/tailscale", nil }); got != "/x/tailscale" {
-		t.Fatalf("PATH lookup = %q", got)
+// writeBinary creates an executable file in a fresh folder.
+func writeBinary(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, nil, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	return path
+}
+
+func TestFindBinaryPrefersFixedInstallOverPath(t *testing.T) {
 	programFiles := t.TempDir()
 	cli := filepath.Join(programFiles, "Tailscale", "tailscale.exe")
+	onPath := writeBinary(t, "tailscale")
 	env := func(value string) func(string) string { return func(string) string { return value } }
-	if got := FindBinary("windows", env(programFiles), missing); got != "" {
-		t.Fatalf("missing install = %q", got)
+	path := func(string) (string, error) { return onPath, nil }
+	if got := FindBinary("windows", env(programFiles), path); got != onPath {
+		t.Fatalf("PATH fallback = %q, want %q", got, onPath)
 	}
 	if err := os.MkdirAll(filepath.Dir(cli), 0o755); err != nil {
 		t.Fatal(err)
@@ -296,16 +357,78 @@ func TestFindBinary(t *testing.T) {
 	if err := os.WriteFile(cli, nil, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := FindBinary("windows", env(programFiles), missing); got != cli {
-		t.Fatalf("installed = %q, want %q", got, cli)
+	if got := FindBinary("windows", env(programFiles), path); got != cli {
+		t.Fatalf("installed = %q, want %q before PATH", got, cli)
 	}
+	missing := func(string) (string, error) { return "", errors.New("not found") }
 	if got := FindBinary("windows", env("relative"), missing); got != "" {
 		t.Fatalf("relative ProgramFiles = %q", got)
 	}
+	relative := func(string) (string, error) { return "tailscale", nil }
+	if got := FindBinary("plan9", os.Getenv, relative); got != "" {
+		t.Fatalf("relative PATH result = %q", got)
+	}
 }
 
-func TestCommandSourceWithoutBinaryIsUnavailable(t *testing.T) {
-	if _, err := CommandSource("")(context.Background()); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("no binary = %v", err)
+func TestFindBinaryRefusesWritableOrForeignFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits")
+	}
+	find := func(path string) string {
+		return FindBinary("plan9", os.Getenv, func(string) (string, error) { return path, nil })
+	}
+	safe := writeBinary(t, "tailscale")
+	if find(safe) != safe {
+		t.Fatal("a private binary was refused")
+	}
+	groupWritable := writeBinary(t, "tailscale")
+	if err := os.Chmod(groupWritable, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	openFolder := writeBinary(t, "tailscale")
+	if err := os.Chmod(filepath.Dir(openFolder), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "tailscale")
+	if err := os.Symlink(groupWritable, link); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"group-writable file": groupWritable, "world-writable folder": openFolder,
+		"symlink to a writable file": link, "folder": t.TempDir(),
+	} {
+		if got := find(path); got != "" {
+			t.Errorf("%s accepted: %q", name, got)
+		}
+	}
+	// Root-owned system files pass (the owner rule allows root or this user).
+	if _, err := os.Stat("/bin/sh"); err == nil && find("/bin/sh") != "/bin/sh" {
+		t.Error("root-owned /bin/sh refused")
+	}
+}
+
+func TestCommandSourceLooksUpAMissingBinaryAgainRateLimited(t *testing.T) {
+	saved := lookupRetry
+	t.Cleanup(func() { lookupRetry = saved })
+	var lookups atomic.Int32
+	found := ""
+	source := CommandSource(func() string { lookups.Add(1); return found })
+	lookupRetry = time.Hour
+	for range 3 {
+		if _, err := source(context.Background()); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("no binary = %v", err)
+		}
+	}
+	if lookups.Load() != 1 {
+		t.Fatalf("lookups within the retry period = %d", lookups.Load())
+	}
+	// Tailscale is installed later: the next lookup after the period finds it.
+	lookupRetry = 0
+	found = filepath.Join(t.TempDir(), "missing-tailscale")
+	if _, err := source(context.Background()); err == nil || errors.Is(err, ErrUnavailable) {
+		t.Fatalf("found binary was not run: %v", err)
+	}
+	if _, _ = source(context.Background()); lookups.Load() != 2 {
+		t.Fatalf("a found binary is looked up again: %d lookups", lookups.Load())
 	}
 }

@@ -34,8 +34,9 @@ var (
 )
 
 // isOwnOrigin: an absent origin was admitted by the gateway as same-origin.
-// The configured origin and the gateway's development loopback origins are
-// this computer's own as well; a bound app origin is always https.
+// The configured origin is this computer's own as well, and so, in the
+// development profile only, are the gateway's loopback origins. A bound app
+// origin is always https.
 func (server *ManagementServer) isOwnOrigin(origin *string) bool {
 	if origin == nil {
 		return true
@@ -43,17 +44,24 @@ func (server *ManagementServer) isOwnOrigin(origin *string) bool {
 	if own := server.ownOrigin.Load(); own != nil && *own == *origin {
 		return true
 	}
-	return strings.HasPrefix(*origin, "http://127.0.0.1:") || strings.HasPrefix(*origin, "http://localhost:")
+	return server.config.Development &&
+		(strings.HasPrefix(*origin, "http://127.0.0.1:") || strings.HasPrefix(*origin, "http://localhost:"))
+}
+
+// trust is the snapshot's verdict on one app binding.
+func trust(status *tailnet.Status, app store.AppBinding) tailnet.Verdict {
+	return status.Trust(app.Origin, app.NodeID, len(app.NodeTags) > 0)
 }
 
 // appTrust reads the latest snapshot only. A definite node change is a
-// revocation; a missing name or another owner refuses without revoking.
-func (server *ManagementServer) appTrust(origin, nodeID string) error {
+// revocation; a missing name, another owner or a changed tagged state refuses
+// without revoking.
+func (server *ManagementServer) appTrust(app store.AppBinding) error {
 	status := server.config.Tailnet.Snapshot()
 	if status == nil {
 		return errTrustUnavailable
 	}
-	switch status.Trust(origin, nodeID) {
+	switch trust(status, app) {
 	case tailnet.Trusted:
 		return nil
 	case tailnet.Changed:
@@ -71,7 +79,16 @@ func (server *ManagementServer) admitDevice(origin *string, principal auth.Princ
 	if !principal.App.Bound() || principal.App.Origin != *origin {
 		return auth.ErrOriginRefused
 	}
-	return server.appTrust(*origin, principal.App.NodeID)
+	return server.appTrust(principal.App)
+}
+
+// admitOwn admits a request only from this computer's own origin: the
+// per-device computer list belongs to the app this computer serves.
+func (server *ManagementServer) admitOwn(origin *string) error {
+	if !server.isOwnOrigin(origin) {
+		return auth.ErrOriginRefused
+	}
+	return nil
 }
 
 // pairingCheck admits a redeem or poll only from the origin its own grant or
@@ -87,7 +104,7 @@ func (server *ManagementServer) pairingCheck(origin *string) auth.AppCheck {
 		if origin == nil || *origin != app.Origin {
 			return auth.ErrOriginRefused
 		}
-		if err := server.appTrust(app.Origin, app.NodeID); errors.Is(err, auth.ErrRevoked) {
+		if err := server.appTrust(app); errors.Is(err, auth.ErrRevoked) {
 			return auth.ErrOriginRefused // No device exists yet to revoke.
 		} else if err != nil {
 			return err
@@ -104,9 +121,17 @@ func (server *ManagementServer) streamOrigin(origin *string) string {
 	return *origin
 }
 
-// originProbe answers gateway.origin. boundOrigins are the app origins of
-// live devices that the latest snapshot still trusts; pairingOrigins those of
-// unexpired grants and pending pairings. The gateway uses them only for CORS.
+// originProbe answers gateway.origin. The gateway uses its origin sets only
+// for CORS headers; the broker authorizes every request on its own.
+//
+// boundOrigins are the app origins of every device ever bound to one,
+// revoked and expired devices included, whose pinned node the latest snapshot
+// still trusts. An app whose credential here was revoked or expired must read
+// this computer's 401 to show "pair again" instead of "can't reach", and CORS
+// lets it read only what the broker answers that origin: refusals for every
+// credential not bound to it. A changed node, a name now held by another
+// node or owner, or an unreadable status gets no CORS. pairingOrigins are
+// those of unexpired grants and pending pairings.
 func (server *ManagementServer) originProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error) {
 	origin, err := server.pairingOrigin(ctx)
 	if err != nil {
@@ -116,21 +141,21 @@ func (server *ManagementServer) originProbe(ctx context.Context) (protocol.Gatew
 	if server.config.Auth == nil {
 		return result, nil
 	}
-	now := server.now()
-	devices, err := server.config.Store.ListBoundDevices(ctx, now, auth.BrowserInactivityLifetime, true)
+	apps, err := server.config.Store.BoundApps(ctx)
 	if err != nil {
 		return protocol.GatewayRPCOriginResultPayload{}, err
 	}
-	if len(devices) > 0 {
+	if len(apps) > 0 {
 		if status := server.config.Tailnet.Snapshot(); status != nil {
-			for _, device := range devices {
-				if status.Trust(device.Origin, device.NodeID) == tailnet.Trusted &&
-					!slices.Contains(result.BoundOrigins, device.Origin) && len(result.BoundOrigins) < protocol.MaxBoundOrigins {
-					result.BoundOrigins = append(result.BoundOrigins, device.Origin)
+			for _, app := range apps {
+				if trust(status, app) == tailnet.Trusted &&
+					!slices.Contains(result.BoundOrigins, app.Origin) && len(result.BoundOrigins) < protocol.MaxBoundOrigins {
+					result.BoundOrigins = append(result.BoundOrigins, app.Origin)
 				}
 			}
 		}
 	}
+	now := server.now()
 	if result.PairingOrigins, err = server.config.Store.PairingOrigins(ctx, now, protocol.MaxPairingOrigins); err != nil {
 		return protocol.GatewayRPCOriginResultPayload{}, err
 	}
@@ -171,13 +196,27 @@ func (server *ManagementServer) lookupComputer(ctx context.Context, origin strin
 	return node, status.CheckOwner(node, true)
 }
 
+// listComputers lists the device's computers. Once a snapshot exists, an
+// entry whose pinned node no longer holds its name is left out, so the app's
+// CSP never allows a machine the phone did not add. Without a snapshot yet
+// (the first read after start) entries stay: CSP is a second fence, and each
+// peer checks its own binding.
 func (server *ManagementServer) listComputers(ctx context.Context, principal auth.Principal) (protocol.GatewayRPCComputerListResultPayload, error) {
 	computers, err := server.config.Store.ListComputers(ctx, principal.DeviceID, server.now())
 	if err != nil {
 		return protocol.GatewayRPCComputerListResultPayload{}, err
 	}
 	result := protocol.GatewayRPCComputerListResultPayload{Computers: []protocol.HTTPComputer{}, PendingOrigins: []string{}}
+	var status *tailnet.Status
+	if len(computers) > 0 {
+		status = server.config.Tailnet.Snapshot()
+	}
 	for _, computer := range computers {
+		if status != nil {
+			if node, ok := status.Peer(strings.TrimPrefix(computer.Origin, "https://")); !ok || node.ID != computer.NodeID {
+				continue
+			}
+		}
 		if computer.State == store.ComputerConfirmed {
 			result.Computers = append(result.Computers, protocol.HTTPComputer{Origin: computer.Origin, Label: computer.Label})
 		} else {
@@ -195,7 +234,7 @@ func (server *ManagementServer) addComputer(
 		return protocol.HTTPComputerAddResponse{}, err
 	}
 	now := server.now()
-	saved, err := server.config.Store.PutComputer(ctx, principal.DeviceID, request.Origin, request.Label,
+	saved, err := server.config.Store.PutComputer(ctx, principal.DeviceID, request.Origin, node.ID, request.Label,
 		store.ComputerState(request.State), now, now.Add(PendingComputerLifetime), protocol.MaxComputers)
 	if err != nil {
 		return protocol.HTTPComputerAddResponse{}, err
@@ -209,7 +248,8 @@ func (server *ManagementServer) addComputer(
 // sweepTrust closes open streams whose app origin is no longer trusted and
 // revokes the devices bound to an origin whose node changed. It runs off the
 // request path; it is the only place that turns a node change into a durable
-// revocation, once per new snapshot.
+// revocation, once per new snapshot. Only devices that can still connect are
+// read: a device without a usable credential has nothing to revoke.
 func (server *ManagementServer) sweepTrust(ctx context.Context) {
 	authority := server.config.Auth
 	if authority == nil {
@@ -217,24 +257,35 @@ func (server *ManagementServer) sweepTrust(ctx context.Context) {
 	}
 	server.trustMu.Lock()
 	defer server.trustMu.Unlock()
-	devices, err := server.config.Store.ListBoundDevices(ctx, server.now(), auth.BrowserInactivityLifetime, false)
+	devices, err := server.config.Store.ListBoundDevices(ctx, server.now(), auth.BrowserInactivityLifetime, true)
 	if err != nil || len(devices) == 0 && !authority.HasAppStreams() {
 		return
 	}
 	status := server.config.Tailnet.Snapshot()
 	if status != nil && status != server.sweptStatus {
 		for _, device := range devices {
-			if status.Trust(device.Origin, device.NodeID) == tailnet.Changed {
+			if trust(status, device.App) == tailnet.Changed {
 				_, _ = authority.RevokeDevice(ctx, device.DeviceID)
 			}
 		}
 		server.sweptStatus = status
 	}
-	authority.CloseUntrusted(func(origin, nodeID string) bool {
-		return status != nil && status.Trust(origin, nodeID) == tailnet.Trusted
+	authority.CloseUntrusted(func(app store.AppBinding) bool {
+		return status != nil && trust(status, app) == tailnet.Trusted
 	})
 }
 
+// TrustUpdated is the monitor's OnUpdate: a new snapshot wakes the sweep at
+// once instead of at the next tick. It never blocks the refresh.
+func (server *ManagementServer) TrustUpdated(*tailnet.Status) {
+	select {
+	case server.trustWake <- struct{}{}:
+	default:
+	}
+}
+
+// watchTrust sweeps on every new snapshot and every trustSweepInterval (the
+// tick also starts refreshes and catches the end of the grace period).
 func (server *ManagementServer) watchTrust(ctx context.Context, stop <-chan struct{}) {
 	ticker := time.NewTicker(trustSweepInterval)
 	defer ticker.Stop()
@@ -245,8 +296,9 @@ func (server *ManagementServer) watchTrust(ctx context.Context, stop <-chan stru
 		case <-stop:
 			return
 		case <-ticker.C:
-			server.sweepTrust(ctx)
+		case <-server.trustWake:
 		}
+		server.sweepTrust(ctx)
 	}
 }
 
@@ -277,6 +329,8 @@ func classifyComputerError(err error) (managementFailure, bool) {
 		return managementFailure{protocol.InvalidRequest, "this is the computer that serves the app"}, true
 	case errors.Is(err, store.ErrComputerMissing):
 		return managementFailure{protocol.InvalidRequest, "add the computer before confirming it"}, true
+	case errors.Is(err, store.ErrComputerNode):
+		return managementFailure{protocol.InvalidRequest, "this name now belongs to another Tailscale machine; add the computer again"}, true
 	case errors.Is(err, store.ErrComputerCapacity):
 		return managementFailure{protocol.LimitExceeded, "this phone already has the most computers allowed"}, true
 	}

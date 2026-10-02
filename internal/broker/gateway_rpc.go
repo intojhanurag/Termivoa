@@ -112,6 +112,14 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		}
 		return principal, server.admitDevice(request.Origin, principal)
 	}
+	// The computer list belongs to the app this computer serves: only its own
+	// origin may read or change it, never another computer's app.
+	authorizeOwn := func(credential string) (auth.Principal, error) {
+		if err := server.admitOwn(request.Origin); err != nil {
+			return auth.Principal{}, err
+		}
+		return authorize(credential)
+	}
 	switch request.Type {
 	case protocol.GatewayPairRedeem:
 		payload, err := protocol.DecodeRPCPayload[protocol.HTTPPairRedeemRequest](request)
@@ -151,10 +159,11 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, err := authorize(payload.Credential); err != nil {
+		principal, err := authorize(payload.Credential)
+		if err != nil {
 			return nil, nil, err
 		}
-		return protocol.BrokerRPCEmptyPayload{}, nil, authority.Logout(ctx, payload.Credential)
+		return protocol.BrokerRPCEmptyPayload{}, nil, authority.LogoutPrincipal(ctx, principal)
 	case protocol.GatewaySettings:
 		principal, err := authorizeCredential(request, authorize)
 		if err != nil {
@@ -313,7 +322,7 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		}
 		return protocol.BrokerRPCEmptyPayload{}, binding, nil
 	case protocol.GatewayComputersList:
-		principal, err := authorizeCredential(request, authorize)
+		principal, err := authorizeCredential(request, authorizeOwn)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -324,7 +333,7 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		principal, err := authorize(payload.Credential)
+		principal, err := authorizeOwn(payload.Credential)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -335,7 +344,7 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		principal, err := authorize(payload.Credential)
+		principal, err := authorizeOwn(payload.Credential)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -59,8 +59,12 @@ type ManagementServerConfig struct {
 	WorktreeRoot string
 	// Tailnet publishes this computer's Tailscale status for multi-computer
 	// trust checks. Nil uses the installed tailscale CLI; it runs only when
-	// an app origin, pairing via or computer list needs it.
+	// an app origin, pairing via or computer list needs it. A monitor passed
+	// here should set OnUpdate to the server's TrustUpdated.
 	Tailnet *tailnet.Monitor
+	// Development is the development profile: the gateway's loopback origins
+	// then count as this computer's own.
+	Development bool
 	// Now is the clock for computer lists and origin probes. Nil is time.Now.
 	Now func() time.Time
 }
@@ -90,9 +94,11 @@ type ManagementServer struct {
 	// SQLite for it. It is refreshed whenever the origin is read or set.
 	ownOrigin atomic.Pointer[string]
 	// trustMu serializes sweepTrust; sweptStatus is the snapshot whose node
-	// changes it already turned into revocations.
+	// changes it already turned into revocations. trustWake asks watchTrust
+	// for a sweep now (a new snapshot).
 	trustMu     sync.Mutex
 	sweptStatus *tailnet.Status
+	trustWake   chan struct{}
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -132,17 +138,21 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	if config.WorktreeRoot == "" {
 		config.WorktreeRoot = defaultWorktreeRoot()
 	}
-	if config.Tailnet == nil {
-		config.Tailnet = tailnet.NewMonitor(tailnet.Config{
-			Source: tailnet.CommandSource(tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)),
-		})
-	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	return &ManagementServer{
-		config: config, connections: make(map[net.Conn]struct{}),
-	}, nil
+	server := &ManagementServer{
+		config: config, connections: make(map[net.Conn]struct{}), trustWake: make(chan struct{}, 1),
+	}
+	if server.config.Tailnet == nil {
+		server.config.Tailnet = tailnet.NewMonitor(tailnet.Config{
+			Source: tailnet.CommandSource(func() string {
+				return tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+			}),
+			OnUpdate: server.TrustUpdated,
+		})
+	}
+	return server, nil
 }
 
 // Serve accepts only BrokerListener connections, which have already passed
@@ -168,9 +178,15 @@ func (server *ManagementServer) Serve(ctx context.Context, listener *ipc.BrokerL
 	server.mu.Unlock()
 
 	_, _ = server.pairingOrigin(ctx) // Warm the own-origin cache.
-	stopTrust := make(chan struct{})
-	go server.watchTrust(ctx, stopTrust)
-	defer close(stopTrust)
+	stopTrust, trustDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(trustDone)
+		server.watchTrust(ctx, stopTrust)
+	}()
+	defer func() {
+		close(stopTrust)
+		<-trustDone // A sweep must not outlive Serve and the store it reads.
+	}()
 	var shutdownOnce sync.Once
 	shutdown := func() {
 		shutdownOnce.Do(func() {
@@ -291,11 +307,6 @@ func (server *ManagementServer) serveConnection(ctx context.Context, connection 
 		if peer.ClientKind == protocol.Gateway {
 			// An upload owns the rest of its dedicated connection.
 			if request, err := protocol.DecodeGatewayRPCRequest(data); err == nil && request.Type == protocol.GatewayUploadBegin {
-				// Origin binding is checked once for the whole upload; commit
-				// re-authorizes the same device.
-				if err := server.admitUpload(ctx, request); err != nil {
-					return writeGatewayReply(writer, request, nil, err)
-				}
 				return server.serveUpload(ctx, connection, reader, writer, request)
 			}
 			binding, err := server.serveGatewayRequest(ctx, writer, data)
@@ -644,22 +655,6 @@ var errInvalidSessionCursor = errors.New("broker: invalid session-list cursor")
 
 func (server *ManagementServer) now() time.Time {
 	return server.config.Now().UTC().Truncate(time.Millisecond)
-}
-
-// admitUpload applies origin binding to gateway.upload.begin.
-func (server *ManagementServer) admitUpload(ctx context.Context, request protocol.GatewayRPCEnvelope) error {
-	if server.config.Auth == nil {
-		return errAuthUnavailable
-	}
-	payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCUploadBeginPayload](request)
-	if err != nil {
-		return err
-	}
-	principal, err := server.config.Auth.Authenticate(ctx, payload.Credential)
-	if err != nil {
-		return err
-	}
-	return server.admitDevice(request.Origin, principal)
 }
 
 func classifyManagementError(err error) managementFailure {
