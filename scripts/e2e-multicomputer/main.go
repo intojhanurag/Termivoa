@@ -6,8 +6,9 @@
 // <host>:443 is answered by an in-process TLS server with a throwaway
 // self-signed certificate, so pages keep real https origins on the default
 // port (explicit ports are refused by design). Routed hosts are reverse
-// proxied to a development gateway on loopback; every other host gets a blank
-// page, used as an attacker or near-miss origin.
+// proxied to a development gateway on loopback; every other test host (any
+// name with "tailx" or "taily") gets a blank page, used as an attacker or
+// near-miss origin. Other hosts are refused.
 //
 // A development gateway accepts only loopback Host and Origin values, so for
 // a routed host H the proxy rewrites Host to the gateway address and an
@@ -157,6 +158,11 @@ func (f *front) connect(response http.ResponseWriter, request *http.Request) {
 		return
 	}
 	host = strings.ToLower(host)
+	// Only test names: the browser's own background traffic goes nowhere.
+	if !strings.Contains(host, "tailx") && !strings.Contains(host, "taily") {
+		http.Error(response, "not a test host", http.StatusForbidden)
+		return
+	}
 	if backend, ok := f.routes[host]; ok {
 		probe, err := net.DialTimeout("tcp", backend, 2*time.Second)
 		if err != nil {

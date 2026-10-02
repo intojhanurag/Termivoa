@@ -15,6 +15,20 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Ports the harness must never use: the installed pterm and its previews.
 const RESERVED = new Set([8787, 8788, 8789, 8443]);
 
+// Every pterm process of the harness runs in this macOS sandbox. It hides
+// the real Tailscale CLI (internal/tailnet.FindBinary checks these fixed
+// paths before PATH, so the fake on PATH is used), and blocks the installed
+// gateway port and launchctl, so nothing here can read or change the real
+// Tailscale, the installed pterm or launchd.
+const REAL_TAILSCALE = ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/usr/local/bin/tailscale',
+  '/opt/homebrew/bin/tailscale', '/usr/bin/tailscale', '/usr/sbin/tailscale'];
+const SANDBOX = `(version 1)(allow default)
+(deny file-read* process-exec ${REAL_TAILSCALE.map((p) => `(literal "${p}")`).join(' ')})
+(deny network-outbound (remote tcp "localhost:8787"))
+(deny process-exec (literal "/bin/launchctl"))`;
+/** argv that runs command inside the harness sandbox. */
+export const sandboxed = (command, args) => ['/usr/bin/sandbox-exec', ['-p', SANDBOX, command, ...args]];
+
 export async function freePort() {
   for (;;) {
     const port = await new Promise((res, rej) => {
@@ -110,6 +124,8 @@ export class Stack {
     this.nodes = structuredClone(NODES);
     for (const path of [this.home, this.bin, this.tsDir, dirname(this.dataDir), dirname(this.runtimeDir)]) mkdirSync(path, { recursive: true, mode: 0o700 });
     copyFileSync(join(HERE, 'tailscale'), join(this.bin, 'tailscale'));
+    // Demo prompt: macOS /etc/zshrc would show the real user and host name.
+    writeFileSync(join(this.home, '.zshrc'), "PROMPT='%1~ %# '\n");
     chmodSync(join(this.bin, 'tailscale'), 0o755);
     this.writeStatus();
   }
@@ -138,8 +154,8 @@ export class Stack {
     this.port ??= await freePort();
     this.gateway = `127.0.0.1:${this.port}`;
     const log = join(this.env.root, `${this.name}.log`);
-    const child = spawn(this.env.pterm, ['up', '--dev', '--data-dir', this.dataDir, '--runtime-dir', this.runtimeDir,
-      '--listen', this.gateway, '--preview-listen', 'off'], { env: this.processEnv, cwd: this.home, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(...sandboxed(this.env.pterm, ['up', '--dev', '--data-dir', this.dataDir, '--runtime-dir', this.runtimeDir,
+      '--listen', this.gateway, '--preview-listen', 'off']), { env: this.processEnv, cwd: this.home, stdio: ['ignore', 'pipe', 'pipe'] });
     this.child = child;
     let out = '';
     const sink = (d) => { out += d; appendFileSync(log, d); };
@@ -161,17 +177,15 @@ export class Stack {
 
   /** Runs an admin or local pterm command against this stack. */
   cli(args, options = {}) {
-    return must(this.env.pterm, [...args, '--dev', '--runtime-dir', this.runtimeDir], { env: this.processEnv, ...options });
+    return must(...sandboxed(this.env.pterm, [...args, '--dev', '--runtime-dir', this.runtimeDir]), { env: this.processEnv, ...options });
   }
 
   /**
-   * `pterm doctor` on this stack. It runs with HOME=doctorHome and inside a
-   * macOS sandbox that blocks 127.0.0.1:8787 and launchctl, so it can never
-   * reach the installed gateway or read the real launchd jobs.
+   * `pterm doctor` on this stack, with HOME=doctorHome, in the sandbox: it
+   * can never reach the installed gateway, launchd or the real Tailscale.
    */
   doctor() {
-    const profile = '(version 1)(allow default)(deny network-outbound (remote tcp "localhost:8787"))(deny process-exec (literal "/bin/launchctl"))';
-    return run('/usr/bin/sandbox-exec', ['-p', profile, this.env.pterm, 'doctor'], { env: { ...this.processEnv, HOME: this.doctorHome } });
+    return run(...sandboxed(this.env.pterm, ['doctor']), { env: { ...this.processEnv, HOME: this.doctorHome } });
   }
 }
 
@@ -312,6 +326,9 @@ export class Page {
     await until(() => this.eval(`document.readyState === 'complete' && location.href.startsWith(${JSON.stringify(url.split('#')[0])})`), { what: `load ${url}` });
   }
 
+  /** Makes this the visible tab: the app polls only while visible. */
+  front() { return this.send('Page.bringToFront'); }
+
   text() { return this.eval('document.body ? document.body.innerText : ""'); }
   waitText(t, timeout = 20000) { return until(async () => (await this.text()).includes(t), { timeout, what: `text "${t}"` }); }
 
@@ -339,7 +356,7 @@ export function pageFetch(page, url, init = {}) {
 export function interactive(stack, args) {
   // Node gives children a socket, not a pipe, as stdin; pterm's prompt
   // accepts only a terminal or a pipe, so cat turns it into a pipe.
-  const child = spawn('/bin/sh', ['-c', 'cat | "$0" "$@"', stack.env.pterm, ...args, '--dev', '--runtime-dir', stack.runtimeDir],
+  const child = spawn(...sandboxed('/bin/sh', ['-c', 'cat | "$0" "$@"', stack.env.pterm, ...args, '--dev', '--runtime-dir', stack.runtimeDir]),
     { env: stack.processEnv, stdio: ['pipe', 'pipe', 'pipe'] });
   const self = {
     child, out: '',
@@ -388,4 +405,50 @@ export async function pairDirect(page, stack, label) {
   cli.end('y\n');
   if (await cli.done !== 0) throw new Error(`pterm pair failed:\n${cli.out}`);
   return { code, ms: Date.now() - started };
+}
+
+/** A JSON API call from inside a page, with credentials. */
+export async function api(page, url, method = 'GET', body) {
+  const init = { method, credentials: 'include' };
+  if (body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json', 'X-Pterm-Request': '1' };
+    init.body = JSON.stringify(body);
+  }
+  const r = await pageFetch(page, url, init);
+  try { r.json = JSON.parse(r.body); } catch { /* not JSON */ }
+  return r;
+}
+
+/** Types text into the Live terminal and presses Enter. */
+export async function typeLine(page, text) {
+  await page.eval(`document.querySelector('.terminal-input').focus()`);
+  await page.send('Input.insertText', { text });
+  for (const type of ['keyDown', 'keyUp']) {
+    await page.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) });
+  }
+}
+
+/** The visible text of the Live terminal. */
+export const terminalText = (page) => page.eval(`[...document.querySelectorAll('.terminal-host .xterm-rows')].map((e) => e.innerText).join('\\n')`);
+
+/** Taps the first place where needle starts in the Live terminal (xterm link providers act on mouse events). */
+export async function tapTerminalText(page, needle) {
+  const point = await page.eval(`(() => {
+    const walker = document.createTreeWalker(document.querySelector('.terminal-host .xterm-rows'), NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = node.textContent.indexOf(${JSON.stringify(needle)});
+      if (at < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + Math.min(8, ${JSON.stringify(needle)}.length));
+      const r = range.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    return null; })()`);
+  if (!point) throw new Error(`"${needle}" is not on the terminal screen`);
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+  await sleep(200);
+  await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
+  await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
+  await sleep(300);
 }

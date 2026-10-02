@@ -17,19 +17,19 @@
    "id": "A2",
    "name": "Pair the browser with mac (home) as today",
    "result": "PASS",
-   "evidence": "code 418-076, 1135 ms"
+   "evidence": "code 315-449, 1140 ms"
   },
   {
    "id": "A3",
    "name": "Bound pairing mac app → vps over real CORS (API level, no screens)",
    "result": "PASS",
-   "evidence": "link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt \"Phone \"e2e phone\" shows code 716-766 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]\", poll 200, settings 200 after 1042 ms, confirm 200; 3394 ms"
+   "evidence": "link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt \"Phone \"e2e phone\" shows code 685-751 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]\", poll 200, settings 200 after 1 ms, confirm 200; 2321 ms"
   },
   {
    "id": "A3-lag",
    "name": "The first settings read right after approval works (what the app does)",
-   "result": "FAIL",
-   "evidence": "first read: TypeError: Failed to fetch; 200 only 1042 ms after the approved poll"
+   "result": "PASS",
+   "evidence": "first read: 200; 200 only 1 ms after the approved poll"
   },
   {
    "id": "A4",
@@ -53,7 +53,7 @@
    "id": "A4d",
    "name": "Control: cors GET from the bound app (mac) works and refreshes the cookie",
    "result": "PASS",
-   "evidence": "GET /api/v1/settings origin=https://mac.tailx.ts.net sfs=same-site sfm=cors cookie=true → 200 ACAO=https://mac.tailx.ts.net Set-Cookie (Path=/; Max-Age=2591998; HttpOnly; SameSite=Strict)"
+   "evidence": "GET /api/v1/settings origin=https://mac.tailx.ts.net sfs=same-site sfm=cors cookie=true → 200 ACAO=https://mac.tailx.ts.net Set-Cookie (Path=/; Max-Age=2591999; HttpOnly; SameSite=Strict)"
   },
   {
    "id": "A5-xmac.tailx.ts.net",
@@ -185,7 +185,7 @@
    "id": "A7-serve",
    "name": "pterm doctor on mac warns about another Serve handler on the home origin",
    "result": "PASS",
-   "evidence": "! tailscale serve: other handlers share this computer's origin (mac.tailx.ts.net): /files. As the home computer, any of them would control every computer paired through it; remove them before using this computer as home."
+   "evidence": "! tailscale serve: other handlers share this computer's Termivoa origin https://mac.tailx.ts.net: /files. Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, every computer added to it. Move each one to another HTTPS port (for example `tailscale serve --bg --https=8444 <target>`) or to another computer, then remove it here: `tailscale serve --https=443 --set-path=/files off`."
   }
  ]
 }

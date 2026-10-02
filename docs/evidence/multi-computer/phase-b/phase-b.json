@@ -1,0 +1,185 @@
+{
+ "chrome": "Chrome/154.0.8037.93",
+ "results": [
+  {
+   "id": "B1",
+   "name": "Pair the phone with mac (home)",
+   "result": "PASS",
+   "evidence": "code 118-487 matched, 1124 ms"
+  },
+  {
+   "id": "B2-sheet",
+   "name": "Confirm sheet shows the full origin, machine and owner",
+   "result": "PASS",
+   "evidence": "Add this computer? Close Address https://vps.tailx.ts.net Machine vps Owner ada@example.com Add it only if you just ran pterm pair --via on vps. Next, this phone shows a code. Check it on vps. Add vps Cancel"
+  },
+  {
+   "id": "B2-code",
+   "name": "Same code on the app and on the vps CLI",
+   "result": "PASS",
+   "evidence": "app 023-070, CLI 023-070"
+  },
+  {
+   "id": "B2",
+   "name": "Add vps by paste ends with \"vps is added\"",
+   "result": "PASS",
+   "evidence": "outcome: added"
+  },
+  {
+   "id": "B3-list",
+   "name": "Sessions list shows sessions from both computers with labels and chips All/mac/vps",
+   "result": "PASS",
+   "evidence": "chips [\"All\",\"mac\",\"vps\"]; rows [{\"title\":\"mac-1\",\"meta\":\"mac · demo · zsh (login) · now\"},{\"title\":\"vps-1\",\"meta\":\"vps · demo · zsh (login) · now\"}]"
+  },
+  {
+   "id": "B3-echo",
+   "name": "Open a vps session from the mac app and echo round-trip",
+   "result": "PASS",
+   "evidence": "/c/vps.tailx.ts.net/sessions/9bea52d3-58c0-413e-9e19-271ade25bfb0; output e2e-2004-42"
+  },
+  {
+   "id": "B3-new",
+   "name": "Start a new session on vps from the mac app (\"Runs on vps\")",
+   "result": "PASS",
+   "evidence": "new session a8cb3713-f289-44e7-a493-936a5b57d75d is in vps pterm list"
+  },
+  {
+   "id": "B8-shell",
+   "name": "The cached app opens while home is offline",
+   "result": "PASS",
+   "evidence": "service workers [\"https://mac.tailx.ts.net/sw.js\"]; load 12 ms; problems []"
+  },
+  {
+   "id": "B8-vps",
+   "name": "vps sessions still listed and reachable with home offline",
+   "result": "PASS",
+   "evidence": "[{\"title\":\"demo\",\"meta\":\"vps · demo · zsh (login) · now · No one\"},{\"title\":\"vps-1\",\"meta\":\"vps · demo · zsh (login) · now\"}]"
+  },
+  {
+   "id": "B8-wall",
+   "name": "An unvisited Wall opens from the cache with home offline",
+   "result": "PASS",
+   "evidence": "tiles [\"demo\",\"vps-1\"]"
+  },
+  {
+   "id": "B4-both",
+   "name": "Wall shows tiles from both computers",
+   "result": "PASS",
+   "evidence": "mac-4@mac, mac-3@mac, mac-2@mac (Paused), vps-2@vps, demo@vps, vps-1@vps (Paused)"
+  },
+  {
+   "id": "B4-paused",
+   "name": "With more than 4 sessions, tiles beyond 4 show Paused",
+   "result": "PASS",
+   "evidence": "6 tiles, 2 Paused"
+  },
+  {
+   "id": "B4-thumb",
+   "name": "Thumbnails stay correct: a live tile follows its session, a paused tile stays still",
+   "result": "PASS",
+   "evidence": "vps-2 live: tick 5 → 8 in 3 s; vps-1 Paused"
+  },
+  {
+   "id": "B5-down",
+   "name": "With vps stopped, mac sessions work and \"vps · can't reach\" shows",
+   "result": "PASS",
+   "evidence": "[\"vps · can't reach Retry\"]; mac echo ok"
+  },
+  {
+   "id": "B5-up",
+   "name": "After vps restarts, Retry recovers it",
+   "result": "PASS",
+   "evidence": "problems []"
+  },
+  {
+   "id": "B6-stream",
+   "name": "The open vps stream closes on revoke --via (Live leaves the session)",
+   "result": "PASS",
+   "evidence": "path now /; revoke said: Revoke browser access for 1 device(s) that use this computer from the Termivoa app at https://mac.tailx.ts.net? Their live connections close now. [y/N] Revoked 1 device(s) bound to https://mac.tailx.ts.net; closed 1 live connection(s)."
+  },
+  {
+   "id": "B6-pair",
+   "name": "\"vps · pair again\" shows for vps only; mac sessions still listed",
+   "result": "PASS",
+   "evidence": "[\"vps · pair again · Run pterm pair --via mac on vps Computers\"]; mac rows 4; first vps answer: GET /api/v1/settings 401 ACAO=https://mac.tailx.ts.net Set-Cookie pterm_dev_session cleared; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+  },
+  {
+   "id": "B6-reload",
+   "name": "\"vps · pair again\" still shows after the app reloads",
+   "result": "PASS",
+   "evidence": "[\"vps · pair again · Run pterm pair --via mac on vps Computers\"]; vps answers: GET /api/v1/settings cookie=false 401 ACAO=https://mac.tailx.ts.net"
+  },
+  {
+   "id": "B2b-tap",
+   "name": "Tapping the add-computer link in the terminal opens the confirm sheet",
+   "result": "FAIL",
+   "evidence": "a tap on the wrapped link (46 columns) did nothing; a tap on a file path in the same terminal opens Files. Continued by pasting the link"
+  },
+  {
+   "id": "B2b-same",
+   "name": "Approved by typing y in the same app's terminal: vps is usable afterwards",
+   "result": "FAIL",
+   "evidence": "problems [\"vps · pair again · Run pterm pair --via mac on vps Computers\"]; vps rows 0; vps devices: no active device for mac"
+  },
+  {
+   "id": "B2b",
+   "name": "Terminal link, approved on vps, ends with \"vps is added\"",
+   "result": "PASS",
+   "evidence": "code 649-228; outcome: added"
+  },
+  {
+   "id": "B7-direct",
+   "name": "A device paired directly with vps cannot be driven from the mac app",
+   "result": "PASS",
+   "evidence": "own page 200; from mac origin: settings 400, sessions 400, WebSocket error; GET /api/v1/settings 400, GET /api/v1/sessions 400, GET /api/v1/ws 400"
+  },
+  {
+   "id": "B7-node",
+   "name": "Changing mac's node ID on vps revokes the bound devices",
+   "result": "PASS",
+   "evidence": "refused (TypeError: Failed to fetch) 24 s and revoked 54 s after the change; before: 4b958e68-9832-4ea1-a977-f1fcae7f08cf \"Demo phone\" active 2026-10-02T10:07:40.748Z https://mac.tailx.ts.net / 1a7f867c-2117-47de-96c2-cc7f502321a1 \"Demo phone\" revoked 2026-10-02T10:06:40.645Z https://mac.tailx.ts.net; after: 4b958e68-9832-4ea1-a977-f1fcae7f08cf \"Demo phone\" revoked 2026-10-02T10:07:40.748Z https://mac.tailx.ts.net / 1a7f867c-2117-47de-96c2-cc7f502321a1 \"Demo phone\" revoked 2026-10-02T10:06:40.645Z https://mac.tailx.ts.net; app: [\"vps · can't reach Retry\"]"
+  }
+ ],
+ "timings": [
+  {
+   "what": "pairing with home (link opened → Sessions)",
+   "ms": 1124
+  },
+  {
+   "what": "add computer by paste (pterm pair --via → outcome)",
+   "ms": 4643
+  },
+  {
+   "what": "Sessions list load (navigation → rows from both computers)",
+   "ms": 219
+  },
+  {
+   "what": "open vps session → live prompt",
+   "ms": 517
+  },
+  {
+   "what": "echo round-trip on vps (Enter → output painted)",
+   "ms": 207
+  },
+  {
+   "what": "cold open with home offline (navigation → vps rows)",
+   "ms": 217
+  },
+  {
+   "what": "vps recovery (Retry → no problem row)",
+   "ms": 1
+  },
+  {
+   "what": "add through the terminal, approved in the same app (link → list)",
+   "ms": 12203
+  },
+  {
+   "what": "add from the terminal link, approved on vps (link → outcome)",
+   "ms": 7027
+  },
+  {
+   "what": "node ID change → bound device revoked (whole seconds)",
+   "ms": 24000
+  }
+ ]
+}
