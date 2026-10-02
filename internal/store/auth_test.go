@@ -51,7 +51,7 @@ func TestPairingGrantIsSingleUseUnderConcurrentRedemption(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			results <- store.RedeemPairingGrant(ctx, grant.Hash, testPending(index, testTime.Add(time.Second)), 16)
+			results <- store.RedeemPairingGrant(ctx, grant.Hash, testPending(index, testTime.Add(time.Second)), 16, nil)
 		}()
 	}
 	wait.Wait()
@@ -89,23 +89,23 @@ func TestPairingGrantExpiryCapacityAndRollback(t *testing.T) {
 		t.Fatalf("outstanding grant capacity = %v", err)
 	}
 	// Pending capacity rolls back the consumption: the grant stays usable.
-	if err := store.RedeemPairingGrant(ctx, testHash("g0"), testPending(1, testTime), 1); err != nil {
+	if err := store.RedeemPairingGrant(ctx, testHash("g0"), testPending(1, testTime), 1, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RedeemPairingGrant(ctx, testHash("g1"), testPending(2, testTime), 1); !errors.Is(err, ErrPairingCapacity) {
+	if err := store.RedeemPairingGrant(ctx, testHash("g1"), testPending(2, testTime), 1, nil); !errors.Is(err, ErrPairingCapacity) {
 		t.Fatalf("pending capacity = %v", err)
 	}
-	if err := store.RedeemPairingGrant(ctx, testHash("g1"), testPending(2, testTime), 2); err != nil {
+	if err := store.RedeemPairingGrant(ctx, testHash("g1"), testPending(2, testTime), 2, nil); err != nil {
 		t.Fatalf("grant was consumed by a rolled-back redemption: %v", err)
 	}
 	// The two-minute boundary is exclusive and expired grants are pruned.
 	if err := store.CreatePairingGrant(ctx, third, 8); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RedeemPairingGrant(ctx, third.Hash, testPending(3, third.ExpiresAt), 8); !errors.Is(err, ErrPairingInvalid) {
+	if err := store.RedeemPairingGrant(ctx, third.Hash, testPending(3, third.ExpiresAt), 8, nil); !errors.Is(err, ErrPairingInvalid) {
 		t.Fatalf("expired grant redemption = %v", err)
 	}
-	if err := store.RedeemPairingGrant(ctx, testHash("unknown"), testPending(4, testTime), 8); !errors.Is(err, ErrPairingInvalid) {
+	if err := store.RedeemPairingGrant(ctx, testHash("unknown"), testPending(4, testTime), 8, nil); !errors.Is(err, ErrPairingInvalid) {
 		t.Fatalf("unknown grant redemption = %v", err)
 	}
 }
@@ -119,15 +119,15 @@ func TestPendingPollRequiresSecretApprovalAndIssuesOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending := testPending(1, testTime)
-	if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 2); err != nil {
+	if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 2, nil); err != nil {
 		t.Fatal(err)
 	}
 	device, session := testIssue(1, testTime.Add(time.Minute))
 	now := testTime.Add(time.Minute)
-	if _, approved, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits); err != nil || approved {
+	if _, approved, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits, nil); err != nil || approved {
 		t.Fatalf("unapproved poll = %v, %v", approved, err)
 	}
-	if _, _, err := store.CompletePendingPairing(ctx, pending.ID, testHash("wrong"), now, device, session, testLimits); !errors.Is(err, ErrPendingSecret) {
+	if _, _, err := store.CompletePendingPairing(ctx, pending.ID, testHash("wrong"), now, device, session, testLimits, nil); !errors.Is(err, ErrPendingSecret) {
 		t.Fatalf("wrong poll secret = %v", err)
 	}
 	if err := store.ApprovePendingPairing(ctx, testUUID(9999), now); !errors.Is(err, ErrPendingMissing) {
@@ -139,15 +139,15 @@ func TestPendingPollRequiresSecretApprovalAndIssuesOnce(t *testing.T) {
 	if err := store.ApprovePendingPairing(ctx, pending.ID, now); !errors.Is(err, ErrPendingApproved) {
 		t.Fatalf("approval replay = %v", err)
 	}
-	if _, _, err := store.CompletePendingPairing(ctx, pending.ID, testHash("wrong"), now, device, session, testLimits); !errors.Is(err, ErrPendingSecret) {
+	if _, _, err := store.CompletePendingPairing(ctx, pending.ID, testHash("wrong"), now, device, session, testLimits, nil); !errors.Is(err, ErrPendingSecret) {
 		t.Fatalf("approved wrong poll secret = %v", err)
 	}
-	issued, approved, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits)
+	issued, approved, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits, nil)
 	if err != nil || !approved || issued.Label != pending.DeviceLabel {
 		t.Fatalf("approved poll = %#v, %v, %v", issued, approved, err)
 	}
 	// Lost issuance response: the pending record is consumed, never replayable.
-	if _, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits); !errors.Is(err, ErrPendingMissing) {
+	if _, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits, nil); !errors.Is(err, ErrPendingMissing) {
 		t.Fatalf("replayed issuance = %v", err)
 	}
 	found, owner, err := store.LookupCredential(ctx, session.CredentialHash)
@@ -173,24 +173,24 @@ func TestPendingPollBurnsAfterFailuresAndExpires(t *testing.T) {
 			CreatedAt: testTime, ExpiresAt: testTime.Add(2 * time.Minute)}, 4); err != nil {
 			t.Fatal(err)
 		}
-		if err := store.RedeemPairingGrant(ctx, testHash(grantName), testPending(index, testTime), 4); err != nil {
+		if err := store.RedeemPairingGrant(ctx, testHash(grantName), testPending(index, testTime), 4, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	burned, expired := testPending(0, testTime), testPending(1, testTime)
 	device, session := testIssue(1, testTime)
 	for attempt := range testLimits.FailedPolls {
-		if _, _, err := store.CompletePendingPairing(ctx, burned.ID, testHash("wrong"), testTime, device, session, testLimits); !errors.Is(err, ErrPendingSecret) {
+		if _, _, err := store.CompletePendingPairing(ctx, burned.ID, testHash("wrong"), testTime, device, session, testLimits, nil); !errors.Is(err, ErrPendingSecret) {
 			t.Fatalf("failed poll %d = %v", attempt, err)
 		}
 	}
-	if _, _, err := store.CompletePendingPairing(ctx, burned.ID, burned.PollHash, testTime, device, session, testLimits); !errors.Is(err, ErrPendingMissing) {
+	if _, _, err := store.CompletePendingPairing(ctx, burned.ID, burned.PollHash, testTime, device, session, testLimits, nil); !errors.Is(err, ErrPendingMissing) {
 		t.Fatalf("burned pending still usable: %v", err)
 	}
 	if err := store.ApprovePendingPairing(ctx, expired.ID, expired.ExpiresAt); !errors.Is(err, ErrPendingMissing) {
 		t.Fatalf("expired approval = %v", err)
 	}
-	if _, _, err := store.CompletePendingPairing(ctx, expired.ID, expired.PollHash, expired.ExpiresAt, device, session, testLimits); !errors.Is(err, ErrPendingMissing) {
+	if _, _, err := store.CompletePendingPairing(ctx, expired.ID, expired.PollHash, expired.ExpiresAt, device, session, testLimits, nil); !errors.Is(err, ErrPendingMissing) {
 		t.Fatalf("expired poll = %v", err)
 	}
 }
@@ -205,14 +205,14 @@ func TestDeviceCapacityPrunesOnlyRevokedDevices(t *testing.T) {
 		if err := store.CreatePairingGrant(ctx, grant, 8); err != nil {
 			return err
 		}
-		if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+		if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 8, nil); err != nil {
 			return err
 		}
 		if err := store.ApprovePendingPairing(ctx, pending.ID, testTime); err != nil {
 			return err
 		}
 		device, session := testIssue(number, testTime)
-		_, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, testLimits)
+		_, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, testLimits, nil)
 		return err
 	}
 	for number := 1; number <= 2; number++ {
@@ -258,7 +258,7 @@ func TestDeviceCapacityIgnoresExpiredDevices(t *testing.T) {
 		if err := store.CreatePairingGrant(ctx, grant, 8); err != nil {
 			return err
 		}
-		if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+		if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 8, nil); err != nil {
 			return err
 		}
 		if err := store.ApprovePendingPairing(ctx, pending.ID, now); err != nil {
@@ -266,7 +266,7 @@ func TestDeviceCapacityIgnoresExpiredDevices(t *testing.T) {
 		}
 		device, session := testIssue(number, now)
 		session.ExpiresAt = now.Add(lifetime)
-		_, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits)
+		_, _, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, testLimits, nil)
 		return err
 	}
 	listed := func(now time.Time, want ...int) {
@@ -340,14 +340,14 @@ func TestDeviceCapacityAndStatusRejectClockRolledBackDevice(t *testing.T) {
 		if err := testStore.CreatePairingGrant(ctx, grant, 8); err != nil {
 			return err
 		}
-		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8, nil); err != nil {
 			return err
 		}
 		if err := testStore.ApprovePendingPairing(ctx, pending.ID, now); err != nil {
 			return err
 		}
 		device, session := testIssue(number, now)
-		_, _, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, limits)
+		_, _, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, now, device, session, limits, nil)
 		return err
 	}
 	if err := pair(1, testTime); err != nil {
@@ -384,7 +384,7 @@ func TestDeviceCapacityExcludesPendingRevoked(t *testing.T) {
 		if err := testStore.CreatePairingGrant(ctx, grant, 8); err != nil {
 			return err
 		}
-		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8, nil); err != nil {
 			return err
 		}
 		if err := testStore.ApprovePendingPairing(ctx, pending.ID, testTime); err != nil {
@@ -393,7 +393,7 @@ func TestDeviceCapacityExcludesPendingRevoked(t *testing.T) {
 		device, session := testIssue(number, testTime)
 		limits := base
 		limits.PendingRevoked = pendingRevoked
-		_, _, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, limits)
+		_, _, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, limits, nil)
 		return err
 	}
 	if err := pair(1, nil); err != nil {
@@ -427,7 +427,7 @@ func TestListDevicesStatus(t *testing.T) {
 		if err := testStore.CreatePairingGrant(ctx, grant, 8); err != nil {
 			t.Fatal(err)
 		}
-		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8); err != nil {
+		if err := testStore.RedeemPairingGrant(ctx, grant.Hash, pending, 8, nil); err != nil {
 			t.Fatal(err)
 		}
 		if err := testStore.ApprovePendingPairing(ctx, pending.ID, testTime); err != nil {
@@ -435,7 +435,7 @@ func TestListDevicesStatus(t *testing.T) {
 		}
 		device, session := testIssue(number, testTime)
 		session.LastUsedAt, session.ExpiresAt = lastUsed, expires
-		issued, approved, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, limits)
+		issued, approved, err := testStore.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, limits, nil)
 		if err != nil || !approved {
 			t.Fatalf("issue device %d = %v, %v", number, approved, err)
 		}
@@ -548,14 +548,14 @@ func TestRenameDeviceChangesOnlyThatLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending := testPending(1, testTime)
-	if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 2); err != nil {
+	if err := store.RedeemPairingGrant(ctx, grant.Hash, pending, 2, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ApprovePendingPairing(ctx, pending.ID, testTime); err != nil {
 		t.Fatal(err)
 	}
 	device, session := testIssue(1, testTime)
-	if _, approved, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, testLimits); err != nil || !approved {
+	if _, approved, err := store.CompletePendingPairing(ctx, pending.ID, pending.PollHash, testTime, device, session, testLimits, nil); err != nil || !approved {
 		t.Fatalf("issue = %v, %v", approved, err)
 	}
 	if err := store.RenameDevice(ctx, device.ID, "Work phone ✓"); err != nil {
