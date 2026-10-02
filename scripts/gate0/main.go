@@ -4,8 +4,8 @@
 // __Host- SameSite=Strict HttpOnly cookie on a credentialed fetch and a
 // WebSocket?
 //
-//	go run ./scripts/gate0 -role home -peer https://peer.tailX.ts.net:8443
-//	go run ./scripts/gate0 -role peer -home https://home.tailX.ts.net:8443
+//	go run ./scripts/gate0 -role home -peer https://peer.tailX.ts.net:10000
+//	go run ./scripts/gate0 -role peer -home https://home.tailX.ts.net:10000
 //
 // Both roles listen on 127.0.0.1 only. See README.md for Tailscale Serve.
 // It is a test tool: it is not built into pterm and shares no state with it.
@@ -57,7 +57,7 @@ const (
 
 func main() {
 	role := flag.String("role", "", "home or peer")
-	peer := flag.String("peer", "", "home role: the peer origin, for example https://peer.tailX.ts.net:8443")
+	peer := flag.String("peer", "", "home role: the peer origin, for example https://peer.tailX.ts.net:10000")
 	home := flag.String("home", "", "peer role: the home origin allowed to call it (comma-separated for more than one)")
 	port := flag.Int("port", 0, "port on 127.0.0.1 (default 8441 for home, 8442 for peer)")
 	selfSigned := flag.Bool("tls-self-signed", false, "serve HTTPS with a throwaway self-signed certificate (local test only)")
@@ -117,7 +117,7 @@ func parseOrigin(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("%q is not an https origin like https://name.tailX.ts.net:8443", raw)
+		return "", fmt.Errorf("%q is not an https origin like https://name.tailX.ts.net:10000", raw)
 	}
 	return "https://" + strings.ToLower(u.Host), nil
 }
