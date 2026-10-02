@@ -1,0 +1,16 @@
+Checks (read-only):
+  pterm: <root>/bin/pterm (build private-dev)
+  data directory: <root>/mac/dh/Library/Application Support/Phone Terminal (exists)
+  runtime directory: <root>/mac/dh/Library/Caches/Phone Terminal/runtime (exists)
+  log directory: <root>/mac/dh/Library/Application Support/Phone Terminal/logs (not created yet)
+  broker: running, 0 active session(s)
+  ! gateway: http://127.0.0.1:8787 is not healthy: Get "http://127.0.0.1:8787/healthz": dial tcp 127.0.0.1:8787: connect: operation not permitted
+  ! startup broker: not registered
+  ! startup gateway: not registered
+  shells: /bin/zsh
+  tailscale: Running, host mac.tailx.ts.net
+  tailscale serve: HTTPS 443 proxies the Termivoa gateway
+  tailscale serve: dev-server previews not shared (optional): tailscale serve --bg --https=8443 http://127.0.0.1:8789
+  protocol revision 1 (oldest supported 1)
+  multi-computer: no bound app origins (CORS off)
+pterm: doctor found 3 problem(s); `pterm setup` explains how to fix startup registration
