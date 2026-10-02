@@ -13,7 +13,6 @@ import {
   MAX_SELECTED_LINES,
   selectedLines,
   ShipFlow,
-  splitPath,
   suggestMessage,
   tapLine,
   type CommitControls,
@@ -293,11 +292,6 @@ describe('ask agent about a file', () => {
     askAboutFile(key, 'src/a.ts');
     expect(readDraft(key)).toBe('Why did this change? @src/a.ts ');
     saveDraft(key, '');
-  });
-
-  it('splits a path into its muted directory and its name', () => {
-    expect(splitPath('src/app/main.ts')).toEqual({ dir: 'src/app/', name: 'main.ts' });
-    expect(splitPath('README.md')).toEqual({ dir: '', name: 'README.md' });
   });
 });
 

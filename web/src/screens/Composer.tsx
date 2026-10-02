@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { blobToBase64, client } from '../api/http';
-import { formatSize, PhotoAttacher, type Attachment, type Uploader } from '../terminal/attachments';
-import type { Connection } from '../terminal/Connection';
+import { PhotoAttacher, type Attachment } from '../terminal/attachments';
+import { formatSize } from './Files';
+import { noSubscribe, type Connection } from '../terminal/Connection';
 import { checkPaste, lineCount, readDraft, saveDraft } from '../terminal/composer';
 import { prepareImage } from '../terminal/image';
 import { NO_MODIFIERS } from '../terminal/InputController';
@@ -10,10 +11,9 @@ import {
 } from '../terminal/speech';
 import { Sheet, SheetHeader } from './Sheet';
 
-const noSubscribe = () => () => undefined;
 const idleSpeech = () => IDLE_SPEECH;
 
-export function Composer({ connection, origin, canSend, draftKey, onClose, speech = recognizerFactory() ?? null, uploader }: {
+export function Composer({ connection, origin, canSend, draftKey, onClose, speech = recognizerFactory() ?? null }: {
   readonly connection: Connection;
   /** The session's computer; photos upload there. Home when omitted. */
   readonly origin?: string;
@@ -22,7 +22,6 @@ export function Composer({ connection, origin, canSend, draftKey, onClose, speec
   readonly onClose: () => void;
   /** Makes speech recognizers; null where the browser has none. */
   readonly speech?: RecognizerFactory | null;
-  readonly uploader?: Uploader;
 }) {
   const [text, setText] = useState(() => readDraft(draftKey));
   const [confirming, setConfirming] = useState(false);
@@ -81,10 +80,10 @@ export function Composer({ connection, origin, canSend, draftKey, onClose, speec
   function pick(file: File | undefined) {
     if (file === undefined) return;
     setNote(undefined);
-    const upload = uploader ?? (async (blob: Blob) => client(origin).uploadImage(connection.sessionId, {
+    const upload = async (blob: Blob) => client(origin).uploadImage(connection.sessionId, {
       generation: connection.generation,
       data: await blobToBase64(blob),
-    }));
+    });
     void attacher.attach(file, { prepare: prepareImage, upload });
   }
 

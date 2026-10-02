@@ -87,21 +87,6 @@ export const MAX_RESPONSE_BYTES = 1024 * 1024;
 /** "Update Termivoa on vps". */
 export const updateText = (label: string): string => `Update Termivoa on ${label}`;
 
-/**
- * Request fields and modes newer than revision 1, by the protocol revision
- * that added them. Go decodes requests strictly, so send one to a computer
- * only when `supports(revision, feature)` is true.
- */
-export const FEATURE_REVISION = {
-  /** `session.attach` `{thumbnail: {maxUpdatesPerSecond}}`. */
-  thumbnail: 1,
-} as const;
-export type Feature = keyof typeof FEATURE_REVISION;
-
-export function supports(revision: number | undefined, feature: Feature): boolean {
-  return revision !== undefined && revision >= FEATURE_REVISION[feature];
-}
-
 /** Why the app must refuse a computer at this revision, or undefined when it may use it. */
 export function revisionProblem(
   settings: Pick<HTTPSettingsResponse, 'protocolRevision' | 'minProtocolRevision'>,
@@ -166,10 +151,6 @@ export interface Client {
   readonly origin: string;
   /** True for the computer that served this app; requests stay same-origin. */
   readonly home: boolean;
-  /** The protocol revision from the last good settings read; undefined until then (home: this build's). */
-  revision(): number | undefined;
-  /** Whether a newer request field or mode may be sent to this computer. */
-  supports(feature: Feature): boolean;
   /**
    * Reads settings. On a peer, also checks the protocol revision: a peer out
    * of range throws ApiError `computer_outdated` or `app_outdated`, and every
@@ -199,7 +180,6 @@ export interface Client {
 }
 
 function createClient(origin: string, home: boolean): Client {
-  let revision: number | undefined;
   let refusal: ApiError | undefined;
 
   /** Sends one request and returns the body of a 2xx answer as text. */
@@ -214,9 +194,7 @@ function createClient(origin: string, home: boolean): Client {
       init.headers = { 'Content-Type': 'application/json', 'X-Pterm-Request': '1' };
       init.body = JSON.stringify(options.body ?? {});
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? REQUEST_TIMEOUT_MS);
-    init.signal = controller.signal;
+    init.signal = AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS);
     let response: Response;
     let text: string;
     try {
@@ -227,8 +205,6 @@ function createClient(origin: string, home: boolean): Client {
         throw new ApiError(0, 'invalid_response', INVALID_RESPONSE);
       }
       throw new ApiError(0, 'network', CONNECTION_UNAVAILABLE);
-    } finally {
-      clearTimeout(timer);
     }
     if (!response.ok) {
       throw failure(response.status, text);
@@ -252,7 +228,6 @@ function createClient(origin: string, home: boolean): Client {
   }
 
   function refuse(problem: 'computer_outdated' | 'app_outdated'): never {
-    revision = undefined;
     refusal = new ApiError(0, problem, updateText(firstLabel(problem === 'computer_outdated' ? origin : homeOrigin())));
     throw refusal;
   }
@@ -284,18 +259,11 @@ function createClient(origin: string, home: boolean): Client {
   return {
     origin,
     home,
-    revision: () => revision ?? (home ? PROTOCOL_REVISION : undefined),
-    supports(feature) {
-      return supports(this.revision(), feature);
-    },
     async settings() {
       const { status, text } = await call('GET', '/api/v1/settings', { ...read, gated: false });
-      // A peer from before multi-computer sends no protocolRevision: it needs an update, not "can't reach".
-      if (!home && !hasRevision(text)) refuse('computer_outdated');
       const settings = parse('settingsResponse', status, text);
       const problem = home ? undefined : revisionProblem(settings);
       if (problem !== undefined) refuse(problem);
-      revision = settings.protocolRevision;
       refusal = undefined;
       return settings;
     },
@@ -321,22 +289,12 @@ function createClient(origin: string, home: boolean): Client {
   };
 }
 
-/** True when a settings body is a JSON object with a numeric protocolRevision. */
-function hasRevision(text: string): boolean {
-  try {
-    const body: unknown = JSON.parse(text);
-    return typeof body === 'object' && body !== null && typeof (body as { protocolRevision?: unknown }).protocolRevision === 'number';
-  } catch {
-    return true; // Not JSON: the schema check reports it as invalid_response.
-  }
-}
-
 const clients = new Map<string, Client>();
 
 /**
  * The client for one computer by its canonical origin; undefined or the home
  * origin gives the home client. Clients are kept per origin, so each keeps
- * its computer's protocol revision.
+ * its computer's refusal (an outdated peer).
  */
 export function client(origin?: string): Client {
   const home = homeOrigin();
@@ -349,7 +307,7 @@ export function client(origin?: string): Client {
   return found;
 }
 
-/** Drops a removed peer's client (and its revision). Home's client is kept. */
+/** Drops a removed peer's client (and its refusal). Home's client is kept. */
 export function forgetClient(origin: string): void {
   if (origin !== homeOrigin()) clients.delete(origin);
 }

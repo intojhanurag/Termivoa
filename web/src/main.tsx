@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, takeStartupLinks } from './screens/App';
-import { AppErrorBoundary } from './screens/chunks';
+import { ErrorBoundary, ErrorScreen, errorText } from './screens/chunks';
 import './styles/global.css';
 
 // Read and strip every URL fragment before anything renders. Grants live
@@ -16,8 +16,8 @@ if (root === null) {
 
 createRoot(root).render(
   <StrictMode>
-    <AppErrorBoundary>
+    <ErrorBoundary fallback={(error) => <ErrorScreen text={errorText(error)} />}>
       <App {...links} />
-    </AppErrorBoundary>
+    </ErrorBoundary>
   </StrictMode>,
 );

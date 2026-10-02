@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { validateBrokerRPCMessage as validate } from './brokerRpc';
+import brokerRPCSchema from '../../../protocol/v1/broker-rpc.schema.json';
+import envelopeSchema from '../../../protocol/v1/envelope.schema.json';
+import { createProtocolAjv } from './ajv';
+
+// Management messages, including UTF-8 byte and safe-text rules.
+const ajv = createProtocolAjv();
+ajv.addSchema(envelopeSchema);
+const validate = ajv.compile(brokerRPCSchema);
 
 const requestId = '11111111-1111-4111-8111-11111111111a';
 const sessionId = '22222222-2222-4222-8222-22222222222a';

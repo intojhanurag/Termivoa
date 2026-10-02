@@ -1,5 +1,6 @@
 import type { Computer } from '../computers';
 import type { AgentStatus, BrokerRPCSessionRecord } from '../generated/protocol';
+import { storage, type StorageLike } from '../storage';
 
 /** When this device last viewed each session generation (ms). Not secret. */
 export type ViewedTimes = Readonly<Record<string, number>>;
@@ -9,30 +10,12 @@ export const VIEWED_KEY = 'pterm.lastViewed';
 export const WORKED_KEY = 'pterm.lastWorked';
 const MAX_VIEWED = 100;
 
-export type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
-/** A session and, when known, its computer; without one it is a home session. */
-type Located = Pick<BrokerRPCSessionRecord, 'id' | 'generation'> & { readonly computer?: Pick<Computer, 'host' | 'home'> };
+/** A session and its computer. */
+type Located = Pick<BrokerRPCSessionRecord, 'id' | 'generation'> & { readonly computer: Pick<Computer, 'host'> };
 type SessionRef = Located & Pick<BrokerRPCSessionRecord, 'lastOutputAt' | 'agent'>;
 
-export function storage(): StorageLike | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Bare `id/generation`: the key before multi-computer, which always means home. */
-const bareKey = (session: Located) => `${session.id}/${session.generation}`;
-
-/** `host/id/generation`; a session without a computer keeps the old bare key, which means home. */
-export const viewedKey = (session: Located) =>
-  (session.computer === undefined ? bareKey(session) : `${session.computer.host}/${bareKey(session)}`);
-
-/** The stored time for this session; a home session also finds its old bare key. */
-export function viewedAt(viewed: ViewedTimes, session: Located): number | undefined {
-  return viewed[viewedKey(session)] ?? (session.computer?.home === false ? undefined : viewed[bareKey(session)]);
-}
+/** `host/id/generation`. */
+export const viewedKey = (session: Located) => `${session.computer.host}/${session.id}/${session.generation}`;
 
 export function readViewed(store: StorageLike | undefined = storage(), key = VIEWED_KEY): ViewedTimes {
   try {
@@ -78,7 +61,7 @@ export function hasNewOutput(session: SessionRef, viewed: ViewedTimes): boolean 
   if (session.lastOutputAt === undefined) return false;
   const output = Date.parse(session.lastOutputAt);
   if (Number.isNaN(output)) return false;
-  const seen = viewedAt(viewed, session);
+  const seen = viewed[viewedKey(session)];
   return seen === undefined || output > seen;
 }
 

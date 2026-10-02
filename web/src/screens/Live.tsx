@@ -4,7 +4,7 @@ import type { DiffLine, HTTPSettingsResponse, KeyName } from '../generated/proto
 import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
 import {
-  canSendWith, Connection, INITIAL_STATUS, type BranchesView, type ChangesView, type TasksView, type WorktreeRemoval,
+  canSendWith, Connection, initialStatus, noSubscribe, type BranchesView, type ChangesView, type TasksView, type WorktreeRemoval,
 } from '../terminal/Connection';
 import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
@@ -26,7 +26,7 @@ import { PreviewChip } from './PreviewChip';
 import { autoDismiss, RecapCard } from './Recap';
 import { useKeyboardOpen, websocketUrl } from './hooks';
 import type { RunFirstRequest } from './presets';
-import { ComputerTag } from './Sessions';
+import { ComputerTag, ended } from './Sessions';
 import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
 import { StateScreen, WindowArt } from './StateScreen';
@@ -45,8 +45,6 @@ type Recap = { readonly phase: 'wait' | 'loading' | 'done' } | { readonly phase:
 /** A reconnect shorter than this shows only the amber dot, not the "Reconnecting…" text. */
 export const QUIET_RECONNECT_MS = 1_500;
 
-const noSubscribe = () => () => undefined;
-const initialStatus = () => INITIAL_STATUS;
 const noChanges = (): ChangesView | undefined => undefined;
 const noTasks = (): TasksView | undefined => undefined;
 const noBranches = (): BranchesView | undefined => undefined;
@@ -59,15 +57,8 @@ export function liveTabs(
   sessions: ReadonlyArray<HostedSession> | undefined,
   current: HostedSession,
 ): HostedSession[] {
-  const running = (sessions ?? []).filter((item) => sameSession(item, current)
-    || (item.state !== 'exited' && item.state !== 'lost'));
+  const running = (sessions ?? []).filter((item) => sameSession(item, current) || !ended(item));
   return running.some((item) => sameSession(item, current)) ? running : [current, ...running];
-}
-
-/** Scrolls the open tab into the strip's view: no vertical page scroll, no focus change. */
-export function revealTab(tab: Pick<Element, 'scrollIntoView'>): void {
-  const still = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
-  tab.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: still ? 'auto' : 'smooth' });
 }
 
 /** Session tabs. Switching opens a new read-only connection; nothing carries over. */
@@ -84,8 +75,10 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
   const open = useRef<HTMLButtonElement>(null);
   // Also when the open tab moves, e.g. the session list arrives after the screen opened.
   const openIndex = tabs.findIndex((tab) => sameSession(tab, current));
+  // Only as far as needed: no vertical page scroll, no focus change. Smooth
+  // unless the user prefers reduced motion (CSS scroll-behavior on .tab-scroll).
   useEffect(() => {
-    if (open.current !== null) revealTab(open.current);
+    open.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [current.id, current.generation, current.computer.host, openIndex]);
   return (
     <nav className="tabs" aria-label="Open sessions">

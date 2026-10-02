@@ -274,15 +274,14 @@ export interface ConnectionOptions {
   readonly requestFrame?: (callback: () => void) => void;
   /**
    * Attach as a read-only thumbnail viewer whose screen frames the broker
-   * sends at most this often (Wall tiles). Pass it only when
-   * `client(origin).supports('thumbnail')`; an older computer would refuse
-   * the attach. Take control and input never work in this mode.
+   * sends at most this often (Wall tiles). Take control and input never
+   * work in this mode.
    */
   readonly thumbnail?: ThumbnailMode;
   /** Decoded size of every host message, for the scheduler's bytes budget (TileHandle.bytes). */
   readonly onMessageBytes?: (bytes: number) => void;
-  /** Admits each socket attempt (scheduler.connectGate); without it, attempts start at once as before. */
-  readonly gate?: ConnectGate;
+  /** Admits each socket attempt (scheduler.connectGate). */
+  readonly gate: ConnectGate;
   /** True for a computer other than home: its error text is replaced by the app's own words (peerErrorText). */
   readonly peer?: boolean;
 }
@@ -330,6 +329,10 @@ export const INITIAL_STATUS: ConnectionStatus = {
   cwd: undefined,
   answer: undefined,
 };
+
+/** useSyncExternalStore helpers for before a connection (or other store) exists. */
+export const noSubscribe = () => () => undefined;
+export const initialStatus = () => INITIAL_STATUS;
 
 /**
  * Owns one session's WebSocket, reconnect state machine, frame application,
@@ -842,13 +845,8 @@ export class Connection {
   private open(): void {
     this.clearReconnect();
     this.cancelGate();
-    const gate = this.options.gate;
-    if (gate === undefined) {
-      this.connect();
-      return;
-    }
     this.update({ link: this.reconnectAttempt === 0 ? 'connecting' : 'reconnecting' });
-    this.gateCancel = gate.wait(() => {
+    this.gateCancel = this.options.gate.wait(() => {
       this.gateCancel = undefined;
       this.gateHeld = true;
       this.connect();
@@ -864,7 +862,7 @@ export class Connection {
   private settleGate(result: 'live' | 'failed' | 'cancelled'): void {
     if (this.gateHeld) {
       this.gateHeld = false;
-      this.options.gate?.done(result);
+      this.options.gate.done(result);
     }
   }
 

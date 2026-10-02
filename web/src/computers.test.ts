@@ -22,6 +22,17 @@ afterEach(() => {
   store.clear();
 });
 
+
+/** Fake timers do not drive AbortSignal.timeout; this one runs on them. */
+function fakeTimeoutSignals() {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('timeout', 'TimeoutError')), ms);
+    return controller.signal;
+  });
+}
+
 describe('computer model', () => {
   it('keys sessions as host/sessionId', () => {
     const computer = toComputer(vps);
@@ -176,10 +187,10 @@ describe('logoutPeers', () => {
 });
 
 describe('log out', () => {
-  afterEach(() => { vi.useRealTimers(); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
   it('waits at most READ_TIMEOUT_MS for a peer that never answers, and signs out of the peers at once', async () => {
-    vi.useFakeTimers();
+    fakeTimeoutSignals();
     const started: string[] = [];
     vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
       started.push(url);

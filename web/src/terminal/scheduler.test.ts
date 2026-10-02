@@ -7,10 +7,9 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 /** `count` tiles, each reported visible by its observer; changes recorded after that. */
-async function tiles(scheduler: Scheduler, count: number, fullRate: (index: number) => boolean = () => false) {
+async function tiles(scheduler: Scheduler, count: number) {
   const changes: Array<[string, TileState]> = [];
   const handles = Array.from({ length: count }, (_, index) => scheduler.requestLiveTile(`h/${index}`, {
-    fullRate: fullRate(index),
     onChange: (state) => changes.push([`h/${index}`, state]),
   }));
   for (const handle of handles) handle.setVisible(true);
@@ -42,11 +41,6 @@ describe('live tiles', () => {
     expect(below.map((handle) => handle.state())).toEqual(['paused', 'paused', 'paused', 'paused', 'paused']);
     below[4]?.setVisible(true);
     expect(below.map((handle) => handle.state())).toEqual(['paused', 'paused', 'paused', 'paused', 'live']);
-  });
-
-  it('counts a tile on a computer without thumbnail mode as full rate', async () => {
-    const { states } = await tiles(new Scheduler(), 4, (index) => index === 0);
-    expect(states()).toEqual(['live', 'live', 'live', 'paused']);
   });
 
   it('suspends every tile while a terminal is active or the app is in the background', async () => {

@@ -330,6 +330,7 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 .tab-scroll { display: flex; flex: 0 1 auto; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+@media (prefers-reduced-motion: no-preference) { .tab-scroll { scroll-behavior: smooth; } }
 .tab { flex-shrink: 0; padding: 4px 0; border: 0; min-width: 44px; max-width: 60vw; }
 .tab-face {
   display: flex;
