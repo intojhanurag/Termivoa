@@ -1120,6 +1120,12 @@ func (session *Session) handleRequest(status *SessionStatus, request sessionRequ
 			response.err = err
 			break
 		}
+		if viewer.subscription.frameInterval > 0 {
+			// Without a lease a thumbnail viewer cannot send input, answer,
+			// resize, upload or commit: every such action checks the lease.
+			response.err = ErrViewerReadOnly
+			break
+		}
 		if response.err = checkAccess(viewer.subscription.access); response.err != nil {
 			break
 		}

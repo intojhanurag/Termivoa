@@ -1042,6 +1042,31 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   ./...`, `GOOS=windows go test -c ./internal/platform` and `./scripts/check`
   exit 0.
 
+- **Multi-computer H1b: broker thumbnail viewers** (`feat/mc-h1b`,
+  2026-10-02, ADR 0005, `docs/multi-computer.md` "Performance budget"; not
+  user-visible until the Wall uses it): `session.attach` with
+  `thumbnail.maxUpdatesPerSecond` (1–30) makes a read-only viewer. The actor
+  refuses its `control.acquire` with `not_controller`
+  (`ErrViewerReadOnly`), and without a lease it cannot send input, answer,
+  resize, upload or commit. `reserveViewerDelivery`
+  (`internal/broker/viewer.go`) spaces its screen frames at least
+  `1s/rate` apart; a skipped frame arms the viewer's single lazy
+  `time.AfterFunc` timer, which only wakes the worker when the slot opens,
+  and the next patch is built from the viewer's last delivered frame to the
+  newest one. Notices (state, control, history reset) are not throttled.
+  Detach stops the timer. Normal viewers and canonical PTY processing are
+  unchanged. Evidence (`internal/broker/viewer_thumbnail_test.go`): at 5/s
+  under a 1.3 s flood the thumbnail got 7 patches and a normal viewer 74,
+  both ending on the canonical revision with an unbroken patch chain; a
+  burst that stops inside a slot paints its final frame; the timer test
+  (no actor, so nothing else wakes the viewer) fails when the timer is
+  removed and when detach does not stop it; stream test refuses
+  control, input, answer and resize with `not_controller`, also with another
+  connection's live lease; goroutines return to baseline after detach and
+  close. `go test -race -count=5` on the viewer, thumbnail, stream, writer,
+  snapshot and control tests, `./scripts/check`, and `CGO_ENABLED=0
+  GOOS=linux|windows go vet ./...` exit 0.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
