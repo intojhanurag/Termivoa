@@ -1,20 +1,77 @@
 # Pending work
 
-Date: 2026-09-27. The owner deferred these items to work on the UI first.
-Ask the agent to "do pending work" to complete them.
+The single roadmap. Updated 2026-10-02. Latest tag: `v0.1.0-beta.2`.
+Ask the agent to "do pending work" to start on **Next**.
+Real-device test steps are in [owner-verification.md](owner-verification.md).
 
-## Road to public beta (updated 2026-09-28)
+## Done
 
-Done: private betas `v0.1.0-beta.1` and `v0.1.0-beta.2` released, website and docs live at
-<https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>.
+- Private betas `v0.1.0-beta.1` and `v0.1.0-beta.2` (#66); website and docs
+  live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
+  (#53, #56).
+- Windows logic: WSL bash profile (#38), Ctrl+] at the attach startup handoff
+  (#37), Scheduled Task launcher kept on `conhost --headless` with logs, normal
+  priority, a late-broker wait and a clean stop (#40), SQLite URI and ACL fixes
+  (#39). All still need a real-Windows check.
+- Linux hosts: systemd user units, XDG paths, WSL notes (#50).
+- Phone features: agent status and answer cards (#42–#45), Web Push (#41,
+  #44), photo and voice (#46), dev-server preview (#47), live folder (#49),
+  Changes view (#60), away recap and commit & push (#62), Agent wall (#64),
+  project buttons and line comments (#67), Wall drag (#109), Down key (#110),
+  worktrees (#113), Files view (#126).
+- Multi-computer: design and ADR 0005 (#132), implementation (#135), docs
+  (#137). Gate 0 on real phones is still open (Next 1).
+- Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
+  #121, #133).
+
+## Next
+
+In this order.
+
+1. **Gate 0 real-phone test for multi-computer** (`scripts/gate0/`). Needs the
+   owner's second computer and the owner's approval for a Tailscale Serve port
+   (rule 12). Port 8443 is taken by the dev-server preview, so use another
+   free port (the harness README still says 8443).
+2. **Notifications from every computer.** Today only the home computer sends
+   Web Push.
+3. **Preview for sessions on peers.** Today preview works for home sessions
+   only.
+4. **Computer health in Settings:** version, last seen, and **Check again**.
+5. **Faster first load:** split the 714 kB TerminalView chunk.
+6. **Wall paused tiles that were never live:** show a last-screen snapshot.
+7. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
+   re-shoot).
+
+## Later
+
+### Smart alerts
+
+The owner wants to plan these together first. Do not start without him.
+Draft scope (honest signals only; the plan forbids labels from terminal text):
+
+- waiting too long (agent state waiting for more than N minutes);
+- looks stuck (working, no output for more than N minutes);
+- dev server stopped (a session's preview port disappeared);
+- session exited with a non-zero code;
+- a smarter "long task done";
+- settings: per-alert on/off, "remind after X min", quiet hours.
+
+### Owner decisions
+
+- [ ] **iOS older than 16.4.** Multi-computer refuses it; the refusal is kept
+      for now.
+- [ ] **PTY-session kill boundary.** Keep (recommended) or revert. See
+      [owner-verification.md](owner-verification.md) section 6.
+- [ ] **Owner confirms** the `SECURITY.md` response times (7 days / 30 days).
 
 ### Before the public beta (the repo goes public)
 
 - [ ] **Real-device tests.** Linux (VPS `t3-vps`), Windows laptop, Android
-      phone. Also test the update steps in the docs once
+      phone. Also test the update steps once
       (`pterm shutdown` → download → `pterm launch`).
-- [ ] **CI.** Run GitHub Actions after the minutes reset (early October) and
-      fix what fails. See "After the GitHub Actions minutes reset" below.
+- [ ] **Re-enable GitHub Actions** when the repo goes public, run CI on `main`
+      (many PRs merged with local checks only) and fix any Windows or Linux
+      failures.
 - [ ] **24-hour soak test.** Sessions running for a full day; check memory
       and reconnects (`scripts/soak.sh`).
 - [ ] **Secret scan of the full git history** before it becomes public.
@@ -22,18 +79,22 @@ Done: private betas `v0.1.0-beta.1` and `v0.1.0-beta.2` released, website and do
       `THIRD_PARTY_NOTICES.md` and `docs/dependencies.md`.
 - [ ] **One-line installer.** `curl … | sh` for macOS and Linux. Needs a
       public repo or the binaries hosted on the website.
-- [ ] **Owner confirms** the `SECURITY.md` response times (7 days / 30 days).
 - [ ] **Owner makes the repo public.** Only the owner does this.
 
 ### Small code items
 
-- [ ] Staged update refusal and diagnostics export (see "Backend gaps" below).
+- [ ] **Staged update refusal.** The broker must refuse replacement while
+      sessions are active (plan section 11; `docs/install.md` marks it
+      pending).
+- [ ] **Diagnostics export.** A user action with a preview before it writes a
+      local file; no secrets, input, output or environment (plan section 10).
 - [ ] `pterm setup` asks "Pair another phone? [y/N]" when a phone is already
       paired.
+- [ ] **Desktop mouse forwarding.** Out of scope for v0; do only if asked.
 
 ### Money (owner decisions, all can wait)
 
-- [ ] **Domain** for the website, about $10–15 a year. Any time.
+- [ ] **Domain** for the website, about $10–15 a year.
 - [ ] **Apple Developer Program**, $99 a year, to sign and notarize the Mac
       app. Only before v1.0; `gh`/`curl` installs need no signing.
 - [ ] **Windows code-signing certificate.** Only if many Windows users come.
@@ -42,37 +103,3 @@ Done: private betas `v0.1.0-beta.1` and `v0.1.0-beta.2` released, website and do
 
 - [ ] Security review by an outside person.
 - [ ] Signed macOS and Windows apps.
-
-## Windows (logic only; native testing is still an owner gate)
-
-- [x] **WSL bash profile.** Done in #38 (needs a real-Windows check). Detect WSL and add a "WSL bash" shell profile when
-      WSL is installed (plan section 5: a separate explicit profile, never a
-      replacement for native Windows coverage). `store.PlatformWSL` exists, but
-      `internal/broker/shell_profiles.go` does not add it.
-- [x] **Ctrl+] at the attach startup handoff.** Done in #37 (needs a real-Windows check). On Windows a Ctrl+] pressed
-      exactly while `pterm attach` starts is lost; Unix drains and scans for it.
-- [x] **Scheduled Task launcher.** Kept `conhost --headless` after review; added logs, normal priority, a late-broker wait and a clean uninstall stop in #40. Tasks start pterm through
-      `conhost.exe --headless`. Restart on failure and `schtasks /End` stopping
-      pterm are unproven. Consider starting `pterm.exe` directly and hidden.
-
-Also fixed before the first Windows test (#39): SQLite path URI on Windows and
-the current-user-only folder ACL check (both would have stopped `pterm setup`).
-
-## Backend gaps from the plan
-
-- [ ] **Staged update refusal.** The broker must refuse replacement while
-      sessions are active (plan section 11; `docs/install.md` marks it pending).
-- [ ] **Diagnostics export.** A user action with a preview before it writes a
-      local file; no secrets, input, output or environment (plan section 10).
-- [ ] **Desktop mouse forwarding.** Documented as out of scope for v0; do only
-      if asked.
-
-## Owner decisions
-
-- [ ] **PTY-session kill boundary.** Keep (recommended) or revert. See
-      `docs/owner-verification.md` section 6.
-
-## After the GitHub Actions minutes reset
-
-- [ ] Run CI on `main` (PRs #27 and #28 merged without CI) and fix any Windows
-      or Linux failures.
