@@ -27,7 +27,7 @@ Go's toolchain selection downloads Go 1.27.1 if your default Go is older
 ./scripts/check             # Windows: ./scripts/check.ps1
 ```
 
-This runs protocol generation drift, the `plan.md` copy check, Go formatting,
+This runs protocol generation drift, Go formatting,
 `go vet` and tests (including the patched `third_party` modules), TypeScript
 checks, web unit tests and the production web build.
 

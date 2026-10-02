@@ -141,7 +141,7 @@ Web Push adds the only outbound connection the broker makes on its own. See
 - **Payload privacy.** Only the session title, project name, a status and a
   duration are sent, end-to-end encrypted to the phone's key; the push
   service sees the endpoint, timing, size and the VAPID public key. Terminal
-  output, prompts and previews are never included; plan.md's rule that
+  output, prompts and previews are never included; the implementation plan's rule that
   terminal-triggered (OSC) notifications stay disabled is unchanged —
   notifications come only from the broker's own state, never from child
   output.

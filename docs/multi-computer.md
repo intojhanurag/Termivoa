@@ -28,9 +28,9 @@ One phone uses several computers (for example a Mac, a Linux server and a VPS) f
 | Revocation | Per computer | All relayed phones at once | Per computer; a stolen token works until revoked | **Per computer** |
 | A compromised home computer | Nothing | Holds standing peer credentials: 24/7 shells on every peer | Its JavaScript can exfiltrate every token | **Also compromises every peer** (service worker woken by push; phishing a new pairing); narrowed by per-device binding, owner checks and bound grants (section 3) |
 | Latency and availability | Direct | Extra hop; peers unreachable when home sleeps | Direct | **Direct** |
-| Plan compliance | OK | Against `plan.md:230` (loopback, same-origin) | **Violates `plan.md:248`** (no reusable credential in localStorage) | Keeps HttpOnly cookies and exact Origin checks |
+| Plan compliance | OK | Against `docs/implementation-plan.md:230` (loopback, same-origin) | **Violates `docs/implementation-plan.md:248`** (no reusable credential in localStorage) | Keeps HttpOnly cookies and exact Origin checks |
 
-Also rejected: one origin through Tailscale Serve path mapping (every `Path=/` `__Host-` cookie would go to every proxied peer, so each peer would receive home's credential; cookie names clash; all traffic goes through home; each peer needs a Serve change) and Tailscale identity headers (`plan.md:230`: forwarded identity is ignored; Tailscale is not app authentication).
+Also rejected: one origin through Tailscale Serve path mapping (every `Path=/` `__Host-` cookie would go to every proxied peer, so each peer would receive home's credential; cookie names clash; all traffic goes through home; each peer needs a Serve change) and Tailscale identity headers (`docs/implementation-plan.md:230`: forwarded identity is ignored; Tailscale is not app authentication).
 
 ## 3. Design
 
@@ -72,7 +72,7 @@ Team tailnets, Funnel nodes and reused MagicDNS names all share the site `tailX.
 
 **Already-open WebSockets.** When a bound origin stops being trusted (node ID changed, grace expired, device revoked), every open stream from that origin is handled like today's revocation: input and control requests are refused, the controller lease is released, queued actions are dropped (never replayed, rule 10), and the stream is closed with `access.revoked`. Checking only new HTTP requests is not enough.
 
-This only narrows access; it is never used as authentication (`plan.md:230`).
+This only narrows access; it is never used as authentication (`docs/implementation-plan.md:230`).
 
 ### Pairing a second computer (bound grant)
 
@@ -184,7 +184,7 @@ A small harness, **to be committed first** (`scripts/gate0/`, about 40 lines; ea
 
 The 7-day cap is not a stop condition (rolling refresh covers it). If checks 1 or 2 fail, stop and decide on plan B.
 
-**Plan B (if cookies fail on iOS):** one non-extractable WebCrypto key per peer in IndexedDB signs requests and a WebSocket challenge, over non-credentialed CORS. It keeps per-device identity and does not depend on cookies, but it changes `plan.md:248` (no reusable credential in browser storage), so it needs an owner decision and its own security review.
+**Plan B (if cookies fail on iOS):** one non-extractable WebCrypto key per peer in IndexedDB signs requests and a WebSocket challenge, over non-credentialed CORS. It keeps per-device identity and does not depend on cookies, but it changes `docs/implementation-plan.md:248` (no reusable credential in browser storage), so it needs an owner decision and its own security review.
 
 ### Tracks (no shared files)
 
@@ -205,7 +205,7 @@ Cookies ignore ports, so two loopback dev stacks would overwrite each other's co
 
 ### Release gates (performance)
 
-Multi-computer is not called fast until these pass. They extend `plan.md` §13 and keep its targets: **p95 under 30 ms app-added key-to-frame latency** (at least 1,000 events, host receive-to-frame and browser send-to-paint measured on their own clocks) and **p95 under 2 seconds authenticated foreground reconnect**. Each benchmark records the actual Tailscale connection type (direct, DERP relay or peer relay).
+Multi-computer is not called fast until these pass. They extend `docs/implementation-plan.md` §13 and keep its targets: **p95 under 30 ms app-added key-to-frame latency** (at least 1,000 events, host receive-to-frame and browser send-to-paint measured on their own clocks) and **p95 under 2 seconds authenticated foreground reconnect**. Each benchmark records the actual Tailscale connection type (direct, DERP relay or peer relay).
 
 | Scenario | Required evidence |
 | --- | --- |
@@ -284,7 +284,7 @@ An outside review of version 3 (with a local benchmark) found no error in the di
 | 43 | Gate 0 harness described as committed but absent; recovery not portable (P2) | True: `scripts/gate0/` absent; Android shares Chrome storage | Harness marked "to be committed first"; platform-specific recovery; old-worker test |
 | 44 | Go claims too strong ("human speed", "GC not a bottleneck") | Fair | Replaced by a profiling requirement |
 | 45 | Direct links may still run over a Tailscale relay | Fair | Benchmarks record the connection type |
-| 46 | Performance release gates missing | True | "Release gates" in section 6, keeping `plan.md` §13 targets |
+| 46 | Performance release gates missing | True | "Release gates" in section 6, keeping `docs/implementation-plan.md` §13 targets |
 
 **Final check of version 4 (feasibility reviewer):** confirmed with notes, all resolved: (47) the shell is cached only when its build ID matches the worker; (48) a trailing timer so throttled thumbnails never stay stale; (49) older peers without thumbnail mode count as full rate or show static tiles; (50) attach and viewer path to H1, the scheduler to W1, a bundle-list contract between W1 and W2, a new attach payload type; (51) Wall tiles beyond the live limit show their last frame as Paused. Bundle-at-install fits the no-`skipWaiting` model, and the broker rate limit stays revision-correct (checked in `viewer.go`).
 
