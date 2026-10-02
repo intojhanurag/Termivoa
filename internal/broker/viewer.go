@@ -67,12 +67,7 @@ type ViewerConfig struct {
 	MaxUpdatesPerSecond int
 	// budget is an optional connection-wide reservation boundary shared with
 	// dispatcher responses. A matching sink must not reserve these bytes twice.
-	budget viewerByteBudget
-}
-
-type viewerByteBudget interface {
-	reserve(int) error
-	release(int)
+	budget *sessionWriter
 }
 
 // ViewerSubscription owns one observer connection. Closing it releases only
@@ -89,7 +84,7 @@ type ViewerSubscription struct {
 	// frameInterval is the minimum spacing of screen frame deliveries; nonzero
 	// only for a read-only thumbnail viewer.
 	frameInterval time.Duration
-	budget        viewerByteBudget
+	budget        *sessionWriter
 	notify        chan struct{}
 	done          chan struct{}
 	detached      chan struct{}

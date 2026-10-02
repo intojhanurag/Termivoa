@@ -488,7 +488,7 @@ func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
 		"TCP forward elsewhere": {serve: `{"TCP":{"8443":{"TCPForward":"127.0.0.1:22"}}}`},
 		"empty":                 {serve: ``},
 	} {
-		if got := otherServeHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+		if got, _ := otherHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
 			t.Errorf("%s: got %q, want %q", name, got, test.want)
 		}
 	}
@@ -538,7 +538,7 @@ func TestDoctorWarnsAboutOtherPortsOfThisHost(t *testing.T) {
 		"other host":           {serve: `{"Web":{"svc.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
 		"TCP forward":          {serve: `{"TCP":{"443":{"HTTPS":true},"5432":{"TCPForward":"127.0.0.1:5432"}}}`, want: []string{"TCP 5432 forward to 127.0.0.1:5432"}},
 	} {
-		if got := otherPortHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+		if _, got := otherHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
 			t.Errorf("%s: got %q, want %q", name, got, test.want)
 		}
 	}

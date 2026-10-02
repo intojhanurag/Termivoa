@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -24,11 +25,11 @@ func TestAFIFONeverBlocksARead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer files.Close()
-	// openRegular is what Read opens with after its Stat: a FIFO swapped in
+	// platform.OpenRegular is what Read opens with after its Stat: a FIFO swapped in
 	// between must not block the open.
 	done := make(chan error, 1)
 	go func() {
-		file, _, err := openRegular(files, "pipe")
+		file, _, err := platform.OpenRegular(files, "pipe", errNotFile)
 		if file != nil {
 			_ = file.Close()
 		}

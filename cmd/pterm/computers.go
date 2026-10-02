@@ -65,38 +65,6 @@ func tailnetFindings(status *tailnet.Status, devices []protocol.AdminRPCDevice) 
 	return findings
 }
 
-// otherServeHandlers lists what else Tailscale Serve offers on this
-// computer's own HTTPS origin: handlers on <host>:443 other than "/" proxying
-// the gateway, and a TCP forward on 443. lifecycle.ServeFindings already
-// counts each as a problem; this names them so setup can refuse them.
-func otherServeHandlers(data []byte, dnsName string) []string {
-	var raw struct {
-		TCP map[string]struct{ TCPForward string }
-		Web map[string]struct {
-			Handlers map[string]struct{ Proxy string }
-		}
-	}
-	if json.Unmarshal(data, &raw) != nil {
-		return nil
-	}
-	var found []string
-	if forward := raw.TCP["443"].TCPForward; forward != "" {
-		found = append(found, tcpForwardPrefix+forward)
-	}
-	for hostPort, web := range raw.Web {
-		if strings.ToLower(hostPort) != dnsHost(dnsName)+":443" {
-			continue
-		}
-		for path, handler := range web.Handlers {
-			if path != "/" || strings.TrimSuffix(handler.Proxy, "/") != strings.TrimSuffix(lifecycle.LocalURL, "/") {
-				found = append(found, path)
-			}
-		}
-	}
-	slices.Sort(found)
-	return found
-}
-
 const tcpForwardPrefix = "TCP forward to "
 
 // otherHandlersProblem explains why other Serve handlers on this computer's
@@ -119,12 +87,19 @@ func otherHandlersProblem(dnsName string, handlers []string) string {
 		dnsHost(dnsName), strings.Join(handlers, ", "), strings.Join(remove, ", "))
 }
 
-// otherPortHandlers lists Serve handlers on other ports of this computer's
-// own host: HTTPS handlers ("HTTPS 8080 /") and TCP forwards. Browsers send
-// the Termivoa cookie to every port of a host, so each one receives it.
-// Port 443 is otherServeHandlers'; Termivoa's own preview handler on 8443 is
-// left out, since the gateway strips the cookie there.
-func otherPortHandlers(data []byte, dnsName string) []string {
+// otherHandlers parses the Serve JSON once and returns two lists.
+//
+// origin is what else Tailscale Serve offers on this computer's own HTTPS
+// origin: handlers on <host>:443 other than "/" proxying the gateway, and a
+// TCP forward on 443. lifecycle.ServeFindings already counts each as a
+// problem; this names them so setup can refuse them.
+//
+// ports is the Serve handlers on other ports of this computer's own host:
+// HTTPS handlers ("HTTPS 8080 /") and TCP forwards. Browsers send the
+// Termivoa cookie to every port of a host, so each one receives it.
+// Termivoa's own preview handler on 8443 is left out, since the gateway
+// strips the cookie there.
+func otherHandlers(data []byte, dnsName string) (origin, ports []string) {
 	var raw struct {
 		TCP map[string]struct{ TCPForward string }
 		Web map[string]struct {
@@ -132,29 +107,38 @@ func otherPortHandlers(data []byte, dnsName string) []string {
 		}
 	}
 	if json.Unmarshal(data, &raw) != nil {
-		return nil
+		return nil, nil
 	}
-	var found []string
 	for port, tcp := range raw.TCP {
-		if port != "443" && tcp.TCPForward != "" {
-			found = append(found, "TCP "+port+" forward to "+tcp.TCPForward)
+		switch {
+		case tcp.TCPForward == "":
+		case port == "443":
+			origin = append(origin, tcpForwardPrefix+tcp.TCPForward)
+		default:
+			ports = append(ports, "TCP "+port+" forward to "+tcp.TCPForward)
 		}
 	}
 	for hostPort, web := range raw.Web {
 		host, port, ok := strings.Cut(strings.ToLower(hostPort), ":")
-		if !ok || host != dnsHost(dnsName) || port == "443" {
+		if !ok || host != dnsHost(dnsName) {
 			continue
 		}
 		for path, handler := range web.Handlers {
-			if port == gateway.PreviewPublicPort && path == "/" &&
-				strings.TrimSuffix(handler.Proxy, "/") == strings.TrimSuffix(lifecycle.PreviewLocalURL, "/") {
-				continue
+			proxy := strings.TrimSuffix(handler.Proxy, "/")
+			switch {
+			case port == "443":
+				if path != "/" || proxy != strings.TrimSuffix(lifecycle.LocalURL, "/") {
+					origin = append(origin, path)
+				}
+			case port == gateway.PreviewPublicPort && path == "/" && proxy == strings.TrimSuffix(lifecycle.PreviewLocalURL, "/"):
+			default:
+				ports = append(ports, "HTTPS "+port+" "+path)
 			}
-			found = append(found, "HTTPS "+port+" "+path)
 		}
 	}
-	slices.Sort(found)
-	return found
+	slices.Sort(origin)
+	slices.Sort(ports)
+	return origin, ports
 }
 
 // otherPortsWarning is a warning, not a problem: setup does not refuse other

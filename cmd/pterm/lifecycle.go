@@ -358,11 +358,12 @@ func inspectTailscale(ctx context.Context, cli string, refused []string, output 
 	problems += len(report.serve.Problems)
 	// Each one is already counted in serve.Problems; this says why it
 	// matters and how to move it. Setup refuses them.
-	if report.otherHandlers = otherServeHandlers(data, status.Self.Host); len(report.otherHandlers) > 0 {
+	var others []string
+	if report.otherHandlers, others = otherHandlers(data, status.Self.Host); len(report.otherHandlers) > 0 {
 		fmt.Fprintf(output, "  ! %s\n", otherHandlersProblem(status.Self.Host, report.otherHandlers))
 	}
 	// Not counted: setup does not refuse these (otherPortsWarning says why).
-	if others := otherPortHandlers(data, status.Self.Host); len(others) > 0 {
+	if len(others) > 0 {
 		fmt.Fprintf(output, "  ! %s\n", otherPortsWarning(others))
 	}
 

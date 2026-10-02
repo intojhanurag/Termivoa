@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 func TestAFIFONeverBlocksARead(t *testing.T) {
@@ -21,11 +23,11 @@ func TestAFIFONeverBlocksARead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	// openRegular is what readFile opens with after its Lstat: a FIFO swapped
+	// platform.OpenRegular is what readFile opens with after its Lstat: a FIFO swapped
 	// in between must not block the open.
 	done := make(chan error, 1)
 	go func() {
-		file, _, err := openRegular(root, "go.mod")
+		file, _, err := platform.OpenRegular(root, "go.mod", errSkipped)
 		if file != nil {
 			_ = file.Close()
 		}
