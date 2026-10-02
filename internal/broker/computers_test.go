@@ -831,14 +831,28 @@ func TestServeWaitsForTheTrustSweeper(t *testing.T) {
 	}
 	served := make(chan error, 1)
 	go func() { served <- fixture.server.Serve(ctx, listener) }()
-	deadline := time.Now().Add(3 * time.Second)
-	for !strings.Contains(goroutines(), "watchTrust") {
-		if time.Now().After(deadline) {
-			t.Fatal("trust sweeper did not start")
+	// Hold a sweep in progress: the sweeper wakes and waits for trustMu.
+	fixture.server.trustMu.Lock()
+	waitFor := func(what string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for !strings.Contains(goroutines(), what) {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s did not start", what)
+			}
+			fixture.server.TrustUpdated(nil)
+			time.Sleep(time.Millisecond)
 		}
-		time.Sleep(time.Millisecond)
 	}
+	waitFor("sweepTrust")
 	cancel()
+	select {
+	case err := <-served:
+		fixture.server.trustMu.Unlock()
+		t.Fatalf("Serve returned during a sweep: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	fixture.server.trustMu.Unlock()
 	if err := <-served; err != nil {
 		t.Fatal(err)
 	}
