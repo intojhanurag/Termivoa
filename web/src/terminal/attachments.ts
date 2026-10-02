@@ -30,10 +30,6 @@ export function removeReference(text: string, path: string): string {
   return text.replaceAll(`@${path} `, '');
 }
 
-export function formatSize(bytes: number): string {
-  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /**
  * Runs one photo at a time through prepare → upload and, on success, inserts
  * its path into the draft. A newer photo or a removal makes older runs stale.

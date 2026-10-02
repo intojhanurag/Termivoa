@@ -140,6 +140,11 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Breaking (host): the database is one fresh schema; an older database stops
+  the broker with "delete the database file to start fresh". Delete the data
+  folder and pair again.
+- Phone: photo sizes in the composer use the same format as Files ("900 B",
+  "1.5 KB").
 - Breaking (all users, one computer too): every `/api` request needs an
   exact `Origin`, or no `Origin` and `Sec-Fetch-Site: same-origin`. Safari
   before iOS 16.4 sends neither on `GET`, so iPhone and iPad need iOS 16.4

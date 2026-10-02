@@ -21,7 +21,6 @@ This file is a preparatory dependency inventory for private development. Direct 
 | React and React DOM | 19.3.0 | MIT |
 | Vite | 8.3.0 | MIT |
 | `@xterm/xterm` | 6.0.0 | MIT |
-| `@xterm/addon-webgl` | 0.19.0 | MIT |
 | `@xterm/addon-unicode-graphemes` | 0.4.0 | MIT |
 | `@tanstack/react-virtual` | 3.14.13 | MIT |
 | Ajv | 8.20.0 | MIT |

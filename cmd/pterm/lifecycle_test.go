@@ -17,6 +17,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
@@ -99,7 +100,7 @@ func newLifecycleTestEnv(t *testing.T) (lifecycleEnv, *launchctlFake) {
 	data := filepath.Join(root, "Application Support", "Phone Terminal")
 	env := lifecycleEnv{
 		host:    lifecycle.Host{OS: "darwin", Executable: "/Applications/Termivoa.app/Contents/MacOS/pterm", DataDir: data, HomeDir: filepath.Join(root, "home"), UID: 501},
-		paths:   host.Paths{DataDir: data, RuntimeDir: filepath.Join(root, "Caches", "Phone Terminal", "runtime")},
+		paths:   platform.Paths{DataDir: data, RuntimeDir: filepath.Join(root, "Caches", "Phone Terminal", "runtime")},
 		runner:  fake,
 		gateway: "http://" + freeLoopbackAddress(t),
 	}
@@ -112,14 +113,14 @@ func newLifecycleTestEnv(t *testing.T) (lifecycleEnv, *launchctlFake) {
 
 // startLifecycleBroker runs a real development broker on env's temporary
 // data and runtime directories, as `pterm launch` would outside launchd.
-func startLifecycleBroker(t *testing.T, paths host.Paths) {
+func startLifecycleBroker(t *testing.T, paths platform.Paths) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
-			DataDir: paths.DataDir, RuntimeDir: paths.RuntimeDir, HostBuild: buildID, Profile: host.DevelopmentProfile,
+			DataDir: paths.DataDir, RuntimeDir: paths.RuntimeDir, HostBuild: buildID, Profile: platform.DevelopmentProfile,
 			Ready: func(host.BrokerReady) { close(ready) },
 		})
 	}()
@@ -487,7 +488,7 @@ func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
 		"TCP forward elsewhere": {serve: `{"TCP":{"8443":{"TCPForward":"127.0.0.1:22"}}}`},
 		"empty":                 {serve: ``},
 	} {
-		if got := otherServeHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+		if got, _ := otherHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
 			t.Errorf("%s: got %q, want %q", name, got, test.want)
 		}
 	}
@@ -537,7 +538,7 @@ func TestDoctorWarnsAboutOtherPortsOfThisHost(t *testing.T) {
 		"other host":           {serve: `{"Web":{"svc.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
 		"TCP forward":          {serve: `{"TCP":{"443":{"HTTPS":true},"5432":{"TCPForward":"127.0.0.1:5432"}}}`, want: []string{"TCP 5432 forward to 127.0.0.1:5432"}},
 	} {
-		if got := otherPortHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+		if _, got := otherHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
 			t.Errorf("%s: got %q, want %q", name, got, test.want)
 		}
 	}

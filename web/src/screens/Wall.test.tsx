@@ -96,10 +96,8 @@ describe('wall order', () => {
 
   it('saves the order on this device and ignores a damaged value', () => {
     const store = memoryStore();
-    saveWallOrder(['b', 'a'], store);
-    expect(readWallOrder(store, 'mac.tailx.ts.net')).toEqual(['mac.tailx.ts.net/b', 'mac.tailx.ts.net/a']);
-    // Saved before multi-computer: a bare id is a home session.
-    expect(readWallOrder(memoryStore('["vps.tailx.ts.net/x","y"]'), 'mac.tailx.ts.net')).toEqual(['vps.tailx.ts.net/x', 'mac.tailx.ts.net/y']);
+    saveWallOrder(['h/b', 'h/a'], store);
+    expect(readWallOrder(store)).toEqual(['h/b', 'h/a']);
     expect(readWallOrder(memoryStore('{"a":1}'))).toEqual([]);
     expect(readWallOrder(memoryStore('not json'))).toEqual([]);
     expect(readWallOrder(memoryStore('["h/a",2,"h/b"]'))).toEqual(['h/a', 'h/b']);

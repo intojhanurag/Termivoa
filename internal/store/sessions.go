@@ -9,16 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"uuid"
 )
 
 const (
 	defaultRetainedTerminalSessions = 4096
 	defaultSessionListLimit         = defaultRetainedTerminalSessions + 64
-	// sessionColumnsV5 are the columns before migration 6. The migration 3
-	// backfill runs on that schema and selects a constant for title_custom.
-	sessionColumnsV5 = `id, generation, broker_generation, title, project_id, shell_profile_id,
-state, columns_count, rows_count, created_at_ms, updated_at_ms, started_at_ms, ended_at_ms, exit_code`
-	sessionColumns = sessionColumnsV5 + `, title_custom`
+	sessionColumns                  = `id, generation, broker_generation, title, project_id, shell_profile_id,
+state, columns_count, rows_count, created_at_ms, updated_at_ms, started_at_ms, ended_at_ms, exit_code, title_custom`
 )
 
 func (store *Store) PutProject(ctx context.Context, project Project) error {
@@ -604,21 +602,11 @@ func allowedTransition(from, to SessionState) bool {
 	}
 }
 
+// validUUID accepts only the canonical lowercase form of an RFC 9562 UUID
+// with version 1..8 and the RFC variant.
 func validUUID(value string) bool {
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
-		value[14] < '1' || value[14] > '8' || !strings.ContainsRune("89aAbB", rune(value[19])) {
-		return false
-	}
-	for index := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			continue
-		}
-		character := value[index]
-		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
-			return false
-		}
-	}
-	return true
+	parsed, err := uuid.Parse(value)
+	return err == nil && parsed.String() == value && parsed[6]>>4 >= 1 && parsed[6]>>4 <= 8 && parsed[8]&0xc0 == 0x80
 }
 
 func millis(value time.Time) int64 { return value.UTC().UnixMilli() }

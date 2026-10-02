@@ -1,6 +1,7 @@
 import { client, firstLabel, homeOrigin, isAuthFailure } from './api/http';
 import type { HTTPComputer, HTTPComputerAddResponse } from './generated/protocol';
 import { parseHttpBody } from './protocol/httpBody';
+import { storage as defaultStorage, type StorageLike } from './storage';
 
 /**
  * The computers this phone uses: the home computer (the origin that served
@@ -32,16 +33,6 @@ export const COMPUTERS_KEY = 'pterm.computers';
 export const MAX_PEERS = 8;
 /** Fixed colours on the dark theme, by place in the list; home always has the first. Never the only cue: show the label too. */
 export const PALETTE = ['#64D8E8', '#F2B544', '#9B8CFF', '#5FD68A', '#FF7A8A', '#4FA3FF', '#FF9F5A', '#C7D36F'] as const;
-
-type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
-
-function defaultStorage(): Storage | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 /** `place` is the computer's index in the list: 0 for home, then each peer in list order. */
 export function toComputer(entry: Pick<HTTPComputer, 'origin' | 'label'>, home = false, place = home ? 0 : 1): Computer {

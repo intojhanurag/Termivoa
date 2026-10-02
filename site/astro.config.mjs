@@ -6,7 +6,6 @@ import starlightLlmsTxt from 'starlight-llms-txt';
 
 export default defineConfig({
 	site: 'https://termivoa.vercel.app',
-	trailingSlash: 'ignore',
 	// Docs images are already small WebP files; serve them as they are (no sharp).
 	image: { service: passthroughImageService() },
 	integrations: [

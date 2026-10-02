@@ -8,6 +8,7 @@ import brokerRPCSchema from '../protocol/v1/broker-rpc.schema.json' with { type:
 import envelopeSchema from '../protocol/v1/envelope.schema.json' with { type: 'json' };
 import httpAPISchema from '../protocol/v1/http-api.schema.json' with { type: 'json' };
 import { createProtocolAjv } from './src/protocol/ajv.ts';
+import type { HttpSchema } from './src/protocol/httpBody.ts';
 
 /**
  * Bundle contract with web/src/sw.js (track W2 precaches exactly this):
@@ -70,27 +71,21 @@ const HTTP_VALIDATORS = 'virtual:http-validators';
 const SCHEMA = 'https://phone-terminal.invalid/protocol/v1/';
 
 /**
- * HTTP API bodies the app reads, by `$defs` name. List items are separate
- * validators so one bad item is dropped without losing the list. Keep in step
- * with `HttpSchema` in src/vite-env.d.ts.
+ * HTTP API bodies the app reads (`HttpBodies` in src/protocol/httpBody.ts), by
+ * `$defs` name in http-api.schema.json. List items are separate validators so
+ * one bad item is dropped without losing the list.
  */
-const HTTP_SCHEMAS: Readonly<Record<string, string>> = {
-  settingsResponse: 'http-api.schema.json#/$defs/settingsResponse',
-  namedOption: 'http-api.schema.json#/$defs/namedOption',
-  sessionListResponse: 'http-api.schema.json#/$defs/sessionListResponse',
+const HTTP_NAMES = [
+  'settingsResponse', 'namedOption', 'sessionListResponse', 'sessionMutationResponse', 'deviceSummary',
+  'pairRedeemResponse', 'pairPollResponse', 'previewConfigResponse', 'pushConfigResponse', 'pushTestResponse',
+  'uploadResponse', 'computerListResponse', 'computer', 'computerAddResponse', 'errorResponse',
+] as const satisfies ReadonlyArray<HttpSchema>;
+
+/** Every HttpSchema name to its schema ref; a name missing here fails the type check. */
+const HTTP_SCHEMAS: Readonly<Record<HttpSchema, string>> = {
+  ...(Object.fromEntries(HTTP_NAMES.map((name) => [name, `http-api.schema.json#/$defs/${name}`])) as Record<(typeof HTTP_NAMES)[number], string>),
+  // The session record is defined once, in the broker RPC schema.
   sessionRecord: 'broker-rpc.schema.json#/$defs/sessionRecord',
-  sessionMutationResponse: 'http-api.schema.json#/$defs/sessionMutationResponse',
-  deviceSummary: 'http-api.schema.json#/$defs/deviceSummary',
-  pairRedeemResponse: 'http-api.schema.json#/$defs/pairRedeemResponse',
-  pairPollResponse: 'http-api.schema.json#/$defs/pairPollResponse',
-  previewConfigResponse: 'http-api.schema.json#/$defs/previewConfigResponse',
-  pushConfigResponse: 'http-api.schema.json#/$defs/pushConfigResponse',
-  pushTestResponse: 'http-api.schema.json#/$defs/pushTestResponse',
-  uploadResponse: 'http-api.schema.json#/$defs/uploadResponse',
-  computerListResponse: 'http-api.schema.json#/$defs/computerListResponse',
-  computer: 'http-api.schema.json#/$defs/computer',
-  computerAddResponse: 'http-api.schema.json#/$defs/computerAddResponse',
-  errorResponse: 'http-api.schema.json#/$defs/errorResponse',
 };
 
 /** Standalone ES module code for the given exports (name → schema id or ref). */

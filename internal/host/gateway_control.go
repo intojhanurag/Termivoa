@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
@@ -31,10 +32,7 @@ func ListenGatewayControl(ctx context.Context, runtimeDir, hostBuild string, sto
 	if stop == nil {
 		return nil, errors.New("host: gateway stop function must not be nil")
 	}
-	token, err := newUUID()
-	if err != nil {
-		return nil, err
-	}
+	token := uuid.New().String()
 	listener, err := ipc.ListenBroker(ctx, ipc.ListenerConfig{
 		RuntimeDir: runtimeDir, BrokerGeneration: token, SocketName: localclient.GatewaySocketName,
 	})

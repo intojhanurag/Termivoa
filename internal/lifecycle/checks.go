@@ -3,7 +3,8 @@ package lifecycle
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -67,7 +68,7 @@ func ServeFindings(data []byte) (ServeStatus, error) {
 		return ServeStatus{}, fmt.Errorf("parse tailscale serve status: %w", err)
 	}
 	var status ServeStatus
-	for _, hostPort := range sortedKeys(raw.AllowFunnel) {
+	for _, hostPort := range slices.Sorted(maps.Keys(raw.AllowFunnel)) {
 		if raw.AllowFunnel[hostPort] {
 			status.Problems = append(status.Problems, "Tailscale Funnel is enabled for "+hostPort+"; Termivoa must never be public. Turn Funnel off before pairing.")
 		}
@@ -87,12 +88,12 @@ func servePortFindings(raw rawServeStatus, port, target string) (configured bool
 		problems = append(problems, "port "+port+" already forwards TCP to "+forward+"; pterm will not overwrite it")
 	}
 	suffix := ":" + port
-	for _, hostPort := range sortedKeys(raw.Web) {
+	for _, hostPort := range slices.Sorted(maps.Keys(raw.Web)) {
 		if !strings.HasSuffix(hostPort, suffix) {
 			continue
 		}
 		handlers := raw.Web[hostPort].Handlers
-		for _, path := range sortedKeys(handlers) {
+		for _, path := range slices.Sorted(maps.Keys(handlers)) {
 			handler := handlers[path]
 			if path == "/" && strings.TrimSuffix(handler.Proxy, "/") == strings.TrimSuffix(target, "/") {
 				configured = true
@@ -106,15 +107,6 @@ func servePortFindings(raw rawServeStatus, port, target string) (configured bool
 		}
 	}
 	return configured, problems
-}
-
-func sortedKeys[V any](values map[string]V) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // TailscaleOperatorCommand lets the current Linux user change Tailscale

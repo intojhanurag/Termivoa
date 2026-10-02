@@ -89,15 +89,6 @@ type Digest struct {
 	value *[sha256.Size]byte
 }
 
-func DigestFromBytes(value []byte) (Digest, error) {
-	if len(value) != sha256.Size {
-		return Digest{}, ErrInvalidDigest
-	}
-	digest := Digest{value: new([sha256.Size]byte)}
-	copy(digest.value[:], value)
-	return digest, nil
-}
-
 func (digest Digest) Bytes() ([]byte, error) {
 	if digest.value == nil {
 		return nil, ErrInvalidDigest

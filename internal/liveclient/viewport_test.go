@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/desktop"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -64,7 +65,7 @@ func TestViewportIsCheckedAgainBeforeSnapshotEnd(t *testing.T) {
 		}
 	})
 	screen, rows := snapshot(t, "snapshot")
-	id, _ := newUUID()
+	id := uuid.New().String()
 	host.send(t, protocol.SnapshotBegin, "", protocol.SnapshotBeginPayload{SnapshotID: id, Revision: "1", Screen: screen})
 	host.send(t, protocol.SnapshotRows, "", protocol.SnapshotRowsPayload{SnapshotID: id, Revision: "1", Rows: rows})
 	small.Store(true)

@@ -15,10 +15,9 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
-	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -147,7 +146,7 @@ func (h *soakHost) startGateway(ctx context.Context) string {
 	go func() {
 		done <- gateway.Run(gatewayCtx, gateway.Config{
 			RuntimeDir: h.runtimeDir, HostBuild: "soak", ListenAddress: "127.0.0.1:0",
-			Profile: host.DevelopmentProfile, Broker: h.gateway,
+			Profile: platform.DevelopmentProfile, Broker: h.gateway,
 			Ready: func(state gateway.ReadyState) { ready <- state },
 		})
 	}()

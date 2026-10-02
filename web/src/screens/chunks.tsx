@@ -38,8 +38,15 @@ interface BoundaryState {
   readonly error: unknown;
 }
 
-/** Shows UpdateRequired for chunk load failures; any other render error propagates. */
-export class ChunkErrorBoundary extends Component<{ readonly children: ReactNode }, BoundaryState> {
+/**
+ * Shows UpdateRequired for chunk load failures. Any other render error goes
+ * to `fallback`, or propagates without one. The app's outer boundary passes
+ * an ErrorScreen fallback: the last line of defense, never a blank page.
+ */
+export class ErrorBoundary extends Component<{
+  readonly children: ReactNode;
+  readonly fallback?: (error: unknown) => ReactNode;
+}, BoundaryState> {
   override state: BoundaryState = { error: undefined };
 
   static getDerivedStateFromError(error: unknown): BoundaryState {
@@ -54,36 +61,14 @@ export class ChunkErrorBoundary extends Component<{ readonly children: ReactNode
     if (error instanceof ChunkLoadError) {
       return <UpdateRequired onReload={() => window.location.reload()} />;
     }
-    throw error;
+    if (this.props.fallback === undefined) throw error;
+    return this.props.fallback(error);
   }
 }
 
 /** The text shown for an error nothing else handled. */
 export function errorText(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-}
-
-/**
- * The last line of defense: a render error that nothing else handled shows
- * its message and a reload, never a blank page.
- */
-export class AppErrorBoundary extends Component<{ readonly children: ReactNode }, BoundaryState> {
-  override state: BoundaryState = { error: undefined };
-
-  static getDerivedStateFromError(error: unknown): BoundaryState {
-    return { error };
-  }
-
-  override render() {
-    const { error } = this.state;
-    if (error === undefined) {
-      return this.props.children;
-    }
-    if (error instanceof ChunkLoadError) {
-      return <UpdateRequired onReload={() => window.location.reload()} />;
-    }
-    return <ErrorScreen text={errorText(error)} />;
-  }
 }
 
 /** A render error: what broke, a way to copy it, and a reload. */

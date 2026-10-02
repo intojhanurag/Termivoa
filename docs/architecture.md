@@ -126,12 +126,12 @@ Dev paths must never equal, contain or sit inside production paths
 | `internal/gatewayapi` | Interface between gateway and broker (the gateway transports, the broker authorizes) |
 | `internal/gatewayclient` | Gateway's IPC client of the broker (RPC and live streams) |
 | `internal/gitchanges` | Bounded git: read changes, commit, push, worktree add/remove; never a shell, never force |
-| `internal/host` | Process bootstrap for broker and gateway, paths, gateway control endpoint |
+| `internal/host` | Process bootstrap for broker and gateway, gateway control endpoint |
 | `internal/ipc` | Length-prefixed local IPC, handshake, current-user peer checks, Unix socket and Windows named pipe |
 | `internal/lifecycle` | LaunchAgent plist, systemd unit and Task XML generation; install/uninstall plans; doctor checks (Tailscale Serve) |
 | `internal/liveclient` | Desktop observer/controller over broker IPC |
 | `internal/localclient` | Bounded IPC clients for `cli` commands (management, admin, gateway control) |
-| `internal/platform` | Data, runtime and log paths per OS and profile; WSL detection |
+| `internal/platform` | Data, runtime and log paths per OS and profile; WSL detection; safe open of a regular file under a root (`OpenRegular`) |
 | `internal/projectfiles` | Read-only Files view through `os.Root`; `.git` hidden |
 | `internal/projecttasks` | Lists project commands (package.json, Makefile, Cargo, Go); never runs them |
 | `internal/protocol` | Generated types (`generated.go`) plus hand-written validation and bounds |
@@ -149,6 +149,7 @@ Dev paths must never equal, contain or sit inside production paths
 | `web/src/pairing` | Pairing and add-computer flows |
 | `web/src/generated` | Generated protocol TypeScript types |
 | `web/src/sw.js` | Service worker: precache, network-first pages, push display |
+| `web/src/storage.ts` | The one safe `localStorage`/`sessionStorage` accessor (private browsing may refuse storage) |
 | `third_party` | Patched copies of `ansi`, `vt`, `xpty`, `ultraviolet` ([dependency-patches.md](dependency-patches.md)) |
 | `tests` | Integration, soak, agent replay and PTY fixtures |
 | `site/` | Public docs site (Astro Starlight) and landing page in `site/public/`, deployed to Vercel |
@@ -195,19 +196,20 @@ request fields only to peers that support them.
 
 ### SQLite tables (`phone-terminal.db`, broker only)
 
-| Migration | Change |
-| --- | --- |
-| `001_sessions.sql` | `projects`, `shell_profiles`, `session_metadata` |
-| `002_mutation_receipts.sql` | `mutation_receipts` (idempotent create/rename/terminate) |
-| `003_mutation_receipt_snapshots.sql` | `result_session_json` snapshot column and triggers |
-| `004_authentication.sql` | `devices`, `browser_sessions`, `pairing_grants`, `pending_pairings`, `settings` |
-| `005_web_push.sql` | `push_subscriptions`, `push_vapid_key` |
-| `006_session_title_custom.sql` | `session_metadata.title_custom` |
-| `007_linux_shell_profiles.sql` | Rebuilds `shell_profiles` to allow Linux profiles |
-| `008_multi_computer.sql` | `app_origin` and app node columns on grants, pending pairings and devices; `computers` table |
-| `009_computer_nodes.sql` | `computers.node_id` (home pins each peer's node) |
+One file, `internal/store/migrations/001_schema.sql`, creates the whole
+schema. There are no migrations: a schema change edits that file, and a
+database made with another schema is refused at startup (delete it to start
+fresh). `schema_migrations` keeps the file's name and SHA-256 to detect this.
 
-Files are in `internal/store/migrations/`. Only credential hashes are stored.
+| Area | Tables |
+| --- | --- |
+| Sessions | `projects`, `shell_profiles` (`darwin`, `windows`, `wsl`, `linux`), `session_metadata` (with `title_custom`) |
+| Operation receipts | `mutation_receipts` (idempotent create/rename/terminate, with the `result_session_json` snapshot that triggers require) |
+| Authentication | `devices`, `browser_sessions`, `pairing_grants`, `pending_pairings`, `settings` (grants, pending pairings and devices carry `app_origin` and app node columns) |
+| Web push | `push_subscriptions`, `push_vapid_key` |
+| Multi-computer | `computers` (with `node_id`: home pins each peer's node) |
+
+Only credential hashes are stored.
 Terminal content, raw output, controller leases and process handles are never
 stored.
 

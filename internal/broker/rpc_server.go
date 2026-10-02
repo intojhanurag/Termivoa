@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -197,13 +199,10 @@ func (server *ManagementServer) Serve(ctx context.Context, listener *ipc.BrokerL
 		close(stopTrust)
 		<-trustDone // A sweep must not outlive Serve and the store it reads.
 	}()
-	var shutdownOnce sync.Once
-	shutdown := func() {
-		shutdownOnce.Do(func() {
-			_ = listener.Close()
-			server.stopConnections()
-		})
-	}
+	shutdown := sync.OnceFunc(func() {
+		_ = listener.Close()
+		server.stopConnections()
+	})
 	cancelDone := make(chan struct{})
 	stopCancel := context.AfterFunc(ctx, func() {
 		shutdown()
@@ -260,10 +259,7 @@ func (server *ManagementServer) unregisterConnection(connection net.Conn) {
 func (server *ManagementServer) stopConnections() {
 	server.mu.Lock()
 	server.stopping = true
-	connections := make([]net.Conn, 0, len(server.connections))
-	for connection := range server.connections {
-		connections = append(connections, connection)
-	}
+	connections := slices.Collect(maps.Keys(server.connections))
 	server.mu.Unlock()
 	for _, connection := range connections {
 		_ = connection.Close()
@@ -704,9 +700,6 @@ func classifyManagementError(err error) managementFailure {
 		return managementFailure{protocol.InvalidRequest, "the worktree or repository name is not allowed"}
 	case errors.Is(err, ErrOperationID), errors.Is(err, errInvalidSessionCursor):
 		return managementFailure{protocol.InvalidRequest, "request is invalid"}
-	case errors.Is(err, ErrOperationResultUnavailable), errors.Is(err, store.ErrMutationResultUnavailable):
-		return managementFailure{protocol.InternalError,
-			"operation completed, but its original result is unavailable after a local data upgrade"}
 	case errors.Is(err, ErrRegistryClosed), errors.Is(err, context.Canceled),
 		errors.Is(err, context.DeadlineExceeded):
 		return managementFailure{protocol.HostUnavailable, "broker is unavailable"}

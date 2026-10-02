@@ -30,16 +30,11 @@ func StopGateway(ctx context.Context, runtimeDir, clientBuild string) (bool, err
 	if _, err := os.Stat(runtimeDir); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	connection, _, _, err := ipc.DialNamedBroker(ctx, runtimeDir, GatewaySocketName, protocol.CLI, clientBuild)
+	client, err := DialNamedAdmin(ctx, runtimeDir, GatewaySocketName, clientBuild)
 	if errors.Is(err, ipc.ErrEndpointMissing) || errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
 		return false, nil
 	}
 	if err != nil {
-		return false, err
-	}
-	client, err := newAdminClient(connection, newUUID)
-	if err != nil {
-		_ = connection.Close()
 		return false, err
 	}
 	_, err = adminCall[protocol.BrokerRPCEmptyPayload](ctx, client, protocol.AdminGatewayStop,

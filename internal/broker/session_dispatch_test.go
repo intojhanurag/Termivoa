@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -121,10 +122,7 @@ func startWrappedStreamClient(t *testing.T, server *ManagementServer, kind proto
 
 func (client *streamClient) send(t *testing.T, kind protocol.MessageType, sessionID, generation *string, payload any) string {
 	t.Helper()
-	id, err := randomUUID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := uuid.New().String()
 	data, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)

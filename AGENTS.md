@@ -41,6 +41,8 @@ These rules apply throughout this repository.
 
     Never put internal architecture (package names, internal file paths, how security checks work inside) on the public docs site. When you find a doc that is out of date or repeats another, fix it or delete it.
 
+26. There are no real users and no real data yet. Until the owner says users have arrived, do not write fallback, backward-compatibility, migration or upgrade code: change database schemas, stored data and saved app settings directly, and tell the owner when a change needs a fresh database or a new pairing. Version checks between the owner's own computers (multi-computer) are not backward compatibility; keep them.
+
 When access is missing, use this format:
 
 > I need [access/action] for [specific milestone]. It permits [scope] and will change/use [resource]. Please configure it through [secure location/action]. Until then, I can complete [independent work]; [specific gate] remains blocked.

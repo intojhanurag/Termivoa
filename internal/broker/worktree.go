@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -154,10 +155,10 @@ func (stream *sessionConnection) removeWorktreeOfSession(
 		work := context.WithoutCancel(viewer.ctx)
 		stopped := false
 		stop := func() {
-			if operationID, err := randomUUID(); err == nil && !stopped {
+			if !stopped {
 				stopped = true
 				_, _ = registry.Terminate(work, TerminateSessionRequest{
-					OperationID: operationID, SessionID: sessionID, Generation: generation,
+					OperationID: uuid.New().String(), SessionID: sessionID, Generation: generation,
 				})
 			}
 		}

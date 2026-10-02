@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { agentBadge, hasNewOutput, readViewed } from './activity';
+import type { HostedSession } from './allSessions';
 import { previewSrc } from './PreviewChip';
 
 /** Top bar: back to the terminal, the previewed address, reload. */
@@ -44,8 +45,8 @@ export function PreviewStatus({ session, fresh, onTell }: {
  * device features, and sends no referrer.
  */
 export function Preview({ session, sessions, origin, port, onBack, onTell }: {
-  readonly session: BrokerRPCSessionRecord;
-  readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
+  readonly session: HostedSession;
+  readonly sessions: ReadonlyArray<HostedSession> | undefined;
   readonly origin: string;
   readonly port: number;
   readonly onBack: () => void;

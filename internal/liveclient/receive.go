@@ -21,12 +21,7 @@ func (client *Client) readLoop() {
 			// connection loss still disables sending and cancels paint immediately.
 			client.mu.Lock()
 			ended := client.state.Lifecycle == protocol.Exited && (client.pending == nil || client.pending.completed)
-			detaching := client.detaching
 			client.mu.Unlock()
-			if detaching && errors.Is(err, io.EOF) {
-				client.stop(nil)
-				return
-			}
 			if ended && errors.Is(err, io.EOF) {
 				client.readFinished <- err
 				return

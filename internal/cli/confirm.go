@@ -18,14 +18,6 @@ type ConfirmationReader interface {
 	ReadContext(context.Context, []byte) (int, error)
 }
 
-// ConfirmationReadFunc adapts a context-aware input function. The function
-// must honor the cancellation contract of ConfirmationReader itself.
-type ConfirmationReadFunc func(context.Context, []byte) (int, error)
-
-func (read ConfirmationReadFunc) ReadContext(ctx context.Context, data []byte) (int, error) {
-	return read(ctx, data)
-}
-
 // LineConfirmer accepts only y/yes (case-insensitive). Empty input, n/no, and
 // EOF without a response decline. Oversized input is rejected without an
 // unbounded allocation. It does not spawn a reader goroutine or close input.

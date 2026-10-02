@@ -18,11 +18,9 @@ import type {
 } from '../generated/protocol';
 // Standalone code generated at build/test time by vite.config.ts, from the same
 // lenient Ajv setup as the WebSocket envelope (validate.ts).
-import { httpValidators, type HttpSchema } from 'virtual:http-validators';
+import { httpValidators } from 'virtual:http-validators';
 
-export type { HttpSchema };
-
-/** The HTTP bodies the app reads, by schema name. */
+/** The HTTP bodies the app reads, by schema name. Validators are built for each one (vite.config.ts). */
 export interface HttpBodies {
   readonly settingsResponse: HTTPSettingsResponse;
   readonly namedOption: HTTPNamedOption;
@@ -41,6 +39,8 @@ export interface HttpBodies {
   readonly computerAddResponse: HTTPComputerAddResponse;
   readonly errorResponse: HTTPErrorResponse;
 }
+
+export type HttpSchema = keyof HttpBodies;
 
 /** Lists checked item by item: an item that fails is dropped, the rest of the list stays. */
 const ITEMS: { readonly [Name in HttpSchema]?: ReadonlyArray<readonly [field: string, item: HttpSchema]> } = {

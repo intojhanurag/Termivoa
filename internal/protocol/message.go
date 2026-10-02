@@ -12,6 +12,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/intojhanurag/phone-terminal/internal/terminal"
 )
 
 const (
@@ -76,13 +78,13 @@ func decode(data []byte, client bool) (Envelope, error) {
 	if envelope.Version != Version {
 		return Envelope{}, fmt.Errorf("protocol: version %d is not supported", envelope.Version)
 	}
-	if !validUUID(envelope.RequestID) {
+	if !ValidUUID(envelope.RequestID) {
 		return Envelope{}, errors.New("protocol: requestId must be a canonical UUID")
 	}
-	if envelope.SessionID != nil && !validUUID(*envelope.SessionID) {
+	if envelope.SessionID != nil && !ValidUUID(*envelope.SessionID) {
 		return Envelope{}, errors.New("protocol: sessionId must be a canonical UUID")
 	}
-	if envelope.Generation != nil && !validUUID(*envelope.Generation) {
+	if envelope.Generation != nil && !ValidUUID(*envelope.Generation) {
 		return Envelope{}, errors.New("protocol: generation must be a canonical UUID")
 	}
 
@@ -302,7 +304,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if len(payload.HostBuild) == 0 || len(payload.HostBuild) > 128 || !validUUID(payload.BrokerGeneration) ||
+		if len(payload.HostBuild) == 0 || len(payload.HostBuild) > 128 || !ValidUUID(payload.BrokerGeneration) ||
 			payload.NegotiatedVersion != Version || payload.CapabilityProfile != PhoneTerminalV1 || payload.Limits != canonicalLimits() {
 			return errors.New("invalid welcome negotiation")
 		}
@@ -463,7 +465,7 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if payload.ControllerConnectionID != nil && !validUUID(*payload.ControllerConnectionID) {
+		if payload.ControllerConnectionID != nil && !ValidUUID(*payload.ControllerConnectionID) {
 			return errors.New("controllerConnectionId must be a UUID or null")
 		}
 		if len(valueOrEmpty(payload.ControllerLabel)) > 128 {
@@ -1106,7 +1108,7 @@ func parseCounter(value string) (uint64, error) {
 }
 
 func validateSnapshotIdentity(snapshotID, revision string) error {
-	if !validUUID(snapshotID) {
+	if !ValidUUID(snapshotID) {
 		return errors.New("snapshotId must be a canonical UUID")
 	}
 	_, err := parseCounter(revision)
@@ -1174,7 +1176,7 @@ func validateRow(row TerminalRow, columns int64) error {
 					return errors.New("continuation cell has no wide leading cell")
 				}
 			} else {
-				if cell.Width < 1 || cell.Width > 2 || len(cell.Text) == 0 || len(cell.Text) > 1024 || !safeDisplayText(cell.Text) {
+				if cell.Width < 1 || cell.Width > 2 || len(cell.Text) == 0 || len(cell.Text) > 1024 || !terminal.ValidText(cell.Text) {
 					return errors.New("invalid display cell")
 				}
 				if cell.Width == 2 {
@@ -1245,9 +1247,11 @@ func validLink(raw string) bool {
 	return err == nil && parsed.User == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
-func validUUID(value string) bool {
+// ValidUUID reports whether value is a canonical lowercase RFC 9562 UUID
+// (versions 1-8, variant 10xx), the schema's uuid pattern.
+func ValidUUID(value string) bool {
 	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
-		value[14] < '1' || value[14] > '8' || !containsByte("89ab", value[19]) {
+		value[14] < '1' || value[14] > '8' || strings.IndexByte("89ab", value[19]) < 0 {
 		return false
 	}
 	for index := range value {
@@ -1263,43 +1267,6 @@ func validUUID(value string) bool {
 
 func isLowerHex(value byte) bool {
 	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f'
-}
-
-func containsByte(values string, value byte) bool {
-	for index := range values {
-		if values[index] == value {
-			return true
-		}
-	}
-	return false
-}
-
-func safeDisplayText(text string) bool {
-	if !utf8.ValidString(text) {
-		return false
-	}
-	for _, value := range text {
-		if value == 0x7f || value < 0x20 || value >= 0x80 && value <= 0x9f {
-			return false
-		}
-	}
-	return true
-}
-
-func validText(text string) bool { return safeDisplayText(text) }
-
-func validPaste(text string) bool {
-	if !utf8.ValidString(text) {
-		return false
-	}
-	for _, value := range text {
-		if value == 0 || value == 0x1b || value == 0x7f ||
-			(value < 0x20 && value != '\n' && value != '\r' && value != '\t') ||
-			(value >= 0x80 && value <= 0x9f) {
-			return false
-		}
-	}
-	return true
 }
 
 func singlePrintableASCII(value string) bool {

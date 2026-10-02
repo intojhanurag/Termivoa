@@ -6,23 +6,13 @@ import (
 	"testing"
 )
 
-// Migration 7 rebuilds shell_profiles so Linux profiles are accepted. Rows
-// and the session foreign key that points at them must survive, and foreign
-// keys must be enforced again afterwards.
-func TestLinuxShellProfileMigrationKeepsExistingRows(t *testing.T) {
+// Linux shell profiles are accepted next to existing ones, unknown platforms
+// are refused, and the session foreign key on shell_profiles is enforced.
+func TestLinuxShellProfilesAndForeignKeys(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "linux.sqlite")
-	database, err := openDatabase(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	migrations, err := bundledMigrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := applyMigrations(ctx, database, migrations[:6], testTime.UnixMilli()); err != nil {
-		t.Fatal(err)
-	}
+	store := openTestStore(t, filepath.Join(t.TempDir(), "linux.sqlite"))
+	defer store.Close()
+	database := store.database
 	const (
 		projectID = "11111111-1111-4111-8111-111111111111"
 		profileID = "22222222-2222-4222-8222-222222222222"
@@ -40,14 +30,8 @@ func TestLinuxShellProfileMigrationKeepsExistingRows(t *testing.T) {
 			t.Fatalf("%s: %v", statement, err)
 		}
 	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	upgraded := openTestStore(t, path)
-	defer upgraded.Close()
-	assertPragma(t, upgraded.database, "foreign_keys", "1")
-	old, err := upgraded.GetShellProfile(ctx, profileID)
+	assertPragma(t, database, "foreign_keys", "1")
+	old, err := store.GetShellProfile(ctx, profileID)
 	if err != nil || old.Platform != PlatformDarwin || old.ExecutablePath != "/bin/zsh" {
 		t.Fatalf("kept profile = %+v, %v", old, err)
 	}
@@ -55,13 +39,13 @@ func TestLinuxShellProfileMigrationKeepsExistingRows(t *testing.T) {
 		ID: "66666666-6666-4666-8666-666666666666", DisplayName: "bash (login)", Platform: PlatformLinux,
 		ExecutablePath: "/bin/bash", Arguments: []string{"-l"}, CreatedAt: testTime, UpdatedAt: testTime,
 	}
-	if err := upgraded.PutShellProfile(ctx, linux); err != nil {
+	if err := store.PutShellProfile(ctx, linux); err != nil {
 		t.Fatalf("put Linux profile: %v", err)
 	}
-	if _, err := upgraded.database.ExecContext(ctx, `DELETE FROM shell_profiles WHERE id = ?`, profileID); err == nil {
+	if _, err := store.database.ExecContext(ctx, `DELETE FROM shell_profiles WHERE id = ?`, profileID); err == nil {
 		t.Fatal("deleting a profile a session still uses succeeded; foreign keys are off")
 	}
-	if _, err := upgraded.database.ExecContext(ctx,
+	if _, err := store.database.ExecContext(ctx,
 		`INSERT INTO shell_profiles VALUES ('77777777-7777-4777-8777-777777777777', 'x', 'beos', '/bin/sh', '[]', 1, 1, NULL)`); err == nil {
 		t.Fatal("unknown platform accepted")
 	}

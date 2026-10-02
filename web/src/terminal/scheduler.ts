@@ -9,9 +9,7 @@
  *   and keeps today's limits. While one is active, and while the app is in the
  *   background, every Wall tile is paused.
  * - Wall tiles ask for a live slot with requestLiveTile. At most `liveTiles`
- *   cost units are live (a thumbnail costs 1; a computer without thumbnail
- *   support streams at full rate and costs `fullRateTileCost`). When live
- *   tiles together decode more than `tileBytesPerSecond`, the noisiest one
+ *   thumbnail tiles are live. When live tiles together decode more than `tileBytesPerSecond`, the noisiest one
  *   pauses for `bytePauseMs`. A paused tile keeps its last frame, shows
  *   Paused and closes its connection; it goes live again when a slot opens.
  * - Connection attempts across all computers pass connectGate: at most
@@ -29,44 +27,28 @@
 
 export type TileState = 'live' | 'paused';
 
-export interface SchedulerLimits {
-  /** Live Wall tile cost units; tuned on real phones. */
-  readonly liveTiles: number;
-  /** Cost of a live tile on a computer without thumbnail mode (a full-rate stream). */
-  readonly fullRateTileCost: number;
-  /** Open Wall tile connections. */
-  readonly tileConnections: number;
-  /** Decoded bytes per second across all live tiles. */
-  readonly tileBytesPerSecond: number;
-  /** How long a tile paused for bytes stays paused. */
-  readonly bytePauseMs: number;
-  /** Computers polled at most: home and up to 8 peers. */
-  readonly maxComputers: number;
-  readonly concurrentReads: number;
-  readonly concurrentConnects: number;
-  readonly pollIntervalMs: number;
-  readonly retryBaseMs: number;
-  readonly retryMaxMs: number;
-  /** After this many failures in a row, a computer counts as offline. */
-  readonly offlineAfterFailures: number;
-  readonly offlineCooldownMs: number;
-}
-
-export const DEFAULT_LIMITS: SchedulerLimits = {
+export const DEFAULT_LIMITS = {
+  /** Live Wall tiles; tuned on real phones. */
   liveTiles: 4,
-  fullRateTileCost: 2,
+  /** Open Wall tile connections. */
   tileConnections: 4,
+  /** Decoded bytes per second across all live tiles. */
   tileBytesPerSecond: 1024 * 1024,
+  /** How long a tile paused for bytes stays paused. */
   bytePauseMs: 10_000,
+  /** Computers polled at most: home and up to 8 peers. */
   maxComputers: 9,
   concurrentReads: 3,
   concurrentConnects: 2,
   pollIntervalMs: 5_000,
   retryBaseMs: 1_000,
   retryMaxMs: 15_000,
+  /** After this many failures in a row, a computer counts as offline. */
   offlineAfterFailures: 3,
   offlineCooldownMs: 30_000,
 };
+
+export type SchedulerLimits = Readonly<typeof DEFAULT_LIMITS>;
 
 /** The rate a thumbnail viewer asks the broker for (`session.attach` `thumbnail.maxUpdatesPerSecond`). */
 export const THUMBNAIL_UPDATES_PER_SECOND = 5;
@@ -82,11 +64,6 @@ export interface TileHandle {
 }
 
 export interface TileOptions {
-  /**
-   * True when the computer has no thumbnail mode, so the tile streams at full rate.
-   * A guard only: every supported computer has thumbnail mode (FEATURE_REVISION.thumbnail is revision 1).
-   */
-  readonly fullRate?: boolean;
   /** Called (in a microtask) when the state changes; not for the initial state. */
   readonly onChange: (state: TileState) => void;
 }
@@ -107,7 +84,6 @@ export type PollOutcome<T> = { readonly ok: true; readonly value: T } | { readon
 
 interface Tile {
   readonly key: string;
-  readonly cost: number;
   readonly onChange: (state: TileState) => void;
   visible: boolean;
   state: TileState;
@@ -162,7 +138,6 @@ export class Scheduler {
     this.tiles.delete(key);
     const tile: Tile = {
       key,
-      cost: options.fullRate === true ? this.limits.fullRateTileCost : 1,
       onChange: options.onChange,
       // Offscreen until the IntersectionObserver says otherwise, so tiles
       // below the fold never take the first live slots.
@@ -413,13 +388,13 @@ export class Scheduler {
   private plan(): void {
     const now = this.now();
     const open = this.foreground && this.active === undefined;
-    let units = this.limits.liveTiles;
+    let live = this.limits.liveTiles;
     let connections = this.limits.tileConnections;
     const next = new Map<Tile, TileState>();
     const consider = (tile: Tile) => {
-      if (open && tile.visible && now >= tile.pausedUntil && tile.cost <= units && connections > 0) {
+      if (open && tile.visible && now >= tile.pausedUntil && live > 0 && connections > 0) {
         next.set(tile, 'live');
-        units -= tile.cost;
+        live--;
         connections--;
       } else {
         next.set(tile, 'paused');

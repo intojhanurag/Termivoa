@@ -90,16 +90,6 @@ func NewInputInbox(controller *Controller, capacity int) (*InputInbox, error) {
 	return &InputInbox{controller: controller, capacity: capacity, notify: make(chan struct{})}, nil
 }
 
-func (inbox *InputInbox) Submit(
-	generation, connectionID, deviceID, lease string,
-	sequence uint64,
-	action InputAction,
-) (InputAcceptance, error) {
-	return inbox.submit(MutationIdentity{
-		Generation: generation, ConnectionID: connectionID, DeviceID: deviceID, Lease: lease,
-	}, sequence, action)
-}
-
 func (inbox *InputInbox) submit(identity MutationIdentity, sequence uint64, action InputAction) (InputAcceptance, error) {
 	generation, connectionID, deviceID, lease := identity.Generation, identity.ConnectionID, identity.DeviceID, identity.Lease
 	validated, err := validatedInputAction(action)

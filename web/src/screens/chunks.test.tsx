@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AppErrorBoundary, ChunkErrorBoundary, ChunkLoadError, loadChunk, UpdateRequired } from './chunks';
+import { ChunkLoadError, ErrorBoundary, ErrorScreen, errorText, loadChunk, UpdateRequired } from './chunks';
 
 const src = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -62,10 +62,10 @@ describe('chunk load failures', () => {
   });
 
   it('shows the reload screen for a chunk error instead of a blank page', () => {
-    const boundary = new ChunkErrorBoundary({ children: <p>live</p> });
+    const boundary = new ErrorBoundary({ children: <p>live</p> });
     expect(renderToStaticMarkup(<>{boundary.render()}</>)).toBe('<p>live</p>');
 
-    boundary.state = ChunkErrorBoundary.getDerivedStateFromError(new ChunkLoadError(new Error('404')));
+    boundary.state = ErrorBoundary.getDerivedStateFromError(new ChunkLoadError(new Error('404')));
     const html = renderToStaticMarkup(<>{boundary.render()}</>);
     expect(html).toContain('role="alert"');
     expect(html).toContain('A new version');
@@ -73,9 +73,9 @@ describe('chunk load failures', () => {
   });
 
   it('does not hide other render errors behind the reload screen', () => {
-    const boundary = new ChunkErrorBoundary({ children: null });
+    const boundary = new ErrorBoundary({ children: null });
     const bug = new Error('bug');
-    boundary.state = ChunkErrorBoundary.getDerivedStateFromError(bug);
+    boundary.state = ErrorBoundary.getDerivedStateFromError(bug);
     expect(() => boundary.render()).toThrow(bug);
   });
 
@@ -86,10 +86,12 @@ describe('chunk load failures', () => {
 });
 
 describe('app error boundary', () => {
+  const appFallback = (error: unknown) => <ErrorScreen text={errorText(error)} />;
+
   it('shows the error and a reload instead of a blank page', () => {
-    const boundary = new AppErrorBoundary({ children: <p>app</p> });
+    const boundary = new ErrorBoundary({ children: <p>app</p>, fallback: appFallback });
     expect(renderToStaticMarkup(<>{boundary.render()}</>)).toBe('<p>app</p>');
-    boundary.state = AppErrorBoundary.getDerivedStateFromError(new TypeError('x is undefined'));
+    boundary.state = ErrorBoundary.getDerivedStateFromError(new TypeError('x is undefined'));
     const html = renderToStaticMarkup(<>{boundary.render()}</>);
     expect(html).toContain('This screen');
     expect(html).toContain('copy error');
@@ -98,8 +100,8 @@ describe('app error boundary', () => {
   });
 
   it('still asks for an update when screen code could not load', () => {
-    const boundary = new AppErrorBoundary({ children: null });
-    boundary.state = AppErrorBoundary.getDerivedStateFromError(new ChunkLoadError(new Error('404')));
+    const boundary = new ErrorBoundary({ children: null, fallback: appFallback });
+    boundary.state = ErrorBoundary.getDerivedStateFromError(new ChunkLoadError(new Error('404')));
     expect(renderToStaticMarkup(<>{boundary.render()}</>)).toContain('A new version');
   });
 });

@@ -221,25 +221,6 @@ func (client *Client) Resize(ctx context.Context, columns, rows int) error {
 	return client.resizeViewport(ctx, columns, rows)
 }
 
-// Detach closes only this connection. It is safe even if an input operation
-// is still waiting; that caller receives delivery uncertainty.
-func (client *Client) Detach(ctx context.Context) error {
-	if ctx == nil {
-		return errors.New("liveclient: nil detach context")
-	}
-	client.mu.Lock()
-	client.detaching = true
-	client.lease, client.state.Controller = "", false
-	client.changedLocked()
-	client.mu.Unlock()
-	message, err := encode(protocol.SessionDetach, client.config.SessionID, client.config.Generation, protocol.EmptyPayload{})
-	if err == nil {
-		err = client.write(ctx, message)
-	}
-	closeErr := client.Close()
-	return errors.Join(err, closeErr)
-}
-
 func (client *Client) oneWay(ctx context.Context, kind protocol.MessageType, payload any, lease string, epoch uint64) error {
 	message, err := encode(kind, client.config.SessionID, client.config.Generation, payload)
 	if err != nil {

@@ -1,3 +1,5 @@
+import { storage, type StorageLike } from '../storage';
+
 /** A saved way to start a session. Plain user text, not a secret. */
 export interface LaunchPreset {
   readonly label: string;
@@ -20,16 +22,6 @@ export const MAX_PRESETS = 20;
 export const MAX_PRESET_LABEL = 80;
 export const MAX_RUN_FIRST = 1000;
 const CONTROLS = /[\u0000-\u001f\u007f-\u009f]/u;
-
-type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
-
-function storage(): StorageLike | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 /** "Run first" is typed as one line of text followed by Enter. */
 export function runFirstProblem(command: string): string | undefined {

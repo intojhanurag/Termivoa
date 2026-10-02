@@ -3,7 +3,6 @@ package broker
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -20,10 +19,9 @@ import (
 )
 
 const (
-	registryBrokerGeneration       = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-	registryProjectID              = "11111111-1111-4111-8111-111111111111"
-	registryProfileID              = "22222222-2222-4222-8222-222222222222"
-	legacyUnavailableReceiptMarker = `{"unavailable":"legacy-v2"}`
+	registryBrokerGeneration = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	registryProjectID        = "11111111-1111-4111-8111-111111111111"
+	registryProfileID        = "22222222-2222-4222-8222-222222222222"
 )
 
 func TestRegistryCreatesOpaqueGenerationsAndListsSessions(t *testing.T) {
@@ -577,49 +575,6 @@ func TestRegistryDurablyReplaysCreateWithoutStartingAnotherRuntime(t *testing.T)
 	conflict.ProjectID = "10000000-0000-4000-8000-000000000099"
 	if _, err := second.Create(context.Background(), conflict); !errors.Is(err, ErrOperationConflict) {
 		t.Fatalf("durable create conflict = %v", err)
-	}
-}
-
-func TestRegistryDoesNotRerunCreateWithUnavailableLegacyResult(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "registry-legacy-create.sqlite")
-	persistence := openRegistryStore(t, path)
-	defer persistence.Close()
-	seedRegistryStore(t, persistence)
-	var starts atomic.Int32
-	first := newPersistentFakeRegistry(t, persistence, &starts, []string{
-		"30000000-0000-4000-8000-000000000091",
-		"40000000-0000-4000-8000-000000000091",
-	})
-	request := CreateSessionRequest{
-		OperationID: operationID("legacy-unavailable-create"), Title: "original",
-		ProjectID: registryProjectID, ShellProfileID: registryProfileID,
-		Process: ptyhost.Spec{Executable: "/bin/zsh", Columns: 80, Rows: 24},
-	}
-	if _, err := first.Create(context.Background(), request); err != nil {
-		t.Fatalf("create original session: %v", err)
-	}
-	if err := first.Close(); err != nil {
-		t.Fatalf("close first registry: %v", err)
-	}
-	markMutationResultUnavailable(t, path, request.OperationID)
-
-	second := newPersistentFakeRegistry(t, persistence, &starts, []string{
-		"30000000-0000-4000-8000-000000000092",
-		"40000000-0000-4000-8000-000000000092",
-	})
-	defer second.Close()
-	for attempt := 0; attempt < 2; attempt++ {
-		if _, err := second.Create(context.Background(), request); !errors.Is(err, ErrOperationResultUnavailable) {
-			t.Fatalf("unavailable replay attempt %d error = %v", attempt, err)
-		}
-	}
-	if starts.Load() != 1 {
-		t.Fatalf("unavailable replay starts = %d, want 1", starts.Load())
-	}
-	conflict := request
-	conflict.ProjectID = "10000000-0000-4000-8000-000000000099"
-	if _, err := second.Create(context.Background(), conflict); !errors.Is(err, ErrOperationConflict) {
-		t.Fatalf("unavailable receipt conflict error = %v", err)
 	}
 }
 
@@ -1413,24 +1368,6 @@ func openRegistryStore(t *testing.T, path string) *store.Store {
 		t.Fatalf("open persistence store: %v", err)
 	}
 	return persistence
-}
-
-func markMutationResultUnavailable(t *testing.T, path, operationID string) {
-	t.Helper()
-	database, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?_busy_timeout=5000")
-	if err != nil {
-		t.Fatalf("open receipt database: %v", err)
-	}
-	defer database.Close()
-	result, err := database.ExecContext(context.Background(), `UPDATE mutation_receipts
-		SET result_session_json = ? WHERE operation_id = ?`, legacyUnavailableReceiptMarker, operationID)
-	if err != nil {
-		t.Fatalf("mark mutation result unavailable: %v", err)
-	}
-	updated, err := result.RowsAffected()
-	if err != nil || updated != 1 {
-		t.Fatalf("marked mutation results = %d, err=%v; want 1", updated, err)
-	}
 }
 
 func seedRegistryStore(t *testing.T, persistence *store.Store) {

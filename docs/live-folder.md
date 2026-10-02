@@ -55,7 +55,7 @@ value only as React text: never HTML, a link, or part of a URL.
 
 ## Titles
 
-`session_metadata.title_custom` (store migration 6) is set when a user renames
+`session_metadata.title_custom` is set when a user renames
 a session. The default title (the project name, or "Terminal") is not custom.
 Sessions that existed before the migration count as renamed only when their
 title differs from both default titles. The session record carries

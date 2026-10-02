@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 func TestBrokerDataLockRemainsHeldThroughRegistryAndStoreCleanup(t *testing.T) {
@@ -30,7 +31,7 @@ func TestBrokerDataLockRemainsHeldThroughRegistryAndStoreCleanup(t *testing.T) {
 	done := make(chan error, 1)
 	config := BrokerConfig{
 		DataDir: filepath.Join(root, "data"), RuntimeDir: filepath.Join(root, "runtime-one"),
-		HostBuild: "data-lock-test", Profile: DevelopmentProfile,
+		HostBuild: "data-lock-test", Profile: platform.DevelopmentProfile,
 		Ready: func(state BrokerReady) { ready <- state },
 		beforeRegistryClose: func() {
 			close(cleanupStarted)

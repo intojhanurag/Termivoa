@@ -80,19 +80,11 @@ func TestBrowserLifetimeRejectsInvalidMetadataAndClockRollback(t *testing.T) {
 	}
 }
 
-func TestPairingGrantHasTwoMinuteBoundary(t *testing.T) {
-	created := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
-	expires := created.Add(PairingGrantLifetime)
-	if err := CheckPairingGrantLifetime(created, expires, expires.Add(-time.Nanosecond)); err != nil {
-		t.Fatal(err)
+// Used is a test helper: a checked copy with LastUsedAt moved to now.
+func (lifetime BrowserLifetime) Used(now time.Time) (BrowserLifetime, error) {
+	if err := lifetime.Check(now); err != nil {
+		return BrowserLifetime{}, err
 	}
-	if err := CheckPairingGrantLifetime(created, expires, expires); !errors.Is(err, ErrExpired) {
-		t.Fatal("expired grant accepted")
-	}
-	if err := CheckPairingGrantLifetime(created, expires.Add(time.Second), created); !errors.Is(err, ErrInvalidLifetime) {
-		t.Fatal("extended grant lifetime accepted")
-	}
-	if err := CheckPairingGrantLifetime(created, expires, created.Add(-time.Second)); !errors.Is(err, ErrInvalidLifetime) {
-		t.Fatal("future grant accepted after clock rollback")
-	}
+	lifetime.LastUsedAt = now.UTC()
+	return lifetime, nil
 }

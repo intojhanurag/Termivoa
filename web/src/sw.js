@@ -9,8 +9,8 @@ const CACHE = `pterm-bundle-${BUILD}`;
 const SHELL = '/index.html';
 /** How long a page load waits for the network before the cached shell. */
 const NAVIGATION_TIMEOUT_MS = 2500;
-/** Caches this app made, under this and older names. */
-const OWN_CACHE = /^pterm-(assets|bundle)-/;
+/** Caches this app made, this build's and older builds'. */
+const OWN_CACHE = /^pterm-bundle-/;
 const BUNDLE_FILES = new Set(BUNDLE.files);
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -55,19 +55,11 @@ function shouldCacheShell(status, contentType, html, build) {
   return status >= 200 && status < 300 && /^text\/html/i.test(contentType || '') && buildOf(html) === build;
 }
 
-function isBundleFile(pathname) {
-  return BUNDLE_FILES.has(pathname);
-}
-
 /** Settles like promise, or rejects when ms pass first. */
 function withTimeout(promise, ms) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), ms);
-    promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
-    );
-  });
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** Stores every bundle file, or nothing: a half-filled cache is deleted and install fails. */
@@ -175,7 +167,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(navigate(event));
     return;
   }
-  if (isBundleFile(url.pathname)) {
+  if (BUNDLE_FILES.has(url.pathname)) {
     event.respondWith(fromBundle(request, url.pathname));
   }
 });

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -129,7 +130,7 @@ func (fixture *trustFixture) from(t *testing.T, origin string, messageType proto
 
 func exchangeFrom(t *testing.T, client *rpcTestClient, origin, messageType string, payload any) ([]byte, error) {
 	t.Helper()
-	requestID, _ := randomUUID()
+	requestID := uuid.New().String()
 	body, _ := json.Marshal(payload)
 	message := map[string]any{"version": 1, "type": messageType, "requestId": requestID, "payload": json.RawMessage(body)}
 	if origin != "" {

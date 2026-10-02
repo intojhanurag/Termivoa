@@ -55,12 +55,12 @@ function loadWorker(network: Network, windows: Array<Record<string, unknown>> = 
 }
 
 /** The worker's pure decision functions. */
-const pure = new Function('self', 'caches', 'fetch', `${SOURCE}\nreturn { buildOf, shouldCacheShell, isBundleFile, withTimeout };`)(
+const pure = new Function('self', 'caches', 'fetch', `${SOURCE}\nreturn { buildOf, shouldCacheShell, BUNDLE_FILES, withTimeout };`)(
   { location: { origin: 'https://host.example' }, addEventListener: () => undefined }, {}, () => undefined,
 ) as {
   buildOf: (html: string) => string | undefined;
   shouldCacheShell: (status: number, contentType: string | null, html: string, build: string) => boolean;
-  isBundleFile: (pathname: string) => boolean;
+  BUNDLE_FILES: ReadonlySet<string>;
   withTimeout: <T>(promise: Promise<T>, ms: number) => Promise<T>;
 };
 
@@ -122,7 +122,7 @@ describe('service worker', () => {
   });
 
   it('on activate deletes the app\'s older caches only, then takes control', async () => {
-    const storage = cacheStorage({ 'pterm-assets-aaa': {}, 'pterm-bundle-bbb': {}, [CACHE]: {}, 'someone-else': {} });
+    const storage = cacheStorage({ 'pterm-bundle-bbb': {}, [CACHE]: {}, 'someone-else': {} });
     const { handlers, self, store } = loadWorker(server(), [], storage);
     await fire(handlers, 'activate', {});
     expect([...store.keys()].sort()).toEqual([CACHE, 'someone-else']);
@@ -229,10 +229,10 @@ describe('service worker decisions', () => {
   });
 
   it('knows the bundle files', () => {
-    expect(pure.isBundleFile('/assets/Wall-1.js')).toBe(true);
-    expect(pure.isBundleFile('/index.html')).toBe(true);
-    expect(pure.isBundleFile('/assets/Wall-0.js')).toBe(false);
-    expect(pure.isBundleFile('/')).toBe(false);
+    expect(pure.BUNDLE_FILES.has('/assets/Wall-1.js')).toBe(true);
+    expect(pure.BUNDLE_FILES.has('/index.html')).toBe(true);
+    expect(pure.BUNDLE_FILES.has('/assets/Wall-0.js')).toBe(false);
+    expect(pure.BUNDLE_FILES.has('/')).toBe(false);
   });
 
   it('times out a slow promise and passes a fast one through', async () => {

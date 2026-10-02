@@ -17,6 +17,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 )
@@ -54,10 +55,7 @@ func TestManagementCommandsAgainstNativeBroker(t *testing.T) {
 	if output, err := runCommand("list", nil); err != nil || output != "No managed sessions.\n" {
 		t.Fatalf("empty list = %q, %v", output, err)
 	}
-	operationID, err := cli.NewOperationID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	operationID := cli.NewOperationID()
 	created, err := client.Create(ctx, operationID, commandProjectID, commandProfileID)
 	if err != nil {
 		t.Fatal(err)
@@ -216,7 +214,7 @@ func startCommandBroker(t *testing.T) (string, *localclient.ManagementClient) {
 	})
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
-			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "command-test", Profile: host.DevelopmentProfile,
+			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "command-test", Profile: platform.DevelopmentProfile,
 			Ready: func(host.BrokerReady) { close(ready) },
 		})
 	}()

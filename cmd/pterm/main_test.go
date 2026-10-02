@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
-	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 func TestInternalModeOverridesRequireExplicitDevelopmentProfile(t *testing.T) {
@@ -62,7 +62,7 @@ func TestDevelopmentModeUsesOnlyExplicitIsolatedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	if brokerConfig.DataDir != dataDir || brokerConfig.RuntimeDir != runtimeDir || brokerConfig.HostBuild != buildID ||
-		brokerConfig.Profile != host.DevelopmentProfile {
+		brokerConfig.Profile != platform.DevelopmentProfile {
 		t.Fatalf("broker config = %#v", brokerConfig)
 	}
 	gatewayConfig, err := parseGatewayConfig([]string{
@@ -72,17 +72,17 @@ func TestDevelopmentModeUsesOnlyExplicitIsolatedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	if gatewayConfig.RuntimeDir != runtimeDir || gatewayConfig.ListenAddress != "127.0.0.1:0" ||
-		gatewayConfig.HostBuild != buildID || gatewayConfig.Profile != host.DevelopmentProfile {
+		gatewayConfig.HostBuild != buildID || gatewayConfig.Profile != platform.DevelopmentProfile {
 		t.Fatalf("gateway config = %#v", gatewayConfig)
 	}
 }
 
 func TestBareAndPartialDevelopmentModesNeverReuseProductionDefaults(t *testing.T) {
-	production, err := host.DefaultPaths()
+	production, err := platform.DefaultPaths()
 	if err != nil {
 		t.Fatal(err)
 	}
-	development, err := host.DevelopmentPaths()
+	development, err := platform.DevelopmentPaths()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestBareAndPartialDevelopmentModesNeverReuseProductionDefaults(t *testing.T
 }
 
 func TestDevelopmentModesRejectProductionPathsAndCanonicalAliases(t *testing.T) {
-	production, err := host.DefaultPaths()
+	production, err := platform.DefaultPaths()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestDevelopmentModesRejectProductionPathsAndCanonicalAliases(t *testing.T) 
 }
 
 func TestProductionModesUseFixedDefaults(t *testing.T) {
-	want, err := host.DefaultPaths()
+	want, err := platform.DefaultPaths()
 	if err != nil {
 		t.Fatal(err)
 	}

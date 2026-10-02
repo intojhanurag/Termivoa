@@ -7,7 +7,6 @@ package gatewayclient
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +14,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -618,10 +618,7 @@ func (connection *rpcConn) exchange(
 // request but the origin probe. Validation errors
 // describe shape only and never echo secret values.
 func encodeRequest(ctx context.Context, requestType protocol.GatewayRPCMessageType, payload any) ([]byte, string, error) {
-	requestID, err := newUUID()
-	if err != nil {
-		return nil, "", fmt.Errorf("gatewayclient: create request ID: %w", err)
-	}
+	requestID := uuid.New().String()
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, "", fmt.Errorf("gatewayclient: encode %s payload: %w", requestType, err)
@@ -678,14 +675,4 @@ func setContextDeadline(ctx context.Context, set func(time.Time) error) (func(),
 		}
 		_ = set(time.Time{})
 	}, nil
-}
-
-func newUUID() (string, error) {
-	var value [16]byte
-	if _, err := rand.Read(value[:]); err != nil {
-		return "", err
-	}
-	value[6] = (value[6] & 0x0f) | 0x40
-	value[8] = (value[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
 }

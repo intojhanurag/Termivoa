@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -41,7 +42,11 @@ type Confirmer interface {
 
 // IDSource returns one fresh operation ID. It is deliberately separate from
 // the per-RPC correlation IDs owned by localclient.
-type IDSource func() (string, error)
+type IDSource func() string
+
+// NewOperationID returns a random UUID for durable mutation deduplication. It
+// must be called once per user-confirmed operation.
+func NewOperationID() string { return uuid.New().String() }
 
 type App struct {
 	management Management
@@ -96,7 +101,7 @@ func (app *App) List(ctx context.Context) error {
 // refreshes its state. Attach and destructive actions use the same identity
 // checks; a restarted or vanished session is never silently replaced.
 func (app *App) ResolveSession(ctx context.Context, sessionID string) (protocol.BrokerRPCSessionRecord, error) {
-	if !validUUID(sessionID) {
+	if !protocol.ValidUUID(sessionID) {
 		return protocol.BrokerRPCSessionRecord{}, errors.New("session ID must be a canonical lowercase UUID")
 	}
 	sessions, err := app.listAll(ctx)
@@ -137,17 +142,14 @@ func (app *App) Create(ctx context.Context, projectID, shellProfileID string) (p
 	if ctx == nil {
 		return protocol.BrokerRPCSessionRecord{}, errors.New("CLI context must not be nil")
 	}
-	if !validUUID(projectID) || !validUUID(shellProfileID) {
+	if !protocol.ValidUUID(projectID) || !protocol.ValidUUID(shellProfileID) {
 		return protocol.BrokerRPCSessionRecord{}, errors.New("project and shell profile IDs must be canonical lowercase UUIDs")
 	}
 	if err := ctx.Err(); err != nil {
 		return protocol.BrokerRPCSessionRecord{}, err
 	}
-	operationID, err := app.newID()
-	if err != nil {
-		return protocol.BrokerRPCSessionRecord{}, fmt.Errorf("create session operation ID: %w", err)
-	}
-	if !validUUID(operationID) {
+	operationID := app.newID()
+	if !protocol.ValidUUID(operationID) {
 		return protocol.BrokerRPCSessionRecord{}, errors.New("generated creation operation ID must be a canonical lowercase UUID")
 	}
 	if err := ctx.Err(); err != nil {
@@ -161,7 +163,7 @@ func (app *App) Create(ctx context.Context, projectID, shellProfileID string) (p
 		return protocol.BrokerRPCSessionRecord{}, err
 	}
 	if result.OperationID != operationID || result.Session.ProjectID != projectID || result.Session.ShellProfileID != shellProfileID ||
-		!validUUID(result.Session.ID) || !validUUID(result.Session.Generation) {
+		!protocol.ValidUUID(result.Session.ID) || !protocol.ValidUUID(result.Session.Generation) {
 		return protocol.BrokerRPCSessionRecord{}, errors.New("delivery uncertain—creation acknowledgement did not match the requested configuration or session identity; run pterm list before creating another")
 	}
 	return result.Session, nil
@@ -194,10 +196,7 @@ func (app *App) Terminate(ctx context.Context, sessionID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	operationID, err := app.newID()
-	if err != nil {
-		return fmt.Errorf("create termination operation ID: %w", err)
-	}
+	operationID := app.newID()
 	result, err := app.management.Terminate(ctx, ref, operationID)
 	if err != nil {
 		if localclient.IsDeliveryUncertain(err) {
@@ -286,20 +285,4 @@ func writeString(output io.Writer, value string) error {
 		return fmt.Errorf("write CLI output: %w", err)
 	}
 	return nil
-}
-
-func validUUID(value string) bool {
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
-		value[14] < '1' || value[14] > '8' || !strings.ContainsRune("89ab", rune(value[19])) {
-		return false
-	}
-	for index := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			continue
-		}
-		if !((value[index] >= '0' && value[index] <= '9') || (value[index] >= 'a' && value[index] <= 'f')) {
-			return false
-		}
-	}
-	return true
 }

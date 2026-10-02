@@ -19,6 +19,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 const (
@@ -139,8 +140,8 @@ func runGateway(ctx context.Context, config gateway.Config) error {
 // report to <data>\logs\<name>.log on Windows, where the task's headless
 // console discards it. launchd redirects both streams on macOS, and `pterm
 // launch` hands the child that same file, so nothing is written twice.
-func useServiceLog(name string, profile host.Profile) {
-	if runtime.GOOS != "windows" || profile != host.ProductionProfile {
+func useServiceLog(name string, profile platform.Profile) {
+	if runtime.GOOS != "windows" || profile != platform.ProductionProfile {
 		return
 	}
 	file, err := openServiceLog(name)
@@ -154,7 +155,7 @@ func useServiceLog(name string, profile host.Profile) {
 }
 
 func openServiceLog(name string) (*os.File, error) {
-	paths, err := host.DefaultPaths()
+	paths, err := platform.DefaultPaths()
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +167,11 @@ func openServiceLog(name string) (*os.File, error) {
 }
 
 func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
-	production, err := host.DefaultPaths()
+	production, err := platform.DefaultPaths()
 	if err != nil {
 		return host.BrokerConfig{}, err
 	}
-	development, err := host.DevelopmentPaths()
+	development, err := platform.DevelopmentPaths()
 	if err != nil {
 		return host.BrokerConfig{}, err
 	}
@@ -185,10 +186,10 @@ func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
 	if flags.NArg() != 0 {
 		return host.BrokerConfig{}, errors.New("broker mode does not accept positional arguments")
 	}
-	profile := host.ProductionProfile
+	profile := platform.ProductionProfile
 	defaults := production
 	if *dev {
-		profile = host.DevelopmentProfile
+		profile = platform.DevelopmentProfile
 		defaults = development
 	}
 	if *dataDir == "" {
@@ -197,7 +198,7 @@ func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
 	if *runtimeDir == "" {
 		*runtimeDir = defaults.RuntimeDir
 	}
-	paths, err := host.ValidatePaths(profile, host.Paths{DataDir: *dataDir, RuntimeDir: *runtimeDir})
+	paths, err := platform.ValidatePaths(profile, platform.Paths{DataDir: *dataDir, RuntimeDir: *runtimeDir})
 	if err != nil {
 		if !*dev {
 			return host.BrokerConfig{}, fmt.Errorf("broker path overrides require explicit --dev: %w", err)
@@ -210,11 +211,11 @@ func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
 }
 
 func parseGatewayConfig(args []string) (gateway.Config, error) {
-	production, err := host.DefaultPaths()
+	production, err := platform.DefaultPaths()
 	if err != nil {
 		return gateway.Config{}, err
 	}
-	development, err := host.DevelopmentPaths()
+	development, err := platform.DevelopmentPaths()
 	if err != nil {
 		return gateway.Config{}, err
 	}
@@ -235,12 +236,12 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 	if flags.NArg() != 0 {
 		return gateway.Config{}, errors.New("gateway mode does not accept positional arguments")
 	}
-	profile := host.ProductionProfile
+	profile := platform.ProductionProfile
 	defaultRuntime := production.RuntimeDir
 	defaultListen := gateway.ProductionListenAddress
 	defaultPreview := gateway.ProductionPreviewListenAddress
 	if *dev {
-		profile = host.DevelopmentProfile
+		profile = platform.DevelopmentProfile
 		defaultRuntime = development.RuntimeDir
 		defaultListen = gateway.DevelopmentListenAddress
 		defaultPreview = gateway.DevelopmentPreviewListenAddress
@@ -257,7 +258,7 @@ func parseGatewayConfig(args []string) (gateway.Config, error) {
 	if *listen == "" {
 		*listen = defaultListen
 	}
-	validatedRuntime, err := host.ValidateRuntimeDir(profile, *runtimeDir)
+	validatedRuntime, err := platform.ValidateRuntimeDir(profile, *runtimeDir)
 	if err != nil {
 		if !*dev {
 			return gateway.Config{}, fmt.Errorf("gateway path overrides require explicit --dev: %w", err)

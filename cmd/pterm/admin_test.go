@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 const adminTestID = "20000000-0000-4000-8000-000000000001"
 
 func TestAdminCommandParsing(t *testing.T) {
-	production, err := host.DefaultPaths()
+	production, err := platform.DefaultPaths()
 	if err != nil {
 		t.Fatal(err)
 	}

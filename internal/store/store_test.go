@@ -34,25 +34,14 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	if got := store.database.Stats().MaxOpenConnections; got != 1 {
 		t.Fatalf("max open connections = %d, want 1", got)
 	}
-	var migrations int
-	if err := store.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
-		t.Fatalf("count migrations: %v", err)
-	}
-	if migrations != 9 {
-		t.Fatalf("migration count = %d, want 9", migrations)
-	}
+	assertFullSchema(t, store.database)
 	if err := store.Close(); err != nil {
 		t.Fatalf("close store: %v", err)
 	}
 
 	reopened := openTestStore(t, path)
 	defer reopened.Close()
-	if err := reopened.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&migrations); err != nil {
-		t.Fatalf("count migrations after reopen: %v", err)
-	}
-	if migrations != 9 {
-		t.Fatalf("migration count after reopen = %d, want 9", migrations)
-	}
+	assertFullSchema(t, reopened.database)
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -64,266 +53,97 @@ func TestOpenConfiguresAndReopensSQLite(t *testing.T) {
 	}
 }
 
-func TestOpenUpgradesExistingSessionSchemaWithReceiptMigrations(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "upgrade.sqlite")
-	database, err := openDatabase(context.Background(), path)
+// assertFullSchema checks that a database holds the whole schema from
+// 001_schema.sql and one ledger row with its checksum.
+func assertFullSchema(t *testing.T, database *sql.DB) {
+	t.Helper()
+	var name string
+	var checksum []byte
+	var rows int
+	if err := database.QueryRow(`SELECT count(*), name, checksum FROM schema_migrations`).Scan(&rows, &name, &checksum); err != nil {
+		t.Fatalf("read schema ledger: %v", err)
+	}
+	digest := sha256.Sum256([]byte(schemaSQL))
+	if rows != 1 || name != schemaName || string(checksum) != string(digest[:]) {
+		t.Fatalf("schema ledger = %d rows, %q; want one row for %s with its checksum", rows, name, schemaName)
+	}
+	objects, err := database.Query(`SELECT type || ' ' || name FROM sqlite_master
+		WHERE name NOT LIKE 'sqlite_%' ORDER BY 1`)
 	if err != nil {
-		t.Fatalf("open old database: %v", err)
+		t.Fatalf("list schema: %v", err)
 	}
-	migrations, err := bundledMigrations()
-	if err != nil {
-		t.Fatalf("load migrations: %v", err)
-	}
-	if len(migrations) != 9 {
-		t.Fatalf("bundled migrations = %d, want 9", len(migrations))
-	}
-	if err := applyMigrations(context.Background(), database, migrations[:1], testTime.UnixMilli()); err != nil {
-		t.Fatalf("apply old schema: %v", err)
-	}
-	if err := database.Close(); err != nil {
-		t.Fatalf("close old database: %v", err)
-	}
-
-	upgraded := openTestStore(t, path)
-	defer upgraded.Close()
-	var applied int
-	if err := upgraded.database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil {
-		t.Fatalf("count upgraded migrations: %v", err)
-	}
-	if applied != 9 {
-		t.Fatalf("upgraded migration count = %d, want 9", applied)
-	}
-	var receiptsTable int
-	if err := upgraded.database.QueryRow(`SELECT count(*) FROM sqlite_master
-		WHERE type = 'table' AND name = 'mutation_receipts'`).Scan(&receiptsTable); err != nil {
-		t.Fatalf("inspect receipt table: %v", err)
-	}
-	if receiptsTable != 1 {
-		t.Fatalf("receipt table count = %d, want 1", receiptsTable)
-	}
-	var snapshotColumn int
-	if err := upgraded.database.QueryRow(`SELECT count(*) FROM pragma_table_info('mutation_receipts')
-		WHERE name = 'result_session_json'`).Scan(&snapshotColumn); err != nil {
-		t.Fatalf("inspect receipt snapshot column: %v", err)
-	}
-	if snapshotColumn != 1 {
-		t.Fatalf("receipt snapshot column count = %d, want 1", snapshotColumn)
-	}
-}
-
-func TestOpenMarksUnprovableV2ReceiptsUnavailableWithoutRerun(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "receipt-upgrade.sqlite")
-	database, err := openDatabase(context.Background(), path)
-	if err != nil {
-		t.Fatalf("open v2 database: %v", err)
-	}
-	migrations, err := bundledMigrations()
-	if err != nil {
-		t.Fatalf("load migrations: %v", err)
-	}
-	if err := applyMigrations(context.Background(), database, migrations[:2], testTime.UnixMilli()); err != nil {
-		t.Fatalf("apply v2 schema: %v", err)
-	}
-	// This build's queries read title_custom (migration 6). Lend the column to
-	// the v2 fixture and drop it again before the upgrade.
-	if _, err := database.Exec(`ALTER TABLE session_metadata ADD COLUMN title_custom INTEGER NOT NULL DEFAULT 0`); err != nil {
-		t.Fatal(err)
-	}
-	legacy := &Store{database: database}
-	beginBroker(t, legacy, testBrokerA)
-	seedParents(t, legacy)
-	session := fixtureSession("70000000-0000-4000-8000-000000000091", testBrokerA, "legacy create")
-	if err := legacy.CreateSession(context.Background(), session); err != nil {
-		t.Fatalf("create legacy session: %v", err)
-	}
-	mustTransition(t, legacy, session, SessionRunning, nil, 1)
-	session, err = legacy.GetSession(context.Background(), session.ID)
-	if err != nil {
-		t.Fatalf("get running legacy session: %v", err)
-	}
-	oldFingerprint := sha256.Sum256([]byte("resolved title/path/executable/arguments/environment/dimensions"))
-	if _, err := database.ExecContext(context.Background(), `INSERT INTO mutation_receipts(
-		operation_id, operation_kind, request_fingerprint, session_id, session_generation,
-		result_title, result_state, result_at_ms, created_at_ms
-	) VALUES (?, 'session_create', ?, ?, ?, NULL, 'running', ?, ?)`,
-		testCreateOperation, oldFingerprint[:], session.ID, session.Generation,
-		millis(session.UpdatedAt), millis(session.UpdatedAt)); err != nil {
-		t.Fatalf("insert v2 create receipt: %v", err)
-	}
-	if err := legacy.RenameSession(
-		context.Background(), session.ID, session.Generation, "renamed after create", testTime.Add(2*time.Second),
-	); err != nil {
-		t.Fatalf("rename session after v2 create receipt: %v", err)
-	}
-	if err := legacy.TransitionSession(
-		context.Background(), session.ID, session.Generation, SessionExiting, nil, testTime.Add(3*time.Second),
-	); err != nil {
-		t.Fatalf("begin legacy termination: %v", err)
-	}
-	terminateFingerprint := sha256.Sum256([]byte("legacy terminate request"))
-	if _, err := database.ExecContext(context.Background(), `INSERT INTO mutation_receipts(
-		operation_id, operation_kind, request_fingerprint, session_id, session_generation,
-		result_title, result_state, result_at_ms, created_at_ms
-	) VALUES (?, 'session_terminate', ?, ?, ?, NULL, 'exiting', ?, ?)`,
-		testTerminateOperation, terminateFingerprint[:], session.ID, session.Generation,
-		millis(testTime.Add(3*time.Second)), millis(testTime.Add(3*time.Second))); err != nil {
-		t.Fatalf("insert v2 terminate receipt: %v", err)
-	}
-	if err := legacy.RenameSession(
-		context.Background(), session.ID, session.Generation, "renamed after terminate", testTime.Add(4*time.Second),
-	); err != nil {
-		t.Fatalf("rename session after v2 terminate receipt: %v", err)
-	}
-	if _, err := database.Exec(`ALTER TABLE session_metadata DROP COLUMN title_custom`); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Close(); err != nil {
-		t.Fatalf("close v2 database: %v", err)
-	}
-
-	upgraded := openTestStore(t, path)
-	defer upgraded.Close()
-	if lost, err := upgraded.BeginBrokerGeneration(context.Background(), testBrokerB, testTime.Add(5*time.Second)); err != nil || len(lost) != 1 {
-		t.Fatalf("begin upgraded broker: lost=%d, err=%v; want one prior live session", len(lost), err)
-	}
-	newFingerprint, err := SessionCreateFingerprint(testProject, testProfile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, found, err := upgraded.LookupMutation(
-		context.Background(), testCreateOperation, OperationSessionCreate, newFingerprint,
-	)
-	if !errors.Is(err, ErrMutationResultUnavailable) || found || result != (MutationResult{}) {
-		t.Fatalf("lookup migrated create receipt: found=%t result=%+v err=%v", found, result, err)
-	}
-	if _, found, err := upgraded.LookupMutation(
-		context.Background(), testCreateOperation, OperationSessionCreate, newFingerprint,
-	); !errors.Is(err, ErrMutationResultUnavailable) || found {
-		t.Fatalf("repeat unavailable lookup found=%t, err=%v", found, err)
-	}
-	stored, err := upgraded.GetSession(context.Background(), session.ID)
-	if err != nil {
-		t.Fatalf("get migrated session: %v", err)
-	}
-	if stored.Title != "renamed after terminate" || !stored.TitleCustom {
-		t.Fatalf("migrated session title = %q custom=%t, want later rename, custom", stored.Title, stored.TitleCustom)
-	}
-	var unavailableMarkers int
-	if err := upgraded.database.QueryRow(`SELECT count(*) FROM mutation_receipts
-		WHERE result_session_json = ?`, legacyUnavailableSnapshotJSON).Scan(&unavailableMarkers); err != nil {
-		t.Fatalf("count unavailable receipt markers: %v", err)
-	}
-	if unavailableMarkers != 2 {
-		t.Fatalf("unavailable receipt markers = %d, want 2", unavailableMarkers)
-	}
-	if _, found, err := upgraded.LookupMutation(
-		context.Background(), testCreateOperation, OperationSessionCreate, oldFingerprint,
-	); !errors.Is(err, ErrOperationConflict) || found {
-		t.Fatalf("legacy fingerprint lookup found=%t, err=%v; want conflict", found, err)
-	}
-	if _, _, err := upgraded.CreateSessionWithReceipt(
-		context.Background(), testCreateOperation, newFingerprint, runningReceiptSession(
-			"70000000-0000-4000-8000-000000000092", "must not run"),
-	); !errors.Is(err, ErrMutationResultUnavailable) {
-		t.Fatalf("receipt-backed rerun error = %v", err)
-	}
-	if _, err := upgraded.GetSession(
-		context.Background(), "70000000-0000-4000-8000-000000000092",
-	); !errors.Is(err, ErrSessionMissing) {
-		t.Fatalf("unavailable receipt created another session: %v", err)
-	}
-	if _, _, err := upgraded.BeginSessionTerminationWithReceipt(
-		context.Background(), testTerminateOperation, terminateFingerprint,
-		session.ID, session.Generation, testTime.Add(6*time.Second),
-	); !errors.Is(err, ErrMutationResultUnavailable) {
-		t.Fatalf("receipt-backed termination rerun error = %v", err)
-	}
-}
-
-func TestMigrationFailureRollsBackWithoutDamagingPriorSchema(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "migration.sqlite")
-	database, err := openDatabase(context.Background(), path)
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	defer database.Close()
-	first := migration{version: 1, name: "001_stable.sql", sql: `
-        CREATE TABLE stable (id INTEGER PRIMARY KEY, value TEXT NOT NULL) STRICT;
-        INSERT INTO stable(id, value) VALUES (1, 'kept');`}
-	if err := applyMigrations(context.Background(), database, []migration{first}, testTime.UnixMilli()); err != nil {
-		t.Fatalf("apply stable migration: %v", err)
-	}
-	second := migration{version: 2, name: "002_broken.sql", sql: `
-        CREATE TABLE transient (id INTEGER PRIMARY KEY) STRICT;
-        INSERT INTO table_that_does_not_exist(id) VALUES (1);`}
-	if err := applyMigrations(context.Background(), database, []migration{first, second}, testTime.UnixMilli()); err == nil {
-		t.Fatal("broken migration unexpectedly succeeded")
-	}
-	var value string
-	if err := database.QueryRow(`SELECT value FROM stable WHERE id = 1`).Scan(&value); err != nil || value != "kept" {
-		t.Fatalf("prior data after failed migration = %q, %v", value, err)
-	}
-	var transient int
-	if err := database.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'transient'`).Scan(&transient); err != nil {
-		t.Fatalf("inspect transient table: %v", err)
-	}
-	if transient != 0 {
-		t.Fatal("failed migration left its table behind")
-	}
-	var applied int
-	if err := database.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil || applied != 1 {
-		t.Fatalf("applied migration count = %d, %v; want 1", applied, err)
-	}
-}
-
-func TestPendingMigrationSetIsAtomic(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "atomic-migrations.sqlite")
-	database, err := openDatabase(context.Background(), path)
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	defer database.Close()
-	migrations := []migration{
-		{version: 1, name: "001_first.sql", sql: `CREATE TABLE first_pending (id INTEGER PRIMARY KEY) STRICT;`},
-		{version: 2, name: "002_broken.sql", sql: `
-			CREATE TABLE second_pending (id INTEGER PRIMARY KEY) STRICT;
-			INSERT INTO missing_table(id) VALUES (1);`},
-	}
-	if err := applyMigrations(context.Background(), database, migrations, testTime.UnixMilli()); err == nil {
-		t.Fatal("partially failing migration set unexpectedly succeeded")
-	}
-	for _, table := range []string{"schema_migrations", "first_pending", "second_pending"} {
-		var count int
-		if err := database.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
-			t.Fatalf("inspect table %s: %v", table, err)
+	defer objects.Close()
+	var got []string
+	for objects.Next() {
+		var object string
+		if err := objects.Scan(&object); err != nil {
+			t.Fatal(err)
 		}
-		if count != 0 {
-			t.Fatalf("failed migration set left table %s behind", table)
-		}
+		got = append(got, object)
+	}
+	want := []string{
+		"index browser_sessions_device_idx", "index computers_origin_idx", "index devices_app_origin_idx",
+		"index mutation_receipts_created_idx", "index mutation_receipts_session_idx",
+		"index push_subscriptions_device_idx", "index session_metadata_project_idx", "index session_metadata_state_idx",
+		"table browser_sessions", "table computers", "table devices", "table mutation_receipts",
+		"table pairing_grants", "table pending_pairings", "table projects", "table push_subscriptions",
+		"table push_vapid_key", "table schema_migrations", "table session_metadata", "table settings",
+		"table shell_profiles",
+		"trigger mutation_receipts_snapshot_required_insert", "trigger mutation_receipts_snapshot_required_update",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("schema objects =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	var strict int
+	if err := database.QueryRow(`SELECT count(*) FROM pragma_table_list
+		WHERE schema = 'main' AND name NOT LIKE 'sqlite_%' AND strict = 0`).Scan(&strict); err != nil || strict != 0 {
+		t.Fatalf("non-STRICT tables = %d, %v; want 0", strict, err)
 	}
 }
 
-func TestMigrationChecksumAndFutureVersionAreRejected(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "drift.sqlite")
-	database, err := openDatabase(context.Background(), path)
+func TestSchemaFailureRollsBack(t *testing.T) {
+	database, err := openDatabase(context.Background(), filepath.Join(t.TempDir(), "broken.sqlite"))
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
 	defer database.Close()
-	original := migration{version: 1, name: "001_one.sql", sql: `CREATE TABLE one (id INTEGER PRIMARY KEY) STRICT;`}
-	if err := applyMigrations(context.Background(), database, []migration{original}, testTime.UnixMilli()); err != nil {
-		t.Fatalf("apply migration: %v", err)
+	broken := `CREATE TABLE transient (id INTEGER PRIMARY KEY) STRICT;
+		INSERT INTO table_that_does_not_exist(id) VALUES (1);`
+	if err := applySchema(context.Background(), database, schemaName, broken, testTime.UnixMilli()); err == nil {
+		t.Fatal("broken schema unexpectedly succeeded")
 	}
-	drifted := migration{version: 1, name: original.name, sql: original.sql + " "}
-	if err := applyMigrations(context.Background(), database, []migration{drifted}, testTime.UnixMilli()); err == nil || !strings.Contains(err.Error(), "checksum") {
-		t.Fatalf("checksum drift error = %v", err)
+	var tables int
+	if err := database.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table'`).Scan(&tables); err != nil || tables != 0 {
+		t.Fatalf("failed schema left %d table(s), %v", tables, err)
 	}
-	if _, err := database.Exec(`INSERT INTO schema_migrations(version, name, checksum, applied_at_ms)
-        VALUES (2, '002_future.sql', zeroblob(32), ?)`, testTime.UnixMilli()); err != nil {
-		t.Fatalf("insert future migration: %v", err)
-	}
-	if err := applyMigrations(context.Background(), database, []migration{original}, testTime.UnixMilli()); err == nil || !strings.Contains(err.Error(), "newer") {
-		t.Fatalf("future-version error = %v", err)
+}
+
+// There are no migrations (AGENTS.md rule 26): a database made with another
+// schema, such as one from an older build, is refused and left unchanged.
+func TestOpenRefusesDatabaseWithAnotherSchema(t *testing.T) {
+	for name, ledger := range map[string]string{
+		"changed checksum": `UPDATE schema_migrations SET checksum = zeroblob(32)`,
+		"renamed schema":   `UPDATE schema_migrations SET name = '001_sessions.sql'`,
+		"older build":      `INSERT INTO schema_migrations VALUES (2, '002_mutation_receipts.sql', zeroblob(32), 1)`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "other.sqlite")
+			openTestStore(t, path).Close()
+			database, err := openDatabase(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := database.Exec(ledger); err != nil {
+				t.Fatal(err)
+			}
+			_ = database.Close()
+			if store, err := Open(context.Background(), path); err == nil || !strings.Contains(err.Error(), "does not match this build") {
+				if store != nil {
+					store.Close()
+				}
+				t.Fatalf("open with %s error = %v", name, err)
+			}
+		})
 	}
 }
 

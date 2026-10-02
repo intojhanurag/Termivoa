@@ -1,20 +1,19 @@
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from 'react';
-import { client } from '../api/http';
-import { homeComputer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { Connection, INITIAL_STATUS, type LinkState } from '../terminal/Connection';
+import { Connection, initialStatus, noSubscribe, type LinkState } from '../terminal/Connection';
 import { scheduler, THUMBNAIL_UPDATES_PER_SECOND, type TileHandle, type TileState } from '../terminal/scheduler';
 import { TerminalView } from '../terminal/TerminalView';
-import { agentBadge, hasNewOutput, readViewed, since, storage, type StorageLike, type ViewedTimes } from './activity';
+import { storage, type StorageLike } from '../storage';
+import { agentBadge, hasNewOutput, readViewed, since, type ViewedTimes } from './activity';
 import { keyOf, type HostedSession } from './allSessions';
 import { sessionName } from './folder';
 import { websocketUrl } from './hooks';
-import { ComputerTag, StatusPill } from './Sessions';
+import { ComputerTag, ended, StatusPill } from './Sessions';
 
 /** Tiles draw at this font size, then shrink to fit the tile. */
 export const TILE_FONT = 12;
-/** This device's tile order, as `host/id` session keys (a bare id is an older home entry). Not secret. */
+/** This device's tile order, as `host/id` session keys. Not secret. */
 export const WALL_ORDER_KEY = 'pterm.wallOrder';
 const MAX_ORDER = 100;
 /** A tile moves after a finger holds it this long; a move before that scrolls. */
@@ -24,9 +23,6 @@ const SLOP_PX = 8;
 const EDGE_PX = 56;
 const SCROLL_STEP_PX = 10;
 
-const noSubscribe = () => () => undefined;
-const initialStatus = () => INITIAL_STATUS;
-const ended = (session: BrokerRPCSessionRecord) => session.state === 'exited' || session.state === 'lost';
 const rank = (session: BrokerRPCSessionRecord) => {
   switch (session.agent?.state) {
     case 'waiting': return 0;
@@ -41,12 +37,12 @@ export function wallSessions<T extends BrokerRPCSessionRecord>(sessions: Readonl
   return { shown, ended: sessions.length - shown.length };
 }
 
-/** The saved order as session keys; an older bare id means a home session. */
-export function readWallOrder(store: StorageLike | undefined = storage(), home?: string): string[] {
+/** The saved order as session keys. */
+export function readWallOrder(store: StorageLike | undefined = storage()): string[] {
   try {
     const parsed: unknown = JSON.parse(store?.getItem(WALL_ORDER_KEY) ?? '[]');
     return Array.isArray(parsed)
-      ? parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_ORDER).map((id) => (id.includes('/') ? id : `${home ?? homeComputer().host}/${id}`))
+      ? parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_ORDER)
       : [];
   } catch {
     return [];
@@ -126,9 +122,8 @@ export function tileMark(tile: TileState, link: LinkState, wasLive = true): 'pau
  * way: no control, no input, no PTY resize. The phone-wide scheduler decides
  * whether it is live: offscreen tiles, tiles beyond the live budget, and all
  * tiles while the app is in the background keep their last frame, show
- * Paused and close their connection. A computer with thumbnail mode sends
- * frames at most THUMBNAIL_UPDATES_PER_SECOND; an older one streams at full
- * rate and costs more of the budget.
+ * Paused and close their connection. Tiles get frames at most
+ * THUMBNAIL_UPDATES_PER_SECOND.
  */
 function MiniTerminal({ session }: { readonly session: HostedSession }) {
   const box = useRef<HTMLSpanElement>(null);
@@ -182,7 +177,7 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
   // A live slot from the scheduler; only a visible tile keeps one.
   useLayoutEffect(() => {
     const frame = box.current;
-    const slot = scheduler.requestLiveTile(key, { fullRate: !client(origin).supports('thumbnail'), onChange: setTile });
+    const slot = scheduler.requestLiveTile(key, { onChange: setTile });
     handle.current = slot;
     setTile(slot.state());
     const observer = frame === null ? undefined : new IntersectionObserver((entries) => {
@@ -195,20 +190,19 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
       slot.release();
       handle.current = undefined;
     };
-  }, [key, origin]);
+  }, [key]);
 
   // Connected only while live.
   useEffect(() => {
     if (view === undefined || tile !== 'live') {
       return undefined;
     }
-    const thumbnail = client(origin).supports('thumbnail');
     const next = new Connection({
       url: websocketUrl(origin),
       sessionId: session.id,
       generation: session.generation,
       display: view.renderer,
-      ...(thumbnail ? { thumbnail: { maxUpdatesPerSecond: THUMBNAIL_UPDATES_PER_SECOND } } : {}),
+      thumbnail: { maxUpdatesPerSecond: THUMBNAIL_UPDATES_PER_SECOND },
       onMessageBytes: (bytes) => handle.current?.bytes(bytes),
       gate: scheduler.connectGate(origin),
       peer: !session.computer.home,
