@@ -169,10 +169,13 @@ export class Stack {
 
   /** Ctrl+C on `pterm up`: the gateway stops, then the broker. */
   async stop() {
-    if (!this.child || this.child.exitCode !== null) return;
-    const exited = new Promise((r) => this.child.once('exit', r));
-    this.child.kill('SIGINT');
-    await Promise.race([exited, sleep(10000).then(() => this.child.kill('SIGKILL'))]);
+    if (this.child && this.child.exitCode === null) {
+      const exited = new Promise((r) => this.child.once('exit', r));
+      this.child.kill('SIGINT');
+      await Promise.race([exited, sleep(10000).then(() => this.child.kill('SIGKILL'))]);
+    }
+    // The broker and gateway run in their own process groups; never leave one behind.
+    await run('/usr/bin/pkill', ['-f', `runtime-dir ${this.runtimeDir}`]);
   }
 
   /** Runs an admin or local pterm command against this stack. */
