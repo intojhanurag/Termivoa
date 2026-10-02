@@ -1,8 +1,8 @@
 # Multi-computer: architecture
 
-Status: **accepted 2026-10-02, version 4 (two adversarial reviewers over three rounds, plus an outside performance review); implementation in progress; Gate 0 before release** (ADR [0005](decisions/0005-multi-computer.md)). Nothing here is implemented. Sections 7–9 list every review finding and how it is resolved; section 3 "Performance budget" and section 6 "Release gates" carry the performance contract.
+Status: **accepted 2026-10-02, version 4 (two adversarial reviewers over three rounds, plus an outside performance review); implemented in #135 (978041f, merged 2026-10-02); Gate 0 (real phone and second computer, `scripts/gate0/`) still pending and required before release** (ADR [0005](decisions/0005-multi-computer.md)). Sections 7–9 list every review finding and how it is resolved; section 3 "Performance budget" and section 6 "Release gates" carry the performance contract.
 
-One phone uses several computers (for example a Mac, a Linux server and a VPS) from one Home Screen app: one Sessions list, one Wall, new sessions on any computer. This document fixes the architecture, the trust model and the build order before any code is written.
+One phone uses several computers (for example a Mac, a Linux server and a VPS) from one Home Screen app: one Sessions list, one Wall, new sessions on any computer. This document fixed the architecture, the trust model and the build order before any code was written; #135 implements it.
 
 ![Concept: one Sessions list across all computers, with a colour dot and label per computer, and a Computers screen to add and manage computers](images/multi-computer-concept.png)
 
@@ -57,7 +57,7 @@ The gateway forwards the request `Origin` with every authenticated call. The bro
 
 Requests without an `Origin` header are not trusted as "own origin": browsers omit `Origin` on same-origin GETs and on cross-origin `no-cors` GETs, and a `no-cors` GET from any same-site page reaches the peer with its cookie (verified). API requests must carry `Sec-Fetch-Site: same-origin` or a bound `Origin`; `Sec-Fetch-Mode: no-cors` is rejected on `/api`.
 
-Origin parsing is strict: `https` only, default port only (an explicit `:443` is rejected), no trailing dot, no control characters, never `null`, exact host match (near misses such as `xtailX.ts.net` or `tailX.ts.net.evil.com` are rejected), punycode shown as is. WebSocket origin patterns become per request (today they are fixed at start, `handler.go:112-125`, `live.go:109`); `InsecureSkipVerify` is never used. Preflight `OPTIONS` is answered only for exact bound origins.
+Origin parsing is strict: `https` only, default port only (an explicit `:443` is rejected), no trailing dot, no control characters, never `null`, exact host match (near misses such as `xtailX.ts.net` or `tailX.ts.net.evil.com` are rejected), punycode shown as is. WebSocket origin patterns become per request (before #135 they were fixed at start, `handler.go:112-125`, `live.go:109`); `InsecureSkipVerify` is never used. Preflight `OPTIONS` is answered only for exact bound origins.
 
 ### Same tailnet is not same owner
 
@@ -107,7 +107,7 @@ A small stream on the wire can still be large work on the phone: an outside revi
 - **One phone-wide scheduler** owns a budget for live tiles, open connections, decoded bytes per second and reconnect attempts.
 - **The active terminal comes first**: it keeps today's limits; Wall tiles and background observers are suspended when offscreen or when the app is in the background.
 - **Thumbnail streams are throttled at the source:** starting point **4 live Wall thumbnails at 5 updates per second, enforced by the broker** for read-only thumbnail viewers. This stays revision-correct because each patch is built from that viewer's last delivered frame to the latest (`internal/broker/viewer.go:322`, `:709-735`); history notices use their own path and are not throttled. A skipped delivery arms a **trailing timer** that delivers when the next slot opens, so output that stops mid-burst still paints (tested). The numbers are tuned on real phones.
-- **Tiles beyond the live limit** show their last frame with a **Paused** mark and go live again when they become one of the live tiles.
+- **Tiles beyond the live limit** show their last frame with a **Paused** mark (a tile that was never live shows the session name and Paused) and go live again when they become one of the live tiles.
 - **Older peers** that do not support the `thumbnail` mode (attached without it, by revision gating) count as full-rate streams in the budget, or show a static tile.
 - Every limit has a test, and the release gates in section 6 measure it.
 
@@ -141,7 +141,7 @@ Every message from every computer (HTTP responses and WebSocket frames) is valid
 
 ### Notifications
 
-Push from home only in the MVP; peer Waiting and Working states show in the list and on the Wall while the app is open. A service-worker registration must be on the page's own origin, so peer push means several scoped registrations on home's origin, each subscribed with one peer's VAPID key. Gate 0 tests this on iOS; if it works, it is the first follow-up.
+Push from home only in the MVP (as built: the app subscribes on home only); peer Waiting and Working states show in the list and on the Wall while the app is open. A service-worker registration must be on the page's own origin, so peer push means several scoped registrations on home's origin, each subscribed with one peer's VAPID key. Gate 0 tests this on iOS; if it works, it is the first follow-up.
 
 ## 4. Protocol and storage changes (rule 6)
 
@@ -172,7 +172,7 @@ The owner asked for the best stack for performance, in any language.
 
 ### Gate 0 (blocking; owner, real iPhone and Android)
 
-A small harness, **to be committed first** (`scripts/gate0/`, about 40 lines; earlier reviewer experiments were throwaway and are reported, not reproducible, evidence: one HTTPS endpoint that sets and echoes a `__Host-` Strict cookie with credentialed CORS and a WebSocket) runs behind Tailscale Serve on two machines in one tailnet. Running it changes Tailscale Serve, so it needs the owner's approval (rule 12). From the installed home app, over **IPv4**:
+A small harness, now committed (`scripts/gate0/`, see its README; earlier reviewer experiments were throwaway and are reported, not reproducible, evidence: one HTTPS endpoint that sets and echoes a `__Host-` Strict cookie with credentialed CORS and a WebSocket) runs behind Tailscale Serve on two machines in one tailnet. Running it changes Tailscale Serve, so it needs the owner's approval (rule 12). From the installed home app, over **IPv4**:
 
 1. A credentialed `fetch` to the peer sets its cookie; later `fetch` and the WebSocket send it.
 2. The cookie survives killing the app and rebooting the phone, and stays in the app's own cookie jar.

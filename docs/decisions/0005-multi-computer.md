@@ -1,6 +1,6 @@
 # ADR 0005: Multi-computer through direct same-site links
 
-- Status: Accepted by the owner on 2026-10-02 (version 4). Implementation in progress; Gate 0 (real iPhone and Android) must pass before release, and the implementation pull request needs the owner's approval before merge
+- Status: Accepted by the owner on 2026-10-02 (version 4). Implemented in #135 (merged 2026-10-02 with the owner's approval); Gate 0 (real iPhone and Android) must pass before release
 - Date: 2026-10-01
 - Design: [`docs/multi-computer.md`](../multi-computer.md)
 

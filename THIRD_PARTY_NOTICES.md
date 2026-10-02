@@ -1,6 +1,6 @@
 # Third-party notices
 
-This file is a preparatory dependency inventory for private development. Direct and transitive versions are locked. Unsigned development artifacts can be built with the scripts under `packaging/`, but no release artifact has been distributed and the full notice audit is pending. Before a release candidate is assembled, generate an SBOM from the locked dependency manifests, inspect transitive dependencies, preserve required upstream `LICENSE` and `NOTICE` material, and replace this preparatory list with the exact shipped inventory.
+This file is a preparatory dependency inventory for private development. Direct and transitive versions are locked. Unsigned development artifacts can be built with the scripts under `packaging/`. Unsigned private-beta binaries (`v0.1.0-beta.1` and `v0.1.0-beta.2`) were shared only with invited collaborators; the full notice audit is pending. Before a release candidate is assembled, generate an SBOM from the locked dependency manifests, inspect transitive dependencies, preserve required upstream `LICENSE` and `NOTICE` material, and replace this preparatory list with the exact shipped inventory.
 
 ## Direct dependencies (runtime and build)
 
@@ -14,7 +14,9 @@ This file is a preparatory dependency inventory for private development. Direct 
 | `modernc.org/sqlite` | v1.59.0 | BSD-3-Clause; locked source also carries SQLite's public-domain dedication and the bundled sqlite-vec MIT notice |
 | `github.com/Microsoft/go-winio` | v0.6.2 | MIT |
 | `github.com/charmbracelet/x/term` | v0.2.2 | MIT |
-| `golang.org/x/sys` | v0.47.0 | BSD-3-Clause |
+| `github.com/charmbracelet/x/windows` | v0.2.2 | MIT |
+| `github.com/creack/pty` | v1.1.24 | MIT |
+| `golang.org/x/sys` | v0.48.0 | BSD-3-Clause |
 | `rsc.io/qr` | v0.2.0 | BSD-3-Clause (Copyright 2009 The Go Authors) |
 | React and React DOM | 19.3.0 | MIT |
 | Vite | 8.3.0 | MIT |

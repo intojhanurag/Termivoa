@@ -8,6 +8,9 @@ with a way back to the terminal and the agent status at the bottom.
 This note describes the design and its security model. The wire format is in
 `protocol/v1` (`previews`, `gateway.preview.check`, `GET /api/v1/preview`).
 
+With several computers ([multi-computer.md](multi-computer.md)), preview works
+for home sessions only. A peer session shows no chip.
+
 ## Parts
 
 ```text

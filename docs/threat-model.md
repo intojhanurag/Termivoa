@@ -249,8 +249,8 @@ New attackers and what limits them:
   key that survives cleaning home. Limits: per-device binding (a phone that
   paired with a peer directly is never reachable from home's app),
   owner and node checks, the app's removal of every non-own service worker
-  on each load, and the required recovery: `pterm revoke --via <home>` on
-  every peer, then delete the Home Screen app (iPhone) or also clear the
+  on each load, and the required recovery: `pterm revoke --via
+  <home-origin>` (the full `https://` address) on every peer, then delete the Home Screen app (iPhone) or also clear the
   site's data in Chrome (Android), then pair again. Same-user malware on home
   therefore moves into scope for every peer. Home should be the least
   exposed always-on computer, and its HTTPS origin must serve only `pterm`
