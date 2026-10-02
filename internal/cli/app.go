@@ -9,6 +9,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -41,7 +42,11 @@ type Confirmer interface {
 
 // IDSource returns one fresh operation ID. It is deliberately separate from
 // the per-RPC correlation IDs owned by localclient.
-type IDSource func() (string, error)
+type IDSource func() string
+
+// NewOperationID returns a random UUID for durable mutation deduplication. It
+// must be called once per user-confirmed operation.
+func NewOperationID() string { return uuid.New().String() }
 
 type App struct {
 	management Management
@@ -143,10 +148,7 @@ func (app *App) Create(ctx context.Context, projectID, shellProfileID string) (p
 	if err := ctx.Err(); err != nil {
 		return protocol.BrokerRPCSessionRecord{}, err
 	}
-	operationID, err := app.newID()
-	if err != nil {
-		return protocol.BrokerRPCSessionRecord{}, fmt.Errorf("create session operation ID: %w", err)
-	}
+	operationID := app.newID()
 	if !validUUID(operationID) {
 		return protocol.BrokerRPCSessionRecord{}, errors.New("generated creation operation ID must be a canonical lowercase UUID")
 	}
@@ -194,10 +196,7 @@ func (app *App) Terminate(ctx context.Context, sessionID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	operationID, err := app.newID()
-	if err != nil {
-		return fmt.Errorf("create termination operation ID: %w", err)
-	}
+	operationID := app.newID()
 	result, err := app.management.Terminate(ctx, ref, operationID)
 	if err != nil {
 		if localclient.IsDeliveryUncertain(err) {

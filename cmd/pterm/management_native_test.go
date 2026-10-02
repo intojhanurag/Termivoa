@@ -54,10 +54,7 @@ func TestManagementCommandsAgainstNativeBroker(t *testing.T) {
 	if output, err := runCommand("list", nil); err != nil || output != "No managed sessions.\n" {
 		t.Fatalf("empty list = %q, %v", output, err)
 	}
-	operationID, err := cli.NewOperationID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	operationID := cli.NewOperationID()
 	created, err := client.Create(ctx, operationID, commandProjectID, commandProfileID)
 	if err != nil {
 		t.Fatal(err)

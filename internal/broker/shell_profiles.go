@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
@@ -144,12 +145,8 @@ func saveShellProfiles(ctx context.Context, persistence *store.Store, candidates
 		}) {
 			continue
 		}
-		id, err := randomUUID()
-		if err != nil {
-			return err
-		}
 		profile := store.ShellProfile{
-			ID: id, DisplayName: candidate.name, Platform: candidate.platform, ExecutablePath: candidate.executable,
+			ID: uuid.New().String(), DisplayName: candidate.name, Platform: candidate.platform, ExecutablePath: candidate.executable,
 			Arguments: candidate.arguments, CreatedAt: created, UpdatedAt: created,
 		}
 		if err := persistence.PutShellProfile(ctx, profile); err != nil {

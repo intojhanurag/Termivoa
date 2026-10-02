@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -43,7 +44,7 @@ func (clock *authClock) Set(value time.Time) {
 func newAuthStreamFixture(t *testing.T) (*managementFixture, *Session, *streamProcess, *auth.Service, *authClock) {
 	t.Helper()
 	fixture, session, process := newStreamFixture(t)
-	fixture.registry.config.newID = randomUUID
+	fixture.registry.config.newID = func() (string, error) { return uuid.New().String(), nil }
 	clock := &authClock{now: time.Now().UTC()}
 	service, err := auth.NewService(auth.ServiceConfig{Store: fixture.persistence, Now: clock.Now})
 	if err != nil {
@@ -97,7 +98,7 @@ func startRPCTestClient(t *testing.T, server *ManagementServer, kind protocol.IP
 // the broker poisoned the connection instead of answering.
 func (client *rpcTestClient) exchange(t *testing.T, messageType string, payload any) ([]byte, error) {
 	t.Helper()
-	requestID, _ := randomUUID()
+	requestID := uuid.New().String()
 	body, _ := json.Marshal(payload)
 	data, _ := json.Marshal(map[string]any{"version": 1, "type": messageType, "requestId": requestID, "payload": json.RawMessage(body)})
 	_ = client.conn.SetDeadline(time.Now().Add(3 * time.Second))

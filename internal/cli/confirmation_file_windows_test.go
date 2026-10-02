@@ -15,10 +15,7 @@ import (
 )
 
 func TestFileTerminalIORejectsOverlappedPipe(t *testing.T) {
-	id, err := NewOperationID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := NewOperationID()
 	name, err := windows.UTF16PtrFromString(`\\.\pipe\pterm-io-test-` + id)
 	if err != nil {
 		t.Fatal(err)

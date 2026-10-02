@@ -61,10 +61,7 @@ func TestStopKeepsSessionsAndShutdownEndsEverything(t *testing.T) {
 			t.Fatalf("%s did not exit", name)
 		}
 	}
-	operationID, err := cli.NewOperationID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	operationID := cli.NewOperationID()
 	created, err := client.Create(ctx, operationID, commandProjectID, commandProfileID)
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +158,7 @@ func TestWindowsUninstallStopsProcessesOnlyWithoutSessions(t *testing.T) {
 		})
 	}()
 	<-gatewayReady
-	operationID, _ := cli.NewOperationID()
+	operationID := cli.NewOperationID()
 	created, err := client.Create(ctx, operationID, commandProjectID, commandProfileID)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +171,7 @@ func TestWindowsUninstallStopsProcessesOnlyWithoutSessions(t *testing.T) {
 	}
 
 	ref := localclient.SessionRef{ID: created.Session.ID, Generation: created.Session.Generation}
-	operationID, _ = cli.NewOperationID()
+	operationID = cli.NewOperationID()
 	if _, err := client.Terminate(ctx, ref, operationID); err != nil {
 		t.Fatal(err)
 	}

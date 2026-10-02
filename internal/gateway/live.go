@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -16,6 +14,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"uuid"
 
 	"github.com/coder/websocket"
 
@@ -291,17 +290,11 @@ func streamEndStatus(last []byte) (websocket.StatusCode, string) {
 // invalidRequestNotice is a canonical host error for a rejected phone message.
 // Its request ID is fresh because the rejected message is untrusted.
 func invalidRequestNotice(message string) ([]byte, error) {
-	var id [16]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		return nil, err
-	}
-	id[6], id[8] = id[6]&0x0f|0x40, id[8]&0x3f|0x80
 	payload, err := json.Marshal(protocol.ErrorPayload{Code: protocol.InvalidRequest, Message: message})
 	if err != nil {
 		return nil, err
 	}
-	requestID := fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16])
-	notice, err := json.Marshal(protocol.Envelope{Version: protocol.Version, Type: protocol.Error, RequestID: requestID, Payload: payload})
+	notice, err := json.Marshal(protocol.Envelope{Version: protocol.Version, Type: protocol.Error, RequestID: uuid.New().String(), Payload: payload})
 	if err != nil {
 		return nil, err
 	}

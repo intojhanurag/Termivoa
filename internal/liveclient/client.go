@@ -5,7 +5,6 @@ package liveclient
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/desktop"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -453,10 +453,7 @@ func (output contextOutput) Write(data []byte) (int, error) {
 }
 
 func encode(kind protocol.MessageType, sessionID, generation string, payload any) (protocol.Envelope, error) {
-	id, err := newUUID()
-	if err != nil {
-		return protocol.Envelope{}, err
-	}
+	id := uuid.New().String()
 	data, err := marshal(payload)
 	if err != nil {
 		return protocol.Envelope{}, err
@@ -486,15 +483,6 @@ func marshal(value any) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
-}
-
-func newUUID() (string, error) {
-	var data [16]byte
-	if _, err := rand.Read(data[:]); err != nil {
-		return "", err
-	}
-	data[6], data[8] = data[6]&15|64, data[8]&63|128
-	return fmt.Sprintf("%x-%x-%x-%x-%x", data[:4], data[4:6], data[6:8], data[8:10], data[10:]), nil
 }
 
 // write serializes complete frames. Cancellation after writing begins closes

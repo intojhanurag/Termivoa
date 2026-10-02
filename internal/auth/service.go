@@ -4,12 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
@@ -64,21 +64,19 @@ func OwnOriginOnly(app store.AppBinding) error {
 	return nil
 }
 
-// ServiceConfig injects persistence, time and randomness. Tests use a fixed
-// clock; production uses time.Now and crypto/rand.
+// ServiceConfig injects persistence and time. Tests use a fixed clock;
+// production uses time.Now.
 type ServiceConfig struct {
-	Store  *store.Store
-	Now    func() time.Time
-	Random io.Reader
+	Store *store.Store
+	Now   func() time.Time
 }
 
 // Service is the broker-owned pairing and browser-credential authority. It
 // keeps revocations fail-closed in memory even when persistence fails and owns
 // the live-stream bindings that revocation, logout and expiry must close.
 type Service struct {
-	store  *store.Store
-	now    func() time.Time
-	random io.Reader
+	store *store.Store
+	now   func() time.Time
 
 	mu                 sync.Mutex
 	revokedDevices     map[string]struct{}
@@ -119,11 +117,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	if config.Random == nil {
-		config.Random = rand.Reader
-	}
 	return &Service{
-		store: config.Store, now: config.Now, random: config.Random,
+		store: config.Store, now: config.Now,
 		revokedDevices: make(map[string]struct{}), revokedCredentials: make(map[string]struct{}),
 		bindings:       make(map[*Binding]struct{}),
 		redeems:        rateWindow{limit: RedeemAttemptsPerMin, span: time.Minute},
@@ -144,7 +139,7 @@ func (service *Service) CreateGrant(ctx context.Context) (string, time.Time, err
 // and polling then accept only that origin.
 func (service *Service) CreateBoundGrant(ctx context.Context, app store.AppBinding) (string, time.Time, error) {
 	now := service.clock()
-	secret, err := generateSecret(service.random)
+	secret, err := generateSecret(rand.Reader)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -152,10 +147,7 @@ func (service *Service) CreateBoundGrant(ctx context.Context, app store.AppBindi
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	id, err := newUUID(service.random)
-	if err != nil {
-		return "", time.Time{}, err
-	}
+	id := uuid.New().String()
 	expires := now.Add(PairingGrantLifetime)
 	if err := service.store.CreatePairingGrant(ctx, store.PairingGrant{
 		ID: id, Hash: hash, CreatedAt: now, ExpiresAt: expires, App: app,
@@ -194,7 +186,7 @@ func (service *Service) RedeemChecked(ctx context.Context, grant, label string, 
 	if err != nil {
 		return protocol.HTTPPairRedeemResponse{}, err
 	}
-	pollSecret, err := generateSecret(service.random)
+	pollSecret, err := generateSecret(rand.Reader)
 	if err != nil {
 		return protocol.HTTPPairRedeemResponse{}, err
 	}
@@ -202,11 +194,8 @@ func (service *Service) RedeemChecked(ctx context.Context, grant, label string, 
 	if err != nil {
 		return protocol.HTTPPairRedeemResponse{}, err
 	}
-	id, err := newUUID(service.random)
-	if err != nil {
-		return protocol.HTTPPairRedeemResponse{}, err
-	}
-	code, err := verificationCode(service.random)
+	id := uuid.New().String()
+	code, err := verificationCode(rand.Reader)
 	if err != nil {
 		return protocol.HTTPPairRedeemResponse{}, err
 	}
@@ -260,7 +249,7 @@ func (service *Service) PollChecked(ctx context.Context, pendingID, pollSecret s
 	if err != nil {
 		return PollResult{}, err
 	}
-	credential, err := generateSecret(service.random)
+	credential, err := generateSecret(rand.Reader)
 	if err != nil {
 		return PollResult{}, err
 	}
@@ -272,14 +261,8 @@ func (service *Service) PollChecked(ctx context.Context, pendingID, pollSecret s
 	if err != nil {
 		return PollResult{}, err
 	}
-	deviceID, err := newUUID(service.random)
-	if err != nil {
-		return PollResult{}, err
-	}
-	sessionID, err := newUUID(service.random)
-	if err != nil {
-		return PollResult{}, err
-	}
+	deviceID := uuid.New().String()
+	sessionID := uuid.New().String()
 	service.mu.Lock()
 	pendingRevoked := make([]string, 0, len(service.revokedDevices))
 	for id := range service.revokedDevices {
@@ -739,26 +722,6 @@ func verificationCode(random io.Reader) (string, error) {
 		}
 	}
 	return "", ErrRandomness
-}
-
-func newUUID(random io.Reader) (string, error) {
-	var value [16]byte
-	if _, err := io.ReadFull(random, value[:]); err != nil {
-		return "", ErrRandomness
-	}
-	value[6] = (value[6] & 0x0f) | 0x40
-	value[8] = (value[8] & 0x3f) | 0x80
-	var encoded [36]byte
-	hex.Encode(encoded[0:8], value[0:4])
-	encoded[8] = '-'
-	hex.Encode(encoded[9:13], value[4:6])
-	encoded[13] = '-'
-	hex.Encode(encoded[14:18], value[6:8])
-	encoded[18] = '-'
-	hex.Encode(encoded[19:23], value[8:10])
-	encoded[23] = '-'
-	hex.Encode(encoded[24:36], value[10:16])
-	return string(encoded[:]), nil
 }
 
 func validUUIDText(value string) bool {

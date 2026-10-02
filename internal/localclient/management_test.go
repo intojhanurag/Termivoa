@@ -103,10 +103,10 @@ func TestDialManagementAuthenticatesAsCLI(t *testing.T) {
 func TestManagementClientListAndStatusCorrelatePartialFrames(t *testing.T) {
 	clientConnection, serverConnection := net.Pipe()
 	requestIDs := []string{testRequest1, testRequest2}
-	client := newTestClient(t, clientConnection, func() (string, error) {
+	client := newTestClient(t, clientConnection, func() string {
 		value := requestIDs[0]
 		requestIDs = requestIDs[1:]
-		return value, nil
+		return value
 	})
 	defer client.Close()
 
@@ -278,10 +278,10 @@ func TestManagementClientCancellationInterruptsBlockedRead(t *testing.T) {
 func TestManagementClientCancellationWhileWaitingDoesNotWriteSecondRequest(t *testing.T) {
 	clientConnection, serverConnection := net.Pipe()
 	requestIDs := []string{testRequest1, testRequest2}
-	client := newTestClient(t, clientConnection, func() (string, error) {
+	client := newTestClient(t, clientConnection, func() string {
 		value := requestIDs[0]
 		requestIDs = requestIDs[1:]
-		return value, nil
+		return value
 	})
 	defer client.Close()
 	firstRead := make(chan struct{})
@@ -373,15 +373,15 @@ func TestMutationOperationMismatchClosesBeforeQueuedMutation(t *testing.T) {
 			defer serverConnection.Close()
 			secondPrepared := make(chan struct{})
 			idCalls := 0
-			client := newTestClient(t, clientConnection, func() (string, error) {
+			client := newTestClient(t, clientConnection, func() string {
 				idCalls++
 				if idCalls == 1 {
-					return testRequest1, nil
+					return testRequest1
 				}
 				if idCalls == 2 {
 					close(secondPrepared)
 				}
-				return testRequest2, nil
+				return testRequest2
 			})
 			defer client.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -509,7 +509,7 @@ func newTestClient(t *testing.T, connection net.Conn, source RequestIDSource) *M
 	return client
 }
 
-func fixedRequestID() (string, error) { return testRequest1, nil }
+func fixedRequestID() string { return testRequest1 }
 
 func testRecord(state protocol.State) protocol.BrokerRPCSessionRecord {
 	record := protocol.BrokerRPCSessionRecord{

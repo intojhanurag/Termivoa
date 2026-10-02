@@ -4,14 +4,13 @@ package localclient
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -55,7 +54,7 @@ func IsDeliveryUncertain(err error) bool {
 }
 
 // RequestIDSource returns a fresh canonical UUID for request correlation.
-type RequestIDSource func() (string, error)
+type RequestIDSource func() string
 
 // ManagementClient serializes bounded request/response exchanges on one local
 // IPC connection. A CLI invocation should use its own short-lived client;
@@ -80,13 +79,15 @@ func DialManagement(ctx context.Context, runtimeDir, clientBuild string) (*Manag
 	if err != nil {
 		return nil, err
 	}
-	client, err := newManagementClient(connection, newUUID)
+	client, err := newManagementClient(connection, newRequestID)
 	if err != nil {
 		_ = connection.Close()
 		return nil, err
 	}
 	return client, nil
 }
+
+func newRequestID() string { return uuid.New().String() }
 
 func newManagementClient(connection net.Conn, requestID RequestIDSource) (*ManagementClient, error) {
 	if connection == nil {
@@ -212,10 +213,7 @@ func (client *ManagementClient) request(
 ) (protocol.BrokerRPCEnvelope, error) {
 	client.requestMu.Lock()
 	defer client.requestMu.Unlock()
-	requestID, err := client.requestID()
-	if err != nil {
-		return protocol.BrokerRPCEnvelope{}, fmt.Errorf("create management request ID: %w", err)
-	}
+	requestID := client.requestID()
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return protocol.BrokerRPCEnvelope{}, fmt.Errorf("encode management request payload: %w", err)
@@ -378,24 +376,4 @@ func deliveryError(ctx context.Context, err error, mutation bool) error {
 		return &DeliveryUncertainError{err: err}
 	}
 	return err
-}
-
-func newUUID() (string, error) {
-	var value [16]byte
-	if _, err := rand.Read(value[:]); err != nil {
-		return "", err
-	}
-	value[6] = (value[6] & 0x0f) | 0x40
-	value[8] = (value[8] & 0x3f) | 0x80
-	var encoded [36]byte
-	hex.Encode(encoded[0:8], value[0:4])
-	encoded[8] = '-'
-	hex.Encode(encoded[9:13], value[4:6])
-	encoded[13] = '-'
-	hex.Encode(encoded[14:18], value[6:8])
-	encoded[18] = '-'
-	hex.Encode(encoded[19:23], value[8:10])
-	encoded[23] = '-'
-	hex.Encode(encoded[24:36], value[10:16])
-	return string(encoded[:]), nil
 }

@@ -27,10 +27,7 @@ func TestManagementCommandsCancelSaturatedOutput(t *testing.T) {
 			if command == "terminate" {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				operationID, err := cli.NewOperationID()
-				if err != nil {
-					t.Fatal(err)
-				}
+				operationID := cli.NewOperationID()
 				created, err := client.Create(ctx, operationID, commandProjectID, commandProfileID)
 				if err != nil {
 					t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
@@ -377,10 +378,7 @@ func (subscription *ViewerSubscription) stream(ctx context.Context, plan viewerD
 }
 
 func (subscription *ViewerSubscription) streamSnapshot(ctx context.Context, plan viewerDeliveryPlan) (viewerDeliveryKind, string, []bool, error) {
-	snapshotID, err := randomUUID()
-	if err != nil {
-		return viewerDeliverySnapshot, "", nil, err
-	}
+	snapshotID := uuid.New().String()
 	metadata, rows, err := protocol.Snapshot(
 		plan.target.frame, plan.target.historyEpoch, plan.target.historyRevision,
 	)
@@ -496,10 +494,7 @@ func (subscription *ViewerSubscription) hostMessageForRequest(messageType protoc
 		return nil, fmt.Errorf("broker: encode %s payload: %w", messageType, err)
 	}
 	if requestID == "" {
-		requestID, err = randomUUID()
-		if err != nil {
-			return nil, err
-		}
+		requestID = uuid.New().String()
 	}
 	sessionID, generation := subscription.session.id, subscription.session.generation
 	message, err := json.Marshal(protocol.Envelope{

@@ -37,7 +37,7 @@ func StopGateway(ctx context.Context, runtimeDir, clientBuild string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	client, err := newAdminClient(connection, newUUID)
+	client, err := newAdminClient(connection, newRequestID)
 	if err != nil {
 		_ = connection.Close()
 		return false, err

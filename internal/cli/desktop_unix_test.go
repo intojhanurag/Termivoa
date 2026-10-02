@@ -533,10 +533,7 @@ func startDesktopBroker(t *testing.T) (string, broker.ManagedSession, protocol.B
 		t.Fatal(err)
 	}
 	defer client.Close()
-	operationID, err := NewOperationID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	operationID := NewOperationID()
 	created, err := client.Create(ctx, operationID, projectID, profileID)
 	if err != nil {
 		t.Fatal(err)

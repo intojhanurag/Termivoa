@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -283,12 +284,8 @@ func (server *ManagementServer) addProject(ctx context.Context, payload protocol
 	if protocol.ValidateDisplayText(name, protocol.MaxNamedOptionBytes) != nil {
 		name = "Project"
 	}
-	id, err := randomUUID()
-	if err != nil {
-		return protocol.AdminRPCProject{}, err
-	}
 	now := time.Now().UTC()
-	project := store.Project{ID: id, DisplayName: name, CanonicalPath: resolved, CreatedAt: now, UpdatedAt: now}
+	project := store.Project{ID: uuid.New().String(), DisplayName: name, CanonicalPath: resolved, CreatedAt: now, UpdatedAt: now}
 	if err := server.config.Store.PutProject(ctx, project); err != nil {
 		return protocol.AdminRPCProject{}, err
 	}

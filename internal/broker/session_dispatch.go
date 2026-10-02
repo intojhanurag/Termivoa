@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -61,10 +62,7 @@ func (server *ManagementServer) serveSessionConnection(
 		return stream.failure(ctx, hello, protocol.Unauthorized,
 			"live access requires a local CLI desktop or a credential-bound gateway browser")
 	}
-	stream.connectionID, err = randomUUID()
-	if err != nil {
-		return err
-	}
+	stream.connectionID = uuid.New().String()
 	if browser {
 		stream.deviceID = binding.Principal().DeviceID
 		// Revocation, logout or expiry interrupts a peer blocked in ReadFrame;
@@ -78,8 +76,8 @@ func (server *ManagementServer) serveSessionConnection(
 			case <-stopWatch:
 			}
 		}()
-	} else if stream.deviceID, err = randomUUID(); err != nil {
-		return err
+	} else {
+		stream.deviceID = uuid.New().String()
 	}
 	if err := stream.send(ctx, hello, protocol.Welcome, protocol.WelcomePayload{
 		BrokerGeneration: server.config.BrokerGeneration, HostBuild: server.config.HostBuild,
@@ -141,17 +139,13 @@ func (stream *sessionConnection) endAccess(ctx context.Context, conn net.Conn) e
 		message = "browser access expired; pair this device again"
 	}
 	var sendErr error
-	requestID, err := randomUUID()
+	payload, _ := json.Marshal(protocol.AccessRevokedPayload{Message: message})
+	notice, err := json.Marshal(protocol.Envelope{
+		Version: protocol.Version, Type: protocol.AccessRevoked, RequestID: uuid.New().String(), Payload: payload,
+	})
 	if err == nil {
-		payload, _ := json.Marshal(protocol.AccessRevokedPayload{Message: message})
-		var notice []byte
-		notice, err = json.Marshal(protocol.Envelope{
-			Version: protocol.Version, Type: protocol.AccessRevoked, RequestID: requestID, Payload: payload,
-		})
-		if err == nil {
-			_ = conn.SetReadDeadline(time.Time{})
-			sendErr = stream.writer.Send(ctx, notice, func() {})
-		}
+		_ = conn.SetReadDeadline(time.Time{})
+		sendErr = stream.writer.Send(ctx, notice, func() {})
 	}
 	if stream.viewer != nil {
 		_ = stream.viewer.Close()
@@ -373,11 +367,7 @@ func (stream *sessionConnection) failure(ctx context.Context, request protocol.E
 // rejectMalformed tells the client why the stream is closing before the
 // connection ends. The request ID is fresh because the original is untrusted.
 func (stream *sessionConnection) rejectMalformed(ctx context.Context) error {
-	requestID, err := randomUUID()
-	if err != nil {
-		return err
-	}
-	return stream.send(ctx, protocol.Envelope{RequestID: requestID}, protocol.Error,
+	return stream.send(ctx, protocol.Envelope{RequestID: uuid.New().String()}, protocol.Error,
 		protocol.ErrorPayload{Code: protocol.InvalidRequest, Message: "message does not match protocol v1; reconnecting is required"})
 }
 
