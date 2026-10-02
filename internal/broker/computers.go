@@ -180,7 +180,11 @@ func (server *ManagementServer) resolveVia(ctx context.Context, via string, allo
 }
 
 // lookupComputer is home's check before it lists a computer: the host must be
-// a node of its own tailnet, owned by home's owner or tagged.
+// a node of its own tailnet, owned by home's owner or tagged. It uses Fresh,
+// which answers from the cached snapshot while it is under 60 s old and runs
+// `tailscale status` (10 s limit) only when it is older. The grace snapshot
+// that Snapshot returns can be 10 minutes old and is nil right after start;
+// pinning a node for a new computer, a rare user action, needs a recent one.
 func (server *ManagementServer) lookupComputer(ctx context.Context, origin string) (tailnet.Node, error) {
 	if own := server.ownOrigin.Load(); own != nil && *own == origin {
 		return tailnet.Node{}, errComputerSelf
