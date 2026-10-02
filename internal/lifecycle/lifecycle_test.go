@@ -412,10 +412,6 @@ func TestServeFindings(t *testing.T) {
 			t.Errorf("%s: status=%+v err=%v", name, status, err)
 		}
 	}
-	status, err := ParseTailscaleStatus([]byte(`{"BackendState":"Running","Self":{"DNSName":"mac.tail1234.ts.net."}}`))
-	if err != nil || status.BackendState != "Running" || status.DNSName != "mac.tail1234.ts.net" {
-		t.Fatalf("status = %+v, %v", status, err)
-	}
 }
 
 func TestExecutableProblems(t *testing.T) {

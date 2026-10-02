@@ -280,11 +280,10 @@ var tailscaleRun = func(ctx context.Context, cli string, stream io.Writer, args 
 type tailscaleReport struct {
 	installed     bool
 	needsOperator bool // Linux: Serve changes need `tailscale set --operator` first
-	status        lifecycle.TailscaleStatus
 	statusErr     error
 	serveErr      error
 	serve         lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
-	tailnet       *tailnet.Status       // nil when the status could not be read
+	tailnet       *tailnet.Status       // `status --json`; nil when it could not be read
 	otherHandlers []string              // other Serve handlers on this computer's own origin
 }
 
@@ -295,16 +294,16 @@ func (report tailscaleReport) phoneOrigin() (origin, problem string) {
 	switch {
 	case !report.installed:
 		return "", "Tailscale is not installed. Install it from https://tailscale.com/download and sign in" + again
-	case report.statusErr != nil:
+	case report.statusErr != nil || report.tailnet == nil:
 		return "", "Tailscale did not report its status. Open Tailscale and sign in" + again
-	case report.status.BackendState != "Running":
-		return "", "Tailscale is not connected (" + report.status.BackendState + "). Run `tailscale up` or sign in from the Tailscale app" + again
-	case report.status.DNSName == "":
+	case report.tailnet.BackendState != "Running":
+		return "", "Tailscale is not connected (" + report.tailnet.BackendState + "). Run `tailscale up` or sign in from the Tailscale app" + again
+	case report.tailnet.Self.Host == "":
 		return "", "Tailscale has no DNS name for this computer. Turn on MagicDNS and HTTPS certificates in the Tailscale admin console" + again
 	}
-	origin = "https://" + strings.ToLower(report.status.DNSName)
+	origin = "https://" + report.tailnet.Self.Host
 	if protocol.ValidatePairingOrigin(origin) != nil {
-		return "", "Tailscale reported an unusable DNS name " + strconv.Quote(report.status.DNSName) + "; set the address yourself with `pterm config origin https://<host>`."
+		return "", "Tailscale reported an unusable DNS name " + strconv.Quote(report.tailnet.Self.Host) + "; set the address yourself with `pterm config origin https://<host>`."
 	}
 	return origin, ""
 }
@@ -328,16 +327,13 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		return tailscaleRun(ctx, cli, nil, args...)
 	}
 	data, err := run("status", "--json")
-	status, parseErr := lifecycle.ParseTailscaleStatus(data)
+	status, parseErr := tailnet.ParseStatus(data)
 	if report.statusErr = errors.Join(err, parseErr); report.statusErr != nil {
 		fmt.Fprintf(output, "  ! tailscale: status unavailable: %v\n", report.statusErr)
 		return report, 1
 	}
-	report.status = status
-	if parsed, err := tailnet.ParseStatus(data); err == nil {
-		report.tailnet = parsed
-	}
-	fmt.Fprintf(output, "  tailscale: %s, host %s\n", status.BackendState, status.DNSName)
+	report.tailnet = status
+	fmt.Fprintf(output, "  tailscale: %s, host %s\n", status.BackendState, status.Self.Host)
 	if status.BackendState != "Running" {
 		problems++
 	}
@@ -360,8 +356,8 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 	problems += len(report.serve.Problems)
 	// Each one is already counted in serve.Problems; this says why it
 	// matters and how to move it. Setup refuses them.
-	if report.otherHandlers = otherServeHandlers(data, status.DNSName); len(report.otherHandlers) > 0 {
-		fmt.Fprintf(output, "  ! %s\n", otherHandlersProblem(status.DNSName, report.otherHandlers))
+	if report.otherHandlers = otherServeHandlers(data, status.Self.Host); len(report.otherHandlers) > 0 {
+		fmt.Fprintf(output, "  ! %s\n", otherHandlersProblem(status.Self.Host, report.otherHandlers))
 	}
 
 	// Dev-server previews (HTTPS 8443) are optional: unconfigured or

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
 // ExecutableProblems reports why a binary location must not be registered
@@ -32,21 +30,6 @@ func ExecutableProblems(goos, path string) []string {
 		problems = append(problems, "pterm is running from a temporary directory; install it first (scripts/install-linux.sh puts it in ~/.local/bin)")
 	}
 	return problems
-}
-
-// TailscaleStatus is the non-secret subset of `tailscale status --json`
-// that setup and doctor print. The parser lives in internal/tailnet.
-type TailscaleStatus struct {
-	BackendState string
-	DNSName      string
-}
-
-func ParseTailscaleStatus(data []byte) (TailscaleStatus, error) {
-	status, err := tailnet.ParseStatus(data)
-	if err != nil {
-		return TailscaleStatus{}, err
-	}
-	return TailscaleStatus{BackendState: status.BackendState, DNSName: status.Self.Host}, nil
 }
 
 // ServeStatus summarizes `tailscale serve status --json`. Configured is true

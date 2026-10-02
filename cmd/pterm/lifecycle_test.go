@@ -529,3 +529,24 @@ func TestOtherHandlersProblemNamesTheRemoveCommands(t *testing.T) {
 		}
 	}
 }
+
+// The phone address comes from the one parsed tailnet status.
+func TestPhoneOriginUsesTheParsedStatus(t *testing.T) {
+	for status, want := range map[string]struct{ origin, problem string }{
+		`{"BackendState":"Running","Self":{"DNSName":"Mac.example.ts.net."}}`: {origin: "https://mac.example.ts.net"},
+		`{"BackendState":"NeedsLogin"}`:                                       {problem: "Tailscale is not connected (NeedsLogin)"},
+		`{"BackendState":"Running","Self":{}}`:                                {problem: "Tailscale has no DNS name for this computer"},
+	} {
+		parsed, err := tailnet.ParseStatus([]byte(status))
+		if err != nil {
+			t.Fatal(err)
+		}
+		origin, problem := tailscaleReport{installed: true, tailnet: parsed}.phoneOrigin()
+		if origin != want.origin || !strings.HasPrefix(problem, want.problem) || (want.problem == "") != (problem == "") {
+			t.Errorf("%s: origin=%q problem=%q", status, origin, problem)
+		}
+	}
+	if _, problem := (tailscaleReport{installed: true}).phoneOrigin(); !strings.HasPrefix(problem, "Tailscale did not report its status") {
+		t.Errorf("no status: problem=%q", problem)
+	}
+}
