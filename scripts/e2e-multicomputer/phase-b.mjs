@@ -200,6 +200,7 @@ try {
 
   await step('B3-new', 'Start a new session on vps from the mac app', async () => {
     await openSessions();
+    await app.waitText('new session on…');
     await click(app, 'new session on…');
     await app.waitText('New session');
     await app.eval(`[...document.querySelectorAll('[aria-label=Computers] .chip')].find((e) => e.innerText.trim() === 'vps').click()`);
@@ -255,7 +256,7 @@ try {
     await sleep(4000);
     const tiles = () => app.eval(`[...document.querySelectorAll('li[data-tile]')].map((li) => ({ key: li.dataset.tile,
       name: li.querySelector('.wall-name')?.innerText, computer: li.querySelector('.wall-computer')?.innerText.trim(),
-      paused: !!li.querySelector('.wall-paused'), text: li.querySelector('.wall-host')?.innerText.replace(/\\s+/g, ' ').trim() }))`);
+      paused: /\\bpaused\\b/i.test(li.querySelector('.wall-screen')?.innerText ?? ''), text: li.querySelector('.wall-host')?.innerText.replace(/\\s+/g, ' ').trim() }))`);
     const a = await tiles();
     await sleep(3000);
     const b = await tiles();
@@ -375,41 +376,45 @@ try {
     return { shown, started, tapped, terminalPath };
   }
 
-  await step('B2b-same', 'In-terminal link, approved with y in that same app terminal', async () => {
-    const { shown, started, tapped, terminalPath } = await terminalLinkToCode('b2b', 'mac-ssh');
+  const banner = () => app.eval(`document.querySelector('.banner')?.innerText.replace(/\\s+/g, ' ').trim() ?? ''`);
+  /** In-app navigation, as the app's own links do: no new page load. */
+  const inApp = (path) => app.eval(`history.pushState(null, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`);
+
+  await step('B2b-back', 'Leave the add page with Back to type y in the terminal', async () => {
+    const { shown, tapped, terminalPath } = await terminalLinkToCode('b2b-back', 'mac-ssh0');
     check('B2b-tap', 'Tapping the add-computer link in the terminal opens the confirm sheet', tapped,
-      tapped ? 'sheet opened' : 'a tap on the wrapped link (46 columns) did nothing; a tap on a file path in the same terminal opens Files. Continued by pasting the link');
-    // The CLI that waits for y runs in the mac-ssh terminal: go back to it.
-    await app.go(`${mac.origin}${terminalPath}`);
-    await liveReady(false);
-    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes(`shows code ${shown}`), { what: 'prompt with the code', timeout: 15000 });
-    await typeLine(app, 'y');
-    await until(async () => /Approved/.test(await terminalText(app)), { what: 'CLI approved', timeout: 15000 }).catch(() => undefined);
-    await shot('b2b-same-app-approved');
-    await openSessions();
-    await sleep(6000);
-    const probs = await problems();
-    const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps'));
-    time('add through the terminal, approved in the same app (link → list)', Date.now() - started);
-    await shot('b2b-same-app-sessions');
-    check('B2b-same', 'Approved by typing y in the same app\'s terminal: vps is usable afterwards', probs.length === 0 && vpsRows.length > 0,
-      `problems ${JSON.stringify(probs)}; vps rows ${vpsRows.length}; vps devices: ${(await vps.cli(['devices'])).stdout.split('\n').filter((l) => l.includes('mac.tailx') && !l.includes('revoked')).map((l) => l.replace(/\s+/g, ' ')).join(' / ') || 'no active device for mac'}`);
+      tapped ? 'sheet opened' : 'the sheet opens on mouseup, then the click that follows the tap closes it again; continued by pasting the link');
+    await app.eval('history.back()');
+    await sleep(3000);
+    const where = await app.eval('location.pathname');
+    const bar = await banner();
+    await shot('b2b-back');
+    check('B2b-back', 'After Back from the waiting add page, the add keeps running (banner "Adding vps… approve on vps")',
+      bar.includes('Adding vps'), `Back went to ${where} (the add page was a separate page load); banner: ${bar || 'none'}; code was ${shown}; terminal ${terminalPath}`);
   });
 
-  await step('B2b', 'In-terminal link, approved from a second vps terminal', async () => {
-    const { shown, started } = await terminalLinkToCode('b2b-2', 'mac-ssh2');
-    const pending = (await vps.cli(['pair', 'pending'])).stdout;
-    const line = pending.split('\n').find((l) => l.includes(shown));
-    const id = /[0-9a-f-]{36}/.exec(line ?? '')?.[0];
-    if (!id) throw new Error(`no pending pairing with code ${shown}:\n${pending}`);
-    await vps.cli(['pair', 'approve', id]);
-    const outcome = await until(async () => ((await app.text()).includes('vps is added') && 'added') || (await app.eval(`document.querySelector('[role=alert]')?.innerText ?? ''`)), { timeout: 20000, what: 'add outcome' });
-    time('add from the terminal link, approved on vps (link → outcome)', Date.now() - started);
-    await shot('b2b-outcome');
-    check('B2b', 'Terminal link, approved on vps, ends with "vps is added"', outcome === 'added', `code ${shown}; outcome: ${outcome}`);
-    if (outcome !== 'added') {
-      await confirmByApi();
-      console.log('     (harness confirmed vps on home through the API to continue)');
+  await step('B2b-same', 'In-terminal link, approved with y in that same app terminal', async () => {
+    const { shown, started, terminalPath } = await terminalLinkToCode('b2b', 'mac-ssh');
+    await inApp(terminalPath);
+    await until(() => app.eval(`!!document.querySelector('.terminal-input')`), { what: 'back in the terminal', timeout: 15000 });
+    await liveReady(false);
+    const waiting = await banner();
+    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes(`shows code ${shown}`), { what: 'prompt with the code', timeout: 15000 });
+    await shot('b2b-same-app-banner');
+    await typeLine(app, 'y');
+    await until(async () => (await banner()).includes('vps is added'), { what: 'banner "vps is added"', timeout: 20000 }).catch(() => undefined);
+    const done = await banner();
+    await shot('b2b-same-app-added');
+    time('add from the terminal, approved in the same app (link → "vps is added")', Date.now() - started);
+    await inApp('/');
+    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.meta.startsWith('vps')), { what: 'vps rows', timeout: 20000 }).catch(() => undefined);
+    const probs = await problems();
+    const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps')).length;
+    check('B2b-same', 'Approved by typing y in the same app\'s terminal (in-app navigation): vps is added and usable',
+      waiting.includes('Adding vps') && done.includes('vps is added') && probs.length === 0 && vpsRows > 0,
+      `banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}`);
+    if (!done.includes('vps is added')) {
+      await confirmByApi().catch(() => undefined);
     }
   });
 
@@ -461,6 +466,20 @@ try {
     const active = (text) => text.split('\n').filter((l) => l.includes('https://mac.tailx.ts.net') && / active /.test(l)).length;
     check('B7-node', 'Changing mac\'s node ID on vps revokes the bound devices', active(before) > 0 && active(after) === 0,
       `refused (${verdict}) ${refusedAfter} s and revoked ${Math.round((Date.now() - started) / 1000)} s after the change; before: ${boundLine(before)}; after: ${boundLine(after)}; app: ${JSON.stringify(await problems())}`);
+  });
+
+  await step('B7-readd', 'Re-add vps after the node ID change', async () => {
+    const r = await addByPaste('b7-readd');
+    time('re-add vps after a node change (pterm pair --via → outcome)', r.ms);
+    await openSessions();
+    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.meta.startsWith('vps')), { what: 'vps rows again', timeout: 20000 }).catch(() => undefined);
+    const probs = await problems();
+    const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps')).length;
+    await shot('b7-readd-sessions');
+    const devices = (await vps.cli(['devices'])).stdout.split('\n').filter((l) => l.includes('https://mac.tailx.ts.net') && / active /.test(l)).length;
+    check('B7-readd', 'Re-adding vps after the node ID change works (new node pinned, sessions back)',
+      r.outcome === 'added' && probs.length === 0 && vpsRows > 0 && devices === 1,
+      `outcome ${r.outcome}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}; active bound devices on vps ${devices}`);
   });
 } catch (error) {
   check('ERR', 'harness error', false, error.stack);

@@ -8,6 +8,8 @@ Checks (read-only):
   ! startup broker: not registered
   ! startup gateway: not registered
   shells: /bin/zsh
+  ! tailscale at /Applications/Tailscale.app/Contents/MacOS/Tailscale: lstat /Applications/Tailscale.app/Contents/MacOS/Tailscale: operation not permitted; Termivoa will not run it
+  ! tailscale at /usr/local/bin/tailscale: lstat /usr/local/bin/tailscale: operation not permitted; Termivoa will not run it
   tailscale: Running, host vps.tailx.ts.net
   tailscale serve: HTTPS 443 proxies the Termivoa gateway
   tailscale serve: dev-server previews not shared (optional): tailscale serve --bg --https=8443 http://127.0.0.1:8789

@@ -17,19 +17,19 @@
    "id": "A2",
    "name": "Pair the browser with mac (home) as today",
    "result": "PASS",
-   "evidence": "code 315-449, 1140 ms"
+   "evidence": "code 077-575, 1137 ms"
   },
   {
    "id": "A3",
    "name": "Bound pairing mac app → vps over real CORS (API level, no screens)",
    "result": "PASS",
-   "evidence": "link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt \"Phone \"e2e phone\" shows code 685-751 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]\", poll 200, settings 200 after 1 ms, confirm 200; 2321 ms"
+   "evidence": "link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt \"Phone \"e2e phone\" shows code 606-527 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]\", poll 200, settings 200 after 4 ms, confirm 200; 2571 ms"
   },
   {
    "id": "A3-lag",
    "name": "The first settings read right after approval works (what the app does)",
    "result": "PASS",
-   "evidence": "first read: 200; 200 only 1 ms after the approved poll"
+   "evidence": "first read: 200; 200 only 4 ms after the approved poll"
   },
   {
    "id": "A4",
@@ -167,13 +167,13 @@
    "id": "A7-mac",
    "name": "pterm doctor on mac reports tailnet, CORS list and protocol revision",
    "result": "PASS",
-   "evidence": "broker: running, 0 active session(s) | ! gateway: http://127.0.0.1:8787 is not healthy: Get \"http://127.0.0.1:8787/healthz\": dial tcp 127.0.0.1:8787: connect: operation not permitted | ! startup broker: not registered | ! startup gateway: not registered | tailscale: Running, host mac.tailx.ts.net | protocol revision 1 (oldest supported 1) | multi-computer: no bound app origins (CORS off)"
+   "evidence": "broker: running, 0 active session(s) | ! gateway: http://127.0.0.1:8787 is not healthy: Get \"http://127.0.0.1:8787/healthz\": dial tcp 127.0.0.1:8787: connect: operation not permitted | ! startup broker: not registered | ! startup gateway: not registered | ! tailscale at /usr/local/bin/tailscale: lstat /usr/local/bin/tailscale: operation not permitted; Termivoa will not run it | tailscale: Running, host mac.tailx.ts.net | protocol revision 1 (oldest supported 1) | multi-computer: no bound app origins (CORS off)"
   },
   {
    "id": "A7-vps",
    "name": "pterm doctor on vps reports tailnet, CORS list and protocol revision",
    "result": "PASS",
-   "evidence": "broker: running, 0 active session(s) | ! gateway: http://127.0.0.1:8787 is not healthy: Get \"http://127.0.0.1:8787/healthz\": dial tcp 127.0.0.1:8787: connect: operation not permitted | ! startup broker: not registered | ! startup gateway: not registered | tailscale: Running, host vps.tailx.ts.net | protocol revision 1 (oldest supported 1) | multi-computer: CORS list (bound app origins): https://mac.tailx.ts.net"
+   "evidence": "broker: running, 0 active session(s) | ! gateway: http://127.0.0.1:8787 is not healthy: Get \"http://127.0.0.1:8787/healthz\": dial tcp 127.0.0.1:8787: connect: operation not permitted | ! startup broker: not registered | ! startup gateway: not registered | ! tailscale at /usr/local/bin/tailscale: lstat /usr/local/bin/tailscale: operation not permitted; Termivoa will not run it | tailscale: Running, host vps.tailx.ts.net | protocol revision 1 (oldest supported 1) | multi-computer: CORS list (bound app origins): https://mac.tailx.ts.net"
   },
   {
    "id": "A7-owner",
@@ -185,7 +185,7 @@
    "id": "A7-serve",
    "name": "pterm doctor on mac warns about another Serve handler on the home origin",
    "result": "PASS",
-   "evidence": "! tailscale serve: other handlers share this computer's Termivoa origin https://mac.tailx.ts.net: /files. Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, every computer added to it. Move each one to another HTTPS port (for example `tailscale serve --bg --https=8444 <target>`) or to another computer, then remove it here: `tailscale serve --https=443 --set-path=/files off`."
+   "evidence": "! tailscale serve: other handlers share this computer's Termivoa origin https://mac.tailx.ts.net: /files. Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, every computer added to it. Move each one to another computer or to its own Tailscale Service hostname, or stop serving it; another port on this computer does not help, because browsers send the Termivoa cookie to every port of a host. Then remove it here: `tailscale serve --https=443 --set-path=/files off`."
   }
  ]
 }
