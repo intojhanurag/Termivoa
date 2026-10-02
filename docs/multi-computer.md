@@ -143,7 +143,7 @@ All additive within v1, regenerated Go and TypeScript types:
 - `http-api.schema.json`: `protocolRevision`, `minProtocolRevision`; `HTTPComputer {origin, label}`; `GET/POST /api/v1/computers`, `DELETE /api/v1/computers/{host}` (per device).
 - `gateway-rpc.schema.json`: forwarded request `origin` on authenticated calls; `boundOrigins[]` (at most 64) on the origin probe result for CORS headers; `gateway.computers.*`.
 - `admin-rpc.schema.json`: `appOrigin`, owner, tags and node ID on pairing grants, pending pairings and devices; `allowTagged` on grant creation; `admin.computers.list/remove`; `revoke` by `via`.
-- WebSocket envelope: a `discriminator` on `type` (validation only; no wire change).
+- WebSocket envelope: a `discriminator` on `type` (validation only; no wire change); `session.attach` gains an optional read-only `thumbnail` mode with a maximum update rate, which the broker enforces per viewer (screen frames are coalesced to that rate; canonical PTY processing is unchanged).
 - Store migration `008_multi_computer.sql`: `pairing_grants.app_origin`, `pending_pairings.app_origin`, `devices.app_origin`, `devices.app_node_id` (NULL = own origin only); `computers(device_id, origin, label, state ('pending'|'confirmed'), expires_at_ms, created_at_ms, PRIMARY KEY (device_id, origin))`.
 
 CLI: `pterm pair --via <name|origin> [--allow-tagged]`; `pterm computers` and `pterm computers remove <origin>` on home; `pterm devices` gains a **Via** column; `pterm revoke --via <origin>`; `pterm doctor` reports bound origins, the CORS list, the protocol revision, tailnet and owner mismatches, and other Serve handlers on home's origin.
