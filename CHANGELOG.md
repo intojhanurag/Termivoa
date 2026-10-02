@@ -148,7 +148,25 @@ All notable changes are documented here. The format follows
   `--apply --yes` from the Windows installer, refuses before any change
   while other Tailscale Serve handlers share this computer's Termivoa
   origin (port 443), and prints the commands to move them; `pterm doctor`
-  reports them as a problem.
+  reports them as a problem. It then exits with code 3, and the Windows
+  installer names that cause. The advice is another computer or the
+  handler's own Tailscale Service hostname: another port on the same
+  computer still receives the Termivoa cookie, so `pterm doctor` also warns
+  (not a problem) about handlers on other ports of this computer, except
+  Termivoa's own preview port 8443.
+- Multi-computer, phone side: adding a computer shows a banner, "Adding
+  vps… approve on vps", that keeps running when you go back to the terminal
+  to type `y`. **Log out** shows "Signing out…" and gives each other
+  computer at most 6 s.
+- Multi-computer, host side: a computer whose Tailscale node changed (for
+  example Tailscale reinstalled) can be added again, and home pins the new
+  node; entries the app no longer shows do not fill the list of 8. After
+  home's node changes, peers answer the app with "revoked", so it shows
+  "pair again" instead of "can't reach". A peer refuses a home whose
+  Tailscale tag set changed, not only one that gained or lost all tags.
+  `pterm` runs the Tailscale CLI only when no other user can replace it
+  (file, symlinks and every folder up to `/`), checks again before each
+  run, and `pterm doctor` says why it refused one.
 - An app tab left open across a host update may fail to read settings until
   it is reloaded.
 

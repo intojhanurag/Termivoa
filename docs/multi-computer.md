@@ -95,7 +95,7 @@ The peer sends its cookie again on every authenticated `GET /api/v1/settings` (t
 
 - Computer key: the canonical origin. Session key: `host/sessionId`; a peer cannot collide with or impersonate another computer's session.
 - Routes: home keeps `/sessions/<id>` (push links keep working); peers use `/c/<host>/sessions/<id>`.
-- Label: the first DNS label (`vps`), renameable. Colour from a fixed palette by origin hash, always with the text label. Labels come from the origin the phone dialled, never from the peer.
+- Label: the first DNS label (`vps`), renameable. Colour from a fixed palette by place in the list, home first, always with the text label. Labels come from the origin the phone dialled, never from the peer.
 - The HTTP client becomes per computer (`client(origin)`); `Connection` already takes any URL.
 - New session: pick the computer first, then its projects and shells. Unreachable computers are disabled.
 - Wall: tiles from all computers, governed by the phone's terminal-work budget below (visibility alone does not bound cost).
