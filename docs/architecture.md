@@ -195,19 +195,20 @@ request fields only to peers that support them.
 
 ### SQLite tables (`phone-terminal.db`, broker only)
 
-| Migration | Change |
-| --- | --- |
-| `001_sessions.sql` | `projects`, `shell_profiles`, `session_metadata` |
-| `002_mutation_receipts.sql` | `mutation_receipts` (idempotent create/rename/terminate) |
-| `003_mutation_receipt_snapshots.sql` | `result_session_json` snapshot column and triggers |
-| `004_authentication.sql` | `devices`, `browser_sessions`, `pairing_grants`, `pending_pairings`, `settings` |
-| `005_web_push.sql` | `push_subscriptions`, `push_vapid_key` |
-| `006_session_title_custom.sql` | `session_metadata.title_custom` |
-| `007_linux_shell_profiles.sql` | Rebuilds `shell_profiles` to allow Linux profiles |
-| `008_multi_computer.sql` | `app_origin` and app node columns on grants, pending pairings and devices; `computers` table |
-| `009_computer_nodes.sql` | `computers.node_id` (home pins each peer's node) |
+One file, `internal/store/migrations/001_schema.sql`, creates the whole
+schema. There are no migrations: a schema change edits that file, and a
+database made with another schema is refused at startup (delete it to start
+fresh). `schema_migrations` keeps the file's name and SHA-256 to detect this.
 
-Files are in `internal/store/migrations/`. Only credential hashes are stored.
+| Area | Tables |
+| --- | --- |
+| Sessions | `projects`, `shell_profiles` (`darwin`, `windows`, `wsl`, `linux`), `session_metadata` (with `title_custom`) |
+| Operation receipts | `mutation_receipts` (idempotent create/rename/terminate, with the `result_session_json` snapshot that triggers require) |
+| Authentication | `devices`, `browser_sessions`, `pairing_grants`, `pending_pairings`, `settings` (grants, pending pairings and devices carry `app_origin` and app node columns) |
+| Web push | `push_subscriptions`, `push_vapid_key` |
+| Multi-computer | `computers` (with `node_id`: home pins each peer's node) |
+
+Only credential hashes are stored.
 Terminal content, raw output, controller leases and process handles are never
 stored.
 

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -30,12 +29,11 @@ const (
 )
 
 type managementFixture struct {
-	server       *ManagementServer
-	registry     *Registry
-	persistence  *store.Store
-	databasePath string
-	starts       atomic.Int32
-	terminate    *fakeManagedSession
+	server      *ManagementServer
+	registry    *Registry
+	persistence *store.Store
+	starts      atomic.Int32
+	terminate   *fakeManagedSession
 
 	specMu sync.Mutex
 	specs  []ptyhost.Spec
@@ -43,8 +41,7 @@ type managementFixture struct {
 
 func newManagementFixture(t *testing.T) *managementFixture {
 	t.Helper()
-	databasePath := filepath.Join(t.TempDir(), "broker.db")
-	persistence := openRegistryStore(t, databasePath)
+	persistence := openRegistryStore(t, filepath.Join(t.TempDir(), "broker.db"))
 	now := time.Now().UTC().Add(-time.Minute)
 	if _, err := persistence.BeginBrokerGeneration(context.Background(), registryBrokerGeneration, now); err != nil {
 		t.Fatalf("begin broker generation: %v", err)
@@ -65,7 +62,7 @@ func newManagementFixture(t *testing.T) *managementFixture {
 		t.Fatalf("put shell profile: %v", err)
 	}
 
-	fixture := &managementFixture{persistence: persistence, databasePath: databasePath}
+	fixture := &managementFixture{persistence: persistence}
 	ids := []string{rpcSessionID, rpcSessionGen}
 	var idMu sync.Mutex
 	registry, err := NewRegistry(context.Background(), RegistryConfig{
@@ -288,48 +285,6 @@ func TestManagementDispatchResolvesSavedConfigurationAndReplaysCreate(t *testing
 	if conflict.RequestID != conflictRequestID || conflict.Type != protocol.BrokerError ||
 		conflictPayload.Code != protocol.OperationConflict || fixture.starts.Load() != 1 {
 		t.Fatalf("create conflict = envelope %#v payload %#v starts %d", conflict, conflictPayload, fixture.starts.Load())
-	}
-}
-
-func TestManagementDispatchRejectsUnavailableLegacyCreateReplayWithoutStarting(t *testing.T) {
-	fixture := newManagementFixture(t)
-	client := startManagementClient(t, context.Background(), fixture.server)
-	createOperationID := operationID("rpc-legacy-unavailable-create")
-	createRequest := protocol.BrokerRPCSessionCreateRequestPayload{
-		OperationID: createOperationID, ProjectID: rpcProjectID, ShellProfileID: rpcProfileID,
-	}
-	created := client.roundTrip(t, managementRequest(t, operationID("rpc-legacy-create-request"),
-		protocol.SessionCreateRequest, nil, nil, createRequest))
-	if created.Type != protocol.SessionCreateResult || fixture.starts.Load() != 1 {
-		t.Fatalf("initial create = %#v, starts=%d", created, fixture.starts.Load())
-	}
-	markMutationResultUnavailable(t, fixture.databasePath, createOperationID)
-
-	for attempt := 0; attempt < 2; attempt++ {
-		requestID := operationID(fmt.Sprintf("rpc-legacy-replay-%d", attempt))
-		response := client.roundTrip(t, managementRequest(t, requestID,
-			protocol.SessionCreateRequest, nil, nil, createRequest))
-		failure, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCErrorPayload](response)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if response.RequestID != requestID || response.Type != protocol.BrokerError ||
-			failure.Code != protocol.InternalError ||
-			failure.Message != "operation completed, but its original result is unavailable after a local data upgrade" {
-			t.Fatalf("unavailable replay %d = envelope %#v payload %#v", attempt, response, failure)
-		}
-	}
-	if fixture.starts.Load() != 1 {
-		t.Fatalf("unavailable RPC replay starts = %d, want 1", fixture.starts.Load())
-	}
-
-	conflictRequest := createRequest
-	conflictRequest.ProjectID = rpcProjectTwo
-	conflict := client.roundTrip(t, managementRequest(t, operationID("rpc-legacy-conflict"),
-		protocol.SessionCreateRequest, nil, nil, conflictRequest))
-	conflictFailure, err := protocol.DecodeBrokerRPCPayload[protocol.BrokerRPCErrorPayload](conflict)
-	if err != nil || conflictFailure.Code != protocol.OperationConflict {
-		t.Fatalf("unavailable receipt conflict = %#v %#v, err=%v", conflict, conflictFailure, err)
 	}
 }
 
