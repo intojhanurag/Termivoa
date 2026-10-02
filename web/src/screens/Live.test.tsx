@@ -7,7 +7,7 @@ import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
 import type { HostedSession } from './allSessions';
 import { canTakeControl, CockpitDock, controlBadge, controllerLine, ReadOnlyDock } from './Dock';
-import { liveTabs, revealTab, TabBar } from './Live';
+import { areaClick, liveTabs, revealTab, TabBar } from './Live';
 
 const live: ConnectionStatus = { ...INITIAL_STATUS, link: 'live', control: 'observer', sessionState: 'running' };
 const noop = () => undefined;
@@ -215,5 +215,19 @@ describe('keyboard-up dock', () => {
     expect(labels.slice(0, 6)).toEqual(['Escape', 'Control C', 'Shift Tab', 'Up arrow', 'Down arrow', '1']);
     expect(labels.filter((label) => label === 'Down arrow')).toHaveLength(1);
     expect(labels).toEqual(expect.arrayContaining(['Left arrow', 'Right arrow']));
+  });
+});
+
+describe('terminal area click (areaClick)', () => {
+  it('a link tap consumes its click, so the sheet it just opened stays open', () => {
+    expect(areaClick(true, true, true)).toBe('none');
+    // A file path tap opens Files (not a sheet): no focus either.
+    expect(areaClick(true, false, true)).toBe('none');
+  });
+
+  it('any other click closes an open sheet, else focuses the input when it can send', () => {
+    expect(areaClick(false, true, true)).toBe('close');
+    expect(areaClick(false, false, true)).toBe('focus');
+    expect(areaClick(false, false, false)).toBe('none');
   });
 });

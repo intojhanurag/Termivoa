@@ -3,7 +3,7 @@ import { ApiError, deviceLabelProblem, firstLabel } from '../api/http';
 import { forgetPending, type Computer } from '../computers';
 import type { TailnetNode } from '../generated/protocol';
 import {
-  addComputerUrl, cancelAdd, currentAdd, dismissAdd, prepareAddComputer, startAdd, subscribeAdd, type AddComputerLink,
+  addComputerUrl, cancelAdd, currentAdd, dismissAdd, fromTerminal, prepareAddComputer, startAdd, subscribeAdd, type AddComputerLink,
 } from '../pairing/addComputer';
 import { CodeTiles } from './Setup';
 import { Sheet, SheetHeader } from './Sheet';
@@ -129,7 +129,7 @@ export function AddComputerSheet({ link, onClose, go = (url) => window.location.
         {check.kind === 'checking' && <p role="status" className="muted">Checking {label}…</p>}
         {check.kind === 'error' && <p role="alert" className="error">{check.message}</p>}
         {check.kind === 'ready' && (
-          <AddComputerConfirm link={link} node={check.node} onConfirm={() => go(addComputerUrl(link))} onCancel={onClose} />
+          <AddComputerConfirm link={link} node={check.node} onConfirm={() => go(addComputerUrl(link, globalThis.location?.pathname))} onCancel={onClose} />
         )}
       </Sheet>
     </div>
@@ -141,7 +141,7 @@ export function AddComputerSheet({ link, onClose, go = (url) => window.location.
  * (startAdd), so the user can leave to type y in a terminal of this app and
  * come back; App shows a banner meanwhile.
  */
-export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings }: {
+export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings, onLeave }: {
   /** Undefined when the page was opened without a valid link (or reloaded: the link is used once). */
   readonly link: AddComputerLink | undefined;
   /** Shown instead of the usual text when there is no link (the app refused it on this load). */
@@ -150,6 +150,8 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings 
   readonly deviceLabel: string | undefined;
   readonly onDone: () => void;
   readonly onSettings: () => void;
+  /** Goes to an app path in this load; the add keeps running behind the banner. */
+  readonly onLeave: (path: string) => void;
 }) {
   const task = useSyncExternalStore(subscribeAdd, currentAdd, currentAdd);
   const phase = task?.phase;
@@ -182,6 +184,7 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings 
             <p role="status"><span className="dots" aria-hidden="true"><span /><span /><span /></span>Waiting for {label}</p>
             <button type="button" className="link" onClick={cancelAdd}>Codes don't match? Cancel</button>
           </div>
+          <LeaveAdd back={link?.back} onLeave={onLeave} />
         </section>
       )}
       {phase?.kind === 'done' && (
@@ -201,6 +204,19 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings 
         <button type="button" onClick={leave(onSettings)}>Settings</button>
       )}
     </main>
+  );
+}
+
+/**
+ * The way out of the waiting page, to type y in a terminal of this app: back
+ * to the session the add started from, else Sessions. The add keeps running.
+ */
+export function LeaveAdd({ back, onLeave }: { readonly back: string | undefined; readonly onLeave: (path: string) => void }) {
+  const terminal = fromTerminal(back) && back !== undefined;
+  return (
+    <button type="button" className="wide" onClick={() => onLeave(terminal ? back : '/')}>
+      {terminal ? 'Back to terminal' : 'Sessions'}
+    </button>
   );
 }
 

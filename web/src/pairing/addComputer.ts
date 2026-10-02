@@ -40,7 +40,15 @@ export interface AddComputerLink {
   /** The peer's canonical origin. */
   readonly origin: string;
   readonly grant: string;
+  /** On the add page: the app path the add was started from (Back and the page's way out go there). */
+  readonly back?: string;
 }
+
+/** An app path on this origin only: one leading slash, no scheme, host, query or fragment. */
+const APP_PATH = /^\/(?!\/)[A-Za-z0-9\-._~%/:]{0,512}$/u;
+
+/** A session's address (`/sessions/<id>` or `/c/<host>/sessions/<id>`): the add was started from its terminal. */
+export const fromTerminal = (back: string | undefined): boolean => back !== undefined && /^\/(?:c\/[^/]+\/)?sessions\/[^/]+$/u.test(back);
 
 export type LinkProblem = 'format' | 'tailnet' | 'self' | 'via' | 'grant';
 
@@ -113,28 +121,45 @@ export function prepareAddComputer(link: AddComputerLink): Promise<HTTPComputerA
   return recordPending(link.origin);
 }
 
-/** Step 3: the home URL to load next. The grant rides in the fragment, never in a query. */
-export function addComputerUrl(link: AddComputerLink): string {
-  return `${ADD_COMPUTER_PATH}#${new URLSearchParams({ grant: link.grant, origin: link.origin }).toString()}`;
+/**
+ * Step 3: the home URL to load next. The grant rides in the fragment, never
+ * in a query. `back` is the app path the add starts from. It must be a full
+ * load: home's CSP for this document does not allow the pending origin yet.
+ */
+export function addComputerUrl(link: AddComputerLink, back?: string): string {
+  const params = new URLSearchParams({ grant: link.grant, origin: link.origin });
+  if (back !== undefined && APP_PATH.test(back)) params.set('back', back);
+  return `${ADD_COMPUTER_PATH}#${params.toString()}`;
 }
 
 /**
  * Step 3, on the load of ADD_COMPUTER_PATH: removes the fragment from the URL
  * at once and returns the link when it is still valid. Call it once at start,
  * before takeGrantFromFragment (which strips every fragment).
+ *
+ * A valid link also gets an entry before it in this document's history: its
+ * `back` path (or `/`). So Back, and the page's own way out, stay in this
+ * load and the add keeps running behind the banner; a new load would lose it.
  */
 export function takeAddComputerFragment(
-  location: LocationLike, history: HistoryLike, app: AppLocation,
+  location: LocationLike, history: HistoryLike & Partial<Pick<History, 'pushState'>>, app: AppLocation,
 ): AddComputerLink | undefined {
   if (location.pathname !== ADD_COMPUTER_PATH || location.hash.length <= 1) return undefined;
   const params = new URLSearchParams(location.hash.slice(1));
-  history.replaceState(null, '', `${location.pathname}${location.search}`);
+  const page = `${location.pathname}${location.search}`;
+  history.replaceState(null, '', page);
   const origin = single(params, 'origin');
   const grant = single(params, 'grant');
   if (origin === undefined || grant === undefined || !GRANT.test(grant) || peerProblem(origin, app) !== undefined) {
     return undefined;
   }
-  return { origin, grant };
+  const asked = single(params, 'back');
+  const back = asked !== undefined && APP_PATH.test(asked) && asked !== ADD_COMPUTER_PATH ? asked : '/';
+  if (history.pushState !== undefined) {
+    history.replaceState(null, '', back);
+    history.pushState(null, '', page);
+  }
+  return { origin, grant, back };
 }
 
 /**

@@ -98,7 +98,7 @@ describe('startup links', () => {
 
   it('takes the add-computer fragment before the pairing grant strips fragments', () => {
     const { links, history } = run('/computers/add', `#grant=${grant}&origin=${encodeURIComponent('https://vps.tailx.ts.net')}`);
-    expect(links.add).toEqual({ origin: 'https://vps.tailx.ts.net', grant });
+    expect(links.add).toEqual({ origin: 'https://vps.tailx.ts.net', grant, back: '/' });
     expect(links.grant.value).toBeUndefined();
     expect(history.replaceState).toHaveBeenCalledWith(null, '', '/computers/add');
   });

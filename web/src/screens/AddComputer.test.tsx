@@ -6,7 +6,7 @@ import type { Computer } from '../computers';
 import { parseAddComputerLink } from '../pairing/addComputer';
 import { findAddComputerLinks } from '../terminal/pathLinks';
 import {
-  AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, ownerText, PeerAddPage, viaLabel,
+  AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, LeaveAdd, ownerText, PeerAddPage, viaLabel,
 } from './AddComputer';
 import type { ComputerEntry } from './allSessions';
 import { computerDetail, ComputersSection, onlineText } from './Computers';
@@ -91,14 +91,14 @@ describe('add-computer link in the terminal', () => {
 
 describe('add-computer page', () => {
   it('asks to paste the link again when there is none', () => {
-    const html = renderToStaticMarkup(<AddComputerPage link={undefined} deviceLabel="iPhone" onDone={noop} onSettings={noop} />);
+    const html = renderToStaticMarkup(<AddComputerPage link={undefined} deviceLabel="iPhone" onDone={noop} onSettings={noop} onLeave={noop} />);
     expect(html).toContain('This add-computer link is used or incomplete.');
   });
 
   it('shows the full origin and waits for Continue before it sends anything', () => {
     const fetch = vi.fn(() => new Promise(noop));
     vi.stubGlobal('fetch', fetch);
-    const html = renderToStaticMarkup(<AddComputerPage link={link} deviceLabel="iPhone" onDone={noop} onSettings={noop} />);
+    const html = renderToStaticMarkup(<AddComputerPage link={link} deviceLabel="iPhone" onDone={noop} onSettings={noop} onLeave={noop} />);
     expect(html).toContain('<dt>Address</dt><dd>https://vps.tailx.ts.net</dd>');
     expect(html).toContain('<button type="button" class="primary">Continue</button>');
     expect(html).not.toContain('Connecting to vps…');
@@ -109,8 +109,20 @@ describe('add-computer page', () => {
     vi.unstubAllGlobals();
   });
 
+  it('offers a way out of the waiting page in this load: back to the terminal the add came from, else Sessions', () => {
+    const onLeave = vi.fn();
+    const terminal = LeaveAdd({ back: '/c/vps.tailx.ts.net/sessions/s1', onLeave });
+    expect(renderToStaticMarkup(terminal)).toContain('Back to terminal');
+    terminal.props.onClick();
+    expect(onLeave).toHaveBeenLastCalledWith('/c/vps.tailx.ts.net/sessions/s1');
+    const other = LeaveAdd({ back: '/settings', onLeave });
+    expect(renderToStaticMarkup(other)).toContain('Sessions');
+    other.props.onClick();
+    expect(onLeave).toHaveBeenLastCalledWith('/');
+  });
+
   it('shows why the app refused a link on this load', () => {
-    const html = renderToStaticMarkup(<AddComputerPage link={undefined} notice="Not used." deviceLabel="iPhone" onDone={noop} onSettings={noop} />);
+    const html = renderToStaticMarkup(<AddComputerPage link={undefined} notice="Not used." deviceLabel="iPhone" onDone={noop} onSettings={noop} onLeave={noop} />);
     expect(html).toContain('Not used.');
     expect(html).not.toContain('used or incomplete');
   });

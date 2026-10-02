@@ -795,6 +795,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
                   navigate({ name: 'sessions' });
                 }}
                 onSettings={() => navigate({ name: 'settings' })}
+                onLeave={(path) => {
+                  window.history.pushState(null, '', path);
+                  void route();
+                }}
               />
             )}
           </Suspense>

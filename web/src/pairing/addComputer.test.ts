@@ -59,8 +59,27 @@ describe('add-computer reload', () => {
     expect(url.startsWith('/computers/add#')).toBe(true);
     const hash = url.slice(url.indexOf('#'));
     expect(takeAddComputerFragment({ pathname: '/computers/add', search: '', hash }, { replaceState }, app))
-      .toEqual({ origin: 'https://vps.tailx.ts.net', grant });
+      .toEqual({ origin: 'https://vps.tailx.ts.net', grant, back: '/' });
     expect(replaceState).toHaveBeenCalledWith(null, '', '/computers/add');
+  });
+
+  it('puts the path the add started from before the add page in this load, so Back keeps the add running', () => {
+    const calls: string[] = [];
+    const history = {
+      replaceState: (_: unknown, __: string, url: string) => { calls.push(`replace ${url}`); },
+      pushState: (_: unknown, __: string, url: string) => { calls.push(`push ${url}`); },
+    };
+    const url = addComputerUrl({ origin: 'https://vps.tailx.ts.net', grant }, '/c/vps.tailx.ts.net/sessions/s1');
+    const hash = url.slice(url.indexOf('#'));
+    expect(takeAddComputerFragment({ pathname: '/computers/add', search: '', hash }, history, app))
+      .toEqual({ origin: 'https://vps.tailx.ts.net', grant, back: '/c/vps.tailx.ts.net/sessions/s1' });
+    expect(calls).toEqual(['replace /computers/add', 'replace /c/vps.tailx.ts.net/sessions/s1', 'push /computers/add']);
+    // A back that is not a path of this app is dropped: in the link, and on the add page.
+    expect(addComputerUrl({ origin: 'https://vps.tailx.ts.net', grant }, '//evil.example/x')).not.toContain('back=');
+    for (const back of ['//evil.example/x', 'https://evil.example/', '/settings?x#y']) {
+      const evil = `#${new URLSearchParams({ grant, origin: 'https://vps.tailx.ts.net', back }).toString()}`;
+      expect(takeAddComputerFragment({ pathname: '/computers/add', search: '', hash: evil }, history, app)?.back).toBe('/');
+    }
   });
 
   it('scrubs but refuses a tampered fragment, and ignores other paths', () => {

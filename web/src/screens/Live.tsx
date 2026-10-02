@@ -133,6 +133,18 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
   );
 }
 
+/**
+ * A click on the terminal area. A link tap (path or add-computer) opens its
+ * sheet or panel on mouseup, and the click of that same tap follows: the link
+ * consumes it, so it never closes what it just opened. Otherwise a click
+ * closes an open sheet, or focuses the input.
+ */
+export function areaClick(linkTook: boolean, sheet: boolean, canSend: boolean): 'none' | 'close' | 'focus' {
+  if (linkTook) return 'none';
+  if (sheet) return 'close';
+  return canSend ? 'focus' : 'none';
+}
+
 export function Live({
   session, sessions, settings, multi = false, fontSize, runFirst, openComposer,
   onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
@@ -634,10 +646,10 @@ export function Live({
         className={`terminal-area${sheet || cardOpen ? ' dim' : ''}${appScroll ? ' app-scroll' : ''}`}
         hidden={fullPanel}
         onClick={() => {
-          const link = linkTapped.current;
+          const action = areaClick(linkTapped.current, sheet, canSend);
           linkTapped.current = false;
-          if (sheet) setPanel('none');
-          else if (canSend && !link) input.current?.focus();
+          if (action === 'close') setPanel('none');
+          else if (action === 'focus') input.current?.focus();
         }}
         onWheel={(event) => {
           if (appScroll) scrollApp(-event.deltaY);
