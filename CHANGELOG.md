@@ -8,6 +8,51 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Multi-computer (ADR 0005, `docs/multi-computer.md`; not yet verified on a
+  real iPhone or Android phone, Gate 0 pending). Phone side: one Home Screen
+  app, served by a "home" computer, talks directly to up to 8 other computers
+  in the same tailnet. **Settings → Computers** lists each computer
+  (**online**, **checking**, **offline**, **needs you**; home is **this
+  computer**) with **Retry**, **Rename** ("Name on this phone") and
+  **Remove** (signs this phone out there first). **+ Add a computer** takes
+  the link from `pterm pair --via`, or the link is tapped in a terminal; both
+  open the **Add this computer?** sheet (Address, Machine, Owner or Tags)
+  before **Add vps**, then the code check. The Sessions list merges all
+  computers with **All** and per-computer chips, a colour dot and label per
+  row, "2 computers · 1 waiting · 1 working", **❯ new session on…**, and per
+  computer "vps · can't reach" (**Retry**), "vps · pair again" and "Update
+  Termivoa on vps". New session picks the computer first ("Runs on vps").
+  The Wall shows tiles from all computers, at most 4 live at 5 updates per
+  second under one phone-wide budget; the rest show **Paused**. Live, the
+  composer, uploads, Changes and Files work on every computer; previews and
+  notifications stay home-only. Peer answers are schema-checked leniently
+  and peer error text is never shown. The service worker now precaches the
+  complete bundle of its build, loads pages network-first with a 2.5 s
+  fallback to that copy, and removes any service worker that is not the
+  app's own on every load. Host side: `pterm pair --via <name|origin>
+  [--allow-tagged]` prints a two-minute add-computer link bound to that app
+  origin; the peer pins the app's Tailscale node ID and requires the same
+  owner (or `--allow-tagged` for tagged nodes). Per-device origin binding:
+  a peer accepts a cross-origin request only from the app origin bound to
+  that request's own credential, grant or pending pairing, and only while
+  its Tailscale snapshot (60 s cache, 10-minute grace) still shows the pinned
+  node; a changed node ID revokes the devices bound to it, and a 15 s sweep
+  closes open streams that lost trust. The gateway sends exact credentialed
+  CORS headers to bound origins only, refuses `Sec-Fetch-Mode: no-cors` and
+  Origin-less requests without `Sec-Fetch-Site: same-origin` on `/api`,
+  refreshes the cookie (same value, never past its expiry) on
+  `GET /api/v1/settings`, and adds the device's computers to the app's CSP
+  `connect-src`. New routes `GET/POST /api/v1/computers` and
+  `DELETE /api/v1/computers/{host}`; `protocolRevision` and
+  `minProtocolRevision` in settings; read-only `session.attach` thumbnail
+  viewers whose frame rate the broker enforces. New commands
+  `pterm computers`, `pterm computers remove <origin>` and
+  `pterm revoke --via <origin>`; a **VIA** column in `pterm devices` and
+  `pterm pair pending`; `pterm revoke <device>` on home lists the phone's
+  other computers; `pterm doctor` shows the protocol revision, the CORS
+  lists, tailnet and owner mismatches, and other Tailscale Serve handlers on
+  home's origin. Store migration 8. A compromised home compromises every
+  computer paired through it; see the threat model and the recovery steps.
 - Files view. Phone side: the Changes screen has a **Changes | Files** switch;
   **Files** shows the session's project as folders (folders first, sizes,
   links that leave the project dimmed), searches file paths, and reads text

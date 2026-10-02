@@ -1,7 +1,7 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-02
 ---
 
 Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted.
@@ -20,6 +20,25 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 - A paired phone gets a secure cookie that scripts on other sites cannot read or use.
 - Access ends after 30 days, or after 7 days without use.
 - `pterm revoke <device-id>` removes a phone at once, also on open connections.
+
+## How do several computers trust each other?
+
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`, and not tested on a real iPhone or Android phone yet. See [Use several computers](/docs/guides/computers/).
+:::
+
+With [several computers](/docs/guides/computers/), one computer (home) serves the app, and the app talks directly to the others (peers).
+
+- **Each peer decides for itself.** You approve the phone on the peer with `pterm pair --via <home>` after you compare codes. Each peer gives the phone its own cookie, which scripts cannot read and no other computer can use.
+- **A peer accepts the phone only from that home.** The approval binds the phone's access to home's exact address. The same phone cannot use the peer from another app address.
+- **Same tailnet is not enough.** At pairing, the peer looks up home in its own Tailscale status: home must have the same Tailscale owner, or, for a tagged node, you must allow it with `--allow-tagged`. The peer saves home's node ID. If that ID changes (for example a reused name, or Tailscale reinstalled on home), the peer revokes the phones that used it. If the peer cannot read its Tailscale status for 10 minutes, it refuses requests from home's app until it can.
+- **Nothing goes through home.** Home stores only each phone's list of computer addresses and names. It holds no peer secret.
+- **Peers cannot fool the app.** The app checks every answer from a peer, never shows a peer's error text, and never shows dev-server previews from peers.
+- **You can cut a home off.** `pterm revoke --via <home address>` on a peer ends the access of every phone that uses it from that home.
+
+:::caution
+**If home is hacked, every computer you added through it is hacked too.** Home serves the app's code, so it can use every peer, even with the app closed, and it can trick you into pairing again. Choose as home an always-on computer where you do not run untrusted code. If it happens, follow [What do I do if home was hacked?](/docs/guides/computers/#what-do-i-do-if-home-was-hacked)
+:::
 
 ## Who can type in a session?
 
@@ -45,6 +64,8 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 | Notification subscriptions | Your typing |
 | Logs | Pairing links and login secrets in clear text (only a one-way hash is kept) |
 
+From the next beta, home also stores each phone's list of other computers (addresses and names), and a peer stores the home address and Tailscale node of each phone that uses it from there. The phone keeps the same list of computers, never their sessions.
+
 All data is private to your user account ([Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)). Photos go to the project's `.termivoa/uploads/`. Snippets and, from the next beta, the Wall tile order (session IDs only) stay on the phone.
 
 ## Can a worktree escape its folder?
@@ -63,13 +84,14 @@ No. [Worktree](/docs/guides/worktrees/) requests send only a session, a name and
 
 - A session runs with your normal user permissions. A project folder is not a sandbox (a closed-off area).
 - Malware already running as your user is not covered.
+- With several computers (next beta), malware or a hacked account on home reaches every computer added through it.
 - The controls have automated tests, but no independent security audit yet.
 
 ## Common questions
 
 ### What do I do if I lose my phone?
 
-Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access and notifications at once.
+Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access and notifications at once. If it used [several computers](/docs/guides/computers/#what-do-i-do-if-i-lose-my-phone) (next beta), revoke it on each one.
 
 ### Can someone on the internet reach my terminal?
 

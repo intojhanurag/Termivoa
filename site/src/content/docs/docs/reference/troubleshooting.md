@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-02
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -160,6 +160,73 @@ The phone shows git's message. Usual causes:
 - **No remote.** Add one, for example `git remote add origin <url>`.
 - **The ssh key has a passphrase.** Add the key to your ssh agent (macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`). Termivoa cannot type a passphrase; the push stops after 2 minutes.
 - **The remote rejected it.** Read git's message. Termivoa never force-pushes.
+
+## Several computers (Next beta)
+
+These problems are about [using several computers](/docs/guides/computers/). This is not in `v0.1.0-beta.2`.
+
+### "vps · can't reach" (Next beta)
+
+Check that vps is on, awake and in your tailnet, then tap **Retry**. The other computers keep working.
+
+### "vps · pair again" (Next beta)
+
+vps no longer accepts this phone: it was revoked or logged out, it expired (30 days, or 7 days unused), or home's Tailscale node changed (for example after you reinstalled Tailscale on home). Run `pterm pair --via <home>` on vps and add it again.
+
+### "Update Termivoa on vps" (Next beta)
+
+Update Termivoa on that computer. Computers can be updated one at a time; the app refuses only one that is too old.
+
+### `pterm pair --via` says "no computer with that name is in this tailnet" (Next beta)
+
+Use home's machine name as Tailscale shows it (the first part of its address), or its full address, for example `pterm pair --via https://mac.tailx.ts.net`. Both computers must be in the same tailnet.
+
+### `pterm pair --via` says "more than one computer has that name" (Next beta)
+
+Use home's full address: `pterm pair --via https://mac.tailx.ts.net`.
+
+### `pterm pair --via` says "that computer belongs to another Tailscale user" (Next beta)
+
+Home and the new computer must belong to the same Tailscale user. Computers of other users cannot be added.
+
+### `pterm pair --via` says "that computer is a tagged Tailscale node" (Next beta)
+
+Check the tags of home and this computer, then run `pterm pair --via <home> --allow-tagged`.
+
+### `pterm pair --via` says "this computer cannot read its Tailscale status" (Next beta)
+
+Check that Tailscale runs and is logged in on this computer (`pterm doctor`), then try again. Under WSL, Tailscale usually runs on Windows, so a WSL computer cannot be added.
+
+### `pterm pair --via` says the link "needs this computer's tailnet https address" (Next beta)
+
+Run `pterm setup` on this computer so it has a Tailscale address, or pass it with `--origin https://<this-computer>.<tailnet>.ts.net`.
+
+### The pasted link is refused (Next beta)
+
+| Message | What to do |
+| --- | --- |
+| "This is not an add-computer link. Copy the whole link that pterm pair --via printed." | Copy the full link, from `https://` to its end. |
+| "That computer is not in the same tailnet as this one." | Only computers in one tailnet can be added. |
+| "That link is for this computer. Run pterm pair --via on the other computer." | Run the command on the computer you want to add, not on home. |
+| "That link was made for another Termivoa app. Run pterm pair --via with this computer's name." | Run `pterm pair --via` again with the name of the home that serves your app. |
+| "The link is damaged or incomplete. Copy it again." | Copy it again; long links can wrap or get cut. |
+| "This add-computer link expired or was already used." | Run `pterm pair --via` again. A link works once, for two minutes. |
+
+### The code expired, or the computer refused it (Next beta)
+
+Run `pterm pair --via <home>` on that computer again and paste the new link. Answer `y` only when the codes match.
+
+### The link opens a page that says "paste this link there" (Next beta)
+
+You opened the add-computer link with the camera or in Safari. Tap **Copy link**, open the Termivoa app from the Home Screen, and paste it in **Settings → Computers → + Add a computer**.
+
+### `pterm doctor` warns that other handlers share this computer's origin (Next beta)
+
+Tailscale Serve shares more than Termivoa on this computer's HTTPS address. On home, each of them could control every computer added through it. Remove them, or choose another computer as home.
+
+### Peer sessions send no notifications (Next beta)
+
+This is a limit for now: only sessions on home send notifications. Sessions on other computers show **Waiting** and **Working** in the app.
 
 ## Where are the logs?
 

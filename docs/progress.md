@@ -38,6 +38,33 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Multi-computer D: user and repo docs (2026-10-02, branch `feat/mc-docs`)
+
+Track D of `docs/multi-computer.md`, written against the integrated branch
+`feat/multi-computer` (384d024), every claim checked in the code. All marked
+**Next beta**; Gate 0 (real iPhone and Android) has not run, and the docs
+say so.
+
+- Site: new guide `site/src/content/docs/docs/guides/computers.md` (sidebar
+  entry), and multi-computer sections in `reference/security.md`,
+  `reference/cli.md`, `reference/troubleshooting.md`, `pair-your-phone.md`
+  and `reference/release-notes.md`; a short mention on the landing page.
+- Repo: `docs/threat-model.md` (four new trust boundaries and the new
+  attackers, including the accepted home-compromise risk and its recovery),
+  `protocol/v1/http-api.md` (cross-origin requests, cookie refresh, CSP),
+  `CHANGELOG.md`, `README.md`, and the stale offline-bundle line in
+  `docs/multi-computer.md` section 3.
+- The H1a blocker above (gateway forwarded-origin key) is resolved on the
+  integrated branch by e118a9c (`gatewayapi.WithForwardedOrigin`).
+- Found while checking: `pterm pair --via` tells the user to tap
+  "Add this computer" and to paste in "Settings → Computers → Add
+  computer", but the app's labels are the **Add this computer?** sheet and
+  **+ Add a computer** (`internal/cli/admin.go`, `pairVia`). **Log out** in
+  Settings signs out of home only; peers keep the phone until it is removed
+  or revoked there (documented).
+- Evidence: `cd site && npx astro build` (links valid) and `./scripts/check`
+  exit 0.
+
 ### Multi-computer H2: gateway and CLI (2026-10-02, branch `feat/mc-h2`)
 
 Track H2 of `docs/multi-computer.md`, built against fake brokers until H1

@@ -10,6 +10,10 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
   are ignored.
 - Every state-changing request (`POST`, `PATCH`) and the WebSocket upgrade
   require an exact `Origin` match. A missing `Origin` is rejected.
+- Every `/api` request needs exactly one `Origin` that is this computer's
+  own or an admitted app origin (see Cross-origin requests), or no `Origin`
+  and exactly `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is
+  refused with `403`.
 - HTTP mutations require `Content-Type: application/json` and the fixed header
   `X-Pterm-Request: 1`. Request bodies are limited to 64 KiB, except an image
   upload (about 7 MiB, see Image uploads).
@@ -69,6 +73,38 @@ used for client mistakes. Only `unauthorized` and `revoked` clear the cookie.
 A host clock step back behind the credential's creation or last use is
 `host_unavailable` ("host clock changed; retry"): the request is rejected but
 the cookie is kept, because the credential cannot be delivered again.
+
+## Cross-origin requests
+
+Multi-computer (`docs/multi-computer.md`, section 3) lets the app served by
+another computer (its app origin) call this computer. The gateway learns two
+origin sets from the broker's origin probe: **bound** origins (app origins of
+unrevoked devices, at most 64) and **pairing** origins (app origins of
+unexpired bound grants and pending pairings, at most 16). Invalid entries are dropped.
+
+- An `/api` request whose single `Origin` exactly matches a bound origin, or
+  a pairing origin on `/api/v1/pair/*`, is admitted. The gateway forwards
+  that `Origin` to the broker with the call, and the broker accepts it only
+  if it is the app origin bound to that request's own credential, grant or
+  pending pairing, and the pinned Tailscale node still holds it.
+- Admitted requests get `Access-Control-Allow-Origin: <origin>`,
+  `Access-Control-Allow-Credentials: true` and `Vary: Origin`. Others get no
+  CORS headers.
+- Preflight (`OPTIONS` with one `Access-Control-Request-Method`) is answered
+  `204` only for an admitted origin, with
+  `Access-Control-Allow-Methods: GET, POST, PATCH, DELETE`,
+  `Access-Control-Allow-Headers: Content-Type, X-Pterm-Request` and
+  `Access-Control-Max-Age: 600`.
+- The WebSocket upgrade checks the same origins per request.
+- Matching is exact: `https`, lowercase host, default port, no trailing dot.
+  `null`, near misses and other spellings never match.
+- `GET /api/v1/settings` sends the same cookie again with `Max-Age` capped by
+  the credential's remaining absolute lifetime, only when the request passed
+  every check, so WebKit's 7-day cap on other computers' cookies does not end
+  a session in regular use. The server never extends an expiry.
+- The app document (`index.html`) adds the exact `https://` and `wss://`
+  origins of the cookie device's confirmed and pending computers (at most 8)
+  to its CSP `connect-src`.
 
 ## Protocol revision
 

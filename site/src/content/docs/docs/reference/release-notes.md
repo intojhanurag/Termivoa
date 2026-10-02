@@ -1,13 +1,14 @@
 ---
 title: Release notes
 description: Termivoa private beta release history, with the new features, fixes and known limits of each version, and what is coming in the next beta.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-02
 ---
 
 The latest Termivoa release is the private beta `v0.1.0-beta.2` (2026-09-29).
 
 ## Next beta (not released yet)
 
+- **Several computers in one app.** Use a Mac, a Linux server and a VPS from one Home Screen app: one Sessions list with a chip and a colour per computer, one Wall, and **❯ new session on…** any computer. Add a computer with `pterm pair --via <home>` on it, then paste or tap the link in **Settings → Computers** and check the code. Each computer approves and revokes the phone itself; `pterm revoke --via` cuts off a hacked home. If home is offline, the app still opens and reaches the other computers. Notifications and previews come from home only for now. **Not yet tested on a real iPhone or Android phone.** Read [Choose home](/docs/guides/computers/#how-do-i-choose-home) first. See [Use several computers](/docs/guides/computers/).
 - **Files.** The Changes screen has a **Files** tab: browse the session's project, search file names and read any text file, read-only and without control. Tap a path such as `src/app.ts:42` in the terminal to open that line. See [Files](/docs/guides/files/).
 - **Fix: project buttons cannot get stuck.** A special file (a named pipe) with the name of a project file could make the list of project commands wait forever. Termivoa now reads only normal files.
 - **Fix: `pterm uninstall` names the right file.** On macOS and Windows it told you to remove an app that the beta does not install. It now names the `pterm` file to delete.

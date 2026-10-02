@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Every command and flag of pterm, the Termivoa host program, for setup, startup, pairing phones, sessions, projects, shells and dev tests.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-02
 ---
 
 `pterm` is the Termivoa host program. `pterm help` (or `--help`, `-h`) prints this command list.
@@ -15,7 +15,7 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | --- | --- |
 | `pterm setup` | First run: checks, one confirmation, startup at login, phone address, Tailscale Serve (asks first), pairing. |
 | `pterm setup --apply --yes` | Installer mode: registers startup, asks nothing, sets the phone address only if unset, never changes Tailscale or pairs a phone. |
-| `pterm doctor` | Read-only checks. Never prints secrets. |
+| `pterm doctor` | Read-only checks. Never prints secrets. From the next beta it also shows the protocol revision and multi-computer checks. |
 | `pterm config origin [<url>]` | Shows or sets the phone's private HTTPS address. |
 | `pterm launch [--no-open]` | Starts the broker and gateway if needed, and opens the local page. |
 | `pterm stop` | Stops only the gateway. Sessions keep running, but phones cannot connect. |
@@ -32,11 +32,39 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | `pterm pair [--origin <url>] [--no-qr] [--no-wait]` | Prints a two-minute, single-use pairing link and QR code, then approves the phone after you compare codes. |
 | `pterm pair pending` | Shows phones waiting for approval, with their codes. |
 | `pterm pair approve <pending-id>` | Approves a phone after you compare its code. |
-| `pterm devices` | Shows paired phones, status and last use. |
+| `pterm devices` | Shows paired phones, status and last use. From the next beta, a **VIA** column shows the home address a phone uses this computer from (`-` for this computer's own page). |
 | `pterm devices rename <device-id> <label>` | Renames a paired phone. |
 | `pterm revoke <device-id>` | Asks first, then removes a phone's access at once. |
 
 The pairing link and QR code are secret. Do not share them.
+
+## Use several computers
+
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`. See [Use several computers](/docs/guides/computers/).
+:::
+
+| Command | Where | What it does |
+| --- | --- | --- |
+| `pterm pair --via <name\|url>` | New computer | Prints a two-minute, single-use add-computer link for the Termivoa app at home (no QR code), then approves the phone after you compare codes. `<name>` is home's machine name, such as `mac`; `<url>` is its full address. |
+| `pterm pair --via <name\|url> --allow-tagged` | New computer | The same, when home or this computer is a tagged Tailscale node. Check the tags first. |
+| `pterm pair pending` | New computer | Also shows a **VIA** column: the home app a waiting phone comes from. |
+| `pterm computers` | Home | Shows each phone's other computers: device ID, label, address and when added. |
+| `pterm computers remove <url>` | Home | Removes a computer from every phone's list. It does not sign the phones out there; run `pterm revoke` on that computer. |
+| `pterm revoke --via <url>` | Peer | Asks first, then revokes every phone that uses this computer from the Termivoa app at `<url>`. Use it if home was hacked. |
+| `pterm revoke <device-id>` | Home | After it revokes the phone, also lists the other computers that phone used, so you can revoke it there too. |
+
+`pterm pair --via` also takes `--no-wait` and `--origin`. `--allow-tagged` needs `--via`.
+
+`pterm doctor` adds these lines:
+
+| Line | What it means |
+| --- | --- |
+| `protocol revision 1 (oldest supported 1)` | This computer's protocol version, for [updating computers one at a time](/docs/guides/computers/#how-do-i-update-the-computers). |
+| `multi-computer: CORS list (bound app origins): …` | Home addresses that phones use this computer from. `no bound app origins (CORS off)` means none. |
+| `multi-computer: pairing CORS list (pending pairings): …` | Home addresses of pairings that wait for approval. |
+| `! multi-computer: <url>: owner mismatch …`, `node ID changed (reused name?)`, `pinned node … is gone`, `different tailnet; not supported` | A home that phones use this computer from fails the Tailscale check. |
+| `! tailscale serve: other handlers share this computer's origin …` | Tailscale Serve shares more than Termivoa on this address. Remove the others before you use this computer as home. |
 
 ## Work with sessions
 

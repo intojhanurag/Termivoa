@@ -34,6 +34,11 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way.
+- **Several computers (next beta).** Use a Mac, a Linux server and a VPS
+  from one phone app: one Sessions list with a chip per computer, one Wall,
+  and new sessions on any of them. Each computer approves the phone itself.
+  Not yet tested on a real phone; choose an always-on, trusted computer as
+  home, because a hacked home reaches every computer added through it.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
   for coding-agent prompts (Down sits next to Up while you type), plus a key
   bar with Esc, Tab, Ctrl, Alt and arrows.
