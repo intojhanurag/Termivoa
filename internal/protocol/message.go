@@ -12,6 +12,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/intojhanurag/phone-terminal/internal/terminal"
 )
 
 const (
@@ -1174,7 +1176,7 @@ func validateRow(row TerminalRow, columns int64) error {
 					return errors.New("continuation cell has no wide leading cell")
 				}
 			} else {
-				if cell.Width < 1 || cell.Width > 2 || len(cell.Text) == 0 || len(cell.Text) > 1024 || !safeDisplayText(cell.Text) {
+				if cell.Width < 1 || cell.Width > 2 || len(cell.Text) == 0 || len(cell.Text) > 1024 || !terminal.ValidText(cell.Text) {
 					return errors.New("invalid display cell")
 				}
 				if cell.Width == 2 {
@@ -1265,34 +1267,6 @@ func ValidUUID(value string) bool {
 
 func isLowerHex(value byte) bool {
 	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f'
-}
-
-func safeDisplayText(text string) bool {
-	if !utf8.ValidString(text) {
-		return false
-	}
-	for _, value := range text {
-		if value == 0x7f || value < 0x20 || value >= 0x80 && value <= 0x9f {
-			return false
-		}
-	}
-	return true
-}
-
-func validText(text string) bool { return safeDisplayText(text) }
-
-func validPaste(text string) bool {
-	if !utf8.ValidString(text) {
-		return false
-	}
-	for _, value := range text {
-		if value == 0 || value == 0x1b || value == 0x7f ||
-			(value < 0x20 && value != '\n' && value != '\r' && value != '\t') ||
-			(value >= 0x80 && value <= 0x9f) {
-			return false
-		}
-	}
-	return true
 }
 
 func singlePrintableASCII(value string) bool {

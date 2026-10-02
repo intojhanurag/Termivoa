@@ -241,7 +241,7 @@ func (core *Core) SendText(ctx context.Context, text string) error {
 	if len(text) > MaxTextBytes {
 		return ErrPayloadTooLarge
 	}
-	if !validText(text) {
+	if !ValidText(text) {
 		return ErrInvalidText
 	}
 	return core.execute(ctx, command{kind: commandText, text: text})
@@ -253,7 +253,7 @@ func (core *Core) Paste(ctx context.Context, text string) error {
 	if len(text) > MaxPasteBytes {
 		return ErrPayloadTooLarge
 	}
-	if !validPaste(text) {
+	if !ValidPaste(text) {
 		return ErrInvalidPaste
 	}
 	return core.execute(ctx, command{kind: commandPaste, text: text})
@@ -421,7 +421,9 @@ func validateSize(columns, rows int) error {
 	return nil
 }
 
-func validText(text string) bool {
+// ValidText reports whether text is valid UTF-8 without C0, DEL or C1
+// control characters (the schema's safeDisplayText rule).
+func ValidText(text string) bool {
 	if !utf8.ValidString(text) {
 		return false
 	}
@@ -433,7 +435,8 @@ func validText(text string) bool {
 	return true
 }
 
-func validPaste(text string) bool {
+// ValidPaste is ValidText that also allows newline, carriage return and tab.
+func ValidPaste(text string) bool {
 	if !utf8.ValidString(text) {
 		return false
 	}

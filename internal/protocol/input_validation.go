@@ -1,6 +1,10 @@
 package protocol
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/intojhanurag/phone-terminal/internal/terminal"
+)
 
 // ValidateKeyInput applies the v1 semantic rules shared by local and remote
 // input producers. Lease and sequence validation remains a broker concern.
@@ -21,7 +25,7 @@ func ValidateKeyInput(key KeyName, character *string, modifiers Modifiers) error
 
 // ValidateTextInput rejects control text and applies the UTF-8 byte limit.
 func ValidateTextInput(text string) error {
-	if len(text) == 0 || len(text) > MaxTextBytes || !validText(text) {
+	if len(text) == 0 || len(text) > MaxTextBytes || !terminal.ValidText(text) {
 		return errors.New("text must be non-empty printable UTF-8 within the byte limit")
 	}
 	return nil
@@ -30,7 +34,7 @@ func ValidateTextInput(text string) error {
 // ValidatePasteInput permits newline, carriage return, and tab but rejects
 // other control bytes and applies the UTF-8 byte limit.
 func ValidatePasteInput(text string) error {
-	if len(text) == 0 || len(text) > MaxPasteBytes || !validPaste(text) {
+	if len(text) == 0 || len(text) > MaxPasteBytes || !terminal.ValidPaste(text) {
 		return errors.New("paste must be non-empty allowed UTF-8 within the byte limit")
 	}
 	return nil

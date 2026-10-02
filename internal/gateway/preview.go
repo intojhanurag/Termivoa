@@ -219,7 +219,7 @@ func (handler *previewHandler) ServeHTTP(response http.ResponseWriter, request *
 		return
 	}
 	credential, ok := handler.main.sessionCookie(request)
-	if !ok || !validSecret(credential) {
+	if !ok || protocol.ValidateSecretText(credential) != nil {
 		previewPage(response, http.StatusUnauthorized, "Open the preview from your paired phone.")
 		return
 	}

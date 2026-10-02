@@ -42,7 +42,7 @@ func (handler *gatewayHandler) pairRedeem(response http.ResponseWriter, request 
 		writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "too many pairing attempts")
 		return
 	}
-	if !validSecret(body.Grant) || !validText(body.DeviceLabel, maxDeviceLabelBytes) {
+	if protocol.ValidateSecretText(body.Grant) != nil || !validText(body.DeviceLabel, maxDeviceLabelBytes) {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid pairing request")
 		return
 	}
@@ -66,7 +66,7 @@ func (handler *gatewayHandler) pairPoll(response http.ResponseWriter, request *h
 		writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "too many pairing polls")
 		return
 	}
-	if !protocol.ValidUUID(body.PendingID) || !validSecret(body.PollSecret) {
+	if !protocol.ValidUUID(body.PendingID) || protocol.ValidateSecretText(body.PollSecret) != nil {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid poll request")
 		return
 	}
@@ -88,7 +88,7 @@ func (handler *gatewayHandler) pairPoll(response http.ResponseWriter, request *h
 	maxAge := int(math.Ceil(time.Until(result.CredentialExpiresAt).Seconds()))
 	switch {
 	case result.Response.Status == protocol.HTTPPairPollStatusPending && result.Credential == "":
-	case result.Response.Status == protocol.Approved && validSecret(result.Credential) && maxAge > 0:
+	case result.Response.Status == protocol.Approved && protocol.ValidateSecretText(result.Credential) == nil && maxAge > 0:
 		handler.setCookie(response, result.Credential, maxAge)
 	default:
 		writeError(response, http.StatusInternalServerError, protocol.InternalError, "internal error")
@@ -420,7 +420,7 @@ func (handler *gatewayHandler) logout(response http.ResponseWriter, request *htt
 	if !handler.mutation(response, request, &body) {
 		return
 	}
-	if value, ok := handler.sessionCookie(request); ok && validSecret(value) {
+	if value, ok := handler.sessionCookie(request); ok && protocol.ValidateSecretText(value) == nil {
 		if err := handler.api.Logout(request.Context(), value); err != nil && !isAuthFailure(err) {
 			writeBrokerError(response, err)
 			return
@@ -460,7 +460,7 @@ func (handler *gatewayHandler) credential(response http.ResponseWriter, request 
 		writeError(response, http.StatusUnauthorized, protocol.Unauthorized, "sign in required")
 		return "", false
 	}
-	if !validSecret(value) {
+	if protocol.ValidateSecretText(value) != nil {
 		handler.authFailLimit.take(key)
 		handler.clearCookie(response)
 		writeError(response, http.StatusUnauthorized, protocol.Unauthorized, "sign in required")
@@ -634,22 +634,6 @@ func writeError(response http.ResponseWriter, status int, code protocol.ErrorCod
 	writeJSON(response, status, protocol.HTTPErrorResponse{
 		Error: protocol.BrokerRPCErrorPayload{Code: code, Message: message},
 	})
-}
-
-// validSecret mirrors the schema secret: 43 unpadded base64url characters.
-func validSecret(value string) bool {
-	if len(value) != 43 {
-		return false
-	}
-	for index := 0; index < len(value); index++ {
-		switch character := value[index]; {
-		case character >= 'A' && character <= 'Z', character >= 'a' && character <= 'z',
-			character >= '0' && character <= '9', character == '-', character == '_':
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 // validText mirrors maxUtf8Bytes plus safeDisplayText. U+FFFD is rejected
