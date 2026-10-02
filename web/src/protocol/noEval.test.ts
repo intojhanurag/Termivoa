@@ -24,6 +24,9 @@ describe('runtime protocol validation', () => {
       version: 1, type: 'access.revoked', requestId: '00000000-0000-4000-8000-000000000001',
       payload: { message: 'x'.repeat(513) },
     }))).toThrow();
+    const { parseHttpBody } = await import('./httpBody');
+    expect(parseHttpBody('pairPollResponse', { status: 'pending', extra: 1 })).toEqual({ status: 'pending' });
+    expect(() => parseHttpBody('pairPollResponse', { status: 1 })).toThrow();
     expect(compiled).toEqual([]);
   });
 });

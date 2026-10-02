@@ -28,6 +28,8 @@ Installer behavior:
   `%LOCALAPPDATA%\Phone Terminal\logs\broker.log` and `gateway.log` itself.
   If the broker has active sessions, or a broker or gateway already runs
   without startup registration, setup refuses and the installer says so.
+  When other Tailscale Serve handlers share this computer's Termivoa address
+  (HTTPS 443), setup exits 3 and the installer names that cause and its fix.
 - Task "Add pterm to my PATH" is unchecked by default and edits only the
   current user's PATH.
 - The uninstaller first asks whether to delete data (default: keep), then runs

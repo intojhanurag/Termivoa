@@ -243,6 +243,7 @@ func TestHealthHandlerRejectsWrongPathMethodAndHost(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(test.method, "http://127.0.0.1:8787"+test.path, nil)
 			request.Host = test.host
+			request.Header.Set("Sec-Fetch-Site", "same-origin")
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
 			if response.Code != test.want {

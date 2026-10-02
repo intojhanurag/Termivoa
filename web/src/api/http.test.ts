@@ -1,5 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, blobToBase64, deviceLabelProblem, REQUEST_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from './http';
+import { MIN_PROTOCOL_REVISION, PROTOCOL_REVISION } from '../generated/protocol';
+import {
+  api, ApiError, blobToBase64, client, deviceLabelProblem, firstLabel, forgetClient, MAX_RESPONSE_BYTES, PEER_REQUEST_FAILED,
+  REQUEST_TIMEOUT_MS, revisionProblem, supports, UPLOAD_TIMEOUT_MS,
+} from './http';
+
+// Pretend this app is at revision 3 and serves computers from revision 2, so a
+// real (schema-valid) revision 1 computer is outdated.
+vi.mock('../generated/protocol', async (original) => ({
+  ...await original<typeof import('../generated/protocol')>(),
+  PROTOCOL_REVISION: 3,
+  MIN_PROTOCOL_REVISION: 2,
+}));
 
 const device = { id: '00000000-0000-4000-8000-000000000020', label: 'Work phone' };
 
@@ -137,5 +149,104 @@ describe('photo upload', () => {
     expect(await blobToBase64(new Blob([bytes]))).toBe(Buffer.from(bytes).toString('base64'));
     expect(await blobToBase64(new Blob([new Uint8Array([1])]))).toBe('AQ==');
     expect(await blobToBase64(new Blob([]))).toBe('');
+  });
+});
+
+const settings = (revision = PROTOCOL_REVISION, minRevision = MIN_PROTOCOL_REVISION) => ({
+  device,
+  projects: [],
+  shellProfiles: [],
+  hostBuild: 'test',
+  brokerGeneration: '00000000-0000-4000-8000-000000000021',
+  protocolRevision: revision,
+  minProtocolRevision: minRevision,
+});
+
+describe('client(origin) for a peer', () => {
+  it('sends credentialed CORS requests to the peer origin and never follows redirects', async () => {
+    const fetch = vi.fn(async () => json(200, settings()));
+    vi.stubGlobal('fetch', fetch);
+    const peer = client('https://vps.tailx.ts.net');
+    expect(peer.home).toBe(false);
+    expect(client('https://vps.tailx.ts.net')).toBe(peer);
+    await peer.settings();
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://vps.tailx.ts.net/api/v1/settings');
+    expect(init).toMatchObject({ mode: 'cors', credentials: 'include', redirect: 'error', cache: 'no-store' });
+    expect(peer.revision()).toBe(PROTOCOL_REVISION);
+    expect(peer.supports('thumbnail')).toBe(true);
+  });
+
+  it('keeps home same-origin with relative paths', async () => {
+    const fetch = vi.fn(async () => json(200, { sessions: [] }));
+    vi.stubGlobal('fetch', fetch);
+    expect(api.home).toBe(true);
+    expect(client()).toBe(api);
+    await api.sessions();
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/v1/sessions');
+    expect(init.credentials).toBe('same-origin');
+    expect(init.redirect).toBeUndefined();
+  });
+
+  it('never shows the peer\'s own error text', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(409, { error: { code: 'not_controller', message: 'Call +1 555 0100 to unlock' } })));
+    const failure = await client('https://text.tailx.ts.net').uploadImage('s', { generation: 'g', data: 'AA==' }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ status: 409, code: 'not_controller', message: PEER_REQUEST_FAILED });
+  });
+
+  it('refuses bodies over the size limit and bodies that break the schema', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(`{"sessions":[],"pad":"${'x'.repeat(MAX_RESPONSE_BYTES)}"}`, { status: 200 })));
+    await expect(client('https://big.tailx.ts.net').sessions()).rejects.toMatchObject({ code: 'invalid_response' });
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { sessions: 'all' })));
+    await expect(client('https://bad.tailx.ts.net').sessions()).rejects.toMatchObject({ code: 'invalid_response' });
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('redirect'); }));
+    await expect(client('https://moved.tailx.ts.net').sessions()).rejects.toMatchObject({ code: 'network' });
+  });
+
+  it('refuses an outdated peer until a settings read passes; logout still works', async () => {
+    let body = settings(MIN_PROTOCOL_REVISION - 1);
+    const fetch = vi.fn(async (url: string) => (url.endsWith('/settings') ? json(200, body) : url.endsWith('/logout')
+      ? new Response(null, { status: 204 }) : json(200, { sessions: [] })));
+    vi.stubGlobal('fetch', fetch);
+    const peer = client('https://old.tailx.ts.net');
+    await expect(peer.settings()).rejects.toMatchObject({ code: 'computer_outdated', message: 'Update Termivoa on old' });
+    await expect(peer.sessions()).rejects.toMatchObject({ code: 'computer_outdated' });
+    await expect(peer.logout()).resolves.toBeUndefined();
+    expect(peer.supports('thumbnail')).toBe(false);
+    body = settings();
+    await peer.settings();
+    await expect(peer.sessions()).resolves.toEqual({ sessions: [] });
+  });
+
+  it('asks to update a peer that sends no protocolRevision (it predates multi-computer), not "can\'t reach"', async () => {
+    const { protocolRevision: _, minProtocolRevision: __, ...old } = settings();
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, old)));
+    await expect(client('https://legacy.tailx.ts.net').settings()).rejects.toMatchObject({ code: 'computer_outdated', message: 'Update Termivoa on legacy' });
+  });
+
+  it('forgets a removed peer\'s client, but never home\'s', () => {
+    const peer = client('https://removed.tailx.ts.net');
+    forgetClient('https://removed.tailx.ts.net');
+    expect(client('https://removed.tailx.ts.net')).not.toBe(peer);
+    forgetClient('');
+    expect(client()).toBe(api);
+  });
+
+  it('asks to update home when a peer needs a newer app', async () => {
+    vi.stubGlobal('location', { origin: 'https://mac.tailx.ts.net' });
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, settings(PROTOCOL_REVISION + 1, PROTOCOL_REVISION + 1))));
+    await expect(client('https://new.tailx.ts.net').settings()).rejects.toMatchObject({ code: 'app_outdated', message: 'Update Termivoa on mac' });
+  });
+});
+
+describe('revision helpers', () => {
+  it('gates features and revisions', () => {
+    expect(supports(undefined, 'thumbnail')).toBe(false);
+    expect(supports(1, 'thumbnail')).toBe(true);
+    expect(revisionProblem({ protocolRevision: MIN_PROTOCOL_REVISION, minProtocolRevision: PROTOCOL_REVISION })).toBeUndefined();
+    expect(revisionProblem({ protocolRevision: MIN_PROTOCOL_REVISION - 1, minProtocolRevision: 1 })).toBe('computer_outdated');
+    expect(revisionProblem({ protocolRevision: PROTOCOL_REVISION + 5, minProtocolRevision: PROTOCOL_REVISION + 1 })).toBe('app_outdated');
+    expect(firstLabel('https://vps.tailx.ts.net')).toBe('vps');
   });
 });

@@ -50,7 +50,7 @@ func TestPairedBrowserControlsSessionUntilRevoked(t *testing.T) {
 		t.Fatalf("local pending view = %#v, %v", pending, err)
 	}
 	poll := protocol.HTTPPairPollRequest{PendingID: redeemed.PendingID, PollSecret: redeemed.PollSecret}
-	if result, err := gateway.PollPairing(ctx, poll); err != nil || result.Response.Status != protocol.Pending || result.Credential != "" {
+	if result, err := gateway.PollPairing(ctx, poll); err != nil || result.Response.Status != protocol.HTTPPairPollStatusPending || result.Credential != "" {
 		t.Fatalf("pending poll = %#v, %v", result, err)
 	}
 	if err := admin.ApprovePairing(ctx, redeemed.PendingID); err != nil {

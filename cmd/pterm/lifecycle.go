@@ -31,6 +31,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
 const devListenAddress = "127.0.0.1:8788"
@@ -44,7 +45,9 @@ type lifecycleEnv struct {
 	paths     host.Paths
 	runner    lifecycle.Runner
 	gateway   string // gateway base URL without trailing slash
-	tailscale string // tailscale CLI path, empty when not installed
+	tailscale string // tailscale CLI path, empty when not installed or refused
+	// why each tailscale found was refused (another user could replace it)
+	tailscaleRefused []string
 	// Linux only: why no systemd user manager answers (host.Systemd false),
 	// and whether this is WSL.
 	noSystemd string
@@ -85,13 +88,10 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 			return lifecycleEnv{}, err
 		}
 	}
-	tailscale, _ := exec.LookPath("tailscale")
-	if tailscale == "" {
-		tailscale = installedTailscale(runtime.GOOS, os.Getenv)
-	}
+	tailscale, refused := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
 	env := lifecycleEnv{
 		host: target, paths: paths, runner: lifecycle.ExecRunner{},
-		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale,
+		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale, tailscaleRefused: refused,
 	}
 	if runtime.GOOS == "linux" {
 		env.host.Logs = paths.LogDir
@@ -104,30 +104,6 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 		env.wsl = platform.IsWSL()
 	}
 	return env, nil
-}
-
-// installedTailscale is the Tailscale CLI its installer puts off PATH, or "".
-func installedTailscale(goos string, getenv func(string) string) string {
-	var path string
-	switch goos {
-	case "darwin":
-		path = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-	case "windows":
-		if programFiles := getenv("ProgramFiles"); filepath.IsAbs(programFiles) {
-			path = filepath.Join(programFiles, "Tailscale", "tailscale.exe")
-		}
-	case "linux":
-		// Distribution packages install here; sbin is often not on a user's PATH.
-		for _, candidate := range []string{"/usr/bin/tailscale", "/usr/sbin/tailscale"} {
-			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-				return candidate
-			}
-		}
-	}
-	if info, err := os.Stat(path); path == "" || err != nil || info.IsDir() {
-		return ""
-	}
-	return path
 }
 
 type hostReport struct {
@@ -220,7 +196,7 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 	}
 	fmt.Fprintf(output, "  shells: %s\n", strings.Join(detectShells(), ", "))
 	var problems int
-	report.tailscale, problems = inspectTailscale(ctx, env.tailscale, output)
+	report.tailscale, problems = inspectTailscale(ctx, env.tailscale, env.tailscaleRefused, output)
 	report.problems += problems
 	if env.host.OS == "linux" && os.Geteuid() != 0 {
 		report.tailscale.needsOperator = needsTailscaleOperator(ctx, env, report.tailscale)
@@ -229,6 +205,7 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 				lifecycle.TailscaleOperatorCommand)
 		}
 	}
+	report.problems += inspectMultiComputer(ctx, env, report, output)
 	return report, nil
 }
 
@@ -304,11 +281,13 @@ var tailscaleRun = func(ctx context.Context, cli string, stream io.Writer, args 
 // tailscaleReport is what the read-only Tailscale checks found.
 type tailscaleReport struct {
 	installed     bool
-	needsOperator bool // Linux: Serve changes need `tailscale set --operator` first
-	status        lifecycle.TailscaleStatus
+	refused       []string // why each tailscale found was refused
+	needsOperator bool     // Linux: Serve changes need `tailscale set --operator` first
 	statusErr     error
 	serveErr      error
 	serve         lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
+	tailnet       *tailnet.Status       // `status --json`; nil when it could not be read
+	otherHandlers []string              // other Serve handlers on this computer's own origin
 }
 
 // phoneOrigin is the private HTTPS origin Tailscale gives this computer. When
@@ -316,18 +295,20 @@ type tailscaleReport struct {
 func (report tailscaleReport) phoneOrigin() (origin, problem string) {
 	again := ", then run `pterm setup` again."
 	switch {
+	case !report.installed && len(report.refused) > 0:
+		return "", "Termivoa will not run the Tailscale CLI it found (" + report.refused[0] + "). Fix its owner or permissions, or install Tailscale from https://tailscale.com/download" + again
 	case !report.installed:
 		return "", "Tailscale is not installed. Install it from https://tailscale.com/download and sign in" + again
-	case report.statusErr != nil:
+	case report.statusErr != nil || report.tailnet == nil:
 		return "", "Tailscale did not report its status. Open Tailscale and sign in" + again
-	case report.status.BackendState != "Running":
-		return "", "Tailscale is not connected (" + report.status.BackendState + "). Run `tailscale up` or sign in from the Tailscale app" + again
-	case report.status.DNSName == "":
+	case report.tailnet.BackendState != "Running":
+		return "", "Tailscale is not connected (" + report.tailnet.BackendState + "). Run `tailscale up` or sign in from the Tailscale app" + again
+	case report.tailnet.Self.Host == "":
 		return "", "Tailscale has no DNS name for this computer. Turn on MagicDNS and HTTPS certificates in the Tailscale admin console" + again
 	}
-	origin = "https://" + strings.ToLower(report.status.DNSName)
+	origin = "https://" + report.tailnet.Self.Host
 	if protocol.ValidatePairingOrigin(origin) != nil {
-		return "", "Tailscale reported an unusable DNS name " + strconv.Quote(report.status.DNSName) + "; set the address yourself with `pterm config origin https://<host>`."
+		return "", "Tailscale reported an unusable DNS name " + strconv.Quote(report.tailnet.Self.Host) + "; set the address yourself with `pterm config origin https://<host>`."
 	}
 	return origin, ""
 }
@@ -339,9 +320,17 @@ func previewOrigin(origin string) string {
 }
 
 // inspectTailscale runs only `status --json` and `serve status --json`.
-func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report tailscaleReport, problems int) {
+// refused says why each tailscale FindBinary found was not used; with a
+// usable one as well they are only warnings.
+func inspectTailscale(ctx context.Context, cli string, refused []string, output io.Writer) (report tailscaleReport, problems int) {
+	report.refused = refused
+	for _, reason := range refused {
+		fmt.Fprintf(output, "  ! %s\n", reason)
+	}
 	if cli == "" {
-		fmt.Fprintln(output, "  ! tailscale: not installed (required for phone access)")
+		if len(refused) == 0 {
+			fmt.Fprintln(output, "  ! tailscale: not installed (required for phone access)")
+		}
 		return report, 1
 	}
 	report.installed = true
@@ -351,13 +340,13 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		return tailscaleRun(ctx, cli, nil, args...)
 	}
 	data, err := run("status", "--json")
-	status, parseErr := lifecycle.ParseTailscaleStatus(data)
+	status, parseErr := tailnet.ParseStatus(data)
 	if report.statusErr = errors.Join(err, parseErr); report.statusErr != nil {
 		fmt.Fprintf(output, "  ! tailscale: status unavailable: %v\n", report.statusErr)
 		return report, 1
 	}
-	report.status = status
-	fmt.Fprintf(output, "  tailscale: %s, host %s\n", status.BackendState, status.DNSName)
+	report.tailnet = status
+	fmt.Fprintf(output, "  tailscale: %s, host %s\n", status.BackendState, status.Self.Host)
 	if status.BackendState != "Running" {
 		problems++
 	}
@@ -378,6 +367,15 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		fmt.Fprintf(output, "  ! tailscale serve: %s\n", finding)
 	}
 	problems += len(report.serve.Problems)
+	// Each one is already counted in serve.Problems; this says why it
+	// matters and how to move it. Setup refuses them.
+	if report.otherHandlers = otherServeHandlers(data, status.Self.Host); len(report.otherHandlers) > 0 {
+		fmt.Fprintf(output, "  ! %s\n", otherHandlersProblem(status.Self.Host, report.otherHandlers))
+	}
+	// Not counted: setup does not refuse these (otherPortsWarning says why).
+	if others := otherPortHandlers(data, status.Self.Host); len(others) > 0 {
+		fmt.Fprintf(output, "  ! %s\n", otherPortsWarning(others))
+	}
 
 	// Dev-server previews (HTTPS 8443) are optional: unconfigured or
 	// conflicting never fails doctor, since only Termivoa itself (443)
@@ -529,6 +527,8 @@ func parseLifecycleFlags(command string, args []string, bools ...string) (map[st
 // before it changes Tailscale Serve, adds a Home project if there is none, and
 // pairs a phone. --apply --yes is the non-interactive installer path: it only
 // registers startup and saves the phone address when no other one is set.
+// Both refuse, before any change, while other Tailscale Serve handlers share
+// this computer's origin.
 func runSetupCommand(ctx context.Context, args []string, input *os.File, output io.Writer) error {
 	options, err := parseLifecycleFlags("setup", args, "apply", "yes")
 	if err != nil {
@@ -542,6 +542,12 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	report, err := inspectHost(ctx, env, output)
 	if err != nil {
 		return err
+	}
+	// Any other handler on this computer's origin is same-origin with the
+	// app, so setup changes nothing until they move (the checks say how).
+	if handlers := report.tailscale.otherHandlers; len(handlers) > 0 {
+		return exitCodeError{exitOtherServeHandlers, fmt.Errorf("refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (%s); "+
+			"move them as shown above, then run `pterm setup` again", strings.Join(handlers, ", "))}
 	}
 	// Without a systemd user manager nothing can be registered; setup then
 	// starts the processes now, as `pterm launch` does, and says so.

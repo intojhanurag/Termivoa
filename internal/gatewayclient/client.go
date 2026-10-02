@@ -300,7 +300,7 @@ func (client *Client) Upload(
 	}
 	defer clearDeadline()
 	send := func(requestType protocol.GatewayRPCMessageType, payload any) (protocol.GatewayRPCEnvelope, error) {
-		data, requestID, err := encodeRequest(requestType, payload)
+		data, requestID, err := encodeRequest(ctx, requestType, payload)
 		if err != nil {
 			return protocol.GatewayRPCEnvelope{}, err
 		}
@@ -345,14 +345,43 @@ func (client *Client) PreviewTarget(ctx context.Context, credential, sessionID s
 	return string(result.Host), err
 }
 
-// Origin returns the configured browser origin, or "" when none is set.
-func (client *Client) Origin(ctx context.Context) (string, error) {
-	result, err := roundTrip[protocol.GatewayRPCOriginResultPayload](ctx, client, protocol.GatewayOrigin,
+// OriginProbe returns the configured origin and the CORS origin sets.
+func (client *Client) OriginProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error) {
+	return roundTrip[protocol.GatewayRPCOriginResultPayload](ctx, client, protocol.GatewayOrigin,
 		protocol.BrokerRPCEmptyPayload{}, false, nil)
-	if err != nil || result.Origin == nil {
-		return "", err
+}
+
+func (client *Client) ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.GatewayRPCComputerListResultPayload{}, err
 	}
-	return *result.Origin, nil
+	return roundTrip[protocol.GatewayRPCComputerListResultPayload](ctx, client, protocol.GatewayComputersList,
+		protocol.GatewayRPCCredentialPayload{Credential: credential}, false, nil)
+}
+
+func (client *Client) AddComputer(
+	ctx context.Context, credential string, request protocol.HTTPComputerAddRequest,
+) (protocol.HTTPComputerAddResponse, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPComputerAddResponse{}, err
+	}
+	return roundTrip(ctx, client, protocol.GatewayComputersAdd,
+		protocol.GatewayRPCComputerAddPayload{Credential: credential, Request: request}, true,
+		func(result protocol.HTTPComputerAddResponse) error {
+			if result.Computer.Origin != request.Origin {
+				return errors.New("gatewayclient: computer result origin mismatch")
+			}
+			return nil
+		})
+}
+
+func (client *Client) RemoveComputer(ctx context.Context, credential, origin string) error {
+	if err := checkCredential(credential); err != nil {
+		return err
+	}
+	_, err := roundTrip[protocol.BrokerRPCEmptyPayload](ctx, client, protocol.GatewayComputersRemove,
+		protocol.GatewayRPCComputerRemovePayload{Credential: credential, Origin: origin}, true, nil)
+	return err
 }
 
 func (client *Client) mutate(
@@ -390,7 +419,7 @@ func roundTrip[R any](
 	if ctx == nil {
 		return result, errors.New("gatewayclient: context must not be nil")
 	}
-	data, requestID, err := encodeRequest(requestType, payload)
+	data, requestID, err := encodeRequest(ctx, requestType, payload)
 	if err != nil {
 		return result, err
 	}
@@ -496,7 +525,7 @@ func (client *Client) OpenLive(ctx context.Context, credential string) (gatewaya
 	if err := checkCredential(credential); err != nil {
 		return nil, err
 	}
-	data, requestID, err := encodeRequest(protocol.GatewayLiveOpen,
+	data, requestID, err := encodeRequest(ctx, protocol.GatewayLiveOpen,
 		protocol.GatewayRPCCredentialPayload{Credential: credential})
 	if err != nil {
 		return nil, err
@@ -585,8 +614,10 @@ func (connection *rpcConn) exchange(
 }
 
 // encodeRequest builds and validates a request before any connection is used.
-// Validation errors describe shape only and never echo secret values.
-func encodeRequest(requestType protocol.GatewayRPCMessageType, payload any) ([]byte, string, error) {
+// It forwards the browser origin from gatewayapi.WithForwardedOrigin, on every
+// request but the origin probe. Validation errors
+// describe shape only and never echo secret values.
+func encodeRequest(ctx context.Context, requestType protocol.GatewayRPCMessageType, payload any) ([]byte, string, error) {
 	requestID, err := newUUID()
 	if err != nil {
 		return nil, "", fmt.Errorf("gatewayclient: create request ID: %w", err)
@@ -595,9 +626,11 @@ func encodeRequest(requestType protocol.GatewayRPCMessageType, payload any) ([]b
 	if err != nil {
 		return nil, "", fmt.Errorf("gatewayclient: encode %s payload: %w", requestType, err)
 	}
-	data, err := json.Marshal(protocol.GatewayRPCEnvelope{
-		Version: protocol.Version, Type: requestType, RequestID: requestID, Payload: payloadJSON,
-	})
+	envelope := protocol.GatewayRPCEnvelope{Version: protocol.Version, Type: requestType, RequestID: requestID, Payload: payloadJSON}
+	if origin, ok := gatewayapi.ForwardedOrigin(ctx); ok && requestType != protocol.GatewayOrigin {
+		envelope.Origin = &origin
+	}
+	data, err := json.Marshal(envelope)
 	if err != nil {
 		return nil, "", fmt.Errorf("gatewayclient: encode %s request: %w", requestType, err)
 	}

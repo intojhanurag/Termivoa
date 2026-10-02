@@ -63,6 +63,32 @@ describe('new-output dot', () => {
   });
 });
 
+describe('keys across computers', () => {
+  const mac = { host: 'mac.tailx.ts.net', home: true };
+  const vps = { host: 'vps.tailx.ts.net', home: false };
+  const output = { ...session, lastOutputAt: '2026-09-27T10:00:00Z' };
+
+  it('keys a session by host, id and generation, so two computers never share a dot', () => {
+    const store = memory();
+    markViewed({ ...output, computer: vps }, at('10:01:00'), store);
+    expect(Object.keys(readViewed(store))).toEqual([`vps.tailx.ts.net/${session.id}/${session.generation}`]);
+    expect(hasNewOutput({ ...output, computer: vps }, readViewed(store))).toBe(false);
+    expect(hasNewOutput({ ...output, computer: mac }, readViewed(store))).toBe(true);
+  });
+
+  it('reads an old bare key as home, never as a peer', () => {
+    const viewed = { [`${session.id}/${session.generation}`]: at('10:01:00') };
+    expect(hasNewOutput({ ...output, computer: mac }, viewed)).toBe(false);
+    expect(hasNewOutput({ ...output, computer: vps }, viewed)).toBe(true);
+  });
+
+  it('keeps the worked seconds under the same host key', () => {
+    const store = memory();
+    markViewed({ ...output, computer: vps, agent: { state: 'working', stateSince: '2026-09-27T09:00:00Z', workedSeconds: 90 } }, at('10:01:00'), store);
+    expect(readWorked(store)).toEqual({ [`vps.tailx.ts.net/${session.id}/${session.generation}`]: 90 });
+  });
+});
+
 describe('agent status', () => {
   it('formats compact durations', () => {
     const now = at('12:00:00');

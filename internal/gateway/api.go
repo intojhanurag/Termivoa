@@ -75,13 +75,19 @@ func (handler *gatewayHandler) pairPoll(response http.ResponseWriter, request *h
 		writeBrokerError(response, err)
 		return
 	}
+	// The app's next request (GET /api/v1/settings) comes from the new
+	// device's bound origin: learn it now, not at the next probe, or that
+	// request would get 403 without CORS.
+	if _, cross := gatewayapi.ForwardedOrigin(request.Context()); cross && result.Response.Status == protocol.Approved {
+		handler.refreshOrigin(request.Context())
+	}
 	// The broker returns the credential exactly once, on the approved
 	// response. Anything else is a contract violation and sets no cookie.
 	// Max-Age is computed once: a value of 0 would omit the attribute and
 	// leave a browser-session cookie with no expiry.
 	maxAge := int(math.Ceil(time.Until(result.CredentialExpiresAt).Seconds()))
 	switch {
-	case result.Response.Status == protocol.Pending && result.Credential == "":
+	case result.Response.Status == protocol.HTTPPairPollStatusPending && result.Credential == "":
 	case result.Response.Status == protocol.Approved && validSecret(result.Credential) && maxAge > 0:
 		handler.setCookie(response, result.Credential, maxAge)
 	default:
@@ -99,7 +105,98 @@ func (handler *gatewayHandler) settings(response http.ResponseWriter, request *h
 	if !ok {
 		return
 	}
+	principal, err := handler.api.Authenticate(request.Context(), credential)
+	if err != nil {
+		handler.respond(response, request, nil, err)
+		return
+	}
 	result, err := handler.api.Settings(request.Context(), credential)
+	if err == nil {
+		handler.refreshCookie(response, credential, principal.ExpiresAt)
+	}
+	handler.respond(response, request, result, err)
+}
+
+// refreshCookie sends the same cookie value again so WebKit's 7-day cap on
+// cookies of other computers never ends a session in regular use. Max-Age is
+// at most the credential's remaining absolute lifetime (rounded down); the
+// server never extends any expiry. Only for requests that passed every check.
+func (handler *gatewayHandler) refreshCookie(response http.ResponseWriter, credential string, expiresAt time.Time) {
+	if maxAge := int(time.Until(expiresAt) / time.Second); maxAge > 0 {
+		handler.setCookie(response, credential, maxAge)
+	}
+}
+
+// computerList lists (GET) or adds, confirms or renames (POST) a computer in
+// the calling device's own list on this (home) computer.
+func (handler *gatewayHandler) computerList(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodGet, http.MethodPost) {
+		return
+	}
+	if request.Method == http.MethodGet {
+		credential, ok := handler.credential(response, request)
+		if !ok {
+			return
+		}
+		list, err := handler.api.ListComputers(request.Context(), credential)
+		result := protocol.HTTPComputerListResponse{Computers: list.Computers}
+		if result.Computers == nil {
+			result.Computers = []protocol.HTTPComputer{}
+		}
+		handler.respondGeneric(response, request, result, err)
+		return
+	}
+	var body protocol.HTTPComputerAddRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	if protocol.ValidateComputerOrigin(body.Origin) != nil || protocol.ValidateComputerLabel(body.Label) != nil ||
+		body.State != protocol.Confirmed && body.State != protocol.HTTPComputerStatePending {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid computer")
+		return
+	}
+	result, err := handler.api.AddComputer(request.Context(), credential, body)
+	handler.respondGeneric(response, request, result, err)
+}
+
+// removeComputer removes https://{host} from the calling device's list. Its
+// body is {} like logout's; the app signs out on that computer first.
+func (handler *gatewayHandler) removeComputer(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodDelete) {
+		return
+	}
+	var body struct{}
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	origin := "https://" + request.PathValue("host")
+	if protocol.ValidateComputerOrigin(origin) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid computer")
+		return
+	}
+	err := handler.api.RemoveComputer(request.Context(), credential, origin)
+	if err != nil {
+		handler.respondGeneric(response, request, nil, err)
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+// respondGeneric is respond with the broker's message replaced by the status
+// text: computer errors may carry names another computer chose.
+func (handler *gatewayHandler) respondGeneric(response http.ResponseWriter, request *http.Request, result any, err error) {
+	var brokerErr *gatewayapi.Error
+	if errors.As(err, &brokerErr) {
+		err = &gatewayapi.Error{Code: brokerErr.Code, Message: http.StatusText(brokerStatus(brokerErr.Code))}
+	}
 	handler.respond(response, request, result, err)
 }
 

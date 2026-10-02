@@ -2,11 +2,13 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import type { HostedSession } from './allSessions';
 import { pathFor, previewPortParam, titleFor } from './App';
 import { Preview, PreviewBar, PreviewStatus } from './Preview';
 import { isPreviewPort, latestPreview, PreviewChip, previewOrigin, previewSrc } from './PreviewChip';
 
-const session: BrokerRPCSessionRecord = {
+const session: HostedSession = {
+  computer: { origin: 'https://mac.tailnet.ts.net', host: 'mac.tailnet.ts.net', label: 'mac', color: '#64D8E8', home: true },
   id: '84444444-4444-4444-8444-444444444444',
   generation: '85555555-5555-4555-8555-555555555555',
   title: 'claude',

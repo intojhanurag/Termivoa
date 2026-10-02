@@ -1,3 +1,4 @@
+import type { Computer } from '../computers';
 import type { AgentStatus, BrokerRPCSessionRecord } from '../generated/protocol';
 
 /** When this device last viewed each session generation (ms). Not secret. */
@@ -9,7 +10,9 @@ export const WORKED_KEY = 'pterm.lastWorked';
 const MAX_VIEWED = 100;
 
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
-type SessionRef = Pick<BrokerRPCSessionRecord, 'id' | 'generation' | 'lastOutputAt' | 'agent'>;
+/** A session and, when known, its computer; without one it is a home session. */
+type Located = Pick<BrokerRPCSessionRecord, 'id' | 'generation'> & { readonly computer?: Pick<Computer, 'host' | 'home'> };
+type SessionRef = Located & Pick<BrokerRPCSessionRecord, 'lastOutputAt' | 'agent'>;
 
 export function storage(): StorageLike | undefined {
   try {
@@ -19,7 +22,17 @@ export function storage(): StorageLike | undefined {
   }
 }
 
-export const viewedKey = (session: Pick<BrokerRPCSessionRecord, 'id' | 'generation'>) => `${session.id}/${session.generation}`;
+/** Bare `id/generation`: the key before multi-computer, which always means home. */
+const bareKey = (session: Located) => `${session.id}/${session.generation}`;
+
+/** `host/id/generation`; a session without a computer keeps the old bare key, which means home. */
+export const viewedKey = (session: Located) =>
+  (session.computer === undefined ? bareKey(session) : `${session.computer.host}/${bareKey(session)}`);
+
+/** The stored time for this session; a home session also finds its old bare key. */
+export function viewedAt(viewed: ViewedTimes, session: Located): number | undefined {
+  return viewed[viewedKey(session)] ?? (session.computer?.home === false ? undefined : viewed[bareKey(session)]);
+}
 
 export function readViewed(store: StorageLike | undefined = storage(), key = VIEWED_KEY): ViewedTimes {
   try {
@@ -65,7 +78,7 @@ export function hasNewOutput(session: SessionRef, viewed: ViewedTimes): boolean 
   if (session.lastOutputAt === undefined) return false;
   const output = Date.parse(session.lastOutputAt);
   if (Number.isNaN(output)) return false;
-  const seen = viewed[viewedKey(session)];
+  const seen = viewedAt(viewed, session);
   return seen === undefined || output > seen;
 }
 

@@ -172,7 +172,7 @@ func TestSetupApplyYesNeverChangesTailscale(t *testing.T) {
 	env, launchd := newLifecycleTestEnv(t)
 	fake := &tailscaleFake{
 		status: `{"BackendState":"Running","Self":{"DNSName":"mac.example.ts.net."}}`,
-		serve:  `{"Web":{"mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
+		serve:  `{"Web":{"svc.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
 	}
 	useTailscaleFake(t, &env, fake)
 	var output bytes.Buffer
@@ -249,5 +249,37 @@ func TestOfferTailscalePreviewServe(t *testing.T) {
 	}
 	if !strings.Contains(conflicted.String(), "already serves http://127.0.0.1:3000") {
 		t.Errorf("conflicted output lacks the finding:\n%s", conflicted.String())
+	}
+}
+
+// Setup refuses, before it changes anything, while other Tailscale Serve
+// handlers share this computer's origin: each would be same-origin with the
+// Termivoa app. This holds even before any other computer is added, and in
+// installer mode too.
+func TestSetupRefusesOtherServeHandlersOnItsOrigin(t *testing.T) {
+	env, launchd := newLifecycleTestEnv(t)
+	fake := &tailscaleFake{
+		status: `{"BackendState":"Running","Self":{"DNSName":"mac.example.ts.net."}}`,
+		serve:  `{"Web":{"mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"},"/grafana":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
+	}
+	useTailscaleFake(t, &env, fake)
+	for _, args := range [][]string{{"setup"}, {"setup", "--apply", "--yes"}} {
+		var output bytes.Buffer
+		input := confirmationPipe(t, "y\ny\ny\ny\n")
+		if args[len(args)-1] == "--yes" {
+			input = nil
+		}
+		err := runWithInput(context.Background(), args, input, &output)
+		if err == nil || !strings.Contains(err.Error(), "refusing to set up") || !strings.Contains(err.Error(), "/grafana") ||
+			exitCode(err) != exitOtherServeHandlers {
+			t.Fatalf("%q: err = %v\n%s", args, err, output.String())
+		}
+		if !strings.Contains(output.String(), "`tailscale serve --https=443 --set-path=/grafana off`") ||
+			strings.Contains(output.String(), "Continue? [y/N]") {
+			t.Errorf("%q output:\n%s", args, output.String())
+		}
+		if launchd.bootstrapped() != 0 || len(fake.changes()) != 0 {
+			t.Fatalf("%q: launchd %d bootstraps, tailscale changes %q", args, launchd.bootstrapped(), fake.changes())
+		}
 	}
 }

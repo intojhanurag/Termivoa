@@ -5,6 +5,10 @@ package protocol
 // Generation index for named types in the canonical v1 protocol schemas.
 type ProtocolTypes struct {
 	AccessRevoked                    AccessRevokedPayload                    `json:"accessRevoked"`
+	AdminRPCComputer                 AdminRPCComputer                        `json:"adminRPCComputer"`
+	AdminRPCComputerListResult       AdminRPCComputerListResultPayload       `json:"adminRPCComputerListResult"`
+	AdminRPCComputerRemove           AdminRPCComputerRemovePayload           `json:"adminRPCComputerRemove"`
+	AdminRPCComputerRemoveResult     AdminRPCComputerRemoveResultPayload     `json:"adminRPCComputerRemoveResult"`
 	AdminRPCDevice                   AdminRPCDevice                          `json:"adminRPCDevice"`
 	AdminRPCDeviceID                 AdminRPCDeviceIDPayload                 `json:"adminRPCDeviceID"`
 	AdminRPCDeviceListResult         AdminRPCDeviceListResultPayload         `json:"adminRPCDeviceListResult"`
@@ -12,6 +16,7 @@ type ProtocolTypes struct {
 	AdminRPCDeviceRevokeResult       AdminRPCDeviceRevokeResultPayload       `json:"adminRPCDeviceRevokeResult"`
 	AdminRPCMessageType              AdminRPCMessageType                     `json:"adminRPCMessageType"`
 	AdminRPCOrigin                   AdminRPCOriginPayload                   `json:"adminRPCOrigin"`
+	AdminRPCPairGrant                AdminRPCPairGrantPayload                `json:"adminRPCPairGrant"`
 	AdminRPCPairGrantResult          AdminRPCPairGrantResultPayload          `json:"adminRPCPairGrantResult"`
 	AdminRPCPairPendingResult        AdminRPCPairPendingResultPayload        `json:"adminRPCPairPendingResult"`
 	AdminRPCPendingID                AdminRPCPendingIDPayload                `json:"adminRPCPendingID"`
@@ -21,6 +26,8 @@ type ProtocolTypes struct {
 	AdminRPCProjectAdd               AdminRPCProjectAddPayload               `json:"adminRPCProjectAdd"`
 	AdminRPCProjectListResult        AdminRPCProjectListResultPayload        `json:"adminRPCProjectListResult"`
 	AdminRPCProjectResult            AdminRPCProjectResultPayload            `json:"adminRPCProjectResult"`
+	AdminRPCRevokeVia                AdminRPCRevokeViaPayload                `json:"adminRPCRevokeVia"`
+	AdminRPCRevokeViaResult          AdminRPCRevokeViaResultPayload          `json:"adminRPCRevokeViaResult"`
 	AdminRPCShellProfile             AdminRPCShellProfile                    `json:"adminRPCShellProfile"`
 	AdminRPCShutdownResult           AdminRPCShutdownResultPayload           `json:"adminRPCShutdownResult"`
 	AgentStatus                      AgentStatus                             `json:"agentStatus"`
@@ -56,6 +63,9 @@ type ProtocolTypes struct {
 	FilesListed                      FilesListedPayload                      `json:"filesListed"`
 	FilesRead                        FilesReadPayload                        `json:"filesRead"`
 	FilesSearch                      FilesSearchPayload                      `json:"filesSearch"`
+	GatewayRPCComputerAdd            GatewayRPCComputerAddPayload            `json:"gatewayRPCComputerAdd"`
+	GatewayRPCComputerListResult     GatewayRPCComputerListResultPayload     `json:"gatewayRPCComputerListResult"`
+	GatewayRPCComputerRemove         GatewayRPCComputerRemovePayload         `json:"gatewayRPCComputerRemove"`
 	GatewayRPCCredential             GatewayRPCCredentialPayload             `json:"gatewayRPCCredential"`
 	GatewayRPCDeviceRename           GatewayRPCDeviceRenamePayload           `json:"gatewayRPCDeviceRename"`
 	GatewayRPCMessageType            GatewayRPCMessageType                   `json:"gatewayRPCMessageType"`
@@ -76,6 +86,11 @@ type ProtocolTypes struct {
 	HistoryChanged                   HistoryChangedPayload                   `json:"historyChanged"`
 	HistoryPage                      HistoryPagePayload                      `json:"historyPage"`
 	HistoryRead                      HistoryReadPayload                      `json:"historyRead"`
+	HTTPComputer                     HTTPComputer                            `json:"httpComputer"`
+	HTTPComputerAddRequest           HTTPComputerAddRequest                  `json:"httpComputerAddRequest"`
+	HTTPComputerAddResponse          HTTPComputerAddResponse                 `json:"httpComputerAddResponse"`
+	HTTPComputerListResponse         HTTPComputerListResponse                `json:"httpComputerListResponse"`
+	HTTPComputerState                HTTPComputerState                       `json:"httpComputerState"`
 	HTTPDeviceRenameRequest          HTTPDeviceRenameRequest                 `json:"httpDeviceRenameRequest"`
 	HTTPDeviceSummary                HTTPDeviceSummary                       `json:"httpDeviceSummary"`
 	HTTPErrorResponse                HTTPErrorResponse                       `json:"httpErrorResponse"`
@@ -116,11 +131,13 @@ type ProtocolTypes struct {
 	ScreenMetadata                   ScreenMetadata                          `json:"screenMetadata"`
 	ScreenPatch                      ScreenPatchPayload                      `json:"screenPatch"`
 	ScreenResync                     ScreenResyncPayload                     `json:"screenResync"`
+	SessionAttach                    SessionAttachPayload                    `json:"sessionAttach"`
 	SessionState                     SessionStatePayload                     `json:"sessionState"`
 	SnapshotApplied                  SnapshotAppliedPayload                  `json:"snapshotApplied"`
 	SnapshotBegin                    SnapshotBeginPayload                    `json:"snapshotBegin"`
 	SnapshotEnd                      SnapshotEndPayload                      `json:"snapshotEnd"`
 	SnapshotRows                     SnapshotRowsPayload                     `json:"snapshotRows"`
+	TailnetNode                      TailnetNode                             `json:"tailnetNode"`
 	TasksList                        TasksListPayload                        `json:"tasksList"`
 	TasksListed                      TasksListedPayload                      `json:"tasksListed"`
 	TerminalResize                   TerminalResizePayload                   `json:"terminalResize"`
@@ -134,13 +151,49 @@ type AccessRevokedPayload struct {
 	Message string `json:"message"`
 }
 
+// One confirmed computer in one device's list on this (home) computer.
+type AdminRPCComputer struct {
+	CreatedAt string `json:"createdAt"`
+	DeviceID  string `json:"deviceId"`
+	Label     string `json:"label"`
+	Origin    string `json:"origin"`
+}
+
+// Confirmed computers of every device (at most 64 devices with 8 each). Pending entries are
+// never listed.
+type AdminRPCComputerListResultPayload struct {
+	Computers []AdminRPCComputer `json:"computers"`
+}
+
+// pterm computers remove: removes origin from every device's list, pending or confirmed. It
+// cannot log the phone out on that computer.
+type AdminRPCComputerRemovePayload struct {
+	Origin string `json:"origin"`
+}
+
+type AdminRPCComputerRemoveResultPayload struct {
+	Origin  string `json:"origin"`
+	Removed int64  `json:"removed"`
+}
+
 type AdminRPCDevice struct {
+	AppNode    *TailnetNode         `json:"appNode,omitempty"`
+	AppOrigin  *string              `json:"appOrigin,omitempty"`
 	CreatedAt  string               `json:"createdAt"`
 	ID         string               `json:"id"`
 	Label      string               `json:"label"`
 	LastUsedAt string               `json:"lastUsedAt"`
 	Revoked    bool                 `json:"revoked"`
 	Status     AdminRPCDeviceStatus `json:"status"`
+}
+
+// A Tailscale node from the computer's own tailscale status. id is the stable node ID.
+// owner is the login name of a user-owned node and is absent for tagged nodes, which carry
+// tags instead. Display and pinning data, never authentication.
+type TailnetNode struct {
+	ID    string   `json:"id"`
+	Owner *string  `json:"owner,omitempty"`
+	Tags  []string `json:"tags"`
 }
 
 type AdminRPCDeviceIDPayload struct {
@@ -169,11 +222,22 @@ type AdminRPCOriginPayload struct {
 	Origin *string `json:"origin,omitempty"`
 }
 
+// Empty creates a grant for this computer's own origin. via binds the grant to one app
+// origin, resolved by the broker in its own tailscale status and pinned to that node ID;
+// allowTagged must be true when that node is tagged.
+type AdminRPCPairGrantPayload struct {
+	AllowTagged *bool   `json:"allowTagged,omitempty"`
+	Via         *string `json:"via,omitempty"`
+}
+
 // The only delivery of a fresh two-minute grant. origin is present when configured.
+// appOrigin and appNode are present exactly when the grant is bound with via.
 type AdminRPCPairGrantResultPayload struct {
-	ExpiresAt string  `json:"expiresAt"`
-	Grant     string  `json:"grant"`
-	Origin    *string `json:"origin,omitempty"`
+	AppNode   *TailnetNode `json:"appNode,omitempty"`
+	AppOrigin *string      `json:"appOrigin,omitempty"`
+	ExpiresAt string       `json:"expiresAt"`
+	Grant     string       `json:"grant"`
+	Origin    *string      `json:"origin,omitempty"`
 }
 
 type AdminRPCPairPendingResultPayload struct {
@@ -181,10 +245,12 @@ type AdminRPCPairPendingResultPayload struct {
 }
 
 type AdminRPCPendingPairing struct {
-	DeviceLabel      string `json:"deviceLabel"`
-	ExpiresAt        string `json:"expiresAt"`
-	ID               string `json:"id"`
-	VerificationCode string `json:"verificationCode"`
+	AppNode          *TailnetNode `json:"appNode,omitempty"`
+	AppOrigin        *string      `json:"appOrigin,omitempty"`
+	DeviceLabel      string       `json:"deviceLabel"`
+	ExpiresAt        string       `json:"expiresAt"`
+	ID               string       `json:"id"`
+	VerificationCode string       `json:"verificationCode"`
 }
 
 type AdminRPCPendingIDPayload struct {
@@ -219,6 +285,19 @@ type AdminRPCProjectListResultPayload struct {
 
 type AdminRPCProjectResultPayload struct {
 	Project AdminRPCProject `json:"project"`
+}
+
+// pterm revoke --via: revokes every device bound to appOrigin.
+type AdminRPCRevokeViaPayload struct {
+	AppOrigin string `json:"appOrigin"`
+}
+
+// Sent only after every revocation is durable and every bound live stream has been closed.
+// deviceIds is empty when no device was bound to appOrigin.
+type AdminRPCRevokeViaResultPayload struct {
+	AppOrigin     string   `json:"appOrigin"`
+	ClosedStreams int64    `json:"closedStreams"`
+	DeviceIDS     []string `json:"deviceIds"`
 }
 
 // Sent after every live session was terminated through the normal termination path and
@@ -573,6 +652,41 @@ type FilesSearchPayload struct {
 	Query string `json:"query"`
 }
 
+// Adds, confirms or renames a computer in the list of the device that owns the credential.
+type GatewayRPCComputerAddPayload struct {
+	Credential string                 `json:"credential"`
+	Request    HTTPComputerAddRequest `json:"request"`
+}
+
+// POST /api/v1/computers. state pending records or refreshes a short-lived pending entry
+// before pairing; confirmed confirms an existing entry (or renames a confirmed one) after
+// the peer's settings were read.
+type HTTPComputerAddRequest struct {
+	Label  string            `json:"label"`
+	Origin string            `json:"origin"`
+	State  HTTPComputerState `json:"state"`
+}
+
+// The device's confirmed computers (the HTTP response) and the origins of its unexpired
+// pending computers, which only the gateway uses for the app's CSP connect-src.
+type GatewayRPCComputerListResultPayload struct {
+	Computers      []HTTPComputer `json:"computers"`
+	PendingOrigins []string       `json:"pendingOrigins"`
+}
+
+// A confirmed peer computer in the calling device's own list on this (home) computer.
+type HTTPComputer struct {
+	Label  string `json:"label"`
+	Origin string `json:"origin"`
+}
+
+// Removes one computer, pending or confirmed, from the list of the device that owns the
+// credential. The gateway builds origin from the {host} path segment.
+type GatewayRPCComputerRemovePayload struct {
+	Credential string `json:"credential"`
+	Origin     string `json:"origin"`
+}
+
 // The raw browser cookie value. It is never logged, persisted, or echoed.
 type GatewayRPCCredentialPayload struct {
 	Credential string `json:"credential"`
@@ -588,11 +702,18 @@ type HTTPDeviceRenameRequest struct {
 	Label string `json:"label"`
 }
 
-// The browser origin configured with admin.config.origin, absent when none is set. It is
-// not a secret. The gateway adds it to its exact Host and Origin allow-list when it is
-// valid for the gateway's profile.
+// origin: the browser origin configured with admin.config.origin, absent when none is set.
+// It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it
+// is valid for the gateway's profile. boundOrigins: the union of origins of devices bound
+// to an app origin whose node is still trusted or has changed since pairing, revoked or
+// expired included (so their app can read the refusal and offer pairing again), used only
+// for CORS headers (the broker still checks each request's origin against its own
+// credential). pairingOrigins: app origins of unexpired bound grants and pending pairings,
+// admitted only on /api/v1/pair/*. Both are sorted, unique, and absent when empty.
 type GatewayRPCOriginResultPayload struct {
-	Origin *string `json:"origin,omitempty"`
+	BoundOrigins   []string `json:"boundOrigins,omitempty"`
+	Origin         *string  `json:"origin,omitempty"`
+	PairingOrigins []string `json:"pairingOrigins,omitempty"`
 }
 
 // credential and credentialExpiresAt appear exactly when response.status is approved. That
@@ -712,6 +833,20 @@ type GatewayRPCUploadChunkPayload struct {
 	Data string `json:"data"`
 }
 
+// The saved entry and the peer's node as seen in this computer's own tailscale status, for
+// the app's confirm sheet.
+type HTTPComputerAddResponse struct {
+	Computer HTTPComputer      `json:"computer"`
+	Node     TailnetNode       `json:"node"`
+	State    HTTPComputerState `json:"state"`
+}
+
+// GET /api/v1/computers: the calling device's confirmed computers. Pending entries are
+// never listed.
+type HTTPComputerListResponse struct {
+	Computers []HTTPComputer `json:"computers"`
+}
+
 type HTTPErrorResponse struct {
 	Error BrokerRPCErrorPayload `json:"error"`
 }
@@ -766,11 +901,13 @@ type HTTPSessionMutationResponse struct {
 }
 
 type HTTPSettingsResponse struct {
-	BrokerGeneration string            `json:"brokerGeneration"`
-	Device           HTTPDeviceSummary `json:"device"`
-	HostBuild        string            `json:"hostBuild"`
-	Projects         []HTTPNamedOption `json:"projects"`
-	ShellProfiles    []HTTPNamedOption `json:"shellProfiles"`
+	BrokerGeneration    string            `json:"brokerGeneration"`
+	Device              HTTPDeviceSummary `json:"device"`
+	HostBuild           string            `json:"hostBuild"`
+	MinProtocolRevision int64             `json:"minProtocolRevision"`
+	Projects            []HTTPNamedOption `json:"projects"`
+	ProtocolRevision    int64             `json:"protocolRevision"`
+	ShellProfiles       []HTTPNamedOption `json:"shellProfiles"`
 }
 
 // One image for the session's project folder. data is the file, standard padded base64, 1
@@ -976,6 +1113,18 @@ type ScreenResyncPayload struct {
 	Reason       Reason  `json:"reason"`
 }
 
+// Empty attaches a full viewer. thumbnail attaches a read-only viewer (no control or input)
+// whose screen frames the broker coalesces to at most maxUpdatesPerSecond; snapshots,
+// history notices and session state are not throttled. Send thumbnail only to a computer
+// whose protocolRevision supports it.
+type SessionAttachPayload struct {
+	Thumbnail *ThumbnailMode `json:"thumbnail,omitempty"`
+}
+
+type ThumbnailMode struct {
+	MaxUpdatesPerSecond int64 `json:"maxUpdatesPerSecond"`
+}
+
 type SessionStatePayload struct {
 	Agent    *AgentStatus  `json:"agent,omitempty"`
 	Cwd      *string       `json:"cwd,omitempty"`
@@ -1088,33 +1237,39 @@ const (
 type AdminRPCMessageType string
 
 const (
-	AdminConfigOrigin        AdminRPCMessageType = "admin.config.origin"
-	AdminConfigOriginResult  AdminRPCMessageType = "admin.config.origin.result"
-	AdminDeviceList          AdminRPCMessageType = "admin.device.list"
-	AdminDeviceListResult    AdminRPCMessageType = "admin.device.list.result"
-	AdminDeviceRename        AdminRPCMessageType = "admin.device.rename"
-	AdminDeviceRenameResult  AdminRPCMessageType = "admin.device.rename.result"
-	AdminDeviceRevoke        AdminRPCMessageType = "admin.device.revoke"
-	AdminDeviceRevokeResult  AdminRPCMessageType = "admin.device.revoke.result"
-	AdminError               AdminRPCMessageType = "admin.error"
-	AdminGatewayStop         AdminRPCMessageType = "admin.gateway.stop"
-	AdminGatewayStopResult   AdminRPCMessageType = "admin.gateway.stop.result"
-	AdminPairApprove         AdminRPCMessageType = "admin.pair.approve"
-	AdminPairApproveResult   AdminRPCMessageType = "admin.pair.approve.result"
-	AdminPairGrant           AdminRPCMessageType = "admin.pair.grant"
-	AdminPairGrantResult     AdminRPCMessageType = "admin.pair.grant.result"
-	AdminPairPending         AdminRPCMessageType = "admin.pair.pending"
-	AdminPairPendingResult   AdminRPCMessageType = "admin.pair.pending.result"
-	AdminProfileDetect       AdminRPCMessageType = "admin.profile.detect"
-	AdminProfileDetectResult AdminRPCMessageType = "admin.profile.detect.result"
-	AdminProfileList         AdminRPCMessageType = "admin.profile.list"
-	AdminProfileListResult   AdminRPCMessageType = "admin.profile.list.result"
-	AdminProjectAdd          AdminRPCMessageType = "admin.project.add"
-	AdminProjectAddResult    AdminRPCMessageType = "admin.project.add.result"
-	AdminProjectList         AdminRPCMessageType = "admin.project.list"
-	AdminProjectListResult   AdminRPCMessageType = "admin.project.list.result"
-	AdminShutdown            AdminRPCMessageType = "admin.shutdown"
-	AdminShutdownResult      AdminRPCMessageType = "admin.shutdown.result"
+	AdminComputersList         AdminRPCMessageType = "admin.computers.list"
+	AdminComputersListResult   AdminRPCMessageType = "admin.computers.list.result"
+	AdminComputersRemove       AdminRPCMessageType = "admin.computers.remove"
+	AdminComputersRemoveResult AdminRPCMessageType = "admin.computers.remove.result"
+	AdminConfigOrigin          AdminRPCMessageType = "admin.config.origin"
+	AdminConfigOriginResult    AdminRPCMessageType = "admin.config.origin.result"
+	AdminDeviceList            AdminRPCMessageType = "admin.device.list"
+	AdminDeviceListResult      AdminRPCMessageType = "admin.device.list.result"
+	AdminDeviceRename          AdminRPCMessageType = "admin.device.rename"
+	AdminDeviceRenameResult    AdminRPCMessageType = "admin.device.rename.result"
+	AdminDeviceRevoke          AdminRPCMessageType = "admin.device.revoke"
+	AdminDeviceRevokeResult    AdminRPCMessageType = "admin.device.revoke.result"
+	AdminDeviceRevokeVia       AdminRPCMessageType = "admin.device.revoke.via"
+	AdminDeviceRevokeViaResult AdminRPCMessageType = "admin.device.revoke.via.result"
+	AdminError                 AdminRPCMessageType = "admin.error"
+	AdminGatewayStop           AdminRPCMessageType = "admin.gateway.stop"
+	AdminGatewayStopResult     AdminRPCMessageType = "admin.gateway.stop.result"
+	AdminPairApprove           AdminRPCMessageType = "admin.pair.approve"
+	AdminPairApproveResult     AdminRPCMessageType = "admin.pair.approve.result"
+	AdminPairGrant             AdminRPCMessageType = "admin.pair.grant"
+	AdminPairGrantResult       AdminRPCMessageType = "admin.pair.grant.result"
+	AdminPairPending           AdminRPCMessageType = "admin.pair.pending"
+	AdminPairPendingResult     AdminRPCMessageType = "admin.pair.pending.result"
+	AdminProfileDetect         AdminRPCMessageType = "admin.profile.detect"
+	AdminProfileDetectResult   AdminRPCMessageType = "admin.profile.detect.result"
+	AdminProfileList           AdminRPCMessageType = "admin.profile.list"
+	AdminProfileListResult     AdminRPCMessageType = "admin.profile.list.result"
+	AdminProjectAdd            AdminRPCMessageType = "admin.project.add"
+	AdminProjectAddResult      AdminRPCMessageType = "admin.project.add.result"
+	AdminProjectList           AdminRPCMessageType = "admin.project.list"
+	AdminProjectListResult     AdminRPCMessageType = "admin.project.list.result"
+	AdminShutdown              AdminRPCMessageType = "admin.shutdown"
+	AdminShutdownResult        AdminRPCMessageType = "admin.shutdown.result"
 )
 
 type AgentState string
@@ -1270,6 +1425,15 @@ const (
 	NotDir                    FilesListState = "not_dir"
 )
 
+// pending: recorded before pairing with the peer so the app's CSP allows it; short expiry,
+// shown nowhere. confirmed: the app read the peer's settings with the peer's own cookie.
+type HTTPComputerState string
+
+const (
+	Confirmed                HTTPComputerState = "confirmed"
+	HTTPComputerStatePending HTTPComputerState = "pending"
+)
+
 type GatewayRPCMessageType string
 
 const (
@@ -1277,6 +1441,12 @@ const (
 	GatewayAuthCheckResult        GatewayRPCMessageType = "gateway.auth.check.result"
 	GatewayAuthLogout             GatewayRPCMessageType = "gateway.auth.logout"
 	GatewayAuthLogoutResult       GatewayRPCMessageType = "gateway.auth.logout.result"
+	GatewayComputersAdd           GatewayRPCMessageType = "gateway.computers.add"
+	GatewayComputersAddResult     GatewayRPCMessageType = "gateway.computers.add.result"
+	GatewayComputersList          GatewayRPCMessageType = "gateway.computers.list"
+	GatewayComputersListResult    GatewayRPCMessageType = "gateway.computers.list.result"
+	GatewayComputersRemove        GatewayRPCMessageType = "gateway.computers.remove"
+	GatewayComputersRemoveResult  GatewayRPCMessageType = "gateway.computers.remove.result"
 	GatewayDeviceRename           GatewayRPCMessageType = "gateway.device.rename"
 	GatewayDeviceRenameResult     GatewayRPCMessageType = "gateway.device.rename.result"
 	GatewayError                  GatewayRPCMessageType = "gateway.error"
@@ -1319,8 +1489,8 @@ const (
 type HTTPPairPollStatus string
 
 const (
-	Approved HTTPPairPollStatus = "approved"
-	Pending  HTTPPairPollStatus = "pending"
+	Approved                  HTTPPairPollStatus = "approved"
+	HTTPPairPollStatusPending HTTPPairPollStatus = "pending"
 )
 
 type PreviewHost string
@@ -1571,4 +1741,11 @@ const (
 	Dirty                     WorktreeRemoveState = "dirty"
 	Removed                   WorktreeRemoveState = "removed"
 	WorktreeRemoveStateFailed WorktreeRemoveState = "failed"
+)
+
+// ProtocolRevision is this build's additive protocol v1 revision and
+// MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
+const (
+	ProtocolRevision    = 1
+	MinProtocolRevision = 1
 )

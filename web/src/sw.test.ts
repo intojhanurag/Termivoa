@@ -1,13 +1,43 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Handler = (event: Record<string, unknown>) => void;
+type Network = (input: unknown, init?: RequestInit) => Promise<Response>;
+
+const BUILD = '0123456789abcdef';
+const CACHE = `pterm-bundle-${BUILD}`;
+const FILES = ['/assets/Wall-1.js', '/assets/index-1.css', '/assets/index-1.js', '/icon-192.png', '/index.html', '/manifest.webmanifest'];
+const SOURCE = readFileSync(new URL('./sw.js', import.meta.url), 'utf8')
+  .replaceAll('__BUILD__', BUILD)
+  .replaceAll('__BUNDLE__', JSON.stringify({ build: BUILD, files: FILES }));
+
+const shell = (build: string, body = 'app') =>
+  new Response(`<!doctype html><html><head>\n    <meta name="pterm-build" content="${build}" />\n</head><body>${body}</body></html>`, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+
+/** A Cache Storage kept in maps: cache name -> key -> response. */
+function cacheStorage(initial: Record<string, Record<string, Response>> = {}) {
+  const store = new Map<string, Map<string, Response>>(Object.entries(initial).map(([name, entries]) => [name, new Map(Object.entries(entries))]));
+  const put = vi.fn(async (_key: string, _response: Response) => undefined);
+  const caches = {
+    open: vi.fn(async (name: string) => {
+      const entries = store.get(name) ?? new Map<string, Response>();
+      store.set(name, entries);
+      return {
+        match: async (key: string) => entries.get(key)?.clone(),
+        put: async (key: string, response: Response) => { await put(key, response); entries.set(key, response); },
+      };
+    }),
+    keys: vi.fn(async () => [...store.keys()]),
+    delete: vi.fn(async (name: string) => store.delete(name)),
+  };
+  return { store, caches, put };
+}
 
 /** Runs src/sw.js against a fake worker global and returns its handlers. */
-function loadWorker(network: (request: Request) => Promise<Response>, windows: Array<Record<string, unknown>> = []) {
+function loadWorker(network: Network, windows: Array<Record<string, unknown>> = [], storage = cacheStorage()) {
   const handlers = new Map<string, Handler>();
-  const put = vi.fn(async () => undefined);
-  const cache = { match: vi.fn(async () => undefined), put };
   const self = {
     location: { origin: 'https://host.example' },
     addEventListener: (type: string, handler: Handler) => handlers.set(type, handler),
@@ -19,46 +49,200 @@ function loadWorker(network: (request: Request) => Promise<Response>, windows: A
     },
     registration: { showNotification: vi.fn(async () => undefined) },
   };
-  const caches = { open: vi.fn(async () => cache), keys: vi.fn(async () => []), delete: vi.fn() };
-  const source = readFileSync(new URL('./sw.js', import.meta.url), 'utf8');
-  new Function('self', 'caches', 'fetch', source)(self, caches, network);
-  return { handlers, self, put };
+  const fetch = vi.fn(network);
+  new Function('self', 'caches', 'fetch', SOURCE)(self, storage.caches, fetch);
+  return { handlers, self, fetch, ...storage };
 }
+
+/** The worker's pure decision functions. */
+const pure = new Function('self', 'caches', 'fetch', `${SOURCE}\nreturn { buildOf, shouldCacheShell, isBundleFile, withTimeout };`)(
+  { location: { origin: 'https://host.example' }, addEventListener: () => undefined }, {}, () => undefined,
+) as {
+  buildOf: (html: string) => string | undefined;
+  shouldCacheShell: (status: number, contentType: string | null, html: string, build: string) => boolean;
+  isBundleFile: (pathname: string) => boolean;
+  withTimeout: <T>(promise: Promise<T>, ms: number) => Promise<T>;
+};
+
+/** A server that answers every bundle file, with overrides per path. */
+function server(overrides: Record<string, () => Promise<Response>> = {}): Network {
+  return async (input) => {
+    const path = String(input);
+    const override = overrides[path];
+    if (override) return override();
+    return path === '/index.html' ? shell(BUILD) : new Response(`file ${path}`);
+  };
+}
+
+/** Starts a navigation and returns the page reply and the background work. */
+function navigate(handlers: Map<string, Handler>, path = '/sessions') {
+  let reply: Promise<Response> | undefined;
+  let work: Promise<unknown> | undefined;
+  handlers.get('fetch')?.({
+    // Request cannot be built with mode "navigate", so pass the fields the worker reads.
+    request: { method: 'GET', url: `https://host.example${path}`, mode: 'navigate' },
+    respondWith: (value: Promise<Response>) => { reply = value; },
+    waitUntil: (value: Promise<unknown>) => { work = value; },
+  });
+  return { reply: reply as Promise<Response>, work: () => work };
+}
+
+afterEach(() => { vi.useRealTimers(); });
 
 describe('service worker', () => {
   it('never activates a new version on install; only an explicit reload message does', async () => {
-    const { handlers, self } = loadWorker(async () => new Response(''));
-    handlers.get('install')?.({ waitUntil: vi.fn() });
+    const { handlers, self } = loadWorker(server());
+    await fire(handlers, 'install', {});
     expect(self.skipWaiting).not.toHaveBeenCalled();
     handlers.get('message')?.({ data: { type: 'skip-waiting' } });
     expect(self.skipWaiting).toHaveBeenCalledOnce();
+  });
+
+  it('precaches exactly the bundle files, past the HTTP cache', async () => {
+    const { handlers, fetch, store } = loadWorker(server());
+    await fire(handlers, 'install', {});
+    expect([...(store.get(CACHE)?.keys() ?? [])].sort()).toEqual(FILES);
+    expect(fetch).toHaveBeenCalledTimes(FILES.length);
+    for (const [, init] of fetch.mock.calls) expect(init).toEqual({ cache: 'reload' });
+  });
+
+  it('fails install and keeps no new cache when a file fails, is missing, or the HTML is of another build', async () => {
+    const failures: Array<Record<string, () => Promise<Response>>> = [
+      { '/assets/Wall-1.js': async () => { throw new TypeError('offline'); } },
+      { '/assets/index-1.css': async () => new Response('not found', { status: 404 }) },
+      { '/index.html': async () => shell('fedcba9876543210') },
+    ];
+    for (const overrides of failures) {
+      const old = new Response('old');
+      const { handlers, self, store } = loadWorker(server(overrides), [], cacheStorage({ 'pterm-bundle-old': { '/index.html': old } }));
+      await expect(fire(handlers, 'install', {})).rejects.toBeDefined();
+      expect([...store.keys()]).toEqual(['pterm-bundle-old']);
+      expect(self.skipWaiting).not.toHaveBeenCalled();
+    }
+  });
+
+  it('on activate deletes the app\'s older caches only, then takes control', async () => {
+    const storage = cacheStorage({ 'pterm-assets-aaa': {}, 'pterm-bundle-bbb': {}, [CACHE]: {}, 'someone-else': {} });
+    const { handlers, self, store } = loadWorker(server(), [], storage);
+    await fire(handlers, 'activate', {});
+    expect([...store.keys()].sort()).toEqual([CACHE, 'someone-else']);
+    expect(self.clients.claim).toHaveBeenCalledOnce();
   });
 
   it('does not cache a missing chunk, so a reload can fetch the new build', async () => {
     const { handlers, put } = loadWorker(async () => new Response('not found', { status: 404 }));
     let reply: Promise<Response> | undefined;
     handlers.get('fetch')?.({
-      request: new Request('https://host.example/assets/Live-old.js'),
+      request: new Request('https://host.example/assets/Wall-1.js'),
       respondWith: (value: Promise<Response>) => { reply = value; },
     });
     expect((await reply)?.status).toBe(404);
     expect(put).not.toHaveBeenCalled();
   });
 
+  it('serves bundle files from the cache, and leaves other files and the API to the network', async () => {
+    const storage = cacheStorage({ [CACHE]: { '/assets/Wall-1.js': new Response('cached wall') } });
+    const { handlers, fetch } = loadWorker(server(), [], storage);
+    const replies: Array<Promise<Response>> = [];
+    for (const path of ['/assets/Wall-1.js', '/assets/Other-9.js', '/api/v1/sessions']) {
+      handlers.get('fetch')?.({
+        request: new Request(`https://host.example${path}`),
+        respondWith: (value: Promise<Response>) => { replies.push(value); },
+      });
+    }
+    expect(replies).toHaveLength(1);
+    expect(await (await replies[0])?.text()).toBe('cached wall');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('answers a failed page load with an offline page that retries by itself', async () => {
     const { handlers } = loadWorker(async () => { throw new TypeError('offline'); });
-    let reply: Promise<Response> | undefined;
-    handlers.get('fetch')?.({
-      // Request cannot be built with mode "navigate", so pass the fields the worker reads.
-      request: { method: 'GET', url: 'https://host.example/', mode: 'navigate' },
-      respondWith: (value: Promise<Response>) => { reply = value; },
-    });
-    const response = await reply;
+    const response = await navigate(handlers).reply;
     expect(response?.status).toBe(503);
     const html = await response?.text();
     expect(html).toContain('<meta http-equiv="refresh" content="5">');
     expect(html).toContain('retrying every 5s');
     expect(html).toContain('<a href="/">Retry now</a>');
+  });
+});
+
+describe('service worker navigation', () => {
+  const withShell = () => cacheStorage({ [CACHE]: { '/index.html': shell(BUILD, 'cached') } });
+
+  it('serves the network page and re-caches it as the shell when its build matches', async () => {
+    const { handlers, store } = loadWorker(async () => shell(BUILD, 'fresh'), [], withShell());
+    const page = navigate(handlers);
+    expect(await (await page.reply).text()).toContain('fresh');
+    await page.work();
+    expect(await store.get(CACHE)?.get('/index.html')?.clone().text()).toContain('fresh');
+  });
+
+  it('serves but never caches a page of another build, an error page, or a non-HTML answer', async () => {
+    for (const answer of [() => shell('fedcba9876543210', 'newer'), () => new Response('gone', { status: 404, headers: { 'Content-Type': 'text/html' } }), () => new Response('{}')]) {
+      const { handlers, put } = loadWorker(async () => answer(), [], withShell());
+      const page = navigate(handlers);
+      expect((await page.reply).status).toBe(answer().status);
+      await page.work();
+      expect(put).not.toHaveBeenCalled();
+    }
+  });
+
+  it('serves the cached shell on a network error or a 5xx', async () => {
+    for (const network of [async () => { throw new TypeError('offline'); }, async () => new Response('bad gateway', { status: 502 })]) {
+      const { handlers } = loadWorker(network, [], withShell());
+      const response = await navigate(handlers).reply;
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('cached');
+    }
+  });
+
+  it('serves the cached shell after 2.5 s, and a late answer of this build still refreshes it', async () => {
+    vi.useFakeTimers();
+    let answer: (response: Response) => void = () => undefined;
+    const { handlers, store } = loadWorker(() => new Promise((resolve) => { answer = resolve; }), [], withShell());
+    const page = navigate(handlers);
+    let served: Response | undefined;
+    void page.reply.then((response) => { served = response; });
+    await vi.advanceTimersByTimeAsync(2400);
+    expect(served).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await served?.text()).toContain('cached');
+    answer(shell(BUILD, 'late'));
+    await page.work();
+    expect(await store.get(CACHE)?.get('/index.html')?.clone().text()).toContain('late');
+  });
+});
+
+describe('service worker decisions', () => {
+  it('reads the build ID from the HTML meta', () => {
+    expect(pure.buildOf(`<head>\n    <meta name="pterm-build" content="${BUILD}" />`)).toBe(BUILD);
+    expect(pure.buildOf('<head></head>')).toBeUndefined();
+  });
+
+  it('caches the shell only for an OK HTML page of the same build', async () => {
+    const html = await shell(BUILD).text();
+    expect(pure.shouldCacheShell(200, 'text/html; charset=utf-8', html, BUILD)).toBe(true);
+    expect(pure.shouldCacheShell(200, 'text/html', html, 'fedcba9876543210')).toBe(false);
+    expect(pure.shouldCacheShell(404, 'text/html', html, BUILD)).toBe(false);
+    expect(pure.shouldCacheShell(200, 'application/json', html, BUILD)).toBe(false);
+    expect(pure.shouldCacheShell(200, null, html, BUILD)).toBe(false);
+  });
+
+  it('knows the bundle files', () => {
+    expect(pure.isBundleFile('/assets/Wall-1.js')).toBe(true);
+    expect(pure.isBundleFile('/index.html')).toBe(true);
+    expect(pure.isBundleFile('/assets/Wall-0.js')).toBe(false);
+    expect(pure.isBundleFile('/')).toBe(false);
+  });
+
+  it('times out a slow promise and passes a fast one through', async () => {
+    vi.useFakeTimers();
+    const slow = pure.withTimeout(new Promise(() => undefined), 1000);
+    const caught = slow.catch((error: Error) => error.message);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await caught).toBe('timeout');
+    await expect(pure.withTimeout(Promise.resolve(7), 1000)).resolves.toBe(7);
+    await expect(pure.withTimeout(Promise.reject(new Error('down')), 1000)).rejects.toThrow('down');
   });
 });
 

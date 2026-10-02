@@ -17,6 +17,8 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
 func TestLifecycleModesMatchInternalModes(t *testing.T) {
@@ -253,6 +255,11 @@ func TestUninstallKeepsDataWhileABrokerRuns(t *testing.T) {
 		t.Fatalf("refused uninstall ran %q", got)
 	}
 	assertExists(t, database, env.paths.RuntimeDir)
+	// The shared read-only checks read the live broker's bound app origins.
+	if !strings.Contains(output.String(), "  multi-computer: no bound app origins (CORS off)\n") ||
+		strings.Contains(output.String(), "! multi-computer") {
+		t.Fatalf("multi-computer checks:\n%s", output.String())
+	}
 
 	// Registered in launchd, but the live broker is not launchd's copy:
 	// booting out the registration must not be taken as stopping it.
@@ -312,36 +319,6 @@ func TestUpRequiresExplicitDevelopmentProfile(t *testing.T) {
 	}
 }
 
-func TestInstalledTailscaleUsesAbsoluteProgramFiles(t *testing.T) {
-	programFiles := t.TempDir()
-	cli := filepath.Join(programFiles, "Tailscale", "tailscale.exe")
-	env := func(value string) func(string) string {
-		return func(name string) string {
-			if name == "ProgramFiles" {
-				return value
-			}
-			return ""
-		}
-	}
-	if got := installedTailscale("windows", env(programFiles)); got != "" {
-		t.Fatalf("missing CLI found at %q", got)
-	}
-	if err := os.MkdirAll(filepath.Dir(cli), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cli, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := installedTailscale("windows", env(programFiles)); got != cli {
-		t.Fatalf("installed CLI = %q, want %q", got, cli)
-	}
-	for _, value := range []string{"", "relative"} {
-		if got := installedTailscale("windows", env(value)); got != "" {
-			t.Errorf("ProgramFiles %q gave %q", value, got)
-		}
-	}
-}
-
 // TestInspectTailscaleReportsPreviewFindingsSeparately proves the dev-server
 // preview (HTTPS 8443) lines in `pterm doctor` output are independent of the
 // Termivoa's own HTTPS 443 status, and that a preview conflict never
@@ -392,7 +369,7 @@ func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
 				return nil, errors.New("unexpected tailscale command")
 			}
 			var output bytes.Buffer
-			_, problems := inspectTailscale(context.Background(), "tailscale-fake", &output)
+			_, problems := inspectTailscale(context.Background(), "tailscale-fake", nil, &output)
 			for _, want := range test.want {
 				if !strings.Contains(output.String(), want) {
 					t.Errorf("output lacks %q:\n%s", want, output.String())
@@ -421,5 +398,210 @@ func TestProgramLeftoverNamesWhatToDelete(t *testing.T) {
 		if got := programLeftover(c.os, c.executable); got != c.want {
 			t.Errorf("programLeftover(%q, %q) = %q, want %q", c.os, c.executable, got, c.want)
 		}
+	}
+}
+
+const tailnetStatusJSON = `{"BackendState":"Running",
+  "Self":{"ID":"nVps","DNSName":"vps.tailx.ts.net.","UserID":1,"Tags":null},
+  "Peer":{
+    "nodekey:a":{"ID":"nMac","DNSName":"mac.tailx.ts.net.","UserID":1},
+    "nodekey:b":{"ID":"nEve","DNSName":"eve.tailx.ts.net.","UserID":2},
+    "nodekey:c":{"ID":"nSrv","DNSName":"srv.tailx.ts.net.","UserID":3,"Tags":["tag:server"]},
+    "nodekey:d":{"ID":"nNew","DNSName":"old.tailx.ts.net.","UserID":1}},
+  "User":{"1":{"LoginName":"ada@example.com"},"2":{"LoginName":"eve@example.com"}},
+  "CurrentTailnet":{"MagicDNSSuffix":"tailx.ts.net"}}`
+
+func TestTailnetFindingsReportBindingMismatches(t *testing.T) {
+	status, err := tailnet.ParseStatus([]byte(tailnetStatusJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := func(origin, node string, revoked bool, tags ...string) protocol.AdminRPCDevice {
+		return protocol.AdminRPCDevice{AppOrigin: &origin, AppNode: &protocol.TailnetNode{ID: node, Tags: append([]string{}, tags...)}, Revoked: revoked}
+	}
+	devices := []protocol.AdminRPCDevice{
+		device("https://mac.tailx.ts.net", "nMac", false),               // same owner: fine
+		device("https://mac.tailx.ts.net", "nMac", false),               // duplicate: checked once
+		device("https://srv.tailx.ts.net", "nSrv", false, "tag:server"), // tagged: owners not compared
+		device("https://eve.tailx.ts.net", "nEve", false),               // another user
+		device("https://gone.tailx.ts.net", "nGone", false),             // node removed
+		device("https://old.tailx.ts.net", "nOld", false),               // name now on another node
+		device("https://mac.other.ts.net", "nX", false),                 // another tailnet
+		device("https://eve.tailx.ts.net", "nEve2", true),               // revoked: skipped
+		{}, // own origin: skipped
+	}
+	got := tailnetFindings(status, devices)
+	want := []string{
+		`https://eve.tailx.ts.net: owner mismatch ("eve@example.com"; this computer: "ada@example.com")`,
+		"https://gone.tailx.ts.net: pinned node nGone is gone; phones bound to it stop working",
+		"https://old.tailx.ts.net: node ID changed (reused name?)",
+		"https://mac.other.ts.net: different tailnet; not supported",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("findings:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// A node pinned untagged that is tagged now is refused (SL4).
+	if got := tailnetFindings(status, []protocol.AdminRPCDevice{device("https://srv.tailx.ts.net", "nSrv", false)}); len(got) != 1 ||
+		got[0] != "https://srv.tailx.ts.net: tags changed since pairing; phones bound to it are refused until paired again" {
+		t.Fatalf("tag change findings = %v", got)
+	}
+	status.Self.Tags = []string{"tag:server"} // a tagged home never compares owners
+	if got := tailnetFindings(status, devices[3:4]); len(got) != 0 {
+		t.Fatalf("tagged self findings = %v", got)
+	}
+}
+
+// Logged out, Tailscale reports no MagicDNS suffix: doctor says so once
+// instead of calling every bound app "different tailnet".
+func TestTailnetFindingsWithUnknownTailnet(t *testing.T) {
+	status, err := tailnet.ParseStatus([]byte(`{"BackendState":"NeedsLogin"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin, other := "https://mac.tailx.ts.net", "https://srv.tailx.ts.net"
+	devices := []protocol.AdminRPCDevice{
+		{AppOrigin: &origin, AppNode: &protocol.TailnetNode{ID: "nMac"}},
+		{AppOrigin: &other, AppNode: &protocol.TailnetNode{ID: "nSrv"}},
+	}
+	want := "this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked"
+	if got := tailnetFindings(status, devices); strings.Join(got, "\n") != want {
+		t.Fatalf("findings = %q", got)
+	}
+	if got := tailnetFindings(status, []protocol.AdminRPCDevice{{}}); len(got) != 0 {
+		t.Fatalf("own-origin device findings = %q", got)
+	}
+}
+
+func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
+	const gateway = `"/":{"Proxy":"http://127.0.0.1:8787"}`
+	for name, test := range map[string]struct {
+		serve string
+		want  []string
+	}{
+		"only the gateway":      {serve: `{"Web":{"h.ts.net:443":{"Handlers":{` + gateway + `}}}}`},
+		"path on own host":      {serve: `{"Web":{"H.ts.net:443":{"Handlers":{` + gateway + `,"/grafana":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"/grafana"}},
+		"root to another app":   {serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"/"}},
+		"other host":            {serve: `{"Web":{"svc.ts.net:443":{"Handlers":{"/x":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
+		"preview port":          {serve: `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
+		"TCP forward on 443":    {serve: `{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}`, want: []string{"TCP forward to 127.0.0.1:22"}},
+		"TCP forward elsewhere": {serve: `{"TCP":{"8443":{"TCPForward":"127.0.0.1:22"}}}`},
+		"empty":                 {serve: ``},
+	} {
+		if got := otherServeHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+			t.Errorf("%s: got %q, want %q", name, got, test.want)
+		}
+	}
+}
+
+// Doctor reports other handlers on this computer's own origin as a problem
+// line that says how to move them. ServeFindings already counts each one, so
+// the explanation does not count it twice.
+func TestDoctorReportsOtherHandlersAsAProblem(t *testing.T) {
+	previous := tailscaleRun
+	t.Cleanup(func() { tailscaleRun = previous })
+	tailscaleRun = func(_ context.Context, _ string, _ io.Writer, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "status --json":
+			return []byte(`{"BackendState":"Running","Self":{"DNSName":"h.ts.net."},"CurrentTailnet":{"MagicDNSSuffix":"ts.net"}}`), nil
+		case "serve status --json":
+			return []byte(`{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"},"/admin":{"Proxy":"http://127.0.0.1:9000"}}}}}`), nil
+		}
+		return nil, errors.New("unexpected tailscale command")
+	}
+	var output bytes.Buffer
+	report, problems := inspectTailscale(context.Background(), "tailscale-fake", nil, &output)
+	want := "  ! tailscale serve: other handlers share this computer's Termivoa origin https://h.ts.net: /admin. " +
+		"Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, " +
+		"every computer added to it. Move each one to another computer or to its own Tailscale Service hostname, " +
+		"or stop serving it; another port on this computer does not help, because browsers send the Termivoa cookie " +
+		"to every port of a host. Then remove it here: `tailscale serve --https=443 --set-path=/admin off`.\n"
+	if problems != 1 || strings.Count(output.String(), want) != 1 || report.tailnet == nil ||
+		report.tailnet.Suffix != "ts.net" || strings.Join(report.otherHandlers, ",") != "/admin" {
+		t.Fatalf("problems=%d report=%+v output:\n%s", problems, report, output.String())
+	}
+}
+
+// Handlers on other ports of this computer's host receive the Termivoa cookie
+// (cookies ignore ports): doctor warns without counting a problem. Termivoa's
+// own preview handler on 8443 strips the cookie and is not listed.
+func TestDoctorWarnsAboutOtherPortsOfThisHost(t *testing.T) {
+	const preview = `"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}`
+	for name, test := range map[string]struct {
+		serve string
+		want  []string
+	}{
+		"preview only":         {serve: `{"Web":{` + preview + `}}`},
+		"443 is not this list": {serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/admin":{"Proxy":"http://127.0.0.1:9000"}}}}}`},
+		"other port":           {serve: `{"Web":{` + preview + `,"H.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"HTTPS 8080 /"}},
+		"8443 not the preview": {serve: `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"HTTPS 8443 /"}},
+		"other host":           {serve: `{"Web":{"svc.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
+		"TCP forward":          {serve: `{"TCP":{"443":{"HTTPS":true},"5432":{"TCPForward":"127.0.0.1:5432"}}}`, want: []string{"TCP 5432 forward to 127.0.0.1:5432"}},
+	} {
+		if got := otherPortHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+			t.Errorf("%s: got %q, want %q", name, got, test.want)
+		}
+	}
+	previous := tailscaleRun
+	t.Cleanup(func() { tailscaleRun = previous })
+	tailscaleRun = func(_ context.Context, _ string, _ io.Writer, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "status --json":
+			return []byte(`{"BackendState":"Running","Self":{"DNSName":"h.ts.net."},"CurrentTailnet":{"MagicDNSSuffix":"ts.net"}}`), nil
+		case "serve status --json":
+			return []byte(`{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` + preview +
+				`,"h.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`), nil
+		}
+		return nil, errors.New("unexpected tailscale command")
+	}
+	var output bytes.Buffer
+	if _, problems := inspectTailscale(context.Background(), "tailscale-fake", nil, &output); problems != 0 ||
+		!strings.Contains(output.String(), "  ! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, "+
+			"because browsers send it to every port of a host: HTTPS 8080 /.") {
+		t.Fatalf("problems=%d output:\n%s", problems, output.String())
+	}
+}
+
+// A tailscale that FindBinary refused is named with the reason, instead of
+// "not installed".
+func TestDoctorSaysWhyTailscaleWasRefused(t *testing.T) {
+	reason := "tailscale at /opt/homebrew/bin/tailscale: /opt/homebrew/bin/tailscale is owned by another user; Termivoa will not run it"
+	var output bytes.Buffer
+	report, problems := inspectTailscale(context.Background(), "", []string{reason}, &output)
+	if problems != 1 || output.String() != "  ! "+reason+"\n" {
+		t.Fatalf("problems=%d output:\n%s", problems, output.String())
+	}
+	if _, problem := report.phoneOrigin(); !strings.Contains(problem, reason) {
+		t.Fatalf("setup problem = %q", problem)
+	}
+}
+
+func TestOtherHandlersProblemNamesTheRemoveCommands(t *testing.T) {
+	got := otherHandlersProblem("h.ts.net.", []string{"/", "TCP forward to 127.0.0.1:22"})
+	for _, want := range []string{"origin https://h.ts.net: /, TCP forward to 127.0.0.1:22.",
+		"remove it here: `tailscale serve --https=443 --set-path=/ off`, `tailscale serve --tcp=443 off`."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("problem lacks %q:\n%s", want, got)
+		}
+	}
+}
+
+// The phone address comes from the one parsed tailnet status.
+func TestPhoneOriginUsesTheParsedStatus(t *testing.T) {
+	for status, want := range map[string]struct{ origin, problem string }{
+		`{"BackendState":"Running","Self":{"DNSName":"Mac.example.ts.net."}}`: {origin: "https://mac.example.ts.net"},
+		`{"BackendState":"NeedsLogin"}`:                                       {problem: "Tailscale is not connected (NeedsLogin)"},
+		`{"BackendState":"Running","Self":{}}`:                                {problem: "Tailscale has no DNS name for this computer"},
+	} {
+		parsed, err := tailnet.ParseStatus([]byte(status))
+		if err != nil {
+			t.Fatal(err)
+		}
+		origin, problem := tailscaleReport{installed: true, tailnet: parsed}.phoneOrigin()
+		if origin != want.origin || !strings.HasPrefix(problem, want.problem) || (want.problem == "") != (problem == "") {
+			t.Errorf("%s: origin=%q problem=%q", status, origin, problem)
+		}
+	}
+	if _, problem := (tailscaleReport{installed: true}).phoneOrigin(); !strings.HasPrefix(problem, "Tailscale did not report its status") {
+		t.Errorf("no status: problem=%q", problem)
 	}
 }

@@ -44,7 +44,25 @@ var (
 	ErrApproved       = errors.New("auth: pending pairing was already approved")
 	ErrDeviceMissing  = errors.New("auth: device does not exist")
 	ErrCleanup        = errors.New("auth: revocation is durable but live stream cleanup did not complete")
+	// ErrOriginRefused refuses a request whose origin is not the one its
+	// credential, grant or pending pairing is bound to. It is not a credential
+	// failure: the caller must not clear the cookie.
+	ErrOriginRefused = errors.New("auth: request origin is not allowed here")
 )
+
+// AppCheck decides whether one request may use a grant or pending pairing
+// bound to app (the zero binding means this computer's own origin only). It
+// runs inside the store transaction, so it must only read memory.
+type AppCheck func(app store.AppBinding) error
+
+// OwnOriginOnly admits only grants and pending pairings that are not bound to
+// an app origin: the check for a request from this computer's own origin.
+func OwnOriginOnly(app store.AppBinding) error {
+	if app.Bound() {
+		return ErrOriginRefused
+	}
+	return nil
+}
 
 // ServiceConfig injects persistence, time and randomness. Tests use a fixed
 // clock; production uses time.Now and crypto/rand.
@@ -81,6 +99,8 @@ type Principal struct {
 	// ValidUntil is the earlier of absolute and inactivity expiry at the time
 	// of resolution. A live binding never outlives it.
 	ValidUntil time.Time
+	// App is the app origin the device is bound to; zero means own origin only.
+	App store.AppBinding
 }
 
 // PollResult carries a credential only for the one approved poll.
@@ -116,6 +136,13 @@ func NewService(config ServiceConfig) (*Service, error) {
 // CreateGrant returns a fresh two-minute grant. Its transport value is
 // returned only to the restricted local CLI and never persisted.
 func (service *Service) CreateGrant(ctx context.Context) (string, time.Time, error) {
+	return service.CreateBoundGrant(ctx, store.AppBinding{})
+}
+
+// CreateBoundGrant is CreateGrant bound to one app origin and pinned node
+// (pterm pair --via); the caller has resolved and checked app. Redemption
+// and polling then accept only that origin.
+func (service *Service) CreateBoundGrant(ctx context.Context, app store.AppBinding) (string, time.Time, error) {
 	now := service.clock()
 	secret, err := generateSecret(service.random)
 	if err != nil {
@@ -131,7 +158,7 @@ func (service *Service) CreateGrant(ctx context.Context) (string, time.Time, err
 	}
 	expires := now.Add(PairingGrantLifetime)
 	if err := service.store.CreatePairingGrant(ctx, store.PairingGrant{
-		ID: id, Hash: hash, CreatedAt: now, ExpiresAt: expires,
+		ID: id, Hash: hash, CreatedAt: now, ExpiresAt: expires, App: app,
 	}, MaxOutstandingGrants); err != nil {
 		return "", time.Time{}, mapStoreError(err)
 	}
@@ -140,8 +167,18 @@ func (service *Service) CreateGrant(ctx context.Context) (string, time.Time, err
 }
 
 // Redeem atomically consumes a grant and creates a pending pairing with an
-// independent poll secret and a human comparison code.
+// independent poll secret and a human comparison code. It is a request from
+// this computer's own origin, so it refuses a grant bound to an app origin.
 func (service *Service) Redeem(ctx context.Context, grant, label string) (protocol.HTTPPairRedeemResponse, error) {
+	return service.RedeemChecked(ctx, grant, label, OwnOriginOnly)
+}
+
+// RedeemChecked is Redeem with the request's origin check. A refused check
+// leaves the grant unused.
+func (service *Service) RedeemChecked(ctx context.Context, grant, label string, check AppCheck) (protocol.HTTPPairRedeemResponse, error) {
+	if check == nil {
+		check = OwnOriginOnly
+	}
 	now := service.clock()
 	if !service.allow(&service.redeems, now) {
 		return protocol.HTTPPairRedeemResponse{}, ErrRateLimited
@@ -177,7 +214,7 @@ func (service *Service) Redeem(ctx context.Context, grant, label string) (protoc
 	if err := service.store.RedeemPairingGrant(ctx, grantHash, store.PendingPairing{
 		ID: id, PollHash: pollHash, VerificationCode: code, DeviceLabel: label,
 		CreatedAt: now, ExpiresAt: expires,
-	}, MaxPendingPairings); err != nil {
+	}, MaxPendingPairings, check); err != nil {
 		return protocol.HTTPPairRedeemResponse{}, mapStoreError(err)
 	}
 	pollValue, err := pollSecret.TransportValue()
@@ -200,7 +237,17 @@ func (service *Service) Approve(ctx context.Context, pendingID string) error {
 
 // Poll requires the independent poll secret. The approved poll atomically
 // creates the device and credential; the plaintext exists only in this result.
+// It is a request from this computer's own origin (see Redeem).
 func (service *Service) Poll(ctx context.Context, pendingID, pollSecret string) (PollResult, error) {
+	return service.PollChecked(ctx, pendingID, pollSecret, OwnOriginOnly)
+}
+
+// PollChecked is Poll with the request's origin check. A refused check
+// changes nothing. The device inherits the pending pairing's app binding.
+func (service *Service) PollChecked(ctx context.Context, pendingID, pollSecret string, check AppCheck) (PollResult, error) {
+	if check == nil {
+		check = OwnOriginOnly
+	}
 	now := service.clock()
 	if !service.allow(&service.polls, now) {
 		return PollResult{}, ErrRateLimited
@@ -250,7 +297,7 @@ func (service *Service) Poll(ctx context.Context, pendingID, pollSecret string) 
 			// A device revoked in memory but not yet durably persisted must not
 			// hold a phantom active slot against the cap.
 			PendingRevoked: pendingRevoked,
-		})
+		}, check)
 	if err != nil {
 		return PollResult{}, mapStoreError(err)
 	}
@@ -299,6 +346,7 @@ func (service *Service) resolve(ctx context.Context, credential string) (Princip
 	}
 	principal := Principal{
 		DeviceID: device.ID, DeviceLabel: device.Label, CredentialID: session.ID, ExpiresAt: session.ExpiresAt,
+		App: device.App,
 	}
 	if session.RevokedAt != nil || device.RevokedAt != nil {
 		return Principal{}, ErrRevoked
@@ -336,18 +384,33 @@ func (service *Service) revokedLocked(principal Principal) error {
 // same critical section that revocation uses, so a stream cannot be bound
 // after a concurrent revocation has already selected its targets.
 func (service *Service) Bind(ctx context.Context, credential string) (*Binding, Principal, error) {
+	return service.BindChecked(ctx, credential, "", nil)
+}
+
+// BindChecked is Bind for a stream opened from origin ("" is this computer's
+// own origin). check, when set, runs in the same critical section before the
+// binding is registered; it must only read memory. CloseUntrusted later
+// closes the stream if its app origin stops being trusted.
+func (service *Service) BindChecked(
+	ctx context.Context, credential, origin string, check func(Principal) error,
+) (*Binding, Principal, error) {
 	principal, err := service.resolve(ctx, credential)
 	if err != nil {
 		return nil, Principal{}, err
 	}
 	binding := &Binding{
-		service: service, principal: principal,
+		service: service, principal: principal, origin: origin,
 		revoked: make(chan struct{}), released: make(chan struct{}),
 	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	if err := service.revokedLocked(principal); err != nil {
 		return nil, Principal{}, err
+	}
+	if check != nil {
+		if err := check(principal); err != nil {
+			return nil, Principal{}, err
+		}
 	}
 	service.bindings[binding] = struct{}{}
 	service.armExpiryLocked(binding, principal.ValidUntil.Sub(service.now()))
@@ -383,6 +446,12 @@ func (service *Service) Logout(ctx context.Context, credential string) error {
 	if err != nil {
 		return err
 	}
+	return service.LogoutPrincipal(ctx, principal)
+}
+
+// LogoutPrincipal is Logout for a principal the caller has just
+// authenticated (and, for the gateway, admitted from its origin).
+func (service *Service) LogoutPrincipal(ctx context.Context, principal Principal) error {
 	service.mu.Lock()
 	service.revokedCredentials[principal.CredentialID] = struct{}{}
 	targets := service.revokeBindingsLocked(func(binding *Binding) bool {
@@ -463,6 +532,60 @@ func (service *Service) Devices(ctx context.Context) ([]store.Device, error) {
 	return devices, nil
 }
 
+// RevokeVia revokes every unrevoked device bound to the app origin, through
+// RevokeDevice, and first deletes the grants and pending pairings bound to it
+// so no pairing under way can finish. It returns the revoked device IDs and
+// the number of live streams closed.
+func (service *Service) RevokeVia(ctx context.Context, origin string) ([]string, int, error) {
+	if err := service.store.DeletePairingsVia(ctx, origin); err != nil {
+		return nil, 0, err
+	}
+	bound, err := service.store.ListBoundDevices(ctx, service.clock(), BrowserInactivityLifetime, false)
+	if err != nil {
+		return nil, 0, err
+	}
+	revoked, closed := []string{}, 0
+	var errs []error
+	for _, device := range bound {
+		if device.App.Origin != origin {
+			continue
+		}
+		count, err := service.RevokeDevice(ctx, device.DeviceID)
+		if errors.Is(err, ErrDeviceMissing) {
+			continue
+		}
+		revoked, closed = append(revoked, device.DeviceID), closed+count
+		errs = append(errs, err)
+	}
+	return revoked, closed, errors.Join(errs...)
+}
+
+// HasAppStreams reports whether any live stream was opened from an app
+// origin other than this computer's own.
+func (service *Service) HasAppStreams() bool {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	for binding := range service.bindings {
+		if binding.origin != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// CloseUntrusted ends every live stream opened from an app origin whose
+// device's app binding trusted refuses, exactly like a revocation: the stream
+// refuses input, releases control and closes with access.revoked. The device
+// is not revoked, and streams from this computer's own origin are never
+// affected. trusted runs under the service lock and must only read memory.
+func (service *Service) CloseUntrusted(trusted func(app store.AppBinding) bool) int {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return len(service.revokeBindingsLocked(func(binding *Binding) bool {
+		return binding.origin != "" && !trusted(binding.principal.App)
+	}, ErrRevoked))
+}
+
 func (service *Service) revokeBindingsLocked(match func(*Binding) bool, reason error) []*Binding {
 	var targets []*Binding
 	for binding := range service.bindings {
@@ -506,6 +629,7 @@ func (service *Service) allow(window *rateWindow, now time.Time) bool {
 type Binding struct {
 	service   *Service
 	principal Principal
+	origin    string      // The app origin the stream was opened from; "" is own.
 	timer     *time.Timer // Guarded by service.mu.
 	revoked   chan struct{}
 	released  chan struct{}

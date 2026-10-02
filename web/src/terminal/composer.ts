@@ -1,13 +1,18 @@
 export const MAX_PASTE_BYTES = 64 * 1024;
 
 /**
- * Composer drafts live only in memory and are keyed by session generation, so
- * a replacement session never inherits text meant for a lost one.
+ * Composer drafts live only in memory and are keyed by computer, session and
+ * generation, so a replacement session never inherits text meant for a lost
+ * one, and the same session id on two computers never shares a draft.
  */
 const drafts = new Map<string, string>();
 
-export function draftKey(sessionId: string, generation: string): string {
-  return `${sessionId}/${generation}`;
+export function draftKey(session: {
+  readonly id: string;
+  readonly generation: string;
+  readonly computer: { readonly host: string };
+}): string {
+  return `${session.computer.host}/${session.id}/${session.generation}`;
 }
 
 export function readDraft(key: string): string {

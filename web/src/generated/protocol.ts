@@ -5,6 +5,10 @@
  */
 export type ProtocolTypes = {
     readonly accessRevoked:                    AccessRevokedPayload;
+    readonly adminRPCComputer:                 AdminRPCComputer;
+    readonly adminRPCComputerListResult:       AdminRPCComputerListResultPayload;
+    readonly adminRPCComputerRemove:           AdminRPCComputerRemovePayload;
+    readonly adminRPCComputerRemoveResult:     AdminRPCComputerRemoveResultPayload;
     readonly adminRPCDevice:                   AdminRPCDevice;
     readonly adminRPCDeviceID:                 AdminRPCDeviceIDPayload;
     readonly adminRPCDeviceListResult:         AdminRPCDeviceListResultPayload;
@@ -12,6 +16,7 @@ export type ProtocolTypes = {
     readonly adminRPCDeviceRevokeResult:       AdminRPCDeviceRevokeResultPayload;
     readonly adminRPCMessageType:              AdminRPCMessageType;
     readonly adminRPCOrigin:                   AdminRPCOriginPayload;
+    readonly adminRPCPairGrant:                AdminRPCPairGrantPayload;
     readonly adminRPCPairGrantResult:          AdminRPCPairGrantResultPayload;
     readonly adminRPCPairPendingResult:        AdminRPCPairPendingResultPayload;
     readonly adminRPCPendingID:                AdminRPCPendingIDPayload;
@@ -21,6 +26,8 @@ export type ProtocolTypes = {
     readonly adminRPCProjectAdd:               AdminRPCProjectAddPayload;
     readonly adminRPCProjectListResult:        AdminRPCProjectListResultPayload;
     readonly adminRPCProjectResult:            AdminRPCProjectResultPayload;
+    readonly adminRPCRevokeVia:                AdminRPCRevokeViaPayload;
+    readonly adminRPCRevokeViaResult:          AdminRPCRevokeViaResultPayload;
     readonly adminRPCShellProfile:             AdminRPCShellProfile;
     readonly adminRPCShutdownResult:           AdminRPCShutdownResultPayload;
     readonly agentStatus:                      AgentStatus;
@@ -56,6 +63,9 @@ export type ProtocolTypes = {
     readonly filesListed:                      FilesListedPayload;
     readonly filesRead:                        FilesReadPayload;
     readonly filesSearch:                      FilesSearchPayload;
+    readonly gatewayRPCComputerAdd:            GatewayRPCComputerAddPayload;
+    readonly gatewayRPCComputerListResult:     GatewayRPCComputerListResultPayload;
+    readonly gatewayRPCComputerRemove:         GatewayRPCComputerRemovePayload;
     readonly gatewayRPCCredential:             GatewayRPCCredentialPayload;
     readonly gatewayRPCDeviceRename:           GatewayRPCDeviceRenamePayload;
     readonly gatewayRPCMessageType:            GatewayRPCMessageType;
@@ -76,6 +86,11 @@ export type ProtocolTypes = {
     readonly historyChanged:                   HistoryChangedPayload;
     readonly historyPage:                      HistoryPagePayload;
     readonly historyRead:                      HistoryReadPayload;
+    readonly httpComputer:                     HTTPComputer;
+    readonly httpComputerAddRequest:           HTTPComputerAddRequest;
+    readonly httpComputerAddResponse:          HTTPComputerAddResponse;
+    readonly httpComputerListResponse:         HTTPComputerListResponse;
+    readonly httpComputerState:                HTTPComputerState;
     readonly httpDeviceRenameRequest:          HTTPDeviceRenameRequest;
     readonly httpDeviceSummary:                HTTPDeviceSummary;
     readonly httpErrorResponse:                HTTPErrorResponse;
@@ -116,11 +131,13 @@ export type ProtocolTypes = {
     readonly screenMetadata:                   ScreenMetadata;
     readonly screenPatch:                      ScreenPatchPayload;
     readonly screenResync:                     ScreenResyncPayload;
+    readonly sessionAttach:                    SessionAttachPayload;
     readonly sessionState:                     SessionStatePayload;
     readonly snapshotApplied:                  SnapshotAppliedPayload;
     readonly snapshotBegin:                    SnapshotBeginPayload;
     readonly snapshotEnd:                      SnapshotEndPayload;
     readonly snapshotRows:                     SnapshotRowsPayload;
+    readonly tailnetNode:                      TailnetNode;
     readonly tasksList:                        TasksListPayload;
     readonly tasksListed:                      TasksListedPayload;
     readonly terminalResize:                   TerminalResizePayload;
@@ -134,13 +151,57 @@ export type AccessRevokedPayload = {
     readonly message: string;
 }
 
+/**
+ * One confirmed computer in one device's list on this (home) computer.
+ */
+export type AdminRPCComputer = {
+    readonly createdAt: string;
+    readonly deviceId:  string;
+    readonly label:     string;
+    readonly origin:    string;
+}
+
+/**
+ * Confirmed computers of every device (at most 64 devices with 8 each). Pending entries are
+ * never listed.
+ */
+export type AdminRPCComputerListResultPayload = {
+    readonly computers: AdminRPCComputer[];
+}
+
+/**
+ * pterm computers remove: removes origin from every device's list, pending or confirmed. It
+ * cannot log the phone out on that computer.
+ */
+export type AdminRPCComputerRemovePayload = {
+    readonly origin: string;
+}
+
+export type AdminRPCComputerRemoveResultPayload = {
+    readonly origin:  string;
+    readonly removed: number;
+}
+
 export type AdminRPCDevice = {
+    readonly appNode?:   TailnetNode;
+    readonly appOrigin?: string;
     readonly createdAt:  string;
     readonly id:         string;
     readonly label:      string;
     readonly lastUsedAt: string;
     readonly revoked:    boolean;
     readonly status:     AdminRPCDeviceStatus;
+}
+
+/**
+ * A Tailscale node from the computer's own tailscale status. id is the stable node ID.
+ * owner is the login name of a user-owned node and is absent for tagged nodes, which carry
+ * tags instead. Display and pinning data, never authentication.
+ */
+export type TailnetNode = {
+    readonly id:     string;
+    readonly owner?: string;
+    readonly tags:   string[];
 }
 
 /**
@@ -174,7 +235,7 @@ export type AdminRPCDeviceRevokeResultPayload = {
     readonly deviceId:      string;
 }
 
-export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.error";
+export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.device.revoke.via" | "admin.computers.list" | "admin.computers.remove" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.device.revoke.via.result" | "admin.computers.list.result" | "admin.computers.remove.result" | "admin.error";
 
 /**
  * In a request, a present origin replaces the configured one and an absent origin reads it.
@@ -185,12 +246,25 @@ export type AdminRPCOriginPayload = {
 }
 
 /**
+ * Empty creates a grant for this computer's own origin. via binds the grant to one app
+ * origin, resolved by the broker in its own tailscale status and pinned to that node ID;
+ * allowTagged must be true when that node is tagged.
+ */
+export type AdminRPCPairGrantPayload = {
+    readonly allowTagged?: boolean;
+    readonly via?:         string;
+}
+
+/**
  * The only delivery of a fresh two-minute grant. origin is present when configured.
+ * appOrigin and appNode are present exactly when the grant is bound with via.
  */
 export type AdminRPCPairGrantResultPayload = {
-    readonly expiresAt: string;
-    readonly grant:     string;
-    readonly origin?:   string;
+    readonly appNode?:   TailnetNode;
+    readonly appOrigin?: string;
+    readonly expiresAt:  string;
+    readonly grant:      string;
+    readonly origin?:    string;
 }
 
 export type AdminRPCPairPendingResultPayload = {
@@ -198,6 +272,8 @@ export type AdminRPCPairPendingResultPayload = {
 }
 
 export type AdminRPCPendingPairing = {
+    readonly appNode?:         TailnetNode;
+    readonly appOrigin?:       string;
     readonly deviceLabel:      string;
     readonly expiresAt:        string;
     readonly id:               string;
@@ -236,6 +312,23 @@ export type AdminRPCProjectListResultPayload = {
 
 export type AdminRPCProjectResultPayload = {
     readonly project: AdminRPCProject;
+}
+
+/**
+ * pterm revoke --via: revokes every device bound to appOrigin.
+ */
+export type AdminRPCRevokeViaPayload = {
+    readonly appOrigin: string;
+}
+
+/**
+ * Sent only after every revocation is durable and every bound live stream has been closed.
+ * deviceIds is empty when no device was bound to appOrigin.
+ */
+export type AdminRPCRevokeViaResultPayload = {
+    readonly appOrigin:     string;
+    readonly closedStreams: number;
+    readonly deviceIds:     string[];
 }
 
 /**
@@ -673,6 +766,57 @@ export type FilesSearchPayload = {
 }
 
 /**
+ * Adds, confirms or renames a computer in the list of the device that owns the credential.
+ */
+export type GatewayRPCComputerAddPayload = {
+    readonly credential: string;
+    readonly request:    HTTPComputerAddRequest;
+}
+
+/**
+ * POST /api/v1/computers. state pending records or refreshes a short-lived pending entry
+ * before pairing; confirmed confirms an existing entry (or renames a confirmed one) after
+ * the peer's settings were read.
+ */
+export type HTTPComputerAddRequest = {
+    readonly label:  string;
+    readonly origin: string;
+    readonly state:  HTTPComputerState;
+}
+
+/**
+ * pending: recorded before pairing with the peer so the app's CSP allows it; short expiry,
+ * shown nowhere. confirmed: the app read the peer's settings with the peer's own cookie.
+ */
+export type HTTPComputerState = "pending" | "confirmed";
+
+/**
+ * The device's confirmed computers (the HTTP response) and the origins of its unexpired
+ * pending computers, which only the gateway uses for the app's CSP connect-src.
+ */
+export type GatewayRPCComputerListResultPayload = {
+    readonly computers:      HTTPComputer[];
+    readonly pendingOrigins: string[];
+}
+
+/**
+ * A confirmed peer computer in the calling device's own list on this (home) computer.
+ */
+export type HTTPComputer = {
+    readonly label:  string;
+    readonly origin: string;
+}
+
+/**
+ * Removes one computer, pending or confirmed, from the list of the device that owns the
+ * credential. The gateway builds origin from the {host} path segment.
+ */
+export type GatewayRPCComputerRemovePayload = {
+    readonly credential: string;
+    readonly origin:     string;
+}
+
+/**
  * The raw browser cookie value. It is never logged, persisted, or echoed.
  */
 export type GatewayRPCCredentialPayload = {
@@ -691,15 +835,22 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.error";
 
 /**
- * The browser origin configured with admin.config.origin, absent when none is set. It is
- * not a secret. The gateway adds it to its exact Host and Origin allow-list when it is
- * valid for the gateway's profile.
+ * origin: the browser origin configured with admin.config.origin, absent when none is set.
+ * It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it
+ * is valid for the gateway's profile. boundOrigins: the union of origins of devices bound
+ * to an app origin whose node is still trusted or has changed since pairing, revoked or
+ * expired included (so their app can read the refusal and offer pairing again), used only
+ * for CORS headers (the broker still checks each request's origin against its own
+ * credential). pairingOrigins: app origins of unexpired bound grants and pending pairings,
+ * admitted only on /api/v1/pair/ *. Both are sorted, unique, and absent when empty.
  */
 export type GatewayRPCOriginResultPayload = {
-    readonly origin?: string;
+    readonly boundOrigins?:   [string, ...string[]];
+    readonly origin?:         string;
+    readonly pairingOrigins?: [string, ...string[]];
 }
 
 /**
@@ -919,6 +1070,24 @@ export type HistoryReadPayload = {
     readonly offset:          number;
 }
 
+/**
+ * The saved entry and the peer's node as seen in this computer's own tailscale status, for
+ * the app's confirm sheet.
+ */
+export type HTTPComputerAddResponse = {
+    readonly computer: HTTPComputer;
+    readonly node:     TailnetNode;
+    readonly state:    HTTPComputerState;
+}
+
+/**
+ * GET /api/v1/computers: the calling device's confirmed computers. Pending entries are
+ * never listed.
+ */
+export type HTTPComputerListResponse = {
+    readonly computers: HTTPComputer[];
+}
+
 export type HTTPErrorResponse = {
     readonly error: BrokerRPCErrorPayload;
 }
@@ -981,11 +1150,13 @@ export type HTTPSessionMutationResponse = {
 }
 
 export type HTTPSettingsResponse = {
-    readonly brokerGeneration: string;
-    readonly device:           HTTPDeviceSummary;
-    readonly hostBuild:        string;
-    readonly projects:         HTTPNamedOption[];
-    readonly shellProfiles:    HTTPNamedOption[];
+    readonly brokerGeneration:    string;
+    readonly device:              HTTPDeviceSummary;
+    readonly hostBuild:           string;
+    readonly minProtocolRevision: number;
+    readonly projects:            HTTPNamedOption[];
+    readonly protocolRevision:    number;
+    readonly shellProfiles:       HTTPNamedOption[];
 }
 
 /**
@@ -1150,6 +1321,20 @@ export type ScreenResyncPayload = {
 
 export type Reason = "initial" | "base-mismatch" | "invalid-state" | "interrupted-snapshot";
 
+/**
+ * Empty attaches a full viewer. thumbnail attaches a read-only viewer (no control or input)
+ * whose screen frames the broker coalesces to at most maxUpdatesPerSecond; snapshots,
+ * history notices and session state are not throttled. Send thumbnail only to a computer
+ * whose protocolRevision supports it.
+ */
+export type SessionAttachPayload = {
+    readonly thumbnail?: ThumbnailMode;
+}
+
+export type ThumbnailMode = {
+    readonly maxUpdatesPerSecond: number;
+}
+
 export type SessionStatePayload = {
     readonly agent?:    AgentStatus;
     readonly cwd?:      string;
@@ -1263,3 +1448,8 @@ export type WorktreeRemovedPayload = {
 }
 
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
+
+/** This build's additive protocol v1 revision (protocol/v1/revision.json). */
+export const PROTOCOL_REVISION = 1;
+/** The oldest peer protocol revision this build supports. */
+export const MIN_PROTOCOL_REVISION = 1;

@@ -12,8 +12,10 @@ import {
   REMOVE_LOST,
   rowText,
   WRITE_LOST,
+  type ConnectionOptions,
   type ScreenDisplay,
 } from './Connection';
+import { Scheduler } from './scheduler';
 import { fitGrid, followCursor, MAX_WHEEL_STEPS, wheelSteps } from './TerminalView';
 import type { CellStyle, ScreenMetadata, ScreenPatch, ScreenSnapshot, TerminalRow } from './FrameRenderer';
 
@@ -113,7 +115,7 @@ function patch(socket: FakeSocket, baseRevision: string, revision: string, index
   });
 }
 
-function harness() {
+function harness(extra: Partial<ConnectionOptions> = {}) {
   const painted: Array<ScreenSnapshot | ScreenPatch> = [];
   const display: ScreenDisplay = {
     paintSnapshot: async (value) => { painted.push(value); },
@@ -126,6 +128,7 @@ function harness() {
     display,
     createSocket: (url) => new FakeSocket(url) as unknown as WebSocket,
     requestFrame: (callback) => queueMicrotask(callback),
+    ...extra,
   });
   connection.start();
   const socket = () => FakeSocket.all.at(-1) as FakeSocket;
@@ -383,6 +386,20 @@ describe('Connection', () => {
     await attachLive(revoked.socket());
     revoked.socket().receive('access.revoked', { message: 'This device was revoked.' }, null);
     expect(revoked.connection.getStatus()).toMatchObject({ link: 'revoked', notice: 'This device was revoked.' });
+  });
+
+  it('never shows a peer\'s own error text: each code gets the app\'s words', async () => {
+    const peer = harness({ peer: true });
+    await attachLive(peer.socket());
+    peer.socket().receive('error', { code: 'host_unavailable', message: 'Call +1 555 0100 to unlock' });
+    expect(peer.connection.getStatus().notice).toBe('That computer is busy. Try again.');
+    peer.socket().receive('access.revoked', { message: 'Re-pair at https://evil.example' }, null);
+    expect(peer.connection.getStatus()).toMatchObject({ link: 'revoked', notice: 'This phone is no longer paired with that computer.' });
+
+    const home = harness();
+    await attachLive(home.socket());
+    home.socket().receive('error', { code: 'host_unavailable', message: 'Broker restarting' });
+    expect(home.connection.getStatus().notice).toBe('Broker restarting');
   });
 
   it('heartbeats every 5 s with the lease only while holding control', async () => {
@@ -1613,5 +1630,68 @@ describe('Files', () => {
     socket().reply(last(socket(), 'files.list'), 'files.listed', listed('', { root: '/Users/me/other' }));
     await expect(answer).resolves.toBe('/Users/me/other');
     expect(connection.knownFilesRoot()).toBe('/Users/me/other');
+  });
+});
+
+describe('Connection for multi-computer', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('attaches a read-only thumbnail viewer that never takes control', async () => {
+    const { connection, socket } = harness({ thumbnail: { maxUpdatesPerSecond: 5 } });
+    await attachLive(socket());
+    const attach = socket().sent.find((message) => message.type === 'session.attach');
+    expect(attach?.payload).toEqual({ thumbnail: { maxUpdatesPerSecond: 5 } });
+    connection.takeControl();
+    expect(socket().types()).not.toContain('control.acquire');
+    expect(connection.sendText('ls')).toBe(false);
+  });
+
+  it('attaches a full viewer with an empty payload by default', async () => {
+    const { socket } = harness();
+    await attachLive(socket());
+    expect(socket().sent.find((message) => message.type === 'session.attach')?.payload).toEqual({});
+  });
+
+  it('reports the size of every host message', async () => {
+    const sizes: number[] = [];
+    const { socket } = harness({ onMessageBytes: (bytes) => sizes.push(bytes) });
+    await attachLive(socket());
+    expect(sizes).toHaveLength(4);
+    expect(sizes.every((size) => size > 50)).toBe(true);
+  });
+
+  it('opens sockets only when the gate admits them and reports how each attempt ended', async () => {
+    const scheduler = new Scheduler({ concurrentConnects: 1 }, { random: () => 0.5 });
+    const first = harness({ gate: scheduler.connectGate('https://a.tailx.ts.net') });
+    const second = harness({ gate: scheduler.connectGate('https://b.tailx.ts.net') });
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(second.connection.getStatus().link).toBe('connecting');
+    await attachLive(first.socket());
+    expect(first.connection.getStatus().link).toBe('live');
+    // The first attempt went live, so the second may start.
+    expect(FakeSocket.all).toHaveLength(2);
+    second.socket().close();
+    // A failed attempt marks the computer for a jittered backoff before the next background try.
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAYS_MS[0]);
+    expect(FakeSocket.all).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeSocket.all).toHaveLength(3);
+  });
+
+  it('cancels a waiting attempt on detach and frees a held slot', async () => {
+    const scheduler = new Scheduler({ concurrentConnects: 1 });
+    const first = harness({ gate: scheduler.connectGate('https://a.tailx.ts.net') });
+    const second = harness({ gate: scheduler.connectGate('https://b.tailx.ts.net') });
+    second.connection.detach();
+    first.connection.detach();
+    const third = harness({ gate: scheduler.connectGate('https://c.tailx.ts.net') });
+    expect(FakeSocket.all).toHaveLength(2);
+    expect(third.socket().url).toBe('wss://host.invalid/api/v1/ws');
   });
 });

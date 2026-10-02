@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1020">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>Gate 0</title>
+<style>
+  body { margin: 0; padding: max(16px, env(safe-area-inset-top)) 16px 48px; background: #0b1020; color: #e5e7eb;
+         font: 16px/1.4 -apple-system, system-ui, sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .meta { font-size: 13px; color: #94a3b8; word-break: break-all; }
+  button { display: block; width: 100%; margin: 8px 0; padding: 16px; font-size: 18px; border: 0; border-radius: 12px;
+           background: #22d3ee; color: #0b1020; font-weight: 600; }
+  button.alt { background: #1e293b; color: #e5e7eb; }
+  .check { background: #111827; border-radius: 12px; padding: 12px; margin: 12px 0; }
+  .check h2 { font-size: 16px; margin: 0; display: flex; justify-content: space-between; gap: 8px; }
+  .st { font-weight: 700; } .PASS { color: #4ade80; } .FAIL { color: #f87171; } .WAIT, .MANUAL { color: #fbbf24; }
+  .check p { font-size: 13px; color: #cbd5e1; margin: 6px 0; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #94a3b8; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<h1>Gate 0</h1>
+<div class="meta" id="meta">loading…</div>
+
+<button id="run">Run checks 1, 2 and 4</button>
+
+<div class="check" id="c1"><h2>1. Fetch sets the peer cookie <span class="st">—</span></h2>
+  <p>A credentialed fetch to the peer sets its cookie; the next fetch sends it back.</p><pre></pre></div>
+<div class="check" id="c2"><h2>2. Later fetch and WebSocket send it <span class="st">—</span></h2>
+  <p>A preflighted fetch and a WebSocket to the peer both carry the same cookie.</p><pre></pre></div>
+<div class="check" id="c3"><h2>3. Cookie survives app kill and reboot <span class="st">—</span></h2>
+  <p>Runs by itself each time the app opens. Kill the app and open it again. Then restart the phone and open it again.
+     Each open adds a line below. iPhone only: also open <b class="peer">the peer</b>/echo in Safari. It must show
+     <code>"received": ""</code> (the app keeps its own cookie jar).</p><pre></pre></div>
+<div class="check" id="c4"><h2>4. Cookie expiry <span class="st">—</span></h2>
+  <p>The peer asks for Max-Age 30 days. To see the real expiry on iPhone: Mac Safari → Develop → your iPhone → Gate 0 →
+     Storage → Cookies → <code>__Host-gate0</code> on the peer host → Expires (or Network → the /set request → Cookies).
+     About 7 days means the WebKit IP cap applies; about 30 days means it does not. If the peer cookie is not listed, write that down.</p><pre></pre></div>
+<div class="check" id="c5"><h2>5. Push-woken worker sends the cookie (optional) <span class="st">—</span></h2>
+  <p>Tap the button, allow notifications, then close the app fully within 15 seconds. A notification says if the
+     worker's request carried the cookie. Open the app again to see the result here.</p>
+  <button class="alt" id="push">Push to the worker in 15 s</button><pre></pre></div>
+<div class="check" id="c6"><h2>6. Two scoped workers, two push keys (optional) <span class="st">—</span></h2>
+  <p>Registers workers at /a/ and /b/, each with its own push key, and pushes to both now. PASS when both report back.</p>
+  <button class="alt" id="scoped">Register /a/ and /b/ and push both</button><pre></pre></div>
+<div class="check" id="c7"><h2>7. Android <span class="st MANUAL">MANUAL</span></h2>
+  <p>In Chrome: menu → Add to Home screen → Install (it must say Install, so Chrome makes a real app). Open it from the
+     Home Screen and run checks 1–6 the same way. On Android the app shares Chrome's cookies, so seeing the cookie at
+     the peer's /echo in Chrome is expected there. Check 4: use chrome://inspect on a computer → the app → Application → Cookies.</p></div>
+
+<button class="alt" id="copy">Copy results</button>
+<button class="alt" id="reset">Reset (delete the test cookie)</button>
+<pre id="summary"></pre>
+
+<script>
+const results = {};
+let config;
+const store = (key, value) => value === undefined ? localStorage.getItem('gate0.' + key) : localStorage.setItem('gate0.' + key, value);
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+function show(n, status, detail) {
+  results[n] = { status, detail };
+  const box = document.getElementById('c' + n);
+  box.querySelector('.st').textContent = status;
+  box.querySelector('.st').className = 'st ' + status;
+  box.querySelector('pre').textContent = typeof detail === 'string' ? detail : JSON.stringify(detail, null, 2);
+}
+
+async function peer(path, init = {}) {
+  const response = await fetch(config.peer + path, { credentials: 'include', cache: 'no-store', ...init });
+  if (!response.ok) throw new Error(path + ': HTTP ' + response.status);
+  return response.json();
+}
+
+function socket() {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(config.peer.replace(/^https/, 'wss') + '/ws');
+    const timer = setTimeout(() => { ws.close(); reject(new Error('WebSocket timed out')); }, 8000);
+    let hello;
+    ws.onmessage = (event) => {
+      if (!hello) { hello = JSON.parse(event.data); ws.send('ping'); return; }
+      clearTimeout(timer); ws.close(); resolve({ ...hello, echoed: event.data });
+    };
+    ws.onerror = () => { clearTimeout(timer); reject(new Error('WebSocket failed (origin refused or network)')); };
+  });
+}
+
+const family = (ip) => (ip || '').includes(':') && !/^\d+\.\d+\.\d+\.\d+:\d+$/.test(ip) ? 'IPv6' : 'IPv4';
+
+async function guard(n, fn) {
+  try { await fn(); } catch (error) { show(n, 'FAIL', String(error)); }
+}
+
+async function check1() {
+  const set = await peer('/set');
+  store('value', set.set); store('setAt', Date.now()); store('history', '[]');
+  const next = await peer('/echo');
+  show(1, next.received === set.set ? 'PASS' : 'FAIL', {
+    peerSetCookie: set.set, hadOneBefore: set.received || 'no', nextFetchSent: next.received || 'nothing',
+    client: next.client + ' (' + family(next.client) + ')', origin: next.origin, secFetchSite: next.secFetchSite,
+  });
+  return set;
+}
+
+async function check2() {
+  const want = store('value');
+  const preflighted = await peer('/echo', { method: 'POST', headers: { 'X-Gate0': '1' } });
+  let ws;
+  try { ws = await socket(); } catch (error) { ws = { error: String(error) }; }
+  const ok = !!want && preflighted.received === want && ws.received === want && ws.echoed === 'ping';
+  show(2, ok ? 'PASS' : 'FAIL', {
+    expected: want || 'none (run check 1)', preflightedFetchSent: preflighted.received || 'nothing',
+    webSocketSent: ws.error || ws.received || 'nothing', webSocketEcho: ws.echoed || '-',
+  });
+}
+
+function check4(set) {
+  const days = Math.round(set.maxAge / 86400);
+  show(4, set.maxAge ? 'PASS' : 'FAIL', {
+    peerAskedMaxAge: set.maxAge + ' s (' + days + ' days)', peerComputedExpiry: set.expires,
+    note: 'PASS means the peer set it. Read the real expiry in Web Inspector (see above) and report it.',
+  });
+}
+
+async function check3() {
+  const want = store('value');
+  if (!want) { show(3, '—', 'No cookie yet. Run checks 1, 2 and 4 first.'); return; }
+  const history = JSON.parse(store('history') || '[]');
+  let line;
+  try {
+    const now = await peer('/echo');
+    line = { at: new Date().toISOString(), sent: now.received === want ? 'yes' : 'NO (' + (now.received || 'nothing') + ')' };
+  } catch (error) {
+    line = { at: new Date().toISOString(), sent: 'ERROR ' + error };
+  }
+  history.push(line);
+  store('history', JSON.stringify(history.slice(-20)));
+  const hours = ((Date.now() - Number(store('setAt'))) / 3.6e6).toFixed(1);
+  show(3, history.length < 2 ? 'WAIT' : history.every((h) => h.sent === 'yes') ? 'PASS' : 'FAIL',
+    { cookieSetAt: new Date(Number(store('setAt'))).toISOString(), hoursAgo: hours, opens: history });
+}
+
+function key(base64url) {
+  const raw = atob(base64url.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+async function subscribe(scope) {
+  const reg = await navigator.serviceWorker.register(scope + 'sw.js', { scope });
+  const worker = reg.installing || reg.waiting || reg.active;
+  if (worker.state !== 'activated') {
+    await new Promise((resolve) => worker.addEventListener('statechange', () => worker.state === 'activated' && resolve()));
+  }
+  const old = await reg.pushManager.getSubscription();
+  if (old) await old.unsubscribe(); // home makes new keys on each start
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(config.keys[scope]) });
+  await post('/subscribe', { scope, ...sub.toJSON() });
+}
+
+async function post(path, body) {
+  const response = await fetch(path, { method: 'POST', body: JSON.stringify(body) });
+  if (!response.ok) throw new Error(path + ': ' + (await response.text()));
+}
+
+async function pushReports() {
+  const reports = await (await fetch('/report', { cache: 'no-store' })).json();
+  const want = store('value');
+  const since5 = Number(store('push5') || Infinity), since6 = Number(store('push6') || Infinity);
+  const r5 = reports['/'];
+  if (r5 && r5.at >= since5) {
+    show(5, !r5.error && r5.received === want ? 'PASS' : 'FAIL', { ...r5, expected: want, at: new Date(r5.at).toISOString() });
+  }
+  const r6 = ['/a/', '/b/'].map((s) => reports[s]).filter((r) => r && r.at >= since6);
+  if (since6 !== Infinity) {
+    show(6, r6.length === 2 && r6.every((r) => !r.error) ? 'PASS' : 'WAIT', { reports: r6 });
+  }
+}
+
+async function needPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('No push here. On iPhone, open Gate 0 from the Home Screen, not Safari.');
+  }
+  if (await Notification.requestPermission() !== 'granted') throw new Error('Notifications not allowed.');
+}
+
+document.getElementById('run').onclick = async () => {
+  await guard(1, async () => {
+    const set = await check1();
+    check4(set);
+    await guard(2, check2);
+  });
+  document.getElementById('summary').textContent = JSON.stringify(results);
+};
+
+document.getElementById('push').onclick = () => guard(5, async () => {
+  await needPush();
+  await subscribe('/');
+  store('push5', Date.now());
+  await post('/push', { scope: '/', delay: 15 });
+  show(5, 'WAIT', 'Push sent in 15 s. Close the app fully now (swipe it away), wait for the notification, then open the app.');
+});
+
+document.getElementById('scoped').onclick = () => guard(6, async () => {
+  await needPush();
+  store('push6', Date.now());
+  for (const scope of ['/a/', '/b/']) {
+    await subscribe(scope);
+    await post('/push', { scope, delay: 0 });
+  }
+  show(6, 'WAIT', 'Pushed to /a/ and /b/. Two notifications should arrive; this updates by itself.');
+  for (let i = 0; i < 15 && results[6].status === 'WAIT'; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    await pushReports();
+  }
+});
+
+document.getElementById('copy').onclick = async () => {
+  const text = JSON.stringify({ when: new Date().toISOString(), userAgent: navigator.userAgent, standalone,
+    home: location.origin, peer: config.peer, results }, null, 2);
+  document.getElementById('summary').textContent = text;
+  try { await navigator.clipboard.writeText(text); alert('Copied. Paste it into the Gate 0 issue.'); }
+  catch { alert('Copy failed. Select the text below and copy it.'); }
+};
+
+document.getElementById('reset').onclick = async () => {
+  try { await peer('/clear'); } catch {}
+  for (const k of ['value', 'setAt', 'history', 'push5', 'push6']) localStorage.removeItem('gate0.' + k);
+  location.reload();
+};
+
+(async () => {
+  config = await (await fetch('/config', { cache: 'no-store' })).json();
+  document.querySelectorAll('.peer').forEach((el) => { el.textContent = config.peer; });
+  document.getElementById('meta').textContent = 'home ' + location.origin + ' · peer ' + config.peer +
+    ' · installed app: ' + (standalone ? 'yes' : 'NO, open it from the Home Screen');
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+  await check3();
+  await pushReports().catch(() => {});
+  if (new URLSearchParams(location.search).has('auto')) document.getElementById('run').click();
+})();
+</script>
+</body>
+</html>

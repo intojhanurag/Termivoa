@@ -1,4 +1,5 @@
 import { Fragment, useState, useSyncExternalStore, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { homeOrigin } from '../api/http';
 import type { ChangedFile, ChangeStatus, DiffLine } from '../generated/protocol';
 import type { ChangesFileView, ChangesView, ChangesWrite, Connection } from '../terminal/Connection';
 import { readDraft, saveDraft } from '../terminal/composer';
@@ -120,11 +121,15 @@ export function suggestMessage(files: ReadonlyArray<Pick<ChangedFile, 'path' | '
   return names.length <= 3 ? `${verb} ${names.join(', ')}` : `${verb} ${names[0]} and ${names.length - 1} more files`;
 }
 
-/** The link only when it is a real https URL; anything else is dropped. */
-export function httpsUrl(url: string | undefined): string | undefined {
+/**
+ * The link only when it is a real https URL that is not this app; anything
+ * else is dropped. A computer chooses this URL, so it must never open an app
+ * route such as /computers/add#… on home.
+ */
+export function httpsUrl(url: string | undefined, app: string = homeOrigin()): string | undefined {
   try {
     const parsed = new URL(url ?? '');
-    return parsed.protocol === 'https:' ? parsed.href : undefined;
+    return parsed.protocol === 'https:' && parsed.origin !== app ? parsed.href : undefined;
   } catch {
     return undefined;
   }

@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api/http';
-import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import { useCallback, useEffect, useState } from 'react';
 
 const FONT_SIZE_KEY = 'pterm.fontSize';
 export const DEFAULT_FONT_SIZE = 14;
@@ -122,81 +120,12 @@ export function useServiceWorkerUpdate(): { available: boolean; reload: () => vo
   return { available: waiting !== null, reload };
 }
 
-export function websocketUrl(): string {
-  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${scheme}//${window.location.host}/api/v1/ws`;
-}
-
-export const SESSION_POLL_MS = 5000;
-
-export interface SessionList {
-  readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
-  /** False after the last list request failed. */
-  readonly reachable: boolean;
-  readonly reload: () => Promise<void>;
-}
-
 /**
- * Wraps a request so a slow response never overwrites a newer one, and tells
- * the poll timer when a request is still open so ticks do not pile up.
+ * The live WebSocket URL of a computer by its origin; this app's own (home)
+ * computer when omitted. http becomes ws and https becomes wss.
  */
-export function latestOnly<T>(
-  load: () => Promise<T>,
-  onResult: (value: T) => void,
-  onError: (error: unknown) => void,
-): { readonly run: () => Promise<void>; readonly busy: () => boolean } {
-  let issued = 0;
-  let open = 0;
-  const run = async () => {
-    const ticket = ++issued;
-    open++;
-    try {
-      const value = await load();
-      if (ticket === issued) onResult(value);
-    } catch (error) {
-      if (ticket === issued) onError(error);
-    } finally {
-      open--;
-    }
-  };
-  return { run, busy: () => open > 0 };
-}
-
-/**
- * The session list for Sessions and the Live tabs. While `active`, it
- * refreshes every few seconds, but only when the page is visible and the
- * previous request has finished.
- */
-export function useSessionList(active: boolean, onFailure: (error: unknown) => void): SessionList {
-  const [sessions, setSessions] = useState<ReadonlyArray<BrokerRPCSessionRecord>>();
-  const [reachable, setReachable] = useState(true);
-  const loader = useMemo(() => latestOnly(
-    async () => (await api.sessions()).sessions,
-    (list) => {
-      setSessions(list);
-      setReachable(true);
-    },
-    (error) => {
-      setReachable(false);
-      onFailure(error);
-    },
-  ), [onFailure]);
-  useEffect(() => {
-    if (!active) {
-      return undefined;
-    }
-    const tick = () => {
-      if (document.visibilityState === 'visible' && !loader.busy()) {
-        void loader.run();
-      }
-    };
-    tick();
-    const timer = setInterval(tick, SESSION_POLL_MS);
-    document.addEventListener('visibilitychange', tick);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', tick);
-    };
-  }, [active, loader]);
-  return { sessions, reachable, reload: loader.run };
+export function websocketUrl(origin: string = window.location.origin): string {
+  const url = new URL('/api/v1/ws', origin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.href;
 }

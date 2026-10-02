@@ -80,12 +80,24 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 	}
 	switch request.Type {
 	case protocol.AdminPairGrant:
-		grant, expires, err := authority.CreateGrant(ctx)
+		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCPairGrantPayload](request)
+		if err != nil {
+			return nil, err
+		}
+		var app store.AppBinding
+		if payload.Via != nil {
+			if app, err = server.resolveVia(ctx, *payload.Via, payload.AllowTagged != nil && *payload.AllowTagged); err != nil {
+				return nil, err
+			}
+		}
+		grant, expires, err := authority.CreateBoundGrant(ctx, app)
 		if err != nil {
 			return nil, err
 		}
 		origin, err := server.pairingOrigin(ctx)
-		return protocol.AdminRPCPairGrantResultPayload{Grant: grant, ExpiresAt: formatRPCTime(expires), Origin: origin}, err
+		result := protocol.AdminRPCPairGrantResultPayload{Grant: grant, ExpiresAt: formatRPCTime(expires), Origin: origin}
+		result.AppOrigin, result.AppNode = wireNode(app)
+		return result, err
 	case protocol.AdminPairPending:
 		pending, err := authority.Pending(ctx)
 		if err != nil {
@@ -93,10 +105,12 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		}
 		result := protocol.AdminRPCPairPendingResultPayload{Pending: []protocol.AdminRPCPendingPairing{}}
 		for _, record := range pending {
-			result.Pending = append(result.Pending, protocol.AdminRPCPendingPairing{
+			pending := protocol.AdminRPCPendingPairing{
 				ID: record.ID, VerificationCode: record.VerificationCode,
 				DeviceLabel: record.DeviceLabel, ExpiresAt: formatRPCTime(record.ExpiresAt),
-			})
+			}
+			pending.AppOrigin, pending.AppNode = wireNode(record.App)
+			result.Pending = append(result.Pending, pending)
 		}
 		return result, nil
 	case protocol.AdminPairApprove:
@@ -112,11 +126,13 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		}
 		result := protocol.AdminRPCDeviceListResultPayload{Devices: []protocol.AdminRPCDevice{}}
 		for _, device := range devices {
-			result.Devices = append(result.Devices, protocol.AdminRPCDevice{
+			record := protocol.AdminRPCDevice{
 				ID: device.ID, Label: device.Label, Revoked: device.RevokedAt != nil,
 				Status:    adminDeviceStatus(device.Status),
 				CreatedAt: formatRPCTime(device.CreatedAt), LastUsedAt: formatRPCTime(device.LastUsedAt),
-			})
+			}
+			record.AppOrigin, record.AppNode = wireNode(device.App)
+			result.Devices = append(result.Devices, record)
 		}
 		return result, nil
 	case protocol.AdminDeviceRevoke:
@@ -126,6 +142,35 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		}
 		closed, err := authority.RevokeDevice(ctx, payload.DeviceID)
 		return protocol.AdminRPCDeviceRevokeResultPayload{DeviceID: payload.DeviceID, ClosedStreams: int64(closed)}, err
+	case protocol.AdminDeviceRevokeVia:
+		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCRevokeViaPayload](request)
+		if err != nil {
+			return nil, err
+		}
+		revoked, closed, err := authority.RevokeVia(ctx, payload.AppOrigin)
+		return protocol.AdminRPCRevokeViaResultPayload{
+			AppOrigin: payload.AppOrigin, DeviceIDS: revoked, ClosedStreams: int64(closed),
+		}, err
+	case protocol.AdminComputersList:
+		computers, err := server.config.Store.ListConfirmedComputers(ctx, protocol.MaxAdminComputers)
+		if err != nil {
+			return nil, err
+		}
+		result := protocol.AdminRPCComputerListResultPayload{Computers: []protocol.AdminRPCComputer{}}
+		for _, computer := range computers {
+			result.Computers = append(result.Computers, protocol.AdminRPCComputer{
+				DeviceID: computer.DeviceID, Origin: computer.Origin, Label: computer.Label,
+				CreatedAt: formatRPCTime(computer.CreatedAt),
+			})
+		}
+		return result, nil
+	case protocol.AdminComputersRemove:
+		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCComputerRemovePayload](request)
+		if err != nil {
+			return nil, err
+		}
+		removed, err := server.config.Store.RemoveComputer(ctx, "", payload.Origin)
+		return protocol.AdminRPCComputerRemoveResultPayload{Origin: payload.Origin, Removed: int64(removed)}, err
 	case protocol.AdminDeviceRename:
 		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCDeviceRenamePayload](request)
 		if err != nil {
@@ -185,11 +230,18 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 	}
 }
 
+// pairingOrigin reads the configured origin and refreshes the own-origin
+// cache that authorization reads.
 func (server *ManagementServer) pairingOrigin(ctx context.Context) (*string, error) {
 	value, ok, err := server.config.Store.GetSetting(ctx, PairingOriginSetting)
-	if err != nil || !ok || protocol.ValidatePairingOrigin(value) != nil {
+	if err != nil {
 		return nil, err
 	}
+	if !ok || protocol.ValidatePairingOrigin(value) != nil {
+		server.ownOrigin.Store(nil)
+		return nil, nil
+	}
+	server.ownOrigin.Store(&value)
 	return &value, nil
 }
 

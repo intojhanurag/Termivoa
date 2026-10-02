@@ -1,16 +1,20 @@
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from 'react';
+import { client } from '../api/http';
+import { homeComputer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { Connection, INITIAL_STATUS } from '../terminal/Connection';
+import { Connection, INITIAL_STATUS, type LinkState } from '../terminal/Connection';
+import { scheduler, THUMBNAIL_UPDATES_PER_SECOND, type TileHandle, type TileState } from '../terminal/scheduler';
 import { TerminalView } from '../terminal/TerminalView';
 import { agentBadge, hasNewOutput, readViewed, since, storage, type StorageLike, type ViewedTimes } from './activity';
+import { keyOf, type HostedSession } from './allSessions';
 import { sessionName } from './folder';
 import { websocketUrl } from './hooks';
-import { StatusPill } from './Sessions';
+import { ComputerTag, StatusPill } from './Sessions';
 
 /** Tiles draw at this font size, then shrink to fit the tile. */
 export const TILE_FONT = 12;
-/** This device's tile order, as session ids. Not secret. */
+/** This device's tile order, as `host/id` session keys (a bare id is an older home entry). Not secret. */
 export const WALL_ORDER_KEY = 'pterm.wallOrder';
 const MAX_ORDER = 100;
 /** A tile moves after a finger holds it this long; a move before that scrolls. */
@@ -32,15 +36,18 @@ const rank = (session: BrokerRPCSessionRecord) => {
 };
 
 /** Running sessions, waiting first, then working, then the rest in the broker's order; and how many ended. */
-export function wallSessions(sessions: ReadonlyArray<BrokerRPCSessionRecord>): { shown: BrokerRPCSessionRecord[]; ended: number } {
+export function wallSessions<T extends BrokerRPCSessionRecord>(sessions: ReadonlyArray<T>): { shown: T[]; ended: number } {
   const shown = sessions.filter((session) => !ended(session)).sort((a, b) => rank(a) - rank(b));
   return { shown, ended: sessions.length - shown.length };
 }
 
-export function readWallOrder(store: StorageLike | undefined = storage()): string[] {
+/** The saved order as session keys; an older bare id means a home session. */
+export function readWallOrder(store: StorageLike | undefined = storage(), home?: string): string[] {
   try {
     const parsed: unknown = JSON.parse(store?.getItem(WALL_ORDER_KEY) ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_ORDER) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_ORDER).map((id) => (id.includes('/') ? id : `${home ?? homeComputer().host}/${id}`))
+      : [];
   } catch {
     return [];
   }
@@ -55,9 +62,9 @@ export function saveWallOrder(ids: ReadonlyArray<string>, store: StorageLike | u
 }
 
 /** Tiles in the saved order; tiles it does not name follow in their own order. */
-export function orderTiles<T extends { readonly id: string }>(shown: ReadonlyArray<T>, order: ReadonlyArray<string>): T[] {
+export function orderTiles<T>(shown: ReadonlyArray<T>, order: ReadonlyArray<string>, key: (item: T) => string): T[] {
   const place = new Map(order.map((id, index) => [id, index]));
-  const at = (session: T) => place.get(session.id) ?? order.length;
+  const at = (session: T) => place.get(key(session)) ?? order.length;
   return shown.map((session, index) => ({ session, index }))
     .sort((a, b) => at(a.session) - at(b.session) || a.index - b.index)
     .map(({ session }) => session);
@@ -105,62 +112,122 @@ export function tileLabel(session: BrokerRPCSessionRecord, fresh: boolean): stri
 }
 
 /**
- * One session's screen, scaled down. It attaches read-only and stays that way:
- * no control, no input, no PTY resize. It detaches when the tile goes away.
+ * The mark over a tile: Paused beyond the live budget, a dot while a live
+ * tile reconnects. A paused tile that was never live has no frame to keep:
+ * `blank` shows the session name and Paused in its place.
  */
-function MiniTerminal({ session }: { readonly session: BrokerRPCSessionRecord }) {
+export function tileMark(tile: TileState, link: LinkState, wasLive = true): 'paused' | 'blank' | 'reconnecting' | undefined {
+  if (tile === 'paused') return wasLive ? 'paused' : 'blank';
+  return link === 'live' ? undefined : 'reconnecting';
+}
+
+/**
+ * One session's screen, scaled down. It attaches read-only and stays that
+ * way: no control, no input, no PTY resize. The phone-wide scheduler decides
+ * whether it is live: offscreen tiles, tiles beyond the live budget, and all
+ * tiles while the app is in the background keep their last frame, show
+ * Paused and close their connection. A computer with thumbnail mode sends
+ * frames at most THUMBNAIL_UPDATES_PER_SECOND; an older one streams at full
+ * rate and costs more of the budget.
+ */
+function MiniTerminal({ session }: { readonly session: HostedSession }) {
   const box = useRef<HTMLSpanElement>(null);
   const host = useRef<HTMLSpanElement>(null);
+  const handle = useRef<TileHandle>(undefined);
+  const [view, setView] = useState<TerminalView>();
   const [connection, setConnection] = useState<Connection>();
+  const [tile, setTile] = useState<TileState>('paused');
+  const [wasLive, setWasLive] = useState(false);
+  useEffect(() => { if (tile === 'live') setWasLive(true); }, [tile]);
   const [fit, setFit] = useState({ scale: 0, offset: 0 });
   const status = useSyncExternalStore(
     connection?.subscribe ?? noSubscribe,
     connection?.getStatus ?? initialStatus,
     initialStatus,
   );
+  const { origin } = session.computer;
+  const key = keyOf(session);
 
+  // The view lives as long as the tile, so a paused tile keeps its last frame.
   useEffect(() => {
     const frame = box.current;
     const element = host.current;
     if (frame === null || element === null) {
       return undefined;
     }
-    const view = new TerminalView(TILE_FONT);
-    view.open(element);
-    const next = new Connection({
-      url: websocketUrl(),
-      sessionId: session.id,
-      generation: session.generation,
-      display: view.renderer,
-    });
-    next.start();
-    setConnection(next);
+    const next = new TerminalView(TILE_FONT);
+    next.open(element);
+    setView(next);
     // The grid changes size when the controller resizes the PTY, the tile when
     // the layout changes, and the cursor row with output.
     const screen = element.querySelector<HTMLElement>('.xterm-screen');
     const measure = () => {
       if (screen === null) return;
       const scale = tileScale(frame.clientWidth, frame.clientHeight, screen.offsetWidth, screen.offsetHeight);
-      const offset = scale > 0 ? tileOffset(frame.clientHeight / scale, screen.offsetHeight, view.cursorBand()?.bottom) : 0;
+      const offset = scale > 0 ? tileOffset(frame.clientHeight / scale, screen.offsetHeight, next.cursorBand()?.bottom) : 0;
       setFit((last) => (last.scale === scale && last.offset === offset ? last : { scale, offset }));
     };
     const observer = new ResizeObserver(measure);
     observer.observe(frame);
     if (screen !== null) observer.observe(screen);
-    const written = view.terminal.onWriteParsed(measure);
+    const written = next.terminal.onWriteParsed(measure);
     return () => {
       written.dispose();
       observer.disconnect();
+      next.dispose();
+      setView(undefined);
+    };
+  }, [key, session.generation]);
+
+  // A live slot from the scheduler; only a visible tile keeps one.
+  useLayoutEffect(() => {
+    const frame = box.current;
+    const slot = scheduler.requestLiveTile(key, { fullRate: !client(origin).supports('thumbnail'), onChange: setTile });
+    handle.current = slot;
+    setTile(slot.state());
+    const observer = frame === null ? undefined : new IntersectionObserver((entries) => {
+      const last = entries.at(-1);
+      if (last !== undefined) slot.setVisible(last.isIntersecting);
+    });
+    if (frame !== null) observer?.observe(frame);
+    return () => {
+      observer?.disconnect();
+      slot.release();
+      handle.current = undefined;
+    };
+  }, [key, origin]);
+
+  // Connected only while live.
+  useEffect(() => {
+    if (view === undefined || tile !== 'live') {
+      return undefined;
+    }
+    const thumbnail = client(origin).supports('thumbnail');
+    const next = new Connection({
+      url: websocketUrl(origin),
+      sessionId: session.id,
+      generation: session.generation,
+      display: view.renderer,
+      ...(thumbnail ? { thumbnail: { maxUpdatesPerSecond: THUMBNAIL_UPDATES_PER_SECOND } } : {}),
+      onMessageBytes: (bytes) => handle.current?.bytes(bytes),
+      gate: scheduler.connectGate(origin),
+      peer: !session.computer.home,
+    });
+    next.start();
+    setConnection(next);
+    return () => {
       next.detach();
-      view.dispose();
       setConnection(undefined);
     };
-  }, [session.id, session.generation]);
+  }, [view, tile, origin, session.computer.home, session.id, session.generation]);
 
+  const mark = tileMark(tile, status.link, wasLive);
   return (
     <span ref={box} className="wall-screen" aria-hidden="true">
       <span ref={host} className="wall-host" style={{ transform: `scale(${fit.scale}) translateY(${-fit.offset}px)` }} />
-      {status.link !== 'live' && <span className="dot amber wall-link" />}
+      {mark === 'reconnecting' && <span className="dot amber wall-link" />}
+      {mark === 'paused' && <span className="wall-paused">Paused</span>}
+      {mark === 'blank' && <span className="wall-blank"><span>{sessionName(session)}</span><span className="wall-paused-text">Paused</span></span>}
     </span>
   );
 }
@@ -190,11 +257,13 @@ interface Drag {
  * The tiles. Hold one and drag it to a new place; Alt+arrow keys move the
  * focused tile. The order is saved on this device only.
  */
-export function WallGrid({ shown, viewed, now, onOpen }: {
-  readonly shown: ReadonlyArray<BrokerRPCSessionRecord>;
+export function WallGrid({ shown, viewed, now, multi = false, onOpen }: {
+  readonly shown: ReadonlyArray<HostedSession>;
   readonly viewed: ViewedTimes;
   readonly now: number;
-  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+  /** Name each tile's computer. */
+  readonly multi?: boolean;
+  readonly onOpen: (session: HostedSession) => void;
 }) {
   const [order, setOrder] = useState(readWallOrder);
   // The live order while a tile moves; saved when it is dropped.
@@ -205,9 +274,9 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
   const drag = useRef<Drag>(undefined);
   const idsRef = useRef<string[]>([]);
   const droppedAt = useRef(Number.NEGATIVE_INFINITY);
-  const ordered = orderTiles(shown, order);
-  const tiles = dragIds === undefined ? ordered : orderTiles(shown, dragIds);
-  const ids = tiles.map((session) => session.id);
+  const ordered = orderTiles(shown, order, keyOf);
+  const tiles = dragIds === undefined ? ordered : orderTiles(shown, dragIds, keyOf);
+  const ids = tiles.map(keyOf);
 
   const save = (next: string[]) => {
     const merged = mergeOrder(next, order);
@@ -330,14 +399,14 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
     drag.current = current;
   };
 
-  const keyMove = (event: KeyboardEvent<HTMLButtonElement>, session: BrokerRPCSessionRecord) => {
+  const keyMove = (event: KeyboardEvent<HTMLButtonElement>, session: HostedSession) => {
     const step = !event.altKey ? 0
       : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1
         : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : 0;
     if (step === 0) return;
     // Alt+arrow also means Back and Forward in the browser; never leave the Wall.
     event.preventDefault();
-    const from = ids.indexOf(session.id);
+    const from = ids.indexOf(keyOf(session));
     const to = from + step;
     if (from < 0 || to < 0 || to >= ids.length) return;
     save(moveTile(ids, from, to));
@@ -377,8 +446,9 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
           const fresh = hasNewOutput(session, viewed);
           const badge = agentBadge(session, fresh);
           const question = session.agent?.state === 'waiting' ? session.agent.question?.text : undefined;
+          const key = keyOf(session);
           return (
-            <li key={`${session.id}/${session.generation}`} data-tile={session.id} className={dragging === session.id ? 'dragging' : undefined}>
+            <li key={`${key}/${session.generation}`} data-tile={key} className={dragging === key ? 'dragging' : undefined}>
               <button
                 type="button"
                 className={badge?.tone === 'amber' ? 'wall-tile asking' : 'wall-tile'}
@@ -388,13 +458,14 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
                   // A drop ends with a click on the tile; it must not open it.
                   if (performance.now() - droppedAt.current > 400) onOpen(session);
                 }}
-                onPointerDown={(event) => start(event, session.id)}
+                onPointerDown={(event) => start(event, key)}
                 onContextMenu={(event) => {
                   if (drag.current !== undefined) event.preventDefault();
                 }}
                 onKeyDown={(event) => keyMove(event, session)}
               >
                 <span className="wall-name">{sessionName(session)}</span>
+                {multi && <span className="wall-computer"><ComputerTag computer={session.computer} /></span>}
                 <MiniTerminal session={session} />
                 {badge !== undefined && <StatusPill badge={badge} duration={since(session.agent?.stateSince, now)} />}
                 {question !== undefined && <span className="wall-question">{question}</span>}
@@ -404,7 +475,7 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
         })}
       </ul>
       <p className="visually-hidden" role="status">{announcement}</p>
-      {shown.length > 1 && shown.some((session) => order.includes(session.id)) && (
+      {shown.length > 1 && shown.some((session) => order.includes(keyOf(session))) && (
         <button type="button" className="link wall-reset" onClick={() => {
           setOrder([]);
           saveWallOrder([]);
@@ -419,9 +490,11 @@ export function WallGrid({ shown, viewed, now, onOpen }: {
   );
 }
 
-export function Wall({ sessions, onOpen, onNew, onList }: {
-  readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
-  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+export function Wall({ sessions, multi = false, onOpen, onNew, onList }: {
+  /** Every computer's sessions; undefined until one computer answers. */
+  readonly sessions: ReadonlyArray<HostedSession> | undefined;
+  readonly multi?: boolean;
+  readonly onOpen: (session: HostedSession) => void;
   readonly onNew: () => void;
   readonly onList: () => void;
 }) {
@@ -452,7 +525,7 @@ export function Wall({ sessions, onOpen, onNew, onList }: {
           </button>
         </section>
       )}
-      <WallGrid shown={wall.shown} viewed={viewed} now={now} onOpen={onOpen} />
+      <WallGrid shown={wall.shown} viewed={viewed} now={now} multi={multi} onOpen={onOpen} />
       {wall.ended > 0 && (
         <p className="hint-text">{wall.ended} ended {wall.ended === 1 ? 'session is' : 'sessions are'} on the list.</p>
       )}

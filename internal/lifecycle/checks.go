@@ -32,23 +32,6 @@ func ExecutableProblems(goos, path string) []string {
 	return problems
 }
 
-// TailscaleStatus is the non-secret subset of `tailscale status --json`.
-type TailscaleStatus struct {
-	BackendState string
-	DNSName      string
-}
-
-func ParseTailscaleStatus(data []byte) (TailscaleStatus, error) {
-	var raw struct {
-		BackendState string
-		Self         struct{ DNSName string }
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return TailscaleStatus{}, fmt.Errorf("parse tailscale status: %w", err)
-	}
-	return TailscaleStatus{BackendState: raw.BackendState, DNSName: strings.TrimSuffix(raw.Self.DNSName, ".")}, nil
-}
-
 // ServeStatus summarizes `tailscale serve status --json`. Configured is true
 // when HTTPS 443 already proxies the local gateway; Problems name conflicts
 // on 443 that pterm must not overwrite and any Funnel exposure (checked once,

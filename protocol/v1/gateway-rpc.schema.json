@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://phone-terminal.invalid/protocol/v1/gateway-rpc.schema.json",
   "title": "GatewayRPCMessage",
-  "description": "Bounded correlated RPC between the browser gateway and the broker on an IPC connection whose peer declared clientKind gateway. Every authenticated request carries the raw browser credential; the broker hashes and re-authorizes it for each request. See authentication-rpc.md.",
+  "description": "Bounded correlated RPC between the browser gateway and the broker on an IPC connection whose peer declared clientKind gateway. Every authenticated request carries the raw browser credential; the broker hashes and re-authorizes it for each request. A request may carry the browser request's Origin as origin. See authentication-rpc.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "type", "requestId", "payload"],
@@ -10,6 +10,10 @@
     "version": { "type": "integer", "const": 1 },
     "type": { "$ref": "#/$defs/messageType" },
     "requestId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+    "origin": {
+      "description": "Requests only: the browser request's exact Origin header, forwarded by the gateway after its own checks. Absent when the gateway admitted the request as same-origin without an Origin header; the broker then treats it as the computer's own origin.",
+      "$ref": "admin-rpc.schema.json#/$defs/origin"
+    },
     "payload": { "type": "object" }
   },
   "oneOf": [
@@ -33,6 +37,9 @@
     { "$ref": "#/$defs/uploadChunkMessage" },
     { "$ref": "#/$defs/uploadCommitMessage" },
     { "$ref": "#/$defs/previewCheckMessage" },
+    { "$ref": "#/$defs/computersListMessage" },
+    { "$ref": "#/$defs/computersAddMessage" },
+    { "$ref": "#/$defs/computersRemoveMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -53,6 +60,9 @@
     { "$ref": "#/$defs/uploadChunkResultMessage" },
     { "$ref": "#/$defs/uploadCommitResultMessage" },
     { "$ref": "#/$defs/previewCheckResultMessage" },
+    { "$ref": "#/$defs/computersListResultMessage" },
+    { "$ref": "#/$defs/computersAddResultMessage" },
+    { "$ref": "#/$defs/computersRemoveResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -65,7 +75,7 @@
         "gateway.session.terminate", "gateway.live.open", "gateway.origin", "gateway.device.rename",
         "gateway.push.config", "gateway.push.subscribe", "gateway.push.unsubscribe", "gateway.push.test",
         "gateway.upload.begin", "gateway.upload.chunk", "gateway.upload.commit",
-        "gateway.preview.check",
+        "gateway.preview.check", "gateway.computers.list", "gateway.computers.add", "gateway.computers.remove",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
@@ -73,6 +83,7 @@
         "gateway.device.rename.result", "gateway.push.config.result", "gateway.push.subscribe.result",
         "gateway.push.unsubscribe.result", "gateway.push.test.result",
         "gateway.upload.begin.result", "gateway.upload.chunk.result", "gateway.upload.commit.result", "gateway.preview.check.result",
+        "gateway.computers.list.result", "gateway.computers.add.result", "gateway.computers.remove.result",
         "gateway.error"
       ]
     },
@@ -198,11 +209,46 @@
     },
     "originResultPayload": {
       "title": "GatewayRPCOriginResultPayload",
-      "description": "The browser origin configured with admin.config.origin, absent when none is set. It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it is valid for the gateway's profile.",
+      "description": "origin: the browser origin configured with admin.config.origin, absent when none is set. It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it is valid for the gateway's profile. boundOrigins: the union of origins of devices bound to an app origin whose node is still trusted or has changed since pairing, revoked or expired included (so their app can read the refusal and offer pairing again), used only for CORS headers (the broker still checks each request's origin against its own credential). pairingOrigins: app origins of unexpired bound grants and pending pairings, admitted only on /api/v1/pair/*. Both are sorted, unique, and absent when empty.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "origin": { "$ref": "admin-rpc.schema.json#/$defs/origin" }
+        "origin": { "$ref": "admin-rpc.schema.json#/$defs/origin" },
+        "boundOrigins": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "http-api.schema.json#/$defs/computerOrigin" } },
+        "pairingOrigins": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "$ref": "http-api.schema.json#/$defs/computerOrigin" } }
+      }
+    },
+    "computerAddPayload": {
+      "title": "GatewayRPCComputerAddPayload",
+      "description": "Adds, confirms or renames a computer in the list of the device that owns the credential.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "request": { "$ref": "http-api.schema.json#/$defs/computerAddRequest" }
+      }
+    },
+    "computerRemovePayload": {
+      "title": "GatewayRPCComputerRemovePayload",
+      "description": "Removes one computer, pending or confirmed, from the list of the device that owns the credential. The gateway builds origin from the {host} path segment.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "origin"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "origin": { "$ref": "http-api.schema.json#/$defs/computerOrigin" }
+      }
+    },
+    "computerListResultPayload": {
+      "title": "GatewayRPCComputerListResultPayload",
+      "description": "The device's confirmed computers (the HTTP response) and the origins of its unexpired pending computers, which only the gateway uses for the app's CSP connect-src.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["computers", "pendingOrigins"],
+      "properties": {
+        "computers": { "type": "array", "maxItems": 8, "items": { "$ref": "http-api.schema.json#/$defs/computer" } },
+        "pendingOrigins": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "$ref": "http-api.schema.json#/$defs/computerOrigin" } }
       }
     },
     "pairPollResultPayload": {
@@ -247,6 +293,9 @@
     "pushSubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.subscribe" }, "payload": { "$ref": "#/$defs/pushSubscribePayload" } } },
     "pushUnsubscribeMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.unsubscribe" }, "payload": { "$ref": "#/$defs/pushUnsubscribePayload" } } },
     "previewCheckMessage": { "type": "object", "properties": { "type": { "const": "gateway.preview.check" }, "payload": { "$ref": "#/$defs/previewCheckPayload" } } },
+    "computersListMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.list" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "computersAddMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.add" }, "payload": { "$ref": "#/$defs/computerAddPayload" } } },
+    "computersRemoveMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.remove" }, "payload": { "$ref": "#/$defs/computerRemovePayload" } } },
     "pushTestMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.test" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "uploadBeginMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.begin" }, "payload": { "$ref": "#/$defs/uploadBeginPayload" } } },
     "uploadChunkMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.chunk" }, "payload": { "$ref": "#/$defs/uploadChunkPayload" } } },
@@ -270,6 +319,9 @@
     "uploadBeginResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.begin.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "uploadChunkResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.chunk.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "uploadCommitResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.commit.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/uploadResponse" } } },
+    "computersListResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.list.result" }, "payload": { "$ref": "#/$defs/computerListResultPayload" } } },
+    "computersAddResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.add.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/computerAddResponse" } } },
+    "computersRemoveResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.remove.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "gateway.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

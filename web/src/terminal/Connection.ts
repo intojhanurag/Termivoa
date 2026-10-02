@@ -5,6 +5,7 @@ import type {
   ChangesPatchPayload,
   ChangesPushedPayload,
   ChangesSummaryPayload,
+  ErrorCode,
   FilesContentPayload,
   FilesFoundPayload,
   FilesListedPayload,
@@ -17,9 +18,10 @@ import type {
   ScreenResyncPayload,
   State as SessionLifecycle,
   TasksListedPayload,
+  ThumbnailMode,
   WorktreeRemovedPayload,
 } from '../generated/protocol';
-import { CLIENT_BUILD } from '../api/http';
+import { CLIENT_BUILD, PEER_REQUEST_FAILED } from '../api/http';
 import { parseHostMessage, type ValidatedHostMessage } from '../protocol/validate';
 import {
   ResyncRequiredError,
@@ -30,6 +32,7 @@ import {
   type TerminalRow,
 } from './FrameRenderer';
 import { DeliveryUncertainError, InputSender } from './InputSender';
+import type { ConnectGate } from './scheduler';
 import { SnapshotAssembler } from './SnapshotAssembler';
 
 export const DELIVERY_UNCERTAIN = 'Delivery uncertain—check the terminal before sending again.';
@@ -218,6 +221,43 @@ const WRITE_ERRORS: Readonly<Record<string, string>> = {
   operation_conflict: 'Another commit, push or worktree remove is running. Wait for it, then try again.',
 };
 
+/**
+ * A peer's own error text is never shown: it could be phishing inside this
+ * app. Each code gets the app's own words instead.
+ */
+const PEER_ERRORS: Readonly<Record<ErrorCode, string>> = {
+  unauthorized: 'This phone is no longer paired with that computer.',
+  revoked: 'This phone is no longer paired with that computer.',
+  pairing_expired: 'The pairing expired.',
+  pairing_pending: 'The pairing is not approved yet.',
+  protocol_mismatch: 'That computer runs another version of Termivoa. Update Termivoa on it.',
+  session_missing: 'That session no longer exists.',
+  generation_changed: 'That session was replaced.',
+  session_lost: 'That session was lost.',
+  not_controller: 'You no longer have control. Take control, then try again.',
+  stale_lease: 'You no longer have control. Take control, then try again.',
+  input_gap: 'Some input did not arrive. Take control, then try again.',
+  limit_exceeded: 'That is more than the computer allows.',
+  history_changed: 'The history changed. Open it again.',
+  resync_required: 'The screen is out of date. It loads again now.',
+  host_unavailable: 'That computer is busy. Try again.',
+  internal_error: 'That computer had an internal error.',
+  invalid_request: 'That computer refused the request.',
+  operation_conflict: 'Another operation is running. Wait for it, then try again.',
+  project_missing: 'That project is no longer on that computer.',
+  shell_profile_missing: 'That shell is no longer on that computer.',
+  question_changed: 'The question changed. Read it again.',
+  preview_missing: 'That preview is gone.',
+  worktree_exists: 'That worktree already exists.',
+  not_a_repository: 'That folder is not in a git repository.',
+  worktree_failed: 'git could not do this on that computer.',
+};
+
+/** The app's own words for a peer's error code. */
+export function peerErrorText(code: string): string {
+  return (PEER_ERRORS as Readonly<Record<string, string | undefined>>)[code] ?? PEER_REQUEST_FAILED;
+}
+
 /** FrameRenderer satisfies this; tests pass a fake. */
 export interface ScreenDisplay {
   paintSnapshot(snapshot: ScreenSnapshot): Promise<void>;
@@ -225,12 +265,26 @@ export interface ScreenDisplay {
 }
 
 export interface ConnectionOptions {
+  /** The computer's live socket, `websocketUrl(origin)`; any computer's origin works. */
   readonly url: string;
   readonly sessionId: string;
   readonly generation: string;
   readonly display: ScreenDisplay;
   readonly createSocket?: (url: string) => WebSocket;
   readonly requestFrame?: (callback: () => void) => void;
+  /**
+   * Attach as a read-only thumbnail viewer whose screen frames the broker
+   * sends at most this often (Wall tiles). Pass it only when
+   * `client(origin).supports('thumbnail')`; an older computer would refuse
+   * the attach. Take control and input never work in this mode.
+   */
+  readonly thumbnail?: ThumbnailMode;
+  /** Decoded size of every host message, for the scheduler's bytes budget (TileHandle.bytes). */
+  readonly onMessageBytes?: (bytes: number) => void;
+  /** Admits each socket attempt (scheduler.connectGate); without it, attempts start at once as before. */
+  readonly gate?: ConnectGate;
+  /** True for a computer other than home: its error text is replaced by the app's own words (peerErrorText). */
+  readonly peer?: boolean;
 }
 
 interface PendingSnapshot {
@@ -334,6 +388,10 @@ export class Connection {
   private hiddenAt: number | undefined;
   private probeTimer: ReturnType<typeof setTimeout> | undefined;
   private attachTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Cancels an attempt still waiting at the gate. */
+  private gateCancel: (() => void) | undefined;
+  /** An attempt the gate admitted that has not gone live or failed yet. */
+  private gateHeld = false;
 
   private readonly createSocket: (url: string) => WebSocket;
   private readonly requestFrame: (callback: () => void) => void;
@@ -393,7 +451,7 @@ export class Connection {
   }
 
   takeControl(): void {
-    if (this.status.link !== 'live' || this.status.control !== 'observer') {
+    if (this.options.thumbnail !== undefined || this.status.link !== 'live' || this.status.control !== 'observer') {
       return;
     }
     this.update({ control: 'acquiring', notice: undefined });
@@ -783,6 +841,34 @@ export class Connection {
 
   private open(): void {
     this.clearReconnect();
+    this.cancelGate();
+    const gate = this.options.gate;
+    if (gate === undefined) {
+      this.connect();
+      return;
+    }
+    this.update({ link: this.reconnectAttempt === 0 ? 'connecting' : 'reconnecting' });
+    this.gateCancel = gate.wait(() => {
+      this.gateCancel = undefined;
+      this.gateHeld = true;
+      this.connect();
+    });
+  }
+
+  private cancelGate(): void {
+    this.gateCancel?.();
+    this.gateCancel = undefined;
+  }
+
+  /** Tells the gate how the admitted attempt ended, once. */
+  private settleGate(result: 'live' | 'failed' | 'cancelled'): void {
+    if (this.gateHeld) {
+      this.gateHeld = false;
+      this.options.gate?.done(result);
+    }
+  }
+
+  private connect(): void {
     const epoch = ++this.socketEpoch;
     clearTimeout(this.attachTimer);
     this.attachTimer = setTimeout(() => {
@@ -818,6 +904,7 @@ export class Connection {
     socket.onmessage = (event: MessageEvent) => {
       if (epoch === this.socketEpoch) {
         this.clearProbe();
+        this.options.onMessageBytes?.(typeof event.data === 'string' ? event.data.length : 0);
         this.handleMessage(event.data);
       }
     };
@@ -843,12 +930,13 @@ export class Connection {
         }
         this.brokerGeneration = message.payload.brokerGeneration;
         this.update({ link: 'attaching', hostBuild: message.payload.hostBuild });
-        this.sendSession('session.attach', {});
+        const { thumbnail } = this.options;
+        this.sendSession('session.attach', thumbnail === undefined ? {} : { thumbnail });
         this.startHeartbeat();
         return;
       }
       case 'access.revoked':
-        this.stop('revoked', message.payload.message);
+        this.stop('revoked', this.errorText('revoked', message.payload.message));
         return;
       case 'error':
         if (message.requestId === this.writeRequest) {
@@ -856,7 +944,7 @@ export class Connection {
           if (code === 'not_controller' || code === 'stale_lease') {
             this.dropControl(undefined);
           }
-          this.finishWrite(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? text });
+          this.finishWrite(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? this.errorText(code, text) });
           return;
         }
         if (message.requestId === this.removalRequest) {
@@ -864,14 +952,14 @@ export class Connection {
           if (code === 'not_controller' || code === 'stale_lease') {
             this.dropControl(undefined);
           }
-          this.finishRemoval(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? text });
+          this.finishRemoval(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? this.errorText(code, text) });
           return;
         }
         this.failChanges(message.requestId);
         this.failFiles(message.requestId);
         this.failTasks(message.requestId);
         this.failBranches(message.requestId);
-        this.handleError(message.payload.code, message.payload.message);
+        this.handleError(message.payload.code, this.errorText(message.payload.code, message.payload.message));
         return;
       default:
         break;
@@ -1016,7 +1104,8 @@ export class Connection {
           // The broker never advances its high-water mark for a rejected
           // sequence, so every later sequence on this lease is a gap. Stop
           // sending and require an explicit Take control for a fresh lease.
-          const { code, inputSequence, message: text } = message.payload;
+          const { code, inputSequence } = message.payload;
+          const text = this.errorText(code, message.payload.message);
           const answer = inputSequence !== undefined && inputSequence === this.answerSequence ? this.status.answer : undefined;
           if (answer !== undefined) {
             this.answerSequence = undefined;
@@ -1071,6 +1160,11 @@ export class Connection {
       }
       throw error;
     }
+  }
+
+  /** A host's error text: home's own, or for a peer the app's words for its code. */
+  private errorText(code: string, text: string): string {
+    return this.options.peer === true ? peerErrorText(code) : text;
   }
 
   private handleError(code: string, message: string): void {
@@ -1181,6 +1275,7 @@ export class Connection {
         this.requestedSize = undefined;
         this.sendSession('snapshot.applied', { snapshotId, revision: snapshot.revision });
         this.reconnectAttempt = 0;
+        this.settleGate('live');
         this.update({
           ...(this.status.link === 'attaching' ? { link: 'live' as const } : {}),
           buffer: snapshot.screen.buffer,
@@ -1593,6 +1688,7 @@ export class Connection {
     }
     this.socket = undefined;
     this.socketEpoch++;
+    this.settleGate('failed');
     this.clearProbe();
     clearTimeout(this.attachTimer);
     this.stopHeartbeat();
@@ -1642,6 +1738,8 @@ export class Connection {
     this.stopped = true;
     this.listen(false);
     this.clearReconnect();
+    this.cancelGate();
+    this.settleGate('cancelled');
     this.clearProbe();
     clearTimeout(this.attachTimer);
     this.stopHeartbeat();

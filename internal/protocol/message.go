@@ -152,7 +152,13 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 			payload.SupportedVersions[0] != Version {
 			return errors.New("invalid hello negotiation")
 		}
-	case SessionAttach, ControlAcquire, SessionDetach:
+	case SessionAttach:
+		payload, err := strictPayload[SessionAttachPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateSessionAttach(payload)
+	case ControlAcquire, SessionDetach:
 		_, err := strictPayload[EmptyPayload](envelope)
 		return err
 	case ScreenResync:

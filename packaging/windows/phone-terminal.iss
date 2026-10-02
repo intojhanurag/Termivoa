@@ -123,6 +123,7 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
+  Ran: Boolean;
 begin
   if CurStep <> ssPostInstall then
     Exit;
@@ -132,7 +133,16 @@ begin
     UpdateUserPath('');
   if WizardIsTaskSelected('startup') then
   begin
-    if not RunPterm('setup --apply --yes', Code) or (Code <> 0) then
+    { pterm setup exits 3 only when other Tailscale Serve handlers share
+      this computer's Termivoa address (exitOtherServeHandlers). }
+    Ran := RunPterm('setup --apply --yes', Code);
+    if Ran and (Code = 3) then
+      SuppressibleMsgBox('Termivoa is installed, but startup was not updated (the previous version, if any, keeps starting at login): other Tailscale Serve handlers share ' +
+        'this computer''s Termivoa address (HTTPS port 443), and any of them could control Termivoa. ' +
+        'Move each one to another computer or to its own Tailscale Service hostname, or stop serving it ' +
+        '(another port on this computer does not help: browsers send the Termivoa cookie to every port). ' +
+        'Then run "pterm setup --apply"; it names each handler and the command that removes it.', mbError, MB_OK, IDOK)
+    else if not Ran or (Code <> 0) then
       SuppressibleMsgBox('Termivoa is installed, but startup registration did not complete (exit code ' + IntToStr(Code) + '). ' +
         'The broker may have active sessions, or Termivoa may already be running without startup registration. ' +
         'Run "pterm setup --apply" to see why and what to stop first.', mbError, MB_OK, IDOK);

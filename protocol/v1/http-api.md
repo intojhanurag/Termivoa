@@ -10,6 +10,12 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
   are ignored.
 - Every state-changing request (`POST`, `PATCH`) and the WebSocket upgrade
   require an exact `Origin` match. A missing `Origin` is rejected.
+- Every `/api` request needs exactly one `Origin` that is this computer's
+  own or an admitted app origin (see Cross-origin requests), or no `Origin`
+  and exactly `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is
+  refused with `403`. This applies to every client, with one computer too:
+  Safari before iOS 16.4 sends neither header on `GET`, so iOS 16.4 is the
+  minimum.
 - HTTP mutations require `Content-Type: application/json` and the fixed header
   `X-Pterm-Request: 1`. Request bodies are limited to 64 KiB, except an image
   upload (about 7 MiB, see Image uploads).
@@ -40,6 +46,9 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `POST /api/v1/sessions/{id}/uploads` | cookie, controller | `HTTPUploadRequest` (body up to 7 MiB) | `200 HTTPUploadResponse`; see Image uploads |
 | `GET /api/v1/preview` | cookie | – | `200 HTTPPreviewConfigResponse`: the preview origin to frame, absent when previews are off |
 | `POST /api/v1/logout` | cookie | `{}` | `204`; clears cookie |
+| `GET /api/v1/computers` | cookie | – | `200 HTTPComputerListResponse`: the calling device's confirmed computers |
+| `POST /api/v1/computers` | cookie | `HTTPComputerAddRequest` | `200 HTTPComputerAddResponse`; see Computers |
+| `DELETE /api/v1/computers/{host}` | cookie | `{}` | `204`; removes `https://{host}` from the calling device's list |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -66,6 +75,93 @@ used for client mistakes. Only `unauthorized` and `revoked` clear the cookie.
 A host clock step back behind the credential's creation or last use is
 `host_unavailable` ("host clock changed; retry"): the request is rejected but
 the cookie is kept, because the credential cannot be delivered again.
+
+## Cross-origin requests
+
+Multi-computer (`docs/multi-computer.md`, section 3) lets the app served by
+another computer (its app origin) call this computer. The gateway learns two
+origin sets from the broker's origin probe: **bound** origins (app origins of
+devices whose pinned Tailscale node is still trusted, revoked and expired
+devices included, so their app can read the 401; at most 64) and **pairing** origins (app origins of
+unexpired bound grants and pending pairings, at most 16). Invalid entries are dropped.
+
+- An `/api` request whose single `Origin` exactly matches a bound origin, or
+  a pairing origin on `/api/v1/pair/*`, is admitted. The gateway forwards
+  that `Origin` to the broker with the call, and the broker accepts it only
+  if it is the app origin bound to that request's own credential, grant or
+  pending pairing, and the pinned Tailscale node still holds it.
+- Admitted requests get `Access-Control-Allow-Origin: <origin>`,
+  `Access-Control-Allow-Credentials: true` and `Vary: Origin`. Others get no
+  CORS headers.
+- Preflight (`OPTIONS` with one `Access-Control-Request-Method`) is answered
+  `204` only for an admitted origin, with
+  `Access-Control-Allow-Methods: GET, POST, PATCH, DELETE`,
+  `Access-Control-Allow-Headers: Content-Type, X-Pterm-Request` and
+  `Access-Control-Max-Age: 600`.
+- The WebSocket upgrade checks the same origins per request.
+- Matching is exact: `https`, lowercase host, default port, no trailing dot.
+  `null`, near misses and other spellings never match.
+- `GET /api/v1/settings` sends the same cookie again with `Max-Age` capped by
+  the credential's remaining absolute lifetime, only when the request passed
+  every check, so WebKit's 7-day cap on other computers' cookies does not end
+  a session in regular use. The server never extends an expiry.
+- The app document (`index.html`) adds the exact `https://` and `wss://`
+  origins of the cookie device's confirmed and pending computers (at most 8)
+  to its CSP `connect-src`.
+
+## Protocol revision
+
+`HTTPSettingsResponse` carries `protocolRevision`, this computer's additive
+revision of protocol v1, and `minProtocolRevision`, the oldest app revision
+it still serves. The single source is `protocol/v1/revision.json`
+(`revision`, `minRevision`); generation emits it as `ProtocolRevision` /
+`MinProtocolRevision` in Go and `PROTOCOL_REVISION` /
+`MIN_PROTOCOL_REVISION` in TypeScript. The app refuses a computer whose
+`protocolRevision` is below the app's `MIN_PROTOCOL_REVISION` ("Update
+Termivoa on vps"), and one whose `minProtocolRevision` is above the app's
+`PROTOCOL_REVISION`.
+
+Computers update one at a time, so every change within v1 follows these
+rules:
+
+- Bump `revision` by one for every change a peer can observe: a new message,
+  field, route or enum value.
+- Responses are read leniently (unknown fields are dropped), so a new
+  response field needs only the bump.
+- Go decodes requests strictly, so the app sends a new request field or
+  message only to a computer whose `protocolRevision` is at least the
+  revision that added it.
+- A new enum value that older apps must parse either raises `minRevision`,
+  or the app maps unknown values to `unknown` before validation.
+- Raise `minRevision` only when an older app can no longer work with this
+  computer.
+
+## Computers
+
+Multi-computer (`docs/multi-computer.md`) keeps a per-device list of peer
+computers on the home computer. Entries are keyed by `HTTPComputer.origin`,
+a canonical origin: `https`, lowercase DNS host, default port, no trailing
+dot. At most 8 per device, pending and confirmed together.
+
+These routes accept only this computer's own origin, never a bound app
+origin.
+
+- `POST` with `state: "pending"` records or refreshes a short-lived pending
+  entry before pairing, after the home computer finds the host in its own
+  tailscale status (same tailnet; same owner unless either node is tagged)
+  and pins that node's ID. Pending entries only widen the app's CSP
+  `connect-src` for that device; they are never listed and expire.
+- `POST` with `state: "confirmed"` confirms the entry after the app's first
+  authenticated `GET /api/v1/settings` on the peer succeeded, or renames a
+  confirmed entry. The host must still be the pinned node; otherwise the
+  request fails with `invalid_request` and the computer must be added again.
+- Once home has read its tailscale status, an entry whose pinned node no
+  longer holds its name is left out of the list and of the CSP.
+- The response echoes the saved entry and the peer's `TailnetNode` (`id`,
+  `owner` when user-owned, `tags`) for the app's confirm sheet.
+- `DELETE /api/v1/computers/{host}` with body `{}` removes the entry. It does not log the
+  phone out on the peer: the app calls the peer's `POST /api/v1/logout`
+  first.
 
 ## Pairing flow
 

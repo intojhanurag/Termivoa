@@ -94,18 +94,31 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 ) (any, *auth.Binding, error) {
 	if request.Type == protocol.GatewayOrigin {
 		// The configured origin is not a secret; the gateway polls it so a
-		// changed origin takes effect without a restart.
-		origin, err := server.pairingOrigin(ctx)
-		return protocol.GatewayRPCOriginResultPayload{Origin: origin}, nil, err
+		// changed origin takes effect without a restart. The origin sets are
+		// for CORS headers only.
+		result, err := server.originProbe(ctx)
+		return result, nil, err
 	}
 	authority := server.config.Auth
 	if authority == nil {
 		return nil, nil, errAuthUnavailable
 	}
-	// Every credential-carrying request is authorized before any read,
-	// mutation, or operation-receipt replay.
+	// Every credential-carrying request is authorized, including its
+	// forwarded origin, before any read, mutation, or operation-receipt replay.
 	authorize := func(credential string) (auth.Principal, error) {
-		return authority.Authenticate(ctx, credential)
+		principal, err := authority.Authenticate(ctx, credential)
+		if err != nil {
+			return auth.Principal{}, err
+		}
+		return principal, server.admitDevice(request.Origin, principal)
+	}
+	// The computer list belongs to the app this computer serves: only its own
+	// origin may read or change it, never another computer's app.
+	authorizeOwn := func(credential string) (auth.Principal, error) {
+		if err := server.admitOwn(request.Origin); err != nil {
+			return auth.Principal{}, err
+		}
+		return authorize(credential)
 	}
 	switch request.Type {
 	case protocol.GatewayPairRedeem:
@@ -113,18 +126,18 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		result, err := authority.Redeem(ctx, payload.Grant, payload.DeviceLabel)
+		result, err := authority.RedeemChecked(ctx, payload.Grant, payload.DeviceLabel, server.pairingCheck(request.Origin))
 		return result, nil, err
 	case protocol.GatewayPairPoll:
 		payload, err := protocol.DecodeRPCPayload[protocol.HTTPPairPollRequest](request)
 		if err != nil {
 			return nil, nil, err
 		}
-		result, err := authority.Poll(ctx, payload.PendingID, payload.PollSecret)
+		result, err := authority.PollChecked(ctx, payload.PendingID, payload.PollSecret, server.pairingCheck(request.Origin))
 		if err != nil {
 			return nil, nil, err
 		}
-		response := protocol.GatewayRPCPairPollResultPayload{Response: protocol.HTTPPairPollResponse{Status: protocol.Pending}}
+		response := protocol.GatewayRPCPairPollResultPayload{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}}
 		if result.Approved {
 			expires := formatRPCTime(result.ExpiresAt)
 			response.Response = protocol.HTTPPairPollResponse{Status: protocol.Approved,
@@ -146,7 +159,11 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		return protocol.BrokerRPCEmptyPayload{}, nil, authority.Logout(ctx, payload.Credential)
+		principal, err := authorize(payload.Credential)
+		if err != nil {
+			return nil, nil, err
+		}
+		return protocol.BrokerRPCEmptyPayload{}, nil, authority.LogoutPrincipal(ctx, principal)
 	case protocol.GatewaySettings:
 		principal, err := authorizeCredential(request, authorize)
 		if err != nil {
@@ -298,11 +315,41 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		binding, _, err := authority.Bind(ctx, payload.Credential)
+		binding, _, err := authority.BindChecked(ctx, payload.Credential, server.streamOrigin(request.Origin),
+			func(principal auth.Principal) error { return server.admitDevice(request.Origin, principal) })
 		if err != nil {
 			return nil, nil, err
 		}
 		return protocol.BrokerRPCEmptyPayload{}, binding, nil
+	case protocol.GatewayComputersList:
+		principal, err := authorizeCredential(request, authorizeOwn)
+		if err != nil {
+			return nil, nil, err
+		}
+		result, err := server.listComputers(ctx, principal)
+		return result, nil, err
+	case protocol.GatewayComputersAdd:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCComputerAddPayload](request)
+		if err != nil {
+			return nil, nil, err
+		}
+		principal, err := authorizeOwn(payload.Credential)
+		if err != nil {
+			return nil, nil, err
+		}
+		result, err := server.addComputer(ctx, principal, payload.Request)
+		return result, nil, err
+	case protocol.GatewayComputersRemove:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCComputerRemovePayload](request)
+		if err != nil {
+			return nil, nil, err
+		}
+		principal, err := authorizeOwn(payload.Credential)
+		if err != nil {
+			return nil, nil, err
+		}
+		_, err = server.config.Store.RemoveComputer(ctx, principal.DeviceID, payload.Origin)
+		return protocol.BrokerRPCEmptyPayload{}, nil, err
 	case protocol.GatewayUploadBegin, protocol.GatewayUploadChunk, protocol.GatewayUploadCommit:
 		// An upload must start a fresh connection; see serveUpload.
 		return nil, nil, errUploadOrder
@@ -333,11 +380,13 @@ func (server *ManagementServer) browserSettings(ctx context.Context, principal a
 		return protocol.HTTPSettingsResponse{}, err
 	}
 	result := protocol.HTTPSettingsResponse{
-		Device:           protocol.HTTPDeviceSummary{ID: principal.DeviceID, Label: principal.DeviceLabel},
-		Projects:         []protocol.HTTPNamedOption{},
-		ShellProfiles:    []protocol.HTTPNamedOption{},
-		HostBuild:        server.config.HostBuild,
-		BrokerGeneration: server.config.BrokerGeneration,
+		Device:              protocol.HTTPDeviceSummary{ID: principal.DeviceID, Label: principal.DeviceLabel},
+		Projects:            []protocol.HTTPNamedOption{},
+		ShellProfiles:       []protocol.HTTPNamedOption{},
+		HostBuild:           server.config.HostBuild,
+		BrokerGeneration:    server.config.BrokerGeneration,
+		ProtocolRevision:    protocol.ProtocolRevision,
+		MinProtocolRevision: protocol.MinProtocolRevision,
 	}
 	for _, project := range projects {
 		result.Projects = append(result.Projects, namedOption(project.ID, project.DisplayName))
@@ -382,6 +431,9 @@ func encodeRPCResponse[T ~string](
 func formatRPCTime(value time.Time) string { return value.UTC().Format(time.RFC3339Nano) }
 
 func classifyAuthError(err error) (managementFailure, bool) {
+	if failure, ok := classifyComputerError(err); ok {
+		return failure, true
+	}
 	switch {
 	case errors.Is(err, auth.ErrRevoked), errors.Is(err, ErrAccessRevoked):
 		return managementFailure{protocol.ErrorCodeRevoked, "browser access was revoked"}, true

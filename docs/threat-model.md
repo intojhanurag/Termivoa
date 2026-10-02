@@ -1,6 +1,6 @@
 # v0 threat model and verification boundaries
 
-Status: private development, updated 2026-09-27. This is a design and test map,
+Status: private development, updated 2026-10-02. This is a design and test map,
 **not a security certification**. Restricted local IPC, terminal replication,
 controller leases, process isolation, phone pairing, broker-side credential
 checks and revocation, and the authenticated loopback gateway are implemented
@@ -44,6 +44,10 @@ safe, and private networking does not replace application authentication.
 | Child output/OS → session folder (live folder) | `cwd` from the OS (lsof, /proc) or OSC 7 / OSC 9;9 is display text only: absolute, no `.`/`..`, no control characters, at most 512 bytes, non-printables shown as U+FFFD; the phone renders it as text, never HTML, a link or a URL; the Windows PowerShell hook is session-scoped (`-Command`), edits no profile file, and is never injected on macOS/Linux | Unit tests (`internal/broker/cwd_test.go`, `internal/protocol/cwd_test.go`, `web/src/screens/folder.test.ts`); real shell tests on macOS and Linux; Windows PowerShell pending owner |
 | Broker → push services (outbound) | Browser-supplied endpoint limited to exact push hosts over https:443; no redirects, no proxy, public addresses only, 10 s timeout; payload is names and status only, encrypted (RFC 8291) and VAPID-signed; revoke/logout delete subscriptions | Unit tests incl. RFC 8291 vectors and SSRF cases (`internal/webpush`); dev-stack curl check; real iPhone/Android delivery pending owner |
 | Phone → project folder (photo upload) | Controller-only, rechecked at commit; magic-byte type check; 5 MiB cap; server-chosen name, `O_EXCL`, 0600/current-user ACL; `os.Root` confinement; symlinked `.termivoa`/`uploads` refused; per-device limits | Unit and RPC tests (`internal/broker/upload_test.go`, gateway and protocol tests); dev-stack curl and browser check; real iPhone pending owner |
+| Home app origin → peer API (multi-computer, next beta) | Per-device origin binding in the broker: a cross-origin request passes only from the app origin bound to that request's own credential, grant or pending pairing; exact credentialed CORS for bound origins only; `Sec-Fetch-Mode: no-cors` and Origin-less requests without `Sec-Fetch-Site: same-origin` refused on `/api`; per-request WebSocket origin checks; strict origin parsing (https, default port, no trailing dot, never `null`) | Unit and loopback tests (`internal/gateway/multicomputer_test.go`, `internal/broker/computers_test.go`, `internal/protocol/computers_test.go`); local Chrome and WebKit cookie check (`scripts/gate0/README.md`); Gate 0 on a real iPhone and Android and the Playwright integration tests pending |
+| Tailscale identity → peer trust (multi-computer) | At `pterm pair --via` the peer resolves home only among own-tailnet MagicDNS first labels (ambiguity refused), requires the same owner or an explicit `--allow-tagged`, and pins the node ID; every bound request reads an immutable snapshot (60 s cache, 10-minute grace, then refuse); owners are compared by stable Tailscale user ID, never by login name; a changed node ID revokes the bound devices; a node whose tagged state changed since pairing is refused (not revoked); a new snapshot closes open streams that lost trust at once; a status that is not `Running` (restart, logout) keeps the last good snapshot under the grace rules. Narrowing only, never authentication | `internal/tailnet/tailnet_test.go`, `internal/broker/computers_test.go` (near-miss, `null`, tagged, other owner, ambiguous name, node change, grace); real `tailscale status --json` owners and tags on a team tailnet pending |
+| Terminal output → add-computer link (multi-computer) | Only a link the app itself would accept is made tappable; a tap opens a confirm sheet drawn outside the terminal; home checks the host in its own Tailscale status (same tailnet, same owner or tagged) before the sheet offers **Add**; the grant stays in the URL fragment and is removed at once | `web/src/pairing/addComputer.test.ts`, `web/src/terminal/pathLinks.test.ts`, `web/src/screens/AddComputer.test.tsx`; real iPhone pending |
+| Peer responses → home app (multi-computer) | Lenient precompiled schema validation of every HTTP body and WebSocket frame (no `unsafe-eval`), per-item list validation, `redirect: 'error'`, 1 MiB response cap, peer error text replaced by generic text, no previews from peers | `web/src/protocol/*.test.ts`, `web/src/api/http.test.ts` |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
 
 ## Pairing and credential acceptance criteria (P4)
@@ -224,6 +228,60 @@ See `docs/preview.md` for the full design.
 - **Network.** The owner runs `tailscale serve --bg --https=8443
   http://127.0.0.1:8789` only after a separate `y` in `pterm setup` (or by
   hand). Never Funnel.
+
+## Multi-computer (next beta)
+
+See ADR [0005](decisions/0005-multi-computer.md) and
+[multi-computer.md](multi-computer.md), sections 3 and 7–9. One phone app,
+served by a **home** computer, talks directly to **peer** computers in the
+same tailnet, each with its own `__Host-` HttpOnly cookie. Not yet verified
+on a real iPhone or Android (Gate 0).
+
+New attackers and what limits them:
+
+- **A compromised home computer (accepted risk, not removed).** Home serves
+  the app and its service worker, so it can drive every peer bound to its
+  origin, also with no app open (a push-woken worker, verified in Chrome),
+  and it can show a fake "pair again" to capture a new pairing. It sees the
+  grant and controls the code the phone shows, so it can redeem a grant
+  from a non-browser client that fakes `Origin` and keep a raw peer cookie
+  for up to 30 days. It can leave an extra service worker with its own push
+  key that survives cleaning home. Limits: per-device binding (a phone that
+  paired with a peer directly is never reachable from home's app),
+  owner and node checks, the app's removal of every non-own service worker
+  on each load, and the required recovery: `pterm revoke --via <home>` on
+  every peer, then delete the Home Screen app (iPhone) or also clear the
+  site's data in Chrome (Android), then pair again. Same-user malware on home
+  therefore moves into scope for every peer. Home should be the least
+  exposed always-on computer, and its HTTPS origin must serve only `pterm`
+  (`pterm setup` refuses, and `pterm doctor` reports, other Serve handlers
+  on that origin).
+- **Another node in the same tailnet.** Same tailnet is same site, so
+  `SameSite=Strict` gives no isolation between computers; only exact Origin
+  binding, owner checks (other users in team tailnets, Funnel nodes) and the
+  pinned node ID (reused MagicDNS names) do. A `no-cors` GET from any
+  same-site page reaches a peer with its cookie; `/api` refuses it.
+- **A compromised peer.** It controls only itself, but can break the app for
+  all computers by setting large `Domain=<tailnet>.ts.net` cookies (recovery:
+  delete the app). Its responses are untrusted input (see the table above).
+- **A program printing a fake add-computer link.** See the table above; it
+  can never add a computer in one tap or outside the user's tailnet and
+  owner.
+- **A lost phone.** It must be revoked on each computer; `pterm revoke` on
+  home lists the phone's other computers. **Log out** in the app signs out
+  of every reachable computer and names the others (`pterm revoke` there).
+
+Not protected: computers in different tailnets (unsupported), WSL as a peer
+(Tailscale usually runs on the Windows host), and any check that depends on
+Tailscale's owner and tag data being correct. Known limit: the cached offline
+shell keeps the CSP from when it was cached, so while home is offline it may
+still allow `connect-src` to a computer removed since; that computer's own
+origin binding still applies.
+
+Browser requirement: `/api` admits an Origin-less request only with
+`Sec-Fetch-Site: same-origin`, for every user (one computer too). Safari
+before iOS 16.4 sends neither header on GET, so it is refused; iOS 16.4 is the
+minimum.
 
 ## Operational and release limits
 

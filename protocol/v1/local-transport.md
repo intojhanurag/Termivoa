@@ -34,6 +34,17 @@ followed by a normalized snapshot transaction. Control acquisition is rejected
 until `snapshot.applied` succeeds. Reconnection always creates a new observer;
 neither leases nor user input are replayed automatically.
 
+`session.attach` carries `SessionAttachPayload`. Empty (`{}`) attaches a full
+viewer, as before. `{"thumbnail": {"maxUpdatesPerSecond": N}}` (N 1..30)
+attaches a read-only thumbnail viewer: it can never acquire control or send
+input, and the broker coalesces its screen frames to at most N per second
+(each patch still goes from that viewer's last delivered frame to the
+latest; a skipped delivery arms a trailing timer so output that stops
+mid-burst still paints). Snapshots, history notices and `session.state` are
+not throttled. Canonical PTY processing is unchanged. A client sends
+`thumbnail` only to a computer whose `protocolRevision` supports it (see
+`http-api.md`, Protocol revision); an older broker rejects the unknown field.
+
 `control.acquire` returns its correlated holder-only lease through the actor's
 ordered notice stream. The dispatcher must not send a second grant response.
 All other observers receive the public controller/epoch without the lease.

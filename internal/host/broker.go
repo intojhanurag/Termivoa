@@ -152,7 +152,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	server, err := broker.NewManagementServer(broker.ManagementServerConfig{
 		Registry: registry, Store: persistence,
 		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority, Push: notifier,
-		Shutdown: shutdown,
+		Shutdown: shutdown, Development: config.Profile == DevelopmentProfile,
 	})
 	if err != nil {
 		return err

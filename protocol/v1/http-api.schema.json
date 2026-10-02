@@ -96,13 +96,95 @@
       "title": "HTTPSettingsResponse",
       "type": "object",
       "additionalProperties": false,
-      "required": ["device", "projects", "shellProfiles", "hostBuild", "brokerGeneration"],
+      "required": ["device", "projects", "shellProfiles", "hostBuild", "brokerGeneration", "protocolRevision", "minProtocolRevision"],
       "properties": {
         "device": { "$ref": "#/$defs/deviceSummary" },
         "projects": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/namedOption" } },
         "shellProfiles": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/namedOption" } },
         "hostBuild": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "brokerGeneration": { "$ref": "#/$defs/uuid" }
+        "brokerGeneration": { "$ref": "#/$defs/uuid" },
+        "protocolRevision": { "$ref": "#/$defs/protocolRevision" },
+        "minProtocolRevision": { "$ref": "#/$defs/protocolRevision" }
+      }
+    },
+    "protocolRevision": {
+      "description": "Additive revision of protocol v1 (protocol/v1/revision.json). On the settings response, protocolRevision is this computer's revision and minProtocolRevision the oldest app revision it still serves. See http-api.md, Protocol revision.",
+      "type": "integer", "minimum": 1, "maximum": 1000000
+    },
+    "computerOrigin": {
+      "description": "Canonical origin of a Termivoa computer: https, lowercase DNS host of at least two labels, default port (no explicit port), no trailing dot, path, user or query.",
+      "type": "string", "minLength": 12, "maxLength": 261,
+      "pattern": "^https://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+    },
+    "computerLabel": {
+      "description": "Display name of a computer on this phone, by default the first DNS label of its origin. Never identity.",
+      "type": "string", "minLength": 1, "maxLength": 64,
+      "maxUtf8Bytes": 64, "safeDisplayText": true
+    },
+    "computerState": {
+      "title": "HTTPComputerState",
+      "description": "pending: recorded before pairing with the peer so the app's CSP allows it; short expiry, shown nowhere. confirmed: the app read the peer's settings with the peer's own cookie.",
+      "type": "string",
+      "enum": ["pending", "confirmed"]
+    },
+    "tailnetNode": {
+      "title": "TailnetNode",
+      "description": "A Tailscale node from the computer's own tailscale status. id is the stable node ID. owner is the login name of a user-owned node and is absent for tagged nodes, which carry tags instead. Display and pinning data, never authentication.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tags"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+        "owner": {
+          "type": "string", "minLength": 1, "maxLength": 256,
+          "maxUtf8Bytes": 256, "safeDisplayText": true
+        },
+        "tags": { "type": "array", "maxItems": 16, "items": { "type": "string", "pattern": "^tag:[!-~]{1,60}$" } }
+      }
+    },
+    "computer": {
+      "title": "HTTPComputer",
+      "description": "A confirmed peer computer in the calling device's own list on this (home) computer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "label"],
+      "properties": {
+        "origin": { "$ref": "#/$defs/computerOrigin" },
+        "label": { "$ref": "#/$defs/computerLabel" }
+      }
+    },
+    "computerListResponse": {
+      "title": "HTTPComputerListResponse",
+      "description": "GET /api/v1/computers: the calling device's confirmed computers. Pending entries are never listed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["computers"],
+      "properties": {
+        "computers": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/computer" } }
+      }
+    },
+    "computerAddRequest": {
+      "title": "HTTPComputerAddRequest",
+      "description": "POST /api/v1/computers. state pending records or refreshes a short-lived pending entry before pairing; confirmed confirms an existing entry (or renames a confirmed one) after the peer's settings were read.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "label", "state"],
+      "properties": {
+        "origin": { "$ref": "#/$defs/computerOrigin" },
+        "label": { "$ref": "#/$defs/computerLabel" },
+        "state": { "$ref": "#/$defs/computerState" }
+      }
+    },
+    "computerAddResponse": {
+      "title": "HTTPComputerAddResponse",
+      "description": "The saved entry and the peer's node as seen in this computer's own tailscale status, for the app's confirm sheet.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["computer", "state", "node"],
+      "properties": {
+        "computer": { "$ref": "#/$defs/computer" },
+        "state": { "$ref": "#/$defs/computerState" },
+        "node": { "$ref": "#/$defs/tailnetNode" }
       }
     },
     "sessionListResponse": {

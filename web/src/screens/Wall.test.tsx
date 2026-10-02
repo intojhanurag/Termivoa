@@ -1,12 +1,18 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import { keyOf, type HostedSession } from './allSessions';
 import {
-  mergeOrder, moveTile, orderTiles, readWallOrder, saveWallOrder, tileLabel, tileOffset, tileScale, Wall, WALL_ORDER_KEY, WallGrid, wallSessions,
+  mergeOrder, moveTile, orderTiles, readWallOrder, saveWallOrder, tileLabel, tileMark, tileOffset, tileScale, Wall, WALL_ORDER_KEY, WallGrid, wallSessions,
 } from './Wall';
 
-const session = (id: string, extra: Partial<BrokerRPCSessionRecord> = {}): BrokerRPCSessionRecord => ({
+const mac: Computer = { origin: 'https://mac.tailx.ts.net', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
+const vps: Computer = { origin: 'https://vps.tailx.ts.net', host: 'vps.tailx.ts.net', label: 'vps', color: '#9B8CFF', home: false };
+
+const session = (id: string, extra: Partial<BrokerRPCSessionRecord> = {}, computer = mac): HostedSession => ({
+  computer,
   id: `84444444-4444-4444-8444-44444444444${id}`,
   generation: '85555555-5555-4555-8555-555555555555',
   title: `shell ${id}`,
@@ -67,8 +73,14 @@ const memoryStore = (value?: string) => {
 describe('wall order', () => {
   it('puts tiles in the saved order and keeps the others after them in their own order', () => {
     const shown = [waiting, working, idle];
-    expect(orderTiles(shown, []).map((item) => item.id)).toEqual([waiting.id, working.id, idle.id]);
-    expect(orderTiles(shown, [idle.id, 'gone', waiting.id]).map((item) => item.id)).toEqual([idle.id, waiting.id, working.id]);
+    expect(orderTiles(shown, [], keyOf).map((item) => item.id)).toEqual([waiting.id, working.id, idle.id]);
+    expect(orderTiles(shown, [keyOf(idle), 'gone', keyOf(waiting)], keyOf).map((item) => item.id)).toEqual([idle.id, waiting.id, working.id]);
+  });
+
+  it('keys tiles by computer and session, so equal ids on two computers keep their own places', () => {
+    const there = session('1', {}, vps);
+    expect(keyOf(idle)).toBe(`mac.tailx.ts.net/${idle.id}`);
+    expect(orderTiles([idle, there], [keyOf(there), keyOf(idle)], keyOf)).toEqual([there, idle]);
   });
 
   it('moves one tile to a new place', () => {
@@ -85,10 +97,12 @@ describe('wall order', () => {
   it('saves the order on this device and ignores a damaged value', () => {
     const store = memoryStore();
     saveWallOrder(['b', 'a'], store);
-    expect(readWallOrder(store)).toEqual(['b', 'a']);
+    expect(readWallOrder(store, 'mac.tailx.ts.net')).toEqual(['mac.tailx.ts.net/b', 'mac.tailx.ts.net/a']);
+    // Saved before multi-computer: a bare id is a home session.
+    expect(readWallOrder(memoryStore('["vps.tailx.ts.net/x","y"]'), 'mac.tailx.ts.net')).toEqual(['vps.tailx.ts.net/x', 'mac.tailx.ts.net/y']);
     expect(readWallOrder(memoryStore('{"a":1}'))).toEqual([]);
     expect(readWallOrder(memoryStore('not json'))).toEqual([]);
-    expect(readWallOrder(memoryStore('["a",2,"b"]'))).toEqual(['a', 'b']);
+    expect(readWallOrder(memoryStore('["h/a",2,"h/b"]'))).toEqual(['h/a', 'h/b']);
     expect(readWallOrder(undefined)).toEqual([]);
   });
 });
@@ -154,6 +168,13 @@ describe('Wall', () => {
     expect(onList).toHaveBeenCalledOnce();
   });
 
+  it('names each tile\'s computer when there is more than one', () => {
+    const there = session('6', {}, vps);
+    const html = renderToStaticMarkup(<Wall sessions={[idle, there]} multi onOpen={noop} onNew={noop} onList={noop} />);
+    expect(html).toContain('<span class="wall-computer"><span class="computer-tag"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</span></span>');
+    expect(renderToStaticMarkup(<Wall sessions={[idle]} onOpen={noop} onNew={noop} onList={noop} />)).not.toContain('wall-computer');
+  });
+
   it('labels a tile for screen readers', () => {
     expect(tileLabel(waiting, false)).toBe('claude, Waiting, open session');
   });
@@ -166,5 +187,22 @@ describe('tileOffset', () => {
     expect(tileOffset(300, 800, 800)).toBe(500);
     expect(tileOffset(300, 200, 150)).toBe(0);
     expect(tileOffset(300, 800, undefined)).toBe(0);
+  });
+});
+
+describe('tile budget marks', () => {
+  it('shows Paused for a tile beyond the live budget, and the amber dot only for a live tile that is not connected', () => {
+    expect(tileMark('paused', 'connecting')).toBe('paused');
+    expect(tileMark('paused', 'live')).toBe('paused');
+    // Never live: no last frame to keep, so the name and Paused fill the tile.
+    expect(tileMark('paused', 'connecting', false)).toBe('blank');
+    expect(tileMark('live', 'live', false)).toBeUndefined();
+    expect(tileMark('live', 'reconnecting')).toBe('reconnecting');
+    expect(tileMark('live', 'live')).toBeUndefined();
+  });
+
+  it('draws every tile paused until the scheduler gives it a live slot; a never-live tile shows its name and Paused', () => {
+    const html = renderToStaticMarkup(<Wall sessions={[idle]} onOpen={noop} onNew={noop} onList={noop} />);
+    expect(html).toMatch(/<span class="wall-blank"><span>[^<]+<\/span><span class="wall-paused-text">Paused<\/span><\/span>/u);
   });
 });

@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-02
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -106,6 +106,51 @@ sudo tailscale set --operator=$USER
 
 Fix the conflict, then run `pterm setup` again. Tailscale Serve already shares another service on HTTPS port 443, and setup leaves it alone.
 
+## Setup refuses other Tailscale Serve handlers (Next beta)
+
+Move the other handlers off this computer's Termivoa address, then run `pterm setup` again. From the next beta, setup stops before it changes anything:
+
+```text
+refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (/grafana); move them as shown above, then run `pterm setup` again
+```
+
+Any other handler on `https://<this-computer>` (port 443) is the same origin as the Termivoa app, so it could control this computer and, if it is home, every computer added to it. This also applies with one computer: if you run `pterm setup` again after the update, it refuses a setup that it accepted before. `pterm doctor` reports the same handlers as a problem.
+
+The checks above the message print the commands. For each handler:
+
+1. Serve it from another computer, or from its own [Tailscale Service](https://tailscale.com/docs/features/tailscale-services) hostname, or stop serving it. Another port on this computer does not help: browsers send the Termivoa cookie to every port of a computer.
+2. Remove it from port 443: `tailscale serve --https=443 --set-path=/grafana off`. For a TCP forward, run `tailscale serve --tcp=443 off`.
+
+The Windows installer runs the same check. When it says that other Tailscale Serve handlers share this computer's Termivoa address (`pterm setup` exit code 3), run `pterm setup --apply` to see the handlers.
+
+## `pterm doctor` warns that other ports receive the Termivoa cookie (Next beta)
+
+Decide if you trust what runs there as much as Termivoa. If not, move it to another computer or to its own Tailscale Service hostname, or remove it. The warning is:
+
+```text
+! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, because browsers send it to every port of a host: HTTPS 8080 /. …
+```
+
+A handler on another port is a different origin, so it cannot use the Termivoa app. But when the phone opens it, the browser sends it the Termivoa cookie, and it could act as that phone. This is a warning, not a problem: setup does not refuse it, because many people serve their own tools on other ports. Termivoa's own preview port 8443 is not listed; Termivoa removes the cookie there.
+
+## `pterm doctor` says Termivoa will not run tailscale (Next beta)
+
+Fix the owner or permissions that the line names, or install Tailscale from [tailscale.com/download](https://tailscale.com/download). An example line is:
+
+```text
+! tailscale at /opt/homebrew/bin/tailscale: /opt/homebrew/bin/tailscale is owned by another user; Termivoa will not run it
+```
+
+Termivoa runs the Tailscale CLI only when no other user can replace it: the file, each symlink to it and each folder up to `/` must belong to root or to you, and no folder may be writable by others (unless it has the sticky bit, as `/tmp` does). On macOS a folder writable by the `admin` group, such as `/Applications`, is accepted. Termivoa checks this again before each run.
+
+## The app cannot load after the update (iPhone, Next beta)
+
+Update the iPhone or iPad to iOS 16.4 or later. From the next beta, the computer accepts a request from the app only when the browser says where it comes from (the `Origin` or `Sec-Fetch-Site` header). Safari before iOS 16.4 sends neither on reads, so the computer refuses them. This is true for every Termivoa app, also with one computer. Android Chrome is not affected.
+
+## The app cannot read settings after the update (Next beta)
+
+Close the app fully and open it again, or tap **update** on the Sessions list. An app that was open while you updated the computer can fail to read settings until it reloads.
+
 ## No "Preview ready" chip
 
 - Answer `y` to the preview question in setup. `pterm doctor` shows if previews are set up.
@@ -160,6 +205,85 @@ The phone shows git's message. Usual causes:
 - **No remote.** Add one, for example `git remote add origin <url>`.
 - **The ssh key has a passphrase.** Add the key to your ssh agent (macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`). Termivoa cannot type a passphrase; the push stops after 2 minutes.
 - **The remote rejected it.** Read git's message. Termivoa never force-pushes.
+
+## Several computers (Next beta)
+
+These problems are about [using several computers](/docs/guides/computers/). This is not in `v0.1.0-beta.2`.
+
+### "vps · can't reach" (Next beta)
+
+Check that vps is on, awake and in your tailnet, then tap **Retry**. The other computers keep working.
+
+### "vps · pair again" (Next beta)
+
+The full line is "vps · pair again · Run pterm pair --via mac on vps". vps no longer accepts this phone: it was revoked or logged out, it expired (30 days, or 7 days unused), or home's Tailscale node changed (for example after you reinstalled Tailscale on home). Run `pterm pair --via <home>` on vps and add it again.
+
+### "Update Termivoa on vps" (Next beta)
+
+Update Termivoa on that computer. Computers can be updated one at a time; the app refuses only one that is too old, or one so old that it does not tell its version. The line uses the name you gave the computer on this phone.
+
+### A computer is gone from the list (Next beta)
+
+Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; from the next beta this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again". A computer you removed from your tailnet stays in the list as "can't reach"; remove it in **Settings → Computers**.
+
+### Log out says "Could not sign out of vps" (Next beta)
+
+Run `pterm devices`, then `pterm revoke <device-id>` on vps. **Log out** signs the phone out of every computer it can reach; it lists the ones it could not reach.
+
+### `pterm pair --via` says "no computer with that name is in this tailnet" (Next beta)
+
+Use home's machine name as Tailscale shows it (the first part of its address), or its full address, for example `pterm pair --via https://mac.tailx.ts.net`. Both computers must be in the same tailnet.
+
+### `pterm pair --via` says "more than one computer has that name" (Next beta)
+
+Use home's full address: `pterm pair --via https://mac.tailx.ts.net`.
+
+### `pterm pair --via` says "that computer belongs to another Tailscale user" (Next beta)
+
+Home and the new computer must belong to the same Tailscale user. Computers of other users cannot be added.
+
+### `pterm pair --via` says "that computer is a tagged Tailscale node" (Next beta)
+
+Check the tags of home and this computer, then run `pterm pair --via <home> --allow-tagged`.
+
+### `pterm pair --via` says "this computer cannot read its Tailscale status" (Next beta)
+
+Check that Tailscale runs and is logged in on this computer (`pterm doctor`), then try again. Under WSL, Tailscale usually runs on Windows, so a WSL computer cannot be added.
+
+### `pterm pair --via` says the link "needs this computer's tailnet https address" (Next beta)
+
+Run `pterm setup` on this computer so it has a Tailscale address, or pass it with `--origin https://<this-computer>.<tailnet>.ts.net`.
+
+### The pasted link is refused (Next beta)
+
+| Message | What to do |
+| --- | --- |
+| "This is not an add-computer link. Copy the whole link that pterm pair --via printed." | Copy the full link, from `https://` to its end. |
+| "That computer is not in the same tailnet as this one." | Only computers in one tailnet can be added. |
+| "That link is for this computer. Run pterm pair --via on the other computer." | Run the command on the computer you want to add, not on home. |
+| "That link was made for another Termivoa app. Run pterm pair --via with this computer's name." | Run `pterm pair --via` again with the name of the home that serves your app. |
+| "The link is damaged or incomplete. Copy it again." | Copy it again; long links can wrap or get cut. |
+| "This add-computer link expired or was already used." | Run `pterm pair --via` again. A link works once, for two minutes. |
+
+### The code expired, or the computer refused it (Next beta)
+
+Run `pterm pair --via <home>` on that computer again and paste the new link. Answer `y` only when the codes match.
+
+### The link opens a page that says "paste this link there" (Next beta)
+
+You opened the add-computer link with the camera or in Safari. Tap **Copy link**, open the Termivoa app from the Home Screen, and paste it in **Settings → Computers → + Add a computer**.
+
+### `pterm doctor` says the tailnet is unknown (Next beta)
+
+Log in to Tailscale on this computer, then run `pterm doctor` again. The line is `this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked`. A short Tailscale restart or logout does not end the sessions of phones that use this computer through home: the computer keeps its last good Tailscale status for up to 10 minutes.
+
+### `pterm doctor` says "tags changed since pairing" (Next beta)
+
+Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tailscale tags were added, removed or replaced after pairing, so the rules for it changed. This computer refuses phones from that home until you pair again.
+
+### Peer sessions send no notifications (Next beta)
+
+This is a limit for now: only sessions on home send notifications. Sessions on other computers show **Waiting** and **Working** in the app.
 
 ## Where are the logs?
 

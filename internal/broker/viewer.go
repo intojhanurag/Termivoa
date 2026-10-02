@@ -35,6 +35,7 @@ var (
 	ErrViewerSnapshotMismatch = errors.New("broker: viewer snapshot acknowledgement does not match")
 	ErrViewerSnapshotTimeout  = errors.New("broker: viewer snapshot acknowledgement timed out")
 	ErrViewerSnapshotPending  = errors.New("broker: viewer has not applied its current snapshot")
+	ErrViewerReadOnly         = errors.New("broker: thumbnail viewer is read-only")
 	errViewerDeliveryStale    = errors.New("broker: viewer delivery was superseded")
 	errViewerSnapshotRestart  = errors.New("broker: snapshot catch-up window exceeded")
 )
@@ -59,6 +60,10 @@ type ViewerConfig struct {
 	// Access re-authorizes a browser viewer before control acquisition. Nil
 	// means a local desktop connection.
 	Access AccessCheck
+	// MaxUpdatesPerSecond makes a read-only thumbnail viewer: screen frames are
+	// coalesced to at most this rate and the viewer can never take control.
+	// Zero means a normal full-rate viewer.
+	MaxUpdatesPerSecond int
 	// budget is an optional connection-wide reservation boundary shared with
 	// dispatcher responses. A matching sink must not reserve these bytes twice.
 	budget viewerByteBudget
@@ -80,12 +85,15 @@ type ViewerSubscription struct {
 	access       AccessCheck
 	timeout      time.Duration
 	ackTimeout   time.Duration
-	budget       viewerByteBudget
-	notify       chan struct{}
-	done         chan struct{}
-	detached     chan struct{}
-	ctx          context.Context
-	cancel       context.CancelFunc
+	// frameInterval is the minimum spacing of screen frame deliveries; nonzero
+	// only for a read-only thumbnail viewer.
+	frameInterval time.Duration
+	budget        viewerByteBudget
+	notify        chan struct{}
+	done          chan struct{}
+	detached      chan struct{}
+	ctx           context.Context
+	cancel        context.CancelFunc
 
 	mu                 sync.Mutex
 	deliveryCancel     context.CancelCauseFunc
@@ -117,6 +125,11 @@ type viewerActorState struct {
 	epoch                uint64
 	notices              []*viewerNotice
 	noticeInFlight       *viewerNotice
+	// nextFrameAt and frameTimer rate-limit a thumbnail viewer. The one lazily
+	// created timer wakes the worker when the next slot opens, so a skipped
+	// frame is always delivered later; detach stops it.
+	nextFrameAt time.Time
+	frameTimer  *time.Timer
 }
 
 type viewerSnapshot struct {
@@ -169,11 +182,18 @@ func (session *Session) AttachViewer(ctx context.Context, config ViewerConfig) (
 	if config.SnapshotAckTimeout < time.Millisecond || config.SnapshotAckTimeout > time.Minute {
 		return nil, errors.New("broker: viewer snapshot acknowledgement timeout must be between 1ms and 1m")
 	}
+	if config.MaxUpdatesPerSecond < 0 || config.MaxUpdatesPerSecond > protocol.MaxThumbnailUpdatesPerSecond {
+		return nil, fmt.Errorf("broker: thumbnail rate must be between 1 and %d updates per second", protocol.MaxThumbnailUpdatesPerSecond)
+	}
+	var frameInterval time.Duration
+	if config.MaxUpdatesPerSecond > 0 {
+		frameInterval = time.Second / time.Duration(config.MaxUpdatesPerSecond)
+	}
 	viewerContext, cancel := context.WithCancel(session.ctx)
 	subscription := &ViewerSubscription{
 		session: session, connectionID: config.ConnectionID, deviceID: config.DeviceID,
 		sink: config.Sink, access: config.Access, timeout: config.SendTimeout, ackTimeout: config.SnapshotAckTimeout,
-		budget: config.budget,
+		frameInterval: frameInterval, budget: config.budget,
 		notify: make(chan struct{}, 1), detached: make(chan struct{}),
 		done: make(chan struct{}), ctx: viewerContext, cancel: cancel,
 	}
@@ -727,6 +747,21 @@ func (session *Session) reserveViewerDelivery(connectionID string, subscription 
 	if viewer.base != nil && viewer.base.frame.Revision == session.published.frame.Revision && !viewer.forceSnapshot {
 		return viewerDeliveryPlan{}, nil
 	}
+	if interval := viewer.subscription.frameInterval; interval > 0 {
+		// Thumbnail rate limit. Skipping is revision-correct: the next patch is
+		// built from this viewer's base to the newest published frame.
+		now := time.Now()
+		if wait := viewer.nextFrameAt.Sub(now); wait > 0 {
+			if viewer.frameTimer == nil {
+				subscription := viewer.subscription
+				viewer.frameTimer = time.AfterFunc(wait, func() { signalViewer(subscription) })
+			} else {
+				viewer.frameTimer.Reset(wait)
+			}
+			return viewerDeliveryPlan{}, nil
+		}
+		viewer.nextFrameAt = now.Add(interval)
+	}
 	kind := viewerDeliveryPatch
 	if viewer.forceSnapshot || viewer.base == nil ||
 		viewer.base.frame.Columns != session.published.frame.Columns ||
@@ -930,6 +965,9 @@ func (session *Session) detachViewer(connectionID string, err error) {
 	}
 	viewer.notices = nil
 	clearViewerAckDeadline(viewer)
+	if viewer.frameTimer != nil {
+		viewer.frameTimer.Stop()
+	}
 	viewer.subscription.stop(err)
 	viewer.subscription.detachOnce.Do(func() { close(viewer.subscription.detached) })
 	session.checkRetirementReady()

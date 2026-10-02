@@ -297,3 +297,48 @@ func TestAdminClientRenameDeviceRequiresExactAcknowledgement(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminClientComputerAdministration(t *testing.T) {
+	client, serverConnection := newAdminPipe(t)
+	origin, via, allow := "https://mac.tailx.ts.net", "mac", true
+	go func() {
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCPairGrantPayload](request)
+			if err != nil || payload.Via == nil || *payload.Via != via || payload.AllowTagged == nil {
+				return nil
+			}
+			return adminResponseJSON(t, request.RequestID, protocol.AdminPairGrantResult, protocol.AdminRPCPairGrantResultPayload{
+				Grant: testGrant, ExpiresAt: "2026-09-27T00:02:00Z", AppOrigin: &origin,
+				AppNode: &protocol.TailnetNode{ID: "nMac", Tags: []string{"tag:server"}}})
+		})
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			return adminResponseJSON(t, request.RequestID, protocol.AdminDeviceRevokeViaResult,
+				protocol.AdminRPCRevokeViaResultPayload{AppOrigin: origin, DeviceIDS: []string{testDevice}, ClosedStreams: 1})
+		})
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			return adminResponseJSON(t, request.RequestID, protocol.AdminComputersListResult, protocol.AdminRPCComputerListResultPayload{
+				Computers: []protocol.AdminRPCComputer{{DeviceID: testDevice, Origin: origin, Label: "mac", CreatedAt: "2026-09-27T00:00:00Z"}}})
+		})
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			return adminResponseJSON(t, request.RequestID, protocol.AdminComputersRemoveResult,
+				protocol.AdminRPCComputerRemoveResultPayload{Origin: "https://other.tailx.ts.net", Removed: 1})
+		})
+	}()
+	ctx := context.Background()
+	grant, err := client.CreateBoundPairingGrant(ctx, protocol.AdminRPCPairGrantPayload{Via: &via, AllowTagged: &allow})
+	if err != nil || grant.AppOrigin == nil || *grant.AppOrigin != origin || grant.AppNode.ID != "nMac" {
+		t.Fatalf("bound grant = %+v, %v", grant, err)
+	}
+	revoked, err := client.RevokeDevicesVia(ctx, origin)
+	if err != nil || len(revoked.DeviceIDS) != 1 || revoked.ClosedStreams != 1 {
+		t.Fatalf("revoke via = %+v, %v", revoked, err)
+	}
+	computers, err := client.Computers(ctx)
+	if err != nil || len(computers) != 1 || computers[0].Origin != origin {
+		t.Fatalf("computers = %+v, %v", computers, err)
+	}
+	// An acknowledgement for another origin is uncertain delivery.
+	if _, err := client.RemoveComputer(ctx, origin); !IsDeliveryUncertain(err) {
+		t.Fatalf("mismatched removal = %v", err)
+	}
+}

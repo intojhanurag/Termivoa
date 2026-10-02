@@ -1,0 +1,13 @@
+#!/bin/sh
+# Fake `tailscale` for the multi-computer e2e harness. It is put first on
+# PATH of one test stack, so internal/tailnet.FindBinary finds it and the
+# real Tailscale is never read or changed. It answers only the two read-only
+# queries pterm makes from files in $PTERM_E2E_TAILSCALE_DIR and refuses
+# everything else.
+set -eu
+dir=${PTERM_E2E_TAILSCALE_DIR:?fake tailscale: PTERM_E2E_TAILSCALE_DIR is not set}
+case "$*" in
+  "status --json") exec cat "$dir/status.json" ;;
+  "serve status --json") exec cat "$dir/serve.json" ;;
+  *) echo "fake tailscale: refused: $*" >&2; exit 1 ;;
+esac

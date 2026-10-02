@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
 import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport } from '../push';
+import type { ComputerEntry } from './allSessions';
+import { ChunkErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
+
+// Computers (and the add-computer sheet it opens) load only when Settings opens.
+const ComputersSection = lazy(() => loadChunk(() => import('./Computers')).then((module) => ({ default: module.ComputersSection })));
 
 export type DeviceNameResult =
   | { readonly kind: 'saved'; readonly device: HTTPDeviceSummary }
@@ -85,32 +90,42 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   );
 }
 
-export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout }: {
-  readonly settings: HTTPSettingsResponse;
+export function Settings({
+  settings, entries, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onRetry, onComputersChanged,
+}: {
+  /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
+  readonly settings: HTTPSettingsResponse | undefined;
+  readonly entries: ReadonlyArray<ComputerEntry>;
   readonly fontSize: number;
   readonly onFontSize: (size: number) => void;
   readonly onBack: () => void;
   readonly onRenamed: (device: HTTPDeviceSummary) => void;
   readonly onFailure: (error: unknown) => string;
   readonly onLogout: () => Promise<void>;
+  readonly onRetry: (origin: string) => void;
+  readonly onComputersChanged: () => void;
 }) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [name, setName] = useState(settings.device.label);
+  const current = settings?.device.label ?? '';
+  // Follows home's label (home may answer after this screen opened) until the user types.
+  const [draft, setDraft] = useState<string>();
+  const name = draft ?? current;
+  const multi = entries.length > 1;
   const [nameState, setNameState] = useState<NameState>({ kind: 'idle' });
   const nameProblem = deviceLabelProblem(name.trim());
-  const unchanged = name.trim() === settings.device.label;
+  const unchanged = name.trim() === current;
 
   async function rename() {
     setNameState({ kind: 'saving' });
     try {
-      const result = await saveDeviceName(name, settings.device.label);
+      const result = await saveDeviceName(name, current);
       if (result.kind === 'invalid') {
         setNameState({ kind: 'error', message: result.message });
         return;
       }
       if (result.kind === 'saved') {
-        setName(result.device.label);
+        setDraft(undefined);
         onRenamed(result.device);
       }
       setNameState({ kind: 'saved' });
@@ -127,6 +142,16 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 
+      <ChunkErrorBoundary>
+        <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
+          <ComputersSection entries={entries} onRetry={onRetry} onChanged={onComputersChanged} onFailure={onFailure} />
+        </Suspense>
+      </ChunkErrorBoundary>
+
+      {settings === undefined && (
+        <p className="muted">Your home computer cannot be reached. Device name, notifications and log out need it.</p>
+      )}
+      {settings !== undefined && (
       <section className="group stack" aria-labelledby="device-heading">
         <h2 id="device-heading" className="caps">This device</h2>
         <form
@@ -145,7 +170,7 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
             aria-describedby="device-name-help device-name-status"
             aria-invalid={nameProblem !== undefined}
             onChange={(event) => {
-              setName(event.target.value);
+              setDraft(event.target.value);
               setNameState({ kind: 'idle' });
             }}
           />
@@ -164,6 +189,7 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
           >Save name</button>
         </form>
       </section>
+      )}
 
       <section className="group stack" aria-labelledby="font-heading">
         <h2 id="font-heading" className="caps">Terminal text size</h2>
@@ -176,32 +202,49 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
         </div>
       </section>
 
-      <NotificationSettings onFailure={onFailure} />
+      {settings !== undefined && <NotificationSettings onFailure={onFailure} />}
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>
         <dl className="facts">
-          <dt>Host build</dt><dd>{settings.hostBuild}</dd>
+          {settings !== undefined && <><dt>Host build</dt><dd>{settings.hostBuild}</dd></>}
           <dt>Web build</dt><dd>{CLIENT_BUILD}</dd>
         </dl>
       </section>
 
-      <section className="group stack" aria-labelledby="logout-heading">
-        <h2 id="logout-heading" className="caps">Log out</h2>
-        <p className="muted">Removes this browser's access. Running sessions keep running on your computer.</p>
-        <button
-          type="button"
-          className="danger"
-          disabled={busy}
-          onClick={() => {
+      {settings !== undefined && (
+        <LogoutSection
+          multi={multi}
+          busy={busy}
+          onLogout={() => {
             setBusy(true);
             onLogout().catch((failure: unknown) => {
               setError(failure instanceof Error ? failure.message : 'Logout failed');
               setBusy(false);
             });
           }}
-        >Log out</button>
-      </section>
+        />
+      )}
     </main>
+  );
+}
+
+/** Log out; while it runs (each peer may take a few seconds), the button is off and says why. */
+export function LogoutSection({ multi, busy, onLogout }: {
+  readonly multi: boolean;
+  readonly busy: boolean;
+  readonly onLogout: () => void;
+}) {
+  return (
+    <section className="group stack" aria-labelledby="logout-heading">
+      <h2 id="logout-heading" className="caps">Log out</h2>
+      <p className="muted">
+        {multi
+          ? 'Signs this phone out of every computer. Running sessions keep running.'
+          : 'Removes this browser\'s access. Running sessions keep running on your computer.'}
+      </p>
+      <button type="button" className="danger" disabled={busy} onClick={onLogout}>Log out</button>
+      <p role="status" className="muted field-note">{busy ? 'Signing out…' : ''}</p>
+    </section>
   );
 }

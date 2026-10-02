@@ -790,3 +790,32 @@ button.preview-open { min-height: 36px; padding: 0 14px; border: 0; border-radiu
 .preview-agent .spinner { width: 14px; height: 14px; }
 .preview-agent-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.preview-tell { flex-shrink: 0; min-height: 40px; padding: 0 14px; border-color: color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 20px; color: var(--accent); font-size: 14px; }
+
+/* Multi-computer: a colour dot always comes with the computer's label. */
+.computer-tag { display: inline-flex; align-items: center; gap: 5px; }
+.chips { display: flex; gap: 8px; margin: 0 0 4px; overflow-x: auto; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px; border-color: var(--line); border-radius: 17px; color: var(--text); font-size: 14px; }
+.chip[aria-pressed="true"] { border-color: var(--surface-2); background: var(--surface-2); color: var(--text); }
+.chip .dot { width: 8px; height: 8px; border-radius: 4px; }
+.computer-problem { display: flex; align-items: center; gap: 10px; margin: 8px; padding: 12px 14px; border: 1px dashed var(--dash); border-radius: 14px; color: var(--muted); font-size: 14px; }
+.computer-problem-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.computer-problem button.link { min-height: 32px; color: var(--accent); }
+.computer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.computer-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 14px; background: var(--surface); }
+.computer-card.offline .row-title { color: var(--muted); }
+.computer-head { display: flex; align-items: center; gap: 12px; }
+.computer-dot { flex-shrink: 0; width: 12px; height: 12px; border-radius: 6px; }
+.computer-card.offline .computer-dot { opacity: 0.45; }
+.computer-state { flex-shrink: 0; font-size: 13px; font-weight: 600; }
+.computer-actions { gap: 4px; }
+.computer-actions button.link { min-height: 32px; }
+button.link.danger-text { color: var(--red); }
+button.add-computer { min-height: 52px; border: 1px dashed var(--accent); border-radius: 14px; color: var(--accent); font-weight: 700; }
+.place-computer { flex-shrink: 0; color: var(--text); }
+.wall-computer { max-width: 100%; margin-top: -6px; color: var(--muted); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wall-blank { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 8px; color: var(--muted); font-family: var(--mono); font-size: 11px; text-align: center; overflow-wrap: anywhere; }
+.wall-paused-text { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.wall-paused { position: absolute; top: 6px; right: 6px; padding: 2px 6px; border-radius: 6px; background: rgb(0 0 0 / 60%); color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+/* A confirm sheet over any screen (Live or Settings). */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 5; background: rgb(0 0 0 / 50%); }

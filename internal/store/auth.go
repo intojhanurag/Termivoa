@@ -29,6 +29,9 @@ type PairingGrant struct {
 	Hash      []byte
 	CreatedAt time.Time
 	ExpiresAt time.Time
+	// App binds the grant to one app origin (pterm pair --via). Redemption
+	// copies it to the pending pairing, and completion to the device.
+	App AppBinding
 }
 
 // PendingPairing is created by one atomic grant redemption. VerificationCode
@@ -42,6 +45,7 @@ type PendingPairing struct {
 	CreatedAt        time.Time
 	ExpiresAt        time.Time
 	ApprovedAt       *time.Time
+	App              AppBinding // Copied from the grant; read-only here.
 }
 
 // Device is a paired browser. Label is untrusted display text, never identity.
@@ -51,6 +55,7 @@ type Device struct {
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	RevokedAt  *time.Time
+	App        AppBinding // Copied from the pending pairing; read-only here.
 	// Status is filled in only by ListDevices, using the same live-credential
 	// rule the device cap enforces.
 	Status DeviceStatus
@@ -119,8 +124,13 @@ func (store *Store) CreatePairingGrant(ctx context.Context, grant PairingGrant, 
 	if outstanding >= limit {
 		return ErrPairingCapacity
 	}
-	if _, err := transaction.ExecContext(ctx, `INSERT INTO pairing_grants(id, grant_hash, created_at_ms, expires_at_ms)
-		VALUES (?, ?, ?, ?)`, grant.ID, grant.Hash, now, millis(grant.ExpiresAt)); err != nil {
+	app, err := grant.App.columns()
+	if err != nil {
+		return err
+	}
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO pairing_grants(id, grant_hash, created_at_ms, expires_at_ms,
+		app_origin, app_node_id, app_node_owner, app_node_tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		grant.ID, grant.Hash, now, millis(grant.ExpiresAt), app[0], app[1], app[2], app[3]); err != nil {
 		return fmt.Errorf("store: insert pairing grant: %w", err)
 	}
 	return commit(transaction, "pairing grant")
@@ -129,8 +139,12 @@ func (store *Store) CreatePairingGrant(ctx context.Context, grant PairingGrant, 
 // RedeemPairingGrant consumes an unexpired unused grant and creates its
 // pending pairing in one transaction. A capacity or insert failure rolls back
 // the consumption, so concurrent redeemers can never both succeed and a failed
-// attempt leaves no partially consumed grant.
-func (store *Store) RedeemPairingGrant(ctx context.Context, grantHash []byte, pending PendingPairing, limit int) error {
+// attempt leaves no partially consumed grant. check, when set, sees the
+// grant's app binding before anything changes; its error leaves the grant
+// unused. It must only read memory.
+func (store *Store) RedeemPairingGrant(
+	ctx context.Context, grantHash []byte, pending PendingPairing, limit int, check func(AppBinding) error,
+) error {
 	if len(grantHash) != sha256.Size || limit < 1 {
 		return errors.New("store: invalid pairing redemption")
 	}
@@ -149,15 +163,25 @@ func (store *Store) RedeemPairingGrant(ctx context.Context, grantHash []byte, pe
 	var grantID string
 	var created, expires int64
 	var redeemed sql.NullInt64
+	var app appColumns
 	err = transaction.QueryRowContext(ctx,
-		`SELECT id, created_at_ms, expires_at_ms, redeemed_at_ms FROM pairing_grants WHERE grant_hash = ?`, grantHash,
-	).Scan(&grantID, &created, &expires, &redeemed)
+		`SELECT id, created_at_ms, expires_at_ms, redeemed_at_ms, `+appSelect+` FROM pairing_grants WHERE grant_hash = ?`, grantHash,
+	).Scan(append([]any{&grantID, &created, &expires, &redeemed}, app.targets()...)...)
 	// A clock behind the creation time must not extend the grant lifetime.
 	if errors.Is(err, sql.ErrNoRows) || err == nil && (redeemed.Valid || expires <= now || created > now) {
 		return ErrPairingInvalid
 	}
 	if err != nil {
 		return fmt.Errorf("store: read pairing grant: %w", err)
+	}
+	if check != nil {
+		binding, err := app.binding()
+		if err != nil {
+			return err
+		}
+		if err := check(binding); err != nil {
+			return err
+		}
 	}
 	var active int
 	if err := transaction.QueryRowContext(ctx, `SELECT count(*) FROM pending_pairings`).Scan(&active); err != nil {
@@ -175,9 +199,10 @@ func (store *Store) RedeemPairingGrant(ctx context.Context, grantHash []byte, pe
 		return ErrPairingInvalid
 	}
 	if _, err := transaction.ExecContext(ctx, `INSERT INTO pending_pairings(
-		id, grant_id, poll_hash, verification_code, device_label, created_at_ms, expires_at_ms
-	) VALUES (?, ?, ?, ?, ?, ?, ?)`, pending.ID, grantID, pending.PollHash, pending.VerificationCode,
-		pending.DeviceLabel, now, millis(pending.ExpiresAt)); err != nil {
+		id, grant_id, poll_hash, verification_code, device_label, created_at_ms, expires_at_ms,
+		app_origin, app_node_id, app_node_owner, app_node_tags
+	) SELECT ?, ?, ?, ?, ?, ?, ?, `+appSelect+` FROM pairing_grants WHERE id = ?`, pending.ID, grantID, pending.PollHash,
+		pending.VerificationCode, pending.DeviceLabel, now, millis(pending.ExpiresAt), grantID); err != nil {
 		return fmt.Errorf("store: insert pending pairing: %w", err)
 	}
 	return commit(transaction, "pairing redemption")
@@ -186,7 +211,7 @@ func (store *Store) RedeemPairingGrant(ctx context.Context, grantHash []byte, pe
 // ListPendingPairings returns unexpired pairings still awaiting approval.
 func (store *Store) ListPendingPairings(ctx context.Context, now time.Time, limit int) ([]PendingPairing, error) {
 	rows, err := store.database.QueryContext(ctx, `SELECT id, grant_id, poll_hash, verification_code,
-		device_label, created_at_ms, expires_at_ms, approved_at_ms FROM pending_pairings
+		device_label, created_at_ms, expires_at_ms, approved_at_ms, `+appSelect+` FROM pending_pairings
 		WHERE expires_at_ms > ?1 AND created_at_ms <= ?1 AND approved_at_ms IS NULL
 		ORDER BY created_at_ms, id LIMIT ?2`, millis(now), limit)
 	if err != nil {
@@ -198,9 +223,13 @@ func (store *Store) ListPendingPairings(ctx context.Context, now time.Time, limi
 		var record PendingPairing
 		var created, expires int64
 		var approved sql.NullInt64
-		if err := rows.Scan(&record.ID, &record.GrantID, &record.PollHash, &record.VerificationCode,
-			&record.DeviceLabel, &created, &expires, &approved); err != nil {
+		var app appColumns
+		if err := rows.Scan(append([]any{&record.ID, &record.GrantID, &record.PollHash, &record.VerificationCode,
+			&record.DeviceLabel, &created, &expires, &approved}, app.targets()...)...); err != nil {
 			return nil, fmt.Errorf("store: scan pending pairing: %w", err)
+		}
+		if record.App, err = app.binding(); err != nil {
+			return nil, err
 		}
 		record.CreatedAt, record.ExpiresAt, record.ApprovedAt = fromMillis(created), fromMillis(expires), timeFromNull(approved)
 		pending = append(pending, record)
@@ -245,10 +274,12 @@ func (store *Store) ApprovePendingPairing(ctx context.Context, id string, now ti
 // CompletePendingPairing checks one poll. A wrong secret increments a bounded
 // failure counter and deletes the record at limits.FailedPolls. An approved
 // poll atomically creates the device and browser credential and deletes the
-// pending record, so the credential can be delivered only once.
+// pending record, so the credential can be delivered only once. check, when
+// set, sees the pending pairing's app binding before the poll secret is
+// compared; its error changes nothing. It must only read memory.
 func (store *Store) CompletePendingPairing(
 	ctx context.Context, id string, pollHash []byte, now time.Time,
-	device Device, session BrowserSession, limits PairingLimits,
+	device Device, session BrowserSession, limits PairingLimits, check func(AppBinding) error,
 ) (Device, bool, error) {
 	if !validUUID(id) || len(pollHash) != sha256.Size || now.IsZero() || limits.FailedPolls < 1 || limits.Devices < 1 ||
 		limits.CredentialIdle <= 0 {
@@ -265,8 +296,10 @@ func (store *Store) CompletePendingPairing(
 	var created, expires int64
 	var approved sql.NullInt64
 	var failed int
+	var app appColumns
 	err = transaction.QueryRowContext(ctx, `SELECT poll_hash, device_label, created_at_ms, expires_at_ms, approved_at_ms,
-		failed_polls FROM pending_pairings WHERE id = ?`, id).Scan(&storedHash, &label, &created, &expires, &approved, &failed)
+		failed_polls, `+appSelect+` FROM pending_pairings WHERE id = ?`, id).Scan(
+		append([]any{&storedHash, &label, &created, &expires, &approved, &failed}, app.targets()...)...)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && created > when { // Rollback cannot extend its lifetime.
 		return Device{}, false, ErrPendingMissing
 	}
@@ -281,6 +314,15 @@ func (store *Store) CompletePendingPairing(
 			return Device{}, false, err
 		}
 		return Device{}, false, ErrPendingMissing
+	}
+	binding, err := app.binding()
+	if err != nil {
+		return Device{}, false, err
+	}
+	if check != nil {
+		if err := check(binding); err != nil {
+			return Device{}, false, err
+		}
 	}
 	if subtle.ConstantTimeCompare(storedHash, pollHash) != 1 {
 		statement := `UPDATE pending_pairings SET failed_polls = failed_polls + 1 WHERE id = ?`
@@ -298,7 +340,7 @@ func (store *Store) CompletePendingPairing(
 	if !approved.Valid {
 		return Device{}, false, nil
 	}
-	device.Label = label
+	device.Label, device.App = label, binding
 	if err := validateDevice(device); err != nil {
 		return Device{}, false, err
 	}
@@ -308,8 +350,10 @@ func (store *Store) CompletePendingPairing(
 	if err := reserveDeviceCapacity(ctx, transaction, limits.Devices, when, when-limits.CredentialIdle.Milliseconds(), limits.PendingRevoked); err != nil {
 		return Device{}, false, err
 	}
-	if _, err := transaction.ExecContext(ctx, `INSERT INTO devices(id, label, created_at_ms, last_used_at_ms)
-		VALUES (?, ?, ?, ?)`, device.ID, device.Label, millis(device.CreatedAt), millis(device.LastUsedAt)); err != nil {
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO devices(id, label, created_at_ms, last_used_at_ms,
+		app_origin, app_node_id, app_node_owner, app_node_tags)
+		SELECT ?, ?, ?, ?, `+appSelect+` FROM pending_pairings WHERE id = ?`,
+		device.ID, device.Label, millis(device.CreatedAt), millis(device.LastUsedAt), id); err != nil {
 		return Device{}, false, fmt.Errorf("store: insert device: %w", err)
 	}
 	if _, err := transaction.ExecContext(ctx, `INSERT INTO browser_sessions(
@@ -385,11 +429,13 @@ func (store *Store) LookupCredential(ctx context.Context, hash []byte) (BrowserS
 	var device Device
 	var created, used, expires, deviceCreated, deviceUsed int64
 	var revoked, deviceRevoked sql.NullInt64
+	var app appColumns
 	err := store.database.QueryRowContext(ctx, `SELECT s.id, s.device_id, s.credential_hash, s.created_at_ms,
-		s.last_used_at_ms, s.expires_at_ms, s.revoked_at_ms, d.label, d.created_at_ms, d.last_used_at_ms, d.revoked_at_ms
+		s.last_used_at_ms, s.expires_at_ms, s.revoked_at_ms, d.label, d.created_at_ms, d.last_used_at_ms, d.revoked_at_ms,
+		d.app_origin, d.app_node_id, d.app_node_owner, d.app_node_tags
 		FROM browser_sessions s JOIN devices d ON d.id = s.device_id WHERE s.credential_hash = ?`, hash).Scan(
-		&session.ID, &session.DeviceID, &session.CredentialHash, &created, &used, &expires, &revoked,
-		&device.Label, &deviceCreated, &deviceUsed, &deviceRevoked)
+		append([]any{&session.ID, &session.DeviceID, &session.CredentialHash, &created, &used, &expires, &revoked,
+			&device.Label, &deviceCreated, &deviceUsed, &deviceRevoked}, app.targets()...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return BrowserSession{}, Device{}, ErrCredentialMissing
 	}
@@ -400,6 +446,9 @@ func (store *Store) LookupCredential(ctx context.Context, hash []byte) (BrowserS
 	session.RevokedAt = timeFromNull(revoked)
 	device.ID, device.CreatedAt, device.LastUsedAt = session.DeviceID, fromMillis(deviceCreated), fromMillis(deviceUsed)
 	device.RevokedAt = timeFromNull(deviceRevoked)
+	if device.App, err = app.binding(); err != nil {
+		return BrowserSession{}, Device{}, err
+	}
 	return session, device, nil
 }
 
@@ -528,7 +577,7 @@ func (store *Store) ListDevices(ctx context.Context, now time.Time, credentialId
 	}
 	when, usedAfter := millis(now), millis(now)-credentialIdle.Milliseconds()
 	rows, err := store.database.QueryContext(ctx, `SELECT id, label, created_at_ms, last_used_at_ms, revoked_at_ms,
-		id IN (`+liveDevices+`) FROM devices ORDER BY created_at_ms DESC, id LIMIT ?3`, when, usedAfter, limit)
+		id IN (`+liveDevices+`), `+appSelect+` FROM devices ORDER BY created_at_ms DESC, id LIMIT ?3`, when, usedAfter, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list devices: %w", err)
 	}
@@ -539,8 +588,12 @@ func (store *Store) ListDevices(ctx context.Context, now time.Time, credentialId
 		var created, used int64
 		var revoked sql.NullInt64
 		var live bool
-		if err := rows.Scan(&device.ID, &device.Label, &created, &used, &revoked, &live); err != nil {
+		var app appColumns
+		if err := rows.Scan(append([]any{&device.ID, &device.Label, &created, &used, &revoked, &live}, app.targets()...)...); err != nil {
 			return nil, fmt.Errorf("store: scan device: %w", err)
+		}
+		if device.App, err = app.binding(); err != nil {
+			return nil, err
 		}
 		device.CreatedAt, device.LastUsedAt, device.RevokedAt = fromMillis(created), fromMillis(used), timeFromNull(revoked)
 		switch {

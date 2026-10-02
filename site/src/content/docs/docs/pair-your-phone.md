@@ -1,7 +1,7 @@
 ---
 title: Pair your phone
 description: Connect a phone to Termivoa with a one-time QR code and a 6-digit code check, add it to the Home Screen, then rename or remove paired phones.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-02
 ---
 
 Termivoa pairs a phone with a one-time QR code from `pterm pair` and a 6-digit code that you check on both screens.
@@ -48,6 +48,14 @@ pterm pair approve <pending-id>
 On iPhone, in Safari, tap **Share**, then **Add to Home Screen**. Termivoa then opens like an app. iPhone needs this for [Notifications](/docs/guides/notifications/).
 On Android, Chrome can also add it to the home screen.
 
+## Add another computer
+
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`.
+:::
+
+Pair the phone with one computer first; it becomes home. To use more computers from the same app, run `pterm pair --via <home>` on each other computer, then paste or tap its link in the app. You check the code the same way. See [Use several computers](/docs/guides/computers/).
+
 ## See and rename your phones
 
 `pterm devices` lists paired phones, their status and last use.
@@ -63,6 +71,8 @@ If you lose a phone or stop using it:
 
 The phone loses access at once, also on open connections, and stops getting notifications.
 On the phone itself, **Settings** → **Log out** removes its access.
+
+If the phone used [several computers](/docs/guides/computers/) (next beta), revoke it on each computer. On home, `pterm revoke` lists them. **Log out** signs the phone out of every computer it can reach, and names the ones it could not; run `pterm revoke` there.
 
 ## When must a phone pair again?
 

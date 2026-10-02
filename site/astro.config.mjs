@@ -59,6 +59,7 @@ export default defineConfig({
 					items: [
 						'docs/guides/sessions',
 						'docs/guides/wall',
+						'docs/guides/computers',
 						'docs/guides/recap',
 						'docs/guides/live-terminal',
 						'docs/guides/project-buttons',

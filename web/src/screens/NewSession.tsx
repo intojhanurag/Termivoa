@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { api } from '../api/http';
-import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
+import { client } from '../api/http';
+import type { Computer } from '../computers';
+import type { HTTPSettingsResponse } from '../generated/protocol';
+import { hosted, type ComputerEntry, type HostedSession } from './allSessions';
+import { ComputerChips, problemText } from './Sessions';
 import {
   loadPresets,
   presetFrom,
@@ -32,14 +35,39 @@ export function NewSessionHelp({ settings }: { readonly settings: HTTPSettingsRe
   return null;
 }
 
-export function NewSession({ settings, onCancel, onStarted, onRefreshSettings, onFailure }: {
-  readonly settings: HTTPSettingsResponse;
+const EMPTY: HTTPSettingsResponse['projects'] = [];
+
+/**
+ * The computer a new session starts on: the chosen one while it answers,
+ * else `initial` (the session it was opened from), else home, else the first
+ * that answers. Computers that do not answer cannot be picked.
+ */
+export function pickComputer(entries: ReadonlyArray<ComputerEntry>, chosen: string | undefined, initial?: string): ComputerEntry | undefined {
+  const ok = entries.filter((entry) => entry.status.kind === 'ok');
+  return ok.find((entry) => entry.computer.host === chosen)
+    ?? ok.find((entry) => entry.computer.host === initial)
+    ?? ok.find((entry) => entry.computer.home)
+    ?? ok[0];
+}
+
+export function NewSession({ entries, initial, onCancel, onStarted, onReload, onFailure }: {
+  readonly entries: ReadonlyArray<ComputerEntry>;
+  /** Preselects this computer (the session the screen was opened from). */
+  readonly initial?: Computer;
   readonly onCancel: () => void;
   /** `runFirst` is the trimmed command to type once, if any. */
-  readonly onStarted: (session: BrokerRPCSessionRecord, runFirst: string | undefined) => void;
-  readonly onRefreshSettings: () => Promise<void>;
-  readonly onFailure: (error: unknown) => string;
+  readonly onStarted: (session: HostedSession, runFirst: string | undefined) => void;
+  /** Reads one computer again, settings included. */
+  readonly onReload: (origin: string) => Promise<void>;
+  readonly onFailure: (error: unknown, computer?: Computer) => string;
 }) {
+  const [chosenComputer, setComputer] = useState<string>();
+  const picked = pickComputer(entries, chosenComputer, initial?.host);
+  const computer = picked?.computer;
+  const settings: HTTPSettingsResponse | undefined = picked?.status.kind === 'ok' ? picked.status.settings : undefined;
+  const projects = settings?.projects ?? EMPTY;
+  const shells = settings?.shellProfiles ?? EMPTY;
+  const multi = entries.length > 1;
   const [presets, setPresets] = useState<LaunchPreset[]>(() => loadPresets());
   const [editing, setEditing] = useState(false);
   const [chosenProject, setProjectId] = useState<string>();
@@ -50,22 +78,23 @@ export function NewSession({ settings, onCancel, onStarted, onRefreshSettings, o
   const [note, setNote] = useState<string>();
 
   // The server lists the user's login shell first, so it is the default.
-  const projectId = settings.projects.find((item) => item.id === chosenProject)?.id ?? settings.projects[0]?.id ?? '';
-  const shellId = settings.shellProfiles.find((item) => item.id === chosenShell)?.id ?? settings.shellProfiles[0]?.id ?? '';
-  const canCreate = settings.projects.length > 0 && settings.shellProfiles.length > 0;
-  const projectName = new Map(settings.projects.map((item) => [item.id, item.name]));
-  const shellName = new Map(settings.shellProfiles.map((item) => [item.id, item.name]));
+  const projectId = projects.find((item) => item.id === chosenProject)?.id ?? projects[0]?.id ?? '';
+  const shellId = shells.find((item) => item.id === chosenShell)?.id ?? shells[0]?.id ?? '';
+  const canCreate = projects.length > 0 && shells.length > 0;
+  const projectName = new Map(projects.map((item) => [item.id, item.name]));
+  const shellName = new Map(shells.map((item) => [item.id, item.name]));
   const command = runFirst.trim();
   const commandProblem = runFirstProblem(command);
 
   async function start(project: string, shell: string, first: string | undefined) {
+    if (computer === undefined) return;
     setBusy(true);
     setError(undefined);
     try {
-      const created = await api.createSession({ operationId: crypto.randomUUID(), projectId: project, shellProfileId: shell });
-      onStarted(created.session, first);
+      const created = await client(computer.origin).createSession({ operationId: crypto.randomUUID(), projectId: project, shellProfileId: shell });
+      onStarted(hosted(created.session, computer), first);
     } catch (failure) {
-      setError(onFailure(failure));
+      setError(onFailure(failure, computer));
       setBusy(false);
     }
   }
@@ -91,29 +120,52 @@ export function NewSession({ settings, onCancel, onStarted, onRefreshSettings, o
   }
 
   async function refresh() {
+    if (computer === undefined) return;
     setBusy(true);
     setError(undefined);
     try {
-      await onRefreshSettings();
+      await onReload(computer.origin);
     } catch (failure) {
-      setError(onFailure(failure));
+      setError(onFailure(failure, computer));
     } finally {
       setBusy(false);
     }
   }
+
+  const now = Date.now();
+  const unavailable = entries.flatMap((entry) => {
+    const text = problemText(entry, now);
+    return text === undefined ? [] : [text];
+  });
 
   return (
     <main className="page screen">
       <header className="screen-header">
         <div>
           <h1>New session</h1>
-          <p className="subtitle">Runs on your computer</p>
+          <p className="subtitle">{multi && computer !== undefined ? `Runs on ${computer.label}` : 'Runs on your computer'}</p>
         </div>
         <button type="button" className="link" onClick={onCancel}>Cancel</button>
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 
-      {!canCreate ? (
+      {multi && (
+        <section className="group" aria-labelledby="computer-heading">
+          <h2 id="computer-heading" className="caps">Computer</h2>
+          <ComputerChips
+            computers={entries.map((entry) => entry.computer)}
+            chosen={computer?.host}
+            all={false}
+            disabled={(host) => entries.find((entry) => entry.computer.host === host)?.status.kind !== 'ok'}
+            onChoose={(host) => { if (host !== undefined) { setComputer(host); setNote(undefined); } }}
+          />
+          {unavailable.map((text) => <p key={text} className="hint-text">{text}</p>)}
+        </section>
+      )}
+
+      {settings === undefined ? (
+        <p role="status" className="muted">{entries.some((entry) => entry.status.kind === 'loading') ? 'Loading…' : 'No computer can be reached.'}</p>
+      ) : !canCreate ? (
         <section className="stack">
           <NewSessionHelp settings={settings} />
           <button type="button" disabled={busy} onClick={() => { void refresh(); }}>Check again</button>

@@ -26,6 +26,9 @@
     { "$ref": "#/$defs/configOriginMessage" },
     { "$ref": "#/$defs/shutdownMessage" },
     { "$ref": "#/$defs/gatewayStopMessage" },
+    { "$ref": "#/$defs/deviceRevokeViaMessage" },
+    { "$ref": "#/$defs/computersListMessage" },
+    { "$ref": "#/$defs/computersRemoveMessage" },
     { "$ref": "#/$defs/pairGrantResultMessage" },
     { "$ref": "#/$defs/pairPendingResultMessage" },
     { "$ref": "#/$defs/pairApproveResultMessage" },
@@ -39,6 +42,9 @@
     { "$ref": "#/$defs/configOriginResultMessage" },
     { "$ref": "#/$defs/shutdownResultMessage" },
     { "$ref": "#/$defs/gatewayStopResultMessage" },
+    { "$ref": "#/$defs/deviceRevokeViaResultMessage" },
+    { "$ref": "#/$defs/computersListResultMessage" },
+    { "$ref": "#/$defs/computersRemoveResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -49,11 +55,13 @@
         "admin.pair.grant", "admin.pair.pending", "admin.pair.approve", "admin.device.list",
         "admin.device.revoke", "admin.project.add", "admin.project.list", "admin.profile.list",
         "admin.profile.detect", "admin.config.origin", "admin.shutdown", "admin.gateway.stop", "admin.device.rename",
+        "admin.device.revoke.via", "admin.computers.list", "admin.computers.remove",
         "admin.pair.grant.result", "admin.pair.pending.result", "admin.pair.approve.result",
         "admin.device.list.result", "admin.device.revoke.result", "admin.project.add.result",
         "admin.project.list.result", "admin.profile.list.result", "admin.profile.detect.result",
         "admin.config.origin.result", "admin.shutdown.result", "admin.gateway.stop.result",
-        "admin.device.rename.result", "admin.error"
+        "admin.device.rename.result", "admin.device.revoke.via.result", "admin.computers.list.result",
+        "admin.computers.remove.result", "admin.error"
       ]
     },
     "timestamp": { "$ref": "http-api.schema.json#/$defs/timestamp" },
@@ -69,16 +77,39 @@
       "description": "Pairing link origin: https://host[:port], or http://127.0.0.1:port / http://localhost:port for development.",
       "type": "string", "minLength": 8, "maxLength": 512, "pattern": "^https?://[^/?#@\\s]+$"
     },
+    "appOrigin": {
+      "description": "The Termivoa app origin (the home computer) that a bound grant, pending pairing or device is bound to. Absent means this computer's own origin only.",
+      "$ref": "http-api.schema.json#/$defs/computerOrigin"
+    },
+    "via": {
+      "description": "pterm pair --via: a full app origin, or a short name that matches only the first label of a node's DNS name in this computer's own tailnet.",
+      "anyOf": [
+        { "$ref": "http-api.schema.json#/$defs/computerOrigin" },
+        { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" }
+      ]
+    },
+    "pairGrantPayload": {
+      "title": "AdminRPCPairGrantPayload",
+      "description": "Empty creates a grant for this computer's own origin. via binds the grant to one app origin, resolved by the broker in its own tailscale status and pinned to that node ID; allowTagged must be true when that node is tagged.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "via": { "$ref": "#/$defs/via" },
+        "allowTagged": { "type": "boolean" }
+      }
+    },
     "pairGrantResultPayload": {
       "title": "AdminRPCPairGrantResultPayload",
-      "description": "The only delivery of a fresh two-minute grant. origin is present when configured.",
+      "description": "The only delivery of a fresh two-minute grant. origin is present when configured. appOrigin and appNode are present exactly when the grant is bound with via.",
       "type": "object",
       "additionalProperties": false,
       "required": ["grant", "expiresAt"],
       "properties": {
         "grant": { "$ref": "http-api.schema.json#/$defs/secret" },
         "expiresAt": { "$ref": "#/$defs/timestamp" },
-        "origin": { "$ref": "#/$defs/origin" }
+        "origin": { "$ref": "#/$defs/origin" },
+        "appOrigin": { "$ref": "#/$defs/appOrigin" },
+        "appNode": { "$ref": "http-api.schema.json#/$defs/tailnetNode" }
       }
     },
     "pendingPairing": {
@@ -90,7 +121,9 @@
         "id": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
         "verificationCode": { "$ref": "http-api.schema.json#/$defs/verificationCode" },
         "deviceLabel": { "$ref": "http-api.schema.json#/$defs/deviceLabel" },
-        "expiresAt": { "$ref": "#/$defs/timestamp" }
+        "expiresAt": { "$ref": "#/$defs/timestamp" },
+        "appOrigin": { "$ref": "#/$defs/appOrigin" },
+        "appNode": { "$ref": "http-api.schema.json#/$defs/tailnetNode" }
       }
     },
     "pairPendingResultPayload": {
@@ -126,7 +159,9 @@
         "revoked": { "type": "boolean" },
         "status": { "$ref": "#/$defs/deviceStatus" },
         "createdAt": { "$ref": "#/$defs/timestamp" },
-        "lastUsedAt": { "$ref": "#/$defs/timestamp" }
+        "lastUsedAt": { "$ref": "#/$defs/timestamp" },
+        "appOrigin": { "$ref": "#/$defs/appOrigin" },
+        "appNode": { "$ref": "http-api.schema.json#/$defs/tailnetNode" }
       }
     },
     "deviceRenamePayload": {
@@ -165,6 +200,67 @@
       "properties": {
         "deviceId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
         "closedStreams": { "type": "integer", "minimum": 0, "maximum": 65536 }
+      }
+    },
+    "revokeViaPayload": {
+      "title": "AdminRPCRevokeViaPayload",
+      "description": "pterm revoke --via: revokes every device bound to appOrigin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appOrigin"],
+      "properties": { "appOrigin": { "$ref": "#/$defs/appOrigin" } }
+    },
+    "revokeViaResultPayload": {
+      "title": "AdminRPCRevokeViaResultPayload",
+      "description": "Sent only after every revocation is durable and every bound live stream has been closed. deviceIds is empty when no device was bound to appOrigin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appOrigin", "deviceIds", "closedStreams"],
+      "properties": {
+        "appOrigin": { "$ref": "#/$defs/appOrigin" },
+        "deviceIds": { "type": "array", "maxItems": 200, "items": { "$ref": "broker-rpc.schema.json#/$defs/uuid" } },
+        "closedStreams": { "type": "integer", "minimum": 0, "maximum": 65536 }
+      }
+    },
+    "computer": {
+      "title": "AdminRPCComputer",
+      "description": "One confirmed computer in one device's list on this (home) computer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "origin", "label", "createdAt"],
+      "properties": {
+        "deviceId": { "$ref": "broker-rpc.schema.json#/$defs/uuid" },
+        "origin": { "$ref": "http-api.schema.json#/$defs/computerOrigin" },
+        "label": { "$ref": "http-api.schema.json#/$defs/computerLabel" },
+        "createdAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "computerListResultPayload": {
+      "title": "AdminRPCComputerListResultPayload",
+      "description": "Confirmed computers of every device (at most 64 devices with 8 each). Pending entries are never listed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["computers"],
+      "properties": {
+        "computers": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/computer" } }
+      }
+    },
+    "computerRemovePayload": {
+      "title": "AdminRPCComputerRemovePayload",
+      "description": "pterm computers remove: removes origin from every device's list, pending or confirmed. It cannot log the phone out on that computer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin"],
+      "properties": { "origin": { "$ref": "http-api.schema.json#/$defs/computerOrigin" } }
+    },
+    "computerRemoveResultPayload": {
+      "title": "AdminRPCComputerRemoveResultPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "removed"],
+      "properties": {
+        "origin": { "$ref": "http-api.schema.json#/$defs/computerOrigin" },
+        "removed": { "type": "integer", "minimum": 0, "maximum": 200 }
       }
     },
     "projectAddPayload": {
@@ -241,7 +337,7 @@
       "properties": { "terminatedSessions": { "type": "integer", "minimum": 0, "maximum": 64 } }
     },
     "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
-    "pairGrantMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "pairGrantMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant" }, "payload": { "$ref": "#/$defs/pairGrantPayload" } } },
     "pairPendingMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "pairApproveMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
     "deviceListMessage": { "type": "object", "properties": { "type": { "const": "admin.device.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
@@ -254,6 +350,9 @@
     "configOriginMessage": { "type": "object", "properties": { "type": { "const": "admin.config.origin" }, "payload": { "$ref": "#/$defs/originPayload" } } },
     "shutdownMessage": { "type": "object", "properties": { "type": { "const": "admin.shutdown" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "gatewayStopMessage": { "type": "object", "properties": { "type": { "const": "admin.gateway.stop" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "deviceRevokeViaMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke.via" }, "payload": { "$ref": "#/$defs/revokeViaPayload" } } },
+    "computersListMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "computersRemoveMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.remove" }, "payload": { "$ref": "#/$defs/computerRemovePayload" } } },
     "pairGrantResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant.result" }, "payload": { "$ref": "#/$defs/pairGrantResultPayload" } } },
     "pairPendingResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending.result" }, "payload": { "$ref": "#/$defs/pairPendingResultPayload" } } },
     "pairApproveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve.result" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
@@ -267,6 +366,9 @@
     "configOriginResultMessage": { "type": "object", "properties": { "type": { "const": "admin.config.origin.result" }, "payload": { "$ref": "#/$defs/originPayload" } } },
     "shutdownResultMessage": { "type": "object", "properties": { "type": { "const": "admin.shutdown.result" }, "payload": { "$ref": "#/$defs/shutdownResultPayload" } } },
     "gatewayStopResultMessage": { "type": "object", "properties": { "type": { "const": "admin.gateway.stop.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "deviceRevokeViaResultMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke.via.result" }, "payload": { "$ref": "#/$defs/revokeViaResultPayload" } } },
+    "computersListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.list.result" }, "payload": { "$ref": "#/$defs/computerListResultPayload" } } },
+    "computersRemoveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.remove.result" }, "payload": { "$ref": "#/$defs/computerRemoveResultPayload" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "admin.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

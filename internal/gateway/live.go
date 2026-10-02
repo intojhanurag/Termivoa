@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -106,7 +107,14 @@ func (handler *gatewayHandler) serveLive(response http.ResponseWriter, request *
 	// before compression.
 	conn, err := websocket.Accept(sendBufferLimit{response, handler.liveLimits.sendBuffer}, request,
 		&websocket.AcceptOptions{
-			OriginPatterns: handler.originPatterns, CompressionMode: websocket.CompressionNoContextTakeover,
+			// coder/websocket matches patterns with path.Match; escape IPv6
+			// brackets and other metacharacters so the pattern stays exact.
+			// It only repeats originAllowed for this one request's Origin:
+			// originAllowed above is the real check. The pattern stays so the
+			// library's own check is never switched off with
+			// InsecureSkipVerify, which docs/multi-computer.md forbids.
+			OriginPatterns:  []string{globEscaper.Replace(strings.ToLower(request.Header.Get("Origin")))},
+			CompressionMode: websocket.CompressionNoContextTakeover,
 		})
 	if err != nil {
 		_ = stream.Close()

@@ -24,11 +24,20 @@ Available commands:
                                      Print a two-minute, single-use phone pairing link
                                      and, on a terminal, its QR code; then wait for the
                                      phone and approve it after you compare its code.
+  pterm pair --via <name|url> [--allow-tagged]
+                                     Add this computer to the Termivoa app at that
+                                     computer: print a two-minute add-computer link
+                                     (no QR code) and approve the phone's code.
+                                     --allow-tagged accepts a tagged app computer.
   pterm pair pending                 Show phones waiting for approval and their codes.
   pterm pair approve <pending-id>    Approve a phone after comparing its code.
-  pterm devices                      Show paired devices, status and last use.
+  pterm devices                      Show paired devices, status, last use and app (VIA).
   pterm devices rename <id> <label>  Rename a paired device.
   pterm revoke <device-id>           Confirm and revoke one device's browser access.
+  pterm revoke --via <url>           Confirm and revoke every device that uses this
+                                     computer from the Termivoa app at <url>.
+  pterm computers                    On the home computer: show each phone's computers.
+  pterm computers remove <url>       Remove a computer from every phone's list.
   pterm project add [--name <name>] <path> Save a project directory.
   pterm project list                 Show saved projects.
   pterm profile list                 Show saved shell profiles.

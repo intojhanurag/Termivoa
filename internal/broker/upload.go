@@ -102,7 +102,7 @@ func (server *ManagementServer) serveUpload(
 	if err != nil {
 		return err
 	}
-	principal, _, err := server.authorizeUpload(ctx, payload.Credential, payload.SessionID, payload.Generation)
+	principal, _, err := server.authorizeUpload(ctx, begin.Origin, payload.Credential, payload.SessionID, payload.Generation)
 	var release func()
 	if err == nil {
 		release, err = server.uploads.acquire(principal.DeviceID, time.Now())
@@ -157,7 +157,7 @@ func (server *ManagementServer) serveUpload(
 			if err != nil {
 				return err
 			}
-			result, err := server.commitUpload(ctx, principal.DeviceID, commit.Credential, payload, data)
+			result, err := server.commitUpload(ctx, request.Origin, principal.DeviceID, commit.Credential, payload, data)
 			return finish(request, result, err)
 		default:
 			return finish(request, nil, errUploadOrder)
@@ -166,13 +166,14 @@ func (server *ManagementServer) serveUpload(
 }
 
 func (server *ManagementServer) commitUpload(
-	ctx context.Context, device, credential string, begin protocol.GatewayRPCUploadBeginPayload, data []byte,
+	ctx context.Context, origin *string, device, credential string, begin protocol.GatewayRPCUploadBeginPayload, data []byte,
 ) (protocol.HTTPUploadResponse, error) {
 	if int64(len(data)) != begin.Size {
 		return protocol.HTTPUploadResponse{}, errUploadSize
 	}
-	// Control may have moved while the chunks arrived.
-	principal, projectDir, err := server.authorizeUpload(ctx, credential, begin.SessionID, begin.Generation)
+	// Control, the credential and the origin's trust may have changed while
+	// the chunks arrived.
+	principal, projectDir, err := server.authorizeUpload(ctx, origin, credential, begin.SessionID, begin.Generation)
 	if err != nil {
 		return protocol.HTTPUploadResponse{}, err
 	}
@@ -183,15 +184,19 @@ func (server *ManagementServer) commitUpload(
 }
 
 // authorizeUpload returns the credential's principal and the session's
-// project folder when that device holds the controller lease of the running
+// project folder when the request's origin may use that credential
+// (admitDevice) and that device holds the controller lease of the running
 // session generation.
 func (server *ManagementServer) authorizeUpload(
-	ctx context.Context, credential, sessionID, generation string,
+	ctx context.Context, origin *string, credential, sessionID, generation string,
 ) (auth.Principal, string, error) {
 	if server.config.Auth == nil {
 		return auth.Principal{}, "", errAuthUnavailable
 	}
 	principal, err := server.config.Auth.Authenticate(ctx, credential)
+	if err == nil {
+		err = server.admitDevice(origin, principal)
+	}
 	if err != nil {
 		return auth.Principal{}, "", err
 	}

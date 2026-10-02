@@ -25,7 +25,10 @@
     "brokerRPCError",
     "httpPairRedeemRequest", "httpPairRedeemResponse", "httpPairPollRequest", "httpPairPollResponse", "httpDeviceSummary", "httpNamedOption", "httpSettingsResponse", "httpSessionListResponse", "httpSessionCreateRequest", "httpSessionRenameRequest", "httpSessionTerminateRequest", "httpSessionMutationResponse", "httpErrorResponse", "httpDeviceRenameRequest", "httpPushConfigResponse", "httpPushSubscribeRequest", "httpPushUnsubscribeRequest", "httpPushTestResponse", "httpUploadContentType", "httpUploadRequest", "httpUploadResponse", "httpPreviewConfigResponse",
     "gatewayRPCMessageType", "gatewayRPCCredential", "gatewayRPCSessionCreate", "gatewayRPCSessionRename", "gatewayRPCSessionTerminate", "gatewayRPCPairPollResult", "gatewayRPCPrincipal", "gatewayRPCDeviceRename", "gatewayRPCOriginResult", "gatewayRPCPushSubscribe", "gatewayRPCPushUnsubscribe", "gatewayRPCUploadBegin", "gatewayRPCUploadChunk", "gatewayRPCPreviewCheck", "gatewayRPCPreviewTarget",
-    "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin", "adminRPCShutdownResult", "adminRPCDeviceRename"
+    "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin", "adminRPCShutdownResult", "adminRPCDeviceRename",
+    "sessionAttach", "httpComputerState", "httpComputer", "httpComputerListResponse", "httpComputerAddRequest", "httpComputerAddResponse", "tailnetNode",
+    "gatewayRPCComputerAdd", "gatewayRPCComputerRemove", "gatewayRPCComputerListResult",
+    "adminRPCPairGrant", "adminRPCRevokeVia", "adminRPCRevokeViaResult", "adminRPCComputer", "adminRPCComputerListResult", "adminRPCComputerRemove", "adminRPCComputerRemoveResult"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -151,6 +154,23 @@
     "adminRPCProfileListResult": { "$ref": "admin-rpc.schema.json#/$defs/profileListResultPayload" },
     "adminRPCOrigin": { "$ref": "admin-rpc.schema.json#/$defs/originPayload" },
     "adminRPCShutdownResult": { "$ref": "admin-rpc.schema.json#/$defs/shutdownResultPayload" },
-    "adminRPCDeviceRename": { "$ref": "admin-rpc.schema.json#/$defs/deviceRenamePayload" }
+    "adminRPCDeviceRename": { "$ref": "admin-rpc.schema.json#/$defs/deviceRenamePayload" },
+    "sessionAttach": { "$ref": "envelope.schema.json#/$defs/sessionAttachPayload" },
+    "httpComputerState": { "$ref": "http-api.schema.json#/$defs/computerState" },
+    "httpComputer": { "$ref": "http-api.schema.json#/$defs/computer" },
+    "httpComputerListResponse": { "$ref": "http-api.schema.json#/$defs/computerListResponse" },
+    "httpComputerAddRequest": { "$ref": "http-api.schema.json#/$defs/computerAddRequest" },
+    "httpComputerAddResponse": { "$ref": "http-api.schema.json#/$defs/computerAddResponse" },
+    "tailnetNode": { "$ref": "http-api.schema.json#/$defs/tailnetNode" },
+    "gatewayRPCComputerAdd": { "$ref": "gateway-rpc.schema.json#/$defs/computerAddPayload" },
+    "gatewayRPCComputerRemove": { "$ref": "gateway-rpc.schema.json#/$defs/computerRemovePayload" },
+    "gatewayRPCComputerListResult": { "$ref": "gateway-rpc.schema.json#/$defs/computerListResultPayload" },
+    "adminRPCPairGrant": { "$ref": "admin-rpc.schema.json#/$defs/pairGrantPayload" },
+    "adminRPCRevokeVia": { "$ref": "admin-rpc.schema.json#/$defs/revokeViaPayload" },
+    "adminRPCRevokeViaResult": { "$ref": "admin-rpc.schema.json#/$defs/revokeViaResultPayload" },
+    "adminRPCComputer": { "$ref": "admin-rpc.schema.json#/$defs/computer" },
+    "adminRPCComputerListResult": { "$ref": "admin-rpc.schema.json#/$defs/computerListResultPayload" },
+    "adminRPCComputerRemove": { "$ref": "admin-rpc.schema.json#/$defs/computerRemovePayload" },
+    "adminRPCComputerRemoveResult": { "$ref": "admin-rpc.schema.json#/$defs/computerRemoveResultPayload" }
   }
 }

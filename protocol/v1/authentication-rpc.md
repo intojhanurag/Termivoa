@@ -15,6 +15,16 @@ from the message:
 | `cli` | `broker-rpc.schema.json`, `admin-rpc.schema.json`, or a canonical `hello` with `clientKind: "desktop"` |
 | `gateway` | `gateway-rpc.schema.json` only; after `gateway.live.open.result` the connection carries canonical envelopes starting with `hello` with `clientKind: "browser"` |
 
+A gateway request may also carry `origin`: the browser request's exact
+`Origin` header, forwarded by the gateway after its own Origin and
+`Sec-Fetch-Site` checks. It is absent when the gateway admitted a request
+without an `Origin` header as same-origin; the broker then treats it as the
+computer's own origin. The broker accepts an origin other than its own only
+when it is the app origin bound to that request's credential (or, on
+`gateway.pair.redeem` and `gateway.pair.poll`, to that request's grant or
+pending pairing). Results and local administration messages never carry
+`origin`.
+
 The IPC role is routing inside the current-user boundary, not cryptographic
 process identity. It never grants browser authority: every gateway request that
 reads or mutates state carries the raw browser credential, which the broker
@@ -45,6 +55,9 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.upload.chunk` | `GatewayRPCUploadChunkPayload`: `data`, 1 byte to 128 KiB as base64 | empty |
 | `gateway.upload.commit` | `GatewayRPCCredentialPayload` | `HTTPUploadResponse` |
 | `gateway.preview.check` | credential + `sessionId` + `port` | `GatewayRPCPreviewTargetPayload` (`host`: `127.0.0.1` or `::1`), or `preview_missing` |
+| `gateway.computers.list` | `GatewayRPCCredentialPayload` | `GatewayRPCComputerListResultPayload`: the device's confirmed `computers` and its unexpired `pendingOrigins` (CSP only) |
+| `gateway.computers.add` | credential + `HTTPComputerAddRequest` | `HTTPComputerAddResponse` |
+| `gateway.computers.remove` | credential + `origin` | empty |
 
 `gateway.origin` is the only request besides pairing that carries no
 credential: the configured origin is not a secret. The gateway asks for it at
@@ -53,6 +66,22 @@ valid result to its exact Host and Origin allow-list next to its `--origin`
 flags. A production gateway accepts only an `https` origin; a development
 gateway only a loopback one. It keeps the last known value while the broker
 does not answer. So `pterm config origin` takes effect without a restart.
+
+The same result carries two sorted, unique origin sets, each absent when
+empty. `boundOrigins` (at most 64) is the union of app origins bound to any
+device, revoked and expired ones included, whose pinned Tailscale node the
+broker still trusts: an app whose credential was revoked or expired must read
+the 401 to offer pairing again. The gateway uses it only to emit CORS headers,
+because the broker checks every request's `origin` against its own credential.
+The gateway also probes right after an approved `gateway.pair.poll` from an
+app origin, so the app's next request is admitted at once.
+`pairingOrigins` (at most 16) are the app origins of unexpired bound grants
+and pending pairings; the gateway admits them, and answers their preflight,
+only on `/api/v1/pair/*`.
+
+The `gateway.computers.*` requests act only on the list of the device that
+owns the credential, and only from this computer's own origin (never a bound
+app origin); see `http-api.md`, Computers.
 
 `gateway.device.rename` changes only the label of the device that owns the
 credential. Labels stay untrusted display text, never identity.
@@ -113,11 +142,14 @@ retracted.
 
 | Request | Payload | Result payload |
 | --- | --- | --- |
-| `admin.pair.grant` | empty | grant (43-character base64url), `expiresAt`, optional configured `origin` |
-| `admin.pair.pending` | empty | at most 16 unexpired pending pairings: `id`, `verificationCode`, `deviceLabel`, `expiresAt` |
+| `admin.pair.grant` | optional `via`, optional `allowTagged` | grant (43-character base64url), `expiresAt`, optional configured `origin`; `appOrigin` and `appNode` when bound with `via` |
+| `admin.pair.pending` | empty | at most 16 unexpired pending pairings: `id`, `verificationCode`, `deviceLabel`, `expiresAt`, optional `appOrigin` and `appNode` |
 | `admin.pair.approve` | `pendingId` | `pendingId` |
-| `admin.device.list` | empty | at most 200 devices: `id`, `label`, `revoked`, `status`, `createdAt`, `lastUsedAt` |
+| `admin.device.list` | empty | at most 200 devices: `id`, `label`, `revoked`, `status`, `createdAt`, `lastUsedAt`, optional `appOrigin` and `appNode` |
 | `admin.device.revoke` | `deviceId` | `deviceId`, `closedStreams` |
+| `admin.device.revoke.via` | `appOrigin` | `appOrigin`, revoked `deviceIds`, `closedStreams` |
+| `admin.computers.list` | empty | at most 512 confirmed computers of all devices: `deviceId`, `origin`, `label`, `createdAt` |
+| `admin.computers.remove` | `origin` | `origin`, `removed` (devices whose list held it) |
 | `admin.device.rename` | `deviceId`, `label` | the saved `deviceId` and `label` |
 | `admin.project.add` | `path`, optional `name` | the saved project |
 | `admin.project.list` | empty | at most 200 projects |
@@ -144,6 +176,21 @@ cleanly; any other request receives `admin.error` `invalid_request`.
 live stream bound to the device's credentials has been closed. If persistence
 fails, the in-memory revocation stays in force (fail closed) and the caller
 receives an error rather than a success.
+
+`admin.pair.grant` with `via` (`pterm pair --via`) binds the grant to one app
+origin. `via` is a full computer origin, or a short name that matches only
+the first label of a node's DNS name in this computer's own tailnet (more
+than one match is refused). The broker resolves it in its own tailscale
+status and pins the node ID. A tagged app node needs `allowTagged: true`;
+`allowTagged` without `via` is invalid. Redeem and poll then accept only that
+origin, and the resulting device records it. `appOrigin` absent means "this
+computer's own origin only". `appNode` (`TailnetNode`: stable `id`, `owner`
+for user-owned nodes, `tags`) is display and pinning data, never
+authentication. `admin.device.revoke.via` (`pterm revoke --via`) revokes
+every device bound to `appOrigin`, with the same durability rule as
+`admin.device.revoke`. `admin.computers.remove` (`pterm computers remove`)
+removes the origin from every device's list on this home computer; it cannot
+log the phone out on that peer.
 
 A device's `status` is computed with the same rule the device cap uses:
 `revoked` when the device is revoked; otherwise `active` when it holds a

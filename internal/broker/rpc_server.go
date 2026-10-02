@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -22,6 +25,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
 	"github.com/intojhanurag/phone-terminal/internal/store"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
@@ -53,6 +57,16 @@ type ManagementServerConfig struct {
 	// WorktreeRoot holds the worktrees that session creates make, as
 	// <root>/<repo>/<name>. Empty means <home>/termivoa/worktrees.
 	WorktreeRoot string
+	// Tailnet publishes this computer's Tailscale status for multi-computer
+	// trust checks. Nil uses the installed tailscale CLI; it runs only when
+	// an app origin, pairing via or computer list needs it. A monitor passed
+	// here should set OnUpdate to the server's TrustUpdated.
+	Tailnet *tailnet.Monitor
+	// Development is the development profile: the gateway's loopback origins
+	// then count as this computer's own.
+	Development bool
+	// Now is the clock for computer lists and origin probes. Nil is time.Now.
+	Now func() time.Time
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -76,6 +90,15 @@ type ManagementServer struct {
 	// worktreeCreates runs one worktree create at a time, so a replayed
 	// operation finds the first one's receipt instead of making a second.
 	worktreeCreates sync.Mutex
+	// ownOrigin caches the configured origin, so authorization never reads
+	// SQLite for it. It is refreshed whenever the origin is read or set.
+	ownOrigin atomic.Pointer[string]
+	// trustMu serializes sweepTrust; sweptStatus is the snapshot whose node
+	// changes it already turned into revocations. trustWake asks watchTrust
+	// for a sweep now (a new snapshot).
+	trustMu     sync.Mutex
+	sweptStatus *tailnet.Status
+	trustWake   chan struct{}
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -115,9 +138,31 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	if config.WorktreeRoot == "" {
 		config.WorktreeRoot = defaultWorktreeRoot()
 	}
-	return &ManagementServer{
-		config: config, connections: make(map[net.Conn]struct{}),
-	}, nil
+	if config.Now == nil {
+		config.Now = time.Now
+	}
+	server := &ManagementServer{
+		config: config, connections: make(map[net.Conn]struct{}), trustWake: make(chan struct{}, 1),
+	}
+	if server.config.Tailnet == nil {
+		var lastRefused string
+		server.config.Tailnet = tailnet.NewMonitor(tailnet.Config{
+			Source: tailnet.CommandSource(func() string {
+				path, refused := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+				// Log why a tailscale was refused once per change, so broker.log
+				// explains a multi-computer outage without pterm doctor.
+				if reasons := strings.Join(refused, "; "); reasons != lastRefused {
+					lastRefused = reasons
+					if reasons != "" {
+						fmt.Fprintf(os.Stderr, "broker: %s\n", reasons)
+					}
+				}
+				return path
+			}),
+			OnUpdate: server.TrustUpdated,
+		})
+	}
+	return server, nil
 }
 
 // Serve accepts only BrokerListener connections, which have already passed
@@ -142,6 +187,16 @@ func (server *ManagementServer) Serve(ctx context.Context, listener *ipc.BrokerL
 	server.serving = true
 	server.mu.Unlock()
 
+	_, _ = server.pairingOrigin(ctx) // Warm the own-origin cache.
+	stopTrust, trustDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(trustDone)
+		server.watchTrust(ctx, stopTrust)
+	}()
+	defer func() {
+		close(stopTrust)
+		<-trustDone // A sweep must not outlive Serve and the store it reads.
+	}()
 	var shutdownOnce sync.Once
 	shutdown := func() {
 		shutdownOnce.Do(func() {
@@ -607,6 +662,10 @@ type managementFailure struct {
 }
 
 var errInvalidSessionCursor = errors.New("broker: invalid session-list cursor")
+
+func (server *ManagementServer) now() time.Time {
+	return server.config.Now().UTC().Truncate(time.Millisecond)
+}
 
 func classifyManagementError(err error) managementFailure {
 	if failure, ok := classifyAuthError(err); ok {

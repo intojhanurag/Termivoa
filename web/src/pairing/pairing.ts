@@ -1,15 +1,15 @@
-import { api, ApiError } from '../api/http';
+import { api, ApiError, type Client } from '../api/http';
 
-const GRANT = /^[A-Za-z0-9_-]{43}$/u;
+export const GRANT = /^[A-Za-z0-9_-]{43}$/u;
 export const POLL_INTERVAL_MS = 2000;
 
-interface LocationLike {
+export interface LocationLike {
   readonly hash: string;
   readonly pathname: string;
   readonly search: string;
 }
 
-interface HistoryLike {
+export interface HistoryLike {
   replaceState(data: unknown, unused: string, url: string): void;
 }
 
@@ -77,14 +77,20 @@ export interface PendingPairing {
 
 export type PairingOutcome = 'approved' | 'expired' | 'cancelled';
 
-/** Holds the poll secret in memory only, and only until polling ends. */
+/**
+ * Holds the poll secret in memory only, and only until polling ends. Pairs
+ * with home by default; pass `client(origin)` to pair with a peer (its own
+ * cookie is set by the approved poll answer).
+ */
 export class PairingFlow {
   private pollSecret: string | undefined;
   private cancelled = false;
   private wake: (() => void) | undefined;
 
+  constructor(private readonly http: Pick<Client, 'pairRedeem' | 'pairPoll'> = api) {}
+
   async redeem(grant: string, deviceLabel: string): Promise<PendingPairing> {
-    const response = await api.pairRedeem({ grant, deviceLabel });
+    const response = await this.http.pairRedeem({ grant, deviceLabel });
     this.pollSecret = response.pollSecret;
     const expiresAt = Date.parse(response.expiresAt);
     return {
@@ -106,7 +112,7 @@ export class PairingFlow {
           return 'cancelled';
         }
         try {
-          const response = await api.pairPoll({ pendingId: pending.pendingId, pollSecret });
+          const response = await this.http.pairPoll({ pendingId: pending.pendingId, pollSecret });
           if (response.status === 'approved') {
             return 'approved';
           }

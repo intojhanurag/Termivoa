@@ -38,6 +38,319 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Multi-computer end-to-end test (2026-10-02, branch `feat/mc-e2e`)
+
+Two isolated dev stacks reached as `https://mac.tailx.ts.net` and `https://vps.tailx.ts.net` through `scripts/e2e-multicomputer/` (loopback CONNECT proxy with in-process TLS, fake `tailscale` status, every harness `pterm` in a `sandbox-exec` profile that hides the real Tailscale, port 8787 and launchctl). On 167eb63: Phase A 31/31, Phase B (Chrome 154, 390×844, touch) 24/24, WebKit 26.5 4/4. Commands, timings and evidence: `docs/evidence/multi-computer/results.md`.
+
+### Multi-computer E2E fixes, web side (2026-10-02, branch `feat/mc-fix-web3`)
+
+Two bugs from the E2E re-run on `feat/multi-computer` (1c4857c). Each fix
+has a vitest test (no jsdom); the 6 new or changed tests fail on 1c4857c.
+
+- A link tap in the terminal consumes the click of the same tap
+  (`areaClick` in `Live.tsx`), so the add-computer sheet no longer closes
+  at once. Path taps still open Files.
+- Back from the waiting add page keeps the add. The add page stays a full
+  load (home's CSP for a document only allows the pending origin from the
+  next load), but that load now puts the path the add started from (`back`
+  in the fragment, or `/`) before the add page in its own history, so Back
+  stays in the same document. The waiting page has **Back to terminal**
+  (from a session) or **Sessions** (`LeaveAdd`). The grant is still
+  stripped at once, and redeemed only after Continue, after the boot
+  stray-worker guard of this load.
+- Evidence: `pnpm --dir web test` (47 files, 660 tests), `cd web && npx tsc
+  --noEmit -p .`, `pnpm build:web` and `./scripts/check` exit 0.
+
+### Multi-computer confirming-review fixes, web side (2026-10-02, branch `feat/mc-fix-web2`)
+
+Fixes the confirming-review and E2E findings on the phone app of
+`feat/multi-computer` (d44f1cd). The host side has its own track. Every fix
+has a vitest test (no jsdom); each new or changed test was run against
+d44f1cd and failed there (20 tests).
+
+- Add flow: a Cancel wins at every step. After approval it skips the
+  confirm, signs out on the new computer and deletes its entry on home; a
+  computer already in the list keeps its entry and cookie
+  (`AddComputerFlow.finish`, `abandon`). The add now runs outside the page
+  (`startAdd`, `cancelAdd`, `currentAdd`), so the user can leave
+  `/computers/add` to type y in a terminal of this app; a bar shows
+  "Adding vps… approve on vps" (**Open**, **Cancel**), then "vps is added"
+  or "vps was not added" (**Dismiss**). Only Cancel, expiry or Log out stop
+  it; the flow, grant and poll secret are dropped when it ends.
+- Start-up: a preview link reads home's preview config itself when it opens
+  before home answered (`homePreview`). Home's answer is adopted again after
+  a re-pair or log out in the same tab, and a failed list read is tried again
+  on the next good home poll (`homeAdoption`). When home's list drops the
+  computer of the open Live view, the app goes to Sessions with "vps is no
+  longer in your list." (`leaveRemoved`).
+- Stray-worker guard: storage that throws still shows "this link was not
+  used" and keeps the grant on a safe load; a later link in the same tab is
+  checked again (`guardLink`) instead of being refused until a reload.
+- Log out: a peer's logout waits at most `READ_TIMEOUT_MS` (6 s), all
+  peers at once; the button says "Signing out…" (`LogoutSection`); the
+  stored list (`pterm.computers`) is cleared (`logOut`).
+- Terminal: a wrapped add-computer link is a tap target again after a
+  resize to fewer columns (`bufferRow` reads only `cols` cells).
+- Colours: by place in the list, home first, so no two of 8 computers
+  share one (`toComputer(…, place)`; `colorFor` removed).
+- Wall: a paused tile that was never live shows the session name and
+  "Paused" (`tileMark` `blank`).
+- Evidence: `pnpm --dir web test` (47 files, 656 tests), `cd web && npx tsc
+  --noEmit -p .`, `pnpm build:web` and `./scripts/check` exit 0.
+- Docs for the host track: `docs/multi-computer.md` still says "Colour from
+  a fixed palette by origin hash"; it is now by place in the list.
+
+### Multi-computer review fixes, web side (2026-10-02, branch `feat/mc-fix-web`)
+
+Fixes the review findings on the phone app of `feat/multi-computer`
+(d826c02). The host side has its own fix track. Every fix has a vitest
+test (no jsdom); each new test was run against the unfixed code and failed
+there, except the "gives up after about 3 s" bound check.
+
+- Security: no grant is redeemed on a load that a stray service worker may
+  still see (`workersSafe`, `guardStartup`: drop the grant, one guarded
+  reload, then "Run pterm pair again"); the service-worker allow-list
+  checks every worker of a registration and keeps a fresh own-scope
+  registration; `/computers/add` shows the full origin and waits for
+  **Continue**; Cancel deletes the pending entry on home; "Open pull
+  request" never opens a same-origin app route; a peer's WebSocket error
+  text is replaced by the app's own words (`ConnectionOptions.peer`);
+  composer drafts and the last Changes tab are keyed by `host/id`.
+- Correctness: with peers stored the app opens at once while home sleeps,
+  and adopts home's settings, list and preview origin when home first
+  answers; the one-computer screen is unchanged (no computer rows, "not
+  reachable" after the first failure); the first peer settings read after
+  approval is retried for about 3 s; Log out signs out of each reachable
+  peer first and names the rest (`pterm revoke` there); a peer without
+  `protocolRevision` is "Update Termivoa on X"; "Check again" reports a
+  failed read; per-origin state is dropped on remove; polls, reloads and
+  route reads go through one per-computer queue (`scheduler.serial`); dead
+  code removed (`useSessionList`, `latestOnly`, `SESSION_POLL_MS`,
+  `parseSessionKey`, the `waitingFirst` re-export).
+- Second round (correctness review): Wall tiles start offscreen until the
+  IntersectionObserver reports them; a load that throws at once frees its
+  read slot; each session is validated once (whole body first, item by
+  item only after a failure); Ajv stops at the first error
+  (`allErrors: false`); Computers and AddComputer are lazy chunks, both
+  precached; the full-rate tile cost is kept as a guard only. New release
+  gate test in `web/src/bundle.test.ts`: a real build's `sw.js`, installed
+  and then offline, serves `/wall` and every chunk the Wall needs from its
+  cache (no DOM; a phone check of the rendered Wall stays with the E2E
+  track). Start-up chunk 420 kB to 392 kB.
+- Not covered by a test (no DOM in tests): the Settings device-name field
+  now follows home's label when home answers late (`draft ?? current`).
+- Evidence: `pnpm --dir web test` (47 files, 640 tests), `cd web && npx tsc
+  --noEmit -p .`, `pnpm build:web` and `./scripts/check` exit 0.
+- Phone texts for the docs (track D):
+  - Setup, after a refused pairing link: "For safety, this pairing link
+    was not used. Run pterm pair on your computer again."
+  - Add page, after a refused add link: "For safety, this add-computer link
+    was not used. Run pterm pair --via <home> on the new computer again,
+    then paste the new link."
+  - Add page first step: **Address** with the full origin, "Continue only
+    if you just ran pterm pair --via on <label>. Next, this phone shows a
+    code. Check it on <label>.", buttons **Continue** and **Cancel**.
+  - Pair-again row: "<label> · pair again · Run pterm pair --via <home> on
+    <label>".
+  - Outdated computer: "Update Termivoa on <label>" uses the renamed label;
+    a computer without `protocolRevision` now shows it instead of "can't
+    reach".
+  - Log out: "You logged out. This phone no longer has access. Could not
+    sign out of <labels>. Run pterm revoke there to remove this phone."
+    With 2 or more computers the Log out section says "Signs this phone out
+    of every computer. Running sessions keep running."
+  - One computer: rows such as "mac · can't reach" are gone again; the
+    header says "Your computer · not reachable, retrying" after the first
+    failure.
+  - "Check again" now shows an error when a read fails.
+  - A peer's live-session errors use fixed texts (`PEER_ERRORS` in
+    `web/src/terminal/Connection.ts`), for example "That computer is busy.
+    Try again."
+  - "Open pull request" is not shown for a link to the app's own address.
+
+### Multi-computer host review fixes, round 2 (2026-10-02, branch `feat/mc-fix-host2`)
+
+Host side of the confirming review of `feat/multi-computer`. Not merged;
+critical feature, owner review required (rule 24). Gate 0 has not run.
+
+- Add a computer again after its node changed: a pending add over an entry
+  pinned to another node (or none) replaces it with a pending entry for the
+  current node, so the CSP allows the redeem and confirm succeeds; a full
+  list drops entries the app no longer shows (`PutComputer` stale callback).
+  Tests: `TestComputerAddAgainAfterNodeChange` (store and broker).
+- Other Serve handlers: setup advice is "another computer or its own
+  Tailscale Service hostname" (another port still gets the cookie); doctor
+  warns (not counted) about handlers on other ports of this host, except
+  Termivoa's own 8443 preview handler; setup is not refused for them. A
+  setup refused for other handlers on 443 exits 3, and the Windows installer
+  shows its own message for 3 (other failures keep the generic one). Tests:
+  `TestDoctorReportsOtherHandlersAsAProblem`,
+  `TestDoctorWarnsAboutOtherPortsOfThisHost`,
+  `TestSetupRefusesOtherServeHandlersOnItsOrigin`.
+- A Changed node (home reinstalled Tailscale) keeps its origin in the CORS
+  union, so peers answer 401 `revoked` and the app shows "pair again";
+  every credential bound to it is revoked, every other credential and grant
+  refused. Test: `TestChangedNodeOriginReadsOnlyRefusals`.
+- `Status.Trust` compares tag sets (sorted), not only tagged/untagged.
+  Test: `TestOwnerRuleAndTrustVerdicts` ("tag swapped", "tag added").
+- `FindBinary` checks every folder up to `/` and every link of the symlink
+  chain (group/other-writable without sticky, or owner not root/current
+  user, is refused; group root, and admin on macOS, pass), returns each
+  refusal reason, and doctor and setup print it. The broker checks again
+  before every `tailscale status` run. Tests:
+  `TestFindBinaryRefusesWritableOrForeignFiles`,
+  `TestCommandSourceChecksTheBinaryBeforeEachRun`,
+  `TestDoctorSaysWhyTailscaleWasRefused`.
+- Evidence: `go test -race ./internal/... ./cmd/...`, `./scripts/check`,
+  `CGO_ENABLED=0 GOOS=windows go vet ./...`, `GOOS=linux` and the site build
+  exit 0 (macOS host). Each test above was run with its fix reverted and
+  failed.
+- Pending: the `boundOrigins` schema description in
+  `protocol/v1/gateway-rpc.schema.json` still says "whose node is still
+  trusted" (now also Changed nodes); regenerating touches `web/src/generated`.
+
+### Multi-computer host review fixes (2026-10-02, branch `feat/mc-fix-host`)
+
+Host side of the review of `feat/multi-computer` (ADR 0005). Not merged;
+critical feature, owner review required (rule 24). Gate 0 has not run.
+
+- Pairing and removal: an approved poll from an app origin refreshes the
+  gateway's origin sets, so the app's first `GET /api/v1/settings` is
+  admitted with CORS (was 403 until the next probe). `DELETE
+  /api/v1/computers/{host}` takes the `{}` body the app sends (was always 400).
+- CORS bound origins come from every device ever bound to an origin (revoked
+  and expired ones too) whose pinned node is still trusted, so a revoked or
+  expired phone reads its 401 and shows "pair again". The broker still
+  authorizes every request; a node change, a gone name or an unreadable
+  status gets no CORS.
+- Tailscale trust: owners are compared by stable user ID (login names are
+  display only); a node whose tagged state changed since pairing is refused
+  (not revoked); a status that is not `Running` (restart, logout) keeps the
+  last good snapshot under the grace rules; a new snapshot wakes the trust
+  sweep at once (`tailnet.Config.OnUpdate`), so untrusted streams close in
+  well under a second after the refresh instead of up to 15 s later; the
+  sweep reads only devices that can still connect; `Serve` waits for it.
+- Finding `tailscale`: fixed install paths first (`/usr/bin`, `/usr/sbin`,
+  the macOS app bundle, `/usr/local/bin`, `/opt/homebrew/bin`), PATH last;
+  a binary or folder that is group/other-writable or owned by neither root
+  nor the current user is refused (Unix); a missing CLI is looked up again at
+  most once a minute, so installing Tailscale later needs no restart.
+- Home computer list: migration 9 pins the node of each entry; confirm needs
+  the same node, and an entry whose node no longer holds its name leaves the
+  list and the CSP. `gateway.computers.*` only from the own origin. Listing
+  is read-only; the admin list leaves out revoked devices.
+- Broker: loopback origins count as own only in the development profile;
+  upload commit re-checks the origin binding; logout authenticates once.
+- CLI: `pterm revoke --via` always sends the request (it also drops pairing
+  links and pending pairings); `pair --via` uses the app's labels ("Add this
+  computer?", "+ Add a computer"); `pterm setup` refuses, before any change,
+  while other Tailscale Serve handlers share this computer's origin, and
+  doctor names them as a problem with the commands to move them; doctor says
+  when the tailnet is unknown (logged out).
+- Code: one `gatewayapi.Broker` (no `computerBroker`, no `Origin()`), one
+  `cli.Admin`, no `tailnet.Status.Peers`, `inspectTailscale` parses once.
+  Settings still asks the broker twice (`Authenticate` for the expiry, then
+  `Settings`): returning the expiry would change the gateway RPC result type
+  for one local IPC round trip on app start and foreground.
+- Evidence: `go test -race ./internal/... ./cmd/...`, `./scripts/check`,
+  `CGO_ENABLED=0 GOOS=linux go vet ./...` and `GOOS=windows` all exit 0
+  (macOS host). Each fix's test was run with that fix reverted and failed.
+- Pending: the schema description of `boundOrigins` in
+  `protocol/v1/gateway-rpc.schema.json` still says "unrevoked devices"
+  (regenerating would touch `web/src/generated`, owned by the web track);
+  site docs and CHANGELOG for the changed texts; Gate 0; Playwright tests.
+
+### Multi-computer D: user and repo docs (2026-10-02, branch `feat/mc-docs`)
+
+Track D of `docs/multi-computer.md`, written against the integrated branch
+`feat/multi-computer` (384d024), every claim checked in the code. All marked
+**Next beta**; Gate 0 (real iPhone and Android) has not run, and the docs
+say so.
+
+- Site: new guide `site/src/content/docs/docs/guides/computers.md` (sidebar
+  entry), and multi-computer sections in `reference/security.md`,
+  `reference/cli.md`, `reference/troubleshooting.md`, `pair-your-phone.md`
+  and `reference/release-notes.md`; a short mention on the landing page.
+- Repo: `docs/threat-model.md` (four new trust boundaries and the new
+  attackers, including the accepted home-compromise risk and its recovery),
+  `protocol/v1/http-api.md` (cross-origin requests, cookie refresh, CSP),
+  `CHANGELOG.md`, `README.md`, and the stale offline-bundle line in
+  `docs/multi-computer.md` section 3.
+- The H1a blocker above (gateway forwarded-origin key) is resolved on the
+  integrated branch by e118a9c (`gatewayapi.WithForwardedOrigin`).
+- Found while checking: `pterm pair --via` tells the user to tap
+  "Add this computer" and to paste in "Settings → Computers → Add
+  computer", but the app's labels are the **Add this computer?** sheet and
+  **+ Add a computer** (`internal/cli/admin.go`, `pairVia`). **Log out** in
+  Settings signs out of home only; peers keep the phone until it is removed
+  or revoked there (documented).
+- Evidence: `cd site && npx astro build` (links valid) and `./scripts/check`
+  exit 0.
+
+### Multi-computer H2: gateway and CLI (2026-10-02, branch `feat/mc-h2`)
+
+Track H2 of `docs/multi-computer.md`, built against fake brokers until H1
+lands (not integrated, not yet usable end to end):
+
+- Gateway: every `/api` request needs an exact own Origin, an exact bound app
+  origin (pairing routes also admit pairing origins), or no Origin with
+  `Sec-Fetch-Site: same-origin`; `Sec-Fetch-Mode: no-cors` is refused.
+  Admitted cross-origin requests get exact CORS headers, preflight only for
+  those origins, and forward their Origin to the broker on every call.
+  WebSocket origins are checked per request. `GET /api/v1/settings` refreshes
+  the cookie (same value, Max-Age capped by the credential's absolute
+  expiry). The app document's CSP `connect-src` lists the cookie device's
+  computers (at most 8). New routes `GET/POST /api/v1/computers` and
+  `DELETE /api/v1/computers/{host}`.
+- CLI: `pterm pair --via <name|origin> [--allow-tagged]` (add-computer link
+  `https://<this-host>/add-computer#grant=<grant>&via=<url-encoded app origin>`),
+  `pterm computers [remove <origin>]`, a VIA column in `pterm devices` and
+  `pterm pair pending`, `pterm revoke --via <origin>`, the computers hint on
+  `pterm revoke <device>`, and doctor/setup checks (protocol revision, CORS
+  list, tailnet and owner mismatches, other Serve handlers on this origin).
+- Evidence: `go test -race ./internal/gateway/... ./internal/cli/... ./cmd/pterm/...`
+  and `./scripts/check` passed; `CGO_ENABLED=0 GOOS=linux|windows go vet` on
+  the same packages passed (macOS host).
+- Pending: integration with H1 (broker RPCs, origin forwarding in
+  `gatewayclient`, `localclient` admin methods), Gate 0 and the Playwright
+  integration tests in section 6.
+
+### Multi-computer H1a: broker trust and storage (2026-10-02, branch `feat/mc-h1a`)
+
+Track H1a of `docs/multi-computer.md`, sections 3 and 4 (not usable end to
+end until the gateway reads `gatewayapi.ForwardedOrigin`, see below):
+
+- Store migration 8: `app_origin` and the pinned app node (ID, owner, tags)
+  on grants, pending pairings and devices (NULL = own origin only; existing
+  rows keep working), and the per-device `computers` table.
+- `internal/tailnet`: an immutable `tailscale status --json` snapshot of
+  own-tailnet nodes, `--via` resolution (full origin, or one DNS first label;
+  ambiguity refused), the owner rule (`allowTagged` when either node is
+  tagged), and a monitor whose readers never wait: single-flight refresh,
+  10 s hard limit, 60 s cache, 10-minute grace, retries at most every 5 s.
+- Broker: per-device origin binding on every authenticated gateway request
+  (including live open, logout and upload), bound grants (redeem and poll
+  only from their own origin), `boundOrigins` and `pairingOrigins` on the
+  origin probe, `gateway.computers.*` (8 per device, pending entries expire
+  after 10 minutes), `admin.computers.*`, `admin.device.revoke.via` (also
+  drops grants and pending pairings via that origin). A 15 s sweep closes
+  open streams from an origin that is no longer trusted (own-origin streams
+  untouched) and revokes devices whose node ID changed.
+- Evidence: `go test -race` on `internal/store`, `auth`, `broker`,
+  `gatewayclient`, `localclient`, `tailnet` and `lifecycle`;
+  `./scripts/check`; `CGO_ENABLED=0 GOOS=linux|windows go vet ./...` all
+  exit 0 (macOS host). Broker tests: `internal/broker/computers_test.go`
+  (origin binding with near-miss and `null` origins, tagged and other-owner
+  nodes, an ambiguous short name, node change to revocation, the grace
+  period, revoke-via closing streams and releasing control, the computer
+  list limit and pending expiry); store tests: migration of existing rows.
+- Blocking for integration: `internal/gateway` still keeps its own
+  forwarded-origin context key, so `gatewayclient` sends no origin and the
+  broker treats cross-origin requests as own. The gateway must use
+  `gatewayapi.ForwardedOrigin`/`WithForwardedOrigin` before this ships.
+- Pending: Gate 0, the Playwright integration tests in section 6, and a real
+  tailnet check of `tailscale status --json` owners and tags.
+
 ### Linux host (2026-09-27, branch `feat/linux-host`)
 
 Linux (Ubuntu 22.04/24.04, x86_64 and arm64, including servers and WSL) is a
@@ -1041,6 +1354,31 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `go test -race ./internal/platform/...`, `CGO_ENABLED=0 GOOS=windows go vet
   ./...`, `GOOS=windows go test -c ./internal/platform` and `./scripts/check`
   exit 0.
+
+- **Multi-computer H1b: broker thumbnail viewers** (`feat/mc-h1b`,
+  2026-10-02, ADR 0005, `docs/multi-computer.md` "Performance budget"; not
+  user-visible until the Wall uses it): `session.attach` with
+  `thumbnail.maxUpdatesPerSecond` (1–30) makes a read-only viewer. The actor
+  refuses its `control.acquire` with `not_controller`
+  (`ErrViewerReadOnly`), and without a lease it cannot send input, answer,
+  resize, upload or commit. `reserveViewerDelivery`
+  (`internal/broker/viewer.go`) spaces its screen frames at least
+  `1s/rate` apart; a skipped frame arms the viewer's single lazy
+  `time.AfterFunc` timer, which only wakes the worker when the slot opens,
+  and the next patch is built from the viewer's last delivered frame to the
+  newest one. Notices (state, control, history reset) are not throttled.
+  Detach stops the timer. Normal viewers and canonical PTY processing are
+  unchanged. Evidence (`internal/broker/viewer_thumbnail_test.go`): at 5/s
+  under a 1.3 s flood the thumbnail got 7 patches and a normal viewer 74,
+  both ending on the canonical revision with an unbroken patch chain; a
+  burst that stops inside a slot paints its final frame; the timer test
+  (no actor, so nothing else wakes the viewer) fails when the timer is
+  removed and when detach does not stop it; stream test refuses
+  control, input, answer and resize with `not_controller`, also with another
+  connection's live lease; goroutines return to baseline after detach and
+  close. `go test -race -count=5` on the viewer, thumbnail, stream, writer,
+  snapshot and control tests, `./scripts/check`, and `CGO_ENABLED=0
+  GOOS=linux|windows go vet ./...` exit 0.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

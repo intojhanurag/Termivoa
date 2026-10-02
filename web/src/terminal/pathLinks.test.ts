@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findPathLinks, rootRelative, rowCells, rowLinks, tapTarget, type Cell } from './pathLinks';
+import { bufferRow, findAddComputerLinks, findPathLinks, joinedRowLinks, overlaps, rootRelative, rowCells, rowLinks, tapTarget, type Cell } from './pathLinks';
 
 describe('findPathLinks', () => {
   it('finds a relative path, with and without "./"', () => {
@@ -195,5 +195,100 @@ describe('rowLinks', () => {
     const [found] = rowLinks(cells('漢字 src/w.ts'), 1);
     expect(found?.text).toBe('src/w.ts');
     expect(found?.range).toEqual({ start: { x: 6, y: 1 }, end: { x: 13, y: 1 } });
+  });
+});
+
+const GRANT = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO_-';
+const LINK = `https://vps.tailx.ts.net/add-computer#grant=${GRANT}&via=https%3A%2F%2Fmac.tailx.ts.net`;
+
+describe('findAddComputerLinks', () => {
+  it('finds a link in a line, with a trailing dot trimmed', () => {
+    expect(findAddComputerLinks(`Open ${LINK}.`)).toEqual([{ start: 5, end: 5 + LINK.length, url: LINK }]);
+  });
+
+  it('takes an unencoded via and either order', () => {
+    const link = `https://vps.tailx.ts.net/add-computer#via=https://mac.tailx.ts.net&grant=${GRANT}`;
+    expect(findAddComputerLinks(`(${link})`).map((found) => found.url)).toEqual([link]);
+  });
+
+  it('does not take near misses', () => {
+    for (const text of [
+      `xhttps://vps.tailx.ts.net/add-computer#grant=${GRANT}`,
+      `http://vps.tailx.ts.net/add-computer#grant=${GRANT}`,
+      `https://VPS.tailx.ts.net/add-computer#grant=${GRANT}`,
+      `https://vps.tailx.ts.net/pair#grant=${GRANT}`,
+      'https://vps.tailx.ts.net/add-computer#',
+      `https://vps.tailx.ts.net/add-computer#grant=${'a'.repeat(600)}`,
+    ]) {
+      expect(findAddComputerLinks(text), text).toEqual([]);
+    }
+  });
+
+  it('keeps findPathLinks out of the link', () => {
+    expect(findPathLinks(LINK)).toEqual([]);
+    expect(findPathLinks(`https://vps.tailx.ts.net/add-computer#via=https://mac.tailx.ts.net/x.ts&grant=${GRANT}`)).toEqual([]);
+    expect(findPathLinks(`${LINK} src/a.ts`).map((link) => link.path)).toEqual(['src/a.ts']);
+  });
+});
+
+describe('joinedRowLinks', () => {
+  const cells = (text: string, width: number): Cell[] => {
+    const row = Array.from(text).flatMap((char): Cell[] => {
+      const wide = /[\u3000-\u9fff]/u.test(char);
+      const cell = { getChars: () => char, getWidth: () => (wide ? 2 : 1) };
+      return wide ? [cell, { getChars: () => '', getWidth: () => 0 }] : [cell];
+    });
+    while (row.length < width) row.push({ getChars: () => '', getWidth: () => 1 });
+    return row;
+  };
+  /** Text broken into rows of width cells (no wide characters). */
+  const wrap = (text: string, width: number): Cell[][] =>
+    Array.from({ length: Math.ceil(text.length / width) }, (_, row) => cells(text.slice(row * width, (row + 1) * width), width));
+
+  it('joins a link over three full rows', () => {
+    // 122 characters: 50 + 50 + 22.
+    expect(LINK.length).toBe(122);
+    expect(joinedRowLinks(wrap(LINK, 50), 10)).toEqual([{ url: LINK, range: { start: { x: 1, y: 10 }, end: { x: 22, y: 12 } } }]);
+  });
+
+  it('joins a wrapped link after a resize to fewer columns (buffer lines longer than cols)', () => {
+    // 80 columns, then 46: each line keeps 80 cells; the 34 past cols are blank.
+    const lines = wrap(LINK, 46).map((row) => [...row, ...cells('', 34)]);
+    const terminal = {
+      cols: 46,
+      buffer: { active: { getLine: (y: number) => {
+        const line = lines[y];
+        return line === undefined ? undefined : { length: line.length, getCell: (x: number) => line[x] };
+      } } },
+    };
+    expect(bufferRow(terminal, 1)).toHaveLength(46);
+    expect(bufferRow(terminal, 9)).toBeUndefined();
+    const rows = [1, 2, 3].map((y) => bufferRow(terminal, y) ?? []);
+    expect(joinedRowLinks(rows, 1).map((found) => found.url)).toEqual([LINK]);
+  });
+
+  it('places a link on one row', () => {
+    expect(joinedRowLinks([cells(`> ${LINK}`, 130)], 3)).toEqual([{ url: LINK, range: { start: { x: 3, y: 3 }, end: { x: 124, y: 3 } } }]);
+  });
+
+  it('stops the join at a row that is not full', () => {
+    const rows = [cells(LINK.slice(0, 40), 50), cells(LINK.slice(40), 80)];
+    // Only the cut first part is a candidate; parseAddComputerLink refuses it.
+    expect(joinedRowLinks(rows, 1).map((found) => found.url)).toEqual([LINK.slice(0, 40)]);
+  });
+
+  it('places a link after a wide character by cell', () => {
+    // "漢" takes two cells, so row 1 holds it, a space and 37 link characters; the other 85 take rows 2 to 4.
+    const rows = [cells(`漢 ${LINK.slice(0, 37)}`, 40), ...wrap(LINK.slice(37), 40)];
+    expect(joinedRowLinks(rows, 1)).toEqual([{ url: LINK, range: { start: { x: 4, y: 1 }, end: { x: 5, y: 4 } } }]);
+  });
+});
+
+describe('overlaps', () => {
+  it('compares ranges in reading order, across rows', () => {
+    const range = (x1: number, y1: number, x2: number, y2: number) => ({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 } });
+    expect(overlaps(range(30, 1, 10, 3), range(1, 2, 5, 2))).toBe(true);
+    expect(overlaps(range(30, 1, 10, 3), range(11, 3, 20, 3))).toBe(false);
+    expect(overlaps(range(1, 1, 5, 1), range(5, 1, 9, 1))).toBe(true);
   });
 });

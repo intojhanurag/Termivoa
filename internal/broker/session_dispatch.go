@@ -269,11 +269,16 @@ func (stream *sessionConnection) attach(ctx context.Context, request protocol.En
 	if stream.viewer != nil {
 		return stream.failure(ctx, request, protocol.InvalidRequest, "detach before attaching another session")
 	}
+	// DecodeClient already validated the payload and its thumbnail rate.
+	payload, _ := protocol.DecodePayload[protocol.SessionAttachPayload](request)
 	session, err := stream.server.config.Registry.Get(*request.SessionID)
 	if err == nil {
 		config := ViewerConfig{
 			ConnectionID: stream.connectionID, DeviceID: stream.deviceID, Generation: *request.Generation,
 			Sink: reservedViewerSink{writer: stream.writer}, budget: stream.writer,
+		}
+		if payload.Thumbnail != nil {
+			config.MaxUpdatesPerSecond = int(payload.Thumbnail.MaxUpdatesPerSecond)
 		}
 		if stream.access != nil {
 			config.Access = stream.access
@@ -326,6 +331,8 @@ func classifySessionError(err error) managementFailure {
 		return managementFailure{protocol.ErrorCodeRevoked, "browser access was revoked or expired"}
 	case errors.Is(err, ErrNotController):
 		return managementFailure{protocol.NotController, "take control before sending input"}
+	case errors.Is(err, ErrViewerReadOnly):
+		return managementFailure{protocol.NotController, "a thumbnail viewer is read-only; attach without thumbnail to take control"}
 	case errors.Is(err, ErrStaleLease):
 		return managementFailure{protocol.StaleLease, "controller lease is no longer valid"}
 	case errors.Is(err, ErrPreviewPort):

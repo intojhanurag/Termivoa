@@ -33,8 +33,30 @@ func main() {
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "pterm: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// exitOtherServeHandlers is pterm setup's exit code when it refuses because
+// other Tailscale Serve handlers share this computer's origin, so the Windows
+// installer can name that cause. Every other error exits 1.
+const exitOtherServeHandlers = 3
+
+// exitCodeError makes pterm exit with code instead of 1.
+type exitCodeError struct {
+	code int
+	err  error
+}
+
+func (failure exitCodeError) Error() string { return failure.err.Error() }
+func (failure exitCodeError) Unwrap() error { return failure.err }
+
+func exitCode(err error) int {
+	var coded exitCodeError
+	if errors.As(err, &coded) {
+		return coded.code
+	}
+	return 1
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
@@ -57,7 +79,7 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return runAttachCommand(ctx, args[1:], input, output)
 	case "new":
 		return runNewCommand(ctx, args[1:], input, output)
-	case "pair", "devices", "revoke", "project", "profile", "config":
+	case "pair", "devices", "revoke", "computers", "project", "profile", "config":
 		return runAdminCommand(ctx, args[0], args[1:], input, output)
 	case "setup":
 		return runSetupCommand(ctx, args[1:], input, output)

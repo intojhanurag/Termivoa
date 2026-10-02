@@ -68,13 +68,39 @@ type Broker interface {
 	// and a process of the running session listens on port now (verified by
 	// the broker from the OS). It returns the loopback address to dial.
 	PreviewTarget(ctx context.Context, credential, sessionID string, port uint16) (string, error)
-	// Origin returns the configured browser origin, or "" when none is set.
-	// It needs no credential: the origin is not a secret.
-	Origin(ctx context.Context) (string, error)
+	// OriginProbe is gateway.origin: the configured browser origin (not a
+	// secret, so no credential) with boundOrigins (app origins of bound
+	// devices whose Tailscale node is still trusted) and pairingOrigins
+	// (unexpired bound grants and pending pairings). The origin sets are for
+	// CORS headers only.
+	OriginProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error)
+	// The computer list (docs/multi-computer.md) acts only on the device that
+	// owns the credential.
+	ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error)
+	AddComputer(ctx context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error)
+	RemoveComputer(ctx context.Context, credential, origin string) error
 	// OpenLive binds a new broker live stream to the credential. The stream
 	// starts as an observer and carries canonical envelope JSON both ways.
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)
 }
+
+// WithForwardedOrigin marks ctx with the browser Origin the gateway admitted
+// as another computer's app origin. A Broker sends it as RPCEnvelope.Origin
+// on every request made with ctx, pairing included, so the broker can apply
+// per-device origin binding. Leave it unset for a request the gateway
+// admitted as same-origin: the broker treats a missing origin as this
+// computer's own.
+func WithForwardedOrigin(ctx context.Context, origin string) context.Context {
+	return context.WithValue(ctx, forwardedOriginKey{}, origin)
+}
+
+// ForwardedOrigin returns the origin set by WithForwardedOrigin.
+func ForwardedOrigin(ctx context.Context) (string, bool) {
+	origin, ok := ctx.Value(forwardedOriginKey{}).(string)
+	return origin, ok && origin != ""
+}
+
+type forwardedOriginKey struct{}
 
 // LiveStream carries one canonical envelope JSON message per call. The broker
 // sends access.revoked before closing a stream whose credential stops being
