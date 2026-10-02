@@ -17,6 +17,23 @@ if (!Number.isInteger(revision) || !Number.isInteger(minRevision) || minRevision
   console.error('protocol/v1/revision.json needs integers 1 <= minRevision <= revision.');
   process.exit(1);
 }
+// Every $ref must resolve: quicktype skips some unreachable definitions, so a
+// broken reference would otherwise pass generation silently (#134).
+const schemaDir = path.join(root, 'protocol/v1');
+const unresolved = [];
+for (const file of ['types', 'envelope', 'ipc', 'broker-rpc', 'http-api', 'gateway-rpc', 'admin-rpc'].map((name) => `${name}.schema.json`)) {
+  const text = readFileSync(path.join(schemaDir, file), 'utf8');
+  for (const [, ref] of text.matchAll(/"\$ref"\s*:\s*"([^"]*)"/g)) {
+    const [target, pointer = ''] = ref.split('#');
+    let node = JSON.parse(readFileSync(path.join(schemaDir, target || file), 'utf8'));
+    for (const key of pointer.split('/').slice(1)) node = node?.[key.replaceAll('~1', '/').replaceAll('~0', '~')];
+    if (node === undefined) unresolved.push(`${file}: ${ref}`);
+  }
+}
+if (unresolved.length > 0) {
+  console.error(`Unresolved $ref in protocol/v1:\n  ${unresolved.join('\n  ')}`);
+  process.exit(1);
+}
 // The revision is one integer, emitted into both languages from revision.json.
 const revisionCode = {
   go: `
