@@ -310,6 +310,7 @@
     "sessionRenameResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.rename.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" } } },
     "sessionTerminateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.session.terminate.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/sessionMutationResponse" } } },
     "liveOpenResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.live.open.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "previewCheckResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.preview.check.result" }, "payload": { "$ref": "#/$defs/previewTargetPayload" } } },
     "originResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.origin.result" }, "payload": { "$ref": "#/$defs/originResultPayload" } } },
     "deviceRenameResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.device.rename.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/deviceSummary" } } },
     "pushConfigResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.config.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/pushConfigResponse" } } },
