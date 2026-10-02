@@ -369,7 +369,7 @@ func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
 				return nil, errors.New("unexpected tailscale command")
 			}
 			var output bytes.Buffer
-			_, problems := inspectTailscale(context.Background(), "tailscale-fake", &output)
+			_, problems := inspectTailscale(context.Background(), "tailscale-fake", nil, &output)
 			for _, want := range test.want {
 				if !strings.Contains(output.String(), want) {
 					t.Errorf("output lacks %q:\n%s", want, output.String())
@@ -509,14 +509,69 @@ func TestDoctorReportsOtherHandlersAsAProblem(t *testing.T) {
 		return nil, errors.New("unexpected tailscale command")
 	}
 	var output bytes.Buffer
-	report, problems := inspectTailscale(context.Background(), "tailscale-fake", &output)
+	report, problems := inspectTailscale(context.Background(), "tailscale-fake", nil, &output)
 	want := "  ! tailscale serve: other handlers share this computer's Termivoa origin https://h.ts.net: /admin. " +
 		"Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, " +
-		"every computer added to it. Move each one to another HTTPS port (for example `tailscale serve --bg --https=8444 <target>`) " +
-		"or to another computer, then remove it here: `tailscale serve --https=443 --set-path=/admin off`.\n"
+		"every computer added to it. Move each one to another computer or to its own Tailscale Service hostname, " +
+		"or stop serving it; another port on this computer does not help, because browsers send the Termivoa cookie " +
+		"to every port of a host. Then remove it here: `tailscale serve --https=443 --set-path=/admin off`.\n"
 	if problems != 1 || strings.Count(output.String(), want) != 1 || report.tailnet == nil ||
 		report.tailnet.Suffix != "ts.net" || strings.Join(report.otherHandlers, ",") != "/admin" {
 		t.Fatalf("problems=%d report=%+v output:\n%s", problems, report, output.String())
+	}
+}
+
+// Handlers on other ports of this computer's host receive the Termivoa cookie
+// (cookies ignore ports): doctor warns without counting a problem. Termivoa's
+// own preview handler on 8443 strips the cookie and is not listed.
+func TestDoctorWarnsAboutOtherPortsOfThisHost(t *testing.T) {
+	const preview = `"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}`
+	for name, test := range map[string]struct {
+		serve string
+		want  []string
+	}{
+		"preview only":         {serve: `{"Web":{` + preview + `}}`},
+		"443 is not this list": {serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/admin":{"Proxy":"http://127.0.0.1:9000"}}}}}`},
+		"other port":           {serve: `{"Web":{` + preview + `,"H.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"HTTPS 8080 /"}},
+		"8443 not the preview": {serve: `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"HTTPS 8443 /"}},
+		"other host":           {serve: `{"Web":{"svc.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
+		"TCP forward":          {serve: `{"TCP":{"443":{"HTTPS":true},"5432":{"TCPForward":"127.0.0.1:5432"}}}`, want: []string{"TCP 5432 forward to 127.0.0.1:5432"}},
+	} {
+		if got := otherPortHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+			t.Errorf("%s: got %q, want %q", name, got, test.want)
+		}
+	}
+	previous := tailscaleRun
+	t.Cleanup(func() { tailscaleRun = previous })
+	tailscaleRun = func(_ context.Context, _ string, _ io.Writer, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "status --json":
+			return []byte(`{"BackendState":"Running","Self":{"DNSName":"h.ts.net."},"CurrentTailnet":{"MagicDNSSuffix":"ts.net"}}`), nil
+		case "serve status --json":
+			return []byte(`{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` + preview +
+				`,"h.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`), nil
+		}
+		return nil, errors.New("unexpected tailscale command")
+	}
+	var output bytes.Buffer
+	if _, problems := inspectTailscale(context.Background(), "tailscale-fake", nil, &output); problems != 0 ||
+		!strings.Contains(output.String(), "  ! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, "+
+			"because browsers send it to every port of a host: HTTPS 8080 /.") {
+		t.Fatalf("problems=%d output:\n%s", problems, output.String())
+	}
+}
+
+// A tailscale that FindBinary refused is named with the reason, instead of
+// "not installed".
+func TestDoctorSaysWhyTailscaleWasRefused(t *testing.T) {
+	reason := "tailscale at /opt/homebrew/bin/tailscale: /opt/homebrew/bin/tailscale is owned by another user; Termivoa will not run it"
+	var output bytes.Buffer
+	report, problems := inspectTailscale(context.Background(), "", []string{reason}, &output)
+	if problems != 1 || output.String() != "  ! "+reason+"\n" {
+		t.Fatalf("problems=%d output:\n%s", problems, output.String())
+	}
+	if _, problem := report.phoneOrigin(); !strings.Contains(problem, reason) {
+		t.Fatalf("setup problem = %q", problem)
 	}
 }
 

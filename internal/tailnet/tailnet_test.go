@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -120,25 +121,31 @@ func TestOwnerRuleAndTrustVerdicts(t *testing.T) {
 		t.Fatal("a tagged computer never compares owners and needs allowTagged")
 	}
 
+	server := []string{"tag:server"}
 	for name, test := range map[string]struct {
 		origin, node string
-		tagged       bool
+		tags         []string
 		want         Verdict
 	}{
-		"same node":      {"https://mac.tailx.ts.net", "nMac1CNTRL", false, Trusted},
-		"tagged pinned":  {"https://ci.tailx.ts.net", "nCi1CNTRL", true, Trusted},
-		"node replaced":  {"https://mac.tailx.ts.net", "nOldMacCNTRL", false, Changed},
-		"name gone":      {"https://old.tailx.ts.net", "nMac1CNTRL", false, Untrusted},
-		"other owner":    {"https://pi.tailx.ts.net", "nPi1CNTRL", false, Untrusted},
-		"near miss":      {"https://mac.tailx.ts.net.evil.com", "nMac1CNTRL", false, Untrusted},
-		"shared-in node": {"https://shared.tailx.ts.net", "nShared1CNTRL", false, Untrusted},
-		// The tagged state must match the pinned one (SL4).
-		"tagged since pairing":   {"https://ci.tailx.ts.net", "nCi1CNTRL", false, Untrusted},
-		"untagged since pairing": {"https://mac.tailx.ts.net", "nMac1CNTRL", true, Untrusted},
+		"same node":      {"https://mac.tailx.ts.net", "nMac1CNTRL", nil, Trusted},
+		"tagged pinned":  {"https://ci.tailx.ts.net", "nCi1CNTRL", server, Trusted},
+		"node replaced":  {"https://mac.tailx.ts.net", "nOldMacCNTRL", nil, Changed},
+		"name gone":      {"https://old.tailx.ts.net", "nMac1CNTRL", nil, Untrusted},
+		"other owner":    {"https://pi.tailx.ts.net", "nPi1CNTRL", nil, Untrusted},
+		"near miss":      {"https://mac.tailx.ts.net.evil.com", "nMac1CNTRL", nil, Untrusted},
+		"shared-in node": {"https://shared.tailx.ts.net", "nShared1CNTRL", nil, Untrusted},
+		// The tag set must match the pinned one (SL4), as a set.
+		"tagged since pairing":   {"https://ci.tailx.ts.net", "nCi1CNTRL", nil, Untrusted},
+		"untagged since pairing": {"https://mac.tailx.ts.net", "nMac1CNTRL", server, Untrusted},
+		"tag swapped":            {"https://ci.tailx.ts.net", "nCi1CNTRL", []string{"tag:dev"}, Untrusted},
+		"tag added":              {"https://ci.tailx.ts.net", "nCi1CNTRL", []string{"tag:server", "tag:dev"}, Untrusted},
 	} {
-		if got := status.Trust(test.origin, test.node, test.tagged); got != test.want {
+		if got := status.Trust(test.origin, test.node, test.tags); got != test.want {
 			t.Errorf("%s: Trust = %v, want %v", name, got, test.want)
 		}
+	}
+	if !SameTags([]string{"tag:b", "tag:a"}, []string{"tag:a", "tag:b"}) || !SameTags(nil, []string{}) {
+		t.Error("tag order or nil changed the set")
 	}
 }
 
@@ -153,11 +160,11 @@ func TestOwnerComparedByUserIDNotLoginName(t *testing.T) {
 	if mac.Owner != "ada@example.com" || !errors.Is(status.CheckOwner(mac, false), ErrOtherOwner) {
 		t.Fatalf("same login name, other user ID = %+v, %v", mac, status.CheckOwner(mac, false))
 	}
-	if got := status.Trust("https://mac.tailx.ts.net", "nA", false); got != Untrusted {
+	if got := status.Trust("https://mac.tailx.ts.net", "nA", nil); got != Untrusted {
 		t.Fatalf("trust of another user with the same login name = %v", got)
 	}
 	pi, _ := status.Peer("pi.tailx.ts.net")
-	if status.CheckOwner(pi, false) != nil || status.Trust("https://pi.tailx.ts.net", "nB", false) != Trusted {
+	if status.CheckOwner(pi, false) != nil || status.Trust("https://pi.tailx.ts.net", "nB", nil) != Trusted {
 		t.Fatal("same user ID refused")
 	}
 }
@@ -348,7 +355,7 @@ func TestFindBinaryPrefersFixedInstallOverPath(t *testing.T) {
 	onPath := writeBinary(t, "tailscale")
 	env := func(value string) func(string) string { return func(string) string { return value } }
 	path := func(string) (string, error) { return onPath, nil }
-	if got := FindBinary("windows", env(programFiles), path); got != onPath {
+	if got, _ := FindBinary("windows", env(programFiles), path); got != onPath {
 		t.Fatalf("PATH fallback = %q, want %q", got, onPath)
 	}
 	if err := os.MkdirAll(filepath.Dir(cli), 0o755); err != nil {
@@ -357,15 +364,15 @@ func TestFindBinaryPrefersFixedInstallOverPath(t *testing.T) {
 	if err := os.WriteFile(cli, nil, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := FindBinary("windows", env(programFiles), path); got != cli {
+	if got, _ := FindBinary("windows", env(programFiles), path); got != cli {
 		t.Fatalf("installed = %q, want %q before PATH", got, cli)
 	}
 	missing := func(string) (string, error) { return "", errors.New("not found") }
-	if got := FindBinary("windows", env("relative"), missing); got != "" {
-		t.Fatalf("relative ProgramFiles = %q", got)
+	if got, refused := FindBinary("windows", env("relative"), missing); got != "" || refused != nil {
+		t.Fatalf("relative ProgramFiles = %q, %q", got, refused)
 	}
 	relative := func(string) (string, error) { return "tailscale", nil }
-	if got := FindBinary("plan9", os.Getenv, relative); got != "" {
+	if got, _ := FindBinary("plan9", os.Getenv, relative); got != "" {
 		t.Fatalf("relative PATH result = %q", got)
 	}
 }
@@ -374,12 +381,12 @@ func TestFindBinaryRefusesWritableOrForeignFiles(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits")
 	}
-	find := func(path string) string {
+	find := func(path string) (string, []string) {
 		return FindBinary("plan9", os.Getenv, func(string) (string, error) { return path, nil })
 	}
 	safe := writeBinary(t, "tailscale")
-	if find(safe) != safe {
-		t.Fatal("a private binary was refused")
+	if got, refused := find(safe); got != safe || refused != nil {
+		t.Fatalf("a private binary was refused: %q", refused)
 	}
 	groupWritable := writeBinary(t, "tailscale")
 	if err := os.Chmod(groupWritable, 0o775); err != nil {
@@ -393,42 +400,84 @@ func TestFindBinaryRefusesWritableOrForeignFiles(t *testing.T) {
 	if err := os.Symlink(groupWritable, link); err != nil {
 		t.Fatal(err)
 	}
+	// A parent folder further up that others can write lets them rename the
+	// whole tree away and plant another.
+	openGrandparent := t.TempDir()
+	deep := filepath.Join(openGrandparent, "bin", "tailscale")
+	if err := os.Mkdir(filepath.Dir(deep), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(deep, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(openGrandparent, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	// A link in the middle of the chain that sits in an open folder.
+	middle := filepath.Join(openFolder[:len(openFolder)-len("tailscale")], "middle")
+	if err := os.Symlink(safe, middle); err != nil {
+		t.Fatal(err)
+	}
+	chain := filepath.Join(t.TempDir(), "tailscale")
+	if err := os.Symlink(middle, chain); err != nil {
+		t.Fatal(err)
+	}
 	for name, path := range map[string]string{
 		"group-writable file": groupWritable, "world-writable folder": openFolder,
 		"symlink to a writable file": link, "folder": t.TempDir(),
+		"world-writable grandparent": deep, "link in a world-writable folder": chain,
 	} {
-		if got := find(path); got != "" {
+		got, refused := find(path)
+		if got != "" {
 			t.Errorf("%s accepted: %q", name, got)
 		}
+		if len(refused) != 1 || !strings.HasPrefix(refused[0], "tailscale at "+path+": ") ||
+			!strings.HasSuffix(refused[0], "; Termivoa will not run it") {
+			t.Errorf("%s: reason = %q", name, refused)
+		}
+	}
+	if _, refused := find(deep); len(refused) != 1 || !strings.Contains(refused[0], openGrandparent+" is writable by group or others") {
+		t.Errorf("grandparent reason = %q", refused)
+	}
+	// The sticky bit (as on /tmp) keeps others from replacing entries they
+	// do not own, so such a folder passes.
+	if err := os.Chmod(openGrandparent, 0o777|os.ModeSticky); err != nil {
+		t.Fatal(err)
+	}
+	if got, refused := find(deep); got != deep {
+		t.Errorf("binary under a sticky folder refused: %q", refused)
 	}
 	// Root-owned system files pass (the owner rule allows root or this user).
-	if _, err := os.Stat("/bin/sh"); err == nil && find("/bin/sh") != "/bin/sh" {
-		t.Error("root-owned /bin/sh refused")
+	if _, err := os.Stat("/bin/sh"); err == nil {
+		if got, refused := find("/bin/sh"); got != "/bin/sh" {
+			t.Errorf("root-owned /bin/sh refused: %q", refused)
+		}
+	}
+	// A missing candidate is not a refusal.
+	if got, refused := find(filepath.Join(t.TempDir(), "tailscale")); got != "" || refused != nil {
+		t.Errorf("missing = %q, %q", got, refused)
 	}
 }
 
-func TestCommandSourceLooksUpAMissingBinaryAgainRateLimited(t *testing.T) {
-	saved := lookupRetry
-	t.Cleanup(func() { lookupRetry = saved })
-	var lookups atomic.Int32
-	found := ""
-	source := CommandSource(func() string { lookups.Add(1); return found })
-	lookupRetry = time.Hour
-	for range 3 {
-		if _, err := source(context.Background()); !errors.Is(err, ErrUnavailable) {
-			t.Fatalf("no binary = %v", err)
-		}
+// The binary is checked again before every run: one that turned unsafe
+// after it was found is not run.
+func TestCommandSourceChecksTheBinaryBeforeEachRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits")
 	}
-	if lookups.Load() != 1 {
-		t.Fatalf("lookups within the retry period = %d", lookups.Load())
-	}
-	// Tailscale is installed later: the next lookup after the period finds it.
-	lookupRetry = 0
-	found = filepath.Join(t.TempDir(), "missing-tailscale")
+	path := writeBinary(t, "tailscale")
+	source := CommandSource(func() string {
+		found, _ := FindBinary("plan9", os.Getenv, func(string) (string, error) { return path, nil })
+		return found
+	})
+	// The empty file is found and run (and fails to start).
 	if _, err := source(context.Background()); err == nil || errors.Is(err, ErrUnavailable) {
-		t.Fatalf("found binary was not run: %v", err)
+		t.Fatalf("safe binary was not run: %v", err)
 	}
-	if _, _ = source(context.Background()); lookups.Load() != 2 {
-		t.Fatalf("a found binary is looked up again: %d lookups", lookups.Load())
+	if err := os.Chmod(filepath.Dir(path), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source(context.Background()); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("binary in a folder that became writable = %v", err)
 	}
 }

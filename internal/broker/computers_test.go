@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -424,8 +425,9 @@ func TestNodeChangeRevokesBoundDevices(t *testing.T) {
 	if code := fixture.code(t, macOrigin, protocol.GatewaySettings, credentialPayload(viaMac.Credential)); code != protocol.ErrorCodeRevoked {
 		t.Fatalf("request after node change = %q", code)
 	}
-	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{ciOrigin}) {
-		t.Fatalf("changed origin still in CORS: %v", probe.BoundOrigins)
+	// It keeps CORS so the app there can read that 401 (TestChangedNodeOriginReadsOnlyRefusals).
+	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{ciOrigin, macOrigin}) {
+		t.Fatalf("CORS after node change: %v", probe.BoundOrigins)
 	}
 	fixture.server.sweepTrust(context.Background())
 	for _, stream := range []*streamClient{fromMac, ownStream} {
@@ -649,12 +651,39 @@ func TestBoundOriginsKeepRevokedAndExpiredDevicesWhileTrusted(t *testing.T) {
 	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{ciOrigin, macOrigin}) {
 		t.Fatalf("expired device's origin = %v", probe.BoundOrigins)
 	}
-	// A name held by another node, or a gone name, gets no CORS.
+	// A gone name gets no CORS. A name now held by another node (home got a
+	// new node ID) keeps it, so the app there reads "revoked" and shows "pair
+	// again"; every request from it is refused.
 	fixture.tailscale.set("mac", "nNewMac", nil)
 	fixture.tailscale.set("ci", "", nil)
 	fixture.refresh(t)
-	if probe := fixture.probe(t); probe.BoundOrigins != nil {
-		t.Fatalf("untrusted origins in CORS: %v", probe.BoundOrigins)
+	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{macOrigin}) {
+		t.Fatalf("CORS after a node change = %v", probe.BoundOrigins)
+	}
+}
+
+// A Changed origin keeps CORS only because the broker refuses everything it
+// sends: a credential bound to it reads "revoked" (the app's "pair again"),
+// any other credential and any grant is refused (SL3).
+func TestChangedNodeOriginReadsOnlyRefusals(t *testing.T) {
+	fixture := newTrustFixture(t)
+	viaMac := fixture.pairVia(t, "mac", macOrigin, false)
+	own := pairDevice(t, fixture.service, "Phone")
+	grant := fixture.grant(t, "mac", false)
+	fixture.tailscale.set("mac", "nNewMac", nil)
+	fixture.refresh(t)
+	if probe := fixture.probe(t); !reflect.DeepEqual(probe.BoundOrigins, []string{macOrigin}) {
+		t.Fatalf("CORS after a node change = %v", probe.BoundOrigins)
+	}
+	if code := fixture.code(t, macOrigin, protocol.GatewaySettings, credentialPayload(viaMac.Credential)); code != protocol.ErrorCodeRevoked {
+		t.Fatalf("bound credential from the changed origin = %q", code)
+	}
+	if code := fixture.code(t, macOrigin, protocol.GatewaySettings, credentialPayload(own.Credential)); code != protocol.InvalidRequest {
+		t.Fatalf("other credential from the changed origin = %q", code)
+	}
+	if code := fixture.code(t, macOrigin, protocol.GatewayPairRedeem,
+		protocol.HTTPPairRedeemRequest{Grant: grant.Grant, DeviceLabel: "Phone"}); code != protocol.InvalidRequest {
+		t.Fatalf("grant from the changed origin = %q", code)
 	}
 }
 
@@ -769,6 +798,54 @@ func TestComputerListPinsTheNode(t *testing.T) {
 	fixture.refresh(t)
 	if got := list(); len(got.Computers) != 0 {
 		t.Fatalf("entry of a gone node still listed: %#v", got)
+	}
+}
+
+// A peer that reinstalled Tailscale has a new node ID: the phone can add it
+// again, the pending entry pins the new node (so the app's CSP allows it) and
+// confirm succeeds. Hidden entries do not fill the list.
+func TestComputerAddAgainAfterNodeChange(t *testing.T) {
+	fixture := newTrustFixture(t)
+	phone := pairDevice(t, fixture.service, "Phone")
+	add := func(origin string, state protocol.HTTPComputerState) protocol.GatewayRPCEnvelope {
+		return fixture.from(t, "", protocol.GatewayComputersAdd, protocol.GatewayRPCComputerAddPayload{
+			Credential: phone.Credential, Request: protocol.HTTPComputerAddRequest{Origin: origin, Label: "pc", State: state}})
+	}
+	list := func() protocol.GatewayRPCComputerListResultPayload {
+		result, err := protocol.DecodeRPCPayload[protocol.GatewayRPCComputerListResultPayload](
+			fixture.from(t, "", protocol.GatewayComputersList, credentialPayload(phone.Credential)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	for index := range protocol.MaxComputers {
+		origin := fmt.Sprintf("https://pc%d.tailx.ts.net", index)
+		for _, state := range []protocol.HTTPComputerState{protocol.HTTPComputerStatePending, protocol.Confirmed} {
+			if response := add(origin, state); response.Type != protocol.GatewayComputersAddResult {
+				t.Fatalf("add pc%d %s = %s", index, state, response.Payload)
+			}
+		}
+	}
+	fixture.tailscale.set("pc0", "nPc0New", nil) // pc0 reinstalled Tailscale
+	fixture.tailscale.set("pc1", "", nil)        // pc1 left the tailnet
+	fixture.refresh(t)
+	added, err := protocol.DecodeRPCPayload[protocol.HTTPComputerAddResponse](add("https://pc0.tailx.ts.net", protocol.HTTPComputerStatePending))
+	if err != nil || added.State != protocol.HTTPComputerStatePending || added.Node.ID != "nPc0New" {
+		t.Fatalf("add again after a node change = %#v, %v", added, err)
+	}
+	if got := list(); !slices.Contains(got.PendingOrigins, "https://pc0.tailx.ts.net") {
+		t.Fatalf("re-added computer not pending: %#v", got)
+	}
+	if response := add("https://pc0.tailx.ts.net", protocol.Confirmed); response.Type != protocol.GatewayComputersAddResult {
+		t.Fatalf("confirm the new node = %s", response.Payload)
+	}
+	// The list is full, but pc1's hidden entry gives up its slot.
+	if response := add("https://pc8.tailx.ts.net", protocol.HTTPComputerStatePending); response.Type != protocol.GatewayComputersAddResult {
+		t.Fatalf("hidden entry still holds a slot: %s", response.Payload)
+	}
+	if got := list(); len(got.Computers) != protocol.MaxComputers-1 || !reflect.DeepEqual(got.PendingOrigins, []string{"https://pc8.tailx.ts.net"}) {
+		t.Fatalf("list = %#v", got)
 	}
 }
 

@@ -147,7 +147,8 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	if server.config.Tailnet == nil {
 		server.config.Tailnet = tailnet.NewMonitor(tailnet.Config{
 			Source: tailnet.CommandSource(func() string {
-				return tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+				path, _ := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+				return path
 			}),
 			OnUpdate: server.TrustUpdated,
 		})

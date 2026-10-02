@@ -13,7 +13,7 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 
 | Command | What it does |
 | --- | --- |
-| `pterm setup` | First run: checks, one confirmation, startup at login, phone address, Tailscale Serve (asks first), pairing. From the next beta, it refuses before any change while other Tailscale Serve handlers share this computer's Termivoa address (port 443); see [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers-next-beta). |
+| `pterm setup` | First run: checks, one confirmation, startup at login, phone address, Tailscale Serve (asks first), pairing. From the next beta, it refuses before any change while other Tailscale Serve handlers share this computer's Termivoa address (port 443); see [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers-next-beta). It then exits with code 3; other errors exit with 1. |
 | `pterm setup --apply --yes` | Installer mode: registers startup, asks nothing, sets the phone address only if unset, never changes Tailscale or pairs a phone. From the next beta, it refuses in the same way. |
 | `pterm doctor` | Read-only checks. Never prints secrets. From the next beta it also shows the protocol revision and multi-computer checks. |
 | `pterm config origin [<url>]` | Shows or sets the phone's private HTTPS address. |
@@ -71,9 +71,11 @@ No device uses this computer from the Termivoa app at https://mac.tailx.ts.net n
 | `multi-computer: CORS list (bound app origins): …` | Home addresses that phones use this computer from. `no bound app origins (CORS off)` means none. |
 | `multi-computer: pairing CORS list (pending pairings): …` | Home addresses of pairings that wait for approval. |
 | `! multi-computer: <url>: owner mismatch …`, `node ID changed (reused name?)`, `pinned node … is gone`, `different tailnet; not supported` | A home that phones use this computer from fails the Tailscale check. Owners are compared by Tailscale user ID, not by login name. |
-| `! multi-computer: <url>: tags changed since pairing; phones bound to it are refused until paired again` | Home's Tailscale tags were added or removed after pairing. Pair again. |
+| `! multi-computer: <url>: tags changed since pairing; phones bound to it are refused until paired again` | Home's Tailscale tags were added, removed or replaced after pairing. Pair again. |
 | `! multi-computer: this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked` | This computer is not logged in to Tailscale. Log in. |
-| `! tailscale serve: other handlers share this computer's Termivoa origin https://…: …` | A problem: Tailscale Serve shares more than Termivoa on this address (port 443). The line prints the commands to move each handler to another port and remove it. `pterm setup` refuses until you do. |
+| `! tailscale serve: other handlers share this computer's Termivoa origin https://…: …` | A problem: Tailscale Serve shares more than Termivoa on this address (port 443). Move each handler to another computer or to its own Tailscale Service hostname (another port does not help); the line prints the commands that remove them. `pterm setup` refuses until you do. |
+| `! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, …` | A warning, not a problem: handlers on other ports of this computer get the Termivoa cookie when the phone opens them. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-warns-that-other-ports-receive-the-termivoa-cookie-next-beta). |
+| `! tailscale at <path>: …; Termivoa will not run it` | Another user could replace that Tailscale CLI, so Termivoa does not use it. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-run-tailscale-next-beta). |
 
 ## Work with sessions
 

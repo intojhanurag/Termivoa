@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -207,20 +208,26 @@ const (
 	Untrusted
 )
 
-// Trust checks a bound app origin against its pinned node ID and whether
-// that node was tagged when it was pinned. Tagged nodes were accepted with an
-// explicit allowTagged at pairing, so only the pinned ID matters for them; a
-// node that gained or lost tags since then is refused, because its owner
-// rule changed without the owner's approval.
-func (status *Status) Trust(origin, nodeID string, tagged bool) Verdict {
+// Trust checks a bound app origin against its pinned node ID and the node's
+// tags when it was pinned. Tagged nodes were accepted with an explicit
+// allowTagged at pairing, so only the pinned ID matters for their owner; a
+// node whose tag set changed since then (gained, lost or swapped a tag) is
+// refused, because the ACL rules that apply to it changed without the
+// owner's approval.
+func (status *Status) Trust(origin, nodeID string, tags []string) Verdict {
 	node, ok := status.peers[strings.TrimPrefix(origin, "https://")]
 	switch {
 	case !ok || !strings.HasPrefix(origin, "https://"):
 		return Untrusted
 	case node.ID != nodeID:
 		return Changed
-	case node.Tagged() != tagged, status.CheckOwner(node, true) != nil:
+	case !SameTags(node.Tags, tags), status.CheckOwner(node, true) != nil:
 		return Untrusted
 	}
 	return Trusted
+}
+
+// SameTags compares two tag lists as sets, ignoring order.
+func SameTags(first, second []string) bool {
+	return slices.Equal(slices.Compact(slices.Sorted(slices.Values(first))), slices.Compact(slices.Sorted(slices.Values(second))))
 }

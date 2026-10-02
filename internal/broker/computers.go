@@ -50,11 +50,11 @@ func (server *ManagementServer) isOwnOrigin(origin *string) bool {
 
 // trust is the snapshot's verdict on one app binding.
 func trust(status *tailnet.Status, app store.AppBinding) tailnet.Verdict {
-	return status.Trust(app.Origin, app.NodeID, len(app.NodeTags) > 0)
+	return status.Trust(app.Origin, app.NodeID, app.NodeTags)
 }
 
 // appTrust reads the latest snapshot only. A definite node change is a
-// revocation; a missing name, another owner or a changed tagged state refuses
+// revocation; a missing name, another owner or a changed tag set refuses
 // without revoking.
 func (server *ManagementServer) appTrust(app store.AppBinding) error {
 	status := server.config.Tailnet.Snapshot()
@@ -126,12 +126,15 @@ func (server *ManagementServer) streamOrigin(origin *string) string {
 //
 // boundOrigins are the app origins of every device ever bound to one,
 // revoked and expired devices included, whose pinned node the latest snapshot
-// still trusts. An app whose credential here was revoked or expired must read
-// this computer's 401 to show "pair again" instead of "can't reach", and CORS
-// lets it read only what the broker answers that origin: refusals for every
-// credential not bound to it. A changed node, a name now held by another
-// node or owner, or an unreadable status gets no CORS. pairingOrigins are
-// those of unexpired grants and pending pairings.
+// still trusts or that a different node now holds (Changed). An app whose
+// credential here was revoked or expired must read this computer's 401 to
+// show "pair again" instead of "can't reach"; so must home after it got a new
+// node ID. CORS lets an origin read only what the broker answers it: for a
+// Changed origin every credential bound to it is revoked (appTrust, 401
+// "revoked"), every other one and every grant is refused, so whoever now holds
+// the name reads only refusals. A gone name, another owner, a changed tag set
+// or an unreadable status gets no CORS. pairingOrigins are those of unexpired
+// grants and pending pairings.
 func (server *ManagementServer) originProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error) {
 	origin, err := server.pairingOrigin(ctx)
 	if err != nil {
@@ -148,7 +151,7 @@ func (server *ManagementServer) originProbe(ctx context.Context) (protocol.Gatew
 	if len(apps) > 0 {
 		if status := server.config.Tailnet.Snapshot(); status != nil {
 			for _, app := range apps {
-				if trust(status, app) == tailnet.Trusted &&
+				if verdict := trust(status, app); (verdict == tailnet.Trusted || verdict == tailnet.Changed) &&
 					!slices.Contains(result.BoundOrigins, app.Origin) && len(result.BoundOrigins) < protocol.MaxBoundOrigins {
 					result.BoundOrigins = append(result.BoundOrigins, app.Origin)
 				}
@@ -185,19 +188,26 @@ func (server *ManagementServer) resolveVia(ctx context.Context, via string, allo
 // `tailscale status` (10 s limit) only when it is older. The grace snapshot
 // that Snapshot returns can be 10 minutes old and is nil right after start;
 // pinning a node for a new computer, a rare user action, needs a recent one.
-func (server *ManagementServer) lookupComputer(ctx context.Context, origin string) (tailnet.Node, error) {
+func (server *ManagementServer) lookupComputer(ctx context.Context, origin string) (tailnet.Node, *tailnet.Status, error) {
 	if own := server.ownOrigin.Load(); own != nil && *own == origin {
-		return tailnet.Node{}, errComputerSelf
+		return tailnet.Node{}, nil, errComputerSelf
 	}
 	status, err := server.config.Tailnet.Fresh(ctx)
 	if err != nil {
-		return tailnet.Node{}, errors.Join(errTrustUnavailable, err)
+		return tailnet.Node{}, nil, errors.Join(errTrustUnavailable, err)
 	}
 	node, ok := status.Peer(strings.TrimPrefix(origin, "https://"))
 	if !ok {
-		return tailnet.Node{}, tailnet.ErrNotFound
+		return tailnet.Node{}, nil, tailnet.ErrNotFound
 	}
-	return node, status.CheckOwner(node, true)
+	return node, status, status.CheckOwner(node, true)
+}
+
+// hiddenComputer reports an entry whose pinned node no longer holds its name
+// in status. The app never sees it, so its user cannot remove it.
+func hiddenComputer(status *tailnet.Status, computer store.Computer) bool {
+	node, ok := status.Peer(strings.TrimPrefix(computer.Origin, "https://"))
+	return !ok || node.ID != computer.NodeID
 }
 
 // listComputers lists the device's computers. Once a snapshot exists, an
@@ -216,10 +226,8 @@ func (server *ManagementServer) listComputers(ctx context.Context, principal aut
 		status = server.config.Tailnet.Snapshot()
 	}
 	for _, computer := range computers {
-		if status != nil {
-			if node, ok := status.Peer(strings.TrimPrefix(computer.Origin, "https://")); !ok || node.ID != computer.NodeID {
-				continue
-			}
+		if status != nil && hiddenComputer(status, computer) {
+			continue
 		}
 		if computer.State == store.ComputerConfirmed {
 			result.Computers = append(result.Computers, protocol.HTTPComputer{Origin: computer.Origin, Label: computer.Label})
@@ -233,13 +241,15 @@ func (server *ManagementServer) listComputers(ctx context.Context, principal aut
 func (server *ManagementServer) addComputer(
 	ctx context.Context, principal auth.Principal, request protocol.HTTPComputerAddRequest,
 ) (protocol.HTTPComputerAddResponse, error) {
-	node, err := server.lookupComputer(ctx, request.Origin)
+	node, status, err := server.lookupComputer(ctx, request.Origin)
 	if err != nil {
 		return protocol.HTTPComputerAddResponse{}, err
 	}
 	now := server.now()
+	// A full list makes room by dropping entries the app no longer shows.
 	saved, err := server.config.Store.PutComputer(ctx, principal.DeviceID, request.Origin, node.ID, request.Label,
-		store.ComputerState(request.State), now, now.Add(PendingComputerLifetime), protocol.MaxComputers)
+		store.ComputerState(request.State), now, now.Add(PendingComputerLifetime), protocol.MaxComputers,
+		func(computer store.Computer) bool { return hiddenComputer(status, computer) })
 	if err != nil {
 		return protocol.HTTPComputerAddResponse{}, err
 	}

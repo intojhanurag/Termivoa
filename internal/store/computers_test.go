@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -167,7 +168,7 @@ func TestComputerListPendingConfirmLimitAndExpiry(t *testing.T) {
 	insertDevice(t, store, other, otherSession)
 	expires := testTime.Add(10 * time.Minute)
 	put := func(deviceID, origin, label string, state ComputerState, now time.Time) (Computer, error) {
-		return store.PutComputer(ctx, deviceID, origin, "nNode", label, state, now, now.Add(10*time.Minute), 8)
+		return store.PutComputer(ctx, deviceID, origin, "nNode", label, state, now, now.Add(10*time.Minute), 8, nil)
 	}
 
 	if _, err := put(device.ID, "https://vps.tailx.ts.net", "vps", ComputerConfirmed, testTime); !errors.Is(err, ErrComputerMissing) {
@@ -191,7 +192,7 @@ func TestComputerListPendingConfirmLimitAndExpiry(t *testing.T) {
 	}
 	// Confirming needs the node the entry was added for (SM2).
 	if _, err := store.PutComputer(ctx, device.ID, "https://vps.tailx.ts.net", "nOther", "vps", ComputerConfirmed,
-		testTime, expires, 8); !errors.Is(err, ErrComputerNode) {
+		testTime, expires, 8, nil); !errors.Is(err, ErrComputerNode) {
 		t.Fatalf("confirm as another node = %v", err)
 	}
 	// The list is per device and holds at most 8 entries, both states.
@@ -256,6 +257,62 @@ func TestComputerListPendingConfirmLimitAndExpiry(t *testing.T) {
 	}
 	if listed, _ := store.ListComputers(ctx, other.ID, expires); len(listed) != 0 {
 		t.Fatalf("list of deleted device = %+v", listed)
+	}
+}
+
+// A peer that reinstalled Tailscale has a new node ID. Adding it again must
+// replace the entry pinned to the old node (or to none, from before pinning)
+// with a pending one for the new node, so it can be confirmed; and entries
+// the caller reports stale must not hold slots of a full list.
+func TestComputerAddAgainAfterNodeChange(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "computers.sqlite"))
+	defer store.Close()
+	ctx := context.Background()
+	device, session := testIssue(1, testTime)
+	insertDevice(t, store, device, session)
+	expires := testTime.Add(10 * time.Minute)
+	const vps = "https://vps.tailx.ts.net"
+	put := func(origin, node string, state ComputerState, stale func(Computer) bool) (Computer, error) {
+		return store.PutComputer(ctx, device.ID, origin, node, "vps", state, testTime, expires, 3, stale)
+	}
+	for _, step := range []struct {
+		node  string
+		state ComputerState
+	}{{"nOld", ComputerPending}, {"nOld", ComputerConfirmed}} {
+		if _, err := put(vps, step.node, step.state, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved, err := put(vps, "nNew", ComputerPending, nil)
+	if err != nil || saved.State != ComputerPending || saved.NodeID != "nNew" || saved.ExpiresAt == nil {
+		t.Fatalf("pending add for a new node = %+v, %v", saved, err)
+	}
+	if saved, err = put(vps, "nNew", ComputerConfirmed, nil); err != nil || saved.State != ComputerConfirmed {
+		t.Fatalf("confirm the new node = %+v, %v", saved, err)
+	}
+	// An entry from before node pinning (NULL node) is replaced the same way.
+	if _, err := store.database.Exec(`UPDATE computers SET node_id = NULL WHERE origin = ?`, vps); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err = put(vps, "nNew", ComputerPending, nil); err != nil || saved.State != ComputerPending || saved.NodeID != "nNew" {
+		t.Fatalf("pending add over an unpinned entry = %+v, %v", saved, err)
+	}
+	// Full list: a stale entry makes room, a live one does not.
+	for _, origin := range []string{"https://a.tailx.ts.net", "https://b.tailx.ts.net"} {
+		if _, err := put(origin, "n", ComputerPending, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := put("https://c.tailx.ts.net", "n", ComputerPending, nil); !errors.Is(err, ErrComputerCapacity) {
+		t.Fatalf("fourth entry = %v", err)
+	}
+	staleA := func(computer Computer) bool { return computer.Origin == "https://a.tailx.ts.net" }
+	if _, err := put("https://c.tailx.ts.net", "n", ComputerPending, staleA); err != nil {
+		t.Fatalf("stale entry kept its slot: %v", err)
+	}
+	listed, err := store.ListComputers(ctx, device.ID, testTime)
+	if err != nil || len(listed) != 3 || slices.ContainsFunc(listed, staleA) {
+		t.Fatalf("list after replacing a stale entry = %+v, %v", listed, err)
 	}
 }
 

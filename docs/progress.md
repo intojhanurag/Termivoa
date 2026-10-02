@@ -145,6 +145,47 @@ there, except the "gives up after about 3 s" bound check.
     Try again."
   - "Open pull request" is not shown for a link to the app's own address.
 
+### Multi-computer host review fixes, round 2 (2026-10-02, branch `feat/mc-fix-host2`)
+
+Host side of the confirming review of `feat/multi-computer`. Not merged;
+critical feature, owner review required (rule 24). Gate 0 has not run.
+
+- Add a computer again after its node changed: a pending add over an entry
+  pinned to another node (or none) replaces it with a pending entry for the
+  current node, so the CSP allows the redeem and confirm succeeds; a full
+  list drops entries the app no longer shows (`PutComputer` stale callback).
+  Tests: `TestComputerAddAgainAfterNodeChange` (store and broker).
+- Other Serve handlers: setup advice is "another computer or its own
+  Tailscale Service hostname" (another port still gets the cookie); doctor
+  warns (not counted) about handlers on other ports of this host, except
+  Termivoa's own 8443 preview handler; setup is not refused for them. A
+  setup refused for other handlers on 443 exits 3, and the Windows installer
+  shows its own message for 3 (other failures keep the generic one). Tests:
+  `TestDoctorReportsOtherHandlersAsAProblem`,
+  `TestDoctorWarnsAboutOtherPortsOfThisHost`,
+  `TestSetupRefusesOtherServeHandlersOnItsOrigin`.
+- A Changed node (home reinstalled Tailscale) keeps its origin in the CORS
+  union, so peers answer 401 `revoked` and the app shows "pair again";
+  every credential bound to it is revoked, every other credential and grant
+  refused. Test: `TestChangedNodeOriginReadsOnlyRefusals`.
+- `Status.Trust` compares tag sets (sorted), not only tagged/untagged.
+  Test: `TestOwnerRuleAndTrustVerdicts` ("tag swapped", "tag added").
+- `FindBinary` checks every folder up to `/` and every link of the symlink
+  chain (group/other-writable without sticky, or owner not root/current
+  user, is refused; group root, and admin on macOS, pass), returns each
+  refusal reason, and doctor and setup print it. The broker checks again
+  before every `tailscale status` run. Tests:
+  `TestFindBinaryRefusesWritableOrForeignFiles`,
+  `TestCommandSourceChecksTheBinaryBeforeEachRun`,
+  `TestDoctorSaysWhyTailscaleWasRefused`.
+- Evidence: `go test -race ./internal/... ./cmd/...`, `./scripts/check`,
+  `CGO_ENABLED=0 GOOS=windows go vet ./...`, `GOOS=linux` and the site build
+  exit 0 (macOS host). Each test above was run with its fix reverted and
+  failed.
+- Pending: the `boundOrigins` schema description in
+  `protocol/v1/gateway-rpc.schema.json` still says "whose node is still
+  trusted" (now also Changed nodes); regenerating touches `web/src/generated`.
+
 ### Multi-computer host review fixes (2026-10-02, branch `feat/mc-fix-host`)
 
 Host side of the review of `feat/multi-computer` (ADR 0005). Not merged;

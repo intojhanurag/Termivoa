@@ -3,8 +3,11 @@ package tailnet
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -152,25 +155,19 @@ func (monitor *Monitor) startLocked() chan struct{} {
 	return done
 }
 
-// lookupRetry spaces lookups of a Tailscale CLI that was not found, so one
-// installed later is used without a restart.
-var lookupRetry = time.Minute
-
-// CommandSource runs `<binary> status --json` with the binary find returns.
-// While find returns "", it is asked again at most once per lookupRetry; a
-// found binary is kept. The context's deadline kills the process; WaitDelay
+// CommandSource runs `<binary> status --json` with the binary find returns,
+// asked again before every run: the checks are a few stat calls, so a binary
+// that turned unsafe since the last run, or one installed later, is noticed
+// without a restart. The context's deadline kills the process; WaitDelay
 // bounds a child that keeps its output pipe open.
+//
+// ponytail: the check and the exec are separate steps, so a writer racing
+// between them could still swap the file; Go cannot exec an opened file
+// descriptor portably. The checks make that window microseconds instead of
+// the broker's lifetime.
 func CommandSource(find func() string) Source {
-	var mu sync.Mutex
-	var binary string
-	var lookedAt time.Time
 	return func(ctx context.Context) ([]byte, error) {
-		mu.Lock()
-		if binary == "" && (lookedAt.IsZero() || time.Since(lookedAt) >= lookupRetry) {
-			binary, lookedAt = find(), time.Now()
-		}
-		path := binary
-		mu.Unlock()
+		path := find()
 		if path == "" {
 			return nil, ErrUnavailable
 		}
@@ -180,15 +177,17 @@ func CommandSource(find func() string) Source {
 	}
 }
 
-// FindBinary returns the Tailscale CLI, or "" when none is usable. Fixed
-// install locations come first and PATH last, so a writable folder early on
-// PATH cannot plant a fake tailscale. The order is most to least protected:
-// /usr/bin and /usr/sbin (owned by the system package manager; read-only
-// under macOS SIP), the macOS app bundle (the CLI of the Tailscale app that
-// runs the daemon), /usr/local/bin, and Homebrew's /opt/homebrew/bin last on
-// macOS (often owned by the user). launchd's PATH has neither Homebrew
-// folder, so they must be listed. Every candidate must pass safeBinary.
-func FindBinary(goos string, getenv func(string) string, lookPath func(string) (string, error)) string {
+// FindBinary returns the Tailscale CLI, or "" when none is usable, and why
+// each existing candidate was refused. Fixed install locations come first and
+// PATH last, so a writable folder early on PATH cannot plant a fake
+// tailscale. The order is most to least protected: /usr/bin and /usr/sbin
+// (owned by the system package manager; read-only under macOS SIP), the
+// macOS app bundle (the CLI of the Tailscale app that runs the daemon),
+// /usr/local/bin, and Homebrew's /opt/homebrew/bin last on macOS (often owned
+// by the user). launchd's PATH has neither Homebrew folder, so they must be
+// listed. Every candidate must pass checkBinary; a missing one is skipped
+// silently.
+func FindBinary(goos string, getenv func(string) string, lookPath func(string) (string, error)) (path string, refused []string) {
 	var candidates []string
 	switch goos {
 	case "darwin":
@@ -204,13 +203,17 @@ func FindBinary(goos string, getenv func(string) string, lookPath func(string) (
 			candidates = []string{filepath.Join(programFiles, "Tailscale", "tailscale.exe")}
 		}
 	}
-	if path, err := lookPath("tailscale"); err == nil && filepath.IsAbs(path) {
-		candidates = append(candidates, path)
+	if found, err := lookPath("tailscale"); err == nil && filepath.IsAbs(found) && !slices.Contains(candidates, found) {
+		candidates = append(candidates, found)
 	}
 	for _, candidate := range candidates {
-		if safeBinary(candidate) {
-			return candidate
+		err := checkBinary(candidate)
+		switch {
+		case err == nil:
+			return candidate, refused
+		case !errors.Is(err, os.ErrNotExist):
+			refused = append(refused, fmt.Sprintf("tailscale at %s: %v; Termivoa will not run it", candidate, err))
 		}
 	}
-	return ""
+	return "", refused
 }

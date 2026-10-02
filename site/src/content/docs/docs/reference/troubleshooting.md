@@ -118,10 +118,30 @@ Any other handler on `https://<this-computer>` (port 443) is the same origin as 
 
 The checks above the message print the commands. For each handler:
 
-1. Serve it on another HTTPS port, for example `tailscale serve --bg --https=8444 http://127.0.0.1:3000`, or on another computer.
+1. Serve it from another computer, or from its own [Tailscale Service](https://tailscale.com/docs/features/tailscale-services) hostname, or stop serving it. Another port on this computer does not help: browsers send the Termivoa cookie to every port of a computer.
 2. Remove it from port 443: `tailscale serve --https=443 --set-path=/grafana off`. For a TCP forward, run `tailscale serve --tcp=443 off`.
 
-The Windows installer runs the same check. If startup registration fails there, run `pterm setup --apply` to see the handlers.
+The Windows installer runs the same check. When it says that other Tailscale Serve handlers share this computer's Termivoa address (`pterm setup` exit code 3), run `pterm setup --apply` to see the handlers.
+
+## `pterm doctor` warns that other ports receive the Termivoa cookie (Next beta)
+
+Decide if you trust what runs there as much as Termivoa. If not, move it to another computer or to its own Tailscale Service hostname, or remove it. The warning is:
+
+```text
+! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, because browsers send it to every port of a host: HTTPS 8080 /. …
+```
+
+A handler on another port is a different origin, so it cannot use the Termivoa app. But when the phone opens it, the browser sends it the Termivoa cookie, and it could act as that phone. This is a warning, not a problem: setup does not refuse it, because many people serve their own tools on other ports. Termivoa's own preview port 8443 is not listed; Termivoa removes the cookie there.
+
+## `pterm doctor` says Termivoa will not run tailscale (Next beta)
+
+Fix the owner or permissions that the line names, or install Tailscale from [tailscale.com/download](https://tailscale.com/download). An example line is:
+
+```text
+! tailscale at /opt/homebrew/bin/tailscale: /opt/homebrew/bin/tailscale is owned by another user; Termivoa will not run it
+```
+
+Termivoa runs the Tailscale CLI only when no other user can replace it: the file, each symlink to it and each folder up to `/` must belong to root or to you, and no folder may be writable by others (unless it has the sticky bit, as `/tmp` does). On macOS a folder writable by the `admin` group, such as `/Applications`, is accepted. Termivoa checks this again before each run.
 
 ## The app cannot load after the update (iPhone, Next beta)
 
@@ -204,7 +224,7 @@ Update Termivoa on that computer. Computers can be updated one at a time; the ap
 
 ### A computer is gone from the list (Next beta)
 
-Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. If you add it while this happens, the app says "this name now belongs to another Tailscale machine; add the computer again".
+Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; from the next beta this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again".
 
 ### Log out says "Could not sign out of vps" (Next beta)
 
@@ -259,7 +279,7 @@ Log in to Tailscale on this computer, then run `pterm doctor` again. The line is
 
 ### `pterm doctor` says "tags changed since pairing" (Next beta)
 
-Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tailscale tags were added or removed after pairing, so the owner rule for it changed. This computer refuses phones from that home until you pair again.
+Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tailscale tags were added, removed or replaced after pairing, so the rules for it changed. This computer refuses phones from that home until you pair again.
 
 ### Peer sessions send no notifications (Next beta)
 

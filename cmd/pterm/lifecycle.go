@@ -45,7 +45,9 @@ type lifecycleEnv struct {
 	paths     host.Paths
 	runner    lifecycle.Runner
 	gateway   string // gateway base URL without trailing slash
-	tailscale string // tailscale CLI path, empty when not installed
+	tailscale string // tailscale CLI path, empty when not installed or refused
+	// why each tailscale found was refused (another user could replace it)
+	tailscaleRefused []string
 	// Linux only: why no systemd user manager answers (host.Systemd false),
 	// and whether this is WSL.
 	noSystemd string
@@ -86,10 +88,10 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 			return lifecycleEnv{}, err
 		}
 	}
-	tailscale := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+	tailscale, refused := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
 	env := lifecycleEnv{
 		host: target, paths: paths, runner: lifecycle.ExecRunner{},
-		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale,
+		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale, tailscaleRefused: refused,
 	}
 	if runtime.GOOS == "linux" {
 		env.host.Logs = paths.LogDir
@@ -194,7 +196,7 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 	}
 	fmt.Fprintf(output, "  shells: %s\n", strings.Join(detectShells(), ", "))
 	var problems int
-	report.tailscale, problems = inspectTailscale(ctx, env.tailscale, output)
+	report.tailscale, problems = inspectTailscale(ctx, env.tailscale, env.tailscaleRefused, output)
 	report.problems += problems
 	if env.host.OS == "linux" && os.Geteuid() != 0 {
 		report.tailscale.needsOperator = needsTailscaleOperator(ctx, env, report.tailscale)
@@ -279,7 +281,8 @@ var tailscaleRun = func(ctx context.Context, cli string, stream io.Writer, args 
 // tailscaleReport is what the read-only Tailscale checks found.
 type tailscaleReport struct {
 	installed     bool
-	needsOperator bool // Linux: Serve changes need `tailscale set --operator` first
+	refused       []string // why each tailscale found was refused
+	needsOperator bool     // Linux: Serve changes need `tailscale set --operator` first
 	statusErr     error
 	serveErr      error
 	serve         lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
@@ -292,6 +295,8 @@ type tailscaleReport struct {
 func (report tailscaleReport) phoneOrigin() (origin, problem string) {
 	again := ", then run `pterm setup` again."
 	switch {
+	case !report.installed && len(report.refused) > 0:
+		return "", "Termivoa will not run the Tailscale CLI it found (" + report.refused[0] + "). Fix its owner or permissions, or install Tailscale from https://tailscale.com/download" + again
 	case !report.installed:
 		return "", "Tailscale is not installed. Install it from https://tailscale.com/download and sign in" + again
 	case report.statusErr != nil || report.tailnet == nil:
@@ -315,9 +320,17 @@ func previewOrigin(origin string) string {
 }
 
 // inspectTailscale runs only `status --json` and `serve status --json`.
-func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report tailscaleReport, problems int) {
+// refused says why each tailscale FindBinary found was not used; with a
+// usable one as well they are only warnings.
+func inspectTailscale(ctx context.Context, cli string, refused []string, output io.Writer) (report tailscaleReport, problems int) {
+	report.refused = refused
+	for _, reason := range refused {
+		fmt.Fprintf(output, "  ! %s\n", reason)
+	}
 	if cli == "" {
-		fmt.Fprintln(output, "  ! tailscale: not installed (required for phone access)")
+		if len(refused) == 0 {
+			fmt.Fprintln(output, "  ! tailscale: not installed (required for phone access)")
+		}
 		return report, 1
 	}
 	report.installed = true
@@ -358,6 +371,10 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 	// matters and how to move it. Setup refuses them.
 	if report.otherHandlers = otherServeHandlers(data, status.Self.Host); len(report.otherHandlers) > 0 {
 		fmt.Fprintf(output, "  ! %s\n", otherHandlersProblem(status.Self.Host, report.otherHandlers))
+	}
+	// Not counted: setup does not refuse these (otherPortsWarning says why).
+	if others := otherPortHandlers(data, status.Self.Host); len(others) > 0 {
+		fmt.Fprintf(output, "  ! %s\n", otherPortsWarning(others))
 	}
 
 	// Dev-server previews (HTTPS 8443) are optional: unconfigured or
@@ -529,8 +546,8 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	// Any other handler on this computer's origin is same-origin with the
 	// app, so setup changes nothing until they move (the checks say how).
 	if handlers := report.tailscale.otherHandlers; len(handlers) > 0 {
-		return fmt.Errorf("refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (%s); "+
-			"move them as shown above, then run `pterm setup` again", strings.Join(handlers, ", "))
+		return exitCodeError{exitOtherServeHandlers, fmt.Errorf("refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (%s); "+
+			"move them as shown above, then run `pterm setup` again", strings.Join(handlers, ", "))}
 	}
 	// Without a systemd user manager nothing can be registered; setup then
 	// starts the processes now, as `pterm launch` does, and says so.

@@ -270,7 +270,8 @@ func TestSetupRefusesOtherServeHandlersOnItsOrigin(t *testing.T) {
 			input = nil
 		}
 		err := runWithInput(context.Background(), args, input, &output)
-		if err == nil || !strings.Contains(err.Error(), "refusing to set up") || !strings.Contains(err.Error(), "/grafana") {
+		if err == nil || !strings.Contains(err.Error(), "refusing to set up") || !strings.Contains(err.Error(), "/grafana") ||
+			exitCode(err) != exitOtherServeHandlers {
 			t.Fatalf("%q: err = %v\n%s", args, err, output.String())
 		}
 		if !strings.Contains(output.String(), "`tailscale serve --https=443 --set-path=/grafana off`") ||

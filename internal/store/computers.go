@@ -205,14 +205,20 @@ type Computer struct {
 // returns the saved entry. Expired pending entries are deleted first.
 //
 //   - Pending inserts or refreshes a pending entry until expires. If the
-//     origin is already confirmed, the confirmed entry is kept unchanged.
+//     origin is already confirmed for the same nodeID, the confirmed entry is
+//     kept unchanged; one pinned to another node (or none) is replaced by a
+//     pending entry for nodeID, so a reinstalled peer can be added again.
 //   - Confirmed needs an existing entry (pending or confirmed) pinned to the
 //     same nodeID: it confirms it and sets its label (a rename when already
 //     confirmed). Another node is ErrComputerNode.
 //
 // A new entry needs room: at most limit entries per device, both states.
+// When the list is full, the device's entries for which stale reports true
+// (the caller's view: hidden from the app, so the user cannot remove them)
+// are deleted to make room. stale may be nil.
 func (store *Store) PutComputer(
 	ctx context.Context, deviceID, origin, nodeID, label string, state ComputerState, now, expires time.Time, limit int,
+	stale func(Computer) bool,
 ) (Computer, error) {
 	if !validUUID(deviceID) || origin == "" || len(origin) > 261 || nodeID == "" || len(nodeID) > 64 || label == "" || len(label) > 64 ||
 		!utf8.ValidString(label) || limit < 1 || (state == ComputerPending && !expires.After(now)) ||
@@ -235,20 +241,15 @@ func (store *Store) PutComputer(
 		return Computer{}, fmt.Errorf("store: read computer: %w", err)
 	}
 	switch {
-	case state == ComputerPending && exists && current.State == ComputerConfirmed:
+	case state == ComputerPending && exists && current.State == ComputerConfirmed && current.NodeID == nodeID:
 		return current, commit(transaction, "computer update")
 	case state == ComputerConfirmed && !exists:
 		return Computer{}, ErrComputerMissing
 	case state == ComputerConfirmed && current.NodeID != nodeID:
 		return Computer{}, ErrComputerNode
 	case !exists:
-		var count int
-		if err := transaction.QueryRowContext(ctx, `SELECT count(*) FROM computers WHERE device_id = ?`,
-			deviceID).Scan(&count); err != nil {
-			return Computer{}, fmt.Errorf("store: count computers: %w", err)
-		}
-		if count >= limit {
-			return Computer{}, ErrComputerCapacity
+		if err := makeComputerRoom(ctx, transaction, deviceID, limit, stale); err != nil {
+			return Computer{}, err
 		}
 	}
 	saved := Computer{DeviceID: deviceID, Origin: origin, NodeID: nodeID, Label: label, State: state, CreatedAt: now.UTC().Truncate(time.Millisecond)}
@@ -311,6 +312,37 @@ func (store *Store) RemoveComputer(ctx context.Context, deviceID, origin string)
 }
 
 const computerColumns = `device_id, origin, node_id, label, state, expires_at_ms, created_at_ms`
+
+// makeComputerRoom returns ErrComputerCapacity when the device already has
+// limit entries and deleting its stale ones does not free a slot.
+func makeComputerRoom(ctx context.Context, transaction *sql.Tx, deviceID string, limit int, stale func(Computer) bool) error {
+	rows, err := transaction.QueryContext(ctx, `SELECT `+computerColumns+` FROM computers WHERE device_id = ?`, deviceID)
+	if err != nil {
+		return fmt.Errorf("store: count computers: %w", err)
+	}
+	computers, err := scanComputers(rows)
+	if err != nil {
+		return err
+	}
+	count := len(computers)
+	for _, computer := range computers {
+		if count < limit {
+			return nil
+		}
+		if stale == nil || !stale(computer) {
+			continue
+		}
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM computers WHERE device_id = ? AND origin = ?`,
+			deviceID, computer.Origin); err != nil {
+			return fmt.Errorf("store: delete stale computer: %w", err)
+		}
+		count--
+	}
+	if count >= limit {
+		return ErrComputerCapacity
+	}
+	return nil
+}
 
 func pruneComputers(ctx context.Context, transaction *sql.Tx, deviceID string, now int64) error {
 	if _, err := transaction.ExecContext(ctx, `DELETE FROM computers
