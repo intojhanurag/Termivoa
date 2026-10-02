@@ -6,12 +6,16 @@ const flush = () => vi.advanceTimersByTimeAsync(0);
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-function tiles(scheduler: Scheduler, count: number, fullRate: (index: number) => boolean = () => false) {
+/** `count` tiles, each reported visible by its observer; changes recorded after that. */
+async function tiles(scheduler: Scheduler, count: number, fullRate: (index: number) => boolean = () => false) {
   const changes: Array<[string, TileState]> = [];
   const handles = Array.from({ length: count }, (_, index) => scheduler.requestLiveTile(`h/${index}`, {
     fullRate: fullRate(index),
     onChange: (state) => changes.push([`h/${index}`, state]),
   }));
+  for (const handle of handles) handle.setVisible(true);
+  await flush();
+  changes.length = 0;
   const states = () => handles.map((handle) => handle.state());
   return { handles, changes, states };
 }
@@ -20,7 +24,7 @@ describe('live tiles', () => {
   it('starts at 4 live thumbnails; the rest wait as Paused and go live when a slot opens', async () => {
     const scheduler = new Scheduler();
     expect(DEFAULT_LIMITS.liveTiles).toBe(4);
-    const { handles, changes, states } = tiles(scheduler, 6);
+    const { handles, changes, states } = await tiles(scheduler, 6);
     expect(states()).toEqual(['live', 'live', 'live', 'live', 'paused', 'paused']);
     await flush();
     expect(changes).toEqual([]);
@@ -32,14 +36,22 @@ describe('live tiles', () => {
     expect(changes).toEqual([['h/1', 'paused'], ['h/4', 'live'], ['h/5', 'live']]);
   });
 
-  it('counts a tile on a computer without thumbnail mode as full rate', () => {
-    const { states } = tiles(new Scheduler(), 4, (index) => index === 0);
+  it('starts a new tile paused until its observer reports it visible', async () => {
+    const scheduler = new Scheduler();
+    const below = Array.from({ length: 5 }, (_, index) => scheduler.requestLiveTile(`h/${index}`, { onChange: () => undefined }));
+    expect(below.map((handle) => handle.state())).toEqual(['paused', 'paused', 'paused', 'paused', 'paused']);
+    below[4]?.setVisible(true);
+    expect(below.map((handle) => handle.state())).toEqual(['paused', 'paused', 'paused', 'paused', 'live']);
+  });
+
+  it('counts a tile on a computer without thumbnail mode as full rate', async () => {
+    const { states } = await tiles(new Scheduler(), 4, (index) => index === 0);
     expect(states()).toEqual(['live', 'live', 'live', 'paused']);
   });
 
   it('suspends every tile while a terminal is active or the app is in the background', async () => {
     const scheduler = new Scheduler();
-    const { states } = tiles(scheduler, 2);
+    const { states } = await tiles(scheduler, 2);
     scheduler.setActive('h/9');
     expect(states()).toEqual(['paused', 'paused']);
     scheduler.setActive(undefined);
@@ -51,7 +63,7 @@ describe('live tiles', () => {
 
   it('pauses the noisiest tile over the bytes budget and resumes it after the pause', async () => {
     const scheduler = new Scheduler({ tileBytesPerSecond: 1000, bytePauseMs: 5000 });
-    const { handles, states } = tiles(scheduler, 5);
+    const { handles, states } = await tiles(scheduler, 5);
     handles[0]?.bytes(300);
     handles[2]?.bytes(600);
     expect(states()).toEqual(['live', 'live', 'live', 'live', 'paused']);
@@ -68,6 +80,7 @@ describe('live tiles', () => {
     const scheduler = new Scheduler({ liveTiles: 1 });
     const old = scheduler.requestLiveTile('k', { onChange: () => undefined });
     const fresh = scheduler.requestLiveTile('k', { onChange: () => undefined });
+    fresh.setVisible(true);
     old.release();
     expect(fresh.state()).toBe('live');
   });
@@ -230,5 +243,14 @@ describe('one read in flight per computer', () => {
     expect(scheduler.offline('https://gone.t.ts.net')).toBe(true);
     scheduler.forget('https://gone.t.ts.net');
     expect(scheduler.offline('https://gone.t.ts.net')).toBe(false);
+  });
+});
+
+describe('reads', () => {
+  it('frees the read slot when load throws at once', async () => {
+    const scheduler = new Scheduler({ concurrentReads: 1 });
+    const broken = scheduler.read((): Promise<number> => { throw new Error('sync'); });
+    await expect(broken).rejects.toThrow('sync');
+    await expect(scheduler.read(async () => 2)).resolves.toBe(2);
   });
 });

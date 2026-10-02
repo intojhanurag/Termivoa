@@ -15,7 +15,10 @@ import { usePattern } from 'ajv/dist/vocabularies/code';
  */
 export function createProtocolAjv(options: { readonly standalone?: boolean; readonly lenient?: boolean } = {}) {
   const ajv = new Ajv2020({
-    allErrors: true,
+    // Stop at the first error: the app never shows an error list (a refused
+    // message only closes the socket or fails the request), and the
+    // standalone validators are smaller and faster this way.
+    allErrors: false,
     strict: true,
     discriminator: true,
     ...(options.lenient === true ? { removeAdditional: true } : {}),

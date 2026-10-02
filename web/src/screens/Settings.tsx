@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
 import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport } from '../push';
 import type { ComputerEntry } from './allSessions';
-import { ComputersSection } from './Computers';
+import { ChunkErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
+
+// Computers (and the add-computer sheet it opens) load only when Settings opens.
+const ComputersSection = lazy(() => loadChunk(() => import('./Computers')).then((module) => ({ default: module.ComputersSection })));
 
 export type DeviceNameResult =
   | { readonly kind: 'saved'; readonly device: HTTPDeviceSummary }
@@ -139,7 +142,11 @@ export function Settings({
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 
-      <ComputersSection entries={entries} onRetry={onRetry} onChanged={onComputersChanged} onFailure={onFailure} />
+      <ChunkErrorBoundary>
+        <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
+          <ComputersSection entries={entries} onRetry={onRetry} onChanged={onComputersChanged} onFailure={onFailure} />
+        </Suspense>
+      </ChunkErrorBoundary>
 
       {settings === undefined && (
         <p className="muted">Your home computer cannot be reached. Device name, notifications and log out need it.</p>

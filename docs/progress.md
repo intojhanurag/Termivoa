@@ -65,9 +65,19 @@ there, except the "gives up after about 3 s" bound check.
   route reads go through one per-computer queue (`scheduler.serial`); dead
   code removed (`useSessionList`, `latestOnly`, `SESSION_POLL_MS`,
   `parseSessionKey`, the `waitingFirst` re-export).
+- Second round (correctness review): Wall tiles start offscreen until the
+  IntersectionObserver reports them; a load that throws at once frees its
+  read slot; each session is validated once (whole body first, item by
+  item only after a failure); Ajv stops at the first error
+  (`allErrors: false`); Computers and AddComputer are lazy chunks, both
+  precached; the full-rate tile cost is kept as a guard only. New release
+  gate test in `web/src/bundle.test.ts`: a real build's `sw.js`, installed
+  and then offline, serves `/wall` and every chunk the Wall needs from its
+  cache (no DOM; a phone check of the rendered Wall stays with the E2E
+  track). Start-up chunk 420 kB to 392 kB.
 - Not covered by a test (no DOM in tests): the Settings device-name field
   now follows home's label when home answers late (`draft ?? current`).
-- Evidence: `pnpm --dir web test` (47 files, 636 tests), `cd web && npx tsc
+- Evidence: `pnpm --dir web test` (47 files, 640 tests), `cd web && npx tsc
   --noEmit -p .`, `pnpm build:web` and `./scripts/check` exit 0.
 - Phone texts for the docs (track D):
   - Setup, after a refused pairing link: "For safety, this pairing link
