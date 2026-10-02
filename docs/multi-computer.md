@@ -1,6 +1,6 @@
 # Multi-computer: architecture
 
-Status: **proposed, version 3 after two adversarial reviews in two rounds each; owner review required** (ADR [0005](decisions/0005-multi-computer.md)). Nothing here is implemented. Sections 7 and 8 list every review finding and how it is resolved.
+Status: **proposed, version 4 (two adversarial reviewers over three rounds, plus an outside performance review); owner review required** (ADR [0005](decisions/0005-multi-computer.md)). Nothing here is implemented. Sections 7–9 list every review finding and how it is resolved; section 3 "Performance budget" and section 6 "Release gates" carry the performance contract.
 
 One phone uses several computers (for example a Mac, a Linux server and a VPS) from one Home Screen app: one Sessions list, one Wall, new sessions on any computer. This document fixes the architecture, the trust model and the build order before any code is written.
 
@@ -44,7 +44,7 @@ What a compromised home can also do, and how to recover:
 - **It can get a cookie that works without the phone.** It sees the pairing grant and controls the code the phone shows, so it can redeem the grant from a non-browser client that fakes the `Origin` header and keep a raw peer cookie for up to 30 days.
 - **A compromised peer can break the app for all computers** by setting large `Domain=tailX.ts.net` cookies through its responses (every request then grows too large).
 
-**Recovery after a home compromise (required, documented):** run `pterm revoke --via <home origin>` on every peer; delete the Home Screen app (this clears its storage, service workers and cookies); clean or replace home; add the app and pair again.
+**Recovery after a home compromise (required, documented):** run `pterm revoke --via <home origin>` on every peer; clean or replace home; then clear the app's data on the phone, which differs by platform: on iPhone, delete the Home Screen app (its storage, service workers and cookies are its own); on Android the installed app shares Chrome's storage, so also clear that site's data in Chrome (**Settings → Site settings → All sites → the home site → Delete data**). Then add the app and pair again. A test proves that an old service worker cannot intercept a fresh pairing (the app's service-worker allow-list cleanup runs before any pairing request).
 
 ### Roles
 
@@ -67,6 +67,10 @@ Team tailnets, Funnel nodes and reused MagicDNS names all share the site `tailX.
 - **Checking later:** the broker caches the status result for about 60 seconds and checks the cached result on **every request** from a bound origin. If the node ID changed, every device bound to that origin is revoked (never re-bound automatically). If status cannot be read, the last good result is kept for a 10-minute grace period; after that, bound-origin requests are refused (not revoked) until a check succeeds. Requests from the peer's own origin are never affected.
 - **Finding `tailscale`:** reuse `installedTailscale` (`cmd/pterm/lifecycle.go:110`) and add the Homebrew paths, because launchd's `PATH` has neither `/usr/local/bin` nor `/opt/homebrew/bin`. Under WSL, Tailscale usually runs on the Windows host, so a WSL computer cannot be a peer (documented).
 
+**Execution contract.** Status refresh runs **asynchronously**: at most one refresh in flight, a hard time limit, and the result published as an immutable, indexed snapshot (node ID → owner, tags, DNS name). Authorization only **reads** the latest snapshot: it never runs `tailscale`, never queries SQLite, and never waits on network work inside a session actor.
+
+**Already-open WebSockets.** When a bound origin stops being trusted (node ID changed, grace expired, device revoked), every open stream from that origin is handled like today's revocation: input and control requests are refused, the controller lease is released, queued actions are dropped (never replayed, rule 10), and the stream is closed with `access.revoked`. Checking only new HTTP requests is not enough.
+
 This only narrows access; it is never used as authentication (`plan.md:230`).
 
 ### Pairing a second computer (bound grant)
@@ -77,6 +81,8 @@ This only narrows access; it is never used as authentication (`plan.md:230`).
 4. The app redeems the grant on the peer with `credentials: 'include'`. The peer checks the bound origin, the owner and the node ID, then its CLI asks: `Phone "iPhone" shows code 123-456 and will use this computer from the Termivoa app at mac (https://mac.tailX.ts.net, owner ada@example.com). Approve? [y/N]`
 5. On approval the peer sets its cookie and records `devices.app_origin` and the node ID.
 6. Only after the app's first authenticated `GET /api/v1/settings` on the peer succeeds does home confirm the computer — **in this device's list** (`computers` keyed by device ID), never a global list. Pending entries that are not confirmed expire and are deleted; they are shown nowhere.
+
+**First-pairing CORS.** Before any device exists, the bound-origin union is empty, so pairing routes need their own admission: the gateway admits an origin on `/api/v1/pair/*` only while an **unexpired grant or pending pairing bound to that exact origin** exists (the broker includes these in the origin probe). Preflight is answered from that route-specific set, because a preflight carries no cookie and no body. Each real redeem and poll request still forwards its `Origin` to the broker, which verifies it against **that request's own** grant or pending pairing.
 
 Peer CORS, for bound origins only: exact `Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials: true`, `Vary: Origin`; preflight allows `GET, POST, PATCH, DELETE`, headers `Content-Type, X-Pterm-Request`, `Max-Age: 600`.
 
@@ -91,7 +97,16 @@ The peer sends its cookie again on every authenticated `GET /api/v1/settings` (t
 - Label: the first DNS label (`vps`), renameable. Colour from a fixed palette by origin hash, always with the text label. Labels come from the origin the phone dialled, never from the peer.
 - The HTTP client becomes per computer (`client(origin)`); `Connection` already takes any URL.
 - New session: pick the computer first, then its projects and shells. Unreachable computers are disabled.
-- Wall: tiles from all computers, but only **visible** tiles connect (IntersectionObserver), and reconnects are staggered per computer, so three computers do not open dozens of sockets or reconnect at once.
+- Wall: tiles from all computers, governed by the phone's terminal-work budget below (visibility alone does not bound cost).
+
+### Performance budget (the phone is the bottleneck)
+
+A small stream on the wire can still be large work on the phone: an outside review measured, on one local broker with a 1 MiB/s terminal and three viewers, about 6.5 MiB/s of decoded JSON from 0.13 MiB/s of compressed traffic. Every message is parsed and validated **on arrival, before** animation-frame coalescing (`Connection.ts:818-828`), each Wall tile builds its own full terminal renderer and connection (`Wall.tsx:128-130`), and browser WebSockets have no receive backpressure, so limiting paint rate alone is not enough.
+
+- **One phone-wide scheduler** owns a budget for live tiles, open connections, decoded bytes per second and reconnect attempts.
+- **The active terminal comes first**: it keeps today's limits; Wall tiles and background observers are suspended when offscreen or when the app is in the background.
+- **Thumbnail streams are throttled at the source:** starting point **4 live Wall thumbnails at 5 updates per second, enforced by the broker** for read-only thumbnail viewers (canonical PTY processing and revision-correct coalescing are unchanged). The numbers are tuned on real phones.
+- Every limit has a test, and the release gates in section 6 measure it.
 
 ### Peer responses are untrusted
 
@@ -99,8 +114,9 @@ Every message from every computer (HTTP responses and WebSocket frames) is valid
 
 ### Home offline, and one computer offline
 
-- Navigation becomes network-first with a **2–3 second timeout** and a cached app shell; the shell is re-cached on every successful navigation, so its CSP follows added and removed computers. (`index.html` and its CSP now depend on the device cookie.) The computer list (origins and labels, not secret) is kept in `localStorage` and replaced on every load from home. If home is unreachable, the app still opens and reaches the peers; home is treated as one more computer.
-- Each computer loads independently (`Promise.allSettled`, per-computer timeouts). An unreachable computer shows **"vps · can't reach"** with Retry; session lists are not cached (titles and folders are private).
+- The app ships as a **versioned, complete offline bundle**: on install, the service worker prepares the HTML (with its CSP) and **every** JavaScript and CSS chunk of that version (today Live, Wall and Preview are lazy chunks, `App.tsx:18-21`, cached only when first requested, `sw.js:62-70`), and switches versions only when the new bundle is complete; an interrupted update keeps the old one. A test opens an **unvisited Wall while home is offline**. Cold launch is measured separately, because a navigation timeout adds delay before peers start.
+- Navigation becomes network-first with a **2–3 second timeout** and the cached bundle; the shell is re-cached on every successful navigation, so its CSP follows added and removed computers. (`index.html` and its CSP now depend on the device cookie.) The computer list (origins and labels, not secret) is kept in `localStorage` and replaced on every load from home. If home is unreachable, the app still opens and reaches the peers; home is treated as one more computer.
+- Each computer loads independently under one scheduler with global limits: at most **8 computers**, at most one outstanding poll per computer, at most **3 concurrent reads** and **2 concurrent connection attempts** across all computers, jittered retries, and an offline cooldown. Each computer's result is shown as soon as it arrives (never waiting for the slowest), so a sleeping VPS never delays opening the Mac's terminal. An unreachable computer shows **"vps · can't reach"** with Retry; session lists are not cached (titles and folders are private).
 - A 401 from a peer shows **"vps · pair again"** and never logs the app out of home or of other peers.
 - Changing which computer is home means a new Home Screen icon (a new cookie jar), so every peer must be paired again. Documented.
 
@@ -139,17 +155,17 @@ The owner asked for the best stack for performance, in any language.
 | Option | Fit |
 | --- | --- |
 | **Go (current)** | One static binary per platform, fast startup, low memory, excellent networking and TLS-free loopback HTTP, mature PTY and SQLite support already in place, cross-compiles to macOS, Linux and Windows. |
-| Rust | Lower memory and no GC pauses, but the hot paths here are network I/O and terminal parsing at human speed; GC pauses are not a bottleneck at this scale. A rewrite would discard a tested broker, gateway and protocol stack and slow every feature. |
+| Rust | Lower memory and no GC pauses. But a rewrite would discard a tested broker, gateway and protocol stack and slow every feature, and no profile shows a host-side bottleneck yet. Terminal output can far exceed typing speed, so allocation and GC cost are measured, not assumed. |
 | Node or Bun (TypeScript) | Shares code with the web app, but needs a runtime on every computer (against ADR 0001 and AGENTS.md rule 2), uses more memory, and is weaker for PTY supervision on Windows. |
 | Zig or C++ | Highest control, far more risk and effort, no benefit for this workload. |
 
-**Decision: keep Go.** Multi-computer adds direct phone-to-computer links, not a new hot path; per-request work is small and bounded. The phone side stays TypeScript and React (shared types are generated from the JSON Schemas). If profiling ever shows a hot spot (for example the terminal emulator), that one component can be optimized in place.
+**Decision: keep Go, with a profiling requirement.** Multi-computer adds direct phone-to-computer links, not a new host hot path. Before any component is rewritten or memory limits are tuned, profile the broker's terminal emulator, frame encoding per viewer, and allocation/GC under the release-gate load. The measured bottleneck today is the phone, not the host. The phone side stays TypeScript and React (shared types are generated from the JSON Schemas). If profiling ever shows a hot spot (for example the terminal emulator), that one component can be optimized in place.
 
 ## 6. Build plan
 
 ### Gate 0 (blocking; owner, real iPhone and Android)
 
-A small committed harness (`scripts/gate0/`, about 40 lines: one HTTPS endpoint that sets and echoes a `__Host-` Strict cookie with credentialed CORS and a WebSocket) runs behind Tailscale Serve on two machines in one tailnet. Running it changes Tailscale Serve, so it needs the owner's approval (rule 12). From the installed home app, over **IPv4**:
+A small harness, **to be committed first** (`scripts/gate0/`, about 40 lines; earlier reviewer experiments were throwaway and are reported, not reproducible, evidence: one HTTPS endpoint that sets and echoes a `__Host-` Strict cookie with credentialed CORS and a WebSocket) runs behind Tailscale Serve on two machines in one tailnet. Running it changes Tailscale Serve, so it needs the owner's approval (rule 12). From the installed home app, over **IPv4**:
 
 1. A credentialed `fetch` to the peer sets its cookie; later `fetch` and the WebSocket send it.
 2. The cookie survives killing the app and rebooting the phone, and stays in the app's own cookie jar.
@@ -177,6 +193,18 @@ The 7-day cap is not a stop condition (rolling refresh covers it). If checks 1 o
 ### Integration tests
 
 Cookies ignore ports, so two loopback dev stacks would overwrite each other's cookie. Integration tests instead run Playwright (Chromium and WebKit) with `--host-resolver-rules="MAP *.tailx.ts.net 127.0.0.1"`, self-signed TLS and those names in the dev Host allow-list. Required tests: per-device origin binding, near-miss and `null` origins, a reused node name (owner and node ID checks), bound grants refused from other origins, cookie refresh, a push-woken service worker, one computer offline, a 401 from one peer, and home offline with the cached shell.
+
+### Release gates (performance)
+
+Multi-computer is not called fast until these pass. They extend `plan.md` §13 and keep its targets: **p95 under 30 ms app-added key-to-frame latency** (at least 1,000 events, host receive-to-frame and browser send-to-paint measured on their own clocks) and **p95 under 2 seconds authenticated foreground reconnect**. Each benchmark records the actual Tailscale connection type (direct, DERP relay or peer relay).
+
+| Scenario | Required evidence |
+| --- | --- |
+| Active terminal while other computers flood output | Host receive-to-frame and browser send-to-paint latency, compared with the single-computer baseline |
+| Maximum supported Wall | Phone CPU, memory, decoded bytes, frame freshness and responsiveness |
+| Sleeping or failing computer | Healthy computers usable at once; retry traffic stays bounded |
+| Network changes | Real iPhone and Android, Wi-Fi and cellular, direct and relayed paths, return to foreground |
+| Sustained load | The ten-minute stress test and 24-hour soak extended across computers |
 
 ### MVP and follow-up
 
@@ -232,6 +260,22 @@ Both reviewers attacked version 2. Security: "sound with changes". Feasibility: 
 | 33 | A compromised peer can bloat cookies for all computers (low) | In the trust statement; recovery is deleting the app |
 | 34 | Track gaps and overlap (`server.go`, Tailscale status code, `Composer`, `SessionMenu`, `Worktree`, `activity`) (medium) | Assigned to H2, H1 (`internal/tailnet`) and W2 |
 | 35 | MVP too large for one step (low) | Split into M1 and M2, both before release |
+
+## 9. Outside performance review (version 4)
+
+An outside review of version 3 (with a local benchmark) found no error in the direction and asked for contracts that version 3 lacked. Each claim was checked against the code before it was accepted:
+
+| # | Finding | Checked | Resolution |
+| --- | --- | --- | --- |
+| 38 | No phone-wide terminal-work budget; visibility does not bound cost; parse and validate happen before coalescing (P1) | True: `Wall.tsx:128-130`, `Connection.ts:818-828` | "Performance budget": one scheduler, active terminal first, broker-enforced thumbnail rate, starting at 4 tiles × 5 updates/s |
+| 39 | Trust checks need a non-blocking execution contract and must affect already-open WebSockets (P1) | True: not specified | Async single-flight refresh with immutable snapshot; open streams refused, lease released, queued actions dropped, closed with `access.revoked` |
+| 40 | Cross-computer polling and reconnects need global bounds (P2) | True | One scheduler: 8 computers, 1 poll each, 3 reads, 2 connects, jitter, cooldown, results shown as they arrive |
+| 41 | "Home offline" needs a complete offline bundle, not a cached shell (P1) | True: lazy chunks `App.tsx:18-21`, cached on request `sw.js:62-70` | Versioned complete bundle, atomic switch; test an unvisited Wall offline; cold launch measured |
+| 42 | First-pairing CORS had no mechanism before a device exists (P2) | True | Route-specific admission from unexpired grants and pending pairings; per-request verification on redeem and poll |
+| 43 | Gate 0 harness described as committed but absent; recovery not portable (P2) | True: `scripts/gate0/` absent; Android shares Chrome storage | Harness marked "to be committed first"; platform-specific recovery; old-worker test |
+| 44 | Go claims too strong ("human speed", "GC not a bottleneck") | Fair | Replaced by a profiling requirement |
+| 45 | Direct links may still run over a Tailscale relay | Fair | Benchmarks record the connection type |
+| 46 | Performance release gates missing | True | "Release gates" in section 6, keeping `plan.md` §13 targets |
 
 **Final confirmation round (version 3):** feasibility — confirmed with notes, all resolved: the `internal/tailnet` move is split between H1 (new package, `checks.go`) and H2 (`cmd/pterm` call site); `pathLinks.ts` and `TerminalView.ts` go to W2; a home reinstall changes the node ID (documented). Security — confirmed with two notes, both resolved: (36, medium) a program printing a fake add-computer link to its own server could add a fake computer → home checks the host in its own `tailscale status` (same tailnet and owner), pins the node ID, and always asks in a confirm sheet drawn outside the terminal; (37, low-medium) short `--via` names could match the wrong node → match only `DNSName` first labels in the peer's own tailnet, refuse ambiguity, always show the full origin.
 
