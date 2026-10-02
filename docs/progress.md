@@ -38,6 +38,64 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Multi-computer review fixes, web side (2026-10-02, branch `feat/mc-fix-web`)
+
+Fixes the review findings on the phone app of `feat/multi-computer`
+(d826c02). The host side has its own fix track. Every fix has a vitest
+test (no jsdom); each new test was run against the unfixed code and failed
+there, except the "gives up after about 3 s" bound check.
+
+- Security: no grant is redeemed on a load that a stray service worker may
+  still see (`workersSafe`, `guardStartup`: drop the grant, one guarded
+  reload, then "Run pterm pair again"); the service-worker allow-list
+  checks every worker of a registration and keeps a fresh own-scope
+  registration; `/computers/add` shows the full origin and waits for
+  **Continue**; Cancel deletes the pending entry on home; "Open pull
+  request" never opens a same-origin app route; a peer's WebSocket error
+  text is replaced by the app's own words (`ConnectionOptions.peer`);
+  composer drafts and the last Changes tab are keyed by `host/id`.
+- Correctness: with peers stored the app opens at once while home sleeps,
+  and adopts home's settings, list and preview origin when home first
+  answers; the one-computer screen is unchanged (no computer rows, "not
+  reachable" after the first failure); the first peer settings read after
+  approval is retried for about 3 s; Log out signs out of each reachable
+  peer first and names the rest (`pterm revoke` there); a peer without
+  `protocolRevision` is "Update Termivoa on X"; "Check again" reports a
+  failed read; per-origin state is dropped on remove; polls, reloads and
+  route reads go through one per-computer queue (`scheduler.serial`); dead
+  code removed (`useSessionList`, `latestOnly`, `SESSION_POLL_MS`,
+  `parseSessionKey`, the `waitingFirst` re-export).
+- Not covered by a test (no DOM in tests): the Settings device-name field
+  now follows home's label when home answers late (`draft ?? current`).
+- Evidence: `pnpm --dir web test` (47 files, 636 tests), `cd web && npx tsc
+  --noEmit -p .`, `pnpm build:web` and `./scripts/check` exit 0.
+- Phone texts for the docs (track D):
+  - Setup, after a refused pairing link: "For safety, this pairing link
+    was not used. Run pterm pair on your computer again."
+  - Add page, after a refused add link: "For safety, this add-computer link
+    was not used. Run pterm pair --via <home> on the new computer again,
+    then paste the new link."
+  - Add page first step: **Address** with the full origin, "Continue only
+    if you just ran pterm pair --via on <label>. Next, this phone shows a
+    code. Check it on <label>.", buttons **Continue** and **Cancel**.
+  - Pair-again row: "<label> · pair again · Run pterm pair --via <home> on
+    <label>".
+  - Outdated computer: "Update Termivoa on <label>" uses the renamed label;
+    a computer without `protocolRevision` now shows it instead of "can't
+    reach".
+  - Log out: "You logged out. This phone no longer has access. Could not
+    sign out of <labels>. Run pterm revoke there to remove this phone."
+    With 2 or more computers the Log out section says "Signs this phone out
+    of every computer. Running sessions keep running."
+  - One computer: rows such as "mac · can't reach" are gone again; the
+    header says "Your computer · not reachable, retrying" after the first
+    failure.
+  - "Check again" now shows an error when a read fails.
+  - A peer's live-session errors use fixed texts (`PEER_ERRORS` in
+    `web/src/terminal/Connection.ts`), for example "That computer is busy.
+    Try again."
+  - "Open pull request" is not shown for a link to the app's own address.
+
 ### Multi-computer D: user and repo docs (2026-10-02, branch `feat/mc-docs`)
 
 Track D of `docs/multi-computer.md`, written against the integrated branch
