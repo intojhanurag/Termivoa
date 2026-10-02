@@ -129,7 +129,7 @@ export function AddComputerSheet({ link, onClose, go = (url) => window.location.
         {check.kind === 'checking' && <p role="status" className="muted">Checking {label}…</p>}
         {check.kind === 'error' && <p role="alert" className="error">{check.message}</p>}
         {check.kind === 'ready' && (
-          <AddComputerConfirm link={link} node={check.node} onConfirm={() => go(addComputerUrl(link, globalThis.location?.pathname))} onCancel={onClose} />
+          <AddComputerConfirm link={link} node={check.node} onConfirm={() => { cancelAdd(); go(addComputerUrl(link, globalThis.location?.pathname)); }} onCancel={onClose} />
         )}
       </Sheet>
     </div>

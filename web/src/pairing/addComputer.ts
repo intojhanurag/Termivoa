@@ -335,6 +335,16 @@ export function cancelAdd(): void {
   publish({ ...task, phase: { kind: 'cancelled' } });
 }
 
+/**
+ * Log out, revoke or re-pair: cancels a running add (the old device must not
+ * get a cookie on the new computer) and forgets an ended one, so its banner
+ * does not come back and a new add can start.
+ */
+export function resetAdd(): void {
+  cancelAdd();
+  publish(undefined);
+}
+
 /** Hides the banner of an add that ended. A running add keeps its banner. */
 export function dismissAdd(): void {
   if (running === undefined && task !== undefined && task.dismissed !== true) publish({ ...task, dismissed: true });

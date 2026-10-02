@@ -263,6 +263,37 @@ describe('AddComputerFlow', () => {
     expect(calls).toContain('DELETE /api/v1/computers/vps.tailx.ts.net');
   });
 
+  it('resetAdd (log out, revoke, re-pair) stops a running add and forgets an ended one', async () => {
+    vi.resetModules();
+    const add = await import('./addComputer');
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      if (url.endsWith('/pair/redeem')) {
+        return json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      }
+      if (url.endsWith('/pair/poll')) return json(200, { status: 'pending' });
+      return new Response(null, { status: 204 });
+    }));
+    const done = add.startAdd({ origin: 'https://vps.tailx.ts.net', grant }, 'Phone');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(add.currentAdd()?.phase.kind).toBe('waiting');
+    add.resetAdd();
+    expect(add.currentAdd()).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await done;
+    expect(add.currentAdd()).toBeUndefined();
+    expect(calls).toContain('DELETE /api/v1/computers/vps.tailx.ts.net');
+    const polls = calls.filter((call) => call.endsWith('/pair/poll')).length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls.filter((call) => call.endsWith('/pair/poll'))).toHaveLength(polls);
+    // A new add can start in the same load.
+    void add.startAdd({ origin: 'https://pc.tailx.ts.net', grant }, 'Phone');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(add.currentAdd()).toMatchObject({ label: 'pc', phase: { kind: 'waiting' } });
+    add.resetAdd();
+  });
+
   it('gives up after about 3 s of network errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url.endsWith('/pair/redeem')) {

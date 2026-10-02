@@ -3,7 +3,7 @@ import { api, ApiError, client, CONNECTION_UNAVAILABLE, firstLabel, homeOrigin, 
 import { logOut, refreshComputers, storedComputers, type Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import {
-  ADD_COMPUTER_PATH, cancelAdd, currentAdd, dismissAdd, PEER_ADD_PATH, subscribeAdd, takeAddComputerFragment,
+  ADD_COMPUTER_PATH, cancelAdd, currentAdd, dismissAdd, PEER_ADD_PATH, resetAdd, subscribeAdd, takeAddComputerFragment,
   type AddComputerLink, type AddTask, type AppLocation,
 } from '../pairing/addComputer';
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
@@ -470,6 +470,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   }));
 
   const toSetup = useCallback((reason?: string) => {
+    resetAdd();
     home.reset();
     if (window.location.pathname !== '/pair') {
       window.history.replaceState(null, '', '/');

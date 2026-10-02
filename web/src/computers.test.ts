@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { READ_TIMEOUT_MS } from './api/http';
 import {
-  COMPUTERS_KEY, forgetPending, logOut, logoutNote, logoutPeers, PALETTE, refreshComputers, removeComputer, renameComputer,
+  COMPUTERS_KEY, confirmComputer, forgetPending, logOut, logoutNote, logoutPeers, PALETTE, refreshComputers, removeComputer, renameComputer,
   sessionKey, storedComputers, toComputer,
 } from './computers';
 
@@ -114,6 +114,15 @@ describe('removeComputer', () => {
       ? new Response(null, { status: 204 }) : json(500, { error: { code: 'internal_error', message: 'x' } }))));
     await expect(removeComputer(toComputer(vps), storage)).rejects.toMatchObject({ status: 500 });
     expect(JSON.parse(store.get(COMPUTERS_KEY) ?? '')).toEqual([vps]);
+  });
+});
+
+describe('confirmComputer', () => {
+  it('gives a computer it could not store a peer colour, never home\'s', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { computer: vps, state: 'confirmed', node: { id: 'n1', tags: [] } })));
+    const refused = { getItem: () => null, setItem: () => { throw new Error('quota'); } };
+    const computer = await confirmComputer(vps.origin, vps.label, refused);
+    expect(computer.color).not.toBe(PALETTE[0]);
   });
 });
 

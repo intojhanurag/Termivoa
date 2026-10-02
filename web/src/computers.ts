@@ -141,7 +141,10 @@ export async function forgetPending(origin: string, storage: StorageLike | undef
 export async function confirmComputer(origin: string, label = firstLabel(origin), storage: StorageLike | undefined = defaultStorage()): Promise<Computer> {
   const saved = await client().saveComputer({ origin, label, state: 'confirmed' });
   savePeer(saved.computer, storage);
-  return toComputer(saved.computer, false, readPeers(storage).findIndex((entry) => entry.origin === saved.computer.origin) + 1);
+  const peers = readPeers(storage);
+  const place = peers.findIndex((entry) => entry.origin === saved.computer.origin);
+  // Not stored (storage refused): still a peer's colour, never home's.
+  return toComputer(saved.computer, false, (place === -1 ? peers.length : place) + 1);
 }
 
 /** Renames a confirmed computer on home and here. Check the label with deviceLabelProblem first (same rules). */
