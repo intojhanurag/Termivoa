@@ -41,7 +41,7 @@ export function age(iso: string | undefined, now: number): string {
   return hours < 48 ? 'yesterday' : `${Math.floor(hours / 24)} d`;
 }
 
-const ended = (session: BrokerRPCSessionRecord) => session.state === 'exited' || session.state === 'lost';
+export const ended = (session: BrokerRPCSessionRecord) => session.state === 'exited' || session.state === 'lost';
 
 function PromptGlyph() {
   return (

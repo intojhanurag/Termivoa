@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, deviceLabelProblem } from '../api/http';
-import { claimGrant, PairingFlow, type PendingPairing } from '../pairing/pairing';
-import type { GrantHolder } from './App';
+import { claimGrant, PairingFlow, type GrantSlot, type PendingPairing } from '../pairing/pairing';
 
 type Phase = 'none' | 'label' | 'redeeming' | 'waiting' | 'expired' | 'error' | 'cancelled';
 
@@ -51,7 +50,7 @@ function Step({ label, title }: { readonly label: string; readonly title: string
 }
 
 export function Setup({ grant, reason, onPaired }: {
-  readonly grant: GrantHolder;
+  readonly grant: GrantSlot;
   readonly reason?: string;
   readonly onPaired: () => void;
 }) {

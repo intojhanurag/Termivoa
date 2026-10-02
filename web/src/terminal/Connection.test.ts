@@ -115,6 +115,9 @@ function patch(socket: FakeSocket, baseRevision: string, revision: string, index
   });
 }
 
+/** A gate that admits every attempt at once, like the active terminal's. */
+const openGate = () => new Scheduler().connectGate('https://host.invalid', true);
+
 function harness(extra: Partial<ConnectionOptions> = {}) {
   const painted: Array<ScreenSnapshot | ScreenPatch> = [];
   const display: ScreenDisplay = {
@@ -128,6 +131,7 @@ function harness(extra: Partial<ConnectionOptions> = {}) {
     display,
     createSocket: (url) => new FakeSocket(url) as unknown as WebSocket,
     requestFrame: (callback) => queueMicrotask(callback),
+    gate: openGate(),
     ...extra,
   });
   connection.start();
@@ -478,6 +482,7 @@ describe('Connection', () => {
       },
       createSocket: (url) => new FakeSocket(url) as unknown as WebSocket,
       requestFrame: () => undefined,
+      gate: openGate(),
     });
     connection.start();
     const socket = FakeSocket.all.at(-1) as FakeSocket;
@@ -1018,6 +1023,7 @@ describe('Session tab switching', () => {
       display: { paintSnapshot: async () => undefined, applyPatch: async () => undefined },
       createSocket: (url) => new FakeSocket(url) as unknown as WebSocket,
       requestFrame: (callback) => queueMicrotask(callback),
+      gate: openGate(),
     });
     next.start();
     const nextSocket = socket();

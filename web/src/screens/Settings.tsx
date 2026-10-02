@@ -3,7 +3,7 @@ import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
 import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport } from '../push';
 import type { ComputerEntry } from './allSessions';
-import { ChunkErrorBoundary, loadChunk } from './chunks';
+import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 
 // Computers (and the add-computer sheet it opens) load only when Settings opens.
@@ -142,11 +142,11 @@ export function Settings({
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 
-      <ChunkErrorBoundary>
+      <ErrorBoundary>
         <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
           <ComputersSection entries={entries} onRetry={onRetry} onChanged={onComputersChanged} onFailure={onFailure} />
         </Suspense>
-      </ChunkErrorBoundary>
+      </ErrorBoundary>
 
       {settings === undefined && (
         <p className="muted">Your home computer cannot be reached. Device name, notifications and log out need it.</p>

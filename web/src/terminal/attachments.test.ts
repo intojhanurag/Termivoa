@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HTTPUploadResponse } from '../generated/protocol';
 import { ApiError } from '../api/http';
-import { formatSize, insertReference, PhotoAttacher, removeReference, type Attachment, type AttachDeps } from './attachments';
+import { insertReference, PhotoAttacher, removeReference, type Attachment, type AttachDeps } from './attachments';
 
 const path = '.termivoa/uploads/20260927-143012-a1b2c3d4.png';
 const saved: HTTPUploadResponse = { path, size: 421_000, contentType: 'image/png' };
@@ -29,12 +29,6 @@ describe('reference text', () => {
     expect(removeReference(`see @${path} here`, path)).toBe('see here');
     expect(removeReference(`@${path}x fix`, path)).toBe(`@${path}x fix`);
     expect(removeReference('fix this', path)).toBe('fix this');
-  });
-
-  it('formats sizes in KB and MB', () => {
-    expect(formatSize(421_888)).toBe('412 KB');
-    expect(formatSize(100)).toBe('1 KB');
-    expect(formatSize(1.25 * 1024 * 1024)).toBe('1.3 MB');
   });
 });
 

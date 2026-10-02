@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ApiError, deviceLabelProblem, firstLabel } from '../api/http';
-import { forgetPending, type Computer } from '../computers';
+import { forgetPending } from '../computers';
 import type { TailnetNode } from '../generated/protocol';
 import {
   addComputerUrl, cancelAdd, currentAdd, dismissAdd, fromTerminal, prepareAddComputer, startAdd, subscribeAdd, type AddComputerLink,

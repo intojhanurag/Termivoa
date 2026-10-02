@@ -2,8 +2,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import type { FileEntry, FileKind } from '../generated/protocol';
 import type { Connection, FilesFileView, FilesView } from '../terminal/Connection';
-import { breakable, splitPath, StateText } from './Changes';
-import { folderName } from './folder';
+import { breakable, StateText } from './Changes';
+import { folderName, splitPath } from './folder';
 
 export type ChangesTab = 'changes' | 'files';
 

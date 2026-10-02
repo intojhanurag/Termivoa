@@ -14,7 +14,9 @@ function memory() {
   };
 }
 
-const session = { id: '00000000-0000-4000-8000-000000000001', generation: '00000000-0000-4000-8000-000000000002' };
+const session = {
+  id: '00000000-0000-4000-8000-000000000001', generation: '00000000-0000-4000-8000-000000000002', computer: { host: 'h' },
+};
 const at = (time: string) => Date.parse(`2026-09-27T${time}Z`);
 
 describe('new-output dot', () => {
@@ -52,12 +54,12 @@ describe('new-output dot', () => {
   it('bounds stored entries and ignores tampered values', () => {
     const store = memory();
     for (let index = 0; index < 120; index++) {
-      markViewed({ id: String(index), generation: 'g' }, index, store);
+      markViewed({ id: String(index), generation: 'g', computer: { host: 'h' } }, index, store);
     }
     const viewed = readViewed(store);
     expect(Object.keys(viewed)).toHaveLength(100);
-    expect(viewed['119/g']).toBe(119);
-    expect(viewed['0/g']).toBeUndefined();
+    expect(viewed['h/119/g']).toBe(119);
+    expect(viewed['h/0/g']).toBeUndefined();
     store.setItem(VIEWED_KEY, '{"a/b":"x","c/d":5}');
     expect(readViewed(store)).toEqual({ 'c/d': 5 });
   });
@@ -74,12 +76,6 @@ describe('keys across computers', () => {
     expect(Object.keys(readViewed(store))).toEqual([`vps.tailx.ts.net/${session.id}/${session.generation}`]);
     expect(hasNewOutput({ ...output, computer: vps }, readViewed(store))).toBe(false);
     expect(hasNewOutput({ ...output, computer: mac }, readViewed(store))).toBe(true);
-  });
-
-  it('reads an old bare key as home, never as a peer', () => {
-    const viewed = { [`${session.id}/${session.generation}`]: at('10:01:00') };
-    expect(hasNewOutput({ ...output, computer: mac }, viewed)).toBe(false);
-    expect(hasNewOutput({ ...output, computer: vps }, viewed)).toBe(true);
   });
 
   it('keeps the worked seconds under the same host key', () => {
@@ -130,7 +126,7 @@ describe('while you were away', () => {
   it('stores the worked seconds next to the viewed time, by session and generation', () => {
     const store = memory();
     markViewed({ ...session, agent: { state: 'working', stateSince, workedSeconds: 42 } }, at('10:00:00'), store);
-    markViewed({ id: 'other', generation: 'g' }, at('10:01:00'), store);
+    markViewed({ id: 'other', generation: 'g', computer: { host: 'h' } }, at('10:01:00'), store);
     expect(readWorked(store)).toEqual({ [viewedKey(session)]: 42 });
     // A later view without a total keeps the last one seen.
     markViewed(session, at('10:02:00'), store);

@@ -8,11 +8,12 @@ import {
 } from '../pairing/addComputer';
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
 import { workersSafe } from '../push';
+import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
   forgetSettings, homeSettings, hosted, keyOf, mergeSessions, pairAgain, ReadFailure, useAllSessions, type HostedSession,
 } from './allSessions';
-import { ChunkErrorBoundary, loadChunk } from './chunks';
+import { ErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
 import { NewSession } from './NewSession';
 import { OfflineScreen } from './StateScreen';
@@ -34,11 +35,9 @@ const loadAddComputer = () => loadChunk(() => import('./AddComputer'));
 const AddComputerPage = lazy(() => loadAddComputer().then((module) => ({ default: module.AddComputerPage })));
 const PeerAddPage = lazy(() => loadAddComputer().then((module) => ({ default: module.PeerAddPage })));
 
-export type GrantHolder = GrantSlot;
-
 /** Secrets and links read from the URL fragment before anything renders. */
 export interface StartupLinks {
-  readonly grant: GrantHolder;
+  readonly grant: GrantSlot;
   /** `/computers/add#…` on home: the add-computer link to redeem. */
   readonly add?: AddComputerLink | undefined;
   /** `/add-computer#…` opened directly on a peer (for example from the iPhone camera): the whole link, to copy. */
@@ -214,14 +213,6 @@ export interface StrayCheck {
 
 type SessionStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-function sessionStore(): SessionStore | undefined {
-  try {
-    return globalThis.sessionStorage;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Runs after the stray-worker cleanup and before any pairing request. A stray
  * worker that controls this page sees every request until the next load, so
@@ -275,7 +266,7 @@ export async function guardLink(
   slots: Parameters<typeof guardStartup>[0],
   unsafe: boolean,
   check: () => Promise<boolean> = workersSafe,
-  store: SessionStore | undefined = sessionStore(),
+  store: SessionStore | undefined = storage('sessionStorage'),
 ): Promise<StrayCheck> {
   return unsafe ? guardStartup(slots, await check(), store) : { safe: true, reload: false, refused: undefined };
 }
@@ -565,7 +556,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     // Before anything else, and before any pairing request: drop service
     // workers that this app did not register (a compromised home may have),
     // and use no grant on a load that one of them may still see.
-    const check = guardStartup({ grant, add: addSlot }, await workersSafe(), sessionStore());
+    const check = guardStartup({ grant, add: addSlot }, await workersSafe(), storage('sessionStorage'));
     unsafe.current = !check.safe;
     if (check.reload) {
       window.location.reload();
@@ -784,7 +775,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         />
       )}
       {(view.name === 'peer-add' || view.name === 'add-computer') && (
-        <ChunkErrorBoundary>
+        <ErrorBoundary>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening…</p></main>}>
             {view.name === 'peer-add' ? <PeerAddPage link={peerLink} /> : (
               <AddComputerPage
@@ -803,7 +794,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               />
             )}
           </Suspense>
-        </ChunkErrorBoundary>
+        </ErrorBoundary>
       )}
       {view.name === 'sessions' && (
         <Sessions
@@ -822,7 +813,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         />
       )}
       {view.name === 'wall' && (
-        <ChunkErrorBoundary>
+        <ErrorBoundary>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening wall…</p></main>}>
             <Wall
               sessions={answered ? sessions : undefined}
@@ -832,7 +823,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onList={toSessions}
             />
           </Suspense>
-        </ChunkErrorBoundary>
+        </ErrorBoundary>
       )}
       {view.name === 'new' && (
         <NewSession
@@ -850,7 +841,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         />
       )}
       {view.name === 'live' && (
-        <ChunkErrorBoundary key={`${keyOf(view.session)}/${view.session.generation}`}>
+        <ErrorBoundary key={`${keyOf(view.session)}/${view.session.generation}`}>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening terminal…</p></main>}>
             <Live
               session={view.session}
@@ -874,10 +865,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onRevoked={(reason) => revoked(view.session.computer, reason)}
             />
           </Suspense>
-        </ChunkErrorBoundary>
+        </ErrorBoundary>
       )}
       {view.name === 'preview' && previewAt !== undefined && (
-        <ChunkErrorBoundary key={`${view.session.id}/${view.session.generation}/preview`}>
+        <ErrorBoundary key={`${view.session.id}/${view.session.generation}/preview`}>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening preview…</p></main>}>
             <Preview
               session={view.session}
@@ -888,7 +879,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onTell={() => navigate({ name: 'live', session: view.session, compose: true })}
             />
           </Suspense>
-        </ChunkErrorBoundary>
+        </ErrorBoundary>
       )}
       {view.name === 'settings' && (
         <Settings

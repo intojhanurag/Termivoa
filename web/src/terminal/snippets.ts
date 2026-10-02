@@ -1,6 +1,7 @@
 import type { KeyName, Modifiers } from '../generated/protocol';
 import { checkPaste, MAX_PASTE_BYTES, type PasteCheck } from './composer';
 import { NO_MODIFIERS } from './InputController';
+import { storage, type StorageLike } from '../storage';
 
 /** Saved text the user sends often. Plain user text, not a secret. */
 export interface Snippet {
@@ -24,16 +25,6 @@ export const DEFAULT_SNIPPETS: ReadonlyArray<Snippet> = [
   { id: 'default-explain', title: 'Explain the last error', text: 'Explain the last error in plain words', sendEnter: true, shell: false },
   { id: 'default-git-status', title: 'git status', text: 'git status', sendEnter: true, shell: true },
 ];
-
-type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
-
-function storage(): StorageLike | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 /** Why a snippet cannot be saved, or undefined when it is valid. */
 export function snippetProblem(title: string, text: string): string | undefined {

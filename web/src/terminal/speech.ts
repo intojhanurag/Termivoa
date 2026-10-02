@@ -25,10 +25,6 @@ export function recognizerFactory(win: object = globalThis): RecognizerFactory |
   return Recognition === undefined ? undefined : () => new Recognition();
 }
 
-export function speechSupported(win: object = globalThis): boolean {
-  return recognizerFactory(win) !== undefined;
-}
-
 export type SpeechSnapshot = {
   readonly state: 'idle' | 'listening' | 'error';
   readonly finalText: string;

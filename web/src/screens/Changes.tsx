@@ -3,7 +3,7 @@ import { homeOrigin } from '../api/http';
 import type { ChangedFile, ChangeStatus, DiffLine } from '../generated/protocol';
 import type { ChangesFileView, ChangesView, ChangesWrite, Connection } from '../terminal/Connection';
 import { readDraft, saveDraft } from '../terminal/composer';
-import { displayPath } from './folder';
+import { displayPath, splitPath } from './folder';
 import { Sheet, SheetHeader } from './Sheet';
 
 const STATUS: Record<ChangeStatus, { readonly letter: string; readonly name: string }> = {
@@ -101,12 +101,6 @@ export function linesDraft(path: string, selected: ReadonlyArray<DiffLine>): str
   // A fence longer than any backtick run in the lines, so the quote cannot end early.
   const fence = '`'.repeat(Math.max(3, ...[...body.matchAll(/`+/gu)].map((run) => run[0].length + 1)));
   return `@${path} ${linesLabel(selected)}:\n${fence}\n${body}\n${fence}\n\n`;
-}
-
-/** "src/app/" and "main.ts": the directory is shown muted, the name strong. */
-export function splitPath(path: string): { readonly dir: string; readonly name: string } {
-  const slash = path.lastIndexOf('/');
-  return { dir: path.slice(0, slash + 1), name: path.slice(slash + 1) };
 }
 
 /**

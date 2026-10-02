@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_PROTOCOL_REVISION, PROTOCOL_REVISION } from '../generated/protocol';
 import {
   api, ApiError, blobToBase64, client, deviceLabelProblem, firstLabel, forgetClient, MAX_RESPONSE_BYTES, PEER_REQUEST_FAILED,
-  REQUEST_TIMEOUT_MS, revisionProblem, supports, UPLOAD_TIMEOUT_MS,
+  REQUEST_TIMEOUT_MS, revisionProblem, UPLOAD_TIMEOUT_MS,
 } from './http';
 
 // Pretend this app is at revision 3 and serves computers from revision 2, so a
@@ -20,6 +20,17 @@ function json(status: number, body: unknown) {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+
+/** Fake timers do not drive AbortSignal.timeout; this one runs on them. */
+function fakeTimeoutSignals() {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('timeout', 'TimeoutError')), ms);
+    return controller.signal;
+  });
+}
 
 describe('deviceLabelProblem mirrors the deviceLabel schema', () => {
   it('accepts 1–64 characters within 64 UTF-8 bytes', () => {
@@ -66,10 +77,10 @@ describe('api.renameDevice', () => {
 });
 
 describe('request timeout', () => {
-  afterEach(() => { vi.useRealTimers(); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
   it('turns a request that never answers into a network error', async () => {
-    vi.useFakeTimers();
+    fakeTimeoutSignals();
     vi.stubGlobal('fetch', vi.fn((_path: string, init: RequestInit) => new Promise((_resolve, reject) => {
       init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
     })));
@@ -109,7 +120,7 @@ describe('push API', () => {
 });
 
 describe('photo upload', () => {
-  afterEach(() => { vi.useRealTimers(); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
   it('posts the image to the session uploads path with the fixed header', async () => {
     const saved = { path: '.termivoa/uploads/20260927-143012-a1b2c3d4.png', size: 421000, contentType: 'image/png' };
@@ -126,7 +137,7 @@ describe('photo upload', () => {
   });
 
   it('waits longer than a normal request before giving up', async () => {
-    vi.useFakeTimers();
+    fakeTimeoutSignals();
     vi.stubGlobal('fetch', vi.fn((_path: string, init: RequestInit) => new Promise((_resolve, reject) => {
       init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
     })));
@@ -173,8 +184,6 @@ describe('client(origin) for a peer', () => {
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://vps.tailx.ts.net/api/v1/settings');
     expect(init).toMatchObject({ mode: 'cors', credentials: 'include', redirect: 'error', cache: 'no-store' });
-    expect(peer.revision()).toBe(PROTOCOL_REVISION);
-    expect(peer.supports('thumbnail')).toBe(true);
   });
 
   it('keeps home same-origin with relative paths', async () => {
@@ -213,16 +222,9 @@ describe('client(origin) for a peer', () => {
     await expect(peer.settings()).rejects.toMatchObject({ code: 'computer_outdated', message: 'Update Termivoa on old' });
     await expect(peer.sessions()).rejects.toMatchObject({ code: 'computer_outdated' });
     await expect(peer.logout()).resolves.toBeUndefined();
-    expect(peer.supports('thumbnail')).toBe(false);
     body = settings();
     await peer.settings();
     await expect(peer.sessions()).resolves.toEqual({ sessions: [] });
-  });
-
-  it('asks to update a peer that sends no protocolRevision (it predates multi-computer), not "can\'t reach"', async () => {
-    const { protocolRevision: _, minProtocolRevision: __, ...old } = settings();
-    vi.stubGlobal('fetch', vi.fn(async () => json(200, old)));
-    await expect(client('https://legacy.tailx.ts.net').settings()).rejects.toMatchObject({ code: 'computer_outdated', message: 'Update Termivoa on legacy' });
   });
 
   it('forgets a removed peer\'s client, but never home\'s', () => {
@@ -241,9 +243,7 @@ describe('client(origin) for a peer', () => {
 });
 
 describe('revision helpers', () => {
-  it('gates features and revisions', () => {
-    expect(supports(undefined, 'thumbnail')).toBe(false);
-    expect(supports(1, 'thumbnail')).toBe(true);
+  it('gates revisions', () => {
     expect(revisionProblem({ protocolRevision: MIN_PROTOCOL_REVISION, minProtocolRevision: PROTOCOL_REVISION })).toBeUndefined();
     expect(revisionProblem({ protocolRevision: MIN_PROTOCOL_REVISION - 1, minProtocolRevision: 1 })).toBe('computer_outdated');
     expect(revisionProblem({ protocolRevision: PROTOCOL_REVISION + 5, minProtocolRevision: PROTOCOL_REVISION + 1 })).toBe('app_outdated');

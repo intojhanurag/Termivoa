@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  appendDictation, recognizerFactory, SpeechController, speechSupported, type RecognitionEvent, type Recognizer,
+  appendDictation, recognizerFactory, SpeechController, type RecognitionEvent, type Recognizer,
 } from './speech';
 
 class FakeRecognizer implements Recognizer {
@@ -32,9 +32,8 @@ afterEach(() => { vi.useRealTimers(); });
 
 describe('speech support', () => {
   it('finds the standard or the webkit recognizer', () => {
-    expect(speechSupported({})).toBe(false);
-    expect(speechSupported({ SpeechRecognition: FakeRecognizer })).toBe(true);
-    expect(speechSupported({ webkitSpeechRecognition: FakeRecognizer })).toBe(true);
+    expect(recognizerFactory({})).toBeUndefined();
+    expect(recognizerFactory({ SpeechRecognition: FakeRecognizer })?.()).toBeInstanceOf(FakeRecognizer);
     expect(recognizerFactory({ webkitSpeechRecognition: FakeRecognizer })?.()).toBeInstanceOf(FakeRecognizer);
   });
 });

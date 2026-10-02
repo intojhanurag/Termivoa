@@ -1,5 +1,6 @@
 import { api } from './api/http';
 import type { HTTPPushSubscribeRequest } from './generated/protocol';
+import { storage } from './storage';
 
 /** Set to '1' after "Not now" or after push is turned on, so the Sessions card shows once. */
 export const PUSH_CARD_KEY = 'pterm.pushCard.dismissed';
@@ -33,14 +34,6 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 export async function pushEnabled(): Promise<boolean> {
   if (pushSupport() !== 'available' || Notification.permission !== 'granted') return false;
   return await currentSubscription() !== null;
-}
-
-function storage(): Pick<Storage, 'getItem' | 'setItem'> | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
 }
 
 export function pushCardDismissed(): boolean {
