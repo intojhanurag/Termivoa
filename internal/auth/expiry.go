@@ -58,27 +58,6 @@ func (lifetime BrowserLifetime) Check(now time.Time) error {
 	return nil
 }
 
-// Used returns a checked copy; it never revives expired state or moves absolute
-// expiry. The broker must persist/serialize this with authoritative revocation.
-func (lifetime BrowserLifetime) Used(now time.Time) (BrowserLifetime, error) {
-	if err := lifetime.Check(now); err != nil {
-		return BrowserLifetime{}, err
-	}
-	lifetime.LastUsedAt = now.UTC()
-	return lifetime, nil
-}
-
-func CheckPairingGrantLifetime(createdAt, expiresAt, now time.Time) error {
-	if !validAuthTime(createdAt) || !validAuthTime(expiresAt) || !validAuthTime(now) || createdAt.After(now) ||
-		!expiresAt.Equal(createdAt.Add(PairingGrantLifetime)) {
-		return ErrInvalidLifetime
-	}
-	if !now.Before(expiresAt) {
-		return ErrExpired
-	}
-	return nil
-}
-
 // Restrict to nonnegative, representable UTC timestamps before SQLite/wire
 // conversion. Clock rollback behind creation/last-use fails closed above.
 func validAuthTime(value time.Time) bool {

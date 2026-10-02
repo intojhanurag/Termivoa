@@ -15,10 +15,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"unicode/utf8"
 
 	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -297,7 +297,7 @@ func Read(ctx context.Context, folder, name string) protocol.FilesContentPayload
 		reply.State = protocol.TooLarge
 		return reply
 	}
-	file, info, err := openRegular(files, name)
+	file, info, err := platform.OpenRegular(files, name, errNotFile)
 	if err != nil {
 		if errors.Is(err, errNotFile) {
 			reply.State, reply.Size = protocol.NotFile, nil
@@ -334,25 +334,6 @@ func Read(ctx context.Context, folder, name string) protocol.FilesContentPayload
 }
 
 var errNotFile = errors.New("projectfiles: not a regular file")
-
-// openRegular opens a regular file without blocking: a FIFO swapped in after
-// the caller's Stat opens at once (O_NONBLOCK) and is refused with
-// errNotFile. Windows ignores O_NONBLOCK and has no FIFOs in folders.
-func openRegular(files *os.Root, name string) (*os.File, fs.FileInfo, error) {
-	file, err := files.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, nil, err
-	}
-	info, err := file.Stat()
-	if err == nil && !info.Mode().IsRegular() {
-		err = errNotFile
-	}
-	if err != nil {
-		_ = file.Close()
-		return nil, nil, err
-	}
-	return file, info, nil
-}
 
 // cutAtLine keeps data up to and including its last line break, or, with
 // none, drops a rune the cut split.

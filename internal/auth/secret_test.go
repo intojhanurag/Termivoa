@@ -156,3 +156,12 @@ func assertNoSyntheticSecret(t *testing.T, formatted, token string) {
 		}
 	}
 }
+
+func DigestFromBytes(value []byte) (Digest, error) {
+	if len(value) != sha256.Size {
+		return Digest{}, ErrInvalidDigest
+	}
+	digest := Digest{value: new([sha256.Size]byte)}
+	copy(digest.value[:], value)
+	return digest, nil
+}

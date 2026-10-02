@@ -33,7 +33,7 @@ func DialNamedAdmin(ctx context.Context, runtimeDir, name, clientBuild string) (
 	if err != nil {
 		return nil, err
 	}
-	client, err := newAdminClient(connection, newUUID)
+	client, err := newAdminClient(connection, newRequestID)
 	if err != nil {
 		_ = connection.Close()
 		return nil, err
@@ -281,10 +281,7 @@ func (client *AdminClient) request(
 	transport := client.transport
 	transport.requestMu.Lock()
 	defer transport.requestMu.Unlock()
-	requestID, err := transport.requestID()
-	if err != nil {
-		return nil, protocol.AdminRPCEnvelope{}, fmt.Errorf("create admin request ID: %w", err)
-	}
+	requestID := transport.requestID()
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, protocol.AdminRPCEnvelope{}, fmt.Errorf("encode admin request payload: %w", err)

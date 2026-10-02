@@ -483,7 +483,7 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 // cookie or broker answer the policy stays as it is.
 func (handler *gatewayHandler) deviceConnectSources(response http.ResponseWriter, request *http.Request) {
 	credential, present := handler.sessionCookie(request)
-	if handler.api == nil || !present || !validSecret(credential) || !handler.authFailLimit.allowed(clientKey(request)) {
+	if handler.api == nil || !present || protocol.ValidateSecretText(credential) != nil || !handler.authFailLimit.allowed(clientKey(request)) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), probeTimeout)

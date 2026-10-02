@@ -21,6 +21,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
@@ -112,7 +113,7 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 	brokerDone := make(chan error, 1)
 	brokerConfig := host.BrokerConfig{
 		DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "process-integration",
-		Profile: host.DevelopmentProfile,
+		Profile: platform.DevelopmentProfile,
 		Ready:   func(state host.BrokerReady) { brokerReady <- state },
 	}
 	go func() { brokerDone <- host.RunBroker(brokerCtx, brokerConfig) }()
@@ -128,7 +129,7 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 	go func() {
 		gatewayOneDone <- gateway.Run(gatewayOneCtx, gateway.Config{
 			RuntimeDir: runtimeDir, HostBuild: "gateway-integration", ListenAddress: "127.0.0.1:0",
-			Profile:       host.DevelopmentProfile,
+			Profile:       platform.DevelopmentProfile,
 			ProbeInterval: 25 * time.Millisecond,
 			Ready:         func(state gateway.ReadyState) { gatewayOneReady <- state },
 		})
@@ -196,7 +197,7 @@ func TestGatewayRestartPreservesBrokerSessionAndCanonicalOutput(t *testing.T) {
 	go func() {
 		gatewayTwoDone <- gateway.Run(gatewayTwoCtx, gateway.Config{
 			RuntimeDir: runtimeDir, HostBuild: "gateway-integration", ListenAddress: "127.0.0.1:0",
-			Profile:       host.DevelopmentProfile,
+			Profile:       platform.DevelopmentProfile,
 			ProbeInterval: 25 * time.Millisecond,
 			Ready:         func(state gateway.ReadyState) { gatewayTwoReady <- state },
 		})
@@ -238,7 +239,7 @@ func TestBrokerStartupMarksPriorLiveMetadataLostWithoutRerun(t *testing.T) {
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
 			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "recovery-integration",
-			Profile: host.DevelopmentProfile,
+			Profile: platform.DevelopmentProfile,
 			Ready:   func(state host.BrokerReady) { ready <- state },
 		})
 	}()

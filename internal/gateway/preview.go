@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/platform"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
 // Dev-server preview. A second loopback listener proxies one owned dev
@@ -218,7 +219,7 @@ func (handler *previewHandler) ServeHTTP(response http.ResponseWriter, request *
 		return
 	}
 	credential, ok := handler.main.sessionCookie(request)
-	if !ok || !validSecret(credential) {
+	if !ok || protocol.ValidateSecretText(credential) != nil {
 		previewPage(response, http.StatusUnauthorized, "Open the preview from your paired phone.")
 		return
 	}
@@ -294,7 +295,7 @@ func (handler *previewHandler) selectPort(response http.ResponseWriter, request 
 	query := request.URL.Query()
 	sessionID := query.Get("session")
 	port, err := strconv.ParseUint(query.Get("port"), 10, 16)
-	if len(query) != 2 || !validUUID(sessionID) || err != nil || port == 0 || strconv.FormatUint(port, 10) != query.Get("port") {
+	if len(query) != 2 || !protocol.ValidUUID(sessionID) || err != nil || port == 0 || strconv.FormatUint(port, 10) != query.Get("port") {
 		previewPage(response, http.StatusBadRequest, "Invalid preview request.")
 		return
 	}
@@ -323,7 +324,7 @@ func (handler *previewHandler) selection(request *http.Request) (string, uint16,
 	}
 	sessionID, portText, ok := strings.Cut(cookies[0].Value, ".")
 	port, err := strconv.ParseUint(portText, 10, 16)
-	if !ok || !validUUID(sessionID) || err != nil || port == 0 {
+	if !ok || !protocol.ValidUUID(sessionID) || err != nil || port == 0 {
 		return "", 0, false
 	}
 	return sessionID, uint16(port), true

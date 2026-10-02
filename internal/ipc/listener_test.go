@@ -386,3 +386,21 @@ func mustEndpointDescriptorPath(t *testing.T, runtimeDir string) string {
 	}
 	return path
 }
+
+// Default-name ("broker") shorthands used only by these tests.
+
+func EndpointDescriptorPath(runtimeDir string) (string, error) {
+	return EndpointDescriptorPathNamed(runtimeDir, defaultSocketName)
+}
+
+func writeEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) error {
+	return writeEndpointDescriptorNamed(runtimeDir, defaultSocketName, descriptor)
+}
+
+func removeStaleDescriptor(runtimeDir string) error {
+	return removeStaleDescriptorNamed(runtimeDir, defaultSocketName)
+}
+
+func platformEndpoint(runtimeDir string) (transport, address string, err error) {
+	return platformEndpointNamed(runtimeDir, defaultSocketName)
+}

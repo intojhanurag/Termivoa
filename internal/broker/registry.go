@@ -2,7 +2,6 @@ package broker
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
@@ -215,7 +215,7 @@ func NewRegistry(ctx context.Context, config RegistryConfig) (*Registry, error) 
 		}
 	}
 	if config.newID == nil {
-		config.newID = randomUUID
+		config.newID = func() (string, error) { return uuid.New().String(), nil }
 	}
 	if config.now == nil {
 		config.now = time.Now
@@ -223,7 +223,7 @@ func NewRegistry(ctx context.Context, config RegistryConfig) (*Registry, error) 
 	if (config.Store == nil) != (config.BrokerGeneration == "") {
 		return nil, errors.New("broker: persistence store and broker generation must be configured together")
 	}
-	if config.Store != nil && !validOperationUUID(config.BrokerGeneration) {
+	if config.Store != nil && !protocol.ValidUUID(config.BrokerGeneration) {
 		return nil, errors.New("broker: broker generation must be a canonical UUID")
 	}
 	registryContext, cancel := context.WithCancel(ctx)
@@ -836,27 +836,10 @@ func (registry *Registry) releasePending(id string) {
 }
 
 func validateOperationID(id string) error {
-	if strings.TrimSpace(id) != id || !validOperationUUID(id) {
+	if strings.TrimSpace(id) != id || !protocol.ValidUUID(id) {
 		return ErrOperationID
 	}
 	return nil
-}
-
-func validOperationUUID(value string) bool {
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
-		value[14] < '1' || value[14] > '8' || !strings.ContainsRune("89ab", rune(value[19])) {
-		return false
-	}
-	for index := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			continue
-		}
-		character := value[index]
-		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
-			return false
-		}
-	}
-	return true
 }
 
 func (registry *Registry) persistedCreateResult(result store.MutationResult) CreateSessionResult {
@@ -919,15 +902,4 @@ func (registry *Registry) persistFinalStatus(status SessionStatus) {
 		registry.lifecycleErrs = append(registry.lifecycleErrs, fmt.Errorf("session %s persist final status: %w", status.ID, err))
 		registry.mu.Unlock()
 	}
-}
-
-func randomUUID() (string, error) {
-	var value [16]byte
-	if _, err := rand.Read(value[:]); err != nil {
-		return "", err
-	}
-	value[6] = (value[6] & 0x0f) | 0x40
-	value[8] = (value[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
 }

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/desktop"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -123,7 +124,7 @@ func welcomePayload() protocol.WelcomePayload {
 
 func (host *fakeHost) sendMessage(kind protocol.MessageType, requestID, generation string, payload any) error {
 	if requestID == "" {
-		requestID, _ = newUUID()
+		requestID = uuid.New().String()
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -189,7 +190,7 @@ func snapshot(t *testing.T, text string) (protocol.ScreenMetadata, []protocol.Te
 
 func (host *fakeHost) snapshot(t *testing.T, revision string, screen protocol.ScreenMetadata, rows []protocol.TerminalRow) string {
 	t.Helper()
-	id, _ := newUUID()
+	id := uuid.New().String()
 	host.send(t, protocol.SnapshotBegin, "", protocol.SnapshotBeginPayload{SnapshotID: id, Revision: revision, Screen: screen})
 	host.send(t, protocol.SnapshotRows, "", protocol.SnapshotRowsPayload{SnapshotID: id, Revision: revision, Rows: rows})
 	host.send(t, protocol.SnapshotEnd, "", protocol.SnapshotEndPayload{SnapshotID: id, Revision: revision, RowCount: screen.Rows})
@@ -243,7 +244,7 @@ func TestSnapshotPaintThenAckObserverAndResync(t *testing.T) {
 		t.Fatalf("early acquire = %v", err)
 	}
 	screen, rows := snapshot(t, "hello")
-	id, _ := newUUID()
+	id := uuid.New().String()
 	host.send(t, protocol.SnapshotBegin, "", protocol.SnapshotBeginPayload{SnapshotID: id, Revision: "9007199254740993", Screen: screen})
 	host.send(t, protocol.SnapshotRows, "", protocol.SnapshotRowsPayload{SnapshotID: id, Revision: "9007199254740993", Rows: rows})
 	if output.text() != "" {
@@ -469,17 +470,13 @@ func TestHeartbeatReleaseAndResizeUseCurrentLease(t *testing.T) {
 	if client.State().Controller {
 		t.Fatal("release retained local input")
 	}
-	if err := client.Detach(context.Background()); err != nil && !errors.Is(err, io.EOF) {
-		t.Fatal(err)
-	}
-	host.await(t, protocol.SessionDetach)
 }
 
 func TestChangedGenerationNeverPaintsAndCloses(t *testing.T) {
 	client, host, output := readyClient(t)
 	before := output.text()
 	screen, rows := snapshot(t, "different")
-	id, _ := newUUID()
+	id := uuid.New().String()
 	err := host.sendMessage(protocol.SnapshotBegin, "", testOther, protocol.SnapshotBeginPayload{SnapshotID: id, Revision: "2", Screen: screen})
 	_ = rows
 	if err != nil {

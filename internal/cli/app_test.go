@@ -98,7 +98,7 @@ func TestListEscapesLegacyTerminalControls(t *testing.T) {
 	record.Title = "legacy\x1b]52;c;payload\a\nright-to-left\u202e"
 	management := &fakeManagement{pages: []protocol.BrokerRPCSessionListResultPayload{{Sessions: []protocol.BrokerRPCSessionRecord{record}}}}
 	var output bytes.Buffer
-	app := newTestApp(t, management, &fakeConfirmer{}, &output, func() (string, error) { return cliOperation, nil })
+	app := newTestApp(t, management, &fakeConfirmer{}, &output, func() string { return cliOperation })
 	if err := app.List(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestListRejectsDuplicateIdentityAcrossPages(t *testing.T) {
 		{Sessions: []protocol.BrokerRPCSessionRecord{record}, NextCursor: &next},
 		{Sessions: []protocol.BrokerRPCSessionRecord{record}},
 	}}
-	app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() (string, error) { return cliOperation, nil })
+	app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() string { return cliOperation })
 	err := app.List(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "duplicate identity") {
 		t.Fatalf("expected duplicate pagination failure, got %v", err)
@@ -135,7 +135,7 @@ func TestListRejectsRepeatedCursor(t *testing.T) {
 	management := &fakeManagement{pages: []protocol.BrokerRPCSessionListResultPayload{
 		{NextCursor: &next}, {NextCursor: &next},
 	}}
-	app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() (string, error) { return cliOperation, nil })
+	app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() string { return cliOperation })
 	err := app.List(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "repeated a cursor") {
 		t.Fatalf("expected cursor loop failure, got %v", err)
@@ -155,9 +155,9 @@ func TestTerminateUsesExactIdentityOneOperationAndSafePrompt(t *testing.T) {
 	confirmer := &fakeConfirmer{answer: true}
 	var output bytes.Buffer
 	idCalls := 0
-	app := newTestApp(t, management, confirmer, &output, func() (string, error) {
+	app := newTestApp(t, management, confirmer, &output, func() string {
 		idCalls++
-		return cliOperation, nil
+		return cliOperation
 	})
 	if err := app.Terminate(context.Background(), cliSession); err != nil {
 		t.Fatal(err)
@@ -186,9 +186,9 @@ func TestTerminateDeclineDoesNotAllocateOperationOrSend(t *testing.T) {
 	confirmer := &fakeConfirmer{answer: false}
 	var output bytes.Buffer
 	idCalls := 0
-	app := newTestApp(t, management, confirmer, &output, func() (string, error) {
+	app := newTestApp(t, management, confirmer, &output, func() string {
 		idCalls++
-		return cliOperation, nil
+		return cliOperation
 	})
 	if err := app.Terminate(context.Background(), cliSession); err != nil {
 		t.Fatal(err)
@@ -208,9 +208,9 @@ func TestTerminateDoesNotTreatTerminalOrExitingSessionAsLive(t *testing.T) {
 			}
 			confirmer := &fakeConfirmer{answer: true}
 			var output bytes.Buffer
-			app := newTestApp(t, management, confirmer, &output, func() (string, error) {
+			app := newTestApp(t, management, confirmer, &output, func() string {
 				t.Fatal("operation ID must not be generated")
-				return "", nil
+				return ""
 			})
 			if err := app.Terminate(context.Background(), cliSession); err != nil {
 				t.Fatal(err)
@@ -236,7 +236,7 @@ func TestTerminateUncertainDeliveryRequiresInspectionWithoutRetry(t *testing.T) 
 		terminateErr: uncertainTestError{},
 	}
 	app := newTestApp(t, management, &fakeConfirmer{answer: true}, &bytes.Buffer{},
-		func() (string, error) { return cliOperation, nil })
+		func() string { return cliOperation })
 	err := app.Terminate(context.Background(), cliSession)
 	if err == nil || !strings.Contains(err.Error(), "delivery uncertain—run pterm list") {
 		t.Fatalf("unexpected error: %v", err)
@@ -255,7 +255,7 @@ func TestTerminateRequiresCanonicalExactSessionID(t *testing.T) {
 				status: record,
 			}
 			app := newTestApp(t, management, &fakeConfirmer{answer: true}, &bytes.Buffer{},
-				func() (string, error) { return cliOperation, nil })
+				func() string { return cliOperation })
 			err := app.Terminate(context.Background(), sessionID)
 			if err == nil || !strings.Contains(err.Error(), "canonical lowercase UUID") {
 				t.Fatalf("expected canonical UUID rejection, got %v", err)
@@ -329,9 +329,9 @@ func TestConfirmationCancellationPreventsLateAnswerFromTerminating(t *testing.T)
 		t.Fatal(err)
 	}
 	idCalls := 0
-	app := newTestApp(t, management, confirmer, &output, func() (string, error) {
+	app := newTestApp(t, management, confirmer, &output, func() string {
 		idCalls++
-		return cliOperation, nil
+		return cliOperation
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -399,4 +399,12 @@ func newTestApp(
 		t.Fatal(err)
 	}
 	return app
+}
+
+// ConfirmationReadFunc adapts a context-aware input function. The function
+// must honor the cancellation contract of ConfirmationReader itself.
+type ConfirmationReadFunc func(context.Context, []byte) (int, error)
+
+func (read ConfirmationReadFunc) ReadContext(ctx context.Context, data []byte) (int, error) {
+	return read(ctx, data)
 }

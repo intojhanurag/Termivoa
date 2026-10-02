@@ -445,7 +445,7 @@ func (session *Session) AcquireControlForRequest(ctx context.Context, viewer *Vi
 	if viewer == nil {
 		return ControlGrant{}, ErrViewerMissing
 	}
-	if !validOperationUUID(requestID) {
+	if !protocol.ValidUUID(requestID) {
 		return ControlGrant{}, errors.New("broker: control request must have a canonical UUID")
 	}
 	response, err := session.call(ctx, sessionRequest{

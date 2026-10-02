@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -49,7 +50,7 @@ func worktreeFixture(t *testing.T) (*managementFixture, map[string]*Session, *sy
 		mu.Lock()
 		defer mu.Unlock()
 		if len(ids) == 0 {
-			return randomUUID()
+			return uuid.New().String(), nil
 		}
 		id := ids[0]
 		ids = ids[1:]
@@ -147,7 +148,7 @@ func TestWorktreeCreateStartsTheSessionInTheWorktree(t *testing.T) {
 		"missing source": {protocol.WorktreeCreate{SourceSessionID: sourceSessionGen, Name: "calm-fox", Base: "main"}, repo, protocol.SessionMissing},
 	} {
 		source.directory = test.folder
-		operationID, _ := randomUUID()
+		operationID := uuid.New().String()
 		_, err := fixture.server.createSession(ctx, protocol.BrokerRPCSessionCreateRequestPayload{
 			OperationID: operationID, ProjectID: rpcProjectID, ShellProfileID: rpcProfileID, Worktree: &test.worktree,
 		})

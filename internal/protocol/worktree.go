@@ -62,7 +62,7 @@ func ValidateWorktreeCreate(worktree *WorktreeCreate) error {
 	if worktree == nil {
 		return nil
 	}
-	if !validUUID(worktree.SourceSessionID) {
+	if !ValidUUID(worktree.SourceSessionID) {
 		return errors.New("worktree sourceSessionId must be a canonical UUID")
 	}
 	if !ValidWorktreeName(worktree.Name) {

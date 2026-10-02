@@ -20,9 +20,9 @@ func TestResolveSessionRefreshesExactGenerationWithoutMutation(t *testing.T) {
 	}
 	confirmer := &fakeConfirmer{}
 	var output bytes.Buffer
-	app := newTestApp(t, management, confirmer, &output, func() (string, error) {
+	app := newTestApp(t, management, confirmer, &output, func() string {
 		t.Fatal("resolution must not allocate a mutation ID")
-		return "", nil
+		return ""
 	})
 	resolved, err := app.ResolveSession(context.Background(), cliSession)
 	if err != nil || resolved.State != protocol.Exited || resolved.Generation != cliGeneration {
@@ -88,7 +88,7 @@ func TestCreateUsesSavedConfigurationAndSingleOperationWithoutAttaching(t *testi
 			confirmer := &fakeConfirmer{}
 			var output bytes.Buffer
 			ids := 0
-			app := newTestApp(t, management, confirmer, &output, func() (string, error) { ids++; return cliOperation, nil })
+			app := newTestApp(t, management, confirmer, &output, func() string { ids++; return cliOperation })
 			created, err := app.Create(context.Background(), cliProject, cliProfile)
 			if err != nil || created.ID != record.ID || created.Generation != record.Generation || created.State != state {
 				t.Fatalf("created=%+v err=%v", created, err)
@@ -106,7 +106,7 @@ func TestCreateUsesSavedConfigurationAndSingleOperationWithoutAttaching(t *testi
 func TestCreateRejectsInvalidIDsBeforeAllocatingOperation(t *testing.T) {
 	for _, pair := range [][2]string{{"/tmp/project", cliProfile}, {cliProject, "zsh"}, {"", cliProfile}, {cliProject, strings.ToUpper(cliSession)}} {
 		management := &fakeManagement{}
-		app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() (string, error) { t.Fatal("invalid config allocated ID"); return "", nil })
+		app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() string { t.Fatal("invalid config allocated ID"); return "" })
 		if _, err := app.Create(context.Background(), pair[0], pair[1]); err == nil || management.createCalls != 0 {
 			t.Fatalf("invalid config accepted: %v", err)
 		}
@@ -114,7 +114,7 @@ func TestCreateRejectsInvalidIDsBeforeAllocatingOperation(t *testing.T) {
 }
 
 func TestCreateCancellationAndIDFailuresNeverSend(t *testing.T) {
-	for _, failure := range []string{"nil context", "pre-canceled", "ID failure", "invalid ID", "cancel during ID"} {
+	for _, failure := range []string{"nil context", "pre-canceled", "invalid ID", "cancel during ID"} {
 		t.Run(failure, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -125,18 +125,16 @@ func TestCreateCancellationAndIDFailuresNeverSend(t *testing.T) {
 				cancel()
 			}
 			management := &fakeManagement{}
-			app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() (string, error) {
+			app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() string {
 				switch failure {
 				case "nil context", "pre-canceled":
 					t.Fatal("invalid context allocated ID")
-				case "ID failure":
-					return "", errors.New("randomness unavailable")
 				case "invalid ID":
-					return "invalid", nil
+					return "invalid"
 				case "cancel during ID":
 					cancel()
 				}
-				return cliOperation, nil
+				return cliOperation
 			})
 			if _, err := app.Create(ctx, cliProject, cliProfile); err == nil || management.createCalls != 0 {
 				t.Fatalf("failure allowed create: %v", err)
@@ -157,7 +155,7 @@ func TestCreateUncertainOrRejectedDeliveryNeverRetries(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			management := &fakeManagement{createErr: test.err}
-			app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() (string, error) { return cliOperation, nil })
+			app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() string { return cliOperation })
 			_, err := app.Create(context.Background(), cliProject, cliProfile)
 			if err == nil || !strings.Contains(err.Error(), test.message) || !errors.Is(err, test.err) || management.createCalls != 1 {
 				t.Fatalf("calls=%d err=%v", management.createCalls, err)
@@ -183,7 +181,7 @@ func TestCreateRejectsMismatchedAcknowledgementWithoutRetry(t *testing.T) {
 				result.Session.Generation = "invalid"
 			}
 			management := &fakeManagement{create: result}
-			app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() (string, error) { return cliOperation, nil })
+			app := newTestApp(t, management, &fakeConfirmer{}, &bytes.Buffer{}, func() string { return cliOperation })
 			_, err := app.Create(context.Background(), cliProject, cliProfile)
 			if err == nil || !strings.Contains(err.Error(), "delivery uncertain") || management.createCalls != 1 {
 				t.Fatalf("calls=%d err=%v", management.createCalls, err)

@@ -187,17 +187,6 @@ func Classify(parsed Parsed, quiet, stable time.Duration) State {
 	}
 }
 
-// Detect is Parse and Classify in one call. The question is returned only
-// when the state is Waiting.
-func Detect(screen Screen, quiet, stable time.Duration) (State, *Question) {
-	parsed := Parse(screen)
-	state := Classify(parsed, quiet, stable)
-	if state != Waiting {
-		return state, nil
-	}
-	return state, parsed.Question
-}
-
 // busy recognizes agent status lines near the bottom, such as Claude Code's
 // "esc to interrupt" footer and Codex's "Working (9s • esc to interrupt)".
 func busy(lines []string, last int) bool {

@@ -188,7 +188,7 @@ func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, 
 	if err != nil {
 		return nil, err
 	}
-	if !validUUID(config.BrokerGeneration) {
+	if !protocol.ValidUUID(config.BrokerGeneration) {
 		return nil, errors.New("ipc: broker generation must be a UUID")
 	}
 	name := config.SocketName
@@ -395,10 +395,6 @@ func recoverStaleEndpoint(ctx context.Context, runtimeDir, name string) error {
 	return nil
 }
 
-func EndpointDescriptorPath(runtimeDir string) (string, error) {
-	return EndpointDescriptorPathNamed(runtimeDir, defaultSocketName)
-}
-
 // EndpointDescriptorPathNamed is EndpointDescriptorPath for a non-default
 // SocketName.
 func EndpointDescriptorPathNamed(runtimeDir, name string) (string, error) {
@@ -454,10 +450,6 @@ func ReadNamedEndpointDescriptor(runtimeDir, name string) (EndpointDescriptor, e
 		return EndpointDescriptor{}, err
 	}
 	return descriptor, nil
-}
-
-func writeEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) error {
-	return writeEndpointDescriptorNamed(runtimeDir, defaultSocketName, descriptor)
 }
 
 func writeEndpointDescriptorNamed(runtimeDir, name string, descriptor EndpointDescriptor) error {
@@ -517,10 +509,6 @@ func removeOwnedDescriptor(runtimeDir, name string, owned EndpointDescriptor) er
 	return removeStaleDescriptorNamed(runtimeDir, name)
 }
 
-func removeStaleDescriptor(runtimeDir string) error {
-	return removeStaleDescriptorNamed(runtimeDir, defaultSocketName)
-}
-
 func removeStaleDescriptorNamed(runtimeDir, name string) error {
 	path := filepath.Join(runtimeDir, descriptorFileName(name))
 	if err := validatePrivateFile(path); err != nil {
@@ -541,7 +529,7 @@ func validateEndpointDescriptor(runtimeDir, name string, descriptor EndpointDesc
 		return err
 	}
 	if descriptor.Version != EndpointDescriptorVersion || descriptor.Transport != transport || descriptor.Address != address ||
-		!validUUID(descriptor.BrokerGeneration) || descriptor.ProcessID <= 0 {
+		!protocol.ValidUUID(descriptor.BrokerGeneration) || descriptor.ProcessID <= 0 {
 		return ErrEndpointInvalid
 	}
 	return nil
@@ -574,21 +562,6 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 		return fmt.Errorf("%w: descriptor trailing data: %v", ErrEndpointInvalid, err)
 	}
 	return nil
-}
-
-func validUUID(value string) bool {
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
-		return false
-	}
-	for index, character := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			continue
-		}
-		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
-			return false
-		}
-	}
-	return true
 }
 
 type brokerLock interface {

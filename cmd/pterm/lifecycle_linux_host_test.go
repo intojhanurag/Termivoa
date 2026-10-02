@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 // systemdFake models `systemctl --user` and `loginctl` for one user and
@@ -76,7 +76,7 @@ func newLinuxLifecycleTestEnv(t *testing.T, systemd bool) (lifecycleEnv, *system
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	fake := &systemdFake{enabled: map[string]bool{}, linger: "no"}
-	paths := host.Paths{
+	paths := platform.Paths{
 		DataDir:    filepath.Join(root, "share", "phone-terminal"),
 		RuntimeDir: filepath.Join(root, "run", "phone-terminal"),
 		LogDir:     filepath.Join(root, "state", "phone-terminal", "logs"),
@@ -260,25 +260,25 @@ func TestLinuxTailscaleOperatorIsExplainedNotBypassed(t *testing.T) {
 
 func TestDataDirectoriesNeverChooseAParent(t *testing.T) {
 	for name, test := range map[string]struct {
-		paths host.Paths
+		paths platform.Paths
 		want  []string
 	}{
 		"linux": {
-			host.Paths{DataDir: "/home/ada/.local/share/phone-terminal", RuntimeDir: "/run/user/1000/phone-terminal",
+			platform.Paths{DataDir: "/home/ada/.local/share/phone-terminal", RuntimeDir: "/run/user/1000/phone-terminal",
 				LogDir: "/home/ada/.local/state/phone-terminal/logs"},
 			[]string{"/home/ada/.local/share/phone-terminal", "/home/ada/.local/state/phone-terminal", "/run/user/1000/phone-terminal"},
 		},
 		"linux runtime fallback inside data": {
-			host.Paths{DataDir: "/home/ada/.local/share/phone-terminal", RuntimeDir: "/home/ada/.local/share/phone-terminal/runtime"},
+			platform.Paths{DataDir: "/home/ada/.local/share/phone-terminal", RuntimeDir: "/home/ada/.local/share/phone-terminal/runtime"},
 			[]string{"/home/ada/.local/share/phone-terminal"},
 		},
 		"home named like the product": {
-			host.Paths{DataDir: "/home/phone-terminal/.local/share/phone-terminal", RuntimeDir: "/run/user/1001/phone-terminal",
+			platform.Paths{DataDir: "/home/phone-terminal/.local/share/phone-terminal", RuntimeDir: "/run/user/1001/phone-terminal",
 				LogDir: "/home/phone-terminal/.local/state/phone-terminal/logs"},
 			[]string{"/home/phone-terminal/.local/share/phone-terminal", "/home/phone-terminal/.local/state/phone-terminal", "/run/user/1001/phone-terminal"},
 		},
 		"macos": {
-			host.Paths{DataDir: "/Users/ada/Library/Application Support/Phone Terminal",
+			platform.Paths{DataDir: "/Users/ada/Library/Application Support/Phone Terminal",
 				RuntimeDir: "/Users/ada/Library/Caches/Phone Terminal/runtime", LogDir: "/Users/ada/Library/Application Support/Phone Terminal/logs"},
 			[]string{"/Users/ada/Library/Application Support/Phone Terminal", "/Users/ada/Library/Caches/Phone Terminal"},
 		},

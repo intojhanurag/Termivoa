@@ -9,8 +9,8 @@ import (
 	"os"
 
 	"github.com/intojhanurag/phone-terminal/internal/cli"
-	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
 const commandHelp = `Termivoa private development build
@@ -96,14 +96,14 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if command == "new" && (len(arguments) != 0 || projectID == "" || profileID == "") {
 		return localCommandConfig{}, errors.New("usage: pterm new [--dev] [--runtime-dir <directory>] --project <saved-project-id> --shell <saved-shell-profile-id>")
 	}
-	profile := host.ProductionProfile
-	defaults, err := host.DefaultPaths()
+	profile := platform.ProductionProfile
+	defaults, err := platform.DefaultPaths()
 	if err != nil {
 		return localCommandConfig{}, err
 	}
 	if *dev {
-		profile = host.DevelopmentProfile
-		defaults, err = host.DevelopmentPaths()
+		profile = platform.DevelopmentProfile
+		defaults, err = platform.DevelopmentPaths()
 		if err != nil {
 			return localCommandConfig{}, err
 		}
@@ -111,7 +111,7 @@ func parseLocalCommand(command string, args []string) (localCommandConfig, error
 	if *runtimeDir == "" {
 		*runtimeDir = defaults.RuntimeDir
 	}
-	validated, err := host.ValidateRuntimeDir(profile, *runtimeDir)
+	validated, err := platform.ValidateRuntimeDir(profile, *runtimeDir)
 	if err != nil {
 		return localCommandConfig{}, fmt.Errorf("invalid local command profile: %w", err)
 	}

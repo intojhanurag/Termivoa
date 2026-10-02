@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
@@ -66,12 +67,7 @@ type ViewerConfig struct {
 	MaxUpdatesPerSecond int
 	// budget is an optional connection-wide reservation boundary shared with
 	// dispatcher responses. A matching sink must not reserve these bytes twice.
-	budget viewerByteBudget
-}
-
-type viewerByteBudget interface {
-	reserve(int) error
-	release(int)
+	budget *sessionWriter
 }
 
 // ViewerSubscription owns one observer connection. Closing it releases only
@@ -88,7 +84,7 @@ type ViewerSubscription struct {
 	// frameInterval is the minimum spacing of screen frame deliveries; nonzero
 	// only for a read-only thumbnail viewer.
 	frameInterval time.Duration
-	budget        viewerByteBudget
+	budget        *sessionWriter
 	notify        chan struct{}
 	done          chan struct{}
 	detached      chan struct{}
@@ -164,7 +160,7 @@ type viewerDetachEvent struct {
 // canonical snapshot inside the session actor. Network transmission runs in a
 // separate worker and cannot block PTY parsing or canonical-state mutation.
 func (session *Session) AttachViewer(ctx context.Context, config ViewerConfig) (*ViewerSubscription, error) {
-	if !validOperationUUID(config.ConnectionID) || !validOperationUUID(config.DeviceID) || !validOperationUUID(config.Generation) {
+	if !protocol.ValidUUID(config.ConnectionID) || !protocol.ValidUUID(config.DeviceID) || !protocol.ValidUUID(config.Generation) {
 		return nil, errors.New("broker: viewer identity must contain canonical UUIDs")
 	}
 	if config.Sink == nil {
@@ -377,10 +373,7 @@ func (subscription *ViewerSubscription) stream(ctx context.Context, plan viewerD
 }
 
 func (subscription *ViewerSubscription) streamSnapshot(ctx context.Context, plan viewerDeliveryPlan) (viewerDeliveryKind, string, []bool, error) {
-	snapshotID, err := randomUUID()
-	if err != nil {
-		return viewerDeliverySnapshot, "", nil, err
-	}
+	snapshotID := uuid.New().String()
 	metadata, rows, err := protocol.Snapshot(
 		plan.target.frame, plan.target.historyEpoch, plan.target.historyRevision,
 	)
@@ -496,10 +489,7 @@ func (subscription *ViewerSubscription) hostMessageForRequest(messageType protoc
 		return nil, fmt.Errorf("broker: encode %s payload: %w", messageType, err)
 	}
 	if requestID == "" {
-		requestID, err = randomUUID()
-		if err != nil {
-			return nil, err
-		}
+		requestID = uuid.New().String()
 	}
 	sessionID, generation := subscription.session.id, subscription.session.generation
 	message, err := json.Marshal(protocol.Envelope{
@@ -530,13 +520,10 @@ func (subscription *ViewerSubscription) send(ctx context.Context, message []byte
 
 func (subscription *ViewerSubscription) sendReserved(ctx context.Context, message []byte) error {
 	drained := make(chan struct{})
-	var once sync.Once
-	release := func() {
-		once.Do(func() {
-			subscription.releaseBudget(len(message))
-			close(drained)
-		})
-	}
+	release := sync.OnceFunc(func() {
+		subscription.releaseBudget(len(message))
+		close(drained)
+	})
 	if err := subscription.sink.Send(ctx, message, release); err != nil {
 		release()
 		return err

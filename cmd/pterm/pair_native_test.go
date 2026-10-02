@@ -13,7 +13,7 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
-	"github.com/intojhanurag/phone-terminal/internal/host"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -144,7 +144,7 @@ func TestRunningGatewayFollowsConfigOrigin(t *testing.T) {
 	go func() {
 		done <- runGateway(gatewayCtx, gateway.Config{
 			RuntimeDir: runtimeDir, HostBuild: buildID, ListenAddress: "127.0.0.1:0",
-			Profile: host.DevelopmentProfile, Ready: func(state gateway.ReadyState) { ready <- state },
+			Profile: platform.DevelopmentProfile, Ready: func(state gateway.ReadyState) { ready <- state },
 		})
 	}()
 	defer func() {

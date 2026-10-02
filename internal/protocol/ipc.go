@@ -41,7 +41,7 @@ func decodeIPC(data []byte, client bool) (IPCEnvelope, error) {
 	if envelope.Version != Version {
 		return IPCEnvelope{}, fmt.Errorf("protocol: IPC version %d is not supported", envelope.Version)
 	}
-	if !validUUID(envelope.RequestID) {
+	if !ValidUUID(envelope.RequestID) {
 		return IPCEnvelope{}, errors.New("protocol: IPC requestId must be a canonical UUID")
 	}
 
@@ -67,7 +67,7 @@ func decodeIPC(data []byte, client bool) (IPCEnvelope, error) {
 		if err != nil {
 			return IPCEnvelope{}, err
 		}
-		if !validUUID(payload.BrokerGeneration) || len(payload.HostBuild) == 0 ||
+		if !ValidUUID(payload.BrokerGeneration) || len(payload.HostBuild) == 0 ||
 			len(payload.HostBuild) > 128 || payload.NegotiatedVersion != Version {
 			return IPCEnvelope{}, errors.New("protocol: invalid IPC welcome negotiation")
 		}

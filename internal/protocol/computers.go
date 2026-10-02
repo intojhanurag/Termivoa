@@ -258,7 +258,7 @@ func validateAdminComputerPayload(envelope AdminRPCEnvelope) error {
 			return errors.New("revocation result is outside bounds")
 		}
 		for _, id := range payload.DeviceIDS {
-			if !validUUID(id) {
+			if !ValidUUID(id) {
 				return errors.New("device id must be a canonical UUID")
 			}
 		}
@@ -272,7 +272,7 @@ func validateAdminComputerPayload(envelope AdminRPCEnvelope) error {
 			return errors.New("computer list is outside bounds")
 		}
 		for _, computer := range payload.Computers {
-			if !validUUID(computer.DeviceID) {
+			if !ValidUUID(computer.DeviceID) {
 				return errors.New("device id must be a canonical UUID")
 			}
 			if err := validateComputer(HTTPComputer{Origin: computer.Origin, Label: computer.Label}); err != nil {

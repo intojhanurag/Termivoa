@@ -339,3 +339,14 @@ func TestStatusWorkedForSumsWorkingStretches(t *testing.T) {
 	tracker.Observe(at.Add(25*time.Second), Parsed{}, at)
 	worked(at.Add(2*time.Hour), 35*time.Second)
 }
+
+// Detect is Parse and Classify in one call. The question is returned only
+// when the state is Waiting.
+func Detect(screen Screen, quiet, stable time.Duration) (State, *Question) {
+	parsed := Parse(screen)
+	state := Classify(parsed, quiet, stable)
+	if state != Waiting {
+		return state, nil
+	}
+	return state, parsed.Question
+}

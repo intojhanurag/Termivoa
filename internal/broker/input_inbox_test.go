@@ -294,3 +294,13 @@ func TestInputInboxDropsExpiredLeaseEpochOnTakeover(t *testing.T) {
 		t.Fatalf("expired input survived takeover: ok=%v err=%v", ok, err)
 	}
 }
+
+func (inbox *InputInbox) Submit(
+	generation, connectionID, deviceID, lease string,
+	sequence uint64,
+	action InputAction,
+) (InputAcceptance, error) {
+	return inbox.submit(MutationIdentity{
+		Generation: generation, ConnectionID: connectionID, DeviceID: deviceID, Lease: lease,
+	}, sequence, action)
+}

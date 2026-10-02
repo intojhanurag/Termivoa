@@ -89,13 +89,13 @@ func decodeBrokerRPC(data []byte, request bool) (BrokerRPCEnvelope, error) {
 	if envelope.Version != Version {
 		return BrokerRPCEnvelope{}, fmt.Errorf("protocol: broker RPC version %d is not supported", envelope.Version)
 	}
-	if !validUUID(envelope.RequestID) {
+	if !ValidUUID(envelope.RequestID) {
 		return BrokerRPCEnvelope{}, errors.New("protocol: broker RPC requestId must be a canonical UUID")
 	}
-	if envelope.SessionID != nil && !validUUID(*envelope.SessionID) {
+	if envelope.SessionID != nil && !ValidUUID(*envelope.SessionID) {
 		return BrokerRPCEnvelope{}, errors.New("protocol: broker RPC sessionId must be a canonical UUID")
 	}
-	if envelope.Generation != nil && !validUUID(*envelope.Generation) {
+	if envelope.Generation != nil && !ValidUUID(*envelope.Generation) {
 		return BrokerRPCEnvelope{}, errors.New("protocol: broker RPC generation must be a canonical UUID")
 	}
 
@@ -141,10 +141,10 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.OperationID) {
+		if !ValidUUID(payload.OperationID) {
 			return errors.New("operationId must be a canonical UUID")
 		}
-		if !validUUID(payload.ProjectID) || !validUUID(payload.ShellProfileID) {
+		if !ValidUUID(payload.ProjectID) || !ValidUUID(payload.ShellProfileID) {
 			return errors.New("projectId and shellProfileId must be canonical UUIDs")
 		}
 		return ValidateWorktreeCreate(payload.Worktree)
@@ -153,7 +153,7 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.OperationID) {
+		if !ValidUUID(payload.OperationID) {
 			return errors.New("operationId must be a canonical UUID")
 		}
 		return validateBrokerRPCText(payload.Title, MaxBrokerRPCRenameTitleBytes, "title")
@@ -162,7 +162,7 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.OperationID) {
+		if !ValidUUID(payload.OperationID) {
 			return errors.New("operationId must be a canonical UUID")
 		}
 		return nil
@@ -198,7 +198,7 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.OperationID) {
+		if !ValidUUID(payload.OperationID) {
 			return errors.New("operationId must be a canonical UUID")
 		}
 		return validateBrokerRPCSessionRecord(payload.Session)
@@ -207,7 +207,7 @@ func validateBrokerRPCPayload(envelope BrokerRPCEnvelope) error { //nolint:gocyc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.OperationID) {
+		if !ValidUUID(payload.OperationID) {
 			return errors.New("operationId must be a canonical UUID")
 		}
 		return validateBrokerRPCSessionResult(envelope, payload.Session)
@@ -285,7 +285,7 @@ func validateBrokerRPCSessionTitle(value string) error {
 }
 
 func validateBrokerRPCSessionRecord(record BrokerRPCSessionRecord) error {
-	if !validUUID(record.ID) || !validUUID(record.Generation) || !validUUID(record.ProjectID) || !validUUID(record.ShellProfileID) {
+	if !ValidUUID(record.ID) || !ValidUUID(record.Generation) || !ValidUUID(record.ProjectID) || !ValidUUID(record.ShellProfileID) {
 		return errors.New("session record contains a non-canonical UUID")
 	}
 	if err := validateBrokerRPCSessionTitle(record.Title); err != nil {

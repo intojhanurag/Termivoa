@@ -33,6 +33,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 )
@@ -137,7 +138,7 @@ func TestSoakBroker(t *testing.T) {
 		}
 	}
 	err := host.RunBroker(ctx, host.BrokerConfig{
-		DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "soak", Profile: host.DevelopmentProfile,
+		DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "soak", Profile: platform.DevelopmentProfile,
 	})
 	pprof.StopCPUProfile() // os.Exit below skips defers
 	if err != nil && !errors.Is(err, context.Canceled) {

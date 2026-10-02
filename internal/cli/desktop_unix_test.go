@@ -24,6 +24,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/liveclient"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 	"golang.org/x/sys/unix"
@@ -504,7 +505,7 @@ func startDesktopBroker(t *testing.T) (string, broker.ManagedSession, protocol.B
 	done := make(chan error, 1)
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
-			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "desktop-test", Profile: host.DevelopmentProfile,
+			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "desktop-test", Profile: platform.DevelopmentProfile,
 			Ready: func(value host.BrokerReady) { ready <- value },
 		})
 	}()
@@ -533,10 +534,7 @@ func startDesktopBroker(t *testing.T) (string, broker.ManagedSession, protocol.B
 		t.Fatal(err)
 	}
 	defer client.Close()
-	operationID, err := NewOperationID()
-	if err != nil {
-		t.Fatal(err)
-	}
+	operationID := NewOperationID()
 	created, err := client.Create(ctx, operationID, projectID, profileID)
 	if err != nil {
 		t.Fatal(err)

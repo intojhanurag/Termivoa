@@ -51,18 +51,18 @@ func newTestService(t *testing.T) (*Service, *testClock) {
 func pair(t *testing.T, service *Service, label string) PollResult {
 	t.Helper()
 	ctx := context.Background()
-	grant, _, err := service.CreateGrant(ctx)
+	grant, _, err := service.CreateBoundGrant(ctx, store.AppBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	redeemed, err := service.Redeem(ctx, grant, label)
+	redeemed, err := service.RedeemChecked(ctx, grant, label, OwnOriginOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := service.Approve(ctx, redeemed.PendingID); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret)
+	result, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, OwnOriginOnly)
 	if err != nil || !result.Approved {
 		t.Fatalf("approved poll = %#v, %v", result, err)
 	}
@@ -72,18 +72,18 @@ func pair(t *testing.T, service *Service, label string) PollResult {
 func TestPairingFlowIssuesCredentialExactlyOnce(t *testing.T) {
 	service, _ := newTestService(t)
 	ctx := context.Background()
-	grant, expires, err := service.CreateGrant(ctx)
+	grant, expires, err := service.CreateBoundGrant(ctx, store.AppBinding{})
 	if err != nil || !expires.Equal(serviceStart.Add(PairingGrantLifetime)) || protocol.ValidateSecretText(grant) != nil {
 		t.Fatalf("grant = %v, %v", expires, err)
 	}
-	redeemed, err := service.Redeem(ctx, grant, "Phone")
+	redeemed, err := service.RedeemChecked(ctx, grant, "Phone", OwnOriginOnly)
 	if err != nil || protocol.ValidateVerificationCode(redeemed.VerificationCode) != nil || redeemed.PollSecret == grant {
 		t.Fatalf("redeem = %#v, %v", redeemed, err)
 	}
-	if _, err := service.Redeem(ctx, grant, "Second phone"); !errors.Is(err, ErrPairingExpired) {
+	if _, err := service.RedeemChecked(ctx, grant, "Second phone", OwnOriginOnly); !errors.Is(err, ErrPairingExpired) {
 		t.Fatalf("second redemption = %v", err)
 	}
-	if result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret); err != nil || result.Approved || result.Credential != "" {
+	if result, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, OwnOriginOnly); err != nil || result.Approved || result.Credential != "" {
 		t.Fatalf("pending poll = %#v, %v", result, err)
 	}
 	pending, err := service.Pending(ctx)
@@ -92,10 +92,10 @@ func TestPairingFlowIssuesCredentialExactlyOnce(t *testing.T) {
 	}
 	wrong, _ := NewSecret()
 	wrongValue, _ := wrong.TransportValue()
-	if _, err := service.Poll(ctx, redeemed.PendingID, wrongValue); !errors.Is(err, ErrPollSecret) {
+	if _, err := service.PollChecked(ctx, redeemed.PendingID, wrongValue, OwnOriginOnly); !errors.Is(err, ErrPollSecret) {
 		t.Fatalf("wrong poll secret = %v", err)
 	}
-	if _, err := service.Poll(ctx, redeemed.PendingID, redeemed.VerificationCode); !errors.Is(err, ErrPollSecret) {
+	if _, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.VerificationCode, OwnOriginOnly); !errors.Is(err, ErrPollSecret) {
 		t.Fatalf("verification code accepted as poll secret: %v", err)
 	}
 	if err := service.Approve(ctx, redeemed.PendingID); err != nil {
@@ -104,13 +104,13 @@ func TestPairingFlowIssuesCredentialExactlyOnce(t *testing.T) {
 	if err := service.Approve(ctx, redeemed.PendingID); !errors.Is(err, ErrApproved) {
 		t.Fatalf("approval replay = %v", err)
 	}
-	result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret)
+	result, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, OwnOriginOnly)
 	if err != nil || !result.Approved || result.DeviceLabel != "Phone" || result.Credential == "" ||
 		!result.ExpiresAt.Equal(serviceStart.Add(BrowserAbsoluteLifetime)) {
 		t.Fatalf("approved poll = %#v, %v", result, err)
 	}
 	// A lost issuance response cannot be replayed into a second credential.
-	if _, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret); !errors.Is(err, ErrPairingExpired) {
+	if _, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, OwnOriginOnly); !errors.Is(err, ErrPairingExpired) {
 		t.Fatalf("issuance replay = %v", err)
 	}
 	principal, err := service.Authenticate(ctx, result.Credential)
@@ -126,7 +126,7 @@ func TestPairingFlowIssuesCredentialExactlyOnce(t *testing.T) {
 
 func TestConcurrentRedemptionHasOneWinner(t *testing.T) {
 	service, _ := newTestService(t)
-	grant, _, err := service.CreateGrant(context.Background())
+	grant, _, err := service.CreateBoundGrant(context.Background(), store.AppBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestConcurrentRedemptionHasOneWinner(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			_, err := service.Redeem(context.Background(), grant, "Phone")
+			_, err := service.RedeemChecked(context.Background(), grant, "Phone", OwnOriginOnly)
 			if err == nil {
 				mu.Lock()
 				wins++
@@ -156,27 +156,27 @@ func TestConcurrentRedemptionHasOneWinner(t *testing.T) {
 func TestGrantExpiryRateLimitAndLabelBounds(t *testing.T) {
 	service, clock := newTestService(t)
 	ctx := context.Background()
-	grant, _, err := service.CreateGrant(ctx)
+	grant, _, err := service.CreateBoundGrant(ctx, store.AppBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Redeem(ctx, grant, "bad\x1blabel"); !errors.Is(err, ErrInvalidLabel) {
+	if _, err := service.RedeemChecked(ctx, grant, "bad\x1blabel", OwnOriginOnly); !errors.Is(err, ErrInvalidLabel) {
 		t.Fatalf("control label = %v", err)
 	}
 	clock.Set(serviceStart.Add(PairingGrantLifetime))
-	if _, err := service.Redeem(ctx, grant, "Phone"); !errors.Is(err, ErrPairingExpired) {
+	if _, err := service.RedeemChecked(ctx, grant, "Phone", OwnOriginOnly); !errors.Is(err, ErrPairingExpired) {
 		t.Fatalf("expired grant = %v", err)
 	}
 	for range RedeemAttemptsPerMin - 1 {
-		if _, err := service.Redeem(ctx, grant, "Phone"); !errors.Is(err, ErrPairingExpired) {
+		if _, err := service.RedeemChecked(ctx, grant, "Phone", OwnOriginOnly); !errors.Is(err, ErrPairingExpired) {
 			t.Fatalf("attempt below the limit = %v", err)
 		}
 	}
-	if _, err := service.Redeem(ctx, grant, "Phone"); !errors.Is(err, ErrRateLimited) {
+	if _, err := service.RedeemChecked(ctx, grant, "Phone", OwnOriginOnly); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("attempt above the limit = %v", err)
 	}
 	clock.Set(serviceStart.Add(PairingGrantLifetime + time.Minute))
-	if _, err := service.Redeem(ctx, grant, "Phone"); !errors.Is(err, ErrPairingExpired) {
+	if _, err := service.RedeemChecked(ctx, grant, "Phone", OwnOriginOnly); !errors.Is(err, ErrPairingExpired) {
 		t.Fatalf("attempt after the window = %v", err)
 	}
 }
@@ -214,7 +214,7 @@ func TestCredentialLifetimeExpiryAndClockRollback(t *testing.T) {
 	if _, err := service.Authenticate(ctx, fresh.Credential); !errors.Is(err, ErrClockRollback) || errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("clock rollback before creation = %v", err)
 	}
-	if _, _, err := service.Bind(ctx, fresh.Credential); !errors.Is(err, ErrClockRollback) {
+	if _, _, err := service.BindChecked(ctx, fresh.Credential, "", nil); !errors.Is(err, ErrClockRollback) {
 		t.Fatalf("live bind after clock rollback = %v", err)
 	}
 	clock.Set(serviceStart.Add(-time.Hour))
@@ -237,11 +237,11 @@ func TestRevokeDeviceClosesBindingsBeforeReportingSuccess(t *testing.T) {
 	ctx := context.Background()
 	issued := pair(t, service, "Phone")
 	other := pair(t, service, "Tablet")
-	binding, principal, err := service.Bind(ctx, issued.Credential)
+	binding, principal, err := service.BindChecked(ctx, issued.Credential, "", nil)
 	if err != nil || principal.DeviceID != issued.DeviceID || binding.Check() != nil {
 		t.Fatalf("bind = %#v, %v", principal, err)
 	}
-	otherBinding, _, err := service.Bind(ctx, other.Credential)
+	otherBinding, _, err := service.BindChecked(ctx, other.Credential, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestRevokeDeviceClosesBindingsBeforeReportingSuccess(t *testing.T) {
 	if _, err := service.Authenticate(ctx, issued.Credential); !errors.Is(err, ErrRevoked) {
 		t.Fatalf("revoked credential = %v", err)
 	}
-	if _, _, err := service.Bind(ctx, issued.Credential); !errors.Is(err, ErrRevoked) {
+	if _, _, err := service.BindChecked(ctx, issued.Credential, "", nil); !errors.Is(err, ErrRevoked) {
 		t.Fatalf("revoked credential bound: %v", err)
 	}
 	if otherBinding.Check() != nil {
@@ -287,7 +287,7 @@ func TestLogoutRevokesOnlyThatCredential(t *testing.T) {
 	service, _ := newTestService(t)
 	ctx := context.Background()
 	first, second := pair(t, service, "Phone"), pair(t, service, "Laptop")
-	binding, _, err := service.Bind(ctx, first.Credential)
+	binding, _, err := service.BindChecked(ctx, first.Credential, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestRevocationRacingBindNeverLeavesAnAuthorizedStream(t *testing.T) {
 		issued := pair(t, service, "Phone")
 		bindings := make(chan *Binding, 1)
 		go func() {
-			binding, _, err := service.Bind(ctx, issued.Credential)
+			binding, _, err := service.BindChecked(ctx, issued.Credential, "", nil)
 			if err != nil {
 				bindings <- nil
 				return
@@ -383,7 +383,7 @@ func TestBindingExpiresOnTheLiveConnection(t *testing.T) {
 		}
 	}
 	clock.Set(serviceStart.Add(BrowserAbsoluteLifetime - 50*time.Millisecond))
-	binding, _, err := service.Bind(context.Background(), issued.Credential)
+	binding, _, err := service.BindChecked(context.Background(), issued.Credential, "", nil)
 	if err != nil || binding.Check() != nil {
 		t.Fatalf("bind before expiry: %v", err)
 	}
@@ -426,16 +426,16 @@ func (randReader) Read(data []byte) (int, error) {
 func TestPairingRejectsClockRollback(t *testing.T) {
 	service, clock := newTestService(t)
 	ctx := context.Background()
-	grant, _, err := service.CreateGrant(ctx)
+	grant, _, err := service.CreateBoundGrant(ctx, store.AppBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	clock.Set(serviceStart.Add(-time.Hour))
-	if _, err := service.Redeem(ctx, grant, "Phone"); !errors.Is(err, ErrPairingExpired) {
+	if _, err := service.RedeemChecked(ctx, grant, "Phone", OwnOriginOnly); !errors.Is(err, ErrPairingExpired) {
 		t.Fatalf("grant redeemed behind its creation time: %v", err)
 	}
 	clock.Set(serviceStart.Add(time.Second))
-	redeemed, err := service.Redeem(ctx, grant, "Phone")
+	redeemed, err := service.RedeemChecked(ctx, grant, "Phone", OwnOriginOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,12 +451,12 @@ func TestPairingRejectsClockRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock.Set(serviceStart.Add(-time.Hour))
-	if result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret); !errors.Is(err, ErrPairingExpired) ||
+	if result, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, OwnOriginOnly); !errors.Is(err, ErrPairingExpired) ||
 		result.Credential != "" {
 		t.Fatalf("credential issued behind the pending creation time: %#v, %v", result, err)
 	}
 	clock.Set(serviceStart.Add(3 * time.Second))
-	if result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret); err != nil || !result.Approved {
+	if result, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, OwnOriginOnly); err != nil || !result.Approved {
 		t.Fatalf("poll after the clock recovered = %#v, %v", result, err)
 	}
 }
@@ -468,7 +468,7 @@ func TestBindingExpiresWhenWallClockPassesDuringHostSleep(t *testing.T) {
 	service, clock := newTestService(t)
 	service.expiryRecheck = 10 * time.Millisecond
 	issued := pair(t, service, "Phone")
-	binding, principal, err := service.Bind(context.Background(), issued.Credential)
+	binding, principal, err := service.BindChecked(context.Background(), issued.Credential, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

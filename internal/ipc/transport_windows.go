@@ -91,10 +91,6 @@ func (lock *windowsBrokerLock) Close() error {
 	return errors.Join(unlockErr, closeErr)
 }
 
-func platformEndpoint(runtimeDir string) (transport, address string, err error) {
-	return platformEndpointNamed(runtimeDir, defaultSocketName)
-}
-
 // platformEndpointNamed is platformEndpoint for a non-default SocketName. A
 // non-default name folds into the pipe-address digest so a second endpoint
 // (such as the gateway's stop control) sharing the runtime directory gets its

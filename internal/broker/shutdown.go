@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"errors"
+	"uuid"
 )
 
 // TerminateAll ends every starting or running session through Terminate, the
@@ -21,12 +22,8 @@ func (registry *Registry) TerminateAll(ctx context.Context) (int, error) {
 			continue
 		}
 		if status.State != SessionExiting {
-			operationID, err := randomUUID()
-			if err != nil {
-				return terminated, err
-			}
-			_, err = registry.Terminate(ctx, TerminateSessionRequest{
-				OperationID: operationID, SessionID: status.ID, Generation: status.Generation,
+			_, err := registry.Terminate(ctx, TerminateSessionRequest{
+				OperationID: uuid.New().String(), SessionID: status.ID, Generation: status.Generation,
 			})
 			switch {
 			case errors.Is(err, ErrSessionMissing), errors.Is(err, ErrGenerationChanged):

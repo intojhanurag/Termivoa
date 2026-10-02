@@ -216,10 +216,6 @@ func (lock *unixBrokerLock) Close() error {
 	return errors.Join(unlockErr, closeErr)
 }
 
-func platformEndpoint(runtimeDir string) (transport, address string, err error) {
-	return platformEndpointNamed(runtimeDir, defaultSocketName)
-}
-
 // platformEndpointNamed is platformEndpoint for a non-default SocketName. The
 // name is a short trusted literal chosen by this codebase (never derived from
 // user input), so it needs no additional sanitization beyond staying within

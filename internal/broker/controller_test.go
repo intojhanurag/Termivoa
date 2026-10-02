@@ -3,6 +3,7 @@ package broker
 import (
 	"bytes"
 	"errors"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -208,4 +209,20 @@ func testSecrets(count int) []byte {
 		secrets = append(secrets, bytes.Repeat([]byte{byte(index + 1)}, controllerSecretBytes)...)
 	}
 	return secrets
+}
+
+func newControllerForTest(generation string, random io.Reader, now func() time.Time) (*Controller, error) {
+	controller, err := NewController(generation)
+	if err != nil {
+		return nil, err
+	}
+	if random == nil {
+		return nil, errors.New("broker: controller random source must not be nil")
+	}
+	if now == nil {
+		return nil, errors.New("broker: controller clock must not be nil")
+	}
+	controller.random = random
+	controller.now = now
+	return controller, nil
 }

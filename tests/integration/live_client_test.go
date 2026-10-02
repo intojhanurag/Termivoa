@@ -24,6 +24,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/liveclient"
+	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
@@ -178,7 +179,7 @@ func TestLiveClientNativeBrokerControlInputResizeAndReconnect(t *testing.T) {
 	if err := second.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := first.Detach(ctx); err != nil {
+	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
 	assertLiveIdentity(t, ctx, managed, initial)
@@ -260,7 +261,7 @@ func startLiveBroker(t *testing.T, parent context.Context) (string, host.BrokerR
 	ready, done := make(chan host.BrokerReady, 1), make(chan error, 1)
 	go func() {
 		done <- host.RunBroker(ctx, host.BrokerConfig{
-			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "live-integration", Profile: host.DevelopmentProfile,
+			DataDir: dataDir, RuntimeDir: runtimeDir, HostBuild: "live-integration", Profile: platform.DevelopmentProfile,
 			Ready: func(value host.BrokerReady) { ready <- value },
 		})
 	}()

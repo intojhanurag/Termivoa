@@ -137,7 +137,7 @@ func decodeRPC[T ~string](
 	if envelope.Version != Version {
 		return RPCEnvelope[T]{}, fmt.Errorf("protocol: RPC version %d is not supported", envelope.Version)
 	}
-	if !validUUID(envelope.RequestID) {
+	if !ValidUUID(envelope.RequestID) {
 		return RPCEnvelope[T]{}, errors.New("protocol: RPC requestId must be a canonical UUID")
 	}
 	if envelope.Origin != nil {
@@ -183,7 +183,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.PendingID) {
+		if !ValidUUID(payload.PendingID) {
 			return errors.New("pendingId must be a canonical UUID")
 		}
 		return ValidateSecretText(payload.PollSecret)
@@ -202,7 +202,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err := ValidateSecretText(payload.Credential); err != nil {
 			return err
 		}
-		if !validUUID(payload.Request.OperationID) || !validUUID(payload.Request.ProjectID) || !validUUID(payload.Request.ShellProfileID) {
+		if !ValidUUID(payload.Request.OperationID) || !ValidUUID(payload.Request.ProjectID) || !ValidUUID(payload.Request.ShellProfileID) {
 			return errors.New("create request contains a non-canonical UUID")
 		}
 		return ValidateWorktreeCreate(payload.Request.Worktree)
@@ -214,7 +214,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err := ValidateSecretText(payload.Credential); err != nil {
 			return err
 		}
-		if !validUUID(payload.SessionID) || !validUUID(payload.Request.OperationID) || !validUUID(payload.Request.Generation) {
+		if !ValidUUID(payload.SessionID) || !ValidUUID(payload.Request.OperationID) || !ValidUUID(payload.Request.Generation) {
 			return errors.New("rename request contains a non-canonical UUID")
 		}
 		return validateBrokerRPCText(payload.Request.Title, MaxBrokerRPCRenameTitleBytes, "title")
@@ -226,7 +226,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err := ValidateSecretText(payload.Credential); err != nil {
 			return err
 		}
-		if !validUUID(payload.SessionID) || !validUUID(payload.Request.OperationID) || !validUUID(payload.Request.Generation) {
+		if !ValidUUID(payload.SessionID) || !ValidUUID(payload.Request.OperationID) || !ValidUUID(payload.Request.Generation) {
 			return errors.New("terminate request contains a non-canonical UUID")
 		}
 		return nil
@@ -263,7 +263,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.ID) {
+		if !ValidUUID(payload.ID) {
 			return errors.New("device id must be a canonical UUID")
 		}
 		return ValidateDeviceLabel(payload.Label)
@@ -299,7 +299,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err := ValidateSecretText(payload.Credential); err != nil {
 			return err
 		}
-		if !validUUID(payload.SessionID) || !ValidPreviewPort(payload.Port) {
+		if !ValidUUID(payload.SessionID) || !ValidPreviewPort(payload.Port) {
 			return errors.New("preview check needs a canonical session UUID and a port 1..65535")
 		}
 		return nil
@@ -329,7 +329,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.PendingID) {
+		if !ValidUUID(payload.PendingID) {
 			return errors.New("pendingId must be a canonical UUID")
 		}
 		if err := ValidateSecretText(payload.PollSecret); err != nil {
@@ -351,7 +351,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.DeviceID) || !validUUID(payload.CredentialID) {
+		if !ValidUUID(payload.DeviceID) || !ValidUUID(payload.CredentialID) {
 			return errors.New("principal contains a non-canonical UUID")
 		}
 		if err := ValidateDeviceLabel(payload.DeviceLabel); err != nil {
@@ -387,7 +387,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.OperationID) {
+		if !ValidUUID(payload.OperationID) {
 			return errors.New("operationId must be a canonical UUID")
 		}
 		return validateBrokerRPCSessionRecord(payload.Session)
@@ -409,7 +409,7 @@ func validateGatewayPollResult(payload GatewayRPCPairPollResultPayload) error {
 		if payload.Response.Device == nil || payload.Credential == nil || payload.CredentialExpiresAt == nil {
 			return errors.New("approved poll must carry exactly one device and credential")
 		}
-		if !validUUID(payload.Response.Device.ID) {
+		if !ValidUUID(payload.Response.Device.ID) {
 			return errors.New("device id must be a canonical UUID")
 		}
 		if err := ValidateDeviceLabel(payload.Response.Device.Label); err != nil {
@@ -426,7 +426,7 @@ func validateGatewayPollResult(payload GatewayRPCPairPollResultPayload) error {
 }
 
 func validateSettings(payload HTTPSettingsResponse) error {
-	if !validUUID(payload.Device.ID) || !validUUID(payload.BrokerGeneration) {
+	if !ValidUUID(payload.Device.ID) || !ValidUUID(payload.BrokerGeneration) {
 		return errors.New("settings contain a non-canonical UUID")
 	}
 	if err := ValidateDeviceLabel(payload.Device.Label); err != nil {
@@ -443,7 +443,7 @@ func validateSettings(payload HTTPSettingsResponse) error {
 		return errors.New("settings lists are outside bounds")
 	}
 	for _, option := range append(append([]HTTPNamedOption(nil), payload.Projects...), payload.ShellProfiles...) {
-		if !validUUID(option.ID) {
+		if !ValidUUID(option.ID) {
 			return errors.New("settings option id must be a canonical UUID")
 		}
 		if err := validateBrokerRPCText(option.Name, MaxNamedOptionBytes, "option name"); err != nil {
@@ -476,7 +476,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.PendingID) {
+		if !ValidUUID(payload.PendingID) {
 			return errors.New("pendingId must be a canonical UUID")
 		}
 		return nil
@@ -485,7 +485,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.DeviceID) {
+		if !ValidUUID(payload.DeviceID) {
 			return errors.New("deviceId must be a canonical UUID")
 		}
 		return nil
@@ -494,7 +494,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.DeviceID) {
+		if !ValidUUID(payload.DeviceID) {
 			return errors.New("deviceId must be a canonical UUID")
 		}
 		return ValidateDeviceLabel(payload.Label)
@@ -546,7 +546,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 			return errors.New("pending list is outside bounds")
 		}
 		for _, pending := range payload.Pending {
-			if !validUUID(pending.ID) {
+			if !ValidUUID(pending.ID) {
 				return errors.New("pending id must be a canonical UUID")
 			}
 			if err := ValidateVerificationCode(pending.VerificationCode); err != nil {
@@ -572,7 +572,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 			return errors.New("device list is outside bounds")
 		}
 		for _, device := range payload.Devices {
-			if !validUUID(device.ID) {
+			if !ValidUUID(device.ID) {
 				return errors.New("device id must be a canonical UUID")
 			}
 			if err := ValidateDeviceLabel(device.Label); err != nil {
@@ -596,7 +596,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 		if err != nil {
 			return err
 		}
-		if !validUUID(payload.DeviceID) || payload.ClosedStreams < 0 || payload.ClosedStreams > 65536 {
+		if !ValidUUID(payload.DeviceID) || payload.ClosedStreams < 0 || payload.ClosedStreams > 65536 {
 			return errors.New("revocation result is outside bounds")
 		}
 		return nil
@@ -629,7 +629,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 			return errors.New("profile list is outside bounds")
 		}
 		for _, profile := range payload.Profiles {
-			if !validUUID(profile.ID) {
+			if !ValidUUID(profile.ID) {
 				return errors.New("profile id must be a canonical UUID")
 			}
 			if err := validateBrokerRPCText(profile.Name, MaxNamedOptionBytes, "profile name"); err != nil {
@@ -656,7 +656,7 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 }
 
 func validateAdminProject(project AdminRPCProject) error {
-	if !validUUID(project.ID) {
+	if !ValidUUID(project.ID) {
 		return errors.New("project id must be a canonical UUID")
 	}
 	if err := validateBrokerRPCText(project.Name, MaxNamedOptionBytes, "project name"); err != nil {
