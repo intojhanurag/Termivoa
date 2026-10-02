@@ -96,6 +96,57 @@ there, except the "gives up after about 3 s" bound check.
     Try again."
   - "Open pull request" is not shown for a link to the app's own address.
 
+### Multi-computer host review fixes (2026-10-02, branch `feat/mc-fix-host`)
+
+Host side of the review of `feat/multi-computer` (ADR 0005). Not merged;
+critical feature, owner review required (rule 24). Gate 0 has not run.
+
+- Pairing and removal: an approved poll from an app origin refreshes the
+  gateway's origin sets, so the app's first `GET /api/v1/settings` is
+  admitted with CORS (was 403 until the next probe). `DELETE
+  /api/v1/computers/{host}` takes the `{}` body the app sends (was always 400).
+- CORS bound origins come from every device ever bound to an origin (revoked
+  and expired ones too) whose pinned node is still trusted, so a revoked or
+  expired phone reads its 401 and shows "pair again". The broker still
+  authorizes every request; a node change, a gone name or an unreadable
+  status gets no CORS.
+- Tailscale trust: owners are compared by stable user ID (login names are
+  display only); a node whose tagged state changed since pairing is refused
+  (not revoked); a status that is not `Running` (restart, logout) keeps the
+  last good snapshot under the grace rules; a new snapshot wakes the trust
+  sweep at once (`tailnet.Config.OnUpdate`), so untrusted streams close in
+  well under a second after the refresh instead of up to 15 s later; the
+  sweep reads only devices that can still connect; `Serve` waits for it.
+- Finding `tailscale`: fixed install paths first (`/usr/bin`, `/usr/sbin`,
+  the macOS app bundle, `/usr/local/bin`, `/opt/homebrew/bin`), PATH last;
+  a binary or folder that is group/other-writable or owned by neither root
+  nor the current user is refused (Unix); a missing CLI is looked up again at
+  most once a minute, so installing Tailscale later needs no restart.
+- Home computer list: migration 9 pins the node of each entry; confirm needs
+  the same node, and an entry whose node no longer holds its name leaves the
+  list and the CSP. `gateway.computers.*` only from the own origin. Listing
+  is read-only; the admin list leaves out revoked devices.
+- Broker: loopback origins count as own only in the development profile;
+  upload commit re-checks the origin binding; logout authenticates once.
+- CLI: `pterm revoke --via` always sends the request (it also drops pairing
+  links and pending pairings); `pair --via` uses the app's labels ("Add this
+  computer?", "+ Add a computer"); `pterm setup` refuses, before any change,
+  while other Tailscale Serve handlers share this computer's origin, and
+  doctor names them as a problem with the commands to move them; doctor says
+  when the tailnet is unknown (logged out).
+- Code: one `gatewayapi.Broker` (no `computerBroker`, no `Origin()`), one
+  `cli.Admin`, no `tailnet.Status.Peers`, `inspectTailscale` parses once.
+  Settings still asks the broker twice (`Authenticate` for the expiry, then
+  `Settings`): returning the expiry would change the gateway RPC result type
+  for one local IPC round trip on app start and foreground.
+- Evidence: `go test -race ./internal/... ./cmd/...`, `./scripts/check`,
+  `CGO_ENABLED=0 GOOS=linux go vet ./...` and `GOOS=windows` all exit 0
+  (macOS host). Each fix's test was run with that fix reverted and failed.
+- Pending: the schema description of `boundOrigins` in
+  `protocol/v1/gateway-rpc.schema.json` still says "unrevoked devices"
+  (regenerating would touch `web/src/generated`, owned by the web track);
+  site docs and CHANGELOG for the changed texts; Gate 0; Playwright tests.
+
 ### Multi-computer D: user and repo docs (2026-10-02, branch `feat/mc-docs`)
 
 Track D of `docs/multi-computer.md`, written against the integrated branch
