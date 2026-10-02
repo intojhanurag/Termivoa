@@ -66,7 +66,7 @@ func (handler *gatewayHandler) pairPoll(response http.ResponseWriter, request *h
 		writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "too many pairing polls")
 		return
 	}
-	if !validUUID(body.PendingID) || !validSecret(body.PollSecret) {
+	if !protocol.ValidUUID(body.PendingID) || !validSecret(body.PollSecret) {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid poll request")
 		return
 	}
@@ -221,7 +221,7 @@ func (handler *gatewayHandler) sessions(response http.ResponseWriter, request *h
 	if !ok {
 		return
 	}
-	if !validUUID(body.OperationID) || !validUUID(body.ProjectID) || !validUUID(body.ShellProfileID) ||
+	if !protocol.ValidUUID(body.OperationID) || !protocol.ValidUUID(body.ProjectID) || !protocol.ValidUUID(body.ShellProfileID) ||
 		protocol.ValidateWorktreeCreate(body.Worktree) != nil {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid session request")
 		return
@@ -243,7 +243,7 @@ func (handler *gatewayHandler) renameSession(response http.ResponseWriter, reque
 		return
 	}
 	sessionID := request.PathValue("id")
-	if !validUUID(sessionID) || !validUUID(body.OperationID) || !validUUID(body.Generation) ||
+	if !protocol.ValidUUID(sessionID) || !protocol.ValidUUID(body.OperationID) || !protocol.ValidUUID(body.Generation) ||
 		!validText(body.Title, maxSessionTitleBytes) {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid rename request")
 		return
@@ -265,7 +265,7 @@ func (handler *gatewayHandler) terminateSession(response http.ResponseWriter, re
 		return
 	}
 	sessionID := request.PathValue("id")
-	if !validUUID(sessionID) || !validUUID(body.OperationID) || !validUUID(body.Generation) {
+	if !protocol.ValidUUID(sessionID) || !protocol.ValidUUID(body.OperationID) || !protocol.ValidUUID(body.Generation) {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid terminate request")
 		return
 	}
@@ -388,7 +388,7 @@ func (handler *gatewayHandler) upload(response http.ResponseWriter, request *htt
 		return
 	}
 	sessionID := request.PathValue("id")
-	if !validUUID(sessionID) || !validUUID(body.Generation) {
+	if !protocol.ValidUUID(sessionID) || !protocol.ValidUUID(body.Generation) {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid upload request")
 		return
 	}
@@ -646,24 +646,6 @@ func validSecret(value string) bool {
 		case character >= 'A' && character <= 'Z', character >= 'a' && character <= 'z',
 			character >= '0' && character <= '9', character == '-', character == '_':
 		default:
-			return false
-		}
-	}
-	return true
-}
-
-// validUUID mirrors the schema uuid pattern (lowercase, versions 1..8).
-func validUUID(value string) bool {
-	if len(value) != 36 || value[14] < '1' || value[14] > '8' || !strings.ContainsRune("89ab", rune(value[19])) {
-		return false
-	}
-	for index := 0; index < len(value); index++ {
-		character := value[index]
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if character != '-' {
-				return false
-			}
-		} else if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
 			return false
 		}
 	}

@@ -56,7 +56,7 @@ func validateGatewayUploadPayload(envelope GatewayRPCEnvelope) error {
 		if err := ValidateSecretText(payload.Credential); err != nil {
 			return err
 		}
-		if !validUUID(payload.SessionID) || !validUUID(payload.Generation) {
+		if !ValidUUID(payload.SessionID) || !ValidUUID(payload.Generation) {
 			return errors.New("upload request contains a non-canonical UUID")
 		}
 		if payload.Size < 1 || payload.Size > MaxUploadBytes {

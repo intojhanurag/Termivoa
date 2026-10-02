@@ -224,7 +224,7 @@ func NewRegistry(ctx context.Context, config RegistryConfig) (*Registry, error) 
 	if (config.Store == nil) != (config.BrokerGeneration == "") {
 		return nil, errors.New("broker: persistence store and broker generation must be configured together")
 	}
-	if config.Store != nil && !validOperationUUID(config.BrokerGeneration) {
+	if config.Store != nil && !protocol.ValidUUID(config.BrokerGeneration) {
 		return nil, errors.New("broker: broker generation must be a canonical UUID")
 	}
 	registryContext, cancel := context.WithCancel(ctx)
@@ -837,27 +837,10 @@ func (registry *Registry) releasePending(id string) {
 }
 
 func validateOperationID(id string) error {
-	if strings.TrimSpace(id) != id || !validOperationUUID(id) {
+	if strings.TrimSpace(id) != id || !protocol.ValidUUID(id) {
 		return ErrOperationID
 	}
 	return nil
-}
-
-func validOperationUUID(value string) bool {
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
-		value[14] < '1' || value[14] > '8' || !strings.ContainsRune("89ab", rune(value[19])) {
-		return false
-	}
-	for index := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			continue
-		}
-		character := value[index]
-		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
-			return false
-		}
-	}
-	return true
 }
 
 func (registry *Registry) persistedCreateResult(result store.MutationResult) CreateSessionResult {

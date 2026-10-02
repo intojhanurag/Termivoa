@@ -450,7 +450,7 @@ func (service *Service) LogoutPrincipal(ctx context.Context, principal Principal
 // even if persistence fails. It reports success only after the revocation is
 // durable and every bound stream has released.
 func (service *Service) RevokeDevice(ctx context.Context, deviceID string) (int, error) {
-	if !validUUIDText(deviceID) {
+	if !protocol.ValidUUID(deviceID) {
 		return 0, ErrDeviceMissing
 	}
 	service.mu.Lock()
@@ -722,23 +722,6 @@ func verificationCode(random io.Reader) (string, error) {
 		}
 	}
 	return "", ErrRandomness
-}
-
-func validUUIDText(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
-	for index := range len(value) {
-		character := value[index]
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if character != '-' {
-				return false
-			}
-		} else if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
-			return false
-		}
-	}
-	return true
 }
 
 func formatTime(value time.Time) string { return value.UTC().Format(time.RFC3339Nano) }

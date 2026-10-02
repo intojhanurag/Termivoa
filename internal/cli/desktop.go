@@ -91,7 +91,7 @@ func AttachDesktop(ctx context.Context, config DesktopConfig) (returnErr error) 
 	if err != nil {
 		return fmt.Errorf("attach requires terminal stdout: %w", err)
 	}
-	if !validUUID(config.Session.ID) || !validUUID(config.Session.Generation) {
+	if !protocol.ValidUUID(config.Session.ID) || !protocol.ValidUUID(config.Session.Generation) {
 		return errors.New("attach requires an exact managed session and generation")
 	}
 	if config.Session.State == protocol.Lost {

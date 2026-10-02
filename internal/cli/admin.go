@@ -329,7 +329,7 @@ func PairPending(ctx context.Context, admin Admin, output io.Writer) error {
 // PairApprove approves one pending pairing. It is never retried: a lost
 // acknowledgement leaves the outcome for the owner to inspect.
 func PairApprove(ctx context.Context, admin Admin, pendingID string, output io.Writer) error {
-	if !validUUID(pendingID) {
+	if !protocol.ValidUUID(pendingID) {
 		return errors.New("pending ID must be a canonical lowercase UUID")
 	}
 	if err := admin.ApprovePairing(ctx, pendingID); err != nil {
@@ -376,7 +376,7 @@ func originText(origin string) string {
 
 // RenameDevice sets a device's display label. Surrounding spaces are removed.
 func RenameDevice(ctx context.Context, admin Admin, deviceID, label string, output io.Writer) error {
-	if !validUUID(deviceID) {
+	if !protocol.ValidUUID(deviceID) {
 		return errors.New("device ID must be a canonical lowercase UUID")
 	}
 	label = strings.TrimSpace(label)
@@ -395,7 +395,7 @@ func RenameDevice(ctx context.Context, admin Admin, deviceID, label string, outp
 // Revoke resolves the exact device, asks for explicit confirmation, and sends
 // one revocation. Device labels are untrusted and shown escaped.
 func Revoke(ctx context.Context, admin Admin, deviceID string, confirmer Confirmer, output io.Writer) error {
-	if !validUUID(deviceID) {
+	if !protocol.ValidUUID(deviceID) {
 		return errors.New("device ID must be a canonical lowercase UUID")
 	}
 	devices, err := admin.Devices(ctx)

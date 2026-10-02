@@ -188,7 +188,7 @@ func ListenBroker(ctx context.Context, config ListenerConfig) (*BrokerListener, 
 	if err != nil {
 		return nil, err
 	}
-	if !validUUID(config.BrokerGeneration) {
+	if !protocol.ValidUUID(config.BrokerGeneration) {
 		return nil, errors.New("ipc: broker generation must be a UUID")
 	}
 	name := config.SocketName
@@ -541,7 +541,7 @@ func validateEndpointDescriptor(runtimeDir, name string, descriptor EndpointDesc
 		return err
 	}
 	if descriptor.Version != EndpointDescriptorVersion || descriptor.Transport != transport || descriptor.Address != address ||
-		!validUUID(descriptor.BrokerGeneration) || descriptor.ProcessID <= 0 {
+		!protocol.ValidUUID(descriptor.BrokerGeneration) || descriptor.ProcessID <= 0 {
 		return ErrEndpointInvalid
 	}
 	return nil
@@ -574,21 +574,6 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 		return fmt.Errorf("%w: descriptor trailing data: %v", ErrEndpointInvalid, err)
 	}
 	return nil
-}
-
-func validUUID(value string) bool {
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
-		return false
-	}
-	for index, character := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			continue
-		}
-		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
-			return false
-		}
-	}
-	return true
 }
 
 type brokerLock interface {

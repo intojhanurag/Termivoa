@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/store"
 )
 
@@ -244,7 +245,7 @@ func (notifier *Notifier) deliver(ctx context.Context, deviceID string, message 
 // eventMessage builds the lock-screen text from names only. Terminal text
 // never enters an Event, and names are cleaned and shortened here.
 func eventMessage(event Event) (Message, bool) {
-	if !validUUID(event.SessionID) {
+	if !protocol.ValidUUID(event.SessionID) {
 		return Message{}, false
 	}
 	title := cleanLabel(event.SessionTitle, "A session")
@@ -290,21 +291,4 @@ func cleanLabel(value, fallback string) string {
 		return result
 	}
 	return fallback
-}
-
-func validUUID(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
-	for index := range len(value) {
-		character := value[index]
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if character != '-' {
-				return false
-			}
-		} else if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
-			return false
-		}
-	}
-	return true
 }

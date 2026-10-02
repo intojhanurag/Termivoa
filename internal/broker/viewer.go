@@ -165,7 +165,7 @@ type viewerDetachEvent struct {
 // canonical snapshot inside the session actor. Network transmission runs in a
 // separate worker and cannot block PTY parsing or canonical-state mutation.
 func (session *Session) AttachViewer(ctx context.Context, config ViewerConfig) (*ViewerSubscription, error) {
-	if !validOperationUUID(config.ConnectionID) || !validOperationUUID(config.DeviceID) || !validOperationUUID(config.Generation) {
+	if !protocol.ValidUUID(config.ConnectionID) || !protocol.ValidUUID(config.DeviceID) || !protocol.ValidUUID(config.Generation) {
 		return nil, errors.New("broker: viewer identity must contain canonical UUIDs")
 	}
 	if config.Sink == nil {
