@@ -1,13 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { takeGrantFromFragment } from './pairing/pairing';
-import { App, type GrantHolder } from './screens/App';
+import { App, takeStartupLinks } from './screens/App';
 import { AppErrorBoundary } from './screens/chunks';
 import './styles/global.css';
 
-// Read and strip the pairing fragment before anything renders. The grant
-// lives only in this in-memory holder until it is redeemed.
-const grant: GrantHolder = { value: takeGrantFromFragment(window.location, window.history) };
+// Read and strip every URL fragment before anything renders. Grants live
+// only in memory until they are redeemed.
+const links = takeStartupLinks(window.location, window.history, window.location);
 
 const root = document.getElementById('root');
 
@@ -18,7 +17,7 @@ if (root === null) {
 createRoot(root).render(
   <StrictMode>
     <AppErrorBoundary>
-      <App grant={grant} />
+      <App {...links} />
     </AppErrorBoundary>
   </StrictMode>,
 );

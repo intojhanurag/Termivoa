@@ -1,8 +1,17 @@
 /* Termivoa service worker. Built into /sw.js by vite.config.ts.
- * Caches only immutable, content-hashed /assets/* files. It never caches API
- * responses, WebSocket traffic, terminal frames, history, or secrets. A new
- * version waits until the user explicitly chooses to reload. */
-const CACHE = 'pterm-assets-__BUILD__';
+ * On install it stores this build's complete bundle (the HTML and every
+ * file the build made), so the app opens with home offline. It never caches
+ * API responses, WebSocket traffic, terminal frames, history, or secrets.
+ * A new version waits until the user explicitly chooses to reload. */
+const BUNDLE = __BUNDLE__;
+const BUILD = '__BUILD__';
+const CACHE = `pterm-bundle-${BUILD}`;
+const SHELL = '/index.html';
+/** How long a page load waits for the network before the cached shell. */
+const NAVIGATION_TIMEOUT_MS = 2500;
+/** Caches this app made, under this and older names. */
+const OWN_CACHE = /^pterm-(assets|bundle)-/;
+const BUNDLE_FILES = new Set(BUNDLE.files);
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -31,14 +40,117 @@ a{display:flex;align-items:center;height:52px;padding:0 24px;border-radius:26px;
 <div class="actions"><span class="pill">retrying every 5s</span><a href="/">Retry now</a></div>
 </body></html>`;
 
-self.addEventListener('install', () => {
+/** The build ID in an index.html's pterm-build meta, or undefined. */
+function buildOf(html) {
+  const match = /<meta name="pterm-build" content="([^"]*)"/.exec(html);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Whether a page response may replace the cached shell: only an OK HTML
+ * page of this same build. A newer build's HTML points to chunks this cache
+ * does not have, so it is served but never stored.
+ */
+function shouldCacheShell(status, contentType, html, build) {
+  return status >= 200 && status < 300 && /^text\/html/i.test(contentType || '') && buildOf(html) === build;
+}
+
+function isBundleFile(pathname) {
+  return BUNDLE_FILES.has(pathname);
+}
+
+/** Settles like promise, or rejects when ms pass first. */
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+/** Stores every bundle file, or nothing: a half-filled cache is deleted and install fails. */
+async function precache() {
+  const cache = await caches.open(CACHE);
+  const results = await Promise.allSettled(BUNDLE.files.map(async (path) => {
+    // 'reload' skips the HTTP cache, so no file of another build comes in.
+    const response = await fetch(path, { cache: 'reload' });
+    if (!response.ok) {
+      throw new Error(`${path}: HTTP ${response.status}`);
+    }
+    if (path === SHELL && buildOf(await response.clone().text()) !== BUILD) {
+      throw new Error('the server already moved to another build');
+    }
+    await cache.put(path, response);
+  }));
+  const failed = results.find((result) => result.status === 'rejected');
+  if (failed) {
+    await caches.delete(CACHE);
+    throw failed.reason;
+  }
+}
+
+function offlinePage() {
+  return new Response(OFFLINE_PAGE, {
+    status: 503,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+async function cachedShell() {
+  try {
+    return (await (await caches.open(CACHE)).match(SHELL)) || offlinePage();
+  } catch {
+    return offlinePage();
+  }
+}
+
+async function refreshShell(response) {
+  const type = response.headers.get('Content-Type');
+  if (!response.ok || !/^text\/html/i.test(type || '')) {
+    return;
+  }
+  if (shouldCacheShell(response.status, type, await response.clone().text(), BUILD)) {
+    await (await caches.open(CACHE)).put(SHELL, response);
+  }
+}
+
+/** Network first, so the CSP follows the computer list; the cached shell after a timeout, error or 5xx. */
+function navigate(event) {
+  const network = fetch(event.request);
+  // Clone before the page reads the body. A late answer may still refresh the shell.
+  const refresh = network.then((response) => refreshShell(response.clone())).catch(() => undefined);
+  if (typeof event.waitUntil === 'function') {
+    event.waitUntil(refresh);
+  }
+  return withTimeout(network, NAVIGATION_TIMEOUT_MS)
+    .then((response) => (response.status >= 500 ? cachedShell() : response))
+    .catch(() => cachedShell());
+}
+
+/** Bundle files come from this build's cache; a miss goes to the network and is not stored. */
+async function fromBundle(request, pathname) {
+  try {
+    const cached = await (await caches.open(CACHE)).match(pathname);
+    if (cached) {
+      return cached;
+    }
+  } catch {
+    // No cache: use the network.
+  }
+  return fetch(request);
+}
+
+self.addEventListener('install', (event) => {
   // Deliberately no skipWaiting(): a live session is never switched underneath the user.
+  event.waitUntil(precache());
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && OWN_CACHE.test(key)).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -55,30 +167,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) {
-    return;
-  }
-  if (url.pathname.startsWith('/assets/')) {
-    event.respondWith(caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(request);
-      if (cached) {
-        return cached;
-      }
-      const response = await fetch(request);
-      if (response.ok) {
-        await cache.put(request, response.clone());
-      }
-      return response;
-    }));
+  // Other origins and /api/* go straight to the network.
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) {
     return;
   }
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => new Response(OFFLINE_PAGE, {
-      status: 503,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-    })));
+    event.respondWith(navigate(event));
+    return;
   }
-  // Everything else, including /api/*, goes straight to the network.
+  if (isBundleFile(url.pathname)) {
+    event.respondWith(fromBundle(request, url.pathname));
+  }
 });
 
 /* Push. A payload carries only a session name, a status and a session id,

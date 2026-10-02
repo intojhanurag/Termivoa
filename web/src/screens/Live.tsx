@@ -1,6 +1,7 @@
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { BrokerRPCSessionRecord, DiffLine, HTTPSettingsResponse, KeyName } from '../generated/protocol';
+import type { DiffLine, HTTPSettingsResponse, KeyName } from '../generated/protocol';
+import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
 import {
   canSendWith, Connection, INITIAL_STATUS, type BranchesView, type ChangesView, type TasksView, type WorktreeRemoval,
@@ -9,8 +10,11 @@ import { draftKey, readDraft, saveDraft } from '../terminal/composer';
 import { InputController } from '../terminal/InputController';
 import { tapTarget, type PathLink } from '../terminal/pathLinks';
 import { runFirstCommand } from '../terminal/runFirst';
+import { scheduler } from '../terminal/scheduler';
 import { followCursor, TerminalView, wheelSteps } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey, type RecapFacts, type ViewedTimes } from './activity';
+import { AddComputerSheet } from './AddComputer';
+import { keyOf, sameSession, type HostedSession } from './allSessions';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
 import { askAboutFile, Changes } from './Changes';
 import { Composer } from './Composer';
@@ -22,6 +26,7 @@ import { PreviewChip } from './PreviewChip';
 import { autoDismiss, RecapCard } from './Recap';
 import { useKeyboardOpen, websocketUrl } from './hooks';
 import type { RunFirstRequest } from './presets';
+import { ComputerTag } from './Sessions';
 import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
 import { StateScreen, WindowArt } from './StateScreen';
@@ -32,7 +37,7 @@ interface Runtime {
   readonly view: TerminalView;
 }
 
-type Panel = 'none' | 'composer' | 'history' | 'changes' | 'snippets' | 'menu' | 'worktree';
+type Panel = 'none' | 'composer' | 'history' | 'changes' | 'snippets' | 'menu' | 'worktree' | 'add';
 
 /** The away recap, once per visit: decided when live, then its changes are read, then shown. */
 type Recap = { readonly phase: 'wait' | 'loading' | 'done' } | { readonly phase: 'shown'; readonly line: string };
@@ -48,13 +53,12 @@ const noBranches = (): BranchesView | undefined => undefined;
 const noRemoval = (): WorktreeRemoval | undefined => undefined;
 /** The Changes screen's last tab per session, while the app is open. */
 const lastTabs = new Map<string, ChangesTab>();
-const sameSession = (a: BrokerRPCSessionRecord, b: BrokerRPCSessionRecord) => a.id === b.id && a.generation === b.generation;
 
-/** Tabs: running sessions, plus the open one even after it exits. */
+/** Tabs: running sessions of every computer, plus the open one even after it exits. */
 export function liveTabs(
-  sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined,
-  current: BrokerRPCSessionRecord,
-): BrokerRPCSessionRecord[] {
+  sessions: ReadonlyArray<HostedSession> | undefined,
+  current: HostedSession,
+): HostedSession[] {
   const running = (sessions ?? []).filter((item) => sameSession(item, current)
     || (item.state !== 'exited' && item.state !== 'lost'));
   return running.some((item) => sameSession(item, current)) ? running : [current, ...running];
@@ -68,12 +72,12 @@ export function revealTab(tab: Pick<Element, 'scrollIntoView'>): void {
 
 /** Session tabs. Switching opens a new read-only connection; nothing carries over. */
 export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }: {
-  readonly tabs: ReadonlyArray<BrokerRPCSessionRecord>;
-  readonly current: BrokerRPCSessionRecord;
+  readonly tabs: ReadonlyArray<HostedSession>;
+  readonly current: HostedSession;
   readonly viewed: ViewedTimes;
   /** The active tab's live session.state cwd, when connected live. */
   readonly liveCwd?: string | undefined;
-  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+  readonly onOpen: (session: HostedSession) => void;
   readonly onNew: () => void;
   readonly onMenu: () => void;
 }) {
@@ -82,7 +86,7 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
   const openIndex = tabs.findIndex((tab) => sameSession(tab, current));
   useEffect(() => {
     if (open.current !== null) revealTab(open.current);
-  }, [current.id, current.generation, openIndex]);
+  }, [current.id, current.generation, current.computer.host, openIndex]);
   return (
     <nav className="tabs" aria-label="Open sessions">
       <div className="tab-scroll">
@@ -93,7 +97,7 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
           const fresh = !active && !waiting && hasNewOutput(tab, viewed);
           return (
             <button
-              key={`${tab.id}/${tab.generation}`}
+              key={`${keyOf(tab)}/${tab.generation}`}
               ref={active ? open : undefined}
               type="button"
               className={active ? 'tab active' : 'tab'}
@@ -130,17 +134,21 @@ export function TabBar({ tabs, current, viewed, liveCwd, onOpen, onNew, onMenu }
 }
 
 export function Live({
-  session, sessions, settings, fontSize, runFirst, openComposer,
+  session, sessions, settings, multi = false, fontSize, runFirst, openComposer,
   onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
 }: {
-  readonly session: BrokerRPCSessionRecord;
-  readonly sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined;
+  readonly session: HostedSession;
+  /** Every computer's sessions, for the tabs. */
+  readonly sessions: ReadonlyArray<HostedSession> | undefined;
+  /** The settings of the session's own computer (project and shell names). */
   readonly settings: HTTPSettingsResponse | undefined;
+  /** The phone uses more than one computer: name this one in the status line. */
+  readonly multi?: boolean;
   readonly fontSize: number;
   readonly runFirst?: RunFirstRequest;
   /** Open the composer once the terminal is ready (from the preview's "Tell agent"). */
   readonly openComposer?: boolean;
-  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+  readonly onOpen: (session: HostedSession) => void;
   readonly onNew: () => void;
   readonly onSessions: () => void;
   readonly onSettings: () => void;
@@ -173,8 +181,11 @@ export function Live({
   const keyboard = useKeyboardOpen();
   const keyboardRef = useRef(keyboard);
   keyboardRef.current = keyboard;
-  // Terminal links: the latest handler, and a tap that a link took.
+  // Terminal links: the latest handlers, and a tap that a link took.
   const openPath = useRef<(link: PathLink) => boolean>(() => false);
+  const openAddLink = useRef<(url: string) => boolean>(() => false);
+  // An add-computer link tapped in the terminal: confirmed in a sheet outside it.
+  const [addLink, setAddLink] = useState<AddComputerLink>();
   const linkTapped = useRef(false);
   // PTY rows measured without the keyboard. The keyboard never shrinks the
   // PTY, so full-screen programs do not redraw each time it opens or closes.
@@ -228,6 +239,14 @@ export function Live({
   useEffect(() => { markViewed(latest.current); }, [current]);
   useEffect(() => () => markViewed(latest.current), []);
 
+  // The open terminal comes first: Wall tiles pause while it is open.
+  const activeKey = keyOf(session);
+  useEffect(() => {
+    scheduler.setActive(activeKey);
+    return () => scheduler.setActive(undefined);
+  }, [activeKey]);
+
+  const origin = session.computer.origin;
   useEffect(() => {
     const element = host.current;
     if (element === null) {
@@ -236,10 +255,11 @@ export function Live({
     const view = new TerminalView(initialFont.current);
     view.open(element);
     const connection = new Connection({
-      url: websocketUrl(),
+      url: websocketUrl(origin),
       sessionId: session.id,
       generation: session.generation,
       display: view.renderer,
+      gate: scheduler.connectGate(origin, true),
     });
     connection.start();
     setRuntime({ connection, view });
@@ -248,7 +268,7 @@ export function Live({
       view.dispose();
       setRuntime(undefined);
     };
-  }, [session.id, session.generation]);
+  }, [origin, session.id, session.generation]);
 
   useEffect(() => {
     if (runtime === undefined || runFirst === undefined || runFirst.settled) {
@@ -263,7 +283,15 @@ export function Live({
     const links = runtime?.view.linkPaths((link) => {
       if (openPath.current(link)) linkTapped.current = true;
     });
-    return () => links?.dispose();
+    // Terminal output is untrusted: only a link this app would accept is a link, and a tap only opens the confirm sheet.
+    const adds = runtime?.view.linkAddComputer(
+      (url) => !('problem' in parseAddComputerLink(url, window.location)),
+      (url) => { if (openAddLink.current(url)) linkTapped.current = true; },
+    );
+    return () => {
+      links?.dispose();
+      adds?.dispose();
+    };
   }, [runtime]);
 
   // A tapped path is resolved inside the tap, so the files root is read ahead, on attach and on each cwd change.
@@ -488,7 +516,7 @@ export function Live({
     }
   }
   const historyEnabled = status.link === 'live';
-  const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu' || panel === 'worktree';
+  const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu' || panel === 'worktree' || panel === 'add';
   const question = panel === 'none' ? openQuestion(status) : undefined;
   // With the keyboard up the card folds to its pill, so typing and keys keep working.
   const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
@@ -504,6 +532,14 @@ export function Live({
     showTab('files');
     input.current?.blur();
     setPanel('changes');
+    return true;
+  };
+  openAddLink.current = (url) => {
+    const link = panel === 'none' && !cardOpen ? parseAddComputerLink(url, window.location) : undefined;
+    if (link === undefined || 'problem' in link) return false;
+    input.current?.blur();
+    setAddLink(link);
+    setPanel('add');
     return true;
   };
   const badge = controlBadge(status);
@@ -523,7 +559,7 @@ export function Live({
         label="Termivoa · session lost"
         art={<WindowArt mark="gone" />}
         title={<>This session<br />is gone</>}
-        lead={`“${session.title}” ended on your computer. Nothing was re-run.`}
+        lead={`“${session.title}” ended on ${multi ? session.computer.label : 'your computer'}. Nothing was re-run.`}
         actions={(
           <>
             <button type="button" className="state-pill" onClick={onSessions}>sessions</button>
@@ -550,6 +586,7 @@ export function Live({
           <div className="status-line" role="status">
             <span className="place">
               <span className={status.link === 'live' ? 'dot green' : 'dot amber'} aria-hidden="true" />
+              {multi && <span className="place-computer"><ComputerTag computer={session.computer} /> · </span>}
               {showPlace ? (
                 // Cut order: the parent folders (from their start), then shell and size, then the last folder.
                 <span className="place-text">
@@ -713,6 +750,7 @@ export function Live({
         <Composer
           key={composerVersion}
           connection={runtime.connection}
+          origin={origin}
           canSend={canSend}
           draftKey={draft}
           onClose={() => setPanel('none')}
@@ -732,6 +770,7 @@ export function Live({
       {panel === 'menu' && (
         <SessionMenu
           session={current}
+          origin={origin}
           controlling={status.control === 'controller'}
           running={(status.sessionState ?? current.state) === 'running'}
           removal={removal}
@@ -748,6 +787,9 @@ export function Live({
           onAuthFailure={() => onRevoked('This phone is no longer paired with your computer.')}
           onClose={() => setPanel('none')}
         />
+      )}
+      {panel === 'add' && addLink !== undefined && (
+        <AddComputerSheet link={addLink} onClose={() => { setAddLink(undefined); setPanel('none'); }} />
       )}
       {panel === 'worktree' && runtime !== undefined && (
         <NewWorktree

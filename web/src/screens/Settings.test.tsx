@@ -59,6 +59,9 @@ describe('Settings device name field', () => {
         onRenamed={() => undefined}
         onFailure={() => ''}
         onLogout={async () => undefined}
+        entries={[]}
+        onRetry={() => undefined}
+        onComputersChanged={() => undefined}
       />,
     );
     expect(html).toContain('<label for="device-name">Device name</label>');

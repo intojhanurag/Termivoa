@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
 import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport } from '../push';
+import type { ComputerEntry } from './allSessions';
+import { ComputersSection } from './Computers';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 
 export type DeviceNameResult =
@@ -85,26 +87,33 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   );
 }
 
-export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout }: {
-  readonly settings: HTTPSettingsResponse;
+export function Settings({
+  settings, entries, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onRetry, onComputersChanged,
+}: {
+  /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
+  readonly settings: HTTPSettingsResponse | undefined;
+  readonly entries: ReadonlyArray<ComputerEntry>;
   readonly fontSize: number;
   readonly onFontSize: (size: number) => void;
   readonly onBack: () => void;
   readonly onRenamed: (device: HTTPDeviceSummary) => void;
   readonly onFailure: (error: unknown) => string;
   readonly onLogout: () => Promise<void>;
+  readonly onRetry: (origin: string) => void;
+  readonly onComputersChanged: () => void;
 }) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [name, setName] = useState(settings.device.label);
+  const current = settings?.device.label ?? '';
+  const [name, setName] = useState(current);
   const [nameState, setNameState] = useState<NameState>({ kind: 'idle' });
   const nameProblem = deviceLabelProblem(name.trim());
-  const unchanged = name.trim() === settings.device.label;
+  const unchanged = name.trim() === current;
 
   async function rename() {
     setNameState({ kind: 'saving' });
     try {
-      const result = await saveDeviceName(name, settings.device.label);
+      const result = await saveDeviceName(name, current);
       if (result.kind === 'invalid') {
         setNameState({ kind: 'error', message: result.message });
         return;
@@ -127,6 +136,12 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 
+      <ComputersSection entries={entries} onRetry={onRetry} onChanged={onComputersChanged} onFailure={onFailure} />
+
+      {settings === undefined && (
+        <p className="muted">Your home computer cannot be reached. Device name, notifications and log out need it.</p>
+      )}
+      {settings !== undefined && (
       <section className="group stack" aria-labelledby="device-heading">
         <h2 id="device-heading" className="caps">This device</h2>
         <form
@@ -164,6 +179,7 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
           >Save name</button>
         </form>
       </section>
+      )}
 
       <section className="group stack" aria-labelledby="font-heading">
         <h2 id="font-heading" className="caps">Terminal text size</h2>
@@ -176,16 +192,17 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
         </div>
       </section>
 
-      <NotificationSettings onFailure={onFailure} />
+      {settings !== undefined && <NotificationSettings onFailure={onFailure} />}
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>
         <dl className="facts">
-          <dt>Host build</dt><dd>{settings.hostBuild}</dd>
+          {settings !== undefined && <><dt>Host build</dt><dd>{settings.hostBuild}</dd></>}
           <dt>Web build</dt><dd>{CLIENT_BUILD}</dd>
         </dl>
       </section>
 
+      {settings !== undefined && (
       <section className="group stack" aria-labelledby="logout-heading">
         <h2 id="logout-heading" className="caps">Log out</h2>
         <p className="muted">Removes this browser's access. Running sessions keep running on your computer.</p>
@@ -202,6 +219,7 @@ export function Settings({ settings, fontSize, onFontSize, onBack, onRenamed, on
           }}
         >Log out</button>
       </section>
+      )}
     </main>
   );
 }

@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
+import type { Computer } from '../computers';
+import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
+import {
+  byChip, cantReach, chipsFor, keyOf, pairAgain, waitingFirst, type ComputerEntry, type HostedSession,
+} from './allSessions';
 import { sessionName } from './folder';
-import type { SessionList } from './hooks';
 import { NewSessionHelp } from './NewSession';
+
+export { waitingFirst };
 import { WorktreeBadge } from './Worktree';
 
 type Tone = 'accent' | 'amber' | 'muted';
@@ -71,13 +76,25 @@ export function StatusPill({ badge, duration }: { readonly badge: AgentBadge; re
  * rendered as text only. A running agent gets one status pill at the top
  * right; the controller then moves into the meta line.
  */
-export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
-  readonly session: BrokerRPCSessionRecord;
+/** The colour dot and label of a computer; the colour is never the only cue. */
+export function ComputerTag({ computer }: { readonly computer: Pick<Computer, 'label' | 'color'> }) {
+  return (
+    <span className="computer-tag">
+      <span className="dot" style={{ background: computer.color }} aria-hidden="true" />
+      {computer.label}
+    </span>
+  );
+}
+
+export function SessionRow<T extends BrokerRPCSessionRecord>({ session, computer, project, shell, fresh, now, onOpen }: {
+  readonly session: T;
+  /** Shown in the meta line when the phone uses more than one computer. */
+  readonly computer?: Pick<Computer, 'label' | 'color'> | undefined;
   readonly project: string;
   readonly shell: string;
   readonly fresh: boolean;
   readonly now: number;
-  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+  readonly onOpen: (session: T) => void;
 }) {
   const done = ended(session);
   const controller = controllerText(session);
@@ -115,6 +132,7 @@ export function SessionRow({ session, project, shell, fresh, now, onOpen }: {
             )}
           </span>
           <span className="row-meta">
+            {computer !== undefined && <><ComputerTag computer={computer} /> · </>}
             {session.worktree !== undefined && <><WorktreeBadge worktree={session.worktree} /> · </>}
             {meta.filter((part) => part !== '').join(' · ')}
           </span>
@@ -194,30 +212,103 @@ export function PushCard({ onClose, onFailure }: {
   );
 }
 
-/** Waiting sessions first; otherwise the broker's order (sort is stable). */
-export function waitingFirst(sessions: ReadonlyArray<BrokerRPCSessionRecord>): BrokerRPCSessionRecord[] {
-  const waiting = (session: BrokerRPCSessionRecord) => (session.agent?.state === 'waiting' ? 0 : 1);
-  return [...sessions].sort((a, b) => waiting(a) - waiting(b));
-}
-
 /** "Your computer · 1 waiting · 1 working", or "· connected" when no agent is busy. */
-export function hostSummary(sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined): string {
+export function hostSummary(sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined, name = 'Your computer'): string {
   const count = (state: string) => (sessions ?? []).filter((session) => session.agent?.state === state).length;
   const parts = [[count('waiting'), 'waiting'], [count('working'), 'working']]
     .filter(([n]) => n !== 0)
     .map(([n, label]) => `${n} ${label}`);
-  return ['Your computer', ...(parts.length === 0 ? ['connected'] : parts)].join(' · ');
+  return [name, ...(parts.length === 0 ? ['connected'] : parts)].join(' · ');
 }
 
-export function Sessions({ settings, list, message, onOpen, onNew, onWall, onSettings, onRefreshSettings, onFailure, onUpdate }: {
-  readonly settings: HTTPSettingsResponse;
-  readonly list: SessionList;
+/** Short time since, for "last seen 3 h ago". */
+function ago(at: number, now: number): string {
+  const text = age(new Date(at).toISOString(), now);
+  return text === 'now' || text === 'yesterday' ? `last seen ${text === 'now' ? 'just now' : text}` : `last seen ${text} ago`;
+}
+
+/** The line for a computer whose sessions cannot be listed, or undefined when it answered (or is still loading). */
+export function problemText(entry: ComputerEntry, now: number): string | undefined {
+  const { computer, status } = entry;
+  switch (status.kind) {
+    case 'unreachable':
+      return status.lastSeen === undefined ? cantReach(computer.label) : `${cantReach(computer.label)} · ${ago(status.lastSeen, now)}`;
+    case 'pair': return pairAgain(computer.label);
+    case 'outdated': return status.message;
+    default: return undefined;
+  }
+}
+
+/** One row per computer that did not answer: "vps · can't reach" with Retry, "vps · pair again", "Update Termivoa on vps". */
+export function ComputerProblem({ entry, now, onRetry, onSettings }: {
+  readonly entry: ComputerEntry;
+  readonly now: number;
+  readonly onRetry: (origin: string) => void;
+  readonly onSettings: () => void;
+}) {
+  const text = problemText(entry, now);
+  if (text === undefined) return null;
+  const { computer, status } = entry;
+  return (
+    <li className="computer-problem">
+      <span className="dot" style={{ background: computer.color }} aria-hidden="true" />
+      <span className="computer-problem-text">{text}</span>
+      {status.kind === 'unreachable' && <button type="button" className="link" onClick={() => onRetry(computer.origin)}>Retry</button>}
+      {status.kind === 'pair' && <button type="button" className="link" onClick={onSettings}>Computers</button>}
+    </li>
+  );
+}
+
+/** "All" plus one chip per computer; the pressed chip shows one computer. */
+export function ComputerChips({ computers, chosen, all = true, disabled, onChoose }: {
+  readonly computers: ReadonlyArray<Computer>;
+  readonly chosen: string | undefined;
+  /** False to pick one computer (New session): no "All" chip. */
+  readonly all?: boolean;
+  /** Computers that cannot be picked now. */
+  readonly disabled?: (host: string) => boolean;
+  readonly onChoose: (host: string | undefined) => void;
+}) {
+  const chips = chipsFor(computers).filter((chip) => all || chip.host !== undefined);
+  if (chips.length === 0) return null;
+  return (
+    <div className="chips" role="group" aria-label="Computers">
+      {chips.map((chip) => (
+        <button
+          key={chip.host ?? ''}
+          type="button"
+          className="chip"
+          aria-pressed={chosen === chip.host}
+          disabled={chip.host !== undefined && disabled?.(chip.host) === true}
+          onClick={() => onChoose(chip.host)}
+        >
+          {chip.color !== undefined && <span className="dot" style={{ background: chip.color }} aria-hidden="true" />}
+          {chip.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const canStart = (entry: ComputerEntry) => entry.status.kind === 'ok'
+  && entry.status.settings.projects.length > 0 && entry.status.settings.shellProfiles.length > 0;
+
+export function Sessions({
+  entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onReload, onRetry, onFailure, onUpdate,
+}: {
+  /** Every computer, home first, with what it answered. */
+  readonly entries: ReadonlyArray<ComputerEntry>;
+  /** All answered computers' sessions, waiting first. */
+  readonly sessions: ReadonlyArray<HostedSession>;
   readonly message?: string;
-  readonly onOpen: (session: BrokerRPCSessionRecord) => void;
+  /** Push comes from home only, so the card waits until home answers. */
+  readonly offerPush: boolean;
+  readonly onOpen: (session: HostedSession) => void;
   readonly onNew: () => void;
   readonly onWall: () => void;
   readonly onSettings: () => void;
-  readonly onRefreshSettings: () => Promise<void>;
+  readonly onReload: () => Promise<void>;
+  readonly onRetry: (origin: string) => void;
   readonly onFailure: (error: unknown) => string;
   /** Present when a new version waits; tapping it reloads into that version. */
   readonly onUpdate?: () => void;
@@ -225,25 +316,38 @@ export function Sessions({ settings, list, message, onOpen, onNew, onWall, onSet
   const [error, setError] = useState<string | undefined>(message);
   const [busy, setBusy] = useState(false);
   const [offerPush, setOfferPush] = useState(false);
-  const canCreate = settings.projects.length > 0 && settings.shellProfiles.length > 0;
-  const projectName = new Map(settings.projects.map((item) => [item.id, item.name]));
-  const shellName = new Map(settings.shellProfiles.map((item) => [item.id, item.name]));
+  const [chip, setChip] = useState<string>();
+  const computers = entries.map((entry) => entry.computer);
+  const multi = computers.length > 1;
+  const shown = byChip(entries, chip);
+  const answered = shown.filter((entry) => entry.status.kind === 'ok');
+  const loading = answered.length === 0 && shown.some((entry) => entry.status.kind === 'loading');
+  const list = byChip(sessions, chip);
+  const canCreate = entries.some(canStart);
+  const help = canCreate ? undefined : entries.find((entry) => entry.status.kind === 'ok')?.status;
+  const names = new Map(entries.flatMap((entry) => (entry.status.kind === 'ok' ? [[entry.computer.origin, {
+    project: new Map(entry.status.settings.projects.map((item) => [item.id, item.name])),
+    shell: new Map(entry.status.settings.shellProfiles.map((item) => [item.id, item.name])),
+  }] as const] : [])));
   const viewed = readViewed();
   const now = Date.now();
-  const { sessions, reachable } = list;
+  const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading');
+  const summary = multi
+    ? hostSummary(sessions, `${computers.length} computers`)
+    : reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying';
 
   useEffect(() => {
+    if (!pushAllowed) return undefined;
     let live = true;
     void shouldOfferPush().then((offer) => { if (live) setOfferPush(offer); });
     return () => { live = false; };
-  }, []);
+  }, [pushAllowed]);
 
   async function refresh() {
     setBusy(true);
     setError(undefined);
     try {
-      await onRefreshSettings();
-      await list.reload();
+      await onReload();
     } catch (failure) {
       setError(onFailure(failure));
     } finally {
@@ -258,7 +362,7 @@ export function Sessions({ settings, list, message, onOpen, onNew, onWall, onSet
           <h1 className="display">Sessions</h1>
           <p className="host-line" role="status">
             <span className={reachable ? 'dot green' : 'dot amber'} aria-hidden="true" />
-            {reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying'}
+            {summary}
           </p>
         </div>
         <div className="header-actions">
@@ -284,9 +388,11 @@ export function Sessions({ settings, list, message, onOpen, onNew, onWall, onSet
       </header>
       {error !== undefined && <p role="alert" className="error">{error}</p>}
 
-      {!canCreate && (
+      <ComputerChips computers={computers} chosen={chip} onChoose={setChip} />
+
+      {help?.kind === 'ok' && (
         <section className="card stack" aria-label="Before your first session">
-          <NewSessionHelp settings={settings} />
+          <NewSessionHelp settings={help.settings} />
           <button type="button" disabled={busy} onClick={() => { void refresh(); }}>Check again</button>
         </section>
       )}
@@ -294,19 +400,26 @@ export function Sessions({ settings, list, message, onOpen, onNew, onWall, onSet
       {offerPush && <PushCard onClose={() => setOfferPush(false)} onFailure={onFailure} />}
 
       <section aria-label="Your sessions" className="list-section">
-        {sessions === undefined && <p role="status" className="muted">Loading…</p>}
-        {sessions?.length === 0 && <p className="muted empty">No sessions yet.</p>}
+        {loading && <p role="status" className="muted">Loading…</p>}
+        {!loading && answered.length > 0 && list.length === 0 && <p className="muted empty">No sessions yet.</p>}
         <ul className="rows">
-          {sessions !== undefined && waitingFirst(sessions).map((session) => (
-            <SessionRow
-              key={`${session.id}/${session.generation}`}
-              session={session}
-              project={projectName.get(session.projectId) ?? 'Unknown project'}
-              shell={shellName.get(session.shellProfileId) ?? 'Unknown shell'}
-              fresh={!ended(session) && hasNewOutput(session, viewed)}
-              now={now}
-              onOpen={onOpen}
-            />
+          {list.map((session) => {
+            const name = names.get(session.computer.origin);
+            return (
+              <SessionRow
+                key={`${keyOf(session)}/${session.generation}`}
+                session={session}
+                computer={multi ? session.computer : undefined}
+                project={name?.project.get(session.projectId) ?? 'Unknown project'}
+                shell={name?.shell.get(session.shellProfileId) ?? 'Unknown shell'}
+                fresh={!ended(session) && hasNewOutput(session, viewed)}
+                now={now}
+                onOpen={onOpen}
+              />
+            );
+          })}
+          {shown.map((entry) => (
+            <ComputerProblem key={entry.computer.origin} entry={entry} now={now} onRetry={onRetry} onSettings={onSettings} />
           ))}
         </ul>
       </section>
@@ -314,7 +427,7 @@ export function Sessions({ settings, list, message, onOpen, onNew, onWall, onSet
       {canCreate && (
         <div className="bottom-bar">
           <button type="button" className="primary wide" onClick={onNew}>
-            <span aria-hidden="true" className="prompt">❯</span> new session
+            <span aria-hidden="true" className="prompt">❯</span> {multi ? 'new session on…' : 'new session'}
           </button>
         </div>
       )}
