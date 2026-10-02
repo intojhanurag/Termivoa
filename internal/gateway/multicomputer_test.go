@@ -46,7 +46,7 @@ func newFakeComputers() *fakeComputers {
 }
 
 func (broker *fakeComputers) saw(ctx context.Context, call string) {
-	origin, _ := ForwardedOrigin(ctx)
+	origin, _ := gatewayapi.ForwardedOrigin(ctx)
 	broker.record(call + "@" + origin)
 }
 

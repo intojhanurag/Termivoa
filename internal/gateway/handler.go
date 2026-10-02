@@ -83,23 +83,6 @@ type computerBroker interface {
 	RemoveComputer(ctx context.Context, credential, origin string) error
 }
 
-type forwardedOriginKey struct{}
-
-// ForwardedOrigin returns the browser Origin the gateway admitted as another
-// computer's app origin for this request. The broker client sends it as
-// RPCEnvelope.Origin on every call made with ctx; absent means this
-// computer's own origin.
-// ponytail: moves to gatewayapi (WithOrigin/OriginFromContext) at integration.
-func ForwardedOrigin(ctx context.Context) (string, bool) {
-	origin, ok := ctx.Value(forwardedOriginKey{}).(string)
-	return origin, ok && origin != ""
-}
-
-// WithForwardedOrigin marks ctx with an admitted cross-origin request Origin.
-func WithForwardedOrigin(ctx context.Context, origin string) context.Context {
-	return context.WithValue(ctx, forwardedOriginKey{}, origin)
-}
-
 // beginLive registers a WebSocket handler unless the gateway is stopping.
 func (handler *gatewayHandler) beginLive() bool {
 	handler.liveMu.Lock()
@@ -299,7 +282,7 @@ func (handler *gatewayHandler) admitAPI(response http.ResponseWriter, request *h
 	switch {
 	case len(origins) == 1 && handler.originAllowedValue(origins[0]):
 	case cross != "":
-		request = request.WithContext(WithForwardedOrigin(request.Context(), cross))
+		request = request.WithContext(gatewayapi.WithForwardedOrigin(request.Context(), cross))
 	case len(origins) == 0 && sameOriginFetch(request):
 	default:
 		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
@@ -343,7 +326,7 @@ func (handler *gatewayHandler) originAllowed(request *http.Request) bool {
 	if len(values) != 1 {
 		return false
 	}
-	if forwarded, ok := ForwardedOrigin(request.Context()); ok && forwarded == values[0] {
+	if forwarded, ok := gatewayapi.ForwardedOrigin(request.Context()); ok && forwarded == values[0] {
 		return true
 	}
 	return handler.originAllowedValue(values[0])
