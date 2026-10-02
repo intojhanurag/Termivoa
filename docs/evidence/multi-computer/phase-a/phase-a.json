@@ -1,0 +1,191 @@
+{
+ "chrome": "Chrome/154.0.8037.93",
+ "results": [
+  {
+   "id": "A1",
+   "name": "Preflight mac → vps before pairing is refused (Chrome)",
+   "result": "PASS",
+   "evidence": "fetch: TypeError: Failed to fetch / TypeError: Failed to fetch; OPTIONS /api/v1/settings origin=https://mac.tailx.ts.net sfs=same-site sfm=cors cookie=false → 403; OPTIONS /api/v1/pair/redeem origin=https://mac.tailx.ts.net sfs=same-site sfm=cors cookie=false → 403"
+  },
+  {
+   "id": "A1b",
+   "name": "Preflight mac → vps before pairing is refused (curl)",
+   "result": "PASS",
+   "evidence": "OPTIONS → 403, ACAO=none"
+  },
+  {
+   "id": "A2",
+   "name": "Pair the browser with mac (home) as today",
+   "result": "PASS",
+   "evidence": "code 315-449, 1140 ms"
+  },
+  {
+   "id": "A3",
+   "name": "Bound pairing mac app → vps over real CORS (API level, no screens)",
+   "result": "PASS",
+   "evidence": "link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt \"Phone \"e2e phone\" shows code 685-751 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]\", poll 200, settings 200 after 1 ms, confirm 200; 2321 ms"
+  },
+  {
+   "id": "A3-lag",
+   "name": "The first settings read right after approval works (what the app does)",
+   "result": "PASS",
+   "evidence": "first read: 200; 200 only 1 ms after the approved poll"
+  },
+  {
+   "id": "A4",
+   "name": "no-cors GET from an unbound same-site page (evil) is refused, no cookie refresh",
+   "result": "PASS",
+   "evidence": "page sees opaque; GET /api/v1/settings origin=- sfs=same-site sfm=no-cors cookie=true → 403"
+  },
+  {
+   "id": "A4b",
+   "name": "cors GET from an unbound same-site page (evil) is refused, no cookie refresh",
+   "result": "PASS",
+   "evidence": "page sees TypeError: Failed to fetch; GET /api/v1/settings origin=https://evil.tailx.ts.net sfs=same-site sfm=cors cookie=true → 403"
+  },
+  {
+   "id": "A4c",
+   "name": "no-cors GET from the bound app (mac) is refused too, no cookie refresh",
+   "result": "PASS",
+   "evidence": "GET /api/v1/settings origin=- sfs=same-site sfm=no-cors cookie=true → 403"
+  },
+  {
+   "id": "A4d",
+   "name": "Control: cors GET from the bound app (mac) works and refreshes the cookie",
+   "result": "PASS",
+   "evidence": "GET /api/v1/settings origin=https://mac.tailx.ts.net sfs=same-site sfm=cors cookie=true → 200 ACAO=https://mac.tailx.ts.net Set-Cookie (Path=/; Max-Age=2591999; HttpOnly; SameSite=Strict)"
+  },
+  {
+   "id": "A5-xmac.tailx.ts.net",
+   "name": "Near-miss page https://xmac.tailx.ts.net is refused (Chrome)",
+   "result": "PASS",
+   "evidence": "page sees TypeError: Failed to fetch; GET /api/v1/settings origin=https://xmac.tailx.ts.net sfs=same-site sfm=cors cookie=true → 403"
+  },
+  {
+   "id": "A5-mac.tailx.ts.net.evil.com",
+   "name": "Near-miss page https://mac.tailx.ts.net.evil.com is refused (Chrome)",
+   "result": "PASS",
+   "evidence": "page sees TypeError: Failed to fetch; GET /api/v1/settings origin=https://mac.tailx.ts.net.evil.com sfs=cross-site sfm=cors cookie=false → 403"
+  },
+  {
+   "id": "A5-mac-tailx.ts.net",
+   "name": "Near-miss page https://mac-tailx.ts.net is refused (Chrome)",
+   "result": "PASS",
+   "evidence": "page sees TypeError: Failed to fetch; GET /api/v1/settings origin=https://mac-tailx.ts.net sfs=cross-site sfm=cors cookie=false → 403"
+  },
+  {
+   "id": "A5-null-chrome",
+   "name": "Origin null (sandboxed iframe) is refused (Chrome)",
+   "result": "PASS",
+   "evidence": "page sees TypeError: Failed to fetch; GET /api/v1/settings origin=null sfs=cross-site sfm=cors cookie=false → 403"
+  },
+  {
+   "id": "A5-control",
+   "name": "Control: exact bound origin https://mac.tailx.ts.net with the vps cookie works (curl)",
+   "result": "PASS",
+   "evidence": "200, ACAO=https://mac.tailx.ts.net"
+  },
+  {
+   "id": "A5 \"null\"",
+   "name": "Forged Origin \"null\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://xmac.tailx.ts.net\"",
+   "name": "Forged Origin \"https://xmac.tailx.ts.net\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://mac.tailx.ts.net.evil.com\"",
+   "name": "Forged Origin \"https://mac.tailx.ts.net.evil.com\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://mac.tailx.ts.net:443\"",
+   "name": "Forged Origin \"https://mac.tailx.ts.net:443\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://mac.tailx.ts.net.\"",
+   "name": "Forged Origin \"https://mac.tailx.ts.net.\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"http://mac.tailx.ts.net\"",
+   "name": "Forged Origin \"http://mac.tailx.ts.net\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://MAC.tailx.ts.net\"",
+   "name": "Forged Origin \"https://MAC.tailx.ts.net\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://mac.tailx.ts.net/\"",
+   "name": "Forged Origin \"https://mac.tailx.ts.net/\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://evil.tailx.ts.net\"",
+   "name": "Forged Origin \"https://evil.tailx.ts.net\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5 \"https://mac.taily.ts.net\"",
+   "name": "Forged Origin \"https://mac.taily.ts.net\" with the vps cookie is refused (curl)",
+   "result": "PASS",
+   "evidence": "GET 403 ACAO=none Set-Cookie=no; OPTIONS 403"
+  },
+  {
+   "id": "A5-two",
+   "name": "Two Origin headers, or one with a list of two, are refused (curl)",
+   "result": "PASS",
+   "evidence": "two headers 403; list 403"
+  },
+  {
+   "id": "A5-grant",
+   "name": "A grant bound to mac is refused from evil.tailx.ts.net (Chrome preflight and forged curl POST)",
+   "result": "PASS",
+   "evidence": "page sees TypeError: Failed to fetch; OPTIONS /api/v1/pair/redeem origin=https://evil.tailx.ts.net sfs=same-site sfm=cors cookie=false → 403; curl POST 403"
+  },
+  {
+   "id": "A6",
+   "name": "/api with a valid cookie but no Sec-Fetch-Site and no Origin → 403 (vps and mac)",
+   "result": "PASS",
+   "evidence": "vps 403, mac 403; control with Sec-Fetch-Site: same-origin on mac → 200"
+  },
+  {
+   "id": "A7-mac",
+   "name": "pterm doctor on mac reports tailnet, CORS list and protocol revision",
+   "result": "PASS",
+   "evidence": "broker: running, 0 active session(s) | ! gateway: http://127.0.0.1:8787 is not healthy: Get \"http://127.0.0.1:8787/healthz\": dial tcp 127.0.0.1:8787: connect: operation not permitted | ! startup broker: not registered | ! startup gateway: not registered | tailscale: Running, host mac.tailx.ts.net | protocol revision 1 (oldest supported 1) | multi-computer: no bound app origins (CORS off)"
+  },
+  {
+   "id": "A7-vps",
+   "name": "pterm doctor on vps reports tailnet, CORS list and protocol revision",
+   "result": "PASS",
+   "evidence": "broker: running, 0 active session(s) | ! gateway: http://127.0.0.1:8787 is not healthy: Get \"http://127.0.0.1:8787/healthz\": dial tcp 127.0.0.1:8787: connect: operation not permitted | ! startup broker: not registered | ! startup gateway: not registered | tailscale: Running, host vps.tailx.ts.net | protocol revision 1 (oldest supported 1) | multi-computer: CORS list (bound app origins): https://mac.tailx.ts.net"
+  },
+  {
+   "id": "A7-owner",
+   "name": "pterm doctor on vps reports an owner mismatch of the bound app computer",
+   "result": "PASS",
+   "evidence": "multi-computer: CORS list (bound app origins): https://mac.tailx.ts.net | ! multi-computer: https://mac.tailx.ts.net: owner mismatch (\"mallory@example.com\"; this computer: \"ada@example.com\")"
+  },
+  {
+   "id": "A7-serve",
+   "name": "pterm doctor on mac warns about another Serve handler on the home origin",
+   "result": "PASS",
+   "evidence": "! tailscale serve: other handlers share this computer's Termivoa origin https://mac.tailx.ts.net: /files. Any handler there is same-origin with the Termivoa app and could control this computer and, if it is home, every computer added to it. Move each one to another HTTPS port (for example `tailscale serve --bg --https=8444 <target>`) or to another computer, then remove it here: `tailscale serve --https=443 --set-path=/files off`."
+  }
+ ]
+}
