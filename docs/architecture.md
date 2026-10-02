@@ -1,152 +1,320 @@
 # Architecture
 
-Status (2026-09-27): the v0 flow is implemented and verified on the macOS
-development profile: broker-owned terminal/runtime, restricted IPC,
-persistence, independent broker/gateway processes, desktop attach, phone
-pairing, the authenticated gateway, the embedded phone web app, per-user
-startup registration and unsigned packaging. Real phones, native Windows 11,
-Tailscale HTTPS and signed installers are not yet verified; see
-[owner-verification.md](owner-verification.md). Related documents:
-[threat-model.md](threat-model.md),
-[p4-authentication-design.md](p4-authentication-design.md) and the
-[decision records](decisions/).
+Status (2026-10-02): latest release tag `v0.1.0-beta.2` (2026-09-29). On
+`main` beyond that tag: multi-computer (ADR 0005, Gate 0 on a real iPhone and
+Android still pending), Files, worktrees, project buttons, line comments in
+Changes, Wall drag-to-arrange, the Down key next to Up, two breaking rules
+(an exact `Origin` or `Sec-Fetch-Site: same-origin` on every `/api` request,
+so iOS 16.4 or later; `pterm setup` refuses other Tailscale Serve handlers on
+port 443), and fixes. See `git log v0.1.0-beta.2..origin/main` and
+[CHANGELOG.md](../CHANGELOG.md).
 
-## Product boundary
+This file is the internal map of the system. The code on `main` is the source
+of truth. The specification is [implementation-plan.md](implementation-plan.md).
+User docs live in `site/src/content/docs/docs/`.
 
-Termivoa manages terminal sessions that it starts on one owner's Mac or Windows host. A session can be observed from a desktop attachment and a paired phone browser. Viewer disconnects and gateway restarts must not end a broker-owned shell. A broker crash, OS logout, or host reboot ends the live process boundary; v0 reports the session lost and does not silently rerun commands.
-
-The host must remain awake, logged in, and running the broker. Registered project roots simplify session creation but do not sandbox the shell from the owner's filesystem.
-
-## Process ownership
-
-One Go executable (`pterm`) exposes separate process modes:
+## 1. Big picture
 
 ```text
-desktop CLI ───────┐
-                   │ restricted user IPC
-phone browser ── gateway ──────────────── broker ── PTY ── child shell
-    private HTTPS  │                       │
-                   └─ embedded web assets  ├─ terminal emulator
-                                             └─ SQLite
+ phone (Home Screen web app, served by "home")
+   │  HTTPS (Tailscale Serve :443 → 127.0.0.1:8787)     ┌──────────────────┐
+   │  cookie __Host-pterm_session, exact Origin          │ other computers  │
+   ├──────────────────────────────────────────────────► │ (peers): own     │
+   │  direct credentialed CORS + WebSocket per peer      │ gateway + broker │
+   ▼                                                     └──────────────────┘
+ gateway  (pterm __gateway, loopback only, no shell)
+   │  restricted local IPC (Unix socket / named pipe), clientKind "gateway"
+   ▼
+ broker   (pterm __broker) ── PTYs ── child shells and agents
+   │        ├─ one Go vt emulator per session (server-authoritative screen)
+   │        └─ SQLite (phone-terminal.db)
+   ▲
+   │  restricted local IPC, clientKind "cli"
+ desktop: pterm attach / list / new / pair / … (in any terminal app)
 ```
 
-- **Broker:** sole owner of PTYs, child lifetimes, canonical terminal emulators, controller leases, device authorization, and SQLite. It is started independently at user login.
-- **Gateway:** loopback HTTP/WebSocket and embedded static assets. It authenticates browser traffic and translates requests to IPC, but does not spawn a shell or own process lifetime.
-- **CLI/desktop attachment:** uses restricted local IPC. Its terminal UI consumes normalized frames and emits the same structured input model as the web client.
+Who owns what (AGENTS.md rules 7–10):
 
-Local broker IPC uses a user-owned Unix-domain socket on macOS and a named
-pipe protected by an explicit current-user SID ACL on Windows. A mode-0700
-runtime directory contains a restricted endpoint descriptor and persistent
-lock file. A second current-user OS lock lives in the canonical data directory.
-Both locks admit one broker without scanning or killing processes, including
-when two launches select different runtime paths for the same SQLite data.
-The descriptor's PID is diagnostic only. Clients must
-complete the versioned handshake and confirm its broker generation before the
-endpoint is considered live. A lock owner may replace an endpoint only after
-that handshake probe fails. `pterm setup` registers separate per-user
-LaunchAgents (macOS), Scheduled Tasks (Windows) and systemd user units
-(Linux) for the broker and the gateway; real-login, native Windows and real
-Linux runs are pending owner verification.
+The **broker** owns PTYs, child lifetimes, terminal emulators, authentication
+state, controller leases and SQLite. The **gateway** only serves the web app
+and carries authenticated requests to the broker; it never owns or spawns a
+shell. Clients get normalized terminal frames, never the child's ANSI bytes.
+The broker is the only application-level terminal-query responder; no
+browser, desktop or client reply goes to the child. All PTY input goes through
+structured, authorized messages and one broker writer. Input is never queued
+offline and never resent after a reconnect.
 
-The executable process bootstrap acquires the data lock and runtime lock before
-it opens the per-user SQLite database or begins a generation. It then
-constructs the Store, Registry, and IPC dispatcher as one broker-owned
-lifetime. Shutdown stops IPC acceptance first, waits for Registry
-mutation/session cleanup, and closes SQLite last; the data lock is released
-only after both are closed. The gateway process receives only the runtime
-endpoint location; it can handshake/probe the broker but has no Store,
-Registry, PTY, or shell capability. It listens on IPv4 loopback
-(`127.0.0.1:8787` in production) with exact Host checks and serves `/healthz`,
-the authenticated HTTP/WebSocket API in
-[`protocol/v1/http-api.md`](../protocol/v1/http-api.md), and the phone web
-assets embedded at build time (`-tags webdist`; other builds serve a
-placeholder page). The configured listener must be a literal IPv4 loopback
-address before any bind occurs. Graceful shutdown has a bounded timeout and
-force-closes remaining connections while retaining the timeout as an
-operational error.
+## 2. Processes and binaries
 
-On Unix, the runtime path is canonicalized once through trusted root-owned
-system aliases. User-controlled symlink components, foreign-owned ancestors
-and unsafe writable ancestors are rejected before the lock, socket or
-descriptor is touched, preventing one configured path from resolving to two
-independent broker locks.
+One Go binary, `pterm` (`cmd/pterm`). Node.js is a build-time tool only.
 
-The explicit development profile uses distinct data/runtime directory names
-and an ephemeral loopback gateway listener by default (the `pterm up --dev`
-harness uses `127.0.0.1:8788`). Bare or partial `--dev`
-invocations never inherit production locations, and canonical aliases or
-parent/child overlaps with the production profile are rejected.
+### `pterm` commands
 
-## Terminal data flow
+| Purpose | Commands |
+| --- | --- |
+| Sessions | `list`, `new --project <id> --shell <id>`, `terminate <id>`, `attach [--control] <id>` |
+| Pairing and devices | `pair [--origin] [--no-qr] [--no-wait]`, `pair pending`, `pair approve <id>`, `devices`, `devices rename`, `revoke <device>` |
+| Multi-computer | `pair --via <name\|url> [--allow-tagged]`, `revoke --via <url>`, `computers`, `computers remove <url>` |
+| Configuration | `project add`, `project list`, `profile list`, `profile detect`, `config origin [<url>]` |
+| Install and run | `setup`, `setup --apply --yes` (installer mode), `doctor`, `uninstall [--dry-run] [--yes] [--delete-data]`, `launch [--no-open]` |
+| Stop | `stop` (gateway only, sessions keep running), `shutdown` (ends all sessions, stops both) |
+| Development | `up --dev [--listen <addr>]`; `--dev` and `--runtime-dir` on any command |
+| Hidden process modes | `__broker`, `__gateway` (started by startup registration) |
 
-PTY output is untrusted. The broker feeds it to one Go virtual terminal that remains alive without viewers. One actor per session serializes terminal mutation, resize, accepted input, mode changes, revision assignment, and immutable frame capture. Emulator-generated replies are drained concurrently and join accepted input at one PTY writer.
+The help text is `commandHelp` in `cmd/pterm/management.go`. Local commands
+talk to the running broker; they never start or replace it (`launch` and
+`up` start processes). `pterm setup` exits with code 3 when other Tailscale
+Serve handlers share the origin.
 
-Clients never receive the child's ANSI stream. They receive complete normalized snapshots and changed-row patches containing grid cells, resolved style, cursor state, dimensions, active buffer, generation, revisions, and terminal-width metadata. A patch applies only to its exact base revision; otherwise the client requests a fresh snapshot.
+### Broker and gateway
 
-Browser xterm is display-only. A small adapter paints validated rows using an escape-sequence allowlist. It does not forward xterm input or terminal-query responses. React owns navigation and settings, while a dedicated terminal controller applies frames outside React state.
+| Process | Responsibilities | Entry |
+| --- | --- | --- |
+| Broker | Takes the data lock and runtime lock, opens SQLite, runs the session registry (default limit 8 live sessions), one actor per session, emulators, controller leases, input writer, pairing and device auth, Web Push, agent-state scans, git (Changes, worktrees), Files, project tasks, uploads, preview port scans, Tailscale status snapshots for multi-computer trust. Serves IPC to `cli` and `gateway` clients. | `internal/host/broker.go`, `internal/broker` |
+| Gateway | Loopback HTTP and WebSocket server; embedded web assets; CSP, Host, Origin and CORS checks; cookie set and refresh; forwards the raw cookie credential and the request `Origin` to the broker on every call; second loopback listener for dev-server preview. Has a private control endpoint that `pterm stop` uses. Holds no Store, Registry or PTY. | `internal/gateway`, `internal/gatewayclient`, `internal/host/gateway_control.go` |
 
-Normal-screen history is bounded and paged as an immutable snapshot. Alternate-screen state remains part of the live emulator. No raw-output log or terminal content is persisted to disk in v0.
+Shutdown order (broker): stop IPC accept, wait for registry cleanup, close
+SQLite, release the data lock. A gateway restart does not end sessions. A
+broker crash, logout or reboot ends sessions; they show as lost and are never
+rerun.
 
-## Input and control
+### Startup registration
 
-Remote and desktop clients send bounded `key`, `text`, `paste`, and `mouse` messages. The broker's emulator encodes them for active terminal modes. Control characters use named key events rather than raw bytes. In v0 the desktop client does not enable mouse reporting in the outer terminal, so it sends no `mouse` messages and outer-terminal text selection keeps working; desktop mouse forwarding is a later, opt-in change.
+Per user, no elevation. Generated and applied by `internal/lifecycle`.
 
-Each session has one controller connection. Acquiring control revokes the prior lease, advances a lease epoch, and produces a new random lease secret. Mutating messages carry session generation, lease, and a monotonically increasing sequence. Authorization and lease validity are rechecked at the broker immediately before acceptance.
+| OS | Mechanism | Names |
+| --- | --- | --- |
+| macOS | LaunchAgents in `~/Library/LaunchAgents` | `dev.phone-terminal.broker`, `dev.phone-terminal.gateway` |
+| Linux | systemd user units in `$XDG_CONFIG_HOME/systemd/user` | `phone-terminal-broker.service`, `phone-terminal-gateway.service` |
+| Windows | Task Scheduler (per-user tasks) | `Phone Terminal Broker (<user>)`, `Phone Terminal Gateway (<user>)` |
 
-Input is never replayed automatically after disconnect. A lost acknowledgement yields an uncertain-delivery warning, and a reconnect begins as an observer. Revocation prevents later acceptance but cannot retract bytes already written to a child.
+Names keep the old working name on purpose ([naming.md](naming.md)).
 
-## Protocol boundaries
+### Profiles
 
-JSON Schema Draft 2020-12 under `protocol/v1` is canonical. quicktype generates Go and TypeScript shapes (`scripts/generate-protocol.mjs`); the browser validates with Ajv, and Go applies explicit semantic and bounds checks. WebSocket uses JSON text messages, while local IPC uses length-prefixed JSON with equivalent limits and chunking.
+| | Production | Development (`--dev`) |
+| --- | --- | --- |
+| Directory name | `Phone Terminal` (Linux: `phone-terminal`) | `Phone Terminal Development` (Linux: `phone-terminal-development`) |
+| Gateway listen | `127.0.0.1:8787` (fixed) | ephemeral loopback; `pterm up --dev` uses `127.0.0.1:8788` |
+| Cookie | `__Host-pterm_session` (Secure) | `pterm_dev_session` (not Secure, plain HTTP) |
+| Startup registration | yes | no |
 
-After the local IPC handshake, session list/create/rename/terminate/status use
-the canonical bounded broker-management RPC. Request IDs correlate replies;
-unique operation IDs separately deduplicate create, rename, and terminate.
-Create requests carry saved project and shell-profile IDs only. Executable
-paths, arguments, working directories, and environment values cannot cross the
-gateway/CLI-to-broker protocol boundary. Protocol UUIDs use lowercase canonical
-spelling so deduplication keys have one representation.
+Dev paths must never equal, contain or sit inside production paths
+(`platform.ValidatePaths`).
 
-The broker dispatches these requests serially within each accepted connection;
-different current-user connections may proceed concurrently. Every successful
-response retains the exact request ID, result type, session identity, and
-mutation operation ID required by its request. Operational failures use bounded
-stable error codes without paths or internal details. A malformed,
-oversized, or wrong-direction frame closes only that connection because it has
-no validated correlation identity. Gateway disconnect and listener shutdown
-close IPC connections but do not close the broker registry, database, or child
-sessions. Session creation resolves enabled project and shell-profile records
-inside the broker, verifies the profile belongs to the host platform, and only
-then builds an argument-array process specification with the fixed terminal
-capability environment.
+### Ports
 
-Screen/input counters travel as decimal strings. Session and broker generations distinguish a reconnect from a dead/replaced process. Full snapshots are transactional: chunks are validated and painted as one state before later patches become visible.
+| Port | What |
+| --- | --- |
+| `127.0.0.1:8787` | Production gateway (app, API, WebSocket, `/healthz`) |
+| `127.0.0.1:8788` | `pterm up --dev` gateway |
+| `127.0.0.1:8789` | Dev-server preview listener (separate origin) |
+| HTTPS 443 | `tailscale serve --bg --https=443 http://127.0.0.1:8787` |
+| HTTPS 8443 | `tailscale serve --bg --https=8443 http://127.0.0.1:8789` (optional, separate consent) |
 
-## Authentication and network
+## 3. Code map
 
-Production HTTP binds only `127.0.0.1:8787`. Tailscale Serve, when explicitly authorized and configured without overwriting another service, provides the approved private HTTPS origin. Tailscale identity headers are ignored; application pairing and authentication remain mandatory. Funnel and public tunnels are excluded.
+| Path | Purpose |
+| --- | --- |
+| `cmd/pterm` | CLI entry, argument parsing, `setup`/`doctor`/`launch`/`up`/`stop`, hidden process modes |
+| `internal/agentstate` | Pure classifier: working, waiting on a question, or idle, from sanitized screen text and timing |
+| `internal/auth` | Secrets, pairing grant (2 min) and browser credential lifetimes (30 days absolute, 7 days idle) |
+| `internal/broker` | Sessions, registry, controller leases, input inbox and writer, viewers, RPC servers (management, admin, gateway), agent state, Changes, Files, tasks, worktrees, uploads, preview scans, live folder, multi-computer trust |
+| `internal/cli` | User-facing local commands (pair, devices, list, attach orchestration, QR); owns no state |
+| `internal/desktop` | Desktop attach client: outer TTY modes, renderer of normalized frames, bounded input decoding |
+| `internal/gateway` | HTTP/WebSocket server, static assets, CSP, Origin/CORS, cookies, preview proxy |
+| `internal/gatewayapi` | Interface between gateway and broker (the gateway transports, the broker authorizes) |
+| `internal/gatewayclient` | Gateway's IPC client of the broker (RPC and live streams) |
+| `internal/gitchanges` | Bounded git: read changes, commit, push, worktree add/remove; never a shell, never force |
+| `internal/host` | Process bootstrap for broker and gateway, paths, gateway control endpoint |
+| `internal/ipc` | Length-prefixed local IPC, handshake, current-user peer checks, Unix socket and Windows named pipe |
+| `internal/lifecycle` | LaunchAgent plist, systemd unit and Task XML generation; install/uninstall plans; doctor checks (Tailscale Serve) |
+| `internal/liveclient` | Desktop observer/controller over broker IPC |
+| `internal/localclient` | Bounded IPC clients for `cli` commands (management, admin, gateway control) |
+| `internal/platform` | Data, runtime and log paths per OS and profile; WSL detection |
+| `internal/projectfiles` | Read-only Files view through `os.Root`; `.git` hidden |
+| `internal/projecttasks` | Lists project commands (package.json, Makefile, Cargo, Go); never runs them |
+| `internal/protocol` | Generated types (`generated.go`) plus hand-written validation and bounds |
+| `internal/ptyhost` | Native PTY and process trees, working folder, listening ports per OS |
+| `internal/store` | SQLite (modernc.org/sqlite), migrations, auth, sessions, receipts, push, computers |
+| `internal/tailnet` | Reads `tailscale status --json` into immutable snapshots; safe binary lookup |
+| `internal/terminal` | Server-authoritative emulator core, frames, row patches, history |
+| `internal/webassets` | Embedded web app (`-tags webdist`) or a placeholder page |
+| `internal/webpush` | Web Push with the standard library (RFC 8291, RFC 8292 VAPID), push host allow-list |
+| `protocol/v1` | Canonical JSON Schemas and protocol docs (section 4) |
+| `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets |
+| `web/src/terminal` | xterm display, frame renderer, snapshot assembly, input sender, composer, snippets, speech, phone-wide scheduler |
+| `web/src/protocol` | Ajv validators generated at build time (no runtime `eval`) |
+| `web/src/api` | HTTP client with timeouts |
+| `web/src/pairing` | Pairing and add-computer flows |
+| `web/src/generated` | Generated protocol TypeScript types |
+| `web/src/sw.js` | Service worker: precache, network-first pages, push display |
+| `third_party` | Patched copies of `ansi`, `vt`, `xpty`, `ultraviolet` ([dependency-patches.md](dependency-patches.md)) |
+| `tests` | Integration, soak, agent replay and PTY fixtures |
+| `site/` | Public docs site (Astro Starlight) and landing page in `site/public/`, deployed to Vercel |
+| `scripts/` | Checks, protocol generation, web embedding, Linux install, soak, Gate 0, multi-computer e2e, docs screenshots |
+| `packaging/` | Unsigned macOS app/DMG, Linux binaries, Windows Inno Setup installer; signing scripts |
 
-Pairing uses an expiring, single-use random grant in a URL fragment, an atomic POST redemption, a separate pending poll secret, and local approval after comparing a verification code. Only credential hashes are stored. Browser credentials use strict secure cookies, exact Origin and Host checks, and broker-authoritative revocation.
+## 4. Protocols
 
-The trust boundary excludes malware already running as the same OS user. The processes do not run as root or SYSTEM.
+All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.
 
-## Persistence
+| File | Defines |
+| --- | --- |
+| `ipc.schema.json` | Local IPC handshake (`ipc.hello`, `ipc.welcome`, `ipc.error`); client kind `cli` or `gateway` |
+| `broker-rpc.schema.json` | Session management RPC: `session.create/list/rename/terminate/status`, worktree create on session create |
+| `admin-rpc.schema.json` | Local admin RPC, `cli` only: pairing, devices, revoke, computers, projects, profiles, origin, shutdown; `admin.gateway.stop` (gateway control endpoint only) |
+| `gateway-rpc.schema.json` | Gateway → broker RPC: auth check, pairing, settings, sessions, uploads, push, preview check, computers, origin probe, live open |
+| `envelope.schema.json` | Live WebSocket and live IPC messages: snapshots, patches, history, input, control, session state, Changes, Files, tasks, branches, worktree remove |
+| `http-api.schema.json` | Browser HTTP API bodies |
+| `types.schema.json` | Index of named types for generation |
+| `revision.json` | Additive protocol revision (now `revision: 1`, `minRevision: 1`) |
 
-The broker is the sole SQLite owner. Persistent tables cover migrations, paired devices, browser sessions, pairing state, projects, shell profiles, session metadata, bounded mutation receipts, and settings. Session create, rename, and terminate requests use canonical UUID operation IDs and request fingerprints. A create fingerprint contains only the saved project and shell-profile IDs supplied by the client; mutable broker-resolved titles, paths, executables, arguments, and environment cannot change the identity of a retry. Each new metadata change and an immutable bounded session-result snapshot commit in one transaction, so a retry returns the original acknowledgement rather than rereading current session or saved-configuration state. Reuse for different request content is a conflict. Schema-v2 receipts predate those snapshots. Migration 003 rewrites their create fingerprints to the saved-ID identity, reconstructs only legacy rename results whose response fields are durably known, and marks legacy create/terminate results explicitly unavailable. A matching unavailable receipt produces a deterministic error before any process side effect; it is never filled with mutable current metadata or rerun. Broker shutdown closes the mutation admission gate before receipt lookup, waits for already-admitted mutations, and retains process-termination and cleanup failures as lifecycle diagnostics. A terminal event may precede the latest metadata mutation timestamp, so persistence keeps `updated_at` monotonic while recording the actual `ended_at`. Receipts for active sessions are never evicted. Terminal-session receipt history is pruned first, and the broker rejects a new unique mutation if active receipts alone reach the hard cap. WAL, foreign keys, transactions, prepared statements, and a bounded busy timeout are required. Raw terminal data, provider credentials, active process handles, and controller leases are not persisted.
+Prose specs: [http-api.md](../protocol/v1/http-api.md) (routes, headers,
+cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transport.md),
+[broker-management.md](../protocol/v1/broker-management.md),
+[authentication-rpc.md](../protocol/v1/authentication-rpc.md),
+[terminal-capabilities.md](../protocol/v1/terminal-capabilities.md).
 
-Migration failure must prevent startup without damaging the prior database. Release updates retain a previous signed version and must test schema backup/rollback compatibility. A database backup before migration is not yet implemented.
+Wire format: local IPC is four-byte big-endian length-prefixed JSON; the
+WebSocket uses JSON text messages. Counters travel as decimal strings.
 
-## Failure and resource boundaries
+Code generation: `pnpm protocol:generate` runs `scripts/generate-protocol.mjs`
+(quicktype) and writes `internal/protocol/generated.go` and
+`web/src/generated/protocol.ts`, plus the revision constants. It fails on an
+unresolved `$ref`. Drift check: `pnpm protocol:check` regenerates and runs
+`git diff --exit-code` on both files; CI job `protocol-generation` and
+`scripts/check` run it. The web validates with Ajv standalone code built by
+`web/vite.config.ts`; Go decodes requests strictly and adds semantic bounds.
 
-- Gateway failure: existing broker sessions continue; clients reconnect and resynchronize.
-- Viewer failure or slowness: drop/coalesce screen updates and eventually disconnect the viewer; never discard bytes before emulator interpretation or block the child indefinitely.
-- Broker failure: active sessions become lost; supervision starts a new broker generation without replaying commands.
-- Explicit termination: broker ends the selected process tree. Detach only closes a viewer, and Ctrl+C remains ordinary terminal input.
-- Default live-session limit: eight, with three busy sessions in validation.
-- Screen, input, history, queue, payload, and dimension limits are specified by the implementation plan and enforced at protocol boundaries.
+The phone reads `protocolRevision` and `minProtocolRevision` from
+`GET /api/v1/settings`. It refuses a peer below the minimum and sends new
+request fields only to peers that support them.
 
-## Platform and release boundaries
+## 5. Data
 
-The intended releases are a signed/notarized macOS app/DMG and a signed per-user Windows installer. Unsigned build scripts exist under `packaging/macos` and `packaging/windows`; signing needs owner credentials and is not done. Unsigned development artifacts remain visibly distinct. Node.js is never required on an installed user's machine because production web assets are embedded in the Go binary.
+### SQLite tables (`phone-terminal.db`, broker only)
 
-Technical completion never authorizes publication or a visibility change. The owner manually changes repository visibility only after the release checklist and history/artifact review are complete.
+| Migration | Change |
+| --- | --- |
+| `001_sessions.sql` | `projects`, `shell_profiles`, `session_metadata` |
+| `002_mutation_receipts.sql` | `mutation_receipts` (idempotent create/rename/terminate) |
+| `003_mutation_receipt_snapshots.sql` | `result_session_json` snapshot column and triggers |
+| `004_authentication.sql` | `devices`, `browser_sessions`, `pairing_grants`, `pending_pairings`, `settings` |
+| `005_web_push.sql` | `push_subscriptions`, `push_vapid_key` |
+| `006_session_title_custom.sql` | `session_metadata.title_custom` |
+| `007_linux_shell_profiles.sql` | Rebuilds `shell_profiles` to allow Linux profiles |
+| `008_multi_computer.sql` | `app_origin` and app node columns on grants, pending pairings and devices; `computers` table |
+| `009_computer_nodes.sql` | `computers.node_id` (home pins each peer's node) |
+
+Files are in `internal/store/migrations/`. Only credential hashes are stored.
+Terminal content, raw output, controller leases and process handles are never
+stored.
+
+### Locations
+
+| OS | Data dir (DB, locks) | Runtime dir (IPC endpoint, locks) | Logs |
+| --- | --- | --- | --- |
+| macOS | `~/Library/Application Support/Phone Terminal` | `~/Library/Caches/Phone Terminal/runtime` | `<data>/logs` |
+| Linux | `$XDG_DATA_HOME/phone-terminal` (`~/.local/share`) | `/run/user/<uid>/phone-terminal`, else `$XDG_RUNTIME_DIR/phone-terminal`, else `<data>/runtime` | `$XDG_STATE_HOME/phone-terminal/logs` |
+| Windows | `%LOCALAPPDATA%\Phone Terminal` | `%LOCALAPPDATA%\Phone Terminal\runtime` (IPC is a named pipe with a current-user ACL) | `<data>\logs` |
+
+Dev profile: same layout with the development directory name. Source:
+`internal/platform/paths.go`. The Unix IPC socket is `<runtime>/broker.sock`.
+
+## 6. Security model in short
+
+Full model: [threat-model.md](threat-model.md). Malware already running as the
+same OS user is out of scope. Nothing runs as root or SYSTEM.
+
+| Topic | Rule |
+| --- | --- |
+| Pairing | `pterm pair` makes a single-use grant (2 minutes) carried in the URL fragment. The phone redeems it with one POST, then polls with a separate secret. The owner approves on the computer after comparing a verification code. |
+| Cookie | `__Host-pterm_session`: Secure, HttpOnly, `SameSite=Strict`, `Path=/`. 30 days absolute, 7 days idle. `GET /api/v1/settings` resends the same value so WebKit's 7-day cap does not end it. The broker stores only hashes and re-authorizes the raw credential on every call. |
+| Origin and Host | Exact Host check. Every `/api` request needs an exact allowed `Origin`, or no `Origin` plus `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is refused. Mutations need `X-Pterm-Request`. Strict CSP on every response. |
+| Tailscale | Serve on 443 gives the private HTTPS origin. Funnel and public tunnels are excluded. Tailscale identity headers are ignored. `tailscale status` only narrows multi-computer access; it is never authentication. |
+| Multi-computer | A peer accepts a cross-origin call only from the app origin bound to that exact credential (`devices.app_origin`), with the pinned node ID and same owner (or `--allow-tagged`). Status cached about 60 s, 10-minute grace. A changed node ID revokes devices bound to it. A compromised home compromises every peer paired through it. |
+| Preview | Separate origin (8443). Termivoa cookies are never forwarded to or set by a dev server. |
+| Controller lease | One controller per session. Acquire revokes the old lease, raises the epoch and makes a new 32-byte secret. Input carries generation, lease and a rising sequence; the broker rechecks auth and lease before acceptance. |
+| Input | Bounded `key`, `text`, `paste`, `mouse`, `answer` messages. Reconnect starts as observer. Lost acks show "uncertain delivery"; nothing is resent. |
+
+Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
+[ADR 0003](decisions/0003-private-tailscale-networking.md),
+[ADR 0005](decisions/0005-multi-computer.md). Pairing design:
+[p4-authentication-design.md](p4-authentication-design.md).
+
+## 7. Features
+
+"Next" means on `main`, not in `v0.1.0-beta.2`.
+
+| Feature | What it is | Host code | Web code | Design doc |
+| --- | --- | --- | --- | --- |
+| Sessions | Create (project + shell profile, optional run-first command), list, rename, terminate; idempotent operation IDs | `internal/broker/registry.go`, `internal/broker/session.go`, `internal/store/sessions.go` | `web/src/screens/Sessions.tsx`, `web/src/screens/NewSession.tsx`, `web/src/screens/SessionMenu.tsx`, `web/src/terminal/runFirst.ts` | — |
+| Live terminal | Snapshot then row patches on exact base revision; history pages; display-only xterm | `internal/terminal`, `internal/broker/viewer.go`, `internal/gateway/live.go` | `web/src/screens/Live.tsx`, `web/src/terminal/FrameRenderer.ts`, `web/src/terminal/SnapshotAssembler.ts`, `web/src/terminal/Connection.ts`, `web/src/screens/History.tsx` | ADR 0002 |
+| Control and observers | Explicit take control; others watch | `internal/broker/controller.go`, `internal/broker/session_dispatch.go`, `internal/broker/input_inbox.go` | `web/src/terminal/InputSender.ts`, `web/src/terminal/InputController.ts` | — |
+| Wall and thumbnails | Grid of all sessions; read-only thumbnail viewers rate-limited by the broker; at most 4 live tiles under a phone-wide budget; hold and drag to arrange (Next) | `internal/broker/viewer.go` | `web/src/screens/Wall.tsx`, `web/src/terminal/scheduler.ts` | multi-computer.md |
+| Agent state and badges | Working, waiting, idle from screen; worked seconds | `internal/agentstate`, `internal/broker/agent.go` | `web/src/screens/Sessions.tsx` | [agent-state.md](agent-state.md) |
+| Answer cards | Tap an option for a detected question; broker re-parses the screen and sends its own keys | `internal/broker/agent.go` | `web/src/screens/AnswerCard.tsx` | [agent-state.md](agent-state.md) |
+| Notifications | Web Push "waiting" and "done"; no terminal text in payloads; home only | `internal/webpush`, `internal/store/push.go` | `web/src/push.ts`, `web/src/sw.js` | [notifications.md](notifications.md) |
+| Away recap | "While you were away" card: time away, time worked, changes | `internal/broker/agent.go` (worked seconds) | `web/src/screens/Recap.tsx`, `web/src/screens/activity.ts` | — |
+| Changes | Diff list and file view, commit selected paths, push (never force), line comments into the composer (Next) | `internal/gitchanges`, `internal/broker/changes.go` | `web/src/screens/Changes.tsx` | [changes.md](changes.md) |
+| Project buttons | Project commands in the Snips sheet; typed into the session as input (Next) | `internal/projecttasks`, `internal/broker/tasks.go` | `web/src/screens/Snippets.tsx` | [project-tasks.md](project-tasks.md) |
+| Files | Browse, search and read project files; tap `path:line` in the terminal (Next) | `internal/projectfiles`, `internal/broker/files.go` | `web/src/screens/Files.tsx`, `web/src/terminal/pathLinks.ts` | — |
+| Worktrees | New session in `~/termivoa/worktrees/<repo>/<name>` on branch `termivoa/<name>` (`git worktree add`); remove it (Next) | `internal/broker/worktree.go`, `internal/gitchanges/worktree.go` | `web/src/screens/Worktree.tsx` | — |
+| Dev-server preview | Proxy one port that the session's own processes listen on (OS scan only) | `internal/broker/devpreview.go`, `internal/ptyhost/listen.go`, `internal/gateway/preview.go` | `web/src/screens/Preview.tsx`, `web/src/screens/PreviewChip.tsx` | [preview.md](preview.md) |
+| Photo and voice | Photo upload into the project folder (controller only); dictation with the Web Speech API | `internal/broker/upload.go` | `web/src/terminal/attachments.ts`, `web/src/terminal/image.ts`, `web/src/terminal/speech.ts` | — |
+| Live folder | Current working folder from the OS or OSC 7 / OSC 9;9; display only | `internal/broker/cwd.go`, `internal/broker/cwd_hook.go`, `internal/ptyhost/cwd.go` | `web/src/screens/folder.ts` | [live-folder.md](live-folder.md) |
+| Snippets, composer and keys | Saved snippets, multi-line composer with drafts in memory, key row, agent keys | — | `web/src/terminal/snippets.ts`, `web/src/terminal/composer.ts`, `web/src/screens/Composer.tsx`, `web/src/screens/Dock.tsx`, `web/src/terminal/agentKeys.ts` | — |
+| Multi-computer | One app on home talks directly to up to 8 peers (Next) | `internal/broker/computers.go`, `internal/store/computers.go`, `internal/tailnet`, `cmd/pterm/computers.go` | `web/src/computers.ts`, `web/src/screens/allSessions.ts`, `web/src/screens/Computers.tsx`, `web/src/screens/AddComputer.tsx`, `web/src/pairing/addComputer.ts` | [multi-computer.md](multi-computer.md), ADR 0005 |
+| Desktop attach | `pterm attach` in any terminal app; Ctrl+] detaches | `internal/desktop`, `internal/liveclient`, `internal/cli/desktop.go`, `cmd/pterm/desktop.go` | — | — |
+| Packaging | Unsigned macOS app and DMG (launcher runs `pterm launch`), Linux static binaries and installer script, Windows Inno Setup installer | `packaging/macos`, `packaging/linux`, `packaging/windows`, `scripts/install-linux.sh` | — | [install.md](install.md) |
+| Docs site | Astro Starlight site with `llms.txt` and per-page Markdown | `site/` | — | AGENTS.md rules 22–23 |
+
+## 8. Build and checks
+
+| Command | What |
+| --- | --- |
+| `scripts/check` / `scripts/check.ps1` | Full local gate: protocol drift, gofmt, vet, Go tests (with `third_party`), web typecheck, tests, build |
+| `pnpm build:web` then `scripts/embed-web.sh` | Build `web/dist` and copy it for `-tags webdist` |
+| `.github/workflows/ci.yml` | protocol-generation, go-quality, go-race, web-quality, macOS and Windows integration, Linux release smoke |
+| `.github/workflows/packaging.yml` | Unsigned macOS, Linux and Windows artifacts |
+| `scripts/soak.sh` | Soak probes (build tag `soak`) |
+| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness |
+| `scripts/docs-screenshots` | Demo-only screenshots for the docs site |
+
+## 9. Key invariants
+
+- The gateway never spawns a shell and never opens SQLite. It has no PTY or Store.
+- Only the broker writes to a PTY, through one writer per session.
+- No client-generated terminal-query replies reach the child. The web xterm has `disableStdin: true`.
+- Clients get normalized frames, never raw child output. Terminal bytes stay out of React state.
+- A patch applies only to its exact base revision; else the client asks for a snapshot.
+- No offline input queue and no resend after reconnect. Reconnect starts as observer.
+- The broker rechecks credential, Origin binding and lease on every call. The gateway caches no auth decision.
+- Every bound is enforced: dimensions, messages, paste, history, queues, viewers, uploads. A slow viewer is dropped, not waited on.
+- Only credential hashes are stored. No terminal content is written to disk.
+- Production listeners are literal IPv4 loopback addresses. Funnel is never used.
+- `pterm` never changes Tailscale or startup configuration without an explicit yes.
+- Read-only helpers stay read-only: `gitchanges` reads, `projectfiles`, `projecttasks`, `agentstate`.
+- Screen text never names a preview port or chooses answer keys; the OS and a fresh parse do.
+- Protocol changes go through `protocol/v1` and regeneration; the drift check must pass.
+
+## 10. Where to read next
+
+| ADR | One line |
+| --- | --- |
+| [0001](decisions/0001-go-typescript-stack.md) | Go host runtime, TypeScript phone app |
+| [0002](decisions/0002-server-authoritative-terminal.md) | The broker's emulator is the truth; clients get frames |
+| [0003](decisions/0003-private-tailscale-networking.md) | Loopback gateway, private access through Tailscale Serve |
+| [0004](decisions/0004-broker-owned-sqlite.md) | Only the broker owns SQLite |
+| [0005](decisions/0005-multi-computer.md) | Multi-computer through direct same-site links, per-device origin binding |
+
+Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
+[live-folder.md](live-folder.md), [notifications.md](notifications.md),
+[preview.md](preview.md), [project-tasks.md](project-tasks.md),
+[multi-computer.md](multi-computer.md),
+[p4-authentication-design.md](p4-authentication-design.md),
+[threat-model.md](threat-model.md). Status and gaps:
+[progress.md](progress.md), [pending-work.md](pending-work.md),
+[owner-verification.md](owner-verification.md),
+[release-checklist.md](release-checklist.md).
