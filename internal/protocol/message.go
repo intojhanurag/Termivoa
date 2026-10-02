@@ -1249,7 +1249,7 @@ func validLink(raw string) bool {
 // (versions 1-8, variant 10xx), the schema's uuid pattern.
 func ValidUUID(value string) bool {
 	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' ||
-		value[14] < '1' || value[14] > '8' || !containsByte("89ab", value[19]) {
+		value[14] < '1' || value[14] > '8' || strings.IndexByte("89ab", value[19]) < 0 {
 		return false
 	}
 	for index := range value {
@@ -1265,15 +1265,6 @@ func ValidUUID(value string) bool {
 
 func isLowerHex(value byte) bool {
 	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f'
-}
-
-func containsByte(values string, value byte) bool {
-	for index := range values {
-		if values[index] == value {
-			return true
-		}
-	}
-	return false
 }
 
 func safeDisplayText(text string) bool {

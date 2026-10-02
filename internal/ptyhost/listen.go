@@ -118,12 +118,7 @@ func descendants(parents map[int]int, roots []int) []int {
 		seen[pid] = true
 		queue = append(queue, children[pid]...)
 	}
-	tree := make([]int, 0, len(seen))
-	for pid := range seen {
-		tree = append(tree, pid)
-	}
-	slices.Sort(tree)
-	return tree
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // parseLsof parses `lsof -F ptn` output: a "p<pid>" line starts a process,

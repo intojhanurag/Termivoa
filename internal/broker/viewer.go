@@ -525,13 +525,10 @@ func (subscription *ViewerSubscription) send(ctx context.Context, message []byte
 
 func (subscription *ViewerSubscription) sendReserved(ctx context.Context, message []byte) error {
 	drained := make(chan struct{})
-	var once sync.Once
-	release := func() {
-		once.Do(func() {
-			subscription.releaseBudget(len(message))
-			close(drained)
-		})
-	}
+	release := sync.OnceFunc(func() {
+		subscription.releaseBudget(len(message))
+		close(drained)
+	})
 	if err := subscription.sink.Send(ctx, message, release); err != nil {
 		release()
 		return err

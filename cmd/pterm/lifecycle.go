@@ -245,7 +245,7 @@ func detectShells() []string {
 	}
 	var found []string
 	for _, candidate := range candidates {
-		if path, err := exec.LookPath(candidate); candidate != "" && err == nil && !containsString(found, path) {
+		if path, err := exec.LookPath(candidate); candidate != "" && err == nil && !slices.Contains(found, path) {
 			found = append(found, path)
 		}
 	}
@@ -253,15 +253,6 @@ func detectShells() []string {
 		return []string{"none found"}
 	}
 	return found
-}
-
-func containsString(values []string, value string) bool {
-	for _, existing := range values {
-		if existing == value {
-			return true
-		}
-	}
-	return false
 }
 
 // tailscaleRun runs the tailscale CLI and returns its standard output. With

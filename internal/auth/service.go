@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 	"uuid"
@@ -251,10 +253,7 @@ func (service *Service) PollChecked(ctx context.Context, pendingID, pollSecret s
 	deviceID := uuid.New().String()
 	sessionID := uuid.New().String()
 	service.mu.Lock()
-	pendingRevoked := make([]string, 0, len(service.revokedDevices))
-	for id := range service.revokedDevices {
-		pendingRevoked = append(pendingRevoked, id)
-	}
+	pendingRevoked := slices.Collect(maps.Keys(service.revokedDevices))
 	service.mu.Unlock()
 	device, approved, err := service.store.CompletePendingPairing(ctx, pendingID, pollHash, now,
 		store.Device{ID: deviceID, CreatedAt: now, LastUsedAt: now},
