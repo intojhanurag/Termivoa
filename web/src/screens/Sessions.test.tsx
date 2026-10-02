@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
-import type { SessionList } from './hooks';
+import type { Computer } from '../computers';
+import { hosted, type ComputerEntry, type ComputerStatus } from './allSessions';
 import { NewSession } from './NewSession';
-import { age, controllerText, hostSummary, PushCard, SessionRow, Sessions, waitingFirst } from './Sessions';
+import { age, ComputerChips, controllerText, hostSummary, problemText, PushCard, SessionRow, Sessions, waitingFirst } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -179,24 +180,34 @@ const settings: HTTPSettingsResponse = {
   protocolRevision: 1,
   minProtocolRevision: 1,
 };
-const list: SessionList = { sessions: [], reachable: true, reload: async () => undefined };
+const mac: Computer = { origin: 'https://mac.tailx.ts.net', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
+const vps: Computer = { origin: 'https://vps.tailx.ts.net', host: 'vps.tailx.ts.net', label: 'vps', color: '#9B8CFF', home: false };
+const NOW = Date.parse('2026-09-27T12:00:00Z');
+const ok = (value: HTTPSettingsResponse, sessions: BrokerRPCSessionRecord[] = [], computer = mac): ComputerStatus =>
+  ({ kind: 'ok', settings: value, sessions: sessions.map((item) => hosted(item, computer)), at: NOW });
+const entry = (computer: Computer, status: ComputerStatus): ComputerEntry => ({ computer, status });
 
-describe('Sessions first use', () => {
-  const renderSessions = (value: HTTPSettingsResponse) => renderToStaticMarkup(
+function renderSessions(entries: ComputerEntry[], extra: { offerPush?: boolean } = {}) {
+  const all = entries.flatMap((item) => (item.status.kind === 'ok' ? item.status.sessions : []));
+  return renderToStaticMarkup(
     <Sessions
-      settings={value}
-      list={list}
+      entries={entries}
+      sessions={waitingFirst(all)}
+      offerPush={extra.offerPush ?? false}
       onOpen={() => undefined}
       onNew={() => undefined}
       onWall={() => undefined}
       onSettings={() => undefined}
-      onRefreshSettings={async () => undefined}
+      onReload={async () => undefined}
+      onRetry={() => undefined}
       onFailure={() => ''}
     />,
   );
+}
 
+describe('Sessions first use', () => {
   it('explains how to add a project instead of offering a new session', () => {
-    const html = renderSessions(settings);
+    const html = renderSessions([entry(mac, ok(settings))]);
     expect(html).toContain('Add a project on your computer first:');
     expect(html).toContain('<code>pterm project add &lt;folder&gt;</code>');
     expect(html).toContain('>Check again</button>');
@@ -204,38 +215,85 @@ describe('Sessions first use', () => {
   });
 
   it('lists waiting sessions first under a summary host line', () => {
-    const html = renderToStaticMarkup(
-      <Sessions
-        settings={settings}
-        list={{ ...list, sessions: [working, waiting] }}
-        onOpen={() => undefined}
-        onNew={() => undefined}
-        onWall={() => undefined}
-        onSettings={() => undefined}
-        onRefreshSettings={async () => undefined}
-        onFailure={() => ''}
-      />,
-    );
+    const html = renderSessions([entry(mac, ok(settings, [working, waiting]))]);
     expect(html).toContain('Your computer · 1 waiting · 1 working');
     expect(html.indexOf('>Waiting<')).toBeLessThan(html.indexOf('>Working<'));
   });
 
   it('offers ❯ new session once a project and shell exist', () => {
-    const html = renderSessions({ ...settings, projects: [{ id: base.projectId, name: 'site' }] });
+    const html = renderSessions([entry(mac, ok({ ...settings, projects: [{ id: base.projectId, name: 'site' }] }))]);
     expect(html).toContain('new session</button>');
     expect(html).toContain('aria-label="Settings"');
     expect(html).toContain('<button type="button" class="round" aria-label="Wall">');
     expect(html).not.toContain('Check again');
   });
+
+  it('shows no chips and no computer labels with one computer', () => {
+    const html = renderSessions([entry(mac, ok(settings, [working]))]);
+    expect(html).not.toContain('class="chips"');
+    expect(html).not.toContain('computer-tag');
+  });
+});
+
+describe('Sessions across computers', () => {
+  const ready = { ...settings, projects: [{ id: base.projectId, name: 'site' }] };
+
+  it('merges every computer, waiting first, each row with its colour dot and label', () => {
+    const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, ok(ready, [waiting], vps))]);
+    expect(html).toContain('2 computers · 1 waiting · 1 working');
+    expect(html.indexOf('>Waiting<')).toBeLessThan(html.indexOf('>Working<'));
+    expect(html).toContain('<span class="computer-tag"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</span>');
+    expect(html).toContain('<span class="computer-tag"><span class="dot" style="background:#64D8E8" aria-hidden="true"></span>mac</span>');
+    expect(html).toContain('new session on…</button>');
+  });
+
+  it('keeps sessions with the same id on two computers apart', () => {
+    const html = renderSessions([entry(mac, ok(ready, [base])), entry(vps, ok(ready, [base], vps))]);
+    expect(html.match(/class="session-row/gu)).toHaveLength(2);
+  });
+
+  it('offers All plus one chip per computer', () => {
+    const html = renderToStaticMarkup(<ComputerChips computers={[mac, vps]} chosen={undefined} onChoose={() => undefined} />);
+    expect(html).toContain('<button type="button" class="chip" aria-pressed="true">All</button>');
+    expect(html).toContain('aria-pressed="false"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</button>');
+    expect(renderToStaticMarkup(<ComputerChips computers={[mac]} chosen={undefined} onChoose={() => undefined} />)).toBe('');
+    const pick = renderToStaticMarkup(
+      <ComputerChips computers={[mac, vps]} chosen="mac.tailx.ts.net" all={false} disabled={(host) => host === vps.host} onChoose={() => undefined} />,
+    );
+    expect(pick).not.toContain('All');
+    expect(pick).toContain('aria-pressed="false" disabled="">');
+  });
+
+  it('shows one line per computer that did not answer, and its sessions are gone', () => {
+    expect(problemText(entry(vps, { kind: 'unreachable' }), NOW)).toBe("vps · can't reach");
+    expect(problemText(entry(vps, { kind: 'unreachable', lastSeen: NOW - 3 * 3_600_000 }), NOW)).toBe("vps · can't reach · last seen 3 h ago");
+    expect(problemText(entry(vps, { kind: 'pair' }), NOW)).toBe('vps · pair again');
+    expect(problemText(entry(vps, { kind: 'outdated', message: 'Update Termivoa on vps' }), NOW)).toBe('Update Termivoa on vps');
+    expect(problemText(entry(vps, { kind: 'loading' }), NOW)).toBeUndefined();
+    expect(problemText(entry(vps, ok(settings)), NOW)).toBeUndefined();
+
+    const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable' })]);
+    expect(html).toContain('<span class="computer-problem-text">vps · can&#x27;t reach</span><button type="button" class="link">Retry</button>');
+    const pair = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'pair' })]);
+    expect(pair).toContain('vps · pair again');
+    expect(pair).not.toContain('Retry');
+  });
+
+  it('shows the other computers while one is still loading', () => {
+    const html = renderSessions([entry(mac, { kind: 'loading' }), entry(vps, ok(ready, [working], vps))]);
+    expect(html).not.toContain('Loading…');
+    expect(html).toContain('class="session-row');
+    expect(renderSessions([entry(mac, { kind: 'loading' })])).toContain('Loading…');
+  });
 });
 
 describe('New session', () => {
-  const renderNew = (value: HTTPSettingsResponse) => renderToStaticMarkup(
+  const renderNew = (value: HTTPSettingsResponse, more: ComputerEntry[] = []) => renderToStaticMarkup(
     <NewSession
-      settings={value}
+      entries={[entry(mac, ok(value)), ...more]}
       onCancel={() => undefined}
       onStarted={() => undefined}
-      onRefreshSettings={async () => undefined}
+      onReload={async () => undefined}
       onFailure={() => ''}
     />,
   );
@@ -258,6 +316,19 @@ describe('New session', () => {
     expect(html).toContain('start session</button>');
     expect(html).toContain('save as preset');
     expect(html).not.toContain('Launch');
+    expect(html).not.toContain('computer-heading');
+  });
+
+  it('picks the computer first; one that cannot be reached is disabled', () => {
+    const html = renderNew(
+      { ...settings, projects: [{ id: base.projectId, name: 'site' }] },
+      [entry(vps, { kind: 'unreachable' })],
+    );
+    expect(html).toContain('<h2 id="computer-heading" class="caps">Computer</h2>');
+    expect(html).toContain('Runs on mac');
+    expect(html).toMatch(/aria-pressed="false" disabled=""><span class="dot" style="background:#9B8CFF" aria-hidden="true"><\/span>vps<\/button>/u);
+    expect(html).toContain("vps · can&#x27;t reach");
+    expect(html.indexOf('computer-heading')).toBeLessThan(html.indexOf('<select id="project"'));
   });
 });
 
@@ -272,10 +343,6 @@ describe('PushCard', () => {
   });
 
   it('is not in the first render of Sessions; it appears only after push support is checked', () => {
-    const html = renderToStaticMarkup(
-      <Sessions settings={settings} list={list} onOpen={() => undefined} onNew={() => undefined} onWall={() => undefined} onSettings={() => undefined}
-        onRefreshSettings={async () => undefined} onFailure={() => ''} />,
-    );
-    expect(html).not.toContain('Get a buzz');
+    expect(renderSessions([entry(mac, ok(settings))], { offerPush: true })).not.toContain('Get a buzz');
   });
 });

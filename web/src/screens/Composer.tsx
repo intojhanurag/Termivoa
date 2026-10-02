@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { api, blobToBase64 } from '../api/http';
+import { blobToBase64, client } from '../api/http';
 import { formatSize, PhotoAttacher, type Attachment, type Uploader } from '../terminal/attachments';
 import type { Connection } from '../terminal/Connection';
 import { checkPaste, lineCount, readDraft, saveDraft } from '../terminal/composer';
@@ -13,8 +13,10 @@ import { Sheet, SheetHeader } from './Sheet';
 const noSubscribe = () => () => undefined;
 const idleSpeech = () => IDLE_SPEECH;
 
-export function Composer({ connection, canSend, draftKey, onClose, speech = recognizerFactory() ?? null, uploader }: {
+export function Composer({ connection, origin, canSend, draftKey, onClose, speech = recognizerFactory() ?? null, uploader }: {
   readonly connection: Connection;
+  /** The session's computer; photos upload there. Home when omitted. */
+  readonly origin?: string;
   readonly canSend: boolean;
   readonly draftKey: string;
   readonly onClose: () => void;
@@ -79,7 +81,7 @@ export function Composer({ connection, canSend, draftKey, onClose, speech = reco
   function pick(file: File | undefined) {
     if (file === undefined) return;
     setNote(undefined);
-    const upload = uploader ?? (async (blob: Blob) => api.uploadImage(connection.sessionId, {
+    const upload = uploader ?? (async (blob: Blob) => client(origin).uploadImage(connection.sessionId, {
       generation: connection.generation,
       data: await blobToBase64(blob),
     }));

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, isAuthFailure } from '../api/http';
+import { client, isAuthFailure } from '../api/http';
 import type { BrokerRPCSessionRecord, SessionWorktree } from '../generated/protocol';
 import type { WorktreeRemoval } from '../terminal/Connection';
 import { Sheet, SheetHeader } from './Sheet';
@@ -9,10 +9,12 @@ const SAFE_TITLE = /^[^\p{Cc}\s](?:[^\p{Cc}]{0,126}[^\p{Cc}\s])?$/u;
 
 /** The "…" menu: control, worktrees, rename, terminate, and the way out to other screens. */
 export function SessionMenu({
-  session, controlling, running, removal,
+  session, origin, controlling, running, removal,
   onRelease, onNewWorktree, onRemoveWorktree, onSessions, onSettings, onChanged, onAuthFailure, onClose,
 }: {
   readonly session: BrokerRPCSessionRecord;
+  /** The session's computer; rename and terminate go there. Home when omitted. */
+  readonly origin?: string;
   readonly controlling: boolean;
   /** The shell is running now, so its folder can be read. */
   readonly running: boolean;
@@ -69,7 +71,7 @@ export function SessionMenu({
           onSubmit={(event) => {
             event.preventDefault();
             if (!titleOk) return;
-            void mutate(() => api.renameSession(session.id, {
+            void mutate(() => client(origin).renameSession(session.id, {
               operationId: crypto.randomUUID(),
               generation: session.generation,
               title: title.trim(),
@@ -96,7 +98,7 @@ export function SessionMenu({
               className="danger"
               disabled={busy}
               onClick={() => {
-                void mutate(() => api.terminateSession(session.id, {
+                void mutate(() => client(origin).terminateSession(session.id, {
                   operationId: crypto.randomUUID(),
                   generation: session.generation,
                 }));

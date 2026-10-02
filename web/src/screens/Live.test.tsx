@@ -1,9 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Computer } from '../computers';
 import type { AgentStatus, BrokerRPCSessionRecord } from '../generated/protocol';
 import { AGENT_KEYS } from '../terminal/agentKeys';
 import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
+import type { HostedSession } from './allSessions';
 import { canTakeControl, CockpitDock, controlBadge, controllerLine, ReadOnlyDock } from './Dock';
 import { liveTabs, revealTab, TabBar } from './Live';
 
@@ -93,7 +95,11 @@ describe('cockpit dock', () => {
   });
 });
 
-const record = (n: number, extra: Partial<BrokerRPCSessionRecord> = {}): BrokerRPCSessionRecord => ({
+const mac: Computer = { origin: 'https://mac.tailx.ts.net', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
+const vps: Computer = { origin: 'https://vps.tailx.ts.net', host: 'vps.tailx.ts.net', label: 'vps', color: '#9B8CFF', home: false };
+
+const record = (n: number, extra: Partial<BrokerRPCSessionRecord> = {}, computer = mac): HostedSession => ({
+  computer,
   id: `00000000-0000-4000-8000-00000000000${n}`,
   generation: `00000000-0000-4000-8000-00000000010${n}`,
   title: `s${n}`,
@@ -114,6 +120,17 @@ describe('session tabs', () => {
     expect(liveTabs(list, open).map((item) => item.title)).toEqual(['s1', 's2', 's4']);
     expect(liveTabs(undefined, open)).toEqual([open]);
     expect(liveTabs([record(2)], record(1)).map((item) => item.title)).toEqual(['s1', 's2']);
+  });
+
+  it('tells apart the same session id on two computers', () => {
+    const here = record(1);
+    const there = record(1, {}, vps);
+    expect(liveTabs([here, there], here)).toEqual([here, there]);
+    expect(liveTabs([there], here)).toEqual([here, there]);
+    const html = renderToStaticMarkup(
+      <TabBar tabs={[here, there]} current={here} viewed={{}} onOpen={noop} onNew={noop} onMenu={noop} />,
+    );
+    expect(html.match(/aria-current="page"/gu)).toHaveLength(1);
   });
 
   it('marks the open tab and shows a new-output dot on other tabs only', () => {

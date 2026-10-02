@@ -1,9 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError, CONNECTION_UNAVAILABLE, isAuthFailure } from '../api/http';
-import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
+import { api, ApiError, client, CONNECTION_UNAVAILABLE, isAuthFailure } from '../api/http';
+import { refreshComputers, storedComputers, type Computer } from '../computers';
+import type { HTTPSettingsResponse } from '../generated/protocol';
+import {
+  ADD_COMPUTER_PATH, PEER_ADD_PATH, takeAddComputerFragment, type AddComputerLink, type AppLocation,
+} from '../pairing/addComputer';
+import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
+import { removeStrayWorkers } from '../push';
+import { scheduler } from '../terminal/scheduler';
+import { AddComputerPage, PeerAddPage } from './AddComputer';
+import { forgetSettings, hosted, mergeSessions, pairAgain, useAllSessions, type HostedSession } from './allSessions';
 import { ChunkErrorBoundary, loadChunk } from './chunks';
-import { useFontSize, useServiceWorkerUpdate, useSessionList, useVisualViewport } from './hooks';
-import { adoptFragmentGrant, type GrantSlot } from '../pairing/pairing';
+import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
 import { NewSession } from './NewSession';
 import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
@@ -22,16 +30,41 @@ const Preview = lazy(() => loadChunk(() => import('./Preview')).then((module) =>
 
 export type GrantHolder = GrantSlot;
 
+/** Secrets and links read from the URL fragment before anything renders. */
+export interface StartupLinks {
+  readonly grant: GrantHolder;
+  /** `/computers/add#…` on home: the add-computer link to redeem. */
+  readonly add?: AddComputerLink | undefined;
+  /** `/add-computer#…` opened directly on a peer (for example from the iPhone camera): the whole link, to copy. */
+  readonly peerLink?: string | undefined;
+}
+
+/**
+ * Reads and strips every URL fragment once at start. The add-computer
+ * fragment goes first, because takeGrantFromFragment strips all fragments.
+ * The peer page's link stays in memory only; it is never redeemed here.
+ */
+export function takeStartupLinks(location: LocationLike, history: HistoryLike, app: AppLocation): StartupLinks {
+  const add = takeAddComputerFragment(location, history, app);
+  const peerLink = location.pathname === PEER_ADD_PATH && location.hash.length > 1
+    ? `${app.origin}${PEER_ADD_PATH}${location.hash}`
+    : undefined;
+  const grant = takeGrantFromFragment(location, history);
+  return { grant: { value: grant }, add, peerLink };
+}
+
 type View =
   | { readonly name: 'boot' }
   | { readonly name: 'offline' }
   | { readonly name: 'setup'; readonly reason?: string }
   | { readonly name: 'sessions'; readonly message?: string }
   | { readonly name: 'wall' }
-  | { readonly name: 'new'; readonly back?: View }
-  | { readonly name: 'live'; readonly session: BrokerRPCSessionRecord; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
-  | { readonly name: 'preview'; readonly session: BrokerRPCSessionRecord; readonly port: number }
-  | { readonly name: 'settings' };
+  | { readonly name: 'new'; readonly back?: View; readonly computer?: Computer }
+  | { readonly name: 'live'; readonly session: HostedSession; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
+  | { readonly name: 'preview'; readonly session: HostedSession; readonly port: number }
+  | { readonly name: 'settings' }
+  | { readonly name: 'add-computer' }
+  | { readonly name: 'peer-add' };
 
 /** While the host is unreachable, try again at most this often in seconds (and at once on network or focus changes). */
 export const OFFLINE_RETRY_S = 10;
@@ -61,21 +94,69 @@ export function titleFor(view: View): string {
     case 'new': return `New session · ${APP_NAME}`;
     case 'settings': return `Settings · ${APP_NAME}`;
     case 'setup': return `Pair · ${APP_NAME}`;
+    case 'add-computer': case 'peer-add': return `Add a computer · ${APP_NAME}`;
     case 'offline': return `${CONNECTION_UNAVAILABLE} · ${APP_NAME}`;
     case 'boot': return APP_NAME;
   }
 }
 
+/** Home keeps `/sessions/<id>` (push links keep working); a peer's session is `/c/<host>/sessions/<id>`. */
+export function sessionPath(session: Pick<HostedSession, 'id' | 'computer'>): string {
+  const id = `/sessions/${encodeURIComponent(session.id)}`;
+  return session.computer.home ? id : `/c/${encodeURIComponent(session.computer.host)}${id}`;
+}
+
 export function pathFor(view: View): string {
   switch (view.name) {
-    case 'live': return `/sessions/${encodeURIComponent(view.session.id)}`;
+    case 'live': return sessionPath(view.session);
+    // Previews come from home only.
     case 'preview': return `/sessions/${encodeURIComponent(view.session.id)}/preview?port=${view.port}`;
     case 'settings': return '/settings';
     case 'wall': return '/wall';
     case 'new': return '/new';
+    case 'add-computer': return ADD_COMPUTER_PATH;
+    case 'peer-add': return PEER_ADD_PATH;
     case 'setup': return window.location.pathname === '/pair' ? '/pair' : '/';
     default: return '/';
   }
+}
+
+export type Route =
+  | { readonly name: 'settings' | 'wall' | 'new' | 'add-computer' | 'peer-add' | 'sessions' }
+  /** `host` is undefined for home. */
+  | { readonly name: 'session'; readonly host: string | undefined; readonly id: string; readonly preview: boolean }
+  /** Not an app address: show Sessions at `/`. */
+  | { readonly name: 'unknown' };
+
+const HOST = /^[a-z0-9.-]+(?::\d{1,5})?$/u;
+
+function decode(part: string): string | undefined {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The screen for an address. */
+export function parseRoute(path: string): Route {
+  switch (path) {
+    case '/': return { name: 'sessions' };
+    case '/settings': return { name: 'settings' };
+    case '/wall': return { name: 'wall' };
+    case '/new': return { name: 'new' };
+    case ADD_COMPUTER_PATH: return { name: 'add-computer' };
+    case PEER_ADD_PATH: return { name: 'peer-add' };
+    default:
+  }
+  const home = /^\/sessions\/([^/]+)(\/preview)?$/u.exec(path);
+  const peer = /^\/c\/([^/]+)\/sessions\/([^/]+)$/u.exec(path);
+  const host = peer?.[1] === undefined ? undefined : decode(peer[1]);
+  const id = decode((home ?? peer)?.[home === null ? 2 : 1] ?? '');
+  if (id === undefined || id === '' || (home === null && (host === undefined || !HOST.test(host)))) {
+    return { name: 'unknown' };
+  }
+  return { name: 'session', host, id, preview: home?.[2] !== undefined };
 }
 
 /**
@@ -85,19 +166,20 @@ export function pathFor(view: View): string {
  * of `from`'s folder and starts the session in it.
  */
 export async function startLike(
-  from: BrokerRPCSessionRecord,
+  from: HostedSession,
   runFirst?: string,
   worktree?: { readonly name: string; readonly base: string },
 ): Promise<View> {
-  const created = await api.createSession({
+  const created = await client(from.computer.origin).createSession({
     operationId: crypto.randomUUID(),
     projectId: from.projectId,
     shellProfileId: from.shellProfileId,
     ...(worktree === undefined ? {} : { worktree: { sourceSessionId: from.id, ...worktree } }),
   });
+  const session = hosted(created.session, from.computer);
   return runFirst === undefined
-    ? { name: 'live', session: created.session }
-    : { name: 'live', session: created.session, runFirst: { command: runFirst, settled: false } };
+    ? { name: 'live', session }
+    : { name: 'live', session, runFirst: { command: runFirst, settled: false } };
 }
 
 /** The port of a preview address's `?port=`, or undefined unless it is a plain valid port number. */
@@ -107,15 +189,34 @@ export function previewPortParam(search: string): number | undefined {
   return isPreviewPort(port) ? port : undefined;
 }
 
-export function App({ grant }: { readonly grant: GrantHolder }) {
+const UNPAIRED = 'This phone is no longer paired with your computer.';
+
+export function App({ grant, add, peerLink }: StartupLinks) {
   const [view, setView] = useState<View>({ name: 'boot' });
   const [settings, setSettings] = useState<HTTPSettingsResponse>();
+  // Home first, then the peers; replaced from home on every load.
+  const [computers, setComputers] = useState<ReadonlyArray<Computer>>(storedComputers);
+  const computersRef = useRef(computers);
+  computersRef.current = computers;
   // Previews are optional: until (or unless) the config answers, there are none.
   const [previewAt, setPreviewAt] = useState<string>();
   const previewConfig = useRef<Promise<string | undefined>>(Promise.resolve(undefined));
   const [fontSize, setFontSize] = useFontSize();
   const update = useServiceWorkerUpdate();
   useVisualViewport();
+
+  // In the background every Wall tile pauses and polls wait; back in front,
+  // settings are read again (a peer refreshes its cookie on that read).
+  useEffect(() => {
+    const apply = () => {
+      const visible = document.visibilityState === 'visible';
+      if (visible) forgetSettings();
+      scheduler.setForeground(visible);
+    };
+    apply();
+    document.addEventListener('visibilitychange', apply);
+    return () => document.removeEventListener('visibilitychange', apply);
+  }, []);
 
   const navigate = useCallback((next: View) => {
     const path = pathFor(next);
@@ -133,71 +234,86 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     setView(reason === undefined ? { name: 'setup' } : { name: 'setup', reason });
   }, []);
 
-  const handleFailure = useCallback((error: unknown): string => {
+  /**
+   * The message for a failed request. Only home's 401 ends the app's access;
+   * a peer's 401 means "pair again" for that computer alone.
+   */
+  const handleFailure = useCallback((error: unknown, computer?: Computer): string => {
+    const peer = computer !== undefined && !computer.home ? computer : undefined;
     if (isAuthFailure(error)) {
-      toSetup('This phone is no longer paired with your computer.');
-    } else if (error instanceof ApiError && error.code === 'network') {
+      if (peer !== undefined) return pairAgain(peer.label);
+      toSetup(UNPAIRED);
+    } else if (error instanceof ApiError && error.code === 'network' && peer === undefined && computersRef.current.length < 2) {
       setView({ name: 'offline' });
     }
     return error instanceof Error ? error.message : 'Request failed';
   }, [toSetup]);
 
-  // A failed background refresh only matters when access is gone; the list
-  // shows "cannot reach" itself and the live terminal has its own link state.
-  const handlePollFailure = useCallback((error: unknown) => {
-    if (isAuthFailure(error)) {
-      toSetup('This phone is no longer paired with your computer.');
-    }
-  }, [toSetup]);
-
-  const list = useSessionList(view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview', handlePollFailure);
+  const onHomeAuth = useCallback(() => toSetup(UNPAIRED), [toSetup]);
+  const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
+    || view.name === 'new' || view.name === 'settings';
+  const all = useAllSessions(polling, computers, onHomeAuth);
+  // Sessions and the Wall sort waiting first; Live's tabs keep each computer's own order.
+  const sessions = mergeSessions(all.entries);
+  const tabs = all.entries.flatMap((entry) => (entry.status.kind === 'ok' ? entry.status.sessions : []));
+  const answered = all.entries.some((entry) => entry.status.kind === 'ok');
 
   const route = useCallback(async () => {
-    const path = window.location.pathname;
-    if (path === '/settings') {
-      setView({ name: 'settings' });
-      return;
+    const target = parseRoute(window.location.pathname);
+    switch (target.name) {
+      case 'settings': setView({ name: 'settings' }); return;
+      case 'wall': setView({ name: 'wall' }); return;
+      case 'new': setView({ name: 'new' }); return;
+      case 'add-computer': setView({ name: 'add-computer' }); return;
+      case 'peer-add': setView({ name: 'peer-add' }); return;
+      case 'sessions': setView({ name: 'sessions' }); return;
+      case 'unknown':
+        window.history.replaceState(null, '', '/');
+        setView({ name: 'sessions' });
+        return;
+      default:
     }
-    if (path === '/wall') {
-      setView({ name: 'wall' });
-      return;
-    }
-    if (path === '/new') {
-      setView({ name: 'new' });
-      return;
-    }
-    const match = /^\/sessions\/([^/]+)(\/preview)?$/u.exec(path);
-    if (match?.[1] !== undefined) {
-      const id = decodeURIComponent(match[1]);
-      try {
-        const session = (await api.sessions()).sessions.find((item) => item.id === id);
-        const port = match[2] === undefined ? undefined : previewPortParam(window.location.search);
-        if (session === undefined) {
-          setView({ name: 'sessions', message: 'That session no longer exists.' });
-        } else if (port !== undefined && await previewConfig.current !== undefined) {
-          setView({ name: 'preview', session, port });
-        } else {
-          // A bad port or no preview origin falls back to the terminal.
-          if (match[2] !== undefined) window.history.replaceState(null, '', pathFor({ name: 'live', session }));
-          setView({ name: 'live', session });
-        }
-      } catch (error) {
-        handleFailure(error);
-      }
-      return;
-    }
-    if (path !== '/') {
+    const computer = computersRef.current.find((item) => (target.host === undefined ? item.home : item.host === target.host));
+    if (computer === undefined) {
       window.history.replaceState(null, '', '/');
+      setView({ name: 'sessions', message: 'That computer is not in your list.' });
+      return;
     }
-    setView({ name: 'sessions' });
+    try {
+      const found = (await client(computer.origin).sessions()).sessions.find((item) => item.id === target.id);
+      const port = target.preview ? previewPortParam(window.location.search) : undefined;
+      if (found === undefined) {
+        setView({ name: 'sessions', message: 'That session no longer exists.' });
+        return;
+      }
+      const session = hosted(found, computer);
+      if (port !== undefined && await previewConfig.current !== undefined) {
+        setView({ name: 'preview', session, port });
+      } else {
+        // A bad port or no preview origin falls back to the terminal.
+        if (target.preview) window.history.replaceState(null, '', pathFor({ name: 'live', session }));
+        setView({ name: 'live', session });
+      }
+    } catch (error) {
+      const message = handleFailure(error, computer);
+      if (!isAuthFailure(error) || !computer.home) setView({ name: 'sessions', message });
+    }
   }, [handleFailure]);
 
   const boot = useCallback(async () => {
+    // Before anything else, and before any pairing request: drop service
+    // workers that this app did not register (a compromised home may have).
+    await removeStrayWorkers();
+    if (peerLink !== undefined || window.location.pathname === PEER_ADD_PATH) {
+      setView({ name: 'peer-add' });
+      return;
+    }
     if (grant.value !== undefined) {
       setView({ name: 'setup' });
       return;
     }
     setView({ name: 'boot' });
+    let homeReachable = true;
     for (let failures = 1; ; failures++) {
       try {
         setSettings(await api.settings());
@@ -209,17 +325,26 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
         }
         const next = offlineRetry(failures);
         if (next.offline) {
-          setView({ name: 'offline' });
-          return;
+          // With other computers, a sleeping home is one more computer that cannot be reached.
+          if (computersRef.current.length < 2) {
+            setView({ name: 'offline' });
+            return;
+          }
+          homeReachable = false;
+          break;
         }
         await new Promise((resolve) => { setTimeout(resolve, next.retryIn * 1000); });
       }
     }
-    // Never blocks boot: a failed or empty answer means no previews.
-    previewConfig.current = api.previewConfig().then((config) => previewOrigin(config.origin), () => undefined);
-    void previewConfig.current.then(setPreviewAt);
+    if (homeReachable) {
+      // The stored list is used until home answers; then home's list replaces it.
+      refreshComputers().then(setComputers, () => undefined);
+      // Never blocks boot: a failed or empty answer means no previews.
+      previewConfig.current = api.previewConfig().then((config) => previewOrigin(config.origin), () => undefined);
+      void previewConfig.current.then(setPreviewAt);
+    }
     await route();
-  }, [grant, route, toSetup]);
+  }, [grant, peerLink, route, toSetup]);
 
   // A new pairing link opened in this same tab only changes the fragment, so
   // the page does not reload. Browsers fire popstate and then hashchange for
@@ -323,31 +448,38 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     }
   }, [view.name]);
 
-  const refreshSettings = useCallback(async () => {
-    setSettings(await api.settings());
-  }, []);
-
-  const openSession = useCallback((session: BrokerRPCSessionRecord) => navigate({ name: 'live', session }), [navigate]);
+  const openSession = useCallback((session: HostedSession) => navigate({ name: 'live', session }), [navigate]);
   const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
+  const reloadAll = all.reload;
+  const reloadComputers = useCallback(() => setComputers(storedComputers()), []);
 
-  const reloadList = list.reload;
-  const startNew = useCallback(async (from: BrokerRPCSessionRecord, runFirst?: string) => {
+  const startNew = useCallback(async (from: HostedSession, runFirst?: string) => {
     try {
       navigate(await startLike(from, runFirst));
-      void reloadList();
+      void reloadAll(from.computer.origin);
     } catch (error) {
-      navigate({ name: 'sessions', message: handleFailure(error) });
+      navigate({ name: 'sessions', message: handleFailure(error, from.computer) });
     }
-  }, [handleFailure, navigate, reloadList]);
+  }, [handleFailure, navigate, reloadAll]);
   // The sheet shows a failure itself, so it can suggest another name.
   const startWorktree = useCallback(async (
-    from: BrokerRPCSessionRecord,
+    from: HostedSession,
     worktree: { readonly name: string; readonly base: string },
     runFirst: string | undefined,
   ) => {
     navigate(await startLike(from, runFirst, worktree));
-    void reloadList();
-  }, [navigate, reloadList]);
+    void reloadAll(from.computer.origin);
+  }, [navigate, reloadAll]);
+
+  // Access to one computer ended. Only home's ends the app's access.
+  const revoked = useCallback((computer: Computer, reason: string | undefined) => {
+    if (computer.home) {
+      toSetup(reason ?? 'Access to this computer was revoked.');
+      return;
+    }
+    navigate({ name: 'sessions', message: pairAgain(computer.label) });
+    void reloadAll(computer.origin);
+  }, [navigate, reloadAll, toSetup]);
 
   const logout = useCallback(async () => {
     try {
@@ -360,6 +492,10 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
     window.history.replaceState(null, '', '/');
     toSetup('You logged out. This phone no longer has access.');
   }, [toSetup]);
+
+  const homeEntry = all.entries.find((entry) => entry.computer.home);
+  const liveComputer = view.name === 'live' ? view.session.computer : undefined;
+  const liveStatus = liveComputer === undefined ? undefined : all.entries.find((entry) => entry.computer.origin === liveComputer.origin)?.status;
 
   return (
     <div className="app">
@@ -382,16 +518,30 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           }}
         />
       )}
-      {view.name === 'sessions' && settings !== undefined && (
+      {view.name === 'peer-add' && <PeerAddPage link={peerLink} />}
+      {view.name === 'add-computer' && (
+        <AddComputerPage
+          link={add}
+          deviceLabel={settings?.device.label}
+          onDone={() => {
+            reloadComputers();
+            navigate({ name: 'sessions' });
+          }}
+          onSettings={() => navigate({ name: 'settings' })}
+        />
+      )}
+      {view.name === 'sessions' && (
         <Sessions
-          settings={settings}
-          list={list}
+          entries={all.entries}
+          sessions={sessions}
           {...(view.message === undefined ? {} : { message: view.message })}
+          offerPush={homeEntry?.status.kind === 'ok'}
           onOpen={openSession}
           onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}
           onWall={() => navigate({ name: 'wall' })}
           onSettings={() => navigate({ name: 'settings' })}
-          onRefreshSettings={refreshSettings}
+          onReload={() => all.reload()}
+          onRetry={all.retry}
           onFailure={handleFailure}
           {...(update.available ? { onUpdate: update.reload } : {})}
         />
@@ -400,7 +550,8 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
         <ChunkErrorBoundary>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening wall…</p></main>}>
             <Wall
-              sessions={list.sessions}
+              sessions={answered ? sessions : undefined}
+              multi={computers.length > 1}
               onOpen={openSession}
               onNew={() => navigate({ name: 'new', back: { name: 'wall' } })}
               onList={toSessions}
@@ -408,42 +559,44 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           </Suspense>
         </ChunkErrorBoundary>
       )}
-      {view.name === 'new' && settings !== undefined && (
+      {view.name === 'new' && (
         <NewSession
-          settings={settings}
+          entries={all.entries}
+          {...(view.back?.name === 'live' ? { initial: view.back.session.computer } : {})}
           onCancel={() => navigate(view.back ?? { name: 'sessions' })}
           onStarted={(session, command) => {
-            void list.reload();
+            void all.reload(session.computer.origin);
             navigate(command === undefined
               ? { name: 'live', session }
               : { name: 'live', session, runFirst: { command, settled: false } });
           }}
-          onRefreshSettings={refreshSettings}
+          onReload={(origin) => all.reload(origin)}
           onFailure={handleFailure}
         />
       )}
       {view.name === 'live' && (
-        <ChunkErrorBoundary key={`${view.session.id}/${view.session.generation}`}>
+        <ChunkErrorBoundary key={`${view.session.computer.host}/${view.session.id}/${view.session.generation}`}>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening terminal…</p></main>}>
             <Live
               session={view.session}
-              sessions={list.sessions}
-              settings={settings}
+              sessions={answered ? tabs : undefined}
+              settings={liveStatus?.kind === 'ok' ? liveStatus.settings : view.session.computer.home ? settings : undefined}
+              multi={computers.length > 1}
               fontSize={fontSize}
               {...(view.runFirst === undefined ? {} : { runFirst: view.runFirst })}
               {...(view.compose === true ? { openComposer: true } : {})}
-              {...(previewAt === undefined ? {} : { onPreview: (port: number) => {
-                void list.reload();
+              {...(previewAt === undefined || !view.session.computer.home ? {} : { onPreview: (port: number) => {
+                void all.reload(view.session.computer.origin);
                 navigate({ name: 'preview', session: view.session, port });
               } })}
               onOpen={openSession}
               onNew={() => navigate({ name: 'new', back: { name: 'live', session: view.session } })}
               onSessions={toSessions}
               onSettings={() => navigate({ name: 'settings' })}
-              onChanged={list.reload}
+              onChanged={() => all.reload(view.session.computer.origin)}
               onStartNew={(runFirst) => { void startNew(view.session, runFirst); }}
               onStartWorktree={(worktree, runFirst) => startWorktree(view.session, worktree, runFirst)}
-              onRevoked={(reason) => toSetup(reason ?? 'Access to this computer was revoked.')}
+              onRevoked={(reason) => revoked(view.session.computer, reason)}
             />
           </Suspense>
         </ChunkErrorBoundary>
@@ -453,7 +606,7 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening preview…</p></main>}>
             <Preview
               session={view.session}
-              sessions={list.sessions}
+              sessions={tabs.filter((item) => item.computer.home)}
               origin={previewAt}
               port={view.port}
               onBack={() => navigate({ name: 'live', session: view.session })}
@@ -462,15 +615,18 @@ export function App({ grant }: { readonly grant: GrantHolder }) {
           </Suspense>
         </ChunkErrorBoundary>
       )}
-      {view.name === 'settings' && settings !== undefined && (
+      {view.name === 'settings' && (
         <Settings
           settings={settings}
+          entries={all.entries}
           fontSize={fontSize}
           onFontSize={setFontSize}
           onBack={toSessions}
-          onRenamed={(device) => setSettings({ ...settings, device })}
+          onRenamed={(device) => { if (settings !== undefined) setSettings({ ...settings, device }); }}
           onFailure={handleFailure}
           onLogout={logout}
+          onRetry={all.retry}
+          onComputersChanged={reloadComputers}
         />
       )}
     </div>
