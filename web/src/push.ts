@@ -126,3 +126,38 @@ export async function disablePush(): Promise<void> {
   }
   await subscription.unsubscribe();
 }
+
+/** The app's own worker: /sw.js on this origin with scope /. Nothing else is allowed. */
+function ownWorker(registration: ServiceWorkerRegistration, origin: string): boolean {
+  try {
+    const script = (registration.active ?? registration.waiting ?? registration.installing)?.scriptURL;
+    const scope = new URL(registration.scope);
+    return script !== undefined && scope.origin === origin && scope.pathname === '/' && new URL(script).href === `${origin}/sw.js`;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Unregisters every service worker that is not the app's own, for example
+ * one a compromised home left behind with its own push key. Run it on every
+ * load. Never rejects; returns how many it removed.
+ */
+export async function removeStrayWorkers(container: ServiceWorkerContainer | undefined = globalThis.navigator?.serviceWorker): Promise<number> {
+  let removed = 0;
+  try {
+    if (container === undefined) return 0;
+    const { origin } = globalThis.location;
+    for (const registration of await container.getRegistrations()) {
+      if (ownWorker(registration, origin)) continue;
+      try {
+        if (await registration.unregister()) removed += 1;
+      } catch {
+        // Try the rest; the next load tries this one again.
+      }
+    }
+  } catch {
+    // No service worker support here, or the browser refused the list.
+  }
+  return removed;
+}

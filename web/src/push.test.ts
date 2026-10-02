@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   disablePush, dismissPushCard, enablePush, fromBase64Url, PUSH_BLOCKED, PUSH_CARD_KEY, pushEnabled, pushSupport,
-  shouldOfferPush, toBase64Url,
+  removeStrayWorkers, shouldOfferPush, toBase64Url,
 } from './push';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
@@ -162,5 +162,47 @@ describe('shouldOfferPush', () => {
 
     browser({ agent: IPHONE });
     await expect(shouldOfferPush()).resolves.toBe(false);
+  });
+});
+
+describe('removeStrayWorkers', () => {
+  const ORIGIN = 'https://host.example';
+  const registration = (scope: string, script: string | null, state: 'active' | 'waiting' | 'installing' = 'active') => ({
+    scope,
+    active: null,
+    waiting: null,
+    installing: null,
+    ...(script === null ? {} : { [state]: { scriptURL: script } }),
+    unregister: vi.fn(async () => true),
+  });
+  const container = (registrations: unknown[]) => ({ getRegistrations: vi.fn(async () => registrations) }) as unknown as ServiceWorkerContainer;
+
+  it('keeps only the app\'s own /sw.js at scope /, and removes every other worker', async () => {
+    vi.stubGlobal('location', { origin: ORIGIN });
+    const own = registration(`${ORIGIN}/`, `${ORIGIN}/sw.js`);
+    const ownWaiting = registration(`${ORIGIN}/`, `${ORIGIN}/sw.js`, 'waiting');
+    const strays = [
+      registration(`${ORIGIN}/`, `${ORIGIN}/evil.js`),
+      registration(`${ORIGIN}/peer/`, `${ORIGIN}/sw.js`),
+      registration(`${ORIGIN}/`, 'https://evil.example/sw.js', 'installing'),
+      registration(`${ORIGIN}/`, `${ORIGIN}/sw.js?v=2`),
+      registration(`${ORIGIN}/`, null),
+    ];
+    await expect(removeStrayWorkers(container([own, ownWaiting, ...strays]))).resolves.toBe(strays.length);
+    expect(own.unregister).not.toHaveBeenCalled();
+    expect(ownWaiting.unregister).not.toHaveBeenCalled();
+    for (const stray of strays) expect(stray.unregister).toHaveBeenCalledOnce();
+  });
+
+  it('never rejects: no support, a failed list, or a failed unregister', async () => {
+    vi.stubGlobal('location', { origin: ORIGIN });
+    await expect(removeStrayWorkers(undefined)).resolves.toBe(0);
+    const broken = { getRegistrations: vi.fn(async () => { throw new Error('denied'); }) } as unknown as ServiceWorkerContainer;
+    await expect(removeStrayWorkers(broken)).resolves.toBe(0);
+    const stuck = { ...registration(`${ORIGIN}/x/`, `${ORIGIN}/sw.js`), unregister: vi.fn(async () => { throw new Error('busy'); }) };
+    const stray = registration(`${ORIGIN}/`, `${ORIGIN}/other.js`);
+    await expect(removeStrayWorkers(container([stuck, stray]))).resolves.toBe(1);
+    vi.stubGlobal('navigator', {});
+    await expect(removeStrayWorkers()).resolves.toBe(0);
   });
 });
