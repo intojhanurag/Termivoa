@@ -126,12 +126,12 @@ Dev paths must never equal, contain or sit inside production paths
 | `internal/gatewayapi` | Interface between gateway and broker (the gateway transports, the broker authorizes) |
 | `internal/gatewayclient` | Gateway's IPC client of the broker (RPC and live streams) |
 | `internal/gitchanges` | Bounded git: read changes, commit, push, worktree add/remove; never a shell, never force |
-| `internal/host` | Process bootstrap for broker and gateway, paths, gateway control endpoint |
+| `internal/host` | Process bootstrap for broker and gateway, gateway control endpoint |
 | `internal/ipc` | Length-prefixed local IPC, handshake, current-user peer checks, Unix socket and Windows named pipe |
 | `internal/lifecycle` | LaunchAgent plist, systemd unit and Task XML generation; install/uninstall plans; doctor checks (Tailscale Serve) |
 | `internal/liveclient` | Desktop observer/controller over broker IPC |
 | `internal/localclient` | Bounded IPC clients for `cli` commands (management, admin, gateway control) |
-| `internal/platform` | Data, runtime and log paths per OS and profile; WSL detection |
+| `internal/platform` | Data, runtime and log paths per OS and profile; WSL detection; safe open of a regular file under a root (`OpenRegular`) |
 | `internal/projectfiles` | Read-only Files view through `os.Root`; `.git` hidden |
 | `internal/projecttasks` | Lists project commands (package.json, Makefile, Cargo, Go); never runs them |
 | `internal/protocol` | Generated types (`generated.go`) plus hand-written validation and bounds |
@@ -149,6 +149,7 @@ Dev paths must never equal, contain or sit inside production paths
 | `web/src/pairing` | Pairing and add-computer flows |
 | `web/src/generated` | Generated protocol TypeScript types |
 | `web/src/sw.js` | Service worker: precache, network-first pages, push display |
+| `web/src/storage.ts` | The one safe `localStorage`/`sessionStorage` accessor (private browsing may refuse storage) |
 | `third_party` | Patched copies of `ansi`, `vt`, `xpty`, `ultraviolet` ([dependency-patches.md](dependency-patches.md)) |
 | `tests` | Integration, soak, agent replay and PTY fixtures |
 | `site/` | Public docs site (Astro Starlight) and landing page in `site/public/`, deployed to Vercel |
