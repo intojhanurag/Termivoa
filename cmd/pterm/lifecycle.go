@@ -31,6 +31,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
 const devListenAddress = "127.0.0.1:8788"
@@ -85,10 +86,7 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 			return lifecycleEnv{}, err
 		}
 	}
-	tailscale, _ := exec.LookPath("tailscale")
-	if tailscale == "" {
-		tailscale = installedTailscale(runtime.GOOS, os.Getenv)
-	}
+	tailscale := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
 	env := lifecycleEnv{
 		host: target, paths: paths, runner: lifecycle.ExecRunner{},
 		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale,
@@ -104,30 +102,6 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 		env.wsl = platform.IsWSL()
 	}
 	return env, nil
-}
-
-// installedTailscale is the Tailscale CLI its installer puts off PATH, or "".
-func installedTailscale(goos string, getenv func(string) string) string {
-	var path string
-	switch goos {
-	case "darwin":
-		path = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-	case "windows":
-		if programFiles := getenv("ProgramFiles"); filepath.IsAbs(programFiles) {
-			path = filepath.Join(programFiles, "Tailscale", "tailscale.exe")
-		}
-	case "linux":
-		// Distribution packages install here; sbin is often not on a user's PATH.
-		for _, candidate := range []string{"/usr/bin/tailscale", "/usr/sbin/tailscale"} {
-			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-				return candidate
-			}
-		}
-	}
-	if info, err := os.Stat(path); path == "" || err != nil || info.IsDir() {
-		return ""
-	}
-	return path
 }
 
 type hostReport struct {
@@ -310,7 +284,7 @@ type tailscaleReport struct {
 	statusErr     error
 	serveErr      error
 	serve         lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
-	tailnet       *tailnetStatus        // nil when the status could not be read
+	tailnet       *tailnet.Status       // nil when the status could not be read
 	otherHandlers []string              // other Serve handlers on this computer's own origin
 }
 
@@ -360,8 +334,8 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		return report, 1
 	}
 	report.status = status
-	if tailnet, err := parseTailnetStatus(data); err == nil {
-		report.tailnet = &tailnet
+	if parsed, err := tailnet.ParseStatus(data); err == nil {
+		report.tailnet = parsed
 	}
 	fmt.Fprintf(output, "  tailscale: %s, host %s\n", status.BackendState, status.DNSName)
 	if status.BackendState != "Running" {

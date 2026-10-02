@@ -18,6 +18,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
 func TestLifecycleModesMatchInternalModes(t *testing.T) {
@@ -318,36 +319,6 @@ func TestUpRequiresExplicitDevelopmentProfile(t *testing.T) {
 	}
 }
 
-func TestInstalledTailscaleUsesAbsoluteProgramFiles(t *testing.T) {
-	programFiles := t.TempDir()
-	cli := filepath.Join(programFiles, "Tailscale", "tailscale.exe")
-	env := func(value string) func(string) string {
-		return func(name string) string {
-			if name == "ProgramFiles" {
-				return value
-			}
-			return ""
-		}
-	}
-	if got := installedTailscale("windows", env(programFiles)); got != "" {
-		t.Fatalf("missing CLI found at %q", got)
-	}
-	if err := os.MkdirAll(filepath.Dir(cli), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cli, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := installedTailscale("windows", env(programFiles)); got != cli {
-		t.Fatalf("installed CLI = %q, want %q", got, cli)
-	}
-	for _, value := range []string{"", "relative"} {
-		if got := installedTailscale("windows", env(value)); got != "" {
-			t.Errorf("ProgramFiles %q gave %q", value, got)
-		}
-	}
-}
-
 // TestInspectTailscaleReportsPreviewFindingsSeparately proves the dev-server
 // preview (HTTPS 8443) lines in `pterm doctor` output are independent of the
 // Termivoa's own HTTPS 443 status, and that a preview conflict never
@@ -441,13 +412,9 @@ const tailnetStatusJSON = `{"BackendState":"Running",
   "CurrentTailnet":{"MagicDNSSuffix":"tailx.ts.net"}}`
 
 func TestTailnetFindingsReportBindingMismatches(t *testing.T) {
-	status, err := parseTailnetStatus([]byte(tailnetStatusJSON))
+	status, err := tailnet.ParseStatus([]byte(tailnetStatusJSON))
 	if err != nil {
 		t.Fatal(err)
-	}
-	if status.Self.ID != "nVps" || len(status.Peer) != 4 || status.User["1"].LoginName != "ada@example.com" ||
-		status.CurrentTailnet.MagicDNSSuffix != "tailx.ts.net" || status.Peer["nodekey:c"].Tags[0] != "tag:server" {
-		t.Fatalf("parsed %+v", status)
 	}
 	device := func(origin, node string, revoked bool) protocol.AdminRPCDevice {
 		return protocol.AdminRPCDevice{AppOrigin: &origin, AppNode: &protocol.TailnetNode{ID: node, Tags: []string{}}, Revoked: revoked}
@@ -519,7 +486,7 @@ func TestInspectTailscaleWarnsAboutOtherHandlersOnce(t *testing.T) {
 	want := "  ! tailscale serve: other handlers share this computer's origin (h.ts.net): /admin. As the home computer, " +
 		"any of them would control every computer paired through it; remove them before using this computer as home.\n"
 	if problems != 1 || !strings.Contains(output.String(), want) || report.tailnet == nil ||
-		report.tailnet.CurrentTailnet.MagicDNSSuffix != "ts.net" || strings.Join(report.otherHandlers, ",") != "/admin" {
+		report.tailnet.Suffix != "ts.net" || strings.Join(report.otherHandlers, ",") != "/admin" {
 		t.Fatalf("problems=%d report=%+v output:\n%s", problems, report, output.String())
 	}
 	var setup bytes.Buffer

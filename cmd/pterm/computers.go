@@ -14,58 +14,16 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
-// tailnetStatus is the subset of `tailscale status --json` that the doctor's
-// multi-computer checks read: this computer, its peers, their owners and the
-// tailnet's MagicDNS suffix.
-// ponytail: replace with internal/tailnet at integration
-type tailnetStatus struct {
-	Self           tailnetPeer
-	Peer           map[string]tailnetPeer
-	User           map[string]struct{ LoginName string } // key: decimal UserID
-	CurrentTailnet *struct{ MagicDNSSuffix string }
-}
-
-type tailnetPeer struct {
-	ID      string
-	DNSName string
-	UserID  int64
-	Tags    []string
-}
-
-func parseTailnetStatus(data []byte) (tailnetStatus, error) {
-	var status tailnetStatus
-	if err := json.Unmarshal(data, &status); err != nil {
-		return tailnetStatus{}, fmt.Errorf("parse tailscale status: %w", err)
-	}
-	return status, nil
-}
-
 func dnsHost(name string) string { return strings.ToLower(strings.TrimSuffix(name, ".")) }
-
-// owner names a tailnet user for doctor output, escaped like other text that
-// does not come from this program.
-func (status tailnetStatus) owner(userID int64) string {
-	if user, ok := status.User[strconv.FormatInt(userID, 10)]; ok && user.LoginName != "" {
-		return strconv.QuoteToGraphic(user.LoginName)
-	}
-	return "user " + strconv.FormatInt(userID, 10)
-}
 
 // tailnetFindings checks each unrevoked device's pinned app node against the
 // current tailnet: the app host must be in this tailnet, its pinned node must
 // still exist and still own that name, and, when neither node is tagged, it
 // must have this computer's owner. Each origin and node pair is reported once.
-func tailnetFindings(status tailnetStatus, devices []protocol.AdminRPCDevice) []string {
-	suffix := ""
-	if status.CurrentTailnet != nil {
-		suffix = dnsHost(status.CurrentTailnet.MagicDNSSuffix)
-	}
-	byID, byName := map[string]tailnetPeer{}, map[string]tailnetPeer{}
-	for _, peer := range status.Peer {
-		byID[peer.ID], byName[dnsHost(peer.DNSName)] = peer, peer
-	}
+func tailnetFindings(status *tailnet.Status, devices []protocol.AdminRPCDevice) []string {
 	checked := map[string]bool{}
 	var findings []string
 	for _, device := range devices {
@@ -78,18 +36,20 @@ func tailnetFindings(status tailnetStatus, devices []protocol.AdminRPCDevice) []
 		}
 		checked[origin+" "+pinned] = true
 		host := strings.TrimPrefix(origin, "https://")
-		peer, found := byID[pinned]
-		named, hasName := byName[host]
+		peer, found := status.Peer(host)
 		switch {
-		case suffix == "" || !strings.HasSuffix(host, "."+suffix):
+		case status.Suffix == "" || !strings.HasSuffix(host, "."+status.Suffix):
 			findings = append(findings, origin+": different tailnet; not supported")
-		case hasName && named.ID != pinned:
-			findings = append(findings, origin+": node ID changed (reused name?)")
 		case !found:
 			findings = append(findings, fmt.Sprintf("%s: pinned node %s is gone; phones bound to it stop working", origin, pinned))
-		case len(peer.Tags) == 0 && len(status.Self.Tags) == 0 && peer.UserID != status.Self.UserID:
-			findings = append(findings, fmt.Sprintf("%s: owner mismatch (%s; this computer: %s)",
-				origin, status.owner(peer.UserID), status.owner(status.Self.UserID)))
+		default:
+			switch status.Trust(origin, pinned) {
+			case tailnet.Changed:
+				findings = append(findings, origin+": node ID changed (reused name?)")
+			case tailnet.Untrusted:
+				findings = append(findings, fmt.Sprintf("%s: owner mismatch (%s; this computer: %s)",
+					origin, strconv.QuoteToGraphic(peer.Owner), strconv.QuoteToGraphic(status.Self.Owner)))
+			}
 		}
 	}
 	return findings
@@ -187,7 +147,7 @@ func inspectMultiComputer(ctx context.Context, env lifecycleEnv, report hostRepo
 		}
 		return 0
 	}
-	for _, finding := range tailnetFindings(*report.tailscale.tailnet, devices) {
+	for _, finding := range tailnetFindings(report.tailscale.tailnet, devices) {
 		fmt.Fprintf(output, "  ! multi-computer: %s\n", finding)
 		problems++
 	}
