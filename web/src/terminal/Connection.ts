@@ -17,6 +17,7 @@ import type {
   ScreenResyncPayload,
   State as SessionLifecycle,
   TasksListedPayload,
+  ThumbnailMode,
   WorktreeRemovedPayload,
 } from '../generated/protocol';
 import { CLIENT_BUILD } from '../api/http';
@@ -30,6 +31,7 @@ import {
   type TerminalRow,
 } from './FrameRenderer';
 import { DeliveryUncertainError, InputSender } from './InputSender';
+import type { ConnectGate } from './scheduler';
 import { SnapshotAssembler } from './SnapshotAssembler';
 
 export const DELIVERY_UNCERTAIN = 'Delivery uncertain—check the terminal before sending again.';
@@ -225,12 +227,24 @@ export interface ScreenDisplay {
 }
 
 export interface ConnectionOptions {
+  /** The computer's live socket, `websocketUrl(origin)`; any computer's origin works. */
   readonly url: string;
   readonly sessionId: string;
   readonly generation: string;
   readonly display: ScreenDisplay;
   readonly createSocket?: (url: string) => WebSocket;
   readonly requestFrame?: (callback: () => void) => void;
+  /**
+   * Attach as a read-only thumbnail viewer whose screen frames the broker
+   * sends at most this often (Wall tiles). Pass it only when
+   * `client(origin).supports('thumbnail')`; an older computer would refuse
+   * the attach. Take control and input never work in this mode.
+   */
+  readonly thumbnail?: ThumbnailMode;
+  /** Decoded size of every host message, for the scheduler's bytes budget (TileHandle.bytes). */
+  readonly onMessageBytes?: (bytes: number) => void;
+  /** Admits each socket attempt (scheduler.connectGate); without it, attempts start at once as before. */
+  readonly gate?: ConnectGate;
 }
 
 interface PendingSnapshot {
@@ -334,6 +348,10 @@ export class Connection {
   private hiddenAt: number | undefined;
   private probeTimer: ReturnType<typeof setTimeout> | undefined;
   private attachTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Cancels an attempt still waiting at the gate. */
+  private gateCancel: (() => void) | undefined;
+  /** An attempt the gate admitted that has not gone live or failed yet. */
+  private gateHeld = false;
 
   private readonly createSocket: (url: string) => WebSocket;
   private readonly requestFrame: (callback: () => void) => void;
@@ -393,7 +411,7 @@ export class Connection {
   }
 
   takeControl(): void {
-    if (this.status.link !== 'live' || this.status.control !== 'observer') {
+    if (this.options.thumbnail !== undefined || this.status.link !== 'live' || this.status.control !== 'observer') {
       return;
     }
     this.update({ control: 'acquiring', notice: undefined });
@@ -783,6 +801,34 @@ export class Connection {
 
   private open(): void {
     this.clearReconnect();
+    this.cancelGate();
+    const gate = this.options.gate;
+    if (gate === undefined) {
+      this.connect();
+      return;
+    }
+    this.update({ link: this.reconnectAttempt === 0 ? 'connecting' : 'reconnecting' });
+    this.gateCancel = gate.wait(() => {
+      this.gateCancel = undefined;
+      this.gateHeld = true;
+      this.connect();
+    });
+  }
+
+  private cancelGate(): void {
+    this.gateCancel?.();
+    this.gateCancel = undefined;
+  }
+
+  /** Tells the gate how the admitted attempt ended, once. */
+  private settleGate(result: 'live' | 'failed' | 'cancelled'): void {
+    if (this.gateHeld) {
+      this.gateHeld = false;
+      this.options.gate?.done(result);
+    }
+  }
+
+  private connect(): void {
     const epoch = ++this.socketEpoch;
     clearTimeout(this.attachTimer);
     this.attachTimer = setTimeout(() => {
@@ -818,6 +864,7 @@ export class Connection {
     socket.onmessage = (event: MessageEvent) => {
       if (epoch === this.socketEpoch) {
         this.clearProbe();
+        this.options.onMessageBytes?.(typeof event.data === 'string' ? event.data.length : 0);
         this.handleMessage(event.data);
       }
     };
@@ -843,7 +890,8 @@ export class Connection {
         }
         this.brokerGeneration = message.payload.brokerGeneration;
         this.update({ link: 'attaching', hostBuild: message.payload.hostBuild });
-        this.sendSession('session.attach', {});
+        const { thumbnail } = this.options;
+        this.sendSession('session.attach', thumbnail === undefined ? {} : { thumbnail });
         this.startHeartbeat();
         return;
       }
@@ -1181,6 +1229,7 @@ export class Connection {
         this.requestedSize = undefined;
         this.sendSession('snapshot.applied', { snapshotId, revision: snapshot.revision });
         this.reconnectAttempt = 0;
+        this.settleGate('live');
         this.update({
           ...(this.status.link === 'attaching' ? { link: 'live' as const } : {}),
           buffer: snapshot.screen.buffer,
@@ -1593,6 +1642,7 @@ export class Connection {
     }
     this.socket = undefined;
     this.socketEpoch++;
+    this.settleGate('failed');
     this.clearProbe();
     clearTimeout(this.attachTimer);
     this.stopHeartbeat();
@@ -1642,6 +1692,8 @@ export class Connection {
     this.stopped = true;
     this.listen(false);
     this.clearReconnect();
+    this.cancelGate();
+    this.settleGate('cancelled');
     this.clearProbe();
     clearTimeout(this.attachTimer);
     this.stopHeartbeat();
