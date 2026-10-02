@@ -30,26 +30,11 @@ type Admin interface {
 	ShellProfiles(context.Context) ([]protocol.AdminRPCShellProfile, error)
 	DetectShellProfiles(context.Context) ([]protocol.AdminRPCShellProfile, error)
 	PairingOrigin(context.Context, *string) (*string, error)
-}
-
-// ComputerAdmin is the multi-computer administration surface
-// (docs/multi-computer.md). localclient.AdminClient implements it once the
-// broker side lands; until then the commands below say this build cannot.
-type ComputerAdmin interface {
-	CreateBoundPairingGrant(ctx context.Context, request protocol.AdminRPCPairGrantPayload) (protocol.AdminRPCPairGrantResultPayload, error)
+	// Multi-computer administration (docs/multi-computer.md).
+	CreateBoundPairingGrant(context.Context, protocol.AdminRPCPairGrantPayload) (protocol.AdminRPCPairGrantResultPayload, error)
 	RevokeDevicesVia(ctx context.Context, appOrigin string) (protocol.AdminRPCRevokeViaResultPayload, error)
-	Computers(ctx context.Context) ([]protocol.AdminRPCComputer, error)
+	Computers(context.Context) ([]protocol.AdminRPCComputer, error)
 	RemoveComputer(ctx context.Context, origin string) (protocol.AdminRPCComputerRemoveResultPayload, error)
-}
-
-// computerAdmin returns admin's multi-computer surface, or an error that says
-// the broker is too old for it.
-func computerAdmin(admin Admin) (ComputerAdmin, error) {
-	computers, ok := admin.(ComputerAdmin)
-	if !ok {
-		return nil, errors.New("this broker does not support multi-computer yet; update Termivoa")
-	}
-	return computers, nil
 }
 
 const setOriginHint = "run `pterm config origin https://<your-private-host>`"
@@ -85,7 +70,6 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 			return fmt.Errorf("invalid --origin: %w", err)
 		}
 	}
-	var computers ComputerAdmin
 	if options.AllowTagged && options.Via == "" {
 		return errors.New("--allow-tagged needs --via")
 	}
@@ -95,10 +79,6 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 		}
 		if options.Origin != "" && protocol.ValidateComputerOrigin(options.Origin) != nil {
 			return errors.New("the add-computer link needs this computer's tailnet https address as --origin")
-		}
-		var err error
-		if computers, err = computerAdmin(admin); err != nil {
-			return err
 		}
 	}
 	// Pending pairings that exist before this grant belong to someone else.
@@ -112,8 +92,8 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 			seen[item.ID] = true
 		}
 	}
-	if computers != nil {
-		return pairVia(ctx, admin, computers, options, seen, output)
+	if options.Via != "" {
+		return pairVia(ctx, admin, options, seen, output)
 	}
 	grant, err := admin.CreatePairingGrant(ctx)
 	if err != nil {
@@ -173,15 +153,13 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 // is no QR code: a phone camera opens links in the browser, whose cookies are
 // not the installed app's. The link needs this computer's own https origin,
 // never the loopback fallback, because the phone's app calls it directly.
-func pairVia(ctx context.Context, admin Admin, computers ComputerAdmin, options PairOptions,
-	seen map[string]bool, output io.Writer,
-) error {
+func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[string]bool, output io.Writer) error {
 	request := protocol.AdminRPCPairGrantPayload{Via: &options.Via}
 	if options.AllowTagged {
 		allow := true
 		request.AllowTagged = &allow
 	}
-	grant, err := computers.CreateBoundPairingGrant(ctx, request)
+	grant, err := admin.CreateBoundPairingGrant(ctx, request)
 	if err != nil {
 		return err
 	}
@@ -475,13 +453,9 @@ func Revoke(ctx context.Context, admin Admin, deviceID string, confirmer Confirm
 }
 
 // phoneComputers lists the other computers one phone uses through this home
-// computer. It is a hint only: an older broker or a failed read gives none.
+// computer. It is a hint only: a failed read gives none.
 func phoneComputers(ctx context.Context, admin Admin, deviceID string) []protocol.AdminRPCComputer {
-	computers, err := computerAdmin(admin)
-	if err != nil {
-		return nil
-	}
-	all, err := computers.Computers(ctx)
+	all, err := admin.Computers(ctx)
 	if err != nil {
 		return nil
 	}
@@ -499,10 +473,6 @@ func phoneComputers(ctx context.Context, admin Admin, deviceID string) []protoco
 func RevokeVia(ctx context.Context, admin Admin, appOrigin string, confirmer Confirmer, output io.Writer) error {
 	if err := protocol.ValidateComputerOrigin(appOrigin); err != nil {
 		return fmt.Errorf("invalid --via: %w", err)
-	}
-	computers, err := computerAdmin(admin)
-	if err != nil {
-		return err
 	}
 	devices, err := admin.Devices(ctx)
 	if err != nil {
@@ -529,7 +499,7 @@ func RevokeVia(ctx context.Context, admin Admin, appOrigin string, confirmer Con
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	result, err := computers.RevokeDevicesVia(ctx, appOrigin)
+	result, err := admin.RevokeDevicesVia(ctx, appOrigin)
 	if err != nil {
 		if localclient.IsDeliveryUncertain(err) {
 			return fmt.Errorf("revocation outcome is uncertain—run pterm devices and check the devices bound to %s before trying again: %w", appOrigin, err)
@@ -545,11 +515,7 @@ func RevokeVia(ctx context.Context, admin Admin, appOrigin string, confirmer Con
 
 // Computers lists, on the home computer, the other computers each phone uses.
 func Computers(ctx context.Context, admin Admin, output io.Writer) error {
-	computers, err := computerAdmin(admin)
-	if err != nil {
-		return err
-	}
-	list, err := computers.Computers(ctx)
+	list, err := admin.Computers(ctx)
 	if err != nil {
 		return err
 	}
@@ -569,11 +535,7 @@ func RemoveComputer(ctx context.Context, admin Admin, origin string, output io.W
 	if err := protocol.ValidateComputerOrigin(origin); err != nil {
 		return fmt.Errorf("invalid computer origin: %w", err)
 	}
-	computers, err := computerAdmin(admin)
-	if err != nil {
-		return err
-	}
-	result, err := computers.RemoveComputer(ctx, origin)
+	result, err := admin.RemoveComputer(ctx, origin)
 	if err != nil {
 		if localclient.IsDeliveryUncertain(err) {
 			return fmt.Errorf("outcome is uncertain—run pterm computers to check: %w", err)

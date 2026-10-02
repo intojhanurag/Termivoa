@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
@@ -40,7 +41,7 @@ type fakeAdmin struct {
 	renamed     []string
 	afterGrant  func(*fakeAdmin) // runs after a grant is created
 
-	// ComputerAdmin
+	// multi-computer
 	boundRequests []protocol.AdminRPCPairGrantPayload
 	revokeVia     protocol.AdminRPCRevokeViaResultPayload
 	revokeViaErr  error
@@ -72,9 +73,12 @@ func (admin *fakeAdmin) RemoveComputer(_ context.Context, origin string) (protoc
 	return admin.removeResult, nil
 }
 
-// adminOnly hides the ComputerAdmin methods, like a broker without
-// multi-computer support.
-type adminOnly struct{ Admin }
+// The multi-computer methods are part of Admin itself, not behind a type
+// assertion with a fallback that never runs; the real client implements them.
+func TestAdminIncludesMultiComputerMethods(t *testing.T) {
+	var _ Admin = (*localclient.AdminClient)(nil)
+	_, _, _, _ = Admin.CreateBoundPairingGrant, Admin.RevokeDevicesVia, Admin.Computers, Admin.RemoveComputer
+}
 
 func (admin *fakeAdmin) CreatePairingGrant(context.Context) (protocol.AdminRPCPairGrantResultPayload, error) {
 	admin.grantCalls++
@@ -536,7 +540,6 @@ func TestPairViaRefusesWhatItCannotBind(t *testing.T) {
 		"no app origin":        {admin: &fakeAdmin{grant: testGrant(nil)}, options: PairOptions{Via: "mac"}, grants: 1},
 		"invalid via":          {admin: &fakeAdmin{}, options: PairOptions{Via: "Mac"}},
 		"tagged without via":   {admin: &fakeAdmin{}, options: PairOptions{AllowTagged: true}},
-		"unsupported broker":   {admin: adminOnly{&fakeAdmin{}}, options: PairOptions{Via: "mac"}},
 	} {
 		var output bytes.Buffer
 		err := Pair(context.Background(), test.admin, test.options, &output)
@@ -545,9 +548,6 @@ func TestPairViaRefusesWhatItCannotBind(t *testing.T) {
 		}
 		if fake, ok := test.admin.(*fakeAdmin); ok && (len(fake.boundRequests) != test.grants || fake.grantCalls != 0) {
 			t.Fatalf("%s: %d bound grants, %d plain grants", name, len(fake.boundRequests), fake.grantCalls)
-		}
-		if name == "unsupported broker" && !strings.Contains(err.Error(), "does not support multi-computer yet; update Termivoa") {
-			t.Fatalf("unsupported error = %v", err)
 		}
 		if strings.HasPrefix(name, "loopback") && !strings.Contains(err.Error(), "tailnet https address") {
 			t.Fatalf("%s error = %v", name, err)
@@ -644,21 +644,16 @@ func TestRevokeViaCountsConfirmsAndChecksTheAcknowledgement(t *testing.T) {
 		output  string
 		err     string
 	}{
-		"no device":   {devices: devices[2:], prompts: 0, output: "No device uses the app at https://mac.tailx.ts.net; no request was sent.\n"},
-		"cancelled":   {devices: devices, prompts: 1, output: "Revocation cancelled.\n"},
-		"revoked":     {devices: devices, answer: true, ack: ack, prompts: 1, sends: 1, output: "Revoked 2 device(s) bound to https://mac.tailx.ts.net; closed 3 live connection(s).\n"},
-		"wrong ack":   {devices: devices, answer: true, ack: protocol.AdminRPCRevokeViaResultPayload{AppOrigin: other}, prompts: 1, sends: 1, err: "wrong app origin"},
-		"uncertain":   {devices: devices, answer: true, ackErr: uncertainTestError{}, prompts: 1, sends: 1, err: "uncertain—run pterm devices"},
-		"unsupported": {devices: devices, answer: true, err: "update Termivoa"},
+		"no device": {devices: devices[2:], prompts: 0, output: "No device uses the app at https://mac.tailx.ts.net; no request was sent.\n"},
+		"cancelled": {devices: devices, prompts: 1, output: "Revocation cancelled.\n"},
+		"revoked":   {devices: devices, answer: true, ack: ack, prompts: 1, sends: 1, output: "Revoked 2 device(s) bound to https://mac.tailx.ts.net; closed 3 live connection(s).\n"},
+		"wrong ack": {devices: devices, answer: true, ack: protocol.AdminRPCRevokeViaResultPayload{AppOrigin: other}, prompts: 1, sends: 1, err: "wrong app origin"},
+		"uncertain": {devices: devices, answer: true, ackErr: uncertainTestError{}, prompts: 1, sends: 1, err: "uncertain—run pterm devices"},
 	} {
 		fake := &fakeAdmin{devices: test.devices, revokeVia: test.ack, revokeViaErr: test.ackErr}
-		var admin Admin = fake
-		if name == "unsupported" {
-			admin = adminOnly{fake}
-		}
 		confirmer := &fakeConfirmer{answer: test.answer}
 		var output bytes.Buffer
-		err := RevokeVia(context.Background(), admin, homeOrigin, confirmer, &output)
+		err := RevokeVia(context.Background(), fake, homeOrigin, confirmer, &output)
 		if (err == nil) != (test.err == "") || err != nil && !strings.Contains(err.Error(), test.err) ||
 			confirmer.calls != test.prompts || len(fake.revokedVia) != test.sends || output.String() != test.output ||
 			test.prompts > 0 && confirmer.prompt != prompt {
@@ -689,11 +684,6 @@ func TestRevokeListsThePhonesOtherComputers(t *testing.T) {
 	want := first + "This phone also used these computers. Run `pterm revoke` on each:\n  \"vps\\x1b[2J\" (https://vps.tailx.ts.net)\n"
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
-	}
-	fake.computers = []protocol.AdminRPCComputer{{DeviceID: adminDevice, Label: "vps", Origin: peerOrigin}}
-	output.Reset()
-	if err := Revoke(context.Background(), adminOnly{fake}, adminDevice, &fakeConfirmer{answer: true}, &output); err != nil || output.String() != first {
-		t.Fatalf("unsupported broker output = %q, %v", output.String(), err)
 	}
 }
 
@@ -728,15 +718,5 @@ func TestComputersListAndRemove(t *testing.T) {
 	}
 	if err := RemoveComputer(context.Background(), fake, "https://VPS.tailx.ts.net", &bytes.Buffer{}); err == nil || len(fake.removed) != 2 {
 		t.Fatalf("invalid origin: %v (%d sends)", err, len(fake.removed))
-	}
-	for _, run := range []func() error{
-		func() error { return Computers(context.Background(), adminOnly{fake}, &bytes.Buffer{}) },
-		func() error {
-			return RemoveComputer(context.Background(), adminOnly{fake}, peerOrigin, &bytes.Buffer{})
-		},
-	} {
-		if err := run(); err == nil || !strings.Contains(err.Error(), "does not support multi-computer yet") {
-			t.Fatalf("unsupported broker: %v", err)
-		}
 	}
 }
