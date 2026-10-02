@@ -17,19 +17,19 @@
    "id": "A2",
    "name": "Pair the browser with mac (home) as today",
    "result": "PASS",
-   "evidence": "code 077-575, 1137 ms"
+   "evidence": "code 168-558, 1138 ms"
   },
   {
    "id": "A3",
    "name": "Bound pairing mac app → vps over real CORS (API level, no screens)",
    "result": "PASS",
-   "evidence": "link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt \"Phone \"e2e phone\" shows code 606-527 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]\", poll 200, settings 200 after 4 ms, confirm 200; 2571 ms"
+   "evidence": "link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt \"Phone \"e2e phone\" shows code 803-195 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]\", poll 200, settings 200 after 2 ms, confirm 200; 2690 ms"
   },
   {
    "id": "A3-lag",
    "name": "The first settings read right after approval works (what the app does)",
    "result": "PASS",
-   "evidence": "first read: 200; 200 only 4 ms after the approved poll"
+   "evidence": "first read: 200; 200 only 2 ms after the approved poll"
   },
   {
    "id": "A4",

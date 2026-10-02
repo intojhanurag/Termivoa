@@ -2,9 +2,9 @@
 | --- | --- | --- | --- |
 | A1 | Preflight mac → vps before pairing is refused (Chrome) | PASS | fetch: TypeError: Failed to fetch / TypeError: Failed to fetch; OPTIONS /api/v1/settings origin=https://mac.tailx.ts.net sfs=same-site sfm=cors cookie=false → 403; OPTIONS /api/v1/pair/redeem origin=https://mac.tailx.ts.net sfs=same-site sfm=cors cookie=false → 403 |
 | A1b | Preflight mac → vps before pairing is refused (curl) | PASS | OPTIONS → 403, ACAO=none |
-| A2 | Pair the browser with mac (home) as today | PASS | code 077-575, 1137 ms |
-| A3 | Bound pairing mac app → vps over real CORS (API level, no screens) | PASS | link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt "Phone "e2e phone" shows code 606-527 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]", poll 200, settings 200 after 4 ms, confirm 200; 2571 ms |
-| A3-lag | The first settings read right after approval works (what the app does) | PASS | first read: 200; 200 only 4 ms after the approved poll |
+| A2 | Pair the browser with mac (home) as today | PASS | code 168-558, 1138 ms |
+| A3 | Bound pairing mac app → vps over real CORS (API level, no screens) | PASS | link https://vps.tailx.ts.net/add-computer#…; pending 200, redeem 200, approve prompt "Phone "e2e phone" shows code 803-195 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N]", poll 200, settings 200 after 2 ms, confirm 200; 2690 ms |
+| A3-lag | The first settings read right after approval works (what the app does) | PASS | first read: 200; 200 only 2 ms after the approved poll |
 | A4 | no-cors GET from an unbound same-site page (evil) is refused, no cookie refresh | PASS | page sees opaque; GET /api/v1/settings origin=- sfs=same-site sfm=no-cors cookie=true → 403 |
 | A4b | cors GET from an unbound same-site page (evil) is refused, no cookie refresh | PASS | page sees TypeError: Failed to fetch; GET /api/v1/settings origin=https://evil.tailx.ts.net sfs=same-site sfm=cors cookie=true → 403 |
 | A4c | no-cors GET from the bound app (mac) is refused too, no cookie refresh | PASS | GET /api/v1/settings origin=- sfs=same-site sfm=no-cors cookie=true → 403 |

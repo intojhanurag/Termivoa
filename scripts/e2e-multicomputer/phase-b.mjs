@@ -380,42 +380,46 @@ try {
   /** In-app navigation, as the app's own links do: no new page load. */
   const inApp = (path) => app.eval(`history.pushState(null, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`);
 
-  await step('B2b-back', 'Leave the add page with Back to type y in the terminal', async () => {
-    const { shown, tapped, terminalPath } = await terminalLinkToCode('b2b-back', 'mac-ssh0');
-    check('B2b-tap', 'Tapping the add-computer link in the terminal opens the confirm sheet', tapped,
-      tapped ? 'sheet opened' : 'the sheet opens on mouseup, then the click that follows the tap closes it again; continued by pasting the link');
-    await app.eval('history.back()');
-    await sleep(3000);
-    const where = await app.eval('location.pathname');
-    const bar = await banner();
-    await shot('b2b-back');
-    check('B2b-back', 'After Back from the waiting add page, the add keeps running (banner "Adding vps… approve on vps")',
-      bar.includes('Adding vps'), `Back went to ${where} (the add page was a separate page load); banner: ${bar || 'none'}; code was ${shown}; terminal ${terminalPath}`);
-  });
-
-  await step('B2b-same', 'In-terminal link, approved with y in that same app terminal', async () => {
-    const { shown, started, terminalPath } = await terminalLinkToCode('b2b', 'mac-ssh');
-    await inApp(terminalPath);
+  /**
+   * Adds vps from a link printed in a mac terminal and approves it with y in
+   * that same terminal. back leaves the waiting add page: the browser's Back,
+   * or the page's own "Back to terminal" button.
+   */
+  async function addFromTerminal(id, title, back) {
+    const { shown, started, tapped, terminalPath } = await terminalLinkToCode(id, title);
+    if (back === 'button') await click(app, 'Back to terminal');
+    else await app.eval('history.back()');
     await until(() => app.eval(`!!document.querySelector('.terminal-input')`), { what: 'back in the terminal', timeout: 15000 });
+    const path = await app.eval('location.pathname');
     await liveReady(false);
+    await until(async () => (await banner()).includes('Adding vps'), { what: 'banner "Adding vps…"', timeout: 5000 }).catch(() => undefined);
     const waiting = await banner();
     await until(async () => (await terminalText(app)).replace(/\n/g, '').includes(`shows code ${shown}`), { what: 'prompt with the code', timeout: 15000 });
-    await shot('b2b-same-app-banner');
+    await shot(`${id}-banner`);
     await typeLine(app, 'y');
     await until(async () => (await banner()).includes('vps is added'), { what: 'banner "vps is added"', timeout: 20000 }).catch(() => undefined);
     const done = await banner();
-    await shot('b2b-same-app-added');
-    time('add from the terminal, approved in the same app (link → "vps is added")', Date.now() - started);
+    await shot(`${id}-added`);
+    time(`add from a terminal link, ${back === 'button' ? '"Back to terminal"' : 'Back'}, y in the same app (tap → "vps is added")`, Date.now() - started);
     await inApp('/');
     await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.meta.startsWith('vps')), { what: 'vps rows', timeout: 20000 }).catch(() => undefined);
     const probs = await problems();
     const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps')).length;
-    check('B2b-same', 'Approved by typing y in the same app\'s terminal (in-app navigation): vps is added and usable',
-      waiting.includes('Adding vps') && done.includes('vps is added') && probs.length === 0 && vpsRows > 0,
-      `banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}`);
-    if (!done.includes('vps is added')) {
-      await confirmByApi().catch(() => undefined);
-    }
+    const pass = path === terminalPath && waiting.includes('Adding vps') && done.includes('vps is added') && probs.length === 0 && vpsRows > 0;
+    if (!done.includes('vps is added')) await confirmByApi().catch(() => undefined);
+    return { tapped, pass, evidence: `back to ${path} (terminal ${terminalPath}); banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}` };
+  }
+
+  await step('B2b-back', 'Tap the terminal link, leave with Back, approve with y in the same app', async () => {
+    const r = await addFromTerminal('b2b-back', 'term-back', 'history');
+    check('B2b-tap', 'Tapping the add-computer link in the terminal opens the confirm sheet', r.tapped,
+      r.tapped ? 'sheet opened from the tap' : 'the tap did not open the sheet; continued by pasting the link');
+    check('B2b-back', 'Back from the waiting add page returns to the terminal, the add keeps running, y adds vps', r.pass, r.evidence);
+  });
+
+  await step('B2b-same', 'Tap the terminal link, "Back to terminal", approve with y in the same app', async () => {
+    const r = await addFromTerminal('b2b', 'term-button', 'button');
+    check('B2b-same', '"Back to terminal" returns to the terminal, the add keeps running, y adds vps', r.pass, r.evidence);
   });
 
   // ---- B7: security ----

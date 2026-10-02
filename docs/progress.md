@@ -40,7 +40,7 @@ on their own date.
 
 ### Multi-computer end-to-end test (2026-10-02, branch `feat/mc-e2e`)
 
-Two isolated dev stacks reached as `https://mac.tailx.ts.net` and `https://vps.tailx.ts.net` through `scripts/e2e-multicomputer/` (loopback CONNECT proxy with in-process TLS, fake `tailscale` status, every harness `pterm` in a `sandbox-exec` profile that hides the real Tailscale, port 8787 and launchctl). On 88742e3: Phase A 31/31, Phase B (Chrome 154, 390×844, touch) 22/24, WebKit 26.5 4/4. Open: a tap on an add-computer link in the terminal is closed again by the click that follows it (B2b-tap), and Back from the waiting add page loses the add (B2b-back). Commands and evidence: `docs/evidence/multi-computer/results.md`.
+Two isolated dev stacks reached as `https://mac.tailx.ts.net` and `https://vps.tailx.ts.net` through `scripts/e2e-multicomputer/` (loopback CONNECT proxy with in-process TLS, fake `tailscale` status, every harness `pterm` in a `sandbox-exec` profile that hides the real Tailscale, port 8787 and launchctl). On 167eb63: Phase A 31/31, Phase B (Chrome 154, 390×844, touch) 24/24, WebKit 26.5 4/4. Commands, timings and evidence: `docs/evidence/multi-computer/results.md`.
 
 ### Multi-computer E2E fixes, web side (2026-10-02, branch `feat/mc-fix-web3`)
 
