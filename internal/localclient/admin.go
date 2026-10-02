@@ -58,6 +58,45 @@ func (client *AdminClient) CreatePairingGrant(ctx context.Context) (protocol.Adm
 		protocol.BrokerRPCEmptyPayload{}, false, nil)
 }
 
+// CreateBoundPairingGrant is CreatePairingGrant bound to one app origin
+// (pterm pair --via): the broker resolves via in its own tailscale status,
+// applies the owner rule and pins the node it reports in the result.
+func (client *AdminClient) CreateBoundPairingGrant(
+	ctx context.Context, request protocol.AdminRPCPairGrantPayload,
+) (protocol.AdminRPCPairGrantResultPayload, error) {
+	return adminCall[protocol.AdminRPCPairGrantResultPayload](ctx, client, protocol.AdminPairGrant, request, false, nil)
+}
+
+// RevokeDevicesVia revokes every device bound to appOrigin, with the same
+// durability and stream-closing rule as RevokeDevice.
+func (client *AdminClient) RevokeDevicesVia(ctx context.Context, appOrigin string) (protocol.AdminRPCRevokeViaResultPayload, error) {
+	return adminCall(ctx, client, protocol.AdminDeviceRevokeVia, protocol.AdminRPCRevokeViaPayload{AppOrigin: appOrigin}, true,
+		func(result protocol.AdminRPCRevokeViaResultPayload) error {
+			if result.AppOrigin != appOrigin {
+				return errors.New("admin revoke-via origin mismatch")
+			}
+			return nil
+		})
+}
+
+// Computers lists the confirmed computers of every device on this home computer.
+func (client *AdminClient) Computers(ctx context.Context) ([]protocol.AdminRPCComputer, error) {
+	result, err := adminCall[protocol.AdminRPCComputerListResultPayload](ctx, client, protocol.AdminComputersList,
+		protocol.BrokerRPCEmptyPayload{}, false, nil)
+	return result.Computers, err
+}
+
+// RemoveComputer removes origin from every device's computer list.
+func (client *AdminClient) RemoveComputer(ctx context.Context, origin string) (protocol.AdminRPCComputerRemoveResultPayload, error) {
+	return adminCall(ctx, client, protocol.AdminComputersRemove, protocol.AdminRPCComputerRemovePayload{Origin: origin}, true,
+		func(result protocol.AdminRPCComputerRemoveResultPayload) error {
+			if result.Origin != origin {
+				return errors.New("admin computer removal origin mismatch")
+			}
+			return nil
+		})
+}
+
 func (client *AdminClient) PendingPairings(ctx context.Context) ([]protocol.AdminRPCPendingPairing, error) {
 	result, err := adminCall[protocol.AdminRPCPairPendingResultPayload](ctx, client, protocol.AdminPairPending,
 		protocol.BrokerRPCEmptyPayload{}, false, nil)

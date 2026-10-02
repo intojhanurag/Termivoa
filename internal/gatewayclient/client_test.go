@@ -887,3 +887,85 @@ func TestUploadChunksOnADedicatedConnection(t *testing.T) {
 		t.Fatalf("refused upload = %v", err)
 	}
 }
+
+// The browser origin travels in the envelope of every request made with a
+// gatewayapi.WithForwardedOrigin context, and never on the origin probe.
+func TestMultiComputerMethodsForwardOrigin(t *testing.T) {
+	expires := "2026-10-27T00:00:00.5Z"
+	settings := protocol.HTTPSettingsResponse{
+		BrokerGeneration: testBroker, Device: protocol.HTTPDeviceSummary{ID: testDevice, Label: "Phone"},
+		HostBuild: "host-test", Projects: []protocol.HTTPNamedOption{}, ShellProfiles: []protocol.HTTPNamedOption{},
+		ProtocolRevision: protocol.ProtocolRevision, MinProtocolRevision: protocol.MinProtocolRevision,
+	}
+	peer := "https://vps.example.ts.net"
+	node := protocol.TailnetNode{ID: "nVps", Tags: []string{"tag:server"}}
+	var origins []string
+	client, _ := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
+		origin := "-"
+		if request.Origin != nil {
+			origin = *request.Origin
+		}
+		origins = append(origins, string(request.Type)+" "+origin)
+		switch request.Type {
+		case protocol.GatewayOrigin:
+			return reply(t, request.RequestID, protocol.GatewayOriginResult, protocol.GatewayRPCOriginResultPayload{
+				Origin: &testOrigin, BoundOrigins: []string{peer}, PairingOrigins: []string{peer}})
+		case protocol.GatewaySettings:
+			return reply(t, request.RequestID, protocol.GatewaySettingsResult, settings)
+		case protocol.GatewayPairPoll:
+			return reply(t, request.RequestID, protocol.GatewayPairPollResult, protocol.GatewayRPCPairPollResultPayload{
+				Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}})
+		case protocol.GatewayAuthCheck:
+			return reply(t, request.RequestID, protocol.GatewayAuthCheckResult, protocol.GatewayRPCPrincipalPayload{
+				DeviceID: testDevice, DeviceLabel: "Phone", CredentialID: testCredID, ExpiresAt: expires})
+		case protocol.GatewayComputersList:
+			return reply(t, request.RequestID, protocol.GatewayComputersListResult, protocol.GatewayRPCComputerListResultPayload{
+				Computers: []protocol.HTTPComputer{{Origin: peer, Label: "vps"}}, PendingOrigins: []string{}})
+		case protocol.GatewayComputersAdd:
+			return reply(t, request.RequestID, protocol.GatewayComputersAddResult, protocol.HTTPComputerAddResponse{
+				Computer: protocol.HTTPComputer{Origin: peer, Label: "vps"}, Node: node, State: protocol.HTTPComputerStatePending})
+		case protocol.GatewayComputersRemove:
+			return reply(t, request.RequestID, protocol.GatewayComputersRemoveResult, protocol.BrokerRPCEmptyPayload{})
+		}
+		t.Errorf("unexpected %s", request.Type)
+		return nil
+	})
+	ctx := gatewayapi.WithForwardedOrigin(context.Background(), testOrigin)
+	probe, err := client.OriginProbe(ctx)
+	if err != nil || *probe.Origin != testOrigin || !reflect.DeepEqual(probe.BoundOrigins, []string{peer}) ||
+		!reflect.DeepEqual(probe.PairingOrigins, []string{peer}) {
+		t.Fatalf("origin probe = %#v, %v", probe, err)
+	}
+	if got, err := client.Settings(ctx, testCredential); err != nil || !reflect.DeepEqual(got, settings) {
+		t.Fatalf("settings = %#v, %v", got, err)
+	}
+	// Cookie refresh reads the absolute expiry from Authenticate.
+	if principal, err := client.Authenticate(ctx, testCredential); err != nil ||
+		!principal.ExpiresAt.Equal(time.Date(2026, 10, 27, 0, 0, 0, 5e8, time.UTC)) {
+		t.Fatalf("authenticate = %#v, %v", principal, err)
+	}
+	if _, err := client.PollPairing(ctx, protocol.HTTPPairPollRequest{PendingID: testPending, PollSecret: testPollSecret}); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := client.ListComputers(ctx, testCredential); err != nil || len(list.Computers) != 1 {
+		t.Fatalf("list = %#v, %v", list, err)
+	}
+	added, err := client.AddComputer(ctx, testCredential, protocol.HTTPComputerAddRequest{Origin: peer, Label: "vps", State: protocol.HTTPComputerStatePending})
+	if err != nil || added.Node.ID != "nVps" {
+		t.Fatalf("add = %#v, %v", added, err)
+	}
+	if err := client.RemoveComputer(context.Background(), testCredential, peer); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"gateway.origin -", "gateway.settings " + testOrigin, "gateway.auth.check " + testOrigin, "gateway.pair.poll " + testOrigin,
+		"gateway.computers.list " + testOrigin, "gateway.computers.add " + testOrigin, "gateway.computers.remove -",
+	}
+	if !reflect.DeepEqual(origins, want) {
+		t.Fatalf("forwarded origins = %v, want %v", origins, want)
+	}
+	// An origin the protocol refuses never leaves the gateway.
+	if _, err := client.Settings(gatewayapi.WithForwardedOrigin(context.Background(), "null"), testCredential); err == nil {
+		t.Fatal("null origin was sent")
+	}
+}

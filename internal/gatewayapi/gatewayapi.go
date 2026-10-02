@@ -76,6 +76,37 @@ type Broker interface {
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)
 }
 
+// WithForwardedOrigin marks ctx with the browser Origin the gateway admitted
+// as another computer's app origin. A Broker sends it as RPCEnvelope.Origin
+// on every request made with ctx, pairing included, so the broker can apply
+// per-device origin binding. Leave it unset for a request the gateway
+// admitted as same-origin: the broker treats a missing origin as this
+// computer's own.
+func WithForwardedOrigin(ctx context.Context, origin string) context.Context {
+	return context.WithValue(ctx, forwardedOriginKey{}, origin)
+}
+
+// ForwardedOrigin returns the origin set by WithForwardedOrigin.
+func ForwardedOrigin(ctx context.Context) (string, bool) {
+	origin, ok := ctx.Value(forwardedOriginKey{}).(string)
+	return origin, ok && origin != ""
+}
+
+type forwardedOriginKey struct{}
+
+// ComputerBroker is the multi-computer part of the broker boundary
+// (docs/multi-computer.md). gatewayclient.Client implements it with Broker.
+type ComputerBroker interface {
+	// OriginProbe is gateway.origin with boundOrigins (live devices whose
+	// Tailscale node is still trusted) and pairingOrigins (unexpired bound
+	// grants and pending pairings). Both are for CORS headers only.
+	OriginProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error)
+	// The computer list acts only on the device that owns the credential.
+	ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error)
+	AddComputer(ctx context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error)
+	RemoveComputer(ctx context.Context, credential, origin string) error
+}
+
 // LiveStream carries one canonical envelope JSON message per call. The broker
 // sends access.revoked before closing a stream whose credential stops being
 // valid; Send and Receive then return an error that wraps ErrStreamEnded.
