@@ -66,6 +66,42 @@ lands (not integrated, not yet usable end to end):
   `gatewayclient`, `localclient` admin methods), Gate 0 and the Playwright
   integration tests in section 6.
 
+### Multi-computer H1a: broker trust and storage (2026-10-02, branch `feat/mc-h1a`)
+
+Track H1a of `docs/multi-computer.md`, sections 3 and 4 (not usable end to
+end until the gateway reads `gatewayapi.ForwardedOrigin`, see below):
+
+- Store migration 8: `app_origin` and the pinned app node (ID, owner, tags)
+  on grants, pending pairings and devices (NULL = own origin only; existing
+  rows keep working), and the per-device `computers` table.
+- `internal/tailnet`: an immutable `tailscale status --json` snapshot of
+  own-tailnet nodes, `--via` resolution (full origin, or one DNS first label;
+  ambiguity refused), the owner rule (`allowTagged` when either node is
+  tagged), and a monitor whose readers never wait: single-flight refresh,
+  10 s hard limit, 60 s cache, 10-minute grace, retries at most every 5 s.
+- Broker: per-device origin binding on every authenticated gateway request
+  (including live open, logout and upload), bound grants (redeem and poll
+  only from their own origin), `boundOrigins` and `pairingOrigins` on the
+  origin probe, `gateway.computers.*` (8 per device, pending entries expire
+  after 10 minutes), `admin.computers.*`, `admin.device.revoke.via` (also
+  drops grants and pending pairings via that origin). A 15 s sweep closes
+  open streams from an origin that is no longer trusted (own-origin streams
+  untouched) and revokes devices whose node ID changed.
+- Evidence: `go test -race` on `internal/store`, `auth`, `broker`,
+  `gatewayclient`, `localclient`, `tailnet` and `lifecycle`;
+  `./scripts/check`; `CGO_ENABLED=0 GOOS=linux|windows go vet ./...` all
+  exit 0 (macOS host). Broker tests: `internal/broker/computers_test.go`
+  (origin binding with near-miss and `null` origins, tagged and other-owner
+  nodes, an ambiguous short name, node change to revocation, the grace
+  period, revoke-via closing streams and releasing control, the computer
+  list limit and pending expiry); store tests: migration of existing rows.
+- Blocking for integration: `internal/gateway` still keeps its own
+  forwarded-origin context key, so `gatewayclient` sends no origin and the
+  broker treats cross-origin requests as own. The gateway must use
+  `gatewayapi.ForwardedOrigin`/`WithForwardedOrigin` before this ships.
+- Pending: Gate 0, the Playwright integration tests in section 6, and a real
+  tailnet check of `tailscale status --json` owners and tags.
+
 ### Linux host (2026-09-27, branch `feat/linux-host`)
 
 Linux (Ubuntu 22.04/24.04, x86_64 and arm64, including servers and WSL) is a
