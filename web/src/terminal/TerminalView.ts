@@ -1,7 +1,7 @@
 import { Terminal, type IBufferCell, type IDisposable } from '@xterm/xterm';
 import { clampGrid } from './Connection';
 import { FrameRenderer } from './FrameRenderer';
-import { rowLinks, type PathLink } from './pathLinks';
+import { joinedRowLinks, rowLinks, overlaps, type Cell, type PathLink } from './pathLinks';
 import { ServerUnicodeAddon } from './ServerUnicodeAddon';
 
 export const MONOSPACE = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
@@ -77,18 +77,15 @@ export class TerminalView {
     const { terminal } = this;
     return terminal.registerLinkProvider({
       provideLinks(y, callback) {
-        const row = terminal.buffer.active.getLine(y - 1);
-        if (row === undefined) {
+        const cells = rowCellsAt(terminal, y);
+        if (cells === undefined) {
           callback(undefined);
           return;
         }
-        const cells: IBufferCell[] = [];
-        for (let x = 0; x < row.length; x++) {
-          const cell = row.getCell(x);
-          if (cell !== undefined) cells.push(cell);
-        }
         const hover = globalThis.matchMedia?.('(pointer: coarse)').matches !== true;
-        const links = rowLinks(cells, y).map(({ link, text, range }) => ({
+        // A wrapped add-computer link can look like a path on one row ("/add-computer#…"); it is not one.
+        const urls = joinedRowLinks(...rowsAround(terminal, y)).map((url) => url.range);
+        const links = rowLinks(cells, y).filter(({ range }) => !urls.some((url) => overlaps(url, range))).map(({ link, text, range }) => ({
           range,
           text,
           decorations: { pointerCursor: hover, underline: hover },
@@ -101,9 +98,62 @@ export class TerminalView {
     });
   }
 
+  /**
+   * Makes an add-computer link a link, also when it wraps over several rows;
+   * a tap on one calls onOpen with the whole link. Only links that accept
+   * takes are links; terminal output is untrusted, so accept checks each one
+   * (parseAddComputerLink). Taps, hover and selection work as in linkPaths.
+   */
+  linkAddComputer(accept: (url: string) => boolean, onOpen: (url: string) => void): IDisposable {
+    const { terminal } = this;
+    return terminal.registerLinkProvider({
+      provideLinks(y, callback) {
+        const hover = globalThis.matchMedia?.('(pointer: coarse)').matches !== true;
+        const links = joinedRowLinks(...rowsAround(terminal, y))
+          .filter(({ url, range }) => range.start.y <= y && y <= range.end.y && accept(url))
+          .map(({ url, range }) => ({
+            range,
+            text: url,
+            decorations: { pointerCursor: hover, underline: hover },
+            activate: () => {
+              if (!terminal.hasSelection()) onOpen(url);
+            },
+          }));
+        callback(links.length > 0 ? links : undefined);
+      },
+    });
+  }
+
   dispose(): void {
     this.terminal.dispose();
   }
+}
+
+/** The cells of buffer row y (1-based), or undefined past the buffer. */
+function rowCellsAt(terminal: Terminal, y: number): IBufferCell[] | undefined {
+  const row = terminal.buffer.active.getLine(y - 1);
+  if (row === undefined) return undefined;
+  const cells: IBufferCell[] = [];
+  for (let x = 0; x < row.length; x++) {
+    const cell = row.getCell(x);
+    if (cell !== undefined) cells.push(cell);
+  }
+  return cells;
+}
+
+/** Rows a wrapped link through row y can span. ponytail: 7 rows each way covers a 140-character link at 20 columns. */
+const LINK_ROWS = 7;
+
+/** The rows around buffer row y and the 1-based row of the first, for joinedRowLinks. */
+function rowsAround(terminal: Terminal, y: number): [Cell[][], number] {
+  const first = Math.max(1, y - LINK_ROWS);
+  const rows: Cell[][] = [];
+  for (let at = first; at <= y + LINK_ROWS; at++) {
+    const cells = rowCellsAt(terminal, at);
+    if (cells === undefined) break;
+    rows.push(cells);
+  }
+  return [rows, first];
 }
 
 export function fitGrid(
