@@ -1,6 +1,6 @@
 # Multi-computer: architecture
 
-Status: **proposed, version 4 (two adversarial reviewers over three rounds, plus an outside performance review); owner review required** (ADR [0005](decisions/0005-multi-computer.md)). Nothing here is implemented. Sections 7–9 list every review finding and how it is resolved; section 3 "Performance budget" and section 6 "Release gates" carry the performance contract.
+Status: **accepted 2026-10-02, version 4 (two adversarial reviewers over three rounds, plus an outside performance review); implementation in progress; Gate 0 before release** (ADR [0005](decisions/0005-multi-computer.md)). Nothing here is implemented. Sections 7–9 list every review finding and how it is resolved; section 3 "Performance budget" and section 6 "Release gates" carry the performance contract.
 
 One phone uses several computers (for example a Mac, a Linux server and a VPS) from one Home Screen app: one Sessions list, one Wall, new sessions on any computer. This document fixes the architecture, the trust model and the build order before any code is written.
 
