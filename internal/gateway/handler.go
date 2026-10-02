@@ -50,9 +50,7 @@ type gatewayHandler struct {
 	// previewPort is the bound preview listener port; "" when previews are off.
 	previewPort string
 	api         gatewayapi.Broker
-	// computers is api's multi-computer part; nil when the broker lacks it.
-	computers computerBroker
-	assets    fs.FS
+	assets      fs.FS
 
 	redeemLimit, pollLimit, authFailLimit *limiter
 	// uploads bounds concurrent upload bodies held in memory.
@@ -70,18 +68,6 @@ type gatewayHandler struct {
 // allowedOrigin is one exact serialized origin and the Host value a browser
 // sends with it.
 type allowedOrigin struct{ origin, host string }
-
-// computerBroker is the multi-computer part of the broker boundary
-// (docs/multi-computer.md). The gateway uses it when the broker client
-// implements it; otherwise it serves no computers routes and no CORS.
-// ponytail: folds into gatewayapi.Broker once the broker side lands.
-type computerBroker interface {
-	// OriginProbe is gateway.origin with boundOrigins and pairingOrigins.
-	OriginProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error)
-	ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error)
-	AddComputer(ctx context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error)
-	RemoveComputer(ctx context.Context, credential, origin string) error
-}
 
 // beginLive registers a WebSocket handler unless the gateway is stopping.
 func (handler *gatewayHandler) beginLive() bool {
@@ -124,7 +110,6 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		liveLimits:    defaultLiveLimits,
 	}
 	handler.liveCtx, handler.cancelLive = context.WithCancel(context.Background())
-	handler.computers, _ = config.Broker.(computerBroker)
 	// The page served on the bound loopback address is always allowed, so a
 	// browser on this computer can pair without any configured origin.
 	for _, loopback := range []string{"http://" + bound, "http://" + localhost} {
@@ -160,10 +145,8 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/logout", handler.logout)
 		mux.HandleFunc("/api/v1/preview", handler.previewConfig)
 		mux.HandleFunc("/api/v1/ws", handler.serveLive)
-		if handler.computers != nil {
-			mux.HandleFunc("/api/v1/computers", handler.computerList)
-			mux.HandleFunc("/api/v1/computers/{host}", handler.removeComputer)
-		}
+		mux.HandleFunc("/api/v1/computers", handler.computerList)
+		mux.HandleFunc("/api/v1/computers/{host}", handler.removeComputer)
 	}
 	handler.mux = mux
 	return handler, nil
@@ -367,22 +350,16 @@ func (handler *gatewayHandler) applyConfiguredOrigin(origin string) {
 	handler.mu.Unlock()
 }
 
-// refreshOrigin asks the broker for the configured origin and, with a
-// multi-computer broker, the bound and pairing app origins. On failure it
-// keeps the last known values: a broker that does not answer serves no API.
+// refreshOrigin asks the broker for the configured origin and the bound and
+// pairing app origins. On failure it keeps the last known values: a broker
+// that does not answer serves no API.
 func (handler *gatewayHandler) refreshOrigin(ctx context.Context) {
 	if handler.api == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	if handler.computers == nil {
-		if origin, err := handler.api.Origin(ctx); err == nil {
-			handler.applyConfiguredOrigin(origin)
-		}
-		return
-	}
-	probe, err := handler.computers.OriginProbe(ctx)
+	probe, err := handler.api.OriginProbe(ctx)
 	if err != nil {
 		return
 	}
@@ -506,12 +483,12 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 // cookie or broker answer the policy stays as it is.
 func (handler *gatewayHandler) deviceConnectSources(response http.ResponseWriter, request *http.Request) {
 	credential, present := handler.sessionCookie(request)
-	if handler.computers == nil || !present || !validSecret(credential) || !handler.authFailLimit.allowed(clientKey(request)) {
+	if handler.api == nil || !present || !validSecret(credential) || !handler.authFailLimit.allowed(clientKey(request)) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), probeTimeout)
 	defer cancel()
-	list, err := handler.computers.ListComputers(ctx, credential)
+	list, err := handler.api.ListComputers(ctx, credential)
 	if err != nil {
 		return
 	}

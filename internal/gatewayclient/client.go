@@ -36,9 +36,8 @@ var (
 var errWriteFailed = errors.New("gatewayclient: request write failed")
 
 var (
-	_ gatewayapi.Broker         = (*Client)(nil)
-	_ gatewayapi.ComputerBroker = (*Client)(nil)
-	_ gatewayapi.LiveStream     = (*liveStream)(nil)
+	_ gatewayapi.Broker     = (*Client)(nil)
+	_ gatewayapi.LiveStream = (*liveStream)(nil)
 )
 
 // Config identifies the broker endpoint and this gateway build.
@@ -344,16 +343,6 @@ func (client *Client) PreviewTarget(ctx context.Context, credential, sessionID s
 	result, err := roundTrip[protocol.GatewayRPCPreviewTargetPayload](ctx, client, protocol.GatewayPreviewCheck,
 		protocol.GatewayRPCPreviewCheckPayload{Credential: credential, SessionID: sessionID, Port: int64(port)}, false, nil)
 	return string(result.Host), err
-}
-
-// Origin returns the configured browser origin, or "" when none is set.
-func (client *Client) Origin(ctx context.Context) (string, error) {
-	result, err := roundTrip[protocol.GatewayRPCOriginResultPayload](ctx, client, protocol.GatewayOrigin,
-		protocol.BrokerRPCEmptyPayload{}, false, nil)
-	if err != nil || result.Origin == nil {
-		return "", err
-	}
-	return *result.Origin, nil
 }
 
 // OriginProbe returns the configured origin and the CORS origin sets.

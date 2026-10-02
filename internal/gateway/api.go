@@ -75,6 +75,12 @@ func (handler *gatewayHandler) pairPoll(response http.ResponseWriter, request *h
 		writeBrokerError(response, err)
 		return
 	}
+	// The app's next request (GET /api/v1/settings) comes from the new
+	// device's bound origin: learn it now, not at the next probe, or that
+	// request would get 403 without CORS.
+	if _, cross := gatewayapi.ForwardedOrigin(request.Context()); cross && result.Response.Status == protocol.Approved {
+		handler.refreshOrigin(request.Context())
+	}
 	// The broker returns the credential exactly once, on the approved
 	// response. Anything else is a contract violation and sets no cookie.
 	// Max-Age is computed once: a value of 0 would omit the attribute and
@@ -132,7 +138,7 @@ func (handler *gatewayHandler) computerList(response http.ResponseWriter, reques
 		if !ok {
 			return
 		}
-		list, err := handler.computers.ListComputers(request.Context(), credential)
+		list, err := handler.api.ListComputers(request.Context(), credential)
 		result := protocol.HTTPComputerListResponse{Computers: list.Computers}
 		if result.Computers == nil {
 			result.Computers = []protocol.HTTPComputer{}
@@ -153,21 +159,18 @@ func (handler *gatewayHandler) computerList(response http.ResponseWriter, reques
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid computer")
 		return
 	}
-	result, err := handler.computers.AddComputer(request.Context(), credential, body)
+	result, err := handler.api.AddComputer(request.Context(), credential, body)
 	handler.respondGeneric(response, request, result, err)
 }
 
-// removeComputer removes https://{host} from the calling device's list. It
-// has no body; the app signs out on that computer first.
+// removeComputer removes https://{host} from the calling device's list. Its
+// body is {} like logout's; the app signs out on that computer first.
 func (handler *gatewayHandler) removeComputer(response http.ResponseWriter, request *http.Request) {
 	if !allowMethod(response, request, http.MethodDelete) {
 		return
 	}
-	if !handler.mutationHeaders(response, request) {
-		return
-	}
-	if request.ContentLength != 0 {
-		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "request has no body")
+	var body struct{}
+	if !handler.mutation(response, request, &body) {
 		return
 	}
 	credential, ok := handler.credential(response, request)
@@ -179,7 +182,7 @@ func (handler *gatewayHandler) removeComputer(response http.ResponseWriter, requ
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid computer")
 		return
 	}
-	err := handler.computers.RemoveComputer(request.Context(), credential, origin)
+	err := handler.api.RemoveComputer(request.Context(), credential, origin)
 	if err != nil {
 		handler.respondGeneric(response, request, nil, err)
 		return
@@ -492,7 +495,12 @@ func (handler *gatewayHandler) mutation(response http.ResponseWriter, request *h
 func (handler *gatewayHandler) mutationLimit(
 	response http.ResponseWriter, request *http.Request, destination any, limit int64,
 ) bool {
-	if !handler.mutationHeaders(response, request) {
+	if !handler.originAllowed(request) {
+		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
+		return false
+	}
+	if values := request.Header.Values(requestHeaderName); len(values) != 1 || values[0] != "1" {
+		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "missing request header")
 		return false
 	}
 	if !jsonContentType(request.Header.Values("Content-Type")) {
@@ -511,19 +519,6 @@ func (handler *gatewayHandler) mutationLimit(
 	}
 	if err := decodeStrict(data, destination); err != nil {
 		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "malformed request body")
-		return false
-	}
-	return true
-}
-
-// mutationHeaders requires an exact Origin and the fixed request header.
-func (handler *gatewayHandler) mutationHeaders(response http.ResponseWriter, request *http.Request) bool {
-	if !handler.originAllowed(request) {
-		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
-		return false
-	}
-	if values := request.Header.Values(requestHeaderName); len(values) != 1 || values[0] != "1" {
-		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "missing request header")
 		return false
 	}
 	return true

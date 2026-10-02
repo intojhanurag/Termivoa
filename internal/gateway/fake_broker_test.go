@@ -227,10 +227,28 @@ func (broker *fakeBroker) setOrigin(origin string) {
 	broker.mu.Unlock()
 }
 
-func (broker *fakeBroker) Origin(context.Context) (string, error) {
+func (broker *fakeBroker) OriginProbe(context.Context) (protocol.GatewayRPCOriginResultPayload, error) {
 	broker.mu.Lock()
 	defer broker.mu.Unlock()
-	return broker.origin, nil
+	if broker.origin == "" {
+		return protocol.GatewayRPCOriginResultPayload{}, nil
+	}
+	origin := broker.origin
+	return protocol.GatewayRPCOriginResultPayload{Origin: &origin}, nil
+}
+
+func (broker *fakeBroker) ListComputers(_ context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error) {
+	return protocol.GatewayRPCComputerListResultPayload{Computers: []protocol.HTTPComputer{}, PendingOrigins: []string{}},
+		broker.authorize(credential)
+}
+
+func (broker *fakeBroker) AddComputer(_ context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error) {
+	return protocol.HTTPComputerAddResponse{Computer: protocol.HTTPComputer{Origin: request.Origin, Label: request.Label},
+		State: request.State, Node: protocol.TailnetNode{ID: "nFake", Tags: []string{}}}, broker.authorize(credential)
+}
+
+func (broker *fakeBroker) RemoveComputer(_ context.Context, credential, _ string) error {
+	return broker.authorize(credential)
 }
 
 func (broker *fakeBroker) OpenLive(_ context.Context, credential string) (gatewayapi.LiveStream, error) {

@@ -32,6 +32,7 @@ type fakeComputers struct {
 	expires time.Time
 	added   []protocol.HTTPComputerAddRequest
 	opErr   error
+	approve bool // PollPairing approves and binds the forwarded origin.
 }
 
 func newFakeComputers() *fakeComputers {
@@ -97,7 +98,16 @@ func (broker *fakeComputers) RedeemPairing(ctx context.Context, request protocol
 
 func (broker *fakeComputers) PollPairing(ctx context.Context, request protocol.HTTPPairPollRequest) (gatewayapi.PollResult, error) {
 	broker.saw(ctx, "poll")
-	return gatewayapi.PollResult{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}}, nil
+	if !broker.approve {
+		return gatewayapi.PollResult{Response: protocol.HTTPPairPollResponse{Status: protocol.HTTPPairPollStatusPending}}, nil
+	}
+	// Like the broker: the approved poll creates a device bound to the origin.
+	origin, _ := gatewayapi.ForwardedOrigin(ctx)
+	broker.probe.BoundOrigins = append(broker.probe.BoundOrigins, origin)
+	return gatewayapi.PollResult{
+		Response:   protocol.HTTPPairPollResponse{Status: protocol.Approved, Device: &protocol.HTTPDeviceSummary{ID: uuidA, Label: "phone"}},
+		Credential: validCredential, CredentialExpiresAt: broker.expires,
+	}, nil
 }
 
 func (broker *fakeComputers) OpenLive(ctx context.Context, credential string) (gatewayapi.LiveStream, error) {
@@ -460,7 +470,8 @@ func TestComputerRoutes(t *testing.T) {
 	if code := do(handler, http.MethodPost, "/api/v1/computers", add, requestOptions{cookie: prodCookie, omitHeader: true}).Code; code != http.StatusForbidden {
 		t.Fatalf("add without request header = %d", code)
 	}
-	if code := do(handler, http.MethodDelete, "/api/v1/computers/vps.tailx.ts.net", "", requestOptions{cookie: prodCookie}).Code; code != http.StatusNoContent ||
+	// The app sends {} like logout (B2).
+	if code := do(handler, http.MethodDelete, "/api/v1/computers/vps.tailx.ts.net", "{}", requestOptions{cookie: prodCookie}).Code; code != http.StatusNoContent ||
 		!broker.called("remove-computer:https://vps.tailx.ts.net@") {
 		t.Fatalf("remove = %d %v", code, broker.calls)
 	}
@@ -469,14 +480,16 @@ func TestComputerRoutes(t *testing.T) {
 		options      requestOptions
 		want         int
 	}{
-		"bad host":    {"/api/v1/computers/VPS.tailx.ts.net", "", requestOptions{cookie: prodCookie}, http.StatusBadRequest},
-		"port":        {"/api/v1/computers/vps.tailx.ts.net:443", "", requestOptions{cookie: prodCookie}, http.StatusBadRequest},
-		"body":        {"/api/v1/computers/vps.tailx.ts.net", "{}", requestOptions{cookie: prodCookie}, http.StatusBadRequest},
-		"no header":   {"/api/v1/computers/vps.tailx.ts.net", "", requestOptions{cookie: prodCookie, omitHeader: true}, http.StatusForbidden},
-		"no origin":   {"/api/v1/computers/vps.tailx.ts.net", "", requestOptions{cookie: prodCookie, omitOrigin: true, header: http.Header{"Sec-Fetch-Site": {"same-origin"}}}, http.StatusForbidden},
-		"no cookie":   {"/api/v1/computers/vps.tailx.ts.net", "", requestOptions{}, http.StatusUnauthorized},
-		"wrong verb":  {"/api/v1/computers/vps.tailx.ts.net", "", requestOptions{cookie: prodCookie}, 0},
-		"bare delete": {"/api/v1/computers", "", requestOptions{cookie: prodCookie}, http.StatusMethodNotAllowed},
+		"bad host":     {"/api/v1/computers/VPS.tailx.ts.net", "{}", requestOptions{cookie: prodCookie}, http.StatusBadRequest},
+		"port":         {"/api/v1/computers/vps.tailx.ts.net:443", "{}", requestOptions{cookie: prodCookie}, http.StatusBadRequest},
+		"unknown body": {"/api/v1/computers/vps.tailx.ts.net", `{"origin":"x"}`, requestOptions{cookie: prodCookie}, http.StatusBadRequest},
+		"no body":      {"/api/v1/computers/vps.tailx.ts.net", "", requestOptions{cookie: prodCookie}, http.StatusBadRequest},
+		"not json":     {"/api/v1/computers/vps.tailx.ts.net", "{}", requestOptions{cookie: prodCookie, contentType: "text/plain"}, http.StatusUnsupportedMediaType},
+		"no header":    {"/api/v1/computers/vps.tailx.ts.net", "{}", requestOptions{cookie: prodCookie, omitHeader: true}, http.StatusForbidden},
+		"no origin":    {"/api/v1/computers/vps.tailx.ts.net", "{}", requestOptions{cookie: prodCookie, omitOrigin: true, header: http.Header{"Sec-Fetch-Site": {"same-origin"}}}, http.StatusForbidden},
+		"no cookie":    {"/api/v1/computers/vps.tailx.ts.net", "{}", requestOptions{}, http.StatusUnauthorized},
+		"wrong verb":   {"/api/v1/computers/vps.tailx.ts.net", "", requestOptions{cookie: prodCookie}, 0},
+		"bare delete":  {"/api/v1/computers", "{}", requestOptions{cookie: prodCookie}, http.StatusMethodNotAllowed},
 	} {
 		method := http.MethodDelete
 		if name == "wrong verb" {
@@ -492,9 +505,25 @@ func TestComputerRoutes(t *testing.T) {
 	if response.Code != http.StatusTooManyRequests || strings.Contains(response.Body.String(), "evil") {
 		t.Fatalf("limit = %d %s", response.Code, response.Body)
 	}
-	// A broker without multi-computer support serves no computers routes.
-	plain := newTestHandler(t, newFakeBroker())
-	if code := do(plain, http.MethodGet, "/api/v1/computers", "", requestOptions{cookie: prodCookie}).Code; code != http.StatusNotFound {
-		t.Fatalf("plain broker computers = %d", code)
+}
+
+// Right after approval the app reads settings from its bound origin. The
+// approved poll refreshes the origin sets, so that read is admitted with CORS
+// instead of waiting for the next probe (B1).
+func TestApprovedPollAdmitsTheNewBoundOriginAtOnce(t *testing.T) {
+	broker := newFakeComputers()
+	broker.probe = protocol.GatewayRPCOriginResultPayload{PairingOrigins: []string{pairOrigin}}
+	broker.approve = true
+	handler := newPeerHandler(t, broker)
+	options := crossSite(pairOrigin)
+	options.cookie = ""
+	if response := do(handler, http.MethodPost, "/api/v1/pair/poll", pollBody, options); response.Code != http.StatusOK ||
+		!strings.Contains(response.Header().Get("Set-Cookie"), validCredential) {
+		t.Fatalf("approved poll = %d %v %s", response.Code, response.Header(), response.Body)
+	}
+	options.cookie = prodCookie
+	response := do(handler, http.MethodGet, "/api/v1/settings", "", options)
+	if response.Code != http.StatusOK || response.Header().Get("Access-Control-Allow-Origin") != pairOrigin {
+		t.Fatalf("first settings after approval = %d %v", response.Code, response.Header())
 	}
 }

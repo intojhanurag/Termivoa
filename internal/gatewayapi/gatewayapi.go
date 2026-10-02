@@ -68,9 +68,17 @@ type Broker interface {
 	// and a process of the running session listens on port now (verified by
 	// the broker from the OS). It returns the loopback address to dial.
 	PreviewTarget(ctx context.Context, credential, sessionID string, port uint16) (string, error)
-	// Origin returns the configured browser origin, or "" when none is set.
-	// It needs no credential: the origin is not a secret.
-	Origin(ctx context.Context) (string, error)
+	// OriginProbe is gateway.origin: the configured browser origin (not a
+	// secret, so no credential) with boundOrigins (app origins of bound
+	// devices whose Tailscale node is still trusted) and pairingOrigins
+	// (unexpired bound grants and pending pairings). The origin sets are for
+	// CORS headers only.
+	OriginProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error)
+	// The computer list (docs/multi-computer.md) acts only on the device that
+	// owns the credential.
+	ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error)
+	AddComputer(ctx context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error)
+	RemoveComputer(ctx context.Context, credential, origin string) error
 	// OpenLive binds a new broker live stream to the credential. The stream
 	// starts as an observer and carries canonical envelope JSON both ways.
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)
@@ -93,19 +101,6 @@ func ForwardedOrigin(ctx context.Context) (string, bool) {
 }
 
 type forwardedOriginKey struct{}
-
-// ComputerBroker is the multi-computer part of the broker boundary
-// (docs/multi-computer.md). gatewayclient.Client implements it with Broker.
-type ComputerBroker interface {
-	// OriginProbe is gateway.origin with boundOrigins (live devices whose
-	// Tailscale node is still trusted) and pairingOrigins (unexpired bound
-	// grants and pending pairings). Both are for CORS headers only.
-	OriginProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error)
-	// The computer list acts only on the device that owns the credential.
-	ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error)
-	AddComputer(ctx context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error)
-	RemoveComputer(ctx context.Context, credential, origin string) error
-}
 
 // LiveStream carries one canonical envelope JSON message per call. The broker
 // sends access.revoked before closing a stream whose credential stops being

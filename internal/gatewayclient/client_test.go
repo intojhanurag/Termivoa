@@ -265,18 +265,9 @@ func TestMethodsRoundTripPayloads(t *testing.T) {
 			payload: protocol.BrokerRPCEmptyPayload{},
 			result:  protocol.GatewayRPCOriginResultPayload{Origin: &testOrigin},
 			call: func(ctx context.Context, client *Client) (any, error) {
-				return client.Origin(ctx)
+				return client.OriginProbe(ctx)
 			},
-			want: testOrigin,
-		},
-		{
-			name: "no origin", requestType: protocol.GatewayOrigin,
-			payload: protocol.BrokerRPCEmptyPayload{},
-			result:  protocol.GatewayRPCOriginResultPayload{},
-			call: func(ctx context.Context, client *Client) (any, error) {
-				return client.Origin(ctx)
-			},
-			want: "",
+			want: protocol.GatewayRPCOriginResultPayload{Origin: &testOrigin},
 		},
 	}
 	for _, test := range cases {
