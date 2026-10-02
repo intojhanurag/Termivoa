@@ -38,6 +38,34 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Multi-computer H2: gateway and CLI (2026-10-02, branch `feat/mc-h2`)
+
+Track H2 of `docs/multi-computer.md`, built against fake brokers until H1
+lands (not integrated, not yet usable end to end):
+
+- Gateway: every `/api` request needs an exact own Origin, an exact bound app
+  origin (pairing routes also admit pairing origins), or no Origin with
+  `Sec-Fetch-Site: same-origin`; `Sec-Fetch-Mode: no-cors` is refused.
+  Admitted cross-origin requests get exact CORS headers, preflight only for
+  those origins, and forward their Origin to the broker on every call.
+  WebSocket origins are checked per request. `GET /api/v1/settings` refreshes
+  the cookie (same value, Max-Age capped by the credential's absolute
+  expiry). The app document's CSP `connect-src` lists the cookie device's
+  computers (at most 8). New routes `GET/POST /api/v1/computers` and
+  `DELETE /api/v1/computers/{host}`.
+- CLI: `pterm pair --via <name|origin> [--allow-tagged]` (add-computer link
+  `https://<this-host>/add-computer#grant=<grant>&via=<url-encoded app origin>`),
+  `pterm computers [remove <origin>]`, a VIA column in `pterm devices` and
+  `pterm pair pending`, `pterm revoke --via <origin>`, the computers hint on
+  `pterm revoke <device>`, and doctor/setup checks (protocol revision, CORS
+  list, tailnet and owner mismatches, other Serve handlers on this origin).
+- Evidence: `go test -race ./internal/gateway/... ./internal/cli/... ./cmd/pterm/...`
+  and `./scripts/check` passed; `CGO_ENABLED=0 GOOS=linux|windows go vet` on
+  the same packages passed (macOS host).
+- Pending: integration with H1 (broker RPCs, origin forwarding in
+  `gatewayclient`, `localclient` admin methods), Gate 0 and the Playwright
+  integration tests in section 6.
+
 ### Linux host (2026-09-27, branch `feat/linux-host`)
 
 Linux (Ubuntu 22.04/24.04, x86_64 and arm64, including servers and WSL) is a

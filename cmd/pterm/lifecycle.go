@@ -229,6 +229,7 @@ func inspectHost(ctx context.Context, env lifecycleEnv, output io.Writer) (hostR
 				lifecycle.TailscaleOperatorCommand)
 		}
 	}
+	report.problems += inspectMultiComputer(ctx, env, report, output)
 	return report, nil
 }
 
@@ -309,6 +310,8 @@ type tailscaleReport struct {
 	statusErr     error
 	serveErr      error
 	serve         lifecycle.ServeStatus // 443 (phone) and 8443 (preview) findings; never overwritten
+	tailnet       *tailnetStatus        // nil when the status could not be read
+	otherHandlers []string              // other Serve handlers on this computer's own origin
 }
 
 // phoneOrigin is the private HTTPS origin Tailscale gives this computer. When
@@ -357,6 +360,9 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		return report, 1
 	}
 	report.status = status
+	if tailnet, err := parseTailnetStatus(data); err == nil {
+		report.tailnet = &tailnet
+	}
 	fmt.Fprintf(output, "  tailscale: %s, host %s\n", status.BackendState, status.DNSName)
 	if status.BackendState != "Running" {
 		problems++
@@ -378,6 +384,10 @@ func inspectTailscale(ctx context.Context, cli string, output io.Writer) (report
 		fmt.Fprintf(output, "  ! tailscale serve: %s\n", finding)
 	}
 	problems += len(report.serve.Problems)
+	// Already counted in serve.Problems; this only explains the home risk.
+	if report.otherHandlers = otherServeHandlers(data, status.DNSName); len(report.otherHandlers) > 0 {
+		fmt.Fprintf(output, "  ! %s\n", otherHandlersWarning(status.DNSName, report.otherHandlers))
+	}
 
 	// Dev-server previews (HTTPS 8443) are optional: unconfigured or
 	// conflicting never fails doctor, since only Termivoa itself (443)
@@ -786,6 +796,9 @@ func offerTailscaleServe(ctx context.Context, env lifecycleEnv, tailscale tailsc
 		return false, nil
 	case tailscale.serve.Configured:
 		fmt.Fprintf(output, "Tailscale Serve already shares the page at %s/\n", origin)
+		if len(tailscale.otherHandlers) > 0 {
+			fmt.Fprintf(output, "  ! %s\n", otherHandlersWarning(tailscale.status.DNSName, tailscale.otherHandlers))
+		}
 		return true, nil
 	case len(tailscale.serve.Problems) > 0:
 		fmt.Fprintln(output, "Tailscale Serve was not changed:")

@@ -24,13 +24,20 @@ func TestAdminCommandParsing(t *testing.T) {
 		args            []string
 		arguments       []string
 		origin, name    string
+		via             string
+		allowTagged     bool
 	}{
 		{command: "pair", action: "pair"},
 		{command: "pair", action: "pair", args: []string{"--origin", "https://desk.example.ts.net"}, origin: "https://desk.example.ts.net"},
+		{command: "pair", action: "pair", args: []string{"--via", "mac"}, via: "mac"},
+		{command: "pair", action: "pair", args: []string{"--via", "https://mac.tailx.ts.net", "--allow-tagged"}, via: "https://mac.tailx.ts.net", allowTagged: true},
 		{command: "pair", action: "pair pending", args: []string{"pending"}},
 		{command: "pair", action: "pair approve", args: []string{"approve", adminTestID}, arguments: []string{adminTestID}},
 		{command: "devices", action: "devices"},
 		{command: "revoke", action: "revoke", args: []string{adminTestID}, arguments: []string{adminTestID}},
+		{command: "revoke", action: "revoke", args: []string{"--via", "https://mac.tailx.ts.net"}, via: "https://mac.tailx.ts.net"},
+		{command: "computers", action: "computers"},
+		{command: "computers", action: "computers remove", args: []string{"remove", "https://vps.tailx.ts.net"}, arguments: []string{"https://vps.tailx.ts.net"}},
 		{command: "project", action: "project add", args: []string{"add", "--name", "Web", "."}, arguments: []string{"."}, name: "Web"},
 		{command: "project", action: "project add", args: []string{"add", "some dir"}, arguments: []string{"some dir"}},
 		{command: "project", action: "project list", args: []string{"list"}},
@@ -48,7 +55,7 @@ func TestAdminCommandParsing(t *testing.T) {
 			name = *config.name
 		}
 		if config.action != test.action || config.runtimeDir != production.RuntimeDir || config.origin != test.origin ||
-			name != test.name || strings.Join(config.arguments, "\x00") != strings.Join(test.arguments, "\x00") {
+			name != test.name || config.via != test.via || config.allowTagged != test.allowTagged || strings.Join(config.arguments, "\x00") != strings.Join(test.arguments, "\x00") {
 			t.Fatalf("%s %v parsed as %#v", test.command, test.args, config)
 		}
 	}
@@ -76,6 +83,19 @@ func TestAdminCommandUsageDoesNotContactBroker(t *testing.T) {
 		{"devices", "--runtime-dir", custom},
 		{"revoke"},
 		{"revoke", adminTestID, "extra"},
+		{"revoke", "--via", "https://mac.tailx.ts.net", adminTestID},
+		{"revoke", "--via", "mac"},
+		{"revoke", "--via", "https://mac.tailx.ts.net:443"},
+		{"revoke", "--allow-tagged", adminTestID},
+		{"pair", "--allow-tagged"},
+		{"pair", "--via", "Mac"},
+		{"pair", "--via", "https://mac.tailx.ts.net/"},
+		{"pair", "--via", "http://mac.tailx.ts.net"},
+		{"pair", "pending", "--via", "mac"},
+		{"computers", "extra"},
+		{"computers", "remove"},
+		{"computers", "remove", "http://vps.tailx.ts.net"},
+		{"computers", "remove", "https://vps.tailx.ts.net", "extra"},
 		{"project"},
 		{"project", "remove", "x"},
 		{"project", "add"},
@@ -102,6 +122,7 @@ func TestAdminCommandUsageDoesNotContactBroker(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"pair", "--help"}, {"pair", "approve", "--help"}, {"devices", "-h"}, {"revoke", "--help"},
+		{"computers", "--help"}, {"computers", "remove", "-h"},
 		{"project", "--help"}, {"project", "add", "--help"}, {"profile", "-h"}, {"config", "origin", "--help"},
 	} {
 		var output bytes.Buffer
