@@ -143,7 +143,7 @@ func inspectMultiComputer(ctx context.Context, env lifecycleEnv, report hostRepo
 	}
 	var bound, pairing []string
 	for _, device := range devices {
-		if !device.Revoked && device.AppOrigin != nil {
+		if device.AppOrigin != nil { // revoked too: the CORS list keeps them so the app can read the 401
 			bound = append(bound, *device.AppOrigin)
 		}
 	}
