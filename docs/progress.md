@@ -38,6 +38,34 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Multi-computer H2: gateway and CLI (2026-10-02, branch `feat/mc-h2`)
+
+Track H2 of `docs/multi-computer.md`, built against fake brokers until H1
+lands (not integrated, not yet usable end to end):
+
+- Gateway: every `/api` request needs an exact own Origin, an exact bound app
+  origin (pairing routes also admit pairing origins), or no Origin with
+  `Sec-Fetch-Site: same-origin`; `Sec-Fetch-Mode: no-cors` is refused.
+  Admitted cross-origin requests get exact CORS headers, preflight only for
+  those origins, and forward their Origin to the broker on every call.
+  WebSocket origins are checked per request. `GET /api/v1/settings` refreshes
+  the cookie (same value, Max-Age capped by the credential's absolute
+  expiry). The app document's CSP `connect-src` lists the cookie device's
+  computers (at most 8). New routes `GET/POST /api/v1/computers` and
+  `DELETE /api/v1/computers/{host}`.
+- CLI: `pterm pair --via <name|origin> [--allow-tagged]` (add-computer link
+  `https://<this-host>/add-computer#grant=<grant>&via=<url-encoded app origin>`),
+  `pterm computers [remove <origin>]`, a VIA column in `pterm devices` and
+  `pterm pair pending`, `pterm revoke --via <origin>`, the computers hint on
+  `pterm revoke <device>`, and doctor/setup checks (protocol revision, CORS
+  list, tailnet and owner mismatches, other Serve handlers on this origin).
+- Evidence: `go test -race ./internal/gateway/... ./internal/cli/... ./cmd/pterm/...`
+  and `./scripts/check` passed; `CGO_ENABLED=0 GOOS=linux|windows go vet` on
+  the same packages passed (macOS host).
+- Pending: integration with H1 (broker RPCs, origin forwarding in
+  `gatewayclient`, `localclient` admin methods), Gate 0 and the Playwright
+  integration tests in section 6.
+
 ### Linux host (2026-09-27, branch `feat/linux-host`)
 
 Linux (Ubuntu 22.04/24.04, x86_64 and arm64, including servers and WSL) is a
@@ -1041,6 +1069,31 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `go test -race ./internal/platform/...`, `CGO_ENABLED=0 GOOS=windows go vet
   ./...`, `GOOS=windows go test -c ./internal/platform` and `./scripts/check`
   exit 0.
+
+- **Multi-computer H1b: broker thumbnail viewers** (`feat/mc-h1b`,
+  2026-10-02, ADR 0005, `docs/multi-computer.md` "Performance budget"; not
+  user-visible until the Wall uses it): `session.attach` with
+  `thumbnail.maxUpdatesPerSecond` (1–30) makes a read-only viewer. The actor
+  refuses its `control.acquire` with `not_controller`
+  (`ErrViewerReadOnly`), and without a lease it cannot send input, answer,
+  resize, upload or commit. `reserveViewerDelivery`
+  (`internal/broker/viewer.go`) spaces its screen frames at least
+  `1s/rate` apart; a skipped frame arms the viewer's single lazy
+  `time.AfterFunc` timer, which only wakes the worker when the slot opens,
+  and the next patch is built from the viewer's last delivered frame to the
+  newest one. Notices (state, control, history reset) are not throttled.
+  Detach stops the timer. Normal viewers and canonical PTY processing are
+  unchanged. Evidence (`internal/broker/viewer_thumbnail_test.go`): at 5/s
+  under a 1.3 s flood the thumbnail got 7 patches and a normal viewer 74,
+  both ending on the canonical revision with an unbroken patch chain; a
+  burst that stops inside a slot paints its final frame; the timer test
+  (no actor, so nothing else wakes the viewer) fails when the timer is
+  removed and when detach does not stop it; stream test refuses
+  control, input, answer and resize with `not_controller`, also with another
+  connection's live lease; goroutines return to baseline after detach and
+  close. `go test -race -count=5` on the viewer, thumbnail, stream, writer,
+  snapshot and control tests, `./scripts/check`, and `CGO_ENABLED=0
+  GOOS=linux|windows go vet ./...` exit 0.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

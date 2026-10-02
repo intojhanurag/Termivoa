@@ -19,6 +19,7 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/webassets"
 )
 
@@ -36,18 +37,22 @@ type gatewayHandler struct {
 	// configured is the origin saved with `pterm config origin`, refreshed
 	// from the broker; it joins the static hosts and origins below.
 	configured allowedOrigin
+	// bound and pairing are the other computers' app origins from the broker
+	// probe (docs/multi-computer.md). They only admit cross-origin requests
+	// and emit CORS headers; the broker checks each forwarded Origin against
+	// the request's own credential, grant or pending pairing.
+	bound, pairing map[string]struct{}
 
 	mux     *http.ServeMux
 	hosts   map[string]struct{}
 	origins map[string]struct{}
-	// originPatterns keeps coder/websocket's own origin check enabled as a
-	// second layer; the exact check in originAllowed is authoritative.
-	originPatterns []string
-	dev            bool
+	dev     bool
 	// previewPort is the bound preview listener port; "" when previews are off.
 	previewPort string
 	api         gatewayapi.Broker
-	assets      fs.FS
+	// computers is api's multi-computer part; nil when the broker lacks it.
+	computers computerBroker
+	assets    fs.FS
 
 	redeemLimit, pollLimit, authFailLimit *limiter
 	// uploads bounds concurrent upload bodies held in memory.
@@ -65,6 +70,35 @@ type gatewayHandler struct {
 // allowedOrigin is one exact serialized origin and the Host value a browser
 // sends with it.
 type allowedOrigin struct{ origin, host string }
+
+// computerBroker is the multi-computer part of the broker boundary
+// (docs/multi-computer.md). The gateway uses it when the broker client
+// implements it; otherwise it serves no computers routes and no CORS.
+// ponytail: folds into gatewayapi.Broker once the broker side lands.
+type computerBroker interface {
+	// OriginProbe is gateway.origin with boundOrigins and pairingOrigins.
+	OriginProbe(ctx context.Context) (protocol.GatewayRPCOriginResultPayload, error)
+	ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error)
+	AddComputer(ctx context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error)
+	RemoveComputer(ctx context.Context, credential, origin string) error
+}
+
+type forwardedOriginKey struct{}
+
+// ForwardedOrigin returns the browser Origin the gateway admitted as another
+// computer's app origin for this request. The broker client sends it as
+// RPCEnvelope.Origin on every call made with ctx; absent means this
+// computer's own origin.
+// ponytail: moves to gatewayapi (WithOrigin/OriginFromContext) at integration.
+func ForwardedOrigin(ctx context.Context) (string, bool) {
+	origin, ok := ctx.Value(forwardedOriginKey{}).(string)
+	return origin, ok && origin != ""
+}
+
+// WithForwardedOrigin marks ctx with an admitted cross-origin request Origin.
+func WithForwardedOrigin(ctx context.Context, origin string) context.Context {
+	return context.WithValue(ctx, forwardedOriginKey{}, origin)
+}
 
 // beginLive registers a WebSocket handler unless the gateway is stopping.
 func (handler *gatewayHandler) beginLive() bool {
@@ -107,11 +141,11 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		liveLimits:    defaultLiveLimits,
 	}
 	handler.liveCtx, handler.cancelLive = context.WithCancel(context.Background())
+	handler.computers, _ = config.Broker.(computerBroker)
 	// The page served on the bound loopback address is always allowed, so a
 	// browser on this computer can pair without any configured origin.
 	for _, loopback := range []string{"http://" + bound, "http://" + localhost} {
 		handler.origins[loopback] = struct{}{}
-		handler.originPatterns = append(handler.originPatterns, globEscaper.Replace(loopback))
 	}
 	for _, origin := range config.Origins {
 		canonical, host, err := validateOrigin(origin, dev)
@@ -119,9 +153,6 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 			return nil, err
 		}
 		handler.origins[canonical] = struct{}{}
-		// coder/websocket matches patterns with path.Match; escape IPv6
-		// brackets and other metacharacters so the pattern stays exact.
-		handler.originPatterns = append(handler.originPatterns, globEscaper.Replace(canonical))
 		handler.hosts[host] = struct{}{}
 	}
 
@@ -146,6 +177,10 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/logout", handler.logout)
 		mux.HandleFunc("/api/v1/preview", handler.previewConfig)
 		mux.HandleFunc("/api/v1/ws", handler.serveLive)
+		if handler.computers != nil {
+			mux.HandleFunc("/api/v1/computers", handler.computerList)
+			mux.HandleFunc("/api/v1/computers/{host}", handler.removeComputer)
+		}
 	}
 	handler.mux = mux
 	return handler, nil
@@ -217,17 +252,99 @@ func (handler *gatewayHandler) ServeHTTP(response http.ResponseWriter, request *
 			return
 		}
 	}
-	if request.URL.Path == "/healthz" || request.URL.Path == "/api" || strings.HasPrefix(request.URL.Path, "/api/") {
+	if request.URL.Path == "/healthz" {
 		header.Set("Cache-Control", "no-store")
+	}
+	if request.URL.Path == "/api" || strings.HasPrefix(request.URL.Path, "/api/") {
+		header.Set("Cache-Control", "no-store")
+		var ok bool
+		if request, ok = handler.admitAPI(response, request); !ok {
+			return
+		}
 	}
 	handler.mux.ServeHTTP(response, request)
 }
 
-// originAllowed requires an exact configured Origin; a missing one fails.
+// admitAPI applies the request rules of every /api request
+// (docs/multi-computer.md section 3). A request passes with an exact own
+// Origin, with another computer's exact bound app origin (pairing routes also
+// admit an origin of an unexpired bound grant or pending pairing), or with no
+// Origin and Sec-Fetch-Site: same-origin. no-cors requests never pass:
+// browsers omit Origin on them and would otherwise reach the API with this
+// computer's cookie. An admitted cross-origin request gets exact CORS headers
+// and carries its Origin to the broker, which checks it against the
+// request's own credential, grant or pending pairing.
+func (handler *gatewayHandler) admitAPI(response http.ResponseWriter, request *http.Request) (*http.Request, bool) {
+	header := response.Header()
+	header.Add("Vary", "Origin")
+	cross := handler.crossOrigin(request)
+	if cross != "" {
+		header.Set("Access-Control-Allow-Origin", cross)
+		header.Set("Access-Control-Allow-Credentials", "true")
+	}
+	if request.Method == http.MethodOptions && cross != "" && len(request.Header.Values("Access-Control-Request-Method")) == 1 {
+		header.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
+		header.Set("Access-Control-Allow-Headers", "Content-Type, X-Pterm-Request")
+		header.Set("Access-Control-Max-Age", "600")
+		response.WriteHeader(http.StatusNoContent)
+		return request, false
+	}
+	for _, mode := range request.Header.Values("Sec-Fetch-Mode") {
+		if strings.EqualFold(strings.TrimSpace(mode), "no-cors") {
+			writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
+			return request, false
+		}
+	}
+	origins := request.Header.Values("Origin")
+	switch {
+	case len(origins) == 1 && handler.originAllowedValue(origins[0]):
+	case cross != "":
+		request = request.WithContext(WithForwardedOrigin(request.Context(), cross))
+	case len(origins) == 0 && sameOriginFetch(request):
+	default:
+		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
+		return request, false
+	}
+	return request, true
+}
+
+// sameOriginFetch reports exactly one Sec-Fetch-Site: same-origin. Browsers
+// set it and pages cannot.
+func sameOriginFetch(request *http.Request) bool {
+	values := request.Header.Values("Sec-Fetch-Site")
+	return len(values) == 1 && values[0] == "same-origin"
+}
+
+// crossOrigin returns the request's single Origin when it is not this
+// computer's own and exactly matches a bound app origin, or, on
+// /api/v1/pair/*, a pairing origin. Matching is exact: https, default port,
+// lowercase, no trailing dot; "null", near misses and other spellings fail.
+func (handler *gatewayHandler) crossOrigin(request *http.Request) string {
+	values := request.Header.Values("Origin")
+	if len(values) != 1 || handler.originAllowedValue(values[0]) || protocol.ValidateComputerOrigin(values[0]) != nil {
+		return ""
+	}
+	origin := values[0]
+	handler.mu.RLock()
+	defer handler.mu.RUnlock()
+	if _, ok := handler.bound[origin]; ok {
+		return origin
+	}
+	if _, ok := handler.pairing[origin]; ok && strings.HasPrefix(request.URL.Path, "/api/v1/pair/") {
+		return origin
+	}
+	return ""
+}
+
+// originAllowed requires exactly one Origin: an exact own origin, or the
+// bound app origin admitAPI admitted for this request. A missing one fails.
 func (handler *gatewayHandler) originAllowed(request *http.Request) bool {
 	values := request.Header.Values("Origin")
 	if len(values) != 1 {
 		return false
+	}
+	if forwarded, ok := ForwardedOrigin(request.Context()); ok && forwarded == values[0] {
+		return true
 	}
 	return handler.originAllowedValue(values[0])
 }
@@ -267,17 +384,46 @@ func (handler *gatewayHandler) applyConfiguredOrigin(origin string) {
 	handler.mu.Unlock()
 }
 
-// refreshOrigin asks the broker for the configured origin. On failure it
-// keeps the last known value: a broker that does not answer serves no API.
+// refreshOrigin asks the broker for the configured origin and, with a
+// multi-computer broker, the bound and pairing app origins. On failure it
+// keeps the last known values: a broker that does not answer serves no API.
 func (handler *gatewayHandler) refreshOrigin(ctx context.Context) {
 	if handler.api == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	if origin, err := handler.api.Origin(ctx); err == nil {
-		handler.applyConfiguredOrigin(origin)
+	if handler.computers == nil {
+		if origin, err := handler.api.Origin(ctx); err == nil {
+			handler.applyConfiguredOrigin(origin)
+		}
+		return
 	}
+	probe, err := handler.computers.OriginProbe(ctx)
+	if err != nil {
+		return
+	}
+	origin := ""
+	if probe.Origin != nil {
+		origin = *probe.Origin
+	}
+	handler.applyConfiguredOrigin(origin)
+	bound, pairing := originSet(probe.BoundOrigins, protocol.MaxBoundOrigins), originSet(probe.PairingOrigins, protocol.MaxPairingOrigins)
+	handler.mu.Lock()
+	handler.bound, handler.pairing = bound, pairing
+	handler.mu.Unlock()
+}
+
+// originSet keeps at most limit exact computer origins; invalid ones are
+// dropped instead of widening CORS.
+func originSet(origins []string, limit int) map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, origin := range origins {
+		if len(set) < limit && protocol.ValidateComputerOrigin(origin) == nil {
+			set[origin] = struct{}{}
+		}
+	}
+	return set
 }
 
 func (handler *gatewayHandler) serveHealth(response http.ResponseWriter, request *http.Request) {
@@ -350,6 +496,9 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 		http.NotFound(response, request)
 		return
 	}
+	if name == "index.html" {
+		handler.deviceConnectSources(response, request)
+	}
 	contentType := contentTypes[path.Ext(name)]
 	if contentType == "" {
 		contentType = mime.TypeByExtension(path.Ext(name))
@@ -366,6 +515,43 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 		response.Header().Set("Cache-Control", "no-store")
 	}
 	http.ServeContent(response, request, name, time.Time{}, bytes.NewReader(data))
+}
+
+// deviceConnectSources adds the exact https and wss origins of the cookie
+// device's confirmed and pending computers (at most 8) to the app document's
+// connect-src, so the app can reach them and nothing else. Without a usable
+// cookie or broker answer the policy stays as it is.
+func (handler *gatewayHandler) deviceConnectSources(response http.ResponseWriter, request *http.Request) {
+	credential, present := handler.sessionCookie(request)
+	if handler.computers == nil || !present || !validSecret(credential) || !handler.authFailLimit.allowed(clientKey(request)) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), probeTimeout)
+	defer cancel()
+	list, err := handler.computers.ListComputers(ctx, credential)
+	if err != nil {
+		return
+	}
+	var origins []string
+	for _, computer := range list.Computers {
+		origins = append(origins, computer.Origin)
+	}
+	origins = append(origins, list.PendingOrigins...)
+	var sources []string
+	seen := map[string]bool{}
+	for _, origin := range origins {
+		if len(seen) == protocol.MaxComputers || seen[origin] || protocol.ValidateComputerOrigin(origin) != nil {
+			continue
+		}
+		seen[origin] = true
+		sources = append(sources, origin, "wss://"+strings.TrimPrefix(origin, "https://"))
+	}
+	if len(sources) == 0 {
+		return
+	}
+	header := response.Header()
+	header.Set("Content-Security-Policy", strings.Replace(header.Get("Content-Security-Policy"),
+		"connect-src 'self'", "connect-src 'self' "+strings.Join(sources, " "), 1))
 }
 
 func allowMethod(response http.ResponseWriter, request *http.Request, methods ...string) bool {

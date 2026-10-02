@@ -24,6 +24,7 @@ import type {
   WorktreeRemovedPayload,
 } from '../generated/protocol';
 // Standalone code generated at build/test time by vite.config.ts; no runtime compiler.
+// One lenient set for every computer: unknown fields are dropped, wrong types fail.
 import { validateEnvelope } from 'virtual:protocol-validators';
 
 const MAX_HOST_MESSAGE_BYTES = 1024 * 1024;
@@ -100,7 +101,12 @@ export class InvalidProtocolMessageError extends Error {
   }
 }
 
-/** Parse and validate one host message before it reaches any display state. */
+/**
+ * Parse and validate one host message before it reaches any display state.
+ * Unknown fields (from a computer on a newer protocol revision) are dropped;
+ * wrong types, unknown enum values and unknown message types still throw, and
+ * Connection closes the socket on a throw.
+ */
 export function parseHostMessage(text: string): ValidatedHostMessage {
   const byteLength = encoder.encode(text).byteLength;
   if (byteLength === 0 || byteLength > MAX_HOST_MESSAGE_BYTES) {

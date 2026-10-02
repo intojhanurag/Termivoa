@@ -173,10 +173,12 @@ describe('parseHostMessage', () => {
       reply('changes.committed', { state: 'failed', output: 'x'.repeat(2001) }),
       reply('changes.pushed', { state: 'pushed', url: 'http://example.com/pull' }),
       reply('changes.pushed', { state: 'pushed', url: 'javascript:alert(1)' }),
-      reply('changes.pushed', { state: 'pushed', force: true }),
     ]) {
       expect(() => parseHostMessage(bad)).toThrow(InvalidProtocolMessageError);
     }
+    // Unknown fields from a newer computer are dropped, not trusted.
+    const lenient = parseHostMessage(reply('changes.pushed', { state: 'pushed', force: true }));
+    expect(lenient.payload).toEqual({ state: 'pushed' });
     for (const type of ['changes.commit', 'changes.push']) {
       expect(() => parseHostMessage(reply(type, { lease: 'L'.repeat(43), message: 'm', paths: ['a'] }))).toThrow(InvalidProtocolMessageError);
     }
@@ -200,11 +202,12 @@ describe('parseHostMessage', () => {
       reply('tasks.listed', { state: 'ready', tasks: [{ ...task, source: 'pyproject.toml' }] }),
       reply('tasks.listed', { state: 'ready', tasks: [{ ...task, command: '' }] }),
       reply('tasks.listed', { state: 'ready', tasks: [{ ...task, command: 'x'.repeat(513) }] }),
-      reply('tasks.listed', { state: 'ready', tasks: [{ ...task, run: true }] }),
       reply('tasks.listed', { state: 'ready', tasks: Array.from({ length: 51 }, () => task) }),
     ]) {
       expect(() => parseHostMessage(bad)).toThrow(InvalidProtocolMessageError);
     }
+    const dropped = parseHostMessage(reply('tasks.listed', { state: 'ready', tasks: [{ ...task, run: true }] }));
+    expect(dropped.type === 'tasks.listed' && dropped.payload.tasks[0]).toEqual(task);
     expect(() => parseHostMessage(reply('tasks.list', {}))).toThrow('not host-to-client');
   });
 
@@ -252,12 +255,13 @@ describe('parseHostMessage', () => {
       reply('files.listed', { ...listed, entries: [{ name: 'a', kind: 'socket' }] }),
       reply('files.listed', { ...listed, state: 'gone' }),
       reply('files.content', { state: 'ready', path: '', text: 'abc', truncated: false }),
-      reply('files.content', { state: 'ready', path: 'a.ts', truncated: false, extra: 1 }),
       reply('files.found', { state: 'ready', query: 'q', paths: Array.from({ length: 201 }, () => 'a.ts'), truncated: true }),
       reply('files.found', { state: 'ready', query: '', paths: [], truncated: false }),
     ]) {
       expect(() => parseHostMessage(bad)).toThrow(InvalidProtocolMessageError);
     }
+    expect(parseHostMessage(reply('files.content', { state: 'ready', path: 'a.ts', truncated: false, extra: 1 })).payload)
+      .toEqual({ state: 'ready', path: 'a.ts', truncated: false });
     expect(() => parseHostMessage(reply('files.list', { path: '' }))).toThrow('not host-to-client');
     expect(() => parseHostMessage(reply('files.read', { path: 'a.ts' }))).toThrow('not host-to-client');
     expect(() => parseHostMessage(reply('files.search', { query: 'q' }))).toThrow('not host-to-client');
@@ -284,10 +288,36 @@ describe('parseHostMessage', () => {
     }))).toThrow('not host-to-client');
   });
 
-  it('rejects malformed JSON and additional properties', () => {
+  it('rejects malformed JSON', () => {
     expect(() => parseHostMessage('{')).toThrow('not valid JSON');
-    expect(() => parseHostMessage(JSON.stringify({ ...welcome(), unexpected: true })))
-      .toThrow(InvalidProtocolMessageError);
+  });
+
+  it('drops unknown fields at every level and keeps the known ones', () => {
+    const base = welcome();
+    const message = parseHostMessage(JSON.stringify({
+      ...base,
+      unexpected: true,
+      payload: { ...base.payload, newer: 'x', limits: { ...base.payload.limits, maxWidgets: 3 } },
+    }));
+    expect(message).toEqual(base);
+    const state = parseHostMessage(JSON.stringify({
+      version: 1, type: 'session.state', requestId, sessionId: brokerGeneration, generation: brokerGeneration,
+      payload: { state: 'running', mood: 'happy', agent: { state: 'idle', stateSince: '2026-09-27T10:00:00.000Z', tokens: 9 } },
+    }));
+    expect(state.payload).toEqual({ state: 'running', agent: { state: 'idle', stateSince: '2026-09-27T10:00:00.000Z' } });
+  });
+
+  it('still rejects wrong types, unknown enum values and unknown message types', () => {
+    const base = welcome();
+    for (const bad of [
+      { ...base, payload: { ...base.payload, negotiatedVersion: '1' } },
+      { ...base, payload: { ...base.payload, limits: { ...base.payload.limits, maxRows: 'many' } } },
+      { ...base, requestId: 7 },
+      { version: 1, type: 'session.state', requestId, sessionId: brokerGeneration, generation: brokerGeneration, payload: { state: 'paused' } },
+      { ...base, type: 'welcome.v2' },
+    ]) {
+      expect(() => parseHostMessage(JSON.stringify(bad))).toThrow(InvalidProtocolMessageError);
+    }
   });
 
   it('rejects non-lowercase canonical UUID spelling', () => {

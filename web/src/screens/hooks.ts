@@ -122,9 +122,14 @@ export function useServiceWorkerUpdate(): { available: boolean; reload: () => vo
   return { available: waiting !== null, reload };
 }
 
-export function websocketUrl(): string {
-  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${scheme}//${window.location.host}/api/v1/ws`;
+/**
+ * The live WebSocket URL of a computer by its origin; this app's own (home)
+ * computer when omitted. http becomes ws and https becomes wss.
+ */
+export function websocketUrl(origin: string = window.location.origin): string {
+  const url = new URL('/api/v1/ws', origin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.href;
 }
 
 export const SESSION_POLL_MS = 5000;

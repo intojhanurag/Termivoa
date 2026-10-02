@@ -56,6 +56,7 @@ type requestOptions struct {
 	host, origin, contentType, pterm, cookie string
 	omitOrigin, omitHeader                   bool
 	remote                                   string
+	header                                   http.Header // added last
 }
 
 func do(handler http.Handler, method, target, body string, options requestOptions) *httptest.ResponseRecorder {
@@ -85,6 +86,9 @@ func do(handler http.Handler, method, target, body string, options requestOption
 	}
 	if options.remote != "" {
 		request.RemoteAddr = options.remote
+	}
+	for name, values := range options.header {
+		request.Header[name] = values
 	}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

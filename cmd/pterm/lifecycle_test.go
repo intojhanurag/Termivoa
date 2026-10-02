@@ -17,6 +17,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/host"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
 func TestLifecycleModesMatchInternalModes(t *testing.T) {
@@ -253,6 +254,11 @@ func TestUninstallKeepsDataWhileABrokerRuns(t *testing.T) {
 		t.Fatalf("refused uninstall ran %q", got)
 	}
 	assertExists(t, database, env.paths.RuntimeDir)
+	// The shared read-only checks read the live broker's bound app origins.
+	if !strings.Contains(output.String(), "  multi-computer: no bound app origins (CORS off)\n") ||
+		strings.Contains(output.String(), "! multi-computer") {
+		t.Fatalf("multi-computer checks:\n%s", output.String())
+	}
 
 	// Registered in launchd, but the live broker is not launchd's copy:
 	// booting out the registration must not be taken as stopping it.
@@ -421,5 +427,104 @@ func TestProgramLeftoverNamesWhatToDelete(t *testing.T) {
 		if got := programLeftover(c.os, c.executable); got != c.want {
 			t.Errorf("programLeftover(%q, %q) = %q, want %q", c.os, c.executable, got, c.want)
 		}
+	}
+}
+
+const tailnetStatusJSON = `{"BackendState":"Running",
+  "Self":{"ID":"nVps","DNSName":"vps.tailx.ts.net.","UserID":1,"Tags":null},
+  "Peer":{
+    "nodekey:a":{"ID":"nMac","DNSName":"mac.tailx.ts.net.","UserID":1},
+    "nodekey:b":{"ID":"nEve","DNSName":"eve.tailx.ts.net.","UserID":2},
+    "nodekey:c":{"ID":"nSrv","DNSName":"srv.tailx.ts.net.","UserID":3,"Tags":["tag:server"]},
+    "nodekey:d":{"ID":"nNew","DNSName":"old.tailx.ts.net.","UserID":1}},
+  "User":{"1":{"LoginName":"ada@example.com"},"2":{"LoginName":"eve@example.com"}},
+  "CurrentTailnet":{"MagicDNSSuffix":"tailx.ts.net"}}`
+
+func TestTailnetFindingsReportBindingMismatches(t *testing.T) {
+	status, err := parseTailnetStatus([]byte(tailnetStatusJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Self.ID != "nVps" || len(status.Peer) != 4 || status.User["1"].LoginName != "ada@example.com" ||
+		status.CurrentTailnet.MagicDNSSuffix != "tailx.ts.net" || status.Peer["nodekey:c"].Tags[0] != "tag:server" {
+		t.Fatalf("parsed %+v", status)
+	}
+	device := func(origin, node string, revoked bool) protocol.AdminRPCDevice {
+		return protocol.AdminRPCDevice{AppOrigin: &origin, AppNode: &protocol.TailnetNode{ID: node, Tags: []string{}}, Revoked: revoked}
+	}
+	devices := []protocol.AdminRPCDevice{
+		device("https://mac.tailx.ts.net", "nMac", false),   // same owner: fine
+		device("https://mac.tailx.ts.net", "nMac", false),   // duplicate: checked once
+		device("https://srv.tailx.ts.net", "nSrv", false),   // tagged: owners not compared
+		device("https://eve.tailx.ts.net", "nEve", false),   // another user
+		device("https://gone.tailx.ts.net", "nGone", false), // node removed
+		device("https://old.tailx.ts.net", "nOld", false),   // name now on another node
+		device("https://mac.other.ts.net", "nX", false),     // another tailnet
+		device("https://eve.tailx.ts.net", "nEve2", true),   // revoked: skipped
+		{}, // own origin: skipped
+	}
+	got := tailnetFindings(status, devices)
+	want := []string{
+		`https://eve.tailx.ts.net: owner mismatch ("eve@example.com"; this computer: "ada@example.com")`,
+		"https://gone.tailx.ts.net: pinned node nGone is gone; phones bound to it stop working",
+		"https://old.tailx.ts.net: node ID changed (reused name?)",
+		"https://mac.other.ts.net: different tailnet; not supported",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("findings:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	status.Self.Tags = []string{"tag:server"} // a tagged home never compares owners
+	if got := tailnetFindings(status, devices[3:4]); len(got) != 0 {
+		t.Fatalf("tagged self findings = %v", got)
+	}
+}
+
+func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
+	const gateway = `"/":{"Proxy":"http://127.0.0.1:8787"}`
+	for name, test := range map[string]struct {
+		serve string
+		want  []string
+	}{
+		"only the gateway":      {serve: `{"Web":{"h.ts.net:443":{"Handlers":{` + gateway + `}}}}`},
+		"path on own host":      {serve: `{"Web":{"H.ts.net:443":{"Handlers":{` + gateway + `,"/grafana":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"/grafana"}},
+		"root to another app":   {serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, want: []string{"/"}},
+		"other host":            {serve: `{"Web":{"svc.ts.net:443":{"Handlers":{"/x":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
+		"preview port":          {serve: `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`},
+		"TCP forward on 443":    {serve: `{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}`, want: []string{"TCP forward to 127.0.0.1:22"}},
+		"TCP forward elsewhere": {serve: `{"TCP":{"8443":{"TCPForward":"127.0.0.1:22"}}}`},
+		"empty":                 {serve: ``},
+	} {
+		if got := otherServeHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
+			t.Errorf("%s: got %q, want %q", name, got, test.want)
+		}
+	}
+}
+
+// The home-origin warning explains findings that ServeFindings already
+// counts, so the problem count does not change.
+func TestInspectTailscaleWarnsAboutOtherHandlersOnce(t *testing.T) {
+	previous := tailscaleRun
+	t.Cleanup(func() { tailscaleRun = previous })
+	tailscaleRun = func(_ context.Context, _ string, _ io.Writer, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "status --json":
+			return []byte(`{"BackendState":"Running","Self":{"DNSName":"h.ts.net."},"CurrentTailnet":{"MagicDNSSuffix":"ts.net"}}`), nil
+		case "serve status --json":
+			return []byte(`{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"},"/admin":{"Proxy":"http://127.0.0.1:9000"}}}}}`), nil
+		}
+		return nil, errors.New("unexpected tailscale command")
+	}
+	var output bytes.Buffer
+	report, problems := inspectTailscale(context.Background(), "tailscale-fake", &output)
+	want := "  ! tailscale serve: other handlers share this computer's origin (h.ts.net): /admin. As the home computer, " +
+		"any of them would control every computer paired through it; remove them before using this computer as home.\n"
+	if problems != 1 || !strings.Contains(output.String(), want) || report.tailnet == nil ||
+		report.tailnet.CurrentTailnet.MagicDNSSuffix != "ts.net" || strings.Join(report.otherHandlers, ",") != "/admin" {
+		t.Fatalf("problems=%d report=%+v output:\n%s", problems, report, output.String())
+	}
+	var setup bytes.Buffer
+	configured, err := offerTailscaleServe(context.Background(), lifecycleEnv{}, report, "https://h.ts.net", fileConfirmer{}, &setup)
+	if err != nil || !configured || !strings.Contains(setup.String(), want) {
+		t.Fatalf("setup configured=%v err=%v output:\n%s", configured, err, setup.String())
 	}
 }

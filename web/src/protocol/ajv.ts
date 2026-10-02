@@ -6,12 +6,19 @@ import { usePattern } from 'ajv/dist/vocabularies/code';
  * the same Ajv setup can emit standalone validators. The browser only loads
  * the build-time standalone output and never compiles code at runtime, which
  * a CSP without 'unsafe-eval' would block.
+ *
+ * `lenient` drops unknown fields (where a schema says `additionalProperties:
+ * false`) instead of failing, but still rejects wrong types and unknown enum
+ * values, so computers on a newer protocol revision stay readable. It relies
+ * on `discriminator: true`: without it, the envelope's top-level `oneOf` would
+ * strip fields while trying the wrong branches.
  */
-export function createProtocolAjv(options: { readonly standalone?: boolean } = {}) {
+export function createProtocolAjv(options: { readonly standalone?: boolean; readonly lenient?: boolean } = {}) {
   const ajv = new Ajv2020({
     allErrors: true,
     strict: true,
     discriminator: true,
+    ...(options.lenient === true ? { removeAdditional: true } : {}),
     ...(options.standalone === true ? { code: { source: true, esm: true } } : {}),
   });
   ajv.addKeyword({
