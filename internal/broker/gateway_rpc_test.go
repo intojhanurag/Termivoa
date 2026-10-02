@@ -20,6 +20,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
@@ -57,18 +58,18 @@ func newAuthStreamFixture(t *testing.T) (*managementFixture, *Session, *streamPr
 func pairDevice(t *testing.T, service *auth.Service, label string) auth.PollResult {
 	t.Helper()
 	ctx := context.Background()
-	grant, _, err := service.CreateGrant(ctx)
+	grant, _, err := service.CreateBoundGrant(ctx, store.AppBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	redeemed, err := service.Redeem(ctx, grant, label)
+	redeemed, err := service.RedeemChecked(ctx, grant, label, auth.OwnOriginOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := service.Approve(ctx, redeemed.PendingID); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.Poll(ctx, redeemed.PendingID, redeemed.PollSecret)
+	result, err := service.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, auth.OwnOriginOnly)
 	if err != nil || !result.Approved {
 		t.Fatalf("pair = %#v, %v", result, err)
 	}

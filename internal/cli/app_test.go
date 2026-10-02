@@ -400,3 +400,11 @@ func newTestApp(
 	}
 	return app
 }
+
+// ConfirmationReadFunc adapts a context-aware input function. The function
+// must honor the cancellation contract of ConfirmationReader itself.
+type ConfirmationReadFunc func(context.Context, []byte) (int, error)
+
+func (read ConfirmationReadFunc) ReadContext(ctx context.Context, data []byte) (int, error) {
+	return read(ctx, data)
+}

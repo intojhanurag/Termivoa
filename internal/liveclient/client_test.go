@@ -470,10 +470,6 @@ func TestHeartbeatReleaseAndResizeUseCurrentLease(t *testing.T) {
 	if client.State().Controller {
 		t.Fatal("release retained local input")
 	}
-	if err := client.Detach(context.Background()); err != nil && !errors.Is(err, io.EOF) {
-		t.Fatal(err)
-	}
-	host.await(t, protocol.SessionDetach)
 }
 
 func TestChangedGenerationNeverPaintsAndCloses(t *testing.T) {

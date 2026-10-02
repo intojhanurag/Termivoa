@@ -178,7 +178,7 @@ func TestLiveClientNativeBrokerControlInputResizeAndReconnect(t *testing.T) {
 	if err := second.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := first.Detach(ctx); err != nil {
+	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
 	assertLiveIdentity(t, ctx, managed, initial)

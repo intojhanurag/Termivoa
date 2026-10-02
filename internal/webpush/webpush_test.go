@@ -291,18 +291,18 @@ func (phone testPhone) subscription() Subscription {
 func pairDevice(t *testing.T, authority *auth.Service) auth.PollResult {
 	t.Helper()
 	ctx := context.Background()
-	grant, _, err := authority.CreateGrant(ctx)
+	grant, _, err := authority.CreateBoundGrant(ctx, store.AppBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	redeemed, err := authority.Redeem(ctx, grant, "Phone")
+	redeemed, err := authority.RedeemChecked(ctx, grant, "Phone", auth.OwnOriginOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := authority.Approve(ctx, redeemed.PendingID); err != nil {
 		t.Fatal(err)
 	}
-	result, err := authority.Poll(ctx, redeemed.PendingID, redeemed.PollSecret)
+	result, err := authority.PollChecked(ctx, redeemed.PendingID, redeemed.PollSecret, auth.OwnOriginOnly)
 	if err != nil || !result.Approved {
 		t.Fatalf("poll = %v", err)
 	}

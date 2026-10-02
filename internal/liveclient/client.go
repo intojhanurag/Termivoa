@@ -155,7 +155,6 @@ type Client struct {
 	recent              []sentRequest
 	queuedBytes         int
 	frameSerial         uint64
-	detaching           bool
 	snapshotApplied     bool
 	viewport            *viewportResize
 	inputIdentity       inputIdentity

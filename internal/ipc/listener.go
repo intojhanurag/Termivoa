@@ -395,10 +395,6 @@ func recoverStaleEndpoint(ctx context.Context, runtimeDir, name string) error {
 	return nil
 }
 
-func EndpointDescriptorPath(runtimeDir string) (string, error) {
-	return EndpointDescriptorPathNamed(runtimeDir, defaultSocketName)
-}
-
 // EndpointDescriptorPathNamed is EndpointDescriptorPath for a non-default
 // SocketName.
 func EndpointDescriptorPathNamed(runtimeDir, name string) (string, error) {
@@ -456,10 +452,6 @@ func ReadNamedEndpointDescriptor(runtimeDir, name string) (EndpointDescriptor, e
 	return descriptor, nil
 }
 
-func writeEndpointDescriptor(runtimeDir string, descriptor EndpointDescriptor) error {
-	return writeEndpointDescriptorNamed(runtimeDir, defaultSocketName, descriptor)
-}
-
 func writeEndpointDescriptorNamed(runtimeDir, name string, descriptor EndpointDescriptor) error {
 	if err := validateEndpointDescriptor(runtimeDir, name, descriptor); err != nil {
 		return err
@@ -515,10 +507,6 @@ func removeOwnedDescriptor(runtimeDir, name string, owned EndpointDescriptor) er
 		return nil
 	}
 	return removeStaleDescriptorNamed(runtimeDir, name)
-}
-
-func removeStaleDescriptor(runtimeDir string) error {
-	return removeStaleDescriptorNamed(runtimeDir, defaultSocketName)
 }
 
 func removeStaleDescriptorNamed(runtimeDir, name string) error {

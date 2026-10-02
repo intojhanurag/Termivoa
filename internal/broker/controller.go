@@ -72,22 +72,6 @@ func NewController(generation string) (*Controller, error) {
 	return &Controller{generation: generation, random: rand.Reader, now: time.Now}, nil
 }
 
-func newControllerForTest(generation string, random io.Reader, now func() time.Time) (*Controller, error) {
-	controller, err := NewController(generation)
-	if err != nil {
-		return nil, err
-	}
-	if random == nil {
-		return nil, errors.New("broker: controller random source must not be nil")
-	}
-	if now == nil {
-		return nil, errors.New("broker: controller clock must not be nil")
-	}
-	controller.random = random
-	controller.now = now
-	return controller, nil
-}
-
 // Acquire serially revokes any existing connection and creates a new lease.
 func (controller *Controller) Acquire(generation, connectionID, deviceID string) (ControlGrant, error) {
 	controller.mu.Lock()
@@ -145,7 +129,7 @@ func (controller *Controller) Authorize(generation, connectionID, deviceID, leas
 }
 
 // acceptInput applies a bounded-queue decision atomically with sequence
-// acceptance. It is deliberately private: callers must use InputInbox.Submit
+// acceptance. It is deliberately private: callers must use InputInbox.submit
 // so no sequence can advance without its corresponding action being queued. A
 // full queue must not advance the high-water mark, otherwise a safe client
 // retry would be misclassified as a duplicate and never execute.

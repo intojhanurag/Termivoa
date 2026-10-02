@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -173,4 +174,62 @@ func TestApplyPatchDoesNotAliasBaseOrPatch(t *testing.T) {
 	if next.Screen[0].Cells[0].Text != "n" {
 		t.Fatalf("canonical next frame mutated: %q", next.Screen[0].Cells[0].Text)
 	}
+}
+
+// Test-only: ApplyPatch is the reference that checks Diff (base + patch == next).
+var (
+	ErrPatchBaseMismatch = errors.New("screen patch base revision does not match")
+	ErrDuplicatePatchRow = errors.New("screen patch contains a duplicate row")
+)
+
+// ApplyPatch returns a new immutable frame. It never partially mutates base.
+func ApplyPatch(base Frame, patch Patch) (Frame, error) {
+	if patch.BaseRevision != base.Revision {
+		return Frame{}, ErrPatchBaseMismatch
+	}
+	if patch.Revision <= patch.BaseRevision {
+		return Frame{}, ErrPatchRevision
+	}
+	if patch.Columns != base.Columns || patch.Rows != base.Rows {
+		return Frame{}, ErrFullSnapshotNeeded
+	}
+	if len(base.Screen) != base.Rows {
+		return Frame{}, fmt.Errorf("%w: base row count does not match dimensions", ErrInvalidPatchRow)
+	}
+
+	next := cloneFrame(base)
+	next.Revision = patch.Revision
+	next.Alternate = patch.Alternate
+	next.WidthMethod = patch.WidthMethod
+	next.Foreground = patch.Foreground
+	next.Background = patch.Background
+	next.CursorColor = patch.CursorColor
+	next.Cursor = patch.Cursor
+	next.HistoryBytes = patch.HistoryBytes
+	next.HistoryRows = patch.HistoryRows
+	next.HistoryEpoch = patch.HistoryEpoch
+	next.HistoryRevision = patch.HistoryRevision
+	next.ContentClipped = patch.ContentClipped
+
+	seen := make([]bool, patch.Rows)
+	for _, changed := range patch.ChangedRows {
+		if changed.Index < 0 || changed.Index >= patch.Rows || len(changed.Row.Cells) != patch.Columns {
+			return Frame{}, fmt.Errorf("%w: index %d", ErrInvalidPatchRow, changed.Index)
+		}
+		if seen[changed.Index] {
+			return Frame{}, fmt.Errorf("%w: index %d", ErrDuplicatePatchRow, changed.Index)
+		}
+		seen[changed.Index] = true
+		next.Screen[changed.Index] = cloneRow(changed.Row)
+	}
+	return next, nil
+}
+
+func cloneFrame(frame Frame) Frame {
+	cloned := frame
+	cloned.Screen = make([]Row, len(frame.Screen))
+	for index, row := range frame.Screen {
+		cloned.Screen[index] = cloneRow(row)
+	}
+	return cloned
 }

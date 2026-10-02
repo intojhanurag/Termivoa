@@ -128,15 +128,11 @@ func NewService(config ServiceConfig) (*Service, error) {
 	}, nil
 }
 
-// CreateGrant returns a fresh two-minute grant. Its transport value is
-// returned only to the restricted local CLI and never persisted.
-func (service *Service) CreateGrant(ctx context.Context) (string, time.Time, error) {
-	return service.CreateBoundGrant(ctx, store.AppBinding{})
-}
-
-// CreateBoundGrant is CreateGrant bound to one app origin and pinned node
-// (pterm pair --via); the caller has resolved and checked app. Redemption
-// and polling then accept only that origin.
+// CreateBoundGrant returns a fresh two-minute grant. Its transport value is
+// returned only to the restricted local CLI and never persisted. A non-zero
+// app binds it to one app origin and pinned node (pterm pair --via); the
+// caller has resolved and checked app. Redemption and polling then accept
+// only that origin.
 func (service *Service) CreateBoundGrant(ctx context.Context, app store.AppBinding) (string, time.Time, error) {
 	now := service.clock()
 	secret, err := generateSecret(rand.Reader)
@@ -158,15 +154,10 @@ func (service *Service) CreateBoundGrant(ctx context.Context, app store.AppBindi
 	return value, expires, err
 }
 
-// Redeem atomically consumes a grant and creates a pending pairing with an
-// independent poll secret and a human comparison code. It is a request from
-// this computer's own origin, so it refuses a grant bound to an app origin.
-func (service *Service) Redeem(ctx context.Context, grant, label string) (protocol.HTTPPairRedeemResponse, error) {
-	return service.RedeemChecked(ctx, grant, label, OwnOriginOnly)
-}
-
-// RedeemChecked is Redeem with the request's origin check. A refused check
-// leaves the grant unused.
+// RedeemChecked atomically consumes a grant and creates a pending pairing
+// with an independent poll secret and a human comparison code. check is the
+// request's origin check (nil means OwnOriginOnly). A refused check leaves
+// the grant unused.
 func (service *Service) RedeemChecked(ctx context.Context, grant, label string, check AppCheck) (protocol.HTTPPairRedeemResponse, error) {
 	if check == nil {
 		check = OwnOriginOnly
@@ -224,15 +215,11 @@ func (service *Service) Approve(ctx context.Context, pendingID string) error {
 	return mapStoreError(service.store.ApprovePendingPairing(ctx, pendingID, service.clock()))
 }
 
-// Poll requires the independent poll secret. The approved poll atomically
-// creates the device and credential; the plaintext exists only in this result.
-// It is a request from this computer's own origin (see Redeem).
-func (service *Service) Poll(ctx context.Context, pendingID, pollSecret string) (PollResult, error) {
-	return service.PollChecked(ctx, pendingID, pollSecret, OwnOriginOnly)
-}
-
-// PollChecked is Poll with the request's origin check. A refused check
-// changes nothing. The device inherits the pending pairing's app binding.
+// PollChecked requires the independent poll secret. The approved poll
+// atomically creates the device and credential; the plaintext exists only in
+// this result. check is the request's origin check (nil means OwnOriginOnly).
+// A refused check changes nothing. The device inherits the pending pairing's
+// app binding.
 func (service *Service) PollChecked(ctx context.Context, pendingID, pollSecret string, check AppCheck) (PollResult, error) {
 	if check == nil {
 		check = OwnOriginOnly
@@ -363,15 +350,10 @@ func (service *Service) revokedLocked(principal Principal) error {
 	return nil
 }
 
-// Bind authenticates a credential and registers a live-stream binding in the
-// same critical section that revocation uses, so a stream cannot be bound
-// after a concurrent revocation has already selected its targets.
-func (service *Service) Bind(ctx context.Context, credential string) (*Binding, Principal, error) {
-	return service.BindChecked(ctx, credential, "", nil)
-}
-
-// BindChecked is Bind for a stream opened from origin ("" is this computer's
-// own origin). check, when set, runs in the same critical section before the
+// BindChecked authenticates a credential and registers a live-stream binding
+// in the same critical section that revocation uses, so a stream cannot be
+// bound after a concurrent revocation has already selected its targets. The
+// stream was opened from origin ("" is this computer's own origin). check, when set, runs in the same critical section before the
 // binding is registered; it must only read memory. CloseUntrusted later
 // closes the stream if its app origin stops being trusted.
 func (service *Service) BindChecked(
