@@ -55,9 +55,6 @@ chmod go-w "$HOME/.local" "$bin_dir"
 install -m 0755 "$source" "$bin_dir/.pterm.new"
 mv -f "$bin_dir/.pterm.new" "$bin_dir/pterm"
 echo "Installed $bin_dir/pterm"
-case ":$PATH:" in
-  *":$bin_dir:"*) ;;
-  *) echo "Note: $bin_dir is not on your PATH yet. Ubuntu adds it at your next login; until then use $bin_dir/pterm." ;;
-esac
 
+# When $bin_dir is not on PATH yet, setup says so as its last line.
 exec "$bin_dir/pterm" setup

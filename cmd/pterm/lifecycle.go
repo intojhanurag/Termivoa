@@ -526,6 +526,22 @@ A new server often has only root. Make a user with sudo and your SSH key (replac
   rsync --archive --chown=<name>:<name> ~/.ssh /home/<name>
 Then log in as that user (ssh <name>@<this-server>) and run the install there again.`
 
+// pathHint says, as the last thing setup prints on Linux, how to run `pterm`
+// when its folder is not on PATH: Ubuntu and Debian add ~/.local/bin only at
+// the next login. It never edits shell startup files: there is no one file
+// for every shell, and those files are the owner's.
+func pathHint(env lifecycleEnv, output io.Writer) {
+	directory := filepath.Dir(env.host.Executable)
+	if env.host.OS != "linux" || slices.Contains(filepath.SplitList(os.Getenv("PATH")), directory) {
+		return
+	}
+	keep := "To keep it, add that line to your shell's startup file (bash: ~/.profile)."
+	if directory == filepath.Join(env.host.HomeDir, ".local", "bin") {
+		keep = "New logins have it already: Ubuntu and Debian add ~/.local/bin at login. On another system, add that line to your shell's startup file."
+	}
+	fmt.Fprintf(output, "\n`pterm` is not on your PATH in this terminal yet. To use it here, run this now:\n  export PATH=\"%s:$PATH\"\n%s\n", directory, keep)
+}
+
 // runSetupCommand is the first-run wizard. It runs read-only checks, shows a
 // short plan of everything it will do, and asks once. Then it registers
 // startup, waits for the broker and gateway, saves the Tailscale phone
@@ -550,6 +566,8 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	if env.host.OS == "linux" && isRoot() {
 		return errors.New(rootHelp)
 	}
+	// Last, also after an error: the next command the owner types is `pterm`.
+	defer pathHint(env, output)
 	// Without --verbose the checks and each step stay out of the way; the
 	// plan and the questions still name every change.
 	var checks bytes.Buffer

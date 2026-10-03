@@ -99,6 +99,35 @@ func newLinuxLifecycleTestEnv(t *testing.T, systemd bool) (lifecycleEnv, *system
 	return env, fake
 }
 
+// After an install into ~/.local/bin that PATH does not have yet, the last
+// thing setup prints is the command that makes `pterm` work in this terminal.
+func TestLinuxSetupEndsWithThePathHint(t *testing.T) {
+	env, _ := newLinuxLifecycleTestEnv(t, true)
+	bin := filepath.Join(env.host.HomeDir, ".local", "bin")
+	env.host.Executable = filepath.Join(bin, "pterm")
+	loadLifecycleEnv = func() (lifecycleEnv, error) { return env, nil }
+	hint := "\n`pterm` is not on your PATH in this terminal yet. To use it here, run this now:\n  export PATH=\"" + bin + ":$PATH\"\n" +
+		"New logins have it already: Ubuntu and Debian add ~/.local/bin at login. On another system, add that line to your shell's startup file.\n"
+
+	t.Setenv("PATH", "/usr/bin:/bin")
+	var output bytes.Buffer
+	if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(output.String(), hint) || strings.Count(output.String(), "not on your PATH") != 1 {
+		t.Errorf("setup does not end with the PATH hint, once:\n%s", output.String())
+	}
+
+	t.Setenv("PATH", "/usr/bin:"+bin)
+	output.Reset()
+	if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "PATH") {
+		t.Errorf("PATH hint although pterm is on PATH:\n%s", output.String())
+	}
+}
+
 // As root, setup changes nothing and says how to make a normal user.
 func TestLinuxSetupRefusesRootAndSaysHowToMakeAUser(t *testing.T) {
 	_, fake := newLinuxLifecycleTestEnv(t, true)
@@ -147,7 +176,8 @@ func TestLinuxSetupAndUninstallUseSystemdUserUnits(t *testing.T) {
 			t.Errorf("short plan contains %q:\n%s", unwanted, short)
 		}
 	}
-	if lines := strings.Count(short, "\n"); lines > 12 {
+	plan, _, _ := strings.Cut(short, "No changes made")
+	if lines := strings.Count(plan, "\n"); lines > 12 {
 		t.Errorf("short plan has %d lines:\n%s", lines, short)
 	}
 	output.Reset()
