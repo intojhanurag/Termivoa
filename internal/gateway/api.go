@@ -28,6 +28,9 @@ const (
 	maxDeviceLabelBytes  = 64
 	maxSessionTitleBytes = 128
 	maxErrorMessageBytes = 512
+	// maxOfferBodyBytes bounds an offer: an origin and a grant fit easily.
+	maxOfferBodyBytes = 1024
+	offerPath         = "/api/v1/computers/offer"
 )
 
 func (handler *gatewayHandler) pairRedeem(response http.ResponseWriter, request *http.Request) {
@@ -188,6 +191,48 @@ func (handler *gatewayHandler) removeComputer(response http.ResponseWriter, requ
 		return
 	}
 	response.WriteHeader(http.StatusNoContent)
+}
+
+// offerComputer takes a new computer's offer (docs/found-on-network.md, H1).
+// admitAPI already refused any Origin and Sec-Fetch-* header; the cookie is
+// never read. Every well-formed offer gets 204, whether the broker keeps it
+// or drops it, and nothing the sender sent is echoed.
+func (handler *gatewayHandler) offerComputer(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body protocol.HTTPComputerOfferRequest
+	if !readJSON(response, request, &body, maxOfferBodyBytes) {
+		return
+	}
+	if !handler.offerLimit.take(clientKey(request)) {
+		writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "too many offers")
+		return
+	}
+	if protocol.ValidateComputerOffer(body) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid offer")
+		return
+	}
+	var brokerErr *gatewayapi.Error
+	if err := handler.api.OfferComputer(request.Context(), body); err != nil && !errors.As(err, &brokerErr) {
+		writeBrokerError(response, err) // A transport failure: 503, no text.
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+// foundComputers lists the computers that offered themselves to this home,
+// for the cookie's device. The broker admits only this computer's own origin.
+func (handler *gatewayHandler) foundComputers(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodGet) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	result, err := handler.api.FoundComputers(request.Context(), credential)
+	handler.respondGeneric(response, request, result, err)
 }
 
 // respondGeneric is respond with the broker's message replaced by the status
@@ -478,8 +523,7 @@ func (handler *gatewayHandler) sessionCookie(request *http.Request) (string, boo
 }
 
 // mutation enforces the state-changing request boundary after the method
-// check: exact Origin, the fixed request header, JSON content type, a 64 KiB
-// body and strict decoding.
+// check: exact Origin, then readJSON with a 64 KiB body.
 func (handler *gatewayHandler) mutation(response http.ResponseWriter, request *http.Request, destination any) bool {
 	return handler.mutationLimit(response, request, destination, maxRequestBodyBytes)
 }
@@ -492,6 +536,12 @@ func (handler *gatewayHandler) mutationLimit(
 		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
 		return false
 	}
+	return readJSON(response, request, destination, limit)
+}
+
+// readJSON checks the fixed request header and the JSON content type, then
+// reads at most limit bytes and decodes them strictly into destination.
+func readJSON(response http.ResponseWriter, request *http.Request, destination any, limit int64) bool {
 	if values := request.Header.Values(requestHeaderName); len(values) != 1 || values[0] != "1" {
 		writeError(response, http.StatusForbidden, protocol.InvalidRequest, "missing request header")
 		return false

@@ -53,6 +53,9 @@ type gatewayHandler struct {
 	assets      fs.FS
 
 	redeemLimit, pollLimit *limiter
+	// offerLimit is the offer route's own bucket: a flood of offers never
+	// takes redeem or poll tokens.
+	offerLimit *limiter
 	// uploads bounds concurrent upload bodies held in memory.
 	uploads    chan struct{}
 	liveLimits liveLimits
@@ -105,6 +108,7 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		assets:      webassets.FS,
 		redeemLimit: newLimiter(5, time.Minute/5),
 		pollLimit:   newLimiter(10, time.Second),
+		offerLimit:  newLimiter(10, time.Second),
 		uploads:     make(chan struct{}, maxConcurrentUploads),
 		liveLimits:  defaultLiveLimits,
 	}
@@ -146,6 +150,9 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/ws", handler.serveLive)
 		mux.HandleFunc("/api/v1/computers", handler.computerList)
 		mux.HandleFunc("/api/v1/computers/{host}", handler.removeComputer)
+		// Literal paths win over {host}; neither is a valid computer host.
+		mux.HandleFunc(offerPath, handler.offerComputer)
+		mux.HandleFunc("/api/v1/computers/found", handler.foundComputers)
 	}
 	handler.mux = mux
 	return handler, nil
@@ -242,6 +249,18 @@ func (handler *gatewayHandler) ServeHTTP(response http.ResponseWriter, request *
 // and carries its Origin to the broker, which checks it against the
 // request's own credential, grant or pending pairing.
 func (handler *gatewayHandler) admitAPI(response http.ResponseWriter, request *http.Request) (*http.Request, bool) {
+	// The offer route (docs/found-on-network.md, H1) is for a new computer's
+	// broker, never a browser: browsers send Origin on every POST and
+	// Sec-Fetch-* on every request. For this exact path and every method it
+	// never sends CORS headers, never answers a preflight and forwards no
+	// origin. The ServeMux routes only this decoded path to offerComputer.
+	if request.URL.Path == offerPath {
+		if _, ok := request.Header["Origin"]; ok || hasSecFetch(request.Header) {
+			writeError(response, http.StatusForbidden, protocol.InvalidRequest, "origin not allowed")
+			return request, false
+		}
+		return request, true
+	}
 	header := response.Header()
 	header.Add("Vary", "Origin")
 	cross := handler.crossOrigin(request)
@@ -273,6 +292,16 @@ func (handler *gatewayHandler) admitAPI(response http.ResponseWriter, request *h
 		return request, false
 	}
 	return request, true
+}
+
+// hasSecFetch reports any Sec-Fetch-* header, even an empty one.
+func hasSecFetch(header http.Header) bool {
+	for name := range header {
+		if strings.HasPrefix(strings.ToLower(name), "sec-fetch-") {
+			return true
+		}
+	}
+	return false
 }
 
 // sameOriginFetch reports exactly one Sec-Fetch-Site: same-origin. Browsers
