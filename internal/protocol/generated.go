@@ -1749,6 +1749,6 @@ const (
 // ProtocolRevision is this build's additive protocol v1 revision and
 // MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
 const (
-	ProtocolRevision    = 1
+	ProtocolRevision    = 2
 	MinProtocolRevision = 1
 )

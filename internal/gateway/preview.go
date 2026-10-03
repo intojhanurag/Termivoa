@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
@@ -34,6 +36,11 @@ const (
 	maxPreviewRequestBody     = 32 << 20
 	maxPreviewUpgrades        = 32
 	previewResponseHeaderWait = 2 * time.Minute
+
+	// previewSelectedPage moves the frame to the dev site root. The move is a
+	// replace navigation started by the preview origin itself, so the request
+	// for / carries Sec-Fetch-Site: same-origin and no Referer.
+	previewSelectedPage = `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>Preview</title>` + "\n"
 )
 
 // previewRecheckEvery bounds how long a revoked phone or a closed port keeps
@@ -205,11 +212,23 @@ func (handler *previewHandler) ServeHTTP(response http.ResponseWriter, request *
 		previewPage(response, http.StatusMisdirectedRequest, "Unknown host.")
 		return
 	}
-	// Browsers send Origin on cross-origin requests and on form posts. Only
-	// the preview origin itself may send one: the app origin and other sites
-	// may not drive the dev server with the owner's cookie.
-	if values := request.Header.Values("Origin"); len(values) > 1 ||
-		len(values) == 1 && strings.ToLower(values[0]) != handler.ownOrigin(request) {
+	// Who may send a request is decided before the cookie is read and before
+	// the dev server is reached (docs/peer-preview.md, L1 and L2). The
+	// selection is the one request the app's frame starts: a navigation has no
+	// Origin, so its Referer must name this computer's app or a bound app. The
+	// app's reachability probe is this path too: without a Referer it answers
+	// 403, with one and no cookie 401; any answer means the listener is served.
+	// Everything else must come from the preview origin itself.
+	selecting := request.URL.Path == previewSelectPath
+	var app string
+	var forward bool
+	if selecting {
+		var ok bool
+		if app, forward, ok = handler.appReferer(request); !ok {
+			previewPage(response, http.StatusForbidden, "Open the preview from the Termivoa app.")
+			return
+		}
+	} else if !handler.fromPreviewOrigin(request) {
 		previewPage(response, http.StatusForbidden, "Origin not allowed.")
 		return
 	}
@@ -223,8 +242,8 @@ func (handler *previewHandler) ServeHTTP(response http.ResponseWriter, request *
 		previewPage(response, http.StatusUnauthorized, "Open the preview from your paired phone.")
 		return
 	}
-	if request.URL.Path == previewSelectPath {
-		handler.selectPort(response, request, credential)
+	if selecting {
+		handler.selectPort(response, request, credential, app, forward)
 		return
 	}
 	if strings.HasPrefix(request.URL.Path, previewReservedPrefix) {
@@ -284,9 +303,46 @@ func (handler *previewHandler) watch(ctx context.Context, cancel context.CancelF
 	}
 }
 
+// fromPreviewOrigin is rule L1, the /api rule on the preview listener: exactly
+// one Origin equal to the preview origin (form posts, module scripts, and
+// WebSocket handshakes, which carry no Sec-Fetch headers in Chrome), or no
+// Origin and Sec-Fetch-Site: same-origin. It refuses a script, image, frame,
+// no-cors fetch or socket from the app and from any other page of the tailnet.
+func (handler *previewHandler) fromPreviewOrigin(request *http.Request) bool {
+	origins := request.Header.Values("Origin")
+	if len(origins) == 1 {
+		return strings.ToLower(origins[0]) == handler.ownOrigin(request)
+	}
+	return len(origins) == 0 && sameOriginFetch(request)
+}
+
+// appReferer is rule L2. The selection must carry no Origin and exactly one
+// Referer that is an app origin plus "/" (the frame has
+// referrerpolicy="origin"): this computer's own origin, or a bound app origin
+// of another computer, which the broker must check against the credential
+// (forward). A page cannot send another origin's Referer.
+func (handler *previewHandler) appReferer(request *http.Request) (origin string, forward, ok bool) {
+	referers := request.Header.Values("Referer")
+	if len(request.Header.Values("Origin")) != 0 || len(referers) != 1 {
+		return "", false, false
+	}
+	candidate, slash := strings.CutSuffix(referers[0], "/")
+	switch {
+	case !slash:
+		return "", false, false
+	case handler.main.originAllowedValue(candidate):
+		return strings.ToLower(candidate), false, true
+	case handler.main.boundOrigin(candidate):
+		return candidate, true, true
+	}
+	return "", false, false
+}
+
 // selectPort authorizes session and port, remembers them in a preview-only
-// cookie and sends the frame to the dev site root.
-func (handler *previewHandler) selectPort(response http.ResponseWriter, request *http.Request, credential string) {
+// cookie and answers a page that moves the frame to the dev site root. A
+// redirect would not do: the request for / would still count as started by
+// the app's page (Sec-Fetch-Site: same-site) and fail rule L1.
+func (handler *previewHandler) selectPort(response http.ResponseWriter, request *http.Request, credential, app string, forward bool) {
 	if request.Method != http.MethodGet {
 		response.Header().Set("Allow", http.MethodGet)
 		previewPage(response, http.StatusMethodNotAllowed, "Method not allowed.")
@@ -299,7 +355,11 @@ func (handler *previewHandler) selectPort(response http.ResponseWriter, request 
 		previewPage(response, http.StatusBadRequest, "Invalid preview request.")
 		return
 	}
-	if _, err := handler.main.api.PreviewTarget(request.Context(), credential, sessionID, uint16(port)); err != nil {
+	ctx := request.Context()
+	if forward {
+		ctx = gatewayapi.WithForwardedOrigin(ctx, app)
+	}
+	if _, err := handler.main.api.PreviewTarget(ctx, credential, sessionID, uint16(port)); err != nil {
 		if isAuthFailure(err) {
 			handler.main.authFailLimit.take(clientKey(request))
 		}
@@ -310,9 +370,15 @@ func (handler *previewHandler) selectPort(response http.ResponseWriter, request 
 		Name: handler.cookieName(), Value: sessionID + "." + strconv.FormatUint(port, 10), Path: "/",
 		Secure: !handler.main.dev, HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
-	response.Header().Set("Cache-Control", "no-store")
-	response.Header().Set("Referrer-Policy", "no-referrer")
-	http.Redirect(response, request, "/", http.StatusSeeOther)
+	header := response.Header()
+	header.Set("Content-Type", "text/html; charset=utf-8")
+	header.Set("Cache-Control", "no-store")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Referrer-Policy", "no-referrer")
+	// A meta refresh needs no script allowance. Only the app that selected
+	// may frame this page.
+	header.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors "+app)
+	_, _ = io.WriteString(response, previewSelectedPage)
 }
 
 // selection reads the preview cookie. It names what to show, not who may
@@ -334,6 +400,10 @@ func (handler *previewHandler) fail(response http.ResponseWriter, err error) {
 	switch status := brokerErrorStatus(err); status {
 	case http.StatusUnauthorized:
 		previewPage(response, status, "This phone is no longer paired. Open Termivoa to pair again.")
+	case http.StatusBadRequest:
+		// invalid_request: the broker refused the app origin for this
+		// credential, or the app computer's Tailscale tags changed.
+		previewPage(response, http.StatusForbidden, "This app may not use this computer.")
 	case http.StatusNotFound:
 		previewPage(response, status, "No dev server of this session listens on that port.")
 	case http.StatusConflict:
@@ -447,13 +517,15 @@ func cutPrefixFold(value, prefix string) (string, bool) {
 	return rest, true
 }
 
-// previewPage writes a small plain-text answer from the gateway itself.
+// previewPage writes a small plain-text answer from the gateway itself. It
+// has no frame-ancestors: the text is static, and it must be readable inside
+// the app's frame, whose parent is another origin.
 func previewPage(response http.ResponseWriter, status int, message string) {
 	header := response.Header()
 	header.Set("Content-Type", "text/plain; charset=utf-8")
 	header.Set("Cache-Control", "no-store")
 	header.Set("X-Content-Type-Options", "nosniff")
-	header.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'")
+	header.Set("Content-Security-Policy", "default-src 'none'")
 	header.Set("Referrer-Policy", "no-referrer")
 	response.WriteHeader(status)
 	_, _ = fmt.Fprintln(response, message)

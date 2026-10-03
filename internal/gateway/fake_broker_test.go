@@ -35,6 +35,7 @@ type fakeBroker struct {
 	opened      chan *fakeStream
 	origin      string // returned by Origin
 	previews    map[uint16]string
+	previewErr  error // returned by PreviewTarget for an authorized credential
 }
 
 func newFakeBroker() *fakeBroker { return &fakeBroker{opened: make(chan *fakeStream, 4)} }
@@ -194,14 +195,20 @@ func (broker *fakeBroker) Upload(_ context.Context, credential, sessionID, gener
 }
 
 // PreviewTarget allows port 5173 of uuidB (owned, IPv4) and port 5174 of
-// uuidB (owned, IPv6 only); everything else is not a dev server of it.
-func (broker *fakeBroker) PreviewTarget(_ context.Context, credential, sessionID string, port uint16) (string, error) {
-	broker.record("preview:" + sessionID + ":" + strconv.Itoa(int(port)))
+// uuidB (owned, IPv6 only); everything else is not a dev server of it. It
+// records the origin the gateway forwarded ("preview:<session>:<port>@<origin>";
+// own origin leaves it empty).
+func (broker *fakeBroker) PreviewTarget(ctx context.Context, credential, sessionID string, port uint16) (string, error) {
+	origin, _ := gatewayapi.ForwardedOrigin(ctx)
+	broker.record("preview:" + sessionID + ":" + strconv.Itoa(int(port)) + "@" + origin)
 	if err := broker.authorize(credential); err != nil {
 		return "", err
 	}
 	broker.mu.Lock()
 	defer broker.mu.Unlock()
+	if broker.previewErr != nil {
+		return "", broker.previewErr
+	}
 	if host, ok := broker.previews[port]; ok && sessionID == uuidB {
 		return host, nil
 	}
