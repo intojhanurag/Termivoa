@@ -63,20 +63,49 @@ No host change was needed: the peer admits the push routes like every other
 `/api` route from its bound app origin, and the device comes from the
 credential.
 
-- **No page lives under `/push/`**, so a peer registration controls nothing.
-  In it the worker stores no bundle, deletes no cache and claims no client;
-  it only shows notifications.
+- **The app never loads under `/push/`.** The gateway answers 404 for every
+  path under `/push/` (other unknown paths without an extension get
+  `index.html`), and in a peer registration the worker handles no fetch,
+  stores no bundle, deletes no cache and claims no client; it only shows
+  notifications. If the app did load there, the page would get the peer's
+  registration in place of home's. For the same reason the app asks for
+  home's registration by its scope (`getRegistration('/')`), never by the
+  page's address (`ready`).
 - **The host comes from the scope, never from the payload.** The worker reads
   `<host>` from its own registration scope (`[a-z0-9.-]+`, exact
-  `/push/<host>/`). A peer notification's body starts with the first DNS label
-  (`vps · <project> · tap to answer`), its tag carries the host, and a tap
-  opens `/c/<host>/sessions/<id>`. A peer's payload is untrusted: it supplies
-  only the clamped title and body text, the session UUID and the kind.
+  `/push/<host>/`). A peer notification's title and body both start with the
+  first DNS label (`vps · <title> is waiting for you`,
+  `vps · <project> · tap to answer`), its tag carries the host, and a tap
+  opens `/c/<host>/sessions/<id>`.
+- **What a peer can still do (trust statement).** A peer's payload is
+  untrusted. The peer writes all the text after the `vps · ` prefix: up to
+  120 characters of title and 160 of body, in any words, also words that
+  name home or another computer ("vps · mac · …"). The prefix is the only
+  part the phone vouches for. A compromised peer can also flood the phone:
+  the broker's rate limits are the peer's own, so it can ignore them, and
+  each random session UUID makes a new tag, so the notifications do not
+  replace each other. Only the push service's own limits apply. A tap still
+  opens only `/c/<that host>/sessions/<uuid>` in the app. To stop it: remove
+  the computer (or turn notifications off); both unsubscribe in the browser,
+  so the push service refuses that peer from then on.
 - **Allow-list.** On every load `removeStrayWorkers` keeps only `/sw.js` at
   scope `/` and `/sw.js` at the exact `/push/<host>/` of each peer in this
   phone's stored list. Any other registration (another script, another host,
   a near-miss scope) is unregistered, and that load redeems no grant
-  (`workersSafe`).
+  (`workersSafe`). The stored list is in `localStorage`, which a compromised
+  home can write. So a `/sw.js` registration that such a home left at
+  `/push/<host>/` (with its own push key) for a host it also wrote into the
+  stored list passes this first cleanup. It lives until home's list answers
+  and replaces the stored one; the sync below then removes it. While home is
+  offline it stays. It runs only the app's own `/sw.js`: it can show
+  notifications with the limits above, nothing more. The recovery steps in
+  [multi-computer.md](multi-computer.md) (delete the app's data) remove it.
+- **Off wins over a slow peer.** A peer can hold its answers for up to 15 s.
+  After the peer's key arrives, and again after the subscription is sent, the
+  sync checks that push is still on and the peer is still in the stored list;
+  if not, it makes no registration, or drops the one it made. So turning
+  notifications off, removing the computer or logging out during a held call
+  is not undone.
 - **One switch.** Turning notifications on (Sessions card or Settings)
   subscribes home, then every peer at once. Only home can fail the switch; a
   peer that fails is named ("No notifications from vps.") and the others keep

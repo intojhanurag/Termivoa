@@ -253,9 +253,11 @@ then on Android Chrome.
       "No notifications from vps." shows under the switch.
 - [ ] Tap **Send a test notification**: the note says **Sent** and two
       notifications arrive, one with the text `Notifications are on.` (home)
-      and one with `vps · Notifications are on.`
+      and one with the title `vps · Termivoa` and the text
+      `vps · Notifications are on.`
 - [ ] Lock the phone. Let an agent on `vps` ask a question: the notification
-      "`<title>` is waiting for you" arrives and its text starts with `vps ·`.
+      "vps · `<title>` is waiting for you" arrives; its title and its text
+      both start with `vps ·`.
 - [ ] Tap that notification with the app closed, then again with the app
       open on another screen: both times the app opens that `vps` session
       (the address is `/c/<vps host>/sessions/<id>`).

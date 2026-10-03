@@ -77,7 +77,7 @@ You can leave the page to type `y` in the app's own terminal: tap **Back to term
 | New session | **❯ new session on…** and a **Computer** row pick where it runs. Projects and shells come from that computer. |
 | [Wall](/docs/guides/wall/) | Tiles from all computers. At most 4 are live at once (5 updates per second each); the rest show **Paused**. |
 | Live, [Changes](/docs/guides/changes/), [Files](/docs/guides/files/) | Work the same on every computer. |
-| [Notifications](/docs/guides/notifications/#do-notifications-come-from-every-computer) | Every computer sends them. One switch in **Settings → Notifications** controls all. A notification from another computer starts with its name (`vps · …`) and a tap opens that session. |
+| [Notifications](/docs/guides/notifications/#do-notifications-come-from-every-computer) | Every computer sends them. One switch in **Settings → Notifications** controls all. The title and text of a notification from another computer start with its name (`vps · …`) and a tap opens that session. |
 
 With one computer, the app looks the same as before.
 
@@ -154,4 +154,4 @@ Every step matters: a hacked home can leave a hidden background script on the ph
 
 ## Is it tested on a real phone?
 
-Not yet. Chrome and WebKit pass all 63 checks with two test computers, but the check on a real iPhone and Android phone has not run. If it fails on iPhone, the design changes before release.
+Not yet. Chrome and WebKit pass all 64 checks with two test computers, but the check on a real iPhone and Android phone has not run. If it fails on iPhone, the design changes before release.

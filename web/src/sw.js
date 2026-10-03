@@ -16,7 +16,8 @@ const BUNDLE_FILES = new Set(BUNDLE.files);
  * this file at scope /push/<host>/ (web/src/push.ts). The host is read from
  * that scope, which the app sets from its confirmed list, and never from a
  * push payload. '' in the app's own registration (scope /). A peer
- * registration controls no page, so it keeps no bundle and deletes no cache. */
+ * registration serves no page (the computer answers 404 under /push/), so it
+ * keeps no bundle, deletes no cache and handles no fetch. */
 const PEER_HOST = (/^\/push\/([a-z0-9.-]+)\/$/.exec(new URL(self.registration.scope).pathname) || [])[1] || '';
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -162,7 +163,8 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  if (request.method !== 'GET') {
+  // A peer registration serves nothing; the computer answers 404 under /push/.
+  if (PEER_HOST || request.method !== 'GET') {
     return;
   }
   const url = new URL(request.url);
@@ -199,10 +201,14 @@ self.addEventListener('push', (event) => {
   const sessionId = typeof data.sessionId === 'string' && SESSION_ID.test(data.sessionId) ? data.sessionId : '';
   const kind = KINDS.includes(data.kind) ? data.kind : 'test';
   const body = text(data.body, 160);
-  // A peer's notification names its computer (the first DNS label) and opens /c/<host>/sessions/<id>.
+  const title = text(data.title, 120) || 'Termivoa';
+  // A peer's notification opens /c/<host>/sessions/<id>. Its title and body
+  // both start with its computer (the first DNS label of the scope's host):
+  // the peer writes the rest, so it could otherwise name another computer.
   const peer = PEER_HOST && `/c/${PEER_HOST}`;
-  event.waitUntil(self.registration.showNotification(text(data.title, 120) || 'Termivoa', {
-    body: PEER_HOST ? [PEER_HOST.split('.')[0], body].filter(Boolean).join(' · ') : body,
+  const label = PEER_HOST.split('.')[0];
+  event.waitUntil(self.registration.showNotification(PEER_HOST ? `${label} · ${title}` : title, {
+    body: PEER_HOST ? [label, body].filter(Boolean).join(' · ') : body,
     tag: `${peer}${sessionId || 'pterm'}:${kind}`,
     icon: '/icon-192.png',
     data: { url: sessionId ? `${peer}/sessions/${sessionId}` : '/' },

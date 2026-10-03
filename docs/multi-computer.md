@@ -142,8 +142,9 @@ Every message from every computer (HTTP responses and WebSocket frames) is valid
 
 Every paired computer sends push (built after the MVP, which had push from home only). A service-worker registration must be on the page's own origin and one subscription has one VAPID key, so each peer has one more registration of `/sw.js` on home's origin, at scope `/push/<host>/`, subscribed with that peer's key and posted to that peer's `POST /api/v1/push/subscribe` through the per-computer client. The peer needed no change: its bound-origin CORS already admits the push routes.
 
-- The worker takes the host from its registration scope, never from a push payload (peer payloads are untrusted): the notification names the computer and a tap opens `/c/<host>/sessions/<id>`.
-- The service-worker allow-list (finding 22) stays strict: `/sw.js` at scope `/`, plus `/sw.js` at the exact `/push/<host>/` of each peer in the phone's stored list. Everything else is removed on every load.
+- The worker takes the host from its registration scope, never from a push payload (peer payloads are untrusted): the notification's title and body start with the computer's name and a tap opens `/c/<host>/sessions/<id>`. The peer still writes the rest of the text and can flood the phone with notifications.
+- The gateway answers 404 under `/push/`, so the app never loads inside a peer's scope.
+- The service-worker allow-list (finding 22): `/sw.js` at scope `/`, plus `/sw.js` at the exact `/push/<host>/` of each peer in the phone's stored list. Every other registration is removed at the start of every load. This is weaker than before peer push in one case: the stored list is in `localStorage`, so a compromised home can write a host into it and leave a `/sw.js` registration at that host's push scope with its own push key. That registration lives until home's list answers and replaces the stored list; the sync then removes it. While home is offline it stays. It runs only the app's own worker code, so it can only show notifications.
 - Removing a computer, log out, "pair again" and turning notifications off unsubscribe and unregister that peer's registration; one failing peer never affects home or the others.
 - Gate 0 check 5 (several scoped registrations in an iOS Home Screen app) is still open. The app fails soft: home push keeps working and Settings names the computers without notifications.
 
@@ -261,7 +262,7 @@ Both reviewers attacked version 2. Security: "sound with changes". Feasibility: 
 
 | # | Finding (severity) | Resolution |
 | --- | --- | --- |
-| 22 | A compromised home can leave a service worker on the phone that survives cleanup (verified) (high) | Service-worker allow-list cleanup on every load (`/sw.js` at scope `/` and at the exact push scope of each listed peer, nothing else); stored list replaced from home; required recovery steps (revoke via, delete the app, pair again) |
+| 22 | A compromised home can leave a service worker on the phone that survives cleanup (verified) (high) | Service-worker allow-list cleanup on every load (`/sw.js` at scope `/` and at the exact push scope of each peer in the stored list, nothing else; a `/sw.js` registration at the push scope of a host that a compromised home wrote into the stored list lives until home's list answers, see "Notifications"); stored list replaced from home; required recovery steps (revoke via, delete the app, pair again) |
 | 23 | v2 pairing could not work: home's CSP blocked the redeem (high) | Pending computer per device (short expiry) before the reload and redeem |
 | 24 | Lenient Ajv broke the WebSocket envelope (verified) (high) | Envelope discriminator, `discriminator: true` with `removeAdditional: true`, one lenient set for HTTP and WebSocket |
 | 25 | A new enum value or request field still forced updating all computers (verified) (high) | Per-item validation; request fields gated by peer revision; enum-widening rule |

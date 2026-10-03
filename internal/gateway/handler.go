@@ -429,8 +429,9 @@ var contentTypes = map[string]string{
 }
 
 // serveStatic serves the embedded build. Unknown extensionless GET paths
-// (such as /pair) fall back to index.html; missing files with an extension or
-// under /assets/ are 404 so a script request never receives HTML.
+// (such as /pair) fall back to index.html; missing files with an extension,
+// under /assets/ or under /push/ are 404 so a script request never receives
+// HTML and the app never loads inside a peer's push scope.
 func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request *http.Request) {
 	if !allowMethod(response, request, http.MethodGet, http.MethodHead) {
 		return
@@ -443,7 +444,9 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 	// Source maps and dotfiles (.vite/manifest.json, .DS_Store) are build
 	// byproducts, never part of the served site.
 	if hidden := path.Ext(name) == ".map" || strings.HasPrefix(name, ".") || strings.Contains(name, "/."); hidden || err != nil || !info.Mode().IsRegular() {
-		if strings.HasPrefix(name, "assets/") || path.Ext(name) != "" {
+		// /push/<host>/ is the scope of a peer's push registration: no page
+		// may load there, or that worker would control it.
+		if strings.HasPrefix(name, "assets/") || name == "push" || strings.HasPrefix(name, "push/") || path.Ext(name) != "" {
 			response.Header().Set("Cache-Control", "no-store")
 			http.NotFound(response, request)
 			return

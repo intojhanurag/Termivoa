@@ -255,7 +255,10 @@ try {
       .then((n) => n.map((x) => ({ title: x.title, body: x.body, url: x.data?.url }))[0])`), { what: 'notification shown' });
     const want = `/c/${vps.host}/sessions/${session.id}`;
     check('B3-push-show', 'A push to the vps registration shows a notification that names vps and links to the vps session',
-      shown.title === 'vps-1 is waiting for you' && shown.body === 'vps · demo · tap to answer' && shown.url === want, JSON.stringify(shown));
+      shown.title === 'vps · vps-1 is waiting for you' && shown.body === 'vps · demo · tap to answer' && shown.url === want, JSON.stringify(shown));
+    // No page loads inside the peer scope: the app there would get the peer's registration.
+    const inside = await env.curl(`${mac.origin}${scope}x`);
+    check('B3-push-scope', 'mac answers 404 under the push scope (no app page there)', inside.status === 404, `GET ${scope}x ${inside.status}`);
     // A tap navigates the app to that link (the click handler itself has unit tests).
     await app.go(`${mac.origin}${shown.url}`);
     await until(async () => /[%$#]\s*$/m.test(await terminalText(app)), { what: 'shell prompt of the vps session' });

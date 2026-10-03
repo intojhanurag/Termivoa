@@ -29,7 +29,7 @@ It has only the session name, project name, status and work time, never terminal
 
 | Question | Answer |
 | --- | --- |
-| How do I know which computer it is? | The text of a notification from another computer starts with its name, for example `vps · <project> · tap to answer`. Home's notifications have no name in front. The name is the first part of the computer's address, also after you rename it in the app. |
+| How do I know which computer it is? | The title and the text of a notification from another computer both start with its name, for example `vps · <session> is waiting for you` and `vps · <project> · tap to answer`. That computer writes the words after the name. Home's notifications have no name in front. The name is the first part of the computer's address, also after you rename it in the app. |
 | What does a tap open? | That session on that computer. |
 | I added a computer later. | It starts to notify when it is added. There is no new permission prompt. |
 | I removed a computer, or it shows **pair again**. | Its notifications stop. |

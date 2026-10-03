@@ -301,14 +301,17 @@ describe('service worker push', () => {
     await fire(handlers, 'push', pushEvent(() => ({
       title: 'api', body: 'Waiting for you', sessionId: SESSION, kind: 'waiting', host: 'evil.example', url: 'https://evil.example/', computer: 'mac',
     })));
-    expect(self.registration.showNotification).toHaveBeenCalledWith('api', {
+    expect(self.registration.showNotification).toHaveBeenCalledWith('vps · api', {
       body: 'vps · Waiting for you',
       tag: `/c/vps.tailx.ts.net${SESSION}:waiting`,
       icon: '/icon-192.png',
       data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` },
     });
     await fire(handlers, 'push', pushEvent(() => ({ sessionId: '../../settings' })));
-    expect(self.registration.showNotification).toHaveBeenLastCalledWith('Termivoa', expect.objectContaining({ body: 'vps', data: { url: '/' } }));
+    expect(self.registration.showNotification).toHaveBeenLastCalledWith('vps · Termivoa', expect.objectContaining({ body: 'vps', data: { url: '/' } }));
+    // A title that names another computer still starts with this one.
+    await fire(handlers, 'push', pushEvent(() => ({ title: 'mac · api is waiting for you', body: 'mac · tap to answer' })));
+    expect(self.registration.showNotification).toHaveBeenLastCalledWith('vps · mac · api is waiting for you', expect.objectContaining({ body: 'vps · mac · tap to answer' }));
 
     const tapped = loadWorker(async () => new Response(''), [], cacheStorage(), PEER_SCOPE);
     await fire(tapped.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` } } });
@@ -331,6 +334,11 @@ describe('service worker push', () => {
     expect(fetch).not.toHaveBeenCalled();
     expect([...store.keys()]).toEqual(['pterm-bundle-old']);
     expect(self.clients.claim).not.toHaveBeenCalled();
+    // A page inside the peer scope gets nothing from this worker: no shell, no bundle file.
+    const respondWith = vi.fn();
+    handlers.get('fetch')?.({ request: { method: 'GET', url: 'https://host.example/push/vps.tailx.ts.net/x', mode: 'navigate' }, respondWith });
+    handlers.get('fetch')?.({ request: new Request('https://host.example/assets/Wall-1.js'), respondWith });
+    expect(respondWith).not.toHaveBeenCalled();
   });
 
   it('on tap, focuses an open app window and moves it to the session', async () => {

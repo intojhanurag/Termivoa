@@ -17,7 +17,8 @@ type Peer = Pick<Computer, 'origin' | 'host' | 'label'>;
 /**
  * A peer's push registration: /sw.js at this scope on home's origin (a
  * registration must be on the page's origin, and one subscription has one
- * VAPID key). No page lives under /push/, so that worker controls nothing.
+ * VAPID key). The computer answers 404 for every path under /push/ and the
+ * worker handles no fetch there, so the app never loads inside this scope.
  * The worker reads the host from its scope, never from a push payload.
  */
 export const peerScope = (host: string): string => `/push/${host}/`;
@@ -69,10 +70,15 @@ export function pushSupport(): PushSupport {
   return 'PushManager' in globalThis && 'serviceWorker' in navigator && 'Notification' in globalThis ? 'available' : 'unsupported';
 }
 
+/**
+ * Home's registration, by its scope / and never by this page's address: a
+ * page inside a peer's push scope would get that peer's registration.
+ * getRegistration, not ready: ready never settles when no worker is registered (dev builds).
+ */
+const homeRegistration = (): Promise<ServiceWorkerRegistration | undefined> => navigator.serviceWorker.getRegistration('/');
+
 async function currentSubscription(): Promise<PushSubscription | null> {
-  // getRegistration, not ready: ready never settles when no worker is registered (dev builds).
-  const registration = await navigator.serviceWorker.getRegistration();
-  return await registration?.pushManager.getSubscription() ?? null;
+  return await (await homeRegistration())?.pushManager.getSubscription() ?? null;
 }
 
 /** True when permission is granted and this phone holds a push subscription. */
@@ -154,12 +160,21 @@ async function subscribeOn(computer: Client, registration: () => Promise<Service
  */
 async function subscribePeers(peers: ReadonlyArray<Peer>): Promise<string[]> {
   const missing = await Promise.all(peers.map(async (peer) => {
+    // Push is still on and the peer is still listed. A peer can hold its
+    // answers for seconds; push turned off, a log out or a removal in that
+    // time must win.
+    const wanted = async () => await pushEnabled() && storedPeers().some((stored) => stored.host === peer.host);
+    const forget = () => peerRegistrations().then((found) => drop(found.get(peer.host))).catch(() => undefined);
     try {
-      await subscribeOn(client(peer.origin), () => navigator.serviceWorker
-        .register('/sw.js', { scope: peerScope(peer.host) }).then(activeWorker));
+      await subscribeOn(client(peer.origin), async () => {
+        if (!await wanted()) throw new Error('Notifications were turned off.');
+        return activeWorker(await navigator.serviceWorker.register('/sw.js', { scope: peerScope(peer.host) }));
+      });
+      // Turned off while this registered or while the peer held the subscribe call.
+      if (!await wanted()) await forget();
       return undefined;
     } catch (error) {
-      if (isAuthFailure(error)) await peerRegistrations().then((found) => drop(found.get(peer.host))).catch(() => undefined);
+      if (isAuthFailure(error)) await forget();
       return peer.label;
     }
   }));
@@ -177,7 +192,11 @@ export async function enablePush(peers: ReadonlyArray<Peer> = storedPeers()): Pr
   const permission = await Notification.requestPermission();
   if (permission === 'denied') return { ok: false, message: PUSH_BLOCKED };
   if (permission !== 'granted') return { ok: false, message: 'Notifications were not allowed.' };
-  await subscribeOn(api, () => navigator.serviceWorker.ready);
+  await subscribeOn(api, async () => {
+    const registration = await homeRegistration();
+    if (registration === undefined) throw new Error('The app is not ready for notifications. Reload it.');
+    return activeWorker(registration);
+  });
   dismissPushCard();
   return { ok: true, missing: await subscribePeers(peers) };
 }

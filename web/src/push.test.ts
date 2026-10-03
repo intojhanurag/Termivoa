@@ -3,7 +3,7 @@ import {
   disablePush, dismissPushCard, enablePush, fromBase64Url, peerScope, PUSH_BLOCKED, PUSH_CARD_KEY, pushEnabled, pushSupport,
   removeStrayWorkers, shouldOfferPush, syncPeerPush, testPush, toBase64Url, workersSafe,
 } from './push';
-import { COMPUTERS_KEY } from './computers';
+import { COMPUTERS_KEY, refreshComputers } from './computers';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
 const IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15';
@@ -52,9 +52,11 @@ function browser({
 } = {}) {
   const store = memoryStorage();
   store.setItem(COMPUTERS_KEY, JSON.stringify(peers.map(({ origin, label }) => ({ origin, label }))));
+  // Home's subscription: kept after subscribe, gone after its unsubscribe.
+  let current = subscription;
   const pushManager = {
-    getSubscription: vi.fn(async () => subscription),
-    subscribe: vi.fn(async () => fakeSubscription('https://push.example/new')),
+    getSubscription: vi.fn(async () => (current !== null && current.unsubscribe.mock.calls.length === 0 ? current : null)),
+    subscribe: vi.fn(async () => (current = fakeSubscription('https://push.example/new'))),
   };
   const registration = { scope: `${HOME}/`, pushManager };
   const registrations = [...scoped];
@@ -87,11 +89,19 @@ const PEER_KEY_BYTES = new Uint8Array(65).map((_, index) => (index === 0 ? 4 : 2
 const PEER_KEY = toBase64Url(PEER_KEY_BYTES.buffer);
 
 /** Home and peers that answer the push routes; `down` hosts fail, `revoked` hosts answer 401. */
-function servers({ down = [] as string[], revoked = [] as string[], sent = 1 } = {}) {
+function servers({
+  down = [] as string[], revoked = [] as string[], sent = 1,
+  /** Peers answer their key only after this settles (a slow or hostile peer). */
+  hold = Promise.resolve() as Promise<unknown>,
+  /** Home's computer list. */
+  listed = [] as Array<typeof VPS>,
+} = {}) {
   const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
     const { host, pathname } = new URL(url, HOME);
     if (down.includes(host)) throw new TypeError('offline');
     if (revoked.includes(host)) return json(401, { error: { code: 'revoked', message: 'revoked' } });
+    if (pathname === '/api/v1/computers') return json(200, { computers: listed.map(({ origin, label }) => ({ origin, label })) });
+    if (pathname === '/api/v1/push' && host !== 'mac.tailx.ts.net') await hold;
     if (pathname === '/api/v1/push') return json(200, { publicKey: host === 'mac.tailx.ts.net' ? PUBLIC_KEY : PEER_KEY });
     if (pathname === '/api/v1/push/test') return json(200, { sent });
     return json(204);
@@ -214,6 +224,8 @@ describe('push from peers', () => {
     expect(init).toMatchObject({ method: 'POST', credentials: 'include', mode: 'cors' });
     expect(JSON.parse(init?.body as string).endpoint).toBe('https://push.example/push/vps.tailx.ts.net/new');
     expect(calls()).toContain('POST https://pi.tailx.ts.net/api/v1/push/subscribe');
+    // Home's registration is asked for by scope /, never by the page's address.
+    for (const [scope] of vi.mocked(navigator.serviceWorker.getRegistration).mock.calls) expect(scope).toBe('/');
   });
 
   it('keeps home and the other peers when one peer fails, and names it', async () => {
@@ -233,6 +245,56 @@ describe('push from peers', () => {
     expect(register).toHaveBeenCalledWith('/sw.js', { scope: '/push/vps.tailx.ts.net/' });
     expect((await gone.pushManager.getSubscription())?.unsubscribe).toHaveBeenCalledOnce();
     expect(gone.unregister).toHaveBeenCalledOnce();
+  });
+
+  it('off, a removal or a log out during a slow peer wins: the held sync makes no registration', async () => {
+    const actions: Array<(store: ReturnType<typeof memoryStorage>) => Promise<void>> = [
+      () => disablePush(),
+      async (store) => { store.setItem(COMPUTERS_KEY, '[]'); },
+    ];
+    for (const action of actions) {
+      const { register, store } = browser({ subscription: on(), peers: [VPS] });
+      let release: () => void = () => undefined;
+      const { calls } = servers({ hold: new Promise<void>((resolve) => { release = resolve; }) });
+      const sync = syncPeerPush();
+      await vi.waitFor(() => expect(calls()).toContain('GET https://vps.tailx.ts.net/api/v1/push'));
+      await action(store);
+      release();
+      await expect(sync).resolves.toEqual(['vps']);
+      expect(register).not.toHaveBeenCalled();
+      expect(calls()).not.toContain('POST https://vps.tailx.ts.net/api/v1/push/subscribe');
+    }
+  });
+
+  it('off while the peer registration is made: the registration is dropped again', async () => {
+    const { register, registrations, store } = browser({ subscription: on(), peers: [VPS] });
+    servers();
+    // The list changes after the first check, while register() runs.
+    register.mockImplementationOnce(async (_script, { scope }) => {
+      store.setItem(COMPUTERS_KEY, '[]');
+      const made = fakeRegistration(scope);
+      registrations.push(made);
+      return made;
+    });
+    await syncPeerPush();
+    expect(registrations[0]?.unregister).toHaveBeenCalledOnce();
+  });
+
+  it('with push on, drops a stored peer that home\'s list no longer has (a host a compromised home wrote)', async () => {
+    const EVIL = { origin: 'https://evil.tailx.ts.net', host: 'evil.tailx.ts.net', label: 'evil' };
+    const planted = fakeRegistration(peerScope(EVIL.host), fakeSubscription('https://push.example/evil', new Uint8Array(65).fill(7)));
+    browser({ subscription: on(), peers: [VPS, EVIL], scoped: [planted] });
+    const { calls } = servers({ listed: [VPS] });
+    // Until home answers, the load-start cleanup keeps it: its host is in the stored list.
+    const container = navigator.serviceWorker;
+    await expect(removeStrayWorkers(container)).resolves.toBe(0);
+    // Home's list replaces the stored one (refreshComputers), then the sync runs.
+    const list = await refreshComputers();
+    await syncPeerPush(list.filter((computer) => !computer.home));
+    expect(planted.unregister).toHaveBeenCalledOnce();
+    expect((await planted.pushManager.getSubscription())?.unsubscribe).toHaveBeenCalledOnce();
+    expect(calls().some((call) => call.includes('evil.tailx.ts.net'))).toBe(false);
+    await expect(removeStrayWorkers(container)).resolves.toBe(0);
   });
 
   it('drops every peer registration and asks no peer while push is off', async () => {
