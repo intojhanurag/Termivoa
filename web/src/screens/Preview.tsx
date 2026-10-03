@@ -104,6 +104,8 @@ export function PreviewBody({ session, origin, port, notice, reach }: {
 }) {
   const { computer } = session;
   if (notice !== undefined) return <div className="banner" role="alert"><span>{notice}</span></div>;
+  // Home answered that it has no preview origin (a peer's is computed, and absent only until it answers).
+  if (origin === undefined && computer.home) return <div className="banner" role="alert"><span>{cantPreview(computer.label)}</span></div>;
   if (origin === undefined || reach === undefined) return <p role="status" className="muted preview-note">Opening preview…</p>;
   if (!reach) return <div className="banner" role="alert"><span>{cantPreview(computer.label)}</span></div>;
   return (

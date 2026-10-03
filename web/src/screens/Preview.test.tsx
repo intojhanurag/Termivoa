@@ -142,7 +142,9 @@ describe('preview screen', () => {
       expect(html).toBe(`<div class="banner" role="alert"><span>${notice.replace('\'', '&#x27;')}</span></div>`);
     }
     // No origin (a peer that has not answered yet): nothing to frame.
-    expect(body({ session: vps, origin: undefined })).not.toContain('<iframe');
+    expect(body({ session: vps, origin: undefined })).toContain('Opening preview…');
+    // Home without a preview origin (its preview read failed while the screen was open): words, not an endless wait.
+    expect(body({ origin: undefined })).toBe('<div class="banner" role="alert"><span>Can&#x27;t open the preview on mac. If mac does not share dev-server previews yet, run pterm setup on mac and answer yes to the preview question.</span></div>');
   });
 
   it('asks the preview origin before framing it; no answer shows neutral words, never a cause', async () => {

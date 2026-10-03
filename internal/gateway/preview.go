@@ -397,13 +397,17 @@ func (handler *previewHandler) selection(request *http.Request) (string, uint16,
 }
 
 func (handler *previewHandler) fail(response http.ResponseWriter, err error) {
+	// invalid_request: the broker refused the app origin for this credential,
+	// or the app computer's Tailscale tags changed. Matched by code, not by
+	// status: protocol_mismatch is 400 too, and that is not a refusal.
+	var brokerErr *gatewayapi.Error
+	if errors.As(err, &brokerErr) && brokerErr.Code == protocol.InvalidRequest {
+		previewPage(response, http.StatusForbidden, "This app may not use this computer.")
+		return
+	}
 	switch status := brokerErrorStatus(err); status {
 	case http.StatusUnauthorized:
 		previewPage(response, status, "This phone is no longer paired. Open Termivoa to pair again.")
-	case http.StatusBadRequest:
-		// invalid_request: the broker refused the app origin for this
-		// credential, or the app computer's Tailscale tags changed.
-		previewPage(response, http.StatusForbidden, "This app may not use this computer.")
 	case http.StatusNotFound:
 		previewPage(response, status, "No dev server of this session listens on that port.")
 	case http.StatusConflict:

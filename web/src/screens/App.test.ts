@@ -6,7 +6,7 @@ import { hosted } from './allSessions';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, offlineRetry, parseRoute, pathFor, previewFor, sessionPath, startApp, startLike,
+  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike,
   STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
 } from './App';
 import { ApiError } from '../api/http';
@@ -378,5 +378,24 @@ describe('add banner (AddBanner)', () => {
     expect(banner({ ...done, dismissed: true })).toBe('');
     expect(banner({ origin: vps.origin, label: 'vps', phase: { kind: 'cancelled' } })).toBe('');
     expect(banner({ origin: vps.origin, label: 'vps', phase: { kind: 'expired' } })).toContain('vps was not added');
+  });
+});
+
+describe('a peer preview address on load', () => {
+  const previews = [{ port: 5173 }];
+
+  it('opens only from an entry a tap in this app made, for a port the session lists', () => {
+    expect(peerPreviewOnLoad(PREVIEW_TAP, previews, 5173)).toBe(true);
+    // The marker as the browser gives it back after a reload (a structured clone).
+    expect(peerPreviewOnLoad(structuredClone(PREVIEW_TAP), previews, 5173)).toBe(true);
+  });
+
+  it('a link from outside (no state), other state, or a port the session does not list opens the terminal', () => {
+    for (const state of [null, undefined, 'previewTap', {}, { previewTap: 'true' }, { previewTap: 1 }]) {
+      expect(peerPreviewOnLoad(state, previews, 5173)).toBe(false);
+    }
+    expect(peerPreviewOnLoad(PREVIEW_TAP, previews, 3000)).toBe(false);
+    expect(peerPreviewOnLoad(PREVIEW_TAP, [], 5173)).toBe(false);
+    expect(peerPreviewOnLoad(PREVIEW_TAP, undefined, 5173)).toBe(false);
   });
 });

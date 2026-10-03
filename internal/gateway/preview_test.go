@@ -417,6 +417,24 @@ func TestPreviewShowsABrokerRefusalAsForbidden(t *testing.T) {
 	}
 }
 
+// protocol_mismatch is 400 on the API like invalid_request, but it is not a
+// refusal of the app: the preview keeps the "not available" answer.
+func TestPreviewShowsAProtocolMismatchAsUnavailable(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	fixture.broker.mu.Lock()
+	fixture.broker.previewErr = &gatewayapi.Error{Code: protocol.ProtocolMismatch, Message: "protocol mismatch"}
+	fixture.broker.mu.Unlock()
+	for target, header := range map[string]http.Header{
+		fixture.selectPath(): framedBy(testOrigin, cookieHeader(prodCookie)),
+		"/":                  cookieHeader(prodCookie, fixture.selection()),
+	} {
+		response := fixture.get(t, target, header)
+		if text := body(t, response); response.StatusCode != http.StatusServiceUnavailable || text != "The computer is not available.\n" || len(response.Cookies()) != 0 {
+			t.Errorf("%s = %d %q", target, response.StatusCode, text)
+		}
+	}
+}
+
 func TestPreviewProxyRewritesHostCookiesAndRedirects(t *testing.T) {
 	fixture := newPreviewFixture(t)
 	header := cookieHeader("app=1", prodCookie, fixture.selection(), developmentCookieName+"=x", "theme=dark")

@@ -211,6 +211,24 @@ export function previewPortParam(search: string): number | undefined {
   return isPreviewPort(port) ? port : undefined;
 }
 
+/**
+ * history.state of the entry the app itself makes when the user taps Open ↗.
+ * It stays with that entry through a reload and through Back and Forward; an
+ * address opened from a link, a message or another page has none.
+ */
+export const PREVIEW_TAP = { previewTap: true } as const;
+
+/**
+ * Whether a loaded address may show a peer's preview: only an entry that a
+ * tap in this app made, and only a port that session lists now. A peer knows
+ * its own session IDs, so a link alone must never put its page in the app;
+ * anything else opens the session's terminal.
+ */
+export function peerPreviewOnLoad(state: unknown, previews: ReadonlyArray<{ readonly port: number }> | undefined, port: number): boolean {
+  const tapped = typeof state === 'object' && state !== null && (state as { readonly previewTap?: unknown }).previewTap === true;
+  return tapped && previews?.some((item) => item.port === port) === true;
+}
+
 /** From this protocol revision on, a peer's preview listener has the rules the frame needs (docs/peer-preview.md). */
 export const PEER_PREVIEW_REVISION = 2;
 
@@ -485,7 +503,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const navigate = useCallback((next: View) => {
     const path = pathFor(next);
     if (path !== window.location.pathname + window.location.search) {
-      window.history.pushState(null, '', path);
+      window.history.pushState(next.name === 'preview' ? PREVIEW_TAP : null, '', path);
     }
     setView(next);
   }, []);
@@ -592,11 +610,11 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       }
       const session = hosted(found, computer);
       // A home preview link may open before home's first answer (peers stored): read the config now.
-      // A peer's preview needs nothing from home.
-      if (port !== undefined && (!computer.home || await preview.origin() !== undefined)) {
+      // A peer's preview needs nothing from home, but it needs the tap that opened it.
+      if (port !== undefined && (computer.home ? await preview.origin() !== undefined : peerPreviewOnLoad(window.history.state, found.previews, port))) {
         setView({ name: 'preview', session, port });
       } else {
-        // A bad port or no preview origin falls back to the terminal.
+        // A bad port, no preview origin, or a peer's preview address that no tap here opened falls back to the terminal.
         if (target.preview) window.history.replaceState(null, '', pathFor({ name: 'live', session }));
         setView({ name: 'live', session });
       }
