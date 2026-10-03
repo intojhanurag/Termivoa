@@ -33,7 +33,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
   Codex already running in it.
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
-  drag it to arrange the Wall your way.
+  drag it to arrange the Wall your way. Tiles over the live limit show one
+  snapshot of their screen, marked Paused.
 - **Several computers (next beta).** Use a Mac, a Linux server and a VPS
   from one phone app: one Sessions list with a chip per computer, one Wall,
   and new sessions on any of them. Each computer approves the phone itself,

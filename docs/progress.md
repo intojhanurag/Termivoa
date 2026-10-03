@@ -1402,6 +1402,14 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `scripts/check` exit 0; every new chunk is in the service worker's precache
   list. Device timing not measured.
 
+- **Wall snapshot for never-live paused tiles** (`feat/wall-paused-snapshot`,
+  2026-10-03): a paused tile that was never live gets one short snapshot turn
+  (read-only thumbnail attach, first snapshot, detach, Paused). One at a
+  time, 1 s after the connection gate is quiet, in the 5th connection slot,
+  at most 8 s and 1 MiB, never for a computer that is backing off, never
+  offscreen or in the background, one try. Evidence: `scripts/check` exit 0,
+  site build. Not tested on a real phone.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

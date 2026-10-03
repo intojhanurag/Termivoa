@@ -5,7 +5,7 @@ import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { keyOf, type HostedSession } from './allSessions';
 import {
-  mergeOrder, moveTile, orderTiles, readWallOrder, saveWallOrder, tileLabel, tileMark, tileOffset, tileScale, Wall, WALL_ORDER_KEY, WallGrid, wallSessions,
+  mergeOrder, moveTile, orderTiles, peekProgress, readWallOrder, saveWallOrder, tileLabel, tileMark, tileOffset, tileScale, Wall, WALL_ORDER_KEY, WallGrid, wallSessions,
 } from './Wall';
 
 const mac: Computer = { origin: 'https://mac.tailx.ts.net', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
@@ -197,6 +197,23 @@ describe('tile budget marks', () => {
     expect(tileMark('live', 'live', false)).toBeUndefined();
     expect(tileMark('live', 'reconnecting')).toBe('reconnecting');
     expect(tileMark('live', 'live')).toBeUndefined();
+  });
+
+  it('keeps the Paused mark and its picture for a tile whose snapshot turn painted; a failed turn leaves the name and Paused', () => {
+    expect(tileMark('peek', 'connecting', false)).toBe('blank');
+    expect(tileMark('peek', 'live', true)).toBe('paused');
+    expect(tileMark('paused', 'closed', true)).toBe('paused');
+  });
+
+  it('ends a snapshot turn at the first painted snapshot or the first failed attempt, never retrying', () => {
+    expect(peekProgress('live', 'live')).toBeUndefined();
+    expect(peekProgress('paused', 'live')).toBeUndefined();
+    expect(peekProgress('peek', 'connecting')).toBe('running');
+    expect(peekProgress('peek', 'attaching')).toBe('running');
+    expect(peekProgress('peek', 'live')).toBe('painted');
+    for (const link of ['reconnecting', 'lost', 'revoked', 'closed'] as const) {
+      expect(peekProgress('peek', link)).toBe('failed');
+    }
   });
 
   it('draws every tile paused until the scheduler gives it a live slot; a never-live tile shows its name and Paused', () => {
