@@ -168,7 +168,7 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
       <h1>{title}</h1>
       {phase === undefined && link === undefined && (
         <>
-          <p role="alert" className="error">{notice ?? 'This add-computer link is used or incomplete. Paste the link again in Settings, under Computers.'}</p>
+          <p role="alert" className="error">{notice ?? 'This add-computer link is used or incomplete. Scan or paste a new link in Settings, under Computers.'}</p>
           <button type="button" className="primary" onClick={onSettings}>Settings</button>
         </>
       )}
@@ -194,7 +194,7 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
         </>
       )}
       {phase?.kind === 'expired' && (
-        <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again and paste the new link.</p>
+        <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then scan or paste the new link.</p>
       )}
       {phase?.kind === 'cancelled' && (
         <p role="alert" className="error">Adding {label} was cancelled. If {label} asks, answer N.</p>
@@ -233,9 +233,10 @@ export function viaLabel(link: string | undefined): string | undefined {
 
 /**
  * `/add-computer` on a peer, when its link is opened directly (the iPhone
- * camera opens it in Safari, another cookie jar). It never redeems the
- * grant: the link must be pasted in the app on the computer it names. The
- * link was read from the fragment at start and is only copied, never sent.
+ * Camera app opens a scanned QR code in Safari, another cookie jar). It
+ * never redeems the grant: the QR code must be scanned, or the link pasted,
+ * in the app on the computer it names. The link was read from the fragment
+ * at start and is only copied, never sent.
  */
 export function PeerAddPage({ link }: { readonly link: string | undefined }) {
   const [note, setNote] = useState<string>();
@@ -248,7 +249,9 @@ export function PeerAddPage({ link }: { readonly link: string | undefined }) {
         <p role="alert" className="error">This link is incomplete. Run <code>pterm pair --via</code> on this computer again.</p>
       ) : (
         <>
-          <p>{via === undefined ? 'Open your Termivoa app and paste this link there.' : `Open your Termivoa app on ${via} and paste this link there.`}</p>
+          <p>This page cannot add the computer. Open your Termivoa app{via === undefined ? '' : ` on ${via}`}, then:</p>
+          <p className="strong">Settings → + Add a computer → Scan QR</p>
+          <p>Scan the same QR code there. Or copy this link and tap <strong>Paste link</strong> there.</p>
           <button
             type="button"
             className="primary wide"
@@ -260,7 +263,7 @@ export function PeerAddPage({ link }: { readonly link: string | undefined }) {
             }}
           >Copy link</button>
           <p role="status" className="muted field-note">{note ?? ''}</p>
-          <p className="hint-text">This page does not add the computer. The link works once and expires after two minutes.</p>
+          <p className="hint-text">The link works once and expires after two minutes.</p>
         </>
       )}
     </main>

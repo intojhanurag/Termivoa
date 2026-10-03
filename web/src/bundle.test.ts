@@ -36,6 +36,8 @@ describe('bundle file list for the service worker', () => {
     // Lazy chunks are precached too, so they open with home offline.
     expect(bundle.files.some((name) => name.startsWith('/assets/Computers-'))).toBe(true);
     expect(bundle.files.some((name) => name.startsWith('/assets/AddComputer-'))).toBe(true);
+    // The QR decoder for Scan QR on phones with no BarcodeDetector (iPhone).
+    expect(bundle.files.some((name) => name.startsWith('/assets/decode-'))).toBe(true);
     expect(bundle.build).toMatch(/^[0-9a-f]{16}$/u);
     expect(sw).toContain(`pterm-assets-${bundle.build}`);
     expect(readFileSync(join(outDir, 'index.html'), 'utf8')).toContain(`<meta name="pterm-build" content="${bundle.build}" />`);
@@ -121,6 +123,12 @@ describe('release gate: open an unvisited Wall while home is offline', () => {
     expect(manifest['index.html']?.dynamicImports).toContain('src/screens/Wall.tsx');
     const needed = closure(manifest, 'src/screens/Wall.tsx', closure(manifest, 'index.html'));
     expect([...needed].some((file) => file.startsWith('/assets/Wall-'))).toBe(true);
+    // The QR decoder loads only on Scan QR: its own chunk, in neither the start-up code nor the Computers screen.
+    const decoder = Object.values(manifest).find((entry) => entry.file.startsWith('assets/decode-'));
+    expect(decoder).toBeDefined();
+    expect(manifest['src/screens/Computers.tsx']?.dynamicImports?.some((key) => manifest[key] === decoder)).toBe(true);
+    expect(closure(manifest, 'src/screens/Computers.tsx', closure(manifest, 'index.html')).has(`/${decoder?.file}`)).toBe(false);
+    expect((await answer(`https://home.example/${decoder?.file}`))?.status).toBe(200);
     for (const file of needed) {
       const reply = await answer(`https://home.example${file}`);
       expect(reply?.status, file).toBe(200);

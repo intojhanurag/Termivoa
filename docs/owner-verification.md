@@ -240,6 +240,44 @@ used by the dev-server preview, so use another free port.
 - [ ] iPhone Home Screen app: Gate 0 checks pass.
 - [ ] Android Chrome: Gate 0 checks pass.
 
+### Scan QR in + Add a computer (real phone)
+
+The agent tested this in desktop Chrome only, with a QR code of a real
+`pterm pair --via` link as Chrome's fake camera (`phase-b.mjs`, `SCAN-*`), and
+with unit tests for the camera stop paths. The camera permission of the
+installed iPhone Home Screen app, and a real camera on a real terminal
+window, are not tested. You need home (`mac`) and a second computer (`vps`).
+
+- [ ] **iPhone Home Screen app, first scan.** On vps run `pterm pair --via mac`
+      (it prints a QR code and the link). In the installed app open
+      **Settings → + Add a computer → Scan QR**. iOS asks for the camera; the
+      app says "Allow the camera to scan the QR code." Tap **Allow**. The
+      picture shows inside the app (not full screen), with "Point the camera
+      at the QR code that pterm pair --via printed." Point it at the code:
+      **Add this computer?** opens with the Address, Machine and Owner. Tap
+      **Add vps**, **Continue**, compare the code, type `y`. "vps is added".
+- [ ] **The camera stops.** After the sheet opens, the green camera dot in
+      the iPhone status bar goes off. Scan again and tap **Cancel**: the dot
+      goes off. Scan again and go to the Home Screen: the dot goes off, and
+      on return the app shows **Scan QR** and **Paste link** again.
+- [ ] **Permission denied.** Tap **Scan QR**, then **Don't Allow**. The app
+      says "The camera is blocked. Allow the camera for this app in your
+      phone or browser settings, then tap Scan QR. Or paste the link."
+      **Paste link** still works. Write down where iOS lets you allow the
+      camera again for the Home Screen app (the docs do not name the exact
+      iOS setting yet), and whether iOS asks again on each **Scan QR**.
+- [ ] **A wrong code.** Scan any other QR code (for example a Wi-Fi code):
+      "This is not an add-computer link. Copy the whole link that pterm pair
+      --via printed." No sheet opens.
+- [ ] **The phone's Camera app.** Scan the same QR code with the iPhone
+      Camera app. Safari opens "Add this computer" with "This page cannot add
+      the computer" and **Settings → + Add a computer → Scan QR**. Nothing is
+      added, and vps still waits.
+- [ ] **Android Chrome (installed app).** Repeat the first, second and third
+      checks. Chrome on Android reads the code with its own detector.
+- [ ] **Reading distance.** The code scans from a laptop screen at normal
+      distance (about 30 cm), with a dark and a light terminal theme.
+
 ### Notifications from every computer (Gate 0 check 5, real app)
 
 The agent tested this in desktop Chrome only (unit tests, and

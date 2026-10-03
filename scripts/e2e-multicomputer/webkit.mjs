@@ -53,6 +53,7 @@ try {
   const [addLink] = await via.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#\S+/);
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByRole('button', { name: '+ Add a computer' }).click();
+  await page.getByRole('button', { name: 'Paste link' }).click();
   await page.fill('#add-link', addLink);
   await page.getByRole('button', { name: 'Check link' }).click();
   await page.getByRole('button', { name: 'Add vps' }).click();

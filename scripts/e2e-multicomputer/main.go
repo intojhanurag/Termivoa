@@ -36,6 +36,10 @@
 // `e2e-multicomputer devserver -listen 127.0.0.1:<port> -name <text>` is a
 // small dev site for a session to run.
 //
+// `e2e-multicomputer qr -out <file>` writes the text on stdin as a QR code in
+// a one-frame Y4M video: the file Chrome plays as its camera
+// (--use-file-for-fake-video-capture) for the Scan QR check.
+//
 // Each request is logged as one JSON line without secrets: no cookie values,
 // no bodies, no query strings.
 package main
@@ -71,6 +75,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"rsc.io/qr"
 )
 
 const previewPort = "8443"
@@ -90,6 +95,20 @@ func (r routes) Set(value string) error {
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "devserver" {
 		devserver(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "qr" {
+		flags := flag.NewFlagSet("qr", flag.ExitOnError)
+		out := flags.String("out", "", "Y4M file to write")
+		_ = flags.Parse(os.Args[2:])
+		text, _ := io.ReadAll(os.Stdin)
+		video, err := qrVideo(strings.TrimSpace(string(text)))
+		if err == nil {
+			err = os.WriteFile(*out, video, 0o600)
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 	table, previews := routes{}, routes{}
@@ -453,6 +472,32 @@ type closeNotify struct {
 func (c *closeNotify) Close() error {
 	c.once.Do(func() { close(c.done) })
 	return c.Conn.Close()
+}
+
+// qrVideo draws text as a QR code, black on white with a quiet zone, in the
+// middle of one 640x480 Y4M frame (Chrome repeats it).
+func qrVideo(text string) ([]byte, error) {
+	code, err := qr.Encode(text, qr.M)
+	if err != nil {
+		return nil, err
+	}
+	const width, height = 640, 480
+	scale := height / (code.Size + 8)
+	if scale < 2 {
+		return nil, errors.New("qr: the text is too long for the frame")
+	}
+	left, top := (width-code.Size*scale)/2, (height-code.Size*scale)/2
+	luma := bytes.Repeat([]byte{235}, width*height)
+	for y := 0; y < code.Size*scale; y++ {
+		for x := 0; x < code.Size*scale; x++ {
+			if code.Black(x/scale, y/scale) {
+				luma[(top+y)*width+left+x] = 16
+			}
+		}
+	}
+	video := []byte(fmt.Sprintf("YUV4MPEG2 W%d H%d F10:1 Ip A1:1 C420jpeg\nFRAME\n", width, height))
+	video = append(video, luma...)
+	return append(video, bytes.Repeat([]byte{128}, width*height/2)...), nil
 }
 
 // devserver is the dev site a harness session runs: a page with a marker
