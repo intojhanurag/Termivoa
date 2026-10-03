@@ -43,7 +43,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
   and **Log out** signs out of every computer it can reach. Not yet tested
   on a real phone; choose an always-on, trusted computer as home, because a
   hacked home reaches every computer added through it. From the next beta,
-  every user needs iOS 16.4 or later on iPhone.
+  every user needs iOS 16.4 or later on iPhone. Add a computer by scanning
+  the QR code from `pterm pair --via` inside the app, by pasting the link,
+  or by tapping it in a Termivoa session.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
   for coding-agent prompts (Down sits next to Up while you type), plus a key
   bar with Esc, Tab, Ctrl, Alt and arrows.

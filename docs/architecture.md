@@ -151,7 +151,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `web/src/terminal` | xterm display, frame renderer, snapshot assembly, input sender, composer, snippets, speech, phone-wide scheduler |
 | `web/src/protocol` | Ajv validators generated at build time (no runtime `eval`) |
 | `web/src/api` | HTTP client with timeouts |
-| `web/src/pairing` | Pairing and add-computer flows |
+| `web/src/pairing` | Pairing and add-computer flows; `scan.ts` reads the add-computer QR code in the app (`BarcodeDetector` or the lazy `qr` decoder chunk) and hands the text to the same parser and confirm sheet as paste |
 | `web/src/generated` | Generated protocol TypeScript types |
 | `web/src/sw.js` | Service worker: precache, network-first pages, push display (home and per-peer scopes) |
 | `web/src/storage.ts` | The one safe `localStorage`/`sessionStorage` accessor (private browsing may refuse storage) |

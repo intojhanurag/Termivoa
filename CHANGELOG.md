@@ -8,6 +8,16 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **Scan QR in + Add a computer.** Phone: **Settings → + Add a computer**
+  now offers **Scan QR** and **Paste link**. Scan opens the camera inside the
+  app and reads the QR code that `pterm pair --via` prints. A scanned link is
+  checked like a pasted one and opens the same **Add this computer?** sheet.
+  Camera pictures stay on the phone; nothing is stored. The QR reader (`qr`
+  0.7.0, MIT OR Apache-2.0) loads only when you tap Scan QR. The page Safari
+  shows for an add-computer link now sends you to **Settings → + Add a
+  computer → Scan QR**. Host: no change.
+- **Home badge.** Phone: **Settings → Computers** marks the home computer
+  with a **Home** badge and says "Home serves this app to your phone."
 - **Preview for sessions on other computers** (ADR 0006,
   `docs/peer-preview.md`; not yet tested on a real phone). Phone: **Preview
   ready** and **Open ↗** now work for a session on another computer in your

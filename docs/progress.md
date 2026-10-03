@@ -1592,6 +1592,18 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   multi-computer run (the coordinator runs it), a real VPS, a real phone,
   and the linger question (the container's users had no login session).
 
+- **Scan QR for + Add a computer and the Home badge**
+  (`feat/scan-add-computer`, 2026-10-03): `web/src/pairing/scan.ts` reads the
+  QR code with `BarcodeDetector` or the lazy `qr` 0.7.0 decoder chunk (34.8 kB,
+  14.3 kB gzip); the text goes through `parseAddComputerLink` and the same
+  confirm sheet as paste. Review: 6 low findings, all fixed (reader-load text,
+  ended track, two codes in one frame, `object-fit: contain`, empty Home line,
+  canvas reuse). Evidence: `scripts/check` (728 web tests);
+  `phase-b.mjs` 65/65 with `SCAN-native` and `SCAN-js` (Chrome fake camera
+  showing a QR code of a real `pterm pair --via` link). Pending (owner):
+  real iPhone and Android, `docs/owner-verification.md` "Scan QR in + Add a
+  computer (real phone)".
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
