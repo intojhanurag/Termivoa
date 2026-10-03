@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -847,6 +848,13 @@ func shortOffers(t *testing.T, interval, wait time.Duration) {
 
 const offerLink = peerOrigin + "/add-computer#grant=" + adminGrant + "&via=https%3A%2F%2Fmac.tailx.ts.net"
 
+// liveGrant is a bound grant for mac whose link has not expired.
+func liveGrant(node *protocol.TailnetNode) protocol.AdminRPCPairGrantResultPayload {
+	grant := boundGrant(homeOrigin, node)
+	grant.ExpiresAt = time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+	return grant
+}
+
 // The N4 screen, for each result of the first offer. Nobody adds the
 // computer, so the wait ends with the timeout text, and the offer ends.
 func TestPairViaOfferScreen(t *testing.T) {
@@ -854,25 +862,28 @@ func TestPairViaOfferScreen(t *testing.T) {
 		t.Fatalf("wait %s, interval %s", OfferWait, OfferInterval)
 	}
 	shortOffers(t, time.Hour, 20*time.Millisecond)
-	tail := "Waiting for your phone (up to 10 minutes; Ctrl+C stops)…\n\n" +
-		"No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n" + offerLink + "\n" +
+	tail := "\nNo Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n" + offerLink + "\n" +
 		"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n"
+	waiting, waitingLong := "Waiting for your phone (Ctrl+C stops)…\n", "Waiting for your phone (up to 10 minutes; Ctrl+C stops)…\n"
 	head := "Add this computer (vps) to the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com).\n"
 	for name, test := range map[string]struct {
 		reply offerReply
 		line  string
 	}{
 		"delivered": {offerReply{result: offered("")}, "Sent to mac (https://mac.tailx.ts.net).\n" +
-			"On your phone, open Termivoa → Settings → Computers and tap Add next to \"vps\".\n"},
-		"unreachable":  {offerReply{result: offered(protocol.Unreachable)}, "mac did not answer. Use the QR code or the link below.\n"},
-		"not accepted": {offerReply{result: offered(protocol.NotAccepted)}, "Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below.\n"},
+			"On your phone, open Termivoa → Settings → Computers and tap Add next to \"vps\".\n" + waitingLong},
+		"unreachable":  {offerReply{result: offered(protocol.Unreachable)}, "mac did not answer. Use the QR code or the link below.\n" + waiting},
+		"busy":         {offerReply{result: offered(protocol.Busy)}, "mac is busy right now. Use the QR code or the link below.\n" + waiting},
+		"not accepted": {offerReply{result: offered(protocol.NotAccepted)}, "Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below.\n" + waiting},
+		"no status here": {offerReply{err: &localclient.RemoteError{Code: protocol.HostUnavailable, Message: "x"}},
+			"This computer cannot read its Tailscale status. Use the QR code or the link below.\n" + waiting},
 		"rpc error": {offerReply{err: &localclient.RemoteError{Code: protocol.LimitExceeded, Message: "home says \x1b[2J"}},
-			"mac did not answer. Use the QR code or the link below.\n"},
+			"This computer could not offer itself to mac. Use the QR code or the link below.\n" + waiting},
 	} {
-		admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com")), replies: []offerReply{test.reply}}
+		admin := &fakeAdmin{grant: liveGrant(owned("ada@example.com")), replies: []offerReply{test.reply}}
 		var output bytes.Buffer
 		err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
-		if err == nil || err.Error() != "Nobody added this computer in 10 minutes. Run pterm pair --via mac again." {
+		if err == nil || err.Error() != "Nobody added this computer in 10 minutes. Run pterm pair --via mac again." || !errors.Is(err, ErrNoPhone) {
 			t.Fatalf("%s: wait ended with %v", name, err)
 		}
 		if want := head + test.line + tail; output.String() != want {
@@ -883,9 +894,27 @@ func TestPairViaOfferScreen(t *testing.T) {
 		}
 	}
 
-	// With a QR code, the Camera sentence stays under the link.
-	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
+	// No saved address for this computer (the link uses --origin): no offer.
+	admin := &fakeAdmin{grant: liveGrant(owned("ada@example.com"))}
+	admin.grant.Origin = nil
 	var output bytes.Buffer
+	_ = Pair(context.Background(), admin, PairOptions{Via: "mac", Origin: peerOrigin, Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
+	if want := head + "Add needs this computer's address: run pterm setup, or pterm config origin https://<this computer>. Use the QR code or the link below.\n" +
+		waiting + tail; output.String() != want || len(admin.offers) != 0 {
+		t.Fatalf("no address: %d offers, screen =\n%s", len(admin.offers), output.String())
+	}
+
+	// A broker older than this pterm closes the connection on the offer.
+	admin = &fakeAdmin{grant: liveGrant(owned("ada@example.com")), replies: []offerReply{{err: io.EOF}}}
+	output.Reset()
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output); err == nil ||
+		!strings.Contains(err.Error(), "Restart Termivoa on this computer (pterm shutdown, then pterm launch), then try again") || len(admin.ends) != 1 {
+		t.Fatalf("old broker: %v, ends %v", err, admin.ends)
+	}
+
+	// With a QR code, the Camera sentence stays under the link.
+	admin = &fakeAdmin{grant: liveGrant(owned("ada@example.com"))}
+	output.Reset()
 	_ = Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, ShowQR: true, QRColumns: 80, PollInterval: time.Millisecond}, &output)
 	text := output.String()
 	if !strings.Contains(text, "paste the link. They work for 2 minutes:\n"+qrColors) ||
@@ -895,14 +924,41 @@ func TestPairViaOfferScreen(t *testing.T) {
 	}
 }
 
+// When the link expires: with no offer delivered yet, the link was the only
+// way, so the wait ends with the link text; after a delivered offer it says
+// so once and goes on (Add still works).
+func TestPairViaLinkExpiryDuringTheOfferWait(t *testing.T) {
+	shortOffers(t, 2*time.Millisecond, 300*time.Millisecond)
+	expiring := func(replies ...offerReply) *fakeAdmin {
+		admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com")), replies: replies}
+		admin.grant.ExpiresAt = time.Now().Add(50 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+		return admin
+	}
+	admin := expiring(offerReply{result: offered(protocol.NotAccepted)})
+	var output bytes.Buffer
+	start := time.Now()
+	err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
+	if err == nil || err.Error() != "the link expired before a phone opened it; run `pterm pair --via mac` again" || !errors.Is(err, ErrNoPhone) ||
+		time.Since(start) > 250*time.Millisecond || len(admin.ends) != 1 {
+		t.Fatalf("never delivered: %v after %s\n%s", err, time.Since(start), output.String())
+	}
+	admin = expiring(offerReply{result: offered(protocol.NotAccepted)}, offerReply{result: offered("")})
+	output.Reset()
+	err = Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
+	if err == nil || !strings.HasPrefix(err.Error(), "Nobody added this computer") ||
+		strings.Count(output.String(), "The QR code and link above expired. Add in the app still works.\n") != 1 {
+		t.Fatalf("delivered: %v\n%s", err, output.String())
+	}
+}
+
 // Every interval the offer goes again; a line shows only when the result
 // changes; an RPC error on a later call shows nothing.
 func TestPairViaOfferResendsAndReportsChanges(t *testing.T) {
 	shortOffers(t, 2*time.Millisecond, 300*time.Millisecond)
-	homeError := offerReply{err: &localclient.RemoteError{Code: protocol.HostUnavailable, Message: "x"}}
-	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com")), replies: []offerReply{
-		{result: offered(protocol.Unreachable)}, {result: offered(protocol.Unreachable)}, {result: offered("")}, homeError,
-		{result: offered("")}, {result: offered(protocol.NotAccepted)}, homeError, {result: offered(protocol.NotAccepted)},
+	rpcError := offerReply{err: &localclient.RemoteError{Code: protocol.LimitExceeded, Message: "x"}}
+	admin := &fakeAdmin{grant: liveGrant(owned("ada@example.com")), replies: []offerReply{
+		{result: offered(protocol.Unreachable)}, {result: offered(protocol.Unreachable)}, {result: offered("")}, rpcError,
+		{result: offered("")}, {result: offered(protocol.Busy)}, rpcError, {result: offered(protocol.NotAccepted)},
 	}}
 	var output bytes.Buffer
 	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output); err == nil {
@@ -910,6 +966,7 @@ func TestPairViaOfferResendsAndReportsChanges(t *testing.T) {
 	}
 	_, after, _ := strings.Cut(output.String(), "screenshots or logs.\n")
 	if want := "Sent to mac (https://mac.tailx.ts.net). Tap Add next to \"vps\" in the app.\n" +
+		"mac is busy right now. Use the QR code or the link below.\n" +
 		"Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below.\n"; after != want {
 		t.Fatalf("change lines = %q", after)
 	}
@@ -969,22 +1026,41 @@ func TestPairViaOfferEndsOnEveryExit(t *testing.T) {
 	}
 }
 
-// --no-wait and --allow-tagged never offer; the tagged wait says why.
+// --no-wait and piped input never offer. --allow-tagged offers only when
+// neither computer is tagged, and the line names the tagged one.
 func TestPairViaOffersOnlyInAnUntaggedWait(t *testing.T) {
 	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
 	var output bytes.Buffer
-	if err := Pair(context.Background(), admin, PairOptions{Via: "mac"}, &output); err != nil || strings.Contains(output.String(), "tagged") {
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac"}, &output); err != nil || strings.Contains(output.String(), "tagged") || len(admin.offers) != 0 {
 		t.Fatalf("--no-wait: %v\n%s", err, output.String())
 	}
+	// A tagged home: no offer; the link is the way, so the wait ends with it.
 	admin = &fakeAdmin{grant: boundGrant(homeOrigin, &protocol.TailnetNode{ID: "n1", Tags: []string{"tag:server"}})}
 	admin.grant.ExpiresAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
 	output.Reset()
 	err := Pair(context.Background(), admin, PairOptions{Via: "mac", AllowTagged: true, Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
-	if err == nil || !strings.HasPrefix(output.String(), "Add does not work with tagged computers. Use the QR code or the link below.\nAdd-computer link") {
-		t.Fatalf("--allow-tagged: %v\n%s", err, output.String())
+	if !errors.Is(err, ErrNoPhone) || !strings.Contains(output.String(), "\nAdd does not work with tagged computers: mac is tagged. Use the QR code or the link below.\n") ||
+		len(admin.offers) != 0 || len(admin.ends) != 1 {
+		t.Fatalf("tagged home: %v, %d offers\n%s", err, len(admin.offers), output.String())
 	}
-	if len(admin.offers) != 0 || len(admin.ends) != 0 {
-		t.Fatalf("offers %v, ends %v", admin.offers, admin.ends)
+	// --allow-tagged with an untagged home: offered; when the broker refuses
+	// because this computer is tagged, the line says so and offers stop.
+	shortOffers(t, 2*time.Millisecond, 50*time.Millisecond)
+	for name, test := range map[string]struct {
+		reply offerReply
+		line  string
+		calls int
+	}{
+		"neither tagged": {offerReply{result: offered("")}, "Sent to mac (https://mac.tailx.ts.net).", 2},
+		"this computer is tagged": {offerReply{err: &localclient.RemoteError{Code: protocol.InvalidRequest, Message: "x"}},
+			"Add does not work with tagged computers: this computer is tagged. Use the QR code or the link below.", 1},
+	} {
+		admin = &fakeAdmin{grant: liveGrant(owned("ada@example.com")), replies: []offerReply{test.reply}}
+		output.Reset()
+		_ = Pair(context.Background(), admin, PairOptions{Via: "mac", AllowTagged: true, Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
+		if !strings.Contains(output.String(), "\n"+test.line+"\n") || len(admin.offers) < test.calls || test.calls == 1 && len(admin.offers) != 1 {
+			t.Fatalf("%s: %d offers\n%s", name, len(admin.offers), output.String())
+		}
 	}
 	// Input that is not a terminal (a pipe) waits for the link, as before
 	// Found, and offers nothing.
