@@ -71,18 +71,26 @@ func TestParseStatusKeepsOnlyOwnTailnetPeers(t *testing.T) {
 	}
 }
 
-// Only this owner's untagged computers can be home; a phone cannot.
+// This owner's computers and tagged computers (which need --allow-tagged)
+// can be home; another owner's computer and a phone cannot. A tagged
+// computer cannot compare owners, so it is offered every computer.
 func TestHomeCandidatesAreThisOwnersComputers(t *testing.T) {
-	status := mustParse(t, strings.Replace(statusJSON, `"k2":`,
+	sample := strings.Replace(statusJSON, `"k2":`,
 		`"p1": {"ID": "nPhone1CNTRL", "DNSName": "iphone.tailx.ts.net.", "UserID": 1, "OS": "iOS"},
     "a1": {"ID": "nAir1CNTRL", "DNSName": "air.tailx.ts.net.", "UserID": 1, "OS": "macOS"},
-    "k2":`, 1))
-	var hosts []string
-	for _, node := range status.HomeCandidates() {
-		hosts = append(hosts, node.Host)
+    "k2":`, 1)
+	hosts := func(status *Status) (hosts []string) {
+		for _, node := range status.HomeCandidates() {
+			hosts = append(hosts, node.Host)
+		}
+		return hosts
 	}
-	if want := []string{"air.tailx.ts.net", "mac.tailx.ts.net"}; !slices.Equal(hosts, want) {
-		t.Fatalf("candidates = %v, want %v", hosts, want)
+	if got, want := hosts(mustParse(t, sample)), []string{"air.tailx.ts.net", "ci.tailx.ts.net", "mac.tailx.ts.net"}; !slices.Equal(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+	tagged := strings.Replace(sample, `"UserID": 1},`, `"UserID": 9, "Tags": ["tag:vps"]},`, 1)
+	if got, want := hosts(mustParse(t, tagged)), []string{"air.tailx.ts.net", "ci.tailx.ts.net", "mac.tailx.ts.net", "pi.tailx.ts.net"}; !slices.Equal(got, want) {
+		t.Fatalf("tagged self: candidates = %v, want %v", got, want)
 	}
 }
 

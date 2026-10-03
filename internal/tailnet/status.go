@@ -150,13 +150,15 @@ func (status *Status) Peer(host string) (Node, bool) {
 }
 
 // HomeCandidates lists, by name, the own-tailnet computers that pterm pair
-// --via accepts without --allow-tagged: untagged nodes of this computer's
-// owner. Phones and TVs are left out; they cannot run Termivoa.
+// --via accepts: untagged nodes of this computer's owner and, when this
+// computer or the node is tagged, the node (only with --allow-tagged, which
+// the caller asks for). Phones and TVs are left out; they cannot run
+// Termivoa.
 func (status *Status) HomeCandidates() []Node {
 	var nodes []Node
 	for _, node := range status.peers {
 		mobile := slices.Contains([]string{"ios", "android", "tvos"}, strings.ToLower(node.OS))
-		if !mobile && status.CheckOwner(node, false) == nil {
+		if !mobile && status.CheckOwner(node, true) == nil {
 			nodes = append(nodes, node)
 		}
 	}
