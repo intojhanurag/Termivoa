@@ -110,6 +110,7 @@ async function addByPaste(id, whilePending = async () => undefined) {
   await click(app, 'Settings');
   await app.waitText('Add a computer');
   await click(app, '+ Add a computer');
+  await click(app, 'Paste link');
   await setInput(app, '#add-link', link);
   await click(app, 'Check link');
   await app.waitText('Add this computer?');
@@ -250,7 +251,7 @@ try {
         await p.waitText('Add vps');
         await shot(`scan-${decoder}-confirm-sheet`, p);
         const sheet = (await p.eval(`document.querySelector('.sheet, [role=dialog]')?.innerText ?? ''`)).replace(/\s+/g, ' ');
-        const after = await p.eval(`({ stopped: globalThis.__stopped, video: document.querySelector('video') !== null, chunk: performance.getEntriesByType('resource').some((e) => /\/assets\/decode-/.test(e.name)) })`);
+        const after = await p.eval(`({ stopped: globalThis.__stopped, video: document.querySelector('video') !== null, chunk: performance.getEntriesByType('resource').some((e) => e.name.includes('/assets/decode-')) })`);
         await click(p, 'Cancel');
         check(`SCAN-${decoder}`, `Scan QR (${native ? 'BarcodeDetector' : 'JavaScript decoder'}) opens the confirm sheet with the full origin and owner, and stops the camera`,
           sheet.includes('https://vps.tailx.ts.net') && sheet.includes('ada@example.com') && after.stopped >= 1 && !after.video && after.chunk === !native,
@@ -772,6 +773,7 @@ try {
     await click(app, 'Settings');
     await app.waitText('Add a computer');
     await click(app, '+ Add a computer');
+    await click(app, 'Paste link');
     await setInput(app, '#add-link', link);
     await click(app, 'Check link');
   }
