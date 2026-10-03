@@ -152,7 +152,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `internal/webassets` | Embedded web app (`-tags webdist`) or a placeholder page |
 | `internal/webpush` | Web Push with the standard library (RFC 8291, RFC 8292 VAPID), push host allow-list |
 | `protocol/v1` | Canonical JSON Schemas and protocol docs (section 4) |
-| `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets |
+| `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets; `ui.tsx` holds the shared icons, the busy `Button`, `Notice` and `Banner` (styles and tokens in `web/src/styles/global.css`) |
 | `web/src/terminal` | xterm display, frame renderer, snapshot assembly, input sender, composer, snippets, speech, phone-wide scheduler |
 | `web/src/protocol` | Ajv validators generated at build time (no runtime `eval`) |
 | `web/src/api` | HTTP client with timeouts |

@@ -256,6 +256,20 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Phone: a new look: lit buttons with a pressed and busy state, and notices
+  that say what happened and what to do. One lit button per screen (for
+  example **❯ new session**); others are raised, quiet or red. A pressed
+  button sinks 2 px; a busy one shows a spinner and keeps its width
+  (**Check again** → **Checking…**, **start session** → **starting…**,
+  **Log out**, **Save name**, **Remove vps**, **Turn on**). Problems show as
+  notices with an icon and a colour for how worried to be: "vps · can't
+  reach" (amber, **Retry**), "vps · pair again" (red, with the
+  `pterm pair --via mac` command), "Update Termivoa on vps" (grey). The
+  adding banner is cyan while it waits, green when "vps is added" and red
+  when "vps was not added". **Settings → Computers** shows each computer as
+  a card with its status, **Found on your network** rows have a lit
+  **+ Add**. Commands show without font ligatures and never break inside
+  `--via`. Motion is off with Reduce Motion. Host: no change.
 - A shorter `pterm setup` for a new computer. Host: setup prints a short
   plan, one line for each change (startup at login, where data and logs go,
   the phone address, each Tailscale Serve question, linger, the project

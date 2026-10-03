@@ -87,12 +87,11 @@ designed in Paper first and shown to the owner before any code.
    names this computer and quotes the phone's code screen; a strong success
    line ("Done. vps is in your Termivoa app on mac. Open the app and tap
    it."); a tip to rename long machine names.
-3. **UI revamp (Paper first):** a real button system (primary, secondary,
-   quiet, danger; pressed, focus and loading states), notices and errors
-   with an icon, a title, a sentence and an action instead of plain text,
-   empty and loading states, livelier cards and status dots, short motion
-   that respects reduced motion. Keep the night palette and the one cyan
-   signal.
+3. **UI revamp (Paper first):** buttons, notices, banners and the
+   Settings → Computers cards are done (`feat/ui-lit`). Left: the site
+   screenshots (`site/src/assets/docs/phone-*.webp`) still show the old
+   look; the other sheets (session menu, snips, worktree, compose,
+   changes) keep their plain buttons and red error lines.
 4. **Open issues:** #158 (test fake systemd), #161 (`pterm pair` and
    `pterm launch` ignore Funnel), #162 (Serve problems under another host
    name), #164 (+ Add a computer shows the renamed home label), #165 (landing
