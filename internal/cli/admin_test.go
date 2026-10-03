@@ -50,6 +50,48 @@ type fakeAdmin struct {
 	computers     []protocol.AdminRPCComputer
 	removeResult  protocol.AdminRPCComputerRemoveResultPayload
 	removed       []string
+
+	// Found on your network: replies[i] answers offer i; the last repeats.
+	// No replies: every offer is delivered to mac.
+	offers     []string
+	replies    []offerReply
+	afterOffer func(admin *fakeAdmin, call int)
+	ends       []*string
+}
+
+type offerReply struct {
+	result protocol.AdminRPCPairOfferResultPayload
+	err    error
+}
+
+func (admin *fakeAdmin) OfferPairing(_ context.Context, via string) (protocol.AdminRPCPairOfferResultPayload, error) {
+	admin.offers = append(admin.offers, via)
+	if admin.afterOffer != nil {
+		admin.afterOffer(admin, len(admin.offers))
+	}
+	if len(admin.replies) == 0 {
+		return offered(""), nil
+	}
+	reply := admin.replies[min(len(admin.offers), len(admin.replies))-1]
+	return reply.result, reply.err
+}
+
+func (admin *fakeAdmin) EndOffer(ctx context.Context, link *string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	admin.ends = append(admin.ends, link)
+	return nil
+}
+
+// offered is an offer result for mac: delivered, or the problem named.
+func offered(problem protocol.AdminRPCPairOfferProblem) protocol.AdminRPCPairOfferResultPayload {
+	result := protocol.AdminRPCPairOfferResultPayload{AppOrigin: homeOrigin, AppNode: *owned("ada@example.com"),
+		ExpiresAt: "2026-09-27T00:02:00Z", Delivered: problem == ""}
+	if problem != "" {
+		result.Problem = &problem
+	}
+	return result
 }
 
 func (admin *fakeAdmin) CreateBoundPairingGrant(_ context.Context, request protocol.AdminRPCPairGrantPayload) (protocol.AdminRPCPairGrantResultPayload, error) {
@@ -624,18 +666,25 @@ func TestPairingPromptNamesTheApp(t *testing.T) {
 		want string
 	}{
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456", AppOrigin: &home, AppNode: owned("ada@example.com")},
-			"Approve only if the phone shows exactly this code.\nPhone \"iPhone\" shows code 123-456 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com). Approve? [y/N] "},
+			viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, owner ada@example.com)")},
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456", AppOrigin: &home, AppNode: &protocol.TailnetNode{ID: "n1", Tags: []string{"tag:server"}}},
-			"Approve only if the phone shows exactly this code.\nPhone \"iPhone\" shows code 123-456 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, tags tag:server). Approve? [y/N] "},
+			viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, tags tag:server)")},
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456", AppOrigin: &home, AppNode: owned(hostile)},
-			"Approve only if the phone shows exactly this code.\nPhone \"iPhone\" shows code 123-456 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, owner \"ada\\x1b[2J@example.com\"). Approve? [y/N] "},
+			viaPrompt("iPhone", "123-456", `mac (https://mac.tailx.ts.net, owner "ada\x1b[2J@example.com")`)},
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456"},
 			"Approve only if the phone shows exactly this code.\nPhone \"iPhone\" shows code 123-456. Approve? [y/N] "},
 	} {
-		if got := pairingPrompt(test.item); got != test.want {
+		if got := pairingPrompt(test.item, "vps"); got != test.want {
 			t.Fatalf("prompt = %q, want %q", got, test.want)
 		}
 	}
+}
+
+// viaPrompt is the N5 prompt for a pairing bound to the app at app.
+func viaPrompt(label, code, app string) string {
+	return "Phone \"" + label + "\" wants to use THIS computer (vps) from the Termivoa app at " + app + ".\n" +
+		"Approve only if your phone shows " + code + " and says \"type y in the terminal on vps\". " +
+		"If it names another computer, shows another code, or shows nothing, answer N.\nApprove? [y/N] "
 }
 
 // With --via, only new pending pairings bound to that app are offered.
@@ -655,7 +704,7 @@ func TestPairViaOffersOnlyPairingsForItsApp(t *testing.T) {
 	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: confirmer, PollInterval: time.Millisecond}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	want := "Approve only if the phone shows exactly this code.\nPhone \"iPhone\" shows code 123-456 and will use this computer from the Termivoa app at mac (https://mac.tailx.ts.net, tags tag:server). Approve? [y/N] "
+	want := viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, tags tag:server)")
 	if confirmer.calls != 1 || confirmer.prompt != want || len(admin.approved) != 1 || admin.approved[0] != adminPending {
 		t.Fatalf("calls=%d prompt=%q approved=%v", confirmer.calls, confirmer.prompt, admin.approved)
 	}
@@ -786,5 +835,155 @@ func TestComputersListAndRemove(t *testing.T) {
 	}
 	if err := RemoveComputer(context.Background(), fake, "https://VPS.tailx.ts.net", &bytes.Buffer{}); err == nil || len(fake.removed) != 2 {
 		t.Fatalf("invalid origin: %v (%d sends)", err, len(fake.removed))
+	}
+}
+
+// shortOffers runs offers every interval and ends a wait after wait.
+func shortOffers(t *testing.T, interval, wait time.Duration) {
+	t.Helper()
+	offerInterval, offerWait = interval, wait
+	t.Cleanup(func() { offerInterval, offerWait = OfferInterval, OfferWait })
+}
+
+const offerLink = peerOrigin + "/add-computer#grant=" + adminGrant + "&via=https%3A%2F%2Fmac.tailx.ts.net"
+
+// The N4 screen, for each result of the first offer. Nobody adds the
+// computer, so the wait ends with the timeout text, and the offer ends.
+func TestPairViaOfferScreen(t *testing.T) {
+	if OfferWait != 10*time.Minute || OfferInterval != 30*time.Second || offerWait != OfferWait || offerInterval != OfferInterval {
+		t.Fatalf("wait %s, interval %s", OfferWait, OfferInterval)
+	}
+	shortOffers(t, time.Hour, 20*time.Millisecond)
+	tail := "Waiting for your phone (up to 10 minutes; Ctrl+C stops)…\n\n" +
+		"No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n" + offerLink + "\n" +
+		"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n"
+	head := "Add this computer (vps) to the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com).\n"
+	for name, test := range map[string]struct {
+		reply offerReply
+		line  string
+	}{
+		"delivered": {offerReply{result: offered("")}, "Sent to mac (https://mac.tailx.ts.net).\n" +
+			"On your phone, open Termivoa → Settings → Computers and tap Add next to \"vps\".\n"},
+		"unreachable":  {offerReply{result: offered(protocol.Unreachable)}, "mac did not answer. Use the QR code or the link below.\n"},
+		"not accepted": {offerReply{result: offered(protocol.NotAccepted)}, "Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below.\n"},
+		"rpc error": {offerReply{err: &localclient.RemoteError{Code: protocol.LimitExceeded, Message: "home says \x1b[2J"}},
+			"mac did not answer. Use the QR code or the link below.\n"},
+	} {
+		admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com")), replies: []offerReply{test.reply}}
+		var output bytes.Buffer
+		err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
+		if err == nil || err.Error() != "Nobody added this computer in 10 minutes. Run pterm pair --via mac again." {
+			t.Fatalf("%s: wait ended with %v", name, err)
+		}
+		if want := head + test.line + tail; output.String() != want {
+			t.Fatalf("%s: screen =\n%s\nwant\n%s", name, output.String(), want)
+		}
+		if len(admin.offers) != 1 || admin.offers[0] != "mac" || len(admin.ends) != 1 || *admin.ends[0] != adminGrant {
+			t.Fatalf("%s: offers %v, ends %v", name, admin.offers, admin.ends)
+		}
+	}
+
+	// With a QR code, the Camera sentence stays under the link.
+	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
+	var output bytes.Buffer
+	_ = Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, ShowQR: true, QRColumns: 80, PollInterval: time.Millisecond}, &output)
+	text := output.String()
+	if !strings.Contains(text, "paste the link. They work for 2 minutes:\n"+qrColors) ||
+		!strings.Contains(text, offerLink+"\nThe phone's Camera app will NOT work for this code: it opens the browser, not the app.\n"+
+			"The link and QR code are a single-use secret") || strings.Count(text, adminGrant) != 1 {
+		t.Fatalf("QR screen:\n%s", text)
+	}
+}
+
+// Every interval the offer goes again; a line shows only when the result
+// changes; an RPC error on a later call shows nothing.
+func TestPairViaOfferResendsAndReportsChanges(t *testing.T) {
+	shortOffers(t, 2*time.Millisecond, 300*time.Millisecond)
+	homeError := offerReply{err: &localclient.RemoteError{Code: protocol.HostUnavailable, Message: "x"}}
+	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com")), replies: []offerReply{
+		{result: offered(protocol.Unreachable)}, {result: offered(protocol.Unreachable)}, {result: offered("")}, homeError,
+		{result: offered("")}, {result: offered(protocol.NotAccepted)}, homeError, {result: offered(protocol.NotAccepted)},
+	}}
+	var output bytes.Buffer
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output); err == nil {
+		t.Fatal("the wait did not time out")
+	}
+	_, after, _ := strings.Cut(output.String(), "screenshots or logs.\n")
+	if want := "Sent to mac (https://mac.tailx.ts.net). Tap Add next to \"vps\" in the app.\n" +
+		"Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below.\n"; after != want {
+		t.Fatalf("change lines = %q", after)
+	}
+	if len(admin.offers) < 10 || len(admin.ends) != 1 {
+		t.Fatalf("%d offers, %d ends", len(admin.offers), len(admin.ends))
+	}
+}
+
+// A new pairing bound to mac gets the N5 prompt; the command ends on y, N,
+// Ctrl+C or home_changed, and always ends the offer.
+func TestPairViaOfferEndsOnEveryExit(t *testing.T) {
+	shortOffers(t, 2*time.Millisecond, time.Minute)
+	home := homeOrigin
+	pendingAfter := func(calls int) func(*fakeAdmin, int) {
+		return func(admin *fakeAdmin, call int) {
+			if call == calls {
+				admin.pending = []protocol.AdminRPCPendingPairing{{ID: adminPending, VerificationCode: "123-456",
+					DeviceLabel: "iPhone", ExpiresAt: "2026-09-27T00:05:00Z", AppOrigin: &home, AppNode: owned("ada@example.com")}}
+			}
+		}
+	}
+	for name, test := range map[string]struct {
+		confirmer *fakeConfirmer
+		replies   []offerReply
+		cancel    bool
+		want      string // error text; "" is success
+	}{
+		"y":          {confirmer: &fakeConfirmer{answer: true}},
+		"N":          {confirmer: &fakeConfirmer{}, want: ErrNotPaired.Error()},
+		"Ctrl+C":     {confirmer: &fakeConfirmer{}, cancel: true, want: context.Canceled.Error()},
+		"home moved": {confirmer: &fakeConfirmer{}, replies: []offerReply{{result: offered("")}, {err: &localclient.RemoteError{Code: protocol.HomeChanged}}}, want: "mac is now a different Tailscale machine. Run pterm pair --via mac again."},
+	} {
+		admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com")), replies: test.replies, afterOffer: pendingAfter(3)}
+		ctx, cancel := context.WithCancel(context.Background())
+		if test.cancel {
+			admin.afterOffer = func(_ *fakeAdmin, call int) {
+				if call == 3 {
+					cancel()
+				}
+			}
+		}
+		err := Pair(ctx, admin, PairOptions{Via: "mac", Confirmer: test.confirmer, PollInterval: time.Millisecond}, &bytes.Buffer{})
+		cancel()
+		if test.want == "" && err != nil || test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)) {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(admin.ends) != 1 || *admin.ends[0] != adminGrant {
+			t.Fatalf("%s: ends %v", name, admin.ends)
+		}
+		prompted := test.confirmer.calls == 1
+		if prompted != (name == "y" || name == "N") || prompted && test.confirmer.prompt != viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, owner ada@example.com)") {
+			t.Fatalf("%s: %d prompts: %q", name, test.confirmer.calls, test.confirmer.prompt)
+		}
+		if (name == "y") != (len(admin.approved) == 1) {
+			t.Fatalf("%s: approved %v", name, admin.approved)
+		}
+	}
+}
+
+// --no-wait and --allow-tagged never offer; the tagged wait says why.
+func TestPairViaOffersOnlyInAnUntaggedWait(t *testing.T) {
+	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
+	var output bytes.Buffer
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac"}, &output); err != nil || strings.Contains(output.String(), "tagged") {
+		t.Fatalf("--no-wait: %v\n%s", err, output.String())
+	}
+	admin = &fakeAdmin{grant: boundGrant(homeOrigin, &protocol.TailnetNode{ID: "n1", Tags: []string{"tag:server"}})}
+	admin.grant.ExpiresAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+	output.Reset()
+	err := Pair(context.Background(), admin, PairOptions{Via: "mac", AllowTagged: true, Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
+	if err == nil || !strings.HasPrefix(output.String(), "Add does not work with tagged computers. Use the QR code or the link below.\nAdd-computer link") {
+		t.Fatalf("--allow-tagged: %v\n%s", err, output.String())
+	}
+	if len(admin.offers) != 0 || len(admin.ends) != 0 {
+		t.Fatalf("offers %v, ends %v", admin.offers, admin.ends)
 	}
 }
