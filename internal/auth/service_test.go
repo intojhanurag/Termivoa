@@ -181,6 +181,37 @@ func TestGrantExpiryRateLimitAndLabelBounds(t *testing.T) {
 	}
 }
 
+func TestDeleteGrantOnlyWhenUnredeemed(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+	unused, _, err := service.CreateBoundGrant(ctx, store.AppBinding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	used, _, err := service.CreateBoundGrant(ctx, store.AppBinding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	redeemed, err := service.RedeemChecked(ctx, used, "Phone", OwnOriginOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, grant := range []string{unused, used} {
+		if err := service.DeleteGrant(ctx, grant); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := service.RedeemChecked(ctx, unused, "Phone", OwnOriginOnly); !errors.Is(err, ErrPairingExpired) {
+		t.Fatalf("deleted grant redeemed: %v", err)
+	}
+	if err := service.Approve(ctx, redeemed.PendingID); err != nil {
+		t.Fatalf("the redeemed grant's pairing is gone: %v", err)
+	}
+	if err := service.DeleteGrant(ctx, "not a grant"); !errors.Is(err, ErrPairingExpired) {
+		t.Fatalf("malformed grant = %v", err)
+	}
+}
+
 func TestCredentialLifetimeExpiryAndClockRollback(t *testing.T) {
 	service, clock := newTestService(t)
 	ctx := context.Background()
