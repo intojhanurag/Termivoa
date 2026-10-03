@@ -352,6 +352,19 @@ func TestInspectTailscaleReportsPreviewFindingsSeparately(t *testing.T) {
 			},
 			problems: 1,
 		},
+		// A machine rename leaves the old name's handlers; they serve
+		// nothing at this computer's name (#168).
+		"only an old host name": {
+			serve: `{"TCP":{"443":{"HTTPS":true},"8443":{"HTTPS":true}},"Web":{` +
+				`"old.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
+				`"old.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
+			want: []string{
+				"! tailscale serve: not configured for Termivoa",
+				"tailscale serve: dev-server previews not shared (optional): " + lifecycle.PreviewServeCommand,
+			},
+			lacks:    []string{"proxies the Termivoa gateway", "proxies dev-server previews"},
+			problems: 1,
+		},
 		"preview conflict does not block or fail 443": {
 			serve: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
 				`"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
@@ -493,6 +506,16 @@ func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
 		"TCP forward on 443":    {serve: `{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}`, want: []string{"TCP forward to 127.0.0.1:22"}},
 		"TCP forward elsewhere": {serve: `{"TCP":{"8443":{"TCPForward":"127.0.0.1:22"}}}`},
 		"empty":                 {serve: ``},
+		"foreground gateway":    {serve: `{"Foreground":{"5f0e2c7d9a1b4e36":{"Web":{"h.ts.net:443":{"Handlers":{` + gateway + `}}}}}}`},
+		"foreground path on own host": {
+			serve: `{"Web":{"h.ts.net:443":{"Handlers":{` + gateway + `}}},` +
+				`"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"443":{"HTTPS":true}},"Web":{"h.ts.net:443":{"Handlers":{"/grafana":{"Proxy":"http://127.0.0.1:3000"}}}}}}}`,
+			want: []string{"foreground /grafana"},
+		},
+		"foreground TCP forward on 443": {
+			serve: `{"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}}}`,
+			want:  []string{"foreground TCP forward to 127.0.0.1:22"},
+		},
 	} {
 		if got, _ := otherHandlers([]byte(test.serve), "h.ts.net."); strings.Join(got, ",") != strings.Join(test.want, ",") {
 			t.Errorf("%s: got %q, want %q", name, got, test.want)

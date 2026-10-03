@@ -115,7 +115,11 @@ sudo tailscale set --operator=$USER
 
 ## Setup says port 443 serves something else
 
-Fix the conflict, then run `pterm setup` again. Tailscale Serve already shares another service on HTTPS port 443, and setup leaves it alone.
+Fix the conflict, then run `pterm setup` again. Tailscale Serve already shares another service on HTTPS port 443, and setup leaves it alone. If the message says "to free it, stop the `tailscale serve` or `tailscale funnel` command that runs in the foreground (Ctrl+C)", a `tailscale serve` without `--bg` still runs in a terminal: press Ctrl+C there.
+
+## Setup asks to share the page again after a rename (Next beta)
+
+Say yes. When you rename a computer in Tailscale, its Tailscale Serve settings stay under the old name, and the phone cannot reach the new name. From the next beta, `pterm setup` counts only the computer's current name, so it asks to share Termivoa there, and `pterm doctor` says `! tailscale serve: not configured for Termivoa` until you do. The settings under the old name do no harm.
 
 ## Setup refuses other Tailscale Serve handlers (Next beta)
 
@@ -143,6 +147,8 @@ refusing to set up: Tailscale Funnel is on for mac.example.ts.net:443, which put
 ```
 
 Run the command it names (for port 8443: `tailscale funnel --https=8443 off`). Termivoa never runs it for you. The command also stops sharing that port in your tailnet, so `pterm setup` asks again to share Termivoa there.
+
+If Funnel runs in the foreground (you ran `tailscale funnel` without `--bg`, and it still runs in a terminal), the message says "stop the `tailscale serve` or `tailscale funnel` command that runs in the foreground (Ctrl+C)". Go to that terminal and press Ctrl+C.
 
 `pterm doctor` reports the same thing as a problem:
 

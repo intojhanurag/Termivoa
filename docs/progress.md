@@ -50,6 +50,43 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### #168: Serve status for this computer's name, foreground and Services (2026-10-03, branch `fix/serve-status-168`)
+
+- **Rename.** `lifecycle.ServeFindings(data, host)` now takes this
+  computer's Tailscale DNS name (`status.Self.Host`, from the same
+  `pterm doctor`/`setup` checks). Only `<host>:443` and `<host>:8443` count
+  as `Configured`/`PreviewConfigured`. Termivoa under another name (left
+  from an old machine name) is neither configured nor a problem: it is
+  another origin (#162 note). Setup now asks to share the page at the new
+  name; before, it said "already shares".
+- **Foreground and Services.** Checked against Tailscale's
+  `ipn/serve.go` (main, 2026-10-03): `ServeConfig` has `Foreground
+  map[string]*ServeConfig` (a `tailscale serve`/`funnel` without `--bg`,
+  keyed by IPN bus session ID) and `Services map[ServiceName]*ServiceConfig`
+  (only `TCP`, `Web`, `Tun`; the CLI refuses Funnel with `--service`).
+  `tailscale serve status --json` prints the whole `ServeConfig`.
+  Foreground Funnel is now a problem and is in `ServeStatus.ForegroundFunnel`;
+  setup, `pterm pair` and `pterm launch` refuse or warn with "stop the
+  `tailscale serve` or `tailscale funnel` command that runs in the
+  foreground (Ctrl+C)" (`tailscale funnel --https=N off` does not stop
+  it). Every foreground handler on 443/8443 is a problem (Termivoa there
+  too: it ends with its command), and `otherHandlers` refuses foreground
+  handlers on this origin ("foreground /grafana"). A Service that proxies
+  Termivoa is a problem (`tailscale serve clear svc:<name>`).
+- **Tests** (all fail on the old parser): `TestServeFindings` (other host
+  name, this host and an old name, foreground funnel, foreground funnel next
+  to a saved config, foreground conflict, foreground TCP forward, service
+  serves termivoa / another app), `TestInspectTailscaleReportsPreviewFindingsSeparately`
+  ("only an old host name"), `TestOtherServeHandlersOnlyOnThisOrigin`
+  (foreground gateway, path, TCP forward), `TestSetupRefusesFunnelOnTermivoaPorts`
+  ("foreground 8443"), `TestPairRefusesFunnelOnTermivoaPorts` (foreground
+  443). The fixtures follow the real struct shapes; no real foreground
+  Funnel or Service was captured (rule 12: no Tailscale changes here).
+- **Checks:** `gofmt -l`, `go vet ./...`, `CGO_ENABLED=0 GOOS=linux go vet
+  ./...` (with cgo the macOS SDK cannot cross-compile runtime/cgo),
+  `GOOS=windows go vet ./...`, `go test -race ./internal/lifecycle/...
+  ./cmd/pterm/...`, `scripts/embed-web.sh && scripts/check`.
+
 ### Host batch: #158, #161, #162, the add-computer wait screen (2026-10-03, branch `fix/host-batch`)
 
 - **#158 (tests only).** The systemd fake in

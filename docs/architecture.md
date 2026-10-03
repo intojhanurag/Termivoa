@@ -73,7 +73,15 @@ names `tailscale funnel --https=<port> off`; `pterm doctor` counts any Funnel
 as a problem. `pterm pair` and `pterm pair approve` refuse with the same text
 (`funnelProblem`), and `pterm launch` warns and starts; both read only
 `tailscale serve status --json` (`termivoaFunnel`) and skip the check when it
-cannot be read.
+cannot be read. `lifecycle.ServeFindings(data, host)` reads Tailscale's whole
+`ipn.ServeConfig`: the saved config, each `Foreground` config (a `tailscale
+serve`/`funnel` without `--bg`; Funnel there is `ForegroundFunnel`, and every
+handler on 443/8443 is a problem, since it ends with its command) and
+`Services` (Termivoa proxied by a Service is a problem; Tailscale has no
+Funnel for Services). Only `<host>:443`/`<host>:8443` count as configured,
+where host is this computer's current Tailscale DNS name; Termivoa under
+another name (an old machine name) is neither configured nor a problem
+(#168). `otherHandlers` also reads foreground handlers on this origin.
 
 ### Broker and gateway
 

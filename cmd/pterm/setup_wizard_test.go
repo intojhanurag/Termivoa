@@ -299,10 +299,17 @@ func TestSetupRefusesOtherServeHandlersOnItsOrigin(t *testing.T) {
 func TestSetupRefusesFunnelOnTermivoaPorts(t *testing.T) {
 	const served = `"Web":{"mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
 		`"mac.example.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}`
-	for port, serve := range map[string]string{
-		"443":  `{` + served + `,"AllowFunnel":{"mac.example.ts.net:443":true}}`,
-		"8443": `{` + served + `,"AllowFunnel":{"mac.example.ts.net:8443":true}}`,
+	for name, test := range map[string]struct{ serve, hostPort, fix string }{
+		"443":  {`{` + served + `,"AllowFunnel":{"mac.example.ts.net:443":true}}`, "mac.example.ts.net:443", "`tailscale funnel --https=443 off`"},
+		"8443": {`{` + served + `,"AllowFunnel":{"mac.example.ts.net:8443":true}}`, "mac.example.ts.net:8443", "`tailscale funnel --https=8443 off`"},
+		// `tailscale funnel 8789` without --bg next to the saved config (#168).
+		"foreground 8443": {
+			`{` + served + `,"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"8443":{"HTTPS":true}},` +
+				`"Web":{"mac.example.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}},"AllowFunnel":{"mac.example.ts.net:8443":true}}}}`,
+			"mac.example.ts.net:8443", lifecycle.ForegroundStop,
+		},
 	} {
+		serve := test.serve
 		env, launchd := newLifecycleTestEnv(t)
 		fake := &tailscaleFake{status: `{"BackendState":"Running","Self":{"DNSName":"mac.example.ts.net."}}`, serve: serve}
 		useTailscaleFake(t, &env, fake)
@@ -313,16 +320,15 @@ func TestSetupRefusesFunnelOnTermivoaPorts(t *testing.T) {
 				input = nil
 			}
 			err := runWithInput(context.Background(), args, input, &output)
-			command := "`tailscale funnel --https=" + port + " off`"
-			if err == nil || !strings.Contains(err.Error(), "refusing to set up: Tailscale Funnel is on for mac.example.ts.net:"+port) ||
-				!strings.Contains(err.Error(), command) {
-				t.Fatalf("%s %q: err = %v\n%s", port, args, err, output.String())
+			if err == nil || !strings.Contains(err.Error(), "refusing to set up: Tailscale Funnel is on for "+test.hostPort) ||
+				!strings.Contains(err.Error(), test.fix) {
+				t.Fatalf("%s %q: err = %v\n%s", name, args, err, output.String())
 			}
-			if !strings.Contains(output.String(), command) || strings.Contains(output.String(), "Continue? [y/N]") {
-				t.Errorf("%s %q output:\n%s", port, args, output.String())
+			if !strings.Contains(output.String(), test.fix) || strings.Contains(output.String(), "Continue? [y/N]") {
+				t.Errorf("%s %q output:\n%s", name, args, output.String())
 			}
 			if launchd.bootstrapped() != 0 || len(fake.changes()) != 0 {
-				t.Fatalf("%s %q: launchd %d bootstraps, tailscale changes %q", port, args, launchd.bootstrapped(), fake.changes())
+				t.Fatalf("%s %q: launchd %d bootstraps, tailscale changes %q", name, args, launchd.bootstrapped(), fake.changes())
 			}
 		}
 	}
@@ -351,7 +357,10 @@ func TestPairRefusesFunnelOnTermivoaPorts(t *testing.T) {
 		for serve, want := range map[string]string{
 			`{"AllowFunnel":{"vps.example.ts.net:443":true}}`: "refusing to pair: Tailscale Funnel is on for vps.example.ts.net:443, " +
 				"which puts Termivoa on the public internet; turn it off with `tailscale funnel --https=443 off`, then run `pterm " + strings.Join(args, " ") + "` again",
-			`{"AllowFunnel":{"vps.example.ts.net:8443":true}}`:  "turn it off with `tailscale funnel --https=8443 off`",
+			`{"AllowFunnel":{"vps.example.ts.net:8443":true}}`: "turn it off with `tailscale funnel --https=8443 off`",
+			// `tailscale funnel 8787` without --bg (#168).
+			`{"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"443":{"HTTPS":true}},"Web":{"vps.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},"AllowFunnel":{"vps.example.ts.net:443":true}}}}`: "refusing to pair: Tailscale Funnel is on for vps.example.ts.net:443, " +
+				"which puts Termivoa on the public internet; stop the `tailscale serve` or `tailscale funnel` command that runs in the foreground (Ctrl+C), then run `pterm " + strings.Join(args, " ") + "` again",
 			`{"AllowFunnel":{"vps.example.ts.net:10000":true}}`: "cannot connect to the managed-session broker",
 			`not json`: "cannot connect to the managed-session broker",
 		} {

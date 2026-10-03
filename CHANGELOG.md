@@ -379,6 +379,21 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): after you renamed a computer in Tailscale, `pterm setup`
+  said "Tailscale Serve already shares the page at https://<new name>/"
+  while only the old name shared it, so the phone could not reach the new
+  name. Now only this computer's current name counts: setup asks to share
+  the page there, and `pterm doctor` says "not configured for Termivoa". A
+  handler that is left under the old name is not a problem. Setup, doctor,
+  `pterm pair` and `pterm launch` now also read Tailscale Serve and Funnel
+  that run in the foreground (`tailscale serve` or `tailscale funnel`
+  without `--bg`): Funnel there stops setup and pairing like Funnel in the
+  saved settings, and the text says "stop the `tailscale serve` or
+  `tailscale funnel` command that runs in the foreground (Ctrl+C)". A
+  foreground handler on port 443 or 8443 is a problem, and one on this
+  computer's address stops setup like any other handler there. `pterm
+  doctor` reports a Tailscale Service that serves Termivoa, with `tailscale
+  serve clear <service>` to remove it (#168). Phone: no change.
 - Fix (host side): when the phone's terminal got fewer rows (for example
   when the "Adding vps… approve on vps" banner opens) while the cursor was
   on one of the cut rows, the bottom rows were lost, so the last line of a
