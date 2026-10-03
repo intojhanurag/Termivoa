@@ -5,13 +5,16 @@
  * in this page (never sent, never stored).
  */
 
-export type ScanProblem = 'denied' | 'none' | 'failed';
+import { ChunkLoadError, loadChunk } from '../screens/chunks';
+
+export type ScanProblem = 'denied' | 'none' | 'failed' | 'reader';
 
 /** Plain words for each camera problem, shown with the Scan QR and Paste link choices. */
 export const SCAN_PROBLEMS: Readonly<Record<ScanProblem, string>> = {
   denied: 'The camera is blocked. Allow the camera for this app in your phone or browser settings, then tap Scan QR. Or paste the link.',
   none: 'No camera found. Paste the link.',
   failed: 'The camera did not start. Close other apps that use it, then tap Scan QR. Or paste the link.',
+  reader: 'The QR reader did not load. Reload the app, or paste the link.',
 };
 
 export const SCAN_ASKING = 'Allow the camera to scan the QR code.';
@@ -26,8 +29,9 @@ export type ScanEnd =
 /** Reads one video frame; undefined when it shows no QR code. */
 export type Decode = (video: HTMLVideoElement) => Promise<string | undefined>;
 
-/** getUserMedia's rejection as a problem. */
+/** getUserMedia's rejection (or the decoder chunk's) as a problem. */
 export function cameraProblem(error: unknown): ScanProblem {
+  if (error instanceof ChunkLoadError) return 'reader';
   const name = typeof error === 'object' && error !== null && 'name' in error ? error.name : undefined;
   if (name === 'NotAllowedError' || name === 'SecurityError') return 'denied';
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'none';
@@ -44,19 +48,41 @@ interface NativeDetectorClass {
 
 /** The longer side of the frame given to the JavaScript decoder; more pixels only cost time. */
 const MAX_SIDE = 800;
+/** BarcodeDetector failures in a row before the JavaScript decoder takes over. */
+const NATIVE_FAILURES = 10;
 
 /**
  * The browser's own BarcodeDetector where it reads QR codes (Chrome on
  * Android); else the `qr` package's decoder, fetched only now (its own
- * chunk). iOS Safari has no BarcodeDetector.
+ * chunk). iOS Safari has no BarcodeDetector. A frame with two different
+ * codes reads nothing: the user cannot tell which one the app would take.
  */
 export async function loadDecoder(): Promise<Decode> {
   const Native = (globalThis as { BarcodeDetector?: NativeDetectorClass }).BarcodeDetector;
   if (Native !== undefined && (await Native.getSupportedFormats().catch((): ReadonlyArray<string> => [])).includes('qr_code')) {
     const detector = new Native({ formats: ['qr_code'] });
-    return async (video) => (await detector.detect(video))[0]?.rawValue || undefined;
+    let failures = 0;
+    let fallback: Promise<Decode> | undefined;
+    return async (video) => {
+      if (fallback !== undefined) return (await fallback)(video);
+      try {
+        const codes = new Set((await detector.detect(video)).map((code) => code.rawValue).filter((text) => text !== ''));
+        failures = 0;
+        return codes.size === 1 ? [...codes][0] : undefined;
+      } catch {
+        failures += 1;
+        if (failures >= NATIVE_FAILURES) fallback = loadScriptDecoder();
+        return undefined;
+      }
+    };
   }
-  const { decodeQR } = await import('qr/decode.js');
+  return loadScriptDecoder();
+}
+
+/** The `qr` package's decoder on a canvas copy of the frame; a failed chunk load rejects with ChunkLoadError. */
+async function loadScriptDecoder(): Promise<Decode> {
+  // `.then(({ decodeQR }) …)` keeps the rest of decode.js out of the chunk (tree shaking).
+  const decodeQR = await loadChunk(() => import('qr/decode.js').then(({ decodeQR: read }) => read));
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d', { willReadFrequently: true });
   return async (video) => {
@@ -64,8 +90,9 @@ export async function loadDecoder(): Promise<Decode> {
     const width = Math.floor(video.videoWidth * scale);
     const height = Math.floor(video.videoHeight * scale);
     if (context === null || width === 0 || height === 0) return undefined;
-    canvas.width = width;
-    canvas.height = height;
+    // Setting a size clears and reallocates the canvas: only when it changes.
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
     context.drawImage(video, 0, 0, width, height);
     try {
       return decodeQR(context.getImageData(0, 0, width, height)) || undefined;
@@ -81,7 +108,8 @@ type VideoLike = Pick<HTMLVideoElement, 'srcObject' | 'play'>;
 /**
  * Opens the rear camera in `video` and reads frames until one shows a QR
  * code. The camera stops, and `onEnd` is called once, when a code is read, on
- * a camera problem, and when the app goes to the background. The returned
+ * a camera or decoder problem (also when the camera stops by itself), and when
+ * the app goes to the background. The returned
  * function stops it without a call (Cancel, unmount); it is safe at any time,
  * also while the permission prompt is open.
  */
@@ -127,12 +155,20 @@ export function startScan({ video, onScanning, onEnd, media = navigator.mediaDev
         return;
       }
       stream = opened;
+      // Another app took the camera, or the system stopped it: the frame would freeze.
+      for (const track of opened.getTracks()) track.addEventListener('ended', () => end({ kind: 'problem', problem: 'failed' }));
       video.srcObject = opened;
-      await video.play();
+      try {
+        await video.play();
+      } catch {
+        // The camera is allowed; a play() rejection (also NotAllowedError) is not a permission problem.
+        end({ kind: 'problem', problem: 'failed' });
+        return;
+      }
       const decode = await loading;
       if (live) onScanning();
       while (live) {
-        const text = await decode(video as HTMLVideoElement).catch(() => undefined);
+        const text = await decode(video as HTMLVideoElement);
         if (text !== undefined) {
           end({ kind: 'text', text });
           return;

@@ -218,6 +218,15 @@ describe('Settings → Computers', () => {
     expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach · last seen 3 h ago");
   });
 
+  it('shows no empty line under home while it is checked; a peer shows its address', () => {
+    const loading: ComputerEntry[] = [{ computer: mac, status: { kind: 'loading' } }, { computer: vps, status: { kind: 'loading' } }];
+    expect(computerDetail(loading[0] as ComputerEntry, Date.now())).toBe('');
+    const html = renderToStaticMarkup(<ComputersSection entries={loading} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    expect(html).not.toContain('<span class="row-meta"></span>');
+    expect(html).toContain('<span class="row-meta">vps.tailx.ts.net</span>');
+    expect(html.match(/<span class="computer-state muted">checking<\/span>/gu)).toHaveLength(2);
+  });
+
   it('offers Check again on every computer, rename and remove for peers only, and + Add a computer', () => {
     const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
     expect(html.match(/>Check again<\/button>/gu)).toHaveLength(2);

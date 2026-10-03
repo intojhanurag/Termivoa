@@ -32,7 +32,7 @@ runtime companion does not require Node.
 
 | Package | Version | Purpose | License check |
 | --- | --- | --- | --- |
-| `qr` | `0.7.0` (exact pin) | QR decoder for **Scan QR** in + Add a computer, on phones whose browser has no `BarcodeDetector` (iPhone). Only `qr/decode.js`; no dependencies. Its own lazy chunk (34.8 kB, 14.3 kB gzip), fetched when the user taps **Scan QR**, never at start. Chosen over `jsqr` 1.4.0 (Apache-2.0, 130.0 kB, 47.5 kB gzip, last release 2020), measured in this build. | MIT OR Apache-2.0, checked against the locked package's `LICENSE` and `LICENSE-MIT`; contains code inspired by ZXing (Apache-2.0); distribution notice audit pending |
+| `qr` | `0.7.0` (exact pin) | QR decoder for **Scan QR** in + Add a computer, on phones whose browser has no `BarcodeDetector` (iPhone). Only `decodeQR` from `qr/decode.js` and the QR tables that `decode.js` imports from `qr/index.js` (no encoder); no dependencies. Its own lazy chunk (34.8 kB, 14.3 kB gzip), fetched when the user taps **Scan QR**, never at start. Chosen over `jsqr` 1.4.0 (Apache-2.0, 130.0 kB, 47.5 kB gzip, last release 2020), measured in this build. | MIT OR Apache-2.0, checked against the locked package's `LICENSE` and `LICENSE-MIT`; contains code inspired by ZXing (Apache-2.0); distribution notice audit pending |
 
 ## Website build dependencies
 

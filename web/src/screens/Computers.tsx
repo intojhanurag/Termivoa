@@ -203,6 +203,8 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           const { computer } = entry;
           const online = onlineText(entry);
           const health = healthText(entry, now);
+          // Empty for home while it loads: "checking" on the right says it.
+          const detail = computerDetail(entry, now);
           const checked = checks.get(computer.origin);
           const working = checked !== undefined && checked.text === undefined;
           return (
@@ -214,7 +216,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                     <span className="computer-name">{computer.label}</span>
                     {computer.home && <span className="badge accent">Home</span>}
                   </span>
-                  <span className="row-meta">{computerDetail(entry, now)}</span>
+                  {detail !== '' && <span className="row-meta">{detail}</span>}
                   {health !== undefined && <span className="row-meta">{health}</span>}
                 </span>
                 <span className={`computer-state ${online.tone}`}>{online.text}</span>
