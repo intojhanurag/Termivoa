@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -916,6 +917,9 @@ func viaCommand(status *tailnet.Status, candidates []tailnet.Node) string {
 	return "`pterm pair --via <name>" + tagged + "` (<name>: " + strings.Join(names, ", ") + ")"
 }
 
+// osName is an OS text setup shows in its list of computers.
+var osName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,23}$`)
+
 // askHome asks which computer the phone was first paired with: a number
 // from the list, or the name or address of a computer in this tailnet. Each
 // computer shows its full address and OS, so the owner can match the address
@@ -929,7 +933,9 @@ func askHome(ctx context.Context, status *tailnet.Status, candidates []tailnet.N
 	for index, node := range candidates {
 		name, _, _ := strings.Cut(node.Host, ".")
 		var about []string
-		if node.OS != "" {
+		// The OS is the node's own text: shown only as a short plain name, so
+		// a hostile node cannot pad it into a fake line of this list.
+		if osName.MatchString(node.OS) {
 			about = append(about, node.OS)
 		}
 		if node.Tagged() {
@@ -938,9 +944,6 @@ func askHome(ctx context.Context, status *tailnet.Status, candidates []tailnet.N
 		details := ""
 		if len(about) > 0 {
 			details = " (" + strings.Join(about, ", ") + ")"
-			if strings.ContainsFunc(details, func(r rune) bool { return r < ' ' || r > '~' }) {
-				details = " " + strconv.QuoteToASCII(details[1:]) // OS is Tailscale's text, not ours.
-			}
 		}
 		prompt += fmt.Sprintf("  %d) %s — %s%s\n", index+1, name, node.Origin(), details)
 	}
