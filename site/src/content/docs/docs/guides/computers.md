@@ -48,7 +48,7 @@ You need `pterm setup` done on the new computer, and both computers in the same 
 1. **On the new computer**, run `pterm pair --via mac`. Use home's machine name, or its full address such as `https://mac.tailx.ts.net`. **Settings → Computers** shows the exact command.
 2. **Get the link into the app.** It works once, for two minutes.
    - **Tap it**, if you ran the command in a Termivoa session (for example after `ssh vps`).
-   - **Paste it**: **Settings** → **+ Add a computer** → paste → **Check link**.
+   - **Scan it** or **paste it**: **Settings** → **+ Add a computer**, then **Scan QR** or **Paste link**. See [How do I scan or paste the link?](#how-do-i-scan-or-paste-the-link)
 3. **Check the sheet.** **Add this computer?** shows the **Address**, **Machine** and **Owner** that home found in its Tailscale status. Tap **Add vps**, then **Continue**.
 
    ![The Add this computer? sheet with Address https://vps.tailx.ts.net, Machine vps, Owner ada@example.com, and the buttons Add vps and Cancel.](../../../../assets/docs/phone-computers-confirm.webp)
@@ -65,7 +65,35 @@ You can leave the page to type `y` in the app's own terminal: tap **Back to term
 | You change your mind | Tap **Cancel** on the sheet, the page or the bar. After a `y`, the app also signs out of vps. |
 | A computer is a tagged Tailscale node | Check its tags, then run `pterm pair --via mac --allow-tagged`. |
 | You want to approve later | `pterm pair --via mac --no-wait`, then `pterm pair pending` and `pterm pair approve <pending-id>`. |
-| The link opened in Safari or the camera | Tap **Copy link** there and paste it in the app. Safari never adds the computer. |
+| The link opened in Safari or the phone's Camera app | That page says **This page cannot add the computer**. Scan the QR code in the app instead (**Settings → + Add a computer → Scan QR**), or tap **Copy link** there and use **Paste link** in the app. Safari never adds the computer. |
+
+## How do I scan or paste the link?
+
+In **Settings → Computers**, tap **+ Add a computer**. Termivoa shows two choices: **Scan QR** and **Paste link**.
+
+:::note[Next beta]
+**Scan QR** is not in `v0.1.0-beta.2`, and it is not tested on a real phone yet.
+:::
+
+| Choice | What you do | What the app does |
+| --- | --- | --- |
+| **Scan QR** | Allow the camera, then point it at the QR code that `pterm pair --via` printed. | Reads the code inside the app, stops the camera, and opens **Add this computer?** |
+| **Paste link** | Paste the whole link, then tap **Check link**. | Checks the link and opens **Add this computer?** |
+
+Both choices give the app the same link, and the app checks it the same way. A scan never adds a computer by itself: you still check the **Address**, **Machine** and **Owner**, tap **Add vps**, tap **Continue**, and compare the code.
+
+Scan with **Scan QR** in the app, not with the phone's Camera app. The Camera app opens the link in Safari, which is not signed in to your app and cannot add the computer.
+
+| The app says | Meaning |
+| --- | --- |
+| **Allow the camera to scan the QR code.** | The phone asks for the camera. Tap **Allow**. |
+| **Point the camera at the QR code that pterm pair --via printed.** | The camera is on. Hold the code inside the picture. |
+| **The camera is blocked. …** | Allow the camera for the Termivoa address in your phone's or browser's settings, then tap **Scan QR** again. Or tap **Paste link**. |
+| **No camera found. Paste the link.** | Tap **Paste link**. |
+| **This is not an add-computer link. …** | The QR code is not from `pterm pair --via`. Scan the right code. |
+| **This add-computer link expired or was already used.** | Run `pterm pair --via mac` again and scan the new code. |
+
+The camera stops when the app reads a code, when you tap **Cancel**, and when you leave the app. The pictures stay on your phone: the app reads them there and saves nothing. See [Security](/docs/reference/security/#what-does-termivoa-store).
 
 ## What changes in the app?
 

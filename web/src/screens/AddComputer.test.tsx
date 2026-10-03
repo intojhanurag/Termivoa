@@ -2,14 +2,15 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { Computer } from '../computers';
-import { parseAddComputerLink } from '../pairing/addComputer';
+import { LINK_PROBLEMS, parseAddComputerLink } from '../pairing/addComputer';
+import { SCAN_ASKING, SCAN_POINT } from '../pairing/scan';
 import { findAddComputerLinks } from '../terminal/pathLinks';
 import {
   AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, LeaveAdd, ownerText, PeerAddPage, viaLabel,
 } from './AddComputer';
 import { ApiError } from '../api/http';
 import { ReadFailure, type ComputerEntry } from './allSessions';
-import { checkFailureText, computerDetail, ComputersSection, healthText, onlineText } from './Computers';
+import { checkFailureText, computerDetail, ComputersSection, healthText, onlineText, readLink, ScanView } from './Computers';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };
 const grant = 'G'.repeat(43);
@@ -137,11 +138,14 @@ describe('add-computer page', () => {
 });
 
 describe('peer add-computer page', () => {
-  it('names the app to paste into and offers Copy link, never redeeming the grant', () => {
+  it('sends the user to Scan QR in the app and offers Copy link, never redeeming the grant', () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     const html = renderToStaticMarkup(<PeerAddPage link={printed} />);
-    expect(html).toContain('Open your Termivoa app on mac and paste this link there.');
+    expect(html).toContain('This page cannot add the computer. Open your Termivoa app on mac, then:');
+    expect(html).toContain('Settings → + Add a computer → Scan QR');
+    expect(html).toContain('Or copy this link and tap <strong>Paste link</strong> there.');
+    expect(html).not.toContain('>Continue<');
     expect(html).toContain('>Copy link</button>');
     expect(html).not.toContain(grant);
     expect(fetch).not.toHaveBeenCalled();
@@ -153,6 +157,42 @@ describe('peer add-computer page', () => {
     expect(viaLabel('https://vps/add-computer#via=javascript%3Aalert(1)')).toBeUndefined();
     expect(viaLabel(undefined)).toBeUndefined();
     expect(renderToStaticMarkup(<PeerAddPage link={undefined} />)).toContain('This link is incomplete.');
+  });
+});
+
+describe('Scan QR', () => {
+  it('gives a scanned text to the same check as a pasted one: the same link for the confirm sheet', () => {
+    expect(readLink(printed, app)).toEqual(parseAddComputerLink(printed, app));
+    expect(readLink(printed, app)).toEqual(link);
+    const html = renderToStaticMarkup(<AddComputerConfirm link={readLink(printed, app) as typeof link} node={{ id: 'n1', owner: 'ada@example.com', tags: [] }} onConfirm={noop} onCancel={noop} />);
+    expect(html).toContain('<dt>Address</dt><dd>https://vps.tailx.ts.net</dd>');
+  });
+
+  it('says what is wrong with a QR code that is not a Termivoa add-computer link, in the paste words', () => {
+    const via = encodeURIComponent(app.origin);
+    expect(readLink('WIFI:S:cafe;T:WPA;P:secret;;', app)).toEqual({ problem: LINK_PROBLEMS.format });
+    expect(readLink('https://example.com/', app)).toEqual({ problem: LINK_PROBLEMS.format });
+    expect(readLink(`https://mac.tailx.ts.net/pair#${grant}`, app)).toEqual({ problem: LINK_PROBLEMS.format });
+    expect(readLink(`https://vps.other.ts.net/add-computer#grant=${grant}&via=${via}`, app)).toEqual({ problem: LINK_PROBLEMS.tailnet });
+    expect(readLink(`https://mac.tailx.ts.net/add-computer#grant=${grant}&via=${via}`, app)).toEqual({ problem: LINK_PROBLEMS.self });
+    expect(readLink(`https://vps.tailx.ts.net/add-computer#grant=${grant}&via=${encodeURIComponent('https://pi.tailx.ts.net')}`, app)).toEqual({ problem: LINK_PROBLEMS.via });
+    expect(readLink(`https://vps.tailx.ts.net/add-computer#grant=short&via=${via}`, app)).toEqual({ problem: LINK_PROBLEMS.grant });
+  });
+
+  it('shows the camera inline with a text alternative, and Cancel and Paste link', () => {
+    const asking = renderToStaticMarkup(<ScanView scanning={false} onPaste={noop} onCancel={noop} />);
+    expect(asking).toContain('playsInline=""');
+    expect(asking).toContain('aria-label="Camera view" aria-describedby="scan-help"');
+    expect(asking).toContain(`<p id="scan-help" role="status" class="hint-text">${SCAN_ASKING}</p>`);
+    expect(SCAN_ASKING).toBe('Allow the camera to scan the QR code.');
+    expect(asking).toContain('>Cancel</button>');
+    expect(asking).toContain('>Paste link</button>');
+    expect(renderToStaticMarkup(<ScanView scanning onPaste={noop} onCancel={noop} />)).toContain(SCAN_POINT);
+    expect(SCAN_POINT).toBe('Point the camera at the QR code that pterm pair --via printed.');
+  });
+
+  it('says an expired link in plain words, after Continue', () => {
+    expect(addFailure(new ApiError(410, 'pairing_expired', 'x'), 'vps')).toBe('This add-computer link expired or was already used.');
   });
 });
 

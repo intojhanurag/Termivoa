@@ -90,6 +90,8 @@ It cannot read the app, but it can lie to you. A [preview](/docs/guides/preview/
 
 From the next beta, home also stores each phone's list of other computers (addresses and names), and a peer stores the home address and Tailscale node of each phone that uses it from there. The phone keeps the same list of computers, never their sessions.
 
+From the next beta, **Scan QR** in **+ Add a computer** uses the phone's camera only while you scan. The app reads the camera pictures on the phone to find the QR code. It does not send them to any computer and does not save them. A scanned link is checked like a pasted one, and never adds a computer by itself.
+
 All data is private to your user account ([Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)). Photos go to the project's `.termivoa/uploads/`. Snippets and, from the next beta, the Wall tile order (session IDs only) stay on the phone.
 
 ## Can a worktree escape its folder?

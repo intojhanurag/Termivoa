@@ -1,6 +1,7 @@
 // Phase B: the full phone flow through the app's screens (README.md).
 //   node scripts/e2e-multicomputer/phase-b.mjs [--no-web-build] [--out <dir>] [--keep] [--only <ID prefix>]
 // --only PV runs pairing, the first add (B1, B2) and the steps whose ID starts with PV.
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -208,6 +209,56 @@ try {
     if (r.outcome !== 'added') {
       await confirmByApi();
       console.log('     (harness confirmed vps on home through the API to continue)');
+    }
+  });
+
+  // ---- SCAN: Scan QR, with a real link's QR code as Chrome's camera ----
+  await step('SCAN', 'Scan QR reads a real pterm pair --via link and opens the confirm sheet', async () => {
+    const video = join(env.root, 'scan-qr.y4m');
+    // Its own browser and device: the camera flags and its pending entry stay away from the other checks.
+    const camera = await Browser.launch(env, {
+      profile: 'chrome-scan',
+      extraArgs: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${video}`],
+    });
+    let via;
+    try {
+      const p = await camera.page();
+      await p.go(`${mac.origin}/`);
+      await pairDirect(p, mac, 'Scan phone');
+      await p.waitText('Sessions', 30000);
+      via = interactive(vps, ['pair', '--via', 'mac']);
+      const [link] = await via.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#\S+/);
+      const made = spawnSync(join(env.bin, 'front'), ['qr', '-out', video], { input: link });
+      if (made.status !== 0) throw new Error(`qr video: ${made.stderr}`);
+      // First the browser's own BarcodeDetector (where it reads QR codes), then the JavaScript decoder (the iPhone path).
+      for (const decoder of ['native', 'js']) {
+        await p.go(`${mac.origin}/`);
+        await p.waitText('Sessions');
+        await click(p, 'Settings');
+        await p.waitText('Add a computer');
+        const native = await p.eval(`(async () => {
+          if (${decoder === 'js'}) delete globalThis.BarcodeDetector;
+          globalThis.__stopped = 0;
+          const stop = MediaStreamTrack.prototype.stop;
+          MediaStreamTrack.prototype.stop = function () { globalThis.__stopped += 1; return stop.call(this); };
+          return 'BarcodeDetector' in globalThis && (await BarcodeDetector.getSupportedFormats()).includes('qr_code');
+        })()`);
+        await click(p, '+ Add a computer');
+        await shot(`scan-${decoder}-choices`, p);
+        await click(p, 'Scan QR');
+        await p.waitText('Add this computer?');
+        await p.waitText('Add vps');
+        await shot(`scan-${decoder}-confirm-sheet`, p);
+        const sheet = (await p.eval(`document.querySelector('.sheet, [role=dialog]')?.innerText ?? ''`)).replace(/\s+/g, ' ');
+        const after = await p.eval(`({ stopped: globalThis.__stopped, video: document.querySelector('video') !== null, chunk: performance.getEntriesByType('resource').some((e) => /\/assets\/decode-/.test(e.name)) })`);
+        await click(p, 'Cancel');
+        check(`SCAN-${decoder}`, `Scan QR (${native ? 'BarcodeDetector' : 'JavaScript decoder'}) opens the confirm sheet with the full origin and owner, and stops the camera`,
+          sheet.includes('https://vps.tailx.ts.net') && sheet.includes('ada@example.com') && after.stopped >= 1 && !after.video && after.chunk === !native,
+          `${sheet.slice(0, 160)}; camera tracks stopped ${after.stopped}; video on the page ${after.video}; decoder chunk loaded ${after.chunk}`);
+      }
+    } finally {
+      via?.child.kill();
+      await camera.close();
     }
   });
 

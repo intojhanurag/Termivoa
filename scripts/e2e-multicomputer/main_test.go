@@ -145,6 +145,21 @@ func TestConnectPorts(t *testing.T) {
 	}
 }
 
+func TestQRVideo(t *testing.T) {
+	video, err := qrVideo("https://vps.tailx.ts.net/add-computer#grant=" + strings.Repeat("G", 43) + "&via=https%3A%2F%2Fmac.tailx.ts.net")
+	header := "YUV4MPEG2 W640 H480 F10:1 Ip A1:1 C420jpeg\nFRAME\n"
+	if err != nil || !strings.HasPrefix(string(video), header) || len(video) != len(header)+640*480*3/2 {
+		t.Fatalf("qrVideo: %d bytes, %v", len(video), err)
+	}
+	// White at the frame corner (the quiet zone), black inside the top-left finder pattern.
+	if frame := video[len(header):]; frame[0] != 235 || !strings.Contains(string(frame[:640*480]), "\x10") {
+		t.Fatal("qrVideo: no black-on-white code in the frame")
+	}
+	if _, err := qrVideo(strings.Repeat("x", 3000)); err == nil {
+		t.Fatal("qrVideo: a text that cannot fit was accepted")
+	}
+}
+
 func TestDevSite(t *testing.T) {
 	server := httptest.NewServer(devSite("vps"))
 	defer server.Close()

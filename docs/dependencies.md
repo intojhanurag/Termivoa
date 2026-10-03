@@ -30,6 +30,10 @@ The exact direct and transitive dependency graph is locked in
 `pnpm-lock.yaml`. The P0 baseline uses Node 24.11.0 and pnpm 10.33.0. The
 runtime companion does not require Node.
 
+| Package | Version | Purpose | License check |
+| --- | --- | --- | --- |
+| `qr` | `0.7.0` (exact pin) | QR decoder for **Scan QR** in + Add a computer, on phones whose browser has no `BarcodeDetector` (iPhone). Only `qr/decode.js`; no dependencies. Its own lazy chunk (34.8 kB, 14.3 kB gzip), fetched when the user taps **Scan QR**, never at start. Chosen over `jsqr` 1.4.0 (Apache-2.0, 130.0 kB, 47.5 kB gzip, last release 2020), measured in this build. | MIT OR Apache-2.0, checked against the locked package's `LICENSE` and `LICENSE-MIT`; contains code inspired by ZXing (Apache-2.0); distribution notice audit pending |
+
 ## Website build dependencies
 
 The website in `site/` (landing page and docs) is built with Astro 7.3.5 and
