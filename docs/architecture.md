@@ -70,7 +70,10 @@ talk to the running broker; they never start or replace it (`launch` and
 Serve handlers share the origin. It refuses (exit 1), before any change, while
 Tailscale Funnel is on for 443 or 8443 (`lifecycle.ServeStatus.Funnel`), and
 names `tailscale funnel --https=<port> off`; `pterm doctor` counts any Funnel
-as a problem.
+as a problem. `pterm pair` and `pterm pair approve` refuse with the same text
+(`funnelProblem`), and `pterm launch` warns and starts; both read only
+`tailscale serve status --json` (`termivoaFunnel`) and skip the check when it
+cannot be read.
 
 ### Broker and gateway
 

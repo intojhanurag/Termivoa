@@ -281,6 +281,12 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 		_, err = io.WriteString(output, commandHelp)
 		return err
 	}
+	// As setup does: no pairing while Funnel puts Termivoa on the internet.
+	if config.action == "pair" || config.action == "pair approve" {
+		if funnel := termivoaFunnel(ctx, findTailscale()); len(funnel) > 0 {
+			return fmt.Errorf("refusing to pair: %s, then run `%s` again", funnelProblem(funnel), lifecycle.DisplayCommand(append([]string{"pterm", command}, args...)))
+		}
+	}
 	client, err := localclient.DialAdmin(ctx, config.runtimeDir, buildID)
 	if err != nil {
 		return fmt.Errorf("cannot connect to the managed-session broker: %w", err)

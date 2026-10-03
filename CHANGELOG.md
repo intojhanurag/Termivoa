@@ -339,6 +339,17 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): `pterm pair` and `pterm launch` did not check Tailscale
+  Funnel; only `pterm setup` and `pterm doctor` did. Now every `pterm pair`
+  that pairs (`pterm pair`, `--via`, `--no-wait`, `pterm pair approve`)
+  refuses before it makes a link while Funnel is on for port 443 or 8443,
+  with setup's text: "refusing to pair: Tailscale Funnel is on for …, which
+  puts Termivoa on the public internet; turn it off with `tailscale funnel
+  --https=443 off`, then run `pterm pair …` again". `pterm launch` still
+  starts, but first prints "Warning: Tailscale Funnel is on for …; turn it
+  off with `…`. Pairing a phone is refused until it is off." Termivoa never
+  runs the command. When the Serve settings cannot be read, both go on as
+  before (#161). Phone: no change.
 - Fix (host side): `pterm setup` went on to start Termivoa and pair a phone
   when Tailscale Funnel was on for port 443 that already served Termivoa; it
   only printed a warning. Funnel puts the terminal on the public internet.

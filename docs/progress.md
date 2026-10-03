@@ -60,6 +60,17 @@ on their own date.
   `disabled` (exit 1) only when the unit file exists, else `not-found`
   (exit 4). New test `TestLinuxFirstInstallPlanRestartsNothing` (fails with
   the old fake). No product change.
+- **#161.** `pterm pair` and `pterm launch` never read the Serve settings.
+  Both now read only `tailscale serve status --json` (`termivoaFunnel`,
+  `lifecycle.ServeFindings`, 5 s). `pterm pair` and `pterm pair approve`
+  refuse before they contact the broker while `ServeStatus.Funnel` is not
+  empty (443 or 8443), with setup's text from the shared `funnelProblem`;
+  `pterm pair pending` does not check (it pairs nothing). `pterm launch`
+  warns and starts. No Tailscale, a failed read or bad JSON: no check, as
+  before. Tests: `TestPairRefusesFunnelOnTermivoaPorts` (every pair form;
+  8443; Funnel on another port and bad JSON go on; no Tailscale change),
+  `TestLaunchWarnsAboutFunnelAndStarts` (real broker and gateway); both fail
+  without the fix. Not run against a real Funnel.
 
 ### Found on your network: harness, review fixes, docs (2026-10-03, branch `feat/found-on-network`)
 

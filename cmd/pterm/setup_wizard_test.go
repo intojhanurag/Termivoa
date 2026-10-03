@@ -328,6 +328,49 @@ func TestSetupRefusesFunnelOnTermivoaPorts(t *testing.T) {
 	}
 }
 
+// Tests never read this computer's real Tailscale through `pterm pair`;
+// a test that wants Tailscale sets findTailscale itself.
+func init() { findTailscale = func() string { return "" } }
+
+// Every form of `pterm pair` that pairs refuses, before it reaches the
+// broker, while Funnel is on for Termivoa's ports, with setup's text and the
+// command that turns it off; it never runs that command. When the Serve
+// status cannot be read, or Funnel is only on another port, it goes on as
+// before (here: to the missing broker).
+func TestPairRefusesFunnelOnTermivoaPorts(t *testing.T) {
+	fake := &tailscaleFake{}
+	previous, previousFind := tailscaleRun, findTailscale
+	t.Cleanup(func() { tailscaleRun, findTailscale = previous, previousFind })
+	tailscaleRun, findTailscale = fake.run, func() string { return "tailscale-fake" }
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	const id = "20000000-0000-4000-8000-000000000001"
+	for _, args := range [][]string{
+		{"pair"}, {"pair", "--no-wait"}, {"pair", "--via", "mac"}, {"pair", "--via", "mac", "--allow-tagged"}, {"pair", "approve", id},
+	} {
+		args = append(args, "--dev", "--runtime-dir", runtimeDir)
+		for serve, want := range map[string]string{
+			`{"AllowFunnel":{"vps.example.ts.net:443":true}}`: "refusing to pair: Tailscale Funnel is on for vps.example.ts.net:443, " +
+				"which puts Termivoa on the public internet; turn it off with `tailscale funnel --https=443 off`, then run `pterm " + strings.Join(args, " ") + "` again",
+			`{"AllowFunnel":{"vps.example.ts.net:8443":true}}`:  "turn it off with `tailscale funnel --https=8443 off`",
+			`{"AllowFunnel":{"vps.example.ts.net:10000":true}}`: "cannot connect to the managed-session broker",
+			`not json`: "cannot connect to the managed-session broker",
+		} {
+			fake.serve, fake.calls = serve, nil
+			var output bytes.Buffer
+			err := runWithInput(context.Background(), args, confirmationPipe(t, "y\n"), &output)
+			if err == nil || !strings.Contains(err.Error(), want) || len(fake.changes()) != 0 {
+				t.Errorf("%q with %s: err = %v, tailscale changes %q", args, serve, err, fake.changes())
+			}
+		}
+	}
+	// pair pending pairs nothing and does not read Tailscale.
+	fake.calls = nil
+	_ = runWithInput(context.Background(), []string{"pair", "pending", "--dev", "--runtime-dir", runtimeDir}, nil, &bytes.Buffer{})
+	if len(fake.calls) != 0 {
+		t.Errorf("pair pending ran tailscale %q", fake.calls)
+	}
+}
+
 // devicesAdmin answers only Devices; offerPairing's pairing itself is faked.
 type devicesAdmin struct {
 	cli.Admin

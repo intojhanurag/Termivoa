@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
@@ -398,6 +399,48 @@ func TestLinuxSetupWithoutSystemdExplainsTheFallback(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "startup broker: not registered") {
 		t.Errorf("startup reported as a problem although it cannot exist:\n%s", output.String())
+	}
+}
+
+// `pterm launch` starts Termivoa while Funnel is on for its ports, but warns
+// first with the command that turns it off; it never runs that command.
+func TestLaunchWarnsAboutFunnelAndStarts(t *testing.T) {
+	env, _ := newLinuxLifecycleTestEnv(t, true)
+	fake := &tailscaleFake{serve: `{"AllowFunnel":{"vps.example.ts.net:443":true}}`}
+	useTailscaleFake(t, &env, fake)
+	startLifecycleBroker(t, env.paths)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runGateway(ctx, gateway.Config{
+			RuntimeDir: env.paths.RuntimeDir, HostBuild: buildID, ListenAddress: strings.TrimPrefix(env.gateway, "http://"),
+			Profile: platform.DevelopmentProfile,
+		})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	if err := waitWithin(ctx, 5*time.Second, func() error { return gatewayHealthy(ctx, env.gateway) }); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := runWithInput(ctx, []string{"launch", "--no-open"}, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	want := "Warning: Tailscale Funnel is on for vps.example.ts.net:443, which puts Termivoa on the public internet; " +
+		"turn it off with `tailscale funnel --https=443 off`. Pairing a phone is refused until it is off.\n" +
+		"Termivoa is running: " + env.gateway + "/\n"
+	if output.String() != want || len(fake.changes()) != 0 {
+		t.Fatalf("launch output %q, tailscale changes %q", output.String(), fake.changes())
+	}
+	// Without Funnel, or when the status cannot be read: no warning.
+	for _, serve := range []string{`{}`, `not json`} {
+		fake.serve = serve
+		output.Reset()
+		if err := runWithInput(ctx, []string{"launch", "--no-open"}, nil, &output); err != nil || strings.Contains(output.String(), "Funnel") {
+			t.Fatalf("%s: %v %q", serve, err, output.String())
+		}
 	}
 }
 
