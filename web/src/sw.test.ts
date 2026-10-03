@@ -388,6 +388,50 @@ describe('service worker push', () => {
     expect(client.postMessage).toHaveBeenLastCalledWith({ type: 'open', path: '/' });
   });
 
+  it('with several windows, a tap goes to the focused visible one, then a visible one, then the first', async () => {
+    const win = (url: string, state: string, focused = false) => ({
+      url, visibilityState: state, focused, focus: vi.fn(async () => undefined), postMessage: vi.fn(), navigate: vi.fn(async () => ({})),
+    });
+    const home = `/sessions/${SESSION}`;
+    const peer = `/c/vps.tailx.ts.net/sessions/${SESSION}`;
+
+    // Home scope: the hidden first window is skipped; a focused window beats a visible one.
+    const hidden = win('https://host.example/', 'hidden');
+    const visible = win('https://host.example/', 'visible');
+    const front = win('https://host.example/', 'visible', true);
+    const a = loadWorker(async () => new Response(''), [hidden, visible, front]);
+    await fire(a.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: home } } });
+    expect(front.focus).toHaveBeenCalledOnce();
+    expect(front.navigate).toHaveBeenCalledWith(`https://host.example${home}`);
+    for (const other of [hidden, visible]) {
+      expect(other.focus).not.toHaveBeenCalled();
+      expect(other.navigate).not.toHaveBeenCalled();
+    }
+
+    // Peer scope: the visible window gets the message and the focus.
+    const hidden2 = win('https://host.example/', 'hidden');
+    const visible2 = win('https://host.example/', 'visible');
+    const b = loadWorker(async () => new Response(''), [hidden2, visible2], cacheStorage(), PEER_SCOPE);
+    await fire(b.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: peer } } });
+    expect(visible2.postMessage).toHaveBeenCalledWith({ type: 'open', path: peer });
+    expect(visible2.focus).toHaveBeenCalledOnce();
+    expect(visible2.navigate).not.toHaveBeenCalled();
+    expect(hidden2.postMessage).not.toHaveBeenCalled();
+    expect(hidden2.focus).not.toHaveBeenCalled();
+    expect(b.self.clients.openWindow).not.toHaveBeenCalled();
+
+    // All hidden: the first one, in both scopes.
+    for (const scope of ['https://host.example/', PEER_SCOPE]) {
+      const first = win('https://host.example/', 'hidden');
+      const second = win('https://host.example/', 'hidden');
+      const c = loadWorker(async () => new Response(''), [first, second], cacheStorage(), scope);
+      await fire(c.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: scope === PEER_SCOPE ? peer : home } } });
+      expect(first.focus).toHaveBeenCalledOnce();
+      expect(second.focus).not.toHaveBeenCalled();
+      expect(c.self.clients.openWindow).not.toHaveBeenCalled();
+    }
+  });
+
   it('never opens another origin from notification data', async () => {
     for (const url of ['//evil.example/x', 'https://evil.example/', '/\\evil.example/x', 42]) {
       const { handlers, self } = loadWorker(async () => new Response(''));

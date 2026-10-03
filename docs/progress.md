@@ -1501,6 +1501,10 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   subscription to home when home answers (`homeAdoption` in `App.tsx`, so also
   after Log out, `pterm revoke` and a new pairing); the host upserts by
   endpoint. Evidence: `web/src/push.test.ts`, `scripts/check`.
+- **Notification tap picks the visible window** (`fix/issue-148`, 2026-10-03):
+  with several app windows, `notificationclick` in `web/src/sw.js` now prefers
+  a focused visible window, then a visible one, then the first (#148); tests in
+  `web/src/sw.test.ts`. Evidence: `scripts/check` exit 0; the new test fails without the fix.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

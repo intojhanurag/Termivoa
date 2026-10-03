@@ -258,6 +258,10 @@ All notable changes are documented here. The format follows
   computer had deleted its copy. Home now gets the browser's subscription
   again whenever it answers, so the switch is true. Other computers already
   did this.
+- Fix (phone side): with several app windows or tabs open, a tap on a
+  notification went to the first one, which could be hidden. It now goes to
+  the window you see (focused first, then visible, then any). No host-side
+  change (#148).
 - Fix (host side): project buttons could hang. Reading `package.json`, a
   `Makefile`, `Cargo.toml` or `go.mod` checked the file and then opened it;
   a FIFO (named pipe) put at that name between the two steps made the open
