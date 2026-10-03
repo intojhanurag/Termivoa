@@ -71,6 +71,17 @@ on their own date.
   8443; Funnel on another port and bad JSON go on; no Tailscale change),
   `TestLaunchWarnsAboutFunnelAndStarts` (real broker and gateway); both fail
   without the fix. Not run against a real Funnel.
+- **#162 (no change).** Verified: `offerTailscaleServe` accepts
+  `Configured` while `serve.Problems` names a handler on 443 under another
+  host name (a fake Serve status with Termivoa on `vps…:443` and `/admin`
+  on `old…:443`: the checks list the problem, setup plans "Then pair your
+  phone"). Not a defect: Serve answers a host by its exact TLS name, and a
+  handler under another name is another origin; the Termivoa cookie is
+  host-only, so such a handler cannot read the app or get the cookie. The
+  same-origin case (this computer's own name, and a TCP forward on 443)
+  already stops setup; the doc's own fix for a handler is "its own Tailscale
+  Service hostname", which a wider refusal would block. Doctor still counts
+  it as a problem.
 
 ### Found on your network: harness, review fixes, docs (2026-10-03, branch `feat/found-on-network`)
 
