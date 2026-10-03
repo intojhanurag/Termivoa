@@ -172,9 +172,18 @@ func CommandSource(find func() string) Source {
 			return nil, ErrUnavailable
 		}
 		command := exec.CommandContext(ctx, path, "status", "--json")
+		command.Env = CLIEnv()
 		command.WaitDelay = time.Second
 		return command.Output()
 	}
+}
+
+// CLIEnv is the environment for every run of the Tailscale CLI. On macOS the
+// CLI is the Tailscale app's own binary, which acts as a CLI only from a
+// terminal or with TAILSCALE_BE_CLI=1; started by launchd (the broker) it
+// prints "The Tailscale GUI failed to start" and exits 0 instead.
+func CLIEnv() []string {
+	return append(os.Environ(), "TAILSCALE_BE_CLI=1")
 }
 
 // FindBinary returns the Tailscale CLI, or "" when none is usable, and why

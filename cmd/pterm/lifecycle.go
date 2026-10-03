@@ -260,6 +260,7 @@ func detectShells() []string {
 // to enable Serve and wait. Tests replace it.
 var tailscaleRun = func(ctx context.Context, cli string, stream io.Writer, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, cli, args...)
+	command.Env = tailnet.CLIEnv()
 	if stream != nil {
 		command.Stdout, command.Stderr = stream, stream
 		return nil, command.Run()
