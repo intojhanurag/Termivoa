@@ -174,14 +174,23 @@ type fileConfirmer struct {
 }
 
 func (confirmer fileConfirmer) Confirm(ctx context.Context, prompt string) (confirmed bool, returnErr error) {
+	return withLine(confirmer, func(line *cli.LineConfirmer) (bool, error) { return line.Confirm(ctx, prompt) })
+}
+
+// Ask reads one free-text line: a menu choice or a computer name.
+func (confirmer fileConfirmer) Ask(ctx context.Context, prompt string) (string, error) {
+	return withLine(confirmer, func(line *cli.LineConfirmer) (string, error) { return line.Ask(ctx, prompt) })
+}
+
+func withLine[T any](confirmer fileConfirmer, read func(*cli.LineConfirmer) (T, error)) (answer T, returnErr error) {
 	reader, err := cli.NewFileConfirmationReader(confirmer.input)
 	if err != nil {
-		return false, err
+		return answer, err
 	}
 	defer func() { returnErr = errors.Join(returnErr, reader.Close()) }()
 	line, err := cli.NewLineConfirmer(reader, confirmer.output)
 	if err != nil {
-		return false, err
+		return answer, err
 	}
-	return line.Confirm(ctx, prompt)
+	return read(line)
 }

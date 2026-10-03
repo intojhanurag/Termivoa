@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -664,11 +665,90 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 			return err
 		}
 	}
-	fmt.Fprintln(output, "\nPair your phone:")
+	return offerPairing(ctx, env, admin, report.tailscale.tailnet, term.IsTerminal(input.Fd()), confirmer, output)
+}
+
+// pairPhone is cli.Pair; tests replace it.
+var pairPhone = cli.Pair
+
+// offerPairing ends setup. On an interactive terminal it first asks whether
+// to pair at all when a phone is already paired, and, when Tailscale shows
+// other computers of this owner, whether this is the first computer (a pairing
+// QR code) or one more for the app the owner already uses (what `pterm pair
+// --via <home>` does, with the same checks and approval). Otherwise it pairs
+// a phone at once. Its last line says what to do next.
+func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status *tailnet.Status, interactive bool,
+	confirmer fileConfirmer, output io.Writer,
+) error {
 	showQR, columns := terminalQR(output)
-	return cli.Pair(ctx, admin, cli.PairOptions{
-		Fallback: env.gateway, ShowQR: showQR, QRColumns: columns, Confirmer: confirmer,
-	}, output)
+	options := cli.PairOptions{Fallback: env.gateway, ShowQR: showQR, QRColumns: columns, Confirmer: confirmer}
+	next := "Setup is done. Next: open Termivoa on your phone and start a session."
+	later := func() error {
+		_, err := fmt.Fprintln(output, "Setup is done. Next: to pair a phone, run `pterm pair`; "+
+			"to add this computer to a Termivoa app you already use, run `pterm pair --via <home>`.")
+		return err
+	}
+	if interactive {
+		devices, err := admin.Devices(ctx)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(devices, func(device protocol.AdminRPCDevice) bool { return !device.Revoked }) {
+			another, err := confirmer.Confirm(ctx, "\nA phone is already paired with this computer. Pair another phone? [y/N] ")
+			if err != nil {
+				return err
+			}
+			if !another {
+				return later()
+			}
+		}
+		var candidates []tailnet.Node
+		if status != nil {
+			candidates = status.HomeCandidates()
+		}
+		for answer := ""; len(candidates) > 0 && answer != "1"; {
+			if answer, err = confirmer.Ask(ctx, "\nWhat is this computer?\n"+
+				"  1) My first computer: pair my phone with it\n"+
+				"  2) Add it to the Termivoa app I already use\n"+
+				"Type 1 or 2 (Enter skips pairing): "); err != nil {
+				return err
+			}
+			if answer == "" {
+				return later()
+			}
+			if answer != "2" {
+				continue
+			}
+			prompt := "\nWhich computer runs the Termivoa app you already use (your home computer)?\n"
+			for index, node := range candidates {
+				name, _, _ := strings.Cut(node.Host, ".")
+				prompt += fmt.Sprintf("  %d) %s\n", index+1, name)
+			}
+			choice, err := confirmer.Ask(ctx, prompt+"Type a number, or the name of another computer (Enter skips pairing): ")
+			if err != nil {
+				return err
+			}
+			if choice == "" {
+				return later()
+			}
+			if number, err := strconv.Atoi(choice); err == nil && number >= 1 && number <= len(candidates) {
+				choice, _, _ = strings.Cut(candidates[number-1].Host, ".")
+			}
+			options.Via = choice
+			next = "Setup is done. Next: in the Termivoa app on your phone, switch to this computer and start a session."
+			break
+		}
+	}
+	if options.Via == "" {
+		fmt.Fprintln(output, "\nPair your phone:")
+	} else {
+		fmt.Fprintf(output, "\nAdd this computer to the Termivoa app at %s (the same as `pterm pair --via %s`):\n", options.Via, options.Via)
+	}
+	if err := pairPhone(ctx, admin, options, output); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(output, next)
+	return err
 }
 
 // describeSetup prints the plan: one line for each thing setup will do, and
@@ -734,7 +814,7 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, ori
 			line("Share dev-server previews at %s (port 8443). It asks first.%s", previewOrigin(origin), runs(lifecycle.PreviewServeCommand))
 		}
 		line("Add your home folder %s as project \"Home\" if you have no project.", env.host.HomeDir)
-		line("Show a QR code for your phone and ask you to approve the code it shows.")
+		line("Ask what this computer is (your first, or one more for the app you already use), then pair your phone.")
 	}
 	if tailscale.needsOperator {
 		fmt.Fprintf(output, "Tailscale Serve is not changed: on Linux only root or the Tailscale operator may change it. Run this once yourself, then run `pterm setup` again: %s\n",

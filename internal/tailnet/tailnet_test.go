@@ -71,6 +71,21 @@ func TestParseStatusKeepsOnlyOwnTailnetPeers(t *testing.T) {
 	}
 }
 
+// Only this owner's untagged computers can be home; a phone cannot.
+func TestHomeCandidatesAreThisOwnersComputers(t *testing.T) {
+	status := mustParse(t, strings.Replace(statusJSON, `"k2":`,
+		`"p1": {"ID": "nPhone1CNTRL", "DNSName": "iphone.tailx.ts.net.", "UserID": 1, "OS": "iOS"},
+    "a1": {"ID": "nAir1CNTRL", "DNSName": "air.tailx.ts.net.", "UserID": 1, "OS": "macOS"},
+    "k2":`, 1))
+	var hosts []string
+	for _, node := range status.HomeCandidates() {
+		hosts = append(hosts, node.Host)
+	}
+	if want := []string{"air.tailx.ts.net", "mac.tailx.ts.net"}; !slices.Equal(hosts, want) {
+		t.Fatalf("candidates = %v, want %v", hosts, want)
+	}
+}
+
 func TestResolveMatchesOnlyFirstDNSLabelsAndRefusesAmbiguity(t *testing.T) {
 	status := mustParse(t, statusJSON)
 	for via, want := range map[string]string{

@@ -14,12 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
 // tailscaleFake answers the read-only status commands and records every call.
@@ -280,6 +282,99 @@ func TestSetupRefusesOtherServeHandlersOnItsOrigin(t *testing.T) {
 		}
 		if launchd.bootstrapped() != 0 || len(fake.changes()) != 0 {
 			t.Fatalf("%q: launchd %d bootstraps, tailscale changes %q", args, launchd.bootstrapped(), fake.changes())
+		}
+	}
+}
+
+// devicesAdmin answers only Devices; offerPairing's pairing itself is faked.
+type devicesAdmin struct {
+	cli.Admin
+	devices []protocol.AdminRPCDevice
+}
+
+func (admin devicesAdmin) Devices(context.Context) ([]protocol.AdminRPCDevice, error) {
+	return admin.devices, nil
+}
+
+// On an interactive terminal setup asks what this computer is: 1 pairs a
+// phone as before; 2 lists this owner's other computers (no phones, no other
+// owners) and runs the `pterm pair --via` flow for the chosen one. Without a
+// terminal, or without other computers, it pairs at once as before.
+func TestOfferPairingAsksWhatThisComputerIs(t *testing.T) {
+	parse := func(peers string) *tailnet.Status {
+		status, err := tailnet.ParseStatus([]byte(`{"BackendState":"Running","MagicDNSSuffix":"example.ts.net",
+			"Self":{"ID":"nSelf","DNSName":"vps.example.ts.net.","UserID":1},
+			"User":{"1":{"LoginName":"ada@example.com"},"2":{"LoginName":"bob@example.com"}},
+			"Peer":{` + peers + `}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return status
+	}
+	mac := `"a":{"ID":"nMac","DNSName":"mac.example.ts.net.","UserID":1,"OS":"macOS"}`
+	several := parse(mac + `,"b":{"ID":"nAir","DNSName":"air.example.ts.net.","UserID":1,"OS":"macOS"},
+		"c":{"ID":"nPhone","DNSName":"iphone.example.ts.net.","UserID":1,"OS":"iOS"},
+		"d":{"ID":"nPi","DNSName":"pi.example.ts.net.","UserID":2,"OS":"linux"}`)
+	var pairs []cli.PairOptions
+	previous := pairPhone
+	pairPhone = func(_ context.Context, _ cli.Admin, options cli.PairOptions, _ io.Writer) error {
+		pairs = append(pairs, options)
+		return nil
+	}
+	t.Cleanup(func() { pairPhone = previous })
+	paired := []protocol.AdminRPCDevice{{}}
+	const (
+		question = "What is this computer?\n  1) My first computer: pair my phone with it\n  2) Add it to the Termivoa app I already use\n"
+		another  = "Pair another phone? [y/N]"
+		skipped  = "Setup is done. Next: to pair a phone, run `pterm pair`; to add this computer to a Termivoa app you already use, run `pterm pair --via <home>`."
+	)
+
+	for name, test := range map[string]struct {
+		answers        string
+		status         *tailnet.Status
+		devices        []protocol.AdminRPCDevice
+		notTerminal    bool
+		pairs          int
+		via            string
+		want, unwanted []string
+		last           string
+	}{
+		"first computer": {answers: "1\n", status: several, pairs: 1, want: []string{question, "Pair your phone:"},
+			last: "Setup is done. Next: open Termivoa on your phone and start a session."},
+		"add by number": {answers: "2\n2\n", status: several, pairs: 1, via: "mac",
+			want:     []string{question, "  1) air\n  2) mac\nType a number", "`pterm pair --via mac`"},
+			unwanted: []string{"iphone", ") pi", "Pair your phone:"},
+			last:     "Setup is done. Next: in the Termivoa app on your phone, switch to this computer and start a session."},
+		"add by name":              {answers: "2\nstudio\n", status: several, pairs: 1, via: "studio"},
+		"one candidate still asks": {answers: "2\n1\n", status: parse(mac), pairs: 1, via: "mac", want: []string{question, "  1) mac\nType a number"}},
+		"a typo asks again":        {answers: "first\n1\n", status: several, pairs: 1, want: []string{question}},
+		"enter skips pairing":      {answers: "\n", status: several, want: []string{question}, last: skipped},
+		"no other computer":        {status: parse(""), pairs: 1, unwanted: []string{"What is this computer?"}},
+		"no Tailscale status":      {pairs: 1, unwanted: []string{"What is this computer?"}},
+		"not a terminal":           {status: several, devices: paired, notTerminal: true, pairs: 1, unwanted: []string{"What is this computer?", another}},
+		"already paired, declined": {answers: "n\n", status: several, devices: paired, want: []string{another}, unwanted: []string{"What is this computer?"}, last: skipped},
+		"already paired, another":  {answers: "y\n1\n", status: several, devices: paired, pairs: 1, want: []string{another, question}},
+	} {
+		pairs = nil
+		var output bytes.Buffer
+		confirmer := fileConfirmer{input: confirmationPipe(t, test.answers), output: &output}
+		err := offerPairing(context.Background(), lifecycleEnv{}, devicesAdmin{devices: test.devices}, test.status, !test.notTerminal, confirmer, &output)
+		text := output.String()
+		if err != nil || len(pairs) != test.pairs || test.pairs == 1 && (pairs[0].Via != test.via || pairs[0].Confirmer == nil) {
+			t.Fatalf("%s: err=%v pairs=%+v\n%s", name, err, pairs, text)
+		}
+		for _, want := range test.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s: output lacks %q:\n%s", name, want, text)
+			}
+		}
+		for _, unwanted := range test.unwanted {
+			if strings.Contains(text, unwanted) {
+				t.Errorf("%s: output contains %q:\n%s", name, unwanted, text)
+			}
+		}
+		if test.last != "" && !strings.HasSuffix(text, test.last+"\n") {
+			t.Errorf("%s: last line is not %q:\n%s", name, test.last, text)
 		}
 	}
 }

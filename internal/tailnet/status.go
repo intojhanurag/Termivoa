@@ -35,6 +35,9 @@ type Node struct {
 	UserID int64
 	Owner  string
 	Tags   []string
+	// OS is as Tailscale reports it ("linux", "macOS", "iOS"). It only
+	// narrows the list HomeCandidates offers; it is never a trust input.
+	OS string
 }
 
 // Tagged reports a tagged node. Tagged nodes share one placeholder owner, so
@@ -71,6 +74,7 @@ type rawPeer struct {
 	UserID     int64
 	Tags       []string
 	ShareeNode bool
+	OS         string
 }
 
 // ParseStatus parses `tailscale status --json`. It is lenient about missing
@@ -99,7 +103,7 @@ func ParseStatus(data []byte) (*Status, error) {
 			owner = raw.User[strconv.FormatInt(peer.UserID, 10)].LoginName
 		}
 		return Node{ID: peer.ID, Host: strings.ToLower(strings.TrimSuffix(peer.DNSName, ".")),
-			UserID: peer.UserID, Owner: owner, Tags: peer.Tags}
+			UserID: peer.UserID, Owner: owner, Tags: peer.Tags, OS: peer.OS}
 	}
 	if raw.Self != nil {
 		status.Self = node(*raw.Self)
@@ -143,6 +147,21 @@ const idCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345
 func (status *Status) Peer(host string) (Node, bool) {
 	node, ok := status.peers[host]
 	return node, ok
+}
+
+// HomeCandidates lists, by name, the own-tailnet computers that pterm pair
+// --via accepts without --allow-tagged: untagged nodes of this computer's
+// owner. Phones and TVs are left out; they cannot run Termivoa.
+func (status *Status) HomeCandidates() []Node {
+	var nodes []Node
+	for _, node := range status.peers {
+		mobile := slices.Contains([]string{"ios", "android", "tvos"}, strings.ToLower(node.OS))
+		if !mobile && status.CheckOwner(node, false) == nil {
+			nodes = append(nodes, node)
+		}
+	}
+	slices.SortFunc(nodes, func(first, second Node) int { return strings.Compare(first.Host, second.Host) })
+	return nodes
 }
 
 // Resolve finds the app node for pterm pair --via. via is a canonical
