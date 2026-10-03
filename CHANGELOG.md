@@ -189,6 +189,33 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- A shorter `pterm setup` for a new computer. Host: setup prints a short
+  plan, one line for each change (startup at login, where data and logs go,
+  the phone address, each Tailscale Serve question, linger, the project
+  **Home folder**), and asks as before. `pterm setup --verbose` adds the
+  checks, the startup files and every command. Warnings from the checks
+  (other ports that get the Termivoa cookie, Funnel, Serve conflicts,
+  multi-computer findings) still show, under **Warnings:**, before the plan.
+  When the phone cannot reach this computer over port 443 (no Tailscale,
+  the Tailscale operator is missing on Linux, or you said no to sharing),
+  setup pairs nothing and ends with the fix and "then run `pterm setup`
+  again". When Tailscale shows other computers of yours, setup asks "Is
+  Termivoa already on your phone?": **1** pairs this computer (QR code);
+  **2** asks which computer you first paired the phone with and adds this
+  computer to that app (the same as `pterm pair --via <name>`, with a
+  separate yes for a tagged Tailscale computer, as `--allow-tagged`). A
+  wrong number or an unknown name asks again; Enter skips. If you do not
+  approve the phone, setup says so and names the command to try again. The
+  project setup adds is now named **Home folder** (was **Home**). On Linux,
+  setup and `install-linux.sh` refuse root with the commands that make a
+  normal user (group `sudo` or `wheel`, your SSH key, a copy of the files),
+  or, under `sudo`, say to run without it; and when the shell does not find
+  this `pterm` yet, setup's last lines give the `export PATH=…` command.
+  Phone: no change.
+- `pterm pair --via` prints a QR code on a terminal, after a line that says
+  to scan it in the app (**Settings → + Add a computer → Scan QR**), not with
+  the phone's Camera app. A terminal too narrow for it gets the link only.
+  The standalone `pterm pair` first says that it is for a FIRST computer.
 - Breaking (host): preview listener rules. Only the preview origin itself
   may send requests to it (an `Origin` equal to the preview origin, or no
   `Origin` and `Sec-Fetch-Site: same-origin`). The selection

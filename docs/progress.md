@@ -1560,6 +1560,38 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `TestCommandSourceRunsTheCLIAsACLI`. The e2e harness uses a fake Tailscale
   CLI, so it could not see this.
 
+- **Setup for a second computer** (`feat/setup-ux`, 2026-10-03): from the
+  owner's first real install (Mac home, new Ubuntu VPS): a 60-line setup
+  wall, a first-computer QR code at the end of setup on the second computer
+  (scanned, it made a separate app), a long `--via` link to copy, `pterm:
+  command not found`, root refused without help, and "Home" naming. Setup now
+  prints a short plan (`--verbose` for the checks, unit files and commands)
+  with the checks' warnings under `Warnings:`; asks "Is Termivoa already on
+  your phone?" and runs the `pterm pair --via` flow for answer 2 (a tagged
+  computer needs its own yes, as `--allow-tagged`; a bad number or unknown
+  name asks again); pairs nothing and names the fix when port 443 is not
+  shared; names `pterm pair --via <name>` when the phone was not approved or
+  the link expired. `pterm pair --via` prints a QR code for the app's **Scan
+  QR** (added by `feat/scan-add-computer`, same release), after the scan
+  text. On Linux, root gets the commands that make a user (`sudo` or `wheel`,
+  `authorized_keys`, a copy of the files; with `SUDO_USER` set: "run it
+  without sudo"), and the last lines give `export PATH=…` when `exec.LookPath`
+  does not find this `pterm`. An adversarial review's findings (M1–M5,
+  L1–L8) were fixed on the same branch. Evidence: `go test ./cmd/pterm
+  ./internal/cli ./internal/tailnet`; `gofmt`; `go vet ./...` for darwin,
+  `CGO_ENABLED=0 GOOS=linux` and `GOOS=windows`; `scripts/check`; the site
+  build. A privileged `ubuntu:24.04` container with systemd as PID 1 and a
+  fake `tailscale` CLI ran `sh install-linux.sh ./pterm-linux-arm64` under
+  `expect` for three users: no Tailscale operator (setup ended with "Setup is
+  done, but your phone cannot reach this computer yet: … sudo tailscale set
+  --operator=$USER, then run `pterm setup` again."), the normal case (Serve
+  `y`, answer `2`, then `1` → `pterm pair --via mac` link and QR code), and a
+  tagged VPS (`tag:server`: the tag question, then `pterm pair --via mac
+  --allow-tagged`). As root the script and `pterm setup` printed the user
+  commands, which then worked in that container. Not tested: the e2e
+  multi-computer run (the coordinator runs it), a real VPS, a real phone,
+  and the linger question (the container's users had no login session).
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

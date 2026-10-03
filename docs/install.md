@@ -135,8 +135,11 @@ pnpm install --frozen-lockfile
 `scripts/install-linux.sh` copies the file to `~/.local/bin/pterm` and runs
 `pterm setup`. Without an argument, in a source checkout on the host, it builds
 the binary first. It refuses to run as root: Termivoa runs as your user.
-If `~/.local/bin` is not on your PATH yet, Ubuntu adds it at your next login;
-until then use `~/.local/bin/pterm`. Invited beta testers can download the
+As root it prints the commands that make a normal user and copy the files
+to it; under `sudo` it says to run it without `sudo`. If the shell does not
+find `pterm` yet, setup's last lines give the `export PATH=…` command for
+this terminal, and say whether new logins have it (bash with Ubuntu's
+`~/.profile` does; zsh does not). Invited beta testers can download the
 binary instead of building it; see [Private beta](#private-beta).
 
 Linux uses the XDG directories:
@@ -171,8 +174,7 @@ pterm setup will:
   - Share Termivoa with your tailnet devices at https://<mac>.<tailnet>.ts.net (port 443). It asks first.
   - Share dev-server previews at https://<mac>.<tailnet>.ts.net:8443 (port 8443). It asks first.
   - Add your home folder /Users/you as the project "Home folder" if you have no project.
-  - Ask what this computer is (your first, or one more for the app you already use), then pair your phone.
-Never use Tailscale Funnel: it would put your terminal on the public internet.
+  - Then connect your phone (pair it, or add this computer to your app).
 For the checks, the startup files and every command, run `pterm setup --verbose`.
 
 Continue? [y/N]
@@ -196,12 +198,33 @@ After `y` it:
   previews (see below). It changes nothing if HTTPS 8443 already serves
   something else;
 - adds your home folder as the project "Home folder" when no project exists;
-- goes straight to pairing (below).
+- connects your phone. When Tailscale shows other computers of yours, it
+  first asks "Is Termivoa already on your phone?": `1` pairs this computer
+  (below); `2` asks which computer you first paired the phone with and adds
+  this computer to that app, the same as `pterm pair --via <name>`
+  (`docs/multi-computer.md`). A tagged Tailscale computer needs a separate
+  `y` (the same as `--allow-tagged`). A wrong number or an unknown name asks
+  again; Enter skips. Otherwise it goes straight to pairing (below).
 
-If Tailscale is missing or signed out, setup tells you the exact next step
-(install it, or run `tailscale up`) and still continues: the pairing link then
-uses `http://127.0.0.1:8787`, which works in a browser on this computer. Run
-`pterm setup` again after Tailscale works to add your phone.
+Without `--verbose`, the checks are not printed, but every `!` warning they
+find that the plan does not state itself (for example other ports that get
+the Termivoa cookie, Funnel, or a multi-computer finding) is printed under
+`Warnings:` before the plan. The Funnel reminder prints only with
+`--verbose` or when Funnel is on.
+
+When the phone cannot reach this computer over port 443 (Tailscale missing
+or signed out, the Tailscale operator missing on Linux, a Serve conflict, or
+you said no to sharing), the plan says "Your phone cannot reach this
+computer yet: <fix>", setup still registers startup, and it ends without
+pairing: "Setup is done, but your phone cannot reach this computer yet:
+<fix>". Each fix ends with "then run `pterm setup` again" (or "run `pterm
+setup` again and say yes to sharing on port 443").
+
+On Linux, setup refuses to run as root and prints the commands that make a
+normal user (the `sudo` or `wheel` group, your `authorized_keys`, a copy of
+`pterm`); under `sudo` it says to run it without `sudo`. When the shell does
+not find this `pterm` on `PATH` yet, its last lines give the `export PATH=…`
+command for this terminal.
 
 `pterm setup --apply --yes` is the installer path: no questions. It registers
 startup and saves the Tailscale phone address if none is set. It never changes

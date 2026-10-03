@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Every command and flag of pterm, the Termivoa host program, for setup, startup, pairing phones, sessions, projects, shells and dev tests.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-03
 ---
 
 `pterm` is the Termivoa host program. `pterm help` (or `--help`, `-h`) prints this command list.
@@ -14,6 +14,7 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | Command | What it does |
 | --- | --- |
 | `pterm setup` | First run: checks, one confirmation, startup at login, phone address, Tailscale Serve (asks first), pairing. From the next beta, it refuses before any change while other Tailscale Serve handlers share this computer's Termivoa address (port 443); see [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers-next-beta). It then exits with code 3; other errors exit with 1. |
+| `pterm setup --verbose` | **Next beta.** `pterm setup` now prints a short plan, one line for each change, and any warning of the checks under **Warnings:**. `--verbose` also prints the checks, the startup files and every command. |
 | `pterm setup --apply --yes` | Installer mode: registers startup, asks nothing, sets the phone address only if unset, never changes Tailscale or pairs a phone. From the next beta, it refuses in the same way. |
 | `pterm doctor` | Read-only checks. Never prints secrets. From the next beta it also shows the protocol revision and multi-computer checks. |
 | `pterm config origin [<url>]` | Shows or sets the phone's private HTTPS address. |
@@ -46,7 +47,7 @@ Not released yet. This is not in `v0.1.0-beta.2`. See [Use several computers](/d
 
 | Command | Where | What it does |
 | --- | --- | --- |
-| `pterm pair --via <name\|url>` | New computer | Prints a two-minute, single-use add-computer link for the Termivoa app at home (no QR code), then approves the phone after you compare codes. `<name>` is home's machine name, such as `mac`; `<url>` is its full address. It tells you to tap the link in a Termivoa session and confirm "Add this computer?", or to tap "+ Add a computer" in **Settings → Computers** and paste it. |
+| `pterm pair --via <name\|url>` | New computer | Prints a two-minute, single-use add-computer link for the Termivoa app at home and, on a terminal wide enough for it, a QR code of that link, then approves the phone after you compare codes. `<name>` is home's machine name, such as `mac`; `<url>` is its full address. It tells you to tap the link in a Termivoa session and confirm "Add this computer?", or, in **Settings → + Add a computer**, to scan the QR code (**Scan QR**) or paste the link. Scan it in the app, not with the phone's Camera app: that opens the browser. `pterm setup` asks the same when you answer that Termivoa is already on your phone. |
 | `pterm pair --via <name\|url> --allow-tagged` | New computer | The same, when home or this computer is a tagged Tailscale node. Check the tags first. |
 | `pterm pair pending` | New computer | Also shows a **VIA** column: the home app a waiting phone comes from. |
 | `pterm computers` | Home | Shows each phone's other computers: device ID, label, address and when added. |
@@ -54,7 +55,7 @@ Not released yet. This is not in `v0.1.0-beta.2`. See [Use several computers](/d
 | `pterm revoke --via <url>` | Peer | Asks first, then revokes every phone that uses this computer from the Termivoa app at `<url>`, and deletes that app's pairing links and pending pairings. It does this also when no phone uses it now. Use it if home was hacked. |
 | `pterm revoke <device-id>` | Home | After it revokes the phone, also lists the other computers that phone used, so you can revoke it there too. |
 
-`pterm pair --via` also takes `--no-wait` and `--origin`. `--allow-tagged` needs `--via`.
+`pterm pair --via` also takes `--no-qr`, `--no-wait` and `--origin`. `--allow-tagged` needs `--via`.
 
 `pterm revoke --via` asks one of these:
 
