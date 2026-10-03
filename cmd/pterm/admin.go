@@ -192,6 +192,17 @@ func parseInterspersed(flags *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
+// terminalQR reports whether output is a terminal, and its width. The QR code
+// uses terminal colors, so redirected output gets only the link.
+func terminalQR(output io.Writer) (show bool, columns int) {
+	file, isFile := output.(*os.File)
+	if !isFile || !term.IsTerminal(file.Fd()) {
+		return false, 0
+	}
+	columns, _, _ = term.GetSize(file.Fd())
+	return true, columns
+}
+
 // localOrigin is the default gateway page on this computer, used for a
 // pairing link when no phone origin is configured.
 func localOrigin(dev bool) string {
@@ -231,9 +242,8 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	if parseErr != nil && !errors.Is(parseErr, flag.ErrHelp) {
 		return parseErr
 	}
-	// The QR code uses terminal colors, so redirected output gets only the link.
-	file, isFile := output.(*os.File)
-	showQR := !config.noQR && isFile && term.IsTerminal(file.Fd())
+	showQR, columns := terminalQR(output)
+	showQR = showQR && !config.noQR
 	managedOutput, err := newManagementOutput(ctx, output)
 	if err != nil {
 		return err
@@ -252,7 +262,7 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	switch config.action {
 	case "pair":
 		options := cli.PairOptions{
-			Origin: config.origin, Fallback: localOrigin(config.dev), ShowQR: showQR,
+			Origin: config.origin, Fallback: localOrigin(config.dev), ShowQR: showQR, QRColumns: columns,
 			Via: config.via, AllowTagged: config.allowTagged,
 		}
 		if !config.noWait && input != nil {

@@ -17,8 +17,10 @@ const (
 )
 
 // renderQR draws text as a QR code with Unicode half blocks: one terminal
-// row holds two module rows. Errors never include text, which is a secret.
-func renderQR(text string) (string, error) {
+// row holds two module rows. columns is the terminal width, zero when
+// unknown: a code wider than the terminal would wrap into noise (a phone-sized
+// Termivoa session). Errors never include text, which is a secret.
+func renderQR(text string, columns int) (string, error) {
 	code, err := qr.Encode(text, qr.M)
 	if err != nil {
 		return "", errors.New("the pairing link cannot be encoded as a QR code")
@@ -26,6 +28,9 @@ func renderQR(text string) (string, error) {
 	width := code.Size + 2*qrQuietZone
 	if width > qrMaxWidth {
 		return "", errors.New("the pairing link is too long for a terminal QR code")
+	}
+	if columns > 0 && width > columns {
+		return "", errors.New("this terminal is too narrow for it")
 	}
 	var builder strings.Builder
 	// Black reports false outside the code, which draws the quiet zone.

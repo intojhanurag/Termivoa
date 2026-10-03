@@ -13,7 +13,7 @@ import (
 // matrix, surrounded by a light quiet zone, in explicit dark-on-light colors.
 func TestRenderQRMatchesModuleMatrixWithQuietZone(t *testing.T) {
 	link := "https://mac.example.ts.net/pair#" + adminGrant
-	rendered, err := renderQR(link)
+	rendered, err := renderQR(link, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,10 +61,11 @@ func TestPairQRAndTooLongLinkKeepTheSecretOutOfErrors(t *testing.T) {
 	}
 	text := output.String()
 	if !strings.Contains(text, qrColors+" ") || !strings.Contains(text, "Scan the QR code") ||
-		strings.Count(text, adminGrant) != 1 {
+		strings.Count(text, adminGrant) != 1 ||
+		!strings.HasPrefix(text, "This pairing is for a FIRST computer. To add this computer to a Termivoa app you already use, run `pterm pair --via <home>` instead.\n") {
 		t.Fatalf("pairing output with QR = %q", text)
 	}
-	if _, err := renderQR("https://" + strings.Repeat("a", 480) + "/pair#" + adminGrant); err == nil ||
+	if _, err := renderQR("https://"+strings.Repeat("a", 480)+"/pair#"+adminGrant, 0); err == nil ||
 		strings.Contains(err.Error(), adminGrant) {
 		t.Fatalf("oversized QR error = %v", err)
 	}

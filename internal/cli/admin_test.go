@@ -503,7 +503,7 @@ func TestPairViaPrintsOnlyTheAddComputerLink(t *testing.T) {
 		admin := &fakeAdmin{grant: boundGrant(homeOrigin, test.node)}
 		var output bytes.Buffer
 		if err := Pair(context.Background(), admin, PairOptions{
-			Via: test.via, AllowTagged: test.allowTagged, ShowQR: true, Fallback: "http://127.0.0.1:8787",
+			Via: test.via, AllowTagged: test.allowTagged, Fallback: "http://127.0.0.1:8787",
 		}, &output); err != nil {
 			t.Fatal(err)
 		}
@@ -519,6 +519,39 @@ func TestPairViaPrintsOnlyTheAddComputerLink(t *testing.T) {
 			!strings.Contains(text, "single-use secret") {
 			t.Fatalf("via %q output = %q", test.via, text)
 		}
+	}
+}
+
+// On a terminal, --via also draws the link as a QR code and says where to
+// scan it. A terminal narrower than the code (a phone-sized Termivoa session)
+// gets the link only.
+func TestPairViaQRSaysWhereToScan(t *testing.T) {
+	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
+	var output bytes.Buffer
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", ShowQR: true, QRColumns: 80}, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, want := range []string{
+		qrColors + " ", "In the Termivoa app: Settings → + Add a computer → Scan QR",
+		"The phone's Camera app will NOT work for this code", "/add-computer#grant=" + adminGrant,
+		`or in Settings → Computers tap "+ Add a computer" and paste the link.`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("--via QR output lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Count(text, adminGrant) != 1 {
+		t.Errorf("the grant appears %d times", strings.Count(text, adminGrant))
+	}
+
+	output.Reset()
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", ShowQR: true, QRColumns: 40}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if text := output.String(); strings.Contains(text, "\x1b[") || strings.Contains(text, "Scan QR") ||
+		!strings.Contains(text, "No QR code: this terminal is too narrow for it.") || !strings.Contains(text, "/add-computer#grant=") {
+		t.Errorf("narrow terminal output = %q", text)
 	}
 }
 

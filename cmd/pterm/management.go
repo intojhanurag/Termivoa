@@ -24,10 +24,13 @@ Available commands:
                                      Print a two-minute, single-use phone pairing link
                                      and, on a terminal, its QR code; then wait for the
                                      phone and approve it after you compare its code.
-  pterm pair --via <name|url> [--allow-tagged]
+                                     For a first computer.
+  pterm pair --via <name|url> [--allow-tagged] [--no-qr]
                                      Add this computer to the Termivoa app at that
                                      computer: print a two-minute add-computer link
-                                     (no QR code) and approve the phone's code.
+                                     and, on a terminal, its QR code for the app's
+                                     own scanner (not the phone's Camera app), and
+                                     approve the phone's code.
                                      --allow-tagged accepts a tagged app computer.
   pterm pair pending                 Show phones waiting for approval and their codes.
   pterm pair approve <pending-id>    Approve a phone after comparing its code.

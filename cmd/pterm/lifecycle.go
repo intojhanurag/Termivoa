@@ -22,7 +22,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/charmbracelet/x/term"
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
@@ -666,9 +665,9 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 		}
 	}
 	fmt.Fprintln(output, "\nPair your phone:")
-	file, isFile := output.(*os.File)
+	showQR, columns := terminalQR(output)
 	return cli.Pair(ctx, admin, cli.PairOptions{
-		Fallback: env.gateway, ShowQR: isFile && term.IsTerminal(file.Fd()), Confirmer: confirmer,
+		Fallback: env.gateway, ShowQR: showQR, QRColumns: columns, Confirmer: confirmer,
 	}, output)
 }
 

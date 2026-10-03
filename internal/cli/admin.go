@@ -47,6 +47,9 @@ type PairOptions struct {
 	// configured. Such a link works only in a browser on this computer.
 	Fallback string
 	ShowQR   bool
+	// QRColumns is the terminal width; a QR code wider than it is left out.
+	// Zero means unknown.
+	QRColumns int
 	// Confirmer, when set, makes Pair wait until the grant expires for a
 	// phone to open the link, show its code, and ask before approving. Nil
 	// prints the manual approval steps instead (--no-wait).
@@ -118,12 +121,15 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 	link := origin + "/pair#" + grant.Grant
 	code, instruction := "", "Open this link"
 	if options.ShowQR {
-		if code, err = renderQR(link); err != nil {
+		if code, err = renderQR(link, options.QRColumns); err != nil {
 			code = "No QR code: " + err.Error() + ".\n"
 		} else {
 			instruction = "Scan the QR code or open this link"
 		}
 	}
+	// Said before the code, so a second computer's owner does not scan it.
+	code = "This pairing is for a FIRST computer. To add this computer to a Termivoa app you already use, " +
+		"run `pterm pair --via <home>` instead.\n" + code
 	where, next := "on the phone", "Then run `pterm pair pending` and approve with "+
 		"`pterm pair approve <pending-id>` after comparing the code."
 	if localOnly {
@@ -149,10 +155,12 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 }
 
 // pairVia creates a grant bound to the app named by options.Via and prints it
-// only inside an add-computer link that the app at that origin opens. There
-// is no QR code: a phone camera opens links in the browser, whose cookies are
-// not the installed app's. The link needs this computer's own https origin,
-// never the loopback fallback, because the phone's app calls it directly.
+// only inside an add-computer link that the app at that origin opens and,
+// when ShowQR is set, a QR code of that link for the app's own scanner. The
+// phone's camera app must not scan it: it opens links in the browser, whose
+// cookies are not the installed app's, and the output says so. The link needs
+// this computer's own https origin, never the loopback fallback, because the
+// phone's app calls it directly.
 func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[string]bool, output io.Writer) error {
 	request := protocol.AdminRPCPairGrantPayload{Via: &options.Via}
 	if options.AllowTagged {
@@ -182,13 +190,22 @@ func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[str
 	if options.Confirmer != nil {
 		next = "Waiting for the phone (Ctrl+C stops waiting)."
 	}
+	code := ""
+	if options.ShowQR {
+		if code, err = renderQR(link, options.QRColumns); err != nil {
+			code = "No QR code: " + err.Error() + ".\n"
+		} else {
+			code += "Scan this QR code. In the Termivoa app: Settings → + Add a computer → Scan QR.\n" +
+				"The phone's Camera app will NOT work for this code: it opens the browser (Safari), not the app.\n"
+		}
+	}
 	if err := writeString(output, fmt.Sprintf(
-		"Add-computer link (expires %s):\n%s\n"+
+		"%sAdd-computer link (expires %s):\n%s\n"+
 			"Open it within 2 minutes in the Termivoa app at %s: run this command inside a Termivoa session "+
 			"in that app and tap the link, then confirm \"Add this computer?\"; "+
 			"or in Settings → Computers tap \"+ Add a computer\" and paste the link. %s\n"+
-			"The link is a single-use secret: do not share it in chats, issues, screenshots or logs.\n",
-		grant.ExpiresAt, link, describeApp(appOrigin, grant.AppNode), next)); err != nil || options.Confirmer == nil {
+			"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n",
+		code, grant.ExpiresAt, link, describeApp(appOrigin, grant.AppNode), next)); err != nil || options.Confirmer == nil {
 		return err
 	}
 	return waitForPhone(ctx, admin, options, grant.ExpiresAt, appOrigin, seen, output)
