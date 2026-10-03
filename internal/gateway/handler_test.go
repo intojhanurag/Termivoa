@@ -429,16 +429,7 @@ func TestRateLimits(t *testing.T) {
 	if response := do(handler, http.MethodPost, "/api/v1/pair/redeem", redeemBody, requestOptions{remote: "192.0.2.77:5"}); response.Code != 200 {
 		t.Fatalf("other client = %d", response.Code)
 	}
-	// Failed authentication: 20 failures, then even a valid cookie is refused.
-	bad := requestOptions{cookie: productionCookieName + "=" + revokedCredential, remote: "192.0.2.2:5"}
-	for attempt := 0; attempt < 20; attempt++ {
-		if response := do(handler, http.MethodGet, "/api/v1/settings", "", bad); response.Code != 401 {
-			t.Fatalf("failure %d = %d", attempt, response.Code)
-		}
-	}
-	if response := do(handler, http.MethodGet, "/api/v1/settings", "", requestOptions{cookie: prodCookie, remote: "192.0.2.2:6"}); response.Code != 429 {
-		t.Fatalf("after failures = %d", response.Code)
-	}
+	// Failed authentication is not counted: see lockout_test.go.
 }
 
 func TestLimiterRefillsAndBoundsClients(t *testing.T) {

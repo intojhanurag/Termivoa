@@ -1518,6 +1518,26 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   with several app windows, `notificationclick` in `web/src/sw.js` now prefers
   a focused visible window, then a visible one, then the first (#148); tests in
   `web/src/sw.test.ts`. Evidence: `scripts/check` exit 0; the new test fails without the fix.
+- **No lockout by another client's failed requests** (`fix/issue-149`,
+  2026-10-03; fixes #149). Confirmed with Go tests on `main` before the fix:
+  the gateway's count of failed credential attempts (20, then 1 per 6 s) is
+  one bucket for all clients behind Tailscale Serve, so a few forged requests
+  made the API, the live socket and the preview listener answer 429 to a
+  paired phone, and `index.html` lost its per-device CSP entries. The issue
+  named only previews. Fix: the count is deleted (`internal/gateway/api.go`,
+  `preview.go`, `handler.go`); a well-formed credential always reaches the
+  broker. A first fix that remembered accepted credentials was dropped after
+  a security review: it did not hold after a gateway restart. Guessing is
+  prevented by the 256-bit credential, not by a count. The pairing limits are
+  unchanged; their shared bucket is a known limit in `docs/threat-model.md`.
+  Tests: `TestFailuresOfAnotherClientDoNotLockOutAPairedDevice` and
+  `TestFailuresOfAnotherClientDoNotLockOutTheLiveSocket`
+  (`internal/gateway/lockout_test.go`); both fail on `main`. Commands, all
+  pass: `gofmt -l internal`, `go vet ./...` (also `CGO_ENABLED=0 GOOS=linux`
+  and `GOOS=windows`), `go test -race ./internal/gateway/...`,
+  `scripts/check`, `node scripts/e2e-multicomputer/phase-a.mjs` (31 PASS),
+  `node scripts/e2e-multicomputer/phase-b.mjs --no-web-build` (63 PASS), the
+  site build. Not measured: a real Tailscale Serve.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

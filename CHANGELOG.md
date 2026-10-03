@@ -245,6 +245,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): another machine in the tailnet could stop the app and
+  previews for every phone (429, "Too many failed attempts.") with about 20
+  requests that carried a bad cookie, because all clients behind Tailscale
+  Serve shared one count of failed attempts. The host no longer counts
+  failed attempts; the 256-bit credential is what prevents guessing. The
+  pairing limits are unchanged. No phone-side change (#149).
 - Fix (host side): the preview proxy now also drops a dev server's
   `Set-Cookie` that sets a Termivoa cookie with an empty name
   (`=__Host-pterm_preview=x`), in other letter case (`__HOST-pterm_session`),

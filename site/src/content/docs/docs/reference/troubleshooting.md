@@ -189,7 +189,6 @@ Tap **↻**. If the text stays, do what the table says. The computer that runs t
 | "This app may not use this computer." | Run `pterm pair --via <home>` on that computer and add it again. |
 | "The computer is not available." | Check that Tailscale runs and is logged in on that computer (`pterm doctor`), then tap **↻**. |
 | "The dev server did not answer.", "No dev server of this session listens on that port." or "The session is not running." | Start the dev server in that session again, then tap **↻**. |
-| "Too many failed attempts." | Wait a short time, then tap **↻**. |
 
 A text that stays after **↻** on another computer: pair that computer again through home (`pterm pair --via <home>` on it, then add it in the app).
 

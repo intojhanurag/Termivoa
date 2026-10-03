@@ -98,7 +98,7 @@ phone app  https://mac.tailx.ts.net  (home)
        src = https://vps.tailx.ts.net:8443/__termivoa/select?session=<id>&port=<n>
      vps preview listener: Host; no Origin; Referer https://mac.tailx.ts.net/
        is a bound app origin → forwarded to the broker as the request origin;
-       limiter; vps cookie
+       vps cookie
      vps broker: admitDevice (origin bound to this credential, node, tags),
        session runs, port owned
      → 200 small page, sets the preview cookie, moves the frame to /
@@ -116,7 +116,7 @@ A home session uses the same steps against home; the `Referer` origin is then ho
 
 1. Host (`hostAllowed`), else `421`.
 2. The selection path: L2. Every other path: L1. Else `403`. This is before the cookie is read and before the dev server is reached.
-3. The failed-attempt limiter (`429`).
+3. (Removed, #149: the failed-attempt limiter. Failed attempts are not counted.)
 4. The device cookie (`401` without a valid one).
 5. The selection: `selectPort`. Other paths: an unknown `/__termivoa/*` path is `404`; the preview cookie (`400` without one); then the broker check and the proxy.
 
@@ -210,7 +210,7 @@ Texts from the listener itself, shown in the frame (plain text):
 | 404 | "No dev server of this session listens on that port." / "Unknown preview route." | Port not owned by the session; unknown `/__termivoa/*` path |
 | 409 | "The session is not running." | |
 | 421 | "Unknown host." | Host not allowed |
-| 429 | "Too many failed attempts." / "Too many open preview sockets." | Limiter; more than 32 upgrades |
+| 429 | "Too many open preview sockets." | More than 32 upgrades |
 | 502 | "The dev server did not answer." | Proxy error |
 | 503 | "The computer is not available." | Any other broker error, for example Tailscale status not readable past the grace period |
 
@@ -385,7 +385,7 @@ Two independent reviews ran on version 1. Security: "sound with changes". Feasib
 | # | Change | Where |
 | --- | --- | --- |
 | 1 | `Referer` parse rule: no `url.Parse`; exactly one header that ends in one `/`; own origin through `originAllowedValue`; a bound origin as an exact string after `ValidateComputerOrigin`; the lookup split out of `crossOrigin` as `boundOrigin` | `appReferer`, `boundOrigin` |
-| 2 | Check order: Host; selection = no `Origin`, then the `Referer` rule; other paths = L1; then limiter and cookie. The probe path keeps its no-cookie answer (`401`) | `previewHandler.ServeHTTP` |
+| 2 | Check order: Host; selection = no `Origin`, then the `Referer` rule; other paths = L1; then the cookie (the failed-attempt limiter was removed later, #149). The probe path keeps its no-cookie answer (`401`) | `previewHandler.ServeHTTP` |
 | 3 | B1 the simple way: `appTrust` whenever the device is bound, with or without a forwarded origin | `GatewayPreviewCheck` case |
 | 4 | Forward the origin on the selection only | `selectPort` |
 | 5 | A broker `invalid_request` shows as `403` "This app may not use this computer.", not `503` | `fail` |
@@ -422,7 +422,7 @@ Known limits (accepted):
 6. **A dev site that sets `Referrer-Policy: no-referrer` and posts a form** sends `Origin: null`; L1 refuses it (it was refused before this change too).
 7. **WebKit: Back inside the frame.** `history.back()` in the sandboxed frame, past its first entry, moves the whole app back (difference B). Exists for home previews too.
 8. **WebKit: history restore.** When the app page is restored from history, the frame first loads its last URL and gets `403` "Origin not allowed."; the app mounts a new frame on `pageshow` with `persisted`, and ↻ does the same (difference A).
-9. **A `curl` or a typed URL** on the preview listener is `403`.
+9. **A plain `curl` or a typed URL** on the preview listener is `403` (a `curl` that forges `Sec-Fetch-Site` or `Origin` passes L1; the cookie and the broker stop it).
 10. **The probe says "something answers on 8443", not "Termivoa answers".** Its failure text names one possible cause only.
 
 Open risks:

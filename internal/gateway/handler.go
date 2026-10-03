@@ -52,7 +52,7 @@ type gatewayHandler struct {
 	api         gatewayapi.Broker
 	assets      fs.FS
 
-	redeemLimit, pollLimit, authFailLimit *limiter
+	redeemLimit, pollLimit *limiter
 	// uploads bounds concurrent upload bodies held in memory.
 	uploads    chan struct{}
 	liveLimits liveLimits
@@ -97,17 +97,16 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 	dev := config.Profile == platform.DevelopmentProfile
 	localhost := net.JoinHostPort("localhost", fmt.Sprint(address.Port()))
 	handler := &gatewayHandler{
-		broker:        brokerState{available: true, generation: generation},
-		hosts:         map[string]struct{}{bound: {}, localhost: {}},
-		origins:       map[string]struct{}{},
-		dev:           dev,
-		api:           config.Broker,
-		assets:        webassets.FS,
-		redeemLimit:   newLimiter(5, time.Minute/5),
-		pollLimit:     newLimiter(10, time.Second),
-		authFailLimit: newLimiter(20, 6*time.Second),
-		uploads:       make(chan struct{}, maxConcurrentUploads),
-		liveLimits:    defaultLiveLimits,
+		broker:      brokerState{available: true, generation: generation},
+		hosts:       map[string]struct{}{bound: {}, localhost: {}},
+		origins:     map[string]struct{}{},
+		dev:         dev,
+		api:         config.Broker,
+		assets:      webassets.FS,
+		redeemLimit: newLimiter(5, time.Minute/5),
+		pollLimit:   newLimiter(10, time.Second),
+		uploads:     make(chan struct{}, maxConcurrentUploads),
+		liveLimits:  defaultLiveLimits,
 	}
 	handler.liveCtx, handler.cancelLive = context.WithCancel(context.Background())
 	// The page served on the bound loopback address is always allowed, so a
@@ -503,7 +502,7 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 // broker answer the policy stays as it is.
 func (handler *gatewayHandler) deviceConnectSources(response http.ResponseWriter, request *http.Request) {
 	credential, present := handler.sessionCookie(request)
-	if handler.api == nil || !present || protocol.ValidateSecretText(credential) != nil || !handler.authFailLimit.allowed(clientKey(request)) {
+	if handler.api == nil || !present || protocol.ValidateSecretText(credential) != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), probeTimeout)
