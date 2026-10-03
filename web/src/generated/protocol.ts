@@ -1150,8 +1150,13 @@ export type HTTPSessionMutationResponse = {
 }
 
 export type HTTPSettingsResponse = {
-    readonly brokerGeneration:    string;
-    readonly device:              HTTPDeviceSummary;
+    readonly brokerGeneration: string;
+    readonly device:           HTTPDeviceSummary;
+    /**
+     * The Termivoa build this computer runs, as version+commit (for example
+     * 0.1.0-beta.2+1a2b3c4d5e6f). A peer sends it, so it is untrusted text: ASCII letters,
+     * digits and . _ + - only, shown as plain text.
+     */
     readonly hostBuild:           string;
     readonly minProtocolRevision: number;
     readonly projects:            HTTPNamedOption[];

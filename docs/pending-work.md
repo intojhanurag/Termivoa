@@ -27,6 +27,8 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   terminal library.
 - Wall: a paused tile that was never live shows one snapshot of its screen.
   Not yet checked on a real phone.
+- Computer health in Settings: version, last seen and **Check again**.
+  Follow-up: show the last known version on a "can't reach" row.
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -42,8 +44,7 @@ In this order.
    Web Push.
 3. **Preview for sessions on peers.** Today preview works for home sessions
    only.
-4. **Computer health in Settings:** version, last seen, and **Check again**.
-5. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
+4. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
    re-shoot).
 
 ## Later

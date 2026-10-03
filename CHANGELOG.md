@@ -8,6 +8,11 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Computer health. Phone: **Settings → Computers** shows the Termivoa
+  version each computer runs and when your phone last got an answer from it,
+  and **Check again** re-checks one computer now (it replaces **Retry**
+  there). Host: the settings answer's `hostBuild` (the version) now allows
+  only ASCII letters, digits and `. _ + -`.
 - Wall: a paused tile that was never live now shows a small picture of its
   session's screen. Phone: Termivoa connects once, for a moment, takes one
   picture and marks the tile Paused. One tile at a time, only while the Wall

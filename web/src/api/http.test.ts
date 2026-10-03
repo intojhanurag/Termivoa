@@ -213,6 +213,16 @@ describe('client(origin) for a peer', () => {
     await expect(client('https://moved.tailx.ts.net').sessions()).rejects.toMatchObject({ code: 'network' });
   });
 
+  it('accepts a normal build and refuses a peer build that is not plain text', async () => {
+    const build = (hostBuild: string) => vi.stubGlobal('fetch', vi.fn(async () => json(200, { ...settings(), hostBuild })));
+    build('0.1.0-beta.2+1a2b3c4d5e6f.dirty');
+    await expect(client('https://ok.tailx.ts.net').settings()).resolves.toMatchObject({ hostBuild: '0.1.0-beta.2+1a2b3c4d5e6f.dirty' });
+    for (const bad of ['<b>1</b>', 'v1\u202e', 'a b', 'x'.repeat(129)]) {
+      build(bad);
+      await expect(client('https://bad.tailx.ts.net').settings()).rejects.toMatchObject({ code: 'invalid_response' });
+    }
+  });
+
   it('refuses an outdated peer until a settings read passes; logout still works', async () => {
     let body = settings(MIN_PROTOCOL_REVISION - 1);
     const fetch = vi.fn(async (url: string) => (url.endsWith('/settings') ? json(200, body) : url.endsWith('/logout')

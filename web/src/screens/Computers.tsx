@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { deviceLabelProblem } from '../api/http';
+import { ApiError, deviceLabelProblem } from '../api/http';
 import { removeComputer, renameComputer, type Computer } from '../computers';
 import { LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { AddComputerSheet } from './AddComputer';
-import type { ComputerEntry } from './allSessions';
-import { problemText } from './Sessions';
+import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
+import { ago, problemText } from './Sessions';
 
 /** The right-hand word for a computer in the list. */
 export function onlineText(entry: ComputerEntry): { readonly text: string; readonly tone: 'green' | 'muted' | 'amber' } {
@@ -27,25 +27,44 @@ export function computerDetail(entry: ComputerEntry, now: number): string {
   ].filter((part) => part !== undefined).join(' · ');
 }
 
+/**
+ * "Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now": the build the
+ * computer runs (plain text, bounded by the schema) and when this phone last
+ * read it. Undefined when it did not answer (computerDetail says why).
+ */
+export function healthText(entry: ComputerEntry, now: number): string | undefined {
+  const { status } = entry;
+  return status.kind === 'ok' ? `Termivoa ${status.settings.hostBuild} · ${ago(status.at, now)}` : undefined;
+}
+
+/** What Check again says when the read failed. */
+export function checkFailureText(computer: Pick<Computer, 'label'>, failure: unknown, onFailure: (error: unknown) => string): string {
+  const error = failure instanceof ReadFailure ? failure.error : failure;
+  return error instanceof ApiError && error.code === 'network' ? cantReach(computer.label) : onFailure(failure);
+}
+
 type Edit =
   | { readonly kind: 'none' }
   | { readonly kind: 'rename'; readonly computer: Computer; readonly draft: string }
   | { readonly kind: 'remove'; readonly computer: Computer };
 
 /**
- * Settings → Computers: every computer with online or offline, rename,
- * remove (signs this phone out there first), Retry, and Add a computer by
+ * Settings → Computers: every computer with online or offline, its version
+ * and when it last answered, Check again, rename, remove (signs this phone
+ * out there first), and Add a computer by
  * pasting the link that `pterm pair --via` printed.
  */
-export function ComputersSection({ entries, onRetry, onChanged, onFailure }: {
+export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   readonly entries: ReadonlyArray<ComputerEntry>;
-  readonly onRetry: (origin: string) => void;
+  /** Reads one computer now (one read per computer at a time); rejects with a ReadFailure. */
+  readonly onCheck: (origin: string) => Promise<void>;
   /** The stored list changed (renamed, removed). */
   readonly onChanged: () => void;
   readonly onFailure: (error: unknown) => string;
 }) {
   const [edit, setEdit] = useState<Edit>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
   const [note, setNote] = useState<{ readonly text: string; readonly error: boolean }>();
   const [pasting, setPasting] = useState(false);
   const [pasted, setPasted] = useState('');
@@ -65,6 +84,21 @@ export function ComputersSection({ entries, onRetry, onChanged, onFailure }: {
     }, (failure: unknown) => setNote({ text: onFailure(failure), error: true })).finally(() => setBusy(false));
   }
 
+  function checkAgain(computer: Computer) {
+    const mark = (on: boolean) => setChecking((current) => {
+      const next = new Set(current);
+      if (on) next.add(computer.origin);
+      else next.delete(computer.origin);
+      return next;
+    });
+    mark(true);
+    setNote({ text: `Checking ${computer.label}…`, error: false });
+    onCheck(computer.origin).then(
+      () => setNote({ text: `${computer.label} answered.`, error: false }),
+      (failure: unknown) => setNote({ text: checkFailureText(computer, failure, onFailure), error: true }),
+    ).finally(() => mark(false));
+  }
+
   function check() {
     const link = parseAddComputerLink(pasted, window.location);
     if ('problem' in link) {
@@ -82,6 +116,7 @@ export function ComputersSection({ entries, onRetry, onChanged, onFailure }: {
         {entries.map((entry) => {
           const { computer } = entry;
           const online = onlineText(entry);
+          const health = healthText(entry, now);
           return (
             <li key={computer.origin} className={entry.status.kind === 'unreachable' ? 'computer-card offline' : 'computer-card'}>
               <div className="computer-head">
@@ -89,6 +124,7 @@ export function ComputersSection({ entries, onRetry, onChanged, onFailure }: {
                 <span className="row-text">
                   <span className="row-title">{computer.label}</span>
                   <span className="row-meta">{computerDetail(entry, now)}</span>
+                  {health !== undefined && <span className="row-meta">{health}</span>}
                 </span>
                 <span className={`computer-state ${online.tone}`}>{online.text}</span>
               </div>
@@ -136,11 +172,11 @@ export function ComputersSection({ entries, onRetry, onChanged, onFailure }: {
                   </div>
                 </div>
               )}
-              {edit.kind === 'none' && (entry.status.kind === 'unreachable' || !computer.home) && (
+              {edit.kind === 'none' && (
                 <div className="row computer-actions">
-                  {entry.status.kind === 'unreachable' && (
-                    <button type="button" className="link" onClick={() => onRetry(computer.origin)}>Retry</button>
-                  )}
+                  <button type="button" className="link" disabled={checking.has(computer.origin)} onClick={() => checkAgain(computer)}>
+                    {checking.has(computer.origin) ? 'Checking…' : 'Check again'}
+                  </button>
                   {!computer.home && (
                     <>
                       <button type="button" className="link" onClick={() => setEdit({ kind: 'rename', computer, draft: computer.label })}>Rename</button>

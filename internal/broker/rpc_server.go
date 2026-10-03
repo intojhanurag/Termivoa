@@ -118,8 +118,8 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	if config.BrokerGeneration == "" || config.Registry.config.BrokerGeneration != config.BrokerGeneration {
 		return nil, errors.New("broker: management broker generation does not match registry")
 	}
-	if len(config.HostBuild) == 0 || len(config.HostBuild) > 128 {
-		return nil, errors.New("broker: management host build must be 1..128 bytes")
+	if !protocol.ValidHostBuild(config.HostBuild) {
+		return nil, errors.New("broker: management host build must be 1..128 letters, digits and . _ + -")
 	}
 	if config.HostPlatform == "" {
 		switch runtime.GOOS {

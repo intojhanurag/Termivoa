@@ -136,6 +136,14 @@ rules:
 - Raise `minRevision` only when an older app can no longer work with this
   computer.
 
+`HTTPSettingsResponse.hostBuild` is the version of Termivoa the computer runs
+(`version+commit`, for example `0.1.0-beta.2+1a2b3c4d5e6f`). The app shows it
+in Settings → Computers, so a peer's value is untrusted text: 1 to 128 ASCII
+letters, digits and `.` `_` `+` `-` (schema `pattern`, checked by Go and by
+the app's validator), always rendered as plain text. Tightening the pattern
+adds no field, message, route or enum value, so it needs no `revision` bump;
+every build ID the packaging scripts produce already matches.
+
 ## Computers
 
 Multi-computer (`docs/multi-computer.md`) keeps a per-device list of peer

@@ -221,7 +221,7 @@ export function hostSummary(sessions: ReadonlyArray<BrokerRPCSessionRecord> | un
 }
 
 /** Short time since, for "last seen 3 h ago". */
-function ago(at: number, now: number): string {
+export function ago(at: number, now: number): string {
   const text = age(new Date(at).toISOString(), now);
   return text === 'now' || text === 'yesterday' ? `last seen ${text === 'now' ? 'just now' : text}` : `last seen ${text} ago`;
 }

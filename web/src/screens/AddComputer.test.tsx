@@ -1,15 +1,15 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError } from '../api/http';
 import type { Computer } from '../computers';
 import { parseAddComputerLink } from '../pairing/addComputer';
 import { findAddComputerLinks } from '../terminal/pathLinks';
 import {
   AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, LeaveAdd, ownerText, PeerAddPage, viaLabel,
 } from './AddComputer';
-import type { ComputerEntry } from './allSessions';
-import { computerDetail, ComputersSection, onlineText } from './Computers';
+import { ApiError } from '../api/http';
+import { ReadFailure, type ComputerEntry } from './allSessions';
+import { checkFailureText, computerDetail, ComputersSection, healthText, onlineText } from './Computers';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };
 const grant = 'G'.repeat(43);
@@ -159,9 +159,9 @@ describe('peer add-computer page', () => {
 describe('Settings → Computers', () => {
   const mac: Computer = { origin: 'https://mac.tailx.ts.net', host: 'mac.tailx.ts.net', label: 'mac', color: '#64D8E8', home: true };
   const vps: Computer = { origin: 'https://vps.tailx.ts.net', host: 'vps.tailx.ts.net', label: 'vps', color: '#9B8CFF', home: false };
-  const settings = { projects: [], shellProfiles: [] } as never;
+  const settings = { projects: [], shellProfiles: [], hostBuild: '0.1.0-beta.2+1a2b3c4d5e6f' } as never;
   const entries: ComputerEntry[] = [
-    { computer: mac, status: { kind: 'ok', settings, sessions: [], at: 0 } },
+    { computer: mac, status: { kind: 'ok', settings, sessions: [], at: Date.now() } },
     { computer: vps, status: { kind: 'unreachable', lastSeen: Date.now() - 3 * 3_600_000 } },
   ];
 
@@ -172,14 +172,39 @@ describe('Settings → Computers', () => {
     expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach · last seen 3 h ago");
   });
 
-  it('offers Retry for an offline computer, rename and remove for peers only, and + Add a computer', () => {
-    const html = renderToStaticMarkup(<ComputersSection entries={entries} onRetry={noop} onChanged={noop} onFailure={() => ''} />);
+  it('offers Check again on every computer, rename and remove for peers only, and + Add a computer', () => {
+    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    expect(html.match(/>Check again<\/button>/gu)).toHaveLength(2);
     expect(html.match(/>Rename<\/button>/gu)).toHaveLength(1);
     expect(html.match(/>Remove<\/button>/gu)).toHaveLength(1);
-    expect(html).toContain('>Retry</button>');
     expect(html).toContain('>+ Add a computer</button>');
     expect(html).toContain('<code>pterm pair --via mac</code>');
     expect(html).toContain('<span class="computer-state green">online</span>');
     expect(html).toContain('<span class="computer-state muted">offline</span>');
+    expect(html).toContain('Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now');
+  });
+
+  it('shows the build and when the phone last read the computer, only for a computer that answered', () => {
+    const now = 10 * 3_600_000;
+    const answered = (at: number): ComputerEntry => ({ computer: vps, status: { kind: 'ok', settings, sessions: [], at } });
+    expect(healthText(answered(now), now)).toBe('Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now');
+    expect(healthText(answered(now - 5 * 60_000), now)).toBe('Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen 5 min ago');
+    expect(healthText(entries[1] as ComputerEntry, now)).toBeUndefined();
+    expect(healthText({ computer: vps, status: { kind: 'pair' } }, now)).toBeUndefined();
+  });
+
+  it('shows a peer build as plain text, never as markup', () => {
+    const hostile = { projects: [], shellProfiles: [], hostBuild: '<img src=x onerror=alert(1)>' } as never;
+    const html = renderToStaticMarkup(
+      <ComputersSection entries={[{ computer: vps, status: { kind: 'ok', settings: hostile, sessions: [], at: 0 } }]} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />,
+    );
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+  });
+
+  it('says what Check again found when the read fails', () => {
+    const onFailure = () => 'Request failed';
+    expect(checkFailureText(vps, new ReadFailure(vps, new ApiError(0, 'network', 'Connection unavailable')), onFailure)).toBe("vps · can't reach");
+    expect(checkFailureText(vps, new ReadFailure(vps, new ApiError(500, 'internal_error', 'boom')), onFailure)).toBe('Request failed');
   });
 });

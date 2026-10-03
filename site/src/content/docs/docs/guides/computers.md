@@ -1,7 +1,7 @@
 ---
 title: Use several computers
 description: Termivoa can use several computers, such as a Mac, a Linux server and a VPS, from one phone app, with one Sessions list and one Wall for all of them.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-03
 ---
 
 Termivoa lets one phone app use several computers, for example a Mac, a Linux server and a VPS, with one Sessions list and one Wall.
@@ -93,6 +93,22 @@ The other computers keep working. The one that does not answer gets its own row.
 | **Update Termivoa on vps** | Termivoa on vps is too old for this app. | Update Termivoa on vps. |
 
 If home is offline, the app still opens from its saved copy and reaches the peers.
+
+## How do I see if a computer is healthy?
+
+Open **Settings → Computers**. Each computer shows the Termivoa version it runs and when the phone last got an answer from it.
+
+:::note[Next beta]
+Not in `v0.1.0-beta.2`.
+:::
+
+| You see | Meaning |
+| --- | --- |
+| **Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
+| **vps · can't reach · last seen 3 h ago** | vps does not answer now. The phone keeps the time of its last answer until you close the app. |
+| **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered.** or why it did not. |
+
+**Check again** works on every computer, also on the one that says **can't reach**.
 
 ## How do I update the computers?
 

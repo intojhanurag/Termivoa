@@ -124,7 +124,7 @@ Every message from every computer (HTTP responses and WebSocket frames) is valid
 
 ### Versions
 
-`HTTPSettingsResponse.protocolRevision` (an integer) plus a minimum supported revision. Computers can be updated one at a time, with three rules: unknown response fields are dropped (lenient validation); a newer app sends a **new request field only to peers whose revision supports it** (Go decodes requests strictly, `api.go:450`, `internal/protocol/message.go:818`); and a **new enum value** that older apps must parse either raises `minProtocolRevision` or is mapped to `unknown` before validation. The app refuses only a peer below the minimum ("Update Termivoa on vps").
+`HTTPSettingsResponse.protocolRevision` (an integer) plus a minimum supported revision. Computers can be updated one at a time, with three rules: unknown response fields are dropped (lenient validation); a newer app sends a **new request field only to peers whose revision supports it** (Go decodes requests strictly, `api.go:450`, `internal/protocol/message.go:818`); and a **new enum value** that older apps must parse either raises `minProtocolRevision` or is mapped to `unknown` before validation. The app refuses only a peer below the minimum ("Update Termivoa on vps"). Settings → Computers shows each answered computer's `hostBuild` (its Termivoa version, plain text, at most 128 ASCII characters) and when the app last read it (kept in memory, not stored), with a **Check again** button that reads that one computer through the same scheduler.
 
 ### Removing a computer, and a lost phone
 
