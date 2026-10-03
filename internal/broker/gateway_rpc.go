@@ -370,11 +370,10 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		server.offerComputer(request.Origin, payload)
 		return protocol.BrokerRPCEmptyPayload{}, nil, nil
 	case protocol.GatewayComputersFound:
-		principal, err := authorizeCredential(request, authorizeOwn)
-		if err != nil {
+		if _, err := authorizeCredential(request, authorizeOwn); err != nil {
 			return nil, nil, err
 		}
-		result, err := server.foundComputers(ctx, principal)
+		result, err := server.foundComputers()
 		return result, nil, err
 	case protocol.GatewayUploadBegin, protocol.GatewayUploadChunk, protocol.GatewayUploadCommit:
 		// An upload must start a fresh connection; see serveUpload.

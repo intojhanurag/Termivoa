@@ -59,7 +59,7 @@ func TestOfferBookKeepsOnlyUntaggedPeersOfTheOwner(t *testing.T) {
 	own := homeOrigin
 	now := time.Date(2026, 10, 3, 10, 0, 0, 0, time.UTC)
 	var book offerBook
-	if got := book.found(status, nil, now); got == nil || len(got) != 0 {
+	if got := book.found(status, now); got == nil || len(got) != 0 {
 		t.Fatalf("a new book (a restart) = %#v", got)
 	}
 	for _, origin := range []string{
@@ -74,19 +74,19 @@ func TestOfferBookKeepsOnlyUntaggedPeersOfTheOwner(t *testing.T) {
 	book.put(nil, &own, offerFor(macOrigin, offerGrantA), now) // no snapshot
 	book.put(status, &own, offerFor(macOrigin, offerGrantA), now)
 	want := []protocol.HTTPFoundComputer{{Origin: macOrigin, Label: "mac", Grant: offerGrantA, ExpiresAt: "2026-10-03T10:01:00Z"}}
-	if got := book.found(status, nil, now); !reflect.DeepEqual(got, want) {
+	if got := book.found(status, now); !reflect.DeepEqual(got, want) {
 		t.Fatalf("found = %#v", got)
 	}
 	// Home's own origin is refused even when the snapshot lists it as a peer.
 	macOwn := macOrigin
 	var other offerBook
 	other.put(status, &macOwn, offerFor(macOrigin, offerGrantA), now)
-	if got := other.found(status, nil, now); len(got) != 0 {
+	if got := other.found(status, now); len(got) != 0 {
 		t.Fatalf("own origin kept: %#v", got)
 	}
 	// A tagged home keeps nothing (CheckOwner without allowTagged).
 	other.put(snapshotOf(t, fake, true), &own, offerFor(macOrigin, offerGrantA), now)
-	if got := other.found(status, nil, now); len(got) != 0 {
+	if got := other.found(status, now); len(got) != 0 {
 		t.Fatalf("tagged home kept an offer: %#v", got)
 	}
 }
@@ -104,13 +104,13 @@ func TestOfferBookExpiryNewestAndCap(t *testing.T) {
 	// The newest offer for an origin wins, with a new expiry.
 	later := start.Add(30 * time.Second)
 	book.put(status, &own, offerFor(macOrigin, offerGrantB), later)
-	if got := book.found(status, nil, later); len(got) != 1 || got[0].Grant != offerGrantB || got[0].ExpiresAt != "2026-10-03T10:01:30Z" {
+	if got := book.found(status, later); len(got) != 1 || got[0].Grant != offerGrantB || got[0].ExpiresAt != "2026-10-03T10:01:30Z" {
 		t.Fatalf("newest = %#v", got)
 	}
-	if got := book.found(status, nil, later.Add(OfferLifetime-time.Millisecond)); len(got) != 1 {
+	if got := book.found(status, later.Add(OfferLifetime-time.Millisecond)); len(got) != 1 {
 		t.Fatalf("dropped before 60 s: %#v", got)
 	}
-	if got := book.found(status, nil, later.Add(OfferLifetime)); len(got) != 0 {
+	if got := book.found(status, later.Add(OfferLifetime)); len(got) != 0 {
 		t.Fatalf("kept after 60 s: %#v", got)
 	}
 	// At most 16 origins; the 17th is dropped, a replacement still lands.
@@ -118,7 +118,7 @@ func TestOfferBookExpiryNewestAndCap(t *testing.T) {
 		book.put(status, &own, offerFor(fmt.Sprintf("https://pc%02d.tailx.ts.net", index), offerGrantA), start)
 	}
 	book.put(status, &own, offerFor("https://pc00.tailx.ts.net", offerGrantB), start)
-	got := book.found(status, nil, start)
+	got := book.found(status, start)
 	if len(got) != MaxOffers || got[0].Grant != offerGrantB || got[MaxOffers-1].Origin != "https://pc15.tailx.ts.net" {
 		t.Fatalf("cap = %v", foundOrigins(got))
 	}
@@ -128,40 +128,37 @@ func TestOfferBookExpiryNewestAndCap(t *testing.T) {
 	// Expired entries make room.
 	next := start.Add(OfferLifetime)
 	book.put(status, &own, offerFor("https://pc16.tailx.ts.net", offerGrantA), next)
-	if got := book.found(status, nil, next); !reflect.DeepEqual(foundOrigins(got), []string{"https://pc16.tailx.ts.net"}) {
+	if got := book.found(status, next); !reflect.DeepEqual(foundOrigins(got), []string{"https://pc16.tailx.ts.net"}) {
 		t.Fatalf("after expiry = %v", foundOrigins(got))
 	}
 }
 
-func TestOfferBookHidesChangedNodesAndSkippedOrigins(t *testing.T) {
+func TestOfferBookHidesChangedNodes(t *testing.T) {
 	fake := &fakeTailscale{peers: map[string]string{"mac": "nMac", "pc0": "nPc0"}, tagged: map[string]bool{}}
 	own := homeOrigin
 	now := time.Date(2026, 10, 3, 10, 0, 0, 0, time.UTC)
 	var book offerBook
 	book.put(snapshotOf(t, fake, false), &own, offerFor(macOrigin, offerGrantA), now)
 	book.put(snapshotOf(t, fake, false), &own, offerFor("https://pc0.tailx.ts.net", offerGrantA), now)
-	if got := book.found(snapshotOf(t, fake, false), map[string]bool{macOrigin: true}, now); !reflect.DeepEqual(foundOrigins(got), []string{"https://pc0.tailx.ts.net"}) {
-		t.Fatalf("skipped origin listed: %v", foundOrigins(got))
-	}
 	for name, change := range map[string]func(){
 		"another node": func() { fake.peers["mac"] = "nOtherMac" },
 		"gone":         func() { fake.peers["mac"] = "" },
 		"tagged":       func() { fake.tagged["mac"] = true },
 	} {
 		change()
-		if got := book.found(snapshotOf(t, fake, false), nil, now); !reflect.DeepEqual(foundOrigins(got), []string{"https://pc0.tailx.ts.net"}) {
+		if got := book.found(snapshotOf(t, fake, false), now); !reflect.DeepEqual(foundOrigins(got), []string{"https://pc0.tailx.ts.net"}) {
 			t.Errorf("%s: listed %v", name, foundOrigins(got))
 		}
 		fake.peers["mac"], fake.tagged["mac"] = "nMac", false
 	}
-	if got := book.found(snapshotOf(t, fake, false), nil, now); len(got) != 2 {
+	if got := book.found(snapshotOf(t, fake, false), now); len(got) != 2 {
 		t.Fatalf("the pinned node is back: %v", foundOrigins(got))
 	}
 }
 
 // Through gateway RPC: an offer never runs tailscale, is answered the same
-// whether kept or dropped, and found is own origin only and leaves out the
-// device's confirmed computers.
+// whether kept or dropped, and found is own origin only and lists computers
+// already in the device's list too (the app decides what to hide).
 func TestOfferAndFoundRPC(t *testing.T) {
 	fixture := newTrustFixture(t)
 	var reads atomic.Int32
@@ -205,18 +202,15 @@ func TestOfferAndFoundRPC(t *testing.T) {
 	if reads.Load() != 0 {
 		t.Fatalf("offers or found ran tailscale %d times", reads.Load())
 	}
-	// A confirmed computer leaves this device's list only; a pending one stays.
+	// A pending or confirmed computer stays listed: a confirmed one may have
+	// lost its access there and wait to be added again.
 	for _, state := range []protocol.HTTPComputerState{protocol.HTTPComputerStatePending, protocol.Confirmed} {
 		if response := fixture.from(t, "", protocol.GatewayComputersAdd, protocol.GatewayRPCComputerAddPayload{
 			Credential: phone.Credential, Request: protocol.HTTPComputerAddRequest{Origin: macOrigin, Label: "mac", State: state},
 		}); response.Type != protocol.GatewayComputersAddResult {
 			t.Fatalf("add %s = %s", state, response.Payload)
 		}
-		want := []string{"https://pc1.tailx.ts.net"}
-		if state == protocol.HTTPComputerStatePending {
-			want = []string{macOrigin, "https://pc1.tailx.ts.net"}
-		}
-		if got := found(phone.Credential); !reflect.DeepEqual(foundOrigins(got), want) {
+		if got := found(phone.Credential); !reflect.DeepEqual(foundOrigins(got), []string{macOrigin, "https://pc1.tailx.ts.net"}) {
 			t.Fatalf("after %s: %v", state, foundOrigins(got))
 		}
 	}

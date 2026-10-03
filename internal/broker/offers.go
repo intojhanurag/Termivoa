@@ -1,15 +1,12 @@
 package broker
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
-	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
@@ -70,16 +67,16 @@ func (book *offerBook) put(status *tailnet.Status, own *string, request protocol
 }
 
 // found lists the unexpired offers whose host status still shows as the same
-// node under the owner rule, leaving out the origins in skip, sorted by origin.
-// The label is the host's first DNS label from status, never from the sender.
-func (book *offerBook) found(status *tailnet.Status, skip map[string]bool, now time.Time) []protocol.HTTPFoundComputer {
+// node under the owner rule, sorted by origin. The label is the host's first
+// DNS label from status, never from the sender.
+func (book *offerBook) found(status *tailnet.Status, now time.Time) []protocol.HTTPFoundComputer {
 	book.mu.Lock()
 	defer book.mu.Unlock()
 	book.dropExpired(now)
 	list := []protocol.HTTPFoundComputer{}
 	for origin, kept := range book.offers {
 		node, ok := status.Peer(strings.TrimPrefix(origin, "https://"))
-		if skip[origin] || !ok || node.ID != kept.nodeID || status.CheckOwner(node, false) != nil {
+		if !ok || node.ID != kept.nodeID || status.CheckOwner(node, false) != nil {
 			continue
 		}
 		label, _, _ := strings.Cut(node.Host, ".")
@@ -112,23 +109,14 @@ func (server *ManagementServer) offerComputer(origin *string, request protocol.H
 	server.offers.put(server.config.Tailnet.Snapshot(), server.ownOrigin.Load(), request, server.now())
 }
 
-// foundComputers answers gateway.computers.found for an own-origin device:
-// the offers, minus the computers already confirmed for that device.
-func (server *ManagementServer) foundComputers(ctx context.Context, principal auth.Principal) (protocol.HTTPComputerFoundResponse, error) {
+// foundComputers answers gateway.computers.found for an own-origin device.
+// It lists every offer, also for computers already in the device's list: one
+// that lost its access there (revoked, or set up again) is re-added from
+// Found. The app hides a row only for a computer it uses and reads now.
+func (server *ManagementServer) foundComputers() (protocol.HTTPComputerFoundResponse, error) {
 	status := server.config.Tailnet.Snapshot()
 	if status == nil {
 		return protocol.HTTPComputerFoundResponse{}, errTrustUnavailable
 	}
-	now := server.now()
-	computers, err := server.config.Store.ListComputers(ctx, principal.DeviceID, now)
-	if err != nil {
-		return protocol.HTTPComputerFoundResponse{}, err
-	}
-	confirmed := map[string]bool{}
-	for _, computer := range computers {
-		if computer.State == store.ComputerConfirmed {
-			confirmed[computer.Origin] = true
-		}
-	}
-	return protocol.HTTPComputerFoundResponse{Computers: server.offers.found(status, confirmed, now)}, nil
+	return protocol.HTTPComputerFoundResponse{Computers: server.offers.found(status, server.now())}, nil
 }

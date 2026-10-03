@@ -297,7 +297,7 @@ describe('Settings → Computers', () => {
   it('shows no Found block before home answers, or when home is too old to list it', () => {
     const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
     expect(html).not.toContain('Found on your network');
-    expect(FoundBlock({ found: undefined, homeLabel: 'mac', app, onAdd: noop })).toBeNull();
+    expect(FoundBlock({ found: undefined, homeName: 'mac', working: new Set(), app, onAdd: noop })).toBeNull();
   });
 
   it('lists each found computer by its label from home and its address, with Add', () => {
@@ -307,7 +307,7 @@ describe('Settings → Computers', () => {
       // A row this app may not add (another tailnet) is not shown.
       { origin: 'https://evil.other.ts.net', label: 'evil', grant, expiresAt: '2026-10-03T10:00:00Z' },
     ];
-    const html = renderToStaticMarkup(<FoundBlock found={{ kind: 'rows', computers: rows }} homeLabel="mac" app={app} onAdd={noop} />);
+    const html = renderToStaticMarkup(<FoundBlock found={{ kind: 'rows', computers: rows }} homeName="mac" working={new Set()} app={app} onAdd={noop} />);
     expect(html).toContain('<h3 id="found-heading" class="caps">Found on your network</h3>');
     expect(html).toContain('<span class="computer-name">nas</span></span><span class="row-meta">nas.tailx.ts.net</span>');
     expect(html).toContain('&lt;b&gt;vps&lt;/b&gt;');
@@ -318,18 +318,28 @@ describe('Settings → Computers', () => {
   });
 
   it('says how to make a computer show when none waits, and when home cannot read Tailscale', () => {
-    const empty = renderToStaticMarkup(<FoundBlock found={{ kind: 'rows', computers: [] }} homeLabel="mac" app={app} onAdd={noop} />);
+    const empty = renderToStaticMarkup(<FoundBlock found={{ kind: 'rows', computers: [] }} homeName="mac" working={new Set()} app={app} onAdd={noop} />);
     expect(empty.replace(/<\/?code>/gu, '')).toContain(
       'To add another computer, run pterm setup on it, or pterm pair --via mac if it is already set up. It shows here while it waits.',
     );
-    const down = renderToStaticMarkup(<FoundBlock found={{ kind: 'no_status' }} homeLabel="mac" app={app} onAdd={noop} />);
+    const down = renderToStaticMarkup(<FoundBlock found={{ kind: 'no_status' }} homeName="mac" working={new Set()} app={app} onAdd={noop} />);
     expect(down).toContain('mac cannot read its Tailscale status. Check Tailscale on mac.');
+  });
+
+  it('hides a computer this phone uses and reads now; one that lost its access shows again', () => {
+    const row = { origin: 'https://vps.tailx.ts.net', label: 'vps', grant, expiresAt: '2026-10-03T10:00:00Z' };
+    const found = { kind: 'rows' as const, computers: [row] };
+    const working = renderToStaticMarkup(<FoundBlock found={found} homeName="mac" working={new Set([row.origin])} app={app} onAdd={noop} />);
+    expect(working).not.toContain('aria-label="Add vps"');
+    expect(working.replace(/<\/?code>/gu, '')).toContain('To add another computer, run pterm setup on it');
+    const lost = renderToStaticMarkup(<FoundBlock found={found} homeName="mac" working={new Set()} app={app} onAdd={noop} />);
+    expect(lost).toContain('aria-label="Add vps"');
   });
 
   it('Add opens the same confirm sheet as a pasted link, with the same link marked found', () => {
     const onAdd = vi.fn();
     const row = { origin: 'https://vps.tailx.ts.net', label: 'vps', grant, expiresAt: '2026-10-03T10:00:00Z' };
-    const tree = FoundBlock({ found: { kind: 'rows', computers: [row] }, homeLabel: 'mac', app, onAdd });
+    const tree = FoundBlock({ found: { kind: 'rows', computers: [row] }, homeName: 'mac', working: new Set(), app, onAdd });
     expect(onAdd).not.toHaveBeenCalled();
     buttons(tree).get('Add')?.();
     expect(onAdd).toHaveBeenCalledWith({ ...readLink(printed, app), found: true });

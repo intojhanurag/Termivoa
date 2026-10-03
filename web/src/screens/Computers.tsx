@@ -74,27 +74,33 @@ export function readLink(text: string, app: AppLocation): AddComputerLink | { re
 /**
  * Found on your network: computers that wait in `pterm pair --via` (or
  * setup) for this home. Add gives the row's link to the same confirm sheet
- * as a pasted link. Nothing shows before the first answer, or when home is
- * too old to list them.
+ * as a pasted link. Nothing shows before the first answer. A computer this
+ * phone uses and reads now (`working`) is not shown; one in the list that
+ * lost its access there can be added again. `homeName` is home's machine
+ * name, the one `pterm pair --via` takes (never a name given on this phone).
  */
-export function FoundBlock({ found, homeLabel, app, onAdd }: {
+export function FoundBlock({ found, homeName, working, app, onAdd }: {
   readonly found: FoundState | undefined;
-  readonly homeLabel: string;
+  readonly homeName: string;
+  readonly working: ReadonlySet<string>;
   readonly app: AppLocation;
   readonly onAdd: (link: AddComputerLink) => void;
 }) {
   if (found === undefined) return null;
   // The same checks as a pasted link; a row that fails them is not shown.
   const rows = found.kind === 'rows'
-    ? found.computers.flatMap((row) => { const link = foundLink(row, app); return link === undefined ? [] : [{ row, link }]; })
+    ? found.computers.flatMap((row) => {
+      const link = working.has(row.origin) ? undefined : foundLink(row, app);
+      return link === undefined ? [] : [{ row, link }];
+    })
     : [];
   return (
     <section className="stack" aria-labelledby="found-heading">
       <h3 id="found-heading" className="caps">Found on your network</h3>
-      {found.kind === 'no_status' && <p className="hint-text">{homeLabel} cannot read its Tailscale status. Check Tailscale on {homeLabel}.</p>}
+      {found.kind === 'no_status' && <p className="hint-text">{homeName} cannot read its Tailscale status. Check Tailscale on {homeName}.</p>}
       {found.kind === 'rows' && rows.length === 0 && (
         <p className="hint-text">
-          To add another computer, run <code>pterm setup</code> on it, or <code>pterm pair --via {homeLabel}</code> if it is already set up. It shows here while it waits.
+          To add another computer, run <code>pterm setup</code> on it, or <code>pterm pair --via {homeName}</code> if it is already set up. It shows here while it waits.
         </p>
       )}
       {rows.length > 0 && (
@@ -181,6 +187,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   useEffect(() => watchFound(setFound), []);
   const now = Date.now();
   const home = entries.find((entry) => entry.computer.home)?.computer;
+  const working = new Set(entries.filter((entry) => !entry.computer.home && entry.status.kind === 'ok').map((entry) => entry.computer.origin));
   const renameProblem = edit.kind === 'rename' ? deviceLabelProblem(edit.draft.trim()) : undefined;
 
   function run(work: () => Promise<string | undefined>) {
@@ -332,7 +339,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
         })}
       </ul>
       <p role="status" className={note?.error === true ? 'error field-note' : 'muted field-note'}>{note?.text ?? ''}</p>
-      <FoundBlock found={found} homeLabel={home?.label ?? firstLabel(homeOrigin())} app={globalThis.location} onAdd={setConfirm} />
+      <FoundBlock found={found} homeName={firstLabel(homeOrigin())} working={working} app={globalThis.location} onAdd={setConfirm} />
 
       {adding === 'closed' && <button type="button" className="add-computer" onClick={() => open('choose')}>+ Add a computer</button>}
       {adding === 'choose' && (
