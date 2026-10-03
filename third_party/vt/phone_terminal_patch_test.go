@@ -3,6 +3,8 @@ package vt
 import (
 	"strings"
 	"testing"
+
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
 func TestPhoneTerminalStreamingWritePreservesGrapheme(t *testing.T) {
@@ -111,5 +113,25 @@ func TestPhoneTerminalOSCTitleKeepsC1ContinuationBytes(t *testing.T) {
 		if got := strings.TrimRight(row.String(), " "); got != want {
 			t.Fatalf("row %d = %q, want %q", y, got, want)
 		}
+	}
+}
+
+// Fewer rows keep the cursor's row on screen: the rows above it move into
+// scrollback, as in xterm, so a prompt at the bottom is not cut off.
+func TestPhoneTerminalShrinkKeepsCursorRow(t *testing.T) {
+	emulator := NewEmulator(20, 8)
+	emulator.SetScrollbackSize(100)
+	_, _ = emulator.Write([]byte("line 1\r\nline 2\r\nline 3\r\nline 4\r\nline 5\r\nline 6\r\nline 7\r\nask [y/N] "))
+	emulator.Resize(20, 6)
+
+	if got, want := emulator.CursorPosition(), (uv.Position{X: 10, Y: 5}); got != want {
+		t.Fatalf("cursor = %v, want %v", got, want)
+	}
+	lines := strings.Split(emulator.String(), "\n")
+	if strings.TrimRight(lines[0], " ") != "line 3" || strings.TrimRight(lines[5], " ") != "ask [y/N]" {
+		t.Fatalf("screen = %q", lines)
+	}
+	if got := emulator.ScrollbackLen(); got != 2 {
+		t.Fatalf("scrollback has %d lines, want 2 (line 1 and line 2)", got)
 	}
 }

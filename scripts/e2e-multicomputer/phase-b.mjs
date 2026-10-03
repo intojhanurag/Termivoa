@@ -57,6 +57,10 @@ async function step(id, name, fn) {
     await fn();
   } catch (error) {
     await shot(`fail-${id}`);
+    if (id.startsWith('F-') && found.page) await shot(`fail-${id}-found-phone`, found.page);
+    // The whole error, with a CLI's output so far (grants and QR codes hidden).
+    writeFileSync(join(out, `fail-${id}.txt`), String(error.stack ?? error).replace(/add-computer#grant=[A-Za-z0-9_-]+/g, 'add-computer#grant=<hidden>')
+      .replace(/\/pair#[A-Za-z0-9_-]+/g, '/pair#<hidden>').replace(/^.*[▀▄█].*$/gm, '[QR code hidden]').replaceAll(env.root, '<root>'));
     const text = await app.text().catch(() => '');
     check(id, name, false, `${error.message.split('\n')[0]} | screen: ${text.replace(/\s+/g, ' ').slice(0, 300)}`);
   }
@@ -791,7 +795,10 @@ try {
     const terminalPath = await app.eval('location.pathname');
     await typeLine(app, 'clear');
     await typeLine(app, vpsCommand());
-    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes('Waiting for your phone'), { what: 'link in terminal' });
+    // After a push that reached mac, the link shows only on Enter.
+    await until(async () => /Press Enter to show a QR code and a link\.|add-computer#grant=/.test((await terminalText(app)).replace(/\n/g, '')), { what: 'wait screen in terminal' });
+    if (!(await terminalText(app)).replace(/\n/g, '').includes('add-computer#grant=')) await typeLine(app, '');
+    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes('add-computer#grant='), { what: 'link in terminal' });
     const link = /https:\/\/vps\.tailx\.ts\.net\/add-computer#grant=[A-Za-z0-9_-]{43}&via=https%3A%2F%2Fmac\.tailx\.ts\.net/.exec((await terminalText(app)).replace(/\n/g, ''))?.[0];
     const started = Date.now();
     await tapTerminalText(app, 'https://vps.tailx.ts.net/add');
@@ -832,12 +839,20 @@ try {
     await shot(`${id}-added`);
     time(`add from a terminal link, ${back === 'button' ? '"Back to terminal"' : 'Back'}, y in the same app (tap → "vps is added")`, Date.now() - started);
     await inApp('/');
-    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.meta.startsWith('vps')), { what: 'vps rows', timeout: 20000 }).catch(() => undefined);
+    // Right after "vps is added" the new computer may refuse the first reads for about a second
+    // (its CORS list refreshes once per second): the row may say "Connecting to vps…", never "can't reach".
+    const seen = new Set();
+    await until(async () => {
+      const now = await problems();
+      for (const p of now) seen.add(p);
+      return now.length === 0 && (await rows()).some((x) => x.meta.startsWith('vps'));
+    }, { what: 'vps rows', timeout: 20000, every: 100 }).catch(() => undefined);
+    const unreachable = [...seen].filter((p) => p.includes("can't reach"));
     const probs = await problems();
     const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps')).length;
     const pass = path === terminalPath && waiting.includes('Adding vps') && done.includes('vps is added') && probs.length === 0 && vpsRows > 0;
     if (!done.includes('vps is added')) await confirmByApi().catch(() => undefined);
-    return { tapped, pass, evidence: `back to ${path} (terminal ${terminalPath}); banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}` };
+    return { tapped, pass, unreachable, evidence: `back to ${path} (terminal ${terminalPath}); banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}; rows seen ${JSON.stringify([...seen])}` };
   }
 
   await step('B2b-back', 'Tap the terminal link, leave with Back, approve with y in the same app', async () => {
@@ -845,6 +860,7 @@ try {
     check('B2b-tap', 'Tapping the add-computer link in the terminal opens the confirm sheet', r.tapped,
       r.tapped ? 'sheet opened from the tap' : 'the tap did not open the sheet; continued by pasting the link');
     check('B2b-back', 'Back from the waiting add page returns to the terminal, the add keeps running, y adds vps', r.pass, r.evidence);
+    check('B2b-connecting', 'Right after "vps is added", no "vps · can\'t reach" row shows (at most "Connecting to vps…")', r.unreachable.length === 0, r.evidence);
   });
 
   await step('B2b-same', 'Tap the terminal link, "Back to terminal", approve with y in the same app', async () => {
@@ -993,7 +1009,7 @@ try {
     const shown = await p.eval(`document.querySelector('.code-tiles .visually-hidden')?.textContent.replace('Verification code ', '')`);
     const phone = await p.eval(`document.querySelector('.pair-wait')?.innerText.replace(/\\s+/g, ' ') ?? ''`);
     await shot(`${id}-code`, p);
-    const [prompt, code] = await cli.wait(/Phone "Found phone" wants to use THIS computer \(vps\)[\s\S]*?shows (\d{3}-\d{3}) and says "type y in the terminal on vps"[\s\S]*?Approve\? \[y\/N\]/);
+    const [prompt, code] = await cli.wait(/Phone "Found phone" wants to add this computer \(vps\) to your Termivoa app on mac\.\nmac is https:\/\/mac\.tailx\.ts\.net \(owner ada@example\.com\)\.\nApprove only if your phone shows (\d{3}-\d{3}) and says "type y in the terminal on vps"\. \[y\/N\]/);
     const good = code === shown && phone.includes('If it matches, type y in the terminal on vps.');
     cli.end(good ? 'y\n' : 'n\n'); // a terminal forwards the end as ^D; pterm has read its answer
     return { shown, code, prompt: prompt.replace(/\s+/g, ' '), phone, good };
@@ -1009,7 +1025,7 @@ try {
     await found.tool.go(`${mac.origin}/`);
     const mark = env.logMark();
     found.cli = interactive(vps, ['pair', '--via', 'mac'], { pty: true });
-    const [screen] = await found.cli.wait(/Add this computer \(vps\) to the Termivoa app at mac[\s\S]*?Waiting for your phone \(up to 10 minutes; Ctrl\+C stops\)…/);
+    const [screen] = await found.cli.wait(/Adding this computer \(vps\) to your Termivoa app on mac\.[\s\S]*?Waiting for your phone \(up to 10 minutes; Ctrl\+C stops\)…\nNo Add button\? Press Enter to show a QR code and a link\./);
     const row = await until(async () => (await foundApi()).find((c) => c.origin === vps.origin), { what: 'vps in mac\'s Found list' });
     const pushed = env.logSince(mark).find((e) => e.host === mac.host && e.path === '/api/v1/computers/offer');
     // Another owner's computer, a browser page, a preflight.
@@ -1026,8 +1042,9 @@ try {
     await evilPage.close();
     await sleep(300);
     const browserLog = env.logSince(mark).filter((e) => e.host === mac.host && e.path === '/api/v1/computers/offer' && e.secFetchSite);
-    check('F-offer', 'vps\'s screen says "Sent to mac (https://mac.tailx.ts.net)." and mac\'s /found lists vps with a grant and the label from mac\'s status; vps\'s broker posted with no Origin, no Sec-Fetch-*, no cookie',
+    check('F-offer', 'vps\'s screen says "Sent to mac (https://mac.tailx.ts.net)." and "Press Enter to show a QR code and a link." with no link; mac\'s /found lists vps with a grant and the label from mac\'s status; vps\'s broker posted with no Origin, no Sec-Fetch-*, no cookie',
       screen.includes('Sent to mac (https://mac.tailx.ts.net).') && screen.includes('On your phone, open Termivoa → Settings → Computers and tap Add next to "vps".')
+        && !plain(found.cli.out).includes('add-computer#grant=')
         && row.label === 'vps' && /^[A-Za-z0-9_-]{43}$/.test(row.grant) && pushed?.status === 204 && !pushed.origin && !pushed.secFetchSite && !pushed.cookie,
       `${screen.split('\n').slice(0, 3).join(' / ')}; found: ${row.label} ${row.origin} grant ${row.grant.length} chars, expires ${row.expiresAt}; vps → mac: ${pushed ? `${pushed.method} ${pushed.path} ${pushed.status} origin=${pushed.origin || '-'} sfs=${pushed.secFetchSite || '-'} cookie=${pushed.cookie}` : 'none'}`);
     check('F-offer-owner', 'An offer for evil.tailx.ts.net (another owner) is answered 204 and dropped', evil.status === 204 && !listed.includes('https://evil.tailx.ts.net'),
@@ -1049,9 +1066,10 @@ try {
     await shot('f-add-outcome', found.page);
     const exit = await found.cli.done;
     time('add from Found (Settings open → "vps is added")', Date.now() - started);
-    check('F-add', 'Found shows "vps — Add"; Add opens "Add this computer?" with the address and owner; the code matches; vps\'s prompt names THIS computer (vps) and quotes the code screen; y adds vps',
+    check('F-add', 'Found shows "vps — Add"; Add opens "Add this computer?" with the address and owner; the code matches; vps\'s prompt names this computer (vps), mac\'s address and owner, and quotes the code screen; y adds vps and vps says "Done. vps is in your Termivoa app on mac."',
       block.toLowerCase().includes('found on your network') && block.includes('vps') && sheet.includes('https://vps.tailx.ts.net') && sheet.includes('ada@example.com')
-        && sheet.includes('Add it only if you just ran pterm setup or pterm pair --via on vps.') && r.good && outcome === 'added' && exit === 0,
+        && sheet.includes('Add it only if you just ran pterm setup or pterm pair --via on vps.') && r.good && outcome === 'added' && exit === 0
+        && plain(found.cli.out).includes('Done. vps is in your Termivoa app on mac. Open the app and tap it.'),
       `block: ${block}; sheet: ${sheet.slice(0, 200)}; phone ${r.shown} "${r.phone.slice(0, 80)}"; prompt: ${r.prompt.slice(0, 260)}; outcome ${outcome}; pterm exit ${exit}`);
     // F-gone: once vps is added for this phone, its row goes.
     await foundSettings();
@@ -1077,6 +1095,7 @@ try {
   });
 
   await step('F-flood', '50 junk offers at once: the bucket refuses the rest; the phones\' API calls and the QR/link pairing still work', async () => {
+    await sleep(2000); // a full bucket: F-dead's offer took a token, and one comes back each second
     const answers = await Promise.all(Array.from({ length: 50 }, () => offer(vps.origin)));
     const counts = answers.reduce((all, r) => ({ ...all, [r.status]: (all[r.status] ?? 0) + 1 }), {});
     const calls = [await api(tool, `${mac.origin}/api/v1/settings`), await api(tool, `${vps.origin}/api/v1/settings`), await api(found.tool, `${mac.origin}/api/v1/computers/found`)];
@@ -1085,8 +1104,13 @@ try {
       `answers ${JSON.stringify(counts)}; then settings mac ${calls[0].status}, settings vps ${calls[1].status}, found ${calls[2].status}`);
     // The link of a new `pterm pair --via mac` still adds vps while offers are refused.
     const cli = interactive(vps, ['pair', '--via', 'mac'], { pty: true });
-    const [link] = await cli.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#grant=[A-Za-z0-9_-]{43}&via=\S+/);
     const [line] = await cli.wait(/(Sent to mac[^\n]*|[^\n]*cannot receive this yet[^\n]*|[^\n]*is busy[^\n]*|mac did not answer[^\n]*)/);
+    // After a push that reached mac, the link shows only on Enter.
+    if (line.startsWith('Sent to mac')) {
+      await cli.wait(/Press Enter to show a QR code and a link\./);
+      cli.write('\n');
+    }
+    const [link] = await cli.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#grant=[A-Za-z0-9_-]{43}&via=\S+/);
     await foundSettings();
     await click(found.page, '+ Add a computer');
     await click(found.page, 'Paste link');
@@ -1151,7 +1175,7 @@ try {
     }, { timeout: 90000, every: 300, what: 'setup to reach the add screen' }).catch((error) => { throw new Error(`${error.message}\n${plain(cli.out)}`); });
     const transcript = plain(cli.out);
     const list = /Which computer did you first pair your phone with\?[\s\S]*?\(Enter skips pairing\):/.exec(transcript)?.[0] ?? '';
-    const [screen] = await cli.wait(/Add this computer \(vps\) to the Termivoa app at mac[\s\S]*?Waiting for your phone[^\n]*/);
+    const [screen] = await cli.wait(/Adding this computer \(vps\) to your Termivoa app on mac\.[\s\S]*?Waiting for your phone[^\n]*/);
     await foundSettings();
     await addFromFound('f-setup');
     const r = await approveOnVps('f-setup', cli);
@@ -1162,8 +1186,9 @@ try {
     writeFileSync(join(out, 'f-setup.txt'), plain(cli.out).replace(/add-computer#grant=[A-Za-z0-9_-]+/g, 'add-computer#grant=<hidden>').replace(/^.*[▀▄█].*$/gm, '[QR code hidden]').replaceAll(env.root, '<root>'));
     check('F-setup-list', 'Setup\'s home list shows each full address and OS: "1) mac — https://mac.tailx.ts.net (macOS)"',
       list.includes('Pick the computer whose address your Termivoa app opens.') && list.includes('1) mac — https://mac.tailx.ts.net (macOS)') && !list.includes('evil'), list.replace(/\s+/g, ' '));
-    check('F-setup', 'Setup answer 2 shows the add screen with "Sent to mac (https://mac.tailx.ts.net).", Add on the phone, y in setup: "vps is added" and "Setup is done"',
-      screen.includes('Sent to mac (https://mac.tailx.ts.net).') && r.good && outcome === 'added' && exit === 0,
+    check('F-setup', 'Setup answer 2 shows the add screen with "Sent to mac (https://mac.tailx.ts.net).", Add on the phone, y in setup: "vps is added", "Done. vps is in your Termivoa app on mac." and "Setup is done."',
+      screen.includes('Sent to mac (https://mac.tailx.ts.net).') && r.good && outcome === 'added' && exit === 0
+        && plain(cli.out).includes('Done. vps is in your Termivoa app on mac. Open the app and tap it.\nSetup is done.\n'),
       `${screen.split('\n').slice(0, 2).join(' / ')}; code ${r.shown}/${r.code}; outcome ${outcome}; "${done.trim()}"; exit ${exit}; launchctl calls: ${readFileSync(join(env.root, 'launchctl.log'), 'utf8').trim().split('\n').map((l) => l.split(' ')[0]).join(',')}`);
   });
 } catch (error) {

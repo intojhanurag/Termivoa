@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { storage } from '../storage';
+import { forgetReload, reloadOnce, storage } from '../storage';
 import { agentBadge, hasNewOutput, readViewed } from './activity';
-import type { HostedSession } from './allSessions';
+import { reloadFreshPage, type HostedSession } from './allSessions';
 import { previewSrc } from './PreviewChip';
 import { ComputerTag } from './Sessions';
+import { Icon, Notice } from './ui';
 
 /** What the screen says when nothing answers on the preview origin. Names no cause: a network error, a timeout and a blocked request look the same to the app. */
 export const cantPreview = (label: string): string =>
@@ -36,14 +37,7 @@ export const PREVIEW_RELOAD_KEY = 'pterm.previewReload';
  * shows the usual text.
  */
 export function reloadForPolicy(blocked: string, origin: string, store: Pick<Storage, 'getItem' | 'setItem'> | undefined): boolean {
-  if (blocked !== origin && !blocked.startsWith(`${origin}/`)) return false;
-  try {
-    if (store === undefined || store.getItem(PREVIEW_RELOAD_KEY) === origin) return false;
-    store.setItem(PREVIEW_RELOAD_KEY, origin);
-    return true;
-  } catch {
-    return false;
-  }
+  return (blocked === origin || blocked.startsWith(`${origin}/`)) && reloadOnce(PREVIEW_RELOAD_KEY, origin, store);
 }
 
 /**
@@ -61,7 +55,7 @@ export function PreviewBar({ port, peer, onBack, onReload }: {
     <header className="preview-bar">
       <button type="button" className="link preview-back" onClick={onBack}>‹ terminal</button>
       <span className="preview-address"><span className="dot green" aria-hidden="true" />localhost:{port}</span>
-      <button type="button" className="link preview-reload" aria-label="Reload preview" onClick={onReload}>↻</button>
+      <button type="button" className="link preview-reload" aria-label="Reload preview" onClick={onReload}><Icon name="refresh" /></button>
       {peer !== undefined && <p className="preview-peer"><ComputerTag computer={peer} /> · <strong>untrusted page</strong></p>}
     </header>
   );
@@ -103,11 +97,11 @@ export function PreviewBody({ session, origin, port, notice, reach }: {
   readonly reach: boolean | undefined;
 }) {
   const { computer } = session;
-  if (notice !== undefined) return <div className="banner" role="alert"><span>{notice}</span></div>;
+  if (notice !== undefined) return <div className="preview-note"><Notice tone="warning" role="alert" title={notice} /></div>;
   // Home answered that it has no preview origin (a peer's is computed, and absent only until it answers).
-  if (origin === undefined && computer.home) return <div className="banner" role="alert"><span>{cantPreview(computer.label)}</span></div>;
+  if (origin === undefined && computer.home) return <div className="preview-note"><Notice tone="warning" role="alert">{cantPreview(computer.label)}</Notice></div>;
   if (origin === undefined || reach === undefined) return <p role="status" className="muted preview-note">Opening preview…</p>;
-  if (!reach) return <div className="banner" role="alert"><span>{cantPreview(computer.label)}</span></div>;
+  if (!reach) return <div className="preview-note"><Notice tone="warning" role="alert">{cantPreview(computer.label)}</Notice></div>;
   return (
     <iframe
       className="preview-frame"
@@ -150,11 +144,11 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
     if (origin === undefined || notice !== undefined) return undefined;
     let current = true;
     const onBlocked = (event: SecurityPolicyViolationEvent) => {
-      if (reloadForPolicy(event.blockedURI, origin, storage('sessionStorage'))) window.location.reload();
+      if (reloadForPolicy(event.blockedURI, origin, storage('sessionStorage'))) reloadFreshPage();
     };
     document.addEventListener('securitypolicyviolation', onBlocked);
     void probePreview(origin).then((answered) => {
-      if (answered) storage('sessionStorage')?.removeItem(PREVIEW_RELOAD_KEY);
+      if (answered) forgetReload(PREVIEW_RELOAD_KEY, origin, storage('sessionStorage'));
       if (current) setReach(answered);
     });
     return () => {
@@ -179,7 +173,7 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
   return (
     <main className="preview-screen">
       <PreviewBar port={port} peer={session.computer.home ? undefined : session.computer} onBack={onBack} onReload={reload} />
-      {notice === undefined && seen && !present && <div className="banner" role="alert"><span>Dev server stopped</span></div>}
+      {notice === undefined && seen && !present && <div className="preview-note"><Notice tone="neutral" icon="x" role="alert" title="Dev server stopped" /></div>}
       <PreviewBody key={loads} session={session} origin={origin} port={port} notice={notice} reach={reach} />
       <PreviewStatus session={current} fresh={hasNewOutput(current, readViewed())} onTell={onTell} />
     </main>

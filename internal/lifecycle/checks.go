@@ -37,7 +37,8 @@ func ExecutableProblems(goos, path string) []string {
 // when HTTPS 443 already proxies the local gateway; Problems name conflicts
 // on 443 that pterm must not overwrite and any Funnel exposure (checked once,
 // not per port: Funnel anywhere is already a problem). Funnel lists the
-// host:port of Termivoa's own ports (443, 8443) with Funnel on: setup refuses
+// host:port of Termivoa's own ports (443, 8443), or of any port that
+// proxies Termivoa, with Funnel on: setup refuses
 // them even when Serve already proxies Termivoa there. PreviewConfigured and
 // PreviewProblems report the same for the separate HTTPS 8443 dev-server
 // preview listener; a preview conflict never blocks the 443 flow, and a 443
@@ -75,7 +76,7 @@ func ServeFindings(data []byte) (ServeStatus, error) {
 		if raw.AllowFunnel[hostPort] {
 			status.Problems = append(status.Problems, "Tailscale Funnel is on for "+hostPort+", which makes it public on the internet; Termivoa must never be public. "+
 				"Turn it off: `"+FunnelOffCommand(hostPort)+"`, then run `pterm setup` again.")
-			if strings.HasSuffix(hostPort, ":443") || strings.HasSuffix(hostPort, ":8443") {
+			if strings.HasSuffix(hostPort, ":443") || strings.HasSuffix(hostPort, ":8443") || servesTermivoa(raw.Web[hostPort].Handlers) {
 				status.Funnel = append(status.Funnel, hostPort)
 			}
 		}
@@ -85,6 +86,17 @@ func ServeFindings(data []byte) (ServeStatus, error) {
 	status.Problems = append(status.Problems, problems...)
 	status.PreviewConfigured, status.PreviewProblems = servePortFindings(raw, "8443", PreviewLocalURL)
 	return status, nil
+}
+
+// servesTermivoa reports whether a handler proxies Termivoa's gateway or
+// preview listener: Funnel on any port (10000 too) then makes it public.
+func servesTermivoa(handlers map[string]struct{ Proxy, Path, Text string }) bool {
+	for _, handler := range handlers {
+		if target := strings.TrimSuffix(handler.Proxy, "/"); target == strings.TrimSuffix(LocalURL, "/") || target == strings.TrimSuffix(PreviewLocalURL, "/") {
+			return true
+		}
+	}
+	return false
 }
 
 // FunnelOffCommand turns Funnel off for hostPort ("host:443"). It also

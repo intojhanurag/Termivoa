@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -379,33 +380,86 @@ func offerAndWait(ctx context.Context, admin Admin, options PairOptions, grant p
 			return err
 		}
 	}
+	linkEnds, err := linkDeadline(grant.ExpiresAt, options)
+	if err != nil {
+		return err
+	}
+	// The QR code and the link: shown at once when the push failed, else
+	// only when the owner presses Enter (or a later push fails).
+	linkShown := false
+	showLink := func(lead string) error {
+		if linkShown {
+			return nil
+		}
+		linkShown = true
+		if time.Now().After(linkEnds) {
+			return writeString(output, fmt.Sprintf("The QR code and link expired (they work for 2 minutes). "+
+				"Add in the app still works; for a new link, press Ctrl+C and run %s again.\n", PairCommand(options)))
+		}
+		text := lead + "No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n" +
+			qrCode + link + "\n"
+		if qrCode != "" {
+			text += "The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n"
+		}
+		return writeString(output, text+"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n")
+	}
+	// Enter is read only on a terminal (a confirmer that can Ask), and only
+	// until a phone asks: the reader stops before the approval prompt, and it
+	// reads no farther than a newline. It keeps reading, and drops, every line
+	// after the first, so a second Enter (or typed-ahead y) never answers the
+	// y/N prompt.
+	asker, canAsk := options.Confirmer.(interface {
+		Ask(context.Context, string) (string, error)
+	})
 	line, waiting := shown, "Waiting for your phone (Ctrl+C stops)…"
 	if delivered {
 		line += fmt.Sprintf("\nOn your phone, open Termivoa → Settings → Computers and tap Add next to %q.", wait.self)
 		waiting = fmt.Sprintf("Waiting for your phone (up to %d minutes; Ctrl+C stops)…", int(OfferWait/time.Minute))
 	}
-	text := fmt.Sprintf("Add this computer (%s) to the Termivoa app at %s.\n%s\n%s\n\n"+
-		"No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n%s%s\n",
-		wait.self, describeApp(wait.appOrigin, grant.AppNode), line, waiting, qrCode, link)
-	if qrCode != "" {
-		text += "The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n"
-	}
-	text += "The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n"
-	if err := writeString(output, text); err != nil {
+	if err := writeString(output, fmt.Sprintf("Adding this computer (%s) to your Termivoa app on %s.\n%s\n%s\n", wait.self, home, line, waiting)); err != nil {
 		return err
 	}
-	linkEnds, err := linkDeadline(grant.ExpiresAt, options)
-	if err != nil {
+	if delivered && canAsk {
+		if err := writeString(output, "No Add button? Press Enter to show a QR code and a link.\n"); err != nil {
+			return err
+		}
+		enterCtx, stopEnter := context.WithCancel(ctx)
+		pressed, stopped := make(chan struct{}), make(chan struct{})
+		go func() {
+			defer close(stopped)
+			var once sync.Once
+			for enterCtx.Err() == nil {
+				if _, err := asker.Ask(enterCtx, ""); err == nil {
+					once.Do(func() { close(pressed) })
+				}
+				// A closed terminal reads as an empty line at once: do not spin.
+				select {
+				case <-enterCtx.Done():
+				case <-time.After(20 * time.Millisecond):
+				}
+			}
+		}()
+		stop := func() {
+			stopEnter()
+			<-stopped
+		}
+		defer stop()
+		wait.enter, wait.beforePrompt = pressed, stop
+		wait.entered = func() error { return showLink("") }
+	} else if err := showLink("\n"); err != nil {
 		return err
 	}
 	wait.deadline = time.Now().Add(offerWait)
 	wait.expired = noPhoneError(fmt.Sprintf("Nobody added this computer in %d minutes. %s.", int(OfferWait/time.Minute), again))
 	wait.linkEnds = linkEnds
 	wait.linkEnded = func() error {
-		if !delivered {
+		switch {
+		case !delivered:
 			return linkExpired(options)
+		case linkShown:
+			return writeString(output, "The QR code and link above expired. Add in the app still works.\n")
 		}
-		return writeString(output, "The QR code and link above expired. Add in the app still works.\n")
+		return nil
 	}
 	if offering {
 		wait.reoffer = func() error {
@@ -417,7 +471,11 @@ func offerAndWait(ctx context.Context, admin Admin, options PairOptions, grant p
 			if strings.HasPrefix(next, "Sent to ") {
 				next += fmt.Sprintf(" Tap Add next to %q in the app.", wait.self)
 			}
-			return writeString(output, next+"\n")
+			if err := writeString(output, next+"\n"); err != nil || strings.HasPrefix(next, "Sent to ") {
+				return err
+			}
+			// The failure line points to the QR code and the link "below".
+			return showLink("")
 		}
 	}
 	return waitForPhone(ctx, admin, options, wait, seen, output)
@@ -452,6 +510,12 @@ func describeApp(origin string, node *protocol.TailnetNode) string {
 	if protocol.ValidateComputerOrigin(origin) != nil {
 		return displayText(origin)
 	}
+	return fmt.Sprintf("%s (%s, %s)", machineName(origin), origin, appOwner(node))
+}
+
+// appOwner is a Termivoa app computer's Tailscale owner or, for a tagged
+// node, its tags.
+func appOwner(node *protocol.TailnetNode) string {
 	who := "owner unknown"
 	switch {
 	case node != nil && len(node.Tags) > 0:
@@ -463,7 +527,7 @@ func describeApp(origin string, node *protocol.TailnetNode) string {
 	case node != nil && node.Owner != nil:
 		who = "owner " + plainText(*node.Owner)
 	}
-	return fmt.Sprintf("%s (%s, %s)", machineName(origin), origin, who)
+	return who
 }
 
 // plainText prints a nonempty printable-ASCII word as is and escapes
@@ -481,15 +545,21 @@ func plainText(value string) string {
 }
 
 // pairingPrompt asks the owner to compare the phone's code. A pairing bound to
-// another computer's app also names that app, from the pending item itself,
-// and THIS computer (self), quoting what the phone's code screen says: in a
-// relay through a wrong home, the phone names another computer.
+// another computer's app names THIS computer (self) and quotes what the
+// phone's code screen says: in a relay through a wrong home, the phone names
+// another computer (docs/found-on-network.md, R1). It also names that app,
+// from the pending item itself, with its full origin and owner, so a
+// look-alike home (another tailnet or another owner) shows.
 func pairingPrompt(item protocol.AdminRPCPendingPairing, self string) string {
 	if item.AppOrigin != nil {
-		return fmt.Sprintf("Phone %s wants to use THIS computer (%s) from the Termivoa app at %s.\n"+
-			"Approve only if your phone shows %s and says \"type y in the terminal on %s\". "+
-			"If it names another computer, shows another code, or shows nothing, answer N.\nApprove? [y/N] ",
-			displayText(item.DeviceLabel), self, describeApp(*item.AppOrigin, item.AppNode), item.VerificationCode, self)
+		origin := *item.AppOrigin
+		home := displayText(origin)
+		if protocol.ValidateComputerOrigin(origin) == nil {
+			home = machineName(origin)
+		}
+		return fmt.Sprintf("Phone %s wants to add this computer (%s) to your Termivoa app on %s.\n%s is %s (%s).\n"+
+			"Approve only if your phone shows %s and says \"type y in the terminal on %s\". [y/N] ",
+			displayText(item.DeviceLabel), self, home, home, originText(origin), appOwner(item.AppNode), item.VerificationCode, self)
 	}
 	return fmt.Sprintf("Approve only if the phone shows exactly this code.\nPhone %s shows code %s. Approve? [y/N] ",
 		displayText(item.DeviceLabel), item.VerificationCode)
@@ -508,6 +578,12 @@ type phoneWait struct {
 	// error ends the wait.
 	linkEnds  time.Time
 	linkEnded func() error
+	// enter, when set, is closed when the owner presses Enter; entered then
+	// runs once and its error ends the wait. beforePrompt, when set, runs
+	// before the approval prompt reads the terminal.
+	enter        <-chan struct{}
+	entered      func() error
+	beforePrompt func()
 }
 
 // waitForPhone approves at most one new pending pairing, and only after the
@@ -535,6 +611,9 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, wait ph
 				wait.appOrigin != "" && (item.AppOrigin == nil || *item.AppOrigin != wait.appOrigin) {
 				continue
 			}
+			if wait.beforePrompt != nil {
+				wait.beforePrompt()
+			}
 			approve, err := options.Confirmer.Confirm(ctx, pairingPrompt(item, wait.self))
 			if err != nil {
 				return err
@@ -543,7 +622,17 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, wait ph
 				return errors.Join(ErrNotPaired, writeString(output,
 					"Not approved; that phone stays unpaired. Run `"+PairCommand(options)+"` to try again.\n"))
 			}
-			return PairApprove(ctx, admin, item.ID, output)
+			if wait.appOrigin == "" {
+				return PairApprove(ctx, admin, item.ID, output)
+			}
+			if err := approvePending(ctx, admin, item.ID); err != nil {
+				return err
+			}
+			text := fmt.Sprintf("Done. %s is in your Termivoa app on %s. Open the app and tap it.\n", wait.self, machineName(wait.appOrigin))
+			if len(wait.self) > 12 {
+				text += "Tip: give it a short name in the app: Settings → Computers → Rename.\n"
+			}
+			return writeString(output, text)
 		}
 		if wait.linkEnded != nil && time.Now().After(wait.linkEnds) {
 			ended := wait.linkEnded
@@ -564,6 +653,11 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, wait ph
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-wait.enter:
+			wait.enter = nil
+			if err := wait.entered(); err != nil {
+				return err
+			}
 		case <-time.After(interval):
 		}
 	}
@@ -587,6 +681,13 @@ func PairPending(ctx context.Context, admin Admin, output io.Writer) error {
 // PairApprove approves one pending pairing. It is never retried: a lost
 // acknowledgement leaves the outcome for the owner to inspect.
 func PairApprove(ctx context.Context, admin Admin, pendingID string, output io.Writer) error {
+	if err := approvePending(ctx, admin, pendingID); err != nil {
+		return err
+	}
+	return writeString(output, fmt.Sprintf("Approved %s. The phone finishes pairing on its next poll.\n", pendingID))
+}
+
+func approvePending(ctx context.Context, admin Admin, pendingID string) error {
 	if !protocol.ValidUUID(pendingID) {
 		return errors.New("pending ID must be a canonical lowercase UUID")
 	}
@@ -596,7 +697,7 @@ func PairApprove(ctx context.Context, admin Admin, pendingID string, output io.W
 		}
 		return err
 	}
-	return writeString(output, fmt.Sprintf("Approved %s. The phone finishes pairing on its next poll.\n", pendingID))
+	return nil
 }
 
 func Devices(ctx context.Context, admin Admin, output io.Writer) error {

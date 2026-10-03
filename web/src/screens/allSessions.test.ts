@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, client } from '../api/http';
+import { forgetReload, reloadOnce } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import {
-  byChip, chipsFor, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  blockedPeer, byChip, homeStillLists, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, reloadFreshPage, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
   type ComputerEntry, type ComputerStatus,
 } from './allSessions';
 
@@ -63,15 +64,17 @@ describe('nextStatus', () => {
   it('keeps the last answer until the scheduler counts the computer offline, then says can\'t reach with when it was last seen', () => {
     const seen = nextStatus({ kind: 'loading' }, vps, loaded, false, 42);
     expect(nextStatus(seen, vps, fail(network), false, 50)).toBe(seen);
-    expect(nextStatus(seen, vps, fail(network), true, 50)).toEqual({ kind: 'unreachable', lastSeen: 42 });
+    expect(nextStatus(seen, vps, fail(network), true, 50)).toEqual({ kind: 'unreachable', lastSeen: 42, network: true });
     const down: ComputerStatus = { kind: 'unreachable', lastSeen: 42 };
-    expect(nextStatus(down, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: 42 });
-    expect(nextStatus({ kind: 'loading' }, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: undefined });
+    expect(nextStatus(down, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: 42, network: true });
+    expect(nextStatus({ kind: 'loading' }, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: undefined, network: true });
+    // An HTTP error is an answer: not a network failure.
+    expect(nextStatus(down, vps, fail(new ApiError(502, 'unknown', 'Bad gateway')), true, 60)).toEqual({ kind: 'unreachable', lastSeen: 42, network: false });
   });
 
   it('with one computer, says not reachable after the first failure, as before multi-computer', () => {
     const seen = nextStatus({ kind: 'loading' }, mac, loaded, false, 42);
-    expect(nextStatus(seen, mac, fail(network), false, 50, true)).toEqual({ kind: 'unreachable', lastSeen: 42 });
+    expect(nextStatus(seen, mac, fail(network), false, 50, true)).toEqual({ kind: 'unreachable', lastSeen: 42, network: true });
   });
 
   it('names an outdated computer by the user\'s label', () => {
@@ -86,6 +89,124 @@ describe('nextStatus', () => {
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on vps' });
     expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(0, 'app_outdated', 'Update Termivoa on mac')), false, 0))
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on mac' });
+  });
+});
+
+describe('the app\'s own CSP blocks a listed computer', () => {
+  const blocked = (blockedURI: string, effectiveDirective = 'connect-src') => blockedPeer({ blockedURI, effectiveDirective }, [mac, vps]);
+  const memory = () => {
+    const values = new Map<string, string>();
+    return {
+      values,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+  };
+
+  it('finds the listed peer from the blocked address, over https or wss', () => {
+    expect(blocked('https://vps.tailx.ts.net/api/v1/settings')).toBe(vps);
+    expect(blocked('https://vps.tailx.ts.net')).toBe(vps);
+    expect(blocked('wss://vps.tailx.ts.net/api/v1/sessions/x/stream')).toBe(vps);
+  });
+
+  it('ignores home, a preview origin, other addresses, other directives and unreadable values', () => {
+    expect(blocked('https://mac.tailx.ts.net/api/v1/settings')).toBeUndefined();
+    expect(blocked('https://vps.tailx.ts.net:8443/__termivoa/select')).toBeUndefined();
+    expect(blocked('https://evil.tailx.ts.net/')).toBeUndefined();
+    expect(blocked('https://vps.tailx.ts.net.evil.example/')).toBeUndefined();
+    expect(blocked('http://vps.tailx.ts.net/')).toBeUndefined();
+    expect(blocked('https://vps.tailx.ts.net/x', 'frame-src')).toBeUndefined();
+    expect(blocked('inline')).toBeUndefined();
+    expect(blocked('')).toBeUndefined();
+  });
+
+  it('reloads once per computer in a tab (the loop guard), and not without storage', () => {
+    const store = memory();
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, store)).toBe(true);
+    expect(store.values.get(POLICY_RELOAD_KEY)).toBe(vps.origin);
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, store)).toBe(false);
+    expect(reloadOnce(POLICY_RELOAD_KEY, 'https://nas.tailx.ts.net', store)).toBe(true);
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, undefined)).toBe(false);
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, { getItem: () => null, setItem: () => { throw new Error('full'); } })).toBe(false);
+  });
+
+  it('reloads at most once per computer in a tab when two peers are blocked (no ping-pong)', () => {
+    const store = memory();
+    const nas = 'https://nas.tailx.ts.net';
+    // Each page load: the first block that may reload does, and the page goes.
+    const pageReloads = () => [vps.origin, nas].some((origin) => reloadOnce(POLICY_RELOAD_KEY, origin, store));
+    expect([1, 2, 3, 4].map(pageReloads)).toEqual([true, true, false, false]);
+    expect(store.values.get(POLICY_RELOAD_KEY)).toBe(`${vps.origin} ${nas}`);
+    forgetReload(POLICY_RELOAD_KEY, vps.origin, store);
+    expect(store.values.get(POLICY_RELOAD_KEY)).toBe(nas);
+    expect(reloadOnce(POLICY_RELOAD_KEY, nas, store)).toBe(false);
+    forgetReload(POLICY_RELOAD_KEY, nas, store);
+    expect(store.values.has(POLICY_RELOAD_KEY)).toBe(false);
+  });
+
+  it('reloads the page once, however many blocks follow', () => {
+    const reload = vi.fn();
+    const replaceState = vi.fn();
+    vi.stubGlobal('window', { history: { state: null, replaceState }, location: { pathname: '/', search: '', reload } });
+    try {
+      reloadFreshPage();
+      reloadFreshPage();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(replaceState).toHaveBeenCalledWith(null, '', '/?pterm-fresh=1');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reloads the same address with the flag that makes the service worker wait for the network', () => {
+    expect(freshPageUrl({ pathname: '/', search: '' })).toBe('/?pterm-fresh=1');
+    expect(freshPageUrl({ pathname: '/c/vps.tailx.ts.net/sessions/1/preview', search: '?port=5173' }))
+      .toBe('/c/vps.tailx.ts.net/sessions/1/preview?port=5173&pterm-fresh=1');
+    expect(freshPageUrl({ pathname: '/', search: '?pterm-fresh=1' })).toBe('/?pterm-fresh=1');
+  });
+
+  it('reloads only for a computer home still lists: one removed elsewhere is not an out-of-date page', async () => {
+    await expect(homeStillLists(vps.origin, async () => [mac, vps])).resolves.toBe(true);
+    await expect(homeStillLists(vps.origin, async () => [mac])).resolves.toBe(false);
+    // Home cannot answer: the page may be out of date, so it still reloads once.
+    await expect(homeStillLists(vps.origin, async () => { throw new ApiError(0, 'network', 'Connection unavailable'); })).resolves.toBe(true);
+  });
+
+  it('keeps saying the page is out of date while reads fail, until the computer answers', () => {
+    const network = { ok: false as const, error: new ApiError(0, 'network', 'Connection unavailable') };
+    expect(nextStatus({ kind: 'blocked' }, vps, network, true, 10)).toEqual({ kind: 'blocked' });
+    expect(nextStatus({ kind: 'blocked' }, vps, network, false, 10, false, true)).toEqual({ kind: 'blocked' });
+    expect(nextStatus({ kind: 'blocked' }, vps, { ok: true, value: { settings, sessions: [] } }, false, 10)).toMatchObject({ kind: 'ok' });
+  });
+});
+
+describe('a computer added in this visit', () => {
+  const network = new ApiError(0, 'network', 'Connection unavailable');
+  const fail = (error: unknown) => ({ ok: false as const, error });
+
+  it('shows a failed read as connecting, also one the user asked for, but a refusal as it is', () => {
+    expect(nextStatus({ kind: 'loading' }, vps, fail(network), false, 10, false, true)).toEqual({ kind: 'connecting' });
+    expect(nextStatus({ kind: 'loading' }, vps, fail(network), true, 10, false, true)).toEqual({ kind: 'connecting' });
+    expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(401, 'unauthorized', 'x')), true, 10, false, true)).toEqual({ kind: 'pair' });
+  });
+
+  it('says can\'t reach at the first failure after the connecting time, without waiting for the offline count', () => {
+    expect(nextStatus({ kind: 'connecting' }, vps, fail(network), false, CONNECTING_MS, false, false))
+      .toEqual({ kind: 'unreachable', lastSeen: undefined, network: true });
+    const loaded = { ok: true as const, value: { settings, sessions: [] } };
+    expect(nextStatus({ kind: 'connecting' }, vps, loaded, false, 20, false, true)).toMatchObject({ kind: 'ok' });
+  });
+
+  it('retries quietly after 0.5, 1 and 2 s, then once when the connecting time ends, and never after', () => {
+    expect(connectingRetry(0, 0, 100)).toBe(500);
+    expect(connectingRetry(1, 0, 700)).toBe(1_000);
+    expect(connectingRetry(2, 0, 1_800)).toBe(2_000);
+    expect(connectingRetry(3, 0, 3_900)).toBe(CONNECTING_MS - 3_900);
+    // A slow read: the retry never lands after the connecting time.
+    expect(connectingRetry(0, 0, 4_800)).toBe(200);
+    expect(connectingRetry(0, 0, CONNECTING_MS)).toBeUndefined();
+    expect(connectingRetry(4, 0, 6_000)).toBeUndefined();
   });
 });
 
@@ -150,7 +271,7 @@ describe('readNow and the computer\'s health', () => {
     await reads(true, published);
     expect(published[0]?.[2]).toBe(true);
     const next = nextStatus({ kind: 'ok', settings, sessions: [], at: 1 }, peer, { ok: false, error: down }, true, 2);
-    expect(next).toEqual({ kind: 'unreachable', lastSeen: 1 });
+    expect(next).toEqual({ kind: 'unreachable', lastSeen: 1, network: true });
     scheduler.forget(origin);
   });
 });

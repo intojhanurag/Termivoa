@@ -76,29 +76,31 @@ In this order.
 From the owner's first real install and add (2026-10-03). UI items are
 designed in Paper first and shown to the owner before any code.
 
-1. **"connecting…" right after an add.** The first read of a just-added
-   computer can fail for up to 1 s (its gateway refreshes the bound-origin
-   CORS list once per second), so the phone showed "vps · can't reach" until
-   a refresh. Make the browser test fail on it first; then the app retries
-   quietly for about 5 s after an add before it shows "can't reach".
-2. **Add-computer wait screen in the terminal** (setup answer 2 and
+1. ~~**"connecting…" right after an add.**~~ Done: for
+   5 s after an add the row says "Connecting to vps…" and retries quietly;
+   `phase-b.mjs` `B2b-connecting` fails on a "can't reach" row right after
+   the add. Also: a page whose own CSP blocks a listed computer
+   reloads once past the service worker's cached page, then says "This app
+   page is out of date. Close the app and open it again."; "vps · can't
+   reach" gets the line "Last seen … Is it on, and in your tailnet?";
+   **Check again** stays at least 600 ms and says "vps answered in 0.2 s.".
+2. ~~**Add-computer wait screen in the terminal**~~ Done (setup answer 2 and
    `pterm pair --via`): no QR code and link up front (Enter shows them; shown
    at once only when the push failed); a short approval prompt that still
    names this computer and quotes the phone's code screen; a strong success
    line ("Done. vps is in your Termivoa app on mac. Open the app and tap
    it."); a tip to rename long machine names.
-3. **UI revamp (Paper first):** a real button system (primary, secondary,
-   quiet, danger; pressed, focus and loading states), notices and errors
-   with an icon, a title, a sentence and an action instead of plain text,
-   empty and loading states, livelier cards and status dots, short motion
-   that respects reduced motion. Keep the night palette and the one cyan
-   signal.
-4. **Open issues:** #158 (test fake systemd), #161 (`pterm pair` and
-   `pterm launch` ignore Funnel), #162 (Serve problems under another host
-   name), #164 (+ Add a computer shows the renamed home label), #165 (landing
-   page does not show adding a computer).
-5. **Scan QR on iPhone:** end the scan when a call or another app mutes the
-   camera track (today the user taps Cancel).
+3. **UI revamp (Paper first):** buttons, notices, banners and the
+   Settings → Computers cards are done (`feat/ui-lit`). Left: the site
+   screenshots (`site/src/assets/docs/phone-*.webp`) still show the old
+   look; the other sheets (session menu, snips, worktree, compose,
+   changes) keep their plain buttons and red error lines.
+4. **Open issues:** #158, #161, #164 fixed; #162 not a defect (see
+   `docs/progress.md`); #165 (landing page does not show adding a
+   computer) waits for the owner's go on the Paper design.
+5. ~~**Scan QR on iPhone:**~~ Done: a camera track that
+   stays muted for 2 s ends the scan with "The camera did not start. …".
+   Needs a real iPhone check (a call during Scan QR).
 6. **Release `v0.1.0-beta.3`** after the owner's real checks, so a new user
    gets today's features from `gh release download`.
 

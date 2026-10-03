@@ -150,6 +150,22 @@ Run the command it names (for port 8443: `tailscale funnel --https=8443 off`). T
 ! tailscale serve: Tailscale Funnel is on for mac.example.ts.net:443, which makes it public on the internet; Termivoa must never be public. Turn it off: `tailscale funnel --https=443 off`, then run `pterm setup` again.
 ```
 
+## `pterm pair` refuses because Tailscale Funnel is on (Next beta)
+
+Turn Funnel off with the command it names, then run the same `pterm pair` command again. From the next beta every `pterm pair` that pairs a phone or adds a computer (`pterm pair`, `pterm pair --via <home>`, `pterm pair approve <pending-id>`) stops before it makes a link while Funnel is on for port 443 or 8443:
+
+```text
+refusing to pair: Tailscale Funnel is on for vps.example.ts.net:443, which puts Termivoa on the public internet; turn it off with `tailscale funnel --https=443 off`, then run `pterm pair --via mac` again
+```
+
+`pterm launch` still starts Termivoa on this computer, but first prints a warning with the same command:
+
+```text
+Warning: Tailscale Funnel is on for vps.example.ts.net:443, which puts Termivoa on the public internet; turn it off with `tailscale funnel --https=443 off`. Pairing a phone is refused until it is off.
+```
+
+Termivoa never runs the command for you. When Termivoa cannot read the Tailscale Serve settings (no Tailscale, or Tailscale does not answer), `pterm pair` and `pterm launch` do not check.
+
 ## `pterm doctor` warns that other ports receive the Termivoa cookie (Next beta)
 
 Decide if you trust what runs there as much as Termivoa. If not, move it to another computer or to its own Tailscale Service hostname, or remove it. The warning is:
@@ -273,7 +289,15 @@ These problems are about [using several computers](/docs/guides/computers/). Thi
 
 ### "vps · can't reach" (Next beta)
 
-Check that vps is on, awake and in your tailnet, then tap **Retry**. The other computers keep working.
+The line under it is "Last seen 3 h ago. Is it on, and in your tailnet?" when nothing answered from vps. The app cannot see why, so check that vps is on, awake and in your tailnet, then tap **Retry**. The other computers keep working. Without the question, vps answered with an error: run `pterm doctor` on vps.
+
+### "This app page is out of date. Close the app and open it again." (Next beta)
+
+It shows under "vps · can't reach". The app page on your phone does not allow vps yet, so the phone sends nothing to vps. This happens when the page is older than the computer, for example when the phone opened its saved copy because home answered slowly. The app reloads once by itself; this line means the reload did not help. Close the app fully (swipe it away) and open it again. If it stays, check that home is reachable, because a fresh page comes from home.
+
+### "Connecting to vps…" (Next beta)
+
+The full text is "Connecting to vps…" and "Just added. Its sessions show in a moment." You added vps a moment ago and it does not answer this phone yet. The app tries again by itself for about 5 seconds. If vps still does not answer, the row says "vps · can't reach".
 
 ### "vps · pair again" (Next beta)
 
@@ -380,7 +404,7 @@ You scanned the QR code with the phone's Camera app, or opened the link in Safar
 | --- | --- |
 | "The camera is blocked. Allow the camera for this app in your phone or browser settings, then tap Scan QR. Or paste the link." | Allow the camera for the Termivoa address in your phone's or browser's settings, then tap **Scan QR** again. |
 | "No camera found. Paste the link." | Tap **Paste link**. |
-| "The camera did not start. Close other apps that use it, then tap Scan QR. Or paste the link." | Close other camera apps and try again, or tap **Paste link**. |
+| "The camera did not start. Close other apps that use it, then tap Scan QR. Or paste the link." | Close other camera apps and try again, or tap **Paste link**. On iPhone this also shows when a call takes the camera for 2 seconds. |
 
 **Paste link** always works without the camera.
 

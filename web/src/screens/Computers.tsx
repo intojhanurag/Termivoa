@@ -5,19 +5,31 @@ import { foundLink, LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink, t
 import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from '../pairing/scan';
 import { AddComputerSheet } from './AddComputer';
 import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
-import { ago, problemText } from './Sessions';
+import { ago, problemDetail, problemText } from './Sessions';
+import { Button, Icon, Notice, type IconName } from './ui';
 
 /** The right-hand word for a computer in the list. */
 export function onlineText(entry: ComputerEntry): { readonly text: string; readonly tone: 'green' | 'muted' | 'amber' } {
   switch (entry.status.kind) {
     case 'ok': return { text: 'online', tone: 'green' };
     case 'loading': return { text: 'checking', tone: 'muted' };
+    case 'connecting': return { text: 'connecting', tone: 'muted' };
     case 'unreachable': return { text: 'offline', tone: 'muted' };
     default: return { text: 'needs you', tone: 'amber' };
   }
 }
 
-/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach · last seen 3 h ago"). */
+/** The icon in a computer's tile: what is wrong, else a computer (home) or a server. */
+function tileIcon(entry: ComputerEntry): IconName {
+  switch (entry.status.kind) {
+    case 'unreachable': case 'blocked': return 'wifi-off';
+    case 'pair': return 'lock';
+    case 'outdated': return 'download';
+    default: return entry.computer.home ? 'monitor' : 'server';
+  }
+}
+
+/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach"; problemDetail says more). */
 export function computerDetail(entry: ComputerEntry, now: number): string {
   const problem = problemText(entry, now);
   if (problem !== undefined) return problem;
@@ -49,6 +61,19 @@ export function checkFailureText(computer: Pick<Computer, 'label'>, failure: unk
 
 /** How long a Check again result stays under its row. */
 const RESULT_MS = 8_000;
+/** Check again shows "Checking…" at least this long: a computer answers in about 0.2 s, and a flash looks like nothing happened. */
+export const CHECKING_MIN_MS = 600;
+
+/** "vps answered in 0.2 s.": seconds with one decimal, never below 0.1. */
+export function answeredText(label: string, ms: number): string {
+  return `${label} answered in ${Math.max(0.1, Math.round(ms / 100) / 10).toFixed(1)} s.`;
+}
+
+/** Settles like `work`, but not before `ms` have passed. */
+export function atLeast<T>(work: Promise<T>, ms: number): Promise<T> {
+  const wait = new Promise((resolve) => { setTimeout(resolve, ms); });
+  return Promise.allSettled([work, wait]).then(() => work);
+}
 
 /** Check again on one row: working (`text` undefined) or its result. */
 interface Check {
@@ -95,24 +120,25 @@ export function FoundBlock({ found, homeName, working, app, onAdd }: {
     })
     : [];
   return (
-    <section className="stack" aria-labelledby="found-heading">
+    <section className="stack found" aria-labelledby="found-heading">
       <h3 id="found-heading" className="caps">Found on your network</h3>
-      {found.kind === 'no_status' && <p className="hint-text">{homeName} cannot read its Tailscale status. Check Tailscale on {homeName}.</p>}
+      {found.kind === 'no_status' && <Notice tone="warning">{homeName} cannot read its Tailscale status. Check Tailscale on {homeName}.</Notice>}
       {found.kind === 'rows' && rows.length === 0 && (
-        <p className="hint-text">
+        <Notice tone="neutral" icon="monitor">
           To add another computer, run <code>pterm setup</code> on it, or <code>pterm pair --via {homeName}</code> if it is already set up. It shows here while it waits.
-        </p>
+        </Notice>
       )}
       {rows.length > 0 && (
         <ul className="computer-list">
           {rows.map(({ row, link }) => (
-            <li key={row.origin} className="computer-card">
+            <li key={row.origin} className="computer-card found-row">
               <div className="computer-head">
+                <span className="computer-tile" aria-hidden="true"><Icon name="monitor" /></span>
                 <span className="row-text">
                   <span className="row-title"><span className="computer-name">{row.label}</span></span>
                   <span className="row-meta">{new URL(row.origin).host}</span>
                 </span>
-                <button type="button" className="primary found-add" aria-label={`Add ${row.label}`} onClick={() => onAdd(link)}>Add</button>
+                <button type="button" className="pill-lit found-add" aria-label={`Add ${row.label}`} onClick={() => onAdd(link)}><Icon name="plus" />Add</button>
               </div>
             </li>
           ))}
@@ -134,8 +160,8 @@ export function ScanView({ scanning, videoRef, onPaste, onCancel }: {
       <video ref={videoRef} className="scan-video" playsInline muted aria-label="Camera view" aria-describedby="scan-help" />
       <p id="scan-help" role="status" className="hint-text">{scanning ? SCAN_POINT : SCAN_ASKING}</p>
       <div className="row">
-        <button type="button" autoFocus onClick={onCancel}>Cancel</button>
-        <button type="button" onClick={onPaste}>Paste link</button>
+        <button type="button" className="secondary" autoFocus onClick={onCancel}>Cancel</button>
+        <button type="button" className="secondary" onClick={onPaste}>Paste link</button>
       </div>
     </div>
   );
@@ -186,7 +212,8 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   // Only while this screen is open; watchFound pauses in the background.
   useEffect(() => watchFound(setFound), []);
   const now = Date.now();
-  const home = entries.find((entry) => entry.computer.home)?.computer;
+  // `pterm pair --via` takes home's machine name, never the name given on this phone (#164).
+  const homeName = firstLabel(homeOrigin());
   const working = new Set(entries.filter((entry) => !entry.computer.home && entry.status.kind === 'ok').map((entry) => entry.computer.origin));
   const renameProblem = edit.kind === 'rename' ? deviceLabelProblem(edit.draft.trim()) : undefined;
 
@@ -223,8 +250,9 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
       }), RESULT_MS);
     };
     put({});
-    onCheck(computer.origin).then(
-      () => finish({ text: `${computer.label} answered.` }),
+    const started = performance.now();
+    atLeast(onCheck(computer.origin).then(() => performance.now() - started), CHECKING_MIN_MS).then(
+      (ms) => finish({ text: answeredText(computer.label, ms) }),
       (failure: unknown) => finish({ text: checkFailureText(computer, failure, onFailure), error: true }),
     );
   }
@@ -260,19 +288,22 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           const health = healthText(entry, now);
           // Empty for home while it loads: "checking" on the right says it.
           const detail = computerDetail(entry, now);
+          const more = problemDetail(entry, now);
           const checked = checks.get(computer.origin);
           const working = checked !== undefined && checked.text === undefined;
           return (
-            <li key={computer.origin} className={entry.status.kind === 'unreachable' ? 'computer-card offline' : 'computer-card'}>
+            <li key={computer.origin} className={`computer-card is-${entry.status.kind}`}>
               <div className="computer-head">
-                <span className="computer-dot" style={{ background: computer.color }} aria-hidden="true" />
+                <span className="computer-tile" aria-hidden="true"><Icon name={tileIcon(entry)} /></span>
                 <span className="row-text">
                   <span className="row-title">
+                    <span className="computer-dot" style={{ background: computer.color }} aria-hidden="true" />
                     <span className="computer-name">{computer.label}</span>
                     {computer.home && <span className="badge accent">Home</span>}
                   </span>
                   {detail !== '' && <span className="row-meta">{detail}</span>}
                   {health !== undefined && <span className="row-meta">{health}</span>}
+                  {more !== undefined && <span className="hint-text">{more}</span>}
                 </span>
                 <span className={`computer-state ${online.tone}`}>{online.text}</span>
               </div>
@@ -296,8 +327,8 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                   />
                   {renameProblem !== undefined && <p className="error field-note">{renameProblem}</p>}
                   <div className="row">
-                    <button type="submit" className="primary" disabled={busy || renameProblem !== undefined}>Save name</button>
-                    <button type="button" onClick={() => setEdit({ kind: 'none' })}>Cancel</button>
+                    <Button type="submit" className="secondary" busy={busy} disabled={renameProblem !== undefined}>Save name</Button>
+                    <button type="button" className="link" onClick={() => setEdit({ kind: 'none' })}>Cancel</button>
                   </div>
                 </form>
               )}
@@ -307,25 +338,29 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                     Remove {computer.label}? This phone signs out of {computer.label} first. Its sessions keep running there.
                   </p>
                   <div className="row">
-                    <button
-                      type="button"
+                    <Button
                       className="danger"
-                      disabled={busy}
+                      busy={busy}
                       onClick={() => run(async () => {
                         const result = await removeComputer(computer);
                         return result.loggedOut ? `${computer.label} is removed.` : `${computer.label} is removed. ${result.hint}`;
                       })}
-                    >Remove {computer.label}</button>
-                    <button type="button" onClick={() => setEdit({ kind: 'none' })}>Keep</button>
+                    >Remove {computer.label}</Button>
+                    <button type="button" className="secondary" onClick={() => setEdit({ kind: 'none' })}>Keep</button>
                   </div>
                 </div>
               )}
               <p role="status" className={checked?.error === true ? 'error field-note' : 'muted field-note'}>{checked === undefined ? '' : (checked.text ?? `Checking ${computer.label}…`)}</p>
               {edit.kind === 'none' && (
                 <div className="row computer-actions">
-                  <button type="button" className="link" disabled={busy || working} onClick={() => checkAgain(computer)}>
-                    {working ? 'Checking…' : 'Check again'}
-                  </button>
+                  <Button
+                    className={entry.status.kind === 'ok' || entry.status.kind === 'loading' ? 'link' : 'secondary compact'}
+                    icon={<Icon name="refresh" />}
+                    busy={working}
+                    busyLabel="Checking…"
+                    disabled={busy}
+                    onClick={() => checkAgain(computer)}
+                  >Check again</Button>
                   {!computer.home && (
                     <>
                       <button type="button" className="link" onClick={() => setEdit({ kind: 'rename', computer, draft: computer.label })}>Rename</button>
@@ -341,13 +376,13 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
       <p role="status" className={note?.error === true ? 'error field-note' : 'muted field-note'}>{note?.text ?? ''}</p>
       <FoundBlock found={found} homeName={firstLabel(homeOrigin())} working={working} app={globalThis.location} onAdd={setConfirm} />
 
-      {adding === 'closed' && <button type="button" className="add-computer" onClick={() => open('choose')}>+ Add a computer</button>}
+      {adding === 'closed' && <button type="button" className="secondary add-computer" onClick={() => open('choose')}>+ Add a computer</button>}
       {adding === 'choose' && (
         <div className="stack" role="group" aria-label="Add a computer">
-          {problem !== undefined && <p role="alert" className="error field-note">{problem}</p>}
+          {problem !== undefined && <Notice tone="danger" role="alert" title={problem} />}
           <div className="row">
             <button type="button" className="primary" autoFocus onClick={() => open('scan')}>Scan QR</button>
-            <button type="button" onClick={() => open('paste')}>Paste link</button>
+            <button type="button" className="secondary" onClick={() => open('paste')}>Paste link</button>
             <button type="button" className="link" onClick={() => open('closed')}>Cancel</button>
           </div>
         </div>
@@ -380,13 +415,13 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           </p>
           <div className="row">
             <button type="submit" className="primary" disabled={pasted.trim() === ''}>Check link</button>
-            <button type="button" onClick={() => open('closed')}>Cancel</button>
+            <button type="button" className="secondary" onClick={() => open('closed')}>Cancel</button>
           </div>
         </form>
       )}
       <div className="card stack">
         <p className="strong">On the new computer, run:</p>
-        <pre className="command"><code>pterm pair --via {home?.label ?? '<this computer>'}</code></pre>
+        <pre className="command"><code>pterm pair --via {homeName}</code></pre>
         <p className="hint-text">
           Then tap <strong>+ Add a computer</strong> and scan the QR code it shows, or paste the link it prints. If you run it in a Termivoa session, tap the link in the terminal instead.
         </p>

@@ -311,6 +311,44 @@ func previewOrigin(origin string) string {
 	return origin + ":8443"
 }
 
+// funnelProblem says that Tailscale Funnel is on for Termivoa's ports
+// (host:443, host:8443) and names the commands that turn it off. pterm never
+// runs them: Tailscale changes are the owner's (AGENTS.md rule 12).
+func funnelProblem(funnel []string) string {
+	commands := make([]string, len(funnel))
+	for index, hostPort := range funnel {
+		commands[index] = "`" + lifecycle.FunnelOffCommand(hostPort) + "`"
+	}
+	return fmt.Sprintf("Tailscale Funnel is on for %s, which puts Termivoa on the public internet; turn it off with %s",
+		strings.Join(funnel, ", "), strings.Join(commands, " and "))
+}
+
+// findTailscale is tailnet.FindBinary for this OS; tests replace it.
+var findTailscale = func() string {
+	cli, _ := tailnet.FindBinary(runtime.GOOS, os.Getenv, exec.LookPath)
+	return cli
+}
+
+// termivoaFunnel reads only `tailscale serve status --json` and returns
+// Termivoa's ports with Funnel on. Without Tailscale, or when the status
+// cannot be read, it returns none, and the caller goes on as before.
+func termivoaFunnel(ctx context.Context, cli string) []string {
+	if cli == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	data, err := tailscaleRun(ctx, cli, nil, "serve", "status", "--json")
+	if err != nil {
+		return nil
+	}
+	serve, err := lifecycle.ServeFindings(data)
+	if err != nil {
+		return nil
+	}
+	return serve.Funnel
+}
+
 // inspectTailscale runs only `status --json` and `serve status --json`.
 // refused says why each tailscale FindBinary found was not used; with a
 // usable one as well they are only warnings.
@@ -642,12 +680,7 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	// nothing. The owner turns it off; pterm never changes Tailscale here.
 	if funnel := report.tailscale.serve.Funnel; len(funnel) > 0 {
 		_, _ = output.Write(checks.Bytes())
-		commands := make([]string, len(funnel))
-		for index, hostPort := range funnel {
-			commands[index] = "`" + lifecycle.FunnelOffCommand(hostPort) + "`"
-		}
-		return fmt.Errorf("refusing to set up: Tailscale Funnel is on for %s, which puts Termivoa on the public internet; "+
-			"turn it off with %s, then run `pterm setup` again", strings.Join(funnel, ", "), strings.Join(commands, " and "))
+		return fmt.Errorf("refusing to set up: %s, then run `pterm setup` again", funnelProblem(funnel))
 	}
 	if !verbose {
 		detail = io.Discard
@@ -879,7 +912,7 @@ func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status
 					return notYet(cli.PairCommand(options))
 				}
 			}
-			next = "Setup is done. Next: in the Termivoa app on your phone, switch to this computer and start a session."
+			next = "Setup is done." // the add-computer wait has said where it is
 			break
 		}
 	}
@@ -891,8 +924,15 @@ func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status
 	}
 	ctx, stop := untilHangup(ctx)
 	defer stop()
+	// As `pterm pair`: the wait reads Enter while it prints, so its writes go
+	// through the owned terminal adapter too.
+	pairOutput, err := newManagementOutput(ctx, output)
+	if err != nil {
+		return err
+	}
+	defer pairOutput.Close()
 	// A declined phone, or none in time, is not a setup failure.
-	if err := pairPhone(ctx, admin, options, output); errors.Is(err, cli.ErrNotPaired) || errors.Is(err, cli.ErrNoPhone) {
+	if err := pairPhone(ctx, admin, options, pairOutput); errors.Is(err, cli.ErrNotPaired) || errors.Is(err, cli.ErrNoPhone) {
 		return notYet(cli.PairCommand(options))
 	} else if err != nil {
 		return err
@@ -1405,6 +1445,11 @@ func runLaunchCommand(ctx context.Context, args []string, output io.Writer) erro
 	statuses, err := env.host.Inspect(ctx, env.runner)
 	if err != nil {
 		return err
+	}
+	// Launch starts only the processes on this computer, so it warns and
+	// starts; pairing refuses while Funnel is on.
+	if funnel := termivoaFunnel(ctx, env.tailscale); len(funnel) > 0 {
+		fmt.Fprintf(output, "Warning: %s. Pairing a phone is refused until it is off.\n", funnelProblem(funnel))
 	}
 	if err := startMissing(ctx, env, statuses, io.Discard); err != nil {
 		return err

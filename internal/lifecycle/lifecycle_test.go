@@ -391,7 +391,8 @@ func TestServeFindings(t *testing.T) {
 		"preview funnel": {json: `{"AllowFunnel":{"h.ts.net:8443":true}}`, problems: 1, funnel: "h.ts.net:8443"},
 		"funnel off":     {json: `{"AllowFunnel":{"h.ts.net:443":false}}`},
 		// Not Termivoa's port: still a problem, but setup does not refuse it.
-		"funnel elsewhere": {json: `{"AllowFunnel":{"h.ts.net:10000":true}}`, problems: 1},
+		"funnel elsewhere":            {json: `{"AllowFunnel":{"h.ts.net:10000":true}}`, problems: 1},
+		"funnel on 10000 to termivoa": {json: `{"Web":{"h.ts.net:10000":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},"AllowFunnel":{"h.ts.net:10000":true}}`, problems: 1, funnel: "h.ts.net:10000"},
 		"preview configured": {
 			json:              `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
 			previewConfigured: true,

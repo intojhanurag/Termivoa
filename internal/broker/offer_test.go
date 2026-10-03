@@ -424,10 +424,14 @@ func TestProductionBuildHasNoE2EHook(t *testing.T) {
 	// Default tags, and the release tags (webdist).
 	var output []byte
 	for _, tags := range []string{"", "webdist"} {
-		listed, err := exec.Command(goTool, "list", "-tags", tags, "-deps", "-f", "{{if not .Standard}}{{.Dir}}|{{join .GoFiles \",\"}}{{end}}",
+		// -e: a fresh checkout has no web build, so the webdist embed pattern fails (#167); the file list still comes out.
+		listed, err := exec.Command(goTool, "list", "-e", "-tags", tags, "-deps", "-f", "{{if not .Standard}}{{.Dir}}|{{join .GoFiles \",\"}}{{end}}",
 			"github.com/intojhanurag/phone-terminal/cmd/pterm").Output()
 		if err != nil {
 			t.Fatal(err)
+		}
+		if count := strings.Count(string(listed), ".go"); count < 100 {
+			t.Fatalf("tags %q: only %d files listed", tags, count)
 		}
 		output = append(output, listed...)
 	}

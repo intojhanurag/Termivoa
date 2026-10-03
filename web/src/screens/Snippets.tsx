@@ -15,6 +15,7 @@ import {
 import { displayPath } from './folder';
 import { runFirstProblem } from './presets';
 import { Sheet, SheetHeader } from './Sheet';
+import { Notice } from './ui';
 
 interface Draft {
   readonly id: string | undefined;
@@ -317,7 +318,7 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
             onType={(task) => send(taskSnippet(task), false)}
           />
           <h3 className="caps">Saved snippets</h3>
-          {!canSend && <p role="status" className="notice">Take control to send snippets. You can still edit them.</p>}
+          {!canSend && <Notice tone="neutral" icon="lock" role="status">Take control to send snippets. You can still edit them.</Notice>}
           {problem !== undefined && <p role="alert" className="error">{problem}</p>}
           {list.length === 0 && <p className="muted">No snippets. Tap + new to save one.</p>}
           <ul className="rows snippet-list">

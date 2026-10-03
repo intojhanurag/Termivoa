@@ -32,7 +32,8 @@ All notable changes are documented here. The format follows
   Tailscale's encrypted connection to mac's Tailscale address, re-sent
   every 30 s), then prints "Sent to mac (https://…)." and "On your phone,
   open Termivoa → Settings → Computers and tap Add next to "vps"." The QR
-  code and the link stay below as the other ways, for 2 minutes; when they
+  code and the link stay as the other ways (on Enter, or at once when
+  nothing reached mac; see Changed), for 2 minutes; when they
   expire and nothing reached mac, the command ends as before; else it says
   "The QR code and link above expired. Add in the app still works." and
   keeps waiting. With piped input or `--no-wait` it sends nothing; with a
@@ -53,9 +54,10 @@ All notable changes are documented here. The format follows
   computer whose address your Termivoa app opens."); after 10 minutes it
   ends with "Setup is done, but your phone is not connected yet. To
   connect it, run `pterm pair --via mac`." The approval prompt for an
-  added computer now names it: `Phone "iPhone" wants to use THIS computer
-  (vps) from the Termivoa app at mac (…)`, and says to approve only if the
-  phone shows the same code and says "type y in the terminal on vps".
+  added computer now names it: `Phone "iPhone" wants to add this computer
+  (vps) to your Termivoa app on mac.`, then mac's address and owner, and
+  says to approve only if the phone shows the same code and says "type y
+  in the terminal on vps".
   Plain `pterm pair` no longer offers pairings that belong to another
   computer's app. Home accepts offers on a new route without login,
   `POST /api/v1/computers/offer` (no browser can call it; always `204`;
@@ -256,6 +258,44 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- A calmer add-computer screen (host side). After `pterm pair --via mac` (or
+  `pterm setup`, answer 2) reached mac, the terminal shows five short
+  lines: "Adding this computer (vps) to your Termivoa app on mac.", "Sent
+  to mac (https://…).", "On your phone, open Termivoa → Settings →
+  Computers and tap Add next to "vps".", "Waiting for your phone (up to 10
+  minutes; Ctrl+C stops)…" and "No Add button? Press Enter to show a QR
+  code and a link." The QR code and the link come only on Enter; when
+  nothing reached mac they print at once, as before. The approval prompt
+  is shorter and keeps its checks: `Phone "iPhone" wants to add this
+  computer (vps) to your Termivoa app on mac.` / `mac is https://… (owner
+  …).` / `Approve only if your phone shows 123-456 and says "type y in the
+  terminal on vps". [y/N]`. Success now says "Done. vps is in your
+  Termivoa app on mac. Open the app and tap it.", with "Tip: give it a
+  short name in the app: Settings → Computers → Rename." for a machine
+  name longer than 12 characters; setup then ends with "Setup is done."
+  Phone: no change.
+- Phone: **Check again** in **Settings → Computers** shows **Checking…** for
+  at least 600 ms and then says how fast the computer answered: "vps
+  answered in 0.2 s." (seconds, one decimal, at least 0.1). Failure texts
+  are unchanged. Host: no change.
+- Phone: "vps · can't reach" has a second line, "Last seen 3 h ago. Is it
+  on, and in your tailnet?" (the time moved there from the first line). The
+  question shows only after a network error, when nothing answered; after
+  an HTTP error the line only says when vps was last seen. Host: no change.
+- Phone: a new look: lit buttons with a pressed and busy state, and notices
+  that say what happened and what to do. One lit button per screen (for
+  example **❯ new session**); others are raised, quiet or red. A pressed
+  button sinks 2 px; a busy one shows a spinner and keeps its width
+  (**Check again** → **Checking…**, **start session** → **starting…**,
+  **Log out**, **Save name**, **Remove vps**, **Turn on**). Problems show as
+  notices with an icon and a colour for how worried to be: "vps · can't
+  reach" (amber, **Retry**), "vps · pair again" (red, with the
+  `pterm pair --via mac` command), "Update Termivoa on vps" (grey). The
+  adding banner is cyan while it waits, green when "vps is added" and red
+  when "vps was not added". **Settings → Computers** shows each computer as
+  a card with its status, **Found on your network** rows have a lit
+  **+ Add**. Commands show without font ligatures and never break inside
+  `--via`. Motion is off with Reduce Motion. Host: no change.
 - A shorter `pterm setup` for a new computer. Host: setup prints a short
   plan, one line for each change (startup at login, where data and logs go,
   the phone address, each Tailscale Serve question, linger, the project
@@ -339,6 +379,48 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): when the phone's terminal got fewer rows (for example
+  when the "Adding vps… approve on vps" banner opens) while the cursor was
+  on one of the cut rows, the bottom rows were lost, so the last line of a
+  prompt (such as "Approve only if your phone shows …") did not show. Now
+  the rows above the cursor move into the history, as in other terminals.
+  Phone: no change.
+- Fix (host side): `pterm pair` and `pterm launch` did not check Tailscale
+  Funnel; only `pterm setup` and `pterm doctor` did. Now every `pterm pair`
+  that pairs (`pterm pair`, `--via`, `--no-wait`, `pterm pair approve`)
+  refuses before it makes a link while Funnel is on for port 443 or 8443,
+  with setup's text: "refusing to pair: Tailscale Funnel is on for …, which
+  puts Termivoa on the public internet; turn it off with `tailscale funnel
+  --https=443 off`, then run `pterm pair …` again". `pterm launch` still
+  starts, but first prints "Warning: Tailscale Funnel is on for …; turn it
+  off with `…`. Pairing a phone is refused until it is off." Termivoa never
+  runs the command. When the Serve settings cannot be read, both go on as
+  before (#161). Phone: no change.
+- Fix (phone side): right after "vps is added", the first read of vps could
+  fail while its gateway did not yet allow the app (it refreshes that list
+  once per second), and the row said "vps · can't reach" until a refresh.
+  For 5 s after an add the row now says "Connecting to vps…" and "Just
+  added. Its sessions show in a moment.", and the app retries quietly after
+  0.5, 1 and 2 s and when the 5 s end; only then does it say "can't
+  reach". Host: no change.
+- Fix (phone side): an app page whose own security policy did not list a
+  computer in the list (a page from before the add, or an old copy that the
+  offline cache served when home answered slowly) blocked every request to
+  that computer: "vps · can't reach" for hours while vps saw nothing. The
+  app now notices the block and, when home still lists that computer (one
+  removed elsewhere is just dropped), reloads once per computer, past the cached
+  copy (it waits up to 12 s for home, then opens the cached copy). If the
+  page still blocks it, the row says "This app page is out of date. Close
+  the app and open it again." The preview's own reload also goes past the
+  cached copy now. Host: no change.
+- Fix (phone side): **+ Add a computer** showed `pterm pair --via` with the
+  name given to home on the phone; it now shows home's machine name, which
+  the command needs (#164). Host: no change.
+- Fix (phone side, iPhone): when a call takes the camera during **Scan QR**,
+  iOS mutes the camera instead of stopping it, and the picture froze until
+  Cancel. A camera that stays muted for 2 s now ends the scan with "The
+  camera did not start. Close other apps that use it, then tap Scan QR. Or
+  paste the link." Host: no change.
 - Fix (host side): `pterm setup` went on to start Termivoa and pair a phone
   when Tailscale Funnel was on for port 443 that already served Termivoa; it
   only printed a warning. Funnel puts the terminal on the public internet.

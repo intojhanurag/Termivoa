@@ -17,6 +17,9 @@ export const SCAN_PROBLEMS: Readonly<Record<ScanProblem, string>> = {
   reader: 'The QR reader did not load. Reload the app, or paste the link.',
 };
 
+/** How long the camera track may stay muted before the scan ends: iOS mutes it (a call, another app) instead of ending it. */
+export const MUTED_MS = 2_000;
+
 export const SCAN_ASKING = 'Allow the camera to scan the QR code.';
 export const SCAN_POINT = 'Point the camera at the QR code that pterm pair --via printed.';
 
@@ -108,8 +111,8 @@ type VideoLike = Pick<HTMLVideoElement, 'srcObject' | 'play'>;
 /**
  * Opens the rear camera in `video` and reads frames until one shows a QR
  * code. The camera stops, and `onEnd` is called once, when a code is read, on
- * a camera or decoder problem (also when the camera stops by itself), and when
- * the app goes to the background. The returned
+ * a camera or decoder problem (also when the camera stops by itself, or stays
+ * muted for MUTED_MS), and when the app goes to the background. The returned
  * function stops it without a call (Cancel, unmount); it is safe at any time,
  * also while the permission prompt is open.
  */
@@ -125,9 +128,11 @@ export function startScan({ video, onScanning, onEnd, media = navigator.mediaDev
 }): () => void {
   let live = true;
   let stream: MediaStream | undefined;
+  let muted: ReturnType<typeof setTimeout> | undefined;
   const hidden = () => { if (doc.visibilityState === 'hidden') end({ kind: 'hidden' }); };
   const stop = () => {
     live = false;
+    clearTimeout(muted);
     doc.removeEventListener('visibilitychange', hidden);
     for (const track of stream?.getTracks() ?? []) track.stop();
     stream = undefined;
@@ -156,7 +161,18 @@ export function startScan({ video, onScanning, onEnd, media = navigator.mediaDev
       }
       stream = opened;
       // Another app took the camera, or the system stopped it: the frame would freeze.
-      for (const track of opened.getTracks()) track.addEventListener('ended', () => end({ kind: 'problem', problem: 'failed' }));
+      // iOS mutes the track instead (a call took the camera): end once it stays muted.
+      for (const track of opened.getTracks()) {
+        const onMute = () => {
+          clearTimeout(muted);
+          muted = setTimeout(() => end({ kind: 'problem', problem: 'failed' }), MUTED_MS);
+        };
+        track.addEventListener('ended', () => end({ kind: 'problem', problem: 'failed' }));
+        track.addEventListener('mute', onMute);
+        track.addEventListener('unmute', () => clearTimeout(muted));
+        // Muted already: no mute event comes.
+        if (track.muted) onMute();
+      }
       video.srcObject = opened;
       try {
         await video.play();

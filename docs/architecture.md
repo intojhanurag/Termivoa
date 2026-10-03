@@ -70,7 +70,10 @@ talk to the running broker; they never start or replace it (`launch` and
 Serve handlers share the origin. It refuses (exit 1), before any change, while
 Tailscale Funnel is on for 443 or 8443 (`lifecycle.ServeStatus.Funnel`), and
 names `tailscale funnel --https=<port> off`; `pterm doctor` counts any Funnel
-as a problem.
+as a problem. `pterm pair` and `pterm pair approve` refuse with the same text
+(`funnelProblem`), and `pterm launch` warns and starts; both read only
+`tailscale serve status --json` (`termivoaFunnel`) and skip the check when it
+cannot be read.
 
 ### Broker and gateway
 
@@ -152,7 +155,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `internal/webassets` | Embedded web app (`-tags webdist`) or a placeholder page |
 | `internal/webpush` | Web Push with the standard library (RFC 8291, RFC 8292 VAPID), push host allow-list |
 | `protocol/v1` | Canonical JSON Schemas and protocol docs (section 4) |
-| `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets |
+| `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets; `ui.tsx` holds the shared icons, the busy `Button`, `Notice` and `Banner` (styles and tokens in `web/src/styles/global.css`) |
 | `web/src/terminal` | xterm display, frame renderer, snapshot assembly, input sender, composer, snippets, speech, phone-wide scheduler |
 | `web/src/protocol` | Ajv validators generated at build time (no runtime `eval`) |
 | `web/src/api` | HTTP client with timeouts |
@@ -242,7 +245,7 @@ same OS user is out of scope. Nothing runs as root or SYSTEM.
 
 | Topic | Rule |
 | --- | --- |
-| Pairing | `pterm pair` makes a single-use grant (2 minutes) carried in the URL fragment. The phone redeems it with one POST, then polls with a separate secret. The owner approves on the computer after comparing a verification code. A grant bound to another computer's app (`pterm pair --via`) can also reach that home as an offer (Found on your network): TLS to home's pinned Tailscale IP, at most 60 s in home's memory, readable by every device paired with home. The approval prompt names THIS computer. |
+| Pairing | `pterm pair` makes a single-use grant (2 minutes) carried in the URL fragment. The phone redeems it with one POST, then polls with a separate secret. The owner approves on the computer after comparing a verification code. A grant bound to another computer's app (`pterm pair --via`) can also reach that home as an offer (Found on your network): TLS to home's pinned Tailscale IP, at most 60 s in home's memory, readable by every device paired with home. The approval prompt names this computer, quotes the phone's code screen and gives the app's origin and owner; after a delivered offer the QR code and the link wait for Enter. |
 | Cookie | `__Host-pterm_session`: Secure, HttpOnly, `SameSite=Strict`, `Path=/`. 30 days absolute, 7 days idle. `GET /api/v1/settings` resends the same value so WebKit's 7-day cap does not end it. The broker stores only hashes and re-authorizes the raw credential on every call. |
 | Origin and Host | Exact Host check. Every `/api` request needs an exact allowed `Origin`, or no `Origin` plus `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is refused. Mutations need `X-Pterm-Request`. Strict CSP on every response. |
 | Tailscale | Serve on 443 gives the private HTTPS origin. Funnel and public tunnels are excluded. Tailscale identity headers are ignored. `tailscale status` only narrows multi-computer access; it is never authentication. |

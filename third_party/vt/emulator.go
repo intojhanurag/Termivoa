@@ -239,6 +239,14 @@ func (e *Emulator) Resize(width int, height int) {
 	if y < 0 {
 		y = 0
 	}
+	// phone-terminal patch: with fewer rows, keep the cursor's row on the
+	// main screen, as xterm does. The rows above it move into scrollback;
+	// cutting the bottom rows would lose a prompt the cursor is on.
+	if shift := y - (height - 1); shift > 0 && e.scr == &e.scrs[0] {
+		e.scr.scroll = e.scr.buf.Bounds()
+		e.scr.ScrollUp(shift)
+		y -= shift
+	}
 	if y >= height {
 		y = height - 1
 	}

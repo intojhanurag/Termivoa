@@ -50,6 +50,52 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Host batch: #158, #161, #162, the add-computer wait screen (2026-10-03, branch `fix/host-batch`)
+
+- **#158 (tests only).** The systemd fake in
+  `cmd/pterm/lifecycle_linux_host_test.go` answered `disabled` for a unit
+  with no file, so every "first install" in those tests planned a broker
+  restart ("This restarts the broker, …" in the short plan; reproduced with
+  the old fake). It now answers like `systemctl --user is-enabled`: `enabled`,
+  `disabled` (exit 1) only when the unit file exists, else `not-found`
+  (exit 4). New test `TestLinuxFirstInstallPlanRestartsNothing` (fails with
+  the old fake). No product change.
+- **#161.** `pterm pair` and `pterm launch` never read the Serve settings.
+  Both now read only `tailscale serve status --json` (`termivoaFunnel`,
+  `lifecycle.ServeFindings`, 5 s). `pterm pair` and `pterm pair approve`
+  refuse before they contact the broker while `ServeStatus.Funnel` is not
+  empty (443 or 8443), with setup's text from the shared `funnelProblem`;
+  `pterm pair pending` does not check (it pairs nothing). `pterm launch`
+  warns and starts. No Tailscale, a failed read or bad JSON: no check, as
+  before. Tests: `TestPairRefusesFunnelOnTermivoaPorts` (every pair form;
+  8443; Funnel on another port and bad JSON go on; no Tailscale change),
+  `TestLaunchWarnsAboutFunnelAndStarts` (real broker and gateway); both fail
+  without the fix. Not run against a real Funnel.
+- **#162 (no change).** Verified: `offerTailscaleServe` accepts
+  `Configured` while `serve.Problems` names a handler on 443 under another
+  host name (a fake Serve status with Termivoa on `vps…:443` and `/admin`
+  on `old…:443`: the checks list the problem, setup plans "Then pair your
+  phone"). Not a defect: Serve answers a host by its exact TLS name, and a
+  handler under another name is another origin; the Termivoa cookie is
+  host-only, so such a handler cannot read the app or get the cookie. The
+  same-origin case (this computer's own name, and a TCP forward on 443)
+  already stops setup; the doc's own fix for a handler is "its own Tailscale
+  Service hostname", which a wider refusal would block. Doctor still counts
+  it as a problem.
+- **Add-computer wait screen.** After a delivered first offer, the N4 screen
+  is five lines and the QR code and the link wait for Enter (read with the
+  confirmer's `Ask`, stopped before the N5 prompt; the reader takes no byte
+  past the newline). A failed first offer prints them at once, as before.
+  N5 is three short lines with the app's origin and owner on one line. A
+  bound approval prints "Done. vps is in your Termivoa app on mac. Open the
+  app and tap it." (+ a Rename tip over 12 characters); setup ends with
+  "Setup is done.". Tests: `TestPairViaEnterShowsTheLinkAfterADeliveredPush`
+  (a real pipe through `FileConfirmationReader`: Enter, then `y` reaches
+  the prompt), `TestPairViaFailedPushShowsTheLinkAtOnce`,
+  `TestPairViaEnterAfterTheLinkExpired`, `TestPairViaSuccessHintsAShortName`,
+  and the updated N4/N5 tests. The e2e harness expectations
+  (`phase-b.mjs`, `webkit.mjs`) are updated but were not run here.
+
 ### Found on your network: harness, review fixes, docs (2026-10-03, branch `feat/found-on-network`)
 
 ADR 0007 v2 is implemented (critical feature, rule 24: not merged; owner
@@ -1664,6 +1710,54 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   showing a QR code of a real `pterm pair --via` link). Pending (owner):
   real iPhone and Android, `docs/owner-verification.md` "Scan QR in + Add a
   computer (real phone)".
+
+- **Web polish from the first real use** (`fix/web-polish`, 2026-10-03),
+  one commit per item, each with a test that fails without it:
+  - "Connecting to vps…" for 5 s after an add, with quiet retries at 0.5, 1
+    and 2 s and at 5 s (`connectingRetry`, `nextStatus` in
+    `web/src/screens/allSessions.ts`; tests in `allSessions.test.ts` and
+    `Sessions.test.tsx`). `phase-b.mjs` gets `B2b-connecting`: every problem
+    row right after "vps is added" is recorded and "can't reach" fails it.
+    Not run here (the coordinator runs the harness). Note: the add flow's
+    own first settings read already retried for 3 s and the gateway
+    refreshes its origins at approval, so the exact cause on the iPhone is
+    not proven; item 2 below may be the same report.
+  - The app's own CSP blocking a listed computer: `securitypolicyviolation`
+    filter (`blockedPeer`), one reload per computer per tab
+    (`reloadOnce`, `pterm.policyReload`), `pterm-fresh=1` makes `sw.js` wait
+    for the network with no 2.5 s timeout, then status `blocked` with "This
+    app page is out of date. Close the app and open it again." Tests:
+    `allSessions.test.ts` (filter, guard, URL, status) and `sw.test.ts`
+    (fresh navigation waits past 2.5 s; cached shell only on an error).
+  - "vps · can't reach" detail line "Last seen 3 h ago. Is it on, and in
+    your tailnet?" (`problemDetail` in `Sessions.tsx`; the question only for
+    a network error, `network` in the `unreachable` status). Tests in
+    `Sessions.test.tsx`, `allSessions.test.ts`, `AddComputer.test.tsx`.
+  - **Check again**: `atLeast` (600 ms) and `answeredText` ("vps answered
+    in 0.2 s.") in `Computers.tsx`; tests in `AddComputer.test.tsx`.
+  - #164: the + Add a computer command uses `firstLabel(homeOrigin())`;
+    test in `AddComputer.test.tsx`.
+  - Scan QR: a camera track muted for `MUTED_MS` (2 s) ends the scan with
+    `failed` (`web/src/pairing/scan.ts`); tests in `scan.test.ts`. Needs a
+    real iPhone check.
+  Evidence: `npx tsc --noEmit -p .` in `web`, `pnpm --dir web test`,
+  `pnpm build:web`, `scripts/check`, the site build. Not run: the e2e
+  multi-computer harness, a real phone.
+- **UI polish: lit buttons and notices** (`feat/ui-lit`, 2026-10-03): the
+  owner-approved Paper design ("Buttons that feel lit", "Errors that tell you
+  what to do", Settings → Computers) in `web/src/styles/global.css` (tokens,
+  the button family, notices, banners, computer cards) and
+  `web/src/screens/ui.tsx` (`Icon`, `Button` with a busy state, `Notice`,
+  `Banner`). Texts unchanged except the design's two notice lines ("This
+  phone lost access on vps. On vps, run:", "It runs an older version than
+  this app. Your other computers still work."). Evidence:
+  `docs/evidence/ui-lit/before/` and `after/` (390×844, demo data, isolated
+  dev stack; the multi-computer shots load the app as a demo tailnet name
+  with mocked peers); `npx tsc --noEmit -p .`, `pnpm --dir web test`,
+  `pnpm build:web`, `scripts/check`, site build. Index CSS 41,748 →
+  52,089 bytes (gzip 8,506 → 10,791). Not reached in the screenshots: the
+  green "vps is added" toast (needs a real approval). Site screenshots are a
+  follow-up.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

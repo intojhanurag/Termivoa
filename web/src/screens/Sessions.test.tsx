@@ -5,7 +5,7 @@ import type { Computer } from '../computers';
 import { hosted, type ComputerEntry, type ComputerStatus } from './allSessions';
 import { NewSession } from './NewSession';
 import { waitingFirst } from './allSessions';
-import { age, ComputerChips, controllerText, hostSummary, pairHint, problemText, PushCard, SessionRow, Sessions } from './Sessions';
+import { age, ComputerChips, controllerText, hostSummary, pairHint, problemDetail, problemText, PushCard, SessionRow, Sessions } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -265,9 +265,25 @@ describe('Sessions across computers', () => {
     expect(pick).toContain('aria-pressed="false" disabled="">');
   });
 
+  it('says when a computer that did not answer was last seen, and asks (never claims) why only after a network error', () => {
+    const lastSeen = NOW - 3 * 3_600_000;
+    expect(problemDetail(entry(vps, { kind: 'unreachable', lastSeen, network: true }), NOW)).toBe('Last seen 3 h ago. Is it on, and in your tailnet?');
+    expect(problemDetail(entry(vps, { kind: 'unreachable', network: true }), NOW)).toBe('Is it on, and in your tailnet?');
+    // An HTTP error or an unreadable reply: something answered, so no question about power or the tailnet.
+    expect(problemDetail(entry(vps, { kind: 'unreachable', lastSeen, network: false }), NOW)).toBe('Last seen 3 h ago.');
+    expect(problemDetail(entry(vps, { kind: 'unreachable' }), NOW)).toBeUndefined();
+    expect(problemDetail(entry(vps, { kind: 'pair' }), NOW)).toBeUndefined();
+    expect(problemText(entry(vps, { kind: 'connecting' }), NOW)).toBe('Connecting to vps…');
+    expect(problemDetail(entry(vps, { kind: 'connecting' }), NOW)).toBe('Just added. Its sessions show in a moment.');
+    expect(problemText(entry(vps, { kind: 'blocked' }), NOW)).toBe("vps · can't reach");
+    expect(problemDetail(entry(vps, { kind: 'blocked' }), NOW)).toBe('This app page is out of date. Close the app and open it again.');
+    const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable', lastSeen, network: true })]);
+    expect(html).toMatch(/<p class="notice-title">vps · can&#x27;t reach<\/p><div class="notice-body">Last seen [^<]+ ago\. Is it on, and in your tailnet\?<\/div>/u);
+  });
+
   it('shows one line per computer that did not answer, and its sessions are gone', () => {
     expect(problemText(entry(vps, { kind: 'unreachable' }), NOW)).toBe("vps · can't reach");
-    expect(problemText(entry(vps, { kind: 'unreachable', lastSeen: NOW - 3 * 3_600_000 }), NOW)).toBe("vps · can't reach · last seen 3 h ago");
+    expect(problemText(entry(vps, { kind: 'unreachable', lastSeen: NOW - 3 * 3_600_000 }), NOW)).toBe("vps · can't reach");
     expect(problemText(entry(vps, { kind: 'pair' }), NOW)).toBe(`vps · pair again · ${pairHint('vps')}`);
     expect(pairHint('Build box', 'mac')).toBe('Run pterm pair --via mac on Build box');
     expect(problemText(entry(vps, { kind: 'outdated', message: 'Update Termivoa on vps' }), NOW)).toBe('Update Termivoa on vps');
@@ -275,7 +291,8 @@ describe('Sessions across computers', () => {
     expect(problemText(entry(vps, ok(settings)), NOW)).toBeUndefined();
 
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable' })]);
-    expect(html).toContain('<span class="computer-problem-text">vps · can&#x27;t reach</span><button type="button" class="link">Retry</button>');
+    expect(html).toContain('<p class="notice-title">vps · can&#x27;t reach</p>');
+    expect(html).toMatch(/<button type="button" class="secondary compact"><svg[^]*?<\/svg>Retry<\/button>/u);
     const pair = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'pair' })]);
     expect(pair).toContain('vps · pair again');
     expect(pair).not.toContain('Retry');
@@ -322,7 +339,7 @@ describe('New session', () => {
     expect(html).toContain('<select id="project"');
     expect(html).toMatch(/<select id="shell"><option value="zsh" selected="">zsh<\/option>/u);
     expect(html).toContain('<input id="run-first"');
-    expect(html).toContain('start session</button>');
+    expect(html).toContain('<span>start session</span><span class="off" aria-hidden="true">starting…</span>');
     expect(html).toContain('save as preset');
     expect(html).not.toContain('Launch');
     expect(html).not.toContain('computer-heading');
@@ -346,8 +363,8 @@ describe('PushCard', () => {
     const html = renderToStaticMarkup(<PushCard onClose={() => undefined} onFailure={() => ''} />);
     expect(html).toContain('Get a buzz when an agent needs you');
     expect(html).toContain('Only the session name and status. Never terminal text.');
-    expect(html).toContain('<button type="button" class="primary">Turn on</button>');
-    expect(html).toContain('<button type="button">Not now</button>');
+    expect(html).toContain('<button type="button" class="secondary">Turn on</button>');
+    expect(html).toContain('<button type="button" class="link">Not now</button>');
     expect(html).toContain('<svg');
   });
 

@@ -4,6 +4,7 @@ import type { Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import { hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ComputerChips, problemText } from './Sessions';
+import { Button, Icon, Notice } from './ui';
 import {
   loadPresets,
   presetFrom,
@@ -147,7 +148,7 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
         </div>
         <button type="button" className="link" onClick={onCancel}>Cancel</button>
       </header>
-      {error !== undefined && <p role="alert" className="error">{error}</p>}
+      {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
 
       {multi && (
         <section className="group" aria-labelledby="computer-heading">
@@ -164,11 +165,11 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
       )}
 
       {settings === undefined ? (
-        <p role="status" className="muted">{entries.some((entry) => entry.status.kind === 'loading') ? 'Loading…' : 'No computer can be reached.'}</p>
+        <p role="status" className="muted">{entries.some((entry) => entry.status.kind === 'loading' || entry.status.kind === 'connecting') ? 'Loading…' : 'No computer can be reached.'}</p>
       ) : !canCreate ? (
         <section className="stack">
           <NewSessionHelp settings={settings} />
-          <button type="button" disabled={busy} onClick={() => { void refresh(); }}>Check again</button>
+          <Button className="secondary" icon={<Icon name="refresh" />} busy={busy} onClick={() => { void refresh(); }}>Check again</Button>
         </section>
       ) : (
         <>
@@ -259,14 +260,14 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
           </section>
 
           <div className="bottom-bar">
-            <button
-              type="button"
+            <Button
               className="primary wide"
-              disabled={busy || commandProblem !== undefined}
+              icon={<span aria-hidden="true" className="prompt">❯</span>}
+              busy={busy}
+              busyLabel="starting…"
+              disabled={commandProblem !== undefined}
               onClick={() => { void start(projectId, shellId, command === '' ? undefined : command); }}
-            >
-              <span aria-hidden="true" className="prompt">❯</span> {busy ? 'starting…' : 'start session'}
-            </button>
+            >start session</Button>
           </div>
         </>
       )}

@@ -19,6 +19,37 @@
   --key-edge: #262e3f;
   --key-base: #04060a;
   --dash: #3a4458;
+  /* "Lit" buttons and notices (the approved UI polish design). */
+  --line-2: #2e3748;
+  --surface-3: #1e2636;
+  --raised-hi: #222a3a;
+  --raised-lo: #1a2130;
+  --card-hi: #171d2a;
+  --card-lo: #131824;
+  --accent-hi: #8be6f1;
+  --accent-lo: #5ad2e3;
+  --accent-press-hi: #4fc3d4;
+  --accent-press-lo: #45b8c9;
+  --accent-text: #9ee6f0;
+  --amber-text: #f6c871;
+  --red-text: #f58a93;
+  --green-text: #8fe3b3;
+  --on-green: #08180f;
+  --on-red: #1a0709;
+  --neutral-icon: #aeb8c8;
+  --off-bg: #1c2a31;
+  --off-text: #6f8c94;
+  --radius-sm: 10px;
+  --radius: 12px;
+  --radius-btn: 14px;
+  --radius-notice: 16px;
+  --radius-card: 18px;
+  --edge-lit: inset 0 1px 0 rgb(255 255 255 / 55%), inset 0 -2px 0 rgb(6 20 24 / 22%);
+  --edge-soft: inset 0 1px 0 rgb(255 255 255 / 6%);
+  --glow: 0 8px 24px -6px rgb(100 216 232 / 55%);
+  --glow-pill: 0 6px 18px -6px rgb(100 216 232 / 60%);
+  --motion: 120ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   color: var(--text);
   background: var(--bg);
@@ -86,10 +117,15 @@ h1.display { font-size: 34px; letter-spacing: -0.03em; line-height: 38px; }
 h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; line-height: 24px; margin: 0; }
 h3 { font-size: 17px; margin: 0; }
 
+/* Commands are typed as shown: "--via" must not join into a dash. */
 code,
 pre {
   font-family: var(--mono);
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0;
 }
+/* A command inside a sentence stays on one line, so "--via" never breaks between its dashes. Paths and branch names wrap. */
+.notice code, .add-computer-hint code { white-space: nowrap; }
 
 /* Buttons: dark key with a 1px edge; text-only links; one accent primary. */
 button {
@@ -111,14 +147,65 @@ button {
 }
 button:disabled { opacity: 0.45; cursor: default; }
 button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-  font-weight: 700;
-  border-radius: 10px;
+
+/*
+ * The button family ("buttons that feel lit"): one lit primary per screen,
+ * the rest stay quiet. primary: the one action. secondary: raised dark.
+ * link: quiet text. danger: red tint. pill: the small lit "+ Add" in a row.
+ * Each sets --ink, which the busy spinner uses. Press and release take
+ * 120 ms; only the busy spinner moves for longer.
+ */
+button.primary,
+button.secondary,
+button.danger,
+button.pill-lit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--radius-btn);
+  color: var(--ink);
+  transition: transform var(--motion) var(--ease), box-shadow var(--motion) var(--ease), filter var(--motion) var(--ease);
 }
-button.danger { border-color: var(--red); color: var(--red); }
+button.primary,
+button.pill-lit {
+  --ink: var(--on-accent);
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent-lo));
+  font-weight: 700;
+  box-shadow: var(--edge-lit), var(--glow), 0 0 0 1px rgb(100 216 232 / 90%);
+}
+button.primary .prompt { color: var(--on-accent); }
+button.secondary {
+  --ink: var(--text);
+  min-height: 48px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, var(--raised-hi), var(--raised-lo));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%), 0 0 0 1px var(--line-2), 0 6px 16px -8px rgb(0 0 0 / 60%);
+}
+button.danger {
+  --ink: var(--red-text);
+  min-height: 48px;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%), 0 0 0 1px color-mix(in srgb, var(--red) 45%, transparent);
+}
+/* 40 px to the eye, 44 px to the thumb. */
+button.pill-lit {
+  position: relative;
+  gap: 6px;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 55%), var(--glow-pill);
+}
+button.pill-lit::after { content: ""; position: absolute; inset: -2px 0; }
+button.pill-lit .icon { width: 14px; height: 14px; stroke-width: 3; }
+/* A small button inside a card: 36 px to the eye, 44 px to the thumb. */
+button.compact { position: relative; min-height: 36px; height: 36px; padding: 0 14px; border-radius: var(--radius); gap: 7px; font-size: 13px; }
+button.compact::after { content: ""; position: absolute; inset: -4px 0; }
+button.compact .icon { width: 14px; height: 14px; stroke-width: 2.4; }
 button.wide {
   width: 100%;
   min-height: 54px;
@@ -128,9 +215,54 @@ button.wide {
   justify-content: center;
   gap: 8px;
 }
-button.link { border: 0; padding: 0 4px; color: var(--muted); font-weight: 600; }
-button.link.strong { color: var(--text); }
+button.link { --ink: var(--muted); display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0 4px; color: var(--ink); font-weight: 600; transition: opacity var(--motion) var(--ease); }
+button.link.strong { --ink: var(--accent); }
 button.link[aria-pressed="true"] { color: var(--accent); }
+
+/* Pressed: sinks 2 px and dims. */
+button.primary:active:not(:disabled),
+button.pill-lit:active:not(:disabled) {
+  transform: translateY(2px);
+  background: linear-gradient(180deg, var(--accent-press-hi), var(--accent-press-lo));
+  box-shadow: inset 0 2px 4px rgb(6 20 24 / 35%), 0 2px 8px -4px rgb(100 216 232 / 40%), 0 0 0 1px rgb(100 216 232 / 70%);
+}
+button.secondary:active:not(:disabled),
+button.danger:active:not(:disabled) { transform: translateY(2px); filter: brightness(0.85); }
+button.link:active:not(:disabled) { opacity: 0.6; }
+@media (hover: hover) and (pointer: fine) {
+  button.primary:hover:not(:disabled),
+  button.pill-lit:hover:not(:disabled) { filter: brightness(1.06); }
+  button.secondary:hover:not(:disabled),
+  button.danger:hover:not(:disabled) { filter: brightness(1.15); }
+  button.link:hover:not(:disabled) { opacity: 0.8; }
+}
+/* Off: flat, no glow. Busy is off too, but keeps its colour. */
+button.primary:disabled:not([aria-busy="true"]),
+button.pill-lit:disabled:not([aria-busy="true"]) {
+  opacity: 1;
+  background: var(--off-bg);
+  color: var(--off-text);
+  box-shadow: 0 0 0 1px rgb(100 216 232 / 18%);
+}
+button.primary:disabled:not([aria-busy="true"]) .prompt { color: var(--off-text); }
+button[aria-busy="true"] { opacity: 1; cursor: progress; }
+/* Busy keeps its width: the two labels share one cell; without an icon the spinner sits over the label. */
+.btn-swap { display: inline-grid; }
+.btn-swap > * { grid-area: 1 / 1; }
+.btn-swap > .off { visibility: hidden; }
+button.busy-over { position: relative; color: transparent !important; }
+button.busy-over > .icon-spinner { position: absolute; inset: 0; margin: auto; stroke: var(--ink, var(--text)); }
+@media (prefers-reduced-motion: reduce) {
+  button.primary, button.secondary, button.danger, button.pill-lit, button.link { transition: none; }
+  button.primary:active:not(:disabled), button.pill-lit:active:not(:disabled),
+  button.secondary:active:not(:disabled), button.danger:active:not(:disabled) { transform: none; }
+}
+
+/* Icons: inline SVG, stroked in the text colour. */
+.icon { flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-plus { stroke-width: 2.5; }
+.icon-spinner { stroke-width: 2.6; animation: spin 0.9s linear infinite; }
+.icon-spinner .icon-track { stroke-opacity: 0.25; }
 button.round { border: 0; border-radius: 22px; background: var(--surface); padding: 0; display: grid; place-items: center; }
 .prompt { font-weight: 800; }
 
@@ -169,7 +301,6 @@ textarea {
 .strong { font-weight: 700; }
 .field-note { margin: 0; }
 .hint-text { color: var(--muted); font-size: 13px; line-height: 18px; }
-.notice { border-left: 3px solid var(--accent); padding-left: 12px; }
 .steps { padding-left: 1.25rem; line-height: 1.6; margin: 0; }
 .command { margin: 0; background: var(--well); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 19px; }
 .confirm { border: 1px solid var(--red); border-radius: 10px; padding: 12px; }
@@ -186,15 +317,70 @@ textarea {
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; }
 
-.banner {
+/*
+ * Notices: what happened (bold), how to fix it (one line), one action. The
+ * colour says how worried to be: working (cyan), success (green), warning
+ * (amber: might fix itself), danger (red: needs you), neutral (grey).
+ */
+.notice {
+  --tone: var(--accent);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-notice);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 9%, transparent), color-mix(in srgb, var(--tone) 3%, transparent));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), inset 0 0 0 1px color-mix(in srgb, var(--tone) 28%, transparent);
+  text-align: left;
 }
+.notice.success { --tone: var(--green); }
+.notice.warning { --tone: var(--amber); }
+.notice.danger { --tone: var(--red); }
+.notice.neutral { --tone: var(--neutral-icon); background: var(--surface); box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), inset 0 0 0 1px #2a3344; }
+.notice-icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius); background: color-mix(in srgb, var(--tone) 14%, transparent); color: var(--tone); }
+.notice.neutral .notice-icon { background: #1f2737; }
+.notice-text { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.notice-title { color: var(--text); font-size: 15px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
+.notice-body { color: var(--muted); font-size: 13px; line-height: 19px; overflow-wrap: anywhere; }
+/* Only one text: it says what happened, so it reads in the text colour. */
+.notice-body:first-child { color: var(--text); font-size: 15px; line-height: 21px; }
+.notice-action { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 11px; }
+/* A command in a notice: one mono line to type, as shown. */
+.notice-command { display: inline-flex; overflow-x: auto; align-items: center; max-width: 100%; min-height: 36px; margin-top: 9px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--dock); box-shadow: 0 0 0 1px var(--line); color: var(--text); font-size: 13px; line-height: 16px; overflow-wrap: anywhere; }
+/* A secondary button in an amber notice or card: "Check again". */
+.notice.warning button.secondary, .computer-card:is(.is-unreachable, .is-blocked) button.secondary {
+  --ink: var(--amber-text);
+  background: linear-gradient(180deg, #2a2418, #211c13);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 0 0 1px color-mix(in srgb, var(--amber) 35%, transparent);
+}
+.notice.warning button.secondary .icon, .computer-card:is(.is-unreachable, .is-blocked) button.secondary .icon { color: var(--amber); }
+
+/* Banners: things in progress over the app (adding a computer). */
+.banner {
+  --tone: var(--accent);
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin: 8px 12px 0;
+  padding: 4px 8px 4px 16px;
+  border-radius: var(--radius-notice);
+  background: linear-gradient(180deg, #17303a, #132631);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 0 0 1px color-mix(in srgb, var(--tone) 35%, transparent), 0 12px 28px -12px color-mix(in srgb, var(--tone) 45%, transparent);
+}
+.banner.success { --tone: var(--green); background: linear-gradient(180deg, #16301f, #11271a); }
+.banner.danger { --tone: var(--red); background: linear-gradient(180deg, #311a1e, #271518); box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%), 0 0 0 1px color-mix(in srgb, var(--red) 40%, transparent); }
+.banner > .icon-spinner { color: var(--accent); }
+.banner-mark { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 11px; background: var(--tone); color: var(--on-green); }
+.banner.danger .banner-mark { color: var(--on-red); }
+.banner-mark .icon { stroke-width: 3.4; }
+.banner-text { flex: 1; min-width: 0; color: var(--text); font-size: 15px; font-weight: 600; line-height: 18px; overflow-wrap: anywhere; }
+.banner-actions { display: flex; flex-shrink: 0; }
+.banner-actions button.link { --ink: var(--accent); padding: 0 10px; font-size: 13px; }
+.banner.success .banner-actions button.link { --ink: var(--green-text); }
+.banner.danger .banner-actions button.link { --ink: var(--red-text); }
+/* On Settings the finished add shows as a toast at the bottom. */
+.app:has(> .settings-screen) > .banner.success { position: absolute; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 24px); z-index: 3; margin: 0; box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 0 0 1px color-mix(in srgb, var(--green) 38%, transparent), 0 18px 40px -12px rgb(0 0 0 / 80%); }
 
 /* Screen headers */
 .screen-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
@@ -739,7 +925,7 @@ a.ship-link { display: flex; align-items: center; justify-content: center; paddi
 .mark.red { color: var(--red); }
 .error-detail { margin: 0; padding: 16px; border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line)); border-radius: 12px; background: var(--well); color: var(--red); font-size: 13px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .state-actions { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 24px; }
-.state-actions > * { height: 52px; min-height: 52px; border-radius: 26px; }
+.state-actions > *, .state-actions > button.primary { height: 52px; min-height: 52px; border-radius: 26px; }
 .state-actions .primary { flex-shrink: 0; padding: 0 24px; font-size: 16px; }
 .state-actions .primary:only-child { flex: 1; }
 .state-pill { display: flex; flex: 1; align-items: center; justify-content: center; gap: 8px; margin: 0; padding: 0 16px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-family: var(--mono); font-size: 14px; font-weight: 500; }
@@ -748,7 +934,7 @@ p.state-pill { justify-content: flex-start; }
 .pulse { animation: pulse 1.4s ease-in-out infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: 0.3; } }
-@media (prefers-reduced-motion: reduce) { .spinner, .pulse { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .spinner, .pulse, .icon-spinner { animation: none; } }
 
 /* The small "update" pill in the Sessions header. */
 .header-actions { display: flex; align-items: center; gap: 8px; }
@@ -804,26 +990,67 @@ button.preview-tell { flex-shrink: 0; min-height: 40px; padding: 0 14px; border-
 .chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px; border-color: var(--line); border-radius: 17px; color: var(--text); font-size: 14px; }
 .chip[aria-pressed="true"] { border-color: var(--surface-2); background: var(--surface-2); color: var(--text); }
 .chip .dot { width: 8px; height: 8px; border-radius: 4px; }
-.computer-problem { display: flex; align-items: center; gap: 10px; margin: 8px; padding: 12px 14px; border: 1px dashed var(--dash); border-radius: 14px; color: var(--muted); font-size: 14px; }
-.computer-problem-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.computer-problem button.link { min-height: 32px; color: var(--accent); }
-.computer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.computer-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 14px; background: var(--surface); }
-.computer-card.offline .row-title { color: var(--muted); }
-.computer-head { display: flex; align-items: center; gap: 12px; }
-.computer-dot { flex-shrink: 0; width: 12px; height: 12px; border-radius: 6px; }
-.computer-card.offline .computer-dot { opacity: 0.45; }
-.computer-state { flex-shrink: 0; font-size: 13px; font-weight: 600; }
-.computer-actions { gap: 4px; }
-.computer-actions button.link { min-height: 32px; }
-button.link.danger-text { color: var(--red); }
+.computer-problem { list-style: none; margin: 8px; }
+.computer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+/* A computer: icon tile, mono name, status on the right; the card's tint says how it is. Rings only, no blur: lists stay light. */
+.computer-card {
+  --tone: var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius-card);
+  background: linear-gradient(180deg, var(--card-hi), var(--card-lo));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%), inset 0 0 0 1px #232b3b;
+}
+.computer-card.is-unreachable { --tone: var(--amber); }
+.computer-card.is-pair { --tone: var(--red); }
+.computer-card.is-connecting { --tone: var(--accent); }
+.computer-card.is-blocked { --tone: var(--amber); }
+.computer-card:is(.is-unreachable, .is-blocked, .is-pair, .is-connecting) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 8%, transparent), color-mix(in srgb, var(--tone) 2%, transparent));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), inset 0 0 0 1px color-mix(in srgb, var(--tone) 26%, transparent);
+}
+.computer-head { display: flex; align-items: flex-start; gap: 12px; }
+.computer-tile { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: var(--radius); background: var(--surface-3); box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%); color: var(--text); }
+.computer-tile .icon { width: 20px; height: 20px; stroke-width: 1.9; }
+.computer-card:is(.is-unreachable, .is-blocked, .is-pair, .is-connecting) .computer-tile { background: color-mix(in srgb, var(--tone) 12%, transparent); box-shadow: none; color: var(--tone); }
+.computer-card.is-connecting .computer-tile { color: var(--accent-text); }
+.computer-card .row-title { gap: 8px; font-family: var(--mono); font-size: 17px; font-weight: 600; letter-spacing: 0; }
+.computer-card .row-meta { white-space: normal; line-height: 18px; overflow-wrap: anywhere; }
+.computer-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 4px; }
+.computer-card .badge.accent { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 0; border-radius: 11px; background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); font-family: system-ui, -apple-system, sans-serif; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Status on the right: a dot (or a spinner while it is read) and one word. */
+.computer-state { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; height: 24px; font-size: 13px; font-weight: 600; }
+.computer-state::before { content: ""; flex-shrink: 0; width: 8px; height: 8px; border-radius: 4px; background: var(--faint); }
+.computer-state.green { color: var(--green-text); }
+.computer-state.green::before { background: var(--green); box-shadow: 0 0 0 3px rgb(111 214 155 / 18%); }
+.computer-state.amber, :is(.is-unreachable, .is-blocked) .computer-state { color: var(--amber-text); }
+.computer-state.amber::before, :is(.is-unreachable, .is-blocked) .computer-state::before { background: var(--amber); }
+.is-pair .computer-state { color: var(--red-text); }
+.is-pair .computer-state::before { background: var(--red); }
+.is-loading .computer-state, .is-connecting .computer-state { color: var(--accent); }
+.is-loading .computer-state::before, .is-connecting .computer-state::before { width: 9px; height: 9px; border: 2px solid rgb(100 216 232 / 25%); border-top-color: var(--accent); border-radius: 50%; background: none; animation: spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .is-loading .computer-state::before, .is-connecting .computer-state::before { animation: none; } }
+/* The empty result line stays in the page (a live region) but takes no room. */
+.computer-card > .field-note:empty { margin-top: -12px; }
+.computer-actions { gap: 8px; }
+.computer-actions button.link { min-height: 44px; padding: 0 10px; font-size: 13px; }
+.computer-actions button.link:first-child { padding-left: 0; }
+button.link.danger-text { --ink: var(--red-text); }
+.computer-card .confirm { border: 0; border-radius: var(--radius); background: color-mix(in srgb, var(--red) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 30%, transparent); }
 /* A long name gives way; the Home badge stays whole. */
 .computer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Square, so the page does not jump when the camera reports its size. contain, not cover: the whole frame the decoder reads is visible, so it never reads a code the user cannot see. */
 .scan-video { width: 100%; max-width: 360px; aspect-ratio: 1; align-self: center; border-radius: 14px; background: #000; object-fit: contain; }
-/* Found on your network: the name gives way at 390 px; Add stays whole. */
+/* Found on your network: a cyan dot by the heading; the name gives way at 390 px; Add stays whole. */
+.found > .caps { display: flex; align-items: center; gap: 8px; padding-top: 14px; }
+.found > .caps::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 0 4px rgb(100 216 232 / 16%); }
+.computer-card.found-row { padding: 12px 12px 12px 16px; background: #121722; box-shadow: inset 0 0 0 1px rgb(100 216 232 / 28%); }
+.found-row .computer-head { align-items: center; }
+.found-row .computer-tile { background: #1a2130; box-shadow: none; }
 button.found-add { flex-shrink: 0; }
-button.add-computer { min-height: 52px; border: 1px dashed var(--accent); border-radius: 14px; color: var(--accent); font-weight: 700; }
+button.add-computer { width: 100%; min-height: 52px; border-radius: var(--radius-notice); background: linear-gradient(180deg, var(--surface-3), #181e2b); }
 .place-computer { flex-shrink: 0; color: var(--text); }
 .wall-computer { max-width: 100%; margin-top: -6px; color: var(--muted); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wall-blank { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 8px; color: var(--muted); font-family: var(--mono); font-size: 11px; text-align: center; overflow-wrap: anywhere; }

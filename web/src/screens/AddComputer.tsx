@@ -7,6 +7,7 @@ import {
 } from '../pairing/addComputer';
 import { CodeTiles } from './Setup';
 import { Sheet, SheetHeader } from './Sheet';
+import { Notice } from './ui';
 
 /**
  * Adding a computer (docs/multi-computer.md, "Pairing a second computer"):
@@ -49,12 +50,12 @@ export function AddComputerConfirm({ link, node, onConfirm, onCancel }: {
         <dt>Machine</dt><dd>{label}</dd>
         <dt>{owner.term}</dt><dd>{owner.value}</dd>
       </dl>
-      <p className="hint-text">
+      <p className="hint-text add-computer-hint">
         Add it only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">
         <button type="button" className="primary" onClick={onConfirm}>Add {label}</button>
-        <button type="button" onClick={() => { void forgetPending(link.origin); onCancel(); }}>Cancel</button>
+        <button type="button" className="secondary" onClick={() => { void forgetPending(link.origin); onCancel(); }}>Cancel</button>
       </div>
     </>
   );
@@ -77,12 +78,12 @@ export function AddComputerContinue({ link, onContinue, onCancel }: {
       <dl className="facts">
         <dt>Address</dt><dd>{link.origin}</dd>
       </dl>
-      <p className="hint-text">
+      <p className="hint-text add-computer-hint">
         Continue only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">
         <button type="button" className="primary" onClick={onContinue}>Continue</button>
-        <button type="button" onClick={() => { void forgetPending(link.origin); onCancel(); }}>Cancel</button>
+        <button type="button" className="secondary" onClick={() => { void forgetPending(link.origin); onCancel(); }}>Cancel</button>
       </div>
     </>
   );
@@ -126,8 +127,8 @@ export function AddComputerSheet({ link, onClose, go = (url) => window.location.
         <SheetHeader id="add-computer-title" title="Add this computer?">
           <button type="button" className="link" onClick={close}>Close</button>
         </SheetHeader>
-        {check.kind === 'checking' && <p role="status" className="muted">Checking {label}…</p>}
-        {check.kind === 'error' && <p role="alert" className="error">{check.message}</p>}
+        {check.kind === 'checking' && <Notice tone="working" role="status" title={`Checking ${label}…`} />}
+        {check.kind === 'error' && <Notice tone="danger" role="alert" title={check.message} />}
         {check.kind === 'ready' && (
           <AddComputerConfirm link={link} node={check.node} onConfirm={() => { cancelAdd(); go(addComputerUrl(link, globalThis.location?.pathname)); }} onCancel={onClose} />
         )}
@@ -168,14 +169,14 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
       <h1>{title}</h1>
       {phase === undefined && link === undefined && (
         <>
-          <p role="alert" className="error">{notice ?? 'This add-computer link is used or incomplete. Scan or paste a new link in Settings, under Computers.'}</p>
+          <Notice tone="danger" role="alert" title={notice ?? 'This add-computer link is used or incomplete. Scan or paste a new link in Settings, under Computers.'} />
           <button type="button" className="primary" onClick={onSettings}>Settings</button>
         </>
       )}
       {phase === undefined && link !== undefined && (
         <AddComputerContinue link={link} onContinue={() => { void startAdd(link, name); }} onCancel={onSettings} />
       )}
-      {phase?.kind === 'redeeming' && <p role="status" className="muted">Connecting to {label}…</p>}
+      {phase?.kind === 'redeeming' && <Notice tone="working" role="status" title={`Connecting to ${label}…`} />}
       {phase?.kind === 'waiting' && (
         <section className="stack pair-wait" aria-live="polite">
           <CodeTiles code={phase.pending.verificationCode} />
@@ -189,22 +190,22 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
       )}
       {phase?.kind === 'done' && (
         <>
-          <p className="muted">Its sessions now show in your list.</p>
+          <Notice tone="success" title="Its sessions now show in your list." />
           <button type="button" className="primary wide" onClick={leave(onDone)}>Open sessions</button>
         </>
       )}
       {phase?.kind === 'expired' && (
-        <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then tap Add again, or scan or paste the new link.</p>
+        <Notice tone="danger" role="alert">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then tap Add again, or scan or paste the new link.</Notice>
       )}
       {phase?.kind === 'cancelled' && (
-        <p role="alert" className="error">Adding {label} was cancelled. If {label} asks, answer N.</p>
+        <Notice tone="neutral" icon="x" role="alert">Adding {label} was cancelled. If {label} asks, answer N.</Notice>
       )}
-      {phase?.kind === 'error' && <p role="alert" className="error">{addFailure(phase.error, label)}</p>}
+      {phase?.kind === 'error' && <Notice tone="danger" role="alert" title={addFailure(phase.error, label)} />}
       {phase?.kind === 'stale' && (
-        <p role="alert" className="error">{label} stopped waiting. On {label} run <code>pterm pair --via {firstLabel(homeOrigin())}</code>, then tap Add again.</p>
+        <Notice tone="danger" role="alert">{label} stopped waiting. On {label} run <code>pterm pair --via {firstLabel(homeOrigin())}</code>, then tap Add again.</Notice>
       )}
       {(phase?.kind === 'expired' || phase?.kind === 'cancelled' || phase?.kind === 'error' || phase?.kind === 'stale') && (
-        <button type="button" onClick={leave(onSettings)}>Settings</button>
+        <button type="button" className="secondary" onClick={leave(onSettings)}>Settings</button>
       )}
     </main>
   );
@@ -217,7 +218,7 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
 export function LeaveAdd({ back, onLeave }: { readonly back: string | undefined; readonly onLeave: (path: string) => void }) {
   const terminal = fromTerminal(back) && back !== undefined;
   return (
-    <button type="button" className="wide" onClick={() => onLeave(terminal ? back : '/')}>
+    <button type="button" className="secondary wide" onClick={() => onLeave(terminal ? back : '/')}>
       {terminal ? 'Back to terminal' : 'Sessions'}
     </button>
   );
@@ -249,7 +250,7 @@ export function PeerAddPage({ link }: { readonly link: string | undefined }) {
       <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
       <h1>Add this computer</h1>
       {link === undefined ? (
-        <p role="alert" className="error">This link is incomplete. Run <code>pterm pair --via</code> on this computer again.</p>
+        <Notice tone="danger" role="alert">This link is incomplete. Run <code>pterm pair --via</code> on this computer again.</Notice>
       ) : (
         <>
           <p>This page cannot add the computer. Open your Termivoa app{via === undefined ? '' : ` on ${via}`}, then:</p>

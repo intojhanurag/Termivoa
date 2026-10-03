@@ -51,13 +51,29 @@ Start a wait on the new computer, then tap **Add** next to it in the app. You ne
    - If Termivoa is not set up there yet, run `pterm setup`. At **Is Termivoa already on your phone?** type `2` (**Yes, add this computer to it**), then pick home. The list shows each computer's full address and system, for example `1) mac — https://mac.tailx.ts.net (macOS)`. Pick the computer whose address your Termivoa app opens.
    - If it is set up, run `pterm pair --via mac`. Use home's machine name, or its full address such as `https://mac.tailx.ts.net`.
 
-   It says **Sent to mac (https://mac.tailx.ts.net).** and waits for your phone for up to 10 minutes. Keep the terminal open.
+   It says **Sent to mac (https://mac.tailx.ts.net).** and waits for your phone for up to 10 minutes. Keep the terminal open. The screen (**Next beta** words):
+
+   ```text
+   Adding this computer (vps) to your Termivoa app on mac.
+   Sent to mac (https://mac.tailx.ts.net).
+   On your phone, open Termivoa → Settings → Computers and tap Add next to "vps".
+   Waiting for your phone (up to 10 minutes; Ctrl+C stops)…
+   No Add button? Press Enter to show a QR code and a link.
+   ```
 2. **On your phone**, open **Settings → Computers**. Under **Found on your network**, tap **Add** next to **vps**.
 3. **Check the sheet.** **Add this computer?** shows the **Address**, **Machine** and **Owner** that home found in its Tailscale status. Tap **Add vps**, then **Continue**.
 
    ![The Add this computer? sheet with Address https://vps.tailx.ts.net, Machine vps, Owner ada@example.com, and the buttons Add vps and Cancel.](../../../../assets/docs/phone-computers-confirm.webp)
 
-4. **Compare the code and the name.** The app asks **Does vps show this code?** and says "If it matches, type y in the terminal on vps." On vps, the prompt says `Phone "iPhone" wants to use THIS computer (vps) from the Termivoa app at mac (…)`. Type `y` only if it names THIS computer (vps) and shows the same code. The app says **vps is added**.
+4. **Compare the code and the name.** The app asks **Does vps show this code?** and says "If it matches, type y in the terminal on vps." On vps, the prompt says:
+
+   ```text
+   Phone "iPhone" wants to add this computer (vps) to your Termivoa app on mac.
+   mac is https://mac.tailx.ts.net (owner ada@example.com).
+   Approve only if your phone shows 742-172 and says "type y in the terminal on vps". [y/N]
+   ```
+
+   Type `y` only if it names this computer (vps), home's address is the one your app opens, and the phone shows the same code. The app says **vps is added**, and vps says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` With a machine name longer than 12 characters it adds `Tip: give it a short name in the app: Settings → Computers → Rename.`
 
    ![The screen Does vps show this code? with the code 742-172, the text If it matches, type y in the terminal on vps., Waiting for vps, and Codes don't match? Cancel.](../../../../assets/docs/phone-computers-code.webp)
 
@@ -82,7 +98,7 @@ A row goes away when that computer stops waiting or becomes another Tailscale ma
 
 ### Other ways: the link and the QR code
 
-Under **Sent to mac**, `pterm pair --via` also prints a QR code and a link: "No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:". They work once, for two minutes. When they expire, the computer says "The QR code and link above expired. Add in the app still works." and keeps waiting. If nothing reached home, the command ends instead; run it again.
+When home got the invite, `pterm pair --via` shows the QR code and the link only when you press Enter ("No Add button? Press Enter to show a QR code and a link."). When nothing reached home, it prints them at once. Either way they come under "No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:". They work once, for two minutes from the start of the command. When shown ones expire, the computer says "The QR code and link above expired. Add in the app still works." and keeps waiting; Enter after that says "The QR code and link expired (they work for 2 minutes). Add in the app still works; for a new link, press Ctrl+C and run pterm pair --via mac again." If nothing reached home, the command ends when they expire; run it again.
 
 ![Three steps. 1, on the new computer: vps $ pterm pair --via mac. 2, on your phone: tap the link, check the address, tap Add vps, then Continue. 3, same code on both? 742-172, type y on vps. A hand note says: vps is added. that's it. a link alone never adds a computer.](../../../../assets/docs/illo-add-computer.webp)
 
@@ -146,7 +162,9 @@ The other computers keep working. The one that does not answer gets its own row.
 
 | Row | Meaning | Do this |
 | --- | --- | --- |
-| **vps · can't reach** | The phone cannot reach vps now. | Check that vps is on and in your tailnet, then tap **Retry**. |
+| **vps · can't reach** and **Last seen 3 h ago. Is it on, and in your tailnet?** | Nothing answered from vps. The app cannot see why, so it asks. | Check that vps is on and in your tailnet, then tap **Retry**. |
+| **vps · can't reach** and **This app page is out of date. Close the app and open it again.** | The app page on your phone does not allow vps yet. The app already reloaded once. | Close the app fully and open it again. |
+| **Connecting to vps…** and **Just added. Its sessions show in a moment.** | vps was added a moment ago and does not answer yet. The app tries again by itself for about 5 seconds. | Wait. If it still does not answer, the row says **vps · can't reach**. |
 | **vps · pair again** | vps no longer accepts this phone (revoked, logged out, expired, or Tailscale changed on home). | Run `pterm pair --via mac` on vps and add it again. |
 | **Update Termivoa on vps** | Termivoa on vps is too old for this app. | Update Termivoa on vps. |
 
@@ -166,8 +184,8 @@ Not in `v0.1.0-beta.2`.
 | --- | --- |
 | **Home** next to a name | This computer is home. Under the heading the app says **Home serves this app to your phone.** |
 | **Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
-| **vps · can't reach · last seen 3 h ago** | vps does not answer now. The phone keeps the time of its last answer until you close the app. |
-| **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered.** or why it did not. |
+| **vps · can't reach** and **Last seen 3 h ago. Is it on, and in your tailnet?** | vps does not answer now. The phone keeps the time of its last answer until you close the app. The question shows only when nothing answered at all. |
+| **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered in 0.2 s.** or why it did not. |
 
 **Check again** works on every computer, also on the one that says **can't reach**.
 
