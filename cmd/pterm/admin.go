@@ -263,12 +263,16 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 	case "pair":
 		options := cli.PairOptions{
 			Origin: config.origin, Fallback: localOrigin(config.dev), ShowQR: showQR, QRColumns: columns,
-			Via: config.via, AllowTagged: config.allowTagged,
+			Via: config.via, AllowTagged: config.allowTagged, FirstComputerWarning: true,
 		}
 		if !config.noWait && input != nil {
 			options.Confirmer = fileConfirmer{input: input, output: output}
 		}
-		return cli.Pair(ctx, client, options, output)
+		// A declined phone is the owner's answer, not a failure; Pair said so.
+		if err := cli.Pair(ctx, client, options, output); !errors.Is(err, cli.ErrNotPaired) {
+			return err
+		}
+		return nil
 	case "pair pending":
 		return cli.PairPending(ctx, client, output)
 	case "pair approve":

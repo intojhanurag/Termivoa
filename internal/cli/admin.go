@@ -61,6 +61,26 @@ type PairOptions struct {
 	// instead of a pairing link. AllowTagged accepts a tagged app node.
 	Via         string
 	AllowTagged bool
+	// FirstComputerWarning says, before a first-computer pairing link, that
+	// it is not the way to add a computer to an app. Only the standalone
+	// `pterm pair` sets it; setup has already asked.
+	FirstComputerWarning bool
+}
+
+// ErrNotPaired is returned when the owner did not approve the phone that
+// opened the link; Pair has already said so and how to try again.
+var ErrNotPaired = errors.New("the phone was not approved")
+
+// PairCommand is the `pterm pair` command line that makes a new link of the
+// same kind.
+func PairCommand(options PairOptions) string {
+	switch {
+	case options.Via == "":
+		return "pterm pair"
+	case options.AllowTagged:
+		return "pterm pair --via " + options.Via + " --allow-tagged"
+	}
+	return "pterm pair --via " + options.Via
 }
 
 // Pair creates one grant and prints it only inside the pairing link and,
@@ -128,8 +148,10 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 		}
 	}
 	// Said before the code, so a second computer's owner does not scan it.
-	code = "This pairing is for a FIRST computer. To add this computer to a Termivoa app you already use, " +
-		"run `pterm pair --via <home>` instead.\n" + code
+	if options.FirstComputerWarning {
+		code = "This pairing is for a FIRST computer. To add this computer to a Termivoa app you already use, " +
+			"run `pterm pair --via <home>` instead.\n" + code
+	}
 	where, next := "on the phone", "Then run `pterm pair pending` and approve with "+
 		"`pterm pair approve <pending-id>` after comparing the code."
 	if localOnly {
@@ -190,20 +212,22 @@ func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[str
 	if options.Confirmer != nil {
 		next = "Waiting for the phone (Ctrl+C stops waiting)."
 	}
+	// No QR code is no loss: the link below is the main way (a terminal too
+	// narrow for the code is usually a phone-sized Termivoa session, where
+	// the owner taps the link).
 	code := ""
 	if options.ShowQR {
-		if code, err = renderQR(link, options.QRColumns); err != nil {
-			code = "No QR code: " + err.Error() + ".\n"
-		} else {
-			code += "Scan this QR code. In the Termivoa app: Settings → + Add a computer → Scan QR.\n" +
-				"The phone's Camera app will NOT work for this code: it opens the browser (Safari), not the app.\n"
+		if qrCode, err := renderQR(link, options.QRColumns); err == nil {
+			// Said before the code, so the owner reads it before scanning.
+			code = "Scan this QR code in the Termivoa app: Settings → + Add a computer → Scan QR.\n" +
+				"The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n" + qrCode
 		}
 	}
 	if err := writeString(output, fmt.Sprintf(
 		"%sAdd-computer link (expires %s):\n%s\n"+
 			"Open it within 2 minutes in the Termivoa app at %s: if this terminal is a Termivoa session "+
 			"in that app, tap the link, then confirm \"Add this computer?\"; "+
-			"or in Settings → Computers tap \"+ Add a computer\" and paste the link. %s\n"+
+			"or in Settings → + Add a computer, paste the link. %s\n"+
 			"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n",
 		code, grant.ExpiresAt, link, describeApp(appOrigin, grant.AppNode), next)); err != nil || options.Confirmer == nil {
 		return err
@@ -313,12 +337,13 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, expires
 				return err
 			}
 			if !approve {
-				return writeString(output, "Not approved; that phone stays unpaired. Run `pterm pair` to try again.\n")
+				return errors.Join(ErrNotPaired, writeString(output,
+					"Not approved; that phone stays unpaired. Run `"+PairCommand(options)+"` to try again.\n"))
 			}
 			return PairApprove(ctx, admin, item.ID, output)
 		}
 		if time.Now().After(deadline) {
-			return errors.New("the pairing link expired before a phone opened it; run `pterm pair` again")
+			return fmt.Errorf("the link expired before a phone opened it; run `%s` again", PairCommand(options))
 		}
 		select {
 		case <-ctx.Done():

@@ -37,11 +37,13 @@ console.log(browser.product);
 const app = await browser.page(); // the phone app, with its real CSP
 const tool = await browser.page({ bypassCSP: true }); // harness-only API calls (same cookie jar)
 /**
- * Screenshots hide add-computer links in the terminal first: the CLI asks
- * never to put the single-use grant in screenshots, even a used test one.
+ * Screenshots hide add-computer links and QR codes (rows of half blocks,
+ * printed above the link) in the terminal first: the CLI asks never to put
+ * the single-use grant in screenshots, even a used test one.
  */
 const shot = async (name, page = app) => {
   await page.eval(`(() => { const rows = [...document.querySelectorAll('.xterm-rows > div')];
+    rows.forEach((row) => { if (/[▀▄█]/.test(row.textContent) && /^[\\s▀▄█]*$/.test(row.textContent)) row.textContent = '[QR code hidden]'; });
     rows.forEach((row, i) => { if (row.textContent.includes('add-computer#grant=')) for (const r of rows.slice(i, i + 3)) if (!/^(Open|Phone|Approve)/.test(r.textContent)) r.textContent = '[add-computer link hidden]'; }); })()`).catch(() => undefined);
   await page.shot(join(out, `${name}.png`)).catch(() => undefined);
 };
