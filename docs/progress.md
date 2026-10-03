@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-03
+Last updated: 2026-10-04
 
 ## Start here
 
@@ -49,6 +49,40 @@ Not yet verified (owner checklist in
 
 The dated entries below are the history log; older entries describe the state
 on their own date.
+
+### Phone screens fit 375 and 390 px again (2026-10-04, branch `fix/phone-overflow`)
+
+- **Report.** On a real iPhone (390 px) the page slid sideways, and in
+  **Settings → Computers** the `pterm pair --via <home>` command under
+  **Found on your network** ran out of its card.
+- **Cause.** One rule from the lit UI (#169): `.notice code,
+  .add-computer-hint code { white-space: nowrap; }`. A command with a long
+  machine name (`pterm pair --via studio-workstation-02`) could not wrap, so
+  it stuck out of the Found notice and the "stopped waiting" notice on the
+  add page and made `.page` scroll sideways (411–420 px wide at 375/390).
+  The same rule, with `overflow-x: auto` on `.notice-command`, cut the
+  command in the "pair again" notice on Sessions (a hidden side scroll,
+  306–313/253–268 px).
+- **Fix.** `code` wraps (`overflow-wrap: anywhere`); `.notice-command` is a
+  wrapping inline block with no side scroll; `PairVia` (`ui.tsx`) renders
+  every `pterm pair --via` with the flag in a `.nowrap` span, because
+  Chrome breaks "--via" between its dashes (WebKit does not).
+- **Evidence** (not in the repo): Playwright 1.61.1, WebKit 2272 and
+  Chromium, 375×812 and 390×844, isolated docs-screenshots dev stack with
+  demo data and mocked peers (can't reach, pair again, Found row, Found
+  empty, add sheet, add error, Continue, code, stopped waiting, paste
+  error, Live with dock, preview, Settings, New session, pairing). Before:
+  4 screens overflow at every size and engine; after: none. The only side
+  scroll left is a terminal that another device sized wider (a viewer pans;
+  by design).
+- **Guard.** Phase B `B6-fit`: Sessions and **Settings → Computers** at
+  390 px with "vps · pair again", once as shown and once with every `code`
+  made long. `phase-b.mjs --no-web-build --only B6`: PASS on this branch,
+  FAIL on the old build (`.page` 845/390). `global.test.ts` checks the CSS
+  rules. `B6-pair` fails under `--only B6` (no mac rows without B3);
+  unrelated to this change.
+- **Checks.** `web`: `tsc --noEmit`, `vitest run` (777 passed);
+  `pnpm build:web`; `scripts/embed-web.sh`; `scripts/check` passed.
 
 ### #168: Serve status for this computer's name, foreground and Services (2026-10-03, branch `fix/serve-status-168`)
 

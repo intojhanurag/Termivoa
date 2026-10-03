@@ -379,6 +379,13 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (phone side): screens fit a narrow phone (375 and 390 px) again. A
+  `pterm pair --via <home>` command with a long machine name, in
+  **Settings → Computers** (under **Found on your network**), in the
+  "pair again" notice on Sessions and on the add page ("stopped waiting"),
+  ran out of its box and let the page slide sideways. Commands and other
+  code now wrap inside their box; `--via` stays whole. Host side: no change.
+
 - Fix (host side): after you renamed a computer in Tailscale, `pterm setup`
   said "Tailscale Serve already shares the page at https://<new name>/"
   while only the old name shared it, so the phone could not reach the new

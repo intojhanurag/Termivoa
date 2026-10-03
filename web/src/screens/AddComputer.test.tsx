@@ -117,8 +117,8 @@ describe('add-computer page', () => {
   it('asks for the command the user ran on every path: setup (Found), or pterm pair --via (Found, paste, scan)', () => {
     const sheet = renderToStaticMarkup(<AddComputerConfirm link={link} node={{ id: 'n1', owner: 'ada@example.com', tags: [] }} onConfirm={noop} onCancel={noop} />);
     const page = renderToStaticMarkup(<AddComputerContinue link={link} onContinue={noop} onCancel={noop} />);
-    expect(sheet.replace(/<\/?code>/gu, '')).toContain('Add it only if you just ran pterm setup or pterm pair --via on vps.');
-    expect(page.replace(/<\/?code>/gu, '')).toContain('Continue only if you just ran pterm setup or pterm pair --via on vps.');
+    expect(sheet.replace(/<\/?(?:code|span)[^>]*>/gu, '')).toContain('Add it only if you just ran pterm setup or pterm pair --via on vps.');
+    expect(page.replace(/<\/?(?:code|span)[^>]*>/gu, '')).toContain('Continue only if you just ran pterm setup or pterm pair --via on vps.');
     // The command stays on one line (global.css: .add-computer-hint code).
     for (const html of [sheet, page]) expect(html).toContain('<p class="hint-text add-computer-hint">');
   });
@@ -131,7 +131,7 @@ describe('add-computer page', () => {
       : new Response(JSON.stringify({ error: { code: 'pairing_expired', message: 'x' } }), { status: 410 }))));
     await startAdd({ ...link, found: true }, 'iPhone');
     const html = renderToStaticMarkup(<AddComputerPage link={{ ...link, found: true }} deviceLabel="iPhone" onDone={noop} onSettings={noop} onLeave={noop} />);
-    expect(html.replace(/<\/?code>/gu, '')).toContain('The code expired or vps refused it. Run pterm pair --via on vps again, then tap Add again, or scan or paste the new link.');
+    expect(html.replace(/<\/?(?:code|span)[^>]*>/gu, '')).toContain('The code expired or vps refused it. Run pterm pair --via on vps again, then tap Add again, or scan or paste the new link.');
     resetAdd();
     vi.unstubAllGlobals();
   });
@@ -163,7 +163,7 @@ describe('add-computer page', () => {
       : new Response(JSON.stringify({ error: { code: 'pairing_expired', message: 'x' } }), { status: 410 }))));
     await startAdd({ ...link, found: true }, 'iPhone');
     const html = renderToStaticMarkup(<AddComputerPage link={{ ...link, found: true }} deviceLabel="iPhone" onDone={noop} onSettings={noop} onLeave={noop} />);
-    expect(html.replace(/<\/?code>/gu, '')).toContain('vps stopped waiting. On vps run pterm pair --via mac, then tap Add again.');
+    expect(html.replace(/<\/?(?:code|span)[^>]*>/gu, '')).toContain('vps stopped waiting. On vps run pterm pair --via mac, then tap Add again.');
     expect(html).not.toContain('expired or was already used');
     expect(html).toContain('>Settings</button>');
     resetAdd();
@@ -325,7 +325,7 @@ describe('Settings → Computers', () => {
 
   it('says how to make a computer show when none waits, and when home cannot read Tailscale', () => {
     const empty = renderToStaticMarkup(<FoundBlock found={{ kind: 'rows', computers: [] }} homeName="mac" working={new Set()} app={app} onAdd={noop} />);
-    expect(empty.replace(/<\/?code>/gu, '')).toContain(
+    expect(empty.replace(/<\/?(?:code|span)[^>]*>/gu, '')).toContain(
       'To add another computer, run pterm setup on it, or pterm pair --via mac if it is already set up. It shows here while it waits.',
     );
     const down = renderToStaticMarkup(<FoundBlock found={{ kind: 'no_status' }} homeName="mac" working={new Set()} app={app} onAdd={noop} />);
@@ -337,7 +337,7 @@ describe('Settings → Computers', () => {
     const found = { kind: 'rows' as const, computers: [row] };
     const working = renderToStaticMarkup(<FoundBlock found={found} homeName="mac" working={new Set([row.origin])} app={app} onAdd={noop} />);
     expect(working).not.toContain('aria-label="Add vps"');
-    expect(working.replace(/<\/?code>/gu, '')).toContain('To add another computer, run pterm setup on it');
+    expect(working.replace(/<\/?(?:code|span)[^>]*>/gu, '')).toContain('To add another computer, run pterm setup on it');
     const lost = renderToStaticMarkup(<FoundBlock found={found} homeName="mac" working={new Set()} app={app} onAdd={noop} />);
     expect(lost).toContain('aria-label="Add vps"');
   });
@@ -358,7 +358,7 @@ describe('Settings → Computers', () => {
     const renamed: ComputerEntry[] = [{ ...(entries[0] as ComputerEntry), computer: { ...mac, label: 'Work laptop' } }];
     const html = renderToStaticMarkup(<ComputersSection entries={renamed} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
     vi.unstubAllGlobals();
-    expect(html).toContain('<code>pterm pair --via mac</code>');
+    expect(html).toContain('<code>pterm pair <span class="nowrap">--via</span> mac</code>');
     expect(html).not.toContain('--via Work laptop');
   });
 

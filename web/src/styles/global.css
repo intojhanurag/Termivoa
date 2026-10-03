@@ -124,8 +124,10 @@ pre {
   font-variant-ligatures: none;
   font-feature-settings: "calt" 0, "liga" 0;
 }
-/* A command inside a sentence stays on one line, so "--via" never breaks between its dashes. Paths and branch names wrap. */
-.notice code, .add-computer-hint code { white-space: nowrap; }
+/* Code wraps inside its box (at spaces, else anywhere): a command, host name or path never pushes the page wider than the phone. */
+code { overflow-wrap: anywhere; }
+/* Keeps a flag such as "--via" whole; Chrome would break it between its dashes. */
+.nowrap { white-space: nowrap; }
 
 /* Buttons: dark key with a 1px edge; text-only links; one accent primary. */
 button {
@@ -344,8 +346,8 @@ textarea {
 /* Only one text: it says what happened, so it reads in the text colour. */
 .notice-body:first-child { color: var(--text); font-size: 15px; line-height: 21px; }
 .notice-action { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 11px; }
-/* A command in a notice: one mono line to type, as shown. */
-.notice-command { display: inline-flex; overflow-x: auto; align-items: center; max-width: 100%; min-height: 36px; margin-top: 9px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--dock); box-shadow: 0 0 0 1px var(--line); color: var(--text); font-size: 13px; line-height: 16px; overflow-wrap: anywhere; }
+/* A command in a notice: a mono box to type as shown; it wraps when the phone is narrow. */
+.notice-command { display: inline-block; max-width: 100%; margin-top: 9px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--dock); box-shadow: 0 0 0 1px var(--line); color: var(--text); font-size: 13px; line-height: 16px; overflow-wrap: anywhere; }
 /* A secondary button in an amber notice or card: "Check again". */
 .notice.warning button.secondary, .computer-card:is(.is-unreachable, .is-blocked) button.secondary {
   --ink: var(--amber-text);
