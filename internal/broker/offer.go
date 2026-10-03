@@ -55,26 +55,18 @@ type offerState struct {
 	expires time.Time
 }
 
-type offerBook struct {
+// outgoingOffer is this computer's own offer to its home (N1); offerBook in
+// offers.go is the other direction, the offers a home receives.
+type outgoingOffer struct {
 	mu    sync.Mutex // held for a whole offer, push included
 	state *offerState
-}
-
-// offerBooks holds each server's offer state.
-// ponytail: keyed by server here because ManagementServer's struct belongs to
-// another track's file (rpc_server.go); make it a field when both merge.
-var offerBooks sync.Map // *ManagementServer -> *offerBook
-
-func (server *ManagementServer) offers() *offerBook {
-	book, _ := offerBooks.LoadOrStore(server, &offerBook{})
-	return book.(*offerBook)
 }
 
 // offerPairing answers admin.pair.offer (N1).
 func (server *ManagementServer) offerPairing(ctx context.Context, authority *auth.Service, via string) (
 	protocol.AdminRPCPairOfferResultPayload, error,
 ) {
-	book := server.offers()
+	book := &server.outgoing
 	book.mu.Lock()
 	defer book.mu.Unlock()
 	origin, err := server.pairingOrigin(ctx)
@@ -129,7 +121,7 @@ func (server *ManagementServer) offerPairing(ctx context.Context, authority *aut
 // endOffer answers admin.pair.offer.end: it deletes the offered grant and
 // the link's grant, each only when it was not redeemed.
 func (server *ManagementServer) endOffer(ctx context.Context, authority *auth.Service, link *string) error {
-	book := server.offers()
+	book := &server.outgoing
 	book.mu.Lock()
 	defer book.mu.Unlock()
 	err := server.dropOffer(ctx, authority, book)
@@ -140,7 +132,7 @@ func (server *ManagementServer) endOffer(ctx context.Context, authority *auth.Se
 }
 
 // dropOffer deletes the offered grant (unless redeemed) and clears the state.
-func (server *ManagementServer) dropOffer(ctx context.Context, authority *auth.Service, book *offerBook) error {
+func (server *ManagementServer) dropOffer(ctx context.Context, authority *auth.Service, book *outgoingOffer) error {
 	if book.state == nil {
 		return nil
 	}

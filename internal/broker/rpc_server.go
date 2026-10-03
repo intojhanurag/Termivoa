@@ -104,6 +104,8 @@ type ManagementServer struct {
 	// offers are the grants new computers offered to this home (offers.go),
 	// in memory only.
 	offers offerBook
+	// outgoing is this computer's own offer to its home (offer.go).
+	outgoing outgoingOffer
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
