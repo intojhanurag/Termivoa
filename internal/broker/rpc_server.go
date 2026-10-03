@@ -101,6 +101,9 @@ type ManagementServer struct {
 	trustMu     sync.Mutex
 	sweptStatus *tailnet.Status
 	trustWake   chan struct{}
+	// offers are the grants new computers offered to this home (offers.go),
+	// in memory only.
+	offers offerBook
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
