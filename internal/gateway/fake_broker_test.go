@@ -36,6 +36,9 @@ type fakeBroker struct {
 	origin      string // returned by Origin
 	previews    map[uint16]string
 	previewErr  error // returned by PreviewTarget for an authorized credential
+	offerErr    error // returned by OfferComputer
+	offers      []protocol.HTTPComputerOfferRequest
+	found       []protocol.HTTPFoundComputer
 }
 
 func newFakeBroker() *fakeBroker { return &fakeBroker{opened: make(chan *fakeStream, 4)} }
@@ -256,6 +259,32 @@ func (broker *fakeBroker) AddComputer(_ context.Context, credential string, requ
 
 func (broker *fakeBroker) RemoveComputer(_ context.Context, credential, _ string) error {
 	return broker.authorize(credential)
+}
+
+// OfferComputer records the offer with the origin the gateway forwarded
+// ("offer@<origin>"; the offer route must never forward one).
+func (broker *fakeBroker) OfferComputer(ctx context.Context, request protocol.HTTPComputerOfferRequest) error {
+	origin, _ := gatewayapi.ForwardedOrigin(ctx)
+	broker.record("offer@" + origin)
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	broker.offers = append(broker.offers, request)
+	return broker.offerErr
+}
+
+// FoundComputers refuses a forwarded origin like the broker's authorizeOwn.
+func (broker *fakeBroker) FoundComputers(ctx context.Context, credential string) (protocol.HTTPComputerFoundResponse, error) {
+	origin, _ := gatewayapi.ForwardedOrigin(ctx)
+	broker.record("found@" + origin)
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPComputerFoundResponse{}, err
+	}
+	if origin != "" {
+		return protocol.HTTPComputerFoundResponse{}, &gatewayapi.Error{Code: protocol.InvalidRequest, Message: "this app is not allowed to use this computer"}
+	}
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	return protocol.HTTPComputerFoundResponse{Computers: append([]protocol.HTTPFoundComputer{}, broker.found...)}, broker.opErr
 }
 
 func (broker *fakeBroker) OpenLive(_ context.Context, credential string) (gatewayapi.LiveStream, error) {

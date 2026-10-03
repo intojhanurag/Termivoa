@@ -11,3 +11,6 @@ import (
 func terminationSignals() []os.Signal {
 	return []os.Signal{os.Interrupt, syscall.SIGTERM}
 }
+
+// hangupSignals: a closed console is already SIGTERM on Windows.
+func hangupSignals() []os.Signal { return nil }

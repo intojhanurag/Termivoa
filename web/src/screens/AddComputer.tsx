@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ApiError, deviceLabelProblem, firstLabel } from '../api/http';
+import { ApiError, deviceLabelProblem, firstLabel, homeOrigin } from '../api/http';
 import { forgetPending } from '../computers';
 import type { TailnetNode } from '../generated/protocol';
 import {
@@ -50,7 +50,7 @@ export function AddComputerConfirm({ link, node, onConfirm, onCancel }: {
         <dt>{owner.term}</dt><dd>{owner.value}</dd>
       </dl>
       <p className="hint-text">
-        Add it only if you just ran <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
+        Add it only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">
         <button type="button" className="primary" onClick={onConfirm}>Add {label}</button>
@@ -78,7 +78,7 @@ export function AddComputerContinue({ link, onContinue, onCancel }: {
         <dt>Address</dt><dd>{link.origin}</dd>
       </dl>
       <p className="hint-text">
-        Continue only if you just ran <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
+        Continue only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">
         <button type="button" className="primary" onClick={onContinue}>Continue</button>
@@ -194,13 +194,16 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
         </>
       )}
       {phase?.kind === 'expired' && (
-        <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then scan or paste the new link.</p>
+        <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then tap Add again, or scan or paste the new link.</p>
       )}
       {phase?.kind === 'cancelled' && (
         <p role="alert" className="error">Adding {label} was cancelled. If {label} asks, answer N.</p>
       )}
       {phase?.kind === 'error' && <p role="alert" className="error">{addFailure(phase.error, label)}</p>}
-      {(phase?.kind === 'expired' || phase?.kind === 'cancelled' || phase?.kind === 'error') && (
+      {phase?.kind === 'stale' && (
+        <p role="alert" className="error">{label} stopped waiting. On {label} run <code>pterm pair --via {firstLabel(homeOrigin())}</code>, then tap Add again.</p>
+      )}
+      {(phase?.kind === 'expired' || phase?.kind === 'cancelled' || phase?.kind === 'error' || phase?.kind === 'stale') && (
         <button type="button" onClick={leave(onSettings)}>Settings</button>
       )}
     </main>

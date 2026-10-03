@@ -260,3 +260,31 @@ describe('revision helpers', () => {
     expect(firstLabel('https://vps.tailx.ts.net')).toBe('vps');
   });
 });
+
+describe('api.foundComputers', () => {
+  const grant = 'G'.repeat(43);
+  const row = (host: string) => ({ origin: `https://${host}.tailx.ts.net`, label: host, grant, expiresAt: '2026-10-03T10:00:00Z' });
+
+  it('reads home\'s Found list same-origin and drops a row that breaks the schema', async () => {
+    const fetch = vi.fn(async () => json(200, { computers: [row('nas'), { ...row('pi'), grant: 'short' }, row('vps')] }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(api.foundComputers()).resolves.toEqual({ computers: [row('nas'), row('vps')] });
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/v1/computers/found');
+    expect(init).toMatchObject({ method: 'GET', credentials: 'same-origin' });
+  });
+
+  it('refuses a body that breaks the schema', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { computers: Array.from({ length: 17 }, (_, at) => row(`c${at}`)) })));
+    await expect(api.foundComputers()).rejects.toMatchObject({ code: 'invalid_response' });
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { computers: 'all' })));
+    await expect(api.foundComputers()).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it('keeps every failure an error, 404 and 405 too (app and home are one build)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('404 page not found', { status: 404 })));
+    await expect(api.foundComputers()).rejects.toMatchObject({ status: 404 });
+    vi.stubGlobal('fetch', vi.fn(async () => json(503, { error: { code: 'host_unavailable', message: 'x' } })));
+    await expect(api.foundComputers()).rejects.toMatchObject({ status: 503, code: 'host_unavailable' });
+  });
+});

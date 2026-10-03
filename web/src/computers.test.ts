@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { READ_TIMEOUT_MS } from './api/http';
 import {
   COMPUTERS_KEY, confirmComputer, forgetPending, logOut, logoutNote, logoutPeers, PALETTE, previewOriginOf, refreshComputers, removeComputer, renameComputer,
-  sessionKey, storedComputers, toComputer,
+  sessionKey, storedComputers, toComputer, FOUND_POLL_MS, watchFound,
 } from './computers';
 
 const home = 'https://mac.tailx.ts.net';
@@ -225,5 +225,99 @@ describe('log out', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
     await expect(logOut([], memory)).resolves.toBe('You logged out. This phone no longer has access.');
     expect(local.has(COMPUTERS_KEY)).toBe(false);
+  });
+});
+
+describe('watchFound', () => {
+  const row = { origin: 'https://vps.tailx.ts.net', label: 'vps', grant: 'G'.repeat(43), expiresAt: '2026-10-03T10:00:00Z' };
+
+  /** A page whose visibility the test sets. */
+  function page() {
+    const listeners = new Set<() => void>();
+    const fake = {
+      visibilityState: 'visible' as DocumentVisibilityState,
+      addEventListener: (_: string, listener: () => void) => { listeners.add(listener); },
+      removeEventListener: (_: string, listener: () => void) => { listeners.delete(listener); },
+      set(state: DocumentVisibilityState) {
+        fake.visibilityState = state;
+        for (const listener of listeners) listener();
+      },
+      listeners,
+    };
+    return fake;
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('reads at once and every 5 s while the screen is open, and stops when it closes', async () => {
+    const fetch = vi.fn(async () => json(200, { computers: [row] }));
+    vi.stubGlobal('fetch', fetch);
+    const states: unknown[] = [];
+    const fake = page();
+    const stop = watchFound((state) => states.push(state), fake as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch.mock.calls[0]).toEqual(['/api/v1/computers/found', expect.objectContaining({ method: 'GET' })]);
+    expect(states).toEqual([{ kind: 'rows', computers: [row] }]);
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS * 2);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    stop();
+    expect(fake.listeners.size).toBe(0);
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS * 4);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('pauses in the background and reads at once back in front', async () => {
+    const fetch = vi.fn(async () => json(200, { computers: [] }));
+    vi.stubGlobal('fetch', fetch);
+    const fake = page();
+    const stop = watchFound(() => undefined, fake as never);
+    await vi.advanceTimersByTimeAsync(0);
+    fake.set('hidden');
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS * 4);
+    expect(fetch).toHaveBeenCalledOnce();
+    fake.set('visible');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it('does not read when the screen opens in the background', async () => {
+    const fetch = vi.fn(async () => json(200, { computers: [] }));
+    vi.stubGlobal('fetch', fetch);
+    const fake = page();
+    fake.visibilityState = 'hidden';
+    const stop = watchFound(() => undefined, fake as never);
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS * 2);
+    expect(fetch).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('says no_status only after two 503 answers in a row, and is quiet on other failures', async () => {
+    const states: unknown[] = [];
+    vi.stubGlobal('fetch', vi.fn(async () => json(500, { error: { code: 'internal_error', message: 'x' } })));
+    const stop = watchFound((state) => states.push(state), page() as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(states).toEqual([]);
+    const unavailable = () => json(503, { error: { code: 'host_unavailable', message: 'x' } });
+    vi.stubGlobal('fetch', vi.fn(async () => unavailable()));
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    expect(states).toEqual([]); // one 503: a home that just started
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { computers: [] })));
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    vi.stubGlobal('fetch', vi.fn(async () => unavailable()));
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    expect(states).toEqual([{ kind: 'rows', computers: [] }]);
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    expect(states).toEqual([{ kind: 'rows', computers: [] }, { kind: 'no_status' }]);
+    const old = vi.fn(async () => new Response('405 method not allowed', { status: 405 }));
+    vi.stubGlobal('fetch', old);
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS * 3);
+    expect(states).toHaveLength(2); // quiet, and the reads go on
+    expect(old).toHaveBeenCalledTimes(3);
+    stop();
   });
 });

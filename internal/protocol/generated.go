@@ -18,6 +18,10 @@ type ProtocolTypes struct {
 	AdminRPCOrigin                   AdminRPCOriginPayload                   `json:"adminRPCOrigin"`
 	AdminRPCPairGrant                AdminRPCPairGrantPayload                `json:"adminRPCPairGrant"`
 	AdminRPCPairGrantResult          AdminRPCPairGrantResultPayload          `json:"adminRPCPairGrantResult"`
+	AdminRPCPairOffer                AdminRPCPairOfferPayload                `json:"adminRPCPairOffer"`
+	AdminRPCPairOfferEnd             AdminRPCPairOfferEndPayload             `json:"adminRPCPairOfferEnd"`
+	AdminRPCPairOfferProblem         AdminRPCPairOfferProblem                `json:"adminRPCPairOfferProblem"`
+	AdminRPCPairOfferResult          AdminRPCPairOfferResultPayload          `json:"adminRPCPairOfferResult"`
 	AdminRPCPairPendingResult        AdminRPCPairPendingResultPayload        `json:"adminRPCPairPendingResult"`
 	AdminRPCPendingID                AdminRPCPendingIDPayload                `json:"adminRPCPendingID"`
 	AdminRPCPendingPairing           AdminRPCPendingPairing                  `json:"adminRPCPendingPairing"`
@@ -89,11 +93,14 @@ type ProtocolTypes struct {
 	HTTPComputer                     HTTPComputer                            `json:"httpComputer"`
 	HTTPComputerAddRequest           HTTPComputerAddRequest                  `json:"httpComputerAddRequest"`
 	HTTPComputerAddResponse          HTTPComputerAddResponse                 `json:"httpComputerAddResponse"`
+	HTTPComputerFoundResponse        HTTPComputerFoundResponse               `json:"httpComputerFoundResponse"`
 	HTTPComputerListResponse         HTTPComputerListResponse                `json:"httpComputerListResponse"`
+	HTTPComputerOfferRequest         HTTPComputerOfferRequest                `json:"httpComputerOfferRequest"`
 	HTTPComputerState                HTTPComputerState                       `json:"httpComputerState"`
 	HTTPDeviceRenameRequest          HTTPDeviceRenameRequest                 `json:"httpDeviceRenameRequest"`
 	HTTPDeviceSummary                HTTPDeviceSummary                       `json:"httpDeviceSummary"`
 	HTTPErrorResponse                HTTPErrorResponse                       `json:"httpErrorResponse"`
+	HTTPFoundComputer                HTTPFoundComputer                       `json:"httpFoundComputer"`
 	HTTPNamedOption                  HTTPNamedOption                         `json:"httpNamedOption"`
 	HTTPPairPollRequest              HTTPPairPollRequest                     `json:"httpPairPollRequest"`
 	HTTPPairPollResponse             HTTPPairPollResponse                    `json:"httpPairPollResponse"`
@@ -238,6 +245,32 @@ type AdminRPCPairGrantResultPayload struct {
 	ExpiresAt string       `json:"expiresAt"`
 	Grant     string       `json:"grant"`
 	Origin    *string      `json:"origin,omitempty"`
+}
+
+// pterm pair --via (interactive wait only): offer this computer to the home computer via.
+// The first call resolves via in a fresh tailscale status, pins that node and makes a bound
+// grant; later calls with the same via re-send the same grant, or a new one when 60 s or
+// less are left. allowTagged is not accepted: home drops every offer when either node is
+// tagged.
+type AdminRPCPairOfferPayload struct {
+	Via string `json:"via"`
+}
+
+// Ends the offer: deletes the offered grant and the given grant (the link's), each only
+// when it was not redeemed, and clears the offer state.
+type AdminRPCPairOfferEndPayload struct {
+	Grant *string `json:"grant,omitempty"`
+}
+
+// The home the offer went to and when the offered grant expires. The grant itself is never
+// in the result. delivered is true exactly when home answered 204; problem is present
+// exactly when delivered is false.
+type AdminRPCPairOfferResultPayload struct {
+	AppNode   TailnetNode               `json:"appNode"`
+	AppOrigin string                    `json:"appOrigin"`
+	Delivered bool                      `json:"delivered"`
+	ExpiresAt string                    `json:"expiresAt"`
+	Problem   *AdminRPCPairOfferProblem `json:"problem,omitempty"`
 }
 
 type AdminRPCPairPendingResultPayload struct {
@@ -841,10 +874,37 @@ type HTTPComputerAddResponse struct {
 	State    HTTPComputerState `json:"state"`
 }
 
+// GET /api/v1/computers/found: unexpired offers of computers in home's own tailnet (same
+// owner, untagged) that are not yet confirmed for the calling device, sorted by origin, one
+// per origin.
+type HTTPComputerFoundResponse struct {
+	Computers []HTTPFoundComputer `json:"computers"`
+}
+
+// One computer that waits to be added. origin and grant come from its offer; label is the
+// first DNS label of its host from home's own tailscale status, never from the offer.
+// expiresAt is when home drops the offer.
+type HTTPFoundComputer struct {
+	ExpiresAt string `json:"expiresAt"`
+	Grant     string `json:"grant"`
+	Label     string `json:"label"`
+	Origin    string `json:"origin"`
+}
+
 // GET /api/v1/computers: the calling device's confirmed computers. Pending entries are
 // never listed.
 type HTTPComputerListResponse struct {
 	Computers []HTTPComputer `json:"computers"`
+}
+
+// POST /api/v1/computers/offer, sent by a new computer's broker to the home computer the
+// user named (pterm pair --via). origin is the new computer's own canonical origin; grant
+// is a single-use grant made on the new computer and bound to home's origin and pinned
+// node. No authentication; the gateway refuses any Origin or Sec-Fetch-* header and answers
+// 204 for every well-formed offer. See http-api.md, Found on your network.
+type HTTPComputerOfferRequest struct {
+	Grant  string `json:"grant"`
+	Origin string `json:"origin"`
 }
 
 type HTTPErrorResponse struct {
@@ -1261,6 +1321,10 @@ const (
 	AdminPairApproveResult     AdminRPCMessageType = "admin.pair.approve.result"
 	AdminPairGrant             AdminRPCMessageType = "admin.pair.grant"
 	AdminPairGrantResult       AdminRPCMessageType = "admin.pair.grant.result"
+	AdminPairOffer             AdminRPCMessageType = "admin.pair.offer"
+	AdminPairOfferEnd          AdminRPCMessageType = "admin.pair.offer.end"
+	AdminPairOfferEndResult    AdminRPCMessageType = "admin.pair.offer.end.result"
+	AdminPairOfferResult       AdminRPCMessageType = "admin.pair.offer.result"
 	AdminPairPending           AdminRPCMessageType = "admin.pair.pending"
 	AdminPairPendingResult     AdminRPCMessageType = "admin.pair.pending.result"
 	AdminProfileDetect         AdminRPCMessageType = "admin.profile.detect"
@@ -1273,6 +1337,17 @@ const (
 	AdminProjectListResult     AdminRPCMessageType = "admin.project.list.result"
 	AdminShutdown              AdminRPCMessageType = "admin.shutdown"
 	AdminShutdownResult        AdminRPCMessageType = "admin.shutdown.result"
+)
+
+// unreachable: no HTTP answer from home (or no usable address). busy: home answered 429
+// (its offer bucket is empty). not_accepted: any other answer than 204, for example a home
+// without this feature.
+type AdminRPCPairOfferProblem string
+
+const (
+	Busy        AdminRPCPairOfferProblem = "busy"
+	NotAccepted AdminRPCPairOfferProblem = "not_accepted"
+	Unreachable AdminRPCPairOfferProblem = "unreachable"
 )
 
 type AgentState string
@@ -1297,6 +1372,7 @@ const (
 	ErrorCodeRevoked    ErrorCode = "revoked"
 	GenerationChanged   ErrorCode = "generation_changed"
 	HistoryChanged      ErrorCode = "history_changed"
+	HomeChanged         ErrorCode = "home_changed"
 	HostUnavailable     ErrorCode = "host_unavailable"
 	InputGap            ErrorCode = "input_gap"
 	InternalError       ErrorCode = "internal_error"
@@ -1446,8 +1522,12 @@ const (
 	GatewayAuthLogoutResult       GatewayRPCMessageType = "gateway.auth.logout.result"
 	GatewayComputersAdd           GatewayRPCMessageType = "gateway.computers.add"
 	GatewayComputersAddResult     GatewayRPCMessageType = "gateway.computers.add.result"
+	GatewayComputersFound         GatewayRPCMessageType = "gateway.computers.found"
+	GatewayComputersFoundResult   GatewayRPCMessageType = "gateway.computers.found.result"
 	GatewayComputersList          GatewayRPCMessageType = "gateway.computers.list"
 	GatewayComputersListResult    GatewayRPCMessageType = "gateway.computers.list.result"
+	GatewayComputersOffer         GatewayRPCMessageType = "gateway.computers.offer"
+	GatewayComputersOfferResult   GatewayRPCMessageType = "gateway.computers.offer.result"
 	GatewayComputersRemove        GatewayRPCMessageType = "gateway.computers.remove"
 	GatewayComputersRemoveResult  GatewayRPCMessageType = "gateway.computers.remove.result"
 	GatewayDeviceRename           GatewayRPCMessageType = "gateway.device.rename"
@@ -1749,6 +1829,6 @@ const (
 // ProtocolRevision is this build's additive protocol v1 revision and
 // MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
 const (
-	ProtocolRevision    = 2
+	ProtocolRevision    = 3
 	MinProtocolRevision = 1
 )

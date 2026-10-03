@@ -360,6 +360,21 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		}
 		_, err = server.config.Store.RemoveComputer(ctx, principal.DeviceID, payload.Origin)
 		return protocol.BrokerRPCEmptyPayload{}, nil, err
+	case protocol.GatewayComputersOffer:
+		// No credential: a new computer posts this (docs/found-on-network.md, H2).
+		// Every offer gets the same empty answer, kept or dropped.
+		payload, err := protocol.DecodeRPCPayload[protocol.HTTPComputerOfferRequest](request)
+		if err != nil {
+			return nil, nil, err
+		}
+		server.offerComputer(request.Origin, payload)
+		return protocol.BrokerRPCEmptyPayload{}, nil, nil
+	case protocol.GatewayComputersFound:
+		if _, err := authorizeCredential(request, authorizeOwn); err != nil {
+			return nil, nil, err
+		}
+		result, err := server.foundComputers()
+		return result, nil, err
 	case protocol.GatewayUploadBegin, protocol.GatewayUploadChunk, protocol.GatewayUploadCommit:
 		// An upload must start a fresh connection; see serveUpload.
 		return nil, nil, errUploadOrder

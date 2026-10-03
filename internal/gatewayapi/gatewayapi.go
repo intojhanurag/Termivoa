@@ -79,6 +79,13 @@ type Broker interface {
 	ListComputers(ctx context.Context, credential string) (protocol.GatewayRPCComputerListResultPayload, error)
 	AddComputer(ctx context.Context, credential string, request protocol.HTTPComputerAddRequest) (protocol.HTTPComputerAddResponse, error)
 	RemoveComputer(ctx context.Context, credential, origin string) error
+	// OfferComputer is gateway.computers.offer (docs/found-on-network.md, H1):
+	// no credential and never a forwarded origin. The broker keeps or drops
+	// the offer without saying which.
+	OfferComputer(ctx context.Context, request protocol.HTTPComputerOfferRequest) error
+	// FoundComputers lists the offers for the device that owns the
+	// credential, from this computer's own origin only.
+	FoundComputers(ctx context.Context, credential string) (protocol.HTTPComputerFoundResponse, error)
 	// OpenLive binds a new broker live stream to the credential. The stream
 	// starts as an observer and carries canonical envelope JSON both ways.
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)

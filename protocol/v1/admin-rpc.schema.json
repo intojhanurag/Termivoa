@@ -29,6 +29,8 @@
     { "$ref": "#/$defs/deviceRevokeViaMessage" },
     { "$ref": "#/$defs/computersListMessage" },
     { "$ref": "#/$defs/computersRemoveMessage" },
+    { "$ref": "#/$defs/pairOfferMessage" },
+    { "$ref": "#/$defs/pairOfferEndMessage" },
     { "$ref": "#/$defs/pairGrantResultMessage" },
     { "$ref": "#/$defs/pairPendingResultMessage" },
     { "$ref": "#/$defs/pairApproveResultMessage" },
@@ -45,6 +47,8 @@
     { "$ref": "#/$defs/deviceRevokeViaResultMessage" },
     { "$ref": "#/$defs/computersListResultMessage" },
     { "$ref": "#/$defs/computersRemoveResultMessage" },
+    { "$ref": "#/$defs/pairOfferResultMessage" },
+    { "$ref": "#/$defs/pairOfferEndResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -56,12 +60,13 @@
         "admin.device.revoke", "admin.project.add", "admin.project.list", "admin.profile.list",
         "admin.profile.detect", "admin.config.origin", "admin.shutdown", "admin.gateway.stop", "admin.device.rename",
         "admin.device.revoke.via", "admin.computers.list", "admin.computers.remove",
+        "admin.pair.offer", "admin.pair.offer.end",
         "admin.pair.grant.result", "admin.pair.pending.result", "admin.pair.approve.result",
         "admin.device.list.result", "admin.device.revoke.result", "admin.project.add.result",
         "admin.project.list.result", "admin.profile.list.result", "admin.profile.detect.result",
         "admin.config.origin.result", "admin.shutdown.result", "admin.gateway.stop.result",
         "admin.device.rename.result", "admin.device.revoke.via.result", "admin.computers.list.result",
-        "admin.computers.remove.result", "admin.error"
+        "admin.computers.remove.result", "admin.pair.offer.result", "admin.pair.offer.end.result", "admin.error"
       ]
     },
     "timestamp": { "$ref": "http-api.schema.json#/$defs/timestamp" },
@@ -110,6 +115,45 @@
         "origin": { "$ref": "#/$defs/origin" },
         "appOrigin": { "$ref": "#/$defs/appOrigin" },
         "appNode": { "$ref": "http-api.schema.json#/$defs/tailnetNode" }
+      }
+    },
+    "pairOfferPayload": {
+      "title": "AdminRPCPairOfferPayload",
+      "description": "pterm pair --via (interactive wait only): offer this computer to the home computer via. The first call resolves via in a fresh tailscale status, pins that node and makes a bound grant; later calls with the same via re-send the same grant, or a new one when 60 s or less are left. allowTagged is not accepted: home drops every offer when either node is tagged.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["via"],
+      "properties": {
+        "via": { "$ref": "#/$defs/via" }
+      }
+    },
+    "pairOfferProblem": {
+      "title": "AdminRPCPairOfferProblem",
+      "description": "unreachable: no HTTP answer from home (or no usable address). busy: home answered 429 (its offer bucket is empty). not_accepted: any other answer than 204, for example a home without this feature.",
+      "type": "string",
+      "enum": ["unreachable", "busy", "not_accepted"]
+    },
+    "pairOfferResultPayload": {
+      "title": "AdminRPCPairOfferResultPayload",
+      "description": "The home the offer went to and when the offered grant expires. The grant itself is never in the result. delivered is true exactly when home answered 204; problem is present exactly when delivered is false.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appOrigin", "appNode", "expiresAt", "delivered"],
+      "properties": {
+        "appOrigin": { "$ref": "#/$defs/appOrigin" },
+        "appNode": { "$ref": "http-api.schema.json#/$defs/tailnetNode" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" },
+        "delivered": { "type": "boolean" },
+        "problem": { "$ref": "#/$defs/pairOfferProblem" }
+      }
+    },
+    "pairOfferEndPayload": {
+      "title": "AdminRPCPairOfferEndPayload",
+      "description": "Ends the offer: deletes the offered grant and the given grant (the link's), each only when it was not redeemed, and clears the offer state.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grant": { "$ref": "http-api.schema.json#/$defs/secret" }
       }
     },
     "pendingPairing": {
@@ -353,6 +397,8 @@
     "deviceRevokeViaMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke.via" }, "payload": { "$ref": "#/$defs/revokeViaPayload" } } },
     "computersListMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.list" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "computersRemoveMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.remove" }, "payload": { "$ref": "#/$defs/computerRemovePayload" } } },
+    "pairOfferMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer" }, "payload": { "$ref": "#/$defs/pairOfferPayload" } } },
+    "pairOfferEndMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer.end" }, "payload": { "$ref": "#/$defs/pairOfferEndPayload" } } },
     "pairGrantResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant.result" }, "payload": { "$ref": "#/$defs/pairGrantResultPayload" } } },
     "pairPendingResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending.result" }, "payload": { "$ref": "#/$defs/pairPendingResultPayload" } } },
     "pairApproveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.approve.result" }, "payload": { "$ref": "#/$defs/pendingIdPayload" } } },
@@ -369,6 +415,8 @@
     "deviceRevokeViaResultMessage": { "type": "object", "properties": { "type": { "const": "admin.device.revoke.via.result" }, "payload": { "$ref": "#/$defs/revokeViaResultPayload" } } },
     "computersListResultMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.list.result" }, "payload": { "$ref": "#/$defs/computerListResultPayload" } } },
     "computersRemoveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.remove.result" }, "payload": { "$ref": "#/$defs/computerRemoveResultPayload" } } },
+    "pairOfferResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer.result" }, "payload": { "$ref": "#/$defs/pairOfferResultPayload" } } },
+    "pairOfferEndResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer.end.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "admin.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

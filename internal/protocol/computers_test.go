@@ -203,3 +203,135 @@ func TestSessionAttachThumbnailMode(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGatewayComputerOfferAndFoundMessages(t *testing.T) {
+	offer := HTTPComputerOfferRequest{Origin: "https://vps.tailx.ts.net", Grant: rpcTestSecret}
+	if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.computers.offer", offer)); err != nil {
+		t.Fatal(err)
+	}
+	for name, message := range map[string][]byte{
+		"explicit port":   rpcJSON(t, "gateway.computers.offer", HTTPComputerOfferRequest{Origin: "https://vps.tailx.ts.net:443", Grant: rpcTestSecret}),
+		"http origin":     rpcJSON(t, "gateway.computers.offer", HTTPComputerOfferRequest{Origin: "http://vps.tailx.ts.net", Grant: rpcTestSecret}),
+		"short grant":     rpcJSON(t, "gateway.computers.offer", HTTPComputerOfferRequest{Origin: offer.Origin, Grant: rpcTestSecret[:42]}),
+		"padded grant":    rpcJSON(t, "gateway.computers.offer", HTTPComputerOfferRequest{Origin: offer.Origin, Grant: rpcTestSecret[:42] + "="}),
+		"missing grant":   rpcJSON(t, "gateway.computers.offer", map[string]string{"origin": offer.Origin}),
+		"unknown field":   rpcJSON(t, "gateway.computers.offer", map[string]string{"origin": offer.Origin, "grant": rpcTestSecret, "label": "vps"}),
+		"found no cookie": rpcJSON(t, "gateway.computers.found", BrokerRPCEmptyPayload{}),
+	} {
+		if _, err := DecodeGatewayRPCRequest(message); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	if err := ValidateComputerOffer(offer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.computers.offer.result", BrokerRPCEmptyPayload{})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeGatewayRPCRequest(rpcJSON(t, "gateway.computers.found", GatewayRPCCredentialPayload{Credential: rpcTestSecret})); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := func(origin string) HTTPFoundComputer {
+		return HTTPFoundComputer{Origin: origin, Label: "vps", Grant: rpcTestSecret, ExpiresAt: "2026-10-03T10:00:00Z"}
+	}
+	full := HTTPComputerFoundResponse{Computers: make([]HTTPFoundComputer, MaxFoundComputers)}
+	for index := range full.Computers {
+		full.Computers[index] = entry("https://m" + strings.Repeat("a", index) + ".tailx.ts.net")
+	}
+	for name, found := range map[string]HTTPComputerFoundResponse{
+		"empty": {Computers: []HTTPFoundComputer{}},
+		"two":   {Computers: []HTTPFoundComputer{entry("https://linux.tailx.ts.net"), entry("https://vps.tailx.ts.net")}},
+		"16":    full,
+	} {
+		if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.computers.found.result", found)); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	changed := func(change func(*HTTPFoundComputer)) HTTPComputerFoundResponse {
+		computer := entry("https://vps.tailx.ts.net")
+		change(&computer)
+		return HTTPComputerFoundResponse{Computers: []HTTPFoundComputer{computer}}
+	}
+	for name, found := range map[string]HTTPComputerFoundResponse{
+		"nil list":      {},
+		"17":            {Computers: append(append([]HTTPFoundComputer(nil), full.Computers...), entry("https://zz.tailx.ts.net"))},
+		"unsorted":      {Computers: []HTTPFoundComputer{entry("https://vps.tailx.ts.net"), entry("https://linux.tailx.ts.net")}},
+		"duplicate":     {Computers: []HTTPFoundComputer{entry("https://vps.tailx.ts.net"), entry("https://vps.tailx.ts.net")}},
+		"control label": changed(func(computer *HTTPFoundComputer) { computer.Label = "vps\x1b[2J" }),
+		"long label":    changed(func(computer *HTTPFoundComputer) { computer.Label = strings.Repeat("a", MaxComputerLabelBytes+1) }),
+		"empty label":   changed(func(computer *HTTPFoundComputer) { computer.Label = "" }),
+		"bad time":      changed(func(computer *HTTPFoundComputer) { computer.ExpiresAt = "soon" }),
+		"bad grant":     changed(func(computer *HTTPFoundComputer) { computer.Grant = "short" }),
+		"bad origin":    changed(func(computer *HTTPFoundComputer) { computer.Origin = "https://VPS.tailx.ts.net" }),
+	} {
+		if _, err := DecodeGatewayRPCResponse(rpcJSON(t, "gateway.computers.found.result", found)); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+}
+
+func TestAdminPairOfferMessages(t *testing.T) {
+	for _, via := range []string{"mac", "https://mac.tailx.ts.net"} {
+		if _, err := DecodeAdminRPCRequest(rpcJSON(t, "admin.pair.offer", AdminRPCPairOfferPayload{Via: via})); err != nil {
+			t.Fatalf("%s: %v", via, err)
+		}
+	}
+	for name, message := range map[string][]byte{
+		"no via":       rpcJSON(t, "admin.pair.offer", BrokerRPCEmptyPayload{}),
+		"bad via":      rpcJSON(t, "admin.pair.offer", AdminRPCPairOfferPayload{Via: "Mac"}),
+		"allow tagged": rpcJSON(t, "admin.pair.offer", map[string]any{"via": "mac", "allowTagged": true}),
+		"end bad":      rpcJSON(t, "admin.pair.offer.end", AdminRPCPairOfferEndPayload{Grant: new("short")}),
+		"end unknown":  rpcJSON(t, "admin.pair.offer.end", map[string]string{"via": "mac"}),
+	} {
+		if _, err := DecodeAdminRPCRequest(message); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	for _, end := range []AdminRPCPairOfferEndPayload{{}, {Grant: new(rpcTestSecret)}} {
+		if _, err := DecodeAdminRPCRequest(rpcJSON(t, "admin.pair.offer.end", end)); err != nil {
+			t.Fatalf("%+v: %v", end, err)
+		}
+	}
+	if _, err := DecodeAdminRPCResponse(rpcJSON(t, "admin.pair.offer.end.result", BrokerRPCEmptyPayload{})); err != nil {
+		t.Fatal(err)
+	}
+
+	result := func(delivered bool, problem *AdminRPCPairOfferProblem) AdminRPCPairOfferResultPayload {
+		return AdminRPCPairOfferResultPayload{
+			AppOrigin: "https://mac.tailx.ts.net", AppNode: TailnetNode{ID: "nMAC", Owner: new("ada@example.com"), Tags: []string{}},
+			ExpiresAt: "2026-10-03T10:02:00Z", Delivered: delivered, Problem: problem,
+		}
+	}
+	unreachable, busy, notAccepted, unknown := Unreachable, Busy, NotAccepted, AdminRPCPairOfferProblem("refused")
+	for _, payload := range []AdminRPCPairOfferResultPayload{result(true, nil), result(false, &unreachable), result(false, &busy), result(false, &notAccepted)} {
+		if _, err := DecodeAdminRPCResponse(rpcJSON(t, "admin.pair.offer.result", payload)); err != nil {
+			t.Fatalf("%+v: %v", payload, err)
+		}
+	}
+	badOrigin, badTime := result(true, nil), result(true, nil)
+	badOrigin.AppOrigin = "https://mac.tailx.ts.net:443"
+	badTime.ExpiresAt = "later"
+	for name, payload := range map[string]AdminRPCPairOfferResultPayload{
+		"delivered with problem": result(true, &unreachable),
+		"undelivered no problem": result(false, nil),
+		"unknown problem":        result(false, &unknown),
+		"app origin with port":   badOrigin,
+		"bad expiry":             badTime,
+	} {
+		if _, err := DecodeAdminRPCResponse(rpcJSON(t, "admin.pair.offer.result", payload)); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	withGrant := map[string]any{
+		"appOrigin": "https://mac.tailx.ts.net", "appNode": result(true, nil).AppNode,
+		"expiresAt": "2026-10-03T10:02:00Z", "delivered": true, "grant": rpcTestSecret,
+	}
+	if _, err := DecodeAdminRPCResponse(rpcJSON(t, "admin.pair.offer.result", withGrant)); err == nil {
+		t.Fatal("offer result with the grant accepted")
+	}
+	homeChanged := BrokerRPCErrorPayload{Code: HomeChanged, Message: "mac is now a different Tailscale machine"}
+	if _, err := DecodeAdminRPCResponse(rpcJSON(t, "admin.error", homeChanged)); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -342,3 +342,36 @@ func TestAdminClientComputerAdministration(t *testing.T) {
 		t.Fatalf("mismatched removal = %v", err)
 	}
 }
+
+func TestAdminClientOfferAndEnd(t *testing.T) {
+	client, serverConnection := newAdminPipe(t)
+	origin := "https://mac.tailx.ts.net"
+	owner := "ada@example.com"
+	go func() {
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCPairOfferPayload](request)
+			if err != nil || payload.Via != "mac" {
+				return nil
+			}
+			problem := protocol.NotAccepted
+			return adminResponseJSON(t, request.RequestID, protocol.AdminPairOfferResult, protocol.AdminRPCPairOfferResultPayload{
+				AppOrigin: origin, AppNode: protocol.TailnetNode{ID: "nMac", Owner: &owner, Tags: []string{}},
+				ExpiresAt: "2026-09-27T00:02:00Z", Problem: &problem})
+		})
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCPairOfferEndPayload](request)
+			if err != nil || payload.Grant == nil || *payload.Grant != testGrant {
+				return nil
+			}
+			return adminResponseJSON(t, request.RequestID, protocol.AdminPairOfferEndResult, protocol.BrokerRPCEmptyPayload{})
+		})
+	}()
+	result, err := client.OfferPairing(context.Background(), "mac")
+	if err != nil || result.AppOrigin != origin || result.Delivered || result.Problem == nil || *result.Problem != protocol.NotAccepted {
+		t.Fatalf("offer = %+v, %v", result, err)
+	}
+	link := testGrant
+	if err := client.EndOffer(context.Background(), &link); err != nil {
+		t.Fatal(err)
+	}
+}

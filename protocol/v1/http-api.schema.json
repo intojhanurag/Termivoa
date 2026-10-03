@@ -190,6 +190,40 @@
         "node": { "$ref": "#/$defs/tailnetNode" }
       }
     },
+    "computerOfferRequest": {
+      "title": "HTTPComputerOfferRequest",
+      "description": "POST /api/v1/computers/offer, sent by a new computer's broker to the home computer the user named (pterm pair --via). origin is the new computer's own canonical origin; grant is a single-use grant made on the new computer and bound to home's origin and pinned node. No authentication; the gateway refuses any Origin or Sec-Fetch-* header and answers 204 for every well-formed offer. See http-api.md, Found on your network.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "grant"],
+      "properties": {
+        "origin": { "$ref": "#/$defs/computerOrigin" },
+        "grant": { "$ref": "#/$defs/secret" }
+      }
+    },
+    "foundComputer": {
+      "title": "HTTPFoundComputer",
+      "description": "One computer that waits to be added. origin and grant come from its offer; label is the first DNS label of its host from home's own tailscale status, never from the offer. expiresAt is when home drops the offer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "label", "grant", "expiresAt"],
+      "properties": {
+        "origin": { "$ref": "#/$defs/computerOrigin" },
+        "label": { "$ref": "#/$defs/computerLabel" },
+        "grant": { "$ref": "#/$defs/secret" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "computerFoundResponse": {
+      "title": "HTTPComputerFoundResponse",
+      "description": "GET /api/v1/computers/found: unexpired offers of computers in home's own tailnet (same owner, untagged) that are not yet confirmed for the calling device, sorted by origin, one per origin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["computers"],
+      "properties": {
+        "computers": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/foundComputer" } }
+      }
+    },
     "sessionListResponse": {
       "title": "HTTPSessionListResponse",
       "type": "object",

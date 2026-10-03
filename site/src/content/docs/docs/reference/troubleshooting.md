@@ -328,7 +328,47 @@ Run `pterm setup` on this computer so it has a Tailscale address, or pass it wit
 
 ### The code expired, or the computer refused it (Next beta)
 
-Run `pterm pair --via <home>` on that computer again, then scan or paste the new link. Answer `y` only when the codes match.
+The app says "The code expired or vps refused it. Run pterm pair --via on vps again, then tap Add again, or scan or paste the new link." Run `pterm pair --via <home>` on that computer again. Then tap **Add** next to it in **Found on your network**, or scan or paste the new link. Answer `y` only when the prompt names that computer and the codes match.
+
+### No Add button for a new computer (Next beta)
+
+**Found on your network** in **Settings → Computers** shows a computer only while it waits in `pterm setup` or `pterm pair --via` in a terminal.
+
+| You see | What to do |
+| --- | --- |
+| No **Found on your network** block at all | Home runs an older Termivoa. Update Termivoa on home, then reload the app. Until then, use **+ Add a computer → Scan QR** or **Paste link**. |
+| "To add another computer, run pterm setup on it, or pterm pair --via mac if it is already set up. It shows here while it waits." | Nothing waits now. Start the wait on the new computer and keep its terminal open. Check what that terminal says (see the next entries). |
+| "mac cannot read its Tailscale status. Check Tailscale on mac." | Check that Tailscale runs and is logged in on home (`pterm doctor` there). |
+| The computer is a tagged Tailscale node, or home is | **Add** does not work with tagged computers. Use the QR code or the link. |
+| The computer is already in your list and answers | It is not shown again. |
+
+The QR code and the link always work as the other way: **Settings → + Add a computer → Scan QR** or **Paste link**.
+
+### "vps stopped waiting" (Next beta)
+
+The full text is "vps stopped waiting. On vps run pterm pair --via mac, then tap Add again." The new computer no longer waits (it was stopped, or its 10 minutes ended), or the invite in the list was no longer valid. Run `pterm pair --via mac` on vps, then tap **Add** again.
+
+### `pterm pair --via` says "mac did not answer" or "cannot receive this yet" (Next beta)
+
+These lines show on the new computer when the app at home cannot list it. The QR code and the link below them still work.
+
+| The new computer says | What to do |
+| --- | --- |
+| "mac did not answer. Use the QR code or the link below." | Check that home is on and in your tailnet, and that `pterm doctor` on home is clean. Or use the QR code or the link. |
+| "mac is busy right now. Use the QR code or the link below." | Home got too many offers in a short time. Wait a little; the computer tries again every 30 seconds. Or use the QR code or the link. |
+| "Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below." | Update Termivoa on home, or use the QR code or the link. |
+| "This computer cannot read its Tailscale status. Use the QR code or the link below." | Check that Tailscale runs and is logged in on the new computer (`pterm doctor`). |
+| "This computer could not offer itself to mac. Use the QR code or the link below." | Termivoa on this computer could not send the offer. Use the QR code or the link, and run `pterm doctor` on this computer. |
+| The command ends with "… Restart Termivoa on this computer (pterm shutdown, then pterm launch), then try again" | An older Termivoa still runs on this computer after an update. Run `pterm shutdown`, then `pterm launch`, then the command again. |
+| "Add needs this computer's address: run pterm setup, or pterm config origin https://<this computer>. Use the QR code or the link below." | This computer has no saved Tailscale address. Run `pterm setup` (or `pterm config origin https://<this computer>.<tailnet>.ts.net`). |
+| "mac is now a different Tailscale machine. Run pterm pair --via mac again." | Home's Tailscale machine changed while you waited (for example a reinstall). Run the command again. |
+| "Nobody added this computer in 10 minutes. Run pterm pair --via mac again." | Run it again, and tap **Add** in the app while it waits. |
+| "the link expired before a phone opened it; run `pterm pair --via mac` again" | Nothing reached home, and the link expired after 2 minutes. Run it again. |
+| `pterm setup` ends with "Setup is done, but your phone is not connected yet. To connect it, run `pterm pair --via mac`." | Setup worked, but nobody added the computer in 10 minutes. Run `pterm pair --via mac`, then tap **Add** in the app. |
+
+### `pterm pair --via` says "Add does not work with tagged computers" (Next beta)
+
+The full line is "Add does not work with tagged computers: mac is tagged. Use the QR code or the link below." or "…: this computer is tagged. …". Home or this computer is a tagged Tailscale node, so home cannot show it in **Found on your network**. Scan the QR code in the app (**Settings → + Add a computer → Scan QR**) or paste the link.
 
 ### The link opens a page that says "This page cannot add the computer" (Next beta)
 

@@ -1,6 +1,7 @@
 // Phase B core flow in WebKit (README.md): pair with mac, add vps by paste,
 // one Sessions list, a vps session with an echo round-trip, its dev-server
-// preview in the app, and a foreign page that may not frame it.
+// preview in the app, a foreign page that may not frame it, and the phone
+// side of adding vps from Found on your network.
 //   PW=<playwright-core dir> [WEBKIT=<browser executable>] node scripts/e2e-multicomputer/webkit.mjs [--no-web-build] [--out <dir>]
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,7 +43,7 @@ try {
   await page.getByRole('button', { name: 'Pair this device' }).click();
   await page.getByText('Does your computer show this code?').waitFor();
   const shown = await code();
-  const [, printed] = await pair.wait(/shows code (\d{3}-\d{3})/);
+  const [, printed] = await pair.wait(/shows (?:code )?(\d{3}-\d{3})/);
   pair.end(printed === shown ? 'y\n' : 'n\n');
   await page.getByRole('heading', { name: 'Sessions' }).waitFor({ timeout: 30000 });
   check('W1', 'WebKit: pair with mac (home)', printed === shown, `code ${shown}, ${Date.now() - started} ms`);
@@ -60,7 +61,7 @@ try {
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByText('Does vps show this code?').waitFor();
   const addShown = await code();
-  const [, addPrinted] = await via.wait(/shows code (\d{3}-\d{3})/);
+  const [, addPrinted] = await via.wait(/shows (?:code )?(\d{3}-\d{3})/);
   via.end(addPrinted === addShown ? 'y\n' : 'n\n');
   const added = await until(async () => ((await text()).includes('vps is added') && 'added') || page.evaluate(() => document.querySelector('[role=alert]')?.innerText ?? ''), { what: 'add outcome' });
   await page.screenshot({ path: join(out, 'webkit-added.png') });
@@ -124,6 +125,33 @@ try {
   await evil.close();
   check('W7', 'WebKit: evil.tailx.ts.net framing the vps select address is refused', refused?.status === 403 && refusal === 'Open the preview from the Termivoa app.',
     `${refused?.status} referer=${refused?.referer} site=${refused?.secFetchSite} cookie=${refused?.cookie}; the frame shows: ${refusal}`);
+
+  // Found on your network, the phone side of F-add: vps waits in a real
+  // terminal; Settings → Computers → Found: vps — Add → the sheet → code → y.
+  const forget = await context.newPage();
+  await forget.goto(`${mac.origin}/`);
+  const removed = await forget.evaluate((host) => fetch(`/api/v1/computers/${host}`, { method: 'DELETE', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Pterm-Request': '1' }, body: '{}' }).then((r) => r.status), vps.host);
+  await forget.close();
+  started = Date.now();
+  const offerCli = interactive(vps, ['pair', '--via', 'mac'], { pty: true });
+  const [sent] = await offerCli.wait(/Sent to mac \(https:\/\/mac\.tailx\.ts\.net\)\./);
+  await page.goto(`${mac.origin}/`);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.locator('.found-add[aria-label="Add vps"]').click({ timeout: 30000 });
+  await page.getByText('Add this computer?').waitFor();
+  await page.locator('[role=dialog] button.primary', { hasText: 'Add vps' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByText('Does vps show this code?').waitFor();
+  const foundShown = await code();
+  const phoneLine = await page.getByText('If it matches, type y in the terminal on vps.').isVisible();
+  const [, foundPrinted] = await offerCli.wait(/THIS computer \(vps\)[\s\S]*?shows (\d{3}-\d{3}) and says "type y in the terminal on vps"/);
+  offerCli.end(foundPrinted === foundShown && phoneLine ? 'y\n' : 'n\n');
+  const foundAdded = await until(async () => ((await text()).includes('vps is added') && 'added') || page.evaluate(() => document.querySelector('[role=alert]')?.innerText ?? ''), { what: 'Found add outcome' });
+  await page.screenshot({ path: join(out, 'webkit-found-added.png') });
+  check('W8', 'WebKit: Found on your network: vps — Add → "Add this computer?" → code; vps\'s prompt names THIS computer and the code; y → "vps is added"',
+    removed === 204 && foundPrinted === foundShown && phoneLine && foundAdded === 'added' && await offerCli.done === 0,
+    `remove ${removed}; ${sent}; code ${foundShown}/${foundPrinted}; phone says "type y in the terminal on vps": ${phoneLine}; ${foundAdded}; ${Date.now() - started} ms`);
 } catch (error) {
   await page.screenshot({ path: join(out, 'webkit-fail.png') }).catch(() => undefined);
   check('ERR', 'WebKit harness error', false, `${error.message.split('\n')[0]} | ${(await text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300)}`);

@@ -38,6 +38,12 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 - Scan QR inside the app for + Add a computer, and a Home badge. Open: the
   real-phone check (owner-verification) and naming the exact iOS camera
   setting in the docs after it.
+- Found on your network: ADR 0007 and `docs/found-on-network.md` (owner
+  approved v2 2026-10-03); implemented (a waiting `pterm pair --via` or setup
+  offers the computer to home; **Settings → Computers → Found on your
+  network → Add**), with unit tests and multi-computer harness checks
+  `F-*` (`scripts/e2e-multicomputer/README.md`). Open: the real two-computer
+  and real-phone checks (Next 3).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -53,8 +59,16 @@ In this order.
    (`docs/owner-verification.md`, "Preview for sessions on peers"). Needs the
    owner's second computer with its own `tailscale serve --https=8443` (asked
    by `pterm setup` there). Can run in the same sitting as Gate 0.
-3. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
-   re-shoot).
+3. **Real checks for Found on your network**
+   (`docs/owner-verification.md`, "Found on your network"): vps's broker
+   under systemd dials mac's Tailscale IP on 443 and verifies its Let's
+   Encrypt certificate; mac's Tailscale Serve forwards an offer with no
+   `Origin` or `Sec-Fetch-*` and `Host` intact (and whether it sets
+   `X-Forwarded-For`); the reverse under launchd; the whole add on a real
+   iPhone Home Screen app and on Android. Can run in the same sitting as
+   Gate 0.
+4. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
+   re-shoot), and a picture of **Found on your network** with **Add**.
 
 ## Later
 

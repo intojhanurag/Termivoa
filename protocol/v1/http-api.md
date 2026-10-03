@@ -9,13 +9,16 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
   private hostname or the bound loopback address. Forwarded identity headers
   are ignored.
 - Every state-changing request (`POST`, `PATCH`) and the WebSocket upgrade
-  require an exact `Origin` match. A missing `Origin` is rejected.
+  require an exact `Origin` match. A missing `Origin` is rejected. The one
+  exception is `POST /api/v1/computers/offer`, which must carry no `Origin`
+  (see Found on your network).
 - Every `/api` request needs exactly one `Origin` that is this computer's
   own or an admitted app origin (see Cross-origin requests), or no `Origin`
   and exactly `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is
   refused with `403`. This applies to every client, with one computer too:
   Safari before iOS 16.4 sends neither header on `GET`, so iOS 16.4 is the
-  minimum.
+  minimum. `/api/v1/computers/offer` is the exception: it refuses every
+  `Origin` and `Sec-Fetch-*` header.
 - HTTP mutations require `Content-Type: application/json` and the fixed header
   `X-Pterm-Request: 1`. Request bodies are limited to 64 KiB, except an image
   upload (about 7 MiB, see Image uploads).
@@ -49,6 +52,8 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `GET /api/v1/computers` | cookie | – | `200 HTTPComputerListResponse`: the calling device's confirmed computers |
 | `POST /api/v1/computers` | cookie | `HTTPComputerAddRequest` | `200 HTTPComputerAddResponse`; see Computers |
 | `DELETE /api/v1/computers/{host}` | cookie | `{}` | `204`; removes `https://{host}` from the calling device's list |
+| `POST /api/v1/computers/offer` | none; no `Origin`, no `Sec-Fetch-*` | `HTTPComputerOfferRequest` (body up to 1 KiB) | `204` for every well-formed offer; see Found on your network |
+| `GET /api/v1/computers/found` | cookie; own origin only | – | `200 HTTPComputerFoundResponse`; see Found on your network |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -99,6 +104,10 @@ unexpired bound grants and pending pairings, at most 16). Invalid entries are dr
   `Access-Control-Allow-Headers: Content-Type, X-Pterm-Request` and
   `Access-Control-Max-Age: 600`.
 - The WebSocket upgrade checks the same origins per request.
+- `/api/v1/computers/offer` is the one `/api` path that never sends CORS
+  headers and never answers a preflight, for any origin, a bound one
+  included: any `Origin` or `Sec-Fetch-*` header is `403` (see Found on your
+  network).
 - Matching is exact: `https`, lowercase host, default port, no trailing dot.
   `null`, near misses and other spellings never match.
 - `GET /api/v1/settings` sends the same cookie again with `Max-Age` capped by
@@ -149,6 +158,7 @@ every build ID the packaging scripts produce already matches.
 | --- | --- |
 | 1 | First revision. |
 | 2 | Preview listener rules (see "Preview listener"): the selection needs a `Referer` of an app origin and answers `200`; every other request must come from the preview origin itself. No schema change. An app frames a peer's preview only when that peer's `protocolRevision` is 2 or higher. |
+| 3 | Found on your network (see that section): `POST /api/v1/computers/offer` (`HTTPComputerOfferRequest`) and `GET /api/v1/computers/found` (`HTTPComputerFoundResponse`, `HTTPFoundComputer`); `gateway.computers.offer`, `gateway.computers.found`, `admin.pair.offer`, `admin.pair.offer.end` (`authentication-rpc.md`); error code `home_changed`, sent only on the local administration RPC, so no app parses it and `minRevision` stays 1. The app is served by home, so it calls `found` only on its own home. A home below revision 3 answers an offer with `403`, which the new computer reports as `not_accepted`. |
 
 ## Computers
 
@@ -177,6 +187,48 @@ origin.
   phone out on the peer: the app calls the peer's `POST /api/v1/logout`
   first.
 
+## Found on your network
+
+A new computer that waits in `pterm pair --via <home>` (or setup) sends its
+own bound grant to the home it names; the app on home lists it, and **Add**
+uses it like a pasted link (`docs/found-on-network.md`).
+
+`POST /api/v1/computers/offer` (no authentication). Checked in this order:
+
+1. At the top of the gateway's `/api` admission, for this exact path and
+   every method: any `Origin` header, or any `Sec-Fetch-*` header, is `403
+   invalid_request "origin not allowed"`. No `Access-Control-*` header is
+   ever sent, a preflight is never answered, the cookie is never read, and
+   no origin is forwarded to the broker. Browsers send `Origin` on every
+   `POST` and `Sec-Fetch-*` on every request, so no web page can reach it.
+2. Methods other than `POST` are `405`.
+3. `X-Pterm-Request: 1` (`403` else), `Content-Type: application/json`
+   (`415`), a body of at most 1 KiB (`413`), strict decoding into
+   `HTTPComputerOfferRequest` (`400`).
+4. One token from the offer bucket (10, then 1 per second), separate from
+   every other bucket; empty is `429 limit_exceeded "too many offers"`.
+5. `origin` must be a canonical computer origin and `grant` a 43-character
+   secret; else `400 invalid_request "invalid offer"`.
+6. `gateway.computers.offer` to the broker. Every broker answer is `204`,
+   whether home keeps the offer or drops it; a broker that cannot be reached
+   is `503`. Nothing the sender sent is echoed.
+
+Home keeps an offer only when its latest Tailscale snapshot (it never waits
+on `tailscale` for an offer; at most one background refresh per 5 s, as for
+every per-request check) shows `origin`'s host as a peer in its own tailnet
+with home's owner, neither node tagged, and not home itself. Offers are kept
+in memory only, for 60 s, at most 16 origins, the newest per origin.
+
+`GET /api/v1/computers/found` (cookie, this computer's own origin only, like
+the other computer routes; a bound app origin is `400 invalid_request`)
+returns `HTTPComputerFoundResponse`: at most 16 unexpired offers, sorted by
+origin, one per origin, leaving out a host whose node ID changed or that is
+gone from the snapshot and computers already confirmed for the calling
+device. `label` is the first DNS label of the host from home's own status.
+Without a snapshot it is `503 host_unavailable` with the generic message
+"Service Unavailable". Every device paired with
+home can read the grants it lists.
+
 ## Pairing flow
 
 1. Local `pterm pair` prints `https://<host>/pair#<grant>` and a QR code.
@@ -186,6 +238,12 @@ origin.
 4. The page polls `/api/v1/pair/poll` every 2 seconds until `approved` or
    expiry. The approved response sets the cookie. The poll secret is kept only
    in memory and cleared afterward.
+
+To add another computer, `pterm pair --via <home>` binds the grant to home's
+app origin, and the app redeems it on that computer from home's origin (see
+Cross-origin requests). The grant reaches the app by a link or QR code, or
+from `GET /api/v1/computers/found` after the computer offered it to home
+(see Found on your network).
 
 ## WebSocket
 

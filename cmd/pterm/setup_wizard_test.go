@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -371,7 +372,8 @@ func TestOfferPairingAsksWhetherTermivoaIsOnThePhone(t *testing.T) {
 	paired := []protocol.AdminRPCDevice{{}}
 	const (
 		question = "Is Termivoa already on your phone?\n  1) No, this is my first computer\n  2) Yes, add this computer to it\n"
-		which    = "Which computer did you first pair your phone with?\n"
+		which    = "Which computer did you first pair your phone with?\nPick the computer whose address your Termivoa app opens.\n"
+		air      = "  1) air — https://air.example.ts.net (macOS)\n"
 		another  = "Pair another phone? [y/N]"
 		skipped  = "Setup is done. Next: to pair a phone, run `pterm pair`; to add this computer to a Termivoa app you already use, " +
 			"run `pterm pair --via <name>` (<name>: air, mac)."
@@ -394,8 +396,9 @@ func TestOfferPairingAsksWhetherTermivoaIsOnThePhone(t *testing.T) {
 		"first computer": {answers: "1\n", status: several, pairs: 1, want: []string{question, "Pair your phone:"},
 			last: "Setup is done. Next: open Termivoa on your phone and start a session."},
 		"add by number": {answers: "2\n2\n", status: several, pairs: 1, via: "mac",
-			want:     []string{question, which + "  1) air\n  2) mac\nType a number or a name (Enter skips): ", "`pterm pair --via mac`"},
-			unwanted: []string{"iphone", ") pi", "Pair your phone:"}, last: added},
+			want: []string{question, which + air + "  2) mac — https://mac.example.ts.net (macOS)\n" +
+				"Type a number, or the name of another computer (Enter skips pairing): "},
+			unwanted: []string{"iphone", ") pi", "Pair your phone:", "Add this computer to the Termivoa app"}, last: added},
 		"add by name, any case": {answers: "2\nMac\n", status: several, pairs: 1, via: "mac", last: added},
 		"a number out of range asks again": {answers: "2\n0\n5\n1\n", status: several, pairs: 1, via: "air",
 			want: []string{"Type a number from 1 to 2, or a name.\n"}},
@@ -405,16 +408,25 @@ func TestOfferPairingAsksWhetherTermivoaIsOnThePhone(t *testing.T) {
 		"another owner's computer asks again": {answers: "2\npi\nmac\n", status: several, pairs: 1, via: "mac",
 			want: []string{"pi belongs to another Tailscale user"}},
 		"one candidate still asks": {answers: "2\n1\n", status: parse(`"UserID":1`, mac), pairs: 1, via: "mac",
-			want: []string{question, "  1) mac\nType a number"}},
+			want: []string{question, "  1) mac — https://mac.example.ts.net (macOS)\nType a number"}},
+		"an OS name with control characters is left out": {answers: "2\n\n", status: parse(`"UserID":1`, `"a":{"ID":"nMac","DNSName":"mac.example.ts.net.","UserID":1,"OS":"mac\u001b[2J"}`),
+			want: []string{"  1) mac — https://mac.example.ts.net\nType a number"}, unwanted: []string{"\x1b[", "2J"}, last: "Setup is done. Next: to pair a phone, run `pterm pair`; to add this computer to a Termivoa app you already use, run `pterm pair --via mac`."},
+		"a padded OS cannot fake a line": {answers: "2\n\n", status: parse(`"UserID":1`, `"a":{"ID":"nMac","DNSName":"mac.example.ts.net.","UserID":1,"OS":"linux)`+strings.Repeat(" ", 200)+`2) evil - https://mac.tailx.ts.net (macOS"}`),
+			want: []string{"  1) mac — https://mac.example.ts.net\nType a number"}, unwanted: []string{"evil", "linux"}},
+		"a long OS is left out": {answers: "2\n\n", status: parse(`"UserID":1`, `"a":{"ID":"nMac","DNSName":"mac.example.ts.net.","UserID":1,"OS":"`+strings.Repeat("x", 25)+`"}`),
+			want: []string{"  1) mac — https://mac.example.ts.net\nType a number"}, unwanted: []string{"xxxxx"}},
 		"a typo asks again":   {answers: "first\n1\n", status: several, pairs: 1, want: []string{question}},
 		"enter skips pairing": {answers: "\n", status: several, want: []string{question}, last: skipped},
 		"one candidate names it when skipped": {answers: "\n", status: parse(`"UserID":1`, mac),
 			last: "Setup is done. Next: to pair a phone, run `pterm pair`; to add this computer to a Termivoa app you already use, run `pterm pair --via mac`."},
 		"not approved": {answers: "2\n2\n", status: several, pairErr: cli.ErrNotPaired, pairs: 1, via: "mac",
 			unwanted: []string{added}, last: "Setup is done, but your phone is not connected yet. To connect it, run `pterm pair --via mac`."},
+		"nobody added it in time": {answers: "2\n2\n", status: several, pairErr: fmt.Errorf("Nobody added this computer in 10 minutes: %w", cli.ErrNoPhone), pairs: 1, via: "mac",
+			unwanted: []string{added, "Nobody added"}, last: "Setup is done, but your phone is not connected yet. To connect it, run `pterm pair --via mac`."},
 		"tagged computer, allowed": {answers: "2\nmac\ny\n", status: tagged, pairs: 1, via: "mac", allowTagged: true,
-			want: []string{which + "  1) air\n  2) mac\n  3) pi\n", "Tailscale cannot show that you own both computers: this computer has tag:vps.",
-				"(the same as `--allow-tagged`). [y/N] ", "`pterm pair --via mac --allow-tagged`"}, last: added},
+			want: []string{which + air + "  2) mac — https://mac.example.ts.net (macOS)\n  3) pi — https://pi.example.ts.net (linux)\n",
+				"Tailscale cannot show that you own both computers: this computer has tag:vps.", "(the same as `--allow-tagged`). [y/N] "},
+			last: added},
 		"tagged computer, refused": {answers: "2\n2\nn\n", status: tagged,
 			last: "Setup is done, but your phone is not connected yet. To connect it, run `pterm pair --via mac --allow-tagged`."},
 		"no other computer":   {status: parse(`"UserID":1`, ""), pairs: 1, unwanted: []string{question}},

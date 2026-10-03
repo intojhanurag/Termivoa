@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -764,7 +765,7 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 			return err
 		}
 	}
-	return offerPairing(ctx, env, admin, report.tailscale.tailnet,
+	return offerPairing(ctx, env, endOnNewConnection{admin, env.paths.RuntimeDir}, report.tailscale.tailnet,
 		report.tailscale.phoneAccessFix(origin, originProblem, phoneServeConfigured), term.IsTerminal(input.Fd()), confirmer, output)
 }
 
@@ -882,12 +883,16 @@ func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status
 			break
 		}
 	}
+	// With Via, the add-computer screen names the app itself.
 	if options.Via == "" {
 		fmt.Fprintln(output, "\nPair your phone:")
 	} else {
-		fmt.Fprintf(output, "\nAdd this computer to the Termivoa app at %s (the same as `%s`):\n", options.Via, cli.PairCommand(options))
+		fmt.Fprintln(output)
 	}
-	if err := pairPhone(ctx, admin, options, output); errors.Is(err, cli.ErrNotPaired) {
+	ctx, stop := untilHangup(ctx)
+	defer stop()
+	// A declined phone, or none in time, is not a setup failure.
+	if err := pairPhone(ctx, admin, options, output); errors.Is(err, cli.ErrNotPaired) || errors.Is(err, cli.ErrNoPhone) {
 		return notYet(cli.PairCommand(options))
 	} else if err != nil {
 		return err
@@ -915,21 +920,37 @@ func viaCommand(status *tailnet.Status, candidates []tailnet.Node) string {
 	return "`pterm pair --via <name>" + tagged + "` (<name>: " + strings.Join(names, ", ") + ")"
 }
 
+// osName is an OS text setup shows in its list of computers.
+var osName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,23}$`)
+
 // askHome asks which computer the phone was first paired with: a number
-// from the list, or the name or address of a computer in this tailnet. It
-// asks again after a wrong answer; the zero Node means Enter (skip).
+// from the list, or the name or address of a computer in this tailnet. Each
+// computer shows its full address and OS, so the owner can match the address
+// the app opens: offering this computer to a wrong home is what a relay
+// needs (docs/found-on-network.md, R1). It asks again after a wrong answer;
+// the zero Node means Enter (skip).
 func askHome(ctx context.Context, status *tailnet.Status, candidates []tailnet.Node, confirmer fileConfirmer,
 	output io.Writer,
 ) (tailnet.Node, error) {
-	prompt := "\nWhich computer did you first pair your phone with?\n"
+	prompt := "\nWhich computer did you first pair your phone with?\nPick the computer whose address your Termivoa app opens.\n"
 	for index, node := range candidates {
 		name, _, _ := strings.Cut(node.Host, ".")
-		if node.Tagged() {
-			name += " (tagged)"
+		var about []string
+		// The OS is the node's own text: shown only as a short plain name, so
+		// a hostile node cannot pad it into a fake line of this list.
+		if osName.MatchString(node.OS) {
+			about = append(about, node.OS)
 		}
-		prompt += fmt.Sprintf("  %d) %s\n", index+1, name)
+		if node.Tagged() {
+			about = append(about, "tagged")
+		}
+		details := ""
+		if len(about) > 0 {
+			details = " (" + strings.Join(about, ", ") + ")"
+		}
+		prompt += fmt.Sprintf("  %d) %s — %s%s\n", index+1, name, node.Origin(), details)
 	}
-	prompt += "Type a number or a name (Enter skips): "
+	prompt += "Type a number, or the name of another computer (Enter skips pairing): "
 	for {
 		choice, err := confirmer.Ask(ctx, prompt)
 		if err != nil || choice == "" {

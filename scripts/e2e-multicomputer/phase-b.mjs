@@ -2,10 +2,10 @@
 //   node scripts/e2e-multicomputer/phase-b.mjs [--no-web-build] [--out <dir>] [--keep] [--only <ID prefix>]
 // --only PV runs pairing, the first add (B1, B2) and the steps whose ID starts with PV.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  Browser, Env, NODES, api, click, freePort, interactive, pairDirect, run, setInput, sleep, tapTerminalText, terminalText, typeLine, until,
+  Browser, Env, HERE, NODES, api, click, freePort, interactive, pageFetch, pairDirect, plain, run, setInput, sleep, tapTerminalText, terminalText, typeLine, until,
 } from './lib.mjs';
 
 const argv = process.argv.slice(2);
@@ -125,7 +125,7 @@ async function addByPaste(id, whilePending = async () => undefined) {
   await app.waitText('Does vps show this code?');
   await shot(`${id}-code`);
   const shown = await app.eval(`document.querySelector('.code-tiles .visually-hidden')?.textContent.replace('Verification code ', '')`);
-  const [, code] = await via.wait(/shows code (\d{3}-\d{3})/);
+  const [, code] = await via.wait(/shows (?:code )?(\d{3}-\d{3})/);
   await whilePending();
   via.end(code === shown ? 'y\n' : 'n\n');
   await via.done;
@@ -145,6 +145,8 @@ async function confirmByApi() {
 }
 
 const tokens = {};
+/** The second phone of the F checks: browser, app page, API page, vps CLI. */
+const found = {};
 /** In-app navigation, as the app's own links do: no new page load. */
 const inApp = (path) => app.eval(`history.pushState(null, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`);
 
@@ -789,7 +791,7 @@ try {
     const terminalPath = await app.eval('location.pathname');
     await typeLine(app, 'clear');
     await typeLine(app, vpsCommand());
-    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes('Waiting for the phone'), { what: 'link in terminal' });
+    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes('Waiting for your phone'), { what: 'link in terminal' });
     const link = /https:\/\/vps\.tailx\.ts\.net\/add-computer#grant=[A-Za-z0-9_-]{43}&via=https%3A%2F%2Fmac\.tailx\.ts\.net/.exec((await terminalText(app)).replace(/\n/g, ''))?.[0];
     const started = Date.now();
     await tapTerminalText(app, 'https://vps.tailx.ts.net/add');
@@ -822,7 +824,7 @@ try {
     await liveReady(false);
     await until(async () => (await banner()).includes('Adding vps'), { what: 'banner "Adding vps…"', timeout: 5000 }).catch(() => undefined);
     const waiting = await banner();
-    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes(`shows code ${shown}`), { what: 'prompt with the code', timeout: 15000 });
+    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes(`shows ${shown}`), { what: 'prompt with the code', timeout: 15000 });
     await shot(`${id}-banner`);
     await typeLine(app, 'y');
     await until(async () => (await banner()).includes('vps is added'), { what: 'banner "vps is added"', timeout: 20000 }).catch(() => undefined);
@@ -942,6 +944,228 @@ try {
       r.outcome === 'added' && probs.length === 0 && vpsRows > 0 && devices === 1,
       `outcome ${r.outcome}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}; active bound devices on vps ${devices}`);
   });
+
+  // ---- F: Found on your network (docs/found-on-network.md, section 10) ----
+  // A second phone ("Found phone") paired with mac: Found leaves out what a
+  // device already uses, so it starts with no computers. vps's `pterm pair
+  // --via mac` runs in a real terminal (script(1)): only then does it offer.
+  const offerUrl = `${mac.origin}/api/v1/computers/offer`;
+  const offerHeaders = { 'Content-Type': 'application/json', 'X-Pterm-Request': '1' };
+  const junkGrant = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url');
+  const offer = (origin, headers = {}, method = 'POST') => env.curl(offerUrl, { method, headers: { ...offerHeaders, ...headers }, body: method === 'POST' ? JSON.stringify({ origin, grant: junkGrant() }) : undefined });
+  const cors = (r) => Object.keys(r.headers).filter((h) => h.startsWith('access-control-')).join(',') || 'none';
+  const foundApi = async () => (await api(found.tool, `${mac.origin}/api/v1/computers/found`)).json?.computers ?? [];
+  const foundButtons = () => found.page.eval(`[...document.querySelectorAll('.found-add')].map((b) => b.getAttribute('aria-label'))`);
+  /** The found phone's Settings → Computers, in front (the app reads Found only while visible). */
+  async function foundSettings() {
+    await found.page.front();
+    await found.page.go(`${mac.origin}/`);
+    await found.page.waitText('Sessions');
+    await click(found.page, 'Settings');
+    await found.page.waitText('Add a computer');
+  }
+  /** Removes vps from the found phone's list on home, as Remove does, so Found shows it again. */
+  async function forgetVps() {
+    const r = await api(found.tool, `${mac.origin}/api/v1/computers/${vps.host}`, 'DELETE', {});
+    if (r.status !== 204 && r.status !== 404) throw new Error(`remove vps: ${r.status} ${r.body}`);
+  }
+  /** Settings → Found: vps — Add → the confirm sheet → Add vps → Continue. Returns the sheet text and the code shown. */
+  async function addFromFound(id) {
+    const p = found.page;
+    await until(async () => (await foundButtons()).includes('Add vps'), { what: 'Found: vps — Add', timeout: 30000 });
+    const block = await p.eval(`document.querySelector('[aria-labelledby=found-heading]').innerText.replace(/\\s+/g, ' ').trim()`);
+    await shot(`${id}-found`, p);
+    await p.eval(`document.querySelector('.found-add[aria-label="Add vps"]').click()`);
+    await p.waitText('Add this computer?');
+    await until(() => p.eval(`[...document.querySelectorAll('[role=dialog] button.primary')].some((b) => b.innerText.trim() === 'Add vps')`), { what: 'the sheet button Add vps' });
+    const sheet = (await p.eval(`document.querySelector('[role=dialog]').innerText`)).replace(/\s+/g, ' ');
+    await shot(`${id}-sheet`, p);
+    await p.eval(`[...document.querySelectorAll('[role=dialog] button.primary')].find((b) => b.innerText.trim() === 'Add vps').click()`);
+    await p.waitText('Continue');
+    await click(p, 'Continue');
+    return { block, sheet };
+  }
+  const added = (p) => until(async () => ((await p.text()).includes('vps is added') && 'added') || p.eval(`document.querySelector('[role=alert]')?.innerText ?? ''`), { what: 'add outcome', timeout: 30000 });
+  /** The phone's code screen, then vps's prompt; y when both name vps and the codes match. */
+  async function approveOnVps(id, cli) {
+    const p = found.page;
+    await p.waitText('Does vps show this code?');
+    const shown = await p.eval(`document.querySelector('.code-tiles .visually-hidden')?.textContent.replace('Verification code ', '')`);
+    const phone = await p.eval(`document.querySelector('.pair-wait')?.innerText.replace(/\\s+/g, ' ') ?? ''`);
+    await shot(`${id}-code`, p);
+    const [prompt, code] = await cli.wait(/Phone "Found phone" wants to use THIS computer \(vps\)[\s\S]*?shows (\d{3}-\d{3}) and says "type y in the terminal on vps"[\s\S]*?Approve\? \[y\/N\]/);
+    const good = code === shown && phone.includes('If it matches, type y in the terminal on vps.');
+    cli.end(good ? 'y\n' : 'n\n'); // a terminal forwards the end as ^D; pterm has read its answer
+    return { shown, code, prompt: prompt.replace(/\s+/g, ' '), phone, good };
+  }
+
+  await step('F-offer', 'pterm pair --via mac in a terminal on vps: mac lists vps under Found; the offer route takes no browser and keeps no other owner', async () => {
+    found.browser = await Browser.launch(env, { profile: 'chrome-found' });
+    found.page = await found.browser.page();
+    await found.page.go(`${mac.origin}/`);
+    await pairDirect(found.page, mac, 'Found phone');
+    await found.page.waitText('Sessions', 30000);
+    found.tool = await found.browser.page({ bypassCSP: true });
+    await found.tool.go(`${mac.origin}/`);
+    const mark = env.logMark();
+    found.cli = interactive(vps, ['pair', '--via', 'mac'], { pty: true });
+    const [screen] = await found.cli.wait(/Add this computer \(vps\) to the Termivoa app at mac[\s\S]*?Waiting for your phone \(up to 10 minutes; Ctrl\+C stops\)…/);
+    const row = await until(async () => (await foundApi()).find((c) => c.origin === vps.origin), { what: 'vps in mac\'s Found list' });
+    const pushed = env.logSince(mark).find((e) => e.host === mac.host && e.path === '/api/v1/computers/offer');
+    // Another owner's computer, a browser page, a preflight.
+    const evil = await offer('https://evil.tailx.ts.net');
+    await sleep(300);
+    const listed = (await foundApi()).map((c) => c.origin);
+    const withOrigin = await offer(vps.origin, { Origin: mac.origin });
+    const withFetch = await offer(vps.origin, { 'Sec-Fetch-Site': 'same-origin' });
+    const preflight = await env.curl(offerUrl, { method: 'OPTIONS', headers: { Origin: mac.origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,x-pterm-request' } });
+    const sameOrigin = await pageFetch(found.tool, offerUrl, { method: 'POST', headers: offerHeaders, body: JSON.stringify({ origin: vps.origin, grant: junkGrant() }) });
+    const evilPage = await found.browser.page();
+    await evilPage.go('https://evil.tailx.ts.net/');
+    const crossSite = await pageFetch(evilPage, offerUrl, { method: 'POST', headers: offerHeaders, body: JSON.stringify({ origin: vps.origin, grant: junkGrant() }) });
+    await evilPage.close();
+    await sleep(300);
+    const browserLog = env.logSince(mark).filter((e) => e.host === mac.host && e.path === '/api/v1/computers/offer' && e.secFetchSite);
+    check('F-offer', 'vps\'s screen says "Sent to mac (https://mac.tailx.ts.net)." and mac\'s /found lists vps with a grant and the label from mac\'s status; vps\'s broker posted with no Origin, no Sec-Fetch-*, no cookie',
+      screen.includes('Sent to mac (https://mac.tailx.ts.net).') && screen.includes('On your phone, open Termivoa → Settings → Computers and tap Add next to "vps".')
+        && row.label === 'vps' && /^[A-Za-z0-9_-]{43}$/.test(row.grant) && pushed?.status === 204 && !pushed.origin && !pushed.secFetchSite && !pushed.cookie,
+      `${screen.split('\n').slice(0, 3).join(' / ')}; found: ${row.label} ${row.origin} grant ${row.grant.length} chars, expires ${row.expiresAt}; vps → mac: ${pushed ? `${pushed.method} ${pushed.path} ${pushed.status} origin=${pushed.origin || '-'} sfs=${pushed.secFetchSite || '-'} cookie=${pushed.cookie}` : 'none'}`);
+    check('F-offer-owner', 'An offer for evil.tailx.ts.net (another owner) is answered 204 and dropped', evil.status === 204 && !listed.includes('https://evil.tailx.ts.net'),
+      `POST ${evil.status}; found now ${JSON.stringify(listed)}`);
+    check('F-offer-origin', 'An offer with an Origin header, or with Sec-Fetch-Site, is 403 with no CORS header (curl)',
+      withOrigin.status === 403 && cors(withOrigin) === 'none' && withFetch.status === 403 && cors(withFetch) === 'none',
+      `Origin: ${withOrigin.status} CORS ${cors(withOrigin)}; Sec-Fetch-Site: ${withFetch.status} CORS ${cors(withFetch)}`);
+    check('F-offer-preflight', 'A preflight to the offer route gets no CORS header; a page on mac or on evil cannot post an offer (Chrome)',
+      preflight.status === 403 && cors(preflight) === 'none' && sameOrigin.status === 403 && !!crossSite.error && browserLog.every((e) => e.status === 403 && !e.acao),
+      `OPTIONS ${preflight.status} CORS ${cors(preflight)}; mac page fetch ${sameOrigin.status ?? sameOrigin.error}; evil page fetch ${crossSite.error ?? crossSite.status}; ${browserLog.map((e) => `${e.method} origin=${e.origin} sfs=${e.secFetchSite} → ${e.status} ACAO=${e.acao || 'none'}`).join('; ')}`);
+  });
+
+  await step('F-add', 'Settings → Computers → Found on your network: vps — Add → the same sheet → code → y on vps', async () => {
+    const started = Date.now();
+    await foundSettings();
+    const { block, sheet } = await addFromFound('f-add');
+    const r = await approveOnVps('f-add', found.cli);
+    const outcome = await added(found.page);
+    await shot('f-add-outcome', found.page);
+    const exit = await found.cli.done;
+    time('add from Found (Settings open → "vps is added")', Date.now() - started);
+    check('F-add', 'Found shows "vps — Add"; Add opens "Add this computer?" with the address and owner; the code matches; vps\'s prompt names THIS computer (vps) and quotes the code screen; y adds vps',
+      block.toLowerCase().includes('found on your network') && block.includes('vps') && sheet.includes('https://vps.tailx.ts.net') && sheet.includes('ada@example.com')
+        && sheet.includes('Add it only if you just ran pterm setup or pterm pair --via on vps.') && r.good && outcome === 'added' && exit === 0,
+      `block: ${block}; sheet: ${sheet.slice(0, 200)}; phone ${r.shown} "${r.phone.slice(0, 80)}"; prompt: ${r.prompt.slice(0, 260)}; outcome ${outcome}; pterm exit ${exit}`);
+    // F-gone: once vps is added for this phone, its row goes.
+    await foundSettings();
+    await sleep(6000); // more than one Found poll
+    const buttons = await foundButtons();
+    const listedNow = await foundApi();
+    await shot('f-gone', found.page);
+    check('F-gone', 'After vps is added, the found phone no longer shows vps under Found', !buttons.includes('Add vps'),
+      `Found buttons now ${JSON.stringify(buttons)}; home's list for this phone ${JSON.stringify(listedNow.map((c) => c.origin))}`);
+  });
+
+  await step('F-dead', 'A junk grant offered for vps: Add → "vps stopped waiting…"', async () => {
+    await forgetVps();
+    const posted = await offer(vps.origin);
+    if (posted.status !== 204) throw new Error(`junk offer: ${posted.status}`);
+    await foundSettings();
+    await addFromFound('f-dead');
+    await found.page.waitText('vps stopped waiting', 30000);
+    const text = (await found.page.eval(`[...document.querySelectorAll('[role=alert]')].map((e) => e.innerText).join(' ')`)).replace(/\s+/g, ' ');
+    await shot('f-dead', found.page);
+    check('F-dead', 'Add with a grant vps never made (a junk offer replaced it): the stale text, no code',
+      text.includes('vps stopped waiting. On vps run pterm pair --via mac, then tap Add again.') && !(await found.page.text()).includes('Does vps show this code?'), text);
+  });
+
+  await step('F-flood', '50 junk offers at once: the bucket refuses the rest; the phones\' API calls and the QR/link pairing still work', async () => {
+    const answers = await Promise.all(Array.from({ length: 50 }, () => offer(vps.origin)));
+    const counts = answers.reduce((all, r) => ({ ...all, [r.status]: (all[r.status] ?? 0) + 1 }), {});
+    const calls = [await api(tool, `${mac.origin}/api/v1/settings`), await api(tool, `${vps.origin}/api/v1/settings`), await api(found.tool, `${mac.origin}/api/v1/computers/found`)];
+    check('F-flood', '50 offers at once: about 10 get 204, the rest 429 "too many offers"; right after, the paired phones\' API calls (settings on mac and vps, found) answer 200',
+      counts[204] >= 10 && counts[204] <= 13 && counts[204] + counts[429] === 50 && calls.every((r) => r.status === 200),
+      `answers ${JSON.stringify(counts)}; then settings mac ${calls[0].status}, settings vps ${calls[1].status}, found ${calls[2].status}`);
+    // The link of a new `pterm pair --via mac` still adds vps while offers are refused.
+    const cli = interactive(vps, ['pair', '--via', 'mac'], { pty: true });
+    const [link] = await cli.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#grant=[A-Za-z0-9_-]{43}&via=\S+/);
+    const [line] = await cli.wait(/(Sent to mac[^\n]*|[^\n]*cannot receive this yet[^\n]*|[^\n]*is busy[^\n]*|mac did not answer[^\n]*)/);
+    await foundSettings();
+    await click(found.page, '+ Add a computer');
+    await click(found.page, 'Paste link');
+    await setInput(found.page, '#add-link', link);
+    await click(found.page, 'Check link');
+    await found.page.waitText('Add this computer?');
+    await until(() => found.page.eval(`[...document.querySelectorAll('[role=dialog] button.primary')].some((b) => b.innerText.trim() === 'Add vps')`), { what: 'Add vps' });
+    await found.page.eval(`[...document.querySelectorAll('[role=dialog] button.primary')].find((b) => b.innerText.trim() === 'Add vps').click()`);
+    await found.page.waitText('Continue');
+    await click(found.page, 'Continue');
+    const r = await approveOnVps('f-flood', cli);
+    const outcome = await added(found.page);
+    const exit = await cli.done;
+    check('F-flood-link', 'After the flood, the pasted link of pterm pair --via still adds vps', r.good && outcome === 'added' && exit === 0,
+      `first offer line: "${line.trim()}"; code ${r.shown}/${r.code}; outcome ${outcome}; pterm exit ${exit}`);
+  });
+
+  await step('F-old', 'A home without the offer route: vps prints the fixed "cannot receive this yet" line', async () => {
+    // The front answers mac's offer route as Termivoa before Found does (403 from admitAPI: no Origin).
+    writeFileSync(env.oldHome, `${mac.host}\n`);
+    let cli;
+    try {
+      const mark = env.logMark();
+      cli = interactive(vps, ['pair', '--via', 'mac'], { pty: true });
+      const [line] = await cli.wait(/[^\n]*cannot receive this yet[^\n]*/);
+      const [link] = await cli.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#\S+/);
+      const posted = env.logSince(mark).find((e) => e.host === mac.host && e.path === '/api/v1/computers/offer');
+      cli.end('\x03'); // Ctrl+C
+      const exit = await Promise.race([cli.done, sleep(10000).then(() => 'still running')]);
+      check('F-old', 'Against a home without the route (403), vps says "Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below." and still prints the link; Ctrl+C ends it',
+        line.trim() === 'Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below.' && !!link && posted?.status === 403 && exit !== 'still running',
+        `"${line.trim()}"; mac answered ${posted?.status}; link printed: ${!!link}; after Ctrl+C: exit ${exit}`);
+    } finally {
+      writeFileSync(env.oldHome, '');
+      cli?.child.kill();
+    }
+  });
+
+  await step('F-setup', 'pterm setup on vps, answer 2: the home list, the add screen, Add on the phone, y in setup', async () => {
+    await forgetVps();
+    // No active sessions on vps: setup refuses to re-register a broker that runs some.
+    await vps.stop();
+    await vps.start();
+    const setupBin = join(env.root, 'setup-bin');
+    mkdirSync(setupBin, { recursive: true });
+    copyFileSync(join(HERE, 'launchctl'), join(setupBin, 'launchctl'));
+    chmodSync(join(setupBin, 'launchctl'), 0o755);
+    // Setup reads the installed paths under HOME; the stack lives exactly there (README, "doctor").
+    const setupEnv = { ...vps.processEnv, HOME: vps.doctorHome, PATH: `${setupBin}:${vps.processEnv.PATH}`,
+      PTERM_E2E_GATEWAY: `http://${vps.gateway}`, PTERM_E2E_LAUNCHCTL_LOG: join(env.root, 'launchctl.log') };
+    const cli = interactive(vps, ['setup'], { pty: true, profile: false, env: setupEnv });
+    const answers = [[/Continue\? \[y\/N\]\s*$/, 'y'], [/never uses Funnel\. \[y\/N\]\s*$/, 'n'], [/Pair another phone\? \[y\/N\]\s*$/, 'y'],
+      [/Type 1 or 2 \(Enter skips\):\s*$/, '2'], [/\(Enter skips pairing\):\s*$/, '1']];
+    let from = 0;
+    await until(() => {
+      const text = plain(cli.out);
+      if (/Waiting for your phone|did not answer|cannot receive|refusing|Error|pterm:/.test(text.slice(from))) return true;
+      const tail = text.slice(from);
+      const answer = answers.find(([re]) => re.test(tail));
+      if (answer) { cli.write(`${answer[1]}\n`); from = text.length; }
+      return false;
+    }, { timeout: 90000, every: 300, what: 'setup to reach the add screen' }).catch((error) => { throw new Error(`${error.message}\n${plain(cli.out)}`); });
+    const transcript = plain(cli.out);
+    const list = /Which computer did you first pair your phone with\?[\s\S]*?\(Enter skips pairing\):/.exec(transcript)?.[0] ?? '';
+    const [screen] = await cli.wait(/Add this computer \(vps\) to the Termivoa app at mac[\s\S]*?Waiting for your phone[^\n]*/);
+    await foundSettings();
+    await addFromFound('f-setup');
+    const r = await approveOnVps('f-setup', cli);
+    const outcome = await added(found.page);
+    const [done] = await cli.wait(/Setup is done[^\n]*/, 30000);
+    cli.end();
+    const exit = await cli.done;
+    writeFileSync(join(out, 'f-setup.txt'), plain(cli.out).replace(/add-computer#grant=[A-Za-z0-9_-]+/g, 'add-computer#grant=<hidden>').replace(/^.*[▀▄█].*$/gm, '[QR code hidden]').replaceAll(env.root, '<root>'));
+    check('F-setup-list', 'Setup\'s home list shows each full address and OS: "1) mac — https://mac.tailx.ts.net (macOS)"',
+      list.includes('Pick the computer whose address your Termivoa app opens.') && list.includes('1) mac — https://mac.tailx.ts.net (macOS)') && !list.includes('evil'), list.replace(/\s+/g, ' '));
+    check('F-setup', 'Setup answer 2 shows the add screen with "Sent to mac (https://mac.tailx.ts.net).", Add on the phone, y in setup: "vps is added" and "Setup is done"',
+      screen.includes('Sent to mac (https://mac.tailx.ts.net).') && r.good && outcome === 'added' && exit === 0,
+      `${screen.split('\n').slice(0, 2).join(' / ')}; code ${r.shown}/${r.code}; outcome ${outcome}; "${done.trim()}"; exit ${exit}; launchctl calls: ${readFileSync(join(env.root, 'launchctl.log'), 'utf8').trim().split('\n').map((l) => l.split(' ')[0]).join(',')}`);
+  });
 } catch (error) {
   check('ERR', 'harness error', false, error.stack);
 } finally {
@@ -955,6 +1179,7 @@ try {
     console.log(`kept running; front ${env.proxy} spki ${env.spki}. Ctrl+C stops.`);
     await new Promise((r) => process.once('SIGINT', r));
   }
+  await found.browser?.close();
   await browser.close();
   await env.close();
   process.exit(results.every((r) => r.result === 'PASS') ? 0 : 1);

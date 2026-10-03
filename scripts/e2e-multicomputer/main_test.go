@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -177,5 +178,43 @@ func TestDevSite(t *testing.T) {
 	}
 	if get("/ping") != "pong" || !strings.Contains(get("/app.js"), "WebSocket") {
 		t.Error("ping or script")
+	}
+}
+
+// -old-home: while the file names a host, only that host's offer route
+// answers as a home without the route; everything else is proxied.
+func TestOldHomeAnswersOnlyTheOfferRoute(t *testing.T) {
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer gateway.Close()
+	backend := strings.TrimPrefix(gateway.URL, "http://")
+	f, err := newFront(routes{"mac.tailx.ts.net": backend, "vps.tailx.ts.net": backend}, routes{}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.oldHome = t.TempDir() + "/old"
+	status := func(host, path string) int {
+		recorder := httptest.NewRecorder()
+		f.site(host).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "https://"+host+path, nil))
+		return recorder.Code
+	}
+	if got := status("mac.tailx.ts.net", "/api/v1/computers/offer"); got != http.StatusNoContent {
+		t.Fatalf("no file: %d", got)
+	}
+	if err := os.WriteFile(f.oldHome, []byte("mac.tailx.ts.net\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		host, path string
+		want       int
+	}{
+		{"mac.tailx.ts.net", "/api/v1/computers/offer", http.StatusForbidden},
+		{"mac.tailx.ts.net", "/api/v1/computers/found", http.StatusNoContent},
+		{"vps.tailx.ts.net", "/api/v1/computers/offer", http.StatusNoContent},
+	} {
+		if got := status(test.host, test.path); got != test.want {
+			t.Errorf("%s%s: %d, want %d", test.host, test.path, got, test.want)
+		}
 	}
 }

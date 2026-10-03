@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -585,5 +586,234 @@ func TestApprovedPollAdmitsTheNewBoundOriginAtOnce(t *testing.T) {
 	response := do(handler, http.MethodGet, "/api/v1/settings", "", options)
 	if response.Code != http.StatusOK || response.Header().Get("Access-Control-Allow-Origin") != pairOrigin {
 		t.Fatalf("first settings after approval = %d %v", response.Code, response.Header())
+	}
+}
+
+var (
+	offerGrant = strings.Repeat("o", 42) + "_"
+	offerBody  = `{"origin":"https://vps.tailx.ts.net","grant":"` + offerGrant + `"}`
+)
+
+// noCORS fails when any Access-Control-* header was sent.
+func noCORS(t *testing.T, name string, response *httptest.ResponseRecorder) {
+	t.Helper()
+	for header := range response.Header() {
+		if strings.HasPrefix(header, "Access-Control-") {
+			t.Errorf("%s: CORS header %s sent: %v", name, header, response.Header())
+		}
+	}
+}
+
+// The offer route is for a new computer's broker only: no Origin, no
+// Sec-Fetch-*, never CORS, never the cookie (docs/found-on-network.md, H1).
+func TestOfferRouteAdmission(t *testing.T) {
+	broker := newFakeComputers()
+	handler := newPeerHandler(t, broker)
+	for _, test := range []struct {
+		name, method, body string
+		options            requestOptions
+		want               int
+	}{
+		{"own Origin", "POST", offerBody, requestOptions{origin: testOrigin}, http.StatusForbidden},
+		{"bound Origin", "POST", offerBody, requestOptions{origin: homeOrigin}, http.StatusForbidden},
+		{"pairing Origin", "POST", offerBody, requestOptions{origin: pairOrigin}, http.StatusForbidden},
+		{"null Origin", "POST", offerBody, requestOptions{origin: "null"}, http.StatusForbidden},
+		{"empty Origin", "POST", offerBody, requestOptions{omitOrigin: true, header: http.Header{"Origin": {""}}}, http.StatusForbidden},
+		{"two Origins", "POST", offerBody, requestOptions{omitOrigin: true, header: http.Header{"Origin": {testOrigin, homeOrigin}}}, http.StatusForbidden},
+		{"Sec-Fetch-Site", "POST", offerBody, requestOptions{omitOrigin: true, header: http.Header{"Sec-Fetch-Site": {"same-origin"}}}, http.StatusForbidden},
+		{"Sec-Fetch-Mode", "POST", offerBody, requestOptions{omitOrigin: true, header: http.Header{"Sec-Fetch-Mode": {"cors"}}}, http.StatusForbidden},
+		{"Sec-Fetch-Dest", "POST", offerBody, requestOptions{omitOrigin: true, header: http.Header{"Sec-Fetch-Dest": {"empty"}}}, http.StatusForbidden},
+		{"empty Sec-Fetch-User", "POST", offerBody, requestOptions{omitOrigin: true, header: http.Header{"Sec-Fetch-User": {""}}}, http.StatusForbidden},
+		{"preflight from bound Origin", "OPTIONS", "", requestOptions{origin: homeOrigin, omitHeader: true, header: http.Header{
+			"Access-Control-Request-Method": {"POST"}, "Access-Control-Request-Headers": {"content-type,x-pterm-request"}}}, http.StatusForbidden},
+		{"OPTIONS without Origin", "OPTIONS", "", requestOptions{omitOrigin: true}, http.StatusMethodNotAllowed},
+		{"GET", "GET", "", requestOptions{omitOrigin: true}, http.StatusMethodNotAllowed},
+		{"DELETE", "DELETE", "{}", requestOptions{omitOrigin: true}, http.StatusMethodNotAllowed},
+		{"missing request header", "POST", offerBody, requestOptions{omitOrigin: true, omitHeader: true}, http.StatusForbidden},
+		{"wrong request header", "POST", offerBody, requestOptions{omitOrigin: true, pterm: "2"}, http.StatusForbidden},
+		{"wrong type", "POST", offerBody, requestOptions{omitOrigin: true, contentType: "text/plain"}, http.StatusUnsupportedMediaType},
+		{"1 KiB + 1", "POST", offerBody + strings.Repeat(" ", maxOfferBodyBytes+1-len(offerBody)), requestOptions{omitOrigin: true}, http.StatusRequestEntityTooLarge},
+		{"bad JSON", "POST", `{"origin":`, requestOptions{omitOrigin: true}, http.StatusBadRequest},
+		{"unknown field", "POST", `{"origin":"https://vps.tailx.ts.net","grant":"` + offerGrant + `","label":"x"}`, requestOptions{omitOrigin: true}, http.StatusBadRequest},
+		{"http origin", "POST", `{"origin":"http://vps.tailx.ts.net","grant":"` + offerGrant + `"}`, requestOptions{omitOrigin: true}, http.StatusBadRequest},
+		{"origin with port", "POST", `{"origin":"https://vps.tailx.ts.net:443","grant":"` + offerGrant + `"}`, requestOptions{omitOrigin: true}, http.StatusBadRequest},
+		{"short grant", "POST", `{"origin":"https://vps.tailx.ts.net","grant":"abc"}`, requestOptions{omitOrigin: true}, http.StatusBadRequest},
+		{"exactly 1 KiB", "POST", offerBody + strings.Repeat(" ", maxOfferBodyBytes-len(offerBody)), requestOptions{omitOrigin: true}, http.StatusNoContent},
+		{"good", "POST", offerBody, requestOptions{omitOrigin: true}, http.StatusNoContent},
+		// A cookie, even a malformed one, is never read: no authenticate call
+		// and no cookie cleared.
+		{"with cookie", "POST", offerBody, requestOptions{omitOrigin: true, cookie: prodCookie}, http.StatusNoContent},
+		{"with bad cookie", "POST", offerBody, requestOptions{omitOrigin: true, cookie: productionCookieName + "=bad"}, http.StatusNoContent},
+	} {
+		response := do(handler, test.method, "/api/v1/computers/offer", test.body, test.options)
+		if response.Code != test.want {
+			t.Errorf("%s: %d, want %d (%s)", test.name, response.Code, test.want, response.Body)
+		}
+		noCORS(t, test.name, response)
+		if response.Header().Get("Set-Cookie") != "" || strings.Contains(response.Body.String(), offerGrant) ||
+			strings.Contains(response.Body.String(), "vps") {
+			t.Errorf("%s: cookie set or offer echoed: %v %s", test.name, response.Header(), response.Body)
+		}
+		if test.want == http.StatusNoContent && response.Body.Len() != 0 {
+			t.Errorf("%s: 204 with a body %q", test.name, response.Body)
+		}
+	}
+	if broker.called("authenticate@") || len(broker.offers) != 4 {
+		t.Fatalf("calls = %v, offers = %d", broker.calls, len(broker.offers))
+	}
+	for _, call := range broker.calls {
+		if strings.HasPrefix(call, "offer@") && call != "offer@" {
+			t.Fatalf("an origin was forwarded with an offer: %v", broker.calls)
+		}
+	}
+	// An offer the broker drops gets the same 204 (no oracle); only a broker
+	// that cannot be reached is 503.
+	broker.offerErr = &gatewayapi.Error{Code: protocol.InvalidRequest, Message: "dropped " + offerGrant}
+	if response := do(handler, http.MethodPost, "/api/v1/computers/offer", offerBody, requestOptions{omitOrigin: true}); response.Code != http.StatusNoContent ||
+		response.Body.Len() != 0 {
+		t.Fatalf("dropped offer = %d %s", response.Code, response.Body)
+	}
+	broker.offerErr = errors.New("broken pipe")
+	if response := do(handler, http.MethodPost, "/api/v1/computers/offer", offerBody, requestOptions{omitOrigin: true}); response.Code != http.StatusServiceUnavailable ||
+		strings.Contains(response.Body.String(), "pipe") {
+		t.Fatalf("broker down = %d %s", response.Code, response.Body)
+	}
+}
+
+// The exception covers exactly the offer path: its neighbours keep every
+// usual rule.
+func TestOfferExceptionDoesNotWidenOtherRoutes(t *testing.T) {
+	broker := newFakeComputers()
+	handler := newPeerHandler(t, broker)
+	bare := requestOptions{omitOrigin: true, cookie: prodCookie}
+	for _, test := range []struct {
+		name, method, target, body string
+		want                       int
+	}{
+		{"computer by host", "POST", "/api/v1/computers/x.tailx.ts.net", offerBody, http.StatusForbidden},
+		{"remove by host", "DELETE", "/api/v1/computers/vps.tailx.ts.net", "{}", http.StatusForbidden},
+		{"list", "GET", "/api/v1/computers", "", http.StatusForbidden},
+		{"add", "POST", "/api/v1/computers", offerBody, http.StatusForbidden},
+		{"found", "GET", "/api/v1/computers/found", "", http.StatusForbidden},
+		{"trailing slash", "POST", "/api/v1/computers/offer/", offerBody, http.StatusForbidden},
+		{"suffix", "POST", "/api/v1/computers/offerx", offerBody, http.StatusForbidden},
+		{"upper case", "POST", "/api/v1/computers/OFFER", offerBody, http.StatusForbidden},
+		{"sessions", "GET", "/api/v1/sessions", "", http.StatusForbidden},
+		{"redeem", "POST", "/api/v1/pair/redeem", redeemBody, http.StatusForbidden},
+		// The other methods on the offer path reach only the offer handler.
+		{"DELETE offer", "DELETE", "/api/v1/computers/offer", "{}", http.StatusMethodNotAllowed},
+		// An escaped slash decodes to the offer path, so the exception admits
+		// it, but the router sends it to no API handler.
+		{"escaped slash", "POST", "/api/v1/computers%2Foffer", offerBody, http.StatusNotFound},
+	} {
+		response := do(handler, test.method, test.target, test.body, bare)
+		if response.Code != test.want {
+			t.Errorf("%s: %d, want %d (%s)", test.name, response.Code, test.want, response.Body)
+		}
+	}
+	if len(broker.calls) != 0 || len(broker.offers) != 0 {
+		t.Fatalf("a neighbour reached the broker: %v", broker.calls)
+	}
+	// An escaped letter is the same route, under the same exception.
+	if response := do(handler, http.MethodPost, "/api/v1/computers/%6Fffer", offerBody, requestOptions{omitOrigin: true}); response.Code != http.StatusNoContent {
+		t.Fatalf("escaped letter = %d %s", response.Code, response.Body)
+	}
+	if response := do(handler, http.MethodPost, "/api/v1/computers/%6Fffer", offerBody, requestOptions{origin: homeOrigin}); response.Code != http.StatusForbidden {
+		t.Fatalf("escaped letter with Origin = %d", response.Code)
+	}
+}
+
+// The offer bucket (10, then 1 per second) is its own: a flood of offers
+// never blocks pairing or a paired phone.
+func TestOfferBucketIsSeparate(t *testing.T) {
+	broker := newFakeComputers()
+	handler := newPeerHandler(t, broker)
+	now := time.Unix(1000, 0)
+	handler.offerLimit.now = func() time.Time { return now }
+	post := func() *httptest.ResponseRecorder {
+		return do(handler, http.MethodPost, "/api/v1/computers/offer", offerBody, requestOptions{omitOrigin: true})
+	}
+	for attempt := 1; attempt <= 10; attempt++ {
+		if code := post().Code; code != http.StatusNoContent {
+			t.Fatalf("offer %d = %d", attempt, code)
+		}
+	}
+	response := post()
+	if response.Code != http.StatusTooManyRequests || errorCode(t, response) != protocol.LimitExceeded ||
+		!strings.Contains(response.Body.String(), "too many offers") {
+		t.Fatalf("eleventh offer = %d %s", response.Code, response.Body)
+	}
+	noCORS(t, "429", response)
+	if response := do(handler, http.MethodPost, "/api/v1/pair/redeem", redeemBody, requestOptions{}); response.Code != http.StatusOK {
+		t.Fatalf("redeem after the flood = %d", response.Code)
+	}
+	if response := do(handler, http.MethodPost, "/api/v1/pair/poll", pollBody, requestOptions{}); response.Code != http.StatusOK {
+		t.Fatalf("poll after the flood = %d", response.Code)
+	}
+	if response := do(handler, http.MethodGet, "/api/v1/sessions", "", requestOptions{cookie: prodCookie}); response.Code != http.StatusOK {
+		t.Fatalf("paired phone after the flood = %d", response.Code)
+	}
+	if response := do(handler, http.MethodGet, "/api/v1/computers/found", "", requestOptions{cookie: prodCookie}); response.Code != http.StatusOK {
+		t.Fatalf("found after the flood = %d", response.Code)
+	}
+	now = now.Add(time.Second)
+	if code := post().Code; code != http.StatusNoContent {
+		t.Fatalf("offer after one second = %d", code)
+	}
+	if code := post().Code; code != http.StatusTooManyRequests {
+		t.Fatalf("second offer in that second = %d", code)
+	}
+	// Redeems and polls never take offer tokens either.
+	now = now.Add(10 * time.Second)
+	for range 5 {
+		do(handler, http.MethodPost, "/api/v1/pair/redeem", redeemBody, requestOptions{})
+	}
+	for attempt := 1; attempt <= 10; attempt++ {
+		if code := post().Code; code != http.StatusNoContent {
+			t.Fatalf("offer %d after redeems = %d", attempt, code)
+		}
+	}
+}
+
+func TestFoundRoute(t *testing.T) {
+	broker := newFakeComputers()
+	handler := newPeerHandler(t, broker)
+	broker.found = []protocol.HTTPFoundComputer{{Origin: "https://vps.tailx.ts.net", Label: "vps", Grant: offerGrant, ExpiresAt: "2026-10-03T10:00:00Z"}}
+	response := do(handler, http.MethodGet, "/api/v1/computers/found", "", requestOptions{cookie: prodCookie})
+	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) !=
+		`{"computers":[{"expiresAt":"2026-10-03T10:00:00Z","grant":"`+offerGrant+`","label":"vps","origin":"https://vps.tailx.ts.net"}]}` ||
+		!broker.called("found@") {
+		t.Fatalf("found = %d %s %v", response.Code, response.Body, broker.calls)
+	}
+	broker.found = nil
+	if response := do(handler, http.MethodGet, "/api/v1/computers/found", "", requestOptions{cookie: prodCookie}); response.Code != http.StatusOK ||
+		strings.TrimSpace(response.Body.String()) != `{"computers":[]}` {
+		t.Fatalf("empty found = %d %s", response.Code, response.Body)
+	}
+	for _, test := range []struct {
+		name    string
+		method  string
+		options requestOptions
+		want    int
+	}{
+		{"no cookie", "GET", requestOptions{}, http.StatusUnauthorized},
+		{"bound app origin", "GET", crossSite(homeOrigin), http.StatusBadRequest},
+		{"pairing origin", "GET", crossSite(pairOrigin), http.StatusForbidden},
+		{"unbound origin", "GET", crossSite("https://other.tailx.ts.net"), http.StatusForbidden},
+		{"POST", "POST", requestOptions{cookie: prodCookie}, http.StatusMethodNotAllowed},
+	} {
+		if code := do(handler, test.method, "/api/v1/computers/found", "", test.options).Code; code != test.want {
+			t.Errorf("%s: %d, want %d", test.name, code, test.want)
+		}
+	}
+	if !broker.called("found@" + homeOrigin) {
+		t.Fatalf("the bound origin was not forwarded for the broker to refuse: %v", broker.calls)
+	}
+	// Broker text never reaches the page: no snapshot is the generic status text.
+	broker.fakeBroker.opErr = &gatewayapi.Error{Code: protocol.HostUnavailable, Message: "vps says: click evil.example"}
+	response = do(handler, http.MethodGet, "/api/v1/computers/found", "", requestOptions{cookie: prodCookie})
+	if response.Code != http.StatusServiceUnavailable || errorCode(t, response) != protocol.HostUnavailable ||
+		strings.Contains(response.Body.String(), "evil") || !strings.Contains(response.Body.String(), `"Service Unavailable"`) {
+		t.Fatalf("no snapshot = %d %s", response.Code, response.Body)
 	}
 }

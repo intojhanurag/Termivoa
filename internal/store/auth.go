@@ -136,6 +136,20 @@ func (store *Store) CreatePairingGrant(ctx context.Context, grant PairingGrant, 
 	return commit(transaction, "pairing grant")
 }
 
+// DeleteUnredeemedGrant deletes the grant with this hash unless it was
+// redeemed: a redeemed grant stays, because its pending pairing refers to it.
+// An unknown hash is not an error.
+func (store *Store) DeleteUnredeemedGrant(ctx context.Context, grantHash []byte) error {
+	if len(grantHash) != sha256.Size {
+		return errors.New("store: invalid pairing grant hash")
+	}
+	if _, err := store.database.ExecContext(ctx,
+		`DELETE FROM pairing_grants WHERE grant_hash = ? AND redeemed_at_ms IS NULL`, grantHash); err != nil {
+		return fmt.Errorf("store: delete pairing grant: %w", err)
+	}
+	return nil
+}
+
 // RedeemPairingGrant consumes an unexpired unused grant and creates its
 // pending pairing in one transaction. A capacity or insert failure rolls back
 // the consumption, so concurrent redeemers can never both succeed and a failed

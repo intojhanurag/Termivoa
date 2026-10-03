@@ -46,6 +46,25 @@ With [several computers](/docs/guides/computers/), one computer (home) serves th
 **If home is hacked, every computer you added through it is hacked too.** Home serves the app's code, so it can use every peer, even with the app closed, and it can trick you into pairing again. Choose as home an always-on computer where you do not run untrusted code. If it happens, follow [What do I do if home was hacked?](/docs/guides/computers/#what-do-i-do-if-home-was-hacked)
 :::
 
+## What does Found on your network share?
+
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`, and not tested on real computers or a real phone yet. See [How do I add a computer?](/docs/guides/computers/#how-do-i-add-a-computer)
+:::
+
+When you add a computer with **Add** in **Found on your network**, the new computer sends its one-time invite to your home computer, and you still approve on the new computer.
+
+| What | Who gets it |
+| --- | --- |
+| The new computer's one-time invite (a secret of the same kind as its link, but a different one) | Your home computer, the one you named in `pterm pair --via` or `pterm setup`. It goes over Tailscale's encrypted connection, only while the command waits in a terminal (up to 10 minutes). Home keeps it in memory for at most 60 seconds per send, never on disk. |
+| The list of waiting computers, with their invites | Every phone paired with home. Termivoa treats each of them as yours. |
+
+- **You still approve on the new computer.** The invite only lets a phone ask. Press `y` only when the prompt names THIS computer, and the phone shows the same code and says "type y in the terminal on" the same computer name. If it names another computer, shows another code, or shows nothing, answer `N`.
+- **Home shows only your own computers.** Home lists a computer only when its own Tailscale status shows it in your tailnet, with your Tailscale user, and neither computer is tagged. The name in the list comes from home's Tailscale status, not from the sender.
+- **Anyone who can reach home in your tailnet can make Add fail for a while** (for example with fake invites, or very many of them). They cannot add a computer or learn anything. The QR code and the link still work.
+- **Another of your own computers can show itself in Found.** That is why you check the name and the code before you press `y`.
+- **This adds no trust in home.** Home, and every phone paired with it, could already use every link you paste or scan into its app.
+
 ## Can a preview from another computer harm the app?
 
 :::note[Next beta]
@@ -113,6 +132,7 @@ With several computers (**Next beta**), each computer sends its own notification
 - A session runs with your normal user permissions. A project folder is not a sandbox (a closed-off area).
 - Malware already running as your user is not covered.
 - With several computers (next beta), malware or a hacked account on home reaches every computer added through it.
+- With **Found on your network** (next beta), anyone who can reach home in your tailnet can make **Add** fail for a while. Use the QR code or the link then.
 - A preview from another computer (next beta) can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
 - The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home is offline, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
 - The controls have automated tests, but no independent security audit yet.

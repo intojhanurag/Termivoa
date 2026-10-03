@@ -62,6 +62,7 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayPreviewCheck:  GatewayPreviewCheckResult,
 	GatewayComputersList: GatewayComputersListResult, GatewayComputersAdd: GatewayComputersAddResult,
 	GatewayComputersRemove: GatewayComputersRemoveResult,
+	GatewayComputersOffer:  GatewayComputersOfferResult, GatewayComputersFound: GatewayComputersFoundResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -74,6 +75,7 @@ var AdminRPCResults = map[AdminRPCMessageType]AdminRPCMessageType{
 	AdminShutdown: AdminShutdownResult, AdminGatewayStop: AdminGatewayStopResult,
 	AdminDeviceRename: AdminDeviceRenameResult, AdminDeviceRevokeVia: AdminDeviceRevokeViaResult,
 	AdminComputersList: AdminComputersListResult, AdminComputersRemove: AdminComputersRemoveResult,
+	AdminPairOffer: AdminPairOfferResult, AdminPairOfferEnd: AdminPairOfferEndResult,
 }
 
 func DecodeGatewayRPCRequest(data []byte) (GatewayRPCEnvelope, error) {
@@ -189,7 +191,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		}
 		return ValidateSecretText(payload.PollSecret)
 	case GatewayAuthCheck, GatewayAuthLogout, GatewaySettings, GatewaySessionList, GatewayLiveOpen,
-		GatewayPushConfig, GatewayPushTest, GatewayComputersList:
+		GatewayPushConfig, GatewayPushTest, GatewayComputersList, GatewayComputersFound:
 		payload, err := DecodeRPCPayload[GatewayRPCCredentialPayload](envelope)
 		if err != nil {
 			return err
@@ -248,7 +250,8 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 			return err
 		}
 		return validateOriginSet(payload.PairingOrigins, MaxPairingOrigins, true, "pairingOrigins")
-	case GatewayComputersAdd, GatewayComputersRemove, GatewayComputersListResult, GatewayComputersAddResult:
+	case GatewayComputersAdd, GatewayComputersRemove, GatewayComputersListResult, GatewayComputersAddResult,
+		GatewayComputersOffer, GatewayComputersFoundResult:
 		return validateGatewayComputerPayload(envelope)
 	case GatewayDeviceRename:
 		payload, err := DecodeRPCPayload[GatewayRPCDeviceRenamePayload](envelope)
@@ -360,7 +363,7 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		}
 		_, err = parseBrokerRPCTime(payload.ExpiresAt, "expiresAt")
 		return err
-	case GatewayAuthLogoutResult, GatewayLiveOpenResult, GatewayComputersRemoveResult:
+	case GatewayAuthLogoutResult, GatewayLiveOpenResult, GatewayComputersRemoveResult, GatewayComputersOfferResult:
 		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
 		return err
 	case GatewaySettingsResult:
@@ -465,10 +468,10 @@ func validateSettings(payload HTTPSettingsResponse) error {
 func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 	switch envelope.Type {
 	case AdminPairGrant, AdminDeviceRevokeVia, AdminDeviceRevokeViaResult, AdminComputersListResult,
-		AdminComputersRemove, AdminComputersRemoveResult:
+		AdminComputersRemove, AdminComputersRemoveResult, AdminPairOffer, AdminPairOfferResult, AdminPairOfferEnd:
 		return validateAdminComputerPayload(envelope)
 	case AdminComputersList, AdminPairPending, AdminDeviceList, AdminProjectList, AdminProfileList, AdminProfileDetect,
-		AdminShutdown, AdminGatewayStop, AdminGatewayStopResult:
+		AdminShutdown, AdminGatewayStop, AdminGatewayStopResult, AdminPairOfferEndResult:
 		_, err := DecodeRPCPayload[BrokerRPCEmptyPayload](envelope)
 		return err
 	case AdminShutdownResult:

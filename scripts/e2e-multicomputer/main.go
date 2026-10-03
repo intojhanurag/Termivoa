@@ -33,6 +33,11 @@
 //     the gateway's loopback origin in the listener's frame-ancestors reads
 //     https://H.
 //
+// -old-home <file>: while the file exists, each routed host named on one of
+// its lines answers POST /api/v1/computers/offer as a home without the route
+// (Termivoa before Found on your network) does: 403 "origin not allowed" from
+// admitAPI, because the request has no Origin. Check F-old uses it.
+//
 // `e2e-multicomputer devserver -listen 127.0.0.1:<port> -name <text>` is a
 // small dev site for a session to run.
 //
@@ -114,6 +119,7 @@ func main() {
 	table, previews := routes{}, routes{}
 	listen := flag.String("listen", "127.0.0.1:0", "loopback proxy address")
 	logPath := flag.String("log", "", "JSON-lines request log (default stderr)")
+	oldHome := flag.String("old-home", "", "file of routed hosts that answer the offer route as an old home")
 	flag.Var(table, "route", "host=127.0.0.1:port of a development gateway (repeatable)")
 	flag.Var(previews, "preview", "host=127.0.0.1:port of that gateway's preview listener (repeatable)")
 	flag.Parse()
@@ -131,6 +137,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	front.oldHome = *oldHome
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatal(err)
@@ -154,6 +161,7 @@ type front struct {
 	certMu   sync.Mutex
 	certs    map[string]*tls.Certificate
 	tls      *tls.Config
+	oldHome  string // see -old-home
 }
 
 func newFront(table, previews routes, logOut io.Writer) (*front, error) {
@@ -287,7 +295,32 @@ func (f *front) site(host string) http.Handler {
 			return nil
 		}
 	}
-	return f.logged(host, proxy)
+	return f.logged(host, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/v1/computers/offer" && f.isOldHome(host) {
+			response.Header().Set("Content-Type", "application/json")
+			response.WriteHeader(http.StatusForbidden)
+			io.WriteString(response, `{"error":{"code":"invalid_request","message":"origin not allowed"}}`)
+			return
+		}
+		proxy.ServeHTTP(response, request)
+	}))
+}
+
+// isOldHome reports whether host is listed in the -old-home file now.
+func (f *front) isOldHome(host string) bool {
+	if f.oldHome == "" {
+		return false
+	}
+	data, err := os.ReadFile(f.oldHome)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == host {
+			return true
+		}
+	}
+	return false
 }
 
 // previewSite serves https://host:8443: the preview listener of a routed host.

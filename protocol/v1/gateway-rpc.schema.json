@@ -40,6 +40,8 @@
     { "$ref": "#/$defs/computersListMessage" },
     { "$ref": "#/$defs/computersAddMessage" },
     { "$ref": "#/$defs/computersRemoveMessage" },
+    { "$ref": "#/$defs/computersOfferMessage" },
+    { "$ref": "#/$defs/computersFoundMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -63,6 +65,8 @@
     { "$ref": "#/$defs/computersListResultMessage" },
     { "$ref": "#/$defs/computersAddResultMessage" },
     { "$ref": "#/$defs/computersRemoveResultMessage" },
+    { "$ref": "#/$defs/computersOfferResultMessage" },
+    { "$ref": "#/$defs/computersFoundResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -76,6 +80,7 @@
         "gateway.push.config", "gateway.push.subscribe", "gateway.push.unsubscribe", "gateway.push.test",
         "gateway.upload.begin", "gateway.upload.chunk", "gateway.upload.commit",
         "gateway.preview.check", "gateway.computers.list", "gateway.computers.add", "gateway.computers.remove",
+        "gateway.computers.offer", "gateway.computers.found",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
@@ -84,6 +89,7 @@
         "gateway.push.unsubscribe.result", "gateway.push.test.result",
         "gateway.upload.begin.result", "gateway.upload.chunk.result", "gateway.upload.commit.result", "gateway.preview.check.result",
         "gateway.computers.list.result", "gateway.computers.add.result", "gateway.computers.remove.result",
+        "gateway.computers.offer.result", "gateway.computers.found.result",
         "gateway.error"
       ]
     },
@@ -296,6 +302,8 @@
     "computersListMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.list" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "computersAddMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.add" }, "payload": { "$ref": "#/$defs/computerAddPayload" } } },
     "computersRemoveMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.remove" }, "payload": { "$ref": "#/$defs/computerRemovePayload" } } },
+    "computersOfferMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.offer" }, "payload": { "$ref": "http-api.schema.json#/$defs/computerOfferRequest" } } },
+    "computersFoundMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.found" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "pushTestMessage": { "type": "object", "properties": { "type": { "const": "gateway.push.test" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
     "uploadBeginMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.begin" }, "payload": { "$ref": "#/$defs/uploadBeginPayload" } } },
     "uploadChunkMessage": { "type": "object", "properties": { "type": { "const": "gateway.upload.chunk" }, "payload": { "$ref": "#/$defs/uploadChunkPayload" } } },
@@ -323,6 +331,8 @@
     "computersListResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.list.result" }, "payload": { "$ref": "#/$defs/computerListResultPayload" } } },
     "computersAddResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.add.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/computerAddResponse" } } },
     "computersRemoveResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.remove.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "computersOfferResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.offer.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "computersFoundResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.found.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/computerFoundResponse" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "gateway.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

@@ -74,6 +74,41 @@ func TestPairingGrantIsSingleUseUnderConcurrentRedemption(t *testing.T) {
 	}
 }
 
+// DeleteUnredeemedGrant frees the grant's slot; a redeemed grant stays with
+// its pending pairing.
+func TestDeleteUnredeemedGrant(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "delete.sqlite"))
+	defer store.Close()
+	ctx := context.Background()
+	for index := range 2 {
+		if err := store.CreatePairingGrant(ctx, PairingGrant{ID: testUUID(index + 1), Hash: testHash(fmt.Sprint("g", index)),
+			CreatedAt: testTime, ExpiresAt: testTime.Add(2 * time.Minute)}, 8); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.RedeemPairingGrant(ctx, testHash("g1"), testPending(1, testTime), 8, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{"g0", "g1", "unknown"} {
+		if err := store.DeleteUnredeemedGrant(ctx, testHash(label)); err != nil {
+			t.Fatalf("delete %s: %v", label, err)
+		}
+	}
+	if err := store.DeleteUnredeemedGrant(ctx, []byte("short")); err == nil {
+		t.Fatal("a malformed hash was accepted")
+	}
+	if err := store.RedeemPairingGrant(ctx, testHash("g0"), testPending(2, testTime), 8, nil); !errors.Is(err, ErrPairingInvalid) {
+		t.Fatalf("deleted grant redeemed: %v", err)
+	}
+	var grants int
+	if err := store.database.QueryRowContext(ctx, `SELECT count(*) FROM pairing_grants`).Scan(&grants); err != nil || grants != 1 {
+		t.Fatalf("grants left = %d, %v (want only the redeemed one)", grants, err)
+	}
+	if pending, err := store.ListPendingPairings(ctx, testTime, 8); err != nil || len(pending) != 1 {
+		t.Fatalf("pending = %v, %v", pending, err)
+	}
+}
+
 func TestPairingGrantExpiryCapacityAndRollback(t *testing.T) {
 	store := openTestStore(t, filepath.Join(t.TempDir(), "limits.sqlite"))
 	defer store.Close()

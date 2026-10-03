@@ -384,6 +384,20 @@ func (client *Client) RemoveComputer(ctx context.Context, credential, origin str
 	return err
 }
 
+// OfferComputer never carries a forwarded origin (see encodeRequest).
+func (client *Client) OfferComputer(ctx context.Context, request protocol.HTTPComputerOfferRequest) error {
+	_, err := roundTrip[protocol.BrokerRPCEmptyPayload](ctx, client, protocol.GatewayComputersOffer, request, true, nil)
+	return err
+}
+
+func (client *Client) FoundComputers(ctx context.Context, credential string) (protocol.HTTPComputerFoundResponse, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPComputerFoundResponse{}, err
+	}
+	return roundTrip[protocol.HTTPComputerFoundResponse](ctx, client, protocol.GatewayComputersFound,
+		protocol.GatewayRPCCredentialPayload{Credential: credential}, false, nil)
+}
+
 func (client *Client) mutate(
 	ctx context.Context,
 	requestType protocol.GatewayRPCMessageType,
@@ -624,7 +638,9 @@ func encodeRequest(ctx context.Context, requestType protocol.GatewayRPCMessageTy
 		return nil, "", fmt.Errorf("gatewayclient: encode %s payload: %w", requestType, err)
 	}
 	envelope := protocol.GatewayRPCEnvelope{Version: protocol.Version, Type: requestType, RequestID: requestID, Payload: payloadJSON}
-	if origin, ok := gatewayapi.ForwardedOrigin(ctx); ok && requestType != protocol.GatewayOrigin {
+	// The origin probe and an offer never carry an origin: the offer route
+	// admits only requests without one (docs/found-on-network.md, H1).
+	if origin, ok := gatewayapi.ForwardedOrigin(ctx); ok && requestType != protocol.GatewayOrigin && requestType != protocol.GatewayComputersOffer {
 		envelope.Origin = &origin
 	}
 	data, err := json.Marshal(envelope)

@@ -28,7 +28,9 @@
     "adminRPCMessageType", "adminRPCPairGrantResult", "adminRPCPendingPairing", "adminRPCPairPendingResult", "adminRPCPendingID", "adminRPCDevice", "adminRPCDeviceListResult", "adminRPCDeviceID", "adminRPCDeviceRevokeResult", "adminRPCProjectAdd", "adminRPCProject", "adminRPCProjectResult", "adminRPCProjectListResult", "adminRPCShellProfile", "adminRPCProfileListResult", "adminRPCOrigin", "adminRPCShutdownResult", "adminRPCDeviceRename",
     "sessionAttach", "httpComputerState", "httpComputer", "httpComputerListResponse", "httpComputerAddRequest", "httpComputerAddResponse", "tailnetNode",
     "gatewayRPCComputerAdd", "gatewayRPCComputerRemove", "gatewayRPCComputerListResult",
-    "adminRPCPairGrant", "adminRPCRevokeVia", "adminRPCRevokeViaResult", "adminRPCComputer", "adminRPCComputerListResult", "adminRPCComputerRemove", "adminRPCComputerRemoveResult"
+    "adminRPCPairGrant", "adminRPCRevokeVia", "adminRPCRevokeViaResult", "adminRPCComputer", "adminRPCComputerListResult", "adminRPCComputerRemove", "adminRPCComputerRemoveResult",
+    "httpComputerOfferRequest", "httpFoundComputer", "httpComputerFoundResponse",
+    "adminRPCPairOffer", "adminRPCPairOfferProblem", "adminRPCPairOfferResult", "adminRPCPairOfferEnd"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -171,6 +173,13 @@
     "adminRPCComputer": { "$ref": "admin-rpc.schema.json#/$defs/computer" },
     "adminRPCComputerListResult": { "$ref": "admin-rpc.schema.json#/$defs/computerListResultPayload" },
     "adminRPCComputerRemove": { "$ref": "admin-rpc.schema.json#/$defs/computerRemovePayload" },
-    "adminRPCComputerRemoveResult": { "$ref": "admin-rpc.schema.json#/$defs/computerRemoveResultPayload" }
+    "adminRPCComputerRemoveResult": { "$ref": "admin-rpc.schema.json#/$defs/computerRemoveResultPayload" },
+    "httpComputerOfferRequest": { "$ref": "http-api.schema.json#/$defs/computerOfferRequest" },
+    "httpFoundComputer": { "$ref": "http-api.schema.json#/$defs/foundComputer" },
+    "httpComputerFoundResponse": { "$ref": "http-api.schema.json#/$defs/computerFoundResponse" },
+    "adminRPCPairOffer": { "$ref": "admin-rpc.schema.json#/$defs/pairOfferPayload" },
+    "adminRPCPairOfferProblem": { "$ref": "admin-rpc.schema.json#/$defs/pairOfferProblem" },
+    "adminRPCPairOfferResult": { "$ref": "admin-rpc.schema.json#/$defs/pairOfferResultPayload" },
+    "adminRPCPairOfferEnd": { "$ref": "admin-rpc.schema.json#/$defs/pairOfferEndPayload" }
   }
 }

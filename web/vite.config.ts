@@ -78,7 +78,8 @@ const SCHEMA = 'https://phone-terminal.invalid/protocol/v1/';
 const HTTP_NAMES = [
   'settingsResponse', 'namedOption', 'sessionListResponse', 'sessionMutationResponse', 'deviceSummary',
   'pairRedeemResponse', 'pairPollResponse', 'previewConfigResponse', 'pushConfigResponse', 'pushTestResponse',
-  'uploadResponse', 'computerListResponse', 'computer', 'computerAddResponse', 'errorResponse',
+  'uploadResponse', 'computerListResponse', 'computer', 'computerAddResponse', 'computerFoundResponse', 'foundComputer',
+  'errorResponse',
 ] as const satisfies ReadonlyArray<HttpSchema>;
 
 /** Every HttpSchema name to its schema ref; a name missing here fails the type check. */

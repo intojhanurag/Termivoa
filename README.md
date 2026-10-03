@@ -46,6 +46,10 @@ the old working name "Phone Terminal" so existing installs keep working (see
   every user needs iOS 16.4 or later on iPhone. Add a computer by scanning
   the QR code from `pterm pair --via` inside the app, by pasting the link,
   or by tapping it in a Termivoa session.
+- **Found on your network (next beta).** Run `pterm setup` or
+  `pterm pair --via <home>` on a new computer, then tap **Add** next to it in
+  **Settings → Computers**: no link to move. You still compare the code and
+  type `y` on the new computer. Not yet tested on a real phone.
 - **Agent keys.** One-tap Esc, Ctrl+C, Shift+Tab, Up, `1`, `2`, `y` and Enter
   for coding-agent prompts (Down sits next to Up while you type), plus a key
   bar with Esc, Tab, Ctrl, Alt and arrows.

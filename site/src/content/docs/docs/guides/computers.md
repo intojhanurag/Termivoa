@@ -41,30 +41,58 @@ If home is hacked, every computer you added through it is at risk too, because h
 
 ## How do I add a computer?
 
-You need `pterm setup` done on the new computer, and both computers in the same tailnet with the same Tailscale user.
+Start a wait on the new computer, then tap **Add** next to it in the app. You need `pterm setup` on the new computer, and both computers in the same tailnet with the same Tailscale user.
 
-![Three steps. 1, on the new computer: vps $ pterm pair --via mac. 2, on your phone: tap the link, check the address, tap Add vps, then Continue. 3, same code on both? 742-172, type y on vps. A hand note says: vps is added. that's it. a link alone never adds a computer.](../../../../assets/docs/illo-add-computer.webp)
+:::note[Next beta]
+**Found on your network** and its **Add** button are not in `v0.1.0-beta.2`, and are not tested on real computers or a real phone yet.
+:::
 
-1. **On the new computer**, run `pterm pair --via mac`. Use home's machine name, or its full address such as `https://mac.tailx.ts.net`. **Settings → Computers** shows the exact command.
-2. **Get the link into the app.** It works once, for two minutes.
-   - **Tap it**, if you ran the command in a Termivoa session (for example after `ssh vps`).
-   - **Scan it** or **paste it**: **Settings** → **+ Add a computer**, then **Scan QR** or **Paste link**. See [How do I scan or paste the link?](#how-do-i-scan-or-paste-the-link)
+1. **On the new computer** (here `vps`), in a terminal:
+   - If Termivoa is not set up there yet, run `pterm setup`. At **Is Termivoa already on your phone?** type `2` (**Yes, add this computer to it**), then pick home. The list shows each computer's full address and system, for example `1) mac — https://mac.tailx.ts.net (macOS)`. Pick the computer whose address your Termivoa app opens.
+   - If it is set up, run `pterm pair --via mac`. Use home's machine name, or its full address such as `https://mac.tailx.ts.net`.
+
+   It says **Sent to mac (https://mac.tailx.ts.net).** and waits for your phone for up to 10 minutes. Keep the terminal open.
+2. **On your phone**, open **Settings → Computers**. Under **Found on your network**, tap **Add** next to **vps**.
 3. **Check the sheet.** **Add this computer?** shows the **Address**, **Machine** and **Owner** that home found in its Tailscale status. Tap **Add vps**, then **Continue**.
 
    ![The Add this computer? sheet with Address https://vps.tailx.ts.net, Machine vps, Owner ada@example.com, and the buttons Add vps and Cancel.](../../../../assets/docs/phone-computers-confirm.webp)
 
-4. **Compare the code.** The app asks **Does vps show this code?** If vps shows the same code, type `y` there. The app says **vps is added**.
+4. **Compare the code and the name.** The app asks **Does vps show this code?** and says "If it matches, type y in the terminal on vps." On vps, the prompt says `Phone "iPhone" wants to use THIS computer (vps) from the Termivoa app at mac (…)`. Type `y` only if it names THIS computer (vps) and shows the same code. The app says **vps is added**.
 
    ![The screen Does vps show this code? with the code 742-172, the text If it matches, type y in the terminal on vps., Waiting for vps, and Codes don't match? Cancel.](../../../../assets/docs/phone-computers-code.webp)
 
 You can leave the page to type `y` in the app's own terminal: tap **Back to terminal**. A bar says **Adding vps… approve on vps** until it is done.
 
+| **Found on your network** shows | Meaning |
+| --- | --- |
+| **vps** · `vps.tailx.ts.net` · **Add** | vps waits to be added. The app checks the list every 5 seconds while **Settings → Computers** is open. |
+| "To add another computer, run pterm setup on it, or pterm pair --via mac if it is already set up. It shows here while it waits." | No computer waits now. |
+| "mac cannot read its Tailscale status. Check Tailscale on mac." | Home cannot see your tailnet now. Check Tailscale on home. |
+
+A row goes away when that computer stops waiting or becomes another Tailscale machine. It is also hidden while that computer is in your list and answers. A computer that lost this phone's access (for example after `pterm revoke` there) shows again, so you can add it again from **Found**.
+
 | If… | Then |
 | --- | --- |
-| The codes are different | Type `n`, then tap **Codes don't match? Cancel**. |
+| No **Add** row shows up | Use the link: see [How do I scan or paste the link?](#how-do-i-scan-or-paste-the-link) and [Troubleshooting](/docs/reference/troubleshooting/#no-add-button-for-a-new-computer-next-beta). |
+| The codes are different, or the prompt names another computer | Type `n`, then tap **Codes don't match? Cancel**. |
 | You change your mind | Tap **Cancel** on the sheet, the page or the bar. After a `y`, the app also signs out of vps. |
-| A computer is a tagged Tailscale node | Check its tags, then run `pterm pair --via mac --allow-tagged`. |
-| You want to approve later | `pterm pair --via mac --no-wait`, then `pterm pair pending` and `pterm pair approve <pending-id>`. |
+| The app says "vps stopped waiting. On vps run pterm pair --via mac, then tap Add again." | vps no longer waits. Run `pterm pair --via mac` on vps, then tap **Add** again. |
+| A computer is a tagged Tailscale node | **Add** does not work for it. Check its tags, then run `pterm pair --via mac --allow-tagged` and use the QR code or the link. |
+| You want to approve later | `pterm pair --via mac --no-wait`, then `pterm pair pending` and `pterm pair approve <pending-id>`. This sends nothing to home: use the link. |
+
+### Other ways: the link and the QR code
+
+Under **Sent to mac**, `pterm pair --via` also prints a QR code and a link: "No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:". They work once, for two minutes. When they expire, the computer says "The QR code and link above expired. Add in the app still works." and keeps waiting. If nothing reached home, the command ends instead; run it again.
+
+![Three steps. 1, on the new computer: vps $ pterm pair --via mac. 2, on your phone: tap the link, check the address, tap Add vps, then Continue. 3, same code on both? 742-172, type y on vps. A hand note says: vps is added. that's it. a link alone never adds a computer.](../../../../assets/docs/illo-add-computer.webp)
+
+- **Tap it**, if you ran the command in a Termivoa session (for example after `ssh vps`).
+- **Scan it** or **paste it**: **Settings** → **+ Add a computer**, then **Scan QR** or **Paste link**. See [How do I scan or paste the link?](#how-do-i-scan-or-paste-the-link)
+
+Then check the sheet and compare the code as in steps 3 and 4. Without a terminal (for example with piped input), `pterm pair --via` sends nothing to home and waits only for the link, for two minutes.
+
+| If… | Then |
+| --- | --- |
 | The link opened in Safari or the phone's Camera app | That page says **This page cannot add the computer**. Scan the QR code in the app instead (**Settings → + Add a computer → Scan QR**), or tap **Copy link** there and use **Paste link** in the app. Safari never adds the computer. |
 
 ## How do I scan or paste the link?
@@ -186,4 +214,4 @@ Every step matters: a hacked home can leave a hidden background script on the ph
 
 ## Is it tested on a real phone?
 
-Not yet. Chrome and WebKit pass all 65 checks with two test computers, but the check on a real iPhone and Android phone has not run. If it fails on iPhone, the design changes before release.
+Not yet. Chrome and WebKit pass every automated check with two test computers, but the check on a real iPhone and Android phone has not run. If it fails on iPhone, the design changes before release.

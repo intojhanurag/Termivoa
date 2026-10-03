@@ -13,6 +13,7 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
 	"github.com/intojhanurag/phone-terminal/internal/gatewayclient"
+	"github.com/intojhanurag/phone-terminal/internal/localclient"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
@@ -185,5 +186,33 @@ func TestRunningGatewayFollowsConfigOrigin(t *testing.T) {
 	}
 	if code := status("attacker.example"); code != http.StatusMisdirectedRequest {
 		t.Fatalf("unrelated host = %d", code)
+	}
+}
+
+// Ctrl+C during an RPC closes the command's own broker connection; the end
+// of an offer still runs, on a new connection, and deletes the grant.
+func TestEndOfferRunsOnANewConnection(t *testing.T) {
+	runtimeDir, _ := startCommandBroker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	client, err := localclient.DialAdmin(ctx, runtimeDir, buildID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := client.CreatePairingGrant(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = client.Close() // what a cancelled RPC leaves
+	if err := (endOnNewConnection{client, runtimeDir}).EndOffer(ctx, &grant.Grant); err != nil {
+		t.Fatalf("end on a new connection: %v", err)
+	}
+	phone, err := gatewayclient.New(gatewayclient.Config{RuntimeDir: runtimeDir, ClientBuild: "pair-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer phone.Close()
+	if _, err := phone.RedeemPairing(ctx, protocol.HTTPPairRedeemRequest{Grant: grant.Grant, DeviceLabel: "Phone"}); err == nil {
+		t.Fatal("the grant survived the end")
 	}
 }

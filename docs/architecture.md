@@ -3,7 +3,9 @@
 Status (2026-10-03): latest release tag `v0.1.0-beta.2` (2026-09-29). On
 `main` beyond that tag: multi-computer (ADR 0005, Gate 0 on a real iPhone and
 Android still pending), preview for sessions on peers (ADR 0006, real-phone
-checks pending), Files, worktrees, project buttons, line comments in
+checks pending), Found on your network (ADR 0007, add a computer
+with **Add** in the app; real two-computer and real-phone checks pending),
+Files, worktrees, project buttons, line comments in
 Changes, Wall drag-to-arrange, the Down key next to Up, two breaking rules
 (an exact `Origin` or `Sec-Fetch-Site: same-origin` on every `/api` request,
 so iOS 16.4 or later; `pterm setup` refuses other Tailscale Serve handlers on
@@ -55,7 +57,7 @@ One Go binary, `pterm` (`cmd/pterm`). Node.js is a build-time tool only.
 | --- | --- |
 | Sessions | `list`, `new --project <id> --shell <id>`, `terminate <id>`, `attach [--control] <id>` |
 | Pairing and devices | `pair [--origin] [--no-qr] [--no-wait]`, `pair pending`, `pair approve <id>`, `devices`, `devices rename`, `revoke <device>` |
-| Multi-computer | `pair --via <name\|url> [--allow-tagged]`, `revoke --via <url>`, `computers`, `computers remove <url>` |
+| Multi-computer | `pair --via <name\|url> [--allow-tagged]` (in a terminal it also offers this computer to home for up to 10 minutes: Found on your network), `revoke --via <url>`, `computers`, `computers remove <url>` |
 | Configuration | `project add`, `project list`, `profile list`, `profile detect`, `config origin [<url>]` |
 | Install and run | `setup`, `setup --apply --yes` (installer mode), `doctor`, `uninstall [--dry-run] [--yes] [--delete-data]`, `launch [--no-open]` |
 | Stop | `stop` (gateway only, sessions keep running), `shutdown` (ends all sessions, stops both) |
@@ -124,10 +126,10 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 
 | Path | Purpose |
 | --- | --- |
-| `cmd/pterm` | CLI entry, argument parsing, `setup`/`doctor`/`launch`/`up`/`stop`, hidden process modes |
+| `cmd/pterm` | CLI entry, argument parsing, `setup`/`doctor`/`launch`/`up`/`stop`, hidden process modes. `lifecycle_e2e.go` is compiled only with the `e2e` tag (section 8) |
 | `internal/agentstate` | Pure classifier: working, waiting on a question, or idle, from sanitized screen text and timing |
 | `internal/auth` | Secrets, pairing grant (2 min) and browser credential lifetimes (30 days absolute, 7 days idle) |
-| `internal/broker` | Sessions, registry, controller leases, input inbox and writer, viewers, RPC servers (management, admin, gateway), agent state, Changes, Files, tasks, worktrees, uploads, preview scans, live folder, multi-computer trust |
+| `internal/broker` | Sessions, registry, controller leases, input inbox and writer, viewers, RPC servers (management, admin, gateway), agent state, Changes, Files, tasks, worktrees, uploads, preview scans, live folder, multi-computer trust, Found on your network (`offer.go`: this computer's offer to its home and the pinned dial; `offers.go`: home's offer book and found list; `peerdial_e2e.go` is compiled only with the `e2e` tag) |
 | `internal/cli` | User-facing local commands (pair, devices, list, attach orchestration, QR); owns no state |
 | `internal/desktop` | Desktop attach client: outer TTY modes, renderer of normalized frames, bounded input decoding |
 | `internal/gateway` | HTTP/WebSocket server, static assets, CSP, Origin/CORS, cookies, preview proxy |
@@ -177,7 +179,7 @@ All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.
 | `envelope.schema.json` | Live WebSocket and live IPC messages: snapshots, patches, history, input, control, session state, Changes, Files, tasks, branches, worktree remove |
 | `http-api.schema.json` | Browser HTTP API bodies |
 | `types.schema.json` | Index of named types for generation |
-| `revision.json` | Additive protocol revision (now `revision: 2`, `minRevision: 1`; revision 2 is the preview listener rules, no schema change) |
+| `revision.json` | Additive protocol revision (now `revision: 3`, `minRevision: 1`; revision 2 is the preview listener rules, no schema change; revision 3 is Found on your network: the offer and found routes, `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`, error `home_changed`) |
 
 Prose specs: [http-api.md](../protocol/v1/http-api.md) (routes, headers,
 cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transport.md),
@@ -240,11 +242,11 @@ same OS user is out of scope. Nothing runs as root or SYSTEM.
 
 | Topic | Rule |
 | --- | --- |
-| Pairing | `pterm pair` makes a single-use grant (2 minutes) carried in the URL fragment. The phone redeems it with one POST, then polls with a separate secret. The owner approves on the computer after comparing a verification code. |
+| Pairing | `pterm pair` makes a single-use grant (2 minutes) carried in the URL fragment. The phone redeems it with one POST, then polls with a separate secret. The owner approves on the computer after comparing a verification code. A grant bound to another computer's app (`pterm pair --via`) can also reach that home as an offer (Found on your network): TLS to home's pinned Tailscale IP, at most 60 s in home's memory, readable by every device paired with home. The approval prompt names THIS computer. |
 | Cookie | `__Host-pterm_session`: Secure, HttpOnly, `SameSite=Strict`, `Path=/`. 30 days absolute, 7 days idle. `GET /api/v1/settings` resends the same value so WebKit's 7-day cap does not end it. The broker stores only hashes and re-authorizes the raw credential on every call. |
 | Origin and Host | Exact Host check. Every `/api` request needs an exact allowed `Origin`, or no `Origin` plus `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is refused. Mutations need `X-Pterm-Request`. Strict CSP on every response. |
 | Tailscale | Serve on 443 gives the private HTTPS origin. Funnel and public tunnels are excluded. Tailscale identity headers are ignored. `tailscale status` only narrows multi-computer access; it is never authentication. |
-| Multi-computer | A peer accepts a cross-origin call only from the app origin bound to that exact credential (`devices.app_origin`), with the pinned node ID and same owner (or `--allow-tagged`). Status cached about 60 s, 10-minute grace. A changed node ID revokes devices bound to it. A compromised home compromises every peer paired through it. The phone keeps only `/sw.js` at scope `/` and at the push scope of each peer in its stored list; a registration for a host a compromised home wrote into that list lives until home's list answers. |
+| Multi-computer | A peer accepts a cross-origin call only from the app origin bound to that exact credential (`devices.app_origin`), with the pinned node ID and same owner (or `--allow-tagged`). Status cached about 60 s, 10-minute grace. A changed node ID revokes devices bound to it. A compromised home compromises every peer paired through it. The phone keeps only `/sw.js` at scope `/` and at the push scope of each peer in its stored list; a registration for a host a compromised home wrote into that list lives until home's list answers. `POST /api/v1/computers/offer` is unauthenticated: any `Origin` or `Sec-Fetch-*` is `403` before CORS, its own bucket (10, then 1/s; one bucket behind Serve), always `204`, snapshot only; home keeps offers only from untagged peers of its owner, in memory, 60 s, at most 16. `GET /api/v1/computers/found` is cookie and own origin only. |
 | Preview | Separate origin (8443) per computer. Termivoa cookies are never forwarded to or set by a dev server. Admission order on the preview listener: Host; then the selection (`/__termivoa/select`) needs no `Origin` and exactly one `Referer` of this computer's own app origin or of a bound app origin (a bound one is forwarded to the broker, which checks it against the credential); every other path needs rule L1 (`Origin` equal to the preview origin, or no `Origin` plus `Sec-Fetch-Site: same-origin`); then the cookie and the broker (failed attempts are not counted: no client can lock out a paired phone). The selection answers a `200` page that moves the frame to `/`, not a redirect. The broker runs the Tailscale trust check for a bound device on every preview check; open sockets are rechecked every 5 s. The app document's CSP holds its own preview origin and the `:8443` origin of each confirmed computer (never pending, never `wss:`) in `frame-src` and `connect-src`. The app probes a preview origin before it frames it, and marks a peer's frame with the computer's label and **untrusted page**: a peer chooses the page in its frame ([peer-preview.md](peer-preview.md), section 7). |
 | Controller lease | One controller per session. Acquire revokes the old lease, raises the epoch and makes a new 32-byte secret. Input carries generation, lease and a rising sequence; the broker rechecks auth and lease before acceptance. |
 | Input | Bounded `key`, `text`, `paste`, `mouse`, `answer` messages. Reconnect starts as observer. Lost acks show "uncertain delivery"; nothing is resent. |
@@ -252,7 +254,8 @@ same OS user is out of scope. Nothing runs as root or SYSTEM.
 Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 [ADR 0003](decisions/0003-private-tailscale-networking.md),
 [ADR 0005](decisions/0005-multi-computer.md),
-[ADR 0006](decisions/0006-peer-preview.md). Pairing design:
+[ADR 0006](decisions/0006-peer-preview.md),
+[ADR 0007](decisions/0007-found-on-network.md). Pairing design:
 [p4-authentication-design.md](p4-authentication-design.md).
 
 ## 7. Features
@@ -278,6 +281,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Live folder | Current working folder from the OS or OSC 7 / OSC 9;9; display only | `internal/broker/cwd.go`, `internal/broker/cwd_hook.go`, `internal/ptyhost/cwd.go` | `web/src/screens/folder.ts` | [live-folder.md](live-folder.md) |
 | Snippets, composer and keys | Saved snippets, multi-line composer with drafts in memory, key row, agent keys | — | `web/src/terminal/snippets.ts`, `web/src/terminal/composer.ts`, `web/src/screens/Composer.tsx`, `web/src/screens/Dock.tsx`, `web/src/terminal/agentKeys.ts` | — |
 | Multi-computer | One app on home talks directly to up to 8 peers (Next); Settings → Computers shows each computer's `hostBuild` and last good read (memory only), **Check again** reads one computer through the scheduler | `internal/broker/computers.go`, `internal/store/computers.go`, `internal/tailnet`, `cmd/pterm/computers.go` | `web/src/computers.ts`, `web/src/screens/allSessions.ts`, `web/src/screens/Computers.tsx`, `web/src/screens/AddComputer.tsx`, `web/src/pairing/addComputer.ts` | [multi-computer.md](multi-computer.md), ADR 0005 |
+| Found on your network | A new computer that waits in `pterm pair --via <home>` (or setup's answer 2) at a terminal pushes its bound grant to home every 30 s for up to 10 minutes; **Settings → Computers → Found on your network** lists it with **Add**, which runs the pasted-link flow. Routes `POST /api/v1/computers/offer` (no auth) and `GET /api/v1/computers/found` (cookie, own origin); RPCs `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`; protocol revision 3 (Next) | `internal/broker/offer.go` (`offerPairing`, `endOffer`, `pushOffer`, `dialHome`, `dialPinned`), `internal/broker/offers.go` (`offerComputer`, `foundComputers`, `offerBook`), `internal/gateway/handler.go` (`admitAPI` exception), `internal/gateway/api.go` (`offerComputer`, `foundComputers`), `internal/cli/admin.go` (`offerAndWait`, `waitForPhone`, `pairingPrompt`), `cmd/pterm/lifecycle.go` (`offerPairing`, `askHome`) | `web/src/computers.ts` (`watchFound`), `web/src/screens/Computers.tsx` (`FoundBlock`), `web/src/pairing/addComputer.ts` (`foundLink`, the one retry), `web/src/screens/AddComputer.tsx` | [found-on-network.md](found-on-network.md), ADR 0007 |
 | Desktop attach | `pterm attach` in any terminal app; Ctrl+] detaches | `internal/desktop`, `internal/liveclient`, `internal/cli/desktop.go`, `cmd/pterm/desktop.go` | — | — |
 | Packaging | Unsigned macOS app and DMG (launcher runs `pterm launch`), Linux static binaries and installer script, Windows Inno Setup installer | `packaging/macos`, `packaging/linux`, `packaging/windows`, `scripts/install-linux.sh` | — | [install.md](install.md) |
 | Docs site | Astro Starlight site with `llms.txt` and per-page Markdown | `site/` | — | AGENTS.md rules 22–23 |
@@ -291,7 +295,8 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | `.github/workflows/ci.yml` | protocol-generation, go-quality, go-race, web-quality, macOS and Windows integration, Linux release smoke |
 | `.github/workflows/packaging.yml` | Unsigned macOS, Linux and Windows artifacts |
 | `scripts/soak.sh` | Soak probes (build tag `soak`) |
-| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443`) |
+| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443` and Found on your network). The harness builds `pterm` with `-tags webdist,e2e` |
+| Build tag `e2e` | Test builds only. `internal/broker/peerdial_e2e.go` replaces the offer dial (`dialHome`) with a `CONNECT` through the harness front when `PTERM_E2E_FRONT` is set, checking the certificate by `PTERM_E2E_SPKI` in place of the pinned-IP guard; `cmd/pterm/lifecycle_e2e.go` makes `pterm setup` check the gateway in `PTERM_E2E_GATEWAY`. Production builds do not compile either file; a unit test and a harness check confirm that a production binary does not contain `PTERM_E2E` |
 | `scripts/docs-screenshots` | Demo-only screenshots for the docs site |
 
 ## 9. Key invariants
@@ -322,12 +327,14 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | [0004](decisions/0004-broker-owned-sqlite.md) | Only the broker owns SQLite |
 | [0005](decisions/0005-multi-computer.md) | Multi-computer through direct same-site links, per-device origin binding |
 | [0006](decisions/0006-peer-preview.md) | Preview for sessions on peers: `Referer` as the app-origin proof on the selection, same-origin-only preview listener, a peer's frame is untrusted |
+| [0007](decisions/0007-found-on-network.md) | Found on your network: a waiting new computer pushes its own bound grant to the home it names; the app adds it with **Add** |
 
 Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [live-folder.md](live-folder.md), [notifications.md](notifications.md),
 [preview.md](preview.md), [peer-preview.md](peer-preview.md),
 [project-tasks.md](project-tasks.md),
 [multi-computer.md](multi-computer.md),
+[found-on-network.md](found-on-network.md),
 [p4-authentication-design.md](p4-authentication-design.md),
 [threat-model.md](threat-model.md). Status and gaps:
 [progress.md](progress.md), [pending-work.md](pending-work.md),
