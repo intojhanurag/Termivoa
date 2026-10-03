@@ -6,7 +6,7 @@ import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from 
 import { AddComputerSheet } from './AddComputer';
 import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
 import { ago, problemDetail, problemText } from './Sessions';
-import { Button, Icon, Notice, type IconName } from './ui';
+import { Button, Icon, Notice, PairVia, type IconName } from './ui';
 
 /** The right-hand word for a computer in the list. */
 export function onlineText(entry: ComputerEntry): { readonly text: string; readonly tone: 'green' | 'muted' | 'amber' } {
@@ -125,7 +125,7 @@ export function FoundBlock({ found, homeName, working, app, onAdd }: {
       {found.kind === 'no_status' && <Notice tone="warning">{homeName} cannot read its Tailscale status. Check Tailscale on {homeName}.</Notice>}
       {found.kind === 'rows' && rows.length === 0 && (
         <Notice tone="neutral" icon="monitor">
-          To add another computer, run <code>pterm setup</code> on it, or <code>pterm pair --via {homeName}</code> if it is already set up. It shows here while it waits.
+          To add another computer, run <code>pterm setup</code> on it, or <PairVia home={homeName} /> if it is already set up. It shows here while it waits.
         </Notice>
       )}
       {rows.length > 0 && (
@@ -421,7 +421,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
       )}
       <div className="card stack">
         <p className="strong">On the new computer, run:</p>
-        <pre className="command"><code>pterm pair --via {homeName}</code></pre>
+        <pre className="command"><PairVia home={homeName} /></pre>
         <p className="hint-text">
           Then tap <strong>+ Add a computer</strong> and scan the QR code it shows, or paste the link it prints. If you run it in a Termivoa session, tap the link in the terminal instead.
         </p>

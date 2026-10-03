@@ -9,7 +9,7 @@ import {
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
-import { Button, Icon, Notice } from './ui';
+import { Button, Icon, Notice, PairVia } from './ui';
 import { WorktreeBadge } from './Worktree';
 
 type Tone = 'accent' | 'amber' | 'muted';
@@ -294,7 +294,7 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
           action={<button type="button" className="secondary compact" onClick={onSettings}>Computers</button>}
         >
           This phone lost access on {computer.label}. On {computer.label}, run:
-          <br /><code className="notice-command">{pairCommand()}</code>
+          <br /><PairVia className="notice-command" home={firstLabel(homeOrigin())} />
         </Notice>
       )}
       {status.kind === 'outdated' && (

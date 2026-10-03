@@ -61,6 +61,14 @@ const TONE_ICON: Readonly<Record<Tone, IconName>> = {
 };
 
 /**
+ * `pterm pair --via <home>` as code. It wraps at its spaces like any text;
+ * "--via" never breaks between its two dashes (Chrome would).
+ */
+export function PairVia({ home, className }: { readonly home?: string; readonly className?: string }) {
+  return <code {...(className === undefined ? {} : { className })}>pterm pair <span className="nowrap">--via</span>{home === undefined ? '' : ` ${home}`}</code>;
+}
+
+/**
  * An inline notice: an icon in a tinted square, a bold title (what happened),
  * a line (how to fix it) and at most one action. Title or body may be left out
  * when the app has only one sentence to say.

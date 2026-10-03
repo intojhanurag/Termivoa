@@ -7,7 +7,7 @@ import {
 } from '../pairing/addComputer';
 import { CodeTiles } from './Setup';
 import { Sheet, SheetHeader } from './Sheet';
-import { Notice } from './ui';
+import { Notice, PairVia } from './ui';
 
 /**
  * Adding a computer (docs/multi-computer.md, "Pairing a second computer"):
@@ -51,7 +51,7 @@ export function AddComputerConfirm({ link, node, onConfirm, onCancel }: {
         <dt>{owner.term}</dt><dd>{owner.value}</dd>
       </dl>
       <p className="hint-text add-computer-hint">
-        Add it only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
+        Add it only if you just ran <code>pterm setup</code> or <PairVia /> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">
         <button type="button" className="primary" onClick={onConfirm}>Add {label}</button>
@@ -79,7 +79,7 @@ export function AddComputerContinue({ link, onContinue, onCancel }: {
         <dt>Address</dt><dd>{link.origin}</dd>
       </dl>
       <p className="hint-text add-computer-hint">
-        Continue only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
+        Continue only if you just ran <code>pterm setup</code> or <PairVia /> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">
         <button type="button" className="primary" onClick={onContinue}>Continue</button>
@@ -195,14 +195,14 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
         </>
       )}
       {phase?.kind === 'expired' && (
-        <Notice tone="danger" role="alert">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then tap Add again, or scan or paste the new link.</Notice>
+        <Notice tone="danger" role="alert">The code expired or {label} refused it. Run <PairVia /> on {label} again, then tap Add again, or scan or paste the new link.</Notice>
       )}
       {phase?.kind === 'cancelled' && (
         <Notice tone="neutral" icon="x" role="alert">Adding {label} was cancelled. If {label} asks, answer N.</Notice>
       )}
       {phase?.kind === 'error' && <Notice tone="danger" role="alert" title={addFailure(phase.error, label)} />}
       {phase?.kind === 'stale' && (
-        <Notice tone="danger" role="alert">{label} stopped waiting. On {label} run <code>pterm pair --via {firstLabel(homeOrigin())}</code>, then tap Add again.</Notice>
+        <Notice tone="danger" role="alert">{label} stopped waiting. On {label} run <PairVia home={firstLabel(homeOrigin())} />, then tap Add again.</Notice>
       )}
       {(phase?.kind === 'expired' || phase?.kind === 'cancelled' || phase?.kind === 'error' || phase?.kind === 'stale') && (
         <button type="button" className="secondary" onClick={leave(onSettings)}>Settings</button>
@@ -250,7 +250,7 @@ export function PeerAddPage({ link }: { readonly link: string | undefined }) {
       <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
       <h1>Add this computer</h1>
       {link === undefined ? (
-        <Notice tone="danger" role="alert">This link is incomplete. Run <code>pterm pair --via</code> on this computer again.</Notice>
+        <Notice tone="danger" role="alert">This link is incomplete. Run <PairVia /> on this computer again.</Notice>
       ) : (
         <>
           <p>This page cannot add the computer. Open your Termivoa app{via === undefined ? '' : ` on ${via}`}, then:</p>

@@ -769,6 +769,38 @@ try {
       `${JSON.stringify(reloaded)}; vps answers: ${[...new Set(later)].join('; ')}`);
   });
 
+  // ---- B6-fit: nothing is wider than the phone (390 px) ----
+  await step('B6-fit', 'Sessions and Settings → Computers fit 390 px, also with long commands and names', async () => {
+    // Boxes sticking out past the right edge, or scrolling sideways, except the deliberate side scrollers.
+    // The second pass makes every code element long (a long machine name), as on a real Mac.
+    const overflow = () => app.eval(`(() => {
+      const iw = innerWidth, keep = '.tab-scroll, .chips, .compact-row, .terminal-area';
+      const name = (e) => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\\s+/).join('.') : '') + ' "' + (e.textContent || '').trim().slice(0, 40) + '"';
+      const scrolls = (e) => { const s = getComputedStyle(e); return (s.overflowX === 'auto' || s.overflowX === 'scroll') && e.scrollWidth > e.clientWidth + 1; };
+      const all = [...document.querySelectorAll('body *')].filter((e) => !e.closest(keep));
+      return [document.documentElement.scrollWidth > iw ? 'document ' + document.documentElement.scrollWidth : '',
+        ...all.filter((e) => e.getBoundingClientRect().right > iw + 0.5).map((e) => name(e) + ' right ' + Math.round(e.getBoundingClientRect().right)),
+        ...all.filter(scrolls).map((e) => name(e) + ' scrolls ' + e.scrollWidth + '/' + e.clientWidth)].filter(Boolean).slice(0, 8);
+    })()`);
+    const lengthen = () => app.eval(`document.querySelectorAll('code').forEach((c) => c.append(' studio-workstation-m3-max ' + 'x'.repeat(40)))`);
+    const width = await app.eval('innerWidth');
+    const seen = {};
+    await openSessions();
+    await until(async () => (await problems()).length > 0, { what: 'problem row', timeout: 20000 });
+    seen.sessions = await overflow();
+    await lengthen();
+    seen.sessionsLong = await overflow();
+    await shot('b6-fit-sessions');
+    await app.go(`${mac.origin}/settings`);
+    await until(() => app.eval(`document.querySelectorAll('.computer-card').length >= 2 && document.querySelector('.found .notice, .found-row') !== null`), { what: 'computer cards and the Found text', timeout: 20000 });
+    seen.computers = await overflow();
+    await lengthen();
+    seen.computersLong = await overflow();
+    await shot('b6-fit-computers');
+    check('B6-fit', `Sessions and Settings → Computers fit ${width} px, also with long commands and names`,
+      Object.values(seen).every((list) => list.length === 0), `width ${width}; ${JSON.stringify(seen)}`);
+  });
+
   // ---- B2b: add vps again through the link printed in a mac terminal ----
   const vpsCommand = () => {
     const e = vps.processEnv;
