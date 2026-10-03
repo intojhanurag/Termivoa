@@ -245,6 +245,13 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): the preview proxy now also drops a dev server's
+  `Set-Cookie` that sets a Termivoa cookie with an empty name
+  (`=__Host-pterm_preview=x`), in other letter case (`__HOST-pterm_session`),
+  with a quoted name, or folded after another cookie in one line; the same
+  spellings are removed from the browser's `Cookie` before it reaches the dev
+  server. The dev site's own cookies still pass unchanged. No phone-side
+  change (#150).
 - Fix (host side): the preview listener's short text pages (for example
   "No dev server of this session listens on that port.") were blank inside
   the app's frame, because they allowed framing only by the preview origin
