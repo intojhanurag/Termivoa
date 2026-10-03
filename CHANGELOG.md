@@ -282,6 +282,14 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): `pterm setup` went on to start Termivoa and pair a phone
+  when Tailscale Funnel was on for port 443 that already served Termivoa; it
+  only printed a warning. Funnel puts the terminal on the public internet.
+  Setup now refuses before any change while Funnel is on for port 443 or the
+  preview port 8443 (also with `--apply --yes`), and prints the command that
+  turns it off, for example `tailscale funnel --https=443 off`; it never runs
+  it. `pterm doctor` reports Funnel as a problem with the same command
+  (#157). Phone: no change.
 - Fix (host side, macOS): adding a computer to a Mac home failed with
   "service unavailable". The broker runs `tailscale status` in the
   background, and there the Tailscale app's own program answered "The

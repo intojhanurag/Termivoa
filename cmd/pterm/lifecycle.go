@@ -601,7 +601,7 @@ func checkWarnings(checks string) []string {
 // non-interactive installer path (always verbose): it only registers startup
 // and saves the phone address when no other one is set. Both refuse, before
 // any change, while other Tailscale Serve handlers share this computer's
-// origin.
+// origin or Tailscale Funnel is on for its ports 443 or 8443.
 func runSetupCommand(ctx context.Context, args []string, input *os.File, output io.Writer) error {
 	options, err := parseLifecycleFlags("setup", args, "apply", "yes", "verbose")
 	if err != nil {
@@ -635,6 +635,18 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 		_, _ = output.Write(checks.Bytes())
 		return exitCodeError{exitOtherServeHandlers, fmt.Errorf("refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (%s); "+
 			"move them as shown above, then run `pterm setup` again", strings.Join(handlers, ", "))}
+	}
+	// Funnel on Termivoa's ports puts the terminal on the public internet,
+	// even where Serve already proxies Termivoa, so setup starts and pairs
+	// nothing. The owner turns it off; pterm never changes Tailscale here.
+	if funnel := report.tailscale.serve.Funnel; len(funnel) > 0 {
+		_, _ = output.Write(checks.Bytes())
+		commands := make([]string, len(funnel))
+		for index, hostPort := range funnel {
+			commands[index] = "`" + lifecycle.FunnelOffCommand(hostPort) + "`"
+		}
+		return fmt.Errorf("refusing to set up: Tailscale Funnel is on for %s, which puts Termivoa on the public internet; "+
+			"turn it off with %s, then run `pterm setup` again", strings.Join(funnel, ", "), strings.Join(commands, " and "))
 	}
 	if !verbose {
 		detail = io.Discard

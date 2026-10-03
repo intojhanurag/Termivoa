@@ -210,8 +210,10 @@ func TestShortSetupPlanShowsWarningsAndThePhoneFix(t *testing.T) {
 			want: []string{"Warnings:\n  ! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie",
 				"Share Termivoa with your tailnet devices at https://vps.example.ts.net (port 443). It asks first.", connect},
 			unwanted: []string{cannot, "Funnel", "not configured for Termivoa"}},
-		"funnel": {status: withMac, serve: strings.TrimSuffix(served, "}") + `,"AllowFunnel":{"vps.example.ts.net:443":true}}`,
-			want: []string{"Warnings:\n  ! tailscale serve: Tailscale Funnel is enabled for vps.example.ts.net:443",
+		// Funnel on 443 or 8443 refuses setup (TestSetupRefusesFunnelOnTermivoaPorts).
+		"funnel on another port": {status: withMac, serve: strings.TrimSuffix(served, "}") + `,"AllowFunnel":{"vps.example.ts.net:10000":true}}`,
+			want: []string{"Warnings:\n  ! tailscale serve: Tailscale Funnel is on for vps.example.ts.net:10000, which makes it public on the internet; " +
+				"Termivoa must never be public. Turn it off: `tailscale funnel --https=10000 off`, then run `pterm setup` again.",
 				"Never use Tailscale Funnel: it would put your terminal on the public internet.", connect}},
 		"no other computer": {status: self + "}", serve: served,
 			want: []string{"  - Then pair your phone.\n"}, unwanted: []string{"Warnings:", connect, cannot, "Funnel"}},
