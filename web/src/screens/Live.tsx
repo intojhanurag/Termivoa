@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { DiffLine, HTTPSettingsResponse, KeyName } from '../generated/protocol';
+import { lazy, Suspense, useEffect, type ComponentProps, type ComponentType, useRef, useState, useSyncExternalStore } from 'react';
+import type { HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
 import {
@@ -16,7 +16,7 @@ import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey,
 import { AddComputerSheet } from './AddComputer';
 import { keyOf, sameSession, type HostedSession } from './allSessions';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
-import { ErrorBoundary, loadChunk } from './chunks';
+import { loadChunk } from './chunks';
 import { Composer } from './Composer';
 import type { ChangesTab } from './Files';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
@@ -34,7 +34,31 @@ import { NewWorktree, WorktreeBadge } from './Worktree';
 
 // Changes and Files are the only screens that open from a tap and need none of
 // the first terminal frame, so they load when first opened.
-const ChangesScreen = lazy(() => loadChunk(() => import('./ChangesScreen')).then((module) => ({ default: module.ChangesScreen })));
+// The screen replaces the terminal and dock, so a wait or a failed load keeps a Back button.
+// React.lazy keeps a rejected promise, so opening Changes after a failed load makes a new lazy.
+type ChangesScreenProps = ComponentProps<typeof import('./ChangesScreen').ChangesScreen>;
+
+export function ChangesWait({ failed, onReturn }: { readonly failed: boolean; readonly onReturn: () => void }) {
+  return (
+    <div className="page">
+      <p role="status" className="muted">{failed ? 'Could not load this screen. Check your connection and try again.' : 'Opening…'}</p>
+      <button type="button" className="link strong" onClick={onReturn}>Back</button>
+    </div>
+  );
+}
+
+function lazyChangesScreen() {
+  return lazy(async (): Promise<{ default: ComponentType<ChangesScreenProps> }> => {
+    try {
+      return { default: (await loadChunk(() => import('./ChangesScreen'))).ChangesScreen };
+    } catch {
+      changesLoadFailed = true;
+      return { default: ({ onReturn }) => <ChangesWait failed onReturn={onReturn} /> };
+    }
+  });
+}
+let ChangesScreen = lazyChangesScreen();
+let changesLoadFailed = false;
 
 interface Runtime {
   readonly connection: Connection;
@@ -485,6 +509,10 @@ export function Live({
   /** Opens the Changes screen on a tab; the dock opens it on the last one. */
   function openChanges(on: ChangesTab = tab) {
     const connection = runtime?.connection;
+    if (changesLoadFailed) {
+      ChangesScreen = lazyChangesScreen();
+      changesLoadFailed = false;
+    }
     if (connection !== undefined && (on === 'changes' ? connection.openChanges() : connection.openFilesFolder(''))) {
       showTab(on);
       input.current?.blur();
@@ -691,11 +719,9 @@ export function Live({
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
       )}
       {panel === 'changes' && runtime !== undefined && (
-        <ErrorBoundary>
-          <Suspense fallback={<p role="status" className="muted">Opening…</p>}>
-            <ChangesScreen connection={runtime.connection} tab={tab} cwd={cwd} draft={draft} onTab={switchTab} onAsked={onAsked} onReturn={closeChanges} />
-          </Suspense>
-        </ErrorBoundary>
+        <Suspense fallback={<ChangesWait failed={false} onReturn={closeChanges} />}>
+          <ChangesScreen connection={runtime.connection} tab={tab} cwd={cwd} draft={draft} onTab={switchTab} onAsked={onAsked} onReturn={closeChanges} />
+        </Suspense>
       )}
 
       {question !== undefined && status.agent !== undefined && (
