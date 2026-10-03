@@ -20,7 +20,6 @@ import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { Sessions } from './Sessions';
-import { Settings } from './Settings';
 import { Setup } from './Setup';
 
 // The terminal (xterm, protocol validators) loads only when a session opens,
@@ -30,6 +29,8 @@ const Live = lazy(() => loadLive().then((module) => ({ default: module.Live })))
 // The wall draws live terminals too, so it also loads with xterm.
 const Wall = lazy(() => loadChunk(() => import('./Wall')).then((module) => ({ default: module.Wall })));
 const Preview = lazy(() => loadChunk(() => import('./Preview')).then((module) => ({ default: module.Preview })));
+// Settings opens from a tap and is not needed to show the session list.
+const Settings = lazy(() => loadChunk(() => import('./Settings')).then((module) => ({ default: module.Settings })));
 // Adding a computer is rare, so its pages load only when opened.
 const loadAddComputer = () => loadChunk(() => import('./AddComputer'));
 const AddComputerPage = lazy(() => loadAddComputer().then((module) => ({ default: module.AddComputerPage })));
@@ -882,18 +883,22 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         </ErrorBoundary>
       )}
       {view.name === 'settings' && (
-        <Settings
-          settings={settings}
-          entries={all.entries}
-          fontSize={fontSize}
-          onFontSize={setFontSize}
-          onBack={toSessions}
-          onRenamed={(device) => { if (settings !== undefined) setSettings({ ...settings, device }); }}
-          onFailure={handleFailure}
-          onLogout={logout}
-          onRetry={all.retry}
-          onComputersChanged={reloadComputers}
-        />
+        <ErrorBoundary>
+          <Suspense fallback={<main className="page"><p role="status" className="muted">Opening settings…</p></main>}>
+            <Settings
+              settings={settings}
+              entries={all.entries}
+              fontSize={fontSize}
+              onFontSize={setFontSize}
+              onBack={toSessions}
+              onRenamed={(device) => { if (settings !== undefined) setSettings({ ...settings, device }); }}
+              onFailure={handleFailure}
+              onLogout={logout}
+              onRetry={all.retry}
+              onComputersChanged={reloadComputers}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
     </div>
   );

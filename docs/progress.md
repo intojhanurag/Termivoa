@@ -1392,6 +1392,16 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   snapshot and control tests, `./scripts/check`, and `CGO_ENABLED=0
   GOOS=linux|windows go vet ./...` exit 0.
 
+- **Faster first load** (`perf/split-terminal-chunk`, 2026-10-03): Changes
+  and Files (one `ChangesScreen` chunk) and Settings are lazy chunks. Live:
+  107.7 → 84.0 kB raw (31.9 → 25.2 kB gzip). First Live open: 166.4 → 159.7
+  kB gzip. First Sessions load: 106.2 → 104.9 kB gzip. The 689.7 kB
+  `TerminalView` chunk is xterm (~331 kB), the generated envelope validator
+  (~284 kB), the graphemes addon (28 kB) and the connection code; all of it
+  is needed for the first frame, so it was not split. Evidence:
+  `scripts/check` exit 0; every new chunk is in the service worker's precache
+  list. Device timing not measured.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

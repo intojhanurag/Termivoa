@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { blobToBase64, client } from '../api/http';
 import { PhotoAttacher, type Attachment } from '../terminal/attachments';
-import { formatSize } from './Files';
 import { noSubscribe, type Connection } from '../terminal/Connection';
 import { checkPaste, lineCount, readDraft, saveDraft } from '../terminal/composer';
 import { prepareImage } from '../terminal/image';
@@ -9,6 +8,7 @@ import { NO_MODIFIERS } from '../terminal/InputController';
 import {
   appendDictation, IDLE_SPEECH, joinWords, recognizerFactory, SpeechController, type RecognizerFactory, type SpeechSnapshot,
 } from '../terminal/speech';
+import { formatSize } from './folder';
 import { Sheet, SheetHeader } from './Sheet';
 
 const idleSpeech = () => IDLE_SPEECH;

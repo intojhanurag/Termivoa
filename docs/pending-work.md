@@ -21,6 +21,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   worktrees (#113), Files view (#126).
 - Multi-computer: design and ADR 0005 (#132), implementation (#135), docs
   (#137). Gate 0 on real phones is still open (Next 1).
+- Faster first load: Changes, Files and Settings load on demand. The 690 kB
+  TerminalView chunk stays: all of it (xterm, the envelope validator) is
+  needed for the first frame. A real cut needs a smaller validator or
+  terminal library.
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -31,15 +35,14 @@ In this order.
 1. **Gate 0 real-phone test for multi-computer** (`scripts/gate0/`). Needs the
    owner's second computer and the owner's approval for a Tailscale Serve port
    (rule 12). Port 8443 is taken by the dev-server preview, so use another
-   free port (the harness README still says 8443).
+   free port.
 2. **Notifications from every computer.** Today only the home computer sends
    Web Push.
 3. **Preview for sessions on peers.** Today preview works for home sessions
    only.
 4. **Computer health in Settings:** version, last seen, and **Check again**.
-5. **Faster first load:** split the 714 kB TerminalView chunk.
-6. **Wall paused tiles that were never live:** show a last-screen snapshot.
-7. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
+5. **Wall paused tiles that were never live:** show a last-screen snapshot.
+6. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
    re-shoot).
 
 ## Later

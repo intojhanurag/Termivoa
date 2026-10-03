@@ -1,5 +1,5 @@
 import '@xterm/xterm/css/xterm.css';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { DiffLine, HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
@@ -16,9 +16,9 @@ import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey,
 import { AddComputerSheet } from './AddComputer';
 import { keyOf, sameSession, type HostedSession } from './allSessions';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
-import { askAboutFile, Changes } from './Changes';
+import { ErrorBoundary, loadChunk } from './chunks';
 import { Composer } from './Composer';
-import { ChangesTabs, Files, type ChangesTab } from './Files';
+import type { ChangesTab } from './Files';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { displayPath, sessionName, splitPath } from './folder';
 import { History } from './History';
@@ -31,6 +31,10 @@ import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
 import { StateScreen, WindowArt } from './StateScreen';
 import { NewWorktree, WorktreeBadge } from './Worktree';
+
+// Changes and Files are the only screens that open from a tap and need none of
+// the first terminal frame, so they load when first opened.
+const ChangesScreen = lazy(() => loadChunk(() => import('./ChangesScreen')).then((module) => ({ default: module.ChangesScreen })));
 
 interface Runtime {
   readonly connection: Connection;
@@ -501,9 +505,8 @@ export function Live({
     setPanel('none');
   }
 
-  // Only fills the draft; the user reads it and taps Send.
-  function askAbout(path: string, selected: ReadonlyArray<DiffLine> = []) {
-    askAboutFile(draft, path, selected);
+  // The screen has filled the draft; the user reads it and taps Send.
+  function onAsked() {
     runtime?.connection.closeChanges();
     runtime?.connection.closeFiles();
     setComposerVersion((value) => value + 1);
@@ -687,11 +690,13 @@ export function Live({
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
       )}
-      {panel === 'changes' && runtime !== undefined && (tab === 'changes' ? (
-        <Changes connection={runtime.connection} cwd={cwd} switcher={<ChangesTabs tab={tab} onTab={switchTab} />} onAsk={askAbout} onReturn={closeChanges} />
-      ) : (
-        <Files connection={runtime.connection} switcher={<ChangesTabs tab={tab} onTab={switchTab} />} onAsk={askAbout} onReturn={closeChanges} />
-      ))}
+      {panel === 'changes' && runtime !== undefined && (
+        <ErrorBoundary>
+          <Suspense fallback={<p role="status" className="muted">Opening…</p>}>
+            <ChangesScreen connection={runtime.connection} tab={tab} cwd={cwd} draft={draft} onTab={switchTab} onAsked={onAsked} onReturn={closeChanges} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
 
       {question !== undefined && status.agent !== undefined && (
         <div className="answer-anchor">

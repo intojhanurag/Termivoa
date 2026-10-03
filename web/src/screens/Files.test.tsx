@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { FilesContentPayload, FilesFoundPayload, FilesListedPayload, FileEntry } from '../generated/protocol';
 import type { FilesFileView, FilesView } from '../terminal/Connection';
-import { ChangesTabs, copyText, CopyNote, crumbs, fileLines, FilesPanel, formatSize, SEARCH_DEBOUNCE_MS, searchSoon, sortEntries } from './Files';
+import { ChangesTabs, copyText, CopyNote, crumbs, fileLines, FilesPanel, SEARCH_DEBOUNCE_MS, searchSoon, sortEntries } from './Files';
+import { formatSize } from './folder';
 
 const noop = () => undefined;
 const root = '/Users/me/app';
