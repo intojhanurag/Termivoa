@@ -15,7 +15,15 @@ if [ "$(uname -s)" != Linux ]; then
   exit 1
 fi
 if [ "$(id -u)" = 0 ]; then
-  echo "Run this as your normal user, not root: Termivoa runs per user." >&2
+  # The same help as `pterm setup` (rootHelp in cmd/pterm/lifecycle.go).
+  cat >&2 <<'EOF'
+Run this as a normal user, not root: Termivoa runs as that user, so that your phone gets that user's shell, not root's.
+A new server often has only root. Make a user with sudo and your SSH key (replace <name>):
+  adduser <name>
+  usermod -aG sudo <name>
+  rsync --archive --chown=<name>:<name> ~/.ssh /home/<name>
+Then log in as that user (ssh <name>@<this-server>) and run the install there again.
+EOF
   exit 1
 fi
 case $(uname -m) in

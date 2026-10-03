@@ -91,11 +91,33 @@ func newLinuxLifecycleTestEnv(t *testing.T, systemd bool) (lifecycleEnv, *system
 	if !systemd {
 		env.noSystemd, env.wsl = "offline", true
 	}
-	previous, previousWait := loadLifecycleEnv, waitTimeout
+	previous, previousWait, previousRoot := loadLifecycleEnv, waitTimeout, isRoot
 	loadLifecycleEnv = func() (lifecycleEnv, error) { return env, nil }
 	waitTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { loadLifecycleEnv, waitTimeout = previous, previousWait })
+	isRoot = func() bool { return false }
+	t.Cleanup(func() { loadLifecycleEnv, waitTimeout, isRoot = previous, previousWait, previousRoot })
 	return env, fake
+}
+
+// As root, setup changes nothing and says how to make a normal user.
+func TestLinuxSetupRefusesRootAndSaysHowToMakeAUser(t *testing.T) {
+	_, fake := newLinuxLifecycleTestEnv(t, true)
+	isRoot = func() bool { return true }
+	for _, args := range [][]string{{"setup"}, {"setup", "--apply", "--yes"}} {
+		var output bytes.Buffer
+		err := runWithInput(context.Background(), args, nil, &output)
+		if err == nil || output.Len() != 0 || len(fake.calls) != 0 {
+			t.Fatalf("%q as root: err=%v calls=%q output=%q", args, err, fake.calls, output.String())
+		}
+		for _, want := range []string{
+			"refusing to set up as root", "\n  adduser <name>\n", "\n  usermod -aG sudo <name>\n",
+			"\n  rsync --archive --chown=<name>:<name> ~/.ssh /home/<name>\n", "ssh <name>@<this-server>",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%q: root refusal lacks %q:\n%v", args, want, err)
+			}
+		}
+	}
 }
 
 func TestLinuxSetupAndUninstallUseSystemdUserUnits(t *testing.T) {

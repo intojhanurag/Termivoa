@@ -513,6 +513,19 @@ func parseLifecycleFlags(command string, args []string, bools ...string) (map[st
 	return values, nil
 }
 
+// isRoot is replaced by tests, which may run as root in a container.
+var isRoot = func() bool { return os.Geteuid() == 0 }
+
+// rootHelp is why setup refuses root on Linux and how to get a normal user: a
+// new server often has only root. scripts/install-linux.sh prints the same
+// commands.
+const rootHelp = `refusing to set up as root: Termivoa runs as a normal user, so that your phone gets that user's shell, not root's.
+A new server often has only root. Make a user with sudo and your SSH key (replace <name>):
+  adduser <name>
+  usermod -aG sudo <name>
+  rsync --archive --chown=<name>:<name> ~/.ssh /home/<name>
+Then log in as that user (ssh <name>@<this-server>) and run the install there again.`
+
 // runSetupCommand is the first-run wizard. It runs read-only checks, shows a
 // short plan of everything it will do, and asks once. Then it registers
 // startup, waits for the broker and gateway, saves the Tailscale phone
@@ -533,6 +546,9 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	env, err := loadLifecycleEnv()
 	if err != nil {
 		return err
+	}
+	if env.host.OS == "linux" && isRoot() {
+		return errors.New(rootHelp)
 	}
 	// Without --verbose the checks and each step stay out of the way; the
 	// plan and the questions still name every change.
