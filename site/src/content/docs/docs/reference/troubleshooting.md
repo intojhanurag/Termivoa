@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-03
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -157,6 +157,41 @@ Close the app fully and open it again, or tap **update** on the Sessions list. A
 - Only servers that the session started are offered, not ones from another terminal window.
 
 More in [Dev-server preview](/docs/guides/preview/).
+
+## No "Preview ready" chip on a session of another computer (Next beta)
+
+1. Update Termivoa on that computer. A computer on an older Termivoa shows no **Preview ready** chip.
+2. Start the dev server in that session, for example `npm run dev`. Only servers that the session started are offered.
+3. Check that the computer has no **can't reach**, **pair again** or **Update Termivoa on …** row on the Sessions list.
+
+## "Can't open the preview on vps" (Next beta)
+
+The full text is "Can't open the preview on vps. If vps does not share dev-server previews yet, run pterm setup on vps and answer yes to the preview question." Nothing answered at that computer's preview address within 5 seconds. The app cannot see why, so check in this order:
+
+1. On that computer, run `pterm setup` and answer `y` to the preview question. Each computer answers it for itself.
+2. On that computer, run `pterm doctor`. It checks the preview setup.
+3. Check that your Tailscale access rules (ACLs) let the phone reach port 8443 of that computer.
+4. Close the app fully and open it again.
+5. Open the preview again and tap **↻**.
+
+If you added the computer after you opened the app, the app reloads itself once when you first open a preview on it. This is normal; you do nothing.
+
+## The preview shows a short text and no page (Next beta)
+
+Tap **↻**. If the text stays, do what the table says. The computer that runs the session writes this text, not the app.
+
+| Text in the frame | What to do |
+| --- | --- |
+| "Origin not allowed." | Tap **↻**. In Safari this can show after the browser's Back to the app. |
+| "Open the preview from the Termivoa app." | Tap **↻**. If it stays, close the app fully and open it again, so it updates. |
+| "Open the preview from your paired phone." | Tap **↻**. |
+| "This phone is no longer paired. Open Termivoa to pair again." | Pair again. For another computer: run `pterm pair --via <home>` on it and add it again. For home: run `pterm pair`. |
+| "This app may not use this computer." | Run `pterm pair --via <home>` on that computer and add it again. |
+| "The computer is not available." | Check that Tailscale runs and is logged in on that computer (`pterm doctor`), then tap **↻**. |
+| "The dev server did not answer.", "No dev server of this session listens on that port." or "The session is not running." | Start the dev server in that session again, then tap **↻**. |
+| "Too many failed attempts." | Wait a short time, then tap **↻**. |
+
+A text that stays after **↻** on another computer: pair that computer again through home (`pterm pair --via <home>` on it, then add it in the app).
 
 ## Sessions end when you log out of a server
 
