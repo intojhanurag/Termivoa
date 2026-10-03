@@ -368,6 +368,6 @@ Open risks:
 
 Found while reading the code, outside this task (rule 21):
 
-1. Filed: "Preview listener error pages are blank inside the app frame" (`preview.go:456`); track T.
-2. Filed: "Preview listener skips per-device origin binding" (section 1); step (b). `docs/preview.md:99-103` speaks only of cross-site pages.
-3. Not filed yet: `GET /api/v1/preview` answers an origin when Serve 8443 is not set up, so the chip shows and the frame cannot load (`preview.go:117-130`); step (d) covers it.
+1. Filed as #144: "Preview listener error pages are blank inside the app frame" (`preview.go:456`); track T.
+2. Filed as #143: "Preview listener skips per-device origin binding" (section 1); step (b). `docs/preview.md:99-103` speaks only of cross-site pages.
+3. Filed in #144: `GET /api/v1/preview` answers an origin when Serve 8443 is not set up, so the chip shows and the frame cannot load (`preview.go:117-130`); step (d) covers it.
