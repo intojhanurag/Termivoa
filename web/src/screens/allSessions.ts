@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, client, forgetClient, isAuthFailure, updateText } from '../api/http';
 import { sessionKey, type Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
+import { reloadOnce, storage } from '../storage';
 import { scheduler, type PollOutcome } from '../terminal/scheduler';
 
 /**
@@ -36,6 +37,8 @@ export type ComputerStatus =
   | { readonly kind: 'unreachable'; readonly lastSeen?: number | undefined; readonly network?: boolean }
   /** A 401 from a peer: "vps · pair again". Never logs out home or other peers. */
   | { readonly kind: 'pair' }
+  /** The app's own CSP blocks this computer even after one reload: "vps · can't reach" and OUT_OF_DATE. Kept until it answers. */
+  | { readonly kind: 'blocked' }
   /** "Update Termivoa on vps" (or on home, when the app is the old one). */
   | { readonly kind: 'outdated'; readonly message: string };
 
@@ -69,6 +72,53 @@ export function connectingRetry(attempt: number, addedAt: number, now: number): 
 /** "vps · pair again". */
 export const pairAgain = (label: string): string => `${label} · pair again`;
 
+/*
+ * The app's own CSP. Its connect-src lists the computers of this device at
+ * page load. A page from before an add, or an old app page that the service
+ * worker served from its cache (its network wait ran out), may not list a
+ * computer that is in the list now: every request to it is blocked in the
+ * phone, and it shows "can't reach" while it never sees a byte. The page
+ * then reloads once, past the cached page; if the policy still blocks, the
+ * row says OUT_OF_DATE.
+ */
+
+/** sessionStorage: the computer this tab already reloaded for (the loop guard, reloadOnce). */
+export const POLICY_RELOAD_KEY = 'pterm.policyReload';
+/** The query flag of that reload: the service worker waits for the network for this page load and never serves its cached page in time. Removed at start. */
+export const FRESH_PAGE = 'pterm-fresh';
+/** Shown under "vps · can't reach" when the reload did not help. */
+export const OUT_OF_DATE = 'This app page is out of date. Close the app and open it again.';
+
+/** The same address with FRESH_PAGE, for a reload past the service worker's cached page. */
+export function freshPageUrl(location: Pick<Location, 'pathname' | 'search'>): string {
+  const params = new URLSearchParams(location.search);
+  params.set(FRESH_PAGE, '1');
+  return `${location.pathname}?${params.toString()}`;
+}
+
+/** Reloads this page past the service worker's cached page. history.state stays (a peer preview needs its tap mark). */
+export function reloadFreshPage(): void {
+  window.history.replaceState(window.history.state, '', freshPageUrl(window.location));
+  window.location.reload();
+}
+
+/** The peer in the list whose address the app's own CSP blocked (connect-src, https or wss), or undefined. */
+export function blockedPeer(
+  event: Pick<SecurityPolicyViolationEvent, 'blockedURI' | 'effectiveDirective'>,
+  computers: ReadonlyArray<Computer>,
+): Computer | undefined {
+  if (event.effectiveDirective !== 'connect-src') return undefined;
+  let url: URL;
+  try {
+    url = new URL(event.blockedURI);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'wss:') return undefined;
+  // `host` keeps a port, so a preview origin (:8443) is never the computer itself.
+  return computers.find((computer) => !computer.home && computer.origin === `https://${url.host}`);
+}
+
 export interface ComputerEntry {
   readonly computer: Computer;
   readonly status: ComputerStatus;
@@ -100,6 +150,8 @@ export function nextStatus(
     return { kind: 'ok', settings: outcome.value.settings, sessions: outcome.value.sessions.map((item) => hosted(item, computer)), at: now };
   }
   const { error } = outcome;
+  // Every request stays blocked in the phone until the app page changes.
+  if (previous.kind === 'blocked') return previous;
   if (isAuthFailure(error)) return { kind: 'pair' };
   if (error instanceof ApiError && error.code === 'computer_outdated') return { kind: 'outdated', message: updateText(computer.label) };
   if (error instanceof ApiError && error.code === 'app_outdated') return { kind: 'outdated', message: error.message };
@@ -186,6 +238,15 @@ export function pruneStatuses(statuses: ReadonlyMap<string, ComputerStatus>, ori
     : new Map([...statuses].filter(([origin]) => origins.has(origin)));
 }
 
+function forgetPolicyReload(origin: string): void {
+  try {
+    const store = storage('sessionStorage');
+    if (store?.getItem(POLICY_RELOAD_KEY) === origin) store.removeItem(POLICY_RELOAD_KEY);
+  } catch {
+    // Nothing to forget.
+  }
+}
+
 /** Exported for tests. */
 export async function load(origin: string, fresh: boolean, listed: () => boolean): Promise<Loaded> {
   const http = client(origin);
@@ -242,6 +303,8 @@ export function useAllSessions(
     }
     const single = byOrigin.current.size < 2;
     const now = Date.now();
+    // It answers under this page's policy: a later block may reload again.
+    if (outcome.ok) forgetPolicyReload(origin);
     const added = fresh.current.get(origin);
     if (outcome.ok) fresh.current.delete(origin);
     const wait = outcome.ok || added === undefined ? undefined : connectingRetry(added.attempt, added.at, now);
@@ -271,6 +334,21 @@ export function useAllSessions(
     if (!active || origins === '') return undefined;
     return scheduler.poll(origins.split(' '), (origin) => load(origin, false, () => byOrigin.current.has(origin)), publish);
   }, [active, origins, publish]);
+
+  // The app's own CSP blocked a listed peer: reload once past the cached page, else say the page is out of date.
+  useEffect(() => {
+    const onBlocked = (event: SecurityPolicyViolationEvent) => {
+      const computer = blockedPeer(event, [...byOrigin.current.values()]);
+      if (computer === undefined) return;
+      if (reloadOnce(POLICY_RELOAD_KEY, computer.origin, storage('sessionStorage'))) {
+        reloadFreshPage();
+        return;
+      }
+      setStatuses((current) => new Map(current).set(computer.origin, { kind: 'blocked' }));
+    };
+    document.addEventListener('securitypolicyviolation', onBlocked);
+    return () => document.removeEventListener('securitypolicyviolation', onBlocked);
+  }, []);
 
   const reload = useCallback((origin?: string) => {
     const list = [...byOrigin.current.values()].filter((computer) => origin === undefined || computer.origin === origin);

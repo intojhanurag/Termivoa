@@ -5,7 +5,7 @@ import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
-  byChip, cantReach, chipsFor, connectingText, JUST_ADDED, keyOf, pairAgain, type ComputerEntry, type HostedSession,
+  byChip, cantReach, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
@@ -235,7 +235,7 @@ export function pairHint(label: string, home = firstLabel(homeOrigin())): string
 export function problemText(entry: ComputerEntry, now: number): string | undefined {
   const { computer, status } = entry;
   switch (status.kind) {
-    case 'unreachable': return cantReach(computer.label);
+    case 'unreachable': case 'blocked': return cantReach(computer.label);
     case 'connecting': return connectingText(computer.label);
     case 'pair': return `${pairAgain(computer.label)} · ${pairHint(computer.label)}`;
     case 'outdated': return status.message;
@@ -246,10 +246,11 @@ export function problemText(entry: ComputerEntry, now: number): string | undefin
 /** Asked under "vps · can't reach" after a network error. The app cannot see why nothing answered, so it names no cause. */
 export const REACH_QUESTION = 'Is it on, and in your tailnet?';
 
-/** The line under problemText: "Last seen 3 h ago. Is it on, and in your tailnet?", "Just added. Its sessions show in a moment.", or undefined. */
+/** The line under problemText: "Last seen 3 h ago. Is it on, and in your tailnet?", "Just added. Its sessions show in a moment.", OUT_OF_DATE, or undefined. */
 export function problemDetail(entry: ComputerEntry, now: number): string | undefined {
   const { status } = entry;
   if (status.kind === 'connecting') return JUST_ADDED;
+  if (status.kind === 'blocked') return OUT_OF_DATE;
   if (status.kind !== 'unreachable') return undefined;
   const seen = status.lastSeen === undefined ? undefined : `${ago(status.lastSeen, now).replace(/^l/u, 'L')}.`;
   const parts = [seen, status.network === true ? REACH_QUESTION : undefined].filter((part) => part !== undefined);

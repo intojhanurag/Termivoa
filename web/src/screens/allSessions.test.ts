@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, client } from '../api/http';
+import { reloadOnce } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import {
-  byChip, chipsFor, CONNECTING_MS, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  blockedPeer, byChip, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
   type ComputerEntry, type ComputerStatus,
 } from './allSessions';
 
@@ -88,6 +89,55 @@ describe('nextStatus', () => {
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on vps' });
     expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(0, 'app_outdated', 'Update Termivoa on mac')), false, 0))
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on mac' });
+  });
+});
+
+describe('the app\'s own CSP blocks a listed computer', () => {
+  const blocked = (blockedURI: string, effectiveDirective = 'connect-src') => blockedPeer({ blockedURI, effectiveDirective }, [mac, vps]);
+  const memory = () => {
+    const values = new Map<string, string>();
+    return { values, getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  };
+
+  it('finds the listed peer from the blocked address, over https or wss', () => {
+    expect(blocked('https://vps.tailx.ts.net/api/v1/settings')).toBe(vps);
+    expect(blocked('https://vps.tailx.ts.net')).toBe(vps);
+    expect(blocked('wss://vps.tailx.ts.net/api/v1/sessions/x/stream')).toBe(vps);
+  });
+
+  it('ignores home, a preview origin, other addresses, other directives and unreadable values', () => {
+    expect(blocked('https://mac.tailx.ts.net/api/v1/settings')).toBeUndefined();
+    expect(blocked('https://vps.tailx.ts.net:8443/__termivoa/select')).toBeUndefined();
+    expect(blocked('https://evil.tailx.ts.net/')).toBeUndefined();
+    expect(blocked('https://vps.tailx.ts.net.evil.example/')).toBeUndefined();
+    expect(blocked('http://vps.tailx.ts.net/')).toBeUndefined();
+    expect(blocked('https://vps.tailx.ts.net/x', 'frame-src')).toBeUndefined();
+    expect(blocked('inline')).toBeUndefined();
+    expect(blocked('')).toBeUndefined();
+  });
+
+  it('reloads once per computer in a tab (the loop guard), and not without storage', () => {
+    const store = memory();
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, store)).toBe(true);
+    expect(store.values.get(POLICY_RELOAD_KEY)).toBe(vps.origin);
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, store)).toBe(false);
+    expect(reloadOnce(POLICY_RELOAD_KEY, 'https://nas.tailx.ts.net', store)).toBe(true);
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, undefined)).toBe(false);
+    expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, { getItem: () => null, setItem: () => { throw new Error('full'); } })).toBe(false);
+  });
+
+  it('reloads the same address with the flag that makes the service worker wait for the network', () => {
+    expect(freshPageUrl({ pathname: '/', search: '' })).toBe('/?pterm-fresh=1');
+    expect(freshPageUrl({ pathname: '/c/vps.tailx.ts.net/sessions/1/preview', search: '?port=5173' }))
+      .toBe('/c/vps.tailx.ts.net/sessions/1/preview?port=5173&pterm-fresh=1');
+    expect(freshPageUrl({ pathname: '/', search: '?pterm-fresh=1' })).toBe('/?pterm-fresh=1');
+  });
+
+  it('keeps saying the page is out of date while reads fail, until the computer answers', () => {
+    const network = { ok: false as const, error: new ApiError(0, 'network', 'Connection unavailable') };
+    expect(nextStatus({ kind: 'blocked' }, vps, network, true, 10)).toEqual({ kind: 'blocked' });
+    expect(nextStatus({ kind: 'blocked' }, vps, network, false, 10, false, true)).toEqual({ kind: 'blocked' });
+    expect(nextStatus({ kind: 'blocked' }, vps, { ok: true, value: { settings, sessions: [] } }, false, 10)).toMatchObject({ kind: 'ok' });
   });
 });
 

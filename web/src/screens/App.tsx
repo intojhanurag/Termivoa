@@ -11,7 +11,7 @@ import { syncHomePush, syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
-  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, pairAgain, ReadFailure, useAllSessions, type ComputerStatus, type HostedSession,
+  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, useAllSessions, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
@@ -253,6 +253,7 @@ export function previewFor(
       : { notice: updateText(computer.label) };
     case 'pair': return { notice: pairAgain(computer.label) };
     case 'unreachable': return { notice: cantReach(computer.label) };
+    case 'blocked': return { notice: `${cantReach(computer.label)}. ${OUT_OF_DATE}` };
     case 'outdated': return { notice: status.message };
     default: return {};
   }
