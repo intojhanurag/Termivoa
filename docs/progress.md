@@ -1547,6 +1547,19 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   folders and the error names that command. Evidence: after `chmod go-w` on
   the VPS, `pterm doctor` runs; `internal/ipc` test for the message.
 
+- **Mac home could not add a computer** (`fix/macos-tailscale-cli`,
+  2026-10-03): found in the owner's first real two-computer test (Mac home,
+  Ubuntu VPS peer): the app showed "service unavailable" after **Check
+  link**. Under launchd the broker's `tailscale status --json` ran
+  `/Applications/Tailscale.app/Contents/MacOS/Tailscale`, which prints "The
+  Tailscale GUI failed to start" (exit 0) unless it has a terminal or
+  `TAILSCALE_BE_CLI=1`. `tailnet.CLIEnv` now sets it for the broker's status
+  reads and for `pterm`'s own Tailscale calls. Evidence: on the owner's Mac,
+  with `env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin XPC_SERVICE_NAME=x`, the
+  status read fails before the change and parses "Running" after it;
+  `TestCommandSourceRunsTheCLIAsACLI`. The e2e harness uses a fake Tailscale
+  CLI, so it could not see this.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

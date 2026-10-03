@@ -505,3 +505,19 @@ func TestCommandSourceChecksTheBinaryBeforeEachRun(t *testing.T) {
 		t.Fatalf("binary in a folder that became writable = %v", err)
 	}
 }
+
+func TestCommandSourceRunsTheCLIAsACLI(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script")
+	}
+	// The macOS Tailscale app binary answers as a CLI only with this set when
+	// launchd starts the broker.
+	path := filepath.Join(t.TempDir(), "tailscale")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf '%s' \"$TAILSCALE_BE_CLI\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	output, err := CommandSource(func() string { return path })(context.Background())
+	if err != nil || string(output) != "1" {
+		t.Fatalf("TAILSCALE_BE_CLI = %q, %v; want 1", output, err)
+	}
+}

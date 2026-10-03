@@ -245,6 +245,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side, macOS): adding a computer to a Mac home failed with
+  "service unavailable". The broker runs `tailscale status` in the
+  background, and there the Tailscale app's own program answered "The
+  Tailscale GUI failed to start" instead of the status; `pterm doctor` in a
+  terminal saw no problem. Termivoa now runs the Tailscale CLI with
+  `TAILSCALE_BE_CLI=1` everywhere.
 - Fix (host side, Linux): on Ubuntu a new user has umask 002, so the install
   script made `~/.local` group-writable and `pterm setup` then stopped with
   "runtime ancestor … is writable by another user". The script now removes
