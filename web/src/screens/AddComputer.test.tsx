@@ -117,6 +117,19 @@ describe('add-computer page', () => {
     expect(page.replace(/<\/?code>/gu, '')).toContain('Continue only if you just ran pterm setup or pterm pair --via on vps.');
   });
 
+  it('says how to try again after the code expired: Add again (Found), or a new link', async () => {
+    vi.stubGlobal('location', { origin: app.origin });
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: noop });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.endsWith('/pair/redeem')
+      ? new Response(JSON.stringify({ pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() }), { status: 200 })
+      : new Response(JSON.stringify({ error: { code: 'pairing_expired', message: 'x' } }), { status: 410 }))));
+    await startAdd({ ...link, found: true }, 'iPhone');
+    const html = renderToStaticMarkup(<AddComputerPage link={{ ...link, found: true }} deviceLabel="iPhone" onDone={noop} onSettings={noop} onLeave={noop} />);
+    expect(html.replace(/<\/?code>/gu, '')).toContain('The code expired or vps refused it. Run pterm pair --via on vps again, then tap Add again, or scan or paste the new link.');
+    resetAdd();
+    vi.unstubAllGlobals();
+  });
+
   it('offers a way out of the waiting page in this load: back to the terminal the add came from, else Sessions', () => {
     const onLeave = vi.fn();
     const terminal = LeaveAdd({ back: '/c/vps.tailx.ts.net/sessions/s1', onLeave });

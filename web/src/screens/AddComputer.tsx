@@ -194,7 +194,7 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
         </>
       )}
       {phase?.kind === 'expired' && (
-        <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then scan or paste the new link.</p>
+        <p role="alert" className="error">The code expired or {label} refused it. Run <code>pterm pair --via</code> on {label} again, then tap Add again, or scan or paste the new link.</p>
       )}
       {phase?.kind === 'cancelled' && (
         <p role="alert" className="error">Adding {label} was cancelled. If {label} asks, answer N.</p>
