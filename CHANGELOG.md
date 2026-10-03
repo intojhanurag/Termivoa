@@ -407,7 +407,8 @@ All notable changes are documented here. The format follows
   computer in the list (a page from before the add, or an old copy that the
   offline cache served when home answered slowly) blocked every request to
   that computer: "vps · can't reach" for hours while vps saw nothing. The
-  app now notices the block and reloads once per computer, past the cached
+  app now notices the block and, when home still lists that computer (one
+  removed elsewhere is just dropped), reloads once per computer, past the cached
   copy (it waits up to 12 s for home, then opens the cached copy). If the
   page still blocks it, the row says "This app page is out of date. Close
   the app and open it again." The preview's own reload also goes past the

@@ -5,7 +5,7 @@ import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import {
-  blockedPeer, byChip, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, reloadFreshPage, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  blockedPeer, byChip, homeStillLists, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, reloadFreshPage, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
   type ComputerEntry, type ComputerStatus,
 } from './allSessions';
 
@@ -164,6 +164,13 @@ describe('the app\'s own CSP blocks a listed computer', () => {
     expect(freshPageUrl({ pathname: '/c/vps.tailx.ts.net/sessions/1/preview', search: '?port=5173' }))
       .toBe('/c/vps.tailx.ts.net/sessions/1/preview?port=5173&pterm-fresh=1');
     expect(freshPageUrl({ pathname: '/', search: '?pterm-fresh=1' })).toBe('/?pterm-fresh=1');
+  });
+
+  it('reloads only for a computer home still lists: one removed elsewhere is not an out-of-date page', async () => {
+    await expect(homeStillLists(vps.origin, async () => [mac, vps])).resolves.toBe(true);
+    await expect(homeStillLists(vps.origin, async () => [mac])).resolves.toBe(false);
+    // Home cannot answer: the page may be out of date, so it still reloads once.
+    await expect(homeStillLists(vps.origin, async () => { throw new ApiError(0, 'network', 'Connection unavailable'); })).resolves.toBe(true);
   });
 
   it('keeps saying the page is out of date while reads fail, until the computer answers', () => {

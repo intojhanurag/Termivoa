@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, client, forgetClient, isAuthFailure, updateText } from '../api/http';
-import { sessionKey, type Computer } from '../computers';
+import { refreshComputers, sessionKey, type Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import { forgetReload, reloadOnce, storage } from '../storage';
 import { scheduler, type PollOutcome } from '../terminal/scheduler';
@@ -105,6 +105,20 @@ export function reloadFreshPage(): void {
   reloading = true;
   window.history.replaceState(window.history.state, '', freshPageUrl(window.location));
   window.location.reload();
+}
+
+/**
+ * Whether home still lists a computer the app's CSP blocked. One removed
+ * elsewhere (another tab, `pterm computers remove`) is blocked by a page that
+ * is not out of date: no reload, and home's list read drops it. When home
+ * cannot answer, the page may be out of date.
+ */
+export async function homeStillLists(origin: string, read: () => Promise<ReadonlyArray<Pick<Computer, 'origin'>>> = refreshComputers): Promise<boolean> {
+  try {
+    return (await read()).some((computer) => computer.origin === origin);
+  } catch {
+    return true;
+  }
 }
 
 /** The peer in the list whose address the app's own CSP blocked (connect-src, https or wss), or undefined. */
@@ -335,16 +349,22 @@ export function useAllSessions(
     return scheduler.poll(origins.split(' '), (origin) => load(origin, false, () => byOrigin.current.has(origin)), publish);
   }, [active, origins, publish]);
 
-  // The app's own CSP blocked a listed peer: reload once past the cached page, else say the page is out of date.
+  // The app's own CSP blocked a peer that home still lists: reload once past the cached page, else say the page is out of date.
   useEffect(() => {
+    const checking = new Set<string>();
     const onBlocked = (event: SecurityPolicyViolationEvent) => {
       const computer = blockedPeer(event, [...byOrigin.current.values()]);
-      if (computer === undefined || reloading) return;
-      if (reloadOnce(POLICY_RELOAD_KEY, computer.origin, storage('sessionStorage'))) {
-        reloadFreshPage();
-        return;
-      }
-      setStatuses((current) => new Map(current).set(computer.origin, { kind: 'blocked' }));
+      if (computer === undefined || reloading || checking.has(computer.origin)) return;
+      checking.add(computer.origin);
+      void homeStillLists(computer.origin).then((listed) => {
+        checking.delete(computer.origin);
+        if (!listed || reloading || !byOrigin.current.has(computer.origin)) return;
+        if (reloadOnce(POLICY_RELOAD_KEY, computer.origin, storage('sessionStorage'))) {
+          reloadFreshPage();
+          return;
+        }
+        setStatuses((current) => new Map(current).set(computer.origin, { kind: 'blocked' }));
+      });
     };
     document.addEventListener('securitypolicyviolation', onBlocked);
     return () => document.removeEventListener('securitypolicyviolation', onBlocked);
