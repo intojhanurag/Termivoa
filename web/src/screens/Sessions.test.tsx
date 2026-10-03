@@ -278,7 +278,7 @@ describe('Sessions across computers', () => {
     expect(problemText(entry(vps, { kind: 'blocked' }), NOW)).toBe("vps · can't reach");
     expect(problemDetail(entry(vps, { kind: 'blocked' }), NOW)).toBe('This app page is out of date. Close the app and open it again.');
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable', lastSeen, network: true })]);
-    expect(html).toMatch(/<span class="computer-problem-text">vps · can&#x27;t reach<span class="computer-problem-detail">Last seen [^<]+ ago\. Is it on, and in your tailnet\?<\/span><\/span>/u);
+    expect(html).toMatch(/<p class="notice-title">vps · can&#x27;t reach<\/p><div class="notice-body">Last seen [^<]+ ago\. Is it on, and in your tailnet\?<\/div>/u);
   });
 
   it('shows one line per computer that did not answer, and its sessions are gone', () => {
