@@ -101,51 +101,162 @@ func newLinuxLifecycleTestEnv(t *testing.T, systemd bool) (lifecycleEnv, *system
 
 // After an install into ~/.local/bin that PATH does not have yet, the last
 // thing setup prints is the command that makes `pterm` work in this terminal.
+// PATH finding this pterm through a symlink needs no hint. New logins have it
+// only when the login shell is bash and ~/.profile adds ~/.local/bin.
 func TestLinuxSetupEndsWithThePathHint(t *testing.T) {
 	env, _ := newLinuxLifecycleTestEnv(t, true)
 	bin := filepath.Join(env.host.HomeDir, ".local", "bin")
 	env.host.Executable = filepath.Join(bin, "pterm")
-	loadLifecycleEnv = func() (lifecycleEnv, error) { return env, nil }
-	hint := "\n`pterm` is not on your PATH in this terminal yet. To use it here, run this now:\n  export PATH=\"" + bin + ":$PATH\"\n" +
-		"New logins have it already: Ubuntu and Debian add ~/.local/bin at login. On another system, add that line to your shell's startup file.\n"
-
-	t.Setenv("PATH", "/usr/bin:/bin")
-	var output bytes.Buffer
-	if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+	if err := os.MkdirAll(bin, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(output.String(), hint) || strings.Count(output.String(), "not on your PATH") != 1 {
-		t.Errorf("setup does not end with the PATH hint, once:\n%s", output.String())
+	if err := os.WriteFile(env.host.Executable, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	loadLifecycleEnv = func() (lifecycleEnv, error) { return env, nil }
+	setup := func() string {
+		t.Helper()
+		var output bytes.Buffer
+		if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+			t.Fatal(err)
+		}
+		return output.String()
+	}
+	hint := "\n`pterm` is not on your PATH in this terminal yet. To use it here, run this now:\n  export PATH=\"" + bin + ":$PATH\"\n"
+
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("SHELL", "/usr/bin/zsh")
+	if text := setup(); !strings.HasSuffix(text, hint+"To keep it for new logins, add that line to your shell's startup file (bash: ~/.profile, zsh: ~/.zshrc).\n") ||
+		strings.Count(text, "not on your PATH") != 1 {
+		t.Errorf("setup does not end with the PATH hint, once:\n%s", text)
+	}
+	t.Setenv("SHELL", "/bin/bash")
+	if err := os.WriteFile(filepath.Join(env.host.HomeDir, ".profile"), []byte(`PATH="$HOME/.local/bin:$PATH"`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if text := setup(); !strings.HasSuffix(text, hint+"New logins have it already: your ~/.profile adds ~/.local/bin when it exists.\n") {
+		t.Errorf("bash with ~/.profile:\n%s", text)
 	}
 
 	t.Setenv("PATH", "/usr/bin:"+bin)
-	output.Reset()
-	if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+	if text := setup(); strings.Contains(text, "PATH") {
+		t.Errorf("PATH hint although pterm is on PATH:\n%s", text)
+	}
+	linked := t.TempDir()
+	if err := os.Symlink(env.host.Executable, filepath.Join(linked, "pterm")); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(output.String(), "PATH") {
-		t.Errorf("PATH hint although pterm is on PATH:\n%s", output.String())
+	t.Setenv("PATH", "/usr/bin:"+linked)
+	if text := setup(); strings.Contains(text, "PATH") {
+		t.Errorf("PATH hint although a symlink on PATH is this pterm:\n%s", text)
 	}
 }
 
-// As root, setup changes nothing and says how to make a normal user.
+// As root, setup changes nothing and says how to make a normal user with
+// the administrators' group this system has; run with sudo, it only says to
+// drop sudo.
 func TestLinuxSetupRefusesRootAndSaysHowToMakeAUser(t *testing.T) {
 	_, fake := newLinuxLifecycleTestEnv(t, true)
 	isRoot = func() bool { return true }
-	for _, args := range [][]string{{"setup"}, {"setup", "--apply", "--yes"}} {
-		var output bytes.Buffer
-		err := runWithInput(context.Background(), args, nil, &output)
-		if err == nil || output.Len() != 0 || len(fake.calls) != 0 {
-			t.Fatalf("%q as root: err=%v calls=%q output=%q", args, err, fake.calls, output.String())
+	previous := groupFile
+	t.Cleanup(func() { groupFile = previous })
+	groupFile = filepath.Join(t.TempDir(), "group")
+	t.Setenv("SUDO_USER", "")
+	for group, file := range map[string]string{"sudo": "root:x:0:\nwheel:x:10:\nsudo:x:27:\n", "wheel": "root:x:0:\nwheel:x:10:\n"} {
+		if err := os.WriteFile(groupFile, []byte(file), 0o600); err != nil {
+			t.Fatal(err)
 		}
-		for _, want := range []string{
-			"refusing to set up as root", "\n  adduser <name>\n", "\n  usermod -aG sudo <name>\n",
-			"\n  rsync --archive --chown=<name>:<name> ~/.ssh /home/<name>\n", "ssh <name>@<this-server>",
-		} {
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("%q: root refusal lacks %q:\n%v", args, want, err)
+		for _, args := range [][]string{{"setup"}, {"setup", "--apply", "--yes"}} {
+			var output bytes.Buffer
+			err := runWithInput(context.Background(), args, nil, &output)
+			if err == nil || output.Len() != 0 || len(fake.calls) != 0 {
+				t.Fatalf("%q as root: err=%v calls=%q output=%q", args, err, fake.calls, output.String())
+			}
+			for _, want := range []string{
+				"refusing to set up as root", "\n  adduser <name>\n", "\n  usermod -aG " + group + " <name>\n",
+				"\n  install -d -m 700 -o <name> -g <name> /home/<name>/.ssh && install -m 600 -o <name> -g <name> ~/.ssh/authorized_keys /home/<name>/.ssh/\n",
+				"\n  install -m 755 -o <name> -g <name> /opt/pterm/bin/pterm /home/<name>/\n", "ssh <name>@<this-server>) and run there: ~/pterm setup",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("%q: root refusal lacks %q:\n%v", args, want, err)
+				}
 			}
 		}
+	}
+	t.Setenv("SUDO_USER", "ada")
+	err := runWithInput(context.Background(), []string{"setup"}, nil, &bytes.Buffer{})
+	if err == nil || !strings.HasSuffix(err.Error(), "\nRun it without sudo, as ada: pterm setup") || strings.Contains(err.Error(), "adduser") {
+		t.Fatalf("setup with sudo: %v", err)
+	}
+}
+
+// The short plan still shows every warning the checks found that it does
+// not state itself (other ports that get the cookie, Funnel), says when the
+// phone cannot reach this computer and how to fix it, and names the
+// pairing question only when it will come.
+func TestShortSetupPlanShowsWarningsAndThePhoneFix(t *testing.T) {
+	const (
+		self    = `{"BackendState":"Running","MagicDNSSuffix":"example.ts.net","Self":{"ID":"nVps","DNSName":"vps.example.ts.net.","UserID":1},"User":{"1":{"LoginName":"ada@example.com"}}`
+		withMac = self + `,"Peer":{"a":{"ID":"nMac","DNSName":"mac.example.ts.net.","UserID":1,"OS":"macOS"}}}`
+		served  = `{"Web":{"vps.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}}}`
+		connect = "  - Then connect your phone (pair it, or add this computer to your app).\n"
+		cannot  = "  - Your phone cannot reach this computer yet: "
+	)
+	for name, test := range map[string]struct {
+		status, serve, prefs string
+		want, unwanted       []string
+	}{
+		"other port gets the cookie": {status: withMac, serve: `{"Web":{"vps.example.ts.net:8080":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`,
+			want: []string{"Warnings:\n  ! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie",
+				"Share Termivoa with your tailnet devices at https://vps.example.ts.net (port 443). It asks first.", connect},
+			unwanted: []string{cannot, "Funnel", "not configured for Termivoa"}},
+		"funnel": {status: withMac, serve: strings.TrimSuffix(served, "}") + `,"AllowFunnel":{"vps.example.ts.net:443":true}}`,
+			want: []string{"Warnings:\n  ! tailscale serve: Tailscale Funnel is enabled for vps.example.ts.net:443",
+				"Never use Tailscale Funnel: it would put your terminal on the public internet.", connect}},
+		"no other computer": {status: self + "}", serve: served,
+			want: []string{"  - Then pair your phone.\n"}, unwanted: []string{"Warnings:", connect, cannot, "Funnel"}},
+		"operator needed": {status: withMac, serve: "{}", prefs: `{"OperatorUser":""}`,
+			want: []string{cannot + "on Linux only root or the Tailscale operator may share it on port 443. Run this once: " +
+				lifecycle.TailscaleOperatorCommand + ", then run `pterm setup` again.\n"},
+			unwanted: []string{"Warnings:", connect, "It asks first.\n  - Share", "(port 443)"}},
+	} {
+		env, _ := newLinuxLifecycleTestEnv(t, true)
+		useTailscaleFake(t, &env, &tailscaleFake{status: test.status, serve: test.serve, prefs: test.prefs})
+		var output bytes.Buffer
+		if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+			t.Fatal(err)
+		}
+		plan, _, _ := strings.Cut(output.String(), "No changes made")
+		for _, want := range test.want {
+			if !strings.Contains(plan, want) {
+				t.Errorf("%s: plan lacks %q:\n%s", name, want, plan)
+			}
+		}
+		for _, unwanted := range test.unwanted {
+			if strings.Contains(plan, unwanted) {
+				t.Errorf("%s: plan contains %q:\n%s", name, unwanted, plan)
+			}
+		}
+	}
+}
+
+// Moving startup to this pterm, or restarting the broker, gets its own line
+// in the short plan.
+func TestShortSetupPlanSaysWhenItReplacesStartup(t *testing.T) {
+	env, _ := newLinuxLifecycleTestEnv(t, true)
+	var output bytes.Buffer
+	status := lifecycle.Status{Service: lifecycle.Service{Name: "broker", Mode: lifecycle.BrokerMode}, Registered: true}
+	plan := lifecycle.Plan{Steps: []lifecycle.Step{{Mkdir: "x"}}, ChangesRunningBroker: true}
+	describeSetup(env, plan, hostReport{statuses: []lifecycle.Status{status}}, "", "Tailscale is not installed.", false, false, &output)
+	if want := "\n    This replaces the startup of another pterm and restarts the broker, which ends running sessions " +
+		"(setup stops first if any is active).\n"; !strings.Contains(output.String(), want) {
+		t.Errorf("plan lacks %q:\n%s", want, output.String())
+	}
+	output.Reset()
+	status.Registered, status.FileMatches = true, true
+	describeSetup(env, lifecycle.Plan{Steps: plan.Steps}, hostReport{statuses: []lifecycle.Status{status}}, "", "", false, false, &output)
+	if strings.Contains(output.String(), "This ") {
+		t.Errorf("plan for a plain registration says it replaces something:\n%s", output.String())
 	}
 }
 

@@ -16,14 +16,29 @@ if [ "$(uname -s)" != Linux ]; then
 fi
 if [ "$(id -u)" = 0 ]; then
   # The same help as `pterm setup` (rootHelp in cmd/pterm/lifecycle.go).
-  cat >&2 <<'EOF'
+  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+    echo "Run this without sudo, as $SUDO_USER: Termivoa runs as your user, so that your phone gets your shell, not root's." >&2
+    exit 1
+  fi
+  # Debian and Ubuntu name the administrators' group sudo; Fedora and others, wheel.
+  group=sudo
+  if ! getent group sudo >/dev/null 2>&1 && getent group wheel >/dev/null 2>&1; then
+    group=wheel
+  fi
+  # The new user cannot read root's files: copy this script and the binary.
+  files=$0
+  if [ -n "${1:-}" ]; then
+    files="$files $1"
+  fi
+  cat >&2 <<HELP
 Run this as a normal user, not root: Termivoa runs as that user, so that your phone gets that user's shell, not root's.
-A new server often has only root. Make a user with sudo and your SSH key (replace <name>):
+A new server often has only root. Make a user with sudo, give it your SSH key and these files (replace <name>):
   adduser <name>
-  usermod -aG sudo <name>
-  rsync --archive --chown=<name>:<name> ~/.ssh /home/<name>
+  usermod -aG $group <name>
+  install -d -m 700 -o <name> -g <name> /home/<name>/.ssh && install -m 600 -o <name> -g <name> ~/.ssh/authorized_keys /home/<name>/.ssh/
+  install -m 644 -o <name> -g <name> $files /home/<name>/
 Then log in as that user (ssh <name>@<this-server>) and run the install there again.
-EOF
+HELP
   exit 1
 fi
 case $(uname -m) in
