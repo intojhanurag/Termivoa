@@ -107,14 +107,39 @@ func TestLinuxSetupAndUninstallUseSystemdUserUnits(t *testing.T) {
 	if err := runWithInput(ctx, []string{"setup"}, nil, &output); err != nil {
 		t.Fatal(err)
 	}
+	// The default plan is short: one line for each thing, no checks, no unit
+	// files, no commands.
+	short := output.String()
+	for _, want := range []string{
+		"No changes made", "  - Start Termivoa when you log in (your user only, no administrator rights).\n",
+		"  - Keep its data in " + env.paths.DataDir + " and its logs in " + env.paths.LogDir + ".\n",
+		"  - Keep running after you log out (Linux linger). It asks first.\n",
+		"run `pterm setup --verbose`",
+	} {
+		if !strings.Contains(short, want) {
+			t.Errorf("setup output lacks %q:\n%s", want, short)
+		}
+	}
+	for _, unwanted := range []string{"Checks (read-only)", "ExecStart", "systemctl", "loginctl"} {
+		if strings.Contains(short, unwanted) {
+			t.Errorf("short plan contains %q:\n%s", unwanted, short)
+		}
+	}
+	if lines := strings.Count(short, "\n"); lines > 12 {
+		t.Errorf("short plan has %d lines:\n%s", lines, short)
+	}
+	output.Reset()
+	if err := runWithInput(ctx, []string{"setup", "--verbose"}, nil, &output); err != nil {
+		t.Fatal(err)
+	}
 	for _, want := range []string{
 		"No changes made", "write " + broker + ":", "ExecStart=/opt/pterm/bin/pterm __broker",
 		"run systemctl --user daemon-reload", "run systemctl --user enable phone-terminal-broker.service",
 		"linger: off; Termivoa stops when you log out",
-		"asks separately whether to keep running after you log out: loginctl enable-linger ada",
+		"Keep running after you log out (Linux linger). It asks first. Runs: loginctl enable-linger ada",
 	} {
 		if !strings.Contains(output.String(), want) {
-			t.Errorf("setup output lacks %q:\n%s", want, output.String())
+			t.Errorf("setup --verbose output lacks %q:\n%s", want, output.String())
 		}
 	}
 	if len(fake.mutations()) != 0 {
@@ -168,7 +193,7 @@ func TestLinuxSetupAndUninstallUseSystemdUserUnits(t *testing.T) {
 func TestLinuxSetupWithoutSystemdExplainsTheFallback(t *testing.T) {
 	_, fake := newLinuxLifecycleTestEnv(t, false)
 	var output bytes.Buffer
-	if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+	if err := runWithInput(context.Background(), []string{"setup", "--verbose"}, nil, &output); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -512,33 +513,47 @@ func parseLifecycleFlags(command string, args []string, bools ...string) (map[st
 	return values, nil
 }
 
-// runSetupCommand is the first-run wizard. It runs read-only checks, shows
-// everything it will do, and asks once. Then it registers startup, waits for
-// the broker and gateway, saves the Tailscale phone address, asks separately
-// before it changes Tailscale Serve, adds a Home project if there is none, and
-// pairs a phone. --apply --yes is the non-interactive installer path: it only
-// registers startup and saves the phone address when no other one is set.
-// Both refuse, before any change, while other Tailscale Serve handlers share
-// this computer's origin.
+// runSetupCommand is the first-run wizard. It runs read-only checks, shows a
+// short plan of everything it will do, and asks once. Then it registers
+// startup, waits for the broker and gateway, saves the Tailscale phone
+// address, asks separately before it changes Tailscale Serve, adds a Home
+// project if there is none, and pairs a phone. --verbose also prints the
+// checks, the startup files and every command. --apply --yes is the
+// non-interactive installer path (always verbose): it only registers startup
+// and saves the phone address when no other one is set. Both refuse, before
+// any change, while other Tailscale Serve handlers share this computer's
+// origin.
 func runSetupCommand(ctx context.Context, args []string, input *os.File, output io.Writer) error {
-	options, err := parseLifecycleFlags("setup", args, "apply", "yes")
+	options, err := parseLifecycleFlags("setup", args, "apply", "yes", "verbose")
 	if err != nil {
 		return err
 	}
 	apply, yes := *options["apply"], *options["yes"]
+	verbose := *options["verbose"] || yes
 	env, err := loadLifecycleEnv()
 	if err != nil {
 		return err
 	}
-	report, err := inspectHost(ctx, env, output)
+	// Without --verbose the checks and each step stay out of the way; the
+	// plan and the questions still name every change.
+	var checks bytes.Buffer
+	detail := io.Writer(&checks)
+	if verbose {
+		detail = output
+	}
+	report, err := inspectHost(ctx, env, detail)
 	if err != nil {
 		return err
 	}
 	// Any other handler on this computer's origin is same-origin with the
 	// app, so setup changes nothing until they move (the checks say how).
 	if handlers := report.tailscale.otherHandlers; len(handlers) > 0 {
+		_, _ = output.Write(checks.Bytes())
 		return exitCodeError{exitOtherServeHandlers, fmt.Errorf("refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (%s); "+
 			"move them as shown above, then run `pterm setup` again", strings.Join(handlers, ", "))}
+	}
+	if !verbose {
+		detail = io.Discard
 	}
 	// Without a systemd user manager nothing can be registered; setup then
 	// starts the processes now, as `pterm launch` does, and says so.
@@ -550,7 +565,7 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 		}
 	}
 	origin, originProblem := report.tailscale.phoneOrigin()
-	describeSetup(env, plan, report, origin, originProblem, yes, output)
+	describeSetup(env, plan, report, origin, originProblem, yes, verbose, output)
 	if !apply && input == nil {
 		fmt.Fprintln(output, "\nNo changes made. Run `pterm setup` in a terminal, or `pterm setup --apply --yes` to register startup without questions.")
 		return nil
@@ -579,14 +594,14 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 		}
 	}
 	if len(plan.Steps) > 0 {
-		fmt.Fprintln(output, "\nRegistering startup:")
-		if err := lifecycle.Apply(ctx, env.runner, plan, output); err != nil {
+		fmt.Fprintln(output, "\nRegistering startup...")
+		if err := lifecycle.Apply(ctx, env.runner, plan, detail); err != nil {
 			return err
 		}
 	}
 	if noStartup {
-		fmt.Fprintln(output, "\nStarting Termivoa in the background (no startup registration):")
-		if err := startMissing(ctx, env, report.statuses, output); err != nil {
+		fmt.Fprintln(output, "\nStarting Termivoa in the background (no startup registration)...")
+		if err := startMissing(ctx, env, report.statuses, detail); err != nil {
 			return err
 		}
 	}
@@ -657,31 +672,43 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	}, output)
 }
 
+// describeSetup prints the plan: one line for each thing setup will do, and
+// which of them ask their own question first. With verbose it adds the startup
+// files and every command. With yes (installer mode) it names the commands
+// that setup leaves to the owner.
 func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, origin, originProblem string,
-	yes bool, output io.Writer,
+	yes, verbose bool, output io.Writer,
 ) {
 	tailscale := report.tailscale
+	line := func(format string, values ...any) { fmt.Fprintf(output, "  - "+format+"\n", values...) }
+	// runs appends the exact command to a line, only with --verbose.
+	runs := func(command string) string {
+		if !verbose {
+			return ""
+		}
+		return " Runs: " + command
+	}
 	fmt.Fprintln(output, "\npterm setup will:")
 	switch {
 	case env.host.OS == "linux" && !env.host.Systemd:
-		fmt.Fprintf(output, "1. Start Termivoa now in the background, as `pterm launch` does. It cannot start at login here:\n"+
-			"  systemd user services are not running (%s).\n  After each restart, run `pterm launch` again.\n", env.noSystemd)
+		line("Start Termivoa now in the background, as `pterm launch` does. It cannot start at login here: "+
+			"systemd user services are not running (%s). After each restart, run `pterm launch` again.", env.noSystemd)
 		if env.wsl {
-			fmt.Fprintf(output, "  %s\n", wslSystemdHint)
+			fmt.Fprintf(output, "    %s\n", wslSystemdHint)
 		}
+	case len(plan.Steps) == 0:
+		line("Start Termivoa when you log in: already registered for this pterm; nothing to change.")
 	default:
-		fmt.Fprintln(output, "1. Start Termivoa when you log in (current user only, no administrator rights):")
-		if len(plan.Steps) == 0 {
-			fmt.Fprintln(output, "  already registered for this pterm; nothing to change.")
-		} else {
+		line("Start Termivoa when you log in (your user only, no administrator rights).")
+		if verbose {
 			_ = lifecycle.Describe(plan, output)
 		}
 	}
-	fmt.Fprintln(output, "2. Wait until the broker and the gateway answer.")
+	line("Keep its data in %s and its logs in %s.", env.paths.DataDir, env.host.LogDir())
 	if origin == "" {
-		fmt.Fprintf(output, "3. Skip the phone address: %s\n   Until then, only a browser on this computer can pair.\n", originProblem)
+		line("Skip the phone address: %s Until then, only a browser on this computer can pair.", originProblem)
 	} else {
-		fmt.Fprintf(output, "3. Save the phone address %s (unless you set another one).\n", origin)
+		line("Save the phone address %s (unless you set another one).", origin)
 	}
 	linger := lifecycle.DisplayCommand(env.host.LingerCommand())
 	if yes {
@@ -692,14 +719,12 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, ori
 		}
 	} else {
 		if report.lingerOff {
-			fmt.Fprintf(output, "After step 1 it asks separately whether to keep running after you log out: %s\n", linger)
+			line("Keep running after you log out (Linux linger). It asks first.%s", runs(linger))
 		}
-		fmt.Fprintf(output, "4. Add your home folder %s as project \"Home\" if you have no project.\n", env.host.HomeDir)
-		fmt.Fprintln(output, "5. Show a QR code for your phone and ask you to approve the code it shows.")
 		asksPhoneServe := origin != "" && tailscale.serveErr == nil && !tailscale.needsOperator &&
 			!tailscale.serve.Configured && len(tailscale.serve.Problems) == 0
 		if asksPhoneServe {
-			fmt.Fprintf(output, "Before step 4 it asks separately whether to run: %s\n", lifecycle.ServeCommand)
+			line("Share Termivoa with your tailnet devices at %s (port 443). It asks first.%s", origin, runs(lifecycle.ServeCommand))
 		}
 		// The second, separate preview question follows only once 443 is
 		// settled successfully: already configured, or about to be asked (and,
@@ -707,8 +732,10 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, ori
 		if origin != "" && tailscale.serveErr == nil && !tailscale.needsOperator &&
 			!tailscale.serve.PreviewConfigured && len(tailscale.serve.PreviewProblems) == 0 &&
 			(tailscale.serve.Configured || asksPhoneServe) {
-			fmt.Fprintf(output, "Before step 4 it also asks separately whether to run: %s\n", lifecycle.PreviewServeCommand)
+			line("Share dev-server previews at %s (port 8443). It asks first.%s", previewOrigin(origin), runs(lifecycle.PreviewServeCommand))
 		}
+		line("Add your home folder %s as project \"Home\" if you have no project.", env.host.HomeDir)
+		line("Show a QR code for your phone and ask you to approve the code it shows.")
 	}
 	if tailscale.needsOperator {
 		fmt.Fprintf(output, "Tailscale Serve is not changed: on Linux only root or the Tailscale operator may change it. Run this once yourself, then run `pterm setup` again: %s\n",
@@ -718,6 +745,9 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, ori
 		fmt.Fprintf(output, "WSL: %s\n", wslLifetimeNote)
 	}
 	fmt.Fprintln(output, "Never use Tailscale Funnel: it would put your terminal on the public internet.")
+	if !verbose {
+		fmt.Fprintln(output, "For the checks, the startup files and every command, run `pterm setup --verbose`.")
+	}
 }
 
 // offerLinger asks its own question before it runs `loginctl enable-linger`,

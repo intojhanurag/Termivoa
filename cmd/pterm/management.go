@@ -43,8 +43,10 @@ Available commands:
   pterm profile list                 Show saved shell profiles.
   pterm profile detect               Detect host shells and save them as profiles.
   pterm config origin [<url>]        Show or set the private HTTPS pairing origin.
-  pterm setup                        First run: checks, one confirmation, startup,
+  pterm setup [--verbose]            First run: a short plan, one confirmation, startup,
                                      phone address, Tailscale Serve (asks), pairing.
+                                     --verbose also shows the checks, the startup
+                                     files and every command.
   pterm setup --apply --yes          Installer mode: register startup, ask nothing.
   pterm doctor                       Read-only diagnostics; never prints secrets.
   pterm uninstall [--dry-run] [--yes] [--delete-data]
