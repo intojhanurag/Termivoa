@@ -1496,6 +1496,11 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   CSP and its Host rule for `:8443`; a real `tailscale serve --https=8443`
   on a peer; a tailnet ACL that blocks 8443; video; HMR of a real dev
   server; WebKit's history restore of the app page (difference A).
+- **Switch on, nothing sent after re-pair** (`fix/issue-145`, 2026-10-03,
+  #145): `syncHomePush` (`web/src/push.ts`) re-posts the browser's push
+  subscription to home when home answers (`homeAdoption` in `App.tsx`, so also
+  after Log out, `pterm revoke` and a new pairing); the host upserts by
+  endpoint. Evidence: `web/src/push.test.ts`, `scripts/check`.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

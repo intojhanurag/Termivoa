@@ -7,7 +7,7 @@ import {
   type AddComputerLink, type AddTask, type AppLocation,
 } from '../pairing/addComputer';
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
-import { syncPeerPush, workersSafe } from '../push';
+import { syncHomePush, syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
@@ -515,6 +515,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     settings: (answer) => {
       setSettings(answer);
       void preview.read();
+      // Log out or a revoke deleted home's copy of this browser's subscription.
+      void syncHomePush();
     },
     // The stored list is used until home answers; then home's list replaces it.
     list: (list) => {

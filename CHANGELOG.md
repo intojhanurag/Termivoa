@@ -251,6 +251,13 @@ All notable changes are documented here. The format follows
   itself. They are now readable in the frame. No phone-side change (#144).
 - Fix (phone side): after browser Back to the app (Safari), the preview
   loads again and does not show a refusal. No host-side change.
+- Fix (phone side): after **Log out** or `pterm revoke` and a new pairing in
+  the same browser, **Settings → Notifications** showed on but home sent
+  nothing, and **Send a test notification** said "No subscription on this
+  phone". The switch reads the browser's subscription, which survives; the
+  computer had deleted its copy. Home now gets the browser's subscription
+  again whenever it answers, so the switch is true. Other computers already
+  did this.
 - Fix (host side): project buttons could hang. Reading `package.json`, a
   `Makefile`, `Cargo.toml` or `go.mod` checked the file and then opened it;
   a FIFO (named pipe) put at that name between the two steps made the open
