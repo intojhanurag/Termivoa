@@ -890,6 +890,8 @@ func TestMultiComputerMethodsForwardOrigin(t *testing.T) {
 	}
 	peer := "https://vps.example.ts.net"
 	node := protocol.TailnetNode{ID: "nVps", Tags: []string{"tag:server"}}
+	found := protocol.HTTPComputerFoundResponse{Computers: []protocol.HTTPFoundComputer{
+		{Origin: peer, Label: "vps", Grant: testGrant, ExpiresAt: expires}}}
 	var origins []string
 	client, _ := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
 		origin := "-"
@@ -917,6 +919,10 @@ func TestMultiComputerMethodsForwardOrigin(t *testing.T) {
 				Computer: protocol.HTTPComputer{Origin: peer, Label: "vps"}, Node: node, State: protocol.HTTPComputerStatePending})
 		case protocol.GatewayComputersRemove:
 			return reply(t, request.RequestID, protocol.GatewayComputersRemoveResult, protocol.BrokerRPCEmptyPayload{})
+		case protocol.GatewayComputersOffer:
+			return reply(t, request.RequestID, protocol.GatewayComputersOfferResult, protocol.BrokerRPCEmptyPayload{})
+		case protocol.GatewayComputersFound:
+			return reply(t, request.RequestID, protocol.GatewayComputersFoundResult, found)
 		}
 		t.Errorf("unexpected %s", request.Type)
 		return nil
@@ -948,9 +954,17 @@ func TestMultiComputerMethodsForwardOrigin(t *testing.T) {
 	if err := client.RemoveComputer(context.Background(), testCredential, peer); err != nil {
 		t.Fatal(err)
 	}
+	// An offer never carries an origin, even from a marked context.
+	if err := client.OfferComputer(ctx, protocol.HTTPComputerOfferRequest{Origin: peer, Grant: testGrant}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := client.FoundComputers(context.Background(), testCredential); err != nil || !reflect.DeepEqual(got, found) {
+		t.Fatalf("found = %#v, %v", got, err)
+	}
 	want := []string{
 		"gateway.origin -", "gateway.settings " + testOrigin, "gateway.auth.check " + testOrigin, "gateway.pair.poll " + testOrigin,
 		"gateway.computers.list " + testOrigin, "gateway.computers.add " + testOrigin, "gateway.computers.remove -",
+		"gateway.computers.offer -", "gateway.computers.found -",
 	}
 	if !reflect.DeepEqual(origins, want) {
 		t.Fatalf("forwarded origins = %v, want %v", origins, want)
