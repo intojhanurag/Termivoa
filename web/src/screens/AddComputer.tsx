@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ApiError, deviceLabelProblem, firstLabel } from '../api/http';
+import { ApiError, deviceLabelProblem, firstLabel, homeOrigin } from '../api/http';
 import { forgetPending } from '../computers';
 import type { TailnetNode } from '../generated/protocol';
 import {
@@ -200,7 +200,10 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
         <p role="alert" className="error">Adding {label} was cancelled. If {label} asks, answer N.</p>
       )}
       {phase?.kind === 'error' && <p role="alert" className="error">{addFailure(phase.error, label)}</p>}
-      {(phase?.kind === 'expired' || phase?.kind === 'cancelled' || phase?.kind === 'error') && (
+      {phase?.kind === 'stale' && (
+        <p role="alert" className="error">{label} stopped waiting. On {label} run <code>pterm pair --via {firstLabel(homeOrigin())}</code>, then tap Add again.</p>
+      )}
+      {(phase?.kind === 'expired' || phase?.kind === 'cancelled' || phase?.kind === 'error' || phase?.kind === 'stale') && (
         <button type="button" onClick={leave(onSettings)}>Settings</button>
       )}
     </main>

@@ -821,6 +821,8 @@ button.link.danger-text { color: var(--red); }
 .computer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Square, so the page does not jump when the camera reports its size. contain, not cover: the whole frame the decoder reads is visible, so it never reads a code the user cannot see. */
 .scan-video { width: 100%; max-width: 360px; aspect-ratio: 1; align-self: center; border-radius: 14px; background: #000; object-fit: contain; }
+/* Found on your network: the name gives way at 390 px; Add stays whole. */
+button.found-add { flex-shrink: 0; }
 button.add-computer { min-height: 52px; border: 1px dashed var(--accent); border-radius: 14px; color: var(--accent); font-weight: 700; }
 .place-computer { flex-shrink: 0; color: var(--text); }
 .wall-computer { max-width: 100%; margin-top: -6px; color: var(--muted); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

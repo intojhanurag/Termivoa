@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMPUTERS_KEY } from '../computers';
-import { AddComputerFlow, addComputerUrl, parseAddComputerLink, takeAddComputerFragment } from './addComputer';
+import { AddComputerFlow, addComputerUrl, foundLink, parseAddComputerLink, takeAddComputerFragment } from './addComputer';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };
 const grant = 'G'.repeat(43);
@@ -307,5 +307,101 @@ describe('AddComputerFlow', () => {
     const caught = done.catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(await caught).toMatchObject({ code: 'network' });
+  });
+});
+
+describe('Found on your network links', () => {
+  const vps = 'https://vps.tailx.ts.net';
+  const fresh = 'F'.repeat(43);
+  const redeemed = () => json(200, { pendingId: '00000000-0000-4000-8000-000000000010', pollSecret: 'p'.repeat(43), verificationCode: '123-456', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+  const gone = () => json(410, { error: { code: 'pairing_expired', message: 'x' } });
+  const listing = (found: string) => json(200, { computers: [{ origin: vps, label: 'vps', grant: found, expiresAt: new Date(Date.now() + 60_000).toISOString() }] });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal('location', { origin: app.origin });
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('builds the same link as a paste, marked found, with the same checks', () => {
+    expect(foundLink({ origin: vps, grant }, app)).toEqual({ ...parseAddComputerLink(link('vps.tailx.ts.net'), app), found: true });
+    expect(foundLink({ origin: 'https://vps.other.ts.net', grant }, app)).toBeUndefined();
+    expect(foundLink({ origin: app.origin, grant }, app)).toBeUndefined();
+    expect(foundLink({ origin: vps, grant: 'short' }, app)).toBeUndefined();
+  });
+
+  it('keeps from=found through the add page fragment, and only there', () => {
+    const replaceState = vi.fn();
+    const url = addComputerUrl({ origin: vps, grant, found: true });
+    expect(url).toContain('from=found');
+    const hash = url.slice(url.indexOf('#'));
+    expect(takeAddComputerFragment({ pathname: '/computers/add', search: '', hash }, { replaceState }, app))
+      .toEqual({ origin: vps, grant, back: '/', found: true });
+    expect(addComputerUrl({ origin: vps, grant })).not.toContain('from=');
+    const other = `#${new URLSearchParams({ grant, origin: vps, from: 'paste' }).toString()}`;
+    expect(takeAddComputerFragment({ pathname: '/computers/add', search: '', hash: other }, { replaceState }, app)).not.toHaveProperty('found');
+  });
+
+  it('on 410 reads Found once and redeems the new grant for the same origin, once', async () => {
+    vi.resetModules();
+    const add = await import('./addComputer');
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      const sent = init.body === undefined ? '' : ` ${(JSON.parse(String(init.body)) as { grant?: string }).grant ?? ''}`;
+      calls.push(`${init.method} ${url}${sent}`);
+      if (url.endsWith('/computers/found')) return listing(fresh);
+      if (url.endsWith('/pair/redeem')) return calls.length === 1 ? gone() : redeemed();
+      return json(200, { status: 'pending' });
+    }));
+    void add.startAdd({ origin: vps, grant, found: true }, 'Phone');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(add.currentAdd()?.phase.kind).toBe('waiting');
+    expect(calls).toEqual([
+      `POST ${vps}/api/v1/pair/redeem ${grant}`,
+      'GET /api/v1/computers/found',
+      `POST ${vps}/api/v1/pair/redeem ${fresh}`,
+    ]);
+    add.resetAdd();
+  });
+
+  it('shows the stale text when Found has no new grant, cannot be read, or the new grant is gone too', async () => {
+    const cases = [
+      [() => listing(grant), redeemed],
+      [() => json(503, { error: { code: 'host_unavailable', message: 'x' } }), redeemed],
+      [() => new Response('404 page not found', { status: 404 }), redeemed],
+      [() => listing(fresh), gone],
+    ] as const;
+    for (const [found, second] of cases) {
+      vi.resetModules();
+      const add = await import('./addComputer');
+      const calls: string[] = [];
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+        calls.push(`${init.method} ${url}`);
+        if (url.endsWith('/computers/found')) return found();
+        return calls.length === 1 ? gone() : second();
+      }));
+      await add.startAdd({ origin: vps, grant, found: true }, 'Phone');
+      expect(add.currentAdd()?.phase.kind).toBe('stale');
+      expect(calls.filter((call) => call.endsWith('/computers/found'))).toHaveLength(1);
+      expect(calls.filter((call) => call.endsWith('/pair/redeem')).length).toBe(found === cases[3][0] ? 2 : 1);
+    }
+  });
+
+  it('never retries a pasted or scanned link: 410 is the usual error', async () => {
+    vi.resetModules();
+    const add = await import('./addComputer');
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method} ${url}`);
+      return gone();
+    }));
+    await add.startAdd({ origin: vps, grant }, 'Phone');
+    expect(add.currentAdd()?.phase).toMatchObject({ kind: 'error', error: { status: 410 } });
+    expect(calls).toEqual([`POST ${vps}/api/v1/pair/redeem`]);
   });
 });

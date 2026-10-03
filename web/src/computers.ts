@@ -1,5 +1,5 @@
-import { client, firstLabel, homeOrigin, isAuthFailure } from './api/http';
-import type { HTTPComputer, HTTPComputerAddResponse } from './generated/protocol';
+import { ApiError, client, firstLabel, homeOrigin, isAuthFailure } from './api/http';
+import type { HTTPComputer, HTTPComputerAddResponse, HTTPFoundComputer } from './generated/protocol';
 import { parseHttpBody } from './protocol/httpBody';
 import { storage as defaultStorage, type StorageLike } from './storage';
 
@@ -225,4 +225,56 @@ export function logoutNote(left: ReadonlyArray<string>): string {
   const done = 'You logged out. This phone no longer has access.';
   if (left.length === 0) return done;
   return `${done} Could not sign out of ${left.join(', ')}. Run pterm revoke there to remove this phone.`;
+}
+
+/** How often Settings → Computers reads home's Found list while it is open and visible. */
+export const FOUND_POLL_MS = 5_000;
+
+/** What the Found on your network block shows. */
+export type FoundState =
+  | { readonly kind: 'rows'; readonly computers: ReadonlyArray<HTTPFoundComputer> }
+  /** Home cannot read its Tailscale status (503). */
+  | { readonly kind: 'no_status' };
+
+type Page = Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
+
+/**
+ * Reads home's Found list now, then every FOUND_POLL_MS while the page is
+ * visible; back in front it reads at once. `onState` gets the rows, or
+ * `no_status` (503), or undefined once when home is too old to list them
+ * (404: the reads stop). Any other failure is quiet: the block keeps what it
+ * shows and the next read tries again. Returns stop (the screen closed).
+ */
+export function watchFound(onState: (state: FoundState | undefined) => void, page: Page = document): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let reading = false;
+  let stopped = false;
+  const visible = () => page.visibilityState === 'visible';
+  async function read(): Promise<void> {
+    timer = undefined;
+    if (stopped || reading || !visible()) return;
+    reading = true;
+    try {
+      const answer = await client().foundComputers();
+      if (!stopped) onState(answer === undefined ? undefined : { kind: 'rows', computers: answer.computers });
+      if (answer === undefined) stopped = true;
+    } catch (error) {
+      if (!stopped && error instanceof ApiError && error.status === 503) onState({ kind: 'no_status' });
+    } finally {
+      reading = false;
+    }
+    if (!stopped && visible() && timer === undefined) timer = setTimeout(() => { void read(); }, FOUND_POLL_MS);
+  }
+  const changed = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (visible()) void read();
+  };
+  page.addEventListener('visibilitychange', changed);
+  void read();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    page.removeEventListener('visibilitychange', changed);
+  };
 }

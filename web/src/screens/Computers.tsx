@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { ApiError, deviceLabelProblem, updateText } from '../api/http';
-import { removeComputer, renameComputer, type Computer } from '../computers';
-import { LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink, type AppLocation } from '../pairing/addComputer';
+import { ApiError, deviceLabelProblem, firstLabel, homeOrigin, updateText } from '../api/http';
+import { removeComputer, renameComputer, watchFound, type Computer, type FoundState } from '../computers';
+import { foundLink, LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink, type AppLocation } from '../pairing/addComputer';
 import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from '../pairing/scan';
 import { AddComputerSheet } from './AddComputer';
 import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
@@ -71,6 +71,51 @@ export function readLink(text: string, app: AppLocation): AddComputerLink | { re
   return 'problem' in link ? { problem: LINK_PROBLEMS[link.problem] } : link;
 }
 
+/**
+ * Found on your network: computers that wait in `pterm pair --via` (or
+ * setup) for this home. Add gives the row's link to the same confirm sheet
+ * as a pasted link. Nothing shows before the first answer, or when home is
+ * too old to list them.
+ */
+export function FoundBlock({ found, homeLabel, app, onAdd }: {
+  readonly found: FoundState | undefined;
+  readonly homeLabel: string;
+  readonly app: AppLocation;
+  readonly onAdd: (link: AddComputerLink) => void;
+}) {
+  if (found === undefined) return null;
+  // The same checks as a pasted link; a row that fails them is not shown.
+  const rows = found.kind === 'rows'
+    ? found.computers.flatMap((row) => { const link = foundLink(row, app); return link === undefined ? [] : [{ row, link }]; })
+    : [];
+  return (
+    <section className="stack" aria-labelledby="found-heading">
+      <h3 id="found-heading" className="caps">Found on your network</h3>
+      {found.kind === 'no_status' && <p className="hint-text">{homeLabel} cannot read its Tailscale status. Check Tailscale on {homeLabel}.</p>}
+      {found.kind === 'rows' && rows.length === 0 && (
+        <p className="hint-text">
+          To add another computer, run <code>pterm setup</code> on it, or <code>pterm pair --via {homeLabel}</code> if it is already set up. It shows here while it waits.
+        </p>
+      )}
+      {rows.length > 0 && (
+        <ul className="computer-list">
+          {rows.map(({ row, link }) => (
+            <li key={row.origin} className="computer-card">
+              <div className="computer-head">
+                <span className="row-text">
+                  <span className="row-title"><span className="computer-name">{row.label}</span></span>
+                  <span className="row-meta">{new URL(row.origin).host}</span>
+                </span>
+                <button type="button" className="primary found-add" aria-label={`Add ${row.label}`} onClick={() => onAdd(link)}>Add</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** The camera view of Scan QR. The video has no sound and no controls; the line under it says what to do. */
 export function ScanView({ scanning, videoRef, onPaste, onCancel }: {
   readonly scanning: boolean;
@@ -131,6 +176,9 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   const [pasted, setPasted] = useState('');
   const [problem, setProblem] = useState<string>();
   const [confirm, setConfirm] = useState<AddComputerLink>();
+  const [found, setFound] = useState<FoundState>();
+  // Only while this screen is open; watchFound pauses in the background.
+  useEffect(() => watchFound(setFound), []);
   const now = Date.now();
   const home = entries.find((entry) => entry.computer.home)?.computer;
   const renameProblem = edit.kind === 'rename' ? deviceLabelProblem(edit.draft.trim()) : undefined;
@@ -284,6 +332,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
         })}
       </ul>
       <p role="status" className={note?.error === true ? 'error field-note' : 'muted field-note'}>{note?.text ?? ''}</p>
+      <FoundBlock found={found} homeLabel={home?.label ?? firstLabel(homeOrigin())} app={globalThis.location} onAdd={setConfirm} />
 
       {adding === 'closed' && <button type="button" className="add-computer" onClick={() => open('choose')}>+ Add a computer</button>}
       {adding === 'choose' && (
