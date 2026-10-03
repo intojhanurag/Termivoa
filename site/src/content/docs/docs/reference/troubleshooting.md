@@ -281,9 +281,9 @@ Log in to Tailscale on this computer, then run `pterm doctor` again. The line is
 
 Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tailscale tags were added, removed or replaced after pairing, so the rules for it changed. This computer refuses phones from that home until you pair again.
 
-### Peer sessions send no notifications (Next beta)
+### Settings shows "No notifications from vps." (Next beta)
 
-This is a limit for now: only sessions on home send notifications. Sessions on other computers show **Waiting** and **Working** in the app.
+That computer could not be set up for notifications; home and the other computers still notify. Check that the computer is awake and reachable (no **can't reach** or **pair again** on the Sessions list), then open **Settings** again. If it stays, turn the switch in **Settings → Notifications** off and on.
 
 ## Where are the logs?
 

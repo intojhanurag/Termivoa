@@ -29,6 +29,8 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   Not yet checked on a real phone.
 - Computer health in Settings: version, last seen and **Check again**.
   Follow-up: show the last known version on a "can't reach" row.
+- Notifications from every computer. Open: the real-iPhone check of several
+  scoped registrations (`docs/owner-verification.md`, Gate 0 check 5).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -40,11 +42,10 @@ In this order.
    owner's second computer and the owner's approval for a Tailscale Serve port
    (rule 12). Port 8443 is taken by the dev-server preview, so use another
    free port.
-2. **Notifications from every computer.** Today only the home computer sends
-   Web Push.
-3. **Preview for sessions on peers.** Today preview works for home sessions
-   only.
-4. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
+2. **Preview for sessions on peers.** Today preview works for home sessions
+   only. Design: ADR 0006 (draft #146, waits for the owner). First fix #143
+   and #144.
+3. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
    re-shoot).
 
 ## Later

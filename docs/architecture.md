@@ -71,7 +71,7 @@ Serve handlers share the origin.
 | Process | Responsibilities | Entry |
 | --- | --- | --- |
 | Broker | Takes the data lock and runtime lock, opens SQLite, runs the session registry (default limit 8 live sessions), one actor per session, emulators, controller leases, input writer, pairing and device auth, Web Push, agent-state scans, git (Changes, worktrees), Files, project tasks, uploads, preview port scans, Tailscale status snapshots for multi-computer trust. Serves IPC to `cli` and `gateway` clients. | `internal/host/broker.go`, `internal/broker` |
-| Gateway | Loopback HTTP and WebSocket server; embedded web assets; CSP, Host, Origin and CORS checks; cookie set and refresh; forwards the raw cookie credential and the request `Origin` to the broker on every call; second loopback listener for dev-server preview. Has a private control endpoint that `pterm stop` uses. Holds no Store, Registry or PTY. | `internal/gateway`, `internal/gatewayclient`, `internal/host/gateway_control.go` |
+| Gateway | Loopback HTTP and WebSocket server; embedded web assets; CSP, Host, Origin and CORS checks; cookie set and refresh; forwards the raw cookie credential and the request `Origin` to the broker on every call; second loopback listener for dev-server preview; answers 404 under `/push/` (peer push scopes). Has a private control endpoint that `pterm stop` uses. Holds no Store, Registry or PTY. | `internal/gateway`, `internal/gatewayclient`, `internal/host/gateway_control.go` |
 
 Shutdown order (broker): stop IPC accept, wait for registry cleanup, close
 SQLite, release the data lock. A gateway restart does not end sessions. A
@@ -148,7 +148,7 @@ Dev paths must never equal, contain or sit inside production paths
 | `web/src/api` | HTTP client with timeouts |
 | `web/src/pairing` | Pairing and add-computer flows |
 | `web/src/generated` | Generated protocol TypeScript types |
-| `web/src/sw.js` | Service worker: precache, network-first pages, push display |
+| `web/src/sw.js` | Service worker: precache, network-first pages, push display (home and per-peer scopes) |
 | `web/src/storage.ts` | The one safe `localStorage`/`sessionStorage` accessor (private browsing may refuse storage) |
 | `third_party` | Patched copies of `ansi`, `vt`, `xpty`, `ultraviolet` ([dependency-patches.md](dependency-patches.md)) |
 | `tests` | Integration, soak, agent replay and PTY fixtures |
@@ -235,7 +235,7 @@ same OS user is out of scope. Nothing runs as root or SYSTEM.
 | Cookie | `__Host-pterm_session`: Secure, HttpOnly, `SameSite=Strict`, `Path=/`. 30 days absolute, 7 days idle. `GET /api/v1/settings` resends the same value so WebKit's 7-day cap does not end it. The broker stores only hashes and re-authorizes the raw credential on every call. |
 | Origin and Host | Exact Host check. Every `/api` request needs an exact allowed `Origin`, or no `Origin` plus `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is refused. Mutations need `X-Pterm-Request`. Strict CSP on every response. |
 | Tailscale | Serve on 443 gives the private HTTPS origin. Funnel and public tunnels are excluded. Tailscale identity headers are ignored. `tailscale status` only narrows multi-computer access; it is never authentication. |
-| Multi-computer | A peer accepts a cross-origin call only from the app origin bound to that exact credential (`devices.app_origin`), with the pinned node ID and same owner (or `--allow-tagged`). Status cached about 60 s, 10-minute grace. A changed node ID revokes devices bound to it. A compromised home compromises every peer paired through it. |
+| Multi-computer | A peer accepts a cross-origin call only from the app origin bound to that exact credential (`devices.app_origin`), with the pinned node ID and same owner (or `--allow-tagged`). Status cached about 60 s, 10-minute grace. A changed node ID revokes devices bound to it. A compromised home compromises every peer paired through it. The phone keeps only `/sw.js` at scope `/` and at the push scope of each peer in its stored list; a registration for a host a compromised home wrote into that list lives until home's list answers. |
 | Preview | Separate origin (8443). Termivoa cookies are never forwarded to or set by a dev server. |
 | Controller lease | One controller per session. Acquire revokes the old lease, raises the epoch and makes a new 32-byte secret. Input carries generation, lease and a rising sequence; the broker rechecks auth and lease before acceptance. |
 | Input | Bounded `key`, `text`, `paste`, `mouse`, `answer` messages. Reconnect starts as observer. Lost acks show "uncertain delivery"; nothing is resent. |
@@ -257,7 +257,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Wall and thumbnails | Grid of all sessions; read-only thumbnail viewers: the phone asks for 5 updates/s per tile and the broker caps any request at 30/s; at most 4 live tiles under a phone-wide budget; hold and drag to arrange (Next); a visible never-live tile beyond the limit gets one snapshot turn (`peek`), then Paused, in a 5th connection slot (Next) | `internal/broker/viewer.go` | `web/src/screens/Wall.tsx`, `web/src/terminal/scheduler.ts` | multi-computer.md |
 | Agent state and badges | Working, waiting, idle from screen; worked seconds | `internal/agentstate`, `internal/broker/agent.go` | `web/src/screens/Sessions.tsx` | [agent-state.md](agent-state.md) |
 | Answer cards | Tap an option for a detected question; broker re-parses the screen and sends its own keys | `internal/broker/agent.go` | `web/src/screens/AnswerCard.tsx` | [agent-state.md](agent-state.md) |
-| Notifications | Web Push "waiting" and "done"; no terminal text in payloads; home only | `internal/webpush`, `internal/store/push.go` | `web/src/push.ts`, `web/src/sw.js` | [notifications.md](notifications.md) |
+| Notifications | Web Push "waiting" and "done"; no terminal text in payloads; from every paired computer (one `/sw.js` registration per peer at scope `/push/<host>/`) (Next) | `internal/webpush`, `internal/store/push.go` | `web/src/push.ts`, `web/src/sw.js` | [notifications.md](notifications.md) |
 | Away recap | "While you were away" card: time away, time worked, changes | `internal/broker/agent.go` (worked seconds) | `web/src/screens/Recap.tsx`, `web/src/screens/activity.ts` | — |
 | Changes | Diff list and file view, commit selected paths, push (never force), line comments into the composer (Next) | `internal/gitchanges`, `internal/broker/changes.go` | `web/src/screens/Changes.tsx` | [changes.md](changes.md) |
 | Project buttons | Project commands in the Snips sheet; typed into the session as input (Next) | `internal/projecttasks`, `internal/broker/tasks.go` | `web/src/screens/Snippets.tsx` | [project-tasks.md](project-tasks.md) |

@@ -1417,6 +1417,19 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   schema and `protocol.ValidHostBuild`; no revision bump (no new field).
   Evidence: `scripts/check` exit 0, site build. Not run on a real phone.
 
+- **Notifications from every computer** (`feat/peer-push`, 2026-10-03): one
+  `/sw.js` registration per peer at scope `/push/<host>/` on home's origin,
+  subscribed with that peer's VAPID key (`web/src/push.ts`,
+  `web/src/sw.js`). Host: the gateway answers 404 under `/push/`. No
+  protocol change. Security review: 4 findings (a held peer call could undo
+  "off"; the app could load under a peer scope; the finding 22 text; a peer
+  controlled the whole title), all fixed. Evidence: `scripts/check` exit 0;
+  site build; `node scripts/e2e-multicomputer/phase-b.mjs` 29/29 (new
+  B3-push-cors, B3-push-show, B3-push-scope, B3-push-open, B3-push-off);
+  `phase-a.mjs` 31/31; `webkit.mjs` 4/4. Pending (owner): real iPhone and
+  Android checks in `docs/owner-verification.md`, "Notifications from every
+  computer" (Gate 0 check 5). No real push service was used in any test.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

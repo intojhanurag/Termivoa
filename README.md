@@ -59,8 +59,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **Agent status and answer cards.** Sessions show **Working**, **Waiting** or
   **Your turn**. Answer Claude Code and Codex questions with one tap; a
   changed question is never answered by mistake.
-- **Notifications.** A buzz when an agent waits or finishes. Only the session
-  name and status, never terminal text.
+- **Notifications.** A buzz when an agent waits or finishes, from every
+  computer you paired. Only the session name and status, never terminal text.
 - **Changes view.** See the files the agent changed and each diff, ask the
   agent about a file or picked lines, then commit the ones you pick and push
   (never forced) from the phone.
