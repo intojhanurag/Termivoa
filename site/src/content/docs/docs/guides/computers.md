@@ -146,7 +146,9 @@ The other computers keep working. The one that does not answer gets its own row.
 
 | Row | Meaning | Do this |
 | --- | --- | --- |
-| **vps · can't reach** | The phone cannot reach vps now. | Check that vps is on and in your tailnet, then tap **Retry**. |
+| **vps · can't reach** and **Last seen 3 h ago. Is it on, and in your tailnet?** | Nothing answered from vps. The app cannot see why, so it asks. | Check that vps is on and in your tailnet, then tap **Retry**. |
+| **vps · can't reach** and **This app page is out of date. Close the app and open it again.** | The app page on your phone does not allow vps yet. The app already reloaded once. | Close the app fully and open it again. |
+| **Connecting to vps…** and **Just added. Its sessions show in a moment.** | vps was added a moment ago and does not answer yet. The app tries again by itself for about 5 seconds. | Wait. If it still does not answer, the row says **vps · can't reach**. |
 | **vps · pair again** | vps no longer accepts this phone (revoked, logged out, expired, or Tailscale changed on home). | Run `pterm pair --via mac` on vps and add it again. |
 | **Update Termivoa on vps** | Termivoa on vps is too old for this app. | Update Termivoa on vps. |
 
@@ -166,8 +168,8 @@ Not in `v0.1.0-beta.2`.
 | --- | --- |
 | **Home** next to a name | This computer is home. Under the heading the app says **Home serves this app to your phone.** |
 | **Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
-| **vps · can't reach · last seen 3 h ago** | vps does not answer now. The phone keeps the time of its last answer until you close the app. |
-| **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered.** or why it did not. |
+| **vps · can't reach** and **Last seen 3 h ago. Is it on, and in your tailnet?** | vps does not answer now. The phone keeps the time of its last answer until you close the app. The question shows only when nothing answered at all. |
+| **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered in 0.2 s.** or why it did not. |
 
 **Check again** works on every computer, also on the one that says **can't reach**.
 

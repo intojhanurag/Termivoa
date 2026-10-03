@@ -1665,6 +1665,39 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   real iPhone and Android, `docs/owner-verification.md` "Scan QR in + Add a
   computer (real phone)".
 
+- **Web polish from the first real use** (`fix/web-polish`, 2026-10-03),
+  one commit per item, each with a test that fails without it:
+  - "Connecting to vps…" for 5 s after an add, with quiet retries at 0.5, 1
+    and 2 s and at 5 s (`connectingRetry`, `nextStatus` in
+    `web/src/screens/allSessions.ts`; tests in `allSessions.test.ts` and
+    `Sessions.test.tsx`). `phase-b.mjs` gets `B2b-connecting`: every problem
+    row right after "vps is added" is recorded and "can't reach" fails it.
+    Not run here (the coordinator runs the harness). Note: the add flow's
+    own first settings read already retried for 3 s and the gateway
+    refreshes its origins at approval, so the exact cause on the iPhone is
+    not proven; item 2 below may be the same report.
+  - The app's own CSP blocking a listed computer: `securitypolicyviolation`
+    filter (`blockedPeer`), one reload per computer per tab
+    (`reloadOnce`, `pterm.policyReload`), `pterm-fresh=1` makes `sw.js` wait
+    for the network with no 2.5 s timeout, then status `blocked` with "This
+    app page is out of date. Close the app and open it again." Tests:
+    `allSessions.test.ts` (filter, guard, URL, status) and `sw.test.ts`
+    (fresh navigation waits past 2.5 s; cached shell only on an error).
+  - "vps · can't reach" detail line "Last seen 3 h ago. Is it on, and in
+    your tailnet?" (`problemDetail` in `Sessions.tsx`; the question only for
+    a network error, `network` in the `unreachable` status). Tests in
+    `Sessions.test.tsx`, `allSessions.test.ts`, `AddComputer.test.tsx`.
+  - **Check again**: `atLeast` (600 ms) and `answeredText` ("vps answered
+    in 0.2 s.") in `Computers.tsx`; tests in `AddComputer.test.tsx`.
+  - #164: the + Add a computer command uses `firstLabel(homeOrigin())`;
+    test in `AddComputer.test.tsx`.
+  - Scan QR: a camera track muted for `MUTED_MS` (2 s) ends the scan with
+    `failed` (`web/src/pairing/scan.ts`); tests in `scan.test.ts`. Needs a
+    real iPhone check.
+  Evidence: `npx tsc --noEmit -p .` in `web`, `pnpm --dir web test`,
+  `pnpm build:web`, `scripts/check`, the site build. Not run: the e2e
+  multi-computer harness, a real phone.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

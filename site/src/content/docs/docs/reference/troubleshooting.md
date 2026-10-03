@@ -273,7 +273,15 @@ These problems are about [using several computers](/docs/guides/computers/). Thi
 
 ### "vps · can't reach" (Next beta)
 
-Check that vps is on, awake and in your tailnet, then tap **Retry**. The other computers keep working.
+The line under it is "Last seen 3 h ago. Is it on, and in your tailnet?" when nothing answered from vps. The app cannot see why, so check that vps is on, awake and in your tailnet, then tap **Retry**. The other computers keep working. Without the question, vps answered with an error: run `pterm doctor` on vps.
+
+### "This app page is out of date. Close the app and open it again." (Next beta)
+
+It shows under "vps · can't reach". The app page on your phone does not allow vps yet, so the phone sends nothing to vps. This happens when the page is older than the computer, for example when the phone opened its saved copy because home answered slowly. The app reloads once by itself; this line means the reload did not help. Close the app fully (swipe it away) and open it again. If it stays, check that home is reachable, because a fresh page comes from home.
+
+### "Connecting to vps…" (Next beta)
+
+The full text is "Connecting to vps…" and "Just added. Its sessions show in a moment." You added vps a moment ago and it does not answer this phone yet. The app tries again by itself for about 5 seconds. If vps still does not answer, the row says "vps · can't reach".
 
 ### "vps · pair again" (Next beta)
 
@@ -380,7 +388,7 @@ You scanned the QR code with the phone's Camera app, or opened the link in Safar
 | --- | --- |
 | "The camera is blocked. Allow the camera for this app in your phone or browser settings, then tap Scan QR. Or paste the link." | Allow the camera for the Termivoa address in your phone's or browser's settings, then tap **Scan QR** again. |
 | "No camera found. Paste the link." | Tap **Paste link**. |
-| "The camera did not start. Close other apps that use it, then tap Scan QR. Or paste the link." | Close other camera apps and try again, or tap **Paste link**. |
+| "The camera did not start. Close other apps that use it, then tap Scan QR. Or paste the link." | Close other camera apps and try again, or tap **Paste link**. On iPhone this also shows when a call takes the camera for 2 seconds. |
 
 **Paste link** always works without the camera.
 
