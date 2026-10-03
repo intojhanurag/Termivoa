@@ -67,6 +67,22 @@ func (client *AdminClient) CreateBoundPairingGrant(
 	return adminCall[protocol.AdminRPCPairGrantResultPayload](ctx, client, protocol.AdminPairGrant, request, false, nil)
 }
 
+// OfferPairing asks the broker to offer this computer to the home computer
+// via (pterm pair --via, while it waits): the broker sends its one live grant
+// bound to that home there. The result never holds the grant.
+func (client *AdminClient) OfferPairing(ctx context.Context, via string) (protocol.AdminRPCPairOfferResultPayload, error) {
+	return adminCall[protocol.AdminRPCPairOfferResultPayload](ctx, client, protocol.AdminPairOffer,
+		protocol.AdminRPCPairOfferPayload{Via: via}, false, nil)
+}
+
+// EndOffer deletes the offered grant and link (the link's grant), each only
+// when it was not redeemed, and ends the offer.
+func (client *AdminClient) EndOffer(ctx context.Context, link *string) error {
+	_, err := adminCall[protocol.BrokerRPCEmptyPayload](ctx, client, protocol.AdminPairOfferEnd,
+		protocol.AdminRPCPairOfferEndPayload{Grant: link}, true, nil)
+	return err
+}
+
 // RevokeDevicesVia revokes every device bound to appOrigin, with the same
 // durability and stream-closing rule as RevokeDevice.
 func (client *AdminClient) RevokeDevicesVia(ctx context.Context, appOrigin string) (protocol.AdminRPCRevokeViaResultPayload, error) {

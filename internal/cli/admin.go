@@ -35,7 +35,22 @@ type Admin interface {
 	RevokeDevicesVia(ctx context.Context, appOrigin string) (protocol.AdminRPCRevokeViaResultPayload, error)
 	Computers(context.Context) ([]protocol.AdminRPCComputer, error)
 	RemoveComputer(ctx context.Context, origin string) (protocol.AdminRPCComputerRemoveResultPayload, error)
+	// Found on your network (docs/found-on-network.md, N1).
+	OfferPairing(ctx context.Context, via string) (protocol.AdminRPCPairOfferResultPayload, error)
+	EndOffer(ctx context.Context, link *string) error
 }
+
+const (
+	// OfferInterval is how often a waiting `pterm pair --via` offers this
+	// computer to home again.
+	OfferInterval = 30 * time.Second
+	// OfferWait is how long `pterm pair --via` waits for a phone while it
+	// offers this computer.
+	OfferWait = 10 * time.Minute
+)
+
+// offerInterval and offerWait are OfferInterval and OfferWait; tests shorten them.
+var offerInterval, offerWait = OfferInterval, OfferWait
 
 const setOriginHint = "run `pterm config origin https://<your-private-host>`"
 
@@ -52,7 +67,9 @@ type PairOptions struct {
 	QRColumns int
 	// Confirmer, when set, makes Pair wait until the grant expires for a
 	// phone to open the link, show its code, and ask before approving. Nil
-	// prints the manual approval steps instead (--no-wait).
+	// prints the manual approval steps instead (--no-wait). With Via (and
+	// no AllowTagged) it also offers this computer to home, so the app lists
+	// it under "Found on your network", and waits up to OfferWait.
 	Confirmer Confirmer
 	// PollInterval is how often pending pairings are read; zero is 1s.
 	PollInterval time.Duration
@@ -173,7 +190,33 @@ func Pair(ctx context.Context, admin Admin, options PairOptions, output io.Write
 		code, grant.ExpiresAt, link, instruction, where, next)); err != nil || options.Confirmer == nil {
 		return err
 	}
-	return waitForPhone(ctx, admin, options, grant.ExpiresAt, "", seen, output)
+	deadline, err := linkDeadline(grant.ExpiresAt, options)
+	if err != nil {
+		return err
+	}
+	return waitForPhone(ctx, admin, options, phoneWait{deadline: deadline, expired: linkExpired(options)}, seen, output)
+}
+
+// linkDeadline is when a wait for one link ends: the grant's expiry, plus
+// two polls, because the broker may record a redemption made just before
+// expiry a moment later.
+func linkDeadline(expiresAt string, options PairOptions) (time.Time, error) {
+	expires, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil {
+		return time.Time{}, errors.New("broker returned a malformed pairing expiry")
+	}
+	return expires.Add(2 * pollInterval(options)), nil
+}
+
+func linkExpired(options PairOptions) error {
+	return fmt.Errorf("the link expired before a phone opened it; run `%s` again", PairCommand(options))
+}
+
+func pollInterval(options PairOptions) time.Duration {
+	if options.PollInterval <= 0 {
+		return time.Second
+	}
+	return options.PollInterval
 }
 
 // pairVia creates a grant bound to the app named by options.Via and prints it
@@ -208,20 +251,30 @@ func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[str
 		return errors.New("broker returned a malformed pairing grant")
 	}
 	link := origin + "/add-computer#grant=" + grant.Grant + "&via=" + url.QueryEscape(appOrigin)
+	// No QR code is no loss: the link below is the main way (a terminal too
+	// narrow for the code is usually a phone-sized Termivoa session, where
+	// the owner taps the link).
+	qrCode := ""
+	if options.ShowQR {
+		qrCode, _ = renderQR(link, options.QRColumns)
+	}
+	wait := phoneWait{appOrigin: appOrigin, self: machineName(origin)}
+	if options.Confirmer != nil && !options.AllowTagged {
+		return offerAndWait(ctx, admin, options, grant, wait, link, qrCode, seen, output)
+	}
 	next := "Then run `pterm pair pending` and approve with `pterm pair approve <pending-id>` after comparing the code."
 	if options.Confirmer != nil {
 		next = "Waiting for the phone (Ctrl+C stops waiting)."
 	}
-	// No QR code is no loss: the link below is the main way (a terminal too
-	// narrow for the code is usually a phone-sized Termivoa session, where
-	// the owner taps the link).
 	code := ""
-	if options.ShowQR {
-		if qrCode, err := renderQR(link, options.QRColumns); err == nil {
-			// Said before the code, so the owner reads it before scanning.
-			code = "Scan this QR code in the Termivoa app: Settings → + Add a computer → Scan QR.\n" +
-				"The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n" + qrCode
-		}
+	if qrCode != "" {
+		// Said before the code, so the owner reads it before scanning.
+		code = "Scan this QR code in the Termivoa app: Settings → + Add a computer → Scan QR.\n" +
+			"The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n" + qrCode
+	}
+	// Home drops every offer from or to a tagged computer, so none is sent.
+	if options.Confirmer != nil {
+		code = "Add does not work with tagged computers. Use the QR code or the link below.\n" + code
 	}
 	if err := writeString(output, fmt.Sprintf(
 		"%sAdd-computer link (expires %s):\n%s\n"+
@@ -232,7 +285,86 @@ func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[str
 		code, grant.ExpiresAt, link, describeApp(appOrigin, grant.AppNode), next)); err != nil || options.Confirmer == nil {
 		return err
 	}
-	return waitForPhone(ctx, admin, options, grant.ExpiresAt, appOrigin, seen, output)
+	if wait.deadline, err = linkDeadline(grant.ExpiresAt, options); err != nil {
+		return err
+	}
+	wait.expired = linkExpired(options)
+	return waitForPhone(ctx, admin, options, wait, seen, output)
+}
+
+// offerAndWait offers this computer to home (admin.pair.offer) at once and
+// every offerInterval while it waits up to offerWait for a phone. The app
+// at home then lists this computer under "Found on your network" with an
+// Add button; the link and QR code stay as the fallback. Every exit ends
+// the offer, which deletes the unused grants.
+func offerAndWait(ctx context.Context, admin Admin, options PairOptions, grant protocol.AdminRPCPairGrantResultPayload,
+	wait phoneWait, link, qrCode string, seen map[string]bool, output io.Writer,
+) error {
+	defer func() {
+		// Ctrl+C has already cancelled ctx. A failed end leaves grants that
+		// expire within 2 minutes.
+		endCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = admin.EndOffer(endCtx, &grant.Grant)
+	}()
+	home := machineName(wait.appOrigin)
+	again := fmt.Errorf("Run %s again", PairCommand(options))
+	unanswered := fmt.Sprintf("%s did not answer. Use the QR code or the link below.", home)
+	// offer returns the line for the offer's result, or "" after an RPC
+	// error (the next call tries again), and stops on home_changed.
+	offer := func() (string, error) {
+		result, err := admin.OfferPairing(ctx, options.Via)
+		var remote *localclient.RemoteError
+		switch {
+		case errors.As(err, &remote) && remote.Code == protocol.HomeChanged:
+			return "", fmt.Errorf("%s is now a different Tailscale machine. %w.", home, again)
+		case err != nil:
+			return "", nil
+		case result.AppOrigin != wait.appOrigin:
+			return "", fmt.Errorf("broker offered this computer to %s, not %s", originText(result.AppOrigin), wait.appOrigin)
+		case result.Delivered:
+			return fmt.Sprintf("Sent to %s (%s).", home, wait.appOrigin), nil
+		case result.Problem != nil && *result.Problem == protocol.NotAccepted:
+			return fmt.Sprintf("Termivoa on %s cannot receive this yet. Update it, or use the QR code or the link below.", home), nil
+		}
+		return unanswered, nil
+	}
+	shown, err := offer()
+	if err != nil {
+		return err
+	}
+	if shown == "" {
+		shown = unanswered // The first offer failed on this computer.
+	}
+	line := shown
+	if strings.HasPrefix(line, "Sent to ") {
+		line += fmt.Sprintf("\nOn your phone, open Termivoa → Settings → Computers and tap Add next to %q.", wait.self)
+	}
+	text := fmt.Sprintf("Add this computer (%s) to the Termivoa app at %s.\n%s\n"+
+		"Waiting for your phone (up to %d minutes; Ctrl+C stops)…\n\n"+
+		"No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n%s%s\n",
+		wait.self, describeApp(wait.appOrigin, grant.AppNode), line, int(OfferWait/time.Minute), qrCode, link)
+	if qrCode != "" {
+		text += "The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n"
+	}
+	text += "The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n"
+	if err := writeString(output, text); err != nil {
+		return err
+	}
+	wait.deadline = time.Now().Add(offerWait)
+	wait.expired = fmt.Errorf("Nobody added this computer in %d minutes. %w.", int(OfferWait/time.Minute), again)
+	wait.reoffer = func() error {
+		next, err := offer()
+		if err != nil || next == "" || next == shown {
+			return err
+		}
+		shown = next
+		if strings.HasPrefix(next, "Sent to ") {
+			next += fmt.Sprintf(" Tap Add next to %q in the app.", wait.self)
+		}
+		return writeString(output, next+"\n")
+	}
+	return waitForPhone(ctx, admin, options, wait, seen, output)
 }
 
 // boundAppOrigin checks that the broker bound the grant to the app the owner
@@ -293,32 +425,39 @@ func plainText(value string) string {
 }
 
 // pairingPrompt asks the owner to compare the phone's code. A pairing bound to
-// another computer's app also names that app, from the pending item itself.
-func pairingPrompt(item protocol.AdminRPCPendingPairing) string {
-	app := ""
+// another computer's app also names that app, from the pending item itself,
+// and THIS computer (self), quoting what the phone's code screen says: in a
+// relay through a wrong home, the phone names another computer.
+func pairingPrompt(item protocol.AdminRPCPendingPairing, self string) string {
 	if item.AppOrigin != nil {
-		app = " and will use this computer from the Termivoa app at " + describeApp(*item.AppOrigin, item.AppNode)
+		return fmt.Sprintf("Phone %s wants to use THIS computer (%s) from the Termivoa app at %s.\n"+
+			"Approve only if your phone shows %s and says \"type y in the terminal on %s\". "+
+			"If it names another computer, shows another code, or shows nothing, answer N.\nApprove? [y/N] ",
+			displayText(item.DeviceLabel), self, describeApp(*item.AppOrigin, item.AppNode), item.VerificationCode, self)
 	}
-	return fmt.Sprintf("Approve only if the phone shows exactly this code.\nPhone %s shows code %s%s. Approve? [y/N] ",
-		displayText(item.DeviceLabel), item.VerificationCode, app)
+	return fmt.Sprintf("Approve only if the phone shows exactly this code.\nPhone %s shows code %s. Approve? [y/N] ",
+		displayText(item.DeviceLabel), item.VerificationCode)
+}
+
+// phoneWait is what waitForPhone waits for, and how long.
+type phoneWait struct {
+	deadline time.Time
+	expired  error // returned at the deadline
+	// appOrigin, when set, offers only pairings bound to that app; self is
+	// this computer's machine name for the prompt.
+	appOrigin, self string
+	// reoffer, when set, runs every offerInterval; its error ends the wait.
+	reoffer func() error
 }
 
 // waitForPhone approves at most one new pending pairing, and only after the
 // owner confirms that the phone shows the same code. It never auto-approves.
-// With appOrigin set, only pairings bound to that app are offered.
-func waitForPhone(ctx context.Context, admin Admin, options PairOptions, expiresAt, appOrigin string,
+// The prompt blocks the loop, so no offer is sent while it waits.
+func waitForPhone(ctx context.Context, admin Admin, options PairOptions, wait phoneWait,
 	seen map[string]bool, output io.Writer,
 ) error {
-	expires, err := time.Parse(time.RFC3339Nano, expiresAt)
-	if err != nil {
-		return errors.New("broker returned a malformed pairing expiry")
-	}
-	interval := options.PollInterval
-	if interval <= 0 {
-		interval = time.Second
-	}
-	// The broker may record a redemption made just before expiry a moment later.
-	deadline := expires.Add(2 * interval)
+	interval := pollInterval(options)
+	offered := time.Now()
 	for {
 		pending, err := admin.PendingPairings(ctx)
 		if err != nil {
@@ -329,10 +468,10 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, expires
 				continue
 			}
 			seen[item.ID] = true
-			if appOrigin != "" && (item.AppOrigin == nil || *item.AppOrigin != appOrigin) {
+			if wait.appOrigin != "" && (item.AppOrigin == nil || *item.AppOrigin != wait.appOrigin) {
 				continue
 			}
-			approve, err := options.Confirmer.Confirm(ctx, pairingPrompt(item))
+			approve, err := options.Confirmer.Confirm(ctx, pairingPrompt(item, wait.self))
 			if err != nil {
 				return err
 			}
@@ -342,8 +481,14 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, expires
 			}
 			return PairApprove(ctx, admin, item.ID, output)
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("the link expired before a phone opened it; run `%s` again", PairCommand(options))
+		if time.Now().After(wait.deadline) {
+			return wait.expired
+		}
+		if wait.reoffer != nil && time.Since(offered) >= offerInterval {
+			offered = time.Now()
+			if err := wait.reoffer(); err != nil {
+				return err
+			}
 		}
 		select {
 		case <-ctx.Done():

@@ -27,11 +27,15 @@ Available commands:
                                      For a first computer.
   pterm pair --via <name|url> [--allow-tagged] [--no-qr]
                                      Add this computer to the Termivoa app at that
-                                     computer: print a two-minute add-computer link
+                                     computer. While it waits (up to 10 minutes),
+                                     the app shows this computer under Settings →
+                                     Computers → Found on your network: tap Add.
+                                     It also prints a two-minute add-computer link
                                      and, on a terminal, its QR code for the app's
-                                     own scanner (not the phone's Camera app), and
-                                     approve the phone's code.
-                                     --allow-tagged accepts a tagged app computer.
+                                     own scanner (not the phone's Camera app). It
+                                     approves the phone after you compare its code.
+                                     --allow-tagged accepts a tagged app computer
+                                     (link and QR code only; no Add button).
   pterm pair pending                 Show phones waiting for approval and their codes.
   pterm pair approve <pending-id>    Approve a phone after comparing its code.
   pterm devices                      Show paired devices, status, last use and app (VIA).

@@ -131,10 +131,13 @@ func NewService(config ServiceConfig) (*Service, error) {
 }
 
 // CreateBoundGrant returns a fresh two-minute grant. Its transport value is
-// returned only to the restricted local CLI and never persisted. A non-zero
-// app binds it to one app origin and pinned node (pterm pair --via); the
-// caller has resolved and checked app. Redemption and polling then accept
-// only that origin.
+// never persisted. It goes to the restricted local CLI and, for a grant bound
+// to an app (pterm pair --via), also to that app's home computer: the broker
+// offers it there over TLS to the pinned node's Tailscale IP, home keeps it in
+// memory for at most 60 s and shows it to every device paired with home, each
+// treated as the owner's (docs/found-on-network.md, section 6). A non-zero
+// app binds it to one app origin and pinned node; the caller has resolved and
+// checked app. Redemption and polling then accept only that origin.
 func (service *Service) CreateBoundGrant(ctx context.Context, app store.AppBinding) (string, time.Time, error) {
 	now := service.clock()
 	secret, err := generateSecret(rand.Reader)
@@ -154,6 +157,21 @@ func (service *Service) CreateBoundGrant(ctx context.Context, app store.AppBindi
 	}
 	value, err := secret.TransportValue()
 	return value, expires, err
+}
+
+// DeleteGrant deletes a grant by its transport value unless it was redeemed
+// (a redeemed grant belongs to its pending pairing). An unknown or expired
+// grant is not an error.
+func (service *Service) DeleteGrant(ctx context.Context, grant string) error {
+	parsed, err := ParseSecret(grant)
+	if err != nil {
+		return ErrPairingExpired
+	}
+	grantHash, err := digestBytes(parsed)
+	if err != nil {
+		return err
+	}
+	return service.store.DeleteUnredeemedGrant(ctx, grantHash)
 }
 
 // RedeemChecked atomically consumes a grant and creates a pending pairing

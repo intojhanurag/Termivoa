@@ -3,6 +3,7 @@ package tailnet
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -68,6 +69,24 @@ func TestParseStatusKeepsOnlyOwnTailnetPeers(t *testing.T) {
 	}
 	if _, err := ParseStatus([]byte(`{`)); err == nil {
 		t.Fatal("malformed JSON parsed")
+	}
+}
+
+// Only addresses inside Tailscale's ranges are kept: an offer dials one of
+// them, so a status that lists any other address cannot aim the dial there.
+func TestParseStatusKeepsOnlyTailscaleIPs(t *testing.T) {
+	sample := strings.Replace(statusJSON, `"HostName": "laptop",`, `"HostName": "laptop", "TailscaleIPs": ["100.101.102.103",
+      "fd7a:115c:a1e0::1234", "192.168.1.5", "100.128.0.1", "fd7a:115c:a1e1::1", "::ffff:100.64.0.1", "fe80::1%en0", "mac.example.com"],`, 1)
+	sample = strings.Replace(sample, `"UserID": 2}`, `"UserID": 2, "TailscaleIPs": ["10.0.0.1"]}`, 1)
+	status := mustParse(t, sample)
+	mac, _ := status.Peer("mac.tailx.ts.net")
+	if want := []netip.Addr{netip.MustParseAddr("100.101.102.103"), netip.MustParseAddr("fd7a:115c:a1e0::1234")}; !slices.Equal(mac.TailscaleIPs, want) {
+		t.Fatalf("mac addresses = %v, want %v", mac.TailscaleIPs, want)
+	}
+	for _, host := range []string{"pi.tailx.ts.net", "ci.tailx.ts.net"} { // only foreign addresses; none at all
+		if node, _ := status.Peer(host); len(node.TailscaleIPs) != 0 {
+			t.Fatalf("%s addresses = %v", host, node.TailscaleIPs)
+		}
 	}
 }
 
