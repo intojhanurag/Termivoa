@@ -291,6 +291,42 @@ func TestSetupRefusesOtherServeHandlersOnItsOrigin(t *testing.T) {
 	}
 }
 
+// Setup refuses, before it changes anything, while Tailscale Funnel is on
+// for Termivoa's ports (443, or the 8443 previews), also when Serve already
+// proxies Termivoa there: Funnel puts the terminal on the public internet.
+// It names the command that turns Funnel off and never runs it.
+func TestSetupRefusesFunnelOnTermivoaPorts(t *testing.T) {
+	const served = `"Web":{"mac.example.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
+		`"mac.example.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}`
+	for port, serve := range map[string]string{
+		"443":  `{` + served + `,"AllowFunnel":{"mac.example.ts.net:443":true}}`,
+		"8443": `{` + served + `,"AllowFunnel":{"mac.example.ts.net:8443":true}}`,
+	} {
+		env, launchd := newLifecycleTestEnv(t)
+		fake := &tailscaleFake{status: `{"BackendState":"Running","Self":{"DNSName":"mac.example.ts.net."}}`, serve: serve}
+		useTailscaleFake(t, &env, fake)
+		for _, args := range [][]string{{"setup"}, {"setup", "--apply", "--yes"}} {
+			var output bytes.Buffer
+			input := confirmationPipe(t, "y\ny\ny\ny\n")
+			if args[len(args)-1] == "--yes" {
+				input = nil
+			}
+			err := runWithInput(context.Background(), args, input, &output)
+			command := "`tailscale funnel --https=" + port + " off`"
+			if err == nil || !strings.Contains(err.Error(), "refusing to set up: Tailscale Funnel is on for mac.example.ts.net:"+port) ||
+				!strings.Contains(err.Error(), command) {
+				t.Fatalf("%s %q: err = %v\n%s", port, args, err, output.String())
+			}
+			if !strings.Contains(output.String(), command) || strings.Contains(output.String(), "Continue? [y/N]") {
+				t.Errorf("%s %q output:\n%s", port, args, output.String())
+			}
+			if launchd.bootstrapped() != 0 || len(fake.changes()) != 0 {
+				t.Fatalf("%s %q: launchd %d bootstraps, tailscale changes %q", port, args, launchd.bootstrapped(), fake.changes())
+			}
+		}
+	}
+}
+
 // devicesAdmin answers only Devices; offerPairing's pairing itself is faked.
 type devicesAdmin struct {
 	cli.Admin

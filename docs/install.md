@@ -210,7 +210,8 @@ Without `--verbose`, the checks are not printed, but every `!` warning they
 find that the plan does not state itself (for example other ports that get
 the Termivoa cookie, Funnel, or a multi-computer finding) is printed under
 `Warnings:` before the plan. The Funnel reminder prints only with
-`--verbose` or when Funnel is on.
+`--verbose` or when Funnel is on for another port (Funnel on 443 or 8443
+stops setup, see below).
 
 When the phone cannot reach this computer over port 443 (Tailscale missing
 or signed out, the Tailscale operator missing on Linux, a Serve conflict, or
@@ -320,7 +321,10 @@ failure. The gateway serves only dev-server previews on 127.0.0.1:8789, never
 the app. Design and security: [preview.md](preview.md).
 
 **Never use Tailscale Funnel.** Funnel makes the page public on the internet.
-`pterm setup` and `pterm doctor` warn if Funnel is on.
+`pterm doctor` reports Funnel as a problem. `pterm setup` refuses, before any
+change, while Funnel is on for port 443 or 8443 (also with `--apply --yes`),
+and prints the command that turns it off, for example
+`tailscale funnel --https=443 off`; it never runs it.
 
 On Linux, only root or the Tailscale **operator** may change Serve. If you are
 not the operator, `pterm setup` and `pterm doctor` say so and do not ask the

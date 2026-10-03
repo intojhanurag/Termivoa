@@ -14,7 +14,7 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 - From the next beta, `pterm setup` refuses to run while other Tailscale Serve handlers share the Termivoa address (port 443), and `pterm doctor` reports them. Such a handler is the same origin as the app, so it could act as the app. Handlers on other ports of the same computer are other origins, but browsers send them the Termivoa cookie, so `pterm doctor` warns about them. Termivoa's own preview port 8443 removes the cookie.
 - From the next beta, `pterm` runs the Tailscale CLI only when no other user can replace it (the file and every folder up to `/` belong to root or to you and are not writable by others), and checks this again before each run. `pterm doctor` says why it refused one.
 - From the next beta, an `/api` request must say where it comes from (`Origin` or `Sec-Fetch-Site: same-origin`), so a page on another computer in your tailnet cannot read your API with your cookie. This needs iOS 16.4 or later on iPhone, also with one computer.
-- Termivoa **never** uses Tailscale Funnel or any public tunnel, which would put your terminal on the public internet. `pterm setup` and `pterm doctor` warn if Funnel is on.
+- Termivoa **never** uses Tailscale Funnel or any public tunnel, which would put your terminal on the public internet. `pterm doctor` reports Funnel as a problem. From the next beta, `pterm setup` refuses to run while Funnel is on for port 443 or 8443, and prints the command that turns it off.
 
 ## How does pairing work?
 

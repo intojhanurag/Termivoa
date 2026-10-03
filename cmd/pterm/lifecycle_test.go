@@ -500,6 +500,31 @@ func TestOtherServeHandlersOnlyOnThisOrigin(t *testing.T) {
 	}
 }
 
+// Doctor reports Funnel as a problem with the command that turns it off,
+// also when Serve already proxies Termivoa on that port.
+func TestDoctorReportsFunnelAsAProblem(t *testing.T) {
+	previous := tailscaleRun
+	t.Cleanup(func() { tailscaleRun = previous })
+	tailscaleRun = func(_ context.Context, _ string, _ io.Writer, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "status --json":
+			return []byte(`{"BackendState":"Running","Self":{"DNSName":"h.ts.net."}}`), nil
+		case "serve status --json":
+			return []byte(`{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},"AllowFunnel":{"h.ts.net:443":true}}`), nil
+		}
+		return nil, errors.New("unexpected tailscale command")
+	}
+	var output bytes.Buffer
+	report, problems := inspectTailscale(context.Background(), "tailscale-fake", nil, &output)
+	want := "  ! tailscale serve: Tailscale Funnel is on for h.ts.net:443, which makes it public on the internet; " +
+		"Termivoa must never be public. " +
+		"Turn it off: `tailscale funnel --https=443 off`, then run `pterm setup` again.\n"
+	if problems != 1 || !strings.Contains(output.String(), want) || !report.serve.Configured ||
+		strings.Join(report.serve.Funnel, ",") != "h.ts.net:443" {
+		t.Fatalf("problems=%d report=%+v output:\n%s", problems, report, output.String())
+	}
+}
+
 // Doctor reports other handlers on this computer's own origin as a problem
 // line that says how to move them. ServeFindings already counts each one, so
 // the explanation does not count it twice.
