@@ -421,10 +421,15 @@ func TestProductionBuildHasNoE2EHook(t *testing.T) {
 	if err != nil {
 		t.Skip("no go tool")
 	}
-	output, err := exec.Command(goTool, "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}|{{join .GoFiles \",\"}}{{end}}",
-		"github.com/intojhanurag/phone-terminal/cmd/pterm").Output()
-	if err != nil {
-		t.Fatal(err)
+	// Default tags, and the release tags (webdist).
+	var output []byte
+	for _, tags := range []string{"", "webdist"} {
+		listed, err := exec.Command(goTool, "list", "-tags", tags, "-deps", "-f", "{{if not .Standard}}{{.Dir}}|{{join .GoFiles \",\"}}{{end}}",
+			"github.com/intojhanurag/phone-terminal/cmd/pterm").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		output = append(output, listed...)
 	}
 	files := 0
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
@@ -443,7 +448,7 @@ func TestProductionBuildHasNoE2EHook(t *testing.T) {
 			}
 		}
 	}
-	if files < 50 {
+	if files < 100 {
 		t.Fatalf("only %d files listed", files)
 	}
 }
