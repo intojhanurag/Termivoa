@@ -166,20 +166,21 @@ func (server *ManagementServer) originProbe(ctx context.Context) (protocol.Gatew
 }
 
 // resolveVia resolves pterm pair --via in a fresh snapshot, applies the owner
-// rule and pins the node.
-func (server *ManagementServer) resolveVia(ctx context.Context, via string, allowTagged bool) (store.AppBinding, error) {
+// rule and pins the node. It also returns the node, whose Tailscale IP an
+// offer to that app's computer dials.
+func (server *ManagementServer) resolveVia(ctx context.Context, via string, allowTagged bool) (store.AppBinding, tailnet.Node, error) {
 	status, err := server.config.Tailnet.Fresh(ctx)
 	if err != nil {
-		return store.AppBinding{}, errors.Join(errTrustUnavailable, err)
+		return store.AppBinding{}, tailnet.Node{}, errors.Join(errTrustUnavailable, err)
 	}
 	node, err := status.Resolve(via)
 	if err != nil {
-		return store.AppBinding{}, err
+		return store.AppBinding{}, tailnet.Node{}, err
 	}
 	if err := status.CheckOwner(node, allowTagged); err != nil {
-		return store.AppBinding{}, err
+		return store.AppBinding{}, tailnet.Node{}, err
 	}
-	return store.AppBinding{Origin: node.Origin(), NodeID: node.ID, NodeOwner: node.Owner, NodeTags: node.Tags}, nil
+	return store.AppBinding{Origin: node.Origin(), NodeID: node.ID, NodeOwner: node.Owner, NodeTags: node.Tags}, node, nil
 }
 
 // lookupComputer is home's check before it lists a computer: the host must be

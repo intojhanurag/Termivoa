@@ -87,7 +87,7 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		}
 		var app store.AppBinding
 		if payload.Via != nil {
-			if app, err = server.resolveVia(ctx, *payload.Via, payload.AllowTagged != nil && *payload.AllowTagged); err != nil {
+			if app, _, err = server.resolveVia(ctx, *payload.Via, payload.AllowTagged != nil && *payload.AllowTagged); err != nil {
 				return nil, err
 			}
 		}
@@ -99,6 +99,18 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		result := protocol.AdminRPCPairGrantResultPayload{Grant: grant, ExpiresAt: formatRPCTime(expires), Origin: origin}
 		result.AppOrigin, result.AppNode = wireNode(app)
 		return result, err
+	case protocol.AdminPairOffer:
+		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCPairOfferPayload](request)
+		if err != nil {
+			return nil, err
+		}
+		return server.offerPairing(ctx, authority, payload.Via)
+	case protocol.AdminPairOfferEnd:
+		payload, err := protocol.DecodeRPCPayload[protocol.AdminRPCPairOfferEndPayload](request)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.BrokerRPCEmptyPayload{}, server.endOffer(ctx, authority, payload.Grant)
 	case protocol.AdminPairPending:
 		pending, err := authority.Pending(ctx)
 		if err != nil {
@@ -338,6 +350,11 @@ func classifyAdminError(err error) managementFailure {
 		return managementFailure{protocol.InvalidRequest, "the broker does not stop the gateway; run pterm stop"}
 	case errors.Is(err, errProjectLimit):
 		return managementFailure{protocol.LimitExceeded, "saved project limit reached"}
+	case errors.Is(err, errHomeChanged):
+		return managementFailure{protocol.HomeChanged, "the app's computer is now a different Tailscale machine"}
+	case errors.Is(err, errNoOfferOrigin):
+		return managementFailure{protocol.InvalidRequest,
+			"this computer has no tailnet https address; run `pterm setup` or `pterm config origin https://<this computer>`"}
 	default:
 		return classifySessionError(err)
 	}

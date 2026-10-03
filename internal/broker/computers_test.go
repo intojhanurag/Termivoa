@@ -48,7 +48,7 @@ func (fake *fakeTailscale) read(context.Context) ([]byte, error) {
 		if id == "" {
 			continue
 		}
-		peer := map[string]any{"ID": id, "DNSName": label + ".tailx.ts.net.", "UserID": 1}
+		peer := map[string]any{"ID": id, "DNSName": label + ".tailx.ts.net.", "UserID": 1, "TailscaleIPs": []string{offerIP}}
 		switch {
 		case label == "ci" || fake.tagged[label]:
 			peer["UserID"], peer["Tags"] = 9, []string{"tag:server"}
