@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -420,6 +421,8 @@ func TestOfferPairingAsksWhetherTermivoaIsOnThePhone(t *testing.T) {
 			last: "Setup is done. Next: to pair a phone, run `pterm pair`; to add this computer to a Termivoa app you already use, run `pterm pair --via mac`."},
 		"not approved": {answers: "2\n2\n", status: several, pairErr: cli.ErrNotPaired, pairs: 1, via: "mac",
 			unwanted: []string{added}, last: "Setup is done, but your phone is not connected yet. To connect it, run `pterm pair --via mac`."},
+		"nobody added it in time": {answers: "2\n2\n", status: several, pairErr: fmt.Errorf("Nobody added this computer in 10 minutes: %w", cli.ErrNoPhone), pairs: 1, via: "mac",
+			unwanted: []string{added, "Nobody added"}, last: "Setup is done, but your phone is not connected yet. To connect it, run `pterm pair --via mac`."},
 		"tagged computer, allowed": {answers: "2\nmac\ny\n", status: tagged, pairs: 1, via: "mac", allowTagged: true,
 			want: []string{which + air + "  2) mac — https://mac.example.ts.net (macOS)\n  3) pi — https://pi.example.ts.net (linux)\n",
 				"Tailscale cannot show that you own both computers: this computer has tag:vps.", "(the same as `--allow-tagged`). [y/N] "},

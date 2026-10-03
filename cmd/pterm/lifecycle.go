@@ -765,7 +765,7 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 			return err
 		}
 	}
-	return offerPairing(ctx, env, admin, report.tailscale.tailnet,
+	return offerPairing(ctx, env, endOnNewConnection{admin, env.paths.RuntimeDir}, report.tailscale.tailnet,
 		report.tailscale.phoneAccessFix(origin, originProblem, phoneServeConfigured), term.IsTerminal(input.Fd()), confirmer, output)
 }
 
@@ -889,7 +889,10 @@ func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status
 	} else {
 		fmt.Fprintln(output)
 	}
-	if err := pairPhone(ctx, admin, options, output); errors.Is(err, cli.ErrNotPaired) {
+	ctx, stop := untilHangup(ctx)
+	defer stop()
+	// A declined phone, or none in time, is not a setup failure.
+	if err := pairPhone(ctx, admin, options, output); errors.Is(err, cli.ErrNotPaired) || errors.Is(err, cli.ErrNoPhone) {
 		return notYet(cli.PairCommand(options))
 	} else if err != nil {
 		return err

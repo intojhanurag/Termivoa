@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/charmbracelet/x/term"
@@ -192,6 +193,32 @@ func parseInterspersed(flags *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
+// endOnNewConnection sends admin.pair.offer.end on a new connection to the
+// broker: Ctrl+C during an RPC closes the command's own connection, and the
+// end must still delete the offered grants.
+type endOnNewConnection struct {
+	*localclient.AdminClient
+	runtimeDir string
+}
+
+func (admin endOnNewConnection) EndOffer(ctx context.Context, link *string) error {
+	client, err := localclient.DialAdmin(ctx, admin.runtimeDir, buildID)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return client.EndOffer(ctx, link)
+}
+
+// untilHangup is ctx, also cancelled by a hangup (a closed SSH session),
+// for a pairing wait whose end must run.
+func untilHangup(ctx context.Context) (context.Context, context.CancelFunc) {
+	if signals := hangupSignals(); len(signals) > 0 {
+		return signal.NotifyContext(ctx, signals...)
+	}
+	return context.WithCancel(ctx)
+}
+
 // terminalQR reports whether output is a terminal, and its width. The QR code
 // uses terminal colors, so redirected output gets only the link.
 func terminalQR(output io.Writer) (show bool, columns int) {
@@ -271,8 +298,10 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 			// network); piped input still waits for the link.
 			options.NoOffer = !term.IsTerminal(input.Fd())
 		}
+		ctx, stop := untilHangup(ctx)
+		defer stop()
 		// A declined phone is the owner's answer, not a failure; Pair said so.
-		if err := cli.Pair(ctx, client, options, output); !errors.Is(err, cli.ErrNotPaired) {
+		if err := cli.Pair(ctx, endOnNewConnection{client, config.runtimeDir}, options, output); !errors.Is(err, cli.ErrNotPaired) {
 			return err
 		}
 		return nil
