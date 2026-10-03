@@ -17,14 +17,14 @@ export function onlineText(entry: ComputerEntry): { readonly text: string; reado
   }
 }
 
-/** "2 sessions · this computer", or the problem ("vps · can't reach · last seen 3 h ago"). */
+/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach · last seen 3 h ago"). */
 export function computerDetail(entry: ComputerEntry, now: number): string {
   const problem = problemText(entry, now);
   if (problem !== undefined) return problem;
   const count = entry.status.kind === 'ok' ? entry.status.sessions.length : undefined;
   return [
     count === undefined ? undefined : `${count} ${count === 1 ? 'session' : 'sessions'}`,
-    entry.computer.home ? 'this computer' : entry.computer.host,
+    entry.computer.home ? undefined : entry.computer.host,
   ].filter((part) => part !== undefined).join(' · ');
 }
 
@@ -197,6 +197,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   return (
     <section className="group stack" aria-labelledby="computers-heading">
       <h2 id="computers-heading" className="caps">Computers</h2>
+      <p className="hint-text">Home serves this app to your phone.</p>
       <ul className="computer-list">
         {entries.map((entry) => {
           const { computer } = entry;
@@ -209,7 +210,10 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
               <div className="computer-head">
                 <span className="computer-dot" style={{ background: computer.color }} aria-hidden="true" />
                 <span className="row-text">
-                  <span className="row-title">{computer.label}</span>
+                  <span className="row-title">
+                    <span className="computer-name">{computer.label}</span>
+                    {computer.home && <span className="badge accent">Home</span>}
+                  </span>
                   <span className="row-meta">{computerDetail(entry, now)}</span>
                   {health !== undefined && <span className="row-meta">{health}</span>}
                 </span>

@@ -136,6 +136,7 @@ Not in `v0.1.0-beta.2`.
 
 | You see | Meaning |
 | --- | --- |
+| **Home** next to a name | This computer is home. Under the heading the app says **Home serves this app to your phone.** |
 | **Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
 | **vps · can't reach · last seen 3 h ago** | vps does not answer now. The phone keeps the time of its last answer until you close the app. |
 | **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered.** or why it did not. |

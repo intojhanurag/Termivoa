@@ -205,10 +205,16 @@ describe('Settings → Computers', () => {
     { computer: vps, status: { kind: 'unreachable', lastSeen: Date.now() - 3 * 3_600_000 } },
   ];
 
-  it('lists each computer as online or offline, home as this computer', () => {
+  it('lists each computer as online or offline, home with the Home badge and its session count', () => {
     expect(onlineText(entries[0] as ComputerEntry)).toEqual({ text: 'online', tone: 'green' });
     expect(onlineText(entries[1] as ComputerEntry)).toEqual({ text: 'offline', tone: 'muted' });
-    expect(computerDetail(entries[0] as ComputerEntry, Date.now())).toBe('0 sessions · this computer');
+    expect(computerDetail(entries[0] as ComputerEntry, Date.now())).toBe('0 sessions');
+    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    expect(html).toContain('<span class="computer-name">mac</span><span class="badge accent">Home</span>');
+    expect(html).toContain('<span class="row-meta">0 sessions</span>');
+    expect(html.match(/class="badge accent">Home</gu)).toHaveLength(1);
+    expect(html).not.toContain('this computer');
+    expect(html).toContain('<p class="hint-text">Home serves this app to your phone.</p>');
     expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach · last seen 3 h ago");
   });
 
