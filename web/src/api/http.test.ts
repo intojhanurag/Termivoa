@@ -281,9 +281,9 @@ describe('api.foundComputers', () => {
     await expect(api.foundComputers()).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
-  it('treats 404 (an older home) as not supported, and keeps other failures', async () => {
+  it('keeps every failure an error, 404 and 405 too (app and home are one build)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('404 page not found', { status: 404 })));
-    await expect(api.foundComputers()).resolves.toBeUndefined();
+    await expect(api.foundComputers()).rejects.toMatchObject({ status: 404 });
     vi.stubGlobal('fetch', vi.fn(async () => json(503, { error: { code: 'host_unavailable', message: 'x' } })));
     await expect(api.foundComputers()).rejects.toMatchObject({ status: 503, code: 'host_unavailable' });
   });

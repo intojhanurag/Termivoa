@@ -328,7 +328,7 @@ export function subscribeAdd(listener: () => void): () => void {
  */
 async function replacedGrant(link: AddComputerLink): Promise<string | undefined> {
   try {
-    const row = (await client().foundComputers())?.computers.find((entry) => entry.origin === link.origin);
+    const row = (await client().foundComputers()).computers.find((entry) => entry.origin === link.origin);
     return row !== undefined && row.grant !== link.grant && GRANT.test(row.grant) ? row.grant : undefined;
   } catch {
     return undefined;

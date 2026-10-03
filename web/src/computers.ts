@@ -241,14 +241,15 @@ type Page = Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEvent
 /**
  * Reads home's Found list now, then every FOUND_POLL_MS while the page is
  * visible; back in front it reads at once. `onState` gets the rows, or
- * `no_status` (503), or undefined once when home is too old to list them
- * (404: the reads stop). Any other failure is quiet: the block keeps what it
- * shows and the next read tries again. Returns stop (the screen closed).
+ * `no_status` after two 503 answers in a row (one can be a home that just
+ * started). Any other failure is quiet: the block keeps what it shows and
+ * the next read tries again. Returns stop (the screen closed).
  */
-export function watchFound(onState: (state: FoundState | undefined) => void, page: Page = document): () => void {
+export function watchFound(onState: (state: FoundState) => void, page: Page = document): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let reading = false;
   let stopped = false;
+  let unavailable = 0;
   const visible = () => page.visibilityState === 'visible';
   async function read(): Promise<void> {
     timer = undefined;
@@ -256,10 +257,11 @@ export function watchFound(onState: (state: FoundState | undefined) => void, pag
     reading = true;
     try {
       const answer = await client().foundComputers();
-      if (!stopped) onState(answer === undefined ? undefined : { kind: 'rows', computers: answer.computers });
-      if (answer === undefined) stopped = true;
+      unavailable = 0;
+      if (!stopped) onState({ kind: 'rows', computers: answer.computers });
     } catch (error) {
-      if (!stopped && error instanceof ApiError && error.status === 503) onState({ kind: 'no_status' });
+      unavailable = error instanceof ApiError && error.status === 503 ? unavailable + 1 : 0;
+      if (!stopped && unavailable >= 2) onState({ kind: 'no_status' });
     } finally {
       reading = false;
     }

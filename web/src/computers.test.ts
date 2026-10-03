@@ -296,20 +296,28 @@ describe('watchFound', () => {
     stop();
   });
 
-  it('hides the block and stops for an older home (404), says 503, and is quiet on other failures', async () => {
+  it('says no_status only after two 503 answers in a row, and is quiet on other failures', async () => {
     const states: unknown[] = [];
     vi.stubGlobal('fetch', vi.fn(async () => json(500, { error: { code: 'internal_error', message: 'x' } })));
     const stop = watchFound((state) => states.push(state), page() as never);
     await vi.advanceTimersByTimeAsync(0);
     expect(states).toEqual([]);
-    vi.stubGlobal('fetch', vi.fn(async () => json(503, { error: { code: 'host_unavailable', message: 'x' } })));
+    const unavailable = () => json(503, { error: { code: 'host_unavailable', message: 'x' } });
+    vi.stubGlobal('fetch', vi.fn(async () => unavailable()));
     await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
-    expect(states).toEqual([{ kind: 'no_status' }]);
-    const old = vi.fn(async () => new Response('404 page not found', { status: 404 }));
+    expect(states).toEqual([]); // one 503: a home that just started
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { computers: [] })));
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    vi.stubGlobal('fetch', vi.fn(async () => unavailable()));
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    expect(states).toEqual([{ kind: 'rows', computers: [] }]);
+    await vi.advanceTimersByTimeAsync(FOUND_POLL_MS);
+    expect(states).toEqual([{ kind: 'rows', computers: [] }, { kind: 'no_status' }]);
+    const old = vi.fn(async () => new Response('405 method not allowed', { status: 405 }));
     vi.stubGlobal('fetch', old);
     await vi.advanceTimersByTimeAsync(FOUND_POLL_MS * 3);
-    expect(states).toEqual([{ kind: 'no_status' }, undefined]);
-    expect(old).toHaveBeenCalledOnce();
+    expect(states).toHaveLength(2); // quiet, and the reads go on
+    expect(old).toHaveBeenCalledTimes(3);
     stop();
   });
 });

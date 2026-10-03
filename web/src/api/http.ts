@@ -179,7 +179,7 @@ export interface Client {
   /** Home only: removes `https://{host}` from this device's list. */
   deleteComputer(host: string): Promise<undefined>;
   /** Home only: computers that wait to be added (Found on your network); undefined when home is too old to list them (404). */
-  foundComputers(): Promise<HTTPComputerFoundResponse | undefined>;
+  foundComputers(): Promise<HTTPComputerFoundResponse>;
 }
 
 function createClient(origin: string, home: boolean): Client {
@@ -289,13 +289,8 @@ function createClient(origin: string, home: boolean): Client {
     computers: () => request('GET', '/api/v1/computers', 'computerListResponse', read),
     saveComputer: (body) => request('POST', '/api/v1/computers', 'computerAddResponse', send(body)),
     deleteComputer: (host) => empty('DELETE', `/api/v1/computers/${encodeURIComponent(host)}`, send({})),
-    async foundComputers() {
-      try {
-        return await request('GET', '/api/v1/computers/found', 'computerFoundResponse', read);
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return undefined;
-        throw error;
-      }
+    foundComputers() {
+      return request('GET', '/api/v1/computers/found', 'computerFoundResponse', read);
     },
   };
 }
