@@ -109,12 +109,24 @@ export function tileLabel(session: BrokerRPCSessionRecord, fresh: boolean): stri
 
 /**
  * The mark over a tile: Paused beyond the live budget, a dot while a live
- * tile reconnects. A paused tile that was never live has no frame to keep:
- * `blank` shows the session name and Paused in its place.
+ * tile reconnects. A paused tile with no frame (never live, and its one
+ * snapshot turn failed or is still running) has nothing to keep: `blank`
+ * shows the session name and Paused in its place.
  */
-export function tileMark(tile: TileState, link: LinkState, wasLive = true): 'paused' | 'blank' | 'reconnecting' | undefined {
-  if (tile === 'paused') return wasLive ? 'paused' : 'blank';
+export function tileMark(tile: TileState, link: LinkState, hasFrame = true): 'paused' | 'blank' | 'reconnecting' | undefined {
+  if (tile !== 'live') return hasFrame ? 'paused' : 'blank';
   return link === 'live' ? undefined : 'reconnecting';
+}
+
+/**
+ * How a snapshot turn ('peek') is going, from the connection's link: running
+ * until the first snapshot is painted (`painted`, the tile now has a frame)
+ * or the first attempt fails (`failed`; the connection must not retry).
+ */
+export function peekProgress(tile: TileState, link: LinkState): 'running' | 'painted' | 'failed' | undefined {
+  if (tile !== 'peek') return undefined;
+  if (link === 'live') return 'painted';
+  return link === 'connecting' || link === 'attaching' ? 'running' : 'failed';
 }
 
 /**
@@ -123,7 +135,9 @@ export function tileMark(tile: TileState, link: LinkState, wasLive = true): 'pau
  * whether it is live: offscreen tiles, tiles beyond the live budget, and all
  * tiles while the app is in the background keep their last frame, show
  * Paused and close their connection. Tiles get frames at most
- * THUMBNAIL_UPDATES_PER_SECOND.
+ * THUMBNAIL_UPDATES_PER_SECOND. A visible tile that was never live gets one
+ * short 'peek' turn: it connects, paints its first snapshot, and closes. The
+ * picture lives in the tile's view only, in memory.
  */
 function MiniTerminal({ session }: { readonly session: HostedSession }) {
   const box = useRef<HTMLSpanElement>(null);
@@ -132,8 +146,7 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
   const [view, setView] = useState<TerminalView>();
   const [connection, setConnection] = useState<Connection>();
   const [tile, setTile] = useState<TileState>('paused');
-  const [wasLive, setWasLive] = useState(false);
-  useEffect(() => { if (tile === 'live') setWasLive(true); }, [tile]);
+  const [hasFrame, setHasFrame] = useState(false);
   const [fit, setFit] = useState({ scale: 0, offset: 0 });
   const status = useSyncExternalStore(
     connection?.subscribe ?? noSubscribe,
@@ -177,7 +190,7 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
   // A live slot from the scheduler; only a visible tile keeps one.
   useLayoutEffect(() => {
     const frame = box.current;
-    const slot = scheduler.requestLiveTile(key, { onChange: setTile });
+    const slot = scheduler.requestLiveTile(key, { origin, onChange: setTile });
     handle.current = slot;
     setTile(slot.state());
     const observer = frame === null ? undefined : new IntersectionObserver((entries) => {
@@ -190,11 +203,12 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
       slot.release();
       handle.current = undefined;
     };
-  }, [key]);
+  }, [key, origin]);
 
-  // Connected only while live.
+  // Connected while live, and for a never-live tile's one snapshot turn.
+  const connected = tile !== 'paused';
   useEffect(() => {
-    if (view === undefined || tile !== 'live') {
+    if (view === undefined || !connected) {
       return undefined;
     }
     const next = new Connection({
@@ -213,9 +227,17 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
       next.detach();
       setConnection(undefined);
     };
-  }, [view, tile, origin, session.computer.home, session.id, session.generation]);
+  }, [view, connected, origin, session.computer.home, session.id, session.generation]);
 
-  const mark = tileMark(tile, status.link, wasLive);
+  // The snapshot turn ends at the first painted snapshot or the first failure; one try while the Wall is open.
+  const progress = peekProgress(tile, status.link);
+  useEffect(() => {
+    // link 'live' is set only after the first snapshot is painted.
+    if (connected && status.link === 'live') setHasFrame(true);
+    if (progress === 'painted' || progress === 'failed') handle.current?.peekDone();
+  }, [connected, status.link, progress]);
+
+  const mark = tileMark(tile, status.link, hasFrame);
   return (
     <span ref={box} className="wall-screen" aria-hidden="true">
       <span ref={host} className="wall-host" style={{ transform: `scale(${fit.scale}) translateY(${-fit.offset}px)` }} />

@@ -1,7 +1,7 @@
 ---
 title: Wall
 description: The Termivoa Wall puts all running sessions on one page as small live screens, so you can watch several coding agents and open one with a tap.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-03
 ---
 
 Termivoa shows every running session as a small live screen on one page, the Wall.
@@ -26,6 +26,12 @@ Each tile shows the session's screen, scaled to fit and following the newest lin
 - an amber dot in the corner while the tile reconnects.
 
 From the next beta, at most 4 tiles are live at once, and each updates up to 5 times per second. Tiles off the screen, tiles over that limit, and all tiles while the app is in the background keep their last screen and show **Paused**.
+
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`.
+:::
+
+A tile over the limit that was never live still shows a small picture of its screen. Termivoa connects to it once, for a moment, takes one picture, and marks the tile **Paused**. It does this for one tile at a time, and only while the Wall is open on screen. If that one try fails, the tile shows only the session name and **Paused**; it goes live when one of the 4 live tiles frees its place.
 
 ## Which tiles come first?
 

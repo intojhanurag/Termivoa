@@ -8,6 +8,12 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Wall: a paused tile that was never live now shows a small picture of its
+  session's screen. Phone: Termivoa connects once, for a moment, takes one
+  picture and marks the tile Paused. One tile at a time, only while the Wall
+  is on screen and the app is in the foreground; a failed try leaves the tile
+  as before. Host: no change.
+
 - Multi-computer (ADR 0005, `docs/multi-computer.md`; not yet verified on a
   real iPhone or Android phone, Gate 0 pending). Phone side: one Home Screen
   app, served by a "home" computer, talks directly to up to 8 other computers

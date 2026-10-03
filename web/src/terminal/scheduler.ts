@@ -12,6 +12,15 @@
  *   thumbnail tiles are live. When live tiles together decode more than `tileBytesPerSecond`, the noisiest one
  *   pauses for `bytePauseMs`. A paused tile keeps its last frame, shows
  *   Paused and closes its connection; it goes live again when a slot opens.
+ * - A visible tile that was never live (the live budget was full) gets one
+ *   short turn, state 'peek': it connects like a live tile, paints its first
+ *   snapshot, then the Wall calls peekDone and the tile is Paused with that
+ *   picture. One turn at a time, one try per tile for as long as the Wall is
+ *   open (a failed turn is not repeated; opening a terminal closes the Wall and
+ *   forgets which tiles had a turn), only while the Wall is open and in the foreground, only when
+ *   no other connection attempt is running or waiting, never for a computer
+ *   that is backing off, and at most `peekMs` and `peekBytes` long. The turn
+ *   uses the spare slot of `tileConnections`; live tiles keep their 4.
  * - Connection attempts across all computers pass connectGate: at most
  *   `concurrentConnects` at once (the active terminal never waits), and a
  *   computer that keeps failing waits a jittered backoff, then an offline
@@ -25,13 +34,19 @@
  * microtask, never inside the caller's own call stack.
  */
 
-export type TileState = 'live' | 'paused';
+export type TileState = 'live' | 'peek' | 'paused';
 
 export const DEFAULT_LIMITS = {
   /** Live Wall tiles; tuned on real phones. */
   liveTiles: 4,
-  /** Open Wall tile connections. */
-  tileConnections: 4,
+  /** Open Wall tile connections: the live tiles and one snapshot turn. */
+  tileConnections: 5,
+  /** The longest a never-live tile's snapshot turn lasts. */
+  peekMs: 8_000,
+  /** The most decoded bytes one snapshot turn may receive. */
+  peekBytes: 1024 * 1024,
+  /** A turn starts this long after the connection gate went quiet, so live tiles connect first. */
+  peekDelayMs: 1_000,
   /** Decoded bytes per second across all live tiles. */
   tileBytesPerSecond: 1024 * 1024,
   /** How long a tile paused for bytes stays paused. */
@@ -60,10 +75,14 @@ export interface TileHandle {
   setVisible(visible: boolean): void;
   /** Reports decoded bytes this tile's connection received (ConnectionOptions.onMessageBytes). */
   bytes(count: number): void;
+  /** The 'peek' turn is over (picture painted, or the attempt failed). One try per tile while the Wall is open. */
+  peekDone(): void;
   release(): void;
 }
 
 export interface TileOptions {
+  /** The computer this tile's session runs on; a computer that is backing off gets no snapshot turn. */
+  readonly origin: string;
   /** Called (in a microtask) when the state changes; not for the initial state. */
   readonly onChange: (state: TileState) => void;
 }
@@ -84,6 +103,7 @@ export type PollOutcome<T> = { readonly ok: true; readonly value: T } | { readon
 
 interface Tile {
   readonly key: string;
+  readonly origin: string;
   readonly onChange: (state: TileState) => void;
   visible: boolean;
   state: TileState;
@@ -92,6 +112,11 @@ interface Tile {
   /** Bytes in the current one-second bucket. */
   bytes: number;
   bucket: number;
+  /** Was live, or had its snapshot turn: no more turns. */
+  seen: boolean;
+  /** Bytes of the current snapshot turn. */
+  turnBytes: number;
+  turnTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
 interface Waiter {
@@ -112,6 +137,7 @@ export class Scheduler {
   private active: string | undefined;
   private foreground = true;
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  private peekTimer: ReturnType<typeof setTimeout> | undefined;
   private connecting = 0;
   private readonly connectQueue: Waiter[] = [];
   private connectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -135,9 +161,11 @@ export class Scheduler {
    */
   requestLiveTile(key: string, options: TileOptions): TileHandle {
     // Asking again for a key replaces the old request (its handle stops working).
+    clearTimeout(this.tiles.get(key)?.turnTimer);
     this.tiles.delete(key);
     const tile: Tile = {
       key,
+      origin: options.origin,
       onChange: options.onChange,
       // Offscreen until the IntersectionObserver says otherwise, so tiles
       // below the fold never take the first live slots.
@@ -147,6 +175,9 @@ export class Scheduler {
       pausedUntil: 0,
       bytes: 0,
       bucket: 0,
+      seen: false,
+      turnBytes: 0,
+      turnTimer: undefined,
     };
     this.tiles.set(key, tile);
     this.plan();
@@ -163,8 +194,12 @@ export class Scheduler {
       bytes: (count) => {
         if (current()) this.addBytes(tile, count);
       },
+      peekDone: () => {
+        if (current() && tile.state === 'peek') this.endPeek(tile);
+      },
       release: () => {
         if (current()) {
+          clearTimeout(tile.turnTimer);
           this.tiles.delete(key);
           this.plan();
         }
@@ -210,6 +245,7 @@ export class Scheduler {
         return () => {
           const index = this.connectQueue.indexOf(waiter);
           if (index >= 0) this.connectQueue.splice(index, 1);
+          this.planPeek();
         };
       },
       done: (result) => {
@@ -323,6 +359,7 @@ export class Scheduler {
   private record(origin: string, ok: boolean): void {
     if (ok) {
       this.health.delete(origin);
+      this.planPeek();
       return;
     }
     const failures = (this.health.get(origin)?.failures ?? 0) + 1;
@@ -359,9 +396,15 @@ export class Scheduler {
     if (wake !== Infinity) {
       this.connectTimer = setTimeout(() => this.pumpConnects(), wake - now);
     }
+    this.planPeek();
   }
 
   private addBytes(tile: Tile, count: number): void {
+    if (tile.state === 'peek') {
+      tile.turnBytes += count;
+      if (tile.turnBytes > this.limits.peekBytes) this.endPeek(tile);
+      return;
+    }
     if (tile.state !== 'live') return;
     // ponytail: fixed one-second buckets, not a sliding window; enough to catch a flood.
     const bucket = Math.floor(this.now() / 1000);
@@ -397,7 +440,8 @@ export class Scheduler {
         live--;
         connections--;
       } else {
-        next.set(tile, 'paused');
+        // A turn goes on only while the Wall is open and the tile visible.
+        next.set(tile, tile.state === 'peek' && !tile.seen && open && tile.visible ? 'peek' : 'paused');
       }
     };
     for (const tile of this.tiles.values()) if (tile.state === 'live') consider(tile);
@@ -406,12 +450,57 @@ export class Scheduler {
     for (const [tile, state] of next) {
       if (tile.pausedUntil > now && tile.visible) wake = Math.min(wake, tile.pausedUntil);
       if (tile.state !== state) {
+        if (tile.state === 'peek') clearTimeout(tile.turnTimer);
+        // A turn cut short (tile scrolled away) is not a try; only live and a finished turn count.
+        if (state === 'live') tile.seen = true;
         tile.state = state;
         this.announce(tile);
       }
     }
     clearTimeout(this.wakeTimer);
     this.wakeTimer = wake === Infinity ? undefined : setTimeout(() => this.plan(), wake - now);
+    this.planPeek();
+  }
+
+  private endPeek(tile: Tile): void {
+    tile.seen = true;
+    this.plan();
+  }
+
+  /** The tile that may have a snapshot turn now, or undefined. */
+  private peekCandidate(): Tile | undefined {
+    if (!this.foreground || this.active !== undefined || this.connecting > 0) return undefined;
+    const now = this.now();
+    // A waiter for a computer that is backing off cannot run yet; it must not hold every other computer's turn.
+    if (this.connectQueue.some((waiter) => (this.health.get(waiter.origin)?.retryAt ?? 0) <= now)) return undefined;
+    let live = 0;
+    let candidate: Tile | undefined;
+    for (const tile of this.tiles.values()) {
+      // One turn at a time.
+      if (tile.state === 'peek') return undefined;
+      if (tile.state === 'live') live++;
+      else if (candidate === undefined && tile.visible && !tile.seen && (this.health.get(tile.origin)?.retryAt ?? 0) <= now) candidate = tile;
+    }
+    return live < this.limits.tileConnections ? candidate : undefined;
+  }
+
+  /** Arms the start of the next snapshot turn; every change that could allow one calls this. */
+  private planPeek(): void {
+    if (this.peekCandidate() === undefined) {
+      clearTimeout(this.peekTimer);
+      this.peekTimer = undefined;
+      return;
+    }
+    if (this.peekTimer !== undefined) return;
+    this.peekTimer = setTimeout(() => {
+      this.peekTimer = undefined;
+      const tile = this.peekCandidate();
+      if (tile === undefined) return;
+      tile.state = 'peek';
+      tile.turnBytes = 0;
+      tile.turnTimer = setTimeout(() => this.endPeek(tile), this.limits.peekMs);
+      this.announce(tile);
+    }, this.limits.peekDelayMs);
   }
 
   private announce(tile: Tile): void {

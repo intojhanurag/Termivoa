@@ -25,6 +25,8 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   TerminalView chunk stays: all of it (xterm, the envelope validator) is
   needed for the first frame. A real cut needs a smaller validator or
   terminal library.
+- Wall: a paused tile that was never live shows one snapshot of its screen.
+  Not yet checked on a real phone.
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -41,8 +43,7 @@ In this order.
 3. **Preview for sessions on peers.** Today preview works for home sessions
    only.
 4. **Computer health in Settings:** version, last seen, and **Check again**.
-5. **Wall paused tiles that were never live:** show a last-screen snapshot.
-6. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
+5. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
    re-shoot).
 
 ## Later

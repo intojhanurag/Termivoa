@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LIMITS, Scheduler, type PollOutcome, type TileState } from './scheduler';
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
+const ORIGIN = 'https://h.t.ts.net';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -10,6 +11,7 @@ afterEach(() => vi.useRealTimers());
 async function tiles(scheduler: Scheduler, count: number) {
   const changes: Array<[string, TileState]> = [];
   const handles = Array.from({ length: count }, (_, index) => scheduler.requestLiveTile(`h/${index}`, {
+    origin: ORIGIN,
     onChange: (state) => changes.push([`h/${index}`, state]),
   }));
   for (const handle of handles) handle.setVisible(true);
@@ -37,7 +39,7 @@ describe('live tiles', () => {
 
   it('starts a new tile paused until its observer reports it visible', async () => {
     const scheduler = new Scheduler();
-    const below = Array.from({ length: 5 }, (_, index) => scheduler.requestLiveTile(`h/${index}`, { onChange: () => undefined }));
+    const below = Array.from({ length: 5 }, (_, index) => scheduler.requestLiveTile(`h/${index}`, { origin: ORIGIN, onChange: () => undefined }));
     expect(below.map((handle) => handle.state())).toEqual(['paused', 'paused', 'paused', 'paused', 'paused']);
     below[4]?.setVisible(true);
     expect(below.map((handle) => handle.state())).toEqual(['paused', 'paused', 'paused', 'paused', 'live']);
@@ -72,11 +74,183 @@ describe('live tiles', () => {
 
   it('ignores a released or replaced handle', () => {
     const scheduler = new Scheduler({ liveTiles: 1 });
-    const old = scheduler.requestLiveTile('k', { onChange: () => undefined });
-    const fresh = scheduler.requestLiveTile('k', { onChange: () => undefined });
+    const old = scheduler.requestLiveTile('k', { origin: ORIGIN, onChange: () => undefined });
+    const fresh = scheduler.requestLiveTile('k', { origin: ORIGIN, onChange: () => undefined });
     fresh.setVisible(true);
     old.release();
     expect(fresh.state()).toBe('live');
+  });
+});
+
+describe('snapshot turns for tiles that were never live', () => {
+  const after = (ms = DEFAULT_LIMITS.peekDelayMs) => vi.advanceTimersByTimeAsync(ms);
+
+  it('gives the 2 tiles beyond the live limit one turn each, one at a time, and keeps the 4 live', async () => {
+    const scheduler = new Scheduler();
+    const { handles, states } = await tiles(scheduler, 6);
+    expect(states()).toEqual(['live', 'live', 'live', 'live', 'paused', 'paused']);
+    await after(DEFAULT_LIMITS.peekDelayMs - 1);
+    expect(states()[4]).toBe('paused');
+    await after(1);
+    expect(states()).toEqual(['live', 'live', 'live', 'live', 'peek', 'paused']);
+    // 6 tiles want a connection; exactly 4 live plus 1 turn are open.
+    expect(states().filter((state) => state === 'live')).toHaveLength(DEFAULT_LIMITS.liveTiles);
+    expect(states().filter((state) => state === 'peek')).toHaveLength(1);
+    expect(states().filter((state) => state !== 'paused')).toHaveLength(DEFAULT_LIMITS.tileConnections);
+    await after(5000);
+    expect(states()).toEqual(['live', 'live', 'live', 'live', 'peek', 'paused']);
+    handles[4]?.peekDone();
+    expect(states()).toEqual(['live', 'live', 'live', 'live', 'paused', 'paused']);
+    await after();
+    expect(states()).toEqual(['live', 'live', 'live', 'live', 'paused', 'peek']);
+    handles[5]?.peekDone();
+    await after(60_000);
+    expect(states()).toEqual(['live', 'live', 'live', 'live', 'paused', 'paused']);
+  });
+
+  it('does not start a turn for a tile that is offscreen, or while a terminal is active or the app is in the background', async () => {
+    const scheduler = new Scheduler();
+    const { handles, states } = await tiles(scheduler, 5);
+    handles[4]?.setVisible(false);
+    await after(10_000);
+    expect(states()[4]).toBe('paused');
+    handles[4]?.setVisible(true);
+    scheduler.setForeground(false);
+    await after(10_000);
+    expect(states()).toEqual(['paused', 'paused', 'paused', 'paused', 'paused']);
+    scheduler.setActive('h/9');
+    scheduler.setForeground(true);
+    await after(10_000);
+    expect(states()).toEqual(['paused', 'paused', 'paused', 'paused', 'paused']);
+    scheduler.setActive(undefined);
+    expect(states()).toEqual(['live', 'live', 'live', 'live', 'paused']);
+    await after();
+    expect(states()[4]).toBe('peek');
+  });
+
+  it('ends a running turn when the tile goes offscreen, the app goes to the background, or a terminal opens', async () => {
+    const scheduler = new Scheduler();
+    const { handles, states } = await tiles(scheduler, 5);
+    await after();
+    expect(states()[4]).toBe('peek');
+    handles[4]?.setVisible(false);
+    expect(states()[4]).toBe('paused');
+    handles[4]?.setVisible(true);
+    await after();
+    expect(states()[4]).toBe('peek');
+    scheduler.setForeground(false);
+    expect(states()[4]).toBe('paused');
+    scheduler.setForeground(true);
+    await after();
+    expect(states()[4]).toBe('peek');
+    scheduler.setActive('h/9');
+    expect(states()).toEqual(['paused', 'paused', 'paused', 'paused', 'paused']);
+  });
+
+  it('leaves a failed tile as it is: a turn that is over is not repeated', async () => {
+    const scheduler = new Scheduler();
+    const { handles, changes, states } = await tiles(scheduler, 5);
+    await after();
+    handles[4]?.peekDone();
+    await after(60_000);
+    expect(states()[4]).toBe('paused');
+    expect(changes.filter(([, state]) => state === 'peek')).toEqual([['h/4', 'peek']]);
+    // Back on screen again: still no second turn.
+    handles[4]?.setVisible(false);
+    handles[4]?.setVisible(true);
+    await after(60_000);
+    expect(states()[4]).toBe('paused');
+  });
+
+  it('ends a turn that takes longer than peekMs or receives more than peekBytes', async () => {
+    const scheduler = new Scheduler({ peekMs: 3000, peekBytes: 1000 });
+    const { handles, states } = await tiles(scheduler, 6);
+    await after();
+    expect(states().slice(4)).toEqual(['peek', 'paused']);
+    await after(2999);
+    expect(states().slice(4)).toEqual(['peek', 'paused']);
+    await after(1);
+    expect(states().slice(4)).toEqual(['paused', 'paused']);
+    await after();
+    expect(states().slice(4)).toEqual(['paused', 'peek']);
+    handles[5]?.bytes(600);
+    handles[5]?.bytes(600);
+    expect(states().slice(4)).toEqual(['paused', 'paused']);
+    await after(60_000);
+    expect(states().slice(4)).toEqual(['paused', 'paused']);
+  });
+
+  it('waits while any connection attempt runs or waits, so live tiles connect first', async () => {
+    const scheduler = new Scheduler();
+    const { states } = await tiles(scheduler, 5);
+    const gate = scheduler.connectGate(ORIGIN);
+    gate.wait(() => undefined);
+    await after(10_000);
+    expect(states()[4]).toBe('paused');
+    gate.done('live');
+    await after(DEFAULT_LIMITS.peekDelayMs - 1);
+    expect(states()[4]).toBe('paused');
+    await after(1);
+    expect(states()[4]).toBe('peek');
+  });
+
+  it('skips a computer that is backing off, until it is reachable again', async () => {
+    const scheduler = new Scheduler({}, { random: () => 1 });
+    const down = 'https://down.t.ts.net';
+    const gate = scheduler.connectGate(down);
+    gate.wait(() => gate.done('failed'));
+    const { states } = await tiles(scheduler, 4);
+    const away = scheduler.requestLiveTile('down/1', { origin: down, onChange: () => undefined });
+    const near = scheduler.requestLiveTile('h/9', { origin: ORIGIN, onChange: () => undefined });
+    away.setVisible(true);
+    near.setVisible(true);
+    expect(states()).toEqual(['live', 'live', 'live', 'live']);
+    await after();
+    expect([away.state(), near.state()]).toEqual(['paused', 'peek']);
+    near.peekDone();
+    await after(100);
+    expect(away.state()).toBe('paused');
+    scheduler.retry(down);
+    await after();
+    expect(away.state()).toBe('peek');
+  });
+
+  it('is not held back by a live tile that waits for a computer that is backing off', async () => {
+    const scheduler = new Scheduler({}, { random: () => 1 });
+    const down = 'https://down.t.ts.net';
+    const failing = scheduler.connectGate(down);
+    failing.wait(() => failing.done('failed'));
+    // This waiter cannot run for 1500 ms; the turn for a healthy computer still starts after 1000 ms.
+    scheduler.connectGate(down).wait(() => undefined);
+    const { states } = await tiles(scheduler, 5);
+    await after();
+    expect(states()[4]).toBe('peek');
+  });
+
+  it('drops the running turn of a key that is requested again', async () => {
+    const scheduler = new Scheduler();
+    const { states } = await tiles(scheduler, 5);
+    await after();
+    expect(states()[4]).toBe('peek');
+    const timers = vi.getTimerCount();
+    const fresh = scheduler.requestLiveTile('h/4', { origin: ORIGIN, onChange: () => undefined });
+    // The old turn's timer is gone, and the new tile has no turn until it is visible.
+    expect(vi.getTimerCount()).toBe(timers - 1);
+    expect(fresh.state()).toBe('paused');
+    fresh.setVisible(true);
+    await after();
+    expect(fresh.state()).toBe('peek');
+  });
+
+  it('ends the turn when the tile becomes live', async () => {
+    const scheduler = new Scheduler();
+    const { handles, states } = await tiles(scheduler, 5);
+    await after();
+    expect(states()[4]).toBe('peek');
+    handles[0]?.release();
+    expect(states().slice(1)).toEqual(['live', 'live', 'live', 'live']);
+    await after(60_000);
+    expect(states().slice(1)).toEqual(['live', 'live', 'live', 'live']);
   });
 });
 
