@@ -379,6 +379,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): when the phone's terminal got fewer rows (for example
+  when the "Adding vps… approve on vps" banner opens) while the cursor was
+  on one of the cut rows, the bottom rows were lost, so the last line of a
+  prompt (such as "Approve only if your phone shows …") did not show. Now
+  the rows above the cursor move into the history, as in other terminals.
+  Phone: no change.
 - Fix (host side): `pterm pair` and `pterm launch` did not check Tailscale
   Funnel; only `pterm setup` and `pterm doctor` did. Now every `pterm pair`
   that pairs (`pterm pair`, `--via`, `--no-wait`, `pterm pair approve`)
