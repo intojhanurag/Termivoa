@@ -115,7 +115,7 @@ func validateUnixAncestors(path string) error {
 		switch stat.Uid {
 		case currentUID:
 			if writableByOthers {
-				return fmt.Errorf("runtime ancestor %q is writable by another user", current)
+				return fmt.Errorf("runtime ancestor %q is writable by another user; run: chmod go-w %s", current, current)
 			}
 		case 0:
 			if writableByOthers && info.Mode()&os.ModeSticky == 0 {

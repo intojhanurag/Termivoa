@@ -94,6 +94,17 @@ Its folder is not on your PATH. Type the full path:
 - macOS and Linux: `~/.local/bin/pterm`
 - Windows: go to `%LOCALAPPDATA%\Programs\Termivoa` and type `.\pterm.exe`
 
+## Setup says a folder "is writable by another user" (Linux)
+
+A folder above Termivoa's data, usually `~/.local`, lets your group or everyone write to it. Ubuntu makes folders like that for a new user. Remove that write permission, then run setup again:
+
+```sh
+chmod go-w ~/.local ~/.local/bin
+~/.local/bin/pterm setup
+```
+
+The error names the folder. Termivoa refuses such a folder because another user could replace its files.
+
 ## Setup does not ask the Tailscale questions (Linux)
 
 Make yourself the Tailscale operator, then run `pterm setup` again:

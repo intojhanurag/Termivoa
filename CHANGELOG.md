@@ -245,6 +245,11 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side, Linux): on Ubuntu a new user has umask 002, so the install
+  script made `~/.local` group-writable and `pterm setup` then stopped with
+  "runtime ancestor … is writable by another user". The script now removes
+  group and other write from `~/.local` and `~/.local/bin`, and the error
+  names the command that fixes it (`chmod go-w <folder>`).
 - Fix (host side): another machine in the tailnet could stop the app and
   previews for every phone (429, "Too many failed attempts.") with about 20
   requests that carried a bad cookie, because all clients behind Tailscale

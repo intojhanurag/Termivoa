@@ -40,6 +40,9 @@ fi
 
 bin_dir="$HOME/.local/bin"
 mkdir -p "$bin_dir"
+# Ubuntu gives a new user umask 002, so these would be group-writable; pterm
+# refuses to keep its data under a folder that another user could write.
+chmod go-w "$HOME/.local" "$bin_dir"
 # Replace atomically: a running broker keeps its old file until it restarts.
 install -m 0755 "$source" "$bin_dir/.pterm.new"
 mv -f "$bin_dir/.pterm.new" "$bin_dir/pterm"
