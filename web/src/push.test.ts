@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   disablePush, dismissPushCard, enablePush, fromBase64Url, peerScope, PUSH_BLOCKED, PUSH_CARD_KEY, pushEnabled, pushSupport,
-  removeStrayWorkers, shouldOfferPush, syncPeerPush, testPush, toBase64Url, workersSafe,
+  removeStrayWorkers, shouldOfferPush, syncHomePush, syncPeerPush, testPush, toBase64Url, workersSafe,
 } from './push';
 import { COMPUTERS_KEY, refreshComputers } from './computers';
 
@@ -210,6 +210,39 @@ describe('enablePush', () => {
     expect(current.unsubscribe).not.toHaveBeenCalled();
     expect(second.pushManager.subscribe).not.toHaveBeenCalled();
     expect(JSON.parse((fetch.mock.calls[1]?.[1] as unknown as RequestInit).body as string).endpoint).toBe('https://push.example/current');
+  });
+});
+
+describe('syncHomePush', () => {
+  it('registers the browser subscription with home again after log out, revoke or a pruned device', async () => {
+    // The browser kept its subscription; home's copy is gone, so the switch says on while home sends nothing.
+    const kept = fakeSubscription('https://push.example/kept');
+    const { pushManager } = browser({ subscription: kept });
+    const { fetch, calls } = servers();
+    await expect(pushEnabled()).resolves.toBe(true);
+
+    await syncHomePush();
+
+    expect(calls()).toEqual(['GET /api/v1/push', 'POST /api/v1/push/subscribe']);
+    expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body as string).endpoint).toBe('https://push.example/kept');
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+    expect(kept.unsubscribe).not.toHaveBeenCalled();
+    expect(Notification.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('does nothing with push off or the permission not granted', async () => {
+    browser();
+    const off = servers();
+    await syncHomePush();
+    browser({ permission: 'denied', subscription: fakeSubscription('https://push.example/kept') });
+    await syncHomePush();
+    expect(off.fetch).not.toHaveBeenCalled();
+  });
+
+  it('never rejects when home cannot be reached', async () => {
+    browser({ subscription: fakeSubscription('https://push.example/kept') });
+    servers({ down: ['mac.tailx.ts.net'] });
+    await expect(syncHomePush()).resolves.toBeUndefined();
   });
 });
 

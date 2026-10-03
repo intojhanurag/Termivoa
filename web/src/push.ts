@@ -81,6 +81,13 @@ export function pushSupport(): PushSupport {
  */
 const homeRegistration = (): Promise<ServiceWorkerRegistration | undefined> => navigator.serviceWorker.getRegistration('/');
 
+/** Home's registration once it has an active worker (subscribe needs one). */
+async function homeWorker(): Promise<ServiceWorkerRegistration> {
+  const registration = await homeRegistration();
+  if (registration === undefined) throw new Error('The app is not ready for notifications. Reload it.');
+  return activeWorker(registration);
+}
+
 async function currentSubscription(): Promise<PushSubscription | null> {
   return await (await homeRegistration())?.pushManager.getSubscription() ?? null;
 }
@@ -197,13 +204,24 @@ export async function enablePush(peers: ReadonlyArray<Peer> = storedPeers()): Pr
   const permission = await Notification.requestPermission();
   if (permission === 'denied') return { ok: false, message: PUSH_BLOCKED };
   if (permission !== 'granted') return { ok: false, message: 'Notifications were not allowed.' };
-  await subscribeOn(api, async () => {
-    const registration = await homeRegistration();
-    if (registration === undefined) throw new Error('The app is not ready for notifications. Reload it.');
-    return activeWorker(registration);
-  });
+  await subscribeOn(api, homeWorker);
   dismissPushCard();
   return { ok: true, missing: subscribePeers(peers) };
+}
+
+/**
+ * Registers this phone's browser subscription with home again, so the switch
+ * (which reads only the browser) is true: log out, `pterm revoke` and a pruned
+ * device all delete the host's copy while the browser keeps its own. Home keys
+ * a subscription by endpoint, so this is safe to repeat. Run it when home
+ * answers (a new pairing included). No-op with push off. Never rejects.
+ */
+export async function syncHomePush(): Promise<void> {
+  try {
+    if (await pushEnabled()) await subscribeOn(api, homeWorker);
+  } catch {
+    // Home is not reachable now; the next load tries again.
+  }
 }
 
 /**

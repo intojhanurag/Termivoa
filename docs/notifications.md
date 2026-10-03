@@ -134,6 +134,12 @@ credential.
   unsubscribed and unregistered: a removed computer, log out, push off. A
   peer that answers 401 ("pair again") loses its registration until it is
   paired again. A subscription made under another key is replaced.
+- **Home is synced too** (`syncHomePush`, when home answers: at start and
+  after a new pairing). Log out, `pterm revoke` and device pruning delete the
+  computer's copy of a subscription, but the switch reads only the browser's.
+  So with push on, the app posts the browser's subscription to home again
+  (the host keeps one row per endpoint, so a repeat changes nothing). Without
+  this, the switch stays on after a new pairing while home sends nothing.
 - **The peer's side.** Remove computer and Log out call the peer's logout,
   which deletes that device's subscriptions there. If the peer cannot be
   reached, the browser subscription is still removed, so the push service
