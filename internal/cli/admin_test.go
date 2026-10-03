@@ -1073,3 +1073,20 @@ func TestPairViaOffersOnlyInAnUntaggedWait(t *testing.T) {
 		t.Fatalf("piped: %v, offers %v, ends %v\n%s", err, admin.offers, admin.ends, output.String())
 	}
 }
+
+// A plain pairing (no --via) never offers a pairing bound to another app: its
+// prompt could not name this computer and that app (S2).
+func TestPairOffersOnlyPlainPairings(t *testing.T) {
+	origin, home := adminOrigin, homeOrigin
+	admin := &fakeAdmin{grant: testGrant(&origin)}
+	admin.grant.ExpiresAt = time.Now().Add(50 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+	admin.afterGrant = func(admin *fakeAdmin) {
+		admin.pending = []protocol.AdminRPCPendingPairing{{ID: adminPending, VerificationCode: "123-456", DeviceLabel: "iPhone",
+			ExpiresAt: "2026-09-27T00:05:00Z", AppOrigin: &home, AppNode: owned("ada@example.com")}}
+	}
+	confirmer := &fakeConfirmer{answer: true}
+	err := Pair(context.Background(), admin, PairOptions{Confirmer: confirmer, PollInterval: time.Millisecond}, &bytes.Buffer{})
+	if !errors.Is(err, ErrNoPhone) || confirmer.calls != 0 || len(admin.approved) != 0 {
+		t.Fatalf("bound pairing offered to a plain pair: %v, %d prompts", err, confirmer.calls)
+	}
+}

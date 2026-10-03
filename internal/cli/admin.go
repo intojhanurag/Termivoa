@@ -528,7 +528,11 @@ func waitForPhone(ctx context.Context, admin Admin, options PairOptions, wait ph
 				continue
 			}
 			seen[item.ID] = true
-			if wait.appOrigin != "" && (item.AppOrigin == nil || *item.AppOrigin != wait.appOrigin) {
+			// A plain pairing (no appOrigin) offers only plain pairings: a
+			// redeemed bound grant (a link or Found offer of another wait)
+			// needs the prompt that names this computer and its app.
+			if wait.appOrigin == "" && item.AppOrigin != nil ||
+				wait.appOrigin != "" && (item.AppOrigin == nil || *item.AppOrigin != wait.appOrigin) {
 				continue
 			}
 			approve, err := options.Confirmer.Confirm(ctx, pairingPrompt(item, wait.self))
