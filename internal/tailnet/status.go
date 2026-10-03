@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,6 +39,25 @@ type Node struct {
 	// OS is as Tailscale reports it ("linux", "macOS", "iOS"). It only
 	// narrows the list HomeCandidates offers; it is never a trust input.
 	OS string
+	// TailscaleIPs are the node's addresses inside Tailscale's own ranges
+	// (100.64.0.0/10, fd7a:115c:a1e0::/48), in status order. An offer to home
+	// dials the first one, never a DNS name (docs/found-on-network.md, N2).
+	TailscaleIPs []netip.Addr
+}
+
+// tailscaleRanges are the address ranges Tailscale assigns to nodes.
+var tailscaleRanges = []netip.Prefix{netip.MustParsePrefix("100.64.0.0/10"), netip.MustParsePrefix("fd7a:115c:a1e0::/48")}
+
+// tailscaleIPs keeps the addresses inside tailscaleRanges and drops the rest.
+func tailscaleIPs(values []string) []netip.Addr {
+	var addresses []netip.Addr
+	for _, value := range values {
+		address, err := netip.ParseAddr(value)
+		if err == nil && slices.ContainsFunc(tailscaleRanges, func(prefix netip.Prefix) bool { return prefix.Contains(address) }) {
+			addresses = append(addresses, address)
+		}
+	}
+	return addresses
 }
 
 // Tagged reports a tagged node. Tagged nodes share one placeholder owner, so
@@ -69,12 +89,13 @@ type Status struct {
 }
 
 type rawPeer struct {
-	ID         string
-	DNSName    string
-	UserID     int64
-	Tags       []string
-	ShareeNode bool
-	OS         string
+	ID           string
+	DNSName      string
+	UserID       int64
+	Tags         []string
+	ShareeNode   bool
+	OS           string
+	TailscaleIPs []string
 }
 
 // ParseStatus parses `tailscale status --json`. It is lenient about missing
@@ -103,7 +124,7 @@ func ParseStatus(data []byte) (*Status, error) {
 			owner = raw.User[strconv.FormatInt(peer.UserID, 10)].LoginName
 		}
 		return Node{ID: peer.ID, Host: strings.ToLower(strings.TrimSuffix(peer.DNSName, ".")),
-			UserID: peer.UserID, Owner: owner, Tags: peer.Tags, OS: peer.OS}
+			UserID: peer.UserID, Owner: owner, Tags: peer.Tags, OS: peer.OS, TailscaleIPs: tailscaleIPs(peer.TailscaleIPs)}
 	}
 	if raw.Self != nil {
 		status.Self = node(*raw.Self)
