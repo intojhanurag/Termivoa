@@ -155,10 +155,13 @@ still need the exact app origin.
    origin itself (form posts, module scripts, WebSocket handshakes), or no
    `Origin` and `Sec-Fetch-Site: same-origin`. So no other page (the app,
    another machine in the tailnet, another computer's dev site) can load
-   from, frame or open a socket to a dev server. A `curl` or a typed URL is
-   refused too.
-4. The failed-attempt limiter, then the device cookie, then the preview
-   cookie and the broker check.
+   from, frame or open a socket to a dev server. A typed URL is refused too.
+   L1 is a rule for browsers: a `curl` that forges `Sec-Fetch-Site` or
+   `Origin` passes it; the device cookie and the broker stop it.
+4. The device cookie, then the preview cookie and the broker check. Failed
+   attempts are not counted, so another machine's requests can never lock out
+   a paired phone (`docs/threat-model.md`, "Pairing and credential acceptance
+   criteria").
 
 On every preview check for a device that is bound to another computer's app,
 the broker also requires that its Tailscale snapshot still trusts that
@@ -182,7 +185,7 @@ Answers from the listener itself are short plain-text pages without
 | 404 | "No dev server of this session listens on that port." / "Unknown preview route." | |
 | 409 | "The session is not running." | |
 | 421 | "Unknown host." | |
-| 429 | "Too many failed attempts." / "Too many open preview sockets." | |
+| 429 | "Too many open preview sockets." | More than 32 open upgrades |
 | 502 | "The dev server did not answer." | |
 | 503 | "The computer is not available." | Other broker errors, for example Tailscale status not readable past the grace period |
 

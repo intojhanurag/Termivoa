@@ -256,11 +256,6 @@ func (handler *previewHandler) ServeHTTP(response http.ResponseWriter, request *
 		previewPage(response, http.StatusForbidden, "Origin not allowed.")
 		return
 	}
-	limitKey := clientKey(request)
-	if !handler.main.authFailLimit.allowed(limitKey) {
-		previewPage(response, http.StatusTooManyRequests, "Too many failed attempts.")
-		return
-	}
 	credential, ok := handler.main.sessionCookie(request)
 	if !ok || protocol.ValidateSecretText(credential) != nil {
 		previewPage(response, http.StatusUnauthorized, "Open the preview from your paired phone.")
@@ -384,9 +379,6 @@ func (handler *previewHandler) selectPort(response http.ResponseWriter, request 
 		ctx = gatewayapi.WithForwardedOrigin(ctx, app)
 	}
 	if _, err := handler.main.api.PreviewTarget(ctx, credential, sessionID, uint16(port)); err != nil {
-		if isAuthFailure(err) {
-			handler.main.authFailLimit.take(clientKey(request))
-		}
 		handler.fail(response, err)
 		return
 	}

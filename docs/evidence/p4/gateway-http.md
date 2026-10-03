@@ -100,6 +100,8 @@ attach in a native outer PTY and does not use the gateway.
 
 - Rate limits key on the peer IP. Behind Tailscale Serve every request comes
   from `127.0.0.1`, so the limits are effectively global for that origin.
+  For that reason the failed-auth limit above was removed later (#149,
+  `docs/threat-model.md`); the pairing limits remain.
 - The gateway checks that inbound WebSocket messages are one JSON object; the
   broker validates envelope semantics.
 - Vite source maps (`build.sourcemap: true`) stay in `web/dist` only; they are not embedded or served (see the review pass below).

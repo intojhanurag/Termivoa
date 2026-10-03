@@ -430,8 +430,8 @@ func (handler *gatewayHandler) logout(response http.ResponseWriter, request *htt
 	response.WriteHeader(http.StatusNoContent)
 }
 
-// respond writes a broker result. Authentication failures are counted
-// against the client and clear the stale cookie.
+// respond writes a broker result. Authentication failures clear the stale
+// cookie.
 func (handler *gatewayHandler) respond(response http.ResponseWriter, request *http.Request, result any, err error) {
 	if err == nil {
 		writeJSON(response, http.StatusOK, result)
@@ -439,29 +439,22 @@ func (handler *gatewayHandler) respond(response http.ResponseWriter, request *ht
 	}
 	if isAuthFailure(err) {
 		handler.clearCookie(response)
-		if !handler.authFailLimit.take(clientKey(request)) {
-			writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "too many failed attempts")
-			return
-		}
 	}
 	writeBrokerError(response, err)
 }
 
 // credential returns the raw session cookie. The broker authorizes it; the
-// gateway only rejects obviously malformed values and throttled clients.
+// gateway only rejects obviously malformed values. Failed attempts are not
+// counted: behind Tailscale Serve every client shares one address, so a
+// count would let any client lock out a paired device (issue #149), and a
+// 256-bit credential cannot be guessed online with or without one.
 func (handler *gatewayHandler) credential(response http.ResponseWriter, request *http.Request) (string, bool) {
-	key := clientKey(request)
-	if !handler.authFailLimit.allowed(key) {
-		writeError(response, http.StatusTooManyRequests, protocol.LimitExceeded, "too many failed attempts")
-		return "", false
-	}
 	value, present := handler.sessionCookie(request)
 	if !present {
 		writeError(response, http.StatusUnauthorized, protocol.Unauthorized, "sign in required")
 		return "", false
 	}
 	if protocol.ValidateSecretText(value) != nil {
-		handler.authFailLimit.take(key)
 		handler.clearCookie(response)
 		writeError(response, http.StatusUnauthorized, protocol.Unauthorized, "sign in required")
 		return "", false
@@ -652,8 +645,10 @@ func validText(value string, maxBytes int) bool {
 
 // clientKey identifies the rate-limit client by peer IP. Forwarded headers
 // are ignored.
-// ponytail: behind Tailscale Serve every peer is 127.0.0.1, so limits are
-// effectively global; per-client limits need a trusted peer identity.
+// ponytail: behind Tailscale Serve every peer is 127.0.0.1, so the pairing
+// limits are effectively global: a tailnet machine that floods the pairing
+// routes blocks new pairings while it runs. Per-client limits need the
+// address Serve forwards, a trust change that needs an ADR.
 func clientKey(request *http.Request) string {
 	host, _, err := net.SplitHostPort(request.RemoteAddr)
 	if err != nil {
@@ -683,20 +678,12 @@ func newLimiter(burst int, every time.Duration) *limiter {
 }
 
 // take consumes one token and reports whether one was available.
-func (limit *limiter) take(key string) bool { return limit.check(key, true) }
-
-// allowed reports whether a token is available without consuming it.
-func (limit *limiter) allowed(key string) bool { return limit.check(key, false) }
-
-func (limit *limiter) check(key string, consume bool) bool {
+func (limit *limiter) take(key string) bool {
 	limit.mu.Lock()
 	defer limit.mu.Unlock()
 	now := limit.now()
 	current := limit.buckets[key]
 	if current == nil {
-		if !consume {
-			return true
-		}
 		if len(limit.buckets) >= maxLimiterClients {
 			for other, candidate := range limit.buckets {
 				if limit.refill(candidate, now) >= limit.burst {
@@ -713,9 +700,7 @@ func (limit *limiter) check(key string, consume bool) bool {
 	if limit.refill(current, now) < 1 {
 		return false
 	}
-	if consume {
-		current.tokens--
-	}
+	current.tokens--
 	return true
 }
 

@@ -84,6 +84,22 @@ Localhost, a Tailscale header, device label, UUID, or verification code alone ne
 grants browser access. Gateway IPC must not convert an unpaired request into a
 privileged desktop/CLI identity.
 
+Guessing a credential online is prevented by the 256-bit credential space, not
+by a rate limit. The gateway does not count failed credential attempts (#149):
+behind Tailscale Serve every client reaches it from `127.0.0.1`, forwarded
+headers are not read, and one shared count let any tailnet machine lock out
+every paired phone with about 20 bad requests. A request with a well-formed
+credential is always judged by the broker. A tailnet machine can still send
+many requests (each well-formed one costs one broker lookup), but it cannot
+lock out a paired phone, also not after a gateway restart.
+
+Known limit: the pairing routes keep their gateway limits (redeem: 5, then 1
+per 12 s; poll: 10, then 1 per s), and behind Tailscale Serve each is one
+bucket for all clients. A tailnet machine that floods these routes blocks new
+pairings while it runs. Paired phones are not affected, and guessing is not
+helped (the broker has its own pairing limits). A per-client key needs the
+address that Tailscale Serve forwards; that is a trust change and needs an ADR.
+
 ## Terminal and input acceptance criteria
 
 Only the broker's emulator responds to child queries. The documented Windows
