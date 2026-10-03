@@ -381,6 +381,7 @@ func TestServeFindings(t *testing.T) {
 		previewConfigured bool
 		previewProblems   int
 		funnel            string
+		foregroundFunnel  string
 	}{
 		"empty":          {json: "{}"},
 		"no output":      {json: ""},
@@ -405,6 +406,54 @@ func TestServeFindings(t *testing.T) {
 			json:            `{"TCP":{"8443":{"TCPForward":"127.0.0.1:22"}}}`,
 			previewProblems: 1,
 		},
+		// After a machine rename the old name still proxies Termivoa, but
+		// nothing serves this computer's name (#168).
+		"other host name": {
+			json: `{"TCP":{"443":{"HTTPS":true},"8443":{"HTTPS":true}},"Web":{` +
+				`"old.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
+				`"old.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
+		},
+		"this host and an old name": {
+			json: `{"TCP":{"443":{"HTTPS":true}},"Web":{` +
+				`"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},` +
+				`"old.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}}}`,
+			configured: true,
+		},
+		// `tailscale funnel 8787` without --bg: the config lives under
+		// Foreground, keyed by the IPN bus session ID.
+		"foreground funnel": {
+			json: `{"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"443":{"HTTPS":true}},` +
+				`"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},` +
+				`"AllowFunnel":{"h.ts.net:443":true}}}}`,
+			problems: 2, foregroundFunnel: "h.ts.net:443",
+		},
+		"foreground funnel next to a saved config": {
+			json: `{"TCP":{"443":{"HTTPS":true}},"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},` +
+				`"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"8443":{"HTTPS":true}},` +
+				`"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}},` +
+				`"AllowFunnel":{"h.ts.net:8443":true}}}}`,
+			configured: true, problems: 1, previewProblems: 1, foregroundFunnel: "h.ts.net:8443",
+		},
+		// `tailscale serve 3000` without --bg on 443.
+		"foreground conflict": {
+			json: `{"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"443":{"HTTPS":true}},` +
+				`"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}}}`,
+			problems: 1,
+		},
+		"foreground tcp forward": {
+			json:     `{"Foreground":{"5f0e2c7d9a1b4e36":{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}}}`,
+			problems: 1,
+		},
+		// `tailscale serve --service=svc:termivoa --https=443 8787`.
+		"service serves termivoa": {
+			json: `{"Services":{"svc:termivoa":{"TCP":{"443":{"HTTPS":true}},` +
+				`"Web":{"termivoa.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}}}}}`,
+			problems: 1,
+		},
+		"service serves another app": {
+			json: `{"Services":{"svc:grafana":{"TCP":{"443":{"HTTPS":true}},` +
+				`"Web":{"grafana.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}}}`,
+		},
 		"both configured, independent": {
 			json: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}},"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
 			// A 443 conflict must not block 8443 being reported configured.
@@ -412,10 +461,10 @@ func TestServeFindings(t *testing.T) {
 			previewConfigured: true,
 		},
 	} {
-		status, err := ServeFindings([]byte(test.json))
+		status, err := ServeFindings([]byte(test.json), "h.ts.net")
 		if err != nil || status.Configured != test.configured || len(status.Problems) != test.problems ||
 			status.PreviewConfigured != test.previewConfigured || len(status.PreviewProblems) != test.previewProblems ||
-			strings.Join(status.Funnel, ",") != test.funnel {
+			strings.Join(status.Funnel, ",") != test.funnel || strings.Join(status.ForegroundFunnel, ",") != test.foregroundFunnel {
 			t.Errorf("%s: status=%+v err=%v", name, status, err)
 		}
 	}

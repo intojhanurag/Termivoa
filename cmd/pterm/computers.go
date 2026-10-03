@@ -65,18 +65,29 @@ func tailnetFindings(status *tailnet.Status, devices []protocol.AdminRPCDevice) 
 	return findings
 }
 
-const tcpForwardPrefix = "TCP forward to "
+const (
+	tcpForwardPrefix = "TCP forward to "
+	// foregroundPrefix marks a handler of a `tailscale serve` or `tailscale
+	// funnel` command that runs in the foreground; stopping it removes it.
+	foregroundPrefix = "foreground "
+)
 
 // otherHandlersProblem explains why other Serve handlers on this computer's
 // origin are refused (docs/multi-computer.md, "Roles") and how to move them.
 // Another port on the same host is no fix: cookies ignore ports, so a handler
 // there still receives the Termivoa cookie (otherPortsWarning).
 func otherHandlersProblem(dnsName string, handlers []string) string {
-	remove := make([]string, len(handlers))
-	for index, handler := range handlers {
-		remove[index] = "`tailscale serve --https=443 --set-path=" + handler + " off`"
-		if strings.HasPrefix(handler, tcpForwardPrefix) {
-			remove[index] = "`tailscale serve --tcp=443 off`"
+	var remove []string
+	for _, handler := range handlers {
+		fix := "`tailscale serve --https=443 --set-path=" + handler + " off`"
+		switch {
+		case strings.HasPrefix(handler, foregroundPrefix):
+			fix = lifecycle.ForegroundStop
+		case strings.HasPrefix(handler, tcpForwardPrefix):
+			fix = "`tailscale serve --tcp=443 off`"
+		}
+		if !slices.Contains(remove, fix) {
+			remove = append(remove, fix)
 		}
 	}
 	return fmt.Sprintf("tailscale serve: other handlers share this computer's Termivoa origin https://%s: %s. "+
@@ -85,6 +96,17 @@ func otherHandlersProblem(dnsName string, handlers []string) string {
 		"or stop serving it; another port on this computer does not help, because browsers send the Termivoa cookie "+
 		"to every port of a host. Then remove it here: %s.",
 		dnsHost(dnsName), strings.Join(handlers, ", "), strings.Join(remove, ", "))
+}
+
+// serveHandlers is the part of `tailscale serve status --json` that
+// otherHandlers reads; Foreground holds the configs of commands that run in
+// the foreground (Tailscale's ipn.ServeConfig).
+type serveHandlers struct {
+	TCP map[string]struct{ TCPForward string }
+	Web map[string]struct {
+		Handlers map[string]struct{ Proxy string }
+	}
+	Foreground map[string]serveHandlers
 }
 
 // otherHandlers parses the Serve JSON once and returns two lists.
@@ -99,42 +121,45 @@ func otherHandlersProblem(dnsName string, handlers []string) string {
 // Termivoa cookie to every port of a host, so each one receives it.
 // Termivoa's own preview handler on 8443 is left out, since the gateway
 // strips the cookie there.
+//
+// Handlers of foreground commands are named with foregroundPrefix.
 func otherHandlers(data []byte, dnsName string) (origin, ports []string) {
-	var raw struct {
-		TCP map[string]struct{ TCPForward string }
-		Web map[string]struct {
-			Handlers map[string]struct{ Proxy string }
-		}
-	}
+	var raw serveHandlers
 	if json.Unmarshal(data, &raw) != nil {
 		return nil, nil
 	}
-	for port, tcp := range raw.TCP {
-		switch {
-		case tcp.TCPForward == "":
-		case port == "443":
-			origin = append(origin, tcpForwardPrefix+tcp.TCPForward)
-		default:
-			ports = append(ports, "TCP "+port+" forward to "+tcp.TCPForward)
-		}
-	}
-	for hostPort, web := range raw.Web {
-		host, port, ok := strings.Cut(strings.ToLower(hostPort), ":")
-		if !ok || host != dnsHost(dnsName) {
-			continue
-		}
-		for path, handler := range web.Handlers {
-			proxy := strings.TrimSuffix(handler.Proxy, "/")
+	read := func(config serveHandlers, label string) {
+		for port, tcp := range config.TCP {
 			switch {
+			case tcp.TCPForward == "":
 			case port == "443":
-				if path != "/" || proxy != strings.TrimSuffix(lifecycle.LocalURL, "/") {
-					origin = append(origin, path)
-				}
-			case port == gateway.PreviewPublicPort && path == "/" && proxy == strings.TrimSuffix(lifecycle.PreviewLocalURL, "/"):
+				origin = append(origin, label+tcpForwardPrefix+tcp.TCPForward)
 			default:
-				ports = append(ports, "HTTPS "+port+" "+path)
+				ports = append(ports, label+"TCP "+port+" forward to "+tcp.TCPForward)
 			}
 		}
+		for hostPort, web := range config.Web {
+			host, port, ok := strings.Cut(strings.ToLower(hostPort), ":")
+			if !ok || host != dnsHost(dnsName) {
+				continue
+			}
+			for path, handler := range web.Handlers {
+				proxy := strings.TrimSuffix(handler.Proxy, "/")
+				switch {
+				case port == "443":
+					if path != "/" || proxy != strings.TrimSuffix(lifecycle.LocalURL, "/") {
+						origin = append(origin, label+path)
+					}
+				case port == gateway.PreviewPublicPort && path == "/" && proxy == strings.TrimSuffix(lifecycle.PreviewLocalURL, "/"):
+				default:
+					ports = append(ports, label+"HTTPS "+port+" "+path)
+				}
+			}
+		}
+	}
+	read(raw, "")
+	for _, config := range raw.Foreground {
+		read(config, foregroundPrefix)
 	}
 	slices.Sort(origin)
 	slices.Sort(ports)

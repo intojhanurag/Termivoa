@@ -312,15 +312,31 @@ func previewOrigin(origin string) string {
 }
 
 // funnelProblem says that Tailscale Funnel is on for Termivoa's ports
-// (host:443, host:8443) and names the commands that turn it off. pterm never
-// runs them: Tailscale changes are the owner's (AGENTS.md rule 12).
-func funnelProblem(funnel []string) string {
-	commands := make([]string, len(funnel))
-	for index, hostPort := range funnel {
-		commands[index] = "`" + lifecycle.FunnelOffCommand(hostPort) + "`"
+// (host:443, host:8443) and how to turn it off, or "" when it is off. pterm
+// never does it: Tailscale changes are the owner's (AGENTS.md rule 12).
+func funnelProblem(serve lifecycle.ServeStatus) string {
+	hostPorts := slices.Clone(serve.Funnel)
+	for _, hostPort := range serve.ForegroundFunnel {
+		if !slices.Contains(hostPorts, hostPort) {
+			hostPorts = append(hostPorts, hostPort)
+		}
 	}
-	return fmt.Sprintf("Tailscale Funnel is on for %s, which puts Termivoa on the public internet; turn it off with %s",
-		strings.Join(funnel, ", "), strings.Join(commands, " and "))
+	if len(hostPorts) == 0 {
+		return ""
+	}
+	var fixes []string
+	if len(serve.Funnel) > 0 {
+		commands := make([]string, len(serve.Funnel))
+		for index, hostPort := range serve.Funnel {
+			commands[index] = "`" + lifecycle.FunnelOffCommand(hostPort) + "`"
+		}
+		fixes = append(fixes, "turn it off with "+strings.Join(commands, " and "))
+	}
+	if len(serve.ForegroundFunnel) > 0 {
+		fixes = append(fixes, lifecycle.ForegroundStop)
+	}
+	return fmt.Sprintf("Tailscale Funnel is on for %s, which puts Termivoa on the public internet; %s",
+		strings.Join(hostPorts, ", "), strings.Join(fixes, "; "))
 }
 
 // findTailscale is tailnet.FindBinary for this OS; tests replace it.
@@ -330,23 +346,25 @@ var findTailscale = func() string {
 }
 
 // termivoaFunnel reads only `tailscale serve status --json` and returns
-// Termivoa's ports with Funnel on. Without Tailscale, or when the status
-// cannot be read, it returns none, and the caller goes on as before.
-func termivoaFunnel(ctx context.Context, cli string) []string {
+// funnelProblem for it: "" when Funnel is off on Termivoa's ports. Without
+// Tailscale, or when the status cannot be read, it returns "", and the
+// caller goes on as before.
+func termivoaFunnel(ctx context.Context, cli string) string {
 	if cli == "" {
-		return nil
+		return ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	data, err := tailscaleRun(ctx, cli, nil, "serve", "status", "--json")
 	if err != nil {
-		return nil
+		return ""
 	}
-	serve, err := lifecycle.ServeFindings(data)
+	// Funnel does not depend on this computer's name, so no host is needed.
+	serve, err := lifecycle.ServeFindings(data, "")
 	if err != nil {
-		return nil
+		return ""
 	}
-	return serve.Funnel
+	return funnelProblem(serve)
 }
 
 // inspectTailscale runs only `status --json` and `serve status --json`.
@@ -381,7 +399,7 @@ func inspectTailscale(ctx context.Context, cli string, refused []string, output 
 		problems++
 	}
 	data, err = run("serve", "status", "--json")
-	report.serve, parseErr = lifecycle.ServeFindings(data)
+	report.serve, parseErr = lifecycle.ServeFindings(data, status.Self.Host)
 	switch {
 	case err != nil || parseErr != nil:
 		report.serveErr = errors.Join(err, parseErr)
@@ -678,9 +696,9 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 	// Funnel on Termivoa's ports puts the terminal on the public internet,
 	// even where Serve already proxies Termivoa, so setup starts and pairs
 	// nothing. The owner turns it off; pterm never changes Tailscale here.
-	if funnel := report.tailscale.serve.Funnel; len(funnel) > 0 {
+	if problem := funnelProblem(report.tailscale.serve); problem != "" {
 		_, _ = output.Write(checks.Bytes())
-		return fmt.Errorf("refusing to set up: %s, then run `pterm setup` again", funnelProblem(funnel))
+		return fmt.Errorf("refusing to set up: %s, then run `pterm setup` again", problem)
 	}
 	if !verbose {
 		detail = io.Discard
@@ -1448,8 +1466,8 @@ func runLaunchCommand(ctx context.Context, args []string, output io.Writer) erro
 	}
 	// Launch starts only the processes on this computer, so it warns and
 	// starts; pairing refuses while Funnel is on.
-	if funnel := termivoaFunnel(ctx, env.tailscale); len(funnel) > 0 {
-		fmt.Fprintf(output, "Warning: %s. Pairing a phone is refused until it is off.\n", funnelProblem(funnel))
+	if problem := termivoaFunnel(ctx, env.tailscale); problem != "" {
+		fmt.Fprintf(output, "Warning: %s. Pairing a phone is refused until it is off.\n", problem)
 	}
 	if err := startMissing(ctx, env, statuses, io.Discard); err != nil {
 		return err
