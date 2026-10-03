@@ -17,7 +17,7 @@ PW=<playwright-core dir> WEBKIT=<webkit executable> node scripts/e2e-multicomput
 
 WebKit needs a Playwright whose WebKit build is installed, for example playwright-core 1.61.1 with `WEBKIT=~/Library/Caches/ms-playwright/webkit-2272/pw_run.sh`. The harness installs nothing.
 
-Options: `--out <dir>` writes the results table, JSON and screenshots there (Phase B also writes each failed step's whole error, with a CLI's output so far, as `fail-<ID>.txt`, links hidden) (default `<root>/evidence`); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 32 checks, Phase B 77 (33 of them `PV-*`, the preview; 2 `SCAN-*`; 12 `F-*`, Found on your network), WebKit 8. Needs macOS, Go, Node 24, pnpm and Google Chrome.
+Options: `--out <dir>` writes the results table, JSON and screenshots there (default `<root>/evidence`), and Phase B writes each failed step's whole error, with a CLI's output so far, as `fail-<ID>.txt` (links hidden); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 32 checks, Phase B 78 (33 of them `PV-*`, the preview; 2 `SCAN-*`; 12 `F-*`, Found on your network), WebKit 8. Needs macOS, Go, Node 24, pnpm and Google Chrome.
 
 `--no-web-build` reuses `internal/webassets/dist`; after a change in `web/`, run once without it (or run `pnpm build:web` and `sh scripts/embed-web.sh`: `pnpm build:web` alone only writes `web/dist`). Every run builds `pterm` again, with `-tags webdist,e2e`; Phase A also builds it without `e2e` (check A8).
 
