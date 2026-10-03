@@ -8,6 +8,21 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **Notifications from every computer.** Phone: each paired computer now
+  sends "waiting" and "done" notifications. One switch (Sessions card or
+  **Settings → Notifications**) covers all computers. The title and text of
+  a notification from another computer start with its name (`vps · …`) and
+  a tap opens that session. With the app already open, the tap moves it to
+  that session. A computer that was offline when you turned notifications on
+  is added when it is back. Settings shows "No notifications from vps." for
+  a computer that could not be subscribed; home and the other computers
+  keep working. **Send a test notification** asks every computer. Removing
+  a computer, **Log out**, "pair again" and turning the switch off stop
+  that computer's notifications, also while that computer is slow to
+  answer. The service-worker cleanup now keeps the app's worker and one
+  push registration per listed computer, and removes everything else.
+  Host: every path under `/push/` now answers 404. Not yet tested on a
+  real iPhone.
 - Computer health. Phone: **Settings → Computers** shows the Termivoa
   version each computer runs and when your phone last got an answer from it,
   and **Check again** re-checks one computer now (it replaces **Retry**
@@ -41,8 +56,8 @@ All notable changes are documented here. The format follows
   remove this phone."). New session picks the computer first ("Runs on vps").
   The Wall shows tiles from all computers, at most 4 live at 5 updates per
   second under one phone-wide budget; the rest show **Paused**. Live, the
-  composer, uploads, Changes and Files work on every computer; previews and
-  notifications stay home-only. Peer answers are schema-checked leniently
+  composer, uploads, Changes and Files work on every computer; previews stay
+  home-only. Peer answers are schema-checked leniently
   and peer error text is never shown. The service worker now precaches the
   complete bundle of its build, loads pages network-first with a 2.5 s
   fallback to that copy, and removes any service worker that is not the

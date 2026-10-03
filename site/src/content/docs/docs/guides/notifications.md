@@ -1,7 +1,7 @@
 ---
 title: Notifications
 description: Termivoa sends a phone notification when a coding agent waits for you or finishes, with only names and status, never any terminal text.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-03
 ---
 
 Termivoa sends a notification to your phone when a coding agent waits for you or finishes.
@@ -23,6 +23,21 @@ Termivoa sends a notification to your phone when a coding agent waits for you or
 
 It has only the session name, project name, status and work time, never terminal text (no output, question, path or command). The content is encrypted to your phone. Tapping it opens that session.
 
+## Do notifications come from every computer?
+
+**Next beta.** Yes. With [several computers](/docs/guides/computers/), each computer sends its own notifications, and one switch controls all of them.
+
+| Question | Answer |
+| --- | --- |
+| How do I know which computer it is? | The title and the text of a notification from another computer both start with its name, for example `vps · <session> is waiting for you` and `vps · <project> · tap to answer`. That computer writes the words after the name. Home's notifications have no name in front. The name is the first part of the computer's address, also after you rename it in the app. |
+| What does a tap open? | That session on that computer. |
+| I added a computer later. | It starts to notify when it is added. There is no new permission prompt. |
+| I removed a computer, or it shows **pair again**. | Its notifications stop. |
+| One computer cannot be reached. | The others still notify. **Settings → Notifications** shows **No notifications from vps.** When the computer is back and the app is open, it starts to notify again by itself. |
+| What does **Send a test notification** do? | Each computer sends one. The note says **Sent**, and names a computer that sent none. |
+
+In `v0.1.0-beta.2`, only home sends notifications. On iPhone, notifications from other computers are not tested on a real phone yet; if they do not arrive there, home's notifications still work.
+
 ## When do notifications come?
 
 - **Waiting:** once per new question.
@@ -33,10 +48,10 @@ It has only the session name, project name, status and work time, never terminal
 
 ## How are notifications sent?
 
-Your computer, which must be awake, sends them through your phone's normal push service (Apple, Google, Mozilla or Microsoft). There is no Termivoa cloud service.
+The computer that runs the session, which must be awake, sends them through your phone's normal push service (Apple, Google, Mozilla or Microsoft). There is no Termivoa cloud service.
 
 ## Turn notifications off
 
-Turn off the switch in **Settings → Notifications**. Removing the phone (`pterm revoke` or **Log out** on the phone) also stops them.
+Turn off the switch in **Settings → Notifications**; it turns them off for every computer. Removing the phone (`pterm revoke` on a computer stops that computer's notifications; **Log out** on the phone stops all) also stops them.
 
 If they do not arrive, see [Notifications do not arrive](/docs/reference/troubleshooting/#notifications-do-not-arrive).

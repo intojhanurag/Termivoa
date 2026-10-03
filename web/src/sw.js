@@ -12,6 +12,13 @@ const NAVIGATION_TIMEOUT_MS = 2500;
 /** Caches this app made, this build's and older builds'. */
 const OWN_CACHE = /^pterm-bundle-/;
 const BUNDLE_FILES = new Set(BUNDLE.files);
+/* Push from another computer (a peer) comes through its own registration of
+ * this file at scope /push/<host>/ (web/src/push.ts). The host is read from
+ * that scope, which the app sets from its confirmed list, and never from a
+ * push payload. '' in the app's own registration (scope /). A peer
+ * registration serves no page (the computer answers 404 under /push/), so it
+ * keeps no bundle, deletes no cache and handles no fetch. */
+const PEER_HOST = (/^\/push\/([a-z0-9.-]+)\/$/.exec(new URL(self.registration.scope).pathname) || [])[1] || '';
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -136,11 +143,12 @@ async function fromBundle(request, pathname) {
 
 self.addEventListener('install', (event) => {
   // Deliberately no skipWaiting(): a live session is never switched underneath the user.
-  event.waitUntil(precache());
+  if (!PEER_HOST) event.waitUntil(precache());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
+  // A peer registration of a newer build must not delete the cache the open app still uses.
+  if (!PEER_HOST) event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && OWN_CACHE.test(key)).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
@@ -155,7 +163,8 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  if (request.method !== 'GET') {
+  // A peer registration serves nothing; the computer answers 404 under /push/.
+  if (PEER_HOST || request.method !== 'GET') {
     return;
   }
   const url = new URL(request.url);
@@ -191,11 +200,18 @@ self.addEventListener('push', (event) => {
   }
   const sessionId = typeof data.sessionId === 'string' && SESSION_ID.test(data.sessionId) ? data.sessionId : '';
   const kind = KINDS.includes(data.kind) ? data.kind : 'test';
-  event.waitUntil(self.registration.showNotification(text(data.title, 120) || 'Termivoa', {
-    body: text(data.body, 160),
-    tag: `${sessionId || 'pterm'}:${kind}`,
+  const body = text(data.body, 160);
+  const title = text(data.title, 120) || 'Termivoa';
+  // A peer's notification opens /c/<host>/sessions/<id>. Its title and body
+  // both start with its computer (the first DNS label of the scope's host):
+  // the peer writes the rest, so it could otherwise name another computer.
+  const peer = PEER_HOST && `/c/${PEER_HOST}`;
+  const label = PEER_HOST.split('.')[0];
+  event.waitUntil(self.registration.showNotification(PEER_HOST ? `${label} · ${title}` : title, {
+    body: PEER_HOST ? [label, body].filter(Boolean).join(' · ') : body,
+    tag: `${peer}${sessionId || 'pterm'}:${kind}`,
     icon: '/icon-192.png',
-    data: { url: sessionId ? `/sessions/${sessionId}` : '/' },
+    data: { url: sessionId ? `${peer}/sessions/${sessionId}` : '/' },
   }));
 });
 
@@ -206,10 +222,19 @@ self.addEventListener('notificationclick', (event) => {
   // '/\host' would parse as another origin, so check the resolved origin too.
   const resolved = new URL(path, self.location.origin);
   const url = resolved.origin === self.location.origin ? resolved.href : `${self.location.origin}/`;
+  // The open app routes to this path itself (App.tsx checks it again).
+  const open = { type: 'open', path: new URL(url).pathname };
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
     const client = windows.find((item) => new URL(item.url).origin === self.location.origin);
     if (!client) {
       return self.clients.openWindow(url);
+    }
+    // A tap allows one window action, and focus() is it: never openWindow() after it.
+    // A peer registration does not control the window (home's does), so
+    // navigate() would reject there: the page gets the path as a message.
+    if (PEER_HOST) {
+      client.postMessage(open);
+      return client.focus();
     }
     await client.focus();
     try {
@@ -217,8 +242,9 @@ self.addEventListener('notificationclick', (event) => {
         return undefined;
       }
     } catch {
-      // Uncontrolled windows cannot be navigated; open one at the right page instead.
+      // A window this worker does not control yet cannot be navigated.
     }
-    return self.clients.openWindow(url);
+    client.postMessage(open);
+    return undefined;
   }));
 });

@@ -77,6 +77,7 @@ You can leave the page to type `y` in the app's own terminal: tap **Back to term
 | New session | **❯ new session on…** and a **Computer** row pick where it runs. Projects and shells come from that computer. |
 | [Wall](/docs/guides/wall/) | Tiles from all computers. At most 4 are live at once (5 updates per second each); the rest show **Paused**. |
 | Live, [Changes](/docs/guides/changes/), [Files](/docs/guides/files/) | Work the same on every computer. |
+| [Notifications](/docs/guides/notifications/#do-notifications-come-from-every-computer) | Every computer sends them. One switch in **Settings → Notifications** controls all. The title and text of a notification from another computer start with its name (`vps · …`) and a tap opens that session. |
 
 With one computer, the app looks the same as before.
 
@@ -148,9 +149,9 @@ Every step matters: a hacked home can leave a hidden background script on the ph
 | One tailnet, one Tailscale user | Each computer checks that home belongs to you. |
 | At most 8 computers plus home | For each phone. |
 | WSL cannot be a peer | Tailscale usually runs on Windows, so WSL cannot check the tailnet. |
-| Notifications and Preview come from home only | Peer sessions show **Waiting** and **Working** while the app is open. |
+| Preview comes from home only | Sessions on other computers have no dev-server preview. |
 | Reinstalling Tailscale | On home: peers show **pair again**. On a peer: home drops it from the list; add it again. |
 
 ## Is it tested on a real phone?
 
-Not yet. Chrome and WebKit pass all 59 checks with two test computers, but the check on a real iPhone and Android phone has not run. If it fails on iPhone, the design changes before release.
+Not yet. Chrome and WebKit pass all 65 checks with two test computers, but the check on a real iPhone and Android phone has not run. If it fails on iPhone, the design changes before release.

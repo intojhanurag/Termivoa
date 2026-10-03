@@ -483,6 +483,13 @@ func TestStaticSite(t *testing.T) {
 		{"/assets/app-3f9a1c.js.map", "", "no-store", "", 404},
 		{"/.vite/manifest.json", "", "no-store", "", 404},
 		{"/.DS_Store", "", "no-store", "", 404},
+		// No page under a peer's push scope, with or without an extension.
+		{"/push", "", "no-store", "", 404},
+		{"/push/", "", "no-store", "", 404},
+		{"/push/vps.tailx.ts.net/", "", "no-store", "", 404},
+		{"/push/vps.tailx.ts.net/x", "", "no-store", "", 404},
+		{"/push/vps.tailx.ts.net/sessions/abc", "", "no-store", "", 404},
+		{"/pushed", "text/html; charset=utf-8", "no-store", "<title>app</title>", 200},
 	} {
 		response := do(handler, http.MethodGet, test.path, "", requestOptions{})
 		header := response.Header()

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
 import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
-import { disablePush, enablePush, pushEnabled, pushSupport } from '../push';
+import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush } from '../push';
 import type { ComputerEntry } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
@@ -29,7 +29,10 @@ type NameState =
 
 type Note = { readonly text: string; readonly error: boolean };
 
-/** Push on/off for this phone, plus a test send. */
+/** "No notifications from vps, pi." */
+export const noPushFrom = (labels: ReadonlyArray<string>): string => `No notifications from ${labels.join(', ')}.`;
+
+/** Push on/off for this phone on every computer, plus a test send. */
 export function NotificationSettings({ onFailure }: { readonly onFailure: (error: unknown) => string }) {
   const [support] = useState(pushSupport);
   // undefined while the browser is asked whether this phone is subscribed.
@@ -37,10 +40,17 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Note>();
 
+  // The computers that send no notifications to this phone (home is on).
+  const [missing, setMissing] = useState<ReadonlyArray<string>>([]);
+
   useEffect(() => {
     if (support !== 'available') return undefined;
     let live = true;
-    pushEnabled().catch(() => false).then((value) => { if (live) setEnabled(value); });
+    pushEnabled().catch(() => false).then((value) => {
+      if (live) setEnabled(value);
+      // Tries each peer again, so this also says which ones are still without.
+      return value ? syncPeerPush() : [];
+    }).then((labels) => { if (live) setMissing(labels); });
     return () => { live = false; };
   }, [support]);
 
@@ -52,15 +62,22 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
 
   // Called straight from the tap: enablePush asks for permission before any await (iOS needs that).
   const toggle = () => run(enabled === true
-    ? disablePush().then(() => setEnabled(false))
+    ? disablePush().then(() => { setEnabled(false); setMissing([]); })
     : enablePush().then((result) => {
-      if (result.ok) setEnabled(true);
-      else setNote({ text: result.message, error: true });
+      if (!result.ok) {
+        setNote({ text: result.message, error: true });
+        return;
+      }
+      // Home is on: the switch is free again. The peers answer later.
+      setEnabled(true);
+      void result.missing.then(setMissing);
     }));
 
-  const sendTest = () => run(api.pushTest().then(({ sent }) => setNote(sent > 0
-    ? { text: 'Sent', error: false }
-    : { text: 'No subscription on this phone', error: true })));
+  // One test from each computer. Home's answer shows at once; a peer that sent none is named when known.
+  const sendTest = () => run(testPush().then(({ sent, missing: late }) => {
+    setNote(sent ? { text: 'Sent', error: false } : { text: 'No subscription on this phone', error: true });
+    if (sent) void late.then((labels) => { if (labels.length > 0) setNote({ text: `Sent. ${noPushFrom(labels)}`, error: true }); });
+  }));
 
   return (
     <section className="group stack" aria-labelledby="push-heading">
@@ -80,6 +97,7 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
             ><span className="switch-track" aria-hidden="true" /></button>
           </div>
           <p className="hint-text">Only the session name and status. Never terminal text.</p>
+          {enabled === true && missing.length > 0 && <p className="error field-note">{noPushFrom(missing)}</p>}
           <button type="button" disabled={enabled !== true || busy} onClick={sendTest}>Send a test notification</button>
           <p role="status" className={note?.error === true ? 'error field-note' : 'muted field-note'}>{note?.text ?? ''}</p>
         </>

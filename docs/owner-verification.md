@@ -238,6 +238,45 @@ used by the dev-server preview, so use another free port.
 - [ ] iPhone Home Screen app: Gate 0 checks pass.
 - [ ] Android Chrome: Gate 0 checks pass.
 
+### Notifications from every computer (Gate 0 check 5, real app)
+
+The agent tested this in desktop Chrome only (unit tests, and
+`scripts/e2e-multicomputer/phase-b.mjs` step B3-push with a push delivered
+by the DevTools protocol, not by a push service). Several scoped
+service-worker registrations in an iOS Home Screen app are not verified.
+Needs: the Home Screen app on home (for example `mac`) with one peer added
+(for example `vps`), and an agent session on each. Do the list on iPhone,
+then on Android Chrome.
+
+- [ ] With notifications off, turn on **Settings → Notifications → Buzz when
+      an agent needs you**. One permission prompt shows. No red line
+      "No notifications from vps." shows under the switch.
+- [ ] Tap **Send a test notification**: the note says **Sent** and two
+      notifications arrive, one with the text `Notifications are on.` (home)
+      and one with the title `vps · Termivoa` and the text
+      `vps · Notifications are on.`
+- [ ] Lock the phone. Let an agent on `vps` ask a question: the notification
+      "vps · `<title>` is waiting for you" arrives; its title and its text
+      both start with `vps ·`.
+- [ ] Tap that notification with the app closed, then again with the app
+      open on another screen: both times the app opens that `vps` session
+      (the address is `/c/<vps host>/sessions/<id>`).
+- [ ] An agent on home still notifies, and its tap opens `/sessions/<id>`.
+- [ ] Close the app, wait one day, and repeat the `vps` question: it still
+      arrives (iOS did not drop the second registration).
+- [ ] Add a second peer while notifications are on. No permission prompt
+      shows. Open the app again, then **Send a test notification**: three
+      notifications arrive.
+- [ ] Stop Termivoa on `vps`, then open **Settings**: after some seconds
+      "No notifications from vps." shows, and a test still arrives from home.
+- [ ] **Settings → Computers → Remove** `vps`, then let the agent on `vps`
+      ask again: no notification arrives.
+- [ ] Turn the switch off: an agent on home and one on a peer both stay
+      silent. Turn it on again: both notify again.
+- [ ] If any step fails on iPhone, record the iOS version and what Settings
+      showed. Home notifications must still work; that is the designed
+      fallback.
+
 ## 3. Windows 11 x64
 
 Only cross-compiled `go vet` and PE checks ran here. CI has a native Windows job,

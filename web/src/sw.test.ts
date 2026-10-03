@@ -36,7 +36,7 @@ function cacheStorage(initial: Record<string, Record<string, Response>> = {}) {
 }
 
 /** Runs src/sw.js against a fake worker global and returns its handlers. */
-function loadWorker(network: Network, windows: Array<Record<string, unknown>> = [], storage = cacheStorage()) {
+function loadWorker(network: Network, windows: Array<Record<string, unknown>> = [], storage = cacheStorage(), scope = 'https://host.example/') {
   const handlers = new Map<string, Handler>();
   const self = {
     location: { origin: 'https://host.example' },
@@ -47,7 +47,7 @@ function loadWorker(network: Network, windows: Array<Record<string, unknown>> = 
       matchAll: vi.fn(async () => windows),
       openWindow: vi.fn(async () => null),
     },
-    registration: { showNotification: vi.fn(async () => undefined) },
+    registration: { scope, showNotification: vi.fn(async () => undefined) },
   };
   const fetch = vi.fn(network);
   new Function('self', 'caches', 'fetch', SOURCE)(self, storage.caches, fetch);
@@ -56,7 +56,7 @@ function loadWorker(network: Network, windows: Array<Record<string, unknown>> = 
 
 /** The worker's pure decision functions. */
 const pure = new Function('self', 'caches', 'fetch', `${SOURCE}\nreturn { buildOf, shouldCacheShell, BUNDLE_FILES, withTimeout };`)(
-  { location: { origin: 'https://host.example' }, addEventListener: () => undefined }, {}, () => undefined,
+  { location: { origin: 'https://host.example' }, registration: { scope: 'https://host.example/' }, addEventListener: () => undefined }, {}, () => undefined,
 ) as {
   buildOf: (html: string) => string | undefined;
   shouldCacheShell: (status: number, contentType: string | null, html: string, build: string) => boolean;
@@ -294,6 +294,53 @@ describe('service worker push', () => {
     expect(second.data.url).toBe('/');
   });
 
+  const PEER_SCOPE = 'https://host.example/push/vps.tailx.ts.net/';
+
+  it('from a peer scope, names the computer and opens /c/<host>/sessions/<id>; the host is the scope\'s, never the payload\'s', async () => {
+    const { handlers, self } = loadWorker(async () => new Response(''), [], cacheStorage(), PEER_SCOPE);
+    await fire(handlers, 'push', pushEvent(() => ({
+      title: 'api', body: 'Waiting for you', sessionId: SESSION, kind: 'waiting', host: 'evil.example', url: 'https://evil.example/', computer: 'mac',
+    })));
+    expect(self.registration.showNotification).toHaveBeenCalledWith('vps · api', {
+      body: 'vps · Waiting for you',
+      tag: `/c/vps.tailx.ts.net${SESSION}:waiting`,
+      icon: '/icon-192.png',
+      data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` },
+    });
+    await fire(handlers, 'push', pushEvent(() => ({ sessionId: '../../settings' })));
+    expect(self.registration.showNotification).toHaveBeenLastCalledWith('vps · Termivoa', expect.objectContaining({ body: 'vps', data: { url: '/' } }));
+    // A title that names another computer still starts with this one.
+    await fire(handlers, 'push', pushEvent(() => ({ title: 'mac · api is waiting for you', body: 'mac · tap to answer' })));
+    expect(self.registration.showNotification).toHaveBeenLastCalledWith('vps · mac · api is waiting for you', expect.objectContaining({ body: 'vps · mac · tap to answer' }));
+
+    const tapped = loadWorker(async () => new Response(''), [], cacheStorage(), PEER_SCOPE);
+    await fire(tapped.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` } } });
+    expect(tapped.self.clients.openWindow).toHaveBeenCalledWith(`https://host.example/c/vps.tailx.ts.net/sessions/${SESSION}`);
+  });
+
+  it('treats a scope that is not exactly /push/<host>/ as the app\'s own', async () => {
+    for (const path of ['/push/', '/push/a/b/', '/push/Vps.example/', '/push/a%2Fb/', '/push/a:1/', '/c/vps.tailx.ts.net/']) {
+      const { handlers, self } = loadWorker(async () => new Response(''), [], cacheStorage(), `https://host.example${path}`);
+      await fire(handlers, 'push', pushEvent(() => ({ body: 'b', sessionId: SESSION, kind: 'done' })));
+      expect(self.registration.showNotification).toHaveBeenCalledWith('Termivoa', expect.objectContaining({ body: 'b', data: { url: `/sessions/${SESSION}` } }));
+    }
+  });
+
+  it('a peer registration stores no bundle and deletes no cache', async () => {
+    const storage = cacheStorage({ 'pterm-bundle-old': {} });
+    const { handlers, self, fetch, store } = loadWorker(server(), [], storage, PEER_SCOPE);
+    await fire(handlers, 'install', {});
+    await fire(handlers, 'activate', {});
+    expect(fetch).not.toHaveBeenCalled();
+    expect([...store.keys()]).toEqual(['pterm-bundle-old']);
+    expect(self.clients.claim).not.toHaveBeenCalled();
+    // A page inside the peer scope gets nothing from this worker: no shell, no bundle file.
+    const respondWith = vi.fn();
+    handlers.get('fetch')?.({ request: { method: 'GET', url: 'https://host.example/push/vps.tailx.ts.net/x', mode: 'navigate' }, respondWith });
+    handlers.get('fetch')?.({ request: new Request('https://host.example/assets/Wall-1.js'), respondWith });
+    expect(respondWith).not.toHaveBeenCalled();
+  });
+
   it('on tap, focuses an open app window and moves it to the session', async () => {
     const client = { url: 'https://host.example/', focus: vi.fn(async () => undefined), navigate: vi.fn(async () => ({})) };
     const { handlers, self } = loadWorker(async () => new Response(''), [{ url: 'https://other.example/', focus: vi.fn() }, client]);
@@ -306,15 +353,39 @@ describe('service worker push', () => {
     expect(self.clients.openWindow).not.toHaveBeenCalled();
   });
 
-  it('opens a window when none is open, or when navigate fails', async () => {
+  it('opens a window when none is open; when navigate fails, sends the path to the page and opens no window', async () => {
     const empty = loadWorker(async () => new Response(''));
     await fire(empty.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/sessions/${SESSION}` } } });
     expect(empty.self.clients.openWindow).toHaveBeenCalledWith(`https://host.example/sessions/${SESSION}`);
 
-    const client = { url: 'https://host.example/', focus: vi.fn(async () => undefined), navigate: vi.fn(async () => { throw new TypeError('not controlled'); }) };
+    // focus() used the one window action of the tap: a browser refuses openWindow() after it.
+    const client = {
+      url: 'https://host.example/', focus: vi.fn(async () => undefined), postMessage: vi.fn(),
+      navigate: vi.fn(async () => { throw new TypeError('not controlled'); }),
+    };
     const stuck = loadWorker(async () => new Response(''), [client]);
-    await fire(stuck.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: '/' } } });
-    expect(stuck.self.clients.openWindow).toHaveBeenCalledWith('https://host.example/');
+    await fire(stuck.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/sessions/${SESSION}` } } });
+    expect(client.focus).toHaveBeenCalledOnce();
+    expect(client.postMessage).toHaveBeenCalledWith({ type: 'open', path: `/sessions/${SESSION}` });
+    expect(stuck.self.clients.openWindow).not.toHaveBeenCalled();
+  });
+
+  it('a peer tap with the app open sends the path to the page and focuses it: no navigate (the window is home\'s), no new window', async () => {
+    // As in a browser: only the worker that controls a window may navigate it.
+    const client = {
+      url: 'https://host.example/wall', focus: vi.fn(async () => undefined), postMessage: vi.fn(),
+      navigate: vi.fn(async () => { throw new TypeError('This service worker is not the client\'s active service worker.'); }),
+    };
+    const { handlers, self } = loadWorker(async () => new Response(''), [client], cacheStorage(), PEER_SCOPE);
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` } } });
+    expect(client.postMessage).toHaveBeenCalledWith({ type: 'open', path: `/c/vps.tailx.ts.net/sessions/${SESSION}` });
+    expect(client.focus).toHaveBeenCalledOnce();
+    expect(client.postMessage.mock.invocationCallOrder[0]).toBeLessThan(client.focus.mock.invocationCallOrder[0] ?? 0);
+    expect(client.navigate).not.toHaveBeenCalled();
+    expect(self.clients.openWindow).not.toHaveBeenCalled();
+    // Data that points to another origin becomes "/", also in the message.
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: '//evil.example/x' } } });
+    expect(client.postMessage).toHaveBeenLastCalledWith({ type: 'open', path: '/' });
   });
 
   it('never opens another origin from notification data', async () => {

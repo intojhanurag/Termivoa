@@ -86,6 +86,8 @@ No. [Worktree](/docs/guides/worktrees/) requests send only a session, a name and
 
 [Notifications](/docs/guides/notifications/) carry only the session name, project name, status, how long the agent worked and the session ID, encrypted to your phone. [Dev-server previews](/docs/guides/preview/) use a separate address and show only that session's servers. Only the device in control can send [photos](/docs/guides/photo-and-voice/).
 
+With several computers (**Next beta**), each computer sends its own notifications straight to your phone's push service; no computer sees another computer's notifications. The app puts the computer's name at the start of the title and text from its own list of computers. That computer writes the words after the name, so a hacked computer can send misleading text or many notifications until you remove it.
+
 ## What is not protected?
 
 - A session runs with your normal user permissions. A project folder is not a sandbox (a closed-off area).

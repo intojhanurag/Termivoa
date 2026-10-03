@@ -17,7 +17,8 @@ The encrypted payload is `{title, body, sessionId, kind}` and nothing else.
 It never carries terminal output, a question text, a preview line, a path or a
 command. Titles and project names are cleaned (control and format characters
 removed) and shortened to 60 characters. Tapping a notification opens
-`/sessions/<id>` in the app; the service worker accepts only a lowercase UUID
+`/sessions/<id>` in the app (`/c/<host>/sessions/<id>` for another computer,
+see "Several computers"); the service worker accepts only a lowercase UUID
 and a same-origin path.
 
 ## Architecture
@@ -45,9 +46,102 @@ and a same-origin path.
   is sent with `Urgency: high` and a 5-minute TTL; `done` with `normal` and
   2 minutes.
 
-**Several computers.** The phone subscribes on home only
-([multi-computer.md](multi-computer.md)), so only home's sessions send push.
-Peer sessions show Waiting and Your turn only while the app is open.
+## Several computers
+
+Every paired computer sends its own push ([multi-computer.md](multi-computer.md)).
+Each computer has its own VAPID key, and one browser subscription has one
+key, so the phone holds one subscription per computer. A service-worker
+registration must be on the page's origin, so they all live on home's origin
+(`web/src/push.ts`, `web/src/sw.js`):
+
+| Computer | Registration | Subscribed with | Sent to |
+| --- | --- | --- | --- |
+| Home | `/sw.js` at scope `/` | home's key | home, same-origin |
+| Peer `<host>` | `/sw.js` at scope `/push/<host>/` | that peer's key (`GET /api/v1/push` on the peer) | `POST /api/v1/push/subscribe` on the peer, through the per-computer client (credentialed CORS, bound origin) |
+
+No host change was needed: the peer admits the push routes like every other
+`/api` route from its bound app origin, and the device comes from the
+credential.
+
+- **The app never loads under `/push/`.** The gateway answers 404 for every
+  path under `/push/` (other unknown paths without an extension get
+  `index.html`), and in a peer registration the worker handles no fetch,
+  stores no bundle, deletes no cache and claims no client; it only shows
+  notifications. If the app did load there, the page would get the peer's
+  registration in place of home's. For the same reason the app asks for
+  home's registration by its scope (`getRegistration('/')`), never by the
+  page's address (`ready`).
+- **The host comes from the scope, never from the payload.** The worker reads
+  `<host>` from its own registration scope (`[a-z0-9.-]+`, exact
+  `/push/<host>/`). A peer notification's title and body both start with the
+  first DNS label (`vps · <title> is waiting for you`,
+  `vps · <project> · tap to answer`), its tag carries the host, and a tap
+  opens `/c/<host>/sessions/<id>`.
+- **What a peer can still do (trust statement).** A peer's payload is
+  untrusted. The peer writes all the text after the `vps · ` prefix: up to
+  120 characters of title and 160 of body, in any words, also words that
+  name home or another computer ("vps · mac · …"). The prefix is the only
+  part the phone vouches for. A compromised peer can also flood the phone:
+  the broker's rate limits are the peer's own, so it can ignore them, and
+  each random session UUID makes a new tag, so the notifications do not
+  replace each other. Only the push service's own limits apply. A tap still
+  opens only `/c/<that host>/sessions/<uuid>` in the app. To stop it: remove
+  the computer (or turn notifications off); both unsubscribe in the browser,
+  so the push service refuses that peer from then on.
+- **Allow-list.** On every load `removeStrayWorkers` keeps only `/sw.js` at
+  scope `/` and `/sw.js` at the exact `/push/<host>/` of each peer in this
+  phone's stored list. Any other registration (another script, another host,
+  a near-miss scope) is unregistered, and that load redeems no grant
+  (`workersSafe`). The stored list is in `localStorage`, which a compromised
+  home can write. So a `/sw.js` registration that such a home left at
+  `/push/<host>/` (with its own push key) for a host it also wrote into the
+  stored list passes this first cleanup. It lives until home's list answers
+  and replaces the stored one; the sync below then removes it. While home is
+  offline it stays. It runs only the app's own `/sw.js`: it can show
+  notifications with the limits above, nothing more. The recovery steps in
+  [multi-computer.md](multi-computer.md) (delete the app's data) remove it.
+- **Off wins over a slow peer.** A peer can hold its answers for up to 15 s.
+  After the peer's key arrives, and again after the subscription is sent, the
+  sync checks that push is still on and the peer is still in the stored list;
+  if not, it makes no registration, or drops the one it made. So turning
+  notifications off, removing the computer or logging out during a held call
+  is not undone.
+- **A tap while the app is open.** Only the worker that controls a window
+  may navigate it (`WindowClient.navigate`), and the app's window is
+  controlled by home's registration. So a peer registration sends the path
+  to the page (`postMessage({type: 'open', path})`) and then calls
+  `focus()`. The page (`notificationPath` in `App.tsx`) checks the message as
+  strictly as the worker: only a session, by lowercase UUID, of home or of a
+  peer in the list; it builds the address itself and routes to it. A tap
+  allows one window action, so the worker never calls `openWindow()` after
+  `focus()`. Home's registration navigates the window as before, and sends
+  the same message when the navigation fails. With no window open, both open
+  one at the address.
+- **One switch.** Turning notifications on (Sessions card or Settings)
+  subscribes home, then every peer at once. Only home can fail the switch,
+  and the switch waits only for home; a peer that fails is named when its
+  answer is known ("No notifications from vps.") and the others keep
+  working. Turning off unsubscribes on every reachable computer (peers are
+  told without waiting) and unregisters the peer registrations. **Send a
+  test notification** asks every computer, shows home's answer at once and
+  then names the peers that sent none.
+- **Sync** (`syncPeerPush`, on every load, when the list changes, when a peer
+  becomes usable or stops being usable (can't reach, pair again, outdated),
+  and when Settings opens). So a peer that was offline when push was turned
+  on is subscribed when it comes back. With push on,
+  each listed peer is subscribed; a peer added later needs no prompt, because
+  permission is already granted. Every other peer registration is
+  unsubscribed and unregistered: a removed computer, log out, push off. A
+  peer that answers 401 ("pair again") loses its registration until it is
+  paired again. A subscription made under another key is replaced.
+- **The peer's side.** Remove computer and Log out call the peer's logout,
+  which deletes that device's subscriptions there. If the peer cannot be
+  reached, the browser subscription is still removed, so the push service
+  answers `410` and the peer deletes the endpoint.
+- **Not verified:** several scoped registrations in an iOS Home Screen app
+  (Gate 0 check 5; `docs/owner-verification.md`). If a scoped registration or
+  subscribe fails there, home push is not affected and Settings names the
+  computers without notifications.
 
 ## Browser API
 

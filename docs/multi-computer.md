@@ -140,7 +140,15 @@ Every message from every computer (HTTP responses and WebSocket frames) is valid
 
 ### Notifications
 
-Push from home only in the MVP (as built: the app subscribes on home only); peer Waiting and Working states show in the list and on the Wall while the app is open. A service-worker registration must be on the page's own origin, so peer push means several scoped registrations on home's origin, each subscribed with one peer's VAPID key. Gate 0 tests this on iOS; if it works, it is the first follow-up.
+Every paired computer sends push (built after the MVP, which had push from home only). A service-worker registration must be on the page's own origin and one subscription has one VAPID key, so each peer has one more registration of `/sw.js` on home's origin, at scope `/push/<host>/`, subscribed with that peer's key and posted to that peer's `POST /api/v1/push/subscribe` through the per-computer client. The peer needed no change: its bound-origin CORS already admits the push routes.
+
+- The worker takes the host from its registration scope, never from a push payload (peer payloads are untrusted): the notification's title and body start with the computer's name and a tap opens `/c/<host>/sessions/<id>`. The peer still writes the rest of the text and can flood the phone with notifications.
+- The gateway answers 404 under `/push/`, so the app never loads inside a peer's scope.
+- The service-worker allow-list (finding 22): `/sw.js` at scope `/`, plus `/sw.js` at the exact `/push/<host>/` of each peer in the phone's stored list. Every other registration is removed at the start of every load. This is weaker than before peer push in one case: the stored list is in `localStorage`, so a compromised home can write a host into it and leave a `/sw.js` registration at that host's push scope with its own push key. That registration lives until home's list answers and replaces the stored list; the sync then removes it. While home is offline it stays. It runs only the app's own worker code, so it can only show notifications.
+- Removing a computer, log out, "pair again" and turning notifications off unsubscribe and unregister that peer's registration; one failing peer never affects home or the others.
+- Gate 0 check 5 (several scoped registrations in an iOS Home Screen app) is still open. The app fails soft: home push keeps working and Settings names the computers without notifications.
+
+Details: [notifications.md](notifications.md), "Several computers".
 
 ## 4. Protocol and storage changes (rule 6)
 
@@ -218,7 +226,7 @@ Multi-computer is not called fast until these pass. They extend `docs/implementa
 
 **MVP, in two milestones before release.** **M1:** bound-grant pairing (in-app link and paste), owner and node checks, per-device origin binding and `Sec-Fetch` checks, rolling cookie refresh, per-device computer list, one Sessions list, Live, new session on any computer, per-computer "can't reach" and "pair again", lenient validation and protocol revision. **M2:** the home-offline app shell, the cross-computer Wall, remove-with-logout and `revoke --via`, service-worker cleanup. Full MVP list: bound-grant pairing with owner and node checks; per-device origin binding; per-device computer list; one Sessions list with labels and colours; Live (control, compose, history, Files and Changes, uploads); new session on any computer; Wall with visible-only tiles; per-computer offline and "pair again"; home-offline app shell; lenient validated peer responses; protocol revision gate; rolling cookie refresh; remove-with-logout and `revoke --via`; push from home only; no previews from peers.
 
-**Follow-up:** push from peers (if Gate 0 check 5 passes); previews from peers; QR scanning inside the app. Different tailnets stay out of scope.
+**Follow-up:** push from peers (built; Gate 0 check 5 on a real iPhone still open, see "Notifications"); previews from peers; QR scanning inside the app. Different tailnets stay out of scope.
 
 ## 7. Adversarial reviews: findings and resolutions
 
@@ -234,7 +242,7 @@ Two independent reviews (security; feasibility and alternatives) ran on version 
 | 6 | 7-day WebKit cookie cap would log peers out weekly (high) | Rolling cookie refresh in the MVP; Gate 0 reads the expiry |
 | 7 | Home offline kills the app (high) | Network-first navigation with a cached app shell; home treated as one more computer |
 | 8 | Exact fingerprint forces updating all computers at once (high) | Integer protocol revision with a minimum; lenient peer validation |
-| 9 | Peer push as written cannot be built (high) | Scoped registrations on home's origin, tested in Gate 0; follow-up |
+| 9 | Peer push as written cannot be built (high) | Scoped registrations on home's origin (built, see "Notifications"); the iOS Home Screen check stays in Gate 0 |
 | 10 | Integration test plan broken (cookies ignore ports) (high) | Host-resolver mapping, self-signed TLS, Playwright Chromium and WebKit |
 | 11 | Gate 0 not cheap without a test server (medium) | Committed harness and a 7-point checklist; plan B defined |
 | 12 | Camera opens pairing links in Safari (medium) | Paste-only MVP; distinct add-to-app link marker |
@@ -254,7 +262,7 @@ Both reviewers attacked version 2. Security: "sound with changes". Feasibility: 
 
 | # | Finding (severity) | Resolution |
 | --- | --- | --- |
-| 22 | A compromised home can leave a service worker on the phone that survives cleanup (verified) (high) | Service-worker allow-list cleanup on every load; stored list replaced from home; required recovery steps (revoke via, delete the app, pair again) |
+| 22 | A compromised home can leave a service worker on the phone that survives cleanup (verified) (high) | Service-worker allow-list cleanup on every load (`/sw.js` at scope `/` and at the exact push scope of each peer in the stored list, nothing else; a `/sw.js` registration at the push scope of a host that a compromised home wrote into the stored list lives until home's list answers, see "Notifications"); stored list replaced from home; required recovery steps (revoke via, delete the app, pair again) |
 | 23 | v2 pairing could not work: home's CSP blocked the redeem (high) | Pending computer per device (short expiry) before the reload and redeem |
 | 24 | Lenient Ajv broke the WebSocket envelope (verified) (high) | Envelope discriminator, `discriminator: true` with `removeAdditional: true`, one lenient set for HTTP and WebSocket |
 | 25 | A new enum value or request field still forced updating all computers (verified) (high) | Per-item validation; request fields gated by peer revision; enum-widening rule |

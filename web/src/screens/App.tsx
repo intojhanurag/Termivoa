@@ -7,7 +7,7 @@ import {
   type AddComputerLink, type AddTask, type AppLocation,
 } from '../pairing/addComputer';
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
-import { workersSafe } from '../push';
+import { syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
@@ -163,6 +163,23 @@ export function parseRoute(path: string): Route {
     return { name: 'unknown' };
   }
   return { name: 'session', host, id, preview: home?.[2] !== undefined };
+}
+
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+/**
+ * The address a tapped notification asks the open app for (a message from a
+ * service worker), or undefined. As strict as the worker: only a session, by
+ * lowercase UUID, of home or of a peer in the list; the address is built
+ * here, never taken as sent.
+ */
+export function notificationPath(data: unknown, computers: ReadonlyArray<Computer>): string | undefined {
+  const { type, path } = (typeof data === 'object' && data !== null ? data : {}) as { readonly type?: unknown; readonly path?: unknown };
+  if (type !== 'open' || typeof path !== 'string') return undefined;
+  const target = parseRoute(path);
+  if (target.name !== 'session' || target.preview || !SESSION_ID.test(target.id)) return undefined;
+  const computer = computers.find((item) => (target.host === undefined ? item.home : !item.home && item.host === target.host));
+  return computer === undefined ? undefined : sessionPath({ id: target.id, computer });
 }
 
 /**
@@ -493,6 +510,13 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
     || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer';
   const all = useAllSessions(polling, computers, onHomeAuth);
+  // Push from peers follows the list: at start, when a computer is added or
+  // removed (log out included), and when one stops or starts being usable
+  // (can't reach, pair again, outdated), so a peer that was offline when push
+  // was turned on is subscribed when it comes back.
+  const peerPush = all.entries.filter((entry) => !entry.computer.home)
+    .map((entry) => `${entry.computer.origin} ${entry.status.kind === 'ok' || entry.status.kind === 'loading' ? '' : entry.status.kind}`).join(',');
+  useEffect(() => { void syncPeerPush(computersRef.current.filter((computer) => !computer.home)); }, [peerPush]);
   // Sessions and the Wall sort waiting first; Live's tabs keep each computer's own order.
   const sessions = mergeSessions(all.entries);
   const tabs = all.entries.flatMap((entry) => (entry.status.kind === 'ok' ? entry.status.sessions : []));
@@ -619,11 +643,21 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       }
     };
     const onHashChange = () => { adoptLinkGrant(); };
+    // A tapped notification while the app is open: its worker sends the
+    // address (a peer's worker cannot navigate this window itself).
+    const onWorkerMessage = (event: MessageEvent) => {
+      const path = notificationPath(event.data, computersRef.current);
+      if (path === undefined) return;
+      if (path !== window.location.pathname) window.history.pushState(null, '', path);
+      void route();
+    };
     window.addEventListener('popstate', onPop);
     window.addEventListener('hashchange', onHashChange);
+    navigator.serviceWorker?.addEventListener('message', onWorkerMessage);
     return () => {
       window.removeEventListener('popstate', onPop);
       window.removeEventListener('hashchange', onHashChange);
+      navigator.serviceWorker?.removeEventListener('message', onWorkerMessage);
     };
   }, [adoptLinkGrant, boot, route]);
 
