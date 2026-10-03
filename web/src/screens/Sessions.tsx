@@ -5,7 +5,7 @@ import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
-  byChip, cantReach, chipsFor, keyOf, pairAgain, type ComputerEntry, type HostedSession,
+  byChip, cantReach, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
@@ -231,16 +231,30 @@ export function pairHint(label: string, home = firstLabel(homeOrigin())): string
   return `Run pterm pair --via ${home} on ${label}`;
 }
 
-/** The line for a computer whose sessions cannot be listed, or undefined when it answered (or is still loading). */
+/** The line for a computer whose sessions cannot be listed, or undefined when it answered (or is still loading). problemDetail has the line under it. */
 export function problemText(entry: ComputerEntry, now: number): string | undefined {
   const { computer, status } = entry;
   switch (status.kind) {
-    case 'unreachable':
-      return status.lastSeen === undefined ? cantReach(computer.label) : `${cantReach(computer.label)} · ${ago(status.lastSeen, now)}`;
+    case 'unreachable': case 'blocked': return cantReach(computer.label);
+    case 'connecting': return connectingText(computer.label);
     case 'pair': return `${pairAgain(computer.label)} · ${pairHint(computer.label)}`;
     case 'outdated': return status.message;
     default: return undefined;
   }
+}
+
+/** Asked under "vps · can't reach" after a network error. The app cannot see why nothing answered, so it names no cause. */
+export const REACH_QUESTION = 'Is it on, and in your tailnet?';
+
+/** The line under problemText: "Last seen 3 h ago. Is it on, and in your tailnet?", "Just added. Its sessions show in a moment.", OUT_OF_DATE, or undefined. */
+export function problemDetail(entry: ComputerEntry, now: number): string | undefined {
+  const { status } = entry;
+  if (status.kind === 'connecting') return JUST_ADDED;
+  if (status.kind === 'blocked') return OUT_OF_DATE;
+  if (status.kind !== 'unreachable') return undefined;
+  const seen = status.lastSeen === undefined ? undefined : `${ago(status.lastSeen, now).replace(/^l/u, 'L')}.`;
+  const parts = [seen, status.network === true ? REACH_QUESTION : undefined].filter((part) => part !== undefined);
+  return parts.length === 0 ? undefined : parts.join(' ');
 }
 
 /** One row per computer that did not answer: "vps · can't reach" with Retry, "vps · pair again", "Update Termivoa on vps". */
@@ -252,11 +266,12 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
 }) {
   const text = problemText(entry, now);
   if (text === undefined) return null;
+  const detail = problemDetail(entry, now);
   const { computer, status } = entry;
   return (
     <li className="computer-problem">
       <span className="dot" style={{ background: computer.color }} aria-hidden="true" />
-      <span className="computer-problem-text">{text}</span>
+      <span className="computer-problem-text">{text}{detail !== undefined && <span className="computer-problem-detail">{detail}</span>}</span>
       {status.kind === 'unreachable' && <button type="button" className="link" onClick={() => onRetry(computer.origin)}>Retry</button>}
       {status.kind === 'pair' && <button type="button" className="link" onClick={onSettings}>Computers</button>}
     </li>
@@ -335,7 +350,7 @@ export function Sessions({
   }] as const] : [])));
   const viewed = readViewed();
   const now = Date.now();
-  const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading');
+  const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting');
   const summary = multi
     ? hostSummary(sessions, `${computers.length} computers`)
     : reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying';

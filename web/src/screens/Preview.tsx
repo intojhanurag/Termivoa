@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { storage } from '../storage';
+import { reloadOnce, storage } from '../storage';
 import { agentBadge, hasNewOutput, readViewed } from './activity';
-import type { HostedSession } from './allSessions';
+import { reloadFreshPage, type HostedSession } from './allSessions';
 import { previewSrc } from './PreviewChip';
 import { ComputerTag } from './Sessions';
 
@@ -36,14 +36,7 @@ export const PREVIEW_RELOAD_KEY = 'pterm.previewReload';
  * shows the usual text.
  */
 export function reloadForPolicy(blocked: string, origin: string, store: Pick<Storage, 'getItem' | 'setItem'> | undefined): boolean {
-  if (blocked !== origin && !blocked.startsWith(`${origin}/`)) return false;
-  try {
-    if (store === undefined || store.getItem(PREVIEW_RELOAD_KEY) === origin) return false;
-    store.setItem(PREVIEW_RELOAD_KEY, origin);
-    return true;
-  } catch {
-    return false;
-  }
+  return (blocked === origin || blocked.startsWith(`${origin}/`)) && reloadOnce(PREVIEW_RELOAD_KEY, origin, store);
 }
 
 /**
@@ -150,7 +143,7 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
     if (origin === undefined || notice !== undefined) return undefined;
     let current = true;
     const onBlocked = (event: SecurityPolicyViolationEvent) => {
-      if (reloadForPolicy(event.blockedURI, origin, storage('sessionStorage'))) window.location.reload();
+      if (reloadForPolicy(event.blockedURI, origin, storage('sessionStorage'))) reloadFreshPage();
     };
     document.addEventListener('securitypolicyviolation', onBlocked);
     void probePreview(origin).then((answered) => {

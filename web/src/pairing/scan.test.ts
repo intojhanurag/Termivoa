@@ -1,7 +1,7 @@
 import { encodeQR } from 'qr';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChunkLoadError } from '../screens/chunks';
-import { cameraProblem, loadDecoder, SCAN_PROBLEMS, startScan, type Decode, type ScanEnd } from './scan';
+import { cameraProblem, loadDecoder, MUTED_MS, SCAN_PROBLEMS, startScan, type Decode, type ScanEnd } from './scan';
 
 /** A camera stream with one track that the system can end, and a page that can go to the background. */
 function setup({ open, decode = async () => undefined, play = async () => undefined }: {
@@ -9,8 +9,9 @@ function setup({ open, decode = async () => undefined, play = async () => undefi
   readonly decode?: Decode;
   readonly play?: () => Promise<void>;
 } = {}) {
-  const ended = new Set<() => void>();
-  const track = { stop: vi.fn(), addEventListener: (_type: 'ended', listener: () => void) => { ended.add(listener); } };
+  const events = new Map<string, Set<() => void>>();
+  const track = { stop: vi.fn(), addEventListener: (type: string, listener: () => void) => { events.set(type, (events.get(type) ?? new Set()).add(listener)); } };
+  const fire = (type: 'ended' | 'mute' | 'unmute') => { for (const listener of events.get(type) ?? []) listener(); };
   const stream = { getTracks: () => [track] } as unknown as MediaStream;
   const getUserMedia = vi.fn(open ?? (async () => stream));
   const video = { srcObject: null as unknown, play: vi.fn(play) };
@@ -26,8 +27,8 @@ function setup({ open, decode = async () => undefined, play = async () => undefi
     video: video as never, onScanning, onEnd, media: { getUserMedia } as never, doc: doc as never, load: async () => decode, everyMs: 1,
   });
   const hide = () => { doc.visibilityState = 'hidden'; for (const listener of [...listeners]) listener(); };
-  const endTrack = () => { for (const listener of ended) listener(); };
-  return { track, stream, getUserMedia, video, listeners, onEnd, onScanning, stop, hide, endTrack };
+  const endTrack = () => fire('ended');
+  return { track, stream, getUserMedia, video, listeners, onEnd, onScanning, stop, hide, endTrack, fire };
 }
 
 const named = (name: string) => Object.assign(new Error(name), { name });
@@ -136,6 +137,33 @@ describe('Scan QR camera', () => {
     expect(scan.onEnd).toHaveBeenCalledWith({ kind: 'problem', problem: 'failed' });
     expect(scan.track.stop).toHaveBeenCalledOnce();
     expect(scan.video.srcObject).toBeNull();
+  });
+
+  it('ends with the same problem when the camera stays muted (iOS: a call took it); a short mute does not', async () => {
+    vi.useFakeTimers();
+    const scan = setup();
+    await vi.waitFor(() => expect(scan.onScanning).toHaveBeenCalled());
+    scan.fire('mute');
+    await vi.advanceTimersByTimeAsync(MUTED_MS - 100);
+    scan.fire('unmute');
+    await vi.advanceTimersByTimeAsync(MUTED_MS);
+    expect(scan.onEnd).not.toHaveBeenCalled();
+    scan.fire('mute');
+    await vi.advanceTimersByTimeAsync(MUTED_MS);
+    expect(scan.onEnd).toHaveBeenCalledExactlyOnceWith({ kind: 'problem', problem: 'failed' });
+    expect(scan.track.stop).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it('a mute after Cancel does nothing', async () => {
+    vi.useFakeTimers();
+    const scan = setup();
+    await vi.waitFor(() => expect(scan.onScanning).toHaveBeenCalled());
+    scan.fire('mute');
+    scan.stop();
+    await vi.advanceTimersByTimeAsync(MUTED_MS * 2);
+    expect(scan.onEnd).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
 

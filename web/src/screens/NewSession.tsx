@@ -164,7 +164,7 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
       )}
 
       {settings === undefined ? (
-        <p role="status" className="muted">{entries.some((entry) => entry.status.kind === 'loading') ? 'Loading…' : 'No computer can be reached.'}</p>
+        <p role="status" className="muted">{entries.some((entry) => entry.status.kind === 'loading' || entry.status.kind === 'connecting') ? 'Loading…' : 'No computer can be reached.'}</p>
       ) : !canCreate ? (
         <section className="stack">
           <NewSessionHelp settings={settings} />

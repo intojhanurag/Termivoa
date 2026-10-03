@@ -11,7 +11,7 @@ import { syncHomePush, syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
-  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, pairAgain, ReadFailure, useAllSessions, type ComputerStatus, type HostedSession,
+  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, useAllSessions, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
@@ -253,6 +253,7 @@ export function previewFor(
       : { notice: updateText(computer.label) };
     case 'pair': return { notice: pairAgain(computer.label) };
     case 'unreachable': return { notice: cantReach(computer.label) };
+    case 'blocked': return { notice: `${cantReach(computer.label)}. ${OUT_OF_DATE}` };
     case 'outdated': return { notice: status.message };
     default: return {};
   }
@@ -557,13 +558,13 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const onHomeAuth = useCallback(() => toSetup(UNPAIRED), [toSetup]);
   const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
     || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer';
-  const all = useAllSessions(polling, computers, onHomeAuth);
+  const all = useAllSessions(polling, computers, onHomeAuth, adding?.phase.kind === 'done' ? adding.origin : undefined);
   // Push from peers follows the list: at start, when a computer is added or
   // removed (log out included), and when one stops or starts being usable
   // (can't reach, pair again, outdated), so a peer that was offline when push
   // was turned on is subscribed when it comes back.
   const peerPush = all.entries.filter((entry) => !entry.computer.home)
-    .map((entry) => `${entry.computer.origin} ${entry.status.kind === 'ok' || entry.status.kind === 'loading' ? '' : entry.status.kind}`).join(',');
+    .map((entry) => `${entry.computer.origin} ${entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting' ? '' : entry.status.kind}`).join(',');
   useEffect(() => { void syncPeerPush(computersRef.current.filter((computer) => !computer.home)); }, [peerPush]);
   // Sessions and the Wall sort waiting first; Live's tabs keep each computer's own order.
   const sessions = mergeSessions(all.entries);

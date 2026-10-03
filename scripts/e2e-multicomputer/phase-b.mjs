@@ -835,12 +835,20 @@ try {
     await shot(`${id}-added`);
     time(`add from a terminal link, ${back === 'button' ? '"Back to terminal"' : 'Back'}, y in the same app (tap → "vps is added")`, Date.now() - started);
     await inApp('/');
-    await until(async () => (await problems()).length === 0 && (await rows()).some((x) => x.meta.startsWith('vps')), { what: 'vps rows', timeout: 20000 }).catch(() => undefined);
+    // Right after "vps is added" the new computer may refuse the first reads for about a second
+    // (its CORS list refreshes once per second): the row may say "Connecting to vps…", never "can't reach".
+    const seen = new Set();
+    await until(async () => {
+      const now = await problems();
+      for (const p of now) seen.add(p);
+      return now.length === 0 && (await rows()).some((x) => x.meta.startsWith('vps'));
+    }, { what: 'vps rows', timeout: 20000, every: 100 }).catch(() => undefined);
+    const unreachable = [...seen].filter((p) => p.includes("can't reach"));
     const probs = await problems();
     const vpsRows = (await rows()).filter((x) => x.meta.startsWith('vps')).length;
     const pass = path === terminalPath && waiting.includes('Adding vps') && done.includes('vps is added') && probs.length === 0 && vpsRows > 0;
     if (!done.includes('vps is added')) await confirmByApi().catch(() => undefined);
-    return { tapped, pass, evidence: `back to ${path} (terminal ${terminalPath}); banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}` };
+    return { tapped, pass, unreachable, evidence: `back to ${path} (terminal ${terminalPath}); banner while waiting: ${waiting || 'none'}; after y: ${done || 'none'}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}; rows seen ${JSON.stringify([...seen])}` };
   }
 
   await step('B2b-back', 'Tap the terminal link, leave with Back, approve with y in the same app', async () => {
@@ -848,6 +856,7 @@ try {
     check('B2b-tap', 'Tapping the add-computer link in the terminal opens the confirm sheet', r.tapped,
       r.tapped ? 'sheet opened from the tap' : 'the tap did not open the sheet; continued by pasting the link');
     check('B2b-back', 'Back from the waiting add page returns to the terminal, the add keeps running, y adds vps', r.pass, r.evidence);
+    check('B2b-connecting', 'Right after "vps is added", no "vps · can\'t reach" row shows (at most "Connecting to vps…")', r.unreachable.length === 0, r.evidence);
   });
 
   await step('B2b-same', 'Tap the terminal link, "Back to terminal", approve with y in the same app', async () => {

@@ -10,7 +10,9 @@ import {
 } from './AddComputer';
 import { ApiError } from '../api/http';
 import { ReadFailure, type ComputerEntry } from './allSessions';
-import { checkFailureText, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView } from './Computers';
+import {
+  answeredText, atLeast, checkFailureText, CHECKING_MIN_MS, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView,
+} from './Computers';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };
 const grant = 'G'.repeat(43);
@@ -237,7 +239,7 @@ describe('Settings → Computers', () => {
   const settings = { projects: [], shellProfiles: [], hostBuild: '0.1.0-beta.2+1a2b3c4d5e6f' } as never;
   const entries: ComputerEntry[] = [
     { computer: mac, status: { kind: 'ok', settings, sessions: [], at: Date.now() } },
-    { computer: vps, status: { kind: 'unreachable', lastSeen: Date.now() - 3 * 3_600_000 } },
+    { computer: vps, status: { kind: 'unreachable', lastSeen: Date.now() - 3 * 3_600_000, network: true } },
   ];
 
   it('lists each computer as online or offline, home with the Home badge and its session count', () => {
@@ -250,7 +252,8 @@ describe('Settings → Computers', () => {
     expect(html.match(/class="badge accent">Home</gu)).toHaveLength(1);
     expect(html).not.toContain('this computer');
     expect(html).toContain('<p class="hint-text">Home serves this app to your phone.</p>');
-    expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach · last seen 3 h ago");
+    expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach");
+    expect(html).toContain('<span class="hint-text">Last seen 3 h ago. Is it on, and in your tailnet?</span>');
   });
 
   it('shows no empty line under home while it is checked; a peer shows its address', () => {
@@ -270,7 +273,6 @@ describe('Settings → Computers', () => {
     expect(html.match(/>Rename<\/button>/gu)).toHaveLength(1);
     expect(html.match(/>Remove<\/button>/gu)).toHaveLength(1);
     expect(html).toContain('>+ Add a computer</button>');
-    expect(html).toContain('<code>pterm pair --via mac</code>');
     expect(html).toContain('<span class="computer-state green">online</span>');
     expect(html).toContain('<span class="computer-state muted">offline</span>');
     expect(html).toContain('Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now');
@@ -345,6 +347,43 @@ describe('Settings → Computers', () => {
     expect(onAdd).toHaveBeenCalledWith({ ...readLink(printed, app), found: true });
     const sheet = renderToStaticMarkup(<AddComputerSheet link={onAdd.mock.calls[0]?.[0] as typeof link} onClose={noop} go={noop} />);
     expect(sheet).toContain('Add this computer?');
+  });
+
+  it('+ Add a computer names home by its machine name, not the name given on this phone (#164)', () => {
+    vi.stubGlobal('location', { origin: mac.origin });
+    const renamed: ComputerEntry[] = [{ ...(entries[0] as ComputerEntry), computer: { ...mac, label: 'Work laptop' } }];
+    const html = renderToStaticMarkup(<ComputersSection entries={renamed} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    vi.unstubAllGlobals();
+    expect(html).toContain('<code>pterm pair --via mac</code>');
+    expect(html).not.toContain('--via Work laptop');
+  });
+
+  it('says how fast Check again answered, in seconds with one decimal', () => {
+    expect(answeredText('vps', 230)).toBe('vps answered in 0.2 s.');
+    expect(answeredText('vps', 40)).toBe('vps answered in 0.1 s.');
+    expect(answeredText('vps', 0)).toBe('vps answered in 0.1 s.');
+    expect(answeredText('vps', 1_960)).toBe('vps answered in 2.0 s.');
+  });
+
+  it('keeps Checking… on screen at least 600 ms, and no longer than the read when it is slower', async () => {
+    vi.useFakeTimers();
+    const fast = vi.fn();
+    void atLeast(Promise.resolve('answer'), CHECKING_MIN_MS).then(fast);
+    await vi.advanceTimersByTimeAsync(CHECKING_MIN_MS - 1);
+    expect(fast).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fast).toHaveBeenCalledWith('answer');
+    const failed = vi.fn();
+    void atLeast(Promise.reject(new Error('down')), CHECKING_MIN_MS).catch(failed);
+    await vi.advanceTimersByTimeAsync(CHECKING_MIN_MS - 1);
+    expect(failed).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(failed).toHaveBeenCalledOnce();
+    const slow = vi.fn();
+    void atLeast(new Promise((resolve) => { setTimeout(() => resolve('late'), 2_000); }), CHECKING_MIN_MS).then(slow);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(slow).toHaveBeenCalledWith('late');
+    vi.useRealTimers();
   });
 
   it('says what Check again found when the read fails', () => {

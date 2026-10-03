@@ -274,6 +274,14 @@ All notable changes are documented here. The format follows
   short name in the app: Settings → Computers → Rename." for a machine
   name longer than 12 characters; setup then ends with "Setup is done."
   Phone: no change.
+- Phone: **Check again** in **Settings → Computers** shows **Checking…** for
+  at least 600 ms and then says how fast the computer answered: "vps
+  answered in 0.2 s." (seconds, one decimal, at least 0.1). Failure texts
+  are unchanged. Host: no change.
+- Phone: "vps · can't reach" has a second line, "Last seen 3 h ago. Is it
+  on, and in your tailnet?" (the time moved there from the first line). The
+  question shows only after a network error, when nothing answered; after
+  an HTTP error the line only says when vps was last seen. Host: no change.
 - A shorter `pterm setup` for a new computer. Host: setup prints a short
   plan, one line for each change (startup at login, where data and logs go,
   the phone address, each Tailscale Serve question, linger, the project
@@ -368,6 +376,29 @@ All notable changes are documented here. The format follows
   off with `…`. Pairing a phone is refused until it is off." Termivoa never
   runs the command. When the Serve settings cannot be read, both go on as
   before (#161). Phone: no change.
+- Fix (phone side): right after "vps is added", the first read of vps could
+  fail while its gateway did not yet allow the app (it refreshes that list
+  once per second), and the row said "vps · can't reach" until a refresh.
+  For 5 s after an add the row now says "Connecting to vps…" and "Just
+  added. Its sessions show in a moment.", and the app retries quietly after
+  0.5, 1 and 2 s and when the 5 s end; only then does it say "can't
+  reach". Host: no change.
+- Fix (phone side): an app page whose own security policy did not list a
+  computer in the list (a page from before the add, or an old copy that the
+  offline cache served when home answered slowly) blocked every request to
+  that computer: "vps · can't reach" for hours while vps saw nothing. The
+  app now notices the block and reloads once, past the cached copy. If the
+  page still blocks it, the row says "This app page is out of date. Close
+  the app and open it again." The preview's own reload also goes past the
+  cached copy now. Host: no change.
+- Fix (phone side): **+ Add a computer** showed `pterm pair --via` with the
+  name given to home on the phone; it now shows home's machine name, which
+  the command needs (#164). Host: no change.
+- Fix (phone side, iPhone): when a call takes the camera during **Scan QR**,
+  iOS mutes the camera instead of stopping it, and the picture froze until
+  Cancel. A camera that stays muted for 2 s now ends the scan with "The
+  camera did not start. Close other apps that use it, then tap Scan QR. Or
+  paste the link." Host: no change.
 - Fix (host side): `pterm setup` went on to start Termivoa and pair a phone
   when Tailscale Funnel was on for port 443 that already served Termivoa; it
   only printed a warning. Funnel puts the terminal on the public internet.

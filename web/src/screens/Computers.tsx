@@ -5,19 +5,20 @@ import { foundLink, LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink, t
 import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from '../pairing/scan';
 import { AddComputerSheet } from './AddComputer';
 import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
-import { ago, problemText } from './Sessions';
+import { ago, problemDetail, problemText } from './Sessions';
 
 /** The right-hand word for a computer in the list. */
 export function onlineText(entry: ComputerEntry): { readonly text: string; readonly tone: 'green' | 'muted' | 'amber' } {
   switch (entry.status.kind) {
     case 'ok': return { text: 'online', tone: 'green' };
     case 'loading': return { text: 'checking', tone: 'muted' };
+    case 'connecting': return { text: 'connecting', tone: 'muted' };
     case 'unreachable': return { text: 'offline', tone: 'muted' };
     default: return { text: 'needs you', tone: 'amber' };
   }
 }
 
-/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach · last seen 3 h ago"). */
+/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach"; problemDetail says more). */
 export function computerDetail(entry: ComputerEntry, now: number): string {
   const problem = problemText(entry, now);
   if (problem !== undefined) return problem;
@@ -49,6 +50,19 @@ export function checkFailureText(computer: Pick<Computer, 'label'>, failure: unk
 
 /** How long a Check again result stays under its row. */
 const RESULT_MS = 8_000;
+/** Check again shows "Checking…" at least this long: a computer answers in about 0.2 s, and a flash looks like nothing happened. */
+export const CHECKING_MIN_MS = 600;
+
+/** "vps answered in 0.2 s.": seconds with one decimal, never below 0.1. */
+export function answeredText(label: string, ms: number): string {
+  return `${label} answered in ${Math.max(0.1, Math.round(ms / 100) / 10).toFixed(1)} s.`;
+}
+
+/** Settles like `work`, but not before `ms` have passed. */
+export function atLeast<T>(work: Promise<T>, ms: number): Promise<T> {
+  const wait = new Promise((resolve) => { setTimeout(resolve, ms); });
+  return Promise.allSettled([work, wait]).then(() => work);
+}
 
 /** Check again on one row: working (`text` undefined) or its result. */
 interface Check {
@@ -186,7 +200,8 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   // Only while this screen is open; watchFound pauses in the background.
   useEffect(() => watchFound(setFound), []);
   const now = Date.now();
-  const home = entries.find((entry) => entry.computer.home)?.computer;
+  // `pterm pair --via` takes home's machine name, never the name given on this phone (#164).
+  const homeName = firstLabel(homeOrigin());
   const working = new Set(entries.filter((entry) => !entry.computer.home && entry.status.kind === 'ok').map((entry) => entry.computer.origin));
   const renameProblem = edit.kind === 'rename' ? deviceLabelProblem(edit.draft.trim()) : undefined;
 
@@ -223,8 +238,9 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
       }), RESULT_MS);
     };
     put({});
-    onCheck(computer.origin).then(
-      () => finish({ text: `${computer.label} answered.` }),
+    const started = performance.now();
+    atLeast(onCheck(computer.origin).then(() => performance.now() - started), CHECKING_MIN_MS).then(
+      (ms) => finish({ text: answeredText(computer.label, ms) }),
       (failure: unknown) => finish({ text: checkFailureText(computer, failure, onFailure), error: true }),
     );
   }
@@ -260,6 +276,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           const health = healthText(entry, now);
           // Empty for home while it loads: "checking" on the right says it.
           const detail = computerDetail(entry, now);
+          const more = problemDetail(entry, now);
           const checked = checks.get(computer.origin);
           const working = checked !== undefined && checked.text === undefined;
           return (
@@ -273,6 +290,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                   </span>
                   {detail !== '' && <span className="row-meta">{detail}</span>}
                   {health !== undefined && <span className="row-meta">{health}</span>}
+                  {more !== undefined && <span className="hint-text">{more}</span>}
                 </span>
                 <span className={`computer-state ${online.tone}`}>{online.text}</span>
               </div>
@@ -386,7 +404,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
       )}
       <div className="card stack">
         <p className="strong">On the new computer, run:</p>
-        <pre className="command"><code>pterm pair --via {home?.label ?? '<this computer>'}</code></pre>
+        <pre className="command"><code>pterm pair --via {homeName}</code></pre>
         <p className="hint-text">
           Then tap <strong>+ Add a computer</strong> and scan the QR code it shows, or paste the link it prints. If you run it in a Termivoa session, tap the link in the terminal instead.
         </p>
