@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import type { HostedSession } from './allSessions';
 import { pathFor, previewPortParam, titleFor } from './App';
-import { cantPreview, Preview, PreviewBar, PreviewBody, PreviewStatus, probePreview } from './Preview';
+import { cantPreview, Preview, PREVIEW_RELOAD_KEY, PreviewBar, PreviewBody, PreviewStatus, probePreview, reloadForPolicy } from './Preview';
 import { isPreviewPort, latestPreview, PreviewChip, previewOrigin, previewSrc } from './PreviewChip';
 
 const session: HostedSession = {
@@ -186,5 +186,28 @@ describe('preview screen', () => {
     expect(status({ state: 'waiting', stateSince: since })).toContain('claude · waiting for you');
     expect(status({ state: 'idle', stateSince: since, afterWork: true }, true)).toContain('claude · your turn');
     expect(status(undefined)).toContain('<span class="preview-agent-text">claude</span>');
+  });
+});
+
+describe('a preview origin the loaded policy blocks (a computer added in this visit)', () => {
+  const memory = () => {
+    const values = new Map<string, string>();
+    return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, values };
+  };
+
+  it('reloads once for a blocked address on that origin, and remembers it', () => {
+    const store = memory();
+    expect(reloadForPolicy(`${vpsOrigin}/__termivoa/select`, vpsOrigin, store)).toBe(true);
+    expect(store.values.get(PREVIEW_RELOAD_KEY)).toBe(vpsOrigin);
+    expect(reloadForPolicy(vpsOrigin, vpsOrigin, store)).toBe(false);
+  });
+
+  it('does not reload for another origin, a near miss, or without storage', () => {
+    const store = memory();
+    expect(reloadForPolicy('https://evil.tailnet.ts.net:8443', vpsOrigin, store)).toBe(false);
+    expect(reloadForPolicy(`${vpsOrigin}0/x`, vpsOrigin, store)).toBe(false);
+    expect(reloadForPolicy(vpsOrigin, vpsOrigin, undefined)).toBe(false);
+    expect(reloadForPolicy(vpsOrigin, vpsOrigin, { getItem: () => null, setItem: () => { throw new Error('full'); } })).toBe(false);
+    expect(store.values.size).toBe(0);
   });
 });

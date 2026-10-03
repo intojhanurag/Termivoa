@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import { storage } from '../storage';
 import { agentBadge, hasNewOutput, readViewed } from './activity';
 import type { HostedSession } from './allSessions';
 import { previewSrc } from './PreviewChip';
@@ -18,6 +19,27 @@ export const cantPreview = (label: string): string =>
 export async function probePreview(origin: string, fetcher: typeof fetch = fetch): Promise<boolean> {
   try {
     await fetcher(`${origin}/__termivoa/select`, { mode: 'no-cors', credentials: 'omit', signal: AbortSignal.timeout(5000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** sessionStorage: the preview origin this tab already reloaded for (the loop guard). */
+export const PREVIEW_RELOAD_KEY = 'pterm.previewReload';
+
+/**
+ * Whether to reload the app because its own CSP blocked `blocked`, an address
+ * on the preview origin. The policy comes from the page load, and a computer
+ * confirmed after that load is not in it yet; one reload reads the new one.
+ * At most once per origin: a policy that still blocks (an old cached page)
+ * shows the usual text.
+ */
+export function reloadForPolicy(blocked: string, origin: string, store: Pick<Storage, 'getItem' | 'setItem'> | undefined): boolean {
+  if (blocked !== origin && !blocked.startsWith(`${origin}/`)) return false;
+  try {
+    if (store === undefined || store.getItem(PREVIEW_RELOAD_KEY) === origin) return false;
+    store.setItem(PREVIEW_RELOAD_KEY, origin);
     return true;
   } catch {
     return false;
@@ -112,17 +134,36 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
   // Each new value mounts a new frame, so the select request runs again.
   const [loads, setLoads] = useState(0);
   const [reach, setReach] = useState<boolean>();
+  // The old answer goes with the old frame: the new frame mounts once, after its own probe.
+  const [reload] = useState(() => () => {
+    setReach(undefined);
+    setLoads((value) => value + 1);
+  });
+  const [probed, setProbed] = useState(origin);
+  if (probed !== origin) {
+    setProbed(origin);
+    setReach(undefined);
+  }
   useEffect(() => {
     if (origin === undefined || notice !== undefined) return undefined;
     let current = true;
-    setReach(undefined);
-    void probePreview(origin).then((answered) => { if (current) setReach(answered); });
-    return () => { current = false; };
+    const onBlocked = (event: SecurityPolicyViolationEvent) => {
+      if (reloadForPolicy(event.blockedURI, origin, storage('sessionStorage'))) window.location.reload();
+    };
+    document.addEventListener('securitypolicyviolation', onBlocked);
+    void probePreview(origin).then((answered) => {
+      if (answered) storage('sessionStorage')?.removeItem(PREVIEW_RELOAD_KEY);
+      if (current) setReach(answered);
+    });
+    return () => {
+      current = false;
+      document.removeEventListener('securitypolicyviolation', onBlocked);
+    };
   }, [origin, notice, loads]);
   // A page shown again from history (WebKit) loads the frame's last address
   // without a select request, and the preview listener refuses that.
   useEffect(() => {
-    const onShow = (event: PageTransitionEvent) => { if (event.persisted) setLoads((value) => value + 1); };
+    const onShow = (event: PageTransitionEvent) => { if (event.persisted) reload(); };
     window.addEventListener('pageshow', onShow);
     return () => window.removeEventListener('pageshow', onShow);
   }, []);
@@ -135,8 +176,8 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
   if (present && !seen) setSeen(true);
   return (
     <main className="preview-screen">
-      <PreviewBar port={port} peer={session.computer.home ? undefined : session.computer} onBack={onBack} onReload={() => setLoads((value) => value + 1)} />
-      {seen && !present && <div className="banner" role="alert"><span>Dev server stopped</span></div>}
+      <PreviewBar port={port} peer={session.computer.home ? undefined : session.computer} onBack={onBack} onReload={reload} />
+      {notice === undefined && seen && !present && <div className="banner" role="alert"><span>Dev server stopped</span></div>}
       <PreviewBody key={loads} session={session} origin={origin} port={port} notice={notice} reach={reach} />
       <PreviewStatus session={current} fresh={hasNewOutput(current, readViewed())} onTell={onTell} />
     </main>
