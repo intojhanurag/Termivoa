@@ -68,9 +68,13 @@ type PairOptions struct {
 	// Confirmer, when set, makes Pair wait until the grant expires for a
 	// phone to open the link, show its code, and ask before approving. Nil
 	// prints the manual approval steps instead (--no-wait). With Via (and
-	// no AllowTagged) it also offers this computer to home, so the app lists
-	// it under "Found on your network", and waits up to OfferWait.
+	// no AllowTagged or NoOffer) it also offers this computer to home, so
+	// the app lists it under "Found on your network", and waits up to
+	// OfferWait.
 	Confirmer Confirmer
+	// NoOffer keeps a Via wait to the link only: stdin is not a terminal
+	// (for example a pipe), so no person is known to wait there.
+	NoOffer bool
 	// PollInterval is how often pending pairings are read; zero is 1s.
 	PollInterval time.Duration
 	// Via binds the grant to the Termivoa app served by another computer
@@ -259,7 +263,7 @@ func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[str
 		qrCode, _ = renderQR(link, options.QRColumns)
 	}
 	wait := phoneWait{appOrigin: appOrigin, self: machineName(origin)}
-	if options.Confirmer != nil && !options.AllowTagged {
+	if options.Confirmer != nil && !options.AllowTagged && !options.NoOffer {
 		return offerAndWait(ctx, admin, options, grant, wait, link, qrCode, seen, output)
 	}
 	next := "Then run `pterm pair pending` and approve with `pterm pair approve <pending-id>` after comparing the code."
@@ -273,7 +277,7 @@ func pairVia(ctx context.Context, admin Admin, options PairOptions, seen map[str
 			"The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n" + qrCode
 	}
 	// Home drops every offer from or to a tagged computer, so none is sent.
-	if options.Confirmer != nil {
+	if options.Confirmer != nil && options.AllowTagged {
 		code = "Add does not work with tagged computers. Use the QR code or the link below.\n" + code
 	}
 	if err := writeString(output, fmt.Sprintf(

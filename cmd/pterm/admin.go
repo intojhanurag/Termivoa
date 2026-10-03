@@ -267,6 +267,9 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 		}
 		if !config.noWait && input != nil {
 			options.Confirmer = fileConfirmer{input: input, output: output}
+			// Only a person at a terminal is offered to home (Found on your
+			// network); piped input still waits for the link.
+			options.NoOffer = !term.IsTerminal(input.Fd())
 		}
 		// A declined phone is the owner's answer, not a failure; Pair said so.
 		if err := cli.Pair(ctx, client, options, output); !errors.Is(err, cli.ErrNotPaired) {

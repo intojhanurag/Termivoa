@@ -986,4 +986,14 @@ func TestPairViaOffersOnlyInAnUntaggedWait(t *testing.T) {
 	if len(admin.offers) != 0 || len(admin.ends) != 0 {
 		t.Fatalf("offers %v, ends %v", admin.offers, admin.ends)
 	}
+	// Input that is not a terminal (a pipe) waits for the link, as before
+	// Found, and offers nothing.
+	admin = &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
+	admin.grant.ExpiresAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+	output.Reset()
+	err = Pair(context.Background(), admin, PairOptions{Via: "mac", NoOffer: true, Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}, &output)
+	if err == nil || !strings.HasPrefix(output.String(), "Add-computer link") || !strings.Contains(output.String(), "Waiting for the phone") ||
+		strings.Contains(output.String(), "tagged") || len(admin.offers) != 0 || len(admin.ends) != 0 {
+		t.Fatalf("piped: %v, offers %v, ends %v\n%s", err, admin.offers, admin.ends, output.String())
+	}
 }
