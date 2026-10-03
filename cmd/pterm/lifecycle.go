@@ -870,10 +870,11 @@ func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status
 			break
 		}
 	}
+	// With Via, the add-computer screen names the app itself.
 	if options.Via == "" {
 		fmt.Fprintln(output, "\nPair your phone:")
 	} else {
-		fmt.Fprintf(output, "\nAdd this computer to the Termivoa app at %s (the same as `%s`):\n", options.Via, cli.PairCommand(options))
+		fmt.Fprintln(output)
 	}
 	if err := pairPhone(ctx, admin, options, output); errors.Is(err, cli.ErrNotPaired) {
 		return notYet(cli.PairCommand(options))
@@ -904,20 +905,34 @@ func viaCommand(status *tailnet.Status, candidates []tailnet.Node) string {
 }
 
 // askHome asks which computer the phone was first paired with: a number
-// from the list, or the name or address of a computer in this tailnet. It
-// asks again after a wrong answer; the zero Node means Enter (skip).
+// from the list, or the name or address of a computer in this tailnet. Each
+// computer shows its full address and OS, so the owner can match the address
+// the app opens: offering this computer to a wrong home is what a relay
+// needs (docs/found-on-network.md, R1). It asks again after a wrong answer;
+// the zero Node means Enter (skip).
 func askHome(ctx context.Context, status *tailnet.Status, candidates []tailnet.Node, confirmer fileConfirmer,
 	output io.Writer,
 ) (tailnet.Node, error) {
-	prompt := "\nWhich computer did you first pair your phone with?\n"
+	prompt := "\nWhich computer did you first pair your phone with?\nPick the computer whose address your Termivoa app opens.\n"
 	for index, node := range candidates {
 		name, _, _ := strings.Cut(node.Host, ".")
-		if node.Tagged() {
-			name += " (tagged)"
+		var about []string
+		if node.OS != "" {
+			about = append(about, node.OS)
 		}
-		prompt += fmt.Sprintf("  %d) %s\n", index+1, name)
+		if node.Tagged() {
+			about = append(about, "tagged")
+		}
+		details := ""
+		if len(about) > 0 {
+			details = " (" + strings.Join(about, ", ") + ")"
+			if strings.ContainsFunc(details, func(r rune) bool { return r < ' ' || r > '~' }) {
+				details = " " + strconv.QuoteToASCII(details[1:]) // OS is Tailscale's text, not ours.
+			}
+		}
+		prompt += fmt.Sprintf("  %d) %s — %s%s\n", index+1, name, node.Origin(), details)
 	}
-	prompt += "Type a number or a name (Enter skips): "
+	prompt += "Type a number, or the name of another computer (Enter skips pairing): "
 	for {
 		choice, err := confirmer.Ask(ctx, prompt)
 		if err != nil || choice == "" {
