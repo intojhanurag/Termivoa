@@ -20,11 +20,13 @@ import (
 )
 
 // systemdFake models `systemctl --user` and `loginctl` for one user and
-// records every call.
+// records every call. Like real systemd, is-enabled says "disabled" only for
+// a unit whose file exists in units; for no file it fails with "not-found".
 type systemdFake struct {
 	mu      sync.Mutex
 	calls   []string
 	enabled map[string]bool
+	units   string // the user unit directory
 	linger  string
 }
 
@@ -41,10 +43,13 @@ func (fake *systemdFake) Run(_ context.Context, name string, args ...string) (st
 	case name != "systemctl":
 		return "", errors.New("unexpected command " + call)
 	case args[1] == "is-enabled":
-		if !fake.enabled[args[2]] {
-			return "disabled\n", errors.New("exit status 1")
+		if fake.enabled[args[2]] {
+			return "enabled\n", nil
 		}
-		return "enabled\n", nil
+		if _, err := os.Stat(filepath.Join(fake.units, args[2])); err != nil {
+			return "not-found\n", errors.New("exit status 4")
+		}
+		return "disabled\n", errors.New("exit status 1")
 	case args[1] == "enable":
 		fake.enabled[args[2]] = true
 	case args[1] == "disable":
@@ -75,7 +80,7 @@ func newLinuxLifecycleTestEnv(t *testing.T, systemd bool) (lifecycleEnv, *system
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	fake := &systemdFake{enabled: map[string]bool{}, linger: "no"}
+	fake := &systemdFake{enabled: map[string]bool{}, units: filepath.Join(root, "config", "systemd", "user"), linger: "no"}
 	paths := platform.Paths{
 		DataDir:    filepath.Join(root, "share", "phone-terminal"),
 		RuntimeDir: filepath.Join(root, "run", "phone-terminal"),
@@ -259,6 +264,22 @@ func TestShortSetupPlanSaysWhenItReplacesStartup(t *testing.T) {
 	describeSetup(env, lifecycle.Plan{Steps: plan.Steps}, hostReport{statuses: []lifecycle.Status{status}}, "", "", false, false, &output)
 	if strings.Contains(output.String(), "This ") {
 		t.Errorf("plan for a plain registration says it replaces something:\n%s", output.String())
+	}
+}
+
+// A first install (no unit files, systemd answers "not-found") registers
+// startup and restarts nothing: the short plan has no "This replaces …"
+// or "restarts the broker" line.
+func TestLinuxFirstInstallPlanRestartsNothing(t *testing.T) {
+	newLinuxLifecycleTestEnv(t, true)
+	var output bytes.Buffer
+	if err := runWithInput(context.Background(), []string{"setup"}, nil, &output); err != nil {
+		t.Fatal(err)
+	}
+	plan := output.String()
+	if !strings.Contains(plan, "  - Start Termivoa when you log in (your user only, no administrator rights).\n  - Keep its data in ") ||
+		strings.Contains(plan, "restarts the broker") || strings.Contains(plan, "replaces the startup") {
+		t.Errorf("first-install plan:\n%s", plan)
 	}
 }
 

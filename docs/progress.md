@@ -50,6 +50,17 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Host batch: #158, #161, #162, the add-computer wait screen (2026-10-03, branch `fix/host-batch`)
+
+- **#158 (tests only).** The systemd fake in
+  `cmd/pterm/lifecycle_linux_host_test.go` answered `disabled` for a unit
+  with no file, so every "first install" in those tests planned a broker
+  restart ("This restarts the broker, …" in the short plan; reproduced with
+  the old fake). It now answers like `systemctl --user is-enabled`: `enabled`,
+  `disabled` (exit 1) only when the unit file exists, else `not-found`
+  (exit 4). New test `TestLinuxFirstInstallPlanRestartsNothing` (fails with
+  the old fake). No product change.
+
 ### Found on your network: harness, review fixes, docs (2026-10-03, branch `feat/found-on-network`)
 
 ADR 0007 v2 is implemented (critical feature, rule 24: not merged; owner
