@@ -310,6 +310,18 @@ Vite project on `vps`. Do the list on iPhone, then on Android Chrome.
       a link to another site in the same tab, then go Back to the app. The
       preview shows again, not "Origin not allowed." (WebKit history
       restore).
+- [ ] The same Back when Safari does **not** keep the app page in its page
+      cache (open several heavy pages in between, or lock the phone for a
+      while first, so the app page loads again from history). The app
+      remounts the frame only on `pageshow` with `persisted`; this case is
+      unverified. Record whether the preview shows or "Origin not allowed."
+      shows until **↻**. If the text shows, file an issue (a fix needs this
+      evidence first).
+- [ ] Open `https://<home>/c/<peer host>/sessions/<id>/preview?port=<n>` of
+      a running peer session from a link in another app (Notes, Messages)
+      and, on Android, from a link that opens the installed app. The app
+      shows that session's terminal, never the preview. Then tap
+      **Open ↗**, and pull to reload: the preview shows again.
 - [ ] Follow a link inside the framed page, then swipe Back until the frame
       is at its first page, and once more. Record what happens (known limit
       in WebKit: the whole app goes back).

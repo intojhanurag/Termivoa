@@ -17,7 +17,10 @@ All notable changes are documented here. The format follows
   **untrusted page**: that computer chooses the page in the frame. The bar
   has **↻** to load the preview again. When a computer shows "pair again",
   "can't reach" or "Update Termivoa on …", its open preview is removed and
-  that text shows. After you add a computer, the first preview from it
+  that text shows. A link alone never opens a preview from another computer:
+  its address shows the preview only in the tab where you tapped **Open ↗**
+  (a reload keeps it), and only for a port that session lists; otherwise it
+  opens the terminal. After you add a computer, the first preview from it
   reloads the app once, so the app's security policy includes it. Host: the
   app's CSP frames the preview origin (`https://<host>:8443`) of confirmed
   computers only, never a pending one, and allows a reachability probe of
@@ -94,7 +97,7 @@ All notable changes are documented here. The format follows
   node; a changed node ID revokes the devices bound to it, a new snapshot
   closes open streams that lost trust at once, and a Tailscale status that
   is not `Running` (restart, logout) keeps the last good snapshot. Home pins
-  each peer's node too (store migration 9): a peer whose node changed leaves
+  each peer's node too: a peer whose node changed leaves
   the list and the CSP, and confirm fails with "this name now belongs to
   another Tailscale machine; add the computer again". The gateway sends
   exact credentialed CORS headers to bound origins (devices whose node is
@@ -114,7 +117,8 @@ All notable changes are documented here. The format follows
   lists, tailnet and owner mismatches, "tags changed since pairing", an
   unknown tailnet (Tailscale logged out), and other Tailscale Serve handlers
   on this computer's origin as a problem with the commands to move them.
-  Store migrations 8 and 9. Known limit: a cached offline shell keeps the
+  The store schema changed (one schema file, no migrations: start with a
+  fresh database). Known limit: a cached offline shell keeps the
   CSP from when it was cached. A compromised home compromises every
   computer paired through it; see the threat model and the recovery steps.
 - Files view. Phone side: the Changes screen has a **Changes | Files** switch;
@@ -192,8 +196,9 @@ All notable changes are documented here. The format follows
   redirect. Per-device origin binding now applies on the preview listener
   (#143). A `curl` or a typed URL on the preview listener is now 403.
   Phone: the preview frame now sends the app's origin as referrer (origin
-  only, no path). An app that was open during the update shows "Open the
-  preview from the Termivoa app." in the frame until it reloads.
+  only, no path). Reload the app after you update: an app that was open
+  during the update has the old script and shows "Open the preview from the
+  Termivoa app." in the frame until it reloads.
 - Preview reachability. Phone: the app asks the preview address before it
   shows the page. If nothing answers in 5 seconds, it shows "Can't open the
   preview on <computer>…" and no empty frame. Host: `GET /api/v1/preview` is

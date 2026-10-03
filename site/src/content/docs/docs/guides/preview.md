@@ -52,6 +52,8 @@ Yes. With [several computers](/docs/guides/computers/), open a session on that c
 
 If you added the computer after you opened the app, the app reloads itself once when you first open a preview on it, then shows the preview. You do nothing.
 
+A link alone never opens a preview from another computer. If you open such an address from a message or a web page, Termivoa shows that session's terminal. Tap **Open ↗** there. A reload of a preview that you opened keeps the preview.
+
 ## What does "untrusted page" mean?
 
 :::note[Next beta]

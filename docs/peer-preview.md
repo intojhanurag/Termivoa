@@ -155,10 +155,11 @@ Only the selection forwards an origin. The per-request check and the 5 s recheck
 - **W2.** Over a frame of a peer, the app's bar **always** shows the computer's label (from the phone's own list) and **untrusted page** (`PreviewBar`). It does not depend on how many computers the phone has. Home's frame has neither.
 - **W3.** The app shows a peer's frame only while its own poll of that computer has `status.kind === 'ok'` (`previewFor` in `App.tsx`). For `pair`, `unreachable` or `outdated` the frame is removed and the existing text shows ("vps · pair again", "vps · can't reach", the update text). The app cannot see the frame's own responses (another origin), and it never sees a `403` for a trust refusal on its own calls (that is `400 invalid_request`, `503`, or a CORS failure that looks like a network error), so the computer's status is the signal. The poll runs while the preview is open.
 - **W4.** The app never uses an origin string that a peer sent. A peer's preview origin is always `https://<host of computer.origin>:8443` (`previewOriginOf` in `web/src/computers.ts`), and home computes its `frame-src` the same way. Home's own preview origin still comes from `GET /api/v1/preview`, so the development profile keeps working.
-- **W5.** A peer preview does not depend on home's previews being on. `previewFor` gives a peer an origin when its status is `ok` and its `protocolRevision` is 2 or higher (`PEER_PREVIEW_REVISION`). `route()` opens a peer preview link without reading home's preview origin. Route: `/c/<host>/sessions/<id>/preview?port=<n>`; home keeps `/sessions/<id>/preview?port=<n>`.
+- **W5.** A peer preview does not depend on home's previews being on. `previewFor` gives a peer an origin when its status is `ok` and its `protocolRevision` is 2 or higher (`PEER_PREVIEW_REVISION`). `route()` decides a peer preview address without reading home's preview origin (W9 says when it opens). Route: `/c/<host>/sessions/<id>/preview?port=<n>`; home keeps `/sessions/<id>/preview?port=<n>`.
 - **W6. Probe.** Before the frame shows (home and peers), `probePreview` sends `fetch('<previewOrigin>/__termivoa/select', {mode: 'no-cors', credentials: 'omit', signal: AbortSignal.timeout(5000)})`. The request has no `Referer` (the app's `no-referrer` policy), so the listener answers `403`; the answer is opaque and never read. A resolved fetch means "something answers there": the frame shows. A rejected fetch (network error, timeout, a block by the app's CSP) shows `cantPreview` and no frame (section 6).
 - **W7. Reload.** ↻ in the bar mounts a new frame, so the selection and the probe run again. The screen does the same on `pageshow` with `persisted` (WebKit difference A).
 - **W8. A computer confirmed in this visit.** The app document's `frame-src` and `connect-src` come from the page load, and a computer becomes confirmed after that load. Until the app loads again, that computer's preview origin is blocked by the app's own CSP. The Preview screen listens for the `securitypolicyviolation` event. When the blocked address is on the preview origin that it is trying to open, the app reloads once. A `sessionStorage` guard (key `pterm.previewReload`, `reloadForPolicy` in `Preview.tsx`) allows one reload per preview origin and so stops a reload loop; it is cleared when the probe is answered. If the policy still blocks after the reload (an old cached page), the probe's text shows. After the reload, the route opens the same preview again under the new CSP. The pending-versus-confirmed rule does not change: a pending computer is never in `frame-src`.
+- **W9. A link never opens a peer's frame.** A compromised peer knows its own session IDs and could send the user a link to `/c/<host>/sessions/<id>/preview?port=<n>`. `navigate` pushes the preview entry with `PREVIEW_TAP` as `history.state`; `route()` (page load, reload, Back, Forward) opens a peer preview only when `peerPreviewOnLoad` finds that mark and the port in the session's current `previews`, and otherwise replaces the address with the session's Live address. The reload of W8 keeps the mark. The push path already refused preview addresses (`notificationPath`). Found by the security review of the joined build.
 
 ### What did not change
 
@@ -230,7 +231,7 @@ What that page **cannot** do:
 - Read or change the app: it is another origin, and the app keeps `frame-ancestors 'none'` and its CSP.
 - Navigate the app away, open popups, show dialogs, start downloads or go full screen (frame sandbox, W1).
 - Call the API of home or of any peer, or load from another computer's preview (section 5).
-- Appear without a tap: the app frames a peer only after **Open ↗** on a session of that peer, or when its preview address is opened (a reload of that screen; see open risk 5 in section 13).
+- Appear without a tap: the app frames a peer only after **Open ↗** on a session of that peer. The app's own `navigate` marks that history entry (`PREVIEW_TAP` in `history.state`); the mark stays with the entry through a reload, Back and Forward, and no other page can set it. `route()` shows a peer's preview address only with that mark and only for a port in that session's current `previews` (`peerPreviewOnLoad` in `App.tsx`); a link from a web page, a message or a notification opens the session's terminal, with no request to the peer's preview origin. Home's own preview address keeps its behavior (it opens from a link).
 
 What it **can** do, stated plainly. "It" is the peer, or any script in a peer's dev site (a project dependency, for example):
 
@@ -279,7 +280,7 @@ No schema, message, error code or store change.
 | --- | --- | --- |
 | Spike | Two origins of one site in Chrome 154 and Playwright WebKit 26.5 (section 2). The stop rule was: if the move to `/` is not `same-origin`, or the `Referer` is absent, in any engine, the design goes back to review. | Done; both held. The real-phone part of the spike was not run; it is in `docs/owner-verification.md`. |
 | Final plan review | 13 changes (section 12). | Done; all in the build. |
-| Build | Host rules (L1, L2, B1, H1, text pages, revision 2), the app (W1 to W8), the harness and the docs, as **one** pull request that closes #143 and #144. Version 2 planned separate pull requests for the `main` gap, the text pages and the probe; the owner's approval covered all of them together. | Done. |
+| Build | Host rules (L1, L2, B1, H1, text pages, revision 2), the app (W1 to W9), the harness and the docs, as **one** pull request that closes #143 and #144. Version 2 planned separate pull requests for the `main` gap, the text pages and the probe; the owner's approval covered all of them together. | Done. |
 | Real-phone checks | `docs/owner-verification.md`, "Preview for sessions on peers". | Open (owner). |
 
 ### Files
@@ -330,6 +331,7 @@ The checks this design asks of the harness, and the harness check that runs each
 | P10 | The bar over the vps frame shows `vps` and **untrusted page**; home's has neither. | `PV-vps-bar`, `PV-home`; WebKit W5 |
 | P11 | A computer confirmed in this visit: the app reloads once and the preview opens (W8). | `PV-added` |
 | P12 | WebKit: after a history restore of the app page, the frame is mounted again and shows the preview (difference A). | Not automated; real-phone check (`docs/owner-verification.md`). The spike saw it (section 2). |
+| P13 | A cold navigation to a peer's preview address shows that session's terminal, with no frame and no request to the peer's preview origin; a port the session does not list does the same, also with the tap mark; a reload after a real tap keeps the preview (W9). | `PV-link-cold`, `PV-link-port`, `PV-link-reload` |
 | | Also run: every near miss of the `Referer` rule with the phone's valid cookies; `GET /` with each `Sec-Fetch-Site`; home's own preview; a computer with no preview listener (the probe's text). | `PV-refuse-*`, `PV-home*`, `PV-off` |
 
 What this harness cannot run (it uses the development profile):
@@ -398,6 +400,16 @@ Two independent reviews ran on version 1. Security: "sound with changes". Feasib
 
 Open point found after the build: a computer confirmed in this visit was blocked by the app's own CSP until the next load, and the app showed the probe's text, which points at `pterm setup` (the wrong fix). Resolved by W8 (reload once on a `securitypolicyviolation` for that preview origin).
 
+Two adversarial reviews of the joined build (security: safe to ship with one required fix; correctness: ship after fixes), and what was done:
+
+| Finding | Resolution |
+| --- | --- |
+| Security, required: a link opened a peer's frame with no tap (`route()` took any in-range port). | W9: the tap mark in `history.state` and the port in the session's `previews`. Checks `PV-link-*`. |
+| `fail` in `preview.go` showed a broker `protocol_mismatch` as "This app may not use this computer." (both are 400 on the API). | `fail` matches the error code `invalid_request`; a mismatch keeps the 503 text (Go test). |
+| A home preview whose origin became undefined while open showed "Opening preview…" without end. | `PreviewBody` shows the `cantPreview` text for home without an origin; the bar keeps the way back. |
+| The frame is remounted only on `pageshow` with `persisted`; a history restore without the page cache is unverified. | No guessed fix. It is a real-phone check (`docs/owner-verification.md`), and the troubleshooting page says to tap **↻**. |
+| ↻ mounted the frame twice; a computer confirmed in this visit was blocked by the CSP. | Fixed before the reviews came back (W8, and one probe per frame). |
+
 ## 13. Known limits, open risks, things not verified
 
 Known limits (accepted):
@@ -419,6 +431,6 @@ Open risks:
 2. **Phishing in the frame** has no technical limit beyond the bar.
 3. **Cookie eviction and bloat** from a peer dev site have no fix in this design. The number of cookies that evicts a session cookie was not tested.
 4. **`Referer` is optional.** A browser that stops sending it for framed navigations breaks every preview (closed); variant C is the fallback design.
-5. **Android opens in-scope links in the installed app.** A link to `/c/<host>/sessions/<id>/preview?port=<n>` opens the frame without a tap in the app. It needs a real session ID of a confirmed peer. The home route has the same behavior.
+5. **Home's own preview address opens from a link** (`/sessions/<id>/preview?port=<n>`), also in the installed Android app. It needs a real session ID of home and shows only home's own dev server. A peer's address does not: it needs the tap mark (section 7, W9).
 
 Issues that this work closed: #143 (the preview listener skipped per-device origin binding) and #144 (listener text pages blank in the app frame; `GET /api/v1/preview` answers an origin when Serve 8443 is not set up, covered by the probe).
