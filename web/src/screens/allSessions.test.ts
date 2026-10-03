@@ -4,7 +4,7 @@ import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import {
-  byChip, chipsFor, forgetComputer, homeSettings, hosted, keyOf, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  byChip, chipsFor, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
   type ComputerEntry, type ComputerStatus,
 } from './allSessions';
 
@@ -117,6 +117,60 @@ describe('readNow (Check again, and reloads after a change)', () => {
     await Promise.all([readNow([vps], load, () => undefined), readNow([vps], load, () => undefined)]);
     expect(load).toHaveBeenCalledTimes(2);
     expect(most).toBe(1);
+  });
+});
+
+describe('readNow and the computer\'s health', () => {
+  const origin = 'https://health.tailx.ts.net';
+  const peer: Computer = { ...vps, origin, host: 'health.tailx.ts.net' };
+  const down = new ApiError(0, 'network', 'Connection unavailable');
+  const reads = (fail: boolean, published: unknown[] = []) => readNow(
+    [peer],
+    async () => { if (fail) throw down; return { settings, sessions: [] }; },
+    (...args) => published.push(args),
+  ).catch(() => undefined);
+
+  it('counts a failed read, and an answer clears the backoff and starts a waiting connect', async () => {
+    scheduler.forget(origin);
+    const gate = scheduler.connectGate(origin);
+    for (let index = 0; index < 3; index++) await reads(true);
+    expect(scheduler.offline(origin)).toBe(true);
+    const started = vi.fn();
+    gate.wait(started);
+    expect(started).not.toHaveBeenCalled();
+    await reads(false);
+    expect(scheduler.offline(origin)).toBe(false);
+    expect(started).toHaveBeenCalledTimes(1);
+    gate.done('cancelled');
+  });
+
+  it('asks the status to show a failed read at once, even before the computer counts as offline', async () => {
+    scheduler.forget(origin);
+    const published: unknown[][] = [];
+    await reads(true, published);
+    expect(published[0]?.[2]).toBe(true);
+    const next = nextStatus({ kind: 'ok', settings, sessions: [], at: 1 }, peer, { ok: false, error: down }, true, 2);
+    expect(next).toEqual({ kind: 'unreachable', lastSeen: 1 });
+    scheduler.forget(origin);
+  });
+});
+
+describe('load and the settings cache', () => {
+  it('keeps nothing for a computer that was removed while it was read', async () => {
+    const body = (url: string) => (url.endsWith('/settings')
+      ? { device: { id: '00000000-0000-4000-8000-000000000020', label: 'Phone' }, projects: [], shellProfiles: [], hostBuild: 'b', brokerGeneration: '00000000-0000-4000-8000-000000000021', protocolRevision: 1, minProtocolRevision: 1 }
+      : { sessions: [] });
+    const fetch = vi.fn(async (url: string) => new Response(JSON.stringify(body(url)), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetch);
+    const origin = 'https://cache.tailx.ts.net';
+    const settingsReads = () => fetch.mock.calls.filter(([url]) => url.endsWith('/settings')).length;
+    await load(origin, true, () => false);
+    await load(origin, false, () => true);
+    expect(settingsReads()).toBe(2);
+    await load(origin, false, () => true);
+    expect(settingsReads()).toBe(2);
+    forgetComputer(origin);
+    vi.unstubAllGlobals();
   });
 });
 

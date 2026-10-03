@@ -175,6 +175,8 @@ describe('Settings → Computers', () => {
   it('offers Check again on every computer, rename and remove for peers only, and + Add a computer', () => {
     const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
     expect(html.match(/>Check again<\/button>/gu)).toHaveLength(2);
+    // One status line per row for its own result, and one for rename and remove.
+    expect(html.match(/role="status"/gu)).toHaveLength(3);
     expect(html.match(/>Rename<\/button>/gu)).toHaveLength(1);
     expect(html.match(/>Remove<\/button>/gu)).toHaveLength(1);
     expect(html).toContain('>+ Add a computer</button>');
@@ -206,5 +208,8 @@ describe('Settings → Computers', () => {
     const onFailure = () => 'Request failed';
     expect(checkFailureText(vps, new ReadFailure(vps, new ApiError(0, 'network', 'Connection unavailable')), onFailure)).toBe("vps · can't reach");
     expect(checkFailureText(vps, new ReadFailure(vps, new ApiError(500, 'internal_error', 'boom')), onFailure)).toBe('Request failed');
+    // The refusal text names the origin's first label; the row shows the name on this phone.
+    const outdated = new ReadFailure(vps, new ApiError(0, 'computer_outdated', 'Update Termivoa on vps'));
+    expect(checkFailureText({ label: 'server' }, outdated, onFailure)).toBe('Update Termivoa on server');
   });
 });

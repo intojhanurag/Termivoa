@@ -133,11 +133,12 @@ export class ReadFailure extends Error {
 export async function readNow(
   computers: ReadonlyArray<Computer>,
   load: (origin: string) => Promise<Loaded>,
-  publish: (origin: string, outcome: PollOutcome<Loaded>) => void,
+  /** `asked` is true: the user or a change asked for this read, so a failure shows at once ("can't reach"), not after three. */
+  publish: (origin: string, outcome: PollOutcome<Loaded>, asked?: boolean) => void,
 ): Promise<void> {
   const failures = await Promise.all(computers.map((computer) => scheduler.serial(computer.origin, () => load(computer.origin)).then(
-    (value) => { publish(computer.origin, { ok: true, value }); return undefined; },
-    (error: unknown) => { publish(computer.origin, { ok: false, error }); return new ReadFailure(computer, error); },
+    (value) => { scheduler.reported(computer.origin, true); publish(computer.origin, { ok: true, value }, true); return undefined; },
+    (error: unknown) => { scheduler.reported(computer.origin, false); publish(computer.origin, { ok: false, error }, true); return new ReadFailure(computer, error); },
   )));
   const first = failures.find((failure) => failure !== undefined);
   if (first !== undefined) throw first;
@@ -150,12 +151,14 @@ export function pruneStatuses(statuses: ReadonlyMap<string, ComputerStatus>, ori
     : new Map([...statuses].filter(([origin]) => origins.has(origin)));
 }
 
-async function load(origin: string, fresh: boolean): Promise<Loaded> {
+/** Exported for tests. */
+export async function load(origin: string, fresh: boolean, listed: () => boolean): Promise<Loaded> {
   const http = client(origin);
   let settings = fresh ? undefined : settingsCache.get(origin);
   if (settings === undefined) {
     settings = await http.settings();
-    settingsCache.set(origin, settings);
+    // A computer removed while this read ran keeps nothing behind.
+    if (listed()) settingsCache.set(origin, settings);
   }
   return { settings, sessions: (await http.sessions()).sessions };
 }
@@ -182,7 +185,7 @@ export function useAllSessions(active: boolean, computers: ReadonlyArray<Compute
   homeAuth.current = onHomeAuth;
   const origins = computers.map((computer) => computer.origin).join(' ');
 
-  const publish = useCallback((origin: string, outcome: PollOutcome<Loaded>) => {
+  const publish = useCallback((origin: string, outcome: PollOutcome<Loaded>, asked = false) => {
     const computer = byOrigin.current.get(origin);
     if (computer === undefined) return;
     if (!outcome.ok && computer.home && isAuthFailure(outcome.error)) {
@@ -192,7 +195,7 @@ export function useAllSessions(active: boolean, computers: ReadonlyArray<Compute
     const single = byOrigin.current.size < 2;
     setStatuses((current) => {
       const next = new Map(current);
-      next.set(origin, nextStatus(current.get(origin) ?? { kind: 'loading' }, computer, outcome, scheduler.offline(origin), Date.now(), single));
+      next.set(origin, nextStatus(current.get(origin) ?? { kind: 'loading' }, computer, outcome, asked || scheduler.offline(origin), Date.now(), single));
       return next;
     });
   }, []);
@@ -208,12 +211,12 @@ export function useAllSessions(active: boolean, computers: ReadonlyArray<Compute
 
   useEffect(() => {
     if (!active || origins === '') return undefined;
-    return scheduler.poll(origins.split(' '), (origin) => load(origin, false), publish);
+    return scheduler.poll(origins.split(' '), (origin) => load(origin, false, () => byOrigin.current.has(origin)), publish);
   }, [active, origins, publish]);
 
   const reload = useCallback((origin?: string) => {
     const list = [...byOrigin.current.values()].filter((computer) => origin === undefined || computer.origin === origin);
-    return readNow(list, (item) => load(item, true), publish);
+    return readNow(list, (item) => load(item, true, () => byOrigin.current.has(item)), publish);
   }, [publish]);
 
   const retry = useCallback((origin: string) => {

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ApiError, deviceLabelProblem } from '../api/http';
+import { useRef, useState } from 'react';
+import { ApiError, deviceLabelProblem, updateText } from '../api/http';
 import { removeComputer, renameComputer, type Computer } from '../computers';
 import { LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { AddComputerSheet } from './AddComputer';
@@ -40,7 +40,19 @@ export function healthText(entry: ComputerEntry, now: number): string | undefine
 /** What Check again says when the read failed. */
 export function checkFailureText(computer: Pick<Computer, 'label'>, failure: unknown, onFailure: (error: unknown) => string): string {
   const error = failure instanceof ReadFailure ? failure.error : failure;
-  return error instanceof ApiError && error.code === 'network' ? cantReach(computer.label) : onFailure(failure);
+  if (error instanceof ApiError && error.code === 'network') return cantReach(computer.label);
+  // The refusal text names the computer by its origin; the row shows the name on this phone.
+  if (error instanceof ApiError && error.code === 'computer_outdated') return updateText(computer.label);
+  return onFailure(failure);
+}
+
+/** How long a Check again result stays under its row. */
+const RESULT_MS = 8_000;
+
+/** Check again on one row: working (`text` undefined) or its result. */
+interface Check {
+  readonly text?: string;
+  readonly error?: boolean;
 }
 
 type Edit =
@@ -64,7 +76,9 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
 }) {
   const [edit, setEdit] = useState<Edit>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
-  const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
+  const [checks, setChecks] = useState<ReadonlyMap<string, Check>>(new Map());
+  const listed = useRef(entries);
+  listed.current = entries;
   const [note, setNote] = useState<{ readonly text: string; readonly error: boolean }>();
   const [pasting, setPasting] = useState(false);
   const [pasted, setPasted] = useState('');
@@ -84,19 +98,33 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
     }, (failure: unknown) => setNote({ text: onFailure(failure), error: true })).finally(() => setBusy(false));
   }
 
+  /** Each row has its own result, so two checks never overwrite each other (or the rename/remove note). */
   function checkAgain(computer: Computer) {
-    const mark = (on: boolean) => setChecking((current) => {
-      const next = new Set(current);
-      if (on) next.add(computer.origin);
-      else next.delete(computer.origin);
+    const put = (check: Check | undefined) => setChecks((current) => {
+      const next = new Map(current);
+      if (check === undefined) next.delete(computer.origin);
+      else next.set(computer.origin, check);
       return next;
     });
-    mark(true);
-    setNote({ text: `Checking ${computer.label}…`, error: false });
+    const finish = (check: Check) => {
+      // The computer may have been removed while it was read.
+      if (!listed.current.some((entry) => entry.computer.origin === computer.origin)) {
+        put(undefined);
+        return;
+      }
+      put(check);
+      setTimeout(() => setChecks((current) => {
+        if (current.get(computer.origin) !== check) return current;
+        const next = new Map(current);
+        next.delete(computer.origin);
+        return next;
+      }), RESULT_MS);
+    };
+    put({});
     onCheck(computer.origin).then(
-      () => setNote({ text: `${computer.label} answered.`, error: false }),
-      (failure: unknown) => setNote({ text: checkFailureText(computer, failure, onFailure), error: true }),
-    ).finally(() => mark(false));
+      () => finish({ text: `${computer.label} answered.` }),
+      (failure: unknown) => finish({ text: checkFailureText(computer, failure, onFailure), error: true }),
+    );
   }
 
   function check() {
@@ -117,6 +145,8 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           const { computer } = entry;
           const online = onlineText(entry);
           const health = healthText(entry, now);
+          const checked = checks.get(computer.origin);
+          const working = checked !== undefined && checked.text === undefined;
           return (
             <li key={computer.origin} className={entry.status.kind === 'unreachable' ? 'computer-card offline' : 'computer-card'}>
               <div className="computer-head">
@@ -172,10 +202,11 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                   </div>
                 </div>
               )}
+              <p role="status" className={checked?.error === true ? 'error field-note' : 'muted field-note'}>{checked === undefined ? '' : (checked.text ?? `Checking ${computer.label}…`)}</p>
               {edit.kind === 'none' && (
                 <div className="row computer-actions">
-                  <button type="button" className="link" disabled={checking.has(computer.origin)} onClick={() => checkAgain(computer)}>
-                    {checking.has(computer.origin) ? 'Checking…' : 'Check again'}
+                  <button type="button" className="link" disabled={busy || working} onClick={() => checkAgain(computer)}>
+                    {working ? 'Checking…' : 'Check again'}
                   </button>
                   {!computer.home && (
                     <>
