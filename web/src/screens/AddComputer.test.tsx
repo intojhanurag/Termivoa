@@ -10,7 +10,9 @@ import {
 } from './AddComputer';
 import { ApiError } from '../api/http';
 import { ReadFailure, type ComputerEntry } from './allSessions';
-import { checkFailureText, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView } from './Computers';
+import {
+  answeredText, atLeast, checkFailureText, CHECKING_MIN_MS, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView,
+} from './Computers';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };
 const grant = 'G'.repeat(43);
@@ -353,6 +355,34 @@ describe('Settings → Computers', () => {
     vi.unstubAllGlobals();
     expect(html).toContain('<code>pterm pair --via mac</code>');
     expect(html).not.toContain('--via Work laptop');
+  });
+
+  it('says how fast Check again answered, in seconds with one decimal', () => {
+    expect(answeredText('vps', 230)).toBe('vps answered in 0.2 s.');
+    expect(answeredText('vps', 40)).toBe('vps answered in 0.1 s.');
+    expect(answeredText('vps', 0)).toBe('vps answered in 0.1 s.');
+    expect(answeredText('vps', 1_960)).toBe('vps answered in 2.0 s.');
+  });
+
+  it('keeps Checking… on screen at least 600 ms, and no longer than the read when it is slower', async () => {
+    vi.useFakeTimers();
+    const fast = vi.fn();
+    void atLeast(Promise.resolve('answer'), CHECKING_MIN_MS).then(fast);
+    await vi.advanceTimersByTimeAsync(CHECKING_MIN_MS - 1);
+    expect(fast).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fast).toHaveBeenCalledWith('answer');
+    const failed = vi.fn();
+    void atLeast(Promise.reject(new Error('down')), CHECKING_MIN_MS).catch(failed);
+    await vi.advanceTimersByTimeAsync(CHECKING_MIN_MS - 1);
+    expect(failed).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(failed).toHaveBeenCalledOnce();
+    const slow = vi.fn();
+    void atLeast(new Promise((resolve) => { setTimeout(() => resolve('late'), 2_000); }), CHECKING_MIN_MS).then(slow);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(slow).toHaveBeenCalledWith('late');
+    vi.useRealTimers();
   });
 
   it('says what Check again found when the read fails', () => {
