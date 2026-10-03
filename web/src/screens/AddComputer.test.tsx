@@ -239,7 +239,7 @@ describe('Settings → Computers', () => {
   const settings = { projects: [], shellProfiles: [], hostBuild: '0.1.0-beta.2+1a2b3c4d5e6f' } as never;
   const entries: ComputerEntry[] = [
     { computer: mac, status: { kind: 'ok', settings, sessions: [], at: Date.now() } },
-    { computer: vps, status: { kind: 'unreachable', lastSeen: Date.now() - 3 * 3_600_000 } },
+    { computer: vps, status: { kind: 'unreachable', lastSeen: Date.now() - 3 * 3_600_000, network: true } },
   ];
 
   it('lists each computer as online or offline, home with the Home badge and its session count', () => {
@@ -252,7 +252,8 @@ describe('Settings → Computers', () => {
     expect(html.match(/class="badge accent">Home</gu)).toHaveLength(1);
     expect(html).not.toContain('this computer');
     expect(html).toContain('<p class="hint-text">Home serves this app to your phone.</p>');
-    expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach · last seen 3 h ago");
+    expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach");
+    expect(html).toContain('<span class="hint-text">Last seen 3 h ago. Is it on, and in your tailnet?</span>');
   });
 
   it('shows no empty line under home while it is checked; a peer shows its address', () => {

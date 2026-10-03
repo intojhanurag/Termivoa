@@ -63,15 +63,17 @@ describe('nextStatus', () => {
   it('keeps the last answer until the scheduler counts the computer offline, then says can\'t reach with when it was last seen', () => {
     const seen = nextStatus({ kind: 'loading' }, vps, loaded, false, 42);
     expect(nextStatus(seen, vps, fail(network), false, 50)).toBe(seen);
-    expect(nextStatus(seen, vps, fail(network), true, 50)).toEqual({ kind: 'unreachable', lastSeen: 42 });
+    expect(nextStatus(seen, vps, fail(network), true, 50)).toEqual({ kind: 'unreachable', lastSeen: 42, network: true });
     const down: ComputerStatus = { kind: 'unreachable', lastSeen: 42 };
-    expect(nextStatus(down, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: 42 });
-    expect(nextStatus({ kind: 'loading' }, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: undefined });
+    expect(nextStatus(down, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: 42, network: true });
+    expect(nextStatus({ kind: 'loading' }, vps, fail(network), true, 60)).toEqual({ kind: 'unreachable', lastSeen: undefined, network: true });
+    // An HTTP error is an answer: not a network failure.
+    expect(nextStatus(down, vps, fail(new ApiError(502, 'unknown', 'Bad gateway')), true, 60)).toEqual({ kind: 'unreachable', lastSeen: 42, network: false });
   });
 
   it('with one computer, says not reachable after the first failure, as before multi-computer', () => {
     const seen = nextStatus({ kind: 'loading' }, mac, loaded, false, 42);
-    expect(nextStatus(seen, mac, fail(network), false, 50, true)).toEqual({ kind: 'unreachable', lastSeen: 42 });
+    expect(nextStatus(seen, mac, fail(network), false, 50, true)).toEqual({ kind: 'unreachable', lastSeen: 42, network: true });
   });
 
   it('names an outdated computer by the user\'s label', () => {
@@ -150,7 +152,7 @@ describe('readNow and the computer\'s health', () => {
     await reads(true, published);
     expect(published[0]?.[2]).toBe(true);
     const next = nextStatus({ kind: 'ok', settings, sessions: [], at: 1 }, peer, { ok: false, error: down }, true, 2);
-    expect(next).toEqual({ kind: 'unreachable', lastSeen: 1 });
+    expect(next).toEqual({ kind: 'unreachable', lastSeen: 1, network: true });
     scheduler.forget(origin);
   });
 });

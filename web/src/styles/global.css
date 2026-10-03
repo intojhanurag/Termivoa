@@ -806,6 +806,7 @@ button.preview-tell { flex-shrink: 0; min-height: 40px; padding: 0 14px; border-
 .chip .dot { width: 8px; height: 8px; border-radius: 4px; }
 .computer-problem { display: flex; align-items: center; gap: 10px; margin: 8px; padding: 12px 14px; border: 1px dashed var(--dash); border-radius: 14px; color: var(--muted); font-size: 14px; }
 .computer-problem-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.computer-problem-detail { display: block; margin-top: 2px; font-size: 13px; }
 .computer-problem button.link { min-height: 32px; color: var(--accent); }
 .computer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .computer-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 14px; background: var(--surface); }

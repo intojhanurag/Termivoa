@@ -5,7 +5,7 @@ import { foundLink, LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink, t
 import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from '../pairing/scan';
 import { AddComputerSheet } from './AddComputer';
 import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
-import { ago, problemText } from './Sessions';
+import { ago, problemDetail, problemText } from './Sessions';
 
 /** The right-hand word for a computer in the list. */
 export function onlineText(entry: ComputerEntry): { readonly text: string; readonly tone: 'green' | 'muted' | 'amber' } {
@@ -17,7 +17,7 @@ export function onlineText(entry: ComputerEntry): { readonly text: string; reado
   }
 }
 
-/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach · last seen 3 h ago"). */
+/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach"; problemDetail says more). */
 export function computerDetail(entry: ComputerEntry, now: number): string {
   const problem = problemText(entry, now);
   if (problem !== undefined) return problem;
@@ -275,6 +275,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           const health = healthText(entry, now);
           // Empty for home while it loads: "checking" on the right says it.
           const detail = computerDetail(entry, now);
+          const more = problemDetail(entry, now);
           const checked = checks.get(computer.origin);
           const working = checked !== undefined && checked.text === undefined;
           return (
@@ -288,6 +289,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                   </span>
                   {detail !== '' && <span className="row-meta">{detail}</span>}
                   {health !== undefined && <span className="row-meta">{health}</span>}
+                  {more !== undefined && <span className="hint-text">{more}</span>}
                 </span>
                 <span className={`computer-state ${online.tone}`}>{online.text}</span>
               </div>

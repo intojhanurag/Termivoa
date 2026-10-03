@@ -26,8 +26,12 @@ export const sameSession = (a: HostedSession, b: HostedSession): boolean =>
 export type ComputerStatus =
   | { readonly kind: 'loading' }
   | { readonly kind: 'ok'; readonly settings: HTTPSettingsResponse; readonly sessions: ReadonlyArray<HostedSession>; readonly at: number }
-  /** "vps · can't reach", with when it last answered in this visit. */
-  | { readonly kind: 'unreachable'; readonly lastSeen?: number | undefined }
+  /**
+   * "vps · can't reach", with when it last answered in this visit. `network`:
+   * the last read failed with a network error (no answer at all), not with
+   * an HTTP error or a reply the app cannot read.
+   */
+  | { readonly kind: 'unreachable'; readonly lastSeen?: number | undefined; readonly network?: boolean }
   /** A 401 from a peer: "vps · pair again". Never logs out home or other peers. */
   | { readonly kind: 'pair' }
   /** "Update Termivoa on vps" (or on home, when the app is the old one). */
@@ -71,7 +75,7 @@ export function nextStatus(
   if (error instanceof ApiError && error.code === 'app_outdated') return { kind: 'outdated', message: error.message };
   if (!offline && !single) return previous;
   const lastSeen = previous.kind === 'ok' ? previous.at : previous.kind === 'unreachable' ? previous.lastSeen : undefined;
-  return { kind: 'unreachable', lastSeen };
+  return { kind: 'unreachable', lastSeen, network: error instanceof ApiError && error.code === 'network' };
 }
 
 /** Waiting sessions first; otherwise computer order (home first), then each computer's own order (sort is stable). */
