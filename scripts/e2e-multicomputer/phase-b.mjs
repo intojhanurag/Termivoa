@@ -214,6 +214,61 @@ try {
     check('B3-new', 'Start a new session on vps from the mac app ("Runs on vps")', after.includes(id) && !before.includes(id), `new session ${id} is in vps pterm list`);
   });
 
+  // ---- B3-push: notifications from a peer ----
+  // Headless Chrome reaches no push service here, so the app cannot subscribe.
+  // The harness calls vps's push routes as the app does, makes the peer
+  // registration the app makes, and delivers the push with CDP.
+  await step('B3-push', 'Push from vps: push routes over CORS, scoped registration, notification, link', async () => {
+    const keys = await tool.eval(`(async () => {
+      const b64 = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+      const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+      return { p256dh: b64(await crypto.subtle.exportKey('raw', pair.publicKey)), auth: b64(crypto.getRandomValues(new Uint8Array(16))) }; })()`);
+    const endpoint = `https://fcm.googleapis.com/fcm/send/e2e-${crypto.randomUUID()}`;
+    const mark = env.logMark();
+    const config = await api(tool, `${vps.origin}/api/v1/push`);
+    const subscribed = await api(tool, `${vps.origin}/api/v1/push/subscribe`, 'POST', { endpoint, keys });
+    const unsubscribed = await api(tool, `${vps.origin}/api/v1/push/unsubscribe`, 'POST', { endpoint });
+    const log = env.logSince(mark).filter((e) => e.host === vps.host && e.path?.startsWith('/api/v1/push'));
+    check('B3-push-cors', 'vps answers the push routes for the mac app (bound origin, credentialed CORS)',
+      config.status === 200 && /^B[\w-]{86}$/.test(config.json?.publicKey ?? '') && subscribed.status === 204 && unsubscribed.status === 204,
+      `key ${config.status}, subscribe ${subscribed.status ?? subscribed.error}, unsubscribe ${unsubscribed.status ?? unsubscribed.error}; ${log.map((e) => `${e.method} ${e.path} ${e.status} ACAO=${e.acao ?? 'none'}`).join(', ')}`);
+
+    const session = (await api(tool, `${vps.origin}/api/v1/sessions`)).json.sessions.find((s) => s.title === 'vps-1');
+    await browser.send('Browser.grantPermissions', { origin: mac.origin, permissions: ['notifications'] });
+    const ids = new Map();
+    browser.listeners.push((m) => {
+      if (m.method === 'ServiceWorker.workerRegistrationUpdated') for (const r of m.params.registrations) ids.set(r.scopeURL, r.registrationId);
+    });
+    await app.send('ServiceWorker.enable');
+    const scope = `/push/${vps.host}/`;
+    await openSessions();
+    await app.eval(`navigator.serviceWorker.register('/sw.js', { scope: ${JSON.stringify(scope)} }).then((r) => new Promise((done) => {
+      const w = r.installing ?? r.waiting;
+      if (r.active || !w) done(true); else w.addEventListener('statechange', () => w.state === 'activated' && done(true)); }))`);
+    const registrationId = await until(() => ids.get(`${mac.origin}${scope}`), { what: 'peer registration id' });
+    // The payload names another host: the worker must use its scope's host.
+    await app.send('ServiceWorker.deliverPushMessage', { origin: mac.origin, registrationId, data: JSON.stringify({
+      title: 'vps-1 is waiting for you', body: 'demo · tap to answer', sessionId: session.id, kind: 'waiting', host: 'evil.tailx.ts.net', url: 'https://evil.tailx.ts.net/',
+    }) });
+    const shown = await until(() => app.eval(`navigator.serviceWorker.getRegistrations()
+      .then((all) => all.find((r) => r.scope.endsWith(${JSON.stringify(scope)})).getNotifications())
+      .then((n) => n.map((x) => ({ title: x.title, body: x.body, url: x.data?.url }))[0])`), { what: 'notification shown' });
+    const want = `/c/${vps.host}/sessions/${session.id}`;
+    check('B3-push-show', 'A push to the vps registration shows a notification that names vps and links to the vps session',
+      shown.title === 'vps-1 is waiting for you' && shown.body === 'vps · demo · tap to answer' && shown.url === want, JSON.stringify(shown));
+    // A tap navigates the app to that link (the click handler itself has unit tests).
+    await app.go(`${mac.origin}${shown.url}`);
+    await until(async () => /[%$#]\s*$/m.test(await terminalText(app)), { what: 'shell prompt of the vps session' });
+    check('B3-push-open', 'The notification link opens the vps session in the mac app', (await terminalText(app)).includes(`${tokens.echo}-42`),
+      `${await app.eval('location.pathname')}; terminal shows the echo typed in B3-echo`);
+    // Push is off in this browser (no home subscription), so the app's own cleanup removes the peer registration.
+    const left = await until(async () => {
+      const scopes = await app.eval(`navigator.serviceWorker.getRegistrations().then((all) => all.map((r) => new URL(r.scope).pathname))`);
+      return !scopes.includes(scope) && scopes;
+    }, { what: 'peer registration removed', timeout: 15000 });
+    check('B3-push-off', 'With notifications off, the app unregisters the peer registration on load', true, `registrations ${JSON.stringify(left)}`);
+  });
+
   // ---- B8 (before the Wall is ever opened): home offline ----
   await step('B8', 'Home offline: cached bundle, unvisited Wall, vps still reachable', async () => {
     const sw = await app.eval(`navigator.serviceWorker.getRegistrations().then((r) => r.map((x) => x.active?.scriptURL ?? 'installing'))`);

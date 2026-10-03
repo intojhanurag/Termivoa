@@ -7,7 +7,7 @@ import {
   type AddComputerLink, type AddTask, type AppLocation,
 } from '../pairing/addComputer';
 import { adoptFragmentGrant, takeGrantFromFragment, type GrantSlot, type HistoryLike, type LocationLike } from '../pairing/pairing';
-import { workersSafe } from '../push';
+import { syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
@@ -493,6 +493,11 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
     || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer';
   const all = useAllSessions(polling, computers, onHomeAuth);
+  // Push from peers follows the list: at start, when a computer is added or
+  // removed (log out included), and when one starts or stops asking to pair again.
+  const peerPush = all.entries.filter((entry) => !entry.computer.home)
+    .map((entry) => `${entry.computer.origin}${entry.status.kind === 'pair' ? ' pair' : ''}`).join(',');
+  useEffect(() => { void syncPeerPush(computersRef.current.filter((computer) => !computer.home)); }, [peerPush]);
   // Sessions and the Wall sort waiting first; Live's tabs keep each computer's own order.
   const sessions = mergeSessions(all.entries);
   const tabs = all.entries.flatMap((entry) => (entry.status.kind === 'ok' ? entry.status.sessions : []));

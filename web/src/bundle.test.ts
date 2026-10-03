@@ -91,6 +91,7 @@ describe('release gate: open an unvisited Wall while home is offline', () => {
     const handlers = new Map<string, (event: Record<string, unknown>) => void>();
     const self = {
       location: { origin: 'https://home.example' },
+      registration: { scope: 'https://home.example/' },
       addEventListener: (type: string, handler: (event: Record<string, unknown>) => void) => handlers.set(type, handler),
       skipWaiting: () => undefined,
       clients: { claim: async () => undefined },

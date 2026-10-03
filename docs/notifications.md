@@ -17,7 +17,8 @@ The encrypted payload is `{title, body, sessionId, kind}` and nothing else.
 It never carries terminal output, a question text, a preview line, a path or a
 command. Titles and project names are cleaned (control and format characters
 removed) and shortened to 60 characters. Tapping a notification opens
-`/sessions/<id>` in the app; the service worker accepts only a lowercase UUID
+`/sessions/<id>` in the app (`/c/<host>/sessions/<id>` for another computer,
+see "Several computers"); the service worker accepts only a lowercase UUID
 and a same-origin path.
 
 ## Architecture
@@ -45,9 +46,58 @@ and a same-origin path.
   is sent with `Urgency: high` and a 5-minute TTL; `done` with `normal` and
   2 minutes.
 
-**Several computers.** The phone subscribes on home only
-([multi-computer.md](multi-computer.md)), so only home's sessions send push.
-Peer sessions show Waiting and Your turn only while the app is open.
+## Several computers
+
+Every paired computer sends its own push ([multi-computer.md](multi-computer.md)).
+Each computer has its own VAPID key, and one browser subscription has one
+key, so the phone holds one subscription per computer. A service-worker
+registration must be on the page's origin, so they all live on home's origin
+(`web/src/push.ts`, `web/src/sw.js`):
+
+| Computer | Registration | Subscribed with | Sent to |
+| --- | --- | --- | --- |
+| Home | `/sw.js` at scope `/` | home's key | home, same-origin |
+| Peer `<host>` | `/sw.js` at scope `/push/<host>/` | that peer's key (`GET /api/v1/push` on the peer) | `POST /api/v1/push/subscribe` on the peer, through the per-computer client (credentialed CORS, bound origin) |
+
+No host change was needed: the peer admits the push routes like every other
+`/api` route from its bound app origin, and the device comes from the
+credential.
+
+- **No page lives under `/push/`**, so a peer registration controls nothing.
+  In it the worker stores no bundle, deletes no cache and claims no client;
+  it only shows notifications.
+- **The host comes from the scope, never from the payload.** The worker reads
+  `<host>` from its own registration scope (`[a-z0-9.-]+`, exact
+  `/push/<host>/`). A peer notification's body starts with the first DNS label
+  (`vps · <project> · tap to answer`), its tag carries the host, and a tap
+  opens `/c/<host>/sessions/<id>`. A peer's payload is untrusted: it supplies
+  only the clamped title and body text, the session UUID and the kind.
+- **Allow-list.** On every load `removeStrayWorkers` keeps only `/sw.js` at
+  scope `/` and `/sw.js` at the exact `/push/<host>/` of each peer in this
+  phone's stored list. Any other registration (another script, another host,
+  a near-miss scope) is unregistered, and that load redeems no grant
+  (`workersSafe`).
+- **One switch.** Turning notifications on (Sessions card or Settings)
+  subscribes home, then every peer at once. Only home can fail the switch; a
+  peer that fails is named ("No notifications from vps.") and the others keep
+  working. Turning off unsubscribes on every reachable computer and
+  unregisters the peer registrations. **Send a test notification** asks every
+  computer and names the peers that sent none.
+- **Sync** (`syncPeerPush`, on every load, when the list changes, when a peer
+  starts or stops asking to pair again, and when Settings opens). With push on,
+  each listed peer is subscribed; a peer added later needs no prompt, because
+  permission is already granted. Every other peer registration is
+  unsubscribed and unregistered: a removed computer, log out, push off. A
+  peer that answers 401 ("pair again") loses its registration until it is
+  paired again. A subscription made under another key is replaced.
+- **The peer's side.** Remove computer and Log out call the peer's logout,
+  which deletes that device's subscriptions there. If the peer cannot be
+  reached, the browser subscription is still removed, so the push service
+  answers `410` and the peer deletes the endpoint.
+- **Not verified:** several scoped registrations in an iOS Home Screen app
+  (Gate 0 check 5; `docs/owner-verification.md`). If a scoped registration or
+  subscribe fails there, home push is not affected and Settings names the
+  computers without notifications.
 
 ## Browser API
 

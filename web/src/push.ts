@@ -1,4 +1,5 @@
-import { api } from './api/http';
+import { api, client, isAuthFailure, type Client } from './api/http';
+import { storedComputers, type Computer } from './computers';
 import type { HTTPPushSubscribeRequest } from './generated/protocol';
 import { storage } from './storage';
 
@@ -8,7 +9,51 @@ export const PUSH_CARD_KEY = 'pterm.pushCard.dismissed';
 export const PUSH_BLOCKED = 'Notifications are blocked. Allow them in Settings.';
 
 export type PushSupport = 'available' | 'needs-home-screen' | 'unsupported';
-export type PushResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
+/** `missing`: the labels of the peers that could not be subscribed (home is on). */
+export type PushResult = { readonly ok: true; readonly missing: string[] } | { readonly ok: false; readonly message: string };
+
+type Peer = Pick<Computer, 'origin' | 'host' | 'label'>;
+
+/**
+ * A peer's push registration: /sw.js at this scope on home's origin (a
+ * registration must be on the page's origin, and one subscription has one
+ * VAPID key). No page lives under /push/, so that worker controls nothing.
+ * The worker reads the host from its scope, never from a push payload.
+ */
+export const peerScope = (host: string): string => `/push/${host}/`;
+const PEER_SCOPE = /^\/push\/([^/]+)\/$/u;
+
+/** The confirmed peers in this phone's stored list. */
+const storedPeers = (): Peer[] => storedComputers().filter((computer) => !computer.home);
+
+/** The peer push registrations on this origin, by host. */
+async function peerRegistrations(): Promise<Map<string, ServiceWorkerRegistration>> {
+  const found = new Map<string, ServiceWorkerRegistration>();
+  for (const registration of await navigator.serviceWorker.getRegistrations()) {
+    const host = PEER_SCOPE.exec(new URL(registration.scope).pathname)?.[1];
+    if (host !== undefined) found.set(host, registration);
+  }
+  return found;
+}
+
+/** Unsubscribes and unregisters one peer registration, in the browser only. */
+async function drop(registration: ServiceWorkerRegistration | undefined): Promise<void> {
+  if (registration === undefined) return;
+  await (await registration.pushManager.getSubscription())?.unsubscribe();
+  await registration.unregister();
+}
+
+/** Resolves when the registration has an active worker (subscribe needs one); rejects when its install fails. */
+function activeWorker(registration: ServiceWorkerRegistration): Promise<ServiceWorkerRegistration> {
+  const worker = registration.installing ?? registration.waiting;
+  if (registration.active !== null || worker === null) return Promise.resolve(registration);
+  return new Promise((resolve, reject) => {
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'activated') resolve(registration);
+      else if (worker.state === 'redundant') reject(new Error('The service worker did not install.'));
+    });
+  });
+}
 
 /**
  * Whether this browser can take push. iOS and iPadOS give push only to a
@@ -84,32 +129,110 @@ const sameBytes = (a: ArrayBuffer | null | undefined, b: Uint8Array) =>
   a != null && a.byteLength === b.byteLength && new Uint8Array(a).every((byte, index) => byte === b[index]);
 
 /**
- * Asks for permission, subscribes this phone and registers it with the host.
- * Call it straight from a click handler: iOS allows the permission prompt only
- * inside a user gesture, so nothing is awaited before requestPermission.
- * Network and API failures throw ApiError.
+ * Subscribes one registration with one computer's key and registers it there.
+ * The key is read first, so a computer that refuses gets no registration.
  */
-export async function enablePush(): Promise<PushResult> {
-  const permission = await Notification.requestPermission();
-  if (permission === 'denied') return { ok: false, message: PUSH_BLOCKED };
-  if (permission !== 'granted') return { ok: false, message: 'Notifications were not allowed.' };
-  const { publicKey } = await api.pushConfig();
+async function subscribeOn(computer: Client, registration: () => Promise<ServiceWorkerRegistration>): Promise<void> {
+  const { publicKey } = await computer.pushConfig();
   const applicationServerKey = fromBase64Url(publicKey);
-  const { pushManager } = await navigator.serviceWorker.ready;
+  const { pushManager } = await registration();
   let subscription = await pushManager.getSubscription();
   if (subscription !== null && !sameBytes(subscription.options.applicationServerKey, applicationServerKey)) {
-    // The host has a new key: a subscription under the old one can no longer be sent to.
+    // The computer has a new key: a subscription under the old one can no longer be sent to.
     await subscription.unsubscribe();
     subscription = null;
   }
   subscription ??= await pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
-  await api.pushSubscribe(subscribeBody(subscription));
-  dismissPushCard();
-  return { ok: true };
+  await computer.pushSubscribe(subscribeBody(subscription));
 }
 
-/** Removes this phone's subscription from the host (best effort) and from the browser. */
-export async function disablePush(): Promise<void> {
+/**
+ * Subscribes each peer on its own scoped registration, all at once. One peer
+ * that fails never stops the others. Returns the labels of the peers left
+ * without notifications. A peer that answers "pair again" (401) loses its
+ * registration.
+ */
+async function subscribePeers(peers: ReadonlyArray<Peer>): Promise<string[]> {
+  const missing = await Promise.all(peers.map(async (peer) => {
+    try {
+      await subscribeOn(client(peer.origin), () => navigator.serviceWorker
+        .register('/sw.js', { scope: peerScope(peer.host) }).then(activeWorker));
+      return undefined;
+    } catch (error) {
+      if (isAuthFailure(error)) await peerRegistrations().then((found) => drop(found.get(peer.host))).catch(() => undefined);
+      return peer.label;
+    }
+  }));
+  return missing.filter((label) => label !== undefined);
+}
+
+/**
+ * Asks for permission, subscribes this phone and registers it with home, then
+ * with each peer. Call it straight from a click handler: iOS allows the
+ * permission prompt only inside a user gesture, so nothing is awaited before
+ * requestPermission. Home's network and API failures throw ApiError; a peer
+ * that fails is only named in `missing`.
+ */
+export async function enablePush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<PushResult> {
+  const permission = await Notification.requestPermission();
+  if (permission === 'denied') return { ok: false, message: PUSH_BLOCKED };
+  if (permission !== 'granted') return { ok: false, message: 'Notifications were not allowed.' };
+  await subscribeOn(api, () => navigator.serviceWorker.ready);
+  dismissPushCard();
+  return { ok: true, missing: await subscribePeers(peers) };
+}
+
+/**
+ * Makes the peer registrations match the list. With push on, every listed
+ * peer is subscribed (also one added later; permission is already granted, so
+ * there is no prompt). Every other peer registration is unsubscribed and
+ * unregistered (a removed computer, log out, push off). Run it on every load
+ * and when the list changes. Never rejects; returns the labels of the peers
+ * left without notifications.
+ */
+export async function syncPeerPush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<string[]> {
+  try {
+    const wanted = await pushEnabled() ? peers : [];
+    for (const [host, registration] of await peerRegistrations()) {
+      if (!wanted.some((peer) => peer.host === host)) await drop(registration).catch(() => undefined);
+    }
+    return await subscribePeers(wanted);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Sends a test notification from every computer. `sent` is home's answer;
+ * `missing` has the labels of the peers that sent none (not reachable, or no
+ * subscription there). Home's failures throw ApiError.
+ */
+export async function testPush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<{ readonly sent: boolean; readonly missing: string[] }> {
+  const [home, ...others] = await Promise.allSettled([api, ...peers.map((peer) => client(peer.origin))].map((computer) => computer.pushTest()));
+  if (home?.status !== 'fulfilled') throw home?.reason;
+  const missing = peers.filter((_, index) => {
+    const result = others[index];
+    return result?.status !== 'fulfilled' || result.value.sent === 0;
+  });
+  return { sent: home.value.sent > 0, missing: missing.map((peer) => peer.label) };
+}
+
+/**
+ * Removes this phone's subscription from every computer (best effort) and
+ * from the browser, and unregisters the peer registrations.
+ */
+export async function disablePush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<void> {
+  const found = await peerRegistrations().catch(() => new Map<string, ServiceWorkerRegistration>());
+  await Promise.all([...found].map(async ([host, registration]) => {
+    try {
+      const endpoint = (await registration.pushManager.getSubscription())?.endpoint;
+      const origin = peers.find((peer) => peer.host === host)?.origin;
+      if (endpoint !== undefined && origin !== undefined) await client(origin).pushUnsubscribe({ endpoint }).catch(() => undefined);
+      await drop(registration);
+    } catch {
+      // The next load removes it (syncPeerPush).
+    }
+  }));
   const subscription = await currentSubscription();
   if (subscription === null) return;
   try {
@@ -121,14 +244,15 @@ export async function disablePush(): Promise<void> {
 }
 
 /**
- * The app's own registration: scope / on this origin, and EVERY worker in it
- * (installing, waiting, active) is /sw.js. A fresh registration at scope /
- * that has no worker yet (the first install) is ours too.
+ * One of the app's own registrations: on this origin, at scope / or at the
+ * exact push scope of a listed peer, and EVERY worker in it (installing,
+ * waiting, active) is /sw.js. A fresh registration that has no worker yet
+ * (the first install) is ours too.
  */
-function ownWorker(registration: ServiceWorkerRegistration, origin: string): boolean {
+function ownWorker(registration: ServiceWorkerRegistration, origin: string, scopes: ReadonlySet<string>): boolean {
   try {
     const scope = new URL(registration.scope);
-    if (scope.origin !== origin || scope.pathname !== '/') return false;
+    if (scope.origin !== origin || !scopes.has(scope.pathname)) return false;
     return [registration.installing, registration.waiting, registration.active]
       .every((worker) => worker === null || worker === undefined || new URL(worker.scriptURL).href === `${origin}/sw.js`);
   } catch {
@@ -138,16 +262,22 @@ function ownWorker(registration: ServiceWorkerRegistration, origin: string): boo
 
 /**
  * Unregisters every service worker that is not the app's own, for example
- * one a compromised home left behind with its own push key. Run it on every
- * load. Never rejects; returns how many it removed.
+ * one a compromised home left behind with its own push key. The allow-list
+ * is /sw.js at scope / plus /sw.js at the exact push scope of each peer in
+ * the stored list (`hosts`); a push scope of any other host is removed too.
+ * Run it on every load. Never rejects; returns how many it removed.
  */
-export async function removeStrayWorkers(container: ServiceWorkerContainer | undefined = globalThis.navigator?.serviceWorker): Promise<number> {
+export async function removeStrayWorkers(
+  container: ServiceWorkerContainer | undefined = globalThis.navigator?.serviceWorker,
+  hosts: ReadonlyArray<string> = storedPeers().map((peer) => peer.host),
+): Promise<number> {
   let removed = 0;
   try {
     if (container === undefined) return 0;
     const { origin } = globalThis.location;
+    const scopes = new Set(['/', ...hosts.map(peerScope)]);
     for (const registration of await container.getRegistrations()) {
-      if (ownWorker(registration, origin)) continue;
+      if (ownWorker(registration, origin, scopes)) continue;
       try {
         if (await registration.unregister()) removed += 1;
       } catch {
@@ -168,8 +298,11 @@ export async function removeStrayWorkers(container: ServiceWorkerContainer | und
  * by a worker other than /sw.js (no controller at all, as on the first
  * visit, is safe). Never rejects.
  */
-export async function workersSafe(container: ServiceWorkerContainer | undefined = globalThis.navigator?.serviceWorker): Promise<boolean> {
-  const removed = await removeStrayWorkers(container);
+export async function workersSafe(
+  container: ServiceWorkerContainer | undefined = globalThis.navigator?.serviceWorker,
+  hosts?: ReadonlyArray<string>,
+): Promise<boolean> {
+  const removed = await removeStrayWorkers(container, hosts);
   const script = container?.controller?.scriptURL;
   return removed === 0 && (script === undefined || script === `${globalThis.location.origin}/sw.js`);
 }

@@ -38,4 +38,5 @@ Options: `--out <dir>` writes the results table, JSON and screenshots there (def
 - Dev gateways use the `pterm_dev_session` cookie without `Secure`, not `__Host-pterm_session`. Host-only, HttpOnly and `SameSite=Strict` are the same.
 - Phase A, and Phase B's own setup calls, send API calls from a mac page with CDP `Page.setBypassCSP`, so they test the computers' answers, not the app's CSP. Phase B's app page keeps the real CSP.
 - The app polls only while its tab is visible, so Phase B keeps the app tab in front (`Page.bringToFront`).
+- Headless Chrome reaches no push service here, so the app cannot subscribe. Step B3-push calls vps's push routes from the mac origin, makes the peer registration the app makes (`/sw.js` at scope `/push/vps.tailx.ts.net/`), and delivers a push with CDP `ServiceWorker.deliverPushMessage`. A real push service and a real tap are in `docs/owner-verification.md`.
 - The front stands in for Tailscale Serve; Gate 0 (real phones, real tailnet) is separate (`scripts/gate0/`).

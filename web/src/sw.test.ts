@@ -36,7 +36,7 @@ function cacheStorage(initial: Record<string, Record<string, Response>> = {}) {
 }
 
 /** Runs src/sw.js against a fake worker global and returns its handlers. */
-function loadWorker(network: Network, windows: Array<Record<string, unknown>> = [], storage = cacheStorage()) {
+function loadWorker(network: Network, windows: Array<Record<string, unknown>> = [], storage = cacheStorage(), scope = 'https://host.example/') {
   const handlers = new Map<string, Handler>();
   const self = {
     location: { origin: 'https://host.example' },
@@ -47,7 +47,7 @@ function loadWorker(network: Network, windows: Array<Record<string, unknown>> = 
       matchAll: vi.fn(async () => windows),
       openWindow: vi.fn(async () => null),
     },
-    registration: { showNotification: vi.fn(async () => undefined) },
+    registration: { scope, showNotification: vi.fn(async () => undefined) },
   };
   const fetch = vi.fn(network);
   new Function('self', 'caches', 'fetch', SOURCE)(self, storage.caches, fetch);
@@ -56,7 +56,7 @@ function loadWorker(network: Network, windows: Array<Record<string, unknown>> = 
 
 /** The worker's pure decision functions. */
 const pure = new Function('self', 'caches', 'fetch', `${SOURCE}\nreturn { buildOf, shouldCacheShell, BUNDLE_FILES, withTimeout };`)(
-  { location: { origin: 'https://host.example' }, addEventListener: () => undefined }, {}, () => undefined,
+  { location: { origin: 'https://host.example' }, registration: { scope: 'https://host.example/' }, addEventListener: () => undefined }, {}, () => undefined,
 ) as {
   buildOf: (html: string) => string | undefined;
   shouldCacheShell: (status: number, contentType: string | null, html: string, build: string) => boolean;
@@ -292,6 +292,45 @@ describe('service worker push', () => {
     const [, second] = self.registration.showNotification.mock.calls[1] as unknown as [string, { body: string; data: { url: string } }];
     expect(second.body).toHaveLength(160);
     expect(second.data.url).toBe('/');
+  });
+
+  const PEER_SCOPE = 'https://host.example/push/vps.tailx.ts.net/';
+
+  it('from a peer scope, names the computer and opens /c/<host>/sessions/<id>; the host is the scope\'s, never the payload\'s', async () => {
+    const { handlers, self } = loadWorker(async () => new Response(''), [], cacheStorage(), PEER_SCOPE);
+    await fire(handlers, 'push', pushEvent(() => ({
+      title: 'api', body: 'Waiting for you', sessionId: SESSION, kind: 'waiting', host: 'evil.example', url: 'https://evil.example/', computer: 'mac',
+    })));
+    expect(self.registration.showNotification).toHaveBeenCalledWith('api', {
+      body: 'vps · Waiting for you',
+      tag: `/c/vps.tailx.ts.net${SESSION}:waiting`,
+      icon: '/icon-192.png',
+      data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` },
+    });
+    await fire(handlers, 'push', pushEvent(() => ({ sessionId: '../../settings' })));
+    expect(self.registration.showNotification).toHaveBeenLastCalledWith('Termivoa', expect.objectContaining({ body: 'vps', data: { url: '/' } }));
+
+    const tapped = loadWorker(async () => new Response(''), [], cacheStorage(), PEER_SCOPE);
+    await fire(tapped.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` } } });
+    expect(tapped.self.clients.openWindow).toHaveBeenCalledWith(`https://host.example/c/vps.tailx.ts.net/sessions/${SESSION}`);
+  });
+
+  it('treats a scope that is not exactly /push/<host>/ as the app\'s own', async () => {
+    for (const path of ['/push/', '/push/a/b/', '/push/Vps.example/', '/push/a%2Fb/', '/push/a:1/', '/c/vps.tailx.ts.net/']) {
+      const { handlers, self } = loadWorker(async () => new Response(''), [], cacheStorage(), `https://host.example${path}`);
+      await fire(handlers, 'push', pushEvent(() => ({ body: 'b', sessionId: SESSION, kind: 'done' })));
+      expect(self.registration.showNotification).toHaveBeenCalledWith('Termivoa', expect.objectContaining({ body: 'b', data: { url: `/sessions/${SESSION}` } }));
+    }
+  });
+
+  it('a peer registration stores no bundle and deletes no cache', async () => {
+    const storage = cacheStorage({ 'pterm-bundle-old': {} });
+    const { handlers, self, fetch, store } = loadWorker(server(), [], storage, PEER_SCOPE);
+    await fire(handlers, 'install', {});
+    await fire(handlers, 'activate', {});
+    expect(fetch).not.toHaveBeenCalled();
+    expect([...store.keys()]).toEqual(['pterm-bundle-old']);
+    expect(self.clients.claim).not.toHaveBeenCalled();
   });
 
   it('on tap, focuses an open app window and moves it to the session', async () => {

@@ -12,6 +12,12 @@ const NAVIGATION_TIMEOUT_MS = 2500;
 /** Caches this app made, this build's and older builds'. */
 const OWN_CACHE = /^pterm-bundle-/;
 const BUNDLE_FILES = new Set(BUNDLE.files);
+/* Push from another computer (a peer) comes through its own registration of
+ * this file at scope /push/<host>/ (web/src/push.ts). The host is read from
+ * that scope, which the app sets from its confirmed list, and never from a
+ * push payload. '' in the app's own registration (scope /). A peer
+ * registration controls no page, so it keeps no bundle and deletes no cache. */
+const PEER_HOST = (/^\/push\/([a-z0-9.-]+)\/$/.exec(new URL(self.registration.scope).pathname) || [])[1] || '';
 
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -136,11 +142,12 @@ async function fromBundle(request, pathname) {
 
 self.addEventListener('install', (event) => {
   // Deliberately no skipWaiting(): a live session is never switched underneath the user.
-  event.waitUntil(precache());
+  if (!PEER_HOST) event.waitUntil(precache());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
+  // A peer registration of a newer build must not delete the cache the open app still uses.
+  if (!PEER_HOST) event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && OWN_CACHE.test(key)).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
@@ -191,11 +198,14 @@ self.addEventListener('push', (event) => {
   }
   const sessionId = typeof data.sessionId === 'string' && SESSION_ID.test(data.sessionId) ? data.sessionId : '';
   const kind = KINDS.includes(data.kind) ? data.kind : 'test';
+  const body = text(data.body, 160);
+  // A peer's notification names its computer (the first DNS label) and opens /c/<host>/sessions/<id>.
+  const peer = PEER_HOST && `/c/${PEER_HOST}`;
   event.waitUntil(self.registration.showNotification(text(data.title, 120) || 'Termivoa', {
-    body: text(data.body, 160),
-    tag: `${sessionId || 'pterm'}:${kind}`,
+    body: PEER_HOST ? [PEER_HOST.split('.')[0], body].filter(Boolean).join(' · ') : body,
+    tag: `${peer}${sessionId || 'pterm'}:${kind}`,
     icon: '/icon-192.png',
-    data: { url: sessionId ? `/sessions/${sessionId}` : '/' },
+    data: { url: sessionId ? `${peer}/sessions/${sessionId}` : '/' },
   }));
 });
 
