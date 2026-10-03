@@ -116,7 +116,8 @@ credential.
   allows one window action, so the worker never calls `openWindow()` after
   `focus()`. Home's registration navigates the window as before, and sends
   the same message when the navigation fails. With no window open, both open
-  one at the address.
+  one at the address. With several app windows, the worker picks the one
+  the user sees: visible and focused, then visible, then the first.
 - **One switch.** Turning notifications on (Sessions card or Settings)
   subscribes home, then every peer at once. Only home can fail the switch,
   and the switch waits only for home; a peer that fails is named when its

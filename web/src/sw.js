@@ -225,7 +225,10 @@ self.addEventListener('notificationclick', (event) => {
   // The open app routes to this path itself (App.tsx checks it again).
   const open = { type: 'open', path: new URL(url).pathname };
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
-    const client = windows.find((item) => new URL(item.url).origin === self.location.origin);
+    // With several windows, the one the user sees: visible and focused, then visible, then any.
+    const ours = windows.filter((item) => new URL(item.url).origin === self.location.origin);
+    const client = ours.find((item) => item.visibilityState === 'visible' && item.focused)
+      || ours.find((item) => item.visibilityState === 'visible') || ours[0];
     if (!client) {
       return self.clients.openWindow(url);
     }
