@@ -2,7 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { Computer } from '../computers';
-import { LINK_PROBLEMS, parseAddComputerLink } from '../pairing/addComputer';
+import { LINK_PROBLEMS, parseAddComputerLink, resetAdd, startAdd } from '../pairing/addComputer';
 import { SCAN_ASKING, SCAN_POINT } from '../pairing/scan';
 import { findAddComputerLinks } from '../terminal/pathLinks';
 import {
@@ -10,7 +10,7 @@ import {
 } from './AddComputer';
 import { ApiError } from '../api/http';
 import { ReadFailure, type ComputerEntry } from './allSessions';
-import { checkFailureText, computerDetail, ComputersSection, healthText, onlineText, readLink, ScanView } from './Computers';
+import { checkFailureText, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView } from './Computers';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };
 const grant = 'G'.repeat(43);
@@ -128,6 +128,21 @@ describe('add-computer page', () => {
     expect(html).not.toContain('used or incomplete');
   });
 
+
+  it('says the found computer stopped waiting when its grant is gone and home lists no new one', async () => {
+    vi.stubGlobal('location', { origin: app.origin });
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: noop });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.endsWith('/computers/found')
+      ? new Response(JSON.stringify({ computers: [] }), { status: 200 })
+      : new Response(JSON.stringify({ error: { code: 'pairing_expired', message: 'x' } }), { status: 410 }))));
+    await startAdd({ ...link, found: true }, 'iPhone');
+    const html = renderToStaticMarkup(<AddComputerPage link={{ ...link, found: true }} deviceLabel="iPhone" onDone={noop} onSettings={noop} onLeave={noop} />);
+    expect(html.replace(/<\/?code>/gu, '')).toContain('vps stopped waiting. On vps run pterm pair --via mac, then tap Add again.');
+    expect(html).not.toContain('expired or was already used');
+    expect(html).toContain('>Settings</button>');
+    resetAdd();
+    vi.unstubAllGlobals();
+  });
 
   it('says what went wrong in plain words, never a peer\'s own text', () => {
     expect(addFailure(new ApiError(0, 'network', 'x'), 'vps')).toBe('This phone cannot reach vps. Check that it is on and in your tailnet.');
@@ -257,6 +272,49 @@ describe('Settings → Computers', () => {
     );
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img');
+  });
+
+  it('shows no Found block before home answers, or when home is too old to list it', () => {
+    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    expect(html).not.toContain('Found on your network');
+    expect(FoundBlock({ found: undefined, homeLabel: 'mac', app, onAdd: noop })).toBeNull();
+  });
+
+  it('lists each found computer by its label from home and its address, with Add', () => {
+    const rows = [
+      { origin: 'https://nas.tailx.ts.net', label: 'nas', grant, expiresAt: '2026-10-03T10:00:00Z' },
+      { origin: 'https://vps.tailx.ts.net', label: '<b>vps</b>', grant, expiresAt: '2026-10-03T10:00:00Z' },
+      // A row this app may not add (another tailnet) is not shown.
+      { origin: 'https://evil.other.ts.net', label: 'evil', grant, expiresAt: '2026-10-03T10:00:00Z' },
+    ];
+    const html = renderToStaticMarkup(<FoundBlock found={{ kind: 'rows', computers: rows }} homeLabel="mac" app={app} onAdd={noop} />);
+    expect(html).toContain('<h3 id="found-heading" class="caps">Found on your network</h3>');
+    expect(html).toContain('<span class="computer-name">nas</span></span><span class="row-meta">nas.tailx.ts.net</span>');
+    expect(html).toContain('&lt;b&gt;vps&lt;/b&gt;');
+    expect(html).toContain('<button type="button" class="primary found-add" aria-label="Add nas">Add</button>');
+    expect(html.match(/>Add<\/button>/gu)).toHaveLength(2);
+    expect(html).not.toContain('evil');
+    expect(html).not.toContain(grant);
+  });
+
+  it('says how to make a computer show when none waits, and when home cannot read Tailscale', () => {
+    const empty = renderToStaticMarkup(<FoundBlock found={{ kind: 'rows', computers: [] }} homeLabel="mac" app={app} onAdd={noop} />);
+    expect(empty.replace(/<\/?code>/gu, '')).toContain(
+      'To add another computer, run pterm setup on it, or pterm pair --via mac if it is already set up. It shows here while it waits.',
+    );
+    const down = renderToStaticMarkup(<FoundBlock found={{ kind: 'no_status' }} homeLabel="mac" app={app} onAdd={noop} />);
+    expect(down).toContain('mac cannot read its Tailscale status. Check Tailscale on mac.');
+  });
+
+  it('Add opens the same confirm sheet as a pasted link, with the same link marked found', () => {
+    const onAdd = vi.fn();
+    const row = { origin: 'https://vps.tailx.ts.net', label: 'vps', grant, expiresAt: '2026-10-03T10:00:00Z' };
+    const tree = FoundBlock({ found: { kind: 'rows', computers: [row] }, homeLabel: 'mac', app, onAdd });
+    expect(onAdd).not.toHaveBeenCalled();
+    buttons(tree).get('Add')?.();
+    expect(onAdd).toHaveBeenCalledWith({ ...readLink(printed, app), found: true });
+    const sheet = renderToStaticMarkup(<AddComputerSheet link={onAdd.mock.calls[0]?.[0] as typeof link} onClose={noop} go={noop} />);
+    expect(sheet).toContain('Add this computer?');
   });
 
   it('says what Check again found when the read fails', () => {

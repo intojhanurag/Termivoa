@@ -1,6 +1,6 @@
 import { ApiError, client, firstLabel } from '../api/http';
 import { confirmComputer, forgetPending, recordPending, removeComputer, storedComputers, type Computer } from '../computers';
-import type { HTTPComputerAddResponse } from '../generated/protocol';
+import type { HTTPComputerAddResponse, HTTPFoundComputer } from '../generated/protocol';
 import { parseHttpBody } from '../protocol/httpBody';
 import { GRANT, PairingFlow, type HistoryLike, type LocationLike, type PendingPairing } from './pairing';
 
@@ -42,6 +42,12 @@ export interface AddComputerLink {
   readonly grant: string;
   /** On the add page: the app path the add was started from (Back and the page's way out go there). */
   readonly back?: string;
+  /**
+   * From Found on your network, not a pasted or scanned link. Not a secret:
+   * it only lets the add page try once more with a grant that the new
+   * computer replaced (startAdd).
+   */
+  readonly found?: true;
 }
 
 /** An app path on this origin only: one leading slash, no scheme, host, query or fragment. */
@@ -116,6 +122,15 @@ export function parseAddComputerLink(text: string, app: AppLocation): AddCompute
   return { origin: url.origin, grant };
 }
 
+/**
+ * A Found on your network row as the link a paste would give: the same
+ * checks on its origin and grant, or undefined for a row this app may not add.
+ */
+export function foundLink(row: Pick<HTTPFoundComputer, 'origin' | 'grant'>, app: AppLocation): AddComputerLink | undefined {
+  if (!GRANT.test(row.grant) || peerProblem(row.origin, app) !== undefined) return undefined;
+  return { origin: row.origin, grant: row.grant, found: true };
+}
+
 /** Step 2: records the peer as pending on home. Show `node` (owner or tags) in the confirm sheet. */
 export function prepareAddComputer(link: AddComputerLink): Promise<HTTPComputerAddResponse> {
   return recordPending(link.origin);
@@ -129,6 +144,7 @@ export function prepareAddComputer(link: AddComputerLink): Promise<HTTPComputerA
 export function addComputerUrl(link: AddComputerLink, back?: string): string {
   const params = new URLSearchParams({ grant: link.grant, origin: link.origin });
   if (back !== undefined && APP_PATH.test(back)) params.set('back', back);
+  if (link.found === true) params.set('from', 'found');
   return `${ADD_COMPUTER_PATH}#${params.toString()}`;
 }
 
@@ -159,7 +175,7 @@ export function takeAddComputerFragment(
     history.replaceState(null, '', back);
     history.pushState(null, '', page);
   }
-  return { origin, grant, back };
+  return single(params, 'from') === 'found' ? { origin, grant, back, found: true } : { origin, grant, back };
 }
 
 /**
@@ -169,6 +185,9 @@ export function takeAddComputerFragment(
  */
 export const FIRST_READ_RETRY_MS = 3_000;
 const FIRST_READ_STEP_MS = 500;
+
+/** The redeem failed because the grant is gone (expired, used, or deleted by the new computer). */
+const expiredGrant = (error: unknown): boolean => error instanceof ApiError && (error.status === 410 || error.code === 'pairing_expired');
 
 export type AddOutcome =
   | { readonly kind: 'confirmed'; readonly computer: Computer }
@@ -189,6 +208,11 @@ export class AddComputerFlow {
     this.grant = grant;
     this.pairing = new PairingFlow(client(origin));
     this.listed = storedComputers().some((computer) => computer.origin === origin);
+  }
+
+  /** A Found add whose grant expired: the next redeem uses the grant the new computer replaced it with. Ignored after cancel. */
+  replaceGrant(grant: string): void {
+    if (!this.cancelled) this.grant = grant;
   }
 
   /** Redeems the grant on the peer once; show the returned verification code. */
@@ -263,6 +287,8 @@ export type AddPhase =
   | { readonly kind: 'waiting'; readonly pending: PendingPairing }
   | { readonly kind: 'done'; readonly computer: Computer }
   | { readonly kind: 'expired' | 'cancelled' }
+  /** A Found add whose grant was gone, with no new one: the new computer stopped waiting. */
+  | { readonly kind: 'stale' }
   | { readonly kind: 'error'; readonly error: unknown };
 
 export interface AddTask {
@@ -297,10 +323,28 @@ export function subscribeAdd(listener: () => void): () => void {
 }
 
 /**
+ * The new grant home lists for this origin now, or undefined (none, the same
+ * one, or home did not answer). Read once, for a Found add only.
+ */
+async function replacedGrant(link: AddComputerLink): Promise<string | undefined> {
+  try {
+    const row = (await client().foundComputers())?.computers.find((entry) => entry.origin === link.origin);
+    return row !== undefined && row.grant !== link.grant && GRANT.test(row.grant) ? row.grant : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Redeems the link, shows the code, waits for approval and confirms, in the
  * background. Once per load: the grant works once. Outcomes after a Cancel
  * are ignored; the flow, its grant and its poll secret are dropped when it
  * ends.
+ *
+ * A Found link (`found`) whose grant is gone (410) reads home's Found list
+ * once: a new grant for the same origin (the new computer replaces its grant
+ * at 60 s left) is redeemed once; else the add ends as `stale`. A pasted or
+ * scanned link never retries.
  */
 export async function startAdd(link: AddComputerLink, deviceLabel: string): Promise<void> {
   if (task !== undefined) return;
@@ -310,7 +354,25 @@ export async function startAdd(link: AddComputerLink, deviceLabel: string): Prom
   const update = (phase: AddPhase) => { if (running === flow) publish({ origin: link.origin, label, phase }); };
   update({ kind: 'redeeming' });
   try {
-    const pending = await flow.redeem(deviceLabel);
+    let pending: PendingPairing;
+    try {
+      pending = await flow.redeem(deviceLabel);
+    } catch (error) {
+      if (link.found !== true || !expiredGrant(error)) throw error;
+      const grant = await replacedGrant(link);
+      if (grant === undefined) {
+        update({ kind: 'stale' });
+        return;
+      }
+      flow.replaceGrant(grant);
+      try {
+        pending = await flow.redeem(deviceLabel);
+      } catch (retry) {
+        if (!expiredGrant(retry)) throw retry;
+        update({ kind: 'stale' });
+        return;
+      }
+    }
     update({ kind: 'waiting', pending });
     const outcome = await flow.finish(pending);
     update(outcome.kind === 'confirmed' ? { kind: 'done', computer: outcome.computer } : { kind: outcome.kind });

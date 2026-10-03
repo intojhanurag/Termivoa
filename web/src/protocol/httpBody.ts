@@ -2,9 +2,11 @@ import type {
   BrokerRPCSessionRecord,
   HTTPComputer,
   HTTPComputerAddResponse,
+  HTTPComputerFoundResponse,
   HTTPComputerListResponse,
   HTTPDeviceSummary,
   HTTPErrorResponse,
+  HTTPFoundComputer,
   HTTPNamedOption,
   HTTPPairPollResponse,
   HTTPPairRedeemResponse,
@@ -37,6 +39,8 @@ export interface HttpBodies {
   readonly computerListResponse: HTTPComputerListResponse;
   readonly computer: HTTPComputer;
   readonly computerAddResponse: HTTPComputerAddResponse;
+  readonly computerFoundResponse: HTTPComputerFoundResponse;
+  readonly foundComputer: HTTPFoundComputer;
   readonly errorResponse: HTTPErrorResponse;
 }
 
@@ -47,6 +51,7 @@ const ITEMS: { readonly [Name in HttpSchema]?: ReadonlyArray<readonly [field: st
   settingsResponse: [['projects', 'namedOption'], ['shellProfiles', 'namedOption']],
   sessionListResponse: [['sessions', 'sessionRecord']],
   computerListResponse: [['computers', 'computer']],
+  computerFoundResponse: [['computers', 'foundComputer']],
 };
 
 export class InvalidResponseError extends Error {
