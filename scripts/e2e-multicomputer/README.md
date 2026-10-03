@@ -16,7 +16,7 @@ PW=<playwright-core dir> WEBKIT=<webkit executable> node scripts/e2e-multicomput
 
 WebKit needs a Playwright whose WebKit build is installed, for example playwright-core 1.61.1 with `WEBKIT=~/Library/Caches/ms-playwright/webkit-2272/pw_run.sh`. The harness installs nothing.
 
-Options: `--out <dir>` writes the results table, JSON and screenshots there (default `<root>/evidence`); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 31 checks, Phase B 60 (30 of them `PV-*`, the preview), WebKit 7. Needs macOS, Go, Node 24, pnpm and Google Chrome.
+Options: `--out <dir>` writes the results table, JSON and screenshots there (default `<root>/evidence`); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 31 checks, Phase B 63 (33 of them `PV-*`, the preview), WebKit 7. Needs macOS, Go, Node 24, pnpm and Google Chrome.
 
 ## How it works
 
@@ -48,6 +48,7 @@ So every check of a **peer** preview (the bound `Referer`, the forwarded origin,
 | `PV-pending` | While vps is pending, home's policy has its API origin in `connect-src` and no `:8443` anywhere; confirmed, `:8443` is in `frame-src` and `connect-src`, never as `wss:`. |
 | `PV-chip`, `PV-added` | **Preview ready** shows for a vps session. vps was added in this visit: the loaded policy blocks its preview origin (`securitypolicyviolation`), the app reloads once and shows the preview. |
 | `PV-vps-bar`, `-page`, `-probe`, `-select`, `-root`, `-reload`, `-api` | The bar `vps · untrusted page`; marker, script, fetch and WebSocket in the frame; the probe; the select request's headers as vps saw them; same-origin requests after it; ↻ makes exactly one new select; the dev site cannot call either API. |
+| `PV-link-reload`, `-cold`, `-port` | A reload of a preview that a tap opened keeps it. The same address opened cold in another tab shows the session's terminal: no frame, no request to `vps:8443`. A port the session does not list does the same, also with a forged tap mark. |
 | `PV-refuse-*` | With the phone's valid cookies (curl): a select with a `Referer` of evil, none, an `Origin` header, a dev site, a path, no slash, or two `Referer` headers is 403; `GET /` is 200 only with `Sec-Fetch-Site: same-origin`. |
 | `PV-evil` | A top-level page on `evil.tailx.ts.net`: framing the select address or `/`, an image, a `no-cors` fetch and a WebSocket are all 403, though the browser sends the cookie. |
 | `PV-home`, `-home-api`, `-home-refuse` | The same for a mac session, with no **untrusted page**; mac's own dev site cannot call the APIs; mac's listener refuses the vps app as `Referer`. |

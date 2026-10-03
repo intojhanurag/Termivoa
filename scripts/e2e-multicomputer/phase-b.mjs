@@ -239,7 +239,6 @@ try {
   });
 
   await step('PV-vps', 'The vps preview in the app: bar "vps · untrusted page", sub-resource, fetch, WebSocket', async () => {
-    if (!(await frameText(vps))) { await inApp(`/c/${vps.host}/sessions/${vpsDev.id}/preview?port=${devPorts['vps-dev']}`); }
     const mark = env.logMark();
     await click(app, 'Reload preview'); // a fresh select with the final policy, so the log below is one clean load
     const text = await frameReady(vps);
@@ -279,6 +278,40 @@ try {
     const seen = env.logSince(mark3).filter((e) => e.path === '/api/v1/settings' && e.origin === vps.previewOrigin);
     check('PV-vps-api', 'The framed vps dev site cannot call the mac API or the vps API', seen.length === 2 && seen.every((e) => e.status === 403 && !e.acao),
       `page sees ${JSON.stringify(tries)}; ${seen.map((e) => `${e.host} ${e.status} cookie=${e.cookie} ACAO=${e.acao ?? 'none'}`).join('; ')}`);
+  });
+
+  await step('PV-link', 'A link alone never opens a peer preview; a reload after a real tap keeps it', async () => {
+    const address = `${mac.origin}/c/${vps.host}/sessions/${vpsDev.id}/preview?port=${devPorts['vps-dev']}`;
+    // The preview is open from the tap in PV-added: a reload of that entry keeps it.
+    await app.eval(`window.__sameLoad = true`);
+    await app.eval('location.reload()');
+    await until(async () => !(await app.eval('window.__sameLoad === true').catch(() => true)), { what: 'the reload' });
+    await frameReady(vps);
+    check('PV-link-reload', 'A reload of the preview that a tap opened shows the preview again', (await app.eval('location.href')) === address, `${await app.eval('location.pathname + location.search')}; history.state ${JSON.stringify(await app.eval('history.state'))}`);
+    // The same address as a link from outside: a new tab (no history state), and a navigation of the app tab.
+    const cold = await browser.page();
+    try {
+      await cold.front();
+      const mark = env.logMark();
+      await cold.go(`${mac.origin}/`); // the address below is replaced, so load something first
+      await cold.send('Page.navigate', { url: address });
+      await until(async () => (await terminalText(cold).catch(() => '')).includes('dev site on vps'), { what: 'the terminal of that session' });
+      await sleep(1500);
+      const asked = previewLog(mark, vps);
+      const state = { path: await cold.eval('location.pathname + location.search'), frame: await cold.eval(`!!document.querySelector('.preview-frame, .preview-screen')`) };
+      await shot('pv-link-cold', cold);
+      check('PV-link-cold', 'A cold navigation to the peer preview address lands on the session\'s terminal: no frame, no request to vps:8443',
+        state.path === `/c/${vps.host}/sessions/${vpsDev.id}` && !state.frame && asked.length === 0, `now ${state.path}; preview screen: ${state.frame}; requests to ${vps.host}:8443: ${asked.length}`);
+      // A tap marker cannot be forged with a port the session does not list.
+      const mark2 = env.logMark();
+      await cold.eval(`history.pushState({ previewTap: true }, '', ${JSON.stringify(`/c/${vps.host}/sessions/${vpsDev.id}/preview?port=1`)}); dispatchEvent(new PopStateEvent('popstate'))`);
+      await sleep(1500);
+      check('PV-link-port', 'A preview address with a port the session does not list opens the terminal, also with the tap marker',
+        (await cold.eval('location.pathname + location.search')) === `/c/${vps.host}/sessions/${vpsDev.id}` && previewLog(mark2, vps).length === 0, `now ${await cold.eval('location.pathname + location.search')}; requests to ${vps.host}:8443: ${previewLog(mark2, vps).length}`);
+    } finally {
+      await cold.close();
+      await app.front();
+    }
   });
 
   await step('PV-refuse', 'The vps preview listener refuses every request that is not the app frame or the preview origin itself', async () => {
