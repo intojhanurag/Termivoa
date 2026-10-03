@@ -66,9 +66,41 @@ In this order.
    `Origin` or `Sec-Fetch-*` and `Host` intact (and whether it sets
    `X-Forwarded-For`); the reverse under launchd; the whole add on a real
    iPhone Home Screen app and on Android. Can run in the same sitting as
-   Gate 0.
+   Gate 0. The owner's first real add (Mac home + Ubuntu VPS, 2026-10-03)
+   worked end to end with **Found on your network → Add** and `y`.
 4. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
    re-shoot), and a picture of **Found on your network** with **Add**.
+
+## Polish next
+
+From the owner's first real install and add (2026-10-03). UI items are
+designed in Paper first and shown to the owner before any code.
+
+1. **"connecting…" right after an add.** The first read of a just-added
+   computer can fail for up to 1 s (its gateway refreshes the bound-origin
+   CORS list once per second), so the phone showed "vps · can't reach" until
+   a refresh. Make the browser test fail on it first; then the app retries
+   quietly for about 5 s after an add before it shows "can't reach".
+2. **Add-computer wait screen in the terminal** (setup answer 2 and
+   `pterm pair --via`): no QR code and link up front (Enter shows them; shown
+   at once only when the push failed); a short approval prompt that still
+   names this computer and quotes the phone's code screen; a strong success
+   line ("Done. vps is in your Termivoa app on mac. Open the app and tap
+   it."); a tip to rename long machine names.
+3. **UI revamp (Paper first):** a real button system (primary, secondary,
+   quiet, danger; pressed, focus and loading states), notices and errors
+   with an icon, a title, a sentence and an action instead of plain text,
+   empty and loading states, livelier cards and status dots, short motion
+   that respects reduced motion. Keep the night palette and the one cyan
+   signal.
+4. **Open issues:** #158 (test fake systemd), #161 (`pterm pair` and
+   `pterm launch` ignore Funnel), #162 (Serve problems under another host
+   name), #164 (+ Add a computer shows the renamed home label), #165 (landing
+   page does not show adding a computer).
+5. **Scan QR on iPhone:** end the scan when a call or another app mutes the
+   camera track (today the user taps Cancel).
+6. **Release `v0.1.0-beta.3`** after the owner's real checks, so a new user
+   gets today's features from `gh release download`.
 
 ## Later
 
