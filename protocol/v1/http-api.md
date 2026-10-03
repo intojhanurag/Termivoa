@@ -213,8 +213,9 @@ uses it like a pasted link (`docs/found-on-network.md`).
    whether home keeps the offer or drops it; a broker that cannot be reached
    is `503`. Nothing the sender sent is echoed.
 
-Home keeps an offer only when its latest Tailscale snapshot (it never runs
-`tailscale` for an offer) shows `origin`'s host as a peer in its own tailnet
+Home keeps an offer only when its latest Tailscale snapshot (it never waits
+on `tailscale` for an offer; at most one background refresh per 5 s, as for
+every per-request check) shows `origin`'s host as a peer in its own tailnet
 with home's owner, neither node tagged, and not home itself. Offers are kept
 in memory only, for 60 s, at most 16 origins, the newest per origin.
 
@@ -224,7 +225,8 @@ returns `HTTPComputerFoundResponse`: at most 16 unexpired offers, sorted by
 origin, one per origin, leaving out a host whose node ID changed or that is
 gone from the snapshot and computers already confirmed for the calling
 device. `label` is the first DNS label of the host from home's own status.
-Without a snapshot it is `503 host_unavailable`. Every device paired with
+Without a snapshot it is `503 host_unavailable` with the generic message
+"Service Unavailable". Every device paired with
 home can read the grants it lists.
 
 ## Pairing flow

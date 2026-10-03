@@ -809,11 +809,11 @@ func TestFoundRoute(t *testing.T) {
 	if !broker.called("found@" + homeOrigin) {
 		t.Fatalf("the bound origin was not forwarded for the broker to refuse: %v", broker.calls)
 	}
-	// Broker text never reaches the page.
+	// Broker text never reaches the page: no snapshot is the generic status text.
 	broker.fakeBroker.opErr = &gatewayapi.Error{Code: protocol.HostUnavailable, Message: "vps says: click evil.example"}
 	response = do(handler, http.MethodGet, "/api/v1/computers/found", "", requestOptions{cookie: prodCookie})
 	if response.Code != http.StatusServiceUnavailable || errorCode(t, response) != protocol.HostUnavailable ||
-		strings.Contains(response.Body.String(), "evil") {
+		strings.Contains(response.Body.String(), "evil") || !strings.Contains(response.Body.String(), `"Service Unavailable"`) {
 		t.Fatalf("no snapshot = %d %s", response.Code, response.Body)
 	}
 }

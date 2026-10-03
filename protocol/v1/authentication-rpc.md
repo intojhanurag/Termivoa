@@ -88,7 +88,8 @@ app origin); see `http-api.md`, Computers.
 
 `gateway.computers.offer` never carries an `origin`; the broker drops an
 offer that does. The broker reads only its latest Tailscale snapshot (it
-never runs `tailscale` for an offer) and keeps the offer only when the
+never waits on `tailscale` for an offer; the snapshot starts at most one
+background refresh per 5 s, as for every per-request check) and keeps the offer only when the
 origin's host is a peer in its own tailnet with the same owner, neither node
 tagged, and not this computer. Otherwise it drops the offer silently. The
 result is empty in both cases, so the answer says nothing about which names

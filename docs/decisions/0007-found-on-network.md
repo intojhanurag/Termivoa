@@ -26,7 +26,7 @@ The grant is what makes adding safe. The new computer makes it, binds it to the 
    - The new route has no authentication.
    - At the top of `admitAPI` it refuses any `Origin` or `Sec-Fetch-*` header, it never sends CORS, and it never reads the cookie. So no browser page can reach it.
    - It needs `X-Pterm-Request: 1`, JSON and at most 1 KiB, and it has its own rate bucket.
-   - Every well-formed offer gets `204`. Home keeps an offer only when its own snapshot (never a `tailscale` run) shows `origin` as a peer with home's owner and no tags; else it drops the offer silently.
+   - Every well-formed offer gets `204`. Home keeps an offer only when its own snapshot (it never waits on `tailscale`; at most one background refresh per 5 s, as for every per-request check) shows `origin` as a peer with home's owner and no tags; else it drops the offer silently.
    - Offers are in memory only, for 60 s, at most 16. The newest offer for an origin wins.
 3. **Phone.**
    - `GET /api/v1/computers/found` (cookie, `authorizeOwn`) lists the offers, with labels from home's own status.
@@ -62,7 +62,7 @@ Also not chosen from v1:
   - The in-terminal path of today (`pterm pair --via` in a Termivoa session on home) already sends the grant through home and to every viewer of that session.
   - A compromised home already sees every grant that is pasted or scanned into its app.
   - From this feature, a compromised home gains only three things: it learns that a computer waits, it gets one live grant at a time for up to 10 minutes, and it sends replies of at most 2 KiB.
-- Anyone who can reach home's port 443 can post junk or replacement offers for a computer of home's owner. **Add** then fails for a while. They learn nothing (always `204`), and they cannot start a `tailscale status` run. The QR code and the link still work.
+- Anyone who can reach home's port 443 can post junk or replacement offers for a computer of home's owner. **Add** then fails for a while. They learn nothing (always `204`), and home never waits on `tailscale` for them (at most one background refresh per 5 s). The QR code and the link still work.
 - A hostile computer of the same user can offer **itself** and show in **Found**. The user must still tap **Add** and press `y` on that computer: the same as adding any hostile peer today.
 - If the user names a hostile computer as home, it could relay the code. The prompt that names THIS computer, and the phone that names the computer it talks to, are the defence. The user must read them.
 - A tagged home (which `docs/multi-computer.md` recommends) never shows **Found**. It uses the link, as today.
