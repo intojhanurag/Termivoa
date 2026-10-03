@@ -50,6 +50,21 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Setup refuses Tailscale Funnel (2026-10-03, branch `fix/issue-157`)
+
+Fixes #157. With Funnel on for 443 while Serve already proxied Termivoa,
+`offerTailscaleServe` returned success and setup registered startup and
+paired a phone (reproduced with the fake Serve status JSON before the fix:
+the plan said "Then pair your phone" and setup reached "Registering
+startup..."). `lifecycle.ServeFindings` now lists Funnel on 443/8443 in
+`ServeStatus.Funnel`; `pterm setup` refuses before any change (also
+`--apply --yes`) and names `tailscale funnel --https=<port> off`; doctor's
+Funnel problem names the same command. Funnel on another port stays a doctor
+problem and a plan warning. Tests: `TestSetupRefusesFunnelOnTermivoaPorts`,
+`TestDoctorReportsFunnelAsAProblem`, `TestServeFindings`. Checks:
+`go test ./cmd/pterm/... ./internal/lifecycle/...`, `go vet` (darwin, linux,
+windows), `scripts/check`, site build. Not run on a real Funnel.
+
 ### Multi-computer end-to-end test (2026-10-02, branch `feat/mc-e2e`)
 
 Two isolated dev stacks reached as `https://mac.tailx.ts.net` and `https://vps.tailx.ts.net` through `scripts/e2e-multicomputer/` (loopback CONNECT proxy with in-process TLS, fake `tailscale` status, every harness `pterm` in a `sandbox-exec` profile that hides the real Tailscale, port 8787 and launchctl). On 167eb63: Phase A 31/31, Phase B (Chrome 154, 390×844, touch) 24/24, WebKit 26.5 4/4. Commands, timings and evidence: `docs/evidence/multi-computer/results.md`.

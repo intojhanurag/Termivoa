@@ -36,13 +36,16 @@ func ExecutableProblems(goos, path string) []string {
 // ServeStatus summarizes `tailscale serve status --json`. Configured is true
 // when HTTPS 443 already proxies the local gateway; Problems name conflicts
 // on 443 that pterm must not overwrite and any Funnel exposure (checked once,
-// not per port: Funnel anywhere is already a problem). PreviewConfigured and
+// not per port: Funnel anywhere is already a problem). Funnel lists the
+// host:port of Termivoa's own ports (443, 8443) with Funnel on: setup refuses
+// them even when Serve already proxies Termivoa there. PreviewConfigured and
 // PreviewProblems report the same for the separate HTTPS 8443 dev-server
 // preview listener; a preview conflict never blocks the 443 flow, and a 443
 // conflict never blocks the preview flow.
 type ServeStatus struct {
 	Configured        bool
 	Problems          []string
+	Funnel            []string
 	PreviewConfigured bool
 	PreviewProblems   []string
 }
@@ -70,7 +73,11 @@ func ServeFindings(data []byte) (ServeStatus, error) {
 	var status ServeStatus
 	for _, hostPort := range slices.Sorted(maps.Keys(raw.AllowFunnel)) {
 		if raw.AllowFunnel[hostPort] {
-			status.Problems = append(status.Problems, "Tailscale Funnel is enabled for "+hostPort+"; Termivoa must never be public. Turn Funnel off before pairing.")
+			status.Problems = append(status.Problems, "Tailscale Funnel is on for "+hostPort+", which makes it public on the internet; Termivoa must never be public. "+
+				"Turn it off: `"+FunnelOffCommand(hostPort)+"`, then run `pterm setup` again.")
+			if strings.HasSuffix(hostPort, ":443") || strings.HasSuffix(hostPort, ":8443") {
+				status.Funnel = append(status.Funnel, hostPort)
+			}
 		}
 	}
 	configured, problems := servePortFindings(raw, "443", LocalURL)
@@ -78,6 +85,13 @@ func ServeFindings(data []byte) (ServeStatus, error) {
 	status.Problems = append(status.Problems, problems...)
 	status.PreviewConfigured, status.PreviewProblems = servePortFindings(raw, "8443", PreviewLocalURL)
 	return status, nil
+}
+
+// FunnelOffCommand turns Funnel off for hostPort ("host:443"). It also
+// removes the Serve handler on that port; `pterm setup` then asks again to
+// share Termivoa there. pterm never runs it (Tailscale changes are the owner's).
+func FunnelOffCommand(hostPort string) string {
+	return "tailscale funnel --https=" + hostPort[strings.LastIndexByte(hostPort, ':')+1:] + " off"
 }
 
 // servePortFindings reports whether target ("http://127.0.0.1:<port>/") is

@@ -134,6 +134,22 @@ The checks above the message print the commands. For each handler:
 
 The Windows installer runs the same check. When it says that other Tailscale Serve handlers share this computer's Termivoa address (`pterm setup` exit code 3), run `pterm setup --apply` to see the handlers.
 
+## Setup refuses because Tailscale Funnel is on (Next beta)
+
+Turn Funnel off, then run `pterm setup` again. Funnel puts your terminal on the public internet, so from the next beta setup stops before it changes anything while Funnel is on for port 443 or the preview port 8443:
+
+```text
+refusing to set up: Tailscale Funnel is on for mac.example.ts.net:443, which puts Termivoa on the public internet; turn it off with `tailscale funnel --https=443 off`, then run `pterm setup` again
+```
+
+Run the command it names (for port 8443: `tailscale funnel --https=8443 off`). Termivoa never runs it for you. The command also stops sharing that port in your tailnet, so `pterm setup` asks again to share Termivoa there.
+
+`pterm doctor` reports the same thing as a problem:
+
+```text
+! tailscale serve: Tailscale Funnel is on for mac.example.ts.net:443, which makes it public on the internet; Termivoa must never be public. Turn it off: `tailscale funnel --https=443 off`, then run `pterm setup` again.
+```
+
 ## `pterm doctor` warns that other ports receive the Termivoa cookie (Next beta)
 
 Decide if you trust what runs there as much as Termivoa. If not, move it to another computer or to its own Tailscale Service hostname, or remove it. The warning is:

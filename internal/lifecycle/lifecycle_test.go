@@ -380,13 +380,18 @@ func TestServeFindings(t *testing.T) {
 		problems          int
 		previewConfigured bool
 		previewProblems   int
+		funnel            string
 	}{
-		"empty":       {json: "{}"},
-		"no output":   {json: ""},
-		"configured":  {json: `{"TCP":{"443":{"HTTPS":true}},"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}}}`, configured: true},
-		"conflict":    {json: `{"TCP":{"443":{"HTTPS":true}},"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, problems: 1},
-		"tcp forward": {json: `{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}`, problems: 1},
-		"funnel":      {json: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},"AllowFunnel":{"h.ts.net:443":true}}`, configured: true, problems: 1},
+		"empty":          {json: "{}"},
+		"no output":      {json: ""},
+		"configured":     {json: `{"TCP":{"443":{"HTTPS":true}},"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}}}`, configured: true},
+		"conflict":       {json: `{"TCP":{"443":{"HTTPS":true}},"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:3000"}}}}}`, problems: 1},
+		"tcp forward":    {json: `{"TCP":{"443":{"TCPForward":"127.0.0.1:22"}}}`, problems: 1},
+		"funnel":         {json: `{"Web":{"h.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}},"AllowFunnel":{"h.ts.net:443":true}}`, configured: true, problems: 1, funnel: "h.ts.net:443"},
+		"preview funnel": {json: `{"AllowFunnel":{"h.ts.net:8443":true}}`, problems: 1, funnel: "h.ts.net:8443"},
+		"funnel off":     {json: `{"AllowFunnel":{"h.ts.net:443":false}}`},
+		// Not Termivoa's port: still a problem, but setup does not refuse it.
+		"funnel elsewhere": {json: `{"AllowFunnel":{"h.ts.net:10000":true}}`, problems: 1},
 		"preview configured": {
 			json:              `{"Web":{"h.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8789"}}}}}`,
 			previewConfigured: true,
@@ -408,7 +413,8 @@ func TestServeFindings(t *testing.T) {
 	} {
 		status, err := ServeFindings([]byte(test.json))
 		if err != nil || status.Configured != test.configured || len(status.Problems) != test.problems ||
-			status.PreviewConfigured != test.previewConfigured || len(status.PreviewProblems) != test.previewProblems {
+			status.PreviewConfigured != test.previewConfigured || len(status.PreviewProblems) != test.previewProblems ||
+			strings.Join(status.Funnel, ",") != test.funnel {
 			t.Errorf("%s: status=%+v err=%v", name, status, err)
 		}
 	}

@@ -65,7 +65,10 @@ One Go binary, `pterm` (`cmd/pterm`). Node.js is a build-time tool only.
 The help text is `commandHelp` in `cmd/pterm/management.go`. Local commands
 talk to the running broker; they never start or replace it (`launch` and
 `up` start processes). `pterm setup` exits with code 3 when other Tailscale
-Serve handlers share the origin.
+Serve handlers share the origin. It refuses (exit 1), before any change, while
+Tailscale Funnel is on for 443 or 8443 (`lifecycle.ServeStatus.Funnel`), and
+names `tailscale funnel --https=<port> off`; `pterm doctor` counts any Funnel
+as a problem.
 
 ### Broker and gateway
 
