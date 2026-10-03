@@ -107,7 +107,8 @@ unexpired bound grants and pending pairings, at most 16). Invalid entries are dr
   a session in regular use. The server never extends an expiry.
 - The app document (`index.html`) adds the exact `https://` and `wss://`
   origins of the cookie device's confirmed and pending computers (at most 8)
-  to its CSP `connect-src`.
+  to its CSP `connect-src`. Confirmed computers also get their preview origin
+  (see "Preview listener").
 
 ## Protocol revision
 
@@ -143,6 +144,11 @@ letters, digits and `.` `_` `+` `-` (schema `pattern`, checked by Go and by
 the app's validator), always rendered as plain text. Tightening the pattern
 adds no field, message, route or enum value, so it needs no `revision` bump;
 every build ID the packaging scripts produce already matches.
+
+| Revision | Change |
+| --- | --- |
+| 1 | First revision. |
+| 2 | Preview listener rules (see "Preview listener"): the selection needs a `Referer` of an app origin and answers `200`; every other request must come from the preview origin itself. No schema change. An app frames a peer's preview only when that peer's `protocolRevision` is 2 or higher. |
 
 ## Computers
 
@@ -301,8 +307,43 @@ A separate loopback listener (production 127.0.0.1:8789, exposed as
 
 | Route | Auth | Result |
 | --- | --- | --- |
-| `GET /__termivoa/select?session=<uuid>&port=<1..65535>` | cookie | `303` to `/` with the preview-only cookie `__Host-pterm_preview=<session>.<port>` when the broker allows it; `401`, `404` (`preview_missing`, `session_missing`) or `400` otherwise |
-| any other path | cookie + preview cookie | proxied to the selected dev server (HTTP and WebSocket), re-authorized per request |
+| `GET /__termivoa/select?session=<uuid>&port=<1..65535>` | app `Referer` + cookie | `200 text/html` with the preview-only cookie `__Host-pterm_preview=<session>.<port>` when the broker allows it; the page moves the frame to `/`. `403` (no app `Referer`, or this app may not use this computer), `401`, `404` (`preview_missing`, `session_missing`) or `400` otherwise |
+| any other path | preview origin + cookie + preview cookie | proxied to the selected dev server (HTTP and WebSocket), re-authorized per request |
 
-Answers from the listener itself are short `text/plain` bodies. Requests with
-an `Origin` other than the preview origin are `403`; unknown Host is `421`.
+Rules, checked in this order (revision 2; `docs/peer-preview.md`):
+
+1. Unknown Host is `421`.
+2. The selection must carry no `Origin` header and exactly one `Referer`
+   header: an app origin followed by one `/` (the app's frame has
+   `referrerpolicy="origin"`). The app origin is this computer's own origin,
+   or the exact app origin of another computer that a device here is bound
+   to; the broker then checks that origin against the request's own
+   credential, as for every `/api` call. Matching is exact, as for CORS: a
+   path, no trailing `/`, an explicit `:443`, a preview origin, `null`, a
+   missing or a doubled `Referer` are `403`.
+3. Every other request must carry exactly one `Origin` equal to the preview
+   origin itself (form posts, WebSocket handshakes), or no `Origin` and
+   exactly one `Sec-Fetch-Site: same-origin`. Everything else is `403`, so no
+   other page can load from, frame or open a socket to a dev server. A typed
+   URL or `curl` is `403` too.
+4. Then the cookie (`401`), the preview cookie (`400`) and the broker check.
+
+The selection page has `Content-Security-Policy: default-src 'none';
+frame-ancestors <the app origin of the Referer>`, `Referrer-Policy:
+no-referrer` and `Cache-Control: no-store`. It is not a redirect: the request
+for `/` must be started by the preview origin to pass rule 3.
+
+Other answers from the listener itself are short `text/plain` bodies that any
+page may frame, so the app's frame can show them.
+
+A request to the selection path without credentials is the app's reachability
+probe (`fetch` with `mode: "no-cors"`, `credentials: "omit"`): it answers
+`403`, or `401` when it carries an app `Referer`. The app cannot read the
+status; any answer means that the preview origin is served. `GET
+/api/v1/preview` reports the origin whenever the listener runs; it does not
+know whether Tailscale Serve exposes it.
+
+The app document's CSP lists the own preview origin in `frame-src` and
+`connect-src`, and `https://<host>:8443` of each confirmed computer of the
+cookie's device (never a pending one) in both; never a `wss://` preview
+origin.

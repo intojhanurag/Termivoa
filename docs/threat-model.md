@@ -1,6 +1,6 @@
 # v0 threat model and verification boundaries
 
-Status: private development, updated 2026-10-02. This is a design and test map,
+Status: private development, updated 2026-10-03. This is a design and test map,
 **not a security certification**. Restricted local IPC, terminal replication,
 controller leases, process isolation, phone pairing, broker-side credential
 checks and revocation, and the authenticated loopback gateway are implemented
@@ -40,14 +40,15 @@ safe, and private networking does not replace application authentication.
 | Child bytes → display | One canonical emulator, normalized cells, validated drawing allowlist, no child ANSI relay | Parser/frame/client fixtures; real application/device width evidence incomplete |
 | Slow viewer → child progress | Bounded queues and history, independent emulator/response writer, disconnect slow viewers | Automated fixtures and a Mac soak (`docs/evidence/p7/soak.md`); 10-minute stress run, 24-hour soak and Windows soak pending |
 | Gateway lifetime → child lifetime | Independent broker owns PTYs, process cleanup, SQLite | Mac process restart fixture; native Windows 11 pending |
-| Dev site → app (dev-server preview) | Dev site served on a separate origin (`https://host:8443`, own loopback listener that never serves the app); app CSP frames only that origin; app rejects requests from the preview origin; every preview request re-authorized by the broker; only OS-verified ports of the session's own process tree; Termivoa cookies and identity headers never forwarded | Unit and loopback tests (`internal/gateway/preview_test.go`, `internal/broker/devpreview_test.go`, `internal/ptyhost/listen_test.go`); Chromium iframe check on the dev profile; iPhone over Tailscale Serve 8443 pending owner |
+| Dev site → app (dev-server preview) | Dev site served on a separate origin (`https://host:8443`, own loopback listener that never serves the app); app CSP frames only preview origins (its own, and those of the phone's confirmed computers); app rejects requests from the preview origin; the preview listener admits the selection only with the `Referer` of its own or a bound app origin, and every other request only from the preview origin itself (rule L1); every preview request re-authorized by the broker; only OS-verified ports of the session's own process tree; Termivoa cookies and identity headers never forwarded | Unit and loopback tests (`internal/gateway/preview_test.go`, `internal/broker/devpreview_test.go`, `internal/ptyhost/listen_test.go`); Chromium iframe check on the dev profile; iPhone over Tailscale Serve 8443 pending owner |
 | Child output/OS → session folder (live folder) | `cwd` from the OS (lsof, /proc) or OSC 7 / OSC 9;9 is display text only: absolute, no `.`/`..`, no control characters, at most 512 bytes, non-printables shown as U+FFFD; the phone renders it as text, never HTML, a link or a URL; the Windows PowerShell hook is session-scoped (`-Command`), edits no profile file, and is never injected on macOS/Linux | Unit tests (`internal/broker/cwd_test.go`, `internal/protocol/cwd_test.go`, `web/src/screens/folder.test.ts`); real shell tests on macOS and Linux; Windows PowerShell pending owner |
 | Broker → push services (outbound) | Browser-supplied endpoint limited to exact push hosts over https:443; no redirects, no proxy, public addresses only, 10 s timeout; payload is names and status only, encrypted (RFC 8291) and VAPID-signed; revoke/logout delete subscriptions | Unit tests incl. RFC 8291 vectors and SSRF cases (`internal/webpush`); dev-stack curl check; real iPhone/Android delivery pending owner |
 | Phone → project folder (photo upload) | Controller-only, rechecked at commit; magic-byte type check; 5 MiB cap; server-chosen name, `O_EXCL`, 0600/current-user ACL; `os.Root` confinement; symlinked `.termivoa`/`uploads` refused; per-device limits | Unit and RPC tests (`internal/broker/upload_test.go`, gateway and protocol tests); dev-stack curl and browser check; real iPhone pending owner |
 | Home app origin → peer API (multi-computer, next beta) | Per-device origin binding in the broker: a cross-origin request passes only from the app origin bound to that request's own credential, grant or pending pairing; exact credentialed CORS for bound origins only; `Sec-Fetch-Mode: no-cors` and Origin-less requests without `Sec-Fetch-Site: same-origin` refused on `/api`; per-request WebSocket origin checks; strict origin parsing (https, default port, no trailing dot, never `null`) | Unit and loopback tests (`internal/gateway/multicomputer_test.go`, `internal/broker/computers_test.go`, `internal/protocol/computers_test.go`); local Chrome and WebKit cookie check (`scripts/gate0/README.md`); Gate 0 on a real iPhone and Android and the Playwright integration tests pending |
 | Tailscale identity → peer trust (multi-computer) | At `pterm pair --via` the peer resolves home only among own-tailnet MagicDNS first labels (ambiguity refused), requires the same owner or an explicit `--allow-tagged`, and pins the node ID; every bound request reads an immutable snapshot (60 s cache, 10-minute grace, then refuse); owners are compared by stable Tailscale user ID, never by login name; a changed node ID revokes the bound devices; a node whose tagged state changed since pairing is refused (not revoked); a new snapshot closes open streams that lost trust at once; a status that is not `Running` (restart, logout) keeps the last good snapshot under the grace rules. Narrowing only, never authentication | `internal/tailnet/tailnet_test.go`, `internal/broker/computers_test.go` (near-miss, `null`, tagged, other owner, ambiguous name, node change, grace); real `tailscale status --json` owners and tags on a team tailnet pending |
 | Terminal output → add-computer link (multi-computer) | Only a link the app itself would accept is made tappable; a tap opens a confirm sheet drawn outside the terminal; home checks the host in its own Tailscale status (same tailnet, same owner or tagged) before the sheet offers **Add**; the grant stays in the URL fragment and is removed at once | `web/src/pairing/addComputer.test.ts`, `web/src/terminal/pathLinks.test.ts`, `web/src/screens/AddComputer.test.tsx`; real iPhone pending |
-| Peer responses → home app (multi-computer) | Lenient precompiled schema validation of every HTTP body and WebSocket frame (no `unsafe-eval`), per-item list validation, `redirect: 'error'`, 1 MiB response cap, peer error text replaced by generic text, no previews from peers | `web/src/protocol/*.test.ts`, `web/src/api/http.test.ts` |
+| Peer responses → home app (multi-computer) | Lenient precompiled schema validation of every HTTP body and WebSocket frame (no `unsafe-eval`), per-item list validation, `redirect: 'error'`, 1 MiB response cap, peer error text replaced by generic text. The preview frame is the one place where a peer chooses what shows (next row) | `web/src/protocol/*.test.ts`, `web/src/api/http.test.ts` |
+| Peer preview origin → home app's frame (peer preview, ADR 0006) | The peer's listener admits the selection only with home's `Referer`, forwarded to the peer's broker and checked against the request's own credential (per-device origin binding); every other request only from the preview origin itself; every preview check of a bound device also needs Tailscale trust of the pinned node and tags; home's CSP holds `https://<peer>:8443` in `frame-src` and `connect-src` for confirmed computers only, never pending, never `wss:`; the origin is computed by the app, never read from a peer; the frame is sandboxed (no top navigation, popups, full screen or device features); the bar always shows the computer's label and **untrusted page**; the frame is removed when that computer refuses the phone, cannot be reached or must update. Not limited: what the framed page shows, and the cookies it sets (see "Dev-server preview", "A peer's frame") | `internal/gateway/preview_test.go`, `internal/gateway/multicomputer_test.go`, `internal/broker/computers_test.go`, `web/src/screens/Preview.test.tsx`, `web/src/screens/App.test.ts`; Chrome and Playwright WebKit in the multi-computer harness (`scripts/e2e-multicomputer/README.md`; results in `docs/progress.md`); real iPhone and Android pending owner |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
 
 ## Pairing and credential acceptance criteria (P4)
@@ -200,12 +201,38 @@ hidden.
 
 ## Dev-server preview
 
-See `docs/preview.md` for the full design.
+See `docs/preview.md` for the full design, and `docs/peer-preview.md` (ADR
+0006) for previews of sessions on peers.
 
 - **Origin isolation.** The dev site is arbitrary code from the owner's
   project and its dependencies. It runs on the preview origin, never on the
   app origin, so it cannot read the app's DOM, storage, API responses or
-  terminal. The app's CSP `frame-src` names only the preview origin.
+  terminal. The app's CSP `frame-src` names only preview origins: the
+  computer's own, and `https://<host>:8443` of each confirmed computer in the
+  paired phone's list (never a pending one).
+- **Who may send a request to the preview listener.** All computers of one
+  tailnet are same-site, so `SameSite=Strict` does not keep the cookie away
+  from another machine's page. The selection needs no `Origin` header and
+  exactly one `Referer` of this computer's own app origin or of a bound app
+  origin; a bound one goes to the broker, which checks it against the
+  request's own credential. Every other request must carry the preview origin
+  as `Origin`, or no `Origin` and `Sec-Fetch-Site: same-origin`. Everything
+  else is 403 before the cookie is read and before the dev server is reached.
+  `Referer` is a second origin proof next to `Origin`; if a browser removes
+  it, the preview fails closed. Markup injected into the app's page without
+  script could start a selection (it needs an app bug and a real session ID).
+- **A peer's frame (accepted risk, not removed).** When the user opens the
+  preview of a session on a peer, that peer (or any script in its dev site)
+  puts a page of its choice inside the app. It cannot read or change the app,
+  navigate it, open popups or call any computer's API or other preview
+  origin. It can show false content, for example a false "pair again" page;
+  the only limit is the bar with the computer's label and **untrusted page**.
+  It can sign the phone out of all computers by filling the cookie jar with
+  `Domain=<tailnet>.ts.net` cookies (recovery: pair again with each
+  computer), send such cookies to dev servers on other computers, and send
+  blind `no-cors` requests from the phone into the tailnet. This withdraws
+  the earlier guarantee that a peer cannot show phishing text in the home
+  app. The owner accepted it on 2026-10-03.
 - **Shared cookie.** Cookies are host-scoped, so the dev site's requests to
   the app carry the owner's session cookie. The app answers 403 to every
   request whose `Origin` is the preview origin (reads and WebSockets too), and
@@ -218,13 +245,22 @@ See `docs/preview.md` for the full design.
   panels and other local services outside the session are never offered or
   proxied, even if their port number is sent by hand.
 - **Revocation.** A revoked or expired device gets 401 on its next preview
-  request; open preview WebSockets and streams close within 5 s.
+  request; open preview WebSockets and streams close within 5 s. For a device
+  bound to another computer's app, a changed node ID or tag set of that
+  computer is seen with the next Tailscale snapshot (up to about 65 s); while
+  the status cannot be read, the last good snapshot is used for up to 10
+  minutes, then such devices are refused.
 - **Proxy hygiene.** No Termivoa cookie, `X-Pterm-*`, `Tailscale-*` or
   forwarded header reaches the dev server; the dev server cannot set a
   Termivoa cookie; redirects are never followed by the gateway.
 - **Known limits.** Previews of different sessions share one origin; a large
   cookie set by a dev site can break app requests until cleared; a same-user
   process binding a more specific address on the same port is out of scope.
+  A dev-site service worker on a preview origin can answer navigations that
+  another page started and can serve cached content after revocation
+  (accepted by the owner). The app's probe of a preview origin shows that
+  something answers there, not that Termivoa does. WebKit: Back inside the
+  frame, past its first entry, moves the whole app back.
 - **Network.** The owner runs `tailscale serve --bg --https=8443
   http://127.0.0.1:8789` only after a separate `y` in `pterm setup` (or by
   hand). Never Funnel.
@@ -264,6 +300,8 @@ New attackers and what limits them:
 - **A compromised peer.** It controls only itself, but can break the app for
   all computers by setting large `Domain=<tailnet>.ts.net` cookies (recovery:
   delete the app). Its responses are untrusted input (see the table above).
+  When the user opens its preview, it also controls the page in the frame
+  (see "Dev-server preview", "A peer's frame").
 - **A program printing a fake add-computer link.** See the table above; it
   can never add a computer in one tap or outside the user's tailnet and
   owner.
@@ -275,13 +313,14 @@ Not protected: computers in different tailnets (unsupported), WSL as a peer
 (Tailscale usually runs on the Windows host), and any check that depends on
 Tailscale's owner and tag data being correct. Known limit: the cached offline
 shell keeps the CSP from when it was cached, so while home is offline it may
-still allow `connect-src` to a computer removed since; that computer's own
-origin binding still applies.
+still allow `connect-src` and `frame-src` to a computer removed since; that
+computer's own origin binding still applies.
 
 Browser requirement: `/api` admits an Origin-less request only with
 `Sec-Fetch-Site: same-origin`, for every user (one computer too). Safari
 before iOS 16.4 sends neither header on GET, so it is refused; iOS 16.4 is the
-minimum.
+minimum. The preview listener has the same rule for every request other
+than the selection.
 
 ## Operational and release limits
 

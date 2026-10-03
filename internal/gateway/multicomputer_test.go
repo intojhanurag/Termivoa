@@ -414,11 +414,21 @@ func TestDocumentCSPListsDeviceComputers(t *testing.T) {
 	}
 	broker.list.Computers = []protocol.HTTPComputer{{Origin: "https://vps.tailx.ts.net", Label: "vps"}}
 	broker.list.PendingOrigins = []string{"https://linux.tailx.ts.net", "https://vps.tailx.ts.net", "https://BAD.tailx.ts.net"}
+	// A confirmed computer also gets its preview origin: in frame-src, and in
+	// connect-src for the probe. A pending one never does, and no preview
+	// origin is a wss source. This computer's previews are off here, so
+	// frame-src lists only the peer.
 	want := strings.Replace(contentSecurityPolicy, "connect-src 'self'", "connect-src 'self' https://vps.tailx.ts.net wss://vps.tailx.ts.net "+
-		"https://linux.tailx.ts.net wss://linux.tailx.ts.net", 1)
+		"https://vps.tailx.ts.net:8443 https://linux.tailx.ts.net wss://linux.tailx.ts.net", 1) + "; frame-src https://vps.tailx.ts.net:8443"
 	if got := policy(prodCookie); got != want {
 		t.Fatalf("CSP = %s\nwant  %s", got, want)
 	}
+	// Only pending computers: no frame-src at all.
+	broker.list.Computers = nil
+	if got := policy(prodCookie); strings.Contains(got, "frame-src") || strings.Contains(got, ":8443") {
+		t.Fatalf("pending computers in the preview policy: %s", got)
+	}
+	broker.list.Computers = []protocol.HTTPComputer{{Origin: "https://vps.tailx.ts.net", Label: "vps"}}
 	if !broker.called("computers@") {
 		t.Fatalf("calls = %v", broker.calls)
 	}
@@ -437,6 +447,56 @@ func TestDocumentCSPListsDeviceComputers(t *testing.T) {
 	}
 	if got := policy(prodCookie); strings.Count(got, "wss://") != protocol.MaxComputers || strings.Contains(got, "c8.") {
 		t.Fatalf("more than 8 computers: %s", got)
+	}
+}
+
+// Rule H1 (docs/peer-preview.md): the app document may frame its own preview
+// origin and the preview origin of each confirmed computer of the cookie's
+// device, nothing else.
+func TestDocumentCSPFramesConfirmedComputersOnly(t *testing.T) {
+	broker := newFakeComputers()
+	handler := newPeerHandler(t, broker)
+	preview, err := newPreviewHandler(handler, ProductionPreviewListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(preview.stop)
+	own := "https://" + previewHost
+	plain := strings.Replace(contentSecurityPolicy, "connect-src 'self'", "connect-src 'self' "+own, 1) + "; frame-src " + own
+	for _, test := range []struct {
+		name               string
+		computers, pending []string
+		cookie             string
+		connect, frames    string // added after 'self' and after the own preview origin
+	}{
+		{"no cookie", []string{"https://vps.tailx.ts.net"}, nil, "", "", ""},
+		{"revoked cookie", []string{"https://vps.tailx.ts.net"}, nil, productionCookieName + "=" + revokedCredential, "", ""},
+		{"no computers", nil, nil, prodCookie, "", ""},
+		{"confirmed", []string{"https://vps.tailx.ts.net"}, nil, prodCookie,
+			"https://vps.tailx.ts.net wss://vps.tailx.ts.net https://vps.tailx.ts.net:8443 ", " https://vps.tailx.ts.net:8443"},
+		{"pending only", nil, []string{"https://linux.tailx.ts.net"}, prodCookie, "https://linux.tailx.ts.net wss://linux.tailx.ts.net ", ""},
+		{"confirmed and pending", []string{"https://vps.tailx.ts.net", "https://pi.tailx.ts.net"}, []string{"https://linux.tailx.ts.net", "https://vps.tailx.ts.net"}, prodCookie,
+			"https://vps.tailx.ts.net wss://vps.tailx.ts.net https://vps.tailx.ts.net:8443 https://pi.tailx.ts.net wss://pi.tailx.ts.net https://pi.tailx.ts.net:8443 " +
+				"https://linux.tailx.ts.net wss://linux.tailx.ts.net ", " https://vps.tailx.ts.net:8443 https://pi.tailx.ts.net:8443"},
+		{"invalid origins", []string{"https://BAD.tailx.ts.net", "https://vps.tailx.ts.net:8443", "http://vps.tailx.ts.net"}, nil, prodCookie, "", ""},
+	} {
+		broker.list.Computers = nil
+		for _, origin := range test.computers {
+			broker.list.Computers = append(broker.list.Computers, protocol.HTTPComputer{Origin: origin, Label: "x"})
+		}
+		broker.list.PendingOrigins = test.pending
+		got := do(handler, http.MethodGet, "/", "", requestOptions{omitOrigin: true, cookie: test.cookie}).Header().Get("Content-Security-Policy")
+		want := strings.Replace(contentSecurityPolicy, "connect-src 'self'", "connect-src 'self' "+test.connect+own, 1) + "; frame-src " + own + test.frames
+		if got != want {
+			t.Errorf("%s: CSP = %s\nwant  %s", test.name, got, want)
+		}
+		if strings.Contains(got, "wss://vps.tailx.ts.net:8443") || strings.Contains(got, "wss://"+previewHost) || strings.Count(got, "frame-src") != 1 {
+			t.Errorf("%s: a wss preview source or two frame-src: %s", test.name, got)
+		}
+		// Only the app document gets the device's computers.
+		if asset := do(handler, http.MethodGet, "/assets/app-3f9a1c.js", "", requestOptions{omitOrigin: true, cookie: test.cookie}).Header().Get("Content-Security-Policy"); asset != plain {
+			t.Errorf("%s: asset CSP = %s", test.name, asset)
+		}
 	}
 }
 

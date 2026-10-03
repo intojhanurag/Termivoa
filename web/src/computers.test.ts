@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { READ_TIMEOUT_MS } from './api/http';
 import {
-  COMPUTERS_KEY, confirmComputer, forgetPending, logOut, logoutNote, logoutPeers, PALETTE, refreshComputers, removeComputer, renameComputer,
+  COMPUTERS_KEY, confirmComputer, forgetPending, logOut, logoutNote, logoutPeers, PALETTE, previewOriginOf, refreshComputers, removeComputer, renameComputer,
   sessionKey, storedComputers, toComputer,
 } from './computers';
 
@@ -39,6 +39,15 @@ describe('computer model', () => {
     expect(computer).toMatchObject({ host: 'vps.tailx.ts.net', label: 'vps', home: false });
     const key = sessionKey(computer, '00000000-0000-4000-8000-000000000001');
     expect(key).toBe('vps.tailx.ts.net/00000000-0000-4000-8000-000000000001');
+  });
+
+  it('frames home from its configured preview origin, and a peer always from its own host on 8443', () => {
+    const homeComputer = toComputer({ origin: home, label: 'mac' }, true);
+    expect(previewOriginOf(homeComputer, 'http://127.0.0.1:8790')).toBe('http://127.0.0.1:8790');
+    expect(previewOriginOf(homeComputer, undefined)).toBeUndefined();
+    // A peer needs nothing from home, and nothing a peer sent is used.
+    expect(previewOriginOf(toComputer(vps), undefined)).toBe('https://vps.tailx.ts.net:8443');
+    expect(previewOriginOf(toComputer(vps), 'https://mac.tailx.ts.net:8443')).toBe('https://vps.tailx.ts.net:8443');
   });
 
   it('colours computers by place: home keeps the first colour, and no two of 8 computers share one', () => {

@@ -1,12 +1,59 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import { storage } from '../storage';
 import { agentBadge, hasNewOutput, readViewed } from './activity';
 import type { HostedSession } from './allSessions';
 import { previewSrc } from './PreviewChip';
+import { ComputerTag } from './Sessions';
 
-/** Top bar: back to the terminal, the previewed address, reload. */
-export function PreviewBar({ port, onBack, onReload }: {
+/** What the screen says when nothing answers on the preview origin. Names no cause: a network error, a timeout and a blocked request look the same to the app. */
+export const cantPreview = (label: string): string =>
+  `Can't open the preview on ${label}. If ${label} does not share dev-server previews yet, run pterm setup on ${label} and answer yes to the preview question.`;
+
+/**
+ * Whether anything answers on the preview origin, asked before the frame
+ * shows (the app cannot see what a frame is answered). Any HTTP answer counts,
+ * also a refusal; the answer itself is opaque and never read.
+ */
+export async function probePreview(origin: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  try {
+    await fetcher(`${origin}/__termivoa/select`, { mode: 'no-cors', credentials: 'omit', signal: AbortSignal.timeout(5000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** sessionStorage: the preview origin this tab already reloaded for (the loop guard). */
+export const PREVIEW_RELOAD_KEY = 'pterm.previewReload';
+
+/**
+ * Whether to reload the app because its own CSP blocked `blocked`, an address
+ * on the preview origin. The policy comes from the page load, and a computer
+ * confirmed after that load is not in it yet; one reload reads the new one.
+ * At most once per origin: a policy that still blocks (an old cached page)
+ * shows the usual text.
+ */
+export function reloadForPolicy(blocked: string, origin: string, store: Pick<Storage, 'getItem' | 'setItem'> | undefined): boolean {
+  if (blocked !== origin && !blocked.startsWith(`${origin}/`)) return false;
+  try {
+    if (store === undefined || store.getItem(PREVIEW_RELOAD_KEY) === origin) return false;
+    store.setItem(PREVIEW_RELOAD_KEY, origin);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Top bar: back to the terminal, the previewed address, reload. Over a peer's
+ * page it always names the computer and marks the page as untrusted: the peer
+ * chooses what the frame shows, and the page cannot cover or change this bar.
+ */
+export function PreviewBar({ port, peer, onBack, onReload }: {
   readonly port: number;
+  readonly peer: Pick<Computer, 'label' | 'color'> | undefined;
   readonly onBack: () => void;
   readonly onReload: () => void;
 }) {
@@ -15,6 +62,7 @@ export function PreviewBar({ port, onBack, onReload }: {
       <button type="button" className="link preview-back" onClick={onBack}>‹ terminal</button>
       <span className="preview-address"><span className="dot green" aria-hidden="true" />localhost:{port}</span>
       <button type="button" className="link preview-reload" aria-label="Reload preview" onClick={onReload}>↻</button>
+      {peer !== undefined && <p className="preview-peer"><ComputerTag computer={peer} /> · <strong>untrusted page</strong></p>}
     </header>
   );
 }
@@ -40,19 +88,87 @@ export function PreviewStatus({ session, fresh, onTell }: {
 }
 
 /**
- * A running dev server of this session, framed from the separate preview
- * origin. The frame gets scripts and forms but no top navigation, popups, or
- * device features, and sends no referrer.
+ * The frame, or the text in its place. The frame exists only with an origin
+ * that answered the probe and without a notice. It gets scripts and forms but
+ * no top navigation, popups, full screen or device features. Its referrer is
+ * the app's origin alone, which the preview listener needs to admit the
+ * select request.
  */
-export function Preview({ session, sessions, origin, port, onBack, onTell }: {
+export function PreviewBody({ session, origin, port, notice, reach }: {
+  readonly session: HostedSession;
+  readonly origin: string | undefined;
+  readonly port: number;
+  readonly notice: string | undefined;
+  /** The probe's answer; undefined while it runs. */
+  readonly reach: boolean | undefined;
+}) {
+  const { computer } = session;
+  if (notice !== undefined) return <div className="banner" role="alert"><span>{notice}</span></div>;
+  // Home answered that it has no preview origin (a peer's is computed, and absent only until it answers).
+  if (origin === undefined && computer.home) return <div className="banner" role="alert"><span>{cantPreview(computer.label)}</span></div>;
+  if (origin === undefined || reach === undefined) return <p role="status" className="muted preview-note">Opening preview…</p>;
+  if (!reach) return <div className="banner" role="alert"><span>{cantPreview(computer.label)}</span></div>;
+  return (
+    <iframe
+      className="preview-frame"
+      title={`Preview of localhost:${port}${computer.home ? '' : ` on ${computer.label}`}`}
+      src={previewSrc(origin, session.id, port)}
+      sandbox="allow-scripts allow-forms allow-same-origin"
+      referrerPolicy="origin"
+    />
+  );
+}
+
+/**
+ * A running dev server of this session, framed from the separate preview
+ * origin of the session's computer. `notice` (that computer refuses the phone,
+ * cannot be reached or must update) replaces the frame.
+ */
+export function Preview({ session, sessions, origin, notice, port, onBack, onTell }: {
   readonly session: HostedSession;
   readonly sessions: ReadonlyArray<HostedSession> | undefined;
-  readonly origin: string;
+  readonly origin?: string | undefined;
+  readonly notice?: string;
   readonly port: number;
   readonly onBack: () => void;
   readonly onTell: () => void;
 }) {
+  // Each new value mounts a new frame, so the select request runs again.
   const [loads, setLoads] = useState(0);
+  const [reach, setReach] = useState<boolean>();
+  // The old answer goes with the old frame: the new frame mounts once, after its own probe.
+  const [reload] = useState(() => () => {
+    setReach(undefined);
+    setLoads((value) => value + 1);
+  });
+  const [probed, setProbed] = useState(origin);
+  if (probed !== origin) {
+    setProbed(origin);
+    setReach(undefined);
+  }
+  useEffect(() => {
+    if (origin === undefined || notice !== undefined) return undefined;
+    let current = true;
+    const onBlocked = (event: SecurityPolicyViolationEvent) => {
+      if (reloadForPolicy(event.blockedURI, origin, storage('sessionStorage'))) window.location.reload();
+    };
+    document.addEventListener('securitypolicyviolation', onBlocked);
+    void probePreview(origin).then((answered) => {
+      if (answered) storage('sessionStorage')?.removeItem(PREVIEW_RELOAD_KEY);
+      if (current) setReach(answered);
+    });
+    return () => {
+      current = false;
+      document.removeEventListener('securitypolicyviolation', onBlocked);
+    };
+  }, [origin, notice, loads]);
+  // A page shown again from history (WebKit) loads the frame's last address
+  // without a select request, and the preview listener refuses that.
+  useEffect(() => {
+    const onShow = (event: PageTransitionEvent) => { if (event.persisted) reload(); };
+    window.addEventListener('pageshow', onShow);
+    return () => window.removeEventListener('pageshow', onShow);
+  }, []);
   const listed = sessions?.find((item) => item.id === session.id && item.generation === session.generation);
   const current = listed ?? session;
   const present = current.previews?.some((item) => item.port === port) === true;
@@ -62,16 +178,9 @@ export function Preview({ session, sessions, origin, port, onBack, onTell }: {
   if (present && !seen) setSeen(true);
   return (
     <main className="preview-screen">
-      <PreviewBar port={port} onBack={onBack} onReload={() => setLoads((value) => value + 1)} />
-      {seen && !present && <div className="banner" role="alert"><span>Dev server stopped</span></div>}
-      <iframe
-        key={loads}
-        className="preview-frame"
-        title={`Preview of localhost:${port}`}
-        src={previewSrc(origin, session.id, port)}
-        sandbox="allow-scripts allow-forms allow-same-origin"
-        referrerPolicy="no-referrer"
-      />
+      <PreviewBar port={port} peer={session.computer.home ? undefined : session.computer} onBack={onBack} onReload={reload} />
+      {notice === undefined && seen && !present && <div className="banner" role="alert"><span>Dev server stopped</span></div>}
+      <PreviewBody key={loads} session={session} origin={origin} port={port} notice={notice} reach={reach} />
       <PreviewStatus session={current} fresh={hasNewOutput(current, readViewed())} onTell={onTell} />
     </main>
   );

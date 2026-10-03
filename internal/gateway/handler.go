@@ -195,9 +195,11 @@ func validateOrigin(origin string, dev bool) (string, string, error) {
 func (handler *gatewayHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	header := response.Header()
 	policy := contentSecurityPolicy
-	// The app may frame exactly the dev-server preview origin, nothing else.
+	// The app may frame the dev-server preview origin (index.html adds the
+	// cookie device's confirmed computers) and probe it with fetch before it
+	// shows the frame. It opens no socket there: never wss.
 	if preview := handler.previewOriginFor(request); preview != "" {
-		policy += "; frame-src " + preview
+		policy = strings.Replace(policy, "connect-src 'self'", "connect-src 'self' "+preview, 1) + "; frame-src " + preview
 	}
 	header.Set("Content-Security-Policy", policy)
 	header.Set("Referrer-Policy", "no-referrer")
@@ -291,15 +293,27 @@ func (handler *gatewayHandler) crossOrigin(request *http.Request) string {
 		return ""
 	}
 	origin := values[0]
-	handler.mu.RLock()
-	defer handler.mu.RUnlock()
-	if _, ok := handler.bound[origin]; ok {
+	if handler.boundOrigin(origin) {
 		return origin
 	}
+	handler.mu.RLock()
+	defer handler.mu.RUnlock()
 	if _, ok := handler.pairing[origin]; ok && strings.HasPrefix(request.URL.Path, "/api/v1/pair/") {
 		return origin
 	}
 	return ""
+}
+
+// boundOrigin reports whether value is exactly a bound app origin of another
+// computer. The broker still checks it against the request's own credential.
+func (handler *gatewayHandler) boundOrigin(value string) bool {
+	if protocol.ValidateComputerOrigin(value) != nil {
+		return false
+	}
+	handler.mu.RLock()
+	defer handler.mu.RUnlock()
+	_, ok := handler.bound[value]
+	return ok
 }
 
 // originAllowed requires exactly one Origin: an exact own origin, or the
@@ -482,8 +496,11 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 
 // deviceConnectSources adds the exact https and wss origins of the cookie
 // device's confirmed and pending computers (at most 8) to the app document's
-// connect-src, so the app can reach them and nothing else. Without a usable
-// cookie or broker answer the policy stays as it is.
+// connect-src, so the app can reach them and nothing else. A confirmed
+// computer, never a pending one, also gets its preview origin
+// (https://<host>:8443) in frame-src, and in connect-src for the app's
+// reachability probe (docs/peer-preview.md, H1). Without a usable cookie or
+// broker answer the policy stays as it is.
 func (handler *gatewayHandler) deviceConnectSources(response http.ResponseWriter, request *http.Request) {
 	credential, present := handler.sessionCookie(request)
 	if handler.api == nil || !present || protocol.ValidateSecretText(credential) != nil || !handler.authFailLimit.allowed(clientKey(request)) {
@@ -495,26 +512,39 @@ func (handler *gatewayHandler) deviceConnectSources(response http.ResponseWriter
 	if err != nil {
 		return
 	}
-	var origins []string
-	for _, computer := range list.Computers {
-		origins = append(origins, computer.Origin)
-	}
-	origins = append(origins, list.PendingOrigins...)
-	var sources []string
+	var sources, frames []string
 	seen := map[string]bool{}
-	for _, origin := range origins {
+	add := func(origin string, confirmed bool) {
 		if len(seen) == protocol.MaxComputers || seen[origin] || protocol.ValidateComputerOrigin(origin) != nil {
-			continue
+			return
 		}
 		seen[origin] = true
 		sources = append(sources, origin, "wss://"+strings.TrimPrefix(origin, "https://"))
+		if confirmed {
+			sources = append(sources, origin+":"+PreviewPublicPort)
+			frames = append(frames, origin+":"+PreviewPublicPort)
+		}
+	}
+	for _, computer := range list.Computers {
+		add(computer.Origin, true)
+	}
+	for _, origin := range list.PendingOrigins {
+		add(origin, false)
 	}
 	if len(sources) == 0 {
 		return
 	}
 	header := response.Header()
-	header.Set("Content-Security-Policy", strings.Replace(header.Get("Content-Security-Policy"),
-		"connect-src 'self'", "connect-src 'self' "+strings.Join(sources, " "), 1))
+	policy := strings.Replace(header.Get("Content-Security-Policy"),
+		"connect-src 'self'", "connect-src 'self' "+strings.Join(sources, " "), 1)
+	if len(frames) > 0 {
+		// ServeHTTP puts frame-src last, and only when home's previews are on.
+		if !strings.Contains(policy, "; frame-src ") {
+			policy += "; frame-src"
+		}
+		policy += " " + strings.Join(frames, " ")
+	}
+	header.Set("Content-Security-Policy", policy)
 }
 
 func allowMethod(response http.ResponseWriter, request *http.Request, methods ...string) bool {

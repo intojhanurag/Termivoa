@@ -1,9 +1,10 @@
 // Phase B: the full phone flow through the app's screens (README.md).
-//   node scripts/e2e-multicomputer/phase-b.mjs [--no-web-build] [--out <dir>] [--keep]
+//   node scripts/e2e-multicomputer/phase-b.mjs [--no-web-build] [--out <dir>] [--keep] [--only <ID prefix>]
+// --only PV runs pairing, the first add (B1, B2) and the steps whose ID starts with PV.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  Browser, Env, NODES, api, click, interactive, pairDirect, setInput, sleep, tapTerminalText, terminalText, typeLine, until,
+  Browser, Env, NODES, api, click, freePort, interactive, pairDirect, run, setInput, sleep, tapTerminalText, terminalText, typeLine, until,
 } from './lib.mjs';
 
 const argv = process.argv.slice(2);
@@ -47,6 +48,8 @@ const shot = async (name, page = app) => {
 
 /** Runs one step; a thrown error becomes a FAIL row with a screenshot. */
 async function step(id, name, fn) {
+  const only = option('--only');
+  if (only && id !== 'B1' && id !== 'B2' && !id.startsWith(only)) return;
   try {
     await fn();
   } catch (error) {
@@ -98,7 +101,7 @@ async function openSessions() {
 }
 
 /** Adds vps through Settings → Computers → paste. Returns the outcome text. */
-async function addByPaste(id) {
+async function addByPaste(id, whilePending = async () => undefined) {
   const started = Date.now();
   const via = interactive(vps, ['pair', '--via', 'mac']);
   const [link] = await via.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#\S+/);
@@ -119,6 +122,7 @@ async function addByPaste(id) {
   await shot(`${id}-code`);
   const shown = await app.eval(`document.querySelector('.code-tiles .visually-hidden')?.textContent.replace('Verification code ', '')`);
   const [, code] = await via.wait(/shows code (\d{3}-\d{3})/);
+  await whilePending();
   via.end(code === shown ? 'y\n' : 'n\n');
   await via.done;
   const outcome = await until(async () => {
@@ -137,6 +141,48 @@ async function confirmByApi() {
 }
 
 const tokens = {};
+/** In-app navigation, as the app's own links do: no new page load. */
+const inApp = (path) => app.eval(`history.pushState(null, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`);
+
+// ---------- dev-server preview (docs/peer-preview.md) ----------
+const devPorts = {};
+const previewLog = (mark, stack) => env.logSince(mark).filter((e) => e.host === `${stack.host}:8443`);
+const briefly = (e) => (e ? `${e.method} ${e.path} ${e.status} site=${e.secFetchSite ?? '-'} dest=${e.secFetchDest ?? '-'} referer=${e.referer ?? '-'} origin=${e.origin ?? '-'} cookie=${e.cookie}` : 'no request');
+/** The preview frame's text, or undefined while there is no frame on that computer's preview origin. */
+const frameText = (stack, page = app) => page.frameEval(stack.previewOrigin, 'document.body.innerText').catch(() => undefined);
+const frameReady = (stack, timeout = 30000) => until(async () => {
+  const text = await frameText(stack);
+  return text?.includes(`dev site on ${stack.name}`) && text.includes('sub ok') && text.includes('fetch pong') && text.includes('ws echo') && text;
+}, { timeout, what: `the dev site of ${stack.name} in the frame` });
+/** The browser's cookies for one computer (the preview origin shares them: cookies ignore ports), for curl. */
+const jarOf = async (stack) => (await browser.cookies()).filter((c) => c.domain === stack.host).map((c) => `${c.name}=${c.value}`).join('; ');
+
+/** A new session on stack that runs the harness dev site, opened in Live from the Sessions list (no page load). Returns the session. */
+async function devSession(stack, title) {
+  const session = await makeSession(stack, title);
+  await inApp('/');
+  await until(async () => (await rows()).some((x) => x.title === title), { what: `${title} row` });
+  await click(app, title);
+  await liveReady();
+  devPorts[title] = await freePort();
+  await typeLine(app, `${join(env.bin, 'front')} devserver -name ${stack.name} -listen 127.0.0.1:${devPorts[title]}`);
+  await until(async () => (await app.text()).includes('Preview ready') && (await app.text()).includes(`:${devPorts[title]}`), { timeout: 30000, what: 'the Preview ready chip' });
+  return session;
+}
+/** The policy home sends with the app document now, read by the app's own page. */
+const policyNow = async () => {
+  const csp = await app.eval(`fetch('/', { cache: 'no-store' }).then((r) => r.headers.get('content-security-policy'))`);
+  const of = (name) => new RegExp(`${name} ([^;]*)`).exec(csp)?.[1].split(' ') ?? [];
+  return { frame: of('frame-src'), connect: of('connect-src') };
+};
+let pendingPolicy;
+/** After a restart of vps: its gateway learns the mac app origin again, then the app's problem row goes. */
+async function vpsBack() {
+  await until(() => settingsOf(vps), { what: 'vps answers the mac app', timeout: 40000, every: 500 });
+  await inApp('/');
+  await until(async () => { if ((await problems()).length) await click(app, 'Retry').catch(() => undefined); return (await problems()).length === 0; }, { what: 'no problem row', timeout: 40000, every: 1000 });
+}
+const openPreview = (title) => click(app, `Open preview of port ${devPorts[title]}`);
 
 try {
   // ---- B1: pair with mac (home), as today ----
@@ -153,7 +199,7 @@ try {
 
   // ---- B2: add vps by paste ----
   await step('B2', 'Add vps: paste link, confirm sheet, code, approve on vps CLI', async () => {
-    const r = await addByPaste('b2');
+    const r = await addByPaste('b2', async () => { pendingPolicy = await policyNow(); });
     time('add computer by paste (pterm pair --via → outcome)', r.ms);
     const sheetOk = r.sheet.includes('https://vps.tailx.ts.net') && r.sheet.includes('ada@example.com');
     check('B2-sheet', 'Confirm sheet shows the full origin, machine and owner', sheetOk, r.sheet.slice(0, 240));
@@ -163,6 +209,251 @@ try {
       await confirmByApi();
       console.log('     (harness confirmed vps on home through the API to continue)');
     }
+  });
+
+  // ---- PV: dev-server preview, home and peer (docs/peer-preview.md section 11) ----
+  let vpsDev;
+
+  await step('PV-added', 'A computer added in this visit: Preview ready shows; Open reloads the app once, then frames the vps dev site', async () => {
+    // vps was confirmed after this app document loaded, so the loaded policy does not name its preview origin yet.
+    vpsDev = await devSession(vps, 'vps-dev');
+    await shot('pv-chip-vps');
+    check('PV-chip', 'The Preview ready chip shows for a vps session', true, `chip :${devPorts['vps-dev']} on ${await app.eval('location.pathname')}`);
+    await app.eval(`window.__sameLoad = true; document.addEventListener('securitypolicyviolation', (e) => sessionStorage.setItem('e2e.blocked', e.effectiveDirective + ' ' + e.blockedURI))`);
+    const mark = env.logMark();
+    await openPreview('vps-dev');
+    await frameReady(vps);
+    const blocked = await app.eval(`sessionStorage.getItem('e2e.blocked')`);
+    const reloaded = !(await app.eval('window.__sameLoad === true'));
+    const guard = await app.eval(`sessionStorage.getItem('pterm.previewReload')`);
+    const loads = env.logSince(mark).filter((e) => e.host === mac.host && e.secFetchMode === 'navigate').map((e) => `${e.method} ${e.path} ${e.status}`);
+    const now = await policyNow();
+    const pending = pendingPolicy ?? { frame: ['not read'], connect: [] };
+    check('PV-pending', 'While vps was pending (B2) it was in connect-src for pairing, but its preview origin was in neither frame-src nor connect-src; confirmed, it is in both, never as wss',
+      pending.connect.includes(vps.origin) && !pending.frame.includes(vps.previewOrigin) && !pending.connect.includes(vps.previewOrigin)
+        && now.frame.includes(vps.previewOrigin) && now.connect.includes(vps.previewOrigin) && !now.connect.some((x) => x.startsWith('wss:') && x.endsWith(':8443')),
+      `pending: frame-src ${pending.frame.join(' ')} | connect-src ${pending.connect.join(' ')}; confirmed: frame-src ${now.frame.join(' ')} | connect-src ${now.connect.join(' ')}`);
+    check('PV-added', 'A computer added in this visit: the loaded policy blocks its preview origin, the app reloads once and then shows the preview',
+      blocked?.includes(vps.previewOrigin) && reloaded && guard === null && loads.length === 1 && now.frame.includes(vps.previewOrigin),
+      `blocked: ${blocked}; app reloaded: ${reloaded} (document loads: ${loads.join(', ')}); loop guard after the answer: ${guard}; frame-src now: ${now.frame.join(' ')}`);
+  });
+
+  await step('PV-vps', 'The vps preview in the app: bar "vps · untrusted page", sub-resource, fetch, WebSocket', async () => {
+    const mark = env.logMark();
+    await click(app, 'Reload preview'); // a fresh select with the final policy, so the log below is one clean load
+    const text = await frameReady(vps);
+    const bar = await app.eval(`document.querySelector('.preview-bar').innerText.replace(/\\s+/g, ' ').trim()`);
+    const title = await app.eval(`document.querySelector('.preview-frame').title`);
+    await shot('pv-vps-preview');
+    check('PV-vps-bar', 'Over the vps page the bar shows "vps · untrusted page"', bar.includes('vps · untrusted page') && bar.includes(`localhost:${devPorts['vps-dev']}`), `bar: ${bar}; frame title: ${title}`);
+    check('PV-vps-page', 'The framed vps dev site works: marker, sub-resource, fetch and WebSocket echo', true, text.replace(/\s+/g, ' '));
+    await sleep(300);
+    const log = previewLog(mark, vps);
+    const probe = log.find((e) => e.path === '/__termivoa/select' && e.secFetchMode === 'no-cors');
+    const select = log.find((e) => e.path === '/__termivoa/select' && e.secFetchDest === 'iframe');
+    const root = log.find((e) => e.path === '/');
+    check('PV-vps-probe', 'The app asks the preview origin first: a no-cors request without cookie; any answer counts', probe && !probe.cookie && probe.status === 403, briefly(probe));
+    check('PV-vps-select', 'The select request: no Origin, Referer https://mac.tailx.ts.net/ (unchanged by the front), same-site, the Strict cookie, 200 with frame-ancestors of the mac app',
+      select?.status === 200 && select.referer === `${mac.origin}/` && !select.origin && select.secFetchSite === 'same-site' && select.cookie, briefly(select));
+    check('PV-vps-root', 'The move to / and every dev-site request come from the preview origin itself (same-origin)',
+      root?.status === 200 && root.secFetchSite === 'same-origin' && !root.referer && log.filter((e) => e.path !== '/__termivoa/select').every((e) => e.status === 200 || e.status === 101),
+      log.filter((e) => e.path !== '/__termivoa/select').map(briefly).join('; '));
+
+    // ↻
+    const load = () => app.frameEval(vps.previewOrigin, `Number(document.getElementById('load').textContent.replace('load ', ''))`).catch(() => undefined);
+    const before = await load();
+    const mark2 = env.logMark();
+    await click(app, 'Reload preview');
+    const after = await until(async () => { const n = await load(); return n > before && n; }, { what: 'a new load of the dev site' });
+    await frameReady(vps);
+    await sleep(300);
+    const selects = previewLog(mark2, vps).filter((e) => e.secFetchDest === 'iframe' && e.path === '/__termivoa/select').map((e) => e.status);
+    check('PV-vps-reload', '↻ loads the preview again through exactly one new select request', selects.length === 1 && selects[0] === 200, `dev site load ${before} → ${after}; select requests: ${selects.join(', ')}`);
+
+    // The dev site (same site as both apps, so its requests carry their cookies) may not use an API.
+    const mark3 = env.logMark();
+    const tries = await app.frameEval(vps.previewOrigin, `Promise.all(${JSON.stringify([mac.origin, vps.origin])}.map((o) =>
+      fetch(o + '/api/v1/settings', { credentials: 'include' }).then((r) => r.status, (e) => String(e))))`);
+    await sleep(300);
+    const seen = env.logSince(mark3).filter((e) => e.path === '/api/v1/settings' && e.origin === vps.previewOrigin);
+    check('PV-vps-api', 'The framed vps dev site cannot call the mac API or the vps API', seen.length === 2 && seen.every((e) => e.status === 403 && !e.acao),
+      `page sees ${JSON.stringify(tries)}; ${seen.map((e) => `${e.host} ${e.status} cookie=${e.cookie} ACAO=${e.acao ?? 'none'}`).join('; ')}`);
+  });
+
+  await step('PV-link', 'A link alone never opens a peer preview; a reload after a real tap keeps it', async () => {
+    const address = `${mac.origin}/c/${vps.host}/sessions/${vpsDev.id}/preview?port=${devPorts['vps-dev']}`;
+    // The preview is open from the tap in PV-added: a reload of that entry keeps it.
+    await app.eval(`window.__sameLoad = true`);
+    await app.eval('location.reload()');
+    await until(async () => !(await app.eval('window.__sameLoad === true').catch(() => true)), { what: 'the reload' });
+    await frameReady(vps);
+    check('PV-link-reload', 'A reload of the preview that a tap opened shows the preview again', (await app.eval('location.href')) === address, `${await app.eval('location.pathname + location.search')}; history.state ${JSON.stringify(await app.eval('history.state'))}`);
+    // The same address as a link from outside: a new tab (no history state), and a navigation of the app tab.
+    const cold = await browser.page();
+    try {
+      await cold.front();
+      const mark = env.logMark();
+      await cold.go(`${mac.origin}/`); // the address below is replaced, so load something first
+      await cold.send('Page.navigate', { url: address });
+      await until(async () => (await terminalText(cold).catch(() => '')).includes('dev site on vps'), { what: 'the terminal of that session' });
+      await sleep(1500);
+      const asked = previewLog(mark, vps);
+      const state = { path: await cold.eval('location.pathname + location.search'), frame: await cold.eval(`!!document.querySelector('.preview-frame, .preview-screen')`) };
+      await shot('pv-link-cold', cold);
+      check('PV-link-cold', 'A cold navigation to the peer preview address lands on the session\'s terminal: no frame, no request to vps:8443',
+        state.path === `/c/${vps.host}/sessions/${vpsDev.id}` && !state.frame && asked.length === 0, `now ${state.path}; preview screen: ${state.frame}; requests to ${vps.host}:8443: ${asked.length}`);
+      // A tap marker cannot be forged with a port the session does not list.
+      const mark2 = env.logMark();
+      await cold.eval(`history.pushState({ previewTap: true }, '', ${JSON.stringify(`/c/${vps.host}/sessions/${vpsDev.id}/preview?port=1`)}); dispatchEvent(new PopStateEvent('popstate'))`);
+      await sleep(1500);
+      check('PV-link-port', 'A preview address with a port the session does not list opens the terminal, also with the tap marker',
+        (await cold.eval('location.pathname + location.search')) === `/c/${vps.host}/sessions/${vpsDev.id}` && previewLog(mark2, vps).length === 0, `now ${await cold.eval('location.pathname + location.search')}; requests to ${vps.host}:8443: ${previewLog(mark2, vps).length}`);
+    } finally {
+      await cold.close();
+      await app.front();
+    }
+  });
+
+  await step('PV-refuse', 'The vps preview listener refuses every request that is not the app frame or the preview origin itself', async () => {
+    const jar = await jarOf(vps);
+    const select = `${vps.previewOrigin}/__termivoa/select?session=${vpsDev.id}&port=${devPorts['vps-dev']}`;
+    const frame = { Cookie: jar, 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'iframe' };
+    const say = (r) => `${r.status} ${r.body.trim().slice(0, 48)}`;
+    const control = await env.curl(select, { headers: { ...frame, Referer: `${mac.origin}/` } });
+    check('PV-refuse-control', 'Control: the select with the phone\'s cookie and Referer https://mac.tailx.ts.net/ works (curl)',
+      control.status === 200 && control.headers['content-security-policy'] === `default-src 'none'; frame-ancestors ${mac.origin}`, `${control.status}; CSP ${control.headers['content-security-policy']}`);
+    for (const [id, name, headers] of [
+      ['evil', 'Referer https://evil.tailx.ts.net/', { Referer: 'https://evil.tailx.ts.net/' }],
+      ['none', 'no Referer', {}],
+      ['origin', 'an Origin header (with the right Referer)', { Referer: `${mac.origin}/`, Origin: mac.origin }],
+      ['devsite', 'Referer of a dev site on mac (https://mac.tailx.ts.net:8443/)', { Referer: `${mac.previewOrigin}/` }],
+      ['path', 'Referer with a path (https://mac.tailx.ts.net/x)', { Referer: `${mac.origin}/x` }],
+      ['bare', 'Referer without the slash', { Referer: mac.origin }],
+    ]) {
+      const r = await env.curl(select, { headers: { ...frame, ...headers } });
+      check(`PV-refuse-${id}`, `A select with ${name} is refused (curl, valid cookie)`, r.status === 403 && !r.headers['set-cookie'], say(r));
+    }
+    const twice = await run('curl', ['-sS', '-k', '--suppress-connect-headers', '--proxy', `http://${env.proxy}`, '-o', '/dev/null', '-w', '%{http_code}',
+      ...Object.entries(frame).flatMap(([k, v]) => ['-H', `${k}: ${v}`]), '-H', `Referer: ${mac.origin}/`, '-H', `referer: ${mac.origin}/`, select]);
+    check('PV-refuse-two', 'A select with two Referer headers is refused (curl, valid cookie)', twice.stdout === '403', twice.stdout);
+    const root = `${vps.previewOrigin}/`;
+    const own = await env.curl(root, { headers: { Cookie: jar, 'Sec-Fetch-Site': 'same-origin' } });
+    const sameSite = await env.curl(root, { headers: { Cookie: jar, 'Sec-Fetch-Site': 'same-site' } });
+    const typed = await env.curl(root, { headers: { Cookie: jar } });
+    const foreign = await env.curl(root, { headers: { Cookie: jar, Origin: mac.origin } });
+    check('PV-refuse-direct', 'GET / on the listener with the valid cookies: same-origin works; same-site, no Sec-Fetch-Site, and the mac app as Origin are refused',
+      own.status === 200 && own.body.includes('dev site on vps') && [sameSite, typed, foreign].every((r) => r.status === 403 && r.body.includes('Origin not allowed')),
+      `same-origin ${own.status}; same-site ${say(sameSite)}; none ${say(typed)}; Origin mac ${say(foreign)}`);
+  });
+
+  await step('PV-evil', 'A page on evil.tailx.ts.net cannot frame or load the vps preview', async () => {
+    const evil = await browser.page();
+    try {
+      await evil.go('https://evil.tailx.ts.net/');
+      const mark = env.logMark();
+      const select = `${vps.previewOrigin}/__termivoa/select?session=${vpsDev.id}&port=${devPorts['vps-dev']}`;
+      const result = await evil.eval(`(async () => {
+        const frame = (src) => new Promise((done) => { const f = document.createElement('iframe'); f.referrerPolicy = 'origin'; f.src = src; f.onload = () => done('loaded'); document.body.append(f); setTimeout(() => done('timeout'), 5000); });
+        const img = new Promise((done) => { const i = new Image(); i.onload = () => done('loaded'); i.onerror = () => done('error'); i.src = ${JSON.stringify(`${vps.previewOrigin}/app.js`)}; });
+        return { select: await frame(${JSON.stringify(select)}), root: await frame(${JSON.stringify(`${vps.previewOrigin}/`)}), img: await img,
+          fetch: await fetch(${JSON.stringify(`${vps.previewOrigin}/ping`)}, { mode: 'no-cors', credentials: 'include' }).then((r) => r.type, (e) => String(e)),
+          ws: await new Promise((done) => { const w = new WebSocket(${JSON.stringify(`wss://${vps.host}:8443/ws`)}); w.onopen = () => done('open'); w.onerror = () => done('error'); }) }; })()`);
+      await sleep(300);
+      const texts = (await evil.send('Page.getFrameTree')).frameTree.childFrames?.length ?? 0;
+      const shown = await evil.frameEval(`${vps.previewOrigin}/__termivoa/select`, 'document.body.innerText').catch(() => undefined);
+      const log = previewLog(mark, vps);
+      await shot('pv-evil', evil);
+      check('PV-evil', 'From a top-level page on evil.tailx.ts.net: framing the select, framing /, an image, a no-cors fetch and a WebSocket are all refused, with the cookie present',
+        log.length === 5 && log.every((e) => e.status === 403) && log.some((e) => e.cookie) && result.ws === 'error' && result.img === 'error',
+        `${log.map(briefly).join('; ')}; page: ${JSON.stringify(result)}; ${texts} frames; the select frame shows: ${shown?.trim()}`);
+    } finally {
+      await evil.close();
+      await app.front();
+    }
+  });
+
+  await step('PV-home', 'A mac (home) preview: chip, frame, no untrusted mark', async () => {
+    await devSession(mac, 'mac-dev');
+    const mark = env.logMark();
+    await openPreview('mac-dev');
+    const text = await frameReady(mac);
+    const bar = await app.eval(`document.querySelector('.preview-bar').innerText.replace(/\\s+/g, ' ').trim()`);
+    await shot('pv-mac-preview');
+    await sleep(300);
+    const select = previewLog(mark, mac).find((e) => e.secFetchDest === 'iframe');
+    check('PV-home', 'A mac (home) session: Preview ready, Open, the dev site in the frame with sub-resource, fetch and WebSocket; the bar has no "untrusted page"',
+      !bar.includes('untrusted') && bar.includes(`localhost:${devPorts['mac-dev']}`) && select?.status === 200 && select.referer === `${mac.origin}/`,
+      `bar: ${bar}; ${text.replace(/\s+/g, ' ')}; ${briefly(select)}`);
+    const mark2 = env.logMark();
+    const tries = await app.frameEval(mac.previewOrigin, `Promise.all(${JSON.stringify([mac.origin, vps.origin])}.map((o) =>
+      fetch(o + '/api/v1/settings', { credentials: 'include' }).then((r) => r.status, (e) => String(e))))`);
+    await sleep(300);
+    const seen = env.logSince(mark2).filter((e) => e.path === '/api/v1/settings' && e.origin === mac.previewOrigin);
+    check('PV-home-api', 'The framed mac dev site (same host as the app, another port) cannot call the mac API or the vps API', seen.length === 2 && seen.every((e) => e.status === 403 && !e.acao),
+      `page sees ${JSON.stringify(tries)}; ${seen.map((e) => `${e.host} ${e.status} cookie=${e.cookie} ACAO=${e.acao ?? 'none'}`).join('; ')}`);
+    // A select on mac's listener that names the vps app is refused: vps is not an app origin of a device on mac.
+    const r = await env.curl(`${mac.previewOrigin}/__termivoa/select?session=${vpsDev.id}&port=1`, { headers: { Cookie: await jarOf(mac), 'Sec-Fetch-Site': 'same-site', Referer: `${vps.origin}/` } });
+    check('PV-home-refuse', 'mac\'s listener refuses a select with the vps app as Referer', r.status === 403, `${r.status} ${r.body.trim()}`);
+  });
+
+  await step('PV-off', 'A computer that does not share previews: neutral text, no empty frame', async () => {
+    await vps.stop();
+    await vps.start({ preview: false });
+    try {
+      await vpsBack();
+      await devSession(vps, 'vps-off');
+      const mark = env.logMark();
+      await openPreview('vps-off');
+      await app.waitText("Can't open the preview on vps", 15000);
+      const text = await app.eval(`document.querySelector('.preview-screen [role=alert]').innerText`);
+      await shot('pv-off');
+      const tried = env.logSince(mark).filter((e) => e.host === `${vps.host}:8443`);
+      check('PV-off', 'With no preview listener on vps the app shows "Can\'t open the preview on vps…" and no frame',
+        !(await app.eval(`!!document.querySelector('.preview-frame')`)) && tried.every((e) => e.status === 502), `${text}; front: ${tried.map((e) => `${e.method} ${e.status} ${e.note}`).join(', ')}`);
+    } finally {
+      await vps.stop();
+      await vps.start();
+    }
+  });
+
+  await step('PV-revoke', 'pterm revoke --via on vps stops an open preview and the app removes the frame', async () => {
+    await vpsBack();
+    const session = await devSession(vps, 'vps-dev2');
+    await openPreview('vps-dev2');
+    await frameReady(vps);
+    const jar = await jarOf(vps);
+    // A socket of the dev site held open outside the app, so only the computer can close it.
+    const held = run('curl', ['-sS', '-k', '--suppress-connect-headers', '--proxy', `http://${env.proxy}`, '--http1.1', '-N', '--max-time', '40', '-o', '/dev/null', '-w', '%{http_code}',
+      '-H', 'Connection: Upgrade', '-H', 'Upgrade: websocket', '-H', 'Sec-WebSocket-Version: 13', '-H', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+      '-H', `Origin: ${vps.previewOrigin}`, '-H', `Cookie: ${jar}`, `${vps.previewOrigin}/ws`]);
+    await sleep(1500);
+    const revoke = interactive(vps, ['revoke', '--via', mac.origin]);
+    await revoke.wait(/\[y\/N\]/);
+    revoke.end('y\n');
+    await revoke.done;
+    const started = Date.now();
+    const socket = await held;
+    const socketMs = Date.now() - started;
+    await until(() => app.eval(`!document.querySelector('.preview-frame')`), { what: 'the frame removed', timeout: 20000 });
+    const frameMs = Date.now() - started;
+    const alerts = () => app.eval(`[...document.querySelectorAll('.preview-screen [role=alert]')].map((e) => e.innerText.trim()).join(' | ')`);
+    await until(async () => (await alerts()).includes('pair again'), { what: 'pair again text', timeout: 20000 }).catch(() => undefined);
+    const text = await alerts();
+    await shot('pv-revoked');
+    time('revoke --via → open preview socket closed by vps', socketMs);
+    time('revoke --via → the app removes the preview frame', frameMs);
+    const after = await env.curl(`${vps.previewOrigin}/__termivoa/select?session=${session.id}&port=${devPorts['vps-dev2']}`, { headers: { Cookie: jar, 'Sec-Fetch-Site': 'same-site', Referer: `${mac.origin}/` } });
+    const root = await env.curl(`${vps.previewOrigin}/`, { headers: { Cookie: jar, 'Sec-Fetch-Site': 'same-origin' } });
+    check('PV-revoke-socket', 'vps closes the open preview socket within the recheck time (5 s) after revoke --via', socket.stdout === '101' && socket.code !== 28 && socketMs < 9000,
+      `handshake ${socket.stdout}; closed by the computer ${socketMs} ms after the revoke (curl exit ${socket.code})`);
+    check('PV-revoke-app', 'The app removes the frame and shows "vps · pair again", and nothing else',  text === 'vps · pair again', `${frameMs} ms after the revoke; text: ${text}`);
+    check('PV-revoke-after', 'After the revoke the old cookies get 401 on the select and on /', after.status === 401 && root.status === 401, `select ${after.status} ${after.body.trim()}; / ${root.status}`);
+  });
+
+  await step('PV-readd', 'Add vps again after the revoke', async () => {
+    const r = await addByPaste('pv-readd');
+    check('PV-readd', 'Adding vps again after revoke --via works', r.outcome === 'added', `outcome ${r.outcome}`);
+    if (r.outcome !== 'added') await confirmByApi();
   });
 
   // ---- B3: one Sessions list, open a vps session, echo, new session on vps ----
@@ -461,8 +752,6 @@ try {
   }
 
   const banner = () => app.eval(`document.querySelector('.banner')?.innerText.replace(/\\s+/g, ' ').trim() ?? ''`);
-  /** In-app navigation, as the app's own links do: no new page load. */
-  const inApp = (path) => app.eval(`history.pushState(null, '', ${JSON.stringify(path)}); dispatchEvent(new PopStateEvent('popstate'))`);
 
   /**
    * Adds vps from a link printed in a mac terminal and approves it with y in
@@ -524,6 +813,14 @@ try {
         w.onopen = () => res('open'); w.onerror = () => res('error'); w.onclose = (e) => res('closed ' + e.code); setTimeout(() => res('timeout'), 5000); })`);
       await sleep(300);
       const log = env.logSince(mark).filter((e) => e.host === vps.host);
+      // The same device on the preview listener, as the mac app's frame would ask (any session: the device is refused first).
+      const jar = (await other.cookies()).filter((c) => c.domain === vps.host).map((c) => `${c.name}=${c.value}`).join('; ');
+      const select = `${vps.previewOrigin}/__termivoa/select?session=${crypto.randomUUID()}&port=3000`;
+      const framed = await env.curl(select, { headers: { Cookie: jar, 'Sec-Fetch-Site': 'same-site', Referer: `${mac.origin}/` } });
+      const ownApp = await env.curl(select, { headers: { Cookie: jar, 'Sec-Fetch-Site': 'same-origin', Referer: `${vps.origin}/` } });
+      check('PV-direct', 'A device paired directly with vps: a select from the mac app is refused (403); from the vps app it passes the device check',
+        framed.status === 403 && framed.body.includes('This app may not use this computer') && !framed.headers['set-cookie'] && ownApp.status === 404,
+        `Referer mac: ${framed.status} ${framed.body.trim()}; Referer vps: ${ownApp.status} ${ownApp.body.trim()}`);
       check('B7-direct', 'A device paired directly with vps cannot be driven from the mac app',
         own.status === 200 && fromMac.status !== 200 && sessions.status !== 200 && ws !== 'open',
         `own page ${own.status}; from mac origin: settings ${fromMac.status ?? fromMac.error}, sessions ${sessions.status ?? sessions.error}, WebSocket ${ws}; ${log.map((e) => `${e.method} ${e.path} ${e.status}`).join(', ')}`);
@@ -533,8 +830,27 @@ try {
   });
 
   await step('B7-node', 'Changing mac\'s node ID on vps revokes the bound devices', async () => {
+    // A preview socket of the bound device, held open across the change.
+    let held;
+    try {
+      await openSessions();
+      await devSession(vps, 'vps-node');
+      await openPreview('vps-node');
+      await frameReady(vps); // the selection sets the preview cookie the held socket needs
+      held = run('curl', ['-sS', '-k', '--suppress-connect-headers', '--proxy', `http://${env.proxy}`, '--http1.1', '-N', '--max-time', '150', '-o', '/dev/null', '-w', '%{http_code}',
+        '-H', 'Connection: Upgrade', '-H', 'Upgrade: websocket', '-H', 'Sec-WebSocket-Version: 13', '-H', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+        '-H', `Origin: ${vps.previewOrigin}`, '-H', `Cookie: ${await jarOf(vps)}`, `${vps.previewOrigin}/ws`], { timeout: 160000 });
+      await sleep(1000);
+    } catch (error) {
+      check('PV-node', 'An open preview socket closes when mac\'s node ID changes on vps', false, `setup: ${error.message.split('\n')[0]}`);
+    }
     const before = (await vps.cli(['devices'])).stdout;
+    const changed = Date.now();
     vps.writeStatus({ ...NODES, mac: { ...NODES.mac, ID: 'nMacE2E2CHANGED' } });
+    if (held) {
+      void held.then((socket) => check('PV-node', 'An open preview socket closes when mac\'s node ID changes on vps (next Tailscale snapshot plus one recheck)',
+        socket.stdout === '101' && socket.code !== 28, `handshake ${socket.stdout}; closed by the computer ${Math.round((Date.now() - changed) / 1000)} s after the change (curl exit ${socket.code})`));
+    }
     // The broker re-reads status after 60 s and checks it on each request.
     const started = Date.now();
     const verdict = await until(async () => {
@@ -552,6 +868,8 @@ try {
     await shot('b7-node-changed');
     const boundLine = (text) => text.split('\n').filter((l) => l.includes('https://mac.tailx.ts.net')).map((l) => l.replace(/\s+/g, ' ')).join(' / ');
     const active = (text) => text.split('\n').filter((l) => l.includes('https://mac.tailx.ts.net') && / active /.test(l)).length;
+    await held;
+    await sleep(50);
     check('B7-node', 'Changing mac\'s node ID on vps revokes the bound devices', active(before) > 0 && active(after) === 0,
       `refused (${verdict}) ${refusedAfter} s and revoked ${Math.round((Date.now() - started) / 1000)} s after the change; before: ${boundLine(before)}; after: ${boundLine(after)}; app: ${JSON.stringify(await problems())}`);
   });

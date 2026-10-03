@@ -1,9 +1,10 @@
 // Phase B core flow in WebKit (README.md): pair with mac, add vps by paste,
-// one Sessions list, a vps session with an echo round-trip.
+// one Sessions list, a vps session with an echo round-trip, its dev-server
+// preview in the app, and a foreign page that may not frame it.
 //   PW=<playwright-core dir> [WEBKIT=<browser executable>] node scripts/e2e-multicomputer/webkit.mjs [--no-web-build] [--out <dir>]
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Env, interactive, sleep, until } from './lib.mjs';
+import { Env, freePort, interactive, sleep, until } from './lib.mjs';
 
 const argv = process.argv.slice(2);
 const option = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
@@ -87,6 +88,41 @@ try {
   await until(async () => (await terminal()).includes('webkit-42'), { what: 'echo' });
   await page.screenshot({ path: join(out, 'webkit-vps-echo.png') });
   check('W4', 'WebKit: open a vps session and echo round-trip', true, `${new URL(page.url()).pathname}; open-to-live ${openMs} ms`);
+
+  // The vps session's dev server, previewed inside the mac app.
+  const port = await freePort();
+  await page.focus('.terminal-input');
+  await page.keyboard.insertText(`${join(env.bin, 'front')} devserver -name vps -listen 127.0.0.1:${port}`);
+  await page.keyboard.press('Enter');
+  const mark = env.logMark();
+  await page.getByRole('button', { name: `Open preview of port ${port}` }).click({ timeout: 30000 });
+  const frame = page.frameLocator('.preview-frame');
+  for (const part of ['dev site on vps', 'sub ok', 'fetch pong', 'ws echo']) await frame.getByText(part).waitFor({ timeout: 20000 });
+  const bar = (await page.locator('.preview-bar').innerText()).replace(/\s+/g, ' ');
+  await page.screenshot({ path: join(out, 'webkit-vps-preview.png') });
+  const seen = (from) => env.logSince(from).filter((e) => e.host === `${vps.host}:8443`);
+  const select = seen(mark).find((e) => e.path === '/__termivoa/select' && e.secFetchMode === 'navigate');
+  const root = seen(mark).find((e) => e.path === '/');
+  check('W5', 'WebKit: Preview ready, Open, the vps dev site in the frame (sub-resource, fetch, WebSocket) under "vps · untrusted page"',
+    bar.includes('vps · untrusted page') && select?.status === 200 && select.referer === `${mac.origin}/` && select.cookie && root?.secFetchSite === 'same-origin',
+    `bar: ${bar}; select ${select?.status} referer=${select?.referer} site=${select?.secFetchSite} cookie=${select?.cookie}; / ${root?.status} site=${root?.secFetchSite}; frame: ${(await frame.locator('body').innerText()).replace(/\s+/g, ' ')}`);
+  const load = async () => Number((await frame.locator('#load').innerText()).replace('load ', ''));
+  const before = await load();
+  await page.getByRole('button', { name: 'Reload preview' }).click();
+  const after = await until(async () => { const n = await load().catch(() => 0); return n > before && n; }, { what: 'a new load' });
+  check('W6', 'WebKit: ↻ loads the preview again', true, `dev site load ${before} → ${after}`);
+
+  // A page of another tailnet user frames the same select address: refused, though WebKit sends the cookie.
+  const evil = await context.newPage();
+  await evil.goto('https://evil.tailx.ts.net/');
+  const mark2 = env.logMark();
+  const src = await page.locator('.preview-frame').getAttribute('src');
+  await evil.evaluate((address) => new Promise((done) => { const f = document.createElement('iframe'); f.referrerPolicy = 'origin'; f.src = address; f.onload = done; document.body.append(f); }), src);
+  const refusal = (await evil.frameLocator('iframe').locator('body').innerText()).trim();
+  const refused = seen(mark2).find((e) => e.path === '/__termivoa/select');
+  await evil.close();
+  check('W7', 'WebKit: evil.tailx.ts.net framing the vps select address is refused', refused?.status === 403 && refusal === 'Open the preview from the Termivoa app.',
+    `${refused?.status} referer=${refused?.referer} site=${refused?.secFetchSite} cookie=${refused?.cookie}; the frame shows: ${refusal}`);
 } catch (error) {
   await page.screenshot({ path: join(out, 'webkit-fail.png') }).catch(() => undefined);
   check('ERR', 'WebKit harness error', false, `${error.message.split('\n')[0]} | ${(await text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300)}`);

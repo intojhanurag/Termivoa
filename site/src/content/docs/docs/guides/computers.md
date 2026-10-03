@@ -77,6 +77,7 @@ You can leave the page to type `y` in the app's own terminal: tap **Back to term
 | New session | **❯ new session on…** and a **Computer** row pick where it runs. Projects and shells come from that computer. |
 | [Wall](/docs/guides/wall/) | Tiles from all computers. At most 4 are live at once (5 updates per second each); the rest show **Paused**. |
 | Live, [Changes](/docs/guides/changes/), [Files](/docs/guides/files/) | Work the same on every computer. |
+| [Dev-server preview](/docs/guides/preview/#can-i-preview-a-session-on-another-computer) | Works per computer. Each computer answers the preview question in `pterm setup` itself. A computer on an older Termivoa shows no **Preview ready** chip. The bar over a page from another computer shows `vps · untrusted page`. |
 | [Notifications](/docs/guides/notifications/#do-notifications-come-from-every-computer) | Every computer sends them. One switch in **Settings → Notifications** controls all. The title and text of a notification from another computer start with its name (`vps · …`) and a tap opens that session. |
 
 With one computer, the app looks the same as before.
@@ -92,6 +93,8 @@ The other computers keep working. The one that does not answer gets its own row.
 | **vps · can't reach** | The phone cannot reach vps now. | Check that vps is on and in your tailnet, then tap **Retry**. |
 | **vps · pair again** | vps no longer accepts this phone (revoked, logged out, expired, or Tailscale changed on home). | Run `pterm pair --via mac` on vps and add it again. |
 | **Update Termivoa on vps** | Termivoa on vps is too old for this app. | Update Termivoa on vps. |
+
+If a [preview](/docs/guides/preview/) of that computer is open, the preview is removed and the text shows in its place: **vps · can't reach**, **vps · pair again** or **Update Termivoa on vps**.
 
 If home is offline, the app still opens from its saved copy and reaches the peers.
 
@@ -149,7 +152,7 @@ Every step matters: a hacked home can leave a hidden background script on the ph
 | One tailnet, one Tailscale user | Each computer checks that home belongs to you. |
 | At most 8 computers plus home | For each phone. |
 | WSL cannot be a peer | Tailscale usually runs on Windows, so WSL cannot check the tailnet. |
-| Preview comes from home only | Sessions on other computers have no dev-server preview. |
+| A preview from another computer is an **untrusted page** | That computer chooses the page. See [What does "untrusted page" mean?](/docs/guides/preview/#what-does-untrusted-page-mean) |
 | Reinstalling Tailscale | On home: peers show **pair again**. On a peer: home drops it from the list; add it again. |
 
 ## Is it tested on a real phone?

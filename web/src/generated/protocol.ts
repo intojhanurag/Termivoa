@@ -1455,6 +1455,6 @@ export type WorktreeRemovedPayload = {
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 
 /** This build's additive protocol v1 revision (protocol/v1/revision.json). */
-export const PROTOCOL_REVISION = 1;
+export const PROTOCOL_REVISION = 2;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;

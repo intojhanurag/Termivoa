@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 ## Start here
 
@@ -1433,6 +1433,69 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `phase-a.mjs` 31/31; `webkit.mjs` 4/4. Pending (owner): real iPhone and
   Android checks in `docs/owner-verification.md`, "Notifications from every
   computer" (Gate 0 check 5). No real push service was used in any test.
+
+- **Preview for sessions on peers** (`feat/peer-preview`, 2026-10-03; ADR
+  0006, `docs/peer-preview.md` version 3; closes #143 and #144). Host
+  (`96d50f7`): preview listener rules L1 and L2, the broker trust check on
+  every preview check, text pages readable in the frame, confirmed
+  computers' `:8443` in `frame-src` and `connect-src`, protocol revision 2.
+  Web (`84e2abc`): the chip and the Preview screen for a peer, the bar
+  `<label> · untrusted page`, the probe, ↻. Harness
+  (`scripts/e2e-multicomputer/`): the front answers `CONNECT <host>:8443`,
+  stacks start with a preview listener, a `devserver` mode is the dev site.
+  Commands and results (macOS, Chrome 154.0.8037.93, Playwright WebKit 26.5):
+  - `scripts/check`: exit 0 (708 web tests).
+  - `go test ./scripts/e2e-multicomputer/`: ok (5 tests).
+  - `node scripts/e2e-multicomputer/phase-a.mjs`: 31/31.
+  - `node scripts/e2e-multicomputer/phase-b.mjs --no-web-build`: 63/63 (30
+    earlier checks, 33 new `PV-*`). `revoke --via` → a held preview socket
+    closed by vps after 3.3 s and the frame gone after 3.3 s; node ID change
+    → the held socket closed after 24 s.
+  - `PW=… WEBKIT=… node scripts/e2e-multicomputer/webkit.mjs --no-web-build`:
+    7/7 (new W5 to W7).
+  - `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`:
+    25 pages, all internal links valid.
+  Evidence: [evidence/peer-preview/](evidence/peer-preview/) (the three
+  result tables and six screenshots).
+  Defects the harness found, fixed in this branch (all in
+  `web/src/screens/Preview.tsx`):
+  1. A computer added in this visit was not in the loaded page's
+     `frame-src`/`connect-src`, so the app's own CSP blocked its preview and
+     the app showed the `pterm setup` text. Fix: on a
+     `securitypolicyviolation` for the preview origin the app reloads once
+     (`reloadForPolicy`, loop guard in `sessionStorage`; unit test). Check
+     `PV-added`.
+  2. ↻ (and the WebKit history restore) mounted the frame twice: once with
+     the old probe answer, then again after the new probe. The first select
+     request was cancelled. Fix: the old answer is dropped with the old
+     frame. Check `PV-vps-reload` (exactly one select).
+  3. After a revoke the screen showed "Dev server stopped" above
+     "vps · pair again". Fix: no "Dev server stopped" while a computer notice
+     shows. Check `PV-revoke-app`.
+  Fixes 2 and 3 have no unit test: the web tests render without effects;
+  the harness checks cover them.
+  Two adversarial reviews of the joined build (security: one required fix;
+  correctness: ship after fixes), all applied:
+  4. Security: a link to `/c/<host>/sessions/<id>/preview?port=<n>` opened
+     a peer's frame with no tap. Fix: `navigate` marks the entry it makes
+     (`PREVIEW_TAP` in `history.state`); `route()` opens a peer preview only
+     with that mark and a port in the session's `previews`
+     (`peerPreviewOnLoad`, unit tests), else the terminal. Checks
+     `PV-link-reload`, `PV-link-cold`, `PV-link-port`.
+  5. `fail` in `internal/gateway/preview.go` showed a broker
+     `protocol_mismatch` as "This app may not use this computer."; it now
+     matches the code `invalid_request` (Go test).
+  6. A home preview without an origin showed "Opening preview…" without
+     end; it now shows the "Can't open the preview on …" text (unit test).
+  7. Unverified, no fix guessed: a WebKit history restore without the page
+     cache may show "Origin not allowed." until ↻; it is on the owner list.
+  Not run here (development profile; owner list in
+  `docs/owner-verification.md`, "Preview for sessions on peers"): `__Host-`
+  and `Secure` cookies in the frame on a real iPhone (installed app) and
+  Android; the production gateway's own `https://<host>:8443` text in its
+  CSP and its Host rule for `:8443`; a real `tailscale serve --https=8443`
+  on a peer; a tailnet ACL that blocks 8443; video; HMR of a real dev
+  server; WebKit's history restore of the app page (difference A).
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

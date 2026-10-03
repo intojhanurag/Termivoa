@@ -67,7 +67,10 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **"While you were away" recap.** On return, how long the agent worked, what
   changed, and whether it waits for you.
 - **Dev-server preview, photo and voice.** Open the session's dev server on
-  the phone, send a photo without location data, or dictate a prompt.
+  the phone, send a photo without location data, or dictate a prompt. From
+  the next beta, the preview works for sessions on every computer in your
+  list, with the computer's label and an **untrusted page** mark over pages
+  from other computers.
 - **Desktop attach.** `pterm attach` opens the same session from any desktop
   terminal. Read-only by default; `--control` to type; Ctrl+] detaches.
 - **Sessions survive the phone.** Close the app or lose signal; the session
@@ -201,7 +204,7 @@ You need Go 1.27.1, Node.js 24.11.0 and pnpm 10.33.0. Run
 
 - [User docs](https://termivoa.vercel.app/docs/) — quick start, guides, CLI and troubleshooting
 - [Install, update and uninstall](docs/install.md)
-- [Architecture](docs/architecture.md), [decision records](docs/decisions/) and [multi-computer design](docs/multi-computer.md)
+- [Architecture](docs/architecture.md), [decision records](docs/decisions/), [multi-computer design](docs/multi-computer.md) and [preview on other computers](docs/peer-preview.md)
 - [Threat model](docs/threat-model.md) and [authentication design](docs/p4-authentication-design.md)
 - [Roadmap](docs/pending-work.md), [progress log](docs/progress.md) and [milestone evidence](docs/evidence/README.md)
 - [Owner verification checklist](docs/owner-verification.md)

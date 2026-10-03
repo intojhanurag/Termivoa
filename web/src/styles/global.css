@@ -785,6 +785,11 @@ button.preview-open { min-height: 36px; padding: 0 14px; border: 0; border-radiu
 .preview-back { justify-self: start; font-family: var(--mono); font-size: 14px; }
 .preview-reload { justify-self: end; font-size: 18px; }
 .preview-address { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--text); font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+.preview-peer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; margin: 0 0 6px; color: var(--muted); font-size: 12px; }
+.preview-peer .computer-tag { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-peer .dot { flex-shrink: 0; }
+.preview-peer strong { flex-shrink: 0; color: var(--amber); font-weight: 600; }
+.preview-note { margin: 0; padding: 12px; }
 .preview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
 .preview-status { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 14px; border: 1px solid var(--line); border-radius: 24px; background: color-mix(in srgb, var(--dock) 92%, transparent); box-shadow: 0 6px 24px rgb(0 0 0 / 45%); }
 .preview-agent { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; color: var(--text); font-family: var(--mono); font-size: 13px; }

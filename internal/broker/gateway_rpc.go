@@ -298,8 +298,18 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, err := authorize(payload.Credential); err != nil {
+		principal, err := authorize(payload.Credential)
+		if err != nil {
 			return nil, nil, err
+		}
+		// Only the selection carries the app's origin. Every later preview
+		// request and the recheck of open sockets arrive without one, so a
+		// device bound to another computer's app is checked against the
+		// Tailscale snapshot on every call (docs/peer-preview.md, B1).
+		if principal.App.Bound() {
+			if err := server.appTrust(principal.App); err != nil {
+				return nil, nil, err
+			}
 		}
 		session, err := server.config.Registry.Get(payload.SessionID)
 		if err != nil {

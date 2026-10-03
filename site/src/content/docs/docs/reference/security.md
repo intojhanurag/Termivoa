@@ -1,7 +1,7 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-03
 ---
 
 Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted.
@@ -38,13 +38,31 @@ With [several computers](/docs/guides/computers/), one computer (home) serves th
 - **Trust loss closes connections at once.** When the peer reads a new Tailscale status that no longer trusts home, it closes the live connections from home's app at once. If Tailscale restarts or logs out, the peer keeps its last good status; after 10 minutes without one, it refuses requests from home's app until it can read it again.
 - **Home pins each peer too.** Home saves each peer's Tailscale node ID. If another machine takes the peer's name, home drops the peer from the list and from the app's allowed addresses, and you must add it again.
 - **Nothing goes through home.** Home stores only each phone's list of computer addresses and names. It holds no peer secret.
-- **Peers cannot fool the app.** The app checks every answer from a peer, never shows a peer's error text, and never shows dev-server previews from peers.
+- **The app checks what a peer sends.** The app checks every answer from a peer and never shows a peer's error text as its own. The one exception is a dev-server preview: there the peer chooses the page, so the app marks it **untrusted page**. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
 - **You can cut a home off.** `pterm revoke --via <home address>` on a peer ends the access of every phone that uses it from that home, and deletes that home's pairing links and pending pairings.
 - **Log out reaches every computer.** **Settings → Log out** signs the phone out of every computer it can reach, and names the ones it could not (run `pterm revoke` there).
 
 :::caution
 **If home is hacked, every computer you added through it is hacked too.** Home serves the app's code, so it can use every peer, even with the app closed, and it can trick you into pairing again. Choose as home an always-on computer where you do not run untrusted code. If it happens, follow [What do I do if home was hacked?](/docs/guides/computers/#what-do-i-do-if-home-was-hacked)
 :::
+
+## Can a preview from another computer harm the app?
+
+:::note[Next beta]
+Not released yet. This is not in `v0.1.0-beta.2`, and not tested on a real iPhone or Android phone yet. See [Dev-server preview](/docs/guides/preview/#can-i-preview-a-session-on-another-computer).
+:::
+
+It cannot read the app, but it can lie to you. A [preview](/docs/guides/preview/) of a session on another computer is a page that the other computer chooses.
+
+| The page from another computer | |
+| --- | --- |
+| Cannot | Read the app, the terminal, your sessions or the app's sign-in. It is kept apart from the app. |
+| Can | Show false content, for example a false "pair again" screen. |
+| Can, in the worst case | Sign the phone out of your computers. You then pair again. |
+
+- **The app always marks it.** Over every preview from another computer, the app shows the computer's name and **untrusted page**. The page cannot cover or change that bar.
+- **Only your computers.** Only computers that you added and confirmed can be shown.
+- **Do not type secrets into a preview.** No pairing links, no passwords. The real app never asks for them inside a preview.
 
 ## Who can type in a session?
 
@@ -84,7 +102,7 @@ No. [Worktree](/docs/guides/worktrees/) requests send only a session, a name and
 
 ## How do other features stay private?
 
-[Notifications](/docs/guides/notifications/) carry only the session name, project name, status, how long the agent worked and the session ID, encrypted to your phone. [Dev-server previews](/docs/guides/preview/) use a separate address and show only that session's servers. Only the device in control can send [photos](/docs/guides/photo-and-voice/).
+[Notifications](/docs/guides/notifications/) carry only the session name, project name, status, how long the agent worked and the session ID, encrypted to your phone. [Dev-server previews](/docs/guides/preview/) use a separate address and show only that session's servers; a preview from another computer (**Next beta**) is marked **untrusted page**. Only the device in control can send [photos](/docs/guides/photo-and-voice/).
 
 With several computers (**Next beta**), each computer sends its own notifications straight to your phone's push service; no computer sees another computer's notifications. The app puts the computer's name at the start of the title and text from its own list of computers. That computer writes the words after the name, so a hacked computer can send misleading text or many notifications until you remove it.
 
@@ -93,6 +111,7 @@ With several computers (**Next beta**), each computer sends its own notification
 - A session runs with your normal user permissions. A project folder is not a sandbox (a closed-off area).
 - Malware already running as your user is not covered.
 - With several computers (next beta), malware or a hacked account on home reaches every computer added through it.
+- A preview from another computer (next beta) can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
 - The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home is offline, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
 - The controls have automated tests, but no independent security audit yet.
 

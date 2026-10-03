@@ -120,6 +120,18 @@ session, and allows the port only when a process in that session's process
 tree listens on it now (an OS scan at most 2 s old). The gateway sends it for
 every preview request and again every 5 s for open preview sockets.
 
+Only the selection (`/__termivoa/select`) from another computer's app carries
+the envelope `origin` (the origin of the request's `Referer`); the broker
+checks it like every forwarded origin, so an origin that is not the
+credential's own bound app origin is `invalid_request`. Every other check
+arrives without an origin. For a device that is bound to an app origin the
+broker also requires, on every check and with or without an origin, that the
+latest Tailscale snapshot still trusts the pinned node: a changed node ID is
+`revoked`, a changed tag set, another owner or a missing name is
+`invalid_request`, and a status that cannot be read after the grace period is
+`host_unavailable`. A device that paired with this computer directly is not
+affected. The preview listener answers `invalid_request` as `403`.
+
 Authorization precedes every other decision, including replay of an existing
 operation receipt. A poll result carries `credential` and
 `credentialExpiresAt` exactly when `status` is `approved`; that one response is

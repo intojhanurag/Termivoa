@@ -15,8 +15,10 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/intojhanurag/phone-terminal/internal/gatewayapi"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
 const previewHost = testHost + ":8443"
@@ -104,7 +106,9 @@ func (fixture *previewFixture) selection() string {
 }
 
 // get sends a request to the preview listener as the browser would through
-// Tailscale Serve on :8443. Redirects are not followed.
+// Tailscale Serve on :8443, from a page of the preview origin itself
+// (Sec-Fetch-Site: same-origin; a nil header value removes it). Redirects are
+// not followed.
 func (fixture *previewFixture) get(t *testing.T, target string, header http.Header) *http.Response {
 	t.Helper()
 	request, err := http.NewRequest(http.MethodGet, fixture.server.URL+target, nil)
@@ -112,7 +116,12 @@ func (fixture *previewFixture) get(t *testing.T, target string, header http.Head
 		t.Fatal(err)
 	}
 	request.Host = previewHost
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
 	for name, values := range header {
+		if values == nil {
+			request.Header.Del(name)
+			continue
+		}
 		request.Header[name] = values
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -126,6 +135,22 @@ func (fixture *previewFixture) get(t *testing.T, target string, header http.Head
 
 func cookieHeader(values ...string) http.Header {
 	return http.Header{"Cookie": {strings.Join(values, "; ")}}
+}
+
+// framedBy is the selection as a browser sends it from the app's frame
+// (referrerpolicy="origin"): a same-site navigation without Origin.
+func framedBy(app string, header http.Header) http.Header {
+	header = header.Clone()
+	if header == nil {
+		header = http.Header{}
+	}
+	header["Sec-Fetch-Site"] = []string{"same-site"}
+	header["Referer"] = []string{app + "/"}
+	return header
+}
+
+func (fixture *previewFixture) selectPath() string {
+	return previewSelectPath + "?session=" + uuidB + "&port=" + strconv.Itoa(int(fixture.dev.port))
 }
 
 func body(t *testing.T, response *http.Response) string {
@@ -148,7 +173,7 @@ func TestPreviewRequiresThePairedCookie(t *testing.T) {
 		"revoked":        cookieHeader(productionCookieName + "=" + revokedCredential),
 		"selection only": cookieHeader(fixture.selection()),
 	} {
-		if response := fixture.get(t, selectPath, header); response.StatusCode != http.StatusUnauthorized {
+		if response := fixture.get(t, selectPath, framedBy(testOrigin, header)); response.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s select = %d", name, response.StatusCode)
 		}
 		withSelection := header.Clone()
@@ -167,11 +192,20 @@ func TestPreviewRequiresThePairedCookie(t *testing.T) {
 
 func TestPreviewSelectAllowsOnlyOwnedPorts(t *testing.T) {
 	fixture := newPreviewFixture(t)
-	auth := cookieHeader(prodCookie)
+	auth := framedBy(testOrigin, cookieHeader(prodCookie))
 	port := strconv.Itoa(int(fixture.dev.port))
-	response := fixture.get(t, previewSelectPath+"?session="+uuidB+"&port="+port, auth)
-	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/" {
-		t.Fatalf("select = %d %q", response.StatusCode, response.Header.Get("Location"))
+	response := fixture.get(t, fixture.selectPath(), auth)
+	// A page of its own, not a redirect and not previewPage: it moves the
+	// frame to / from the preview origin, and only the selecting app may
+	// frame it.
+	header := response.Header
+	if text := body(t, response); response.StatusCode != http.StatusOK || text != previewSelectedPage ||
+		!strings.Contains(text, `<meta http-equiv="refresh" content="0;url=/">`) || strings.Contains(text, "<script") ||
+		header.Get("Location") != "" || header.Get("Content-Type") != "text/html; charset=utf-8" ||
+		header.Get("Content-Security-Policy") != "default-src 'none'; frame-ancestors "+testOrigin ||
+		header.Get("Referrer-Policy") != "no-referrer" || header.Get("Cache-Control") != "no-store" ||
+		header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("select = %d %q %v", response.StatusCode, text, header)
 	}
 	cookies := response.Cookies()
 	if len(cookies) != 1 || cookies[0].Name != productionPreviewCookie || cookies[0].Value != uuidB+"."+port ||
@@ -185,17 +219,219 @@ func TestPreviewSelectAllowsOnlyOwnedPorts(t *testing.T) {
 		previewSelectPath + "?session=" + uuidB + "&port=070000":           http.StatusBadRequest,
 		previewSelectPath + "?session=" + uuidB + "&port=" + port + "&x=1": http.StatusBadRequest,
 		previewSelectPath + "?session=nope&port=" + port:                   http.StatusBadRequest,
-		"/__termivoa/other": http.StatusNotFound,
 	} {
 		response := fixture.get(t, target, auth)
 		if response.StatusCode != want || len(response.Cookies()) != 0 {
 			t.Errorf("%s = %d (cookies %v), want %d", target, response.StatusCode, response.Cookies(), want)
 		}
 	}
+	if response := fixture.get(t, "/__termivoa/other", cookieHeader(prodCookie)); response.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown reserved path = %d", response.StatusCode)
+	}
 	// A stale selection of a port that closed is refused on the next request.
 	fixture.broker.setPreview(fixture.dev.port, "")
-	if response := fixture.get(t, "/", cookieHeader(prodCookie, fixture.selection())); response.StatusCode != http.StatusNotFound {
+	response = fixture.get(t, "/", cookieHeader(prodCookie, fixture.selection()))
+	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("closed port = %d", response.StatusCode)
+	}
+	// The listener's text pages must show inside the app's frame (#144).
+	if policy := response.Header.Get("Content-Security-Policy"); policy != "default-src 'none'" ||
+		response.Header.Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatalf("text page: CSP %q, type %q", policy, response.Header.Get("Content-Type"))
+	}
+}
+
+// Rule L1 (docs/peer-preview.md): only the preview origin itself may send a
+// request other than the selection. Refusals come before the cookie and
+// before the dev server.
+func TestPreviewRequestsOnlyFromThePreviewOrigin(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	own := "https://" + previewHost
+	for _, test := range []struct {
+		name   string
+		header http.Header
+		want   int
+	}{
+		{"own Origin, no Sec-Fetch (WebSocket handshake, Chrome)", http.Header{"Origin": {own}, "Sec-Fetch-Site": nil}, http.StatusOK},
+		{"own Origin, upper case", http.Header{"Origin": {"HTTPS://MAC.TAILNET.TS.NET:8443"}, "Sec-Fetch-Site": nil}, http.StatusOK},
+		{"no Origin, same-origin", nil, http.StatusOK},
+		{"no Origin, same-site", http.Header{"Sec-Fetch-Site": {"same-site"}}, http.StatusForbidden},
+		{"no Origin, cross-site", http.Header{"Sec-Fetch-Site": {"cross-site"}}, http.StatusForbidden},
+		{"no Origin, none (typed URL)", http.Header{"Sec-Fetch-Site": {"none"}}, http.StatusForbidden},
+		{"no Origin, no Sec-Fetch (curl)", http.Header{"Sec-Fetch-Site": nil}, http.StatusForbidden},
+		{"no Origin, two Sec-Fetch-Site", http.Header{"Sec-Fetch-Site": {"same-origin", "same-origin"}}, http.StatusForbidden},
+		{"app Origin, same-origin", http.Header{"Origin": {testOrigin}}, http.StatusForbidden},
+		{"bound app Origin", http.Header{"Origin": {homeOrigin}}, http.StatusForbidden},
+		{"other preview Origin", http.Header{"Origin": {"https://vps.tailx.ts.net:8443"}}, http.StatusForbidden},
+		{"null Origin", http.Header{"Origin": {"null"}}, http.StatusForbidden},
+		{"two own Origins", http.Header{"Origin": {own, own}}, http.StatusForbidden},
+		{"app Referer does not replace L1", framedBy(testOrigin, nil), http.StatusForbidden},
+	} {
+		header := cookieHeader(prodCookie, fixture.selection())
+		for name, values := range test.header {
+			header[name] = values
+		}
+		fixture.dev.mu.Lock()
+		fixture.dev.last = nil
+		fixture.dev.mu.Unlock()
+		response := fixture.get(t, "/page", header)
+		if response.StatusCode != test.want {
+			t.Errorf("%s = %d, want %d", test.name, response.StatusCode, test.want)
+		}
+		if reached := fixture.dev.request() != nil; reached != (test.want == http.StatusOK) {
+			t.Errorf("%s: reached the dev server = %v", test.name, reached)
+		}
+	}
+	// Refused before the cookie: no 401, and no broker call.
+	fixture.broker.mu.Lock()
+	fixture.broker.calls = nil
+	fixture.broker.mu.Unlock()
+	if response := fixture.get(t, "/", http.Header{"Sec-Fetch-Site": {"same-site"}}); response.StatusCode != http.StatusForbidden || len(fixture.broker.calls) != 0 {
+		t.Fatalf("foreign request without a cookie = %d, calls %v", response.StatusCode, fixture.broker.calls)
+	}
+}
+
+// Rule L2: the selection needs exactly one Referer that names this computer's
+// app or a bound app; a bound one reaches the broker as the forwarded origin.
+// Matching is exact, as for CORS.
+func TestPreviewSelectNeedsAnAppReferer(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	fixture.main.mu.Lock()
+	fixture.main.bound = originSet([]string{homeOrigin}, protocol.MaxBoundOrigins)
+	fixture.main.pairing = originSet([]string{pairOrigin}, protocol.MaxPairingOrigins)
+	fixture.main.mu.Unlock()
+	call := "preview:" + uuidB + ":" + strconv.Itoa(int(fixture.dev.port)) + "@"
+	for _, test := range []struct {
+		name      string
+		referer   []string
+		forwarded string // "-" = refused before the broker
+	}{
+		{"own", []string{testOrigin + "/"}, ""},
+		{"own, upper case (as /api accepts it)", []string{"HTTPS://MAC.TAILNET.TS.NET/"}, ""},
+		{"bound", []string{homeOrigin + "/"}, homeOrigin},
+		{"unbound", []string{"https://other.tailx.ts.net/"}, "-"},
+		{"pairing origin", []string{pairOrigin + "/"}, "-"},
+		{"missing", nil, "-"},
+		{"empty", []string{""}, "-"},
+		{"doubled", []string{testOrigin + "/", testOrigin + "/"}, "-"},
+		{"own and bound", []string{testOrigin + "/", homeOrigin + "/"}, "-"},
+		{"with a path", []string{testOrigin + "/sessions/1"}, "-"},
+		{"with a path and a slash", []string{homeOrigin + "/sessions/"}, "-"},
+		{"two slashes", []string{homeOrigin + "//"}, "-"},
+		{"own without the trailing /", []string{testOrigin}, "-"},
+		{"bound without the trailing /", []string{homeOrigin}, "-"},
+		{"bound, upper case", []string{"https://HOME.tailx.ts.net/"}, "-"},
+		{"own, explicit :443", []string{testOrigin + ":443/"}, "-"},
+		{"bound, explicit :443", []string{homeOrigin + ":443/"}, "-"},
+		{"bound, trailing dot", []string{homeOrigin + "./"}, "-"},
+		{"bound, http", []string{"http://home.tailx.ts.net/"}, "-"},
+		{"near miss", []string{homeOrigin + ".evil.com/"}, "-"},
+		{"own preview origin", []string{"https://" + previewHost + "/"}, "-"},
+		{"bound computer's preview origin", []string{homeOrigin + ":8443/"}, "-"},
+		{"null", []string{"null"}, "-"},
+		{"null with a slash", []string{"null/"}, "-"},
+	} {
+		fixture.broker.mu.Lock()
+		fixture.broker.calls = nil
+		fixture.broker.mu.Unlock()
+		header := cookieHeader(prodCookie)
+		header["Sec-Fetch-Site"] = []string{"same-site"}
+		if test.referer != nil {
+			header["Referer"] = test.referer
+		}
+		response := fixture.get(t, fixture.selectPath(), header)
+		if test.forwarded == "-" {
+			if response.StatusCode != http.StatusForbidden || len(response.Cookies()) != 0 || len(fixture.broker.calls) != 0 ||
+				response.Header.Get("Content-Type") != "text/plain; charset=utf-8" {
+				t.Errorf("%s = %d, cookies %v, calls %v", test.name, response.StatusCode, response.Cookies(), fixture.broker.calls)
+			}
+			continue
+		}
+		want := strings.ToLower(strings.TrimSuffix(test.referer[0], "/"))
+		if response.StatusCode != http.StatusOK || len(response.Cookies()) != 1 || !fixture.broker.called(call+test.forwarded) || len(fixture.broker.calls) != 1 ||
+			response.Header.Get("Content-Security-Policy") != "default-src 'none'; frame-ancestors "+want {
+			t.Errorf("%s = %d, calls %v, CSP %q", test.name, response.StatusCode, fixture.broker.calls, response.Header.Get("Content-Security-Policy"))
+		}
+	}
+	// The selection is a navigation: any Origin header refuses it, the preview
+	// origin's own included.
+	for _, origin := range []string{"https://" + previewHost, testOrigin, homeOrigin, "null"} {
+		header := framedBy(homeOrigin, cookieHeader(prodCookie))
+		header.Set("Origin", origin)
+		if response := fixture.get(t, fixture.selectPath(), header); response.StatusCode != http.StatusForbidden || len(response.Cookies()) != 0 {
+			t.Errorf("select with Origin %s = %d", origin, response.StatusCode)
+		}
+	}
+	// Only the selection forwards the origin: later requests and the recheck
+	// carry none (the broker checks a bound device's trust on every call).
+	fixture.broker.mu.Lock()
+	fixture.broker.calls = nil
+	fixture.broker.mu.Unlock()
+	if response := fixture.get(t, "/", cookieHeader(prodCookie, fixture.selection())); response.StatusCode != http.StatusOK ||
+		!fixture.broker.called(call) || len(fixture.broker.calls) != 1 {
+		t.Fatalf("proxied request = %d, calls %v", response.StatusCode, fixture.broker.calls)
+	}
+}
+
+// The app's reachability probe is a no-cors fetch of the selection path
+// without credentials: it gets an answer, never a page or a cookie.
+func TestPreviewProbeAnswersWithoutACookie(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	for name, test := range map[string]struct {
+		header http.Header
+		want   int
+	}{
+		"no Referer (the app's policy is no-referrer)": {http.Header{"Sec-Fetch-Site": {"same-site"}, "Sec-Fetch-Mode": {"no-cors"}}, http.StatusForbidden},
+		"app Referer": {framedBy(testOrigin, nil), http.StatusUnauthorized},
+	} {
+		response := fixture.get(t, previewSelectPath, test.header)
+		if response.StatusCode != test.want || len(response.Cookies()) != 0 || response.Header.Get("Access-Control-Allow-Origin") != "" ||
+			response.Header.Get("Content-Security-Policy") != "default-src 'none'" {
+			t.Errorf("%s = %d %v", name, response.StatusCode, response.Header)
+		}
+	}
+	if len(fixture.broker.calls) != 0 {
+		t.Fatalf("the probe reached the broker: %v", fixture.broker.calls)
+	}
+}
+
+// The broker refuses an app origin that is not the credential's own, and a
+// bound device whose computer it no longer trusts, with invalid_request.
+func TestPreviewShowsABrokerRefusalAsForbidden(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	fixture.broker.mu.Lock()
+	fixture.broker.previewErr = &gatewayapi.Error{Code: protocol.InvalidRequest, Message: "request origin is not allowed here"}
+	fixture.broker.mu.Unlock()
+	for target, header := range map[string]http.Header{
+		fixture.selectPath(): framedBy(testOrigin, cookieHeader(prodCookie)),
+		"/":                  cookieHeader(prodCookie, fixture.selection()),
+	} {
+		response := fixture.get(t, target, header)
+		if text := body(t, response); response.StatusCode != http.StatusForbidden || text != "This app may not use this computer.\n" ||
+			len(response.Cookies()) != 0 || response.Header.Get("Content-Security-Policy") != "default-src 'none'" {
+			t.Errorf("%s = %d %q %v", target, response.StatusCode, text, response.Header)
+		}
+	}
+	if fixture.dev.request() != nil {
+		t.Fatal("a refused request reached the dev server")
+	}
+}
+
+// protocol_mismatch is 400 on the API like invalid_request, but it is not a
+// refusal of the app: the preview keeps the "not available" answer.
+func TestPreviewShowsAProtocolMismatchAsUnavailable(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	fixture.broker.mu.Lock()
+	fixture.broker.previewErr = &gatewayapi.Error{Code: protocol.ProtocolMismatch, Message: "protocol mismatch"}
+	fixture.broker.mu.Unlock()
+	for target, header := range map[string]http.Header{
+		fixture.selectPath(): framedBy(testOrigin, cookieHeader(prodCookie)),
+		"/":                  cookieHeader(prodCookie, fixture.selection()),
+	} {
+		response := fixture.get(t, target, header)
+		if text := body(t, response); response.StatusCode != http.StatusServiceUnavailable || text != "The computer is not available.\n" || len(response.Cookies()) != 0 {
+			t.Errorf("%s = %d %q", target, response.StatusCode, text)
+		}
 	}
 }
 
@@ -296,9 +532,23 @@ func TestPreviewProxiesWebSocketsAndClosesThemOnRevocation(t *testing.T) {
 		forwarded.Header.Get("Cookie") != "" {
 		t.Fatalf("upgrade forwarded host %q cookie %q", forwarded.Host, forwarded.Header.Get("Cookie"))
 	}
-	fixture.broker.setPreview(fixture.dev.port, "") // the port closed or access was revoked
+	fixture.broker.setPreview(fixture.dev.port, "") // the port closed, access was revoked, or trust in the app's computer ended
 	if _, _, err := conn.Read(ctx); err == nil || ctx.Err() != nil {
 		t.Fatalf("socket stayed open after the recheck failed: %v", err)
+	}
+	// The handshake above had only Origin (Chrome sends no Sec-Fetch headers
+	// on it). Without the preview origin as Origin there is no socket.
+	fixture.broker.setPreview(fixture.dev.port, "127.0.0.1")
+	for name, origin := range map[string]string{"no Origin": "", "app Origin": testOrigin, "other preview Origin": "https://vps.tailx.ts.net:8443"} {
+		header := cookieHeader(prodCookie, fixture.selection())
+		if origin != "" {
+			header.Set("Origin", origin)
+		}
+		_, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(fixture.server.URL, "http")+"/hmr",
+			&websocket.DialOptions{HTTPHeader: header, Host: previewHost})
+		if err == nil || response == nil || response.StatusCode != http.StatusForbidden {
+			t.Errorf("WebSocket with %s: %v, %v", name, response, err)
+		}
 	}
 }
 
@@ -348,7 +598,10 @@ func TestAppCSPFramesOnlyThePreviewOrigin(t *testing.T) {
 		"localhost:8787": "frame-src http://localhost:8789",
 	} {
 		policy := do(fixture.main, http.MethodGet, "/", "", requestOptions{host: host, omitOrigin: true}).Header().Get("Content-Security-Policy")
-		if !strings.HasSuffix(policy, "; "+want) || strings.Count(policy, "frame-src") != 1 || !strings.Contains(policy, "frame-ancestors 'none'") {
+		// The same origin, and only it, is in connect-src for the app's probe.
+		origin := strings.TrimPrefix(want, "frame-src ")
+		if !strings.HasSuffix(policy, "; "+want) || strings.Count(policy, "frame-src") != 1 || !strings.Contains(policy, "frame-ancestors 'none'") ||
+			!strings.Contains(policy, "; connect-src 'self' "+origin+";") || strings.Contains(policy, "wss:") {
 			t.Errorf("%s CSP = %q", host, policy)
 		}
 	}
@@ -434,7 +687,9 @@ func TestRunServesTheSeparatePreviewListener(t *testing.T) {
 		t.Fatalf("preview address = %q (app %q)", state.PreviewAddress, state.Address)
 	}
 	for _, path := range []string{"/", "/healthz", "/api/v1/settings", "/index.html"} {
-		response, err := http.Get("http://" + state.PreviewAddress + path)
+		request, _ := http.NewRequest(http.MethodGet, "http://"+state.PreviewAddress+path, nil)
+		request.Header.Set("Sec-Fetch-Site", "same-origin")
+		response, err := http.DefaultClient.Do(request)
 		if err != nil {
 			t.Fatal(err)
 		}

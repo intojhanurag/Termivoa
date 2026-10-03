@@ -8,6 +8,28 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **Preview for sessions on other computers** (ADR 0006,
+  `docs/peer-preview.md`; not yet tested on a real phone). Phone: **Preview
+  ready** and **Open ↗** now work for a session on another computer in your
+  list. That computer must run a Termivoa build with protocol revision 2 and
+  must share dev-server previews (`pterm setup`). Over a preview from
+  another computer, the bar always shows the computer's label and
+  **untrusted page**: that computer chooses the page in the frame. The bar
+  has **↻** to load the preview again. When a computer shows "pair again",
+  "can't reach" or "Update Termivoa on …", its open preview is removed and
+  that text shows. A link alone never opens a preview from another computer:
+  its address shows the preview only in the tab where you tapped **Open ↗**
+  (a reload keeps it), and only for a port that session lists; otherwise it
+  opens the terminal. After you add a computer, the first preview from it
+  reloads the app once, so the app's security policy includes it. Host: the
+  app's CSP frames the preview origin (`https://<host>:8443`) of confirmed
+  computers only, never a pending one, and allows a reachability probe of
+  preview origins (`connect-src`, never `wss:`). A device bound to another
+  computer's app is checked against Tailscale trust on every preview
+  request; open preview sockets close within the 5 s recheck. Protocol
+  revision 2 (`minRevision` stays 1; no schema change). Trust: a framed page
+  from another computer can show false content and can sign the phone out
+  of all computers by filling the cookie jar; pair again to recover.
 - **Notifications from every computer.** Phone: each paired computer now
   sends "waiting" and "done" notifications. One switch (Sessions card or
   **Settings → Notifications**) covers all computers. The title and text of
@@ -56,8 +78,8 @@ All notable changes are documented here. The format follows
   remove this phone."). New session picks the computer first ("Runs on vps").
   The Wall shows tiles from all computers, at most 4 live at 5 updates per
   second under one phone-wide budget; the rest show **Paused**. Live, the
-  composer, uploads, Changes and Files work on every computer; previews stay
-  home-only. Peer answers are schema-checked leniently
+  composer, uploads, Changes and Files work on every computer (previews too,
+  see "Preview for sessions on other computers" above). Peer answers are schema-checked leniently
   and peer error text is never shown. The service worker now precaches the
   complete bundle of its build, loads pages network-first with a 2.5 s
   fallback to that copy, and removes any service worker that is not the
@@ -75,7 +97,7 @@ All notable changes are documented here. The format follows
   node; a changed node ID revokes the devices bound to it, a new snapshot
   closes open streams that lost trust at once, and a Tailscale status that
   is not `Running` (restart, logout) keeps the last good snapshot. Home pins
-  each peer's node too (store migration 9): a peer whose node changed leaves
+  each peer's node too: a peer whose node changed leaves
   the list and the CSP, and confirm fails with "this name now belongs to
   another Tailscale machine; add the computer again". The gateway sends
   exact credentialed CORS headers to bound origins (devices whose node is
@@ -95,7 +117,8 @@ All notable changes are documented here. The format follows
   lists, tailnet and owner mismatches, "tags changed since pairing", an
   unknown tailnet (Tailscale logged out), and other Tailscale Serve handlers
   on this computer's origin as a problem with the commands to move them.
-  Store migrations 8 and 9. Known limit: a cached offline shell keeps the
+  The store schema changed (one schema file, no migrations: start with a
+  fresh database). Known limit: a cached offline shell keeps the
   CSP from when it was cached. A compromised home compromises every
   computer paired through it; see the threat model and the recovery steps.
 - Files view. Phone side: the Changes screen has a **Changes | Files** switch;
@@ -166,6 +189,20 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Breaking (host): preview listener rules. Only the preview origin itself
+  may send requests to it (an `Origin` equal to the preview origin, or no
+  `Origin` and `Sec-Fetch-Site: same-origin`). The selection
+  (`/__termivoa/select`) needs the app's `Referer` and answers a page, not a
+  redirect. Per-device origin binding now applies on the preview listener
+  (#143). A `curl` or a typed URL on the preview listener is now 403.
+  Phone: the preview frame now sends the app's origin as referrer (origin
+  only, no path). Reload the app after you update: an app that was open
+  during the update has the old script and shows "Open the preview from the
+  Termivoa app." in the frame until it reloads.
+- Preview reachability. Phone: the app asks the preview address before it
+  shows the page. If nothing answers in 5 seconds, it shows "Can't open the
+  preview on <computer>…" and no empty frame. Host: `GET /api/v1/preview` is
+  unchanged (it cannot know whether Tailscale Serve 8443 is set up) (#144).
 - Faster first load. Phone: the Changes and Files screens and Settings now
   load only when you open them, so the terminal screen downloads about 7 kB
   (gzip) less on first open. Nothing changes in what you see; the offline
@@ -208,6 +245,12 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): the preview listener's short text pages (for example
+  "No dev server of this session listens on that port.") were blank inside
+  the app's frame, because they allowed framing only by the preview origin
+  itself. They are now readable in the frame. No phone-side change (#144).
+- Fix (phone side): after browser Back to the app (Safari), the preview
+  loads again and does not show a refusal. No host-side change.
 - Fix (host side): project buttons could hang. Reading `package.json`, a
   `Makefile`, `Cargo.toml` or `go.mod` checked the file and then opened it;
   a FIFO (named pipe) put at that name between the two steps made the open

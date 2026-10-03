@@ -708,6 +708,88 @@ func TestTaggedStateChangeRefuses(t *testing.T) {
 	}
 }
 
+// Rule B1 (docs/peer-preview.md). Only the selection carries the app's origin;
+// every later preview request and the 5 s recheck of open sockets arrive
+// without one. A device bound to another computer's app is therefore checked
+// against the Tailscale snapshot on every preview check. A device that paired
+// with this computer directly never is.
+func TestPreviewCheckFollowsAppTrust(t *testing.T) {
+	fixture := newTrustFixture(t)
+	viaMac := fixture.pairVia(t, "mac", macOrigin, false)
+	direct := pairDevice(t, fixture.service, "Direct")
+	// The fixture's session has no dev server: preview_missing means that the
+	// check passed authorization and reached the port lookup.
+	const admitted = protocol.PreviewMissing
+	check := func(credential, origin string) protocol.ErrorCode {
+		t.Helper()
+		return fixture.code(t, origin, protocol.GatewayPreviewCheck, protocol.GatewayRPCPreviewCheckPayload{
+			Credential: credential, SessionID: fixture.session.id, Port: 5173,
+		})
+	}
+	expect := func(state string, bound, boundFromApp protocol.ErrorCode) {
+		t.Helper()
+		for _, test := range []struct {
+			name, credential, origin string
+			want                     protocol.ErrorCode
+		}{
+			{"bound device, no origin", viaMac.Credential, "", bound},
+			{"bound device, own origin", viaMac.Credential, homeOrigin, bound},
+			{"bound device, its app origin", viaMac.Credential, macOrigin, boundFromApp},
+			{"bound device, another app origin", viaMac.Credential, ciOrigin, protocol.InvalidRequest},
+			{"direct device, no origin", direct.Credential, "", admitted},
+			{"direct device, an app origin", direct.Credential, macOrigin, protocol.InvalidRequest},
+		} {
+			if code := check(test.credential, test.origin); code != test.want {
+				t.Errorf("%s: %s = %q, want %q", state, test.name, code, test.want)
+			}
+		}
+	}
+	expect("trusted", admitted, admitted)
+
+	retag := func(tagged bool) {
+		fixture.tailscale.mu.Lock()
+		fixture.tailscale.tagged = map[string]bool{"mac": tagged}
+		fixture.tailscale.mu.Unlock()
+		fixture.refresh(t)
+	}
+	retag(true)
+	expect("tags changed", protocol.InvalidRequest, protocol.InvalidRequest)
+	retag(false)
+	expect("tags restored", admitted, admitted)
+
+	fixture.tailscale.set("pi", "nMac", nil) // another owner's node took over the name
+	fixture.tailscale.set("mac", "", nil)
+	fixture.refresh(t)
+	expect("name gone", protocol.InvalidRequest, protocol.InvalidRequest)
+	fixture.tailscale.set("pi", "nPi", nil)
+	fixture.tailscale.set("mac", "nMac", nil)
+	fixture.refresh(t)
+
+	fixture.tailscale.set("", "", errors.New("tailscaled is not running"))
+	fixture.clock.Set(fixture.clock.Now().Add(tailnet.DefaultGrace - time.Second))
+	expect("inside the grace period", admitted, admitted)
+	fixture.clock.Set(fixture.clock.Now().Add(time.Second))
+	expect("grace expired", protocol.HostUnavailable, protocol.HostUnavailable)
+	if devices := fixture.devices(t); devices[viaMac.DeviceID].Revoked || devices[direct.DeviceID].Revoked {
+		t.Fatalf("a refusal revoked a device: %#v", devices)
+	}
+	fixture.tailscale.set("", "", nil)
+	fixture.refresh(t)
+	expect("status readable again", admitted, admitted)
+
+	// A definite node change refuses at once and revokes on the next sweep.
+	fixture.tailscale.set("mac", "nNewMac", nil)
+	fixture.refresh(t)
+	expect("node changed", protocol.ErrorCodeRevoked, protocol.ErrorCodeRevoked)
+	fixture.server.sweepTrust(context.Background())
+	if devices := fixture.devices(t); !devices[viaMac.DeviceID].Revoked || devices[direct.DeviceID].Revoked {
+		t.Fatalf("devices after the node change = %#v", devices)
+	}
+	if code := check(direct.Credential, ""); code != admitted {
+		t.Fatalf("direct device after the node change = %q", code)
+	}
+}
+
 // A new snapshot that no longer trusts an app origin closes its streams at
 // once, not at the next 15 s tick (M2).
 func TestNewSnapshotClosesUntrustedStreamsAtOnce(t *testing.T) {
