@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSPro
 import type { FileEntry, FileKind } from '../generated/protocol';
 import type { Connection, FilesFileView, FilesView } from '../terminal/Connection';
 import { breakable, StateText } from './Changes';
-import { folderName, splitPath } from './folder';
+import { folderName, formatSize, splitPath } from './folder';
 
 export type ChangesTab = 'changes' | 'files';
 
@@ -12,21 +12,6 @@ export const SEARCH_DEBOUNCE_MS = 250;
 
 /** The viewer's line height in CSS pixels; it matches the diff's. */
 const LINE_PX = 19;
-
-/** "0 B", "900 B", "1.5 KB", "12 KB", "3.4 MB": 1024-based, like ls -h. */
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  return `${value < 10 ? value.toFixed(1).replace(/\.0$/u, '') : Math.round(value)} ${units[unit]}`;
-}
 
 /** Folders first, then the rest, each by name ignoring case. */
 export function sortEntries(entries: ReadonlyArray<FileEntry>): FileEntry[] {

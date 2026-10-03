@@ -71,3 +71,18 @@ export function sessionName(record: BrokerRPCSessionRecord, liveCwd?: string): s
   const cwd = liveCwd ?? record.cwd;
   return cwd === undefined || cwd === '' ? record.title : folderName(cwd);
 }
+
+/** "0 B", "900 B", "1.5 KB", "12 KB", "3.4 MB": 1024-based, like ls -h. */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value < 10 ? value.toFixed(1).replace(/\.0$/u, '') : Math.round(value)} ${units[unit]}`;
+}

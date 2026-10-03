@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { DiffLine, HTTPSettingsResponse, KeyName } from '../generated/protocol';
+import { lazy, Suspense, useEffect, type ComponentProps, type ComponentType, useRef, useState, useSyncExternalStore } from 'react';
+import type { HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
 import {
@@ -16,9 +16,9 @@ import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey,
 import { AddComputerSheet } from './AddComputer';
 import { keyOf, sameSession, type HostedSession } from './allSessions';
 import { AnswerCard, AnswerPill, openQuestion } from './AnswerCard';
-import { askAboutFile, Changes } from './Changes';
+import { loadChunk } from './chunks';
 import { Composer } from './Composer';
-import { ChangesTabs, Files, type ChangesTab } from './Files';
+import type { ChangesTab } from './Files';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { displayPath, sessionName, splitPath } from './folder';
 import { History } from './History';
@@ -31,6 +31,34 @@ import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
 import { StateScreen, WindowArt } from './StateScreen';
 import { NewWorktree, WorktreeBadge } from './Worktree';
+
+// Changes and Files are the only screens that open from a tap and need none of
+// the first terminal frame, so they load when first opened.
+// The screen replaces the terminal and dock, so a wait or a failed load keeps a Back button.
+// React.lazy keeps a rejected promise, so opening Changes after a failed load makes a new lazy.
+type ChangesScreenProps = ComponentProps<typeof import('./ChangesScreen').ChangesScreen>;
+
+export function ChangesWait({ failed, onReturn }: { readonly failed: boolean; readonly onReturn: () => void }) {
+  return (
+    <div className="page">
+      <p role="status" className="muted">{failed ? 'Could not load this screen. Check your connection and try again.' : 'Opening…'}</p>
+      <button type="button" className="link strong" onClick={onReturn}>Back</button>
+    </div>
+  );
+}
+
+function lazyChangesScreen() {
+  return lazy(async (): Promise<{ default: ComponentType<ChangesScreenProps> }> => {
+    try {
+      return { default: (await loadChunk(() => import('./ChangesScreen'))).ChangesScreen };
+    } catch {
+      changesLoadFailed = true;
+      return { default: ({ onReturn }) => <ChangesWait failed onReturn={onReturn} /> };
+    }
+  });
+}
+let ChangesScreen = lazyChangesScreen();
+let changesLoadFailed = false;
 
 interface Runtime {
   readonly connection: Connection;
@@ -481,6 +509,10 @@ export function Live({
   /** Opens the Changes screen on a tab; the dock opens it on the last one. */
   function openChanges(on: ChangesTab = tab) {
     const connection = runtime?.connection;
+    if (changesLoadFailed) {
+      ChangesScreen = lazyChangesScreen();
+      changesLoadFailed = false;
+    }
     if (connection !== undefined && (on === 'changes' ? connection.openChanges() : connection.openFilesFolder(''))) {
       showTab(on);
       input.current?.blur();
@@ -501,9 +533,8 @@ export function Live({
     setPanel('none');
   }
 
-  // Only fills the draft; the user reads it and taps Send.
-  function askAbout(path: string, selected: ReadonlyArray<DiffLine> = []) {
-    askAboutFile(draft, path, selected);
+  // The screen has filled the draft; the user reads it and taps Send.
+  function onAsked() {
     runtime?.connection.closeChanges();
     runtime?.connection.closeFiles();
     setComposerVersion((value) => value + 1);
@@ -687,11 +718,11 @@ export function Live({
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
       )}
-      {panel === 'changes' && runtime !== undefined && (tab === 'changes' ? (
-        <Changes connection={runtime.connection} cwd={cwd} switcher={<ChangesTabs tab={tab} onTab={switchTab} />} onAsk={askAbout} onReturn={closeChanges} />
-      ) : (
-        <Files connection={runtime.connection} switcher={<ChangesTabs tab={tab} onTab={switchTab} />} onAsk={askAbout} onReturn={closeChanges} />
-      ))}
+      {panel === 'changes' && runtime !== undefined && (
+        <Suspense fallback={<ChangesWait failed={false} onReturn={closeChanges} />}>
+          <ChangesScreen connection={runtime.connection} tab={tab} cwd={cwd} draft={draft} onTab={switchTab} onAsked={onAsked} onReturn={closeChanges} />
+        </Suspense>
+      )}
 
       {question !== undefined && status.agent !== undefined && (
         <div className="answer-anchor">

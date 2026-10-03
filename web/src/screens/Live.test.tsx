@@ -7,7 +7,7 @@ import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
 import type { HostedSession } from './allSessions';
 import { canTakeControl, CockpitDock, controlBadge, controllerLine, ReadOnlyDock } from './Dock';
-import { areaClick, liveTabs, TabBar } from './Live';
+import { areaClick, ChangesWait, liveTabs, TabBar } from './Live';
 
 const live: ConnectionStatus = { ...INITIAL_STATUS, link: 'live', control: 'observer', sessionState: 'running' };
 const noop = () => undefined;
@@ -211,5 +211,15 @@ describe('terminal area click (areaClick)', () => {
     expect(areaClick(false, true, true)).toBe('close');
     expect(areaClick(false, false, true)).toBe('focus');
     expect(areaClick(false, false, false)).toBe('none');
+  });
+});
+
+describe('ChangesWait', () => {
+  it('keeps a Back button while waiting and after a failed load', () => {
+    for (const failed of [false, true]) {
+      const markup = renderToStaticMarkup(<ChangesWait failed={failed} onReturn={noop} />);
+      expect(markup).toContain('>Back</button>');
+      expect(markup.includes('Check your connection')).toBe(failed);
+    }
   });
 });

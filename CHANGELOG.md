@@ -140,6 +140,11 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Faster first load. Phone: the Changes and Files screens and Settings now
+  load only when you open them, so the terminal screen downloads about 7 kB
+  (gzip) less on first open. Nothing changes in what you see; the offline
+  bundle still contains everything. Host: no change.
+
 - Breaking (host): the database is one fresh schema; an older database stops
   the broker with "delete the database file to start fresh". Delete the data
   folder and pair again.
