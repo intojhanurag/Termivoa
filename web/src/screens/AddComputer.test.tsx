@@ -26,7 +26,9 @@ function buttons(node: ReactNode, found = new Map<string, () => void>()): Map<st
     node.forEach((child: ReactNode) => buttons(child, found));
   } else if (isValidElement(node)) {
     const { props } = node as ReactElement<{ children?: ReactNode; onClick?: () => void }>;
-    if (node.type === 'button' && props.onClick !== undefined) found.set(String(props.children), props.onClick);
+    // Keyed by the button's text; an icon next to it is left out.
+    const text = Array.isArray(props.children) ? props.children.filter((child) => !isValidElement(child)) : props.children;
+    if (node.type === 'button' && props.onClick !== undefined) found.set(String(text), props.onClick);
     buttons(props.children, found);
   }
   return found;
@@ -267,7 +269,7 @@ describe('Settings → Computers', () => {
 
   it('offers Check again on every computer, rename and remove for peers only, and + Add a computer', () => {
     const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
-    expect(html.match(/>Check again<\/button>/gu)).toHaveLength(2);
+    expect(html.match(/<span>Check again<\/span><span class="off" aria-hidden="true">Checking…<\/span><\/span><\/button>/gu)).toHaveLength(2);
     // One status line per row for its own result, and one for rename and remove.
     expect(html.match(/role="status"/gu)).toHaveLength(3);
     expect(html.match(/>Rename<\/button>/gu)).toHaveLength(1);
@@ -313,8 +315,8 @@ describe('Settings → Computers', () => {
     expect(html).toContain('<h3 id="found-heading" class="caps">Found on your network</h3>');
     expect(html).toContain('<span class="computer-name">nas</span></span><span class="row-meta">nas.tailx.ts.net</span>');
     expect(html).toContain('&lt;b&gt;vps&lt;/b&gt;');
-    expect(html).toContain('<button type="button" class="primary found-add" aria-label="Add nas">Add</button>');
-    expect(html.match(/>Add<\/button>/gu)).toHaveLength(2);
+    expect(html).toMatch(/<button type="button" class="pill-lit found-add" aria-label="Add nas"><svg[^>]*>.*?<\/svg>Add<\/button>/u);
+    expect(html.match(/<\/svg>Add<\/button>/gu)).toHaveLength(2);
     expect(html).not.toContain('evil');
     expect(html).not.toContain(grant);
   });

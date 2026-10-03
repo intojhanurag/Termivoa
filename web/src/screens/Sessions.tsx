@@ -9,6 +9,7 @@ import {
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
+import { Button, Icon, Notice } from './ui';
 import { WorktreeBadge } from './Worktree';
 
 type Tone = 'accent' | 'amber' | 'muted';
@@ -201,10 +202,10 @@ export function PushCard({ onClose, onFailure }: {
       <div className="push-card-body">
         <h2 id="push-card-title" className="push-card-title">Get a buzz when an agent needs you</h2>
         <p className="hint-text">Only the session name and status. Never terminal text.</p>
-        {note !== undefined && <p role="alert" className="error hint-text">{note}</p>}
+        {note !== undefined && <Notice tone="danger" role="alert" title={note} />}
         <div className="push-card-actions">
-          <button type="button" className="primary" disabled={busy} onClick={turnOn}>Turn on</button>
-          <button type="button" disabled={busy} onClick={() => { dismissPushCard(); onClose(); }}>Not now</button>
+          <Button className="secondary" busy={busy} onClick={turnOn}>Turn on</Button>
+          <button type="button" className="link" disabled={busy} onClick={() => { dismissPushCard(); onClose(); }}>Not now</button>
         </div>
       </div>
     </section>
@@ -226,9 +227,12 @@ export function ago(at: number, now: number): string {
   return text === 'now' || text === 'yesterday' ? `last seen ${text === 'now' ? 'just now' : text}` : `last seen ${text} ago`;
 }
 
+/** The command that pairs a computer with this phone again, through home: "pterm pair --via mac". */
+export const pairCommand = (home = firstLabel(homeOrigin())): string => `pterm pair --via ${home}`;
+
 /** What to run so a peer accepts this phone again: "Run pterm pair --via mac on vps". */
 export function pairHint(label: string, home = firstLabel(homeOrigin())): string {
-  return `Run pterm pair --via ${home} on ${label}`;
+  return `Run ${pairCommand(home)} on ${label}`;
 }
 
 /** The line for a computer whose sessions cannot be listed, or undefined when it answered (or is still loading). problemDetail has the line under it. */
@@ -257,23 +261,47 @@ export function problemDetail(entry: ComputerEntry, now: number): string | undef
   return parts.length === 0 ? undefined : parts.join(' ');
 }
 
-/** One row per computer that did not answer: "vps · can't reach" with Retry, "vps · pair again", "Update Termivoa on vps". */
+/**
+ * One notice per computer that did not answer: "vps · can't reach" (amber,
+ * with problemDetail and Retry), "Connecting to vps…" (cyan), "vps · pair again" (red, with the
+ * command to run there) or "Update Termivoa on vps" (grey).
+ */
 export function ComputerProblem({ entry, now, onRetry, onSettings }: {
   readonly entry: ComputerEntry;
   readonly now: number;
   readonly onRetry: (origin: string) => void;
   readonly onSettings: () => void;
 }) {
-  const text = problemText(entry, now);
-  if (text === undefined) return null;
+  if (problemText(entry, now) === undefined) return null;
   const detail = problemDetail(entry, now);
   const { computer, status } = entry;
   return (
     <li className="computer-problem">
-      <span className="dot" style={{ background: computer.color }} aria-hidden="true" />
-      <span className="computer-problem-text">{text}{detail !== undefined && <span className="computer-problem-detail">{detail}</span>}</span>
-      {status.kind === 'unreachable' && <button type="button" className="link" onClick={() => onRetry(computer.origin)}>Retry</button>}
-      {status.kind === 'pair' && <button type="button" className="link" onClick={onSettings}>Computers</button>}
+      {(status.kind === 'unreachable' || status.kind === 'blocked') && (
+        <Notice
+          tone="warning"
+          icon="wifi-off"
+          title={cantReach(computer.label)}
+          {...(status.kind === 'unreachable' ? { action: <button type="button" className="secondary compact" onClick={() => onRetry(computer.origin)}><Icon name="refresh" />Retry</button> } : {})}
+        >{detail}</Notice>
+      )}
+      {status.kind === 'connecting' && <Notice tone="working" title={connectingText(computer.label)}>{detail}</Notice>}
+      {status.kind === 'pair' && (
+        <Notice
+          tone="danger"
+          icon="lock"
+          title={pairAgain(computer.label)}
+          action={<button type="button" className="secondary compact" onClick={onSettings}>Computers</button>}
+        >
+          This phone lost access on {computer.label}. On {computer.label}, run:
+          <br /><code className="notice-command">{pairCommand()}</code>
+        </Notice>
+      )}
+      {status.kind === 'outdated' && (
+        <Notice tone="neutral" icon="download" title={status.message}>
+          It runs an older version than this app. Your other computers still work.
+        </Notice>
+      )}
     </li>
   );
 }
@@ -405,14 +433,14 @@ export function Sessions({
           </button>
         </div>
       </header>
-      {error !== undefined && <p role="alert" className="error">{error}</p>}
+      {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
 
       <ComputerChips computers={computers} chosen={chip} onChoose={setChip} />
 
       {help?.kind === 'ok' && (
         <section className="card stack" aria-label="Before your first session">
           <NewSessionHelp settings={help.settings} />
-          <button type="button" disabled={busy} onClick={() => { void refresh(); }}>Check again</button>
+          <Button className="secondary" icon={<Icon name="refresh" />} busy={busy} onClick={() => { void refresh(); }}>Check again</Button>
         </section>
       )}
 

@@ -5,6 +5,7 @@ import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPu
 import type { ComputerEntry } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
+import { Button, Notice } from './ui';
 
 // Computers (and the add-computer sheet it opens) load only when Settings opens.
 const ComputersSection = lazy(() => loadChunk(() => import('./Computers')).then((module) => ({ default: module.ComputersSection })));
@@ -97,9 +98,11 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
             ><span className="switch-track" aria-hidden="true" /></button>
           </div>
           <p className="hint-text">Only the session name and status. Never terminal text.</p>
-          {enabled === true && missing.length > 0 && <p className="error field-note">{noPushFrom(missing)}</p>}
-          <button type="button" disabled={enabled !== true || busy} onClick={sendTest}>Send a test notification</button>
-          <p role="status" className={note?.error === true ? 'error field-note' : 'muted field-note'}>{note?.text ?? ''}</p>
+          {enabled === true && missing.length > 0 && <Notice tone="warning" title={noPushFrom(missing)} />}
+          <button type="button" className="secondary" disabled={enabled !== true || busy} onClick={sendTest}>Send a test notification</button>
+          <div role="status" className="field-note">
+            {note?.error === true ? <Notice tone="danger" title={note.text} /> : <span className="muted">{note?.text ?? ''}</span>}
+          </div>
         </>
       ) : (
         <p className="muted">{support === 'needs-home-screen' ? 'Add to Home Screen to get notifications' : 'Not supported in this browser'}</p>
@@ -153,12 +156,12 @@ export function Settings({
   }
 
   return (
-    <main className="page screen">
+    <main className="page screen settings-screen">
       <header className="screen-header">
         <h1 className="display">Settings</h1>
         <button type="button" className="link strong" onClick={onBack}>Done</button>
       </header>
-      {error !== undefined && <p role="alert" className="error">{error}</p>}
+      {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
 
       <ErrorBoundary>
         <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
@@ -167,7 +170,7 @@ export function Settings({
       </ErrorBoundary>
 
       {settings === undefined && (
-        <p className="muted">Your home computer cannot be reached. Device name, notifications and log out need it.</p>
+        <Notice tone="warning">Your home computer cannot be reached. Device name, notifications and log out need it.</Notice>
       )}
       {settings !== undefined && (
       <section className="group stack" aria-labelledby="device-heading">
@@ -200,11 +203,12 @@ export function Settings({
               : nameState.kind === 'saving' ? 'Saving…'
                 : nameState.kind === 'saved' ? 'Name saved.' : '')}
           </p>
-          <button
+          <Button
             type="submit"
-            className="primary"
-            disabled={nameProblem !== undefined || unchanged || nameState.kind === 'saving'}
-          >Save name</button>
+            className="secondary"
+            busy={nameState.kind === 'saving'}
+            disabled={nameProblem !== undefined || unchanged}
+          >Save name</Button>
         </form>
       </section>
       )}
@@ -261,7 +265,7 @@ export function LogoutSection({ multi, busy, onLogout }: {
           ? 'Signs this phone out of every computer. Running sessions keep running.'
           : 'Removes this browser\'s access. Running sessions keep running on your computer.'}
       </p>
-      <button type="button" className="danger" disabled={busy} onClick={onLogout}>Log out</button>
+      <Button className="danger" busy={busy} onClick={onLogout}>Log out</Button>
       <p role="status" className="muted field-note">{busy ? 'Signing out…' : ''}</p>
     </section>
   );

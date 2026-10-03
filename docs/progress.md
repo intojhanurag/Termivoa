@@ -1743,6 +1743,21 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   Evidence: `npx tsc --noEmit -p .` in `web`, `pnpm --dir web test`,
   `pnpm build:web`, `scripts/check`, the site build. Not run: the e2e
   multi-computer harness, a real phone.
+- **UI polish: lit buttons and notices** (`feat/ui-lit`, 2026-10-03): the
+  owner-approved Paper design ("Buttons that feel lit", "Errors that tell you
+  what to do", Settings → Computers) in `web/src/styles/global.css` (tokens,
+  the button family, notices, banners, computer cards) and
+  `web/src/screens/ui.tsx` (`Icon`, `Button` with a busy state, `Notice`,
+  `Banner`). Texts unchanged except the design's two notice lines ("This
+  phone lost access on vps. On vps, run:", "It runs an older version than
+  this app. Your other computers still work."). Evidence:
+  `docs/evidence/ui-lit/before/` and `after/` (390×844, demo data, isolated
+  dev stack; the multi-computer shots load the app as a demo tailnet name
+  with mocked peers); `npx tsc --noEmit -p .`, `pnpm --dir web test`,
+  `pnpm build:web`, `scripts/check`, site build. Index CSS 41,748 →
+  52,089 bytes (gzip 8,506 → 10,791). Not reached in the screenshots: the
+  green "vps is added" toast (needs a real approval). Site screenshots are a
+  follow-up.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

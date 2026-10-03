@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, deviceLabelProblem } from '../api/http';
 import { claimGrant, PairingFlow, type GrantSlot, type PendingPairing } from '../pairing/pairing';
+import { Notice } from './ui';
 
 type Phase = 'none' | 'label' | 'redeeming' | 'waiting' | 'expired' | 'error' | 'cancelled';
 
@@ -104,14 +105,14 @@ export function Setup({ grant, reason, onPaired }: {
     <main className="page screen setup">
       <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
       <Step label={phase === 'waiting' ? 'Step 2 of 2' : 'Step 1 of 2'} title={title} />
-      {reason !== undefined && <p role="status" className="notice">{reason}</p>}
+      {reason !== undefined && <Notice tone="neutral" icon="lock" role="status" title={reason} />}
       {phase === 'none' && (
         <>
           {window.location.pathname === '/pair' ? (
-            <p role="alert" className="error">
+            <Notice tone="danger" role="alert">
               This pairing link is incomplete or was already opened. Run <code>pterm pair</code> again on your
               computer and open the new link.
-            </p>
+            </Notice>
           ) : <p className="muted">This phone is not paired with your computer yet.</p>}
           <ol className="steps">
             <li>On your computer, run <code>pterm pair</code>.</li>
@@ -147,7 +148,7 @@ export function Setup({ grant, reason, onPaired }: {
           </button>
         </form>
       )}
-      {phase === 'redeeming' && <p role="status" className="muted">Checking the pairing link…</p>}
+      {phase === 'redeeming' && <Notice tone="working" role="status" title="Checking the pairing link…" />}
       {phase === 'waiting' && pending !== undefined && (
         <section className="stack pair-wait" aria-live="polite">
           <CodeTiles code={pending.verificationCode} />
@@ -173,20 +174,20 @@ export function Setup({ grant, reason, onPaired }: {
         </section>
       )}
       {phase === 'cancelled' && (
-        <p role="alert" className="error">
+        <Notice tone="neutral" icon="x" role="alert">
           Pairing cancelled. This phone stays unpaired; if your computer asks, answer N. Run <code>pterm pair</code> again
           to start over.
-        </p>
+        </Notice>
       )}
       {phase === 'expired' && (
-        <p role="alert" className="error">
+        <Notice tone="danger" role="alert">
           This pairing request expired or was refused. Run <code>pterm pair</code> again on your computer.
-        </p>
+        </Notice>
       )}
       {phase === 'error' && (
-        <p role="alert" className="error">
-          {error} Run <code>pterm pair</code> again on your computer.
-        </p>
+        <Notice tone="danger" role="alert" title={error}>
+          Run <code>pterm pair</code> again on your computer.
+        </Notice>
       )}
     </main>
   );
