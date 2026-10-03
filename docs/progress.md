@@ -1421,11 +1421,15 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `/sw.js` registration per peer at scope `/push/<host>/` on home's origin,
   subscribed with that peer's VAPID key (`web/src/push.ts`,
   `web/src/sw.js`). Host: the gateway answers 404 under `/push/`. No
-  protocol change. Security review: 4 findings (a held peer call could undo
+  protocol change. Reviews: security (4 findings: a held peer call could undo
   "off"; the app could load under a peer scope; the finding 22 text; a peer
-  controlled the whole title), all fixed. Evidence: `scripts/check` exit 0;
-  site build; `node scripts/e2e-multicomputer/phase-b.mjs` 29/29 (new
-  B3-push-cors, B3-push-show, B3-push-scope, B3-push-open, B3-push-off);
+  controlled the whole title) and correctness (5 findings: a peer tap with
+  the app open; sync when a peer comes back; the switch waited for peers;
+  unregister after a failed unsubscribe; tests), all fixed. Evidence:
+  `scripts/check` exit 0; site build;
+  `node scripts/e2e-multicomputer/phase-b.mjs` 30/30 (new B3-push-cors,
+  B3-push-show, B3-push-scope, B3-push-open with a synthetic
+  notificationclick in the peer worker, B3-push-cold, B3-push-off);
   `phase-a.mjs` 31/31; `webkit.mjs` 4/4. Pending (owner): real iPhone and
   Android checks in `docs/owner-verification.md`, "Notifications from every
   computer" (Gate 0 check 5). No real push service was used in any test.

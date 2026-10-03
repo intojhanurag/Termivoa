@@ -12,7 +12,9 @@ All notable changes are documented here. The format follows
   sends "waiting" and "done" notifications. One switch (Sessions card or
   **Settings → Notifications**) covers all computers. The title and text of
   a notification from another computer start with its name (`vps · …`) and
-  a tap opens that session. Settings shows "No notifications from vps." for
+  a tap opens that session. With the app already open, the tap moves it to
+  that session. A computer that was offline when you turned notifications on
+  is added when it is back. Settings shows "No notifications from vps." for
   a computer that could not be subscribed; home and the other computers
   keep working. **Send a test notification** asks every computer. Removing
   a computer, **Log out**, "pair again" and turning the switch off stop
