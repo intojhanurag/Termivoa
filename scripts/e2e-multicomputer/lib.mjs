@@ -278,6 +278,8 @@ export class Env {
   async close() {
     await Promise.all(Object.values(this.stacks).map((s) => s.stop()));
     this.front?.kill();
+    // A failed step can leave a CLI under script(1) running (pterm setup has no runtime dir).
+    await run('/usr/bin/pkill', ['-f', `${this.root}/bin/`]);
   }
 }
 

@@ -57,6 +57,10 @@ async function step(id, name, fn) {
     await fn();
   } catch (error) {
     await shot(`fail-${id}`);
+    if (id.startsWith('F-') && found.page) await shot(`fail-${id}-found-phone`, found.page);
+    // The whole error, with a CLI's output so far (grants and QR codes hidden).
+    writeFileSync(join(out, `fail-${id}.txt`), String(error.stack ?? error).replace(/add-computer#grant=[A-Za-z0-9_-]+/g, 'add-computer#grant=<hidden>')
+      .replace(/\/pair#[A-Za-z0-9_-]+/g, '/pair#<hidden>').replace(/^.*[▀▄█].*$/gm, '[QR code hidden]').replaceAll(env.root, '<root>'));
     const text = await app.text().catch(() => '');
     check(id, name, false, `${error.message.split('\n')[0]} | screen: ${text.replace(/\s+/g, ' ').slice(0, 300)}`);
   }
@@ -1091,6 +1095,7 @@ try {
   });
 
   await step('F-flood', '50 junk offers at once: the bucket refuses the rest; the phones\' API calls and the QR/link pairing still work', async () => {
+    await sleep(2000); // a full bucket: F-dead's offer took a token, and one comes back each second
     const answers = await Promise.all(Array.from({ length: 50 }, () => offer(vps.origin)));
     const counts = answers.reduce((all, r) => ({ ...all, [r.status]: (all[r.status] ?? 0) + 1 }), {});
     const calls = [await api(tool, `${mac.origin}/api/v1/settings`), await api(tool, `${vps.origin}/api/v1/settings`), await api(found.tool, `${mac.origin}/api/v1/computers/found`)];
