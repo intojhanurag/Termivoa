@@ -259,8 +259,9 @@ func (fixture *trustFixture) redeemable(t *testing.T, grant string) bool {
 	return fixture.code(t, macOrigin, protocol.GatewayPairRedeem, protocol.HTTPPairRedeemRequest{Grant: grant, DeviceLabel: "Phone"}) == ""
 }
 
-// One live offered grant: the same grant is re-sent; at 60 s left a new one
-// replaces it and the old unredeemed one is deleted; a redeemed one stays.
+// One live offered grant: the same grant is re-sent; at 65 s left a new one
+// replaces it and the old unredeemed one is deleted once home took the new
+// one; a redeemed one stays.
 func TestOfferKeepsOneLiveGrant(t *testing.T) {
 	fixture := newTrustFixture(t)
 	home := newOfferHome(t, []string{"*.tailx.ts.net"}, nil)
@@ -308,6 +309,50 @@ func TestOfferKeepsOneLiveGrant(t *testing.T) {
 		t.Fatalf("pending after end = %d", len(pending))
 	}
 	fixture.endOffer(t, nil) // Nothing left: still fine.
+}
+
+// A renewal whose push fails keeps the replaced grant: home still lists it,
+// so it must still redeem. The next accepted push deletes it.
+func TestOfferRenewalKeepsTheListedGrantUntilHomeTakesTheNewOne(t *testing.T) {
+	fixture := newTrustFixture(t)
+	var refuse sync.Mutex
+	down := false
+	home := newOfferHome(t, []string{"*.tailx.ts.net"}, func(response http.ResponseWriter, _ *http.Request) {
+		refuse.Lock()
+		defer refuse.Unlock()
+		if down {
+			response.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
+	})
+	first, _ := fixture.offer(t, "mac")
+	// 62 s left: inside the renewal margin (65 s), home is down.
+	fixture.clock.Set(fixture.clock.Now().Add(58 * time.Second))
+	refuse.Lock()
+	down = true
+	refuse.Unlock()
+	renewed, _ := fixture.offer(t, "mac")
+	offered := home.offered()
+	if renewed.Delivered || renewed.ExpiresAt == first.ExpiresAt || offered[1].Grant == offered[0].Grant {
+		t.Fatalf("renewal = %+v", renewed)
+	}
+	if !fixture.redeemable(t, offered[0].Grant) {
+		t.Fatal("the grant home still lists was deleted before home took its successor")
+	}
+	refuse.Lock()
+	down = false
+	refuse.Unlock()
+	fixture.clock.Set(fixture.clock.Now().Add(time.Second))
+	if again, _ := fixture.offer(t, "mac"); !again.Delivered || again.ExpiresAt != renewed.ExpiresAt {
+		t.Fatalf("re-send = %+v", again)
+	}
+	// offered[0] was redeemed above (its pairing stays); a fresh check: the
+	// end deletes the live grant and nothing else is left to delete.
+	fixture.endOffer(t, nil)
+	if offered = home.offered(); fixture.redeemable(t, offered[len(offered)-1].Grant) {
+		t.Fatal("the live grant survived the end")
+	}
 }
 
 // A changed node for home's name ends the offer; no snapshot skips the push.

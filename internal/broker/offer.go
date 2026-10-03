@@ -29,8 +29,10 @@ import (
 
 const (
 	// offerRenewAt: a grant with this much time or less left is replaced, so
-	// home (which keeps an offer 60 s) never lists a grant that expires first.
-	offerRenewAt = 60 * time.Second
+	// home, which lists an offer for 60 s from its arrival (up to
+	// offerTimeout after the push starts), never lists a grant that expires
+	// first; rounded up from 63 s.
+	offerRenewAt = 65 * time.Second
 	// offerTimeout bounds one push: dial, TLS, request and answer.
 	offerTimeout = 3 * time.Second
 	// maxOfferAnswer is how much of home's answer is read before it is
@@ -46,13 +48,16 @@ var (
 )
 
 // offerState is the one live offer: the home named by via, its pinned node,
-// and the grant offered to it.
+// and the grant offered to it. previous is the grant that grant replaced: home
+// may still list it, so it is deleted only after home accepted the new one
+// (or at the end).
 type offerState struct {
-	via     string
-	app     store.AppBinding
-	node    tailnet.Node
-	grant   string
-	expires time.Time
+	via      string
+	app      store.AppBinding
+	node     tailnet.Node
+	grant    string
+	previous string
+	expires  time.Time
 }
 
 // outgoingOffer is this computer's own offer to its home (N1); offerBook in
@@ -104,18 +109,28 @@ func (server *ManagementServer) offerPairing(ctx context.Context, authority *aut
 			return protocol.AdminRPCPairOfferResultPayload{}, errors.Join(errHomeChanged, server.dropOffer(ctx, authority, book))
 		}
 		if state.expires.Sub(server.now()) <= offerRenewAt {
-			if err := authority.DeleteGrant(ctx, state.grant); err != nil {
-				return protocol.AdminRPCPairOfferResultPayload{}, err
-			}
 			grant, expires, err := authority.CreateBoundGrant(ctx, state.app)
 			if err != nil {
-				book.state = nil
 				return protocol.AdminRPCPairOfferResultPayload{}, err
 			}
-			state.grant, state.expires = grant, expires
+			// A grant replaced earlier, whose successor home never accepted, has expired by now.
+			if state.previous != "" {
+				if err := authority.DeleteGrant(ctx, state.previous); err != nil {
+					return protocol.AdminRPCPairOfferResultPayload{}, err
+				}
+			}
+			state.previous, state.grant, state.expires = state.grant, grant, expires
 		}
 	}
-	return offerResult(state, pushOffer(ctx, state.node, *origin, state.grant)), nil
+	problem := pushOffer(ctx, state.node, *origin, state.grant)
+	// Home lists the new grant now; the one it replaced can go.
+	if problem == nil && state.previous != "" {
+		if err := authority.DeleteGrant(ctx, state.previous); err != nil {
+			return protocol.AdminRPCPairOfferResultPayload{}, err
+		}
+		state.previous = ""
+	}
+	return offerResult(state, problem), nil
 }
 
 // endOffer answers admin.pair.offer.end: it deletes the offered grant and
@@ -131,14 +146,18 @@ func (server *ManagementServer) endOffer(ctx context.Context, authority *auth.Se
 	return err
 }
 
-// dropOffer deletes the offered grant (unless redeemed) and clears the state.
+// dropOffer deletes the offered grants (unless redeemed) and clears the state.
 func (server *ManagementServer) dropOffer(ctx context.Context, authority *auth.Service, book *outgoingOffer) error {
 	if book.state == nil {
 		return nil
 	}
-	grant := book.state.grant
+	state := book.state
 	book.state = nil
-	return authority.DeleteGrant(ctx, grant)
+	err := authority.DeleteGrant(ctx, state.grant)
+	if state.previous != "" {
+		err = errors.Join(err, authority.DeleteGrant(ctx, state.previous))
+	}
+	return err
 }
 
 func offerResult(state *offerState, problem *protocol.AdminRPCPairOfferProblem) protocol.AdminRPCPairOfferResultPayload {

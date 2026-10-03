@@ -21,8 +21,10 @@ const (
 	// MaxOffers bounds the offer book: at most this many origins.
 	MaxOffers = protocol.MaxFoundComputers
 	// OfferLifetime is how long home lists one offer. The new computer sends
-	// every 30 s and replaces its grant at 60 s left, so a listed grant is
-	// valid for at least as long as it is listed.
+	// every 30 s and replaces its grant at 65 s left (60 s plus its 3 s push
+	// limit, rounded up), deleting the replaced grant only after home
+	// accepted the new one, so a listed grant is valid for at least as long
+	// as it is listed.
 	OfferLifetime = 60 * time.Second
 )
 
