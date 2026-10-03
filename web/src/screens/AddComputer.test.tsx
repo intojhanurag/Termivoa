@@ -270,7 +270,6 @@ describe('Settings → Computers', () => {
     expect(html.match(/>Rename<\/button>/gu)).toHaveLength(1);
     expect(html.match(/>Remove<\/button>/gu)).toHaveLength(1);
     expect(html).toContain('>+ Add a computer</button>');
-    expect(html).toContain('<code>pterm pair --via mac</code>');
     expect(html).toContain('<span class="computer-state green">online</span>');
     expect(html).toContain('<span class="computer-state muted">offline</span>');
     expect(html).toContain('Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now');
@@ -345,6 +344,15 @@ describe('Settings → Computers', () => {
     expect(onAdd).toHaveBeenCalledWith({ ...readLink(printed, app), found: true });
     const sheet = renderToStaticMarkup(<AddComputerSheet link={onAdd.mock.calls[0]?.[0] as typeof link} onClose={noop} go={noop} />);
     expect(sheet).toContain('Add this computer?');
+  });
+
+  it('+ Add a computer names home by its machine name, not the name given on this phone (#164)', () => {
+    vi.stubGlobal('location', { origin: mac.origin });
+    const renamed: ComputerEntry[] = [{ ...(entries[0] as ComputerEntry), computer: { ...mac, label: 'Work laptop' } }];
+    const html = renderToStaticMarkup(<ComputersSection entries={renamed} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    vi.unstubAllGlobals();
+    expect(html).toContain('<code>pterm pair --via mac</code>');
+    expect(html).not.toContain('--via Work laptop');
   });
 
   it('says what Check again found when the read fails', () => {

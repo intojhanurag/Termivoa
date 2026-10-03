@@ -186,7 +186,8 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   // Only while this screen is open; watchFound pauses in the background.
   useEffect(() => watchFound(setFound), []);
   const now = Date.now();
-  const home = entries.find((entry) => entry.computer.home)?.computer;
+  // `pterm pair --via` takes home's machine name, never the name given on this phone (#164).
+  const homeName = firstLabel(homeOrigin());
   const working = new Set(entries.filter((entry) => !entry.computer.home && entry.status.kind === 'ok').map((entry) => entry.computer.origin));
   const renameProblem = edit.kind === 'rename' ? deviceLabelProblem(edit.draft.trim()) : undefined;
 
@@ -386,7 +387,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
       )}
       <div className="card stack">
         <p className="strong">On the new computer, run:</p>
-        <pre className="command"><code>pterm pair --via {home?.label ?? '<this computer>'}</code></pre>
+        <pre className="command"><code>pterm pair --via {homeName}</code></pre>
         <p className="hint-text">
           Then tap <strong>+ Add a computer</strong> and scan the QR code it shows, or paste the link it prints. If you run it in a Termivoa session, tap the link in the terminal instead.
         </p>
