@@ -1,0 +1,81 @@
+Warnings:
+  ! tailscale at /Applications/Tailscale.app/Contents/MacOS/Tailscale: lstat /Applications/Tailscale.app/Contents/MacOS/Tailscale: operation not permitted; Termivoa will not run it
+  ! tailscale at /usr/local/bin/tailscale: lstat /usr/local/bin/tailscale: operation not permitted; Termivoa will not run it
+
+pterm setup will:
+  - Start Termivoa when you log in (your user only, no administrator rights).
+    This replaces the startup of another pterm and restarts the broker, which ends running sessions (setup stops first if any is active).
+  - Keep its data in <root>/vps/dh/Library/Application Support/Phone Terminal and its logs in <root>/vps/dh/Library/Application Support/Phone Terminal/logs.
+  - Save the phone address https://vps.tailx.ts.net (unless you set another one).
+  - Share dev-server previews at https://vps.tailx.ts.net:8443 (port 8443). It asks first.
+  - Add your home folder <root>/vps/dh as the project "Home folder" if you have no project.
+  - Then connect your phone (pair it, or add this computer to your app).
+For the checks, the startup files and every command, run `pterm setup --verbose`.
+
+Continue? [y/N] y
+
+Registering startup...
+
+Waiting for the broker...
+Phone address: https://vps.tailx.ts.net
+Waiting for the gateway...
+Tailscale Serve already shares the page at https://vps.tailx.ts.net/
+
+Also share dev-server previews with your tailnet devices at https://vps.tailx.ts.net:8443/ ?
+This runs: tailscale serve --bg --https=8443 http://127.0.0.1:8789
+Previews are a separate origin; only devices in your tailnet can reach them; it never uses Funnel. [y/N] n
+Dev-server previews not shared. To share them later, run: tailscale serve --bg --https=8443 http://127.0.0.1:8789
+
+A phone is already paired with this computer. Pair another phone? [y/N] y
+
+Is Termivoa already on your phone?
+  1) No, this is my first computer
+  2) Yes, add this computer to it
+Type 1 or 2 (Enter skips): 2
+
+Which computer did you first pair your phone with?
+Pick the computer whose address your Termivoa app opens.
+  1) mac — https://mac.tailx.ts.net (macOS)
+Type a number, or the name of another computer (Enter skips pairing): 1
+
+Add this computer (vps) to the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com).
+Sent to mac (https://mac.tailx.ts.net).
+On your phone, open Termivoa → Settings → Computers and tap Add next to "vps".
+Waiting for your phone (up to 10 minutes; Ctrl+C stops)…
+
+No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:
+                                                     
+                                                     
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+[QR code hidden]
+                                                     
+                                                     
+https://vps.tailx.ts.net/add-computer#grant=<hidden>&via=https%3A%2F%2Fmac.tailx.ts.net
+The phone's Camera app will NOT work for this code: it opens the browser, not the app.
+The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.
+Phone "Found phone" wants to use THIS computer (vps) from the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com).
+Approve only if your phone shows 603-158 and says "type y in the terminal on vps". If it names another computer, shows another code, or shows nothing, answer N.
+Approve? [y/N] y
+^DApproved 06e3d879-0167-404b-8691-418088f0eaf3. The phone finishes pairing on its next poll.
+Setup is done. Next: in the Termivoa app on your phone, switch to this computer and start a session.

@@ -47,6 +47,8 @@ safe, and private networking does not replace application authentication.
 | Home app origin → peer API (multi-computer, next beta) | Per-device origin binding in the broker: a cross-origin request passes only from the app origin bound to that request's own credential, grant or pending pairing; exact credentialed CORS for bound origins only; `Sec-Fetch-Mode: no-cors` and Origin-less requests without `Sec-Fetch-Site: same-origin` refused on `/api`; per-request WebSocket origin checks; strict origin parsing (https, default port, no trailing dot, never `null`) | Unit and loopback tests (`internal/gateway/multicomputer_test.go`, `internal/broker/computers_test.go`, `internal/protocol/computers_test.go`); local Chrome and WebKit cookie check (`scripts/gate0/README.md`); Gate 0 on a real iPhone and Android and the Playwright integration tests pending |
 | Tailscale identity → peer trust (multi-computer) | At `pterm pair --via` the peer resolves home only among own-tailnet MagicDNS first labels (ambiguity refused), requires the same owner or an explicit `--allow-tagged`, and pins the node ID; every bound request reads an immutable snapshot (60 s cache, 10-minute grace, then refuse); owners are compared by stable Tailscale user ID, never by login name; a changed node ID revokes the bound devices; a node whose tagged state changed since pairing is refused (not revoked); a new snapshot closes open streams that lost trust at once; a status that is not `Running` (restart, logout) keeps the last good snapshot under the grace rules. Narrowing only, never authentication | `internal/tailnet/tailnet_test.go`, `internal/broker/computers_test.go` (near-miss, `null`, tagged, other owner, ambiguous name, node change, grace); real `tailscale status --json` owners and tags on a team tailnet pending |
 | Terminal output → add-computer link (multi-computer) | Only a link the app itself would accept is made tappable; a tap opens a confirm sheet drawn outside the terminal; home checks the host in its own Tailscale status (same tailnet, same owner or tagged) before the sheet offers **Add**; the grant stays in the URL fragment and is removed at once | `web/src/pairing/addComputer.test.ts`, `web/src/terminal/pathLinks.test.ts`, `web/src/screens/AddComputer.test.tsx`; real iPhone pending |
+| New computer → home (offer; Found on your network, ADR 0007) | `POST /api/v1/computers/offer` has no authentication, so admission comes first: any `Origin` or `Sec-Fetch-*` header is `403` at the top of `/api` admission, no CORS header and no preflight answer ever, the cookie is never read and no origin is forwarded (no browser page can reach it); `X-Pterm-Request: 1`, JSON, at most 1 KiB, strict decoding; its own token bucket (10, then 1 per s), which never takes redeem or poll tokens but is one bucket for all senders behind Tailscale Serve (`429 "too many offers"`); `204` for every well-formed offer, kept or dropped, and nothing echoed; home reads only its latest Tailscale snapshot (never waits on `tailscale`; at most one background refresh per 5 s, as for every per-request check) and keeps an offer only from an untagged peer of its own owner in its own tailnet, not itself; memory only, 60 s, at most 16 origins, newest per origin wins. The sender is the new computer's broker: TLS to home's pinned Tailscale IP on 443 with home's certificate name and system roots, no proxy, no redirect, 3 s, at most 2 KiB of the answer read and never shown. Accepted: anyone who reaches home's port 443 (also other users of a team tailnet or a share) can post junk or replacement offers, or empty the bucket, so **Add** fails for a while; a junk grant fails on redeem, and the QR code and link still work | `internal/gateway/multicomputer_test.go`, `internal/broker/offers_test.go`, `internal/broker/offer_test.go`; multi-computer harness checks `F-offer`, `F-dead`, `F-flood` (`scripts/e2e-multicomputer/README.md`); Serve forwarding and the background-process TLS dial on real computers pending owner |
+| Home → paired devices (found list) | `GET /api/v1/computers/found` needs the cookie and home's own origin (a bound app origin is refused by the broker); it lists unexpired offers whose host still has the stored node ID and passes the owner rule, with labels from home's own status. It carries grants: every device paired with home can read them, and each such device is treated as the owner's (it already has a shell on home). A row still needs **Add**, the confirm sheet, the code and `y` on the new computer, whose prompt names THIS computer | `internal/broker/offers_test.go`, `internal/gateway/multicomputer_test.go`, `web/src/computers.test.ts`; harness check `F-add` (Chrome and WebKit); real iPhone and Android pending owner |
 | Peer responses → home app (multi-computer) | Lenient precompiled schema validation of every HTTP body and WebSocket frame (no `unsafe-eval`), per-item list validation, `redirect: 'error'`, 1 MiB response cap, peer error text replaced by generic text. The preview frame is the one place where a peer chooses what shows (next row) | `web/src/protocol/*.test.ts`, `web/src/api/http.test.ts` |
 | Peer preview origin → home app's frame (peer preview, ADR 0006) | The peer's listener admits the selection only with home's `Referer`, forwarded to the peer's broker and checked against the request's own credential (per-device origin binding); every other request only from the preview origin itself; every preview check of a bound device also needs Tailscale trust of the pinned node and tags; home's CSP holds `https://<peer>:8443` in `frame-src` and `connect-src` for confirmed computers only, never pending, never `wss:`; the origin is computed by the app, never read from a peer; the frame is sandboxed (no top navigation, popups, full screen or device features); the bar always shows the computer's label and **untrusted page**; the frame is removed when that computer refuses the phone, cannot be reached or must update. Not limited: what the framed page shows, and the cookies it sets (see "Dev-server preview", "A peer's frame") | `internal/gateway/preview_test.go`, `internal/gateway/multicomputer_test.go`, `internal/broker/computers_test.go`, `web/src/screens/Preview.test.tsx`, `web/src/screens/App.test.ts`; Chrome and Playwright WebKit in the multi-computer harness (`scripts/e2e-multicomputer/README.md`; results in `docs/progress.md`); real iPhone and Android pending owner |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
@@ -54,7 +56,14 @@ safe, and private networking does not replace application authentication.
 ## Pairing and credential acceptance criteria (P4)
 
 The local CLI creates a 256-bit, two-minute grant. Its URL fragment is a temporary
-pairing secret, not a reusable login token. The page must remove that fragment
+pairing secret, not a reusable login token. Until Found on your network (ADR
+0007), a grant's value went only to the restricted local CLI. Now a grant bound
+to another computer's app (`pterm pair --via`) also goes from the new computer
+to that home, over TLS to home's pinned Tailscale IP with home's certificate
+name; home keeps it in memory for at most 60 s per send and gives it to every
+device paired with home (each treated as the owner's). The grant still works
+only on the computer that made it, only from the bound app origin, and only
+after the owner compares the code and types `y` there. The page must remove that fragment
 before starting other navigation or requests, then redeem it in a same-origin
 HTTPS POST body. No query parameter, log, localStorage value, or analytics event
 may contain the grant. SQLite stores only its hash.
@@ -94,9 +103,10 @@ many requests (each well-formed one costs one broker lookup), but it cannot
 lock out a paired phone, also not after a gateway restart.
 
 Known limit: the pairing routes keep their gateway limits (redeem: 5, then 1
-per 12 s; poll: 10, then 1 per s), and behind Tailscale Serve each is one
-bucket for all clients. A tailnet machine that floods these routes blocks new
-pairings while it runs. Paired phones are not affected, and guessing is not
+per 12 s; poll: 10, then 1 per s), and so does the offer route of Found on
+your network (10, then 1 per s, its own bucket). Behind Tailscale Serve each
+is one bucket for all clients. A tailnet machine that floods these routes
+blocks new pairings (or every offer, so **Add** in Found fails) while it runs. Paired phones are not affected, and guessing is not
 helped (the broker has its own pairing limits). A per-client key needs the
 address that Tailscale Serve forwards; that is a trust change and needs an ADR.
 
@@ -321,6 +331,14 @@ New attackers and what limits them:
 - **A program printing a fake add-computer link.** See the table above; it
   can never add a computer in one tap or outside the user's tailnet and
   owner.
+- **Offers to home (Found on your network).** See the two "offer" and "found
+  list" rows above. Another node that reaches home can make **Add** fail for
+  a while, never add a computer. A hostile computer of the same owner can
+  offer itself and show in **Found**; the user must still tap **Add** and
+  press `y` on it. If the user names a hostile computer as home, it could
+  relay the code; the approval prompt names THIS computer and quotes the
+  phone's sentence "type y in the terminal on vps", and the user must read
+  it (`docs/found-on-network.md`, R1).
 - **A lost phone.** It must be revoked on each computer; `pterm revoke` on
   home lists the phone's other computers. **Log out** in the app signs out
   of every reachable computer and names the others (`pterm revoke` there).

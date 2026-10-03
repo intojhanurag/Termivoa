@@ -50,6 +50,52 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Found on your network: harness, review fixes, docs (2026-10-03, branch `feat/found-on-network`)
+
+ADR 0007 v2 is implemented (critical feature, rule 24: not merged; owner
+review). This session added the e2e checks, fixed four small defects
+(`pterm pair --via` with piped stdin offered; two web texts; two doc
+claims) and applied the code reviews of fd0be48 (security and correctness,
+both "ship after fixes"): C1 to C9 and S1 to S5, each in its own commit
+with a test, except C4 with C6 and S4 with C5 (broker side), which share
+hunks. Protocol revision stays 3; `admin.pair.offer` `problem` gained
+`busy` (regenerated).
+
+Commands and results (macOS 26, Apple Silicon, Chrome 154, WebKit
+playwright-core 1.61.1 build 2272):
+
+- `scripts/check`: exit 0. `go vet -tags e2e ./...`: clean.
+  `go test -race` of `internal/broker`, `internal/cli`, `internal/gateway`,
+  `cmd/pterm`: pass.
+- `node scripts/e2e-multicomputer/phase-a.mjs`: 32/32 PASS (new A8: a
+  production build has no `PTERM_E2E`; the e2e build has it).
+- `node scripts/e2e-multicomputer/phase-b.mjs --no-web-build` (pterm built
+  with `-tags webdist,e2e`): 77/77 PASS, 12 of them new `F-*`: F-offer,
+  F-offer-owner, F-offer-origin, F-offer-preflight, F-add, F-gone, F-dead,
+  F-flood (204 ×10, 429 ×40), F-flood-link, F-old (front `-old-home`, not a
+  beta.2 build), F-setup-list, F-setup (real `pterm setup` on the dev stack
+  with a fake `launchctl` and `PTERM_E2E_GATEWAY`).
+- `webkit.mjs --no-web-build`: 8/8 PASS (new W8: the phone side of F-add).
+- Site: `pnpm install --frozen-lockfile --ignore-workspace && npx astro
+  build`: 25 pages, all internal links valid.
+
+Evidence: [`docs/evidence/found-on-network/`](evidence/found-on-network/)
+(result tables, the setup transcript with the grant and QR code hidden,
+screenshots of Found, the sheet, the code, the stale text and WebKit).
+
+The harness found no new product defect. It showed that the old checks
+lagged the code (the N5 prompt says "shows 123-456", the in-terminal wait
+says "Waiting for your phone"); they are updated. The docs pass found that
+the Found texts used the name given to home on the phone, not its machine
+name (fixed with C3).
+
+Still open (owner, `docs/owner-verification.md`, "Found on your network"):
+a real vps broker under systemd dialling mac's Tailscale IP with its Let's
+Encrypt certificate; Tailscale Serve forwarding the offer with no `Origin`;
+the reverse direction under launchd; the whole add on a real iPhone Home
+Screen app and on Android. The pinned-IP dial guard is proven by unit tests
+only; the harness dials through its front.
+
 ### Setup refuses Tailscale Funnel (2026-10-03, branch `fix/issue-157`)
 
 Fixes #157. With Funnel on for 443 while Serve already proxied Termivoa,

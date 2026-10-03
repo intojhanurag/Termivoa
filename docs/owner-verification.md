@@ -393,6 +393,41 @@ Vite project on `vps`. Do the list on iPhone, then on Android Chrome.
       then it still opens (the WebKit 7-day cookie cap, with the rolling
       refresh).
 
+### Found on your network (real computers and phones)
+
+The agent tested this with two test stacks behind the harness front
+(`scripts/e2e-multicomputer`, checks `F-*`; Chrome, and WebKit for the phone
+side of **Add**). The harness has no real Tailscale IPs, no real
+certificates and no Tailscale Serve, so these checks are yours. You need
+home (`mac`) and a second computer (`vps`), both set up with Termivoa from
+this build. Design: [found-on-network.md](found-on-network.md), section 10.
+
+- [ ] **vps → mac under systemd.** On `vps` (Linux, broker under systemd, no
+      desktop session), run `pterm pair --via mac` in an SSH terminal. The
+      screen says "Sent to mac (https://mac.<tailnet>.ts.net)." This proves
+      that vps's broker dials mac's Tailscale IP on port 443 and verifies
+      mac's Let's Encrypt certificate with the system roots from a background
+      process. "mac did not answer." means it failed (the broker does
+      not log why): record the screen line, `pterm doctor` on both
+      computers, and whether `curl -sS https://mac.<tailnet>.ts.net/healthz`
+      works on `vps`.
+- [ ] **Serve forwards the offer.** On `mac`, Tailscale Serve passes the
+      `POST /api/v1/computers/offer` with no `Origin` and no `Sec-Fetch-*`
+      header to the gateway, with `Host` intact (the row shows in the app).
+      Also record whether Serve sets `X-Forwarded-For` on that request (for
+      the option that is rejected for now; Termivoa does not use it).
+- [ ] **mac → vps under launchd.** The reverse: make `vps` the home of a
+      second test app, and run `pterm pair --via vps` on `mac` (broker under
+      launchd). The screen says "Sent to vps (…)".
+- [ ] **The whole add on a real iPhone Home Screen app.** On `vps` run
+      `pterm pair --via mac` (or `pterm setup`, answer 2). In the app:
+      **Settings → Computers → Found on your network**, `vps`, **Add**, the
+      **Add this computer?** sheet, **Add vps**, **Continue**. The phone shows
+      a code and "If it matches, type y in the terminal on vps." The prompt
+      on `vps` says "THIS computer (vps)" and the same code. Type `y`: `vps`
+      is in the list, its sessions show, and the row is gone.
+- [ ] **The same on Android** (Chrome, installed app).
+
 ## 3. Windows 11 x64
 
 Only cross-compiled `go vet` and PE checks ran here. CI has a native Windows job,

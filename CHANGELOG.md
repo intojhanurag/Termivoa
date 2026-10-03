@@ -8,6 +8,63 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **Found on your network** (ADR 0007, `docs/found-on-network.md`; not yet
+  tested on real computers or a real phone). Add a computer with no link.
+  Phone: **Settings → Computers** has a **Found on your network** block. A
+  computer that waits in `pterm setup` or `pterm pair --via mac` shows there
+  with its name, its address and **Add**. **Add** opens the same **Add this
+  computer?** sheet as a pasted link: **Add vps**, **Continue**, then the
+  code and "If it matches, type y in the terminal on vps." With no row, the
+  block says "To add another computer, run pterm setup on it, or pterm pair
+  --via mac if it is already set up. It shows here while it waits." When
+  home cannot read Tailscale (two reads in a row), it says "mac cannot read
+  its Tailscale status. Check Tailscale on mac." The app reads the list
+  every 5 s while **Settings → Computers** is open. A row goes when its
+  computer stops waiting or changes its Tailscale machine, and is hidden
+  while that computer is in your list and answers; a computer that lost
+  your phone's access can be added again from **Found**. If the new
+  computer stopped waiting, the add page says "vps stopped waiting. On vps
+  run pterm pair --via mac, then tap Add again." The sheet now says "Add it
+  only if you just ran pterm setup or pterm pair --via on vps.", and an
+  expired code says "…then tap Add again, or scan or paste the new link."
+  Host: `pterm pair --via mac` in a terminal now waits up to 10 minutes and
+  sends this computer's single-use add-computer secret to mac (over
+  Tailscale's encrypted connection to mac's Tailscale address, re-sent
+  every 30 s), then prints "Sent to mac (https://…)." and "On your phone,
+  open Termivoa → Settings → Computers and tap Add next to "vps"." The QR
+  code and the link stay below as the other ways, for 2 minutes; when they
+  expire and nothing reached mac, the command ends as before; else it says
+  "The QR code and link above expired. Add in the app still works." and
+  keeps waiting. With piped input or `--no-wait` it sends nothing; with a
+  tagged computer it sends nothing and says "Add does not work with tagged
+  computers: mac is tagged. Use the QR code or the link below." (or "this
+  computer is tagged"). Other lines: "mac did not answer.", "mac is busy
+  right now.", "Termivoa on mac cannot receive this yet. Update it, …",
+  "This computer cannot read its Tailscale status.", "This computer could
+  not offer itself to mac.", "Add needs this computer's address: run pterm
+  setup, or pterm config origin https://<this computer>.", and, when an
+  older broker still runs, "Restart Termivoa on this computer (pterm
+  shutdown, then pterm launch), then try again.",
+  "mac is now a different Tailscale machine. Run pterm pair --via mac
+  again." and "Nobody added this computer in 10 minutes. Run pterm pair
+  --via mac again." Ctrl+C or a closed SSH session deletes the unused
+  secrets. `pterm setup`'s answer 2 ("Yes, add this computer to it") does
+  the same; its list of homes shows each full address and OS ("Pick the
+  computer whose address your Termivoa app opens."); after 10 minutes it
+  ends with "Setup is done, but your phone is not connected yet. To
+  connect it, run `pterm pair --via mac`." The approval prompt for an
+  added computer now names it: `Phone "iPhone" wants to use THIS computer
+  (vps) from the Termivoa app at mac (…)`, and says to approve only if the
+  phone shows the same code and says "type y in the terminal on vps".
+  Plain `pterm pair` no longer offers pairings that belong to another
+  computer's app. Home accepts offers on a new route without login,
+  `POST /api/v1/computers/offer` (no browser can call it; always `204`;
+  own rate limit, 10 then 1 per second; offers in memory only, 60 s), and
+  lists them on `GET /api/v1/computers/found` (cookie, home's own address
+  only). Protocol revision 3 (`minRevision` stays 1; no database change).
+  Trust: every phone paired with home can see the waiting computers and
+  their one-time secrets, and anyone who can reach home in your tailnet can
+  make **Add** fail for a while; the QR code and the link still work.
 - **Scan QR in + Add a computer.** Phone: **Settings → + Add a computer**
   now offers **Scan QR** and **Paste link**. Scan opens the camera inside the
   app and reads the QR code that `pterm pair --via` prints. A scanned link is

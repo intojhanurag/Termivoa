@@ -1,13 +1,13 @@
 # ADR 0007: Found on your network (add a computer with no link)
 
-- Status: **accepted (owner approved 2026-10-03); v2 after two reviews; security re-check of the push shape done ("sound with changes"), resolutions in this text**. Do not merge an implementation before the owner approves this version (AGENTS.md rule 24).
+- Status: **accepted; implemented** (branch `feat/found-on-network`). The owner approved v2 on 2026-10-03, after two reviews of v1 and a security re-check of the push shape ("sound with changes", resolved below). The implementation still needs the owner's review before merge (AGENTS.md rule 24).
 - Date: 2026-10-03
-- Design: [`docs/found-on-network.md`](../found-on-network.md) (version 2)
+- Design: [`docs/found-on-network.md`](../found-on-network.md) (version 3: matches the code)
 - Builds on: ADR [0005](0005-multi-computer.md), [`docs/multi-computer.md`](../multi-computer.md)
 
 ## Context
 
-Today a second computer is added with a secret link. The owner runs `pterm pair --via mac` on the new computer. The link must then reach the phone app by a tap in a terminal, a paste or a scan. It holds a grant: single use, 2 minutes, bound to home's app origin and pinned node.
+Before this decision, a second computer was added with a secret link. The owner ran `pterm pair --via mac` on the new computer. The link then had to reach the phone app by a tap in a terminal, a paste or a scan. It held a grant: single use, 2 minutes, bound to home's app origin and pinned node.
 
 The owner wants: "login to Tailscale, see all devices, Add". In the app, **Settings → Computers** shows the computer that waits, with an **Add** button. There is no link to move.
 
@@ -18,10 +18,10 @@ The grant is what makes adding safe. The new computer makes it, binds it to the 
 **The new computer pushes its own bound grant to the home the user named.** Everything after that is today's link flow.
 
 1. **New computer.**
-   - While `pterm pair --via <home>` waits for a phone (setup's answer 2 also does this), its broker sends one bound grant to home every 30 s: `POST https://<home host>/api/v1/computers/offer {origin, grant}`.
-   - It re-sends the **same** grant (`resolveVia`, `CreateBoundGrant`, 2 minutes, unchanged), and it replaces the grant only when 60 s are left. It deletes the old unredeemed grant then, and it deletes the remaining grants when the command ends.
+   - While `pterm pair --via <home>` waits for a phone at a terminal (setup's answer 2 also does this; piped stdin keeps the 2-minute link wait and sends no offer), its broker sends one bound grant to home every 30 s, for up to 10 minutes: `POST https://<home host>/api/v1/computers/offer {origin, grant}`.
+   - It re-sends the **same** grant (`resolveVia`, `CreateBoundGrant`, 2 minutes, unchanged), and it replaces the grant only when 65 s are left. It deletes the old unredeemed grant after home accepts the new one, and it deletes the remaining grants when the command ends (also on Ctrl+C or a closed SSH session).
    - The dial goes only to the pinned home node's Tailscale IP on port 443, checked again before each push. The TLS name is home's host, with system roots and TLS 1.2 or later. There is no proxy, no redirect, no cookie and no `Origin`, and the time limit is 3 s.
-   - There is no push with `--allow-tagged`: home accepts offers only between untagged nodes of one owner.
+   - There is no push when home or the new computer is tagged: home accepts offers only between untagged nodes of one owner.
 2. **Home.**
    - The new route has no authentication.
    - At the top of `admitAPI` it refuses any `Origin` or `Sec-Fetch-*` header, it never sends CORS, and it never reads the cookie. So no browser page can reach it.
@@ -61,7 +61,7 @@ Also not chosen from v1:
   This is not a new kind of exposure:
   - The in-terminal path of today (`pterm pair --via` in a Termivoa session on home) already sends the grant through home and to every viewer of that session.
   - A compromised home already sees every grant that is pasted or scanned into its app.
-  - From this feature, a compromised home gains only three things: it learns that a computer waits, it gets one live grant at a time for up to 10 minutes, and it sends replies of at most 2 KiB.
+  - From this feature, a compromised home gains only three things: it learns that a computer waits, it gets one listed grant at a time for up to 10 minutes, and it sends replies of at most 2 KiB.
 - Anyone who can reach home's port 443 can post junk or replacement offers for a computer of home's owner. **Add** then fails for a while. They learn nothing (always `204`), and home never waits on `tailscale` for them (at most one background refresh per 5 s). The QR code and the link still work.
 - A hostile computer of the same user can offer **itself** and show in **Found**. The user must still tap **Add** and press `y` on that computer: the same as adding any hostile peer today.
 - If the user names a hostile computer as home, it could relay the code. The prompt that names THIS computer, and the phone that names the computer it talks to, are the defence. The user must read them.
@@ -99,17 +99,17 @@ The re-check confirmed these points as sound:
 - The v1 relay from any hostile same-owner node is closed: a grant works only on its issuer, and it is sent only to the named, pinned home.
 - The app origin in the prompt comes from the grant row; the redeemer cannot forge it.
 - Browsers cannot reach the offer route.
-- A compromised home gains only three things: it learns that a computer waits, it gets one live grant at a time, and it sends replies of at most 2 KiB.
+- A compromised home gains only three things: it learns that a computer waits, it gets one listed grant at a time, and it sends replies of at most 2 KiB.
 
 Each finding below was checked against the code (design, section 7).
 
 | # | Finding (severity) | Resolution |
 | --- | --- | --- |
 | R1 | Relay when the user names the wrong home: M redeems X's grant with a forged `Origin`, offers itself to the real home, and returns X's code to the phone (medium) | The prompt names THIS computer and quotes the phone's code-screen sentence ("type y in the terminal on vps"). The setup list shows each full address and OS. The screen prints "Sent to mac (https://…)". Typing the code in place of `y` is not chosen: in this relay the codes match, so only the computer name stops it |
-| R2 | A new grant every 30 s keeps 4–5 grants live and can fill the 4 pending pairings (low–medium) | One live offered grant, re-sent every 30 s. It is replaced at 60 s left and the old one is deleted. The grants are deleted on every exit. One command run makes at most one pending pairing from offers |
+| R2 | A new grant every 30 s keeps 4–5 grants live and can fill the 4 pending pairings (low–medium) | One listed offered grant, re-sent every 30 s. It is replaced at 65 s left, and the old one is deleted after home accepts the new one (so for a short time two can be live). The grants are deleted on every exit. One command run makes at most one pending pairing from offers |
 | R3 | The unauthenticated route allows junk and replacement offers, empties the bucket, and its answers show which names are untagged nodes of home's owner (low) | `204` for every well-formed offer, and silent drops. Snapshot only. Labels come from home's status. The DoS is accepted. The `X-Forwarded-For` sender check is rejected for now |
 | R4 | `admitAPI` sends CORS and answers preflights on every `/api` path for bound origins; an old home answers 403, not 404 (low) | The exception sits at the top of `admitAPI` for this exact path: no CORS, any `Origin` or `Sec-Fetch-*` refused, no cookie read, no origin forwarded. The CLI shows one fixed line for any reply other than 204 and never prints home's body |
 | R5 | `/found` read from another app bound on home (low) | `authorizeOwn` in the broker; a test shows that a bound origin gets 400 |
 | R6 | Outbound dial details (low) | `TailscaleIPs` checked against Tailscale's ranges; a dial guard that allows only the pinned IP on port 443 (not the webpush guard); a node-ID check before each push; no proxy, no redirect, no jar; TLS 1.2 or later with `ServerName` and system roots; never http; 2 KiB; in the broker only |
 | R7 | The rule "grants go only to the local CLI" changes (info) | Stated under Consequences. A threat-model row "New computer → home (offer)" is added, and the text says that every device paired with home is the owner's |
-| R8 | A tagged home or new computer always has its offers refused (info) | No push with `--allow-tagged`; the CLI points to the QR code and the link |
+| R8 | A tagged home or new computer always has its offers refused (info) | No push when either computer is tagged; the CLI points to the QR code and the link |
