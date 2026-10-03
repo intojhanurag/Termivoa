@@ -63,7 +63,7 @@ the [quick start](https://termivoa.vercel.app/docs/quick-start/):
       Check the plan it prints, answer `y` once, and answer `y` to the separate
       Tailscale Serve question only if it is correct for you. Never use Funnel.
 - [ ] Setup saved `https://<your-mac>.<tailnet>.ts.net` as the phone address
-      (`pterm config origin` shows it) and added the project "Home".
+      (`pterm config origin` shows it) and added the project "Home folder".
 - [ ] Confirm that Tailscale Serve keeps the original `Host`
       (`<your-mac>.<tailnet>.ts.net`) when it forwards to `127.0.0.1:8787`.
       The gateway fix assumes this.
@@ -215,7 +215,7 @@ Real delivery cannot be tested without a phone. See `docs/notifications.md`.
 
 ### Live folder
 
-- [ ] Mac: open a session from the "Home" project, run `cd src` (any
+- [ ] Mac: open a session from the "Home folder" project, run `cd src` (any
       subfolder). Within about 2 seconds the tab shows `src`, the Live status
       line shows `~/src` and, on the Sessions list, the row title is `src`
       while its second line still reads "Home · zsh".

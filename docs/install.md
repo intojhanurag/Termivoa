@@ -195,7 +195,7 @@ After `y` it:
   `tailscale serve --bg --https=8443 http://127.0.0.1:8789` for dev-server
   previews (see below). It changes nothing if HTTPS 8443 already serves
   something else;
-- adds your home folder as project "Home" when no project exists;
+- adds your home folder as the project "Home folder" when no project exists;
 - goes straight to pairing (below).
 
 If Tailscale is missing or signed out, setup tells you the exact next step

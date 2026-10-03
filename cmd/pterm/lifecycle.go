@@ -545,7 +545,7 @@ func pathHint(env lifecycleEnv, output io.Writer) {
 // runSetupCommand is the first-run wizard. It runs read-only checks, shows a
 // short plan of everything it will do, and asks once. Then it registers
 // startup, waits for the broker and gateway, saves the Tailscale phone
-// address, asks separately before it changes Tailscale Serve, adds a Home
+// address, asks separately before it changes Tailscale Serve, adds a "Home folder"
 // project if there is none, and pairs a phone. --verbose also prints the
 // checks, the startup files and every command. --apply --yes is the
 // non-interactive installer path (always verbose): it only registers startup
@@ -694,7 +694,7 @@ func runSetupCommand(ctx context.Context, args []string, input *os.File, output 
 		return err
 	}
 	if len(projects) == 0 {
-		name := "Home"
+		name := "Home folder"
 		if err := cli.ProjectAdd(ctx, admin, env.host.HomeDir, &name, output); err != nil {
 			return err
 		}
@@ -847,7 +847,7 @@ func describeSetup(env lifecycleEnv, plan lifecycle.Plan, report hostReport, ori
 			(tailscale.serve.Configured || asksPhoneServe) {
 			line("Share dev-server previews at %s (port 8443). It asks first.%s", previewOrigin(origin), runs(lifecycle.PreviewServeCommand))
 		}
-		line("Add your home folder %s as project \"Home\" if you have no project.", env.host.HomeDir)
+		line("Add your home folder %s as the project \"Home folder\" if you have no project.", env.host.HomeDir)
 		line("Ask what this computer is (your first, or one more for the app you already use), then pair your phone.")
 	}
 	if tailscale.needsOperator {

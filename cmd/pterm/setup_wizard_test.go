@@ -74,7 +74,7 @@ func useTailscaleFake(t *testing.T, env *lifecycleEnv, fake *tailscaleFake) {
 // TestSetupWizardGoesFromInstallToPairedPhone runs the interactive wizard
 // against fake launchctl and tailscale, a real development broker and a real
 // gateway: one confirmation registers startup, the Tailscale name becomes the
-// phone address, Serve runs only after its own yes, Home is added, and the
+// phone address, Serve runs only after its own yes, the Home folder project is added, and the
 // phone is approved after its code is shown.
 func TestSetupWizardGoesFromInstallToPairedPhone(t *testing.T) {
 	env, launchd := newLifecycleTestEnv(t)
@@ -141,7 +141,7 @@ func TestSetupWizardGoesFromInstallToPairedPhone(t *testing.T) {
 		"This runs: tailscale serve --bg --https=443 http://127.0.0.1:8787", "never uses Funnel",
 		"Also share dev-server previews with your tailnet devices at https://mac.example.ts.net:8443/ ?",
 		"This runs: tailscale serve --bg --https=8443 http://127.0.0.1:8789", "Previews are a separate origin",
-		`Saved project "Home"`, "https://mac.example.ts.net/pair#",
+		`Saved project "Home folder"`, "https://mac.example.ts.net/pair#",
 		"shows code " + redeemed.VerificationCode + ". Approve? [y/N]",
 	} {
 		if !strings.Contains(text, want) {
@@ -163,7 +163,7 @@ func TestSetupWizardGoesFromInstallToPairedPhone(t *testing.T) {
 	defer admin.Close()
 	projects, err := admin.Projects(ctx)
 	home, _ := filepath.EvalSymlinks(env.host.HomeDir)
-	if err != nil || len(projects) != 1 || projects[0].Name != "Home" || projects[0].Path != home {
+	if err != nil || len(projects) != 1 || projects[0].Name != "Home folder" || projects[0].Path != home {
 		t.Fatalf("projects = %#v, %v", projects, err)
 	}
 }

@@ -1,6 +1,6 @@
 # Live folder
 
-A session starts with the project name as its title, for example "Home".
+A session starts with the project name as its title, for example "Home folder".
 After `cd`, the phone shows where the session is now: the tab and the
 Sessions row show the folder name, and the Live status line shows the path
 (`~/src/app`). A session that a user renamed keeps its name. The Sessions row
