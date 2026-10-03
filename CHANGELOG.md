@@ -32,7 +32,8 @@ All notable changes are documented here. The format follows
   Tailscale's encrypted connection to mac's Tailscale address, re-sent
   every 30 s), then prints "Sent to mac (https://…)." and "On your phone,
   open Termivoa → Settings → Computers and tap Add next to "vps"." The QR
-  code and the link stay below as the other ways, for 2 minutes; when they
+  code and the link stay as the other ways (on Enter, or at once when
+  nothing reached mac; see Changed), for 2 minutes; when they
   expire and nothing reached mac, the command ends as before; else it says
   "The QR code and link above expired. Add in the app still works." and
   keeps waiting. With piped input or `--no-wait` it sends nothing; with a
@@ -53,9 +54,10 @@ All notable changes are documented here. The format follows
   computer whose address your Termivoa app opens."); after 10 minutes it
   ends with "Setup is done, but your phone is not connected yet. To
   connect it, run `pterm pair --via mac`." The approval prompt for an
-  added computer now names it: `Phone "iPhone" wants to use THIS computer
-  (vps) from the Termivoa app at mac (…)`, and says to approve only if the
-  phone shows the same code and says "type y in the terminal on vps".
+  added computer now names it: `Phone "iPhone" wants to add this computer
+  (vps) to your Termivoa app on mac.`, then mac's address and owner, and
+  says to approve only if the phone shows the same code and says "type y
+  in the terminal on vps".
   Plain `pterm pair` no longer offers pairings that belong to another
   computer's app. Home accepts offers on a new route without login,
   `POST /api/v1/computers/offer` (no browser can call it; always `204`;
@@ -256,6 +258,22 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- A calmer add-computer screen (host side). After `pterm pair --via mac` (or
+  `pterm setup`, answer 2) reached mac, the terminal shows five short
+  lines: "Adding this computer (vps) to your Termivoa app on mac.", "Sent
+  to mac (https://…).", "On your phone, open Termivoa → Settings →
+  Computers and tap Add next to "vps".", "Waiting for your phone (up to 10
+  minutes; Ctrl+C stops)…" and "No Add button? Press Enter to show a QR
+  code and a link." The QR code and the link come only on Enter; when
+  nothing reached mac they print at once, as before. The approval prompt
+  is shorter and keeps its checks: `Phone "iPhone" wants to add this
+  computer (vps) to your Termivoa app on mac.` / `mac is https://… (owner
+  …).` / `Approve only if your phone shows 123-456 and says "type y in the
+  terminal on vps". [y/N]`. Success now says "Done. vps is in your
+  Termivoa app on mac. Open the app and tap it.", with "Tip: give it a
+  short name in the app: Settings → Computers → Rename." for a machine
+  name longer than 12 characters; setup then ends with "Setup is done."
+  Phone: no change.
 - A shorter `pterm setup` for a new computer. Host: setup prints a short
   plan, one line for each change (startup at login, where data and logs go,
   the phone address, each Tailscale Serve question, linger, the project

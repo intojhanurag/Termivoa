@@ -145,11 +145,11 @@ try {
   await page.getByText('Does vps show this code?').waitFor();
   const foundShown = await code();
   const phoneLine = await page.getByText('If it matches, type y in the terminal on vps.').isVisible();
-  const [, foundPrinted] = await offerCli.wait(/THIS computer \(vps\)[\s\S]*?shows (\d{3}-\d{3}) and says "type y in the terminal on vps"/);
+  const [, foundPrinted] = await offerCli.wait(/wants to add this computer \(vps\)[\s\S]*?shows (\d{3}-\d{3}) and says "type y in the terminal on vps"/);
   offerCli.end(foundPrinted === foundShown && phoneLine ? 'y\n' : 'n\n');
   const foundAdded = await until(async () => ((await text()).includes('vps is added') && 'added') || page.evaluate(() => document.querySelector('[role=alert]')?.innerText ?? ''), { what: 'Found add outcome' });
   await page.screenshot({ path: join(out, 'webkit-found-added.png') });
-  check('W8', 'WebKit: Found on your network: vps — Add → "Add this computer?" → code; vps\'s prompt names THIS computer and the code; y → "vps is added"',
+  check('W8', 'WebKit: Found on your network: vps — Add → "Add this computer?" → code; vps\'s prompt names this computer and the code; y → "vps is added"',
     removed === 204 && foundPrinted === foundShown && phoneLine && foundAdded === 'added' && await offerCli.done === 0,
     `remove ${removed}; ${sent}; code ${foundShown}/${foundPrinted}; phone says "type y in the terminal on vps": ${phoneLine}; ${foundAdded}; ${Date.now() - started} ms`);
 } catch (error) {

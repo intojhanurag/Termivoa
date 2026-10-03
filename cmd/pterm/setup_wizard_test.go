@@ -420,7 +420,7 @@ func TestOfferPairingAsksWhetherTermivoaIsOnThePhone(t *testing.T) {
 		another  = "Pair another phone? [y/N]"
 		skipped  = "Setup is done. Next: to pair a phone, run `pterm pair`; to add this computer to a Termivoa app you already use, " +
 			"run `pterm pair --via <name>` (<name>: air, mac)."
-		added = "Setup is done. Next: in the Termivoa app on your phone, switch to this computer and start a session."
+		added = "Setup is done."
 	)
 
 	for name, test := range map[string]struct {

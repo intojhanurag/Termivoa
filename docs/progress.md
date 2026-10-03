@@ -82,6 +82,19 @@ on their own date.
   already stops setup; the doc's own fix for a handler is "its own Tailscale
   Service hostname", which a wider refusal would block. Doctor still counts
   it as a problem.
+- **Add-computer wait screen.** After a delivered first offer, the N4 screen
+  is five lines and the QR code and the link wait for Enter (read with the
+  confirmer's `Ask`, stopped before the N5 prompt; the reader takes no byte
+  past the newline). A failed first offer prints them at once, as before.
+  N5 is three short lines with the app's origin and owner on one line. A
+  bound approval prints "Done. vps is in your Termivoa app on mac. Open the
+  app and tap it." (+ a Rename tip over 12 characters); setup ends with
+  "Setup is done.". Tests: `TestPairViaEnterShowsTheLinkAfterADeliveredPush`
+  (a real pipe through `FileConfirmationReader`: Enter, then `y` reaches
+  the prompt), `TestPairViaFailedPushShowsTheLinkAtOnce`,
+  `TestPairViaEnterAfterTheLinkExpired`, `TestPairViaSuccessHintsAShortName`,
+  and the updated N4/N5 tests. The e2e harness expectations
+  (`phase-b.mjs`, `webkit.mjs`) are updated but were not run here.
 
 ### Found on your network: harness, review fixes, docs (2026-10-03, branch `feat/found-on-network`)
 

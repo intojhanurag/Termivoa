@@ -18,7 +18,7 @@ The design rests on these facts about the code before this feature (`origin/main
 | The grant is a 256-bit secret, 2 minutes, single use, stored only as a hash, bound to the app origin and pinned node. At most 8 unredeemed grants. Its value is "returned only to the restricted local CLI". There is no function that deletes one grant. **Now:** the `CreateBoundGrant` comment states the new rule (R7), and `Service.DeleteGrant` and `Store.DeleteUnredeemedGrant` delete one unredeemed grant. | `internal/auth/service.go` `CreateBoundGrant` (and its comment), `MaxOutstandingGrants`; `internal/auth/expiry.go` `PairingGrantLifetime`; `internal/store/auth.go` `CreatePairingGrant` |
 | A redeem finds the grant by its hash on the computer that made it. The pending pairing copies the app binding from the grant row in SQL, so the redeemer cannot choose it. At most 4 pending pairings in total. | `internal/store/auth.go` `RedeemPairingGrant` (`WHERE grant_hash = ?`; `INSERT … SELECT … FROM pairing_grants`); `internal/auth/service.go` `MaxPendingPairings` |
 | Redeem and poll pass only when the `Origin` header equals the bound origin and the snapshot still trusts the pinned node. The header is the only origin check: a program can send any `Origin`. | `internal/broker/computers.go` `pairingCheck`, `appTrust` |
-| The CLI approves only after the owner compares the phone's code and types `y`. The prompt names the app computer, its origin and owner, but not this computer. **Now:** it also names THIS computer (N5). | `internal/cli/admin.go` `pairingPrompt`, `waitForPhone`, `describeApp` |
+| The CLI approves only after the owner compares the phone's code and types `y`. The prompt names the app computer, its origin and owner, but not this computer. **Now:** it also names this computer (N5). | `internal/cli/admin.go` `pairingPrompt`, `waitForPhone`, `describeApp` |
 | `waitForPhone` waited until the grant expired (2 minutes) and offered only pending pairings bound to the named app. **Now:** it takes a `phoneWait` (deadline, end error, an optional re-offer every 30 s); the offer path waits 10 minutes (N3). | `internal/cli/admin.go` `waitForPhone` |
 | The phone's confirm sheet says "Next, this phone shows a code. Check it on {label}."; its code screen says "If it matches, type y in the terminal on {label}." **Now:** the sheet's first sentence is "Add it only if you just ran pterm setup or pterm pair --via on {label}." | `web/src/screens/AddComputer.tsx` `AddComputerConfirm`, `AddComputerPage` |
 | **Add this computer?** first records a pending entry on home (home checks the host in its own status and pins the node). Then a full load of `/computers/add#grant=…&origin=…` redeems on the new computer. | `web/src/screens/AddComputer.tsx` `AddComputerSheet`; `web/src/pairing/addComputer.ts` `prepareAddComputer`, `addComputerUrl`, `takeAddComputerFragment`, `AddComputerFlow`; `internal/broker/computers.go` `addComputer`, `lookupComputer` |
@@ -69,7 +69,7 @@ pterm pair --via mac (waits, 10 min)
                                                                      load /computers/add#grant=…
  POST /api/v1/pair/redeem  <------------------------------------------------------ (Origin mac)
  pending pairing bound to mac; code -------------------------------------------->  shows the code
- prompt: THIS computer (vps), app at mac, code; y
+ prompt: this computer (vps), app on mac, code; y
  POST /api/v1/pair/poll    <------------------------------------------------------
  approved + cookie ------------------------------------------------------------->  confirm on mac
  CLI exits: admin.pair.offer.end deletes unredeemed G and the link grant
@@ -165,7 +165,7 @@ The CLI offers (`offerAndWait`) only when a person waits at a terminal: there is
 1. Read the pending pairings that exist now (`seen`, as today).
 2. Make the link grant with today's `admin.pair.grant`. It checks `--via` and fails as today; for example, a tagged home without `--allow-tagged` fails here. The QR code and the link show this grant.
 3. Call `admin.pair.offer`. Check `appOrigin` with today's `boundAppOrigin`.
-4. Print the screen (N4).
+4. Print the screen (N4). After a delivered first offer, the QR code and the link wait for Enter.
 5. `waitForPhone` with a deadline of **10 minutes** (not the grant's expiry; the wait line says "up to 10 minutes" only when the first offer was delivered, else `Waiting for your phone (Ctrl+C stops)…`). Every 30 s it calls `admin.pair.offer` again. When the link grant expires (2 minutes): if no offer was delivered yet, the command ends with today's text "the link expired before a phone opened it; run \`pterm pair --via mac\` again" (exit 1); if an offer was delivered, it prints once `The QR code and link above expired. Add in the app still works.` and keeps waiting. It prints one line only when the result changes (`Sent to mac (https://…). Tap Add next to "vps" in the app.` or the failure line of N4). An RPC error on a later call prints nothing, and the CLI tries again 30 s later. The exception is `home_changed`: it ends the command with `mac is now a different Tailscale machine. Run pterm pair --via mac again.` (exit 1).
 6. A new pending pairing bound to home's origin gets the prompt of N5. The prompt blocks the loop, so no offer is sent while it waits. After the answer the command ends, so one command run can produce at most one pending pairing from offers.
 7. Nothing for 10 minutes: `Nobody added this computer in 10 minutes. Run pterm pair --via mac again.` (exit 1).
@@ -190,18 +190,31 @@ Type a number, or the name of another computer (Enter skips pairing):
 
 ### N4. The screen
 
+When the first offer is delivered (2026-10-03: the owner's first real add ended with a full QR code, the link and long lines on screen, which confused):
+
 ```
-Add this computer (vps) to the Termivoa app at mac (https://mac.<tailnet>.ts.net, owner <owner>).
+Adding this computer (vps) to your Termivoa app on mac.
 Sent to mac (https://mac.<tailnet>.ts.net).
 On your phone, open Termivoa → Settings → Computers and tap Add next to "vps".
 Waiting for your phone (up to 10 minutes; Ctrl+C stops)…
+No Add button? Press Enter to show a QR code and a link.
+```
+
+Enter prints the block below. `waitForPhone` reads Enter with the confirmer's `Ask` (one byte at a time, never past the newline) and stops that read before the N5 prompt, so Enter never takes the `y`/`N` answer. Only a terminal gets this line: `offerAndWait` runs only with a terminal, and only a confirmer that can `Ask` reads Enter; without one the block prints at once.
+
+When the first offer is not delivered, the block prints at once, and lines 2 and 3 become one line (table below):
+
+```
+Adding this computer (vps) to your Termivoa app on mac.
+mac did not answer. Use the QR code or the link below.
+Waiting for your phone (Ctrl+C stops)…
 
 No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:
 [QR]
 <link>
 ```
 
-The first line uses `describeApp` (tags in place of the owner for a tagged home). `vps` is this computer's first DNS label. When the offer is not delivered, lines 2 and 3 become one line:
+`vps` is this computer's first DNS label, `mac` home's. When a later offer fails before the block was shown, its line comes with the block. When the link expires before it was shown, nothing is printed; Enter then prints `The QR code and link expired (they work for 2 minutes). Add in the app still works; for a new link, press Ctrl+C and run pterm pair --via mac again.` The lines for an offer that is not delivered:
 
 | Case | Line |
 | --- | --- |
@@ -223,10 +236,14 @@ The "do not share" sentence and the "Camera app will NOT work" sentence of `pair
 `pairingPrompt` gets this computer's first label. For a pairing bound to another computer's app (both the link and Found):
 
 ```
-Phone "iPhone" wants to use THIS computer (vps) from the Termivoa app at mac (https://mac.<tailnet>.ts.net, owner <owner>).
-Approve only if your phone shows 123-456 and says "type y in the terminal on vps". If it names another computer, shows another code, or shows nothing, answer N.
-Approve? [y/N]
+Phone "iPhone" wants to add this computer (vps) to your Termivoa app on mac.
+mac is https://mac.<tailnet>.ts.net (owner <owner>).
+Approve only if your phone shows 123-456 and says "type y in the terminal on vps". [y/N]
 ```
+
+The second line keeps the app's full origin and its owner (tags for a tagged home), both from the pending item: a machine name alone can be a look-alike (`mac` in another tailnet, or another user's `mac` in a team tailnet), which the origin and the owner tell apart. Version 3 had the same facts in longer words ("wants to use THIS computer … from the Termivoa app at …", and "If it names another computer, shows another code, or shows nothing, answer N."); "Approve only if" already says that.
+
+After `y`, `pterm pair --via` and setup's answer 2 print `Done. vps is in your Termivoa app on mac. Open the app and tap it.` (setup then `Setup is done.`). A machine name longer than 12 characters adds `Tip: give it a short name in the app: Settings → Computers → Rename.`
 
 The quoted words are the phone's code screen ("If it matches, type y in the terminal on {label}."). The review's draft quoted the confirm sheet ("Check it on vps"), but the code screen is what shows next to the code. This sentence is what stops the wrong-home relay (section 6, item 4): in that relay, the phone names the hostile computer, not `vps`.
 
@@ -280,7 +297,7 @@ The add page's text for an expired code now also names **Add**: "The code expire
    6. The phone shows C, and X's prompt shows C.
 
    With a wrong `--via` today, nothing happens. **Resolution:**
-   - X's prompt names X ("THIS computer (vps)"), and it tells the user to answer `N` unless the phone says "type y in the terminal on vps". In this relay, the phone says "…on M".
+   - X's prompt names X ("wants to add this computer (vps)"), and it tells the user to answer `N` unless the phone says "type y in the terminal on vps". In this relay, the phone says "…on M".
    - Setup's list shows the full address and OS, and asks for the computer whose address the app opens.
    - The screen prints "Sent to mac (https://…)".
 5. **The phone shows no code until a redeem happens.** The code it shows comes from its own redeem on the computer that the row and the code screen name.
@@ -436,7 +453,7 @@ Phase B checks in Chrome; the WebKit run adds the phone side of `F-add`. Real tw
 | Check | What it proves |
 | --- | --- |
 | `F-offer` | `pterm pair --via mac` on vps: mac's `found` lists vps with a grant, and the screen says "Sent to mac (https://mac.tailx.ts.net)". Direct `POST`s with curl: with `Origin` or `Sec-Fetch-Site` → `403`, no CORS header. An offer for evil's name (owner mallory), for a tagged node, or for mac's own origin → `204`, but nothing is listed. A bad body → `400` |
-| `F-add` (Chrome; WebKit for the phone side) | **Found** row → **Add** → sheet → code; vps's prompt says "THIS computer (vps)" and the phone says "type y in the terminal on vps"; `y` on vps; the computer is in the list; its sessions show; the device on vps has `Via` mac; the row is gone |
+| `F-add` (Chrome; WebKit for the phone side) | **Found** row → **Add** → sheet → code; vps's prompt says "this computer (vps)" and the phone says "type y in the terminal on vps"; `y` on vps; the computer is in the list; its sessions show; the device on vps has `Via` mac; the row is gone |
 | `F-dead` | curl overwrites vps's offer with a dead grant: **Add** shows "vps stopped waiting…". Within 30 s vps's next send replaces it and **Add** works. The QR link works the whole time |
 | `F-flood` | 50 offers at once: 10 pass, then `429`; a paired phone's requests and a link pairing still work |
 | `F-gone` | Ctrl+C on vps: the row is gone within 60 s. vps's node ID changes on mac: the row is gone at the next poll. mac's node ID changes on vps: the vps command ends with the `home_changed` text |

@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -667,11 +670,11 @@ func TestPairingPromptNamesTheApp(t *testing.T) {
 		want string
 	}{
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456", AppOrigin: &home, AppNode: owned("ada@example.com")},
-			viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, owner ada@example.com)")},
+			viaPrompt("iPhone", "123-456", "owner ada@example.com")},
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456", AppOrigin: &home, AppNode: &protocol.TailnetNode{ID: "n1", Tags: []string{"tag:server"}}},
-			viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, tags tag:server)")},
+			viaPrompt("iPhone", "123-456", "tags tag:server")},
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456", AppOrigin: &home, AppNode: owned(hostile)},
-			viaPrompt("iPhone", "123-456", `mac (https://mac.tailx.ts.net, owner "ada\x1b[2J@example.com")`)},
+			viaPrompt("iPhone", "123-456", `owner "ada\x1b[2J@example.com"`)},
 		{protocol.AdminRPCPendingPairing{DeviceLabel: "iPhone", VerificationCode: "123-456"},
 			"Approve only if the phone shows exactly this code.\nPhone \"iPhone\" shows code 123-456. Approve? [y/N] "},
 	} {
@@ -681,11 +684,12 @@ func TestPairingPromptNamesTheApp(t *testing.T) {
 	}
 }
 
-// viaPrompt is the N5 prompt for a pairing bound to the app at app.
-func viaPrompt(label, code, app string) string {
-	return "Phone \"" + label + "\" wants to use THIS computer (vps) from the Termivoa app at " + app + ".\n" +
-		"Approve only if your phone shows " + code + " and says \"type y in the terminal on vps\". " +
-		"If it names another computer, shows another code, or shows nothing, answer N.\nApprove? [y/N] "
+// viaPrompt is the N5 prompt on vps for a pairing bound to the app on mac,
+// whose owner (or tags) is owner.
+func viaPrompt(label, code, owner string) string {
+	return "Phone \"" + label + "\" wants to add this computer (vps) to your Termivoa app on mac.\n" +
+		"mac is https://mac.tailx.ts.net (" + owner + ").\n" +
+		"Approve only if your phone shows " + code + " and says \"type y in the terminal on vps\". [y/N] "
 }
 
 // With --via, only new pending pairings bound to that app are offered.
@@ -705,7 +709,7 @@ func TestPairViaOffersOnlyPairingsForItsApp(t *testing.T) {
 	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: confirmer, PollInterval: time.Millisecond}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	want := viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, tags tag:server)")
+	want := viaPrompt("iPhone", "123-456", "tags tag:server")
 	if confirmer.calls != 1 || confirmer.prompt != want || len(admin.approved) != 1 || admin.approved[0] != adminPending {
 		t.Fatalf("calls=%d prompt=%q approved=%v", confirmer.calls, confirmer.prompt, admin.approved)
 	}
@@ -865,7 +869,7 @@ func TestPairViaOfferScreen(t *testing.T) {
 	tail := "\nNo Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n" + offerLink + "\n" +
 		"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n"
 	waiting, waitingLong := "Waiting for your phone (Ctrl+C stops)…\n", "Waiting for your phone (up to 10 minutes; Ctrl+C stops)…\n"
-	head := "Add this computer (vps) to the Termivoa app at mac (https://mac.tailx.ts.net, owner ada@example.com).\n"
+	head := "Adding this computer (vps) to your Termivoa app on mac.\n"
 	for name, test := range map[string]struct {
 		reply offerReply
 		line  string
@@ -1017,7 +1021,7 @@ func TestPairViaOfferEndsOnEveryExit(t *testing.T) {
 			t.Fatalf("%s: ends %v", name, admin.ends)
 		}
 		prompted := test.confirmer.calls == 1
-		if prompted != (name == "y" || name == "N") || prompted && test.confirmer.prompt != viaPrompt("iPhone", "123-456", "mac (https://mac.tailx.ts.net, owner ada@example.com)") {
+		if prompted != (name == "y" || name == "N") || prompted && test.confirmer.prompt != viaPrompt("iPhone", "123-456", "owner ada@example.com") {
 			t.Fatalf("%s: %d prompts: %q", name, test.confirmer.calls, test.confirmer.prompt)
 		}
 		if (name == "y") != (len(admin.approved) == 1) {
@@ -1088,5 +1092,213 @@ func TestPairOffersOnlyPlainPairings(t *testing.T) {
 	err := Pair(context.Background(), admin, PairOptions{Confirmer: confirmer, PollInterval: time.Millisecond}, &bytes.Buffer{})
 	if !errors.Is(err, ErrNoPhone) || confirmer.calls != 0 || len(admin.approved) != 0 {
 		t.Fatalf("bound pairing offered to a plain pair: %v, %d prompts", err, confirmer.calls)
+	}
+}
+
+// pipeConfirmer reads a pipe as pterm's fileConfirmer reads the terminal:
+// a fresh FileConfirmationReader for each answer.
+type pipeConfirmer struct {
+	input  *os.File
+	output io.Writer
+}
+
+func (confirmer pipeConfirmer) line(ctx context.Context, read func(*LineConfirmer) error) error {
+	reader, err := NewFileConfirmationReader(confirmer.input)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	line, err := NewLineConfirmer(reader, confirmer.output)
+	if err != nil {
+		return err
+	}
+	return read(line)
+}
+
+func (confirmer pipeConfirmer) Confirm(ctx context.Context, prompt string) (answer bool, err error) {
+	return answer, confirmer.line(ctx, func(line *LineConfirmer) error {
+		answer, err = line.Confirm(ctx, prompt)
+		return err
+	})
+}
+
+func (confirmer pipeConfirmer) Ask(ctx context.Context, prompt string) (answer string, err error) {
+	return answer, confirmer.line(ctx, func(line *LineConfirmer) error {
+		answer, err = line.Ask(ctx, prompt)
+		return err
+	})
+}
+
+// lockedBuffer is output that the test reads while Pair writes.
+type lockedBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (buffer *lockedBuffer) Write(data []byte) (int, error) {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.buffer.Write(data)
+}
+
+func (buffer *lockedBuffer) String() string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.buffer.String()
+}
+
+func (buffer *lockedBuffer) waitFor(t *testing.T, text string) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(buffer.String(), text); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("output lacks %q:\n%s", text, buffer.String())
+		}
+	}
+}
+
+// pendingLater is a fakeAdmin whose phone (a pairing bound to mac) arrives
+// when the test says so.
+type pendingLater struct {
+	*fakeAdmin
+	ready atomic.Bool
+}
+
+func (admin *pendingLater) PendingPairings(context.Context) ([]protocol.AdminRPCPendingPairing, error) {
+	if !admin.ready.Load() {
+		return nil, nil
+	}
+	home := homeOrigin
+	return []protocol.AdminRPCPendingPairing{{ID: adminPending, VerificationCode: "123-456", DeviceLabel: "iPhone",
+		ExpiresAt: "2026-09-27T00:05:00Z", AppOrigin: &home, AppNode: owned("ada@example.com")}}, nil
+}
+
+// startTerminalWait runs `pterm pair --via mac` on a terminal (a pipe read
+// like one) and returns its input, its output and its result.
+func startTerminalWait(t *testing.T, admin Admin) (*os.File, *lockedBuffer, <-chan error) {
+	t.Helper()
+	input, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	output, done, finished := &lockedBuffer{}, make(chan error, 1), make(chan struct{})
+	go func() {
+		defer close(finished)
+		done <- Pair(ctx, admin, PairOptions{Via: "mac", Confirmer: pipeConfirmer{input, output}, PollInterval: time.Millisecond}, output)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-finished
+		_ = writer.Close()
+		_ = input.Close()
+	})
+	return writer, output, done
+}
+
+// After a delivered push the screen has no QR code and no link, only one
+// line that says Enter shows them. Enter prints them (the grant once); the
+// later y still reaches the approval prompt, which names this computer, the
+// app's address and owner, and the phone's code-screen words. Success says
+// where the computer is now.
+func TestPairViaEnterShowsTheLinkAfterADeliveredPush(t *testing.T) {
+	admin := &pendingLater{fakeAdmin: &fakeAdmin{grant: liveGrant(owned("ada@example.com"))}}
+	input, output, done := startTerminalWait(t, admin)
+	screen := "Adding this computer (vps) to your Termivoa app on mac.\n" +
+		"Sent to mac (https://mac.tailx.ts.net).\n" +
+		"On your phone, open Termivoa → Settings → Computers and tap Add next to \"vps\".\n" +
+		"Waiting for your phone (up to 10 minutes; Ctrl+C stops)…\n" +
+		"No Add button? Press Enter to show a QR code and a link.\n"
+	output.waitFor(t, screen)
+	time.Sleep(20 * time.Millisecond) // a few polls: nothing more is printed
+	if output.String() != screen {
+		t.Fatalf("screen =\n%s", output.String())
+	}
+	if _, err := input.WriteString("\n"); err != nil {
+		t.Fatal(err)
+	}
+	link := "No Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n" + offerLink + "\n" +
+		"The link and QR code are a single-use secret: do not share them in chats, issues, screenshots or logs.\n"
+	output.waitFor(t, link)
+	admin.ready.Store(true)
+	output.waitFor(t, "[y/N] ")
+	if _, err := input.WriteString("y\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	want := screen + link + viaPrompt("iPhone", "123-456", "owner ada@example.com") +
+		"Done. vps is in your Termivoa app on mac. Open the app and tap it.\n"
+	if output.String() != want || len(admin.approved) != 1 || admin.approved[0] != adminPending || strings.Count(want, adminGrant) != 1 {
+		t.Fatalf("approved %v; output =\n%s\nwant\n%s", admin.approved, output.String(), want)
+	}
+}
+
+// A failed push prints the QR code and the link at once, as before, and no
+// Enter line. A delivered push that fails later prints its line and then
+// the QR code and the link it points to.
+func TestPairViaFailedPushShowsTheLinkAtOnce(t *testing.T) {
+	shortOffers(t, 2*time.Millisecond, time.Minute)
+	admin := &pendingLater{fakeAdmin: &fakeAdmin{grant: liveGrant(owned("ada@example.com")), replies: []offerReply{{result: offered(protocol.Unreachable)}}}}
+	_, output, _ := startTerminalWait(t, admin)
+	link := "\nNo Add button? In the app tap + Add a computer → Scan QR, or paste the link. They work for 2 minutes:\n" + offerLink + "\n"
+	output.waitFor(t, "screenshots or logs.\n")
+	if want := "Adding this computer (vps) to your Termivoa app on mac.\nmac did not answer. Use the QR code or the link below.\n" +
+		"Waiting for your phone (Ctrl+C stops)…\n" + link; !strings.HasPrefix(output.String(), want) || strings.Contains(output.String(), "Press Enter") {
+		t.Fatalf("screen =\n%s", output.String())
+	}
+
+	admin = &pendingLater{fakeAdmin: &fakeAdmin{grant: liveGrant(owned("ada@example.com")),
+		replies: []offerReply{{result: offered("")}, {result: offered(protocol.Busy)}}}}
+	_, output, _ = startTerminalWait(t, admin)
+	output.waitFor(t, "screenshots or logs.\n")
+	if _, after, _ := strings.Cut(output.String(), "Press Enter to show a QR code and a link.\n"); !strings.HasPrefix(after,
+		"mac is busy right now. Use the QR code or the link below.\n"+link[1:]) {
+		t.Fatalf("later failure:\n%s", output.String())
+	}
+}
+
+// A link that expires before anyone asked for it is not mentioned; Enter
+// after that says so and that Add still works.
+func TestPairViaEnterAfterTheLinkExpired(t *testing.T) {
+	admin := &pendingLater{fakeAdmin: &fakeAdmin{grant: liveGrant(owned("ada@example.com"))}}
+	admin.grant.ExpiresAt = time.Now().Add(20 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+	input, output, _ := startTerminalWait(t, admin)
+	output.waitFor(t, "Press Enter")
+	time.Sleep(100 * time.Millisecond)
+	if strings.Contains(output.String(), "expired") {
+		t.Fatalf("an unseen link is said to expire:\n%s", output.String())
+	}
+	if _, err := input.WriteString("\n"); err != nil {
+		t.Fatal(err)
+	}
+	output.waitFor(t, "Press Enter to show a QR code and a link.\nThe QR code and link expired (they work for 2 minutes). "+
+		"Add in the app still works; for a new link, press Ctrl+C and run pterm pair --via mac again.\n")
+	if strings.Contains(output.String(), adminGrant) {
+		t.Fatalf("expired grant printed:\n%s", output.String())
+	}
+}
+
+// A long machine name gets one hint after success.
+func TestPairViaSuccessHintsAShortName(t *testing.T) {
+	for self, tip := range map[string]bool{"vps": false, "anurags-macbook": true} {
+		admin := &fakeAdmin{grant: liveGrant(owned("ada@example.com")), afterOffer: func(admin *fakeAdmin, _ int) {
+			home := homeOrigin
+			admin.pending = []protocol.AdminRPCPendingPairing{{ID: adminPending, VerificationCode: "123-456", DeviceLabel: "iPhone",
+				ExpiresAt: "2026-09-27T00:05:00Z", AppOrigin: &home, AppNode: owned("ada@example.com")}}
+		}}
+		origin := "https://" + self + ".tailx.ts.net"
+		admin.grant.Origin = &origin
+		var output bytes.Buffer
+		if err := Pair(context.Background(), admin, PairOptions{Via: "mac", Confirmer: &fakeConfirmer{answer: true}, PollInterval: time.Millisecond}, &output); err != nil {
+			t.Fatal(err)
+		}
+		want := "\nDone. " + self + " is in your Termivoa app on mac. Open the app and tap it.\n"
+		if tip {
+			want += "Tip: give it a short name in the app: Settings → Computers → Rename.\n"
+		}
+		if !strings.HasSuffix(output.String(), want) {
+			t.Errorf("%s: output ends\n%s", self, output.String())
+		}
 	}
 }

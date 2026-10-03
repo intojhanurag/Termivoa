@@ -81,7 +81,7 @@ designed in Paper first and shown to the owner before any code.
    CORS list once per second), so the phone showed "vps · can't reach" until
    a refresh. Make the browser test fail on it first; then the app retries
    quietly for about 5 s after an add before it shows "can't reach".
-2. **Add-computer wait screen in the terminal** (setup answer 2 and
+2. **Done (branch `fix/host-batch`, not merged yet).** **Add-computer wait screen in the terminal** (setup answer 2 and
    `pterm pair --via`): no QR code and link up front (Enter shows them; shown
    at once only when the push failed); a short approval prompt that still
    names this computer and quotes the phone's code screen; a strong success
@@ -93,9 +93,8 @@ designed in Paper first and shown to the owner before any code.
    empty and loading states, livelier cards and status dots, short motion
    that respects reduced motion. Keep the night palette and the one cyan
    signal.
-4. **Open issues:** #158 (test fake systemd), #161 (`pterm pair` and
-   `pterm launch` ignore Funnel), #162 (Serve problems under another host
-   name), #164 (+ Add a computer shows the renamed home label), #165 (landing
+4. **Open issues:** #158, #161 and #162 are fixed or answered on branch
+   `fix/host-batch` (#162: not a defect, see `docs/progress.md`); #164 (+ Add a computer shows the renamed home label), #165 (landing
    page does not show adding a computer).
 5. **Scan QR on iPhone:** end the scan when a call or another app mutes the
    camera track (today the user taps Cancel).

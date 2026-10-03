@@ -912,7 +912,7 @@ func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status
 					return notYet(cli.PairCommand(options))
 				}
 			}
-			next = "Setup is done. Next: in the Termivoa app on your phone, switch to this computer and start a session."
+			next = "Setup is done." // the add-computer wait has said where it is
 			break
 		}
 	}

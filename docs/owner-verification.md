@@ -424,7 +424,7 @@ this build. Design: [found-on-network.md](found-on-network.md), section 10.
       **Settings → Computers → Found on your network**, `vps`, **Add**, the
       **Add this computer?** sheet, **Add vps**, **Continue**. The phone shows
       a code and "If it matches, type y in the terminal on vps." The prompt
-      on `vps` says "THIS computer (vps)" and the same code. Type `y`: `vps`
+      on `vps` says "wants to add this computer (vps)" and the same code. Type `y`: `vps`
       is in the list, its sessions show, and the row is gone.
 - [ ] **The same on Android** (Chrome, installed app).
 
