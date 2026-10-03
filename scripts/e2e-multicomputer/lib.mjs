@@ -149,13 +149,18 @@ export class Stack {
     };
   }
 
-  async start() {
+  /** preview false starts without the preview listener: a computer that does not share previews. */
+  async start({ preview = true } = {}) {
     mkdirSync(join(this.dir, 'tmp'), { recursive: true });
     this.port ??= await freePort();
     this.gateway = `127.0.0.1:${this.port}`;
+    // What `tailscale serve --https=8443` exposes; the front routes <host>:8443 here.
+    this.previewPort ??= await freePort();
+    this.preview = `127.0.0.1:${this.previewPort}`;
+    this.previewOrigin = `https://${this.host}:8443`;
     const log = join(this.env.root, `${this.name}.log`);
     const child = spawn(...sandboxed(this.env.pterm, ['up', '--dev', '--data-dir', this.dataDir, '--runtime-dir', this.runtimeDir,
-      '--listen', this.gateway, '--preview-listen', 'off']), { env: this.processEnv, cwd: this.home, stdio: ['ignore', 'pipe', 'pipe'] });
+      '--listen', this.gateway, '--preview-listen', preview ? this.preview : 'off']), { env: this.processEnv, cwd: this.home, stdio: ['ignore', 'pipe', 'pipe'] });
     this.child = child;
     let out = '';
     const sink = (d) => { out += d; appendFileSync(log, d); };
@@ -215,7 +220,7 @@ export class Env {
 
   async startFront() {
     this.frontLog = join(this.root, 'front.jsonl');
-    const routes = Object.values(this.stacks).flatMap((s) => ['-route', `${s.host}=${s.gateway}`]);
+    const routes = Object.values(this.stacks).flatMap((s) => ['-route', `${s.host}=${s.gateway}`, '-preview', `${s.host}=${s.preview}`]);
     this.front = spawn(join(this.bin, 'front'), ['-log', this.frontLog, ...routes], { stdio: ['ignore', 'pipe', 'inherit'] });
     const line = await new Promise((res) => this.front.stdout.once('data', (d) => res(String(d))));
     const [, address, spki] = /^proxy (\S+) spki (\S+)/.exec(line);
@@ -232,20 +237,21 @@ export class Env {
 
   logMark() { return this.logSince(0).length; }
 
-  /** One request through the front with curl. Returns status and lowercase headers. */
+  /** One request through the front with curl. Returns status, lowercase headers and the body text. */
   async curl(url, { method = 'GET', headers = {}, body } = {}) {
-    const args = ['-sS', '-k', '--suppress-connect-headers', '--proxy', `http://${this.proxy}`, '-o', '/dev/null', '-D', '-', '-X', method];
+    const args = ['-sS', '-k', '--suppress-connect-headers', '--proxy', `http://${this.proxy}`, '-D', '-', '-X', method];
     for (const [k, v] of Object.entries(headers)) args.push('-H', `${k}: ${v}`);
     if (body !== undefined) args.push('--data-binary', body);
     const { stdout } = await must('curl', [...args, url]);
-    const lines = stdout.split('\r\n');
+    const end = stdout.indexOf('\r\n\r\n');
+    const lines = stdout.slice(0, end).split('\r\n');
     const status = Number(/^HTTP\/[\d.]+ (\d+)/.exec(lines[0])?.[1]);
     const h = {};
     for (const line of lines.slice(1)) {
       const i = line.indexOf(':');
       if (i > 0) h[line.slice(0, i).toLowerCase()] = line.slice(i + 1).trim();
     }
-    return { status, headers: h };
+    return { status, headers: h, body: stdout.slice(end + 4) };
   }
 
   async close() {
@@ -341,6 +347,21 @@ export class Page {
   }
 
   close() { return this.browser.send('Target.closeTarget', { targetId: this.targetId }); }
+
+  /**
+   * Evaluates in the child frame whose address starts with prefix (the
+   * preview frame is another origin, so the page cannot read it). Returns
+   * undefined when there is no such frame.
+   */
+  async frameEval(prefix, expression) {
+    const { frameTree } = await this.send('Page.getFrameTree');
+    const frame = (frameTree.childFrames ?? []).map((child) => child.frame).find((f) => f.url.startsWith(prefix));
+    if (!frame) return undefined;
+    const { executionContextId } = await this.send('Page.createIsolatedWorld', { frameId: frame.id });
+    const r = await this.send('Runtime.evaluate', { expression, contextId: executionContextId, awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    return r.result.value;
+  }
 }
 
 /**
