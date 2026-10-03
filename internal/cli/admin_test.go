@@ -514,7 +514,7 @@ func TestPairViaPrintsOnlyTheAddComputerLink(t *testing.T) {
 		}
 		if strings.Count(text, adminGrant) != 1 || !strings.Contains(text, "\n"+link+"\n") || strings.Contains(text, "\x1b[") ||
 			!strings.Contains(text, "in the Termivoa app at "+test.describe+":") ||
-			!strings.Contains(text, `run this command inside a Termivoa session in that app and tap the link, then confirm "Add this computer?"; `+
+			!strings.Contains(text, `if this terminal is a Termivoa session in that app, tap the link, then confirm "Add this computer?"; `+
 				`or in Settings → Computers tap "+ Add a computer" and paste the link.`) ||
 			!strings.Contains(text, "single-use secret") {
 			t.Fatalf("via %q output = %q", test.via, text)
