@@ -103,7 +103,7 @@ func (server *ManagementServer) offerPairing(ctx context.Context, authority *aut
 	} else {
 		status := server.config.Tailnet.Snapshot()
 		if status == nil {
-			return offerResult(state, unreachable()), nil
+			return protocol.AdminRPCPairOfferResultPayload{}, errTrustUnavailable
 		}
 		if node, ok := status.Peer(state.node.Host); !ok || node.ID != state.node.ID {
 			return protocol.AdminRPCPairOfferResultPayload{}, errors.Join(errHomeChanged, server.dropOffer(ctx, authority, book))
@@ -173,8 +173,8 @@ func unreachable() *protocol.AdminRPCPairOfferProblem {
 }
 
 // pushOffer posts {origin, grant} to home (N2). nil means home answered 204.
-// No network answer is unreachable; any other answer, a redirect included,
-// is not_accepted. Home's body is read up to maxOfferAnswer and dropped.
+// No network answer is unreachable; 429 (home's offer bucket is empty) is
+// busy; any other answer, a redirect included, is not_accepted. Home's body is read up to maxOfferAnswer and dropped.
 func pushOffer(ctx context.Context, home tailnet.Node, origin, grant string) *protocol.AdminRPCPairOfferProblem {
 	if len(home.TailscaleIPs) == 0 {
 		return unreachable()
@@ -213,11 +213,15 @@ func pushOffer(ctx context.Context, home tailnet.Node, origin, grant string) *pr
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxOfferAnswer))
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusNoContent {
-		problem := protocol.NotAccepted
+	switch response.StatusCode {
+	case http.StatusNoContent:
+		return nil
+	case http.StatusTooManyRequests:
+		problem := protocol.Busy
 		return &problem
 	}
-	return nil
+	problem := protocol.NotAccepted
+	return &problem
 }
 
 // dialHome opens the TLS connection of one offer push to home's pinned

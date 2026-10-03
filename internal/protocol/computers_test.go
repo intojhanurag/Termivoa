@@ -303,8 +303,8 @@ func TestAdminPairOfferMessages(t *testing.T) {
 			ExpiresAt: "2026-10-03T10:02:00Z", Delivered: delivered, Problem: problem,
 		}
 	}
-	unreachable, notAccepted, unknown := Unreachable, NotAccepted, AdminRPCPairOfferProblem("refused")
-	for _, payload := range []AdminRPCPairOfferResultPayload{result(true, nil), result(false, &unreachable), result(false, &notAccepted)} {
+	unreachable, busy, notAccepted, unknown := Unreachable, Busy, NotAccepted, AdminRPCPairOfferProblem("refused")
+	for _, payload := range []AdminRPCPairOfferResultPayload{result(true, nil), result(false, &unreachable), result(false, &busy), result(false, &notAccepted)} {
 		if _, err := DecodeAdminRPCResponse(rpcJSON(t, "admin.pair.offer.result", payload)); err != nil {
 			t.Fatalf("%+v: %v", payload, err)
 		}

@@ -176,7 +176,7 @@ retracted.
 | `admin.device.revoke.via` | `appOrigin` | `appOrigin`, revoked `deviceIds`, `closedStreams` |
 | `admin.computers.list` | empty | at most 512 confirmed computers of all devices: `deviceId`, `origin`, `label`, `createdAt` |
 | `admin.computers.remove` | `origin` | `origin`, `removed` (devices whose list held it) |
-| `admin.pair.offer` | `via` (no `allowTagged`) | `appOrigin`, `appNode`, `expiresAt` of the offered grant, `delivered`; `problem` (`unreachable` or `not_accepted`) exactly when not delivered. Never the grant. Error `home_changed` |
+| `admin.pair.offer` | `via` (no `allowTagged`) | `appOrigin`, `appNode`, `expiresAt` of the offered grant, `delivered`; `problem` (`unreachable`, `busy` or `not_accepted`) exactly when not delivered. Never the grant. Errors `home_changed`, and `host_unavailable` when this computer has no Tailscale snapshot |
 | `admin.pair.offer.end` | optional `grant` (the link's) | empty |
 | `admin.device.rename` | `deviceId`, `label` | the saved `deviceId` and `label` |
 | `admin.project.add` | `path`, optional `name` | the saved project |
@@ -229,18 +229,21 @@ memory; a call with another `via` replaces it and deletes the old grant.
   never with `allowTagged`, and makes a bound two-minute grant.
 - With a state, it reads its latest snapshot. If home's host now has another
   node ID, or is gone, it deletes the grant, clears the state and answers
-  `home_changed`. With no snapshot it skips the push and answers
-  `unreachable`. With 60 s or less left it deletes the grant (only when not
-  redeemed) and makes a new one; otherwise it re-sends the same grant.
+  `home_changed`. With no snapshot it skips the push and answers the error
+  `host_unavailable`. With 65 s or less left (home lists an offer for 60 s,
+  plus the 3 s push limit) it makes a new grant and sends it; the replaced
+  grant is deleted (only when not redeemed) after home answers `204`, or at
+  the end. Otherwise it re-sends the same grant.
 - It then sends `POST https://<home host>/api/v1/computers/offer` with
   `{origin, grant}` (this computer's configured origin) to the pinned node's
   Tailscale IP on port 443, with TLS for home's host name, no `Origin`, no
   proxy, no redirect, a 3 s limit and at most 2 KiB of the answer read.
-  `delivered` is true exactly on `204`; no answer is `unreachable`, any other
-  answer `not_accepted`. Home's answer text is never returned.
+  `delivered` is true exactly on `204`; no answer is `unreachable`, `429` is
+  `busy`, any other answer `not_accepted`. Home's answer text is never
+  returned.
 
-`admin.pair.offer.end` deletes the offered grant and the given `grant`, each
-only when it was not redeemed, and clears the offer state. The CLI calls it
+`admin.pair.offer.end` deletes the offered grant (and a replaced one not yet
+deleted) and the given `grant`, each only when it was not redeemed, and clears the offer state. The CLI calls it
 on every exit.
 
 A device's `status` is computed with the same rule the device cap uses:

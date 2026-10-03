@@ -176,7 +176,8 @@ func TestOfferDialGuardAllowsOnlyThePinnedAddress(t *testing.T) {
 }
 
 // A certificate for another name fails, with no retry over http; a redirect
-// is an answer (not followed); any answer but 204 is not_accepted.
+// is an answer (not followed); 429 is busy; any other answer but 204 is
+// not_accepted.
 func TestOfferPushAnswers(t *testing.T) {
 	wrong := newOfferHome(t, []string{"evil.tailx.ts.net"}, nil)
 	if got := problemOf(pushOffer(context.Background(), macNode, homeOrigin, testOfferGrant)); got != "unreachable" || len(wrong.posts) != 0 || len(wrong.dials) != 1 {
@@ -185,6 +186,7 @@ func TestOfferPushAnswers(t *testing.T) {
 	for status, want := range map[int]string{
 		http.StatusTemporaryRedirect: "not_accepted", http.StatusForbidden: "not_accepted",
 		http.StatusOK: "not_accepted", http.StatusNotFound: "not_accepted", http.StatusNoContent: "delivered",
+		http.StatusTooManyRequests: "busy",
 	} {
 		home := newOfferHome(t, []string{"mac.tailx.ts.net"}, func(response http.ResponseWriter, request *http.Request) {
 			if request.URL.Path != offerPath {
@@ -372,11 +374,12 @@ func TestOfferChecksThePinnedNodeBeforeEachPush(t *testing.T) {
 	if result, code := fixture.offer(t, "mac"); code != "" || !result.Delivered || result.AppNode.ID != "nMac2" {
 		t.Fatalf("after home_changed: %+v %s", result, code)
 	}
-	// No snapshot (Tailscale stopped past the grace period): no push.
+	// No snapshot (Tailscale stopped past the grace period): no push, and a
+	// local error (this computer cannot read its status), not "unreachable".
 	fixture.tailscale.set("", "", errors.New("tailscale stopped"))
 	fixture.clock.Set(fixture.clock.Now().Add(tailnet.DefaultGrace))
-	if result, code := fixture.offer(t, "mac"); code != "" || problemOf(result.Problem) != "unreachable" || len(home.offered()) != 2 {
-		t.Fatalf("no snapshot: %+v %s, %d pushes", result, code, len(home.offered()))
+	if _, code := fixture.offer(t, "mac"); code != protocol.HostUnavailable || len(home.offered()) != 2 {
+		t.Fatalf("no snapshot: %s, %d pushes", code, len(home.offered()))
 	}
 }
 

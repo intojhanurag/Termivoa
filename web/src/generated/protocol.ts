@@ -294,10 +294,11 @@ export type AdminRPCPairOfferEndPayload = {
 }
 
 /**
- * unreachable: no HTTP answer from home (or no usable snapshot or address). not_accepted:
- * any answer other than 204, for example a home without this feature.
+ * unreachable: no HTTP answer from home (or no usable address). busy: home answered 429
+ * (its offer bucket is empty). not_accepted: any other answer than 204, for example a home
+ * without this feature.
  */
-export type AdminRPCPairOfferProblem = "unreachable" | "not_accepted";
+export type AdminRPCPairOfferProblem = "unreachable" | "busy" | "not_accepted";
 
 /**
  * The home the offer went to and when the offered grant expires. The grant itself is never

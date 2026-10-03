@@ -1339,11 +1339,13 @@ const (
 	AdminShutdownResult        AdminRPCMessageType = "admin.shutdown.result"
 )
 
-// unreachable: no HTTP answer from home (or no usable snapshot or address). not_accepted:
-// any answer other than 204, for example a home without this feature.
+// unreachable: no HTTP answer from home (or no usable address). busy: home answered 429
+// (its offer bucket is empty). not_accepted: any other answer than 204, for example a home
+// without this feature.
 type AdminRPCPairOfferProblem string
 
 const (
+	Busy        AdminRPCPairOfferProblem = "busy"
 	NotAccepted AdminRPCPairOfferProblem = "not_accepted"
 	Unreachable AdminRPCPairOfferProblem = "unreachable"
 )

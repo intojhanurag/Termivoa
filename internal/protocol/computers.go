@@ -209,7 +209,7 @@ func validatePairOfferResult(result AdminRPCPairOfferResultPayload) error {
 	if result.Delivered != (result.Problem == nil) {
 		return errors.New("problem must be present exactly when the offer was not delivered")
 	}
-	if result.Problem != nil && *result.Problem != Unreachable && *result.Problem != NotAccepted {
+	if result.Problem != nil && *result.Problem != Unreachable && *result.Problem != Busy && *result.Problem != NotAccepted {
 		return errors.New("offer problem is not a recognized value")
 	}
 	return nil
