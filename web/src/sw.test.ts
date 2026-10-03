@@ -196,7 +196,7 @@ describe('service worker navigation', () => {
     }
   });
 
-  it('waits for the network past 2.5 s on a fresh reload (the app\'s CSP was out of date), and falls back to the shell only on an error', async () => {
+  it('waits for the network past 2.5 s on a fresh reload (the app\'s CSP was out of date), and falls back to the shell after 12 s or on an error', async () => {
     vi.useFakeTimers();
     let answer: (response: Response) => void = () => undefined;
     const { handlers } = loadWorker(() => new Promise((resolve) => { answer = resolve; }), [], withShell());
@@ -208,6 +208,13 @@ describe('service worker navigation', () => {
     answer(shell(BUILD, 'fresh'));
     await vi.advanceTimersByTimeAsync(0);
     expect(await served?.text()).toContain('fresh');
+    const hung = navigate(loadWorker(() => new Promise(() => undefined), [], withShell()).handlers, '/?pterm-fresh=1');
+    let late: Response | undefined;
+    void hung.reply.then((response) => { late = response; });
+    await vi.advanceTimersByTimeAsync(11_900);
+    expect(late).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await late?.text()).toContain('cached');
     vi.useRealTimers();
     const offline = loadWorker(async () => { throw new TypeError('offline'); }, [], withShell());
     expect(await (await navigate(offline.handlers, '/?pterm-fresh=1').reply).text()).toContain('cached');

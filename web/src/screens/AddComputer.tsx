@@ -50,7 +50,7 @@ export function AddComputerConfirm({ link, node, onConfirm, onCancel }: {
         <dt>Machine</dt><dd>{label}</dd>
         <dt>{owner.term}</dt><dd>{owner.value}</dd>
       </dl>
-      <p className="hint-text">
+      <p className="hint-text add-computer-hint">
         Add it only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">
@@ -78,7 +78,7 @@ export function AddComputerContinue({ link, onContinue, onCancel }: {
       <dl className="facts">
         <dt>Address</dt><dd>{link.origin}</dd>
       </dl>
-      <p className="hint-text">
+      <p className="hint-text add-computer-hint">
         Continue only if you just ran <code>pterm setup</code> or <code>pterm pair --via</code> on {label}. Next, this phone shows a code. Check it on {label}.
       </p>
       <div className="row">

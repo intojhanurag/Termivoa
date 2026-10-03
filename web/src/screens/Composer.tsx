@@ -10,6 +10,7 @@ import {
 } from '../terminal/speech';
 import { formatSize } from './folder';
 import { Sheet, SheetHeader } from './Sheet';
+import { Notice } from './ui';
 
 const idleSpeech = () => IDLE_SPEECH;
 
@@ -150,9 +151,9 @@ export function Composer({ connection, origin, canSend, draftKey, onClose, speec
         <button type="button" className="link" disabled={text === ''} onClick={() => setText('')}>Clear</button>
       </div>
       {!canSend && (
-        <p role="status" className="notice">
+        <Notice tone="neutral" icon="lock" role="status">
           Sending is off because you are not connected or do not have control. Your draft is kept.
-        </p>
+        </Notice>
       )}
       {problem !== undefined && <p role="alert" className="error">{problem}</p>}
       {attachment !== undefined && (

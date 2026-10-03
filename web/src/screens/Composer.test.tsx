@@ -35,6 +35,10 @@ describe('composer toolbar', () => {
   it('turns Photo off without control', () => {
     expect(composer(recognizer, false)).toMatch(/<button type="button" class="tool" disabled="">.*Photo<\/button>/u);
   });
+
+  it('says why sending is off in a neutral notice with its icon', () => {
+    expect(composer(recognizer, false)).toMatch(/<div class="notice neutral" role="status"><span class="notice-icon">.*Sending is off/u);
+  });
 });
 
 describe('voice panel', () => {

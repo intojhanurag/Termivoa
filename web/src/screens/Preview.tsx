@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
-import { reloadOnce, storage } from '../storage';
+import { forgetReload, reloadOnce, storage } from '../storage';
 import { agentBadge, hasNewOutput, readViewed } from './activity';
 import { reloadFreshPage, type HostedSession } from './allSessions';
 import { previewSrc } from './PreviewChip';
@@ -148,7 +148,7 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
     };
     document.addEventListener('securitypolicyviolation', onBlocked);
     void probePreview(origin).then((answered) => {
-      if (answered) storage('sessionStorage')?.removeItem(PREVIEW_RELOAD_KEY);
+      if (answered) forgetReload(PREVIEW_RELOAD_KEY, origin, storage('sessionStorage'));
       if (current) setReach(answered);
     });
     return () => {

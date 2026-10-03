@@ -124,8 +124,8 @@ pre {
   font-variant-ligatures: none;
   font-feature-settings: "calt" 0, "liga" 0;
 }
-/* A command inside a sentence stays on one line, so "--via" never breaks between its dashes. */
-:not(pre) > code { white-space: nowrap; }
+/* A command inside a sentence stays on one line, so "--via" never breaks between its dashes. Paths and branch names wrap. */
+.notice code, .add-computer-hint code { white-space: nowrap; }
 
 /* Buttons: dark key with a 1px edge; text-only links; one accent primary. */
 button {
@@ -347,12 +347,12 @@ textarea {
 /* A command in a notice: one mono line to type, as shown. */
 .notice-command { display: inline-flex; overflow-x: auto; align-items: center; max-width: 100%; min-height: 36px; margin-top: 9px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--dock); box-shadow: 0 0 0 1px var(--line); color: var(--text); font-size: 13px; line-height: 16px; overflow-wrap: anywhere; }
 /* A secondary button in an amber notice or card: "Check again". */
-.notice.warning button.secondary, .computer-card.is-unreachable button.secondary {
+.notice.warning button.secondary, .computer-card:is(.is-unreachable, .is-blocked) button.secondary {
   --ink: var(--amber-text);
   background: linear-gradient(180deg, #2a2418, #211c13);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 0 0 1px color-mix(in srgb, var(--amber) 35%, transparent);
 }
-.notice.warning button.secondary .icon, .computer-card.is-unreachable button.secondary .icon { color: var(--amber); }
+.notice.warning button.secondary .icon, .computer-card:is(.is-unreachable, .is-blocked) button.secondary .icon { color: var(--amber); }
 
 /* Banners: things in progress over the app (adding a computer). */
 .banner {

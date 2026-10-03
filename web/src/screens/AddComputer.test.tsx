@@ -119,6 +119,8 @@ describe('add-computer page', () => {
     const page = renderToStaticMarkup(<AddComputerContinue link={link} onContinue={noop} onCancel={noop} />);
     expect(sheet.replace(/<\/?code>/gu, '')).toContain('Add it only if you just ran pterm setup or pterm pair --via on vps.');
     expect(page.replace(/<\/?code>/gu, '')).toContain('Continue only if you just ran pterm setup or pterm pair --via on vps.');
+    // The command stays on one line (global.css: .add-computer-hint code).
+    for (const html of [sheet, page]) expect(html).toContain('<p class="hint-text add-computer-hint">');
   });
 
   it('says how to try again after the code expired: Add again (Found), or a new link', async () => {

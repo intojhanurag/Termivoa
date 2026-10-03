@@ -164,4 +164,11 @@ describe('project commands', () => {
     expect(saved).toBeGreaterThan(project);
     expect(markup.indexOf('Run tests and fix failures')).toBeGreaterThan(saved);
   });
+
+  it('says to take control in a neutral notice with its icon', () => {
+    const markup = renderToStaticMarkup(
+      <Snippets target={{ sendPaste: () => true, sendKey: () => true }} canSend={false} busy={undefined} tasks={ready()} onRetryTasks={noop} onRunTask={noop} onClose={noop} />,
+    );
+    expect(markup).toMatch(/<div class="notice neutral" role="status"><span class="notice-icon">.*Take control to send snippets/u);
+  });
 });

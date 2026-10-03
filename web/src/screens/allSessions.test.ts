@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, client } from '../api/http';
-import { reloadOnce } from '../storage';
+import { forgetReload, reloadOnce } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import {
-  blockedPeer, byChip, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  blockedPeer, byChip, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, reloadFreshPage, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
   type ComputerEntry, type ComputerStatus,
 } from './allSessions';
 
@@ -96,7 +96,12 @@ describe('the app\'s own CSP blocks a listed computer', () => {
   const blocked = (blockedURI: string, effectiveDirective = 'connect-src') => blockedPeer({ blockedURI, effectiveDirective }, [mac, vps]);
   const memory = () => {
     const values = new Map<string, string>();
-    return { values, getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+    return {
+      values,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    };
   };
 
   it('finds the listed peer from the blocked address, over https or wss', () => {
@@ -124,6 +129,34 @@ describe('the app\'s own CSP blocks a listed computer', () => {
     expect(reloadOnce(POLICY_RELOAD_KEY, 'https://nas.tailx.ts.net', store)).toBe(true);
     expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, undefined)).toBe(false);
     expect(reloadOnce(POLICY_RELOAD_KEY, vps.origin, { getItem: () => null, setItem: () => { throw new Error('full'); } })).toBe(false);
+  });
+
+  it('reloads at most once per computer in a tab when two peers are blocked (no ping-pong)', () => {
+    const store = memory();
+    const nas = 'https://nas.tailx.ts.net';
+    // Each page load: the first block that may reload does, and the page goes.
+    const pageReloads = () => [vps.origin, nas].some((origin) => reloadOnce(POLICY_RELOAD_KEY, origin, store));
+    expect([1, 2, 3, 4].map(pageReloads)).toEqual([true, true, false, false]);
+    expect(store.values.get(POLICY_RELOAD_KEY)).toBe(`${vps.origin} ${nas}`);
+    forgetReload(POLICY_RELOAD_KEY, vps.origin, store);
+    expect(store.values.get(POLICY_RELOAD_KEY)).toBe(nas);
+    expect(reloadOnce(POLICY_RELOAD_KEY, nas, store)).toBe(false);
+    forgetReload(POLICY_RELOAD_KEY, nas, store);
+    expect(store.values.has(POLICY_RELOAD_KEY)).toBe(false);
+  });
+
+  it('reloads the page once, however many blocks follow', () => {
+    const reload = vi.fn();
+    const replaceState = vi.fn();
+    vi.stubGlobal('window', { history: { state: null, replaceState }, location: { pathname: '/', search: '', reload } });
+    try {
+      reloadFreshPage();
+      reloadFreshPage();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(replaceState).toHaveBeenCalledWith(null, '', '/?pterm-fresh=1');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('reloads the same address with the flag that makes the service worker wait for the network', () => {

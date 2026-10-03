@@ -4,13 +4,14 @@ import { ChunkLoadError } from '../screens/chunks';
 import { cameraProblem, loadDecoder, MUTED_MS, SCAN_PROBLEMS, startScan, type Decode, type ScanEnd } from './scan';
 
 /** A camera stream with one track that the system can end, and a page that can go to the background. */
-function setup({ open, decode = async () => undefined, play = async () => undefined }: {
+function setup({ open, decode = async () => undefined, play = async () => undefined, muted = false }: {
   readonly open?: () => Promise<MediaStream>;
+  readonly muted?: boolean;
   readonly decode?: Decode;
   readonly play?: () => Promise<void>;
 } = {}) {
   const events = new Map<string, Set<() => void>>();
-  const track = { stop: vi.fn(), addEventListener: (type: string, listener: () => void) => { events.set(type, (events.get(type) ?? new Set()).add(listener)); } };
+  const track = { muted, stop: vi.fn(), addEventListener: (type: string, listener: () => void) => { events.set(type, (events.get(type) ?? new Set()).add(listener)); } };
   const fire = (type: 'ended' | 'mute' | 'unmute') => { for (const listener of events.get(type) ?? []) listener(); };
   const stream = { getTracks: () => [track] } as unknown as MediaStream;
   const getUserMedia = vi.fn(open ?? (async () => stream));
@@ -152,6 +153,21 @@ describe('Scan QR camera', () => {
     await vi.advanceTimersByTimeAsync(MUTED_MS);
     expect(scan.onEnd).toHaveBeenCalledExactlyOnceWith({ kind: 'problem', problem: 'failed' });
     expect(scan.track.stop).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it('ends when the camera is muted from the start (no mute event comes), unless it unmutes', async () => {
+    vi.useFakeTimers();
+    const scan = setup({ muted: true });
+    await vi.waitFor(() => expect(scan.onScanning).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(MUTED_MS);
+    expect(scan.onEnd).toHaveBeenCalledExactlyOnceWith({ kind: 'problem', problem: 'failed' });
+    const quiet = setup({ muted: true });
+    await vi.waitFor(() => expect(quiet.onScanning).toHaveBeenCalled());
+    quiet.fire('unmute');
+    await vi.advanceTimersByTimeAsync(MUTED_MS * 2);
+    expect(quiet.onEnd).not.toHaveBeenCalled();
+    quiet.stop();
     vi.useRealTimers();
   });
 

@@ -9,7 +9,9 @@ const CACHE = `pterm-bundle-${BUILD}`;
 const SHELL = '/index.html';
 /** How long a page load waits for the network before the cached shell. */
 const NAVIGATION_TIMEOUT_MS = 2500;
-/** A page load with this query flag waits for the network as long as it takes (the app reloads with it when its CSP is out of date). */
+/** How long a page load with FRESH_PAGE waits: long, so a slow network still brings the new CSP. */
+const FRESH_TIMEOUT_MS = 12000;
+/** A page load with this query flag waits for the network much longer (the app reloads with it when its CSP is out of date). */
 const FRESH_PAGE = 'pterm-fresh';
 /** Caches this app made, this build's and older builds'. */
 const OWN_CACHE = /^pterm-bundle-/;
@@ -117,7 +119,7 @@ async function refreshShell(response) {
   }
 }
 
-/** Network first, so the CSP follows the computer list; the cached shell after a timeout (none when `fresh`), error or 5xx. */
+/** Network first, so the CSP follows the computer list; the cached shell after a timeout (a long one when `fresh`), error or 5xx. */
 function navigate(event, fresh) {
   const network = fetch(event.request);
   // Clone before the page reads the body. A late answer may still refresh the shell.
@@ -125,7 +127,7 @@ function navigate(event, fresh) {
   if (typeof event.waitUntil === 'function') {
     event.waitUntil(refresh);
   }
-  return (fresh ? network : withTimeout(network, NAVIGATION_TIMEOUT_MS))
+  return withTimeout(network, fresh ? FRESH_TIMEOUT_MS : NAVIGATION_TIMEOUT_MS)
     .then((response) => (response.status >= 500 ? cachedShell() : response))
     .catch(() => cachedShell());
 }

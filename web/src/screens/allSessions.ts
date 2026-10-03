@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, client, forgetClient, isAuthFailure, updateText } from '../api/http';
 import { sessionKey, type Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
-import { reloadOnce, storage } from '../storage';
+import { forgetReload, reloadOnce, storage } from '../storage';
 import { scheduler, type PollOutcome } from '../terminal/scheduler';
 
 /**
@@ -82,9 +82,9 @@ export const pairAgain = (label: string): string => `${label} · pair again`;
  * row says OUT_OF_DATE.
  */
 
-/** sessionStorage: the computer this tab already reloaded for (the loop guard, reloadOnce). */
+/** sessionStorage: the computers this tab already reloaded for, space-joined (the loop guard, reloadOnce). */
 export const POLICY_RELOAD_KEY = 'pterm.policyReload';
-/** The query flag of that reload: the service worker waits for the network for this page load and never serves its cached page in time. Removed at start. */
+/** The query flag of that reload: the service worker waits up to 12 s for the network for this page load before its cached page. Removed at start. */
 export const FRESH_PAGE = 'pterm-fresh';
 /** Shown under "vps · can't reach" when the reload did not help. */
 export const OUT_OF_DATE = 'This app page is out of date. Close the app and open it again.';
@@ -96,8 +96,13 @@ export function freshPageUrl(location: Pick<Location, 'pathname' | 'search'>): s
   return `${location.pathname}?${params.toString()}`;
 }
 
-/** Reloads this page past the service worker's cached page. history.state stays (a peer preview needs its tap mark). */
+/** Set by reloadFreshPage: the page is going, later blocks on it do nothing. */
+let reloading = false;
+
+/** Reloads this page past the service worker's cached page, once per page. history.state stays (a peer preview needs its tap mark). */
 export function reloadFreshPage(): void {
+  if (reloading) return;
+  reloading = true;
   window.history.replaceState(window.history.state, '', freshPageUrl(window.location));
   window.location.reload();
 }
@@ -239,12 +244,7 @@ export function pruneStatuses(statuses: ReadonlyMap<string, ComputerStatus>, ori
 }
 
 function forgetPolicyReload(origin: string): void {
-  try {
-    const store = storage('sessionStorage');
-    if (store?.getItem(POLICY_RELOAD_KEY) === origin) store.removeItem(POLICY_RELOAD_KEY);
-  } catch {
-    // Nothing to forget.
-  }
+  forgetReload(POLICY_RELOAD_KEY, origin, storage('sessionStorage'));
 }
 
 /** Exported for tests. */
@@ -339,7 +339,7 @@ export function useAllSessions(
   useEffect(() => {
     const onBlocked = (event: SecurityPolicyViolationEvent) => {
       const computer = blockedPeer(event, [...byOrigin.current.values()]);
-      if (computer === undefined) return;
+      if (computer === undefined || reloading) return;
       if (reloadOnce(POLICY_RELOAD_KEY, computer.origin, storage('sessionStorage'))) {
         reloadFreshPage();
         return;

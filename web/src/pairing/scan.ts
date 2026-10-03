@@ -163,12 +163,15 @@ export function startScan({ video, onScanning, onEnd, media = navigator.mediaDev
       // Another app took the camera, or the system stopped it: the frame would freeze.
       // iOS mutes the track instead (a call took the camera): end once it stays muted.
       for (const track of opened.getTracks()) {
-        track.addEventListener('ended', () => end({ kind: 'problem', problem: 'failed' }));
-        track.addEventListener('mute', () => {
+        const onMute = () => {
           clearTimeout(muted);
           muted = setTimeout(() => end({ kind: 'problem', problem: 'failed' }), MUTED_MS);
-        });
+        };
+        track.addEventListener('ended', () => end({ kind: 'problem', problem: 'failed' }));
+        track.addEventListener('mute', onMute);
         track.addEventListener('unmute', () => clearTimeout(muted));
+        // Muted already: no mute event comes.
+        if (track.muted) onMute();
       }
       video.srcObject = opened;
       try {
