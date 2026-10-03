@@ -430,6 +430,9 @@ func TestProductionBuildHasNoE2EHook(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if count := strings.Count(string(listed), ".go"); count < 100 {
+			t.Fatalf("tags %q: only %d files listed", tags, count)
+		}
 		output = append(output, listed...)
 	}
 	files := 0

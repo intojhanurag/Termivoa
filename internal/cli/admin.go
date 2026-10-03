@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -404,7 +405,9 @@ func offerAndWait(ctx context.Context, admin Admin, options PairOptions, grant p
 	}
 	// Enter is read only on a terminal (a confirmer that can Ask), and only
 	// until a phone asks: the reader stops before the approval prompt, and it
-	// reads no farther than the newline, so it never takes the y/N answer.
+	// reads no farther than a newline. It keeps reading, and drops, every line
+	// after the first, so a second Enter (or typed-ahead y) never answers the
+	// y/N prompt.
 	asker, canAsk := options.Confirmer.(interface {
 		Ask(context.Context, string) (string, error)
 	})
@@ -424,8 +427,16 @@ func offerAndWait(ctx context.Context, admin Admin, options PairOptions, grant p
 		pressed, stopped := make(chan struct{}), make(chan struct{})
 		go func() {
 			defer close(stopped)
-			if _, err := asker.Ask(enterCtx, ""); err == nil {
-				close(pressed)
+			var once sync.Once
+			for enterCtx.Err() == nil {
+				if _, err := asker.Ask(enterCtx, ""); err == nil {
+					once.Do(func() { close(pressed) })
+				}
+				// A closed terminal reads as an empty line at once: do not spin.
+				select {
+				case <-enterCtx.Done():
+				case <-time.After(20 * time.Millisecond):
+				}
 			}
 		}()
 		stop := func() {

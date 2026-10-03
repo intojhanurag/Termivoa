@@ -1234,6 +1234,30 @@ func TestPairViaEnterShowsTheLinkAfterADeliveredPush(t *testing.T) {
 	}
 }
 
+// Keys pressed after Enter (a second Enter, a typed-ahead y) are dropped:
+// only an answer typed at the prompt approves or declines.
+func TestPairViaLaterKeysDoNotAnswerThePrompt(t *testing.T) {
+	admin := &pendingLater{fakeAdmin: &fakeAdmin{grant: liveGrant(owned("ada@example.com"))}}
+	input, output, done := startTerminalWait(t, admin)
+	output.waitFor(t, "Press Enter to show a QR code and a link.\n")
+	if _, err := input.WriteString("\n"); err != nil {
+		t.Fatal(err)
+	}
+	output.waitFor(t, offerLink)
+	if _, err := input.WriteString("\nn\n"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond) // the reader drops both lines
+	admin.ready.Store(true)
+	output.waitFor(t, "[y/N] ")
+	if _, err := input.WriteString("y\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil || len(admin.approved) != 1 {
+		t.Fatalf("err %v, approved %v; output =\n%s", err, admin.approved, output.String())
+	}
+}
+
 // A failed push prints the QR code and the link at once, as before, and no
 // Enter line. A delivered push that fails later prints its line and then
 // the QR code and the link it points to.

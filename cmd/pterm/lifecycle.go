@@ -924,8 +924,15 @@ func offerPairing(ctx context.Context, env lifecycleEnv, admin cli.Admin, status
 	}
 	ctx, stop := untilHangup(ctx)
 	defer stop()
+	// As `pterm pair`: the wait reads Enter while it prints, so its writes go
+	// through the owned terminal adapter too.
+	pairOutput, err := newManagementOutput(ctx, output)
+	if err != nil {
+		return err
+	}
+	defer pairOutput.Close()
 	// A declined phone, or none in time, is not a setup failure.
-	if err := pairPhone(ctx, admin, options, output); errors.Is(err, cli.ErrNotPaired) || errors.Is(err, cli.ErrNoPhone) {
+	if err := pairPhone(ctx, admin, options, pairOutput); errors.Is(err, cli.ErrNotPaired) || errors.Is(err, cli.ErrNoPhone) {
 		return notYet(cli.PairCommand(options))
 	} else if err != nil {
 		return err
