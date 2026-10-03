@@ -93,8 +93,10 @@ describe('snapshot turns for tiles that were never live', () => {
     expect(states()[4]).toBe('paused');
     await after(1);
     expect(states()).toEqual(['live', 'live', 'live', 'live', 'peek', 'paused']);
-    // Never more than 4 live plus 1 turn open.
-    expect(states().filter((state) => state !== 'paused').length).toBeLessThanOrEqual(DEFAULT_LIMITS.tileConnections);
+    // 6 tiles want a connection; exactly 4 live plus 1 turn are open.
+    expect(states().filter((state) => state === 'live')).toHaveLength(DEFAULT_LIMITS.liveTiles);
+    expect(states().filter((state) => state === 'peek')).toHaveLength(1);
+    expect(states().filter((state) => state !== 'paused')).toHaveLength(DEFAULT_LIMITS.tileConnections);
     await after(5000);
     expect(states()).toEqual(['live', 'live', 'live', 'live', 'peek', 'paused']);
     handles[4]?.peekDone();
@@ -211,6 +213,33 @@ describe('snapshot turns for tiles that were never live', () => {
     scheduler.retry(down);
     await after();
     expect(away.state()).toBe('peek');
+  });
+
+  it('is not held back by a live tile that waits for a computer that is backing off', async () => {
+    const scheduler = new Scheduler({}, { random: () => 1 });
+    const down = 'https://down.t.ts.net';
+    const failing = scheduler.connectGate(down);
+    failing.wait(() => failing.done('failed'));
+    // This waiter cannot run for 1500 ms; the turn for a healthy computer still starts after 1000 ms.
+    scheduler.connectGate(down).wait(() => undefined);
+    const { states } = await tiles(scheduler, 5);
+    await after();
+    expect(states()[4]).toBe('peek');
+  });
+
+  it('drops the running turn of a key that is requested again', async () => {
+    const scheduler = new Scheduler();
+    const { states } = await tiles(scheduler, 5);
+    await after();
+    expect(states()[4]).toBe('peek');
+    const timers = vi.getTimerCount();
+    const fresh = scheduler.requestLiveTile('h/4', { origin: ORIGIN, onChange: () => undefined });
+    // The old turn's timer is gone, and the new tile has no turn until it is visible.
+    expect(vi.getTimerCount()).toBe(timers - 1);
+    expect(fresh.state()).toBe('paused');
+    fresh.setVisible(true);
+    await after();
+    expect(fresh.state()).toBe('peek');
   });
 
   it('ends the turn when the tile becomes live', async () => {

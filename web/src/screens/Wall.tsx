@@ -229,12 +229,13 @@ function MiniTerminal({ session }: { readonly session: HostedSession }) {
     };
   }, [view, connected, origin, session.computer.home, session.id, session.generation]);
 
-  // The snapshot turn ends at the first painted snapshot or the first failure; one try.
+  // The snapshot turn ends at the first painted snapshot or the first failure; one try while the Wall is open.
   const progress = peekProgress(tile, status.link);
   useEffect(() => {
-    if (tile === 'live' || progress === 'painted') setHasFrame(true);
+    // link 'live' is set only after the first snapshot is painted.
+    if (connected && status.link === 'live') setHasFrame(true);
     if (progress === 'painted' || progress === 'failed') handle.current?.peekDone();
-  }, [tile, progress]);
+  }, [connected, status.link, progress]);
 
   const mark = tileMark(tile, status.link, hasFrame);
   return (

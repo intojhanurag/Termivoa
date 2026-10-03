@@ -15,8 +15,9 @@
  * - A visible tile that was never live (the live budget was full) gets one
  *   short turn, state 'peek': it connects like a live tile, paints its first
  *   snapshot, then the Wall calls peekDone and the tile is Paused with that
- *   picture. One turn at a time, one try per tile (a failed turn is not
- *   repeated), only while the Wall is open and in the foreground, only when
+ *   picture. One turn at a time, one try per tile for as long as the Wall is
+ *   open (a failed turn is not repeated; opening a terminal closes the Wall and
+ *   forgets which tiles had a turn), only while the Wall is open and in the foreground, only when
  *   no other connection attempt is running or waiting, never for a computer
  *   that is backing off, and at most `peekMs` and `peekBytes` long. The turn
  *   uses the spare slot of `tileConnections`; live tiles keep their 4.
@@ -74,7 +75,7 @@ export interface TileHandle {
   setVisible(visible: boolean): void;
   /** Reports decoded bytes this tile's connection received (ConnectionOptions.onMessageBytes). */
   bytes(count: number): void;
-  /** The 'peek' turn is over (picture painted, or the attempt failed). One try per tile. */
+  /** The 'peek' turn is over (picture painted, or the attempt failed). One try per tile while the Wall is open. */
   peekDone(): void;
   release(): void;
 }
@@ -160,6 +161,7 @@ export class Scheduler {
    */
   requestLiveTile(key: string, options: TileOptions): TileHandle {
     // Asking again for a key replaces the old request (its handle stops working).
+    clearTimeout(this.tiles.get(key)?.turnTimer);
     this.tiles.delete(key);
     const tile: Tile = {
       key,
@@ -177,7 +179,6 @@ export class Scheduler {
       turnBytes: 0,
       turnTimer: undefined,
     };
-    clearTimeout(this.tiles.get(key)?.turnTimer);
     this.tiles.set(key, tile);
     this.plan();
     tile.notified = tile.state;
@@ -468,10 +469,12 @@ export class Scheduler {
 
   /** The tile that may have a snapshot turn now, or undefined. */
   private peekCandidate(): Tile | undefined {
-    if (!this.foreground || this.active !== undefined || this.connecting > 0 || this.connectQueue.length > 0) return undefined;
+    if (!this.foreground || this.active !== undefined || this.connecting > 0) return undefined;
+    const now = this.now();
+    // A waiter for a computer that is backing off cannot run yet; it must not hold every other computer's turn.
+    if (this.connectQueue.some((waiter) => (this.health.get(waiter.origin)?.retryAt ?? 0) <= now)) return undefined;
     let live = 0;
     let candidate: Tile | undefined;
-    const now = this.now();
     for (const tile of this.tiles.values()) {
       // One turn at a time.
       if (tile.state === 'peek') return undefined;
