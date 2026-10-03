@@ -110,6 +110,13 @@ describe('add-computer page', () => {
     vi.unstubAllGlobals();
   });
 
+  it('asks for the command the user ran on every path: setup (Found), or pterm pair --via (Found, paste, scan)', () => {
+    const sheet = renderToStaticMarkup(<AddComputerConfirm link={link} node={{ id: 'n1', owner: 'ada@example.com', tags: [] }} onConfirm={noop} onCancel={noop} />);
+    const page = renderToStaticMarkup(<AddComputerContinue link={link} onContinue={noop} onCancel={noop} />);
+    expect(sheet.replace(/<\/?code>/gu, '')).toContain('Add it only if you just ran pterm setup or pterm pair --via on vps.');
+    expect(page.replace(/<\/?code>/gu, '')).toContain('Continue only if you just ran pterm setup or pterm pair --via on vps.');
+  });
+
   it('offers a way out of the waiting page in this load: back to the terminal the add came from, else Sessions', () => {
     const onLeave = vi.fn();
     const terminal = LeaveAdd({ back: '/c/vps.tailx.ts.net/sessions/s1', onLeave });
