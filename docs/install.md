@@ -165,15 +165,15 @@ it will do and asks **once**:
 
 ```text
 pterm setup will:
-1. Start Termivoa when you log in (current user only, no administrator rights):
-   ...the exact files and launchctl / schtasks / systemctl --user commands...
-2. Wait until the broker and the gateway answer.
-3. Save the phone address https://<mac>.<tailnet>.ts.net (unless you set another one).
-4. Add your home folder /Users/you as project "Home" if you have no project.
-5. Show a QR code for your phone and ask you to approve the code it shows.
-Before step 4 it asks separately whether to run: tailscale serve --bg --https=443 http://127.0.0.1:8787
-Before step 4 it also asks separately whether to run: tailscale serve --bg --https=8443 http://127.0.0.1:8789
+  - Start Termivoa when you log in (your user only, no administrator rights).
+  - Keep its data in /Users/you/Library/Application Support/Phone Terminal and its logs in /Users/you/Library/Application Support/Phone Terminal/logs.
+  - Save the phone address https://<mac>.<tailnet>.ts.net (unless you set another one).
+  - Share Termivoa with your tailnet devices at https://<mac>.<tailnet>.ts.net (port 443). It asks first.
+  - Share dev-server previews at https://<mac>.<tailnet>.ts.net:8443 (port 8443). It asks first.
+  - Add your home folder /Users/you as the project "Home folder" if you have no project.
+  - Ask what this computer is (your first, or one more for the app you already use), then pair your phone.
 Never use Tailscale Funnel: it would put your terminal on the public internet.
+For the checks, the startup files and every command, run `pterm setup --verbose`.
 
 Continue? [y/N]
 ```
