@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { api, ApiError, client, CONNECTION_UNAVAILABLE, firstLabel, homeOrigin, isAuthFailure } from '../api/http';
-import { logOut, refreshComputers, storedComputers, type Computer } from '../computers';
+import { api, ApiError, client, CONNECTION_UNAVAILABLE, firstLabel, homeOrigin, isAuthFailure, updateText } from '../api/http';
+import { logOut, previewOriginOf, refreshComputers, storedComputers, type Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import {
   ADD_COMPUTER_PATH, cancelAdd, currentAdd, dismissAdd, PEER_ADD_PATH, resetAdd, subscribeAdd, takeAddComputerFragment,
@@ -11,7 +11,7 @@ import { syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
-  forgetSettings, homeSettings, hosted, keyOf, mergeSessions, pairAgain, ReadFailure, useAllSessions, type HostedSession,
+  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, pairAgain, ReadFailure, useAllSessions, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
@@ -115,8 +115,7 @@ export function sessionPath(session: Pick<HostedSession, 'id' | 'computer'>): st
 export function pathFor(view: View): string {
   switch (view.name) {
     case 'live': return sessionPath(view.session);
-    // Previews come from home only.
-    case 'preview': return `/sessions/${encodeURIComponent(view.session.id)}/preview?port=${view.port}`;
+    case 'preview': return `${sessionPath(view.session)}/preview?port=${view.port}`;
     case 'settings': return '/settings';
     case 'wall': return '/wall';
     case 'new': return '/new';
@@ -156,13 +155,13 @@ export function parseRoute(path: string): Route {
     default:
   }
   const home = /^\/sessions\/([^/]+)(\/preview)?$/u.exec(path);
-  const peer = /^\/c\/([^/]+)\/sessions\/([^/]+)$/u.exec(path);
+  const peer = /^\/c\/([^/]+)\/sessions\/([^/]+)(\/preview)?$/u.exec(path);
   const host = peer?.[1] === undefined ? undefined : decode(peer[1]);
   const id = decode((home ?? peer)?.[home === null ? 2 : 1] ?? '');
   if (id === undefined || id === '' || (home === null && (host === undefined || !HOST.test(host)))) {
     return { name: 'unknown' };
   }
-  return { name: 'session', host, id, preview: home?.[2] !== undefined };
+  return { name: 'session', host, id, preview: (home?.[2] ?? peer?.[3]) !== undefined };
 }
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -210,6 +209,35 @@ export function previewPortParam(search: string): number | undefined {
   const raw = new URLSearchParams(search).get('port');
   const port = raw !== null && /^\d{1,5}$/u.test(raw) ? Number(raw) : undefined;
   return isPreviewPort(port) ? port : undefined;
+}
+
+/** From this protocol revision on, a peer's preview listener has the rules the frame needs (docs/peer-preview.md). */
+export const PEER_PREVIEW_REVISION = 2;
+
+/**
+ * Where a session's preview is framed from (`origin`), or what to say in
+ * place of the frame (`notice`); neither while a peer has not answered yet.
+ * Home: its configured origin. A peer never needs home's previews: its origin
+ * is computed, and it has one only while the app's own poll of that peer
+ * answers, at PEER_PREVIEW_REVISION or higher. The app cannot see what the
+ * frame is answered, so a peer that refuses the phone or cannot be reached
+ * loses its frame.
+ */
+export function previewFor(
+  computer: Computer,
+  status: ComputerStatus | undefined,
+  homePreviewAt: string | undefined,
+): { readonly origin?: string | undefined; readonly notice?: string } {
+  if (computer.home) return { origin: previewOriginOf(computer, homePreviewAt) };
+  switch (status?.kind) {
+    case 'ok': return status.settings.protocolRevision >= PEER_PREVIEW_REVISION
+      ? { origin: previewOriginOf(computer, undefined) }
+      : { notice: updateText(computer.label) };
+    case 'pair': return { notice: pairAgain(computer.label) };
+    case 'unreachable': return { notice: cantReach(computer.label) };
+    case 'outdated': return { notice: status.message };
+    default: return {};
+  }
 }
 
 const UNPAIRED = 'This phone is no longer paired with your computer.';
@@ -344,9 +372,9 @@ export function homeAdoption(deps: {
   };
 }
 
-/** Home's new list dropped the computer of the open Live view: go to Sessions with a short notice. */
+/** Home's new list dropped the computer of the open Live view or preview: go to Sessions with a short notice. */
 export function leaveRemoved(view: View, computers: ReadonlyArray<Computer>): View | undefined {
-  if (view.name !== 'live' || computers.some((computer) => computer.origin === view.session.computer.origin)) return undefined;
+  if ((view.name !== 'live' && view.name !== 'preview') || computers.some((computer) => computer.origin === view.session.computer.origin)) return undefined;
   return { name: 'sessions', message: `${view.session.computer.label} is no longer in your list.` };
 }
 
@@ -563,8 +591,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         return;
       }
       const session = hosted(found, computer);
-      // A preview link may open before home's first answer (peers stored): read the config now.
-      if (port !== undefined && await preview.origin() !== undefined) {
+      // A home preview link may open before home's first answer (peers stored): read the config now.
+      // A peer's preview needs nothing from home.
+      if (port !== undefined && (!computer.home || await preview.origin() !== undefined)) {
         setView({ name: 'preview', session, port });
       } else {
         // A bad port or no preview origin falls back to the terminal.
@@ -780,7 +809,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     toSetup(note);
   }, [entries, toSetup]);
 
-  const liveComputer = view.name === 'live' ? view.session.computer : undefined;
+  const liveComputer = view.name === 'live' || view.name === 'preview' ? view.session.computer : undefined;
   const liveStatus = liveComputer === undefined ? undefined : all.entries.find((entry) => entry.computer.origin === liveComputer.origin)?.status;
 
   return (
@@ -886,7 +915,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               fontSize={fontSize}
               {...(view.runFirst === undefined ? {} : { runFirst: view.runFirst })}
               {...(view.compose === true ? { openComposer: true } : {})}
-              {...(previewAt === undefined || !view.session.computer.home ? {} : { onPreview: (port: number) => {
+              {...(previewFor(view.session.computer, liveStatus, previewAt).origin === undefined ? {} : { onPreview: (port: number) => {
                 void refresh(view.session.computer.origin);
                 navigate({ name: 'preview', session: view.session, port });
               } })}
@@ -902,13 +931,13 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           </Suspense>
         </ErrorBoundary>
       )}
-      {view.name === 'preview' && previewAt !== undefined && (
-        <ErrorBoundary key={`${view.session.id}/${view.session.generation}/preview`}>
+      {view.name === 'preview' && (
+        <ErrorBoundary key={`${keyOf(view.session)}/${view.session.generation}/preview`}>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening preview…</p></main>}>
             <Preview
               session={view.session}
-              sessions={tabs.filter((item) => item.computer.home)}
-              origin={previewAt}
+              sessions={tabs.filter((item) => item.computer.origin === view.session.computer.origin)}
+              {...previewFor(view.session.computer, liveStatus, previewAt)}
               port={view.port}
               onBack={() => navigate({ name: 'live', session: view.session })}
               onTell={() => navigate({ name: 'live', session: view.session, compose: true })}

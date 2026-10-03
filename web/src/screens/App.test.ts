@@ -6,7 +6,7 @@ import { hosted } from './allSessions';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, offlineRetry, parseRoute, pathFor, sessionPath, startApp, startLike,
+  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, offlineRetry, parseRoute, pathFor, previewFor, sessionPath, startApp, startLike,
   STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
 } from './App';
 import { ApiError } from '../api/http';
@@ -73,6 +73,13 @@ describe('routes', () => {
     expect(pathFor({ name: 'live', session: hosted({ id } as BrokerRPCSessionRecord, vps) })).toBe(`/c/vps.tailx.ts.net/sessions/${id}`);
   });
 
+  it('gives a preview its address beside the session: home as before, a peer under /c/<host>', () => {
+    expect(pathFor({ name: 'preview', session: hosted({ id } as BrokerRPCSessionRecord, home), port: 5173 })).toBe(`/sessions/${id}/preview?port=5173`);
+    const path = pathFor({ name: 'preview', session: hosted({ id } as BrokerRPCSessionRecord, vps), port: 5173 });
+    expect(path).toBe(`/c/vps.tailx.ts.net/sessions/${id}/preview?port=5173`);
+    expect(parseRoute(path.slice(0, path.indexOf('?')))).toEqual({ name: 'session', host: 'vps.tailx.ts.net', id, preview: true });
+  });
+
   it('accepts a notification message only for a session of home or a listed peer, by lowercase UUID', () => {
     const list = [home, vps];
     const open = (path: unknown) => notificationPath({ type: 'open', path }, list);
@@ -82,7 +89,7 @@ describe('routes', () => {
     expect(open(`/c/vps%2Etailx.ts.net/sessions/${id}`)).toBe(`/c/vps.tailx.ts.net/sessions/${id}`);
     for (const path of [
       '/', '/settings', '/wall', `/sessions/${id}/preview`, '/sessions/AB444444-4444-4444-8444-44444444444C', '/sessions/abc', '/sessions/..%2Fsettings',
-      `/c/evil.tailx.ts.net/sessions/${id}`, `/c/${home.host}/sessions/${id}`, `//evil.example/sessions/${id}`,
+      `/c/vps.tailx.ts.net/sessions/${id}/preview`, `/c/evil.tailx.ts.net/sessions/${id}`, `/c/${home.host}/sessions/${id}`, `//evil.example/sessions/${id}`,
       `https://evil.example/sessions/${id}`, `/sessions/${id}?x=1`, `/sessions/${id}#x`, 42, undefined,
     ]) expect(open(path)).toBeUndefined();
     for (const data of [null, 'open', 42, { type: 'skip-waiting', path: `/sessions/${id}` }, { path: `/sessions/${id}` }]) {
@@ -101,7 +108,7 @@ describe('routes', () => {
     expect(parseRoute('/wall')).toEqual({ name: 'wall' });
     expect(parseRoute('/computers/add')).toEqual({ name: 'add-computer' });
     expect(parseRoute('/add-computer')).toEqual({ name: 'peer-add' });
-    for (const path of ['/c/Evil Host/sessions/x', '/c/vps/sessions/', '/c/a%ZZ/sessions/x', '/c/vps/sessions/x/preview', '/nope', '/sessions/%E0%A4%A']) {
+    for (const path of ['/c/Evil Host/sessions/x', '/c/vps/sessions/', '/c/a%ZZ/sessions/x', '/c/vps/sessions/x/preview/y', '/c/vps/sessions//preview', '/nope', '/sessions/%E0%A4%A']) {
       expect(parseRoute(path), path).toEqual({ name: 'unknown' });
     }
   });
@@ -235,6 +242,33 @@ describe('preview link before home answered (homePreview)', () => {
   });
 });
 
+describe('where a preview is framed from (previewFor)', () => {
+  const ok = (protocolRevision: number) => ({ kind: 'ok' as const, settings: { protocolRevision } as HTTPSettingsResponse, sessions: [], at: 1 });
+
+  it('home uses its configured origin, whatever its poll says; none means no previews', () => {
+    expect(previewFor(home, undefined, 'https://mac.tailx.ts.net:8443')).toEqual({ origin: 'https://mac.tailx.ts.net:8443' });
+    expect(previewFor(home, { kind: 'unreachable' }, 'http://127.0.0.1:8790')).toEqual({ origin: 'http://127.0.0.1:8790' });
+    expect(previewFor(home, ok(2), undefined).origin).toBeUndefined();
+  });
+
+  it('a peer at revision 2 or higher is framed from its own host on 8443, with home\'s previews off or on', () => {
+    expect(previewFor(vps, ok(2), undefined)).toEqual({ origin: 'https://vps.tailx.ts.net:8443' });
+    expect(previewFor(vps, ok(3), 'https://mac.tailx.ts.net:8443')).toEqual({ origin: 'https://vps.tailx.ts.net:8443' });
+  });
+
+  it('a peer below revision 2 has no preview: no chip, and an opened link says to update', () => {
+    expect(previewFor(vps, ok(1), 'https://mac.tailx.ts.net:8443')).toEqual({ notice: 'Update Termivoa on vps' });
+  });
+
+  it('a peer has a frame only while its own poll answers: otherwise the existing text, or nothing yet', () => {
+    expect(previewFor(vps, { kind: 'pair' }, undefined)).toEqual({ notice: 'vps · pair again' });
+    expect(previewFor(vps, { kind: 'unreachable', lastSeen: 1 }, undefined)).toEqual({ notice: 'vps · can\'t reach' });
+    expect(previewFor(vps, { kind: 'outdated', message: 'Update Termivoa on vps' }, undefined)).toEqual({ notice: 'Update Termivoa on vps' });
+    expect(previewFor(vps, { kind: 'loading' }, undefined)).toEqual({});
+    expect(previewFor(vps, undefined, 'https://mac.tailx.ts.net:8443')).toEqual({});
+  });
+});
+
 describe('home adoption (homeAdoption)', () => {
   const answer = { device: { id: 'd', label: 'Phone' } } as unknown as HTTPSettingsResponse;
   const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
@@ -281,6 +315,7 @@ describe('leaveRemoved', () => {
 
   it('leaves a Live view whose computer home\'s new list dropped, with a short notice', () => {
     expect(leaveRemoved({ name: 'live', session }, [home])).toEqual({ name: 'sessions', message: 'vps is no longer in your list.' });
+    expect(leaveRemoved({ name: 'preview', session, port: 5173 }, [home])).toEqual({ name: 'sessions', message: 'vps is no longer in your list.' });
     expect(leaveRemoved({ name: 'live', session }, [home, vps])).toBeUndefined();
     expect(leaveRemoved({ name: 'settings' }, [home])).toBeUndefined();
   });
