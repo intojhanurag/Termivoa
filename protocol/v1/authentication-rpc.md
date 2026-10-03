@@ -58,9 +58,12 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.computers.list` | `GatewayRPCCredentialPayload` | `GatewayRPCComputerListResultPayload`: the device's confirmed `computers` and its unexpired `pendingOrigins` (CSP only) |
 | `gateway.computers.add` | credential + `HTTPComputerAddRequest` | `HTTPComputerAddResponse` |
 | `gateway.computers.remove` | credential + `origin` | empty |
+| `gateway.computers.offer` | `HTTPComputerOfferRequest` (no credential) | empty, also when the offer is dropped |
+| `gateway.computers.found` | `GatewayRPCCredentialPayload` | `HTTPComputerFoundResponse` |
 
-`gateway.origin` is the only request besides pairing that carries no
-credential: the configured origin is not a secret. The gateway asks for it at
+`gateway.origin` and `gateway.computers.offer` are the only requests
+besides pairing that carry no credential: the configured origin is not a
+secret. The gateway asks for it at
 start and after every successful broker probe (once a second), and adds a
 valid result to its exact Host and Origin allow-list next to its `--origin`
 flags. A production gateway accepts only an `https` origin; a development
@@ -82,6 +85,16 @@ only on `/api/v1/pair/*`.
 The `gateway.computers.*` requests act only on the list of the device that
 owns the credential, and only from this computer's own origin (never a bound
 app origin); see `http-api.md`, Computers.
+
+`gateway.computers.offer` never carries an `origin`; the broker drops an
+offer that does. The broker reads only its latest Tailscale snapshot (it
+never runs `tailscale` for an offer) and keeps the offer only when the
+origin's host is a peer in its own tailnet with the same owner, neither node
+tagged, and not this computer. Otherwise it drops the offer silently. The
+result is empty in both cases, so the answer says nothing about which names
+exist. The grant is never logged or written to disk. `gateway.computers.found`
+lists the kept offers for the credential's device (see `http-api.md`, Found
+on your network); without a snapshot it is `host_unavailable`.
 
 `gateway.device.rename` changes only the label of the device that owns the
 credential. Labels stay untrusted display text, never identity.
@@ -162,6 +175,8 @@ retracted.
 | `admin.device.revoke.via` | `appOrigin` | `appOrigin`, revoked `deviceIds`, `closedStreams` |
 | `admin.computers.list` | empty | at most 512 confirmed computers of all devices: `deviceId`, `origin`, `label`, `createdAt` |
 | `admin.computers.remove` | `origin` | `origin`, `removed` (devices whose list held it) |
+| `admin.pair.offer` | `via` (no `allowTagged`) | `appOrigin`, `appNode`, `expiresAt` of the offered grant, `delivered`; `problem` (`unreachable` or `not_accepted`) exactly when not delivered. Never the grant. Error `home_changed` |
+| `admin.pair.offer.end` | optional `grant` (the link's) | empty |
 | `admin.device.rename` | `deviceId`, `label` | the saved `deviceId` and `label` |
 | `admin.project.add` | `path`, optional `name` | the saved project |
 | `admin.project.list` | empty | at most 200 projects |
@@ -204,6 +219,29 @@ every device bound to `appOrigin`, with the same durability rule as
 removes the origin from every device's list on this home computer; it cannot
 log the phone out on that peer.
 
+`admin.pair.offer` (`pterm pair --via` while it waits in a terminal) offers
+this computer to the home `via` names. The broker keeps one offer state in
+memory; a call with another `via` replaces it and deletes the old grant.
+
+- With no state for `via`, the broker resolves `via` exactly as
+  `admin.pair.grant` does (fresh status, owner rule, pinned node ID), but
+  never with `allowTagged`, and makes a bound two-minute grant.
+- With a state, it reads its latest snapshot. If home's host now has another
+  node ID, or is gone, it deletes the grant, clears the state and answers
+  `home_changed`. With no snapshot it skips the push and answers
+  `unreachable`. With 60 s or less left it deletes the grant (only when not
+  redeemed) and makes a new one; otherwise it re-sends the same grant.
+- It then sends `POST https://<home host>/api/v1/computers/offer` with
+  `{origin, grant}` (this computer's configured origin) to the pinned node's
+  Tailscale IP on port 443, with TLS for home's host name, no `Origin`, no
+  proxy, no redirect, a 3 s limit and at most 2 KiB of the answer read.
+  `delivered` is true exactly on `204`; no answer is `unreachable`, any other
+  answer `not_accepted`. Home's answer text is never returned.
+
+`admin.pair.offer.end` deletes the offered grant and the given `grant`, each
+only when it was not redeemed, and clears the offer state. The CLI calls it
+on every exit.
+
 A device's `status` is computed with the same rule the device cap uses:
 `revoked` when the device is revoked; otherwise `active` when it holds a
 credential that is unrevoked, before its absolute expiry, and used within the
@@ -221,8 +259,12 @@ compatibility and is redundant with `status == "revoked"`.
 | Poll attempts | 120 per minute per broker; excess returns `limit_exceeded` |
 | Browser credential | 256-bit; 30-day absolute and 7-day inactivity expiry; last use persisted at most once per minute |
 | Devices | at most 64 rows; the oldest revoked devices are pruned first, active devices never |
+| Offers on home | memory only, 60 s, at most 16 origins, the newest per origin wins; gateway bucket 10, then 1 per second; body at most 1 KiB |
+| Offers on the new computer | one live offered grant, re-sent every 30 s, replaced at 60 s left, deleted at exit |
 
 Error codes: an unknown, used or expired grant and an unknown or expired
 pending pairing return `pairing_expired`; a wrong poll secret, or an unknown,
 expired or invalid credential returns `unauthorized`; a revoked credential or
-device returns `revoked`; capacity and rate limits return `limit_exceeded`.
+device returns `revoked`; capacity and rate limits return `limit_exceeded`;
+`admin.pair.offer` returns `home_changed` when the home it offers to is now
+another Tailscale node.

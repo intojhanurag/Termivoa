@@ -251,6 +251,7 @@ const PEER_ERRORS: Readonly<Record<ErrorCode, string>> = {
   worktree_exists: 'That worktree already exists.',
   not_a_repository: 'That folder is not in a git repository.',
   worktree_failed: 'git could not do this on that computer.',
+  home_changed: 'That computer is now a different Tailscale machine.',
 };
 
 /** The app's own words for a peer's error code. */

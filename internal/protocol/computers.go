@@ -8,6 +8,7 @@ import (
 
 const (
 	MaxComputers                 = 8
+	MaxFoundComputers            = 16
 	MaxBoundOrigins              = 64
 	MaxPairingOrigins            = 16
 	MaxAdminComputers            = 512
@@ -161,6 +162,59 @@ func validateAppBinding(appOrigin *string, appNode *TailnetNode) error {
 	return nil
 }
 
+// ValidateComputerOffer checks the body of POST /api/v1/computers/offer: the
+// new computer's canonical origin and a grant in secret text form.
+func ValidateComputerOffer(offer HTTPComputerOfferRequest) error {
+	if err := ValidateComputerOrigin(offer.Origin); err != nil {
+		return err
+	}
+	return ValidateSecretText(offer.Grant)
+}
+
+// ValidateFoundComputers checks the found list: at most MaxFoundComputers
+// entries, sorted by origin with one entry per origin.
+func ValidateFoundComputers(found HTTPComputerFoundResponse) error {
+	if found.Computers == nil || len(found.Computers) > MaxFoundComputers {
+		return errors.New("found list is outside bounds")
+	}
+	for index, computer := range found.Computers {
+		if index > 0 && computer.Origin <= found.Computers[index-1].Origin {
+			return errors.New("found list must be sorted by origin with one entry per origin")
+		}
+		if err := ValidateComputerOffer(HTTPComputerOfferRequest{Origin: computer.Origin, Grant: computer.Grant}); err != nil {
+			return fmt.Errorf("computers[%d]: %w", index, err)
+		}
+		if err := ValidateComputerLabel(computer.Label); err != nil {
+			return fmt.Errorf("computers[%d]: %w", index, err)
+		}
+		if _, err := parseBrokerRPCTime(computer.ExpiresAt, "expiresAt"); err != nil {
+			return fmt.Errorf("computers[%d]: %w", index, err)
+		}
+	}
+	return nil
+}
+
+// validatePairOfferResult checks admin.pair.offer.result: problem is present
+// exactly when the offer was not delivered.
+func validatePairOfferResult(result AdminRPCPairOfferResultPayload) error {
+	if err := ValidateComputerOrigin(result.AppOrigin); err != nil {
+		return fmt.Errorf("appOrigin: %w", err)
+	}
+	if err := validateTailnetNode(result.AppNode); err != nil {
+		return err
+	}
+	if _, err := parseBrokerRPCTime(result.ExpiresAt, "expiresAt"); err != nil {
+		return err
+	}
+	if result.Delivered != (result.Problem == nil) {
+		return errors.New("problem must be present exactly when the offer was not delivered")
+	}
+	if result.Problem != nil && *result.Problem != Unreachable && *result.Problem != NotAccepted {
+		return errors.New("offer problem is not a recognized value")
+	}
+	return nil
+}
+
 func validateComputerState(state HTTPComputerState) error {
 	if state != HTTPComputerStatePending && state != Confirmed {
 		return errors.New("computer state is not a recognized value")
@@ -200,6 +254,18 @@ func validateGatewayComputerPayload(envelope GatewayRPCEnvelope) error {
 			return err
 		}
 		return ValidateComputerOrigin(payload.Origin)
+	case GatewayComputersOffer:
+		payload, err := DecodeRPCPayload[HTTPComputerOfferRequest](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateComputerOffer(payload)
+	case GatewayComputersFoundResult:
+		payload, err := DecodeRPCPayload[HTTPComputerFoundResponse](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateFoundComputers(payload)
 	case GatewayComputersListResult:
 		payload, err := DecodeRPCPayload[GatewayRPCComputerListResultPayload](envelope)
 		if err != nil {
@@ -238,6 +304,27 @@ func validateAdminComputerPayload(envelope AdminRPCEnvelope) error {
 		}
 		if payload.AllowTagged != nil {
 			return errors.New("allowTagged needs via")
+		}
+		return nil
+	case AdminPairOffer:
+		payload, err := DecodeRPCPayload[AdminRPCPairOfferPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidatePairVia(payload.Via)
+	case AdminPairOfferResult:
+		payload, err := DecodeRPCPayload[AdminRPCPairOfferResultPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return validatePairOfferResult(payload)
+	case AdminPairOfferEnd:
+		payload, err := DecodeRPCPayload[AdminRPCPairOfferEndPayload](envelope)
+		if err != nil {
+			return err
+		}
+		if payload.Grant != nil {
+			return ValidateSecretText(*payload.Grant)
 		}
 		return nil
 	case AdminDeviceRevokeVia:

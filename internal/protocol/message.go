@@ -1329,7 +1329,7 @@ func validErrorCode(value ErrorCode) bool {
 		GenerationChanged, SessionLost, NotController, StaleLease, InputGap, LimitExceeded,
 		HistoryChanged, ResyncRequired, HostUnavailable, InternalError, InvalidRequest,
 		OperationConflict, ProjectMissing, ShellProfileMissing, QuestionChanged, PreviewMissing,
-		WorktreeExists, NotARepository, WorktreeFailed:
+		WorktreeExists, NotARepository, WorktreeFailed, HomeChanged:
 		return true
 	default:
 		return false

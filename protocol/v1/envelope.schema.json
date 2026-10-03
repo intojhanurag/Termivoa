@@ -111,7 +111,7 @@
         "host_unavailable", "internal_error", "invalid_request",
         "operation_conflict", "project_missing", "shell_profile_missing",
         "question_changed", "preview_missing", "worktree_exists", "not_a_repository",
-        "worktree_failed"
+        "worktree_failed", "home_changed"
       ]
     },
     "sessionLifecycle": {

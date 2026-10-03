@@ -18,6 +18,10 @@ export type ProtocolTypes = {
     readonly adminRPCOrigin:                   AdminRPCOriginPayload;
     readonly adminRPCPairGrant:                AdminRPCPairGrantPayload;
     readonly adminRPCPairGrantResult:          AdminRPCPairGrantResultPayload;
+    readonly adminRPCPairOffer:                AdminRPCPairOfferPayload;
+    readonly adminRPCPairOfferEnd:             AdminRPCPairOfferEndPayload;
+    readonly adminRPCPairOfferProblem:         AdminRPCPairOfferProblem;
+    readonly adminRPCPairOfferResult:          AdminRPCPairOfferResultPayload;
     readonly adminRPCPairPendingResult:        AdminRPCPairPendingResultPayload;
     readonly adminRPCPendingID:                AdminRPCPendingIDPayload;
     readonly adminRPCPendingPairing:           AdminRPCPendingPairing;
@@ -89,11 +93,14 @@ export type ProtocolTypes = {
     readonly httpComputer:                     HTTPComputer;
     readonly httpComputerAddRequest:           HTTPComputerAddRequest;
     readonly httpComputerAddResponse:          HTTPComputerAddResponse;
+    readonly httpComputerFoundResponse:        HTTPComputerFoundResponse;
     readonly httpComputerListResponse:         HTTPComputerListResponse;
+    readonly httpComputerOfferRequest:         HTTPComputerOfferRequest;
     readonly httpComputerState:                HTTPComputerState;
     readonly httpDeviceRenameRequest:          HTTPDeviceRenameRequest;
     readonly httpDeviceSummary:                HTTPDeviceSummary;
     readonly httpErrorResponse:                HTTPErrorResponse;
+    readonly httpFoundComputer:                HTTPFoundComputer;
     readonly httpNamedOption:                  HTTPNamedOption;
     readonly httpPairPollRequest:              HTTPPairPollRequest;
     readonly httpPairPollResponse:             HTTPPairPollResponse;
@@ -235,7 +242,7 @@ export type AdminRPCDeviceRevokeResultPayload = {
     readonly deviceId:      string;
 }
 
-export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.device.revoke.via" | "admin.computers.list" | "admin.computers.remove" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.device.revoke.via.result" | "admin.computers.list.result" | "admin.computers.remove.result" | "admin.error";
+export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.device.revoke.via" | "admin.computers.list" | "admin.computers.remove" | "admin.pair.offer" | "admin.pair.offer.end" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.device.revoke.via.result" | "admin.computers.list.result" | "admin.computers.remove.result" | "admin.pair.offer.result" | "admin.pair.offer.end.result" | "admin.error";
 
 /**
  * In a request, a present origin replaces the configured one and an absent origin reads it.
@@ -265,6 +272,44 @@ export type AdminRPCPairGrantResultPayload = {
     readonly expiresAt:  string;
     readonly grant:      string;
     readonly origin?:    string;
+}
+
+/**
+ * pterm pair --via (interactive wait only): offer this computer to the home computer via.
+ * The first call resolves via in a fresh tailscale status, pins that node and makes a bound
+ * grant; later calls with the same via re-send the same grant, or a new one when 60 s or
+ * less are left. allowTagged is not accepted: home drops every offer when either node is
+ * tagged.
+ */
+export type AdminRPCPairOfferPayload = {
+    readonly via: string;
+}
+
+/**
+ * Ends the offer: deletes the offered grant and the given grant (the link's), each only
+ * when it was not redeemed, and clears the offer state.
+ */
+export type AdminRPCPairOfferEndPayload = {
+    readonly grant?: string;
+}
+
+/**
+ * unreachable: no HTTP answer from home (or no usable snapshot or address). not_accepted:
+ * any answer other than 204, for example a home without this feature.
+ */
+export type AdminRPCPairOfferProblem = "unreachable" | "not_accepted";
+
+/**
+ * The home the offer went to and when the offered grant expires. The grant itself is never
+ * in the result. delivered is true exactly when home answered 204; problem is present
+ * exactly when delivered is false.
+ */
+export type AdminRPCPairOfferResultPayload = {
+    readonly appNode:   TailnetNode;
+    readonly appOrigin: string;
+    readonly delivered: boolean;
+    readonly expiresAt: string;
+    readonly problem?:  AdminRPCPairOfferProblem;
 }
 
 export type AdminRPCPairPendingResultPayload = {
@@ -424,7 +469,7 @@ export type BrokerRPCErrorPayload = {
     readonly message: string;
 }
 
-export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed" | "preview_missing" | "worktree_exists" | "not_a_repository" | "worktree_failed";
+export type ErrorCode = "unauthorized" | "pairing_expired" | "pairing_pending" | "revoked" | "protocol_mismatch" | "session_missing" | "generation_changed" | "session_lost" | "not_controller" | "stale_lease" | "input_gap" | "limit_exceeded" | "history_changed" | "resync_required" | "host_unavailable" | "internal_error" | "invalid_request" | "operation_conflict" | "project_missing" | "shell_profile_missing" | "question_changed" | "preview_missing" | "worktree_exists" | "not_a_repository" | "worktree_failed" | "home_changed";
 
 export type BrokerRPCMessageType = "session.list.request" | "session.create.request" | "session.rename.request" | "session.terminate.request" | "session.status.request" | "session.list.result" | "session.create.result" | "session.rename.result" | "session.terminate.result" | "session.status.result" | "broker.error";
 
@@ -835,7 +880,7 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.error";
 
 /**
  * origin: the browser origin configured with admin.config.origin, absent when none is set.
@@ -1081,11 +1126,44 @@ export type HTTPComputerAddResponse = {
 }
 
 /**
+ * GET /api/v1/computers/found: unexpired offers of computers in home's own tailnet (same
+ * owner, untagged) that are not yet confirmed for the calling device, sorted by origin, one
+ * per origin.
+ */
+export type HTTPComputerFoundResponse = {
+    readonly computers: HTTPFoundComputer[];
+}
+
+/**
+ * One computer that waits to be added. origin and grant come from its offer; label is the
+ * first DNS label of its host from home's own tailscale status, never from the offer.
+ * expiresAt is when home drops the offer.
+ */
+export type HTTPFoundComputer = {
+    readonly expiresAt: string;
+    readonly grant:     string;
+    readonly label:     string;
+    readonly origin:    string;
+}
+
+/**
  * GET /api/v1/computers: the calling device's confirmed computers. Pending entries are
  * never listed.
  */
 export type HTTPComputerListResponse = {
     readonly computers: HTTPComputer[];
+}
+
+/**
+ * POST /api/v1/computers/offer, sent by a new computer's broker to the home computer the
+ * user named (pterm pair --via). origin is the new computer's own canonical origin; grant
+ * is a single-use grant made on the new computer and bound to home's origin and pinned
+ * node. No authentication; the gateway refuses any Origin or Sec-Fetch-* header and answers
+ * 204 for every well-formed offer. See http-api.md, Found on your network.
+ */
+export type HTTPComputerOfferRequest = {
+    readonly grant:  string;
+    readonly origin: string;
 }
 
 export type HTTPErrorResponse = {
@@ -1455,6 +1533,6 @@ export type WorktreeRemovedPayload = {
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 
 /** This build's additive protocol v1 revision (protocol/v1/revision.json). */
-export const PROTOCOL_REVISION = 2;
+export const PROTOCOL_REVISION = 3;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;
