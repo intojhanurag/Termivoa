@@ -82,16 +82,16 @@ export async function until(fn, { timeout = 20000, every = 200, what = 'conditio
 
 /** Demo tailnet: mac and vps share an owner; evil is another user's node. */
 export const NODES = {
-  mac: { ID: 'nMacE2E1CNTRL', user: 1 },
-  vps: { ID: 'nVpsE2E1CNTRL', user: 1 },
-  evil: { ID: 'nEvilE2E1CNTRL', user: 2 },
+  mac: { ID: 'nMacE2E1CNTRL', user: 1, OS: 'macOS' },
+  vps: { ID: 'nVpsE2E1CNTRL', user: 1, OS: 'linux' },
+  evil: { ID: 'nEvilE2E1CNTRL', user: 2, OS: 'linux' },
 };
 const USERS = { 1: { LoginName: 'ada@example.com' }, 2: { LoginName: 'mallory@example.com' } };
 
 function statusJSON(self, nodes) {
   const node = (name, index) => ({
     ID: nodes[name].ID, PublicKey: `nodekey:e2e${name}`, HostName: name, DNSName: `${name}.${TAILNET}.`,
-    UserID: nodes[name].user, TailscaleIPs: [`100.64.0.${index + 1}`], Online: true,
+    UserID: nodes[name].user, OS: nodes[name].OS, TailscaleIPs: [`100.64.0.${index + 1}`], Online: true,
   });
   const names = Object.keys(nodes);
   const peers = Object.fromEntries(names.filter((n) => n !== self).map((n) => [`nodekey:e2e${n}`, node(n, names.indexOf(n))]));
@@ -146,18 +146,25 @@ export class Stack {
       PATH: `${this.bin}:${this.env.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
       HOME: this.home, SHELL: '/bin/zsh', TERM: 'xterm-256color', LANG: 'en_US.UTF-8',
       TMPDIR: join(this.dir, 'tmp'), PTERM_E2E_TAILSCALE_DIR: this.tsDir,
+      // The broker's offer to home goes through the front (peerdial_e2e.go, e2e builds only).
+      PTERM_E2E_FRONT: this.env.proxy, PTERM_E2E_SPKI: this.env.spki,
     };
   }
 
-  /** preview false starts without the preview listener: a computer that does not share previews. */
-  async start({ preview = true } = {}) {
-    mkdirSync(join(this.dir, 'tmp'), { recursive: true });
+  /** Picks the gateway and preview ports once; the front routes to them before the stack starts. */
+  async ports() {
     this.port ??= await freePort();
     this.gateway = `127.0.0.1:${this.port}`;
     // What `tailscale serve --https=8443` exposes; the front routes <host>:8443 here.
     this.previewPort ??= await freePort();
     this.preview = `127.0.0.1:${this.previewPort}`;
     this.previewOrigin = `https://${this.host}:8443`;
+  }
+
+  /** preview false starts without the preview listener: a computer that does not share previews. */
+  async start({ preview = true } = {}) {
+    mkdirSync(join(this.dir, 'tmp'), { recursive: true });
+    await this.ports();
     const log = join(this.env.root, `${this.name}.log`);
     const child = spawn(...sandboxed(this.env.pterm, ['up', '--dev', '--data-dir', this.dataDir, '--runtime-dir', this.runtimeDir,
       '--listen', this.gateway, '--preview-listen', preview ? this.preview : 'off']), { env: this.processEnv, cwd: this.home, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -198,8 +205,12 @@ export class Stack {
 }
 
 export class Env {
-  /** Builds pterm and the front, then starts both stacks and the front. */
-  static async create({ buildWeb = true, names = ['mac', 'vps'] } = {}) {
+  /**
+   * Builds pterm (tags webdist,e2e: the offer dial goes through the front)
+   * and the front, then starts the front and both stacks. production also
+   * builds pterm without the e2e tag, as bin/pterm-production.
+   */
+  static async create({ buildWeb = true, names = ['mac', 'vps'], production = false } = {}) {
     const env = new Env();
     env.root = mkdtempSync('/tmp/mce2e.');
     env.bin = join(env.root, 'bin');
@@ -209,19 +220,29 @@ export class Env {
       await must('pnpm', ['build:web'], { timeout: 600000 });
       await must('sh', ['scripts/embed-web.sh']);
     }
-    await must('go', ['build', '-tags', 'webdist', '-o', env.pterm, './cmd/pterm'], { timeout: 600000 });
-    await must('go', ['build', '-o', join(env.bin, 'front'), './scripts/e2e-multicomputer'], { timeout: 600000 });
+    const builds = [
+      must('go', ['build', '-tags', 'webdist,e2e', '-o', env.pterm, './cmd/pterm'], { timeout: 600000 }),
+      must('go', ['build', '-o', join(env.bin, 'front'), './scripts/e2e-multicomputer'], { timeout: 600000 }),
+    ];
+    if (production) {
+      env.production = join(env.bin, 'pterm-production');
+      builds.push(must('go', ['build', '-tags', 'webdist', '-o', env.production, './cmd/pterm'], { timeout: 600000 }));
+    }
+    await Promise.all(builds);
     env.stacks = {};
     for (const name of names) env.stacks[name] = new Stack(env, name);
-    await Promise.all(Object.values(env.stacks).map((s) => s.start()));
+    await Promise.all(Object.values(env.stacks).map((s) => s.ports()));
     await env.startFront();
+    await Promise.all(Object.values(env.stacks).map((s) => s.start()));
     return env;
   }
 
   async startFront() {
     this.frontLog = join(this.root, 'front.jsonl');
+    // While this file names a host, the front answers its offer route as a home without it (check F-old).
+    this.oldHome = join(this.root, 'old-home');
     const routes = Object.values(this.stacks).flatMap((s) => ['-route', `${s.host}=${s.gateway}`, '-preview', `${s.host}=${s.preview}`]);
-    this.front = spawn(join(this.bin, 'front'), ['-log', this.frontLog, ...routes], { stdio: ['ignore', 'pipe', 'inherit'] });
+    this.front = spawn(join(this.bin, 'front'), ['-log', this.frontLog, '-old-home', this.oldHome, ...routes], { stdio: ['ignore', 'pipe', 'inherit'] });
     const line = await new Promise((res) => this.front.stdout.once('data', (d) => res(String(d))));
     const [, address, spki] = /^proxy (\S+) spki (\S+)/.exec(line);
     this.proxy = address;
@@ -376,20 +397,34 @@ export function pageFetch(page, url, init = {}) {
 
 // ---------- pairing ----------
 
-/** Starts a long-running pterm command on a stack; read its output with wait(). */
-export function interactive(stack, args) {
+/** Terminal output as plain text: no color codes, no carriage returns. */
+export const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r/g, '');
+
+/**
+ * Starts a long-running pterm command on a stack; read its output with wait().
+ * pty runs it in a real terminal (script(1)), as a person types it: only
+ * then does `pterm pair --via` offer this computer to home. profile false
+ * leaves out --dev --runtime-dir (pterm setup has no dev profile); env
+ * replaces the stack's environment.
+ */
+export function interactive(stack, args, { pty = false, profile = true, env = stack.processEnv } = {}) {
   // Node gives children a socket, not a pipe, as stdin; pterm's prompt
-  // accepts only a terminal or a pipe, so cat turns it into a pipe.
-  const child = spawn(...sandboxed('/bin/sh', ['-c', 'cat | "$0" "$@"', stack.env.pterm, ...args, '--dev', '--runtime-dir', stack.runtimeDir]),
-    { env: stack.processEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+  // accepts only a terminal or a pipe, so cat turns it into a pipe (and
+  // script(1) needs a pipe or terminal to read from).
+  const run = pty ? 'cat | /usr/bin/script -q /dev/null "$0" "$@"' : 'cat | "$0" "$@"';
+  const child = spawn(...sandboxed('/bin/sh', ['-c', run, stack.env.pterm, ...args, ...(profile ? ['--dev', '--runtime-dir', stack.runtimeDir] : [])]),
+    { env, stdio: ['pipe', 'pipe', 'pipe'] });
   const self = {
     child, out: '',
-    wait: (re, timeout = 30000) => until(() => re.exec(self.out), { timeout, what: `${re} in pterm ${args.join(' ')}` })
-      .catch((error) => { throw new Error(`${error.message}\noutput so far:\n${self.out}`); }),
+    wait: (re, timeout = 30000) => until(() => re.exec(plain(self.out)), { timeout, what: `${re} in pterm ${args.join(' ')}` })
+      .catch((error) => { throw new Error(`${error.message}\noutput so far:\n${plain(self.out)}`); }),
     write: (text) => child.stdin.write(text),
     end: (text) => child.stdin.end(text),
     done: new Promise((r) => child.on('close', (code) => r(code))),
   };
+  // Whole characters: a chunk may end inside one (QR blocks, arrows).
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
   child.stdout.on('data', (d) => { self.out += d; });
   child.stderr.on('data', (d) => { self.out += d; });
   return self;

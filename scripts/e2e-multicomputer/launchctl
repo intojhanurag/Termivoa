@@ -1,0 +1,13 @@
+#!/bin/sh
+# Fake `launchctl` for check F-setup of the multi-computer e2e harness. Only
+# that one `pterm setup` run has it first on PATH (pterm runs launchctl by
+# name, and the sandbox denies the real /bin/launchctl). It says every
+# Termivoa service is registered and accepts bootout and bootstrap without
+# doing anything, so setup registers nothing; it logs each call to
+# $PTERM_E2E_LAUNCHCTL_LOG and refuses every other command.
+set -eu
+echo "$*" >> "${PTERM_E2E_LAUNCHCTL_LOG:?fake launchctl: PTERM_E2E_LAUNCHCTL_LOG is not set}"
+case "$1" in
+  print|bootout|bootstrap) exit 0 ;;
+  *) echo "fake launchctl: refused: $*" >&2; exit 1 ;;
+esac

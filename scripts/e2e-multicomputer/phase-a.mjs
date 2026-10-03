@@ -16,7 +16,7 @@ function check(id, name, pass, evidence) {
 const brief = (e) => e ? `${e.method} ${e.path} origin=${e.origin || '-'} sfs=${e.secFetchSite || '-'} sfm=${e.secFetchMode || '-'} cookie=${e.cookie} → ${e.status}${e.acao ? ` ACAO=${e.acao}` : ''}${e.setCookie ? ' Set-Cookie' : ''}` : 'no request reached the computer';
 const refused = (r) => r.status === 403 && !r.headers['access-control-allow-origin'] && !r.headers['set-cookie'];
 
-const env = await Env.create({ buildWeb: !flag('--no-web-build') });
+const env = await Env.create({ buildWeb: !flag('--no-web-build'), production: true });
 const { mac, vps } = env.stacks;
 console.log(`root ${env.root}\nfront ${env.proxy}\nmac → ${mac.gateway}\nvps → ${vps.gateway}`);
 const browser = await Browser.launch(env);
@@ -56,7 +56,7 @@ try {
   const pending = await pageFetch(macPage, `${mac.origin}/api/v1/computers`, { method: 'POST', credentials: 'include', headers: json, body: JSON.stringify({ label: 'vps', origin: vps.origin, state: 'pending' }) });
   const redeem = await pageFetch(macPage, `${vps.origin}/api/v1/pair/redeem`, { method: 'POST', credentials: 'include', headers: json, body: JSON.stringify({ grant, deviceLabel: 'e2e phone' }) });
   const redeemed = JSON.parse(redeem.body || '{}');
-  const [, code] = await via.wait(/shows code (\d{3}-\d{3})/);
+  const [, code] = await via.wait(/shows (?:code )?(\d{3}-\d{3})/);
   const prompt = via.out.slice(via.out.indexOf('Phone'));
   via.end(code === redeemed.verificationCode ? 'y\n' : 'n\n');
   const poll = await until(async () => {
@@ -193,6 +193,14 @@ try {
   writeFileSync(serve, saved);
   const handlerLine = (handlers.stdout + handlers.stderr).split('\n').find((l) => l.includes('other handlers share')) ?? 'no warning';
   check('A7-serve', 'pterm doctor on mac warns about another Serve handler on the home origin', handlerLine.includes('/files'), handlerLine.trim());
+
+  // ---- A8: the e2e hooks are not in a production build ----
+  const marker = Buffer.from('PTERM_E2E');
+  const production = readFileSync(env.production);
+  const e2e = readFileSync(env.pterm);
+  check('A8-production', 'A production build (go build -tags webdist, no e2e) does not contain the string PTERM_E2E; the e2e build does (control)',
+    !production.includes(marker) && e2e.includes(marker),
+    `pterm-production ${production.length} bytes: ${production.includes(marker) ? 'contains' : 'no'} PTERM_E2E; e2e pterm ${e2e.length} bytes: ${e2e.includes(marker) ? 'contains' : 'no'} PTERM_E2E`);
 } catch (error) {
   check('ERR', 'harness error', false, error.stack);
 } finally {
