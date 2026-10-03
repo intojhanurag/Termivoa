@@ -24,10 +24,13 @@ Available commands:
                                      Print a two-minute, single-use phone pairing link
                                      and, on a terminal, its QR code; then wait for the
                                      phone and approve it after you compare its code.
-  pterm pair --via <name|url> [--allow-tagged]
+                                     For a first computer.
+  pterm pair --via <name|url> [--allow-tagged] [--no-qr]
                                      Add this computer to the Termivoa app at that
                                      computer: print a two-minute add-computer link
-                                     (no QR code) and approve the phone's code.
+                                     and, on a terminal, its QR code for the app's
+                                     own scanner (not the phone's Camera app), and
+                                     approve the phone's code.
                                      --allow-tagged accepts a tagged app computer.
   pterm pair pending                 Show phones waiting for approval and their codes.
   pterm pair approve <pending-id>    Approve a phone after comparing its code.
@@ -43,8 +46,10 @@ Available commands:
   pterm profile list                 Show saved shell profiles.
   pterm profile detect               Detect host shells and save them as profiles.
   pterm config origin [<url>]        Show or set the private HTTPS pairing origin.
-  pterm setup                        First run: checks, one confirmation, startup,
+  pterm setup [--verbose]            First run: a short plan, one confirmation, startup,
                                      phone address, Tailscale Serve (asks), pairing.
+                                     --verbose also shows the checks, the startup
+                                     files and every command.
   pterm setup --apply --yes          Installer mode: register startup, ask nothing.
   pterm doctor                       Read-only diagnostics; never prints secrets.
   pterm uninstall [--dry-run] [--yes] [--delete-data]
@@ -169,14 +174,23 @@ type fileConfirmer struct {
 }
 
 func (confirmer fileConfirmer) Confirm(ctx context.Context, prompt string) (confirmed bool, returnErr error) {
+	return withLine(confirmer, func(line *cli.LineConfirmer) (bool, error) { return line.Confirm(ctx, prompt) })
+}
+
+// Ask reads one free-text line: a menu choice or a computer name.
+func (confirmer fileConfirmer) Ask(ctx context.Context, prompt string) (string, error) {
+	return withLine(confirmer, func(line *cli.LineConfirmer) (string, error) { return line.Ask(ctx, prompt) })
+}
+
+func withLine[T any](confirmer fileConfirmer, read func(*cli.LineConfirmer) (T, error)) (answer T, returnErr error) {
 	reader, err := cli.NewFileConfirmationReader(confirmer.input)
 	if err != nil {
-		return false, err
+		return answer, err
 	}
 	defer func() { returnErr = errors.Join(returnErr, reader.Close()) }()
 	line, err := cli.NewLineConfirmer(reader, confirmer.output)
 	if err != nil {
-		return false, err
+		return answer, err
 	}
-	return line.Confirm(ctx, prompt)
+	return read(line)
 }

@@ -37,24 +37,11 @@ func NewLineConfirmer(input ConfirmationReader, output io.Writer) (*LineConfirme
 }
 
 func (confirmer *LineConfirmer) Confirm(ctx context.Context, prompt string) (bool, error) {
-	if ctx == nil {
-		return false, errors.New("CLI confirmation context must not be nil")
-	}
-	if err := ctx.Err(); err != nil {
+	response, err := confirmer.Ask(ctx, prompt)
+	if err != nil {
 		return false, err
 	}
-	if err := writeString(confirmer.output, prompt); err != nil {
-		return false, err
-	}
-	line, err := readConfirmationLine(ctx, confirmer.input)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, fmt.Errorf("read confirmation: %w", err)
-	}
-	if contextErr := ctx.Err(); contextErr != nil {
-		return false, contextErr
-	}
-	response := strings.ToLower(strings.TrimSpace(line))
-	switch response {
+	switch strings.ToLower(response) {
 	case "y", "yes":
 		return true, nil
 	case "", "n", "no":
@@ -62,6 +49,28 @@ func (confirmer *LineConfirmer) Confirm(ctx context.Context, prompt string) (boo
 	default:
 		return false, errors.New("confirmation must be yes or no")
 	}
+}
+
+// Ask writes prompt and returns one line of the answer without surrounding
+// spaces. EOF without a response is the empty answer.
+func (confirmer *LineConfirmer) Ask(ctx context.Context, prompt string) (string, error) {
+	if ctx == nil {
+		return "", errors.New("CLI confirmation context must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := writeString(confirmer.output, prompt); err != nil {
+		return "", err
+	}
+	line, err := readConfirmationLine(ctx, confirmer.input)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read confirmation: %w", err)
+	}
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
+	return strings.TrimSpace(line), nil
 }
 
 func readConfirmationLine(ctx context.Context, input ConfirmationReader) (string, error) {

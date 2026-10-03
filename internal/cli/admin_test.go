@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -413,8 +414,8 @@ func TestPairWaitsAndApprovesOnlyAfterConfirmation(t *testing.T) {
 		confirmer := &fakeConfirmer{answer: answer}
 		var output bytes.Buffer
 		err := Pair(context.Background(), admin, PairOptions{Confirmer: confirmer, PollInterval: time.Millisecond}, &output)
-		if err != nil {
-			t.Fatal(err)
+		if answer && err != nil || !answer && !errors.Is(err, ErrNotPaired) {
+			t.Fatalf("answer %v: %v", answer, err)
 		}
 		if confirmer.calls != 1 || !strings.Contains(confirmer.prompt, "shows code 123-456. Approve? [y/N]") ||
 			strings.Contains(confirmer.prompt, "\x1b") || strings.Contains(confirmer.prompt, "111-111") {
@@ -423,7 +424,7 @@ func TestPairWaitsAndApprovesOnlyAfterConfirmation(t *testing.T) {
 		if answer && (len(admin.approved) != 1 || admin.approved[0] != adminPending) {
 			t.Fatalf("approved = %v", admin.approved)
 		}
-		if !answer && (len(admin.approved) != 0 || !strings.Contains(output.String(), "Not approved")) {
+		if !answer && (len(admin.approved) != 0 || !strings.Contains(output.String(), "Not approved; that phone stays unpaired. Run `pterm pair` to try again.")) {
 			t.Fatalf("declined pairing approved %v: %q", admin.approved, output.String())
 		}
 	}
@@ -435,8 +436,35 @@ func TestPairStopsWaitingWhenTheGrantExpires(t *testing.T) {
 	admin.grant.ExpiresAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
 	confirmer := &fakeConfirmer{answer: true}
 	err := Pair(context.Background(), admin, PairOptions{Confirmer: confirmer, PollInterval: time.Millisecond}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "expired") || confirmer.calls != 0 {
+	if err == nil || !strings.Contains(err.Error(), "expired") || !strings.Contains(err.Error(), "run `pterm pair` again") || confirmer.calls != 0 {
 		t.Fatalf("expired wait = %v after %d prompts", err, confirmer.calls)
+	}
+}
+
+// An add-computer wait that ends without an approved phone names the
+// command that makes a new add-computer link, not the first-computer one.
+func TestPairViaEndingWithoutAPhoneNamesTheViaCommand(t *testing.T) {
+	admin := &fakeAdmin{grant: boundGrant(homeOrigin, &protocol.TailnetNode{ID: "n1", Tags: []string{"tag:server"}})}
+	admin.grant.ExpiresAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+	options := PairOptions{Via: "mac", AllowTagged: true, Confirmer: &fakeConfirmer{}, PollInterval: time.Millisecond}
+	err := Pair(context.Background(), admin, options, &bytes.Buffer{})
+	if err == nil || errors.Is(err, ErrNotPaired) || !strings.Contains(err.Error(), "run `pterm pair --via mac --allow-tagged` again") {
+		t.Fatalf("expired --via wait = %v", err)
+	}
+
+	admin = &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
+	admin.grant.ExpiresAt = time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
+	appOrigin := homeOrigin
+	admin.afterGrant = func(admin *fakeAdmin) {
+		admin.pending = append(admin.pending, protocol.AdminRPCPendingPairing{
+			ID: adminPending, VerificationCode: "123-456", DeviceLabel: "Phone", ExpiresAt: "2026-09-27T00:05:00Z", AppOrigin: &appOrigin,
+		})
+	}
+	var output bytes.Buffer
+	options = PairOptions{Via: "mac", Confirmer: &fakeConfirmer{answer: false}, PollInterval: time.Millisecond}
+	if err := Pair(context.Background(), admin, options, &output); !errors.Is(err, ErrNotPaired) ||
+		!strings.Contains(output.String(), "Not approved; that phone stays unpaired. Run `pterm pair --via mac` to try again.") {
+		t.Fatalf("declined --via: %v\n%s", err, output.String())
 	}
 }
 
@@ -503,7 +531,7 @@ func TestPairViaPrintsOnlyTheAddComputerLink(t *testing.T) {
 		admin := &fakeAdmin{grant: boundGrant(homeOrigin, test.node)}
 		var output bytes.Buffer
 		if err := Pair(context.Background(), admin, PairOptions{
-			Via: test.via, AllowTagged: test.allowTagged, ShowQR: true, Fallback: "http://127.0.0.1:8787",
+			Via: test.via, AllowTagged: test.allowTagged, Fallback: "http://127.0.0.1:8787",
 		}, &output); err != nil {
 			t.Fatal(err)
 		}
@@ -514,11 +542,43 @@ func TestPairViaPrintsOnlyTheAddComputerLink(t *testing.T) {
 		}
 		if strings.Count(text, adminGrant) != 1 || !strings.Contains(text, "\n"+link+"\n") || strings.Contains(text, "\x1b[") ||
 			!strings.Contains(text, "in the Termivoa app at "+test.describe+":") ||
-			!strings.Contains(text, `run this command inside a Termivoa session in that app and tap the link, then confirm "Add this computer?"; `+
-				`or in Settings → Computers tap "+ Add a computer" and paste the link.`) ||
+			!strings.Contains(text, `if this terminal is a Termivoa session in that app, tap the link, then confirm "Add this computer?"; `+
+				`or in Settings → + Add a computer, paste the link.`) ||
 			!strings.Contains(text, "single-use secret") {
 			t.Fatalf("via %q output = %q", test.via, text)
 		}
+	}
+}
+
+// On a terminal, --via also draws the link as a QR code and says where to
+// scan it. A terminal narrower than the code (a phone-sized Termivoa session)
+// gets the link only.
+func TestPairViaQRSaysWhereToScan(t *testing.T) {
+	admin := &fakeAdmin{grant: boundGrant(homeOrigin, owned("ada@example.com"))}
+	var output bytes.Buffer
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", ShowQR: true, QRColumns: 80}, &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	// Where to scan comes first, then the code, then the link.
+	scan := "Scan this QR code in the Termivoa app: Settings → + Add a computer → Scan QR.\n" +
+		"The phone's Camera app will NOT work for this code: it opens the browser, not the app.\n" + qrColors
+	if !strings.HasPrefix(text, scan) || strings.Index(text, qrColors) > strings.Index(text, "Add-computer link") ||
+		!strings.Contains(text, `or in Settings → + Add a computer, paste the link.`) || strings.Contains(text, "Safari") {
+		t.Errorf("--via QR output:\n%s", text)
+	}
+	if strings.Count(text, adminGrant) != 1 {
+		t.Errorf("the grant appears %d times", strings.Count(text, adminGrant))
+	}
+
+	// Too narrow: the link alone, without a word about the missing code.
+	output.Reset()
+	if err := Pair(context.Background(), admin, PairOptions{Via: "mac", ShowQR: true, QRColumns: 40}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if text := output.String(); strings.Contains(text, "\x1b[") || strings.Contains(text, "QR code:") || strings.Contains(text, "Scan") ||
+		!strings.HasPrefix(text, "Add-computer link") || !strings.Contains(text, "/add-computer#grant=") {
+		t.Errorf("narrow terminal output = %q", text)
 	}
 }
 

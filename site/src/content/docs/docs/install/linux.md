@@ -1,7 +1,7 @@
 ---
 title: Install on Linux
 description: Install the Termivoa pterm beta on Ubuntu desktop, a server, a VPS or WSL, and run it as systemd user services that need no root access.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-03
 ---
 
 Termivoa installs on Ubuntu (desktop, server or WSL) as one file, `pterm`, with an install script that runs `pterm setup`.
@@ -29,11 +29,32 @@ sh install-linux.sh ./pterm-linux-amd64
 ```
 
 The script installs `~/.local/bin/pterm` and starts setup.
-If `~/.local/bin` is not on your PATH, Ubuntu adds it at your next login; until then, type `~/.local/bin/pterm`.
+If this terminal does not find `pterm` yet, the last lines of setup give the command to fix it (**Next beta**):
+
+```text
+`pterm` is not on your PATH in this terminal yet. To use it here, run this now:
+  export PATH="/home/you/.local/bin:$PATH"
+New logins have it already: your ~/.profile adds ~/.local/bin when it exists.
+```
+
+With zsh, the last line says to add the `export` line to `~/.zshrc`. Until then, you can also type `~/.local/bin/pterm`.
 
 To check the download, get the release's `SHA256SUMS` file and run `shasum -a 256 -c SHA256SUMS --ignore-missing`.
 
-Then follow [Pair your phone](/docs/pair-your-phone/).
+Then follow [Pair your phone](/docs/pair-your-phone/). If Termivoa is already on your phone (this is your second computer), answer `2` when setup asks "Is Termivoa already on your phone?", then pick the computer you first paired. See [Use several computers](/docs/guides/computers/).
+
+### What if I am logged in as root?
+
+The script and `pterm setup` refuse root: your phone would get root's shell. A new VPS often has only root. The script then prints the commands that make a normal user with `sudo` rights (the `wheel` group on Fedora), give it your SSH key, and copy the two files to it (**Next beta**):
+
+```sh
+adduser <name>
+usermod -aG sudo <name>
+install -d -m 700 -o <name> -g <name> /home/<name>/.ssh && install -m 600 -o <name> -g <name> ~/.ssh/authorized_keys /home/<name>/.ssh/
+install -m 644 -o <name> -g <name> install-linux.sh ./pterm-linux-amd64 /home/<name>/
+```
+
+Then log in as that user (`ssh <name>@<server>`) and run the install again. If you ran it with `sudo`, run it again without `sudo`.
 
 ## How does it start at login?
 
@@ -42,7 +63,7 @@ Then follow [Pair your phone](/docs/pair-your-phone/).
 - `phone-terminal-broker.service`: the broker, which owns your sessions.
 - `phone-terminal-gateway.service`: the gateway, which serves the phone page on this computer only (`127.0.0.1:8787`).
 
-Setup shows the unit files and every `systemctl --user` command before it runs them.
+Setup lists this in a short plan before it asks. `pterm setup --verbose` also shows the unit files and every `systemctl --user` command.
 If a service crashes, systemd restarts it after 5 seconds.
 
 ## Keep sessions running on a server or VPS
@@ -62,6 +83,12 @@ On Linux, only root or the Tailscale **operator** may share the page. To become 
 
 ```sh
 sudo tailscale set --operator=$USER
+```
+
+Until then your phone cannot reach the computer, so setup does not pair a phone. From the next beta, the plan and the last line of setup say so:
+
+```text
+Setup is done, but your phone cannot reach this computer yet: on Linux only root or the Tailscale operator may share it on port 443. Run this once: sudo tailscale set --operator=$USER, then run `pterm setup` again.
 ```
 
 ## Install in WSL (Windows Subsystem for Linux)

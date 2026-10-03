@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { ApiError, deviceLabelProblem, updateText } from '../api/http';
 import { removeComputer, renameComputer, type Computer } from '../computers';
-import { LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
+import { LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink, type AppLocation } from '../pairing/addComputer';
+import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from '../pairing/scan';
 import { AddComputerSheet } from './AddComputer';
 import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
 import { ago, problemText } from './Sessions';
@@ -16,14 +17,14 @@ export function onlineText(entry: ComputerEntry): { readonly text: string; reado
   }
 }
 
-/** "2 sessions · this computer", or the problem ("vps · can't reach · last seen 3 h ago"). */
+/** "2 sessions · vps.tailx.ts.net" ("2 sessions" for home, which has the Home badge), or the problem ("vps · can't reach · last seen 3 h ago"). */
 export function computerDetail(entry: ComputerEntry, now: number): string {
   const problem = problemText(entry, now);
   if (problem !== undefined) return problem;
   const count = entry.status.kind === 'ok' ? entry.status.sessions.length : undefined;
   return [
     count === undefined ? undefined : `${count} ${count === 1 ? 'session' : 'sessions'}`,
-    entry.computer.home ? 'this computer' : entry.computer.host,
+    entry.computer.home ? undefined : entry.computer.host,
   ].filter((part) => part !== undefined).join(' · ');
 }
 
@@ -61,10 +62,56 @@ type Edit =
   | { readonly kind: 'remove'; readonly computer: Computer };
 
 /**
+ * A scanned or pasted text, checked the same way: the link for the confirm
+ * sheet, or the words for what is wrong with it. A QR code is as untrusted
+ * as a pasted link.
+ */
+export function readLink(text: string, app: AppLocation): AddComputerLink | { readonly problem: string } {
+  const link = parseAddComputerLink(text, app);
+  return 'problem' in link ? { problem: LINK_PROBLEMS[link.problem] } : link;
+}
+
+/** The camera view of Scan QR. The video has no sound and no controls; the line under it says what to do. */
+export function ScanView({ scanning, videoRef, onPaste, onCancel }: {
+  readonly scanning: boolean;
+  readonly videoRef?: RefObject<HTMLVideoElement | null>;
+  readonly onPaste: () => void;
+  readonly onCancel: () => void;
+}) {
+  return (
+    <div className="stack" role="group" aria-label="Scan QR">
+      <video ref={videoRef} className="scan-video" playsInline muted aria-label="Camera view" aria-describedby="scan-help" />
+      <p id="scan-help" role="status" className="hint-text">{scanning ? SCAN_POINT : SCAN_ASKING}</p>
+      <div className="row">
+        <button type="button" autoFocus onClick={onCancel}>Cancel</button>
+        <button type="button" onClick={onPaste}>Paste link</button>
+      </div>
+    </div>
+  );
+}
+
+/** Runs the camera while it is on screen; it stops on a result, on Cancel, on unmount and in the background. */
+function ScanQr({ onEnd, onPaste, onCancel }: {
+  readonly onEnd: (end: ScanEnd) => void;
+  readonly onPaste: () => void;
+  readonly onCancel: () => void;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [scanning, setScanning] = useState(false);
+  const ended = useRef(onEnd);
+  ended.current = onEnd;
+  useEffect(() => {
+    if (video.current === null) return undefined;
+    return startScan({ video: video.current, onScanning: () => setScanning(true), onEnd: (end) => ended.current(end) });
+  }, []);
+  return <ScanView scanning={scanning} videoRef={video} onPaste={onPaste} onCancel={onCancel} />;
+}
+
+/**
  * Settings → Computers: every computer with online or offline, its version
  * and when it last answered, Check again, rename, remove (signs this phone
- * out there first), and Add a computer by
- * pasting the link that `pterm pair --via` printed.
+ * out there first), and Add a computer: scan the QR code that
+ * `pterm pair --via` printed, or paste its link.
  */
 export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   readonly entries: ReadonlyArray<ComputerEntry>;
@@ -80,7 +127,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
   const listed = useRef(entries);
   listed.current = entries;
   const [note, setNote] = useState<{ readonly text: string; readonly error: boolean }>();
-  const [pasting, setPasting] = useState(false);
+  const [adding, setAdding] = useState<'closed' | 'choose' | 'scan' | 'paste'>('closed');
   const [pasted, setPasted] = useState('');
   const [problem, setProblem] = useState<string>();
   const [confirm, setConfirm] = useState<AddComputerLink>();
@@ -127,24 +174,37 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
     );
   }
 
-  function check() {
-    const link = parseAddComputerLink(pasted, window.location);
+  /** Scan and paste end here: the problem, or the confirm sheet. */
+  function check(text: string): boolean {
+    const link = readLink(text, window.location);
     if ('problem' in link) {
-      setProblem(LINK_PROBLEMS[link.problem]);
-      return;
+      setProblem(link.problem);
+      return false;
     }
     setProblem(undefined);
     setConfirm(link);
+    return true;
   }
+
+  function scanned(end: ScanEnd) {
+    setAdding('choose');
+    if (end.kind === 'problem') setProblem(SCAN_PROBLEMS[end.problem]);
+    else if (end.kind === 'text' && check(end.text)) setAdding('closed');
+  }
+
+  const open = (next: typeof adding) => { setProblem(undefined); setPasted(''); setAdding(next); };
 
   return (
     <section className="group stack" aria-labelledby="computers-heading">
       <h2 id="computers-heading" className="caps">Computers</h2>
+      <p className="hint-text">Home serves this app to your phone.</p>
       <ul className="computer-list">
         {entries.map((entry) => {
           const { computer } = entry;
           const online = onlineText(entry);
           const health = healthText(entry, now);
+          // Empty for home while it loads: "checking" on the right says it.
+          const detail = computerDetail(entry, now);
           const checked = checks.get(computer.origin);
           const working = checked !== undefined && checked.text === undefined;
           return (
@@ -152,8 +212,11 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
               <div className="computer-head">
                 <span className="computer-dot" style={{ background: computer.color }} aria-hidden="true" />
                 <span className="row-text">
-                  <span className="row-title">{computer.label}</span>
-                  <span className="row-meta">{computerDetail(entry, now)}</span>
+                  <span className="row-title">
+                    <span className="computer-name">{computer.label}</span>
+                    {computer.home && <span className="badge accent">Home</span>}
+                  </span>
+                  {detail !== '' && <span className="row-meta">{detail}</span>}
                   {health !== undefined && <span className="row-meta">{health}</span>}
                 </span>
                 <span className={`computer-state ${online.tone}`}>{online.text}</span>
@@ -222,17 +285,30 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
       </ul>
       <p role="status" className={note?.error === true ? 'error field-note' : 'muted field-note'}>{note?.text ?? ''}</p>
 
-      {pasting ? (
+      {adding === 'closed' && <button type="button" className="add-computer" onClick={() => open('choose')}>+ Add a computer</button>}
+      {adding === 'choose' && (
+        <div className="stack" role="group" aria-label="Add a computer">
+          {problem !== undefined && <p role="alert" className="error field-note">{problem}</p>}
+          <div className="row">
+            <button type="button" className="primary" autoFocus onClick={() => open('scan')}>Scan QR</button>
+            <button type="button" onClick={() => open('paste')}>Paste link</button>
+            <button type="button" className="link" onClick={() => open('closed')}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {adding === 'scan' && <ScanQr onEnd={scanned} onPaste={() => open('paste')} onCancel={() => open('closed')} />}
+      {adding === 'paste' && (
         <form
           className="stack"
           onSubmit={(event) => {
             event.preventDefault();
-            check();
+            check(pasted);
           }}
         >
           <label htmlFor="add-link">Add-computer link</label>
           <input
             id="add-link"
+            autoFocus
             value={pasted}
             placeholder="https://…/add-computer#…"
             autoCapitalize="off"
@@ -248,17 +324,15 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           </p>
           <div className="row">
             <button type="submit" className="primary" disabled={pasted.trim() === ''}>Check link</button>
-            <button type="button" onClick={() => { setPasting(false); setPasted(''); setProblem(undefined); }}>Cancel</button>
+            <button type="button" onClick={() => open('closed')}>Cancel</button>
           </div>
         </form>
-      ) : (
-        <button type="button" className="add-computer" onClick={() => setPasting(true)}>+ Add a computer</button>
       )}
       <div className="card stack">
         <p className="strong">On the new computer, run:</p>
         <pre className="command"><code>pterm pair --via {home?.label ?? '<this computer>'}</code></pre>
         <p className="hint-text">
-          Then paste the link it prints here. If you run it in a Termivoa session, tap the link in the terminal instead.
+          Then tap <strong>+ Add a computer</strong> and scan the QR code it shows, or paste the link it prints. If you run it in a Termivoa session, tap the link in the terminal instead.
         </p>
       </div>
       {confirm !== undefined && <AddComputerSheet link={confirm} onClose={() => setConfirm(undefined)} />}

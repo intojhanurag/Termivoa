@@ -35,6 +35,9 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   (design #146, approved by the owner 2026-10-03); the build also closes #143
   and #144. Open: the real-phone checks (`docs/owner-verification.md`,
   "Preview for sessions on peers").
+- Scan QR inside the app for + Add a computer, and a Home badge. Open: the
+  real-phone check (owner-verification) and naming the exact iOS camera
+  setting in the docs after it.
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 

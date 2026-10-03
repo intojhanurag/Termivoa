@@ -1,6 +1,7 @@
 // Phase B: the full phone flow through the app's screens (README.md).
 //   node scripts/e2e-multicomputer/phase-b.mjs [--no-web-build] [--out <dir>] [--keep] [--only <ID prefix>]
 // --only PV runs pairing, the first add (B1, B2) and the steps whose ID starts with PV.
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -37,11 +38,13 @@ console.log(browser.product);
 const app = await browser.page(); // the phone app, with its real CSP
 const tool = await browser.page({ bypassCSP: true }); // harness-only API calls (same cookie jar)
 /**
- * Screenshots hide add-computer links in the terminal first: the CLI asks
- * never to put the single-use grant in screenshots, even a used test one.
+ * Screenshots hide add-computer links and QR codes (rows of half blocks,
+ * printed above the link) in the terminal first: the CLI asks never to put
+ * the single-use grant in screenshots, even a used test one.
  */
 const shot = async (name, page = app) => {
   await page.eval(`(() => { const rows = [...document.querySelectorAll('.xterm-rows > div')];
+    rows.forEach((row) => { if (/[▀▄█]/.test(row.textContent) && /^[\\s▀▄█]*$/.test(row.textContent)) row.textContent = '[QR code hidden]'; });
     rows.forEach((row, i) => { if (row.textContent.includes('add-computer#grant=')) for (const r of rows.slice(i, i + 3)) if (!/^(Open|Phone|Approve)/.test(r.textContent)) r.textContent = '[add-computer link hidden]'; }); })()`).catch(() => undefined);
   await page.shot(join(out, `${name}.png`)).catch(() => undefined);
 };
@@ -109,6 +112,7 @@ async function addByPaste(id, whilePending = async () => undefined) {
   await click(app, 'Settings');
   await app.waitText('Add a computer');
   await click(app, '+ Add a computer');
+  await click(app, 'Paste link');
   await setInput(app, '#add-link', link);
   await click(app, 'Check link');
   await app.waitText('Add this computer?');
@@ -208,6 +212,56 @@ try {
     if (r.outcome !== 'added') {
       await confirmByApi();
       console.log('     (harness confirmed vps on home through the API to continue)');
+    }
+  });
+
+  // ---- SCAN: Scan QR, with a real link's QR code as Chrome's camera ----
+  await step('SCAN', 'Scan QR reads a real pterm pair --via link and opens the confirm sheet', async () => {
+    const video = join(env.root, 'scan-qr.y4m');
+    // Its own browser and device: the camera flags and its pending entry stay away from the other checks.
+    const camera = await Browser.launch(env, {
+      profile: 'chrome-scan',
+      extraArgs: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${video}`],
+    });
+    let via;
+    try {
+      const p = await camera.page();
+      await p.go(`${mac.origin}/`);
+      await pairDirect(p, mac, 'Scan phone');
+      await p.waitText('Sessions', 30000);
+      via = interactive(vps, ['pair', '--via', 'mac']);
+      const [link] = await via.wait(/https:\/\/vps\.tailx\.ts\.net\/add-computer#\S+/);
+      const made = spawnSync(join(env.bin, 'front'), ['qr', '-out', video], { input: link });
+      if (made.status !== 0) throw new Error(`qr video: ${made.stderr}`);
+      // First the browser's own BarcodeDetector (where it reads QR codes), then the JavaScript decoder (the iPhone path).
+      for (const decoder of ['native', 'js']) {
+        await p.go(`${mac.origin}/`);
+        await p.waitText('Sessions');
+        await click(p, 'Settings');
+        await p.waitText('Add a computer');
+        const native = await p.eval(`(async () => {
+          if (${decoder === 'js'}) delete globalThis.BarcodeDetector;
+          globalThis.__stopped = 0;
+          const stop = MediaStreamTrack.prototype.stop;
+          MediaStreamTrack.prototype.stop = function () { globalThis.__stopped += 1; return stop.call(this); };
+          return 'BarcodeDetector' in globalThis && (await BarcodeDetector.getSupportedFormats()).includes('qr_code');
+        })()`);
+        await click(p, '+ Add a computer');
+        await shot(`scan-${decoder}-choices`, p);
+        await click(p, 'Scan QR');
+        await p.waitText('Add this computer?');
+        await p.waitText('Add vps');
+        await shot(`scan-${decoder}-confirm-sheet`, p);
+        const sheet = (await p.eval(`document.querySelector('.sheet, [role=dialog]')?.innerText ?? ''`)).replace(/\s+/g, ' ');
+        const after = await p.eval(`({ stopped: globalThis.__stopped, video: document.querySelector('video') !== null, chunk: performance.getEntriesByType('resource').some((e) => e.name.includes('/assets/decode-')) })`);
+        await click(p, 'Cancel');
+        check(`SCAN-${decoder}`, `Scan QR (${native ? 'BarcodeDetector' : 'JavaScript decoder'}) opens the confirm sheet with the full origin and owner, and stops the camera`,
+          sheet.includes('https://vps.tailx.ts.net') && sheet.includes('ada@example.com') && after.stopped >= 1 && !after.video && after.chunk === !native,
+          `${sheet.slice(0, 160)}; camera tracks stopped ${after.stopped}; video on the page ${after.video}; decoder chunk loaded ${after.chunk}`);
+      }
+    } finally {
+      via?.child.kill();
+      await camera.close();
     }
   });
 
@@ -721,6 +775,7 @@ try {
     await click(app, 'Settings');
     await app.waitText('Add a computer');
     await click(app, '+ Add a computer');
+    await click(app, 'Paste link');
     await setInput(app, '#add-link', link);
     await click(app, 'Check link');
   }
@@ -734,7 +789,7 @@ try {
     const terminalPath = await app.eval('location.pathname');
     await typeLine(app, 'clear');
     await typeLine(app, vpsCommand());
-    await until(async () => (await terminalText(app)).includes('Waiting for the phone'), { what: 'link in terminal' });
+    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes('Waiting for the phone'), { what: 'link in terminal' });
     const link = /https:\/\/vps\.tailx\.ts\.net\/add-computer#grant=[A-Za-z0-9_-]{43}&via=https%3A%2F%2Fmac\.tailx\.ts\.net/.exec((await terminalText(app)).replace(/\n/g, ''))?.[0];
     const started = Date.now();
     await tapTerminalText(app, 'https://vps.tailx.ts.net/add');

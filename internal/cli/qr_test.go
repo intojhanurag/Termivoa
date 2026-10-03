@@ -13,7 +13,7 @@ import (
 // matrix, surrounded by a light quiet zone, in explicit dark-on-light colors.
 func TestRenderQRMatchesModuleMatrixWithQuietZone(t *testing.T) {
 	link := "https://mac.example.ts.net/pair#" + adminGrant
-	rendered, err := renderQR(link)
+	rendered, err := renderQR(link, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,15 +56,21 @@ func TestPairQRAndTooLongLinkKeepTheSecretOutOfErrors(t *testing.T) {
 	origin := "https://mac.example.ts.net"
 	admin := &fakeAdmin{grant: testGrant(&origin)}
 	var output bytes.Buffer
-	if err := Pair(context.Background(), admin, PairOptions{ShowQR: true}, &output); err != nil {
-		t.Fatal(err)
+	// Only the standalone `pterm pair` warns, before the code, that this is
+	// not how a second computer is added; setup has asked already.
+	const first = "This pairing is for a FIRST computer. To add this computer to a Termivoa app you already use, run `pterm pair --via <home>` instead.\n"
+	for _, warn := range []bool{true, false} {
+		output.Reset()
+		if err := Pair(context.Background(), admin, PairOptions{ShowQR: true, FirstComputerWarning: warn}, &output); err != nil {
+			t.Fatal(err)
+		}
+		text := output.String()
+		if !strings.Contains(text, qrColors+" ") || !strings.Contains(text, "Scan the QR code") ||
+			strings.Count(text, adminGrant) != 1 || strings.HasPrefix(text, first) != warn || strings.Count(text, "FIRST") > 1 {
+			t.Fatalf("pairing output with QR (warning %v) = %q", warn, text)
+		}
 	}
-	text := output.String()
-	if !strings.Contains(text, qrColors+" ") || !strings.Contains(text, "Scan the QR code") ||
-		strings.Count(text, adminGrant) != 1 {
-		t.Fatalf("pairing output with QR = %q", text)
-	}
-	if _, err := renderQR("https://" + strings.Repeat("a", 480) + "/pair#" + adminGrant); err == nil ||
+	if _, err := renderQR("https://"+strings.Repeat("a", 480)+"/pair#"+adminGrant, 0); err == nil ||
 		strings.Contains(err.Error(), adminGrant) {
 		t.Fatalf("oversized QR error = %v", err)
 	}

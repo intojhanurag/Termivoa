@@ -26,7 +26,7 @@ Setup checks first and changes nothing. Then it lists its changes and asks `Cont
 2. A separate question asks to share the page with your Tailscale devices. Type `y` if the command shown is correct.
 3. An optional third question is about dev-server previews (port 8443).
 
-Setup starts Termivoa at every login. If you have no project yet, it adds your home folder as the project **Home**.
+Setup starts Termivoa at every login. If you have no project yet, it adds your home folder as the project **Home folder** (**Next beta**; the latest release names it **Home**).
 It never uses Tailscale Funnel; the page is never public.
 
 ## 3. Scan the QR code

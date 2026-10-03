@@ -312,11 +312,21 @@ Run `pterm setup` on this computer so it has a Tailscale address, or pass it wit
 
 ### The code expired, or the computer refused it (Next beta)
 
-Run `pterm pair --via <home>` on that computer again and paste the new link. Answer `y` only when the codes match.
+Run `pterm pair --via <home>` on that computer again, then scan or paste the new link. Answer `y` only when the codes match.
 
-### The link opens a page that says "paste this link there" (Next beta)
+### The link opens a page that says "This page cannot add the computer" (Next beta)
 
-You opened the add-computer link with the camera or in Safari. Tap **Copy link**, open the Termivoa app from the Home Screen, and paste it in **Settings → Computers → + Add a computer**.
+You scanned the QR code with the phone's Camera app, or opened the link in Safari. Open the Termivoa app from the Home Screen and go to **Settings → + Add a computer → Scan QR**, then scan the same QR code there. Or tap **Copy link** on that page and use **Paste link** in the app.
+
+### Scan QR does not open the camera (Next beta)
+
+| The app says | Do this |
+| --- | --- |
+| "The camera is blocked. Allow the camera for this app in your phone or browser settings, then tap Scan QR. Or paste the link." | Allow the camera for the Termivoa address in your phone's or browser's settings, then tap **Scan QR** again. |
+| "No camera found. Paste the link." | Tap **Paste link**. |
+| "The camera did not start. Close other apps that use it, then tap Scan QR. Or paste the link." | Close other camera apps and try again, or tap **Paste link**. |
+
+**Paste link** always works without the camera.
 
 ### `pterm doctor` says the tailnet is unknown (Next beta)
 

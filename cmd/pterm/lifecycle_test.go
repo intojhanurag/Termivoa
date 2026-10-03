@@ -164,6 +164,12 @@ func TestSetupAndUninstallChangeStartupOnlyWithConsent(t *testing.T) {
 	if err := runWithInput(ctx, []string{"setup"}, nil, &output); err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(output.String(), "launchctl") || strings.Contains(output.String(), "<plist") {
+		t.Errorf("short plan shows startup detail:\n%s", output.String())
+	}
+	if err := runWithInput(ctx, []string{"setup", "--verbose"}, nil, &output); err != nil {
+		t.Fatal(err)
+	}
 	for _, want := range []string{"No changes made", "Tailscale is not installed", "Never use Tailscale Funnel", "run launchctl bootstrap gui/501 " + plist} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("setup output lacks %q:\n%s", want, output.String())

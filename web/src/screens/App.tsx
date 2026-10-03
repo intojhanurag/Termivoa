@@ -264,7 +264,7 @@ const UNPAIRED = 'This phone is no longer paired with your computer.';
 export const STRAY_RELOAD_KEY = 'pterm.strayReload';
 export const STRAY_PAIR = 'For safety, this pairing link was not used. Run pterm pair on your computer again.';
 export const strayAdd = (home: string): string =>
-  `For safety, this add-computer link was not used. Run pterm pair --via ${home} on the new computer again, then paste the new link.`;
+  `For safety, this add-computer link was not used. Run pterm pair --via ${home} on the new computer again, then scan or paste the new link.`;
 
 export interface StrayCheck {
   /** False when a stray service worker was removed or still controls this page. */

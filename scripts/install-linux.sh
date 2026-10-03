@@ -15,7 +15,30 @@ if [ "$(uname -s)" != Linux ]; then
   exit 1
 fi
 if [ "$(id -u)" = 0 ]; then
-  echo "Run this as your normal user, not root: Termivoa runs per user." >&2
+  # The same help as `pterm setup` (rootHelp in cmd/pterm/lifecycle.go).
+  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+    echo "Run this without sudo, as $SUDO_USER: Termivoa runs as your user, so that your phone gets your shell, not root's." >&2
+    exit 1
+  fi
+  # Debian and Ubuntu name the administrators' group sudo; Fedora and others, wheel.
+  group=sudo
+  if ! getent group sudo >/dev/null 2>&1 && getent group wheel >/dev/null 2>&1; then
+    group=wheel
+  fi
+  # The new user cannot read root's files: copy this script and the binary.
+  files=$0
+  if [ -n "${1:-}" ]; then
+    files="$files $1"
+  fi
+  cat >&2 <<HELP
+Run this as a normal user, not root: Termivoa runs as that user, so that your phone gets that user's shell, not root's.
+A new server often has only root. Make a user with sudo, give it your SSH key and these files (replace <name>):
+  adduser <name>
+  usermod -aG $group <name>
+  install -d -m 700 -o <name> -g <name> /home/<name>/.ssh && install -m 600 -o <name> -g <name> ~/.ssh/authorized_keys /home/<name>/.ssh/
+  install -m 644 -o <name> -g <name> $files /home/<name>/
+Then log in as that user (ssh <name>@<this-server>) and run the install there again.
+HELP
   exit 1
 fi
 case $(uname -m) in
@@ -47,9 +70,6 @@ chmod go-w "$HOME/.local" "$bin_dir"
 install -m 0755 "$source" "$bin_dir/.pterm.new"
 mv -f "$bin_dir/.pterm.new" "$bin_dir/pterm"
 echo "Installed $bin_dir/pterm"
-case ":$PATH:" in
-  *":$bin_dir:"*) ;;
-  *) echo "Note: $bin_dir is not on your PATH yet. Ubuntu adds it at your next login; until then use $bin_dir/pterm." ;;
-esac
 
+# When $bin_dir is not on PATH yet, setup says so as its last line.
 exec "$bin_dir/pterm" setup

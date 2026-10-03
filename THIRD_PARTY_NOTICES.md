@@ -24,6 +24,7 @@ This file is a preparatory dependency inventory for private development. Direct 
 | `@xterm/addon-unicode-graphemes` | 0.4.0 | MIT |
 | `@tanstack/react-virtual` | 3.14.13 | MIT |
 | Ajv | 8.20.0 | MIT |
+| `qr` (QR decoder, `qr/decode.js` only) | 0.7.0 | MIT OR Apache-2.0 (Copyright Paul Miller; contains code inspired by ZXing, Apache-2.0, Copyright ZXing authors) |
 | quicktype | 26.0.0 | Apache-2.0 |
 
 The patched `ansi`, `xpty`, `vt`, and `ultraviolet` sources and their upstream MIT license texts are
