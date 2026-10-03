@@ -1539,6 +1539,14 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   `node scripts/e2e-multicomputer/phase-b.mjs --no-web-build` (63 PASS), the
   site build. Not measured: a real Tailscale Serve.
 
+- **Ubuntu umask 002 stopped setup** (`fix/ubuntu-umask`, 2026-10-03): found
+  on the owner's new Ubuntu 24.04 VPS. `scripts/install-linux.sh` made
+  `~/.local` and `~/.local/bin` mode 775 (the default umask of a new Ubuntu
+  user is 002), and `validateUnixAncestors` (`internal/ipc/transport_unix.go`)
+  refuses a group-writable ancestor. The script now runs `chmod go-w` on both
+  folders and the error names that command. Evidence: after `chmod go-w` on
+  the VPS, `pterm doctor` runs; `internal/ipc` test for the message.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

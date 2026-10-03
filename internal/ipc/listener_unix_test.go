@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -226,5 +227,17 @@ func TestEndpointDescriptorRejectsPermissiveUnixMode(t *testing.T) {
 	}
 	if _, err := ReadEndpointDescriptor(runtimeDir); !errors.Is(err, ErrEndpointInvalid) {
 		t.Fatalf("permissive descriptor error = %v", err)
+	}
+}
+
+func TestGroupWritableAncestorNamesTheFix(t *testing.T) {
+	parent := shortRuntimeDir(t)
+	// Ubuntu's default umask for a new user (002) makes folders like this.
+	if err := os.Chmod(parent, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	err := validateUnixAncestors(parent + "/runtime")
+	if err == nil || !strings.Contains(err.Error(), "chmod go-w "+parent) {
+		t.Fatalf("validateUnixAncestors = %v, want the chmod go-w fix for %s", err, parent)
 	}
 }
