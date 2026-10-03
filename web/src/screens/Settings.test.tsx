@@ -70,7 +70,7 @@ describe('Settings device name field', () => {
     expect(html).toMatch(/<input id="device-name" [^>]*value="iPhone"/u);
     expect(html).toContain('aria-describedby="device-name-help device-name-status"');
     // Unchanged name: nothing to save yet.
-    expect(html).toMatch(/<button type="submit" class="primary" disabled="">Save name<\/button>/u);
+    expect(html).toMatch(/<button type="submit" class="secondary" disabled="">Save name<\/button>/u);
   });
 });
 
@@ -112,7 +112,7 @@ describe('Settings notifications', () => {
     const html = render();
     expect(html).toContain('<h2 id="push-heading" class="caps">Notifications</h2>');
     expect(html).toMatch(/<button type="button" role="switch" class="switch" aria-checked="false" aria-labelledby="push-label" disabled="">/u);
-    expect(html).toContain('<button type="button" disabled="">Send a test notification</button>');
+    expect(html).toContain('<button type="button" class="secondary" disabled="">Send a test notification</button>');
   });
 
   it('tells an iPhone Safari tab to add the app to the Home Screen', () => {
@@ -135,6 +135,7 @@ describe('LogoutSection', () => {
     expect(idle).not.toContain('disabled');
     const busy = renderToStaticMarkup(<LogoutSection multi busy onLogout={() => undefined} />);
     expect(busy).toContain('<p role="status" class="muted field-note">Signing out…</p>');
-    expect(busy).toMatch(/<button[^>]*disabled[^>]*>Log out<\/button>/u);
+    // Busy: off, marked busy, and the label stays (under the spinner) for screen readers.
+    expect(busy).toMatch(/<button[^>]*disabled=""[^>]*aria-busy="true"[^>]*>Log out<svg[^]*<\/svg><\/button>/u);
   });
 });

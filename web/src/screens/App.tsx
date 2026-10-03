@@ -21,6 +21,7 @@ import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { Sessions } from './Sessions';
 import { Setup } from './Setup';
+import { Banner } from './ui';
 
 // The terminal (xterm, protocol validators) loads only when a session opens,
 // so Setup and Sessions start without it.
@@ -450,15 +451,15 @@ export function AddBanner({ task, onOpen }: { readonly task: AddTask; readonly o
   if (task.dismissed === true || phase.kind === 'cancelled') return null;
   const running = phase.kind === 'redeeming' || phase.kind === 'waiting';
   return (
-    <div className="banner" role="status">
-      <span>{running ? `Adding ${label}… approve on ${label}` : phase.kind === 'done' ? `${label} is added` : `${label} was not added`}</span>
-      <span className="row">
-        {phase.kind !== 'done' && <button type="button" className="link" onClick={onOpen}>Open</button>}
-        {running
-          ? <button type="button" className="link" onClick={cancelAdd}>Cancel</button>
-          : <button type="button" className="link" onClick={dismissAdd}>Dismiss</button>}
-      </span>
-    </div>
+    <Banner
+      tone={running ? 'working' : phase.kind === 'done' ? 'success' : 'danger'}
+      text={running ? `Adding ${label}… approve on ${label}` : phase.kind === 'done' ? `${label} is added` : `${label} was not added`}
+    >
+      {phase.kind !== 'done' && <button type="button" className="link" onClick={onOpen}>Open</button>}
+      {running
+        ? <button type="button" className="link" onClick={cancelAdd}>Cancel</button>
+        : <button type="button" className="link" onClick={dismissAdd}>Dismiss</button>}
+    </Banner>
   );
 }
 
