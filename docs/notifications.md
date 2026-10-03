@@ -106,14 +106,29 @@ credential.
   if not, it makes no registration, or drops the one it made. So turning
   notifications off, removing the computer or logging out during a held call
   is not undone.
+- **A tap while the app is open.** Only the worker that controls a window
+  may navigate it (`WindowClient.navigate`), and the app's window is
+  controlled by home's registration. So a peer registration sends the path
+  to the page (`postMessage({type: 'open', path})`) and then calls
+  `focus()`. The page (`notificationPath` in `App.tsx`) checks the message as
+  strictly as the worker: only a session, by lowercase UUID, of home or of a
+  peer in the list; it builds the address itself and routes to it. A tap
+  allows one window action, so the worker never calls `openWindow()` after
+  `focus()`. Home's registration navigates the window as before, and sends
+  the same message when the navigation fails. With no window open, both open
+  one at the address.
 - **One switch.** Turning notifications on (Sessions card or Settings)
-  subscribes home, then every peer at once. Only home can fail the switch; a
-  peer that fails is named ("No notifications from vps.") and the others keep
-  working. Turning off unsubscribes on every reachable computer and
-  unregisters the peer registrations. **Send a test notification** asks every
-  computer and names the peers that sent none.
+  subscribes home, then every peer at once. Only home can fail the switch,
+  and the switch waits only for home; a peer that fails is named when its
+  answer is known ("No notifications from vps.") and the others keep
+  working. Turning off unsubscribes on every reachable computer (peers are
+  told without waiting) and unregisters the peer registrations. **Send a
+  test notification** asks every computer, shows home's answer at once and
+  then names the peers that sent none.
 - **Sync** (`syncPeerPush`, on every load, when the list changes, when a peer
-  starts or stops asking to pair again, and when Settings opens). With push on,
+  becomes usable or stops being usable (can't reach, pair again, outdated),
+  and when Settings opens). So a peer that was offline when push was turned
+  on is subscribed when it comes back. With push on,
   each listed peer is subscribed; a peer added later needs no prompt, because
   permission is already granted. Every other peer registration is
   unsubscribed and unregistered: a removed computer, log out, push off. A

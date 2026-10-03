@@ -353,15 +353,39 @@ describe('service worker push', () => {
     expect(self.clients.openWindow).not.toHaveBeenCalled();
   });
 
-  it('opens a window when none is open, or when navigate fails', async () => {
+  it('opens a window when none is open; when navigate fails, sends the path to the page and opens no window', async () => {
     const empty = loadWorker(async () => new Response(''));
     await fire(empty.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/sessions/${SESSION}` } } });
     expect(empty.self.clients.openWindow).toHaveBeenCalledWith(`https://host.example/sessions/${SESSION}`);
 
-    const client = { url: 'https://host.example/', focus: vi.fn(async () => undefined), navigate: vi.fn(async () => { throw new TypeError('not controlled'); }) };
+    // focus() used the one window action of the tap: a browser refuses openWindow() after it.
+    const client = {
+      url: 'https://host.example/', focus: vi.fn(async () => undefined), postMessage: vi.fn(),
+      navigate: vi.fn(async () => { throw new TypeError('not controlled'); }),
+    };
     const stuck = loadWorker(async () => new Response(''), [client]);
-    await fire(stuck.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: '/' } } });
-    expect(stuck.self.clients.openWindow).toHaveBeenCalledWith('https://host.example/');
+    await fire(stuck.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/sessions/${SESSION}` } } });
+    expect(client.focus).toHaveBeenCalledOnce();
+    expect(client.postMessage).toHaveBeenCalledWith({ type: 'open', path: `/sessions/${SESSION}` });
+    expect(stuck.self.clients.openWindow).not.toHaveBeenCalled();
+  });
+
+  it('a peer tap with the app open sends the path to the page and focuses it: no navigate (the window is home\'s), no new window', async () => {
+    // As in a browser: only the worker that controls a window may navigate it.
+    const client = {
+      url: 'https://host.example/wall', focus: vi.fn(async () => undefined), postMessage: vi.fn(),
+      navigate: vi.fn(async () => { throw new TypeError('This service worker is not the client\'s active service worker.'); }),
+    };
+    const { handlers, self } = loadWorker(async () => new Response(''), [client], cacheStorage(), PEER_SCOPE);
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/c/vps.tailx.ts.net/sessions/${SESSION}` } } });
+    expect(client.postMessage).toHaveBeenCalledWith({ type: 'open', path: `/c/vps.tailx.ts.net/sessions/${SESSION}` });
+    expect(client.focus).toHaveBeenCalledOnce();
+    expect(client.postMessage.mock.invocationCallOrder[0]).toBeLessThan(client.focus.mock.invocationCallOrder[0] ?? 0);
+    expect(client.navigate).not.toHaveBeenCalled();
+    expect(self.clients.openWindow).not.toHaveBeenCalled();
+    // Data that points to another origin becomes "/", also in the message.
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: '//evil.example/x' } } });
+    expect(client.postMessage).toHaveBeenLastCalledWith({ type: 'open', path: '/' });
   });
 
   it('never opens another origin from notification data', async () => {

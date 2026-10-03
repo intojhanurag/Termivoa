@@ -33,7 +33,7 @@ It has only the session name, project name, status and work time, never terminal
 | What does a tap open? | That session on that computer. |
 | I added a computer later. | It starts to notify when it is added. There is no new permission prompt. |
 | I removed a computer, or it shows **pair again**. | Its notifications stop. |
-| One computer cannot be reached. | The others still notify. **Settings → Notifications** shows **No notifications from vps.** Open Settings again when the computer is back. |
+| One computer cannot be reached. | The others still notify. **Settings → Notifications** shows **No notifications from vps.** When the computer is back and the app is open, it starts to notify again by itself. |
 | What does **Send a test notification** do? | Each computer sends one. The note says **Sent**, and names a computer that sent none. |
 
 In `v0.1.0-beta.2`, only home sends notifications. On iPhone, notifications from other computers are not tested on a real phone yet; if they do not arrive there, home's notifications still work.

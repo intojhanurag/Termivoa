@@ -6,7 +6,7 @@ import { hosted } from './allSessions';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, offlineRetry, parseRoute, pathFor, sessionPath, startApp, startLike,
+  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, offlineRetry, parseRoute, pathFor, sessionPath, startApp, startLike,
   STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
 } from './App';
 import { ApiError } from '../api/http';
@@ -71,6 +71,25 @@ describe('routes', () => {
     expect(sessionPath({ id, computer: home })).toBe(`/sessions/${id}`);
     expect(sessionPath({ id, computer: vps })).toBe(`/c/vps.tailx.ts.net/sessions/${id}`);
     expect(pathFor({ name: 'live', session: hosted({ id } as BrokerRPCSessionRecord, vps) })).toBe(`/c/vps.tailx.ts.net/sessions/${id}`);
+  });
+
+  it('accepts a notification message only for a session of home or a listed peer, by lowercase UUID', () => {
+    const list = [home, vps];
+    const open = (path: unknown) => notificationPath({ type: 'open', path }, list);
+    expect(open(`/sessions/${id}`)).toBe(`/sessions/${id}`);
+    expect(open(`/c/vps.tailx.ts.net/sessions/${id}`)).toBe(`/c/vps.tailx.ts.net/sessions/${id}`);
+    // Built here, never taken as sent: an escaped spelling comes back in the plain form.
+    expect(open(`/c/vps%2Etailx.ts.net/sessions/${id}`)).toBe(`/c/vps.tailx.ts.net/sessions/${id}`);
+    for (const path of [
+      '/', '/settings', '/wall', `/sessions/${id}/preview`, '/sessions/AB444444-4444-4444-8444-44444444444C', '/sessions/abc', '/sessions/..%2Fsettings',
+      `/c/evil.tailx.ts.net/sessions/${id}`, `/c/${home.host}/sessions/${id}`, `//evil.example/sessions/${id}`,
+      `https://evil.example/sessions/${id}`, `/sessions/${id}?x=1`, `/sessions/${id}#x`, 42, undefined,
+    ]) expect(open(path)).toBeUndefined();
+    for (const data of [null, 'open', 42, { type: 'skip-waiting', path: `/sessions/${id}` }, { path: `/sessions/${id}` }]) {
+      expect(notificationPath(data, list)).toBeUndefined();
+    }
+    // Before the list has the peer (or after it was removed), its links do nothing.
+    expect(notificationPath({ type: 'open', path: `/c/vps.tailx.ts.net/sessions/${id}` }, [home])).toBeUndefined();
   });
 
   it('reads every app address back', () => {

@@ -259,11 +259,37 @@ try {
     // No page loads inside the peer scope: the app there would get the peer's registration.
     const inside = await env.curl(`${mac.origin}${scope}x`);
     check('B3-push-scope', 'mac answers 404 under the push scope (no app page there)', inside.status === 404, `GET ${scope}x ${inside.status}`);
-    // A tap navigates the app to that link (the click handler itself has unit tests).
-    await app.go(`${mac.origin}${shown.url}`);
+    // A tap with the app open on another screen. CDP has no notification
+    // click, so the harness dispatches notificationclick inside the peer
+    // worker with the shown notification. That event is not a user action:
+    // its waitUntil is replaced (the real one throws) and the browser refuses
+    // focus() for it, but the worker's message to the page, and the page's
+    // routing, run as after a real tap.
+    // One app window, as on a phone: the harness's second mac page leaves for the click.
+    await tool.go('about:blank');
+    await app.eval(`window.__sameLoad = true`);
+    const workers = [];
+    for (const target of (await browser.send('Target.getTargets')).targetInfos.filter((t) => t.type === 'service_worker')) {
+      const { sessionId } = await browser.send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+      const r = await browser.send('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `self.registration.scope.endsWith(${JSON.stringify(scope)})
+        && self.registration.getNotifications().then(([n]) => { const e = new NotificationEvent('notificationclick', { notification: n });
+          let done = Promise.resolve('no waitUntil');
+          e.waitUntil = (work) => { done = work.then(() => 'done', (error) => String(error)); }; // the real waitUntil throws on an event the browser did not make
+          self.dispatchEvent(e);
+          return done; })` }, sessionId);
+      if (r.result?.value !== false) workers.push(String(r.result?.value ?? r.exceptionDetails?.exception?.description));
+      await browser.send('Target.detachFromTarget', { sessionId }).catch(() => undefined);
+    }
+    await until(() => app.eval(`location.pathname === ${JSON.stringify(want)}`), { what: `the open app routes to the vps session (peer worker: ${workers.join('; ') || 'not found'})` });
     await until(async () => /[%$#]\s*$/m.test(await terminalText(app)), { what: 'shell prompt of the vps session' });
-    check('B3-push-open', 'The notification link opens the vps session in the mac app', (await terminalText(app)).includes(`${tokens.echo}-42`),
-      `${await app.eval('location.pathname')}; terminal shows the echo typed in B3-echo`);
+    check('B3-push-open', 'A notification click in the vps registration moves the open mac app to the vps session, with no page load',
+      await app.eval(`window.__sameLoad === true`) && (await terminalText(app)).includes(`${tokens.echo}-42`),
+      `${await app.eval('location.pathname')}; same page load; terminal shows the echo typed in B3-echo; worker: ${workers.join('; ')} (the click is synthetic, so focus() is refused)`);
+    await tool.go(`${mac.origin}/`);
+    // With the app closed, the tap opens this address in a new window.
+    await app.go(`${mac.origin}${shown.url}`);
+    await until(async () => /[%$#]\s*$/m.test(await terminalText(app)), { what: 'shell prompt after a cold open' });
+    check('B3-push-cold', 'The notification link opens the vps session on a fresh load', (await terminalText(app)).includes(`${tokens.echo}-42`), await app.eval('location.pathname'));
     // Push is off in this browser (no home subscription), so the app's own cleanup removes the peer registration.
     const left = await until(async () => {
       const scopes = await app.eval(`navigator.serviceWorker.getRegistrations().then((all) => all.map((r) => new URL(r.scope).pathname))`);

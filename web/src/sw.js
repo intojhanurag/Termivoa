@@ -222,10 +222,19 @@ self.addEventListener('notificationclick', (event) => {
   // '/\host' would parse as another origin, so check the resolved origin too.
   const resolved = new URL(path, self.location.origin);
   const url = resolved.origin === self.location.origin ? resolved.href : `${self.location.origin}/`;
+  // The open app routes to this path itself (App.tsx checks it again).
+  const open = { type: 'open', path: new URL(url).pathname };
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
     const client = windows.find((item) => new URL(item.url).origin === self.location.origin);
     if (!client) {
       return self.clients.openWindow(url);
+    }
+    // A tap allows one window action, and focus() is it: never openWindow() after it.
+    // A peer registration does not control the window (home's does), so
+    // navigate() would reject there: the page gets the path as a message.
+    if (PEER_HOST) {
+      client.postMessage(open);
+      return client.focus();
     }
     await client.focus();
     try {
@@ -233,8 +242,9 @@ self.addEventListener('notificationclick', (event) => {
         return undefined;
       }
     } catch {
-      // Uncontrolled windows cannot be navigated; open one at the right page instead.
+      // A window this worker does not control yet cannot be navigated.
     }
-    return self.clients.openWindow(url);
+    client.postMessage(open);
+    return undefined;
   }));
 });

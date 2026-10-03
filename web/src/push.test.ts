@@ -157,6 +157,12 @@ describe('base64url', () => {
   });
 });
 
+/** enablePush with the peers' late answer awaited. */
+async function enabled() {
+  const result = await enablePush();
+  return result.ok ? { ok: true, missing: await result.missing } : result;
+}
+
 describe('enablePush', () => {
   it('stops at a denied permission without calling the server', async () => {
     browser({ permission: 'denied' });
@@ -176,7 +182,7 @@ describe('enablePush', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    await expect(enablePush()).resolves.toEqual({ ok: true, missing: [] });
+    await expect(enabled()).resolves.toEqual({ ok: true, missing: [] });
 
     expect(order).toEqual(['permission', '/api/v1/push', '/api/v1/push/subscribe']);
     expect(pushManager.subscribe).toHaveBeenCalledWith({ userVisibleOnly: true, applicationServerKey: KEY_BYTES });
@@ -213,7 +219,7 @@ describe('push from peers', () => {
   it('subscribes each peer on its own scope with that peer\'s key, and sends it to that peer with its cookie', async () => {
     const { register, registrations } = browser({ peers: [VPS, PI] });
     const { fetch, calls } = servers();
-    await expect(enablePush()).resolves.toEqual({ ok: true, missing: [] });
+    await expect(enabled()).resolves.toEqual({ ok: true, missing: [] });
     expect(register.mock.calls.map(([script, options]) => [script, options.scope]).sort()).toEqual([
       ['/sw.js', '/push/pi.tailx.ts.net/'], ['/sw.js', '/push/vps.tailx.ts.net/'],
     ]);
@@ -231,7 +237,7 @@ describe('push from peers', () => {
   it('keeps home and the other peers when one peer fails, and names it', async () => {
     browser({ peers: [VPS, PI] });
     const { calls } = servers({ down: ['vps.tailx.ts.net'] });
-    await expect(enablePush()).resolves.toEqual({ ok: true, missing: ['vps'] });
+    await expect(enabled()).resolves.toEqual({ ok: true, missing: ['vps'] });
     expect(calls()).toContain('POST /api/v1/push/subscribe');
     expect(calls()).toContain('POST https://pi.tailx.ts.net/api/v1/push/subscribe');
   });
@@ -334,9 +340,40 @@ describe('push from peers', () => {
   it('tests every computer and names the peers that sent nothing', async () => {
     browser({ peers: [VPS, PI] });
     servers({ down: ['pi.tailx.ts.net'] });
-    await expect(testPush()).resolves.toEqual({ sent: true, missing: ['pi'] });
+    const first = await testPush();
+    expect(first.sent).toBe(true);
+    await expect(first.missing).resolves.toEqual(['pi']);
     servers({ sent: 0 });
-    await expect(testPush()).resolves.toEqual({ sent: false, missing: ['vps', 'pi'] });
+    const second = await testPush();
+    expect(second.sent).toBe(false);
+    await expect(second.missing).resolves.toEqual(['vps', 'pi']);
+  });
+
+  it('does not wait for a slow peer: on, test and off answer when home has answered', async () => {
+    const vps = fakeRegistration(peerScope(VPS.host), fakeSubscription('https://push.example/vps'));
+    browser({ peers: [VPS], scoped: [vps] });
+    // The peer never answers anything.
+    const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.startsWith(VPS.origin)) return new Promise<Response>(() => undefined);
+      return url === '/api/v1/push' ? json(200, { publicKey: PUBLIC_KEY }) : url === '/api/v1/push/test' ? json(200, { sent: 1 }) : json(204);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const result = await enablePush();
+    expect(result.ok).toBe(true);
+    expect((await testPush()).sent).toBe(true);
+    await disablePush();
+    expect(vps.unregister).toHaveBeenCalledOnce();
+    expect(fetch.mock.calls.map(([url]) => url)).toContain('https://vps.tailx.ts.net/api/v1/push/unsubscribe');
+  });
+
+  it('unregisters a peer registration also when its unsubscribe fails', async () => {
+    const broken = fakeSubscription('https://push.example/vps');
+    broken.unsubscribe.mockRejectedValue(new Error('push service down'));
+    const vps = fakeRegistration(peerScope(VPS.host), broken);
+    browser({ subscription: fakeSubscription('https://push.example/home'), peers: [VPS], scoped: [vps] });
+    servers();
+    await disablePush();
+    expect(vps.unregister).toHaveBeenCalledOnce();
   });
 });
 

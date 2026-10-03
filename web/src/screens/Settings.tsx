@@ -64,14 +64,20 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   const toggle = () => run(enabled === true
     ? disablePush().then(() => { setEnabled(false); setMissing([]); })
     : enablePush().then((result) => {
-      if (result.ok) { setEnabled(true); setMissing(result.missing); } else setNote({ text: result.message, error: true });
+      if (!result.ok) {
+        setNote({ text: result.message, error: true });
+        return;
+      }
+      // Home is on: the switch is free again. The peers answer later.
+      setEnabled(true);
+      void result.missing.then(setMissing);
     }));
 
-  // One test from each computer; a peer that sent none is named.
-  const sendTest = () => run(testPush().then((result) => setNote(!result.sent
-    ? { text: 'No subscription on this phone', error: true }
-    : result.missing.length === 0 ? { text: 'Sent', error: false }
-      : { text: `Sent. ${noPushFrom(result.missing)}`, error: true })));
+  // One test from each computer. Home's answer shows at once; a peer that sent none is named when known.
+  const sendTest = () => run(testPush().then(({ sent, missing: late }) => {
+    setNote(sent ? { text: 'Sent', error: false } : { text: 'No subscription on this phone', error: true });
+    if (sent) void late.then((labels) => { if (labels.length > 0) setNote({ text: `Sent. ${noPushFrom(labels)}`, error: true }); });
+  }));
 
   return (
     <section className="group stack" aria-labelledby="push-heading">

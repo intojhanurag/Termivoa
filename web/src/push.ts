@@ -9,8 +9,8 @@ export const PUSH_CARD_KEY = 'pterm.pushCard.dismissed';
 export const PUSH_BLOCKED = 'Notifications are blocked. Allow them in Settings.';
 
 export type PushSupport = 'available' | 'needs-home-screen' | 'unsupported';
-/** `missing`: the labels of the peers that could not be subscribed (home is on). */
-export type PushResult = { readonly ok: true; readonly missing: string[] } | { readonly ok: false; readonly message: string };
+/** `missing` settles (it never rejects) with the labels of the peers that could not be subscribed; home is on already. */
+export type PushResult = { readonly ok: true; readonly missing: Promise<string[]> } | { readonly ok: false; readonly message: string };
 
 type Peer = Pick<Computer, 'origin' | 'host' | 'label'>;
 
@@ -40,8 +40,12 @@ async function peerRegistrations(): Promise<Map<string, ServiceWorkerRegistratio
 /** Unsubscribes and unregisters one peer registration, in the browser only. */
 async function drop(registration: ServiceWorkerRegistration | undefined): Promise<void> {
   if (registration === undefined) return;
-  await (await registration.pushManager.getSubscription())?.unsubscribe();
-  await registration.unregister();
+  try {
+    await (await registration.pushManager.getSubscription())?.unsubscribe();
+  } finally {
+    // Also when unsubscribe fails: a registration left behind would be a stray on the next load.
+    await registration.unregister();
+  }
 }
 
 /** Resolves when the registration has an active worker (subscribe needs one); rejects when its install fails. */
@@ -185,8 +189,9 @@ async function subscribePeers(peers: ReadonlyArray<Peer>): Promise<string[]> {
  * Asks for permission, subscribes this phone and registers it with home, then
  * with each peer. Call it straight from a click handler: iOS allows the
  * permission prompt only inside a user gesture, so nothing is awaited before
- * requestPermission. Home's network and API failures throw ApiError; a peer
- * that fails is only named in `missing`.
+ * requestPermission. Home's network and API failures throw ApiError. The
+ * peers are not waited for (one that cannot be reached takes up to 15 s):
+ * `missing` settles later with the labels of the peers that failed.
  */
 export async function enablePush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<PushResult> {
   const permission = await Notification.requestPermission();
@@ -198,7 +203,7 @@ export async function enablePush(peers: ReadonlyArray<Peer> = storedPeers()): Pr
     return activeWorker(registration);
   });
   dismissPushCard();
-  return { ok: true, missing: await subscribePeers(peers) };
+  return { ok: true, missing: subscribePeers(peers) };
 }
 
 /**
@@ -223,17 +228,15 @@ export async function syncPeerPush(peers: ReadonlyArray<Peer> = storedPeers()): 
 
 /**
  * Sends a test notification from every computer. `sent` is home's answer;
- * `missing` has the labels of the peers that sent none (not reachable, or no
- * subscription there). Home's failures throw ApiError.
+ * home's failures throw ApiError. The peers are not waited for: `missing`
+ * settles later (it never rejects) with the labels of the peers that sent
+ * none (not reachable, or no subscription there).
  */
-export async function testPush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<{ readonly sent: boolean; readonly missing: string[] }> {
-  const [home, ...others] = await Promise.allSettled([api, ...peers.map((peer) => client(peer.origin))].map((computer) => computer.pushTest()));
-  if (home?.status !== 'fulfilled') throw home?.reason;
-  const missing = peers.filter((_, index) => {
-    const result = others[index];
-    return result?.status !== 'fulfilled' || result.value.sent === 0;
-  });
-  return { sent: home.value.sent > 0, missing: missing.map((peer) => peer.label) };
+export async function testPush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<{ readonly sent: boolean; readonly missing: Promise<string[]> }> {
+  const missing = Promise.all(peers.map((peer) => client(peer.origin).pushTest()
+    .then(({ sent }) => (sent > 0 ? undefined : peer.label), () => peer.label)))
+    .then((labels) => labels.filter((label) => label !== undefined));
+  return { sent: (await api.pushTest()).sent > 0, missing };
 }
 
 /**
@@ -246,7 +249,8 @@ export async function disablePush(peers: ReadonlyArray<Peer> = storedPeers()): P
     try {
       const endpoint = (await registration.pushManager.getSubscription())?.endpoint;
       const origin = peers.find((peer) => peer.host === host)?.origin;
-      if (endpoint !== undefined && origin !== undefined) await client(origin).pushUnsubscribe({ endpoint }).catch(() => undefined);
+      // Not waited for: a peer that cannot be reached would hold the switch for 15 s.
+      if (endpoint !== undefined && origin !== undefined) void client(origin).pushUnsubscribe({ endpoint }).catch(() => undefined);
       await drop(registration);
     } catch {
       // The next load removes it (syncPeerPush).
