@@ -1,6 +1,6 @@
 # Owner verification checklist (v0)
 
-Date: 2026-09-27, updated 2026-10-02. Host used for agent testing: Apple Silicon Mac, macOS 26.5.2,
+Date: 2026-09-27, updated 2026-10-03. Host used for agent testing: Apple Silicon Mac, macOS 26.5.2,
 Go 1.27.1, Node 24.11.0.
 
 This file lists every v0 item that the agent could not test. Each item needs
@@ -203,9 +203,11 @@ Real delivery cannot be tested without a phone. See `docs/notifications.md`.
       needs a change.
 - [ ] Edit a file: Vite HMR updates the page live without reload.
 - [ ] Start an unrelated server in a normal Terminal window (outside pterm),
-      for example `python3 -m http.server 5288`: it is never offered, and
-      `https://<host>:8443/__termivoa/select?session=<id>&port=5288` shows
-      "No dev server of this session listens on that port".
+      for example `python3 -m http.server 5288`: it is never offered. A
+      typed address on `https://<host>:8443` (for example
+      `/__termivoa/select?session=<id>&port=5288`) shows "Open the preview
+      from the Termivoa app.": the preview listener now refuses every request
+      that the app's frame did not start.
 - [ ] **Tell agent** returns to the terminal with the composer open; **‹
       terminal** returns without it.
 - [ ] Revoke the phone with `pterm revoke <device-id>` while the preview is
@@ -276,6 +278,70 @@ then on Android Chrome.
 - [ ] If any step fails on iPhone, record the iOS version and what Settings
       showed. Home notifications must still work; that is the designed
       fallback.
+
+### Preview for sessions on peers
+
+The agent tested this in desktop Chrome and Playwright WebKit only: unit
+tests, and the multi-computer harness (`scripts/e2e-multicomputer/README.md`;
+results in `docs/progress.md`). The harness runs development gateways behind
+a front that stands in for Tailscale Serve, so it cannot check the installed
+app, the production cookies and CSP, a real Tailscale Serve or a real tailnet
+ACL. Design: `docs/peer-preview.md`.
+Needs: the Home Screen app on home (for example `mac`) with one peer added
+(for example `vps`), both on a Termivoa build with protocol revision 2, and a
+Vite project on `vps`. Do the list on iPhone, then on Android Chrome.
+
+- [ ] On `vps`, run `pterm setup` and answer `y` to the preview question (it
+      shows `tailscale serve --bg --https=8443 http://127.0.0.1:8789`).
+      `pterm doctor` on `vps` shows "HTTPS 8443 proxies dev-server previews".
+- [ ] In a session on `vps`, run `npm run dev`. The **Preview ready** chip
+      shows. Tap **Open ↗**: the page loads in the app. This confirms that
+      the installed app sends the peer's `__Host-pterm_session` cookie and
+      home's `Referer` in the frame, and that the move to `/` after the
+      selection is accepted. If the frame shows a short text, record it
+      ("Open the preview from the Termivoa app.", "Origin not allowed.",
+      "Open the preview from your paired phone.", "Unknown host.").
+- [ ] The bar over the page shows `vps` and **untrusted page**. Home's own
+      preview shows neither.
+- [ ] Edit a file on `vps`: Vite HMR updates the page without a reload (the
+      WebSocket passes a real Tailscale Serve).
+- [ ] Tap **↻**: the page loads again.
+- [ ] iPhone Safari tab (not the Home Screen app): open the preview, follow
+      a link to another site in the same tab, then go Back to the app. The
+      preview shows again, not "Origin not allowed." (WebKit history
+      restore).
+- [ ] Follow a link inside the framed page, then swipe Back until the frame
+      is at its first page, and once more. Record what happens (known limit
+      in WebKit: the whole app goes back).
+- [ ] A page with a `<video>` and an `<audio>` element plays in the frame.
+- [ ] A link in the framed page with `target="_top"` or `target="_blank"`
+      does nothing.
+- [ ] Home's own preview still works (the list "Dev-server preview" above);
+      home uses the new rules too.
+- [ ] Production CSP: in Safari Web Inspector (or Chrome remote debugging),
+      the app document's `Content-Security-Policy` has
+      `https://<vps host>:8443` in `frame-src` and in `connect-src`, and no
+      `wss://<vps host>:8443`. The cookies `__Host-pterm_session` and
+      `__Host-pterm_preview` on the `vps` host are `Secure`.
+- [ ] Add a second peer (with its own Serve 8443) and, without closing the
+      app, open a preview of a session on it. The app reloads once, by
+      itself, and then shows the preview. It does not reload again and again.
+- [ ] Remove Serve 8443 on `vps` (`tailscale serve --https=8443 off`), or
+      block port 8443 to `vps` with a tailnet ACL, then tap **Open ↗**:
+      within about 5 s the app shows "Can't open the preview on vps. If vps
+      does not share dev-server previews yet, run pterm setup on vps and
+      answer yes to the preview question." and no empty frame. Restore it
+      after the check.
+- [ ] With the preview open, run `pterm revoke <device-id>` on `vps`: HMR
+      stops within 5 s, and the app removes the frame and shows
+      "vps · pair again".
+- [ ] Stop Termivoa on `vps` with the preview open: the app removes the
+      frame and shows "vps · can't reach".
+- [ ] A peer on an older Termivoa (protocol revision 1) shows no
+      **Preview ready** chip.
+- [ ] Use the app as usual for 8 days without opening the `vps` preview;
+      then it still opens (the WebKit 7-day cookie cap, with the rolling
+      refresh).
 
 ## 3. Windows 11 x64
 

@@ -1,6 +1,6 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-02. Latest tag: `v0.1.0-beta.2`.
+The single roadmap. Updated 2026-10-03. Latest tag: `v0.1.0-beta.2`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
@@ -31,6 +31,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   Follow-up: show the last known version on a "can't reach" row.
 - Notifications from every computer. Open: the real-iPhone check of several
   scoped registrations (`docs/owner-verification.md`, Gate 0 check 5).
+- Preview for sessions on peers: ADR 0006 and `docs/peer-preview.md`
+  (design #146, approved by the owner 2026-10-03); the build also closes #143
+  and #144. Open: the real-phone checks (`docs/owner-verification.md`,
+  "Preview for sessions on peers").
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -42,9 +46,10 @@ In this order.
    owner's second computer and the owner's approval for a Tailscale Serve port
    (rule 12). Port 8443 is taken by the dev-server preview, so use another
    free port.
-2. **Preview for sessions on peers.** Today preview works for home sessions
-   only. Design: ADR 0006 (draft #146, waits for the owner). First fix #143
-   and #144.
+2. **Real-phone checks for preview on peers**
+   (`docs/owner-verification.md`, "Preview for sessions on peers"). Needs the
+   owner's second computer with its own `tailscale serve --https=8443` (asked
+   by `pterm setup` there). Can run in the same sitting as Gate 0.
 3. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
    re-shoot).
 
@@ -88,6 +93,12 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 - [ ] **Owner makes the repo public.** Only the owner does this.
 
 ### Small code items
+
+- [ ] **Preview on peers, follow-ups** (`docs/peer-preview.md`, section 13).
+      Only if a real-phone check fails or a browser stops sending `Referer`
+      on framed navigations: review the preview ticket (variant C). Not
+      fixed: WebKit Back inside the frame moves the whole app back; cookie
+      eviction by a framed dev site.
 
 - [ ] **Staged update refusal.** The broker must refuse replacement while
       sessions are active (plan section 11; `docs/install.md` marks it

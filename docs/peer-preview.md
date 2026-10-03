@@ -1,29 +1,32 @@
 # Preview for sessions on peers: design
 
-Status: **proposed 2026-10-03, version 2 — DO NOT MERGE without owner review** (AGENTS.md rule 24; ADR [0006](decisions/0006-peer-preview.md)). Design only: no code exists. Version 2 answers two adversarial reviews (security: "sound with changes"; feasibility: "build with changes"); section 12 lists every finding and its resolution.
+Status: **implemented, version 3 (2026-10-03)**. ADR [0006](decisions/0006-peer-preview.md), accepted by the owner on 2026-10-03 (AGENTS.md rule 24): the `Referer` variant, the trust statement of section 7, and the service-worker limit of section 13. One pull request holds the host rules, the app and the harness, and closes #143 and #144. Version 2 answered two adversarial reviews; version 3 records a final plan review (13 changes), a real-browser spike (Chrome 154, Playwright WebKit 26.5) and what was built. Section 12 lists every finding and its resolution. Not yet checked on a real phone (`docs/owner-verification.md`, "Preview for sessions on peers").
 
-Goal (roadmap item 3, `docs/pending-work.md:37`): a session on a peer computer (for example `vps`) shows the **Preview ready** chip, and the home app shows that peer's dev server in the frame. Read [preview.md](preview.md) and [multi-computer.md](multi-computer.md) first; this document only describes what changes.
+What it does (it was roadmap item "Preview for sessions on peers" in `docs/pending-work.md`): a session on a peer computer (for example `vps`) shows the **Preview ready** chip, and the home app shows that peer's dev server in the frame. Read [preview.md](preview.md) and [multi-computer.md](multi-computer.md) first; this document describes what changed and why.
 
-Names used below: **home** `https://mac.tailx.ts.net` serves the app. **Peer** `https://vps.tailx.ts.net`. A computer's **preview origin** is its host on port 8443 (`internal/gateway/preview.go:28`).
+Names used below: **home** `https://mac.tailx.ts.net` serves the app. **Peer** `https://vps.tailx.ts.net`. A computer's **preview origin** is its host on port 8443 (`PreviewPublicPort` in `internal/gateway/preview.go`).
 
-## 1. What happens today (from the code)
+Code is named by function, not by line number.
 
-| Fact | Evidence |
+## 1. What the code did before this change
+
+| Fact before | What it is now |
 | --- | --- |
-| The app offers a preview for home sessions only, and only when home's own previews are on (`previewAt`). | `web/src/screens/App.tsx:854`, `:870`, `:117-118`, `:875` |
-| Peer session records already carry `previews`; the app drops them. | `protocol/v1/envelope.schema.json:165-180`, `web/src/screens/Live.tsx:716` |
-| Home's CSP frames only its own preview origin. Peers get `connect-src` only, per device, on `index.html`. | `internal/gateway/handler.go:199-201`, `:484-515` |
-| The preview listener accepts a request when the `Origin` header is absent, or equal to the preview origin. Nothing else is checked before the cookie. | `internal/gateway/preview.go:211-215`, `:221-225` |
-| The listener's broker call carries no origin. | `internal/gateway/preview.go:241`, `:277`, `:302`; `internal/gatewayclient/client.go:339-346`, `:627` |
-| The broker treats a missing origin as its own origin and admits the device. | `internal/broker/gateway_rpc.go:301` → `:108-114`; `internal/broker/computers.go:40-43`, `:75-78` |
-| So **per-device origin binding is not applied on the preview listener**: a credential bound to home's app (`devices.app_origin`) is accepted there, from any page that can make the browser send the cookie. | The three rows above. Filed as the issue "Preview listener skips per-device origin binding". |
-| The selection is a `303` to `/`. | `internal/gateway/preview.go:315` |
-| Open preview sockets and streams are checked again every 5 s. | `internal/gateway/preview.go:41`, `:263`, `:268-285` |
-| The listener's own text pages carry `frame-ancestors 'self'`. `'self'` is the `:8443` origin, and the frame's parent is the app origin, so these pages are blank inside the app's frame. | `internal/gateway/preview.go:456`. Filed as the issue "Preview listener error pages are blank inside the app frame". |
-| A main origin refuses its **own** preview origin as `Origin` (403, before routing). Other origins on `/api` need an exact own or bound `Origin`, or no `Origin` plus `Sec-Fetch-Site: same-origin`; `no-cors` is refused. | `internal/gateway/handler.go:214-219`, `:258-273`, `:279-282`; `internal/gateway/preview.go:134-149` |
-| The gateway keeps the set of bound app origins from the broker probe. | `internal/gateway/handler.go:40-44`, `:288-303`, `:356-375` |
-| `GET /api/v1/preview` reports an origin whenever the preview listener runs. It does not know whether Tailscale Serve 8443 is set up. | `internal/gateway/preview.go:117-130`, `:164-167` |
-| Serve 8443 is a separate consent question in `pterm setup`, per computer; `pterm doctor` reports it. | `cmd/pterm/lifecycle.go:812-847`, `:370-377`; `internal/lifecycle/lifecycle.go:43` |
+| The app offered a preview for home sessions only, and only when home's own previews were on. | `previewFor` in `web/src/screens/App.tsx` decides per computer (W5). |
+| Peer session records already carried `previews` (`protocol/v1/envelope.schema.json`); `Live` got no `onPreview` for a peer, so the chip did not show. | `App.tsx` passes `onPreview` whenever `previewFor` gives an origin. |
+| Home's CSP framed only its own preview origin. Peers got `connect-src` only. | H1: confirmed computers' `:8443` in `frame-src` and `connect-src` (`deviceConnectSources`, `internal/gateway/handler.go`). |
+| The preview listener accepted a request when the `Origin` header was absent or equal to the preview origin. Nothing else was checked before the cookie. | L1 and L2 (`fromPreviewOrigin`, `appReferer` in `preview.go`). |
+| The listener's broker call carried no origin, and the broker treats a missing origin as its own (`isOwnOrigin`, `internal/broker/computers.go`). So **per-device origin binding was not applied on the preview listener** (#143): a credential bound to home's app was accepted there from any page that could make the browser send the cookie. | The selection of another computer's app forwards its origin; every preview check of a bound device runs `appTrust` (B1). |
+| The selection was a `303` to `/`. | A `200` page that moves the frame to `/` (`previewSelectedPage`). |
+| The listener's own text pages carried `frame-ancestors 'self'`. `'self'` is the `:8443` origin and the frame's parent is the app origin, so these pages were blank inside the app's frame (#144). | `previewPage` sends no `frame-ancestors`. |
+| `GET /api/v1/preview` reports an origin whenever the preview listener runs. It does not know whether Tailscale Serve 8443 is set up (#144). | Unchanged; the app probes the preview origin before it shows the frame (section 6). |
+
+Unchanged facts this design rests on:
+
+- A main origin refuses its **own** preview origin as `Origin` (403, before routing; `ServeHTTP` and `isPreviewOrigin`). Other origins on `/api` need an exact own or bound `Origin`, or no `Origin` plus `Sec-Fetch-Site: same-origin`; `no-cors` is refused (`admitAPI`).
+- The gateway keeps the set of bound app origins from the broker probe (`boundOrigin`, `refreshOrigin` in `handler.go`).
+- Open preview sockets and streams are checked again every 5 s (`previewRecheckEvery`, `watch` in `preview.go`).
+- Serve 8443 is a separate consent question in `pterm setup`, per computer; `pterm doctor` reports it.
 
 ## 2. What the browser sends (the hard part)
 
@@ -31,343 +34,391 @@ The frame navigates from a top-level page on home to `https://vps.tailx.ts.net:8
 
 | Header | Value on the frame's first request | Why |
 | --- | --- | --- |
-| `Cookie` | The peer's `__Host-pterm_session` | Cookies ignore ports (RFC 6265 §8.5). The cookie is host-only for `vps.tailx.ts.net`. `SameSite=Strict` is decided by site, and `ts.net` is a public suffix, so home and the peer are same-site (`docs/multi-computer.md:13-14`). |
+| `Cookie` | The peer's `__Host-pterm_session` | Cookies ignore ports (RFC 6265 §8.5). The cookie is host-only for `vps.tailx.ts.net`. `SameSite=Strict` is decided by site, and `ts.net` is a public suffix, so home and the peer are same-site (`docs/multi-computer.md`, section 1). |
 | `Origin` | **absent** | Browsers send `Origin` on CORS requests and on non-`GET` requests, not on a `GET` navigation. |
 | `Sec-Fetch-Site` | `same-site` | Other origin, same site. The same value arrives from a page on **any** machine in the tailnet (another owner's machine in a team tailnet, another computer's dev site). |
 | `Sec-Fetch-Mode` / `Sec-Fetch-Dest` | `navigate` / `iframe` | They say what kind of request it is, not who made it. |
-| `Referer` | absent today (`referrerPolicy="no-referrer"`, `web/src/screens/Preview.tsx:73`). With `referrerPolicy="origin"` on the frame: `https://mac.tailx.ts.net/` | It is the URL (cut to the origin) of the document that started the navigation. A page cannot send another origin's `Referer`. A redirect keeps the first one. |
+| `Referer` | With `referrerPolicy="origin"` on the frame: exactly one `https://mac.tailx.ts.net/`. Without it (the frame before this change): none, because the app has `Referrer-Policy: no-referrer`. | It is the URL (cut to the origin) of the document that started the navigation. A page cannot send another origin's `Referer`. The frame attribute overrides the app's `no-referrer` header. |
 
-Conclusion: with today's frame, **no header names home's app**, so `devices.app_origin` cannot be compared with anything. The only header that can name the app on a `GET` navigation is `Referer`.
+Conclusion: the only header that can name the app on a `GET` navigation is `Referer`.
 
-After the selection, requests made by the framed dev page itself are different: `fetch`, scripts, images and same-origin navigations carry `Sec-Fetch-Site: same-origin`; form posts and WebSocket handshakes carry `Origin: https://vps.tailx.ts.net:8443`. A `303` does **not** give that: after a redirect the request still counts from the page that started it, so `GET /` would still say `same-site`. That is why the selection must answer with a page, not a redirect (section 4).
+After the selection, requests made by the framed dev page itself are different: `fetch`, scripts, images and same-origin navigations carry `Sec-Fetch-Site: same-origin`; form posts, module scripts and WebSocket handshakes carry `Origin: https://vps.tailx.ts.net:8443`. A `303` does **not** give that: after a redirect the request still counts from the page that started it, so `GET /` would still say `same-site`. That is why the selection answers with a page, not a redirect (section 4).
 
-Not verified in a real browser: every row above is from the Fetch, Fetch Metadata, Referrer Policy and cookie specifications. The spike in section 10 checks them first.
+### Spike results (Chrome 154 and Playwright WebKit 26.5)
+
+A throwaway harness ran before the build (two origins of one site, self-signed TLS). It is not in the repository, so this is reported evidence, not reproducible evidence; the multi-computer harness (`scripts/e2e-multicomputer/README.md`) now checks the built feature. Every row above held in both engines:
+
+- The Strict host cookie arrives on the frame's select request (peer host, and same host on another port). The framed page can set and read back cookies.
+- The select request has no `Origin`, `Sec-Fetch-Site: same-site`, `navigate`, `iframe`.
+- `referrerpolicy="origin"` on the frame overrides the app's `no-referrer` meta and header: exactly one `Referer: https://mac.tailx.ts.net/`.
+- The `200` page's move to `/` (meta refresh or `location.replace('/')`) is `Sec-Fetch-Site: same-origin` with no `Referer`, and it is a replace navigation (the selection is not in history). A `303` leaves `/` as `same-site`.
+- L1 passes everything a dev page does: sub-resources, module scripts, `fetch`, form `POST`, links, reload, Back, `EventSource`, workers, video and audio. **WebSocket: Chrome sends no `Sec-Fetch` headers on the handshake, only `Origin`**, so the `Origin` branch of L1 must admit it. Module scripts send `Origin` equal to the preview origin.
+- L1 refuses an image, script, `no-cors` fetch, frame, form `POST` and WebSocket from a same-site or cross-site attacker page. The `Referer` rule separates the app from `evil`, from a dev site (`https://mac.tailx.ts.net:8443/`: the port shows) and from a removed `Referer`.
+- The move to `/` after an attacker-framed selection page would be `same-origin`. So L1 alone does not stop a foreign frame once a selection page is served: the `Referer` rule on the selection (and `frame-ancestors` on the selection page) is the gate, and the listener refuses **before** it serves the page.
+
+Two WebKit differences:
+
+- **A. History restore.** When the app document is restored from history (browser Back to the app tab), WebKit loads the frame's last URL directly, with `Sec-Fetch-Site: same-site` and no select request. L1 answers `403` "Origin not allowed." Fix in the app (W7): the Preview screen mounts a new frame on `pageshow` with `persisted`, and the bar's ↻ does the same. The `403` text is readable in the frame.
+- **B. Back inside the frame.** In WebKit, `history.back()` inside a sandboxed frame, past the frame's first entry, moves the **top** page back. This exists for home previews too and is not fixed; it is known limit 7 in section 13.
+
+Not covered by the spike: a real phone, the installed app, a real Tailscale Serve. Those are in `docs/owner-verification.md`.
 
 ## 3. Options for authenticating the frame
 
-| | A. Fetch-metadata and `frame-ancestors` only | **B. `Referer` as origin proof (recommended)** | C. Preview ticket (alternative) |
+| | A. Fetch-metadata and `frame-ancestors` only | **B. `Referer` as origin proof (chosen and built)** | C. Preview ticket (not built) |
 | --- | --- | --- | --- |
 | Rule on the selection | cookie + `Sec-Fetch-Site: same-site` + `Sec-Fetch-Dest: iframe` | cookie + exactly one `Referer` whose origin is this computer's own origin or the credential's bound app origin | cookie + a single-use ticket that the app fetched through the authenticated CORS API |
-| What stops another same-tailnet page from selecting | Only that it does not know the session ID | The browser never lets a page send another origin's `Referer`. A dev site on `:8443` sends its own origin, which is never a bound origin (a bound origin has the default port, `internal/protocol/computers.go:26`). | Only the bound app origin can get a ticket |
-| Broker check | cookie only | the same `admitDevice` as every API call (`internal/broker/computers.go:75-83`), with the `Referer` origin as the forwarded origin | the same `admitDevice`, on the ticket call |
+| What stops another same-tailnet page from selecting | Only that it does not know the session ID | The browser never lets a page send another origin's `Referer`. A dev site on `:8443` sends its own origin, which is never a bound origin (a bound origin has the default port, `ValidateComputerOrigin` in `internal/protocol/computers.go`). | Only the bound app origin can get a ticket |
+| Broker check | cookie only | the same `admitDevice` as every API call, with the `Referer` origin as the forwarded origin | the same `admitDevice`, on the ticket call |
 | Works when a header is removed | Yes | **No.** `Referer` is optional. If a browser setting or extension removes it, the preview fails (closed). | Yes |
-| New parts | one response header | one frame attribute, one `Referer` parse in `selectPort`. No new route, RPC or state. The reviews estimate about 20 lines. | one HTTP route, one gateway RPC, one optional RPC field, an in-memory ticket table. The reviews estimate 300 to 400 lines. |
+| New parts | one response header | one frame attribute, one `Referer` rule on the listener. No new route, RPC or state. | one HTTP route, one gateway RPC, one optional RPC field, an in-memory ticket table |
 | Secret in a URL | no | no | yes: 30 s, single use, useless without the cookie |
 
-**Recommendation: B.** Both reviews found it not weaker than the ticket against the attackers of this design (another tailnet page, a dev site on any `:8443`), and it is much less code and state. Version 1 of this document recommended C; that changed in review (S1, F1).
+**B was chosen by the owner on 2026-10-03.** Both reviews found it not weaker than the ticket against the attackers of this design (another tailnet page, a dev site on any `:8443`), and it is much less code and state. Version 1 of this document recommended C; that changed in review (S1, F1).
 
 Honest costs of B:
 
-- **It fails closed when `Referer` is removed.** The user then sees the listener's refusal text, not a preview.
-- **`Referer` becomes a second origin proof** next to `Origin`. Every later reviewer of the preview listener must know that.
-- **A script-free HTML injection on home's origin could start a selection.** Markup injected into the app's page (for example an `<iframe>`) sends home's `Referer`. With the ticket, the attacker would need script. The app renders terminal text as text and has a strict CSP, so this needs an app bug first; it also needs a real session ID, and it shows only what a tap on **Open ↗** would show.
+- **It fails closed when `Referer` is removed.** The user then sees "Open the preview from the Termivoa app." in the frame, not a preview.
+- **`Referer` is a second origin proof** next to `Origin`. Every later reviewer of the preview listener must know that.
+- **A script-free HTML injection on home's origin could start a selection.** Markup injected into the app's page (for example an `<iframe>` with `referrerpolicy="origin"`) sends home's `Referer`. With the ticket, the attacker would need script. The app renders terminal text as text and has a strict CSP, so this needs an app bug first; it also needs a real session ID, and it shows only what a tap on **Open ↗** would show.
 
-**C stays documented as the alternative** (section 4, "Alternative: preview ticket") for the owner to choose. **A is rejected:** `same-site` is not "same owner" (`docs/multi-computer.md:62-64`).
+**A was rejected:** `same-site` is not "same owner" (`docs/multi-computer.md`, "Same tailnet is not same owner").
 
-Also rejected: a preview-only bearer cookie that replaces the device cookie (a new credential type; against "no new secret type", `docs/multi-computer.md:52`), and a relay of the peer's preview through home (home would hold standing peer credentials; `docs/multi-computer.md:23-31`, option B).
-
-Both B and C need L1, the `200` selection page, the trust check and the CSP change of section 4.
+Also rejected: a preview-only bearer cookie that replaces the device cookie (a new credential type; against "No new secret type", `docs/multi-computer.md`, "Roles"), and a relay of the peer's preview through home (home would hold standing peer credentials; `docs/multi-computer.md`, section 2, option B).
 
 ## 4. Design
 
-### Request flow (variant B)
+### Request flow
 
 ```text
 phone app  https://mac.tailx.ts.net  (home)
+  0. fetch <peer>:8443/__termivoa/select  (no-cors, no credentials, 5 s)
+       any HTTP answer → show the frame; no answer → text, no frame
   1. iframe referrerpolicy="origin"
        src = https://vps.tailx.ts.net:8443/__termivoa/select?session=<id>&port=<n>
-     vps preview listener: vps cookie; Referer origin = https://mac.tailx.ts.net
-       is in the bound set → forwarded to the broker as the request origin
+     vps preview listener: Host; no Origin; Referer https://mac.tailx.ts.net/
+       is a bound app origin → forwarded to the broker as the request origin;
+       limiter; vps cookie
      vps broker: admitDevice (origin bound to this credential, node, tags),
        session runs, port owned
      → 200 small page, sets the preview cookie, moves the frame to /
   2. GET /  (and every later request of the dev page)
-       same-origin by Sec-Fetch-Site or Origin; cookie + preview cookie;
+       same-origin by Sec-Fetch-Site or Origin (L1); cookie + preview cookie;
        broker re-check (credential, trust of the bound node, port) on every
        request and every 5 s for open sockets
 ```
 
-A home session uses the same steps against home; the `Referer` origin is then home's own origin.
+A home session uses the same steps against home; the `Referer` origin is then home's own origin, and nothing is forwarded.
 
-### Rules that change on every computer (each computer runs the same build)
+### Rules that changed on every computer (each computer runs the same build)
 
-**L1. Preview listener: who may send a request** (`internal/gateway/preview.go`, replaces `:208-215`). A request other than the selection passes only with:
+**Admission order** in `previewHandler.ServeHTTP` (`internal/gateway/preview.go`):
 
-- exactly one `Origin` header equal to the preview origin itself (form posts, WebSocket handshakes), or
-- no `Origin` header and exactly one `Sec-Fetch-Site: same-origin` (reuse `sameOriginFetch`, `internal/gateway/handler.go:279-282`).
+1. Host (`hostAllowed`), else `421`.
+2. The selection path: L2. Every other path: L1. Else `403`. This is before the cookie is read and before the dev server is reached.
+3. The failed-attempt limiter (`429`).
+4. The device cookie (`401` without a valid one).
+5. The selection: `selectPort`. Other paths: an unknown `/__termivoa/*` path is `404`; the preview cookie (`400` without one); then the broker check and the proxy.
 
-Everything else is `403` before the cookie is read and before the dev server is reached. This is the `/api` rule (`handler.go:264-273`) on the preview listener. It refuses a script tag, image, `no-cors` fetch, frame or WebSocket from the app, from another tailnet machine and from another computer's dev site. There is **no fallback** that accepts `same-site` navigations: if an engine does not send `same-origin` for the move to `/`, this design goes back to review (S3).
+**L1. Who may send a request** (`fromPreviewOrigin`). A request other than the selection passes only with:
 
-**L2. Preview listener: the selection** (`selectPort`, `preview.go:289-316`). `GET /__termivoa/select?session=<uuid>&port=<n>` with the device cookie and exactly one `Referer` header. Its origin (scheme, host, port; lower case) decides:
+- exactly one `Origin` header equal to the preview origin itself, compared without case (form posts, module scripts, WebSocket handshakes), or
+- no `Origin` header and exactly one `Sec-Fetch-Site: same-origin` (`sameOriginFetch`, shared with `/api`).
 
-- this computer's own origin (`originAllowedValue`, `handler.go:319-327`) → the broker call carries no forwarded origin;
-- an origin in the gateway's bound set (`handler.go:296`) → the broker call carries it through `gatewayapi.WithForwardedOrigin` (`internal/gatewayapi/gatewayapi.go:93`), so the broker runs `admitDevice` against **this credential's** binding;
-- anything else, a missing or a doubled `Referer` → `403`.
+Everything else is `403` "Origin not allowed." This is the `/api` rule on the preview listener. It refuses a script tag, image, `no-cors` fetch, frame or WebSocket from the app, from another tailnet machine and from another computer's dev site. A `curl` or a typed URL is `403` too. There is **no fallback** that accepts `same-site` navigations.
 
-The answer is `200 text/html` with `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors <the Referer origin>`, the preview cookie as today (`preview.go:309-312`), and a body that only moves the frame to `/` (`<meta http-equiv="refresh" content="0;url=/">`). The move is started by a document on the preview origin, so `GET /` is `same-origin` and passes L1. This page is **not** built with `previewPage`, whose `frame-ancestors 'self'` blanks it in the app's frame (`preview.go:456`). The dev server never sees home's `Referer`: the selection is not proxied.
+**L2. The selection** (`appReferer`, then `selectPort`). `GET /__termivoa/select?session=<uuid>&port=<n>`, exactly these two parameters. The request must carry **no `Origin` header at all** and **exactly one `Referer` header that ends in one `/`**. The `/` is cut off and the rest is the candidate; it is not parsed as a URL.
 
-**B1. Broker: preview check** (`gateway.preview.check`, `internal/broker/gateway_rpc.go:296-312`). No wire change; the envelope's existing `origin` field is used.
+- The candidate is this computer's own origin (`originAllowedValue`, which compares without case) → the broker call carries no forwarded origin.
+- The candidate is a valid computer origin (`protocol.ValidateComputerOrigin`) and is in the gateway's bound set, compared as an exact string (`boundOrigin`, the same lookup `/api` uses for CORS) → the broker call carries it through `gatewayapi.WithForwardedOrigin`, so the broker runs `admitDevice` against **this credential's** binding.
+- Anything else → `403` "Open the preview from the Termivoa app.": a path, no trailing `/`, an explicit `:443`, a preview origin (`https://<host>:8443/`), `null`, a missing or doubled `Referer`, or any `Origin` header.
 
-- With a forwarded origin (the selection from another computer's app): `admitDevice` as every other call (`gateway_rpc.go:108-114`).
-- With no origin (the selection from the own app, every later request, the 5 s recheck): authenticate; **if the device is bound to an app origin (`principal.App.Bound()`), also require `appTrust(principal.App)`** (`internal/broker/computers.go:59-72`). A device that paired with this computer directly is checked as today.
-- Then the port ownership check as today (`internal/broker/devpreview.go:119-137`).
+The answer is `200 text/html` with `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors <the app origin of the Referer>`, the preview cookie, and a body that only moves the frame to `/` (`<meta http-equiv="refresh" content="0;url=/">`; a meta refresh needs no script allowance in the CSP). The move is a replace navigation started by a document on the preview origin, so `GET /` is `same-origin` and passes L1. This page is not built with `previewPage`. The dev server never sees home's `Referer`: the selection is not proxied.
 
-### Rules that change on home only
+Only the selection forwards an origin. The per-request check and the 5 s recheck (`watch`) send none; that is correct only because of B1.
 
-**H1. CSP of the app document** (`deviceConnectSources`, `internal/gateway/handler.go:484-515`). For each **confirmed** computer of the cookie's device (`list.Computers`, never `list.PendingOrigins`), add `<origin>:8443` to `frame-src`. `frame-src` is created when home's own preview listener is off. Entries whose node changed are already left out by the broker (`internal/broker/computers.go:216-241`). At most 8 (`internal/protocol/computers.go:10`). Like `connect-src` today, this is on `index.html` only and only with a usable cookie. The known limit for the cached offline shell (`docs/threat-model.md:276-279`) now also covers `frame-src`.
+**Text pages** (`previewPage`, #144). Every other answer from the listener itself is a short `text/plain` body with `default-src 'none'` and **no `frame-ancestors`**: the text is static, and it must be readable inside the app's frame, whose parent is another origin. Section 6 lists the texts.
 
-`connect-src` gains `https://<origin>:8443` only together with the reachability probe (section 6), which may come in a later pull request. **Never `wss://<peer>:8443`**: the app opens no socket to a preview origin.
+**B1. Broker: preview check** (the `GatewayPreviewCheck` case in `internal/broker/gateway_rpc.go`). No wire change; the envelope's existing `origin` field is used.
 
-### App rules (requirements, not options)
+- `authorize` runs first, as for every call: it authenticates the credential and runs `admitDevice` on the forwarded origin (a missing origin counts as the own origin).
+- Then, **whenever the device is bound to an app origin (`principal.App.Bound()`), the check requires `appTrust(principal.App)`, with or without a forwarded origin.** A changed node ID is `ErrRevoked` (the listener answers `401`); a changed tag set, another owner or a missing name is `ErrOriginRefused` (`invalid_request`; the listener's `fail` answers `403` "This app may not use this computer."); a status that cannot be read after the grace period is `host_unavailable` (`503`). A device that paired with this computer directly is checked as before.
+- Then the port ownership check as before (`internal/broker/devpreview.go`).
 
-- **W1.** The frame gets `referrerPolicy="origin"`. It keeps `sandbox="allow-scripts allow-forms allow-same-origin"` (`web/src/screens/Preview.tsx:72`): no top navigation, popups, modals or downloads; no `allow` attribute (no camera, microphone, location) and no `allowfullscreen`.
-- **W2.** Over a frame of a peer, the app's bar **always** shows the computer's label (from the phone's own list, `web/src/computers.ts:13-14`) and an **untrusted page** mark. It does not depend on how many computers the phone has.
-- **W3.** When that computer answers `401` or `403` to the app, the app **removes the frame**; a banner over a live frame is not enough. The app cannot see the frame's own responses (another origin), so the signal is the app's own poll of that computer, which runs while the preview is open (`web/src/screens/App.tsx:492`).
-- **W4.** The app never uses an origin string that a peer sent. A peer's preview origin is always `<computer.origin>:8443`, and home computes its `frame-src` the same way.
-- **W5.** A peer preview does not depend on home's previews being on: `App.tsx:854` and `:870` test home's `previewAt` today and must test the session's own computer.
+### Rules that changed on home only
 
-### What does not change
+**H1. CSP of the app document.** `gatewayHandler.ServeHTTP` puts the own preview origin into `connect-src` and `frame-src` on every response when previews are on. On `index.html`, with a usable cookie, `deviceConnectSources` adds, for each **confirmed** computer of the cookie's device (`list.Computers`, never `list.PendingOrigins`), `<origin>:8443` to `frame-src` and to `connect-src` (for the probe). `frame-src` is created when home's own preview listener is off. A pending computer gets only its `https` and `wss` API origins in `connect-src`, as before. Entries whose node changed are already left out by the broker (`listComputers`). At most 8 (`protocol.MaxComputers`). **Never `wss://<peer>:8443`**: the app opens no socket to a preview origin. The known limit for the cached offline shell (`docs/threat-model.md`, "Multi-computer") now also covers `frame-src`.
 
-Proxy rules, cookie stripping, port ownership and the 5 s recheck (`docs/preview.md:105-123`); push, pairing, `/api` admission and CORS; the CLI; the store.
+### App rules
 
-### Alternative: preview ticket (variant C, not recommended)
+- **W1.** The frame has `referrerPolicy="origin"` and `sandbox="allow-scripts allow-forms allow-same-origin"` (`PreviewBody` in `web/src/screens/Preview.tsx`): no top navigation, popups, modals or downloads; no `allow` attribute (no camera, microphone, location) and no `allowfullscreen`.
+- **W2.** Over a frame of a peer, the app's bar **always** shows the computer's label (from the phone's own list) and **untrusted page** (`PreviewBar`). It does not depend on how many computers the phone has. Home's frame has neither.
+- **W3.** The app shows a peer's frame only while its own poll of that computer has `status.kind === 'ok'` (`previewFor` in `App.tsx`). For `pair`, `unreachable` or `outdated` the frame is removed and the existing text shows ("vps · pair again", "vps · can't reach", the update text). The app cannot see the frame's own responses (another origin), and it never sees a `403` for a trust refusal on its own calls (that is `400 invalid_request`, `503`, or a CORS failure that looks like a network error), so the computer's status is the signal. The poll runs while the preview is open.
+- **W4.** The app never uses an origin string that a peer sent. A peer's preview origin is always `https://<host of computer.origin>:8443` (`previewOriginOf` in `web/src/computers.ts`), and home computes its `frame-src` the same way. Home's own preview origin still comes from `GET /api/v1/preview`, so the development profile keeps working.
+- **W5.** A peer preview does not depend on home's previews being on. `previewFor` gives a peer an origin when its status is `ok` and its `protocolRevision` is 2 or higher (`PEER_PREVIEW_REVISION`). `route()` opens a peer preview link without reading home's preview origin. Route: `/c/<host>/sessions/<id>/preview?port=<n>`; home keeps `/sessions/<id>/preview?port=<n>`.
+- **W6. Probe.** Before the frame shows (home and peers), `probePreview` sends `fetch('<previewOrigin>/__termivoa/select', {mode: 'no-cors', credentials: 'omit', signal: AbortSignal.timeout(5000)})`. The request has no `Referer` (the app's `no-referrer` policy), so the listener answers `403`; the answer is opaque and never read. A resolved fetch means "something answers there": the frame shows. A rejected fetch (network error, timeout, a block by the app's CSP) shows `cantPreview` and no frame (section 6).
+- **W7. Reload.** ↻ in the bar mounts a new frame, so the selection and the probe run again. The screen does the same on `pageshow` with `persisted` (WebKit difference A).
+- **W8. A computer confirmed in this visit.** The app document's `frame-src` and `connect-src` come from the page load, and a computer becomes confirmed after that load. Until the app loads again, that computer's preview origin is blocked by the app's own CSP. The Preview screen listens for the `securitypolicyviolation` event. When the blocked address is on the preview origin that it is trying to open, the app reloads once. A `sessionStorage` guard (key `pterm.previewReload`, `reloadForPolicy` in `Preview.tsx`) allows one reload per preview origin and so stops a reload loop; it is cleared when the probe is answered. If the policy still blocks after the reload (an old cached page), the probe's text shows. After the reload, the route opens the same preview again under the new CSP. The pending-versus-confirmed rule does not change: a pending computer is never in `frame-src`.
 
-If the owner chooses C, L1, B1's trust check, H1 and W1 to W5 stay (the frame keeps `no-referrer`), and L2 changes:
+### What did not change
 
-- New route `POST /api/v1/sessions/{id}/preview`, body `{port}`, answer `{ticket}`; a mutation (`internal/gateway/api.go:490-525`), so it needs the exact own or bound `Origin` and `X-Pterm-Request`.
-- New RPC `gateway.preview.ticket`; `gateway.preview.check` gains an optional `ticket`. The broker keeps the SHA-256 of a 256-bit ticket with device, session, port and a 30 s expiry, in memory; at most 4 per device and 64 in total.
-- The selection needs the cookie and `ticket`. The broker **looks up and deletes the ticket atomically under one lock**, pass or fail.
-- The app gets **one ticket per frame mount** (also on reload), never one per render.
-- A test proves that the selection page moves to `/` as a **replace** navigation, so that Back inside the frame never returns to a used ticket.
+Proxy rules, cookie stripping, port ownership and the 5 s recheck (`docs/preview.md`, "Proxy rules"); push, pairing, `/api` admission and CORS; the CLI; the store; `GET /api/v1/preview`.
 
-## 5. What each side must refuse
+### Alternative that was not built: preview ticket (variant C)
+
+A new route `POST /api/v1/sessions/{id}/preview` would give a single-use, 30-second ticket; the selection would need the cookie and the ticket; the broker would keep ticket hashes in memory. It does not depend on an optional header, and an HTML injection without script cannot use it. It needs a route, an RPC and a ticket table, and both reviews found it not stronger than `Referer` against these attackers. If `Referer` ever fails in a supported browser, this is the next design to review.
+
+## 5. What each side refuses
 
 | Request | Who answers | Result | Rule |
 | --- | --- | --- | --- |
-| Dev site on peer A (`https://a:8443`) calls home's or peer B's `/api` with `fetch` or a WebSocket | main origin | `403`: the `Origin` is not own and not bound | existing, `handler.go:264-273` |
-| Same dev site sends a `no-cors` `GET` or navigates a nested frame to `/api/...` | main origin | `403`: `no-cors`, or no `Origin` without `same-origin` | existing, `handler.go:258-273` |
-| A computer's own dev site calls that computer's main origin | main origin | `403` before routing | existing, `handler.go:214-219` |
-| Dev site on peer A loads a script or image from, frames, or opens a WebSocket to `https://b:8443` or `https://mac:8443` | preview listener | `403` before the dev server | **new, L1** |
-| A page on another tailnet machine, or a dev site on any `:8443`, frames a selection URL | preview listener | `403`: its `Referer` origin is not own and not bound | **new, L2** |
-| A page on an origin that is bound for **another** device frames a selection URL with this device's cookie | broker | refused: `principal.App.Origin` differs | existing `computers.go:79-81`, reached through L2 |
-| Home's app selects on a peer with a credential that paired with the peer directly (`app_origin` NULL) | peer broker | refused (`ErrOriginRefused`) | existing, `computers.go:79-81` |
-| A bound device's preview request after home's node ID changed, its tag set changed, or the status is older than the grace period | peer broker | refused; a node change also revokes | **new, B1** via `appTrust` |
+| Dev site on peer A (`https://a:8443`) calls home's or peer B's `/api` with `fetch` or a WebSocket | main origin | `403`: the `Origin` is not own and not bound | existing, `admitAPI` |
+| Same dev site sends a `no-cors` `GET` or navigates a nested frame to `/api/...` | main origin | `403`: `no-cors`, or no `Origin` without `same-origin` | existing, `admitAPI` |
+| A computer's own dev site calls that computer's main origin | main origin | `403` before routing | existing, `isPreviewOrigin` |
+| Dev site on peer A loads a script or image from, frames, or opens a WebSocket to `https://b:8443` or `https://mac:8443` | preview listener | `403` before the dev server | **L1** |
+| A page on another tailnet machine, or a dev site on any `:8443`, frames a selection URL | preview listener | `403`: its `Referer` origin is not own and not bound | **L2** |
+| A page on an origin that is bound for **another** device frames a selection URL with this device's cookie | broker | refused: `principal.App.Origin` differs (`403` "This app may not use this computer.") | existing `admitDevice`, reached through L2 |
+| Home's app selects on a peer with a credential that paired with the peer directly (`app_origin` NULL) | peer broker | refused (`ErrOriginRefused`), same `403` | existing `admitDevice` |
+| A bound device's preview request after home's node ID changed, its tag set changed, or the status is older than the grace period | peer broker | refused; a node change also revokes | **B1** via `appTrust` |
 
 Does a dev site on peer A get new power over home or peer B? **Over the APIs: no.** Over the other preview origins: without L1 it would (blind `GET`s and script loads against the selected dev server, with the user's cookies), because a framed peer dev site is the first foreign same-site page that runs inside the installed app's cookie jar. L1 removes that. What stays is in section 7.
 
-## 6. A peer without a preview origin, and older peers
+## 6. A peer without a preview origin, older peers, and the texts the user sees
 
 | Case | How the app knows | What the user sees |
 | --- | --- | --- |
-| Peer below protocol revision 2 | `settings.protocolRevision` of that computer (`web/src/screens/allSessions.ts:28`, `web/src/api/http.ts:91-97`) | No chip, as today. The app never frames a peer whose listener lacks L1 and L2. |
-| Peer never ran `tailscale serve --https=8443`, or an ACL blocks 8443 | First pull request: it does not know; the frame stays empty. With the probe: on **Open ↗** one `fetch('<peer>:8443/__termivoa/select', {mode: 'no-cors', credentials: 'omit', signal: AbortSignal.timeout(5000)})`. Any HTTP answer means the port is served; a failure means the phone could not reach it. | With the probe, neutral words, because a stale cached CSP or a timeout looks the same as a missing Serve: "Can't open the preview on vps. If vps does not share dev-server previews yet, run `pterm setup` on vps and answer yes to the preview question." |
-| The session ended, the port closed, the phone is no longer paired there | The listener answers with its text page inside the frame (needs track T, section 10); the app's poll shows the session and computer state | The text in the frame; for `401` the frame is removed and "vps · pair again" shows (`allSessions.ts:39`) |
-| Peer unreachable | existing | "vps · can't reach" |
+| Peer below protocol revision 2 | `settings.protocolRevision` of that computer | No chip. A preview link to it shows the update text ("Update Termivoa on vps") and no frame. The app never frames a peer whose listener lacks L1 and L2. |
+| Peer never ran `tailscale serve --https=8443`, an ACL blocks 8443, or nothing answers in 5 s | The probe (W6) is rejected | "Can't open the preview on vps. If vps does not share dev-server previews yet, run pterm setup on vps and answer yes to the preview question." No frame. The words are neutral, because a blocked request, a timeout and a missing Serve look the same to the app. |
+| Computer confirmed in this visit | `securitypolicyviolation` on its preview origin | The app reloads once and opens the preview again (W8). |
+| The phone is no longer paired there, or the computer cannot be reached, or it must update | The app's poll of that computer | The frame is removed; "vps · pair again", "vps · can't reach" or the update text shows (W3). |
+| The session ended or the port closed | The listener's text in the frame; the app's poll | The text in the frame; the **Dev server stopped** banner. |
 
-The probe is on the phone on purpose: it tests the real path, and it needs no Tailscale call in the broker. It also covers home, where the chip shows today even when Serve 8443 was declined. Rejected: letting the broker run `tailscale serve status --json` (more host code, and it cannot see ACLs).
+The probe is on the phone on purpose: it tests the real path, and it needs no Tailscale call in the broker. It also covers home, where the chip shows even when Serve 8443 was declined. Rejected: letting the broker run `tailscale serve status --json` (more host code, and it cannot see ACLs).
 
-Each computer's Serve 8443 stays that computer's own consent in `pterm setup` (`cmd/pterm/lifecycle.go:812-847`, rule 12). Nothing in this design changes Tailscale configuration, and no computer configures another.
+Texts from the listener itself, shown in the frame (plain text):
 
-**Protocol revision.** `protocol/v1/revision.json` goes from 1 to 2; `minRevision` stays 1. Variant B changes no schema, but the listener's behavior is a change a peer's app can observe (`protocol/v1/http-api.md:127-128`), and the app needs the number to know that a peer's listener has L1 and L2. Home and the app are one build. No path for the old selection stays (rule 26).
+| Status | Text | Cause |
+| --- | --- | --- |
+| 403 | "Open the preview from the Termivoa app." | Selection: missing, doubled or wrong `Referer`, or any `Origin` header |
+| 403 | "Origin not allowed." | Other paths: not from the preview origin (also WebKit history restore, difference A) |
+| 403 | "This app may not use this computer." | Broker `invalid_request`: wrong app origin for this credential, or the app computer's tags, owner or name changed |
+| 401 | "This phone is no longer paired. Open Termivoa to pair again." | Broker: revoked, expired, or the app computer's node changed |
+| 401 | "Open the preview from your paired phone." | No valid device cookie |
+| 400 | "Open the preview from the Termivoa app." | Not the selection, and no valid preview cookie |
+| 400 | "Invalid preview request." | Selection with bad or extra parameters |
+| 404 | "No dev server of this session listens on that port." / "Unknown preview route." | Port not owned by the session; unknown `/__termivoa/*` path |
+| 409 | "The session is not running." | |
+| 421 | "Unknown host." | Host not allowed |
+| 429 | "Too many failed attempts." / "Too many open preview sockets." | Limiter; more than 32 upgrades |
+| 502 | "The dev server did not answer." | Proxy error |
+| 503 | "The computer is not available." | Any other broker error, for example Tailscale status not readable past the grace period |
+
+Each computer's Serve 8443 stays that computer's own consent in `pterm setup` (rule 12). Nothing in this design changes Tailscale configuration, and no computer configures another.
+
+**Protocol revision.** `protocol/v1/revision.json` is at revision 2; `minRevision` stays 1. No schema changed, but the listener's behavior is a change a peer's app can observe, and the app needs the number to know that a peer's listener has L1 and L2. Home and the app are one build. No path for the old selection stays (rule 26).
 
 ## 7. Honest trust statement
 
+Accepted by the owner on 2026-10-03.
+
 **When you open a preview of a session on a peer, that peer puts a page of its choice inside your app.** It does not need a real dev server: a compromised peer can report any port in `previews` and answer on its `:8443` with anything.
 
-**This withdraws a guarantee.** `docs/multi-computer.md:115` says that a peer cannot show phishing text in the home app. With this feature a peer can: inside the frame, after the user opens that peer's preview.
+**This withdrew a guarantee.** `docs/multi-computer.md` ("Peer responses are untrusted") said that a peer cannot show phishing text in the home app. With this feature a peer can: inside the frame, after the user opens that peer's preview. That document now says so.
 
 What that page **cannot** do:
 
 - Read or change the app: it is another origin, and the app keeps `frame-ancestors 'none'` and its CSP.
 - Navigate the app away, open popups, show dialogs, start downloads or go full screen (frame sandbox, W1).
 - Call the API of home or of any peer, or load from another computer's preview (section 5).
-- Appear without a tap: the app frames a peer only after **Open ↗** on a session of that peer (or a reload of that same screen).
+- Appear without a tap: the app frames a peer only after **Open ↗** on a session of that peer, or when its preview address is opened (a reload of that screen; see open risk 5 in section 13).
 
 What it **can** do, stated plainly. "It" is the peer, or any script in a peer's dev site (a project dependency, for example):
 
-- **Show a false page.** A fake "pair again" screen, a fake login. The only limit is the app's bar with the computer label and the **untrusted page** mark (W2).
-- **Un-pair the phone from every computer.** About 200 cookies with `Domain=<tailnet>.ts.net` make the browser evict older cookies of the site, and every computer's `__Host-pterm_session` is one of them. The user must **pair again** with every computer. Larger cookies also push every request past the 16 KiB header limit until the app's data is cleared. The exact number depends on the browser and was not tested. Before this feature only a peer's HTTP responses could set such cookies (`docs/multi-computer.md:45`); a home dev site already could (`docs/preview.md:132-134`).
-- **Send cookies to other dev servers.** A `Domain=<tailnet>.ts.net` cookie goes to every computer's `:8443`, and the proxy forwards cookies that are not Termivoa's (`internal/gateway/preview.go:404-416`). A dev server on another computer can receive a cookie it did not set.
+- **Show a false page.** A fake "pair again" screen, a fake login. The only limit is the app's bar with the computer label and **untrusted page** (W2).
+- **Sign the phone out of every computer.** About 200 cookies with `Domain=<tailnet>.ts.net` make the browser evict older cookies of the site, and every computer's `__Host-pterm_session` is one of them. The user must **pair again** with every computer. Larger cookies also push every request past the 16 KiB header limit until the app's data is cleared. The exact number depends on the browser and was not tested. Before this feature only a peer's HTTP responses could set such cookies (`docs/multi-computer.md`, "Honest trust statement"); a home dev site already could (`docs/preview.md`, "Known limits").
+- **Send cookies to other dev servers.** A `Domain=<tailnet>.ts.net` cookie goes to every computer's `:8443`, and the proxy forwards cookies that are not Termivoa's (`forwardedCookies` in `preview.go`). A dev server on another computer can receive a cookie it did not set.
 - **Send blind requests from the phone** to other machines in the tailnet (`no-cors`), also machines that the peer itself cannot reach under your ACLs. It cannot read the answers. Any web page that the phone opens can do the same.
 - **Keep state on its own origin** (storage, a service worker for `https://vps:8443`; see section 13, limit 1).
 - **Track that you opened it**, and when.
 
-What stays as before: a compromised home compromises every peer (`docs/multi-computer.md:37-39`). A compromised peer still controls only itself, plus the frame above.
+What stays as before: a compromised home compromises every peer (`docs/multi-computer.md`, "Honest trust statement"). A compromised peer still controls only itself, plus the frame above.
 
-Known limits kept from `docs/preview.md:125-141`: all previews of one computer share one origin, and the preview cookie is not signed; script on that origin can replace it. No isolation between two dev sites of one computer is claimed.
+Known limits kept from `docs/preview.md`: all previews of one computer share one origin, and the preview cookie is not signed; script on that origin can replace it. No isolation between two dev sites of one computer is claimed.
 
 ## 8. Tailscale rules and revocation timing for preview streams
 
 | Rule from multi-computer | Does the preview on a peer follow it? |
 | --- | --- |
-| Node-ID pinning | Yes. The selection goes through `admitDevice`; every later check of a bound device goes through `appTrust` (B1). A changed node ID answers `ErrRevoked`, and the sweep revokes the devices as today (`internal/broker/computers.go:270-293`). |
-| Tagged nodes | Yes, no new rule. `appTrust` compares the pinned tag set (`internal/tailnet/status.go:217-228`): a changed set is refused, not revoked. |
-| 60 s status cache, 10-minute grace | Yes. `appTrust` only reads the snapshot (`internal/tailnet/monitor.go:78-94`). Devices that paired with the peer directly are not affected. |
-| Already-open WebSockets | Not at once. Live streams close on a new snapshot (`CloseUntrusted`, `internal/auth/service.go:545-551`). Preview sockets are not broker streams; the gateway asks again every 5 s (`preview.go:268-285`). |
+| Node-ID pinning | Yes. The selection goes through `admitDevice`; every check of a bound device goes through `appTrust` (B1). A changed node ID answers `ErrRevoked`, and the sweep revokes the devices as before (`sweepTrust` in `internal/broker/computers.go`). |
+| Tagged nodes | Yes, no new rule. `appTrust` compares the pinned tag set: a changed set is refused, not revoked. |
+| 60 s status cache, 10-minute grace | Yes. `appTrust` only reads the snapshot. Devices that paired with the peer directly are not affected. |
+| Already-open WebSockets | Not at once. Live streams close on a new snapshot. Preview sockets are not broker streams; the gateway asks again every 5 s (`watch`). |
 
 Timing, stated exactly:
 
 | Event | Effect on the preview |
 | --- | --- |
-| Device revoked or expired (`pterm revoke`, logout) | `401` on the next request; open sockets close within 5 s |
+| Device revoked or expired (`pterm revoke`, logout) | `401` on the next request; open sockets close within 5 s. The app removes the frame when its own poll of that computer sees the refusal (W3). |
 | Home's node ID or tag set changed | Seen with the next status snapshot: up to about 65 s (60 s cache plus the 5 s recheck) |
 | Tailscale status cannot be read | The last good snapshot is used for up to 10 minutes; after that, bound devices are refused (not revoked) |
 
 ## 9. Protocol changes (additive, rule 6)
 
-Variant B:
-
 | File | Change |
 | --- | --- |
-| `protocol/v1/revision.json` | `revision` 2 |
-| `protocol/v1/http-api.md` | "Preview listener" (`:289-300`): the selection needs a `Referer` of the own or a bound app origin and answers `200`; the L1 rule; revision 2 in "Protocol revision" |
-| `protocol/v1/authentication-rpc.md` | `gateway.preview.check` (`:57`, `:118-121`): the forwarded origin, and the trust check for bound devices |
-| Generated Go and TypeScript | regenerate (the revision constants); the drift check must pass |
+| `protocol/v1/revision.json` | `revision` 2; `minRevision` 1 |
+| `protocol/v1/http-api.md` | "Preview listener": the rules in order, the selection page, the probe, the CSP entries; revision 2 in the "Protocol revision" table |
+| `protocol/v1/authentication-rpc.md` | `gateway.preview.check`: the forwarded origin on the selection, and the trust check for bound devices |
+| `internal/protocol/generated.go`, `web/src/generated/protocol.ts` | regenerated (the revision constants) |
 
 No schema, message, error code or store change.
 
-Variant C adds: `previewTicketRequest`/`previewTicketResponse` in `http-api.schema.json`; `gateway.preview.ticket` and its result, and an optional `ticket` in `previewCheckPayload` (`gateway-rpc.schema.json:188-199`); the type names in `types.schema.json`; the binding in `internal/protocol/auth_rpc.go:61`, `:294-307`.
+## 10. How it was built
 
-## 10. Build order and implementation plan (not started)
-
-### Order
-
-| Step | What | Gate |
+| Step | What | State |
 | --- | --- | --- |
-| **(a) Spike**, about one hour, throwaway | Two origins of one site, in Chrome, Playwright WebKit and one real phone (installed app). Record: (1) the Strict host cookie arrives inside the frame; (2) `Sec-Fetch-Site` on the meta-refresh move to `/`, on `location.reload()` and on Back inside the frame; (3) `Referer` with `referrerpolicy="origin"` on the frame; (4) the meta refresh is a replace navigation; (5) a `<video>` load inside the frame sends `Sec-Fetch-Site`. | If (2) is not `same-origin`, or (3) is absent, in any engine: **stop; new design review.** No fallback. |
-| **(b) Fix `main` for home alone**, its own pull request | Issue "Preview listener skips per-device origin binding": L1, the `200` selection page, B1's trust check. Recommended in the same pull request: L2 with `Referer` and W1, because without L2 the selection stays open to any same-tailnet page that knows a session ID, and home needs L2 anyway. | Owner review (rule 24: it changes authorization). |
-| **(T) Text pages**, its own pull request, before or with (b) | Issue "Preview listener error pages are blank inside the app frame": `previewPage` (`preview.go:451-460`) must be visible in the app's frame. The texts of section 6 depend on it. | — |
-| **(c) Peer preview** | H1, W2 to W5, revision 2, harness, docs. | Owner review. Gate 0 for multi-computer (`docs/pending-work.md:31`) first. |
-| **(d) Probe**, may be a later pull request | The probe of section 6 and its `connect-src` entry. | — |
+| Spike | Two origins of one site in Chrome 154 and Playwright WebKit 26.5 (section 2). The stop rule was: if the move to `/` is not `same-origin`, or the `Referer` is absent, in any engine, the design goes back to review. | Done; both held. The real-phone part of the spike was not run; it is in `docs/owner-verification.md`. |
+| Final plan review | 13 changes (section 12). | Done; all in the build. |
+| Build | Host rules (L1, L2, B1, H1, text pages, revision 2), the app (W1 to W8), the harness and the docs, as **one** pull request that closes #143 and #144. Version 2 planned separate pull requests for the `main` gap, the text pages and the probe; the owner's approval covered all of them together. | Done. |
+| Real-phone checks | `docs/owner-verification.md`, "Preview for sessions on peers". | Open (owner). |
 
-### Files (variant B)
+### Files
 
-| Step | File | Change |
-| --- | --- | --- |
-| b | `internal/gateway/preview.go` | L1 in `ServeHTTP` (`:208-215`); L2 in `selectPort` (`:289-316`): `Referer`, forwarded origin, the `200` page with its own headers |
-| b | `internal/broker/gateway_rpc.go` (`:296-312`), `internal/broker/computers.go` | B1: the preview check runs `appTrust` when there is no origin and the device is bound |
-| b | `web/src/screens/Preview.tsx` (`:73`) | W1: `referrerPolicy="origin"` |
-| b | `internal/gateway/preview_test.go`, `internal/gateway/fake_broker_test.go`, `internal/broker/computers_test.go` | section 11 |
-| T | `internal/gateway/preview.go` (`:451-460`) | the text pages' `frame-ancestors` |
-| c | `protocol/v1/revision.json`, `protocol/v1/*.md`, generated files | section 9 |
-| c | `internal/gateway/handler.go` (`:484-515`) | H1 |
-| c | `web/src/computers.ts` | `previewOriginOf(computer)`: home uses the origin from `GET /api/v1/preview` (so the development profile keeps working); a peer uses `<origin>:8443` |
-| c | `web/src/screens/App.tsx` | W5 (`:854`, `:870`); offer `onPreview` for a peer at revision 2 or higher; the route `/c/<host>/sessions/<id>/preview?port=<n>` (`:114-118`, `:157-164`); pass that computer's sessions to `Preview` (`:875`); W3 |
-| c | `web/src/screens/Preview.tsx` | W2: label and **untrusted page** mark; W3 |
-| c | `scripts/e2e-multicomputer/main.go` (`:152-157` accepts only `CONNECT host:443`), `lib.mjs` (`:158` starts stacks with `--preview-listen off`), `phase-b.mjs`, `webkit.mjs`, `README.md` | route `<host>:8443` to each stack's preview listener with the same Host and Origin rewrite; start the listeners; the checks of section 11 |
-| d | `web/src/screens/Preview.tsx`, `internal/gateway/handler.go` | the probe; `connect-src` gains `https://<origin>:8443` (never `wss:`) |
-| c (rules 22 and 25; not in this design commit) | `docs/preview.md`, `docs/multi-computer.md` (line 115, "No previews from peers"), `docs/threat-model.md`, `docs/architecture.md`, `docs/owner-verification.md` (`:190-212`), `docs/pending-work.md`, `docs/progress.md`, `CHANGELOG.md`, `README.md`, site docs (computers guide, preview guide, security, troubleshooting, release notes) | |
+| File | What |
+| --- | --- |
+| `internal/gateway/preview.go` | Admission order in `ServeHTTP`; `fromPreviewOrigin` (L1); `appReferer` (L2); `selectPort` with the forwarded origin and the `200` page; `fail` maps `invalid_request` to `403`; `previewPage` without `frame-ancestors` |
+| `internal/gateway/handler.go` | `boundOrigin` split out of `crossOrigin`; the own preview origin in `connect-src`; `deviceConnectSources` (H1) |
+| `internal/broker/gateway_rpc.go` | B1 in the `GatewayPreviewCheck` case |
+| `protocol/v1/*`, generated files | section 9 |
+| `web/src/computers.ts` | `previewOriginOf` |
+| `web/src/screens/App.tsx` | `previewFor`, `PEER_PREVIEW_REVISION`, the peer route in `pathFor` / `parseRoute`, `route()` |
+| `web/src/screens/Preview.tsx` | `probePreview`, `cantPreview`, `PreviewBar` (label, **untrusted page**, ↻), `PreviewBody` (the frame), `Preview` (probe, remount, reload-once) |
+| `scripts/e2e-multicomputer/` | The front also answers `CONNECT <host>:8443` and routes it to that stack's preview listener; stacks start with a preview listener; a `devserver` mode of the front binary is the dev site. See its README. |
 
 No CLI change. `pterm setup` and `pterm doctor` already ask about and report Serve 8443 on each computer.
 
 ## 11. Test plan
 
-### Unit and loopback tests
+This section says where each check lives. It holds no results: those are in `docs/progress.md`.
 
-| Area | Must prove |
-| --- | --- |
-| `internal/gateway/preview_test.go` | **L1** table (like `multicomputer_test.go:270-280`): own `Origin` pass; no `Origin` + `same-origin` pass; no `Origin` + `same-site`, `cross-site`, `none`, missing or doubled header → `403`, and the dev server sees no request; a WebSocket without `Origin` → `403`. **L2:** `Referer` own → pass with no forwarded origin; bound → pass with that forwarded origin; missing, doubled, unbound, near-miss, the preview origin itself, `https://<bound>:8443` → `403` and no `Set-Cookie`. The selection answers `200` with the refresh body and without `previewPage`'s headers. Revocation still closes sockets within the recheck. |
-| `internal/broker/computers_test.go` | Preview check, no origin, bound device: trusted → pass; node changed → `ErrRevoked`; tags changed, other owner, name gone → refused; no snapshot and grace expired → refused, not revoked. A directly paired device is not affected by the snapshot. With a forwarded origin that is not the credential's → refused. |
-| `internal/gateway/multicomputer_test.go` | H1: `frame-src` holds exactly the own preview origin and `<origin>:8443` of confirmed computers; pending and other devices' computers are absent; no cookie → unchanged; home previews off → `frame-src` lists only peers; no `wss:` entry for a preview origin. |
-| `web` | No chip for a peer at revision 1; a peer preview with home's previews off (W5); the peer preview origin is computed, never read from a peer's answer; route parse and build; the bar shows the label and the mark for every peer frame (W2); a `401` poll removes the frame (W3). |
-| Variant C only | Ticket: works once; atomic consume under concurrent use; **expiry (with a fake clock, here and not in the harness)**; wrong device, session or port; bounds; one ticket per mount; replace navigation. |
+### Unit and loopback tests (automated, `scripts/check`)
 
-### What `scripts/e2e-multicomputer` must prove (Chrome and WebKit)
+| Area | Tests | What they prove |
+| --- | --- | --- |
+| `internal/gateway/preview_test.go` | `TestPreviewRequestsOnlyFromThePreviewOrigin`, `TestPreviewSelectNeedsAnAppReferer`, `TestPreviewProbeAnswersWithoutACookie`, `TestPreviewShowsABrokerRefusalAsForbidden`, `TestPreviewProxiesWebSocketsAndClosesThemOnRevocation`, and the earlier preview tests (which now send `Sec-Fetch-Site: same-origin`) | L1; L2 (own, bound and forwarded, refused forms); the probe gets an answer without a cookie; `invalid_request` shows as `403`; revocation closes sockets within the recheck |
+| `internal/gateway/multicomputer_test.go` | `TestDocumentCSPFramesConfirmedComputersOnly`, `TestDocumentCSPListsDeviceComputers` | H1: confirmed computers only in `frame-src`; no `wss:` preview entry |
+| `internal/broker/computers_test.go` | `TestPreviewCheckFollowsAppTrust` | B1 |
+| `web/src/screens/Preview.test.tsx`, `App.test.ts`, `web/src/computers.test.ts` | — | The frame attributes (W1); the bar over a peer (W2); no frame for `pair` / `unreachable` / `outdated` (W3); the computed peer origin (W4); `previewFor` and the routes (W5); the probe and its neutral text (W6) |
 
-Setup: mac and vps as today, vps paired through mac. A small HTTP server with a WebSocket runs **inside a vps session** (so the port belongs to the session's process tree); it uses **relative redirects only**, because a development gateway rewrites absolute ones to its loopback address (`preview.go:422-437`, `:172-178`). The front accepts `CONNECT host:8443` and routes `vps.tailx.ts.net:8443` and `mac.tailx.ts.net:8443` to the preview listeners.
+### The multi-computer harness (automated, Chrome and Playwright WebKit)
 
-Harness fact: in the development profile, home's own `frame-src` and `GET /api/v1/preview` give the loopback address (`preview.go:117-130`), not `https://mac.tailx.ts.net:8443`. So **home's own preview through the app cannot be checked in this harness**; it stays in the loopback Chromium check and on the real phone. The peer's `frame-src` entry comes from the computer list and is the real `https://vps.tailx.ts.net:8443`.
+`scripts/e2e-multicomputer/` runs two computers (mac as home, vps as peer) behind an HTTPS front that stands in for Tailscale Serve. For peer preview the front also routes `<host>:8443` to each stack's preview listener, and a small dev site runs inside a vps session. Chrome goes through the real app screens with the app's real CSP; a Playwright WebKit run covers the engine differences. The steps it runs are listed in `scripts/e2e-multicomputer/README.md`; a check that the README does not list is not automated.
 
-| ID | Check |
-| --- | --- |
-| P1 | In the mac app, the vps session shows **Preview ready**; **Open ↗** shows the vps page in the frame. The front log shows the selection with no `Origin`, `Sec-Fetch-Site: same-site` and `Referer: https://mac.tailx.ts.net/`; then `GET /` with `Sec-Fetch-Site: same-origin`. |
-| P2 | The frame's own WebSocket connects (`101`); a change reaches the page. Reload and Back inside the frame still work. |
-| P3 | A page on `evil.tailx.ts.net` frames the same selection URL, with the vps cookie present: `403`, no preview cookie. |
-| P4 | After a correct selection, the evil page tries a script tag, an image, a `no-cors` fetch, a frame and a WebSocket to `https://vps.tailx.ts.net:8443`: all `403`, and the dev server's log has no such request. |
-| P5 | The framed vps page tries: `fetch` and WebSocket to mac's and vps's `/api`; a script from and a nested frame of `https://mac.tailx.ts.net:8443` (the front's route; answers `403` by L1); a nested frame of its own selection URL for another session (`403`: `Referer` is the `:8443` origin); `top.location`. All fail. |
-| P6 | A device paired directly with vps: the mac app's frame is refused (like `B7-direct`, `phase-b.mjs:443`). |
-| P7 | With a preview socket open, change mac's node ID in vps's fake Tailscale status: the socket closes after the next snapshot, new requests fail, and the devices are revoked (like `B7-node`, `phase-b.mjs:471`). A changed tag set refuses without revoking. |
-| P8 | `pterm revoke` of the device on vps while the preview is open: the socket closes within 5 s, and the app removes the frame. |
-| P9 | The real CSP of the mac app page (Phase B keeps it, `README.md` "Limits"): the frame loads for confirmed vps; after **Remove computer** and a reload it is blocked. |
-| P10 | The bar over the vps frame shows `vps` and **untrusted page**. |
+The checks this design asks of the harness, and the harness check that runs each (IDs as in the harness README; results are in `docs/progress.md`):
 
-Harness limits to record: development gateways use `pterm_dev_session` and `pterm_dev_preview` without `Secure` and without the `__Host-` prefix (`scripts/e2e-multicomputer/README.md`, "Limits"); the front stands in for Tailscale Serve.
+| ID | Check | Harness |
+| --- | --- | --- |
+| P1 | In the mac app, the vps session shows **Preview ready**; **Open ↗** shows the vps page in the frame. The selection has no `Origin`, `Sec-Fetch-Site: same-site` and `Referer: https://mac.tailx.ts.net/`; then `GET /` has `Sec-Fetch-Site: same-origin`. | `PV-chip`, `PV-vps-page`, `PV-vps-select`, `PV-vps-root`; WebKit W5 |
+| P2 | The frame's own WebSocket connects (`101`). ↻ works. | `PV-vps-page`, `PV-vps-root`, `PV-vps-reload` (exactly one new selection); WebKit W6. A reload started inside the frame is not automated. |
+| P3 | A page on `evil.tailx.ts.net` frames the same selection URL, with the vps cookie present: `403`, no preview cookie. | `PV-evil`, `PV-refuse-evil`; WebKit W7 |
+| P4 | After a correct selection, the evil page tries an image, a `no-cors` fetch, a frame and a WebSocket to `https://vps.tailx.ts.net:8443`: all `403`. | `PV-evil` (the image address is the dev site's script) |
+| P5 | The framed vps page tries `fetch` to mac's and vps's `/api`: both fail. | `PV-vps-api`, and `PV-home-api` for mac's own dev site. Nested frames, a script from another preview origin, WebSocket to `/api` and `top.location` from inside the frame are not automated; the rules they meet are the ones `PV-refuse-devsite`, `PV-refuse-direct` and Phase A check with direct requests. |
+| P6 | A device paired directly with vps: the mac app's frame is refused. | `PV-direct` |
+| P7 | With a preview socket open, change mac's node ID in vps's fake Tailscale status: the socket closes after the next snapshot, new requests fail, and the devices are revoked. | `PV-node`, `B7-node`. A changed tag set (refuse without revoking) is a Go test only (`internal/broker`). |
+| P8 | `pterm revoke --via` on vps while the preview is open: the socket closes within 5 s, and the app removes the frame. | `PV-revoke-socket`, `PV-revoke-app`, `PV-revoke-after` |
+| P9 | The real CSP of the mac app page: the frame loads for confirmed vps; a pending computer is not in `frame-src`. | `PV-pending`, `PV-added` |
+| P10 | The bar over the vps frame shows `vps` and **untrusted page**; home's has neither. | `PV-vps-bar`, `PV-home`; WebKit W5 |
+| P11 | A computer confirmed in this visit: the app reloads once and the preview opens (W8). | `PV-added` |
+| P12 | WebKit: after a history restore of the app page, the frame is mounted again and shows the preview (difference A). | Not automated; real-phone check (`docs/owner-verification.md`). The spike saw it (section 2). |
+| | Also run: every near miss of the `Referer` rule with the phone's valid cookies; `GET /` with each `Sec-Fetch-Site`; home's own preview; a computer with no preview listener (the probe's text). | `PV-refuse-*`, `PV-home*`, `PV-off` |
 
-### Must stay on a real phone (owner)
+What this harness cannot run (it uses the development profile):
 
-Installed Home Screen app on iPhone, and Android, two real computers in one tailnet, both with Serve 8443, over IPv4:
+- Development gateways use `pterm_dev_session` and `pterm_dev_preview` without `Secure` and without the `__Host-` prefix.
+- A development gateway knows its own preview origin only as a loopback address (`previewOriginFor`), and its preview listener admits no `:8443` Host (`previewHandler.hostAllowed`). The front maps that one name both ways (Host, the own `Origin` and `Referer`, the own preview origin in the CSP and in `GET /api/v1/preview`). So the production gateway's own CSP text (`https://<host>:8443` in `frame-src`) and its Host rule for `:8443` are real-phone checks. A peer's `frame-src` entry comes from the computer list and is the real `https://vps.tailx.ts.net:8443`.
+- The front stands in for Tailscale Serve and the tailnet: no real ACL, no real `tailscale serve --https=8443`.
 
-1. The frame request to the peer's `:8443` carries the peer's `__Host-pterm_session` and the `Referer` of home.
-2. The `__Host-pterm_preview` cookie set inside the frame is stored and sent.
-3. The move to `/` is accepted (WebKit sent `same-origin`); reload and Back inside the frame work.
-4. Vite HMR works over the frame's WebSocket.
-5. **A page with a `<video>` and an `<audio>` element plays** (iOS media loads may lack `Sec-Fetch-Site`, and L1 would refuse them).
-6. Home's own preview (`docs/owner-verification.md:190-212`) again, because home uses the new rules and the harness cannot check it.
-7. A peer without Serve 8443: what the frame shows; with the probe, its text.
-8. `pterm revoke --via <home>` on the peer while a preview is open: it stops within 5 s and the frame goes away.
-9. A link in the dev page with `target="_top"` or `target="_blank"` does nothing.
-10. After 8 days without opening that peer's preview, it still opens (the WebKit 7-day cap, `docs/multi-computer.md:17`, `:90-92`).
-11. An app that was open during the update (old cached bundle) shows a blank frame until it reloads; after the reload it works.
+### Real-phone checks (owner, not automated)
+
+The list is in `docs/owner-verification.md`, "Preview for sessions on peers": the cookie in the frame in the installed iOS app and on Android Chrome; the move to `/`; ↻ and browser Back; video and audio; Vite HMR through a real Tailscale Serve; `tailscale serve --https=8443` and `pterm doctor` on a peer; the probe under a tailnet ACL that blocks 8443; the production CSP and `__Host-` cookies; the reload-once after adding a computer; revocation with an open preview.
 
 ## 12. Reviews: findings and resolutions
 
-Two independent reviews ran on version 1. Security: "sound with changes". Feasibility: "build with changes". The full review texts are not in this repository; the findings below follow the coordinator's summary, and the severity column is this document's reading, not the reviewers'. Each point was checked against the code before it was accepted.
+Two independent reviews ran on version 1. Security: "sound with changes". Feasibility: "build with changes". The full review texts are not in this repository; the findings below follow the coordinator's summary, and the severity column is this document's reading, not the reviewers'. Each point was checked against the code before it was accepted. A final plan review ran on version 2 before the build.
 
 ### Security review
 
 | # | Finding | Severity | Resolution |
 | --- | --- | --- | --- |
-| S1 | `Referer` is not weaker than the ticket against these attackers: a page cannot forge it, redirects keep the first one, a dev site on `:8443` sends another origin, and the broker runs the same `admitDevice`. The ticket adds a route, an RPC and state for no gain. | high | Accepted. B is recommended (section 3); C stays as the alternative. Checked: the gateway already holds the bound set (`handler.go:296`) and forwards an origin with `WithForwardedOrigin`. |
+| S1 | `Referer` is not weaker than the ticket against these attackers: a page cannot forge it, redirects keep the first one, a dev site on `:8443` sends another origin, and the broker runs the same `admitDevice`. The ticket adds a route, an RPC and state for no gain. | high | Accepted. B was built (section 3). |
 | S2 | State the costs of `Referer`: fails closed when removed; a script-free HTML injection on home could start a selection; a second origin proof. | medium | Accepted; section 3 "Honest costs" and the ADR. |
-| S3 | The "accept `same-site` navigations" fallback reopens blind navigations; remove it. | high | Accepted. L1 has no fallback; a failed spike means a new review (section 10). |
-| S4 | The frame withdraws the guarantee of `docs/multi-computer.md:115` (no phishing text from a peer); a peer dev site can show a fake "pair again". | high | Accepted; section 7 and the ADR say so. |
-| S5 | About 200 `Domain=<tailnet>.ts.net` cookies evict every computer's `__Host-pterm_session` (forced un-pair; recovery is "pair again"), and such cookies reach other dev servers. | medium | Accepted; section 7. The eviction number is browser-specific and not tested here. Cookie forwarding checked at `preview.go:404-416`. |
-| S6 | The bar over a peer frame must always show the computer label and an "untrusted page" mark; the sandbox stays without fullscreen and `allow`; on `401`/`403` the app removes the frame. | high | Accepted as W1 to W3. One correction: the app cannot see the frame's own `401`/`403` (another origin), so W3 uses the app's own poll of that computer (`App.tsx:492`). |
+| S3 | The "accept `same-site` navigations" fallback reopens blind navigations; remove it. | high | Accepted. L1 has no fallback. The spike showed that none is needed. |
+| S4 | The frame withdraws the guarantee of `docs/multi-computer.md` (no phishing text from a peer); a peer dev site can show a fake "pair again". | high | Accepted; section 7, the ADR, and `docs/multi-computer.md` itself. |
+| S5 | About 200 `Domain=<tailnet>.ts.net` cookies evict every computer's `__Host-pterm_session` (forced sign-out; recovery is "pair again"), and such cookies reach other dev servers. | medium | Accepted; section 7. The eviction number is browser-specific and not tested here. |
+| S6 | The bar over a peer frame must always show the computer label and an "untrusted page" mark; the sandbox stays without fullscreen and `allow`; on `401`/`403` the app removes the frame. | high | Built as W1 to W3. Correction: the app cannot see the frame's own answers and gets no `403` for a trust refusal, so W3 follows the computer's status in the app's poll. |
 | S7 | Delete the sentence that the ticket "makes it harder" to switch sessions: script on the same host can replace the unsigned preview cookie. | low | Accepted; deleted. Section 7 states that no isolation is claimed. |
-| S8 | A dev-site service worker on `:8443` can re-send navigations as `same-origin` and serve cached content after revocation. | medium | Stated as limit 1 in section 13. Owner decision: accept, or refuse `Sec-Fetch-Dest: serviceworker`. |
-| S9 | "Within about 5 s" is wrong for a node change and for the status grace. | medium | Accepted; section 8 gives the three timings. Checked: 60 s cache and 10-minute grace at `monitor.go:15-22`, `:78-94`. |
-| S10 | The gap exists on `main` today for home alone; fix it first, as its own pull request. If the ticket is kept: atomic consume, one ticket per mount, replace navigation. | high | Accepted; step (b) in section 10 and the alternative in section 4. Addition from this document: (b) should include L2, or the selection stays open to a same-tailnet page that knows a session ID. |
+| S8 | A dev-site service worker on `:8443` can re-send navigations as `same-origin` and serve cached content after revocation. | medium | Limit 1 in section 13. The owner accepted it (2026-10-03). |
+| S9 | "Within about 5 s" is wrong for a node change and for the status grace. | medium | Accepted; section 8 gives the three timings. |
+| S10 | The gap exists on `main` for home alone; fix it first, as its own pull request. | high | The gap (#143) is closed for home and peers by L1, L2 and B1. It shipped in the same pull request as the peer work, with the owner's approval, not as its own. |
 
 ### Feasibility review
 
 | # | Finding | Severity | Resolution |
 | --- | --- | --- | --- |
-| F1 | `Referer` is about 20 lines; the ticket is 300 to 400 plus a route, an RPC and a table. | high | Accepted as the reviewers' estimate; not measured here. B recommended. |
-| F2 | Browser facts are untested; run a one-hour spike (Chrome, Playwright WebKit, one real phone) before any build. | high | Accepted; step (a), with a stop rule. |
-| F3 | Fix the `main` gap for home as its own pull request before the peer work. | high | Accepted; step (b). |
-| F4 | The listener's text pages are blank in the app frame (`preview.go:456`); the selection page must not use `previewPage`. | high | Accepted. Track T in section 10; L2 builds its own page. Checked in the code; not seen in a browser by this author. |
-| F5 | L1 answers `403` to requests without `Sec-Fetch-Site`: Safari before 16.4, possibly iOS media loads. | medium | Stated as limit 2. iOS 16.4 is already the minimum (`docs/threat-model.md:281-284`). Video and audio are on the real-phone list. |
-| F6 | L1 refuses sub-resources of opaque-origin frames inside the dev site. | low | Stated as limit 3. |
-| F7 | An old cached app bundle shows a blank frame until it updates. | low | Stated as limit 4; real-phone check 11. |
-| F8 | `App.tsx:854` and `:870` tie every preview to home's `previewAt`. | medium | Accepted as W5. Checked at those lines. |
-| F9 | Do not add `wss://<peer>:8443` to `connect-src`. | low | Accepted; H1 says never, and a test checks it. Version 1 did not add it but did not say so. |
-| F10 | The probe needs `AbortSignal.timeout(5000)` and neutral failure text (a stale cached CSP looks like a network error); it may move to a later pull request. | medium | Accepted; section 6 and step (d). |
-| F11 | In the development profile home's `frame-src` and `GET /api/v1/preview` give the loopback address, so harness checks that need `https://mac.tailx.ts.net:8443` cannot pass as written. | high | Accepted. The front accepts `CONNECT host:8443`; checks that only need the listener to answer on that name stay (P5); home's own preview through the app moves to the real-phone list. Not accepted: computing `<origin>:8443` for home in the app, because it breaks the loopback development profile. |
-| F12 | The test dev server must use relative redirects only; expiry checks belong in unit tests; list what must stay on a real phone. | medium | Accepted; section 11. |
+| F1 | `Referer` is small; the ticket is 300 to 400 lines plus a route, an RPC and a table. | high | Accepted. B built. |
+| F2 | Browser facts are untested; run a spike (Chrome, Playwright WebKit, one real phone) before any build. | high | Done for Chrome 154 and Playwright WebKit 26.5 (section 2). The real phone is still open (`docs/owner-verification.md`). |
+| F3 | Fix the `main` gap for home as its own pull request before the peer work. | high | See S10. |
+| F4 | The listener's text pages are blank in the app frame; the selection page must not use `previewPage`. | high | Built: `previewPage` has no `frame-ancestors`; the selection page is its own page (#144). |
+| F5 | L1 answers `403` to requests without `Sec-Fetch-Site`: Safari before 16.4, possibly iOS media loads. | medium | Limit 2. iOS 16.4 is already the minimum (`docs/threat-model.md`, "Browser requirement"). Video and audio passed in the spike and are on the real-phone list. |
+| F6 | L1 refuses sub-resources of opaque-origin frames inside the dev site. | low | Limit 3. |
+| F7 | An old cached app bundle cannot open a preview until it updates. | low | Limit 4. The frame now shows the refusal text, not a blank page. |
+| F8 | The app tied every preview to home's `previewAt`. | medium | Built as W5 (`previewFor`, `route()`). |
+| F9 | Do not add `wss://<peer>:8443` to `connect-src`. | low | Built; H1 says never, and a test checks it. |
+| F10 | The probe needs `AbortSignal.timeout(5000)` and neutral failure text (a stale cached CSP looks like a network error). | medium | Built as W6, in the same pull request. |
+| F11 | In the development profile home's `frame-src` and `GET /api/v1/preview` give the loopback address, so harness checks that need `https://mac.tailx.ts.net:8443` cannot pass as written. | high | Accepted. The front answers `CONNECT <host>:8443` and maps the stack's loopback preview origin to `https://<host>:8443` both ways (see the comment at the top of `scripts/e2e-multicomputer/main.go`). The production profile stays a real-phone check. Not accepted: computing `<origin>:8443` for home in the app, because it breaks the loopback development profile. |
+| F12 | The test dev server must use relative redirects only; list what must stay on a real phone. | medium | Accepted; section 11 and `docs/owner-verification.md`. |
+
+### Final plan review (13 changes) and the open point
+
+| # | Change | Where |
+| --- | --- | --- |
+| 1 | `Referer` parse rule: no `url.Parse`; exactly one header that ends in one `/`; own origin through `originAllowedValue`; a bound origin as an exact string after `ValidateComputerOrigin`; the lookup split out of `crossOrigin` as `boundOrigin` | `appReferer`, `boundOrigin` |
+| 2 | Check order: Host; selection = no `Origin`, then the `Referer` rule; other paths = L1; then limiter and cookie. The probe path keeps its no-cookie answer (`401`) | `previewHandler.ServeHTTP` |
+| 3 | B1 the simple way: `appTrust` whenever the device is bound, with or without a forwarded origin | `GatewayPreviewCheck` case |
+| 4 | Forward the origin on the selection only | `selectPort` |
+| 5 | A broker `invalid_request` shows as `403` "This app may not use this computer.", not `503` | `fail` |
+| 6 | `previewPage` without `frame-ancestors`; the selection page is its own page with `frame-ancestors <validated Referer origin>`, `Referrer-Policy: no-referrer`, `no-store`, `nosniff`; one mechanism for the move (meta refresh, which `default-src 'none'` allows) | `previewPage`, `selectPort`, `previewSelectedPage` |
+| 7 | The probe is in this pull request: own preview origin in `connect-src`, confirmed computers' `:8443` in `connect-src`, never `wss:` | `gatewayHandler.ServeHTTP`, `deviceConnectSources`, `probePreview` |
+| 8 | `frame-src` from confirmed computers only; append to an existing `frame-src` or add one | `deviceConnectSources` |
+| 9 | The app never sees a `403` for a trust refusal; show the peer frame only while that computer's status is `ok` | `previewFor` (W3) |
+| 10 | A peer preview link must not need home's preview origin | `route()` (W5) |
+| 11 | Stale line numbers in version 2 | This version names functions |
+| 12 | Harness: the front's log needs `Referer` and `Sec-Fetch-Dest`; the `:8443` route rewrites an `Origin` of exactly `https://H:8443` to the preview listener's loopback origin and leaves another computer's `Referer` alone; stacks start with a preview listener | `scripts/e2e-multicomputer/` (see its README) |
+| 13 | Protocol revision 2, regenerated types, protocol docs; `minRevision` stays 1 | section 9 |
+
+Open point found after the build: a computer confirmed in this visit was blocked by the app's own CSP until the next load, and the app showed the probe's text, which points at `pterm setup` (the wrong fix). Resolved by W8 (reload once on a `securitypolicyviolation` for that preview origin).
 
 ## 13. Known limits, open risks, things not verified
 
-Known limits (accepted unless the owner decides otherwise):
+Known limits (accepted):
 
-1. **Service worker on `:8443`.** A dev site can register a service worker for its preview origin. It can answer a navigation that another page started, and its own requests are `same-origin`, so for that origin L1 does not stop framing by another page. It can also serve cached content after the phone was revoked. It cannot read anything new. Owner decision: accept this, or refuse `Sec-Fetch-Dest: serviceworker` on the listener, which breaks dev sites that use a service worker.
-2. **Requests without `Sec-Fetch-Site` get `403`.** Safari before 16.4 (already below the minimum), and possibly iOS media loads (real-phone check 5).
+1. **Service worker on `:8443`.** A dev site can register a service worker for its preview origin. It can answer a navigation that another page started, and its own requests are `same-origin`, so for that origin L1 does not stop framing by another page. It can also serve cached content after the phone was revoked. It cannot read anything new. The owner accepted this on 2026-10-03; the other choice (refuse `Sec-Fetch-Dest: serviceworker`) breaks dev sites that use a service worker.
+2. **Requests without `Sec-Fetch-Site` get `403`.** Safari before 16.4 (already below the minimum). iOS media loads are a real-phone check.
 3. **Opaque-origin frames inside a dev site** (a sandboxed frame without `allow-same-origin`, `srcdoc` with a sandbox): their sub-resources are not `same-origin` and get `403`.
-4. **An old cached app bundle** sends no `Referer` and gets a blank frame until the app updates.
-5. **A `Referer` removed by the browser** means no preview (variant B).
-6. **A dev site that sets `Referrer-Policy: no-referrer` and posts a form** sends `Origin: null`; refused today too (`preview.go:211-215`).
+4. **An app bundle from before this change** sends no `Referer`; the frame shows "Open the preview from the Termivoa app." until the app updates.
+5. **A `Referer` removed by the browser** (a setting or an extension) means no preview; same text.
+6. **A dev site that sets `Referrer-Policy: no-referrer` and posts a form** sends `Origin: null`; L1 refuses it (it was refused before this change too).
+7. **WebKit: Back inside the frame.** `history.back()` in the sandboxed frame, past its first entry, moves the whole app back (difference B). Exists for home previews too.
+8. **WebKit: history restore.** When the app page is restored from history, the frame first loads its last URL and gets `403` "Origin not allowed."; the app mounts a new frame on `pageshow` with `persisted`, and ↻ does the same (difference A).
+9. **A `curl` or a typed URL** on the preview listener is `403`.
+10. **The probe says "something answers on 8443", not "Termivoa answers".** Its failure text names one possible cause only.
 
 Open risks:
 
-1. **Browser facts are from specifications, not from a test**, until the spike runs. Without `same-origin` on the move to `/` in every engine there is no design.
-2. **Cookies in the frame on installed iOS and Android apps** are not verified, also not for home today (`docs/threat-model.md:43`).
-3. **Phishing in the frame** has no technical limit beyond the bar.
-4. **Cookie eviction and bloat** from a peer dev site have no fix in this design.
-5. **The probe says "something answers on 8443", not "Termivoa answers".**
-6. **Android opens in-scope links in the installed app.** A link to `/c/<host>/sessions/<id>/preview?port=<n>` opens the frame without a tap in the app. It needs a real session ID of a confirmed peer. The home route has the same behavior today.
-7. Variant C only: the ticket is in a URL for up to 30 s; the gateway's and Tailscale Serve's logging of query strings was not audited.
+1. **Real phones are not checked**: cookies in the frame in the installed iOS and Android apps (also not checked for home), media loads, HMR through a real Tailscale Serve (`docs/owner-verification.md`).
+2. **Phishing in the frame** has no technical limit beyond the bar.
+3. **Cookie eviction and bloat** from a peer dev site have no fix in this design. The number of cookies that evicts a session cookie was not tested.
+4. **`Referer` is optional.** A browser that stops sending it for framed navigations breaks every preview (closed); variant C is the fallback design.
+5. **Android opens in-scope links in the installed app.** A link to `/c/<host>/sessions/<id>/preview?port=<n>` opens the frame without a tap in the app. It needs a real session ID of a confirmed peer. The home route has the same behavior.
 
-Found while reading the code, outside this task (rule 21):
-
-1. Filed as #144: "Preview listener error pages are blank inside the app frame" (`preview.go:456`); track T.
-2. Filed as #143: "Preview listener skips per-device origin binding" (section 1); step (b). `docs/preview.md:99-103` speaks only of cross-site pages.
-3. Filed in #144: `GET /api/v1/preview` answers an origin when Serve 8443 is not set up, so the chip shows and the frame cannot load (`preview.go:117-130`); step (d) covers it.
+Issues that this work closed: #143 (the preview listener skipped per-device origin binding) and #144 (listener text pages blank in the app frame; `GET /api/v1/preview` answers an origin when Serve 8443 is not set up, covered by the probe).

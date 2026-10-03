@@ -1,8 +1,9 @@
 # Architecture
 
-Status (2026-10-02): latest release tag `v0.1.0-beta.2` (2026-09-29). On
+Status (2026-10-03): latest release tag `v0.1.0-beta.2` (2026-09-29). On
 `main` beyond that tag: multi-computer (ADR 0005, Gate 0 on a real iPhone and
-Android still pending), Files, worktrees, project buttons, line comments in
+Android still pending), preview for sessions on peers (ADR 0006, real-phone
+checks pending), Files, worktrees, project buttons, line comments in
 Changes, Wall drag-to-arrange, the Down key next to Up, two breaking rules
 (an exact `Origin` or `Sec-Fetch-Site: same-origin` on every `/api` request,
 so iOS 16.4 or later; `pterm setup` refuses other Tailscale Serve handlers on
@@ -112,6 +113,10 @@ Dev paths must never equal, contain or sit inside production paths
 | HTTPS 443 | `tailscale serve --bg --https=443 http://127.0.0.1:8787` |
 | HTTPS 8443 | `tailscale serve --bg --https=8443 http://127.0.0.1:8789` (optional, separate consent) |
 
+With several computers, each computer has its own 8443 with its own consent
+in `pterm setup`; it proxies only that computer's sessions. The home app
+frames `https://<peer>:8443` directly; nothing is relayed through home.
+
 ## 3. Code map
 
 | Path | Purpose |
@@ -169,7 +174,7 @@ All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.
 | `envelope.schema.json` | Live WebSocket and live IPC messages: snapshots, patches, history, input, control, session state, Changes, Files, tasks, branches, worktree remove |
 | `http-api.schema.json` | Browser HTTP API bodies |
 | `types.schema.json` | Index of named types for generation |
-| `revision.json` | Additive protocol revision (now `revision: 1`, `minRevision: 1`) |
+| `revision.json` | Additive protocol revision (now `revision: 2`, `minRevision: 1`; revision 2 is the preview listener rules, no schema change) |
 
 Prose specs: [http-api.md](../protocol/v1/http-api.md) (routes, headers,
 cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transport.md),
@@ -189,8 +194,9 @@ unresolved `$ref`. Drift check: `pnpm protocol:check` regenerates and runs
 `web/vite.config.ts`; Go decodes requests strictly and adds semantic bounds.
 
 The phone reads `protocolRevision` and `minProtocolRevision` from
-`GET /api/v1/settings`. It refuses a peer below the minimum and sends new
-request fields only to peers that support them.
+`GET /api/v1/settings`. It refuses a peer below the minimum, sends new
+request fields only to peers that support them, and frames a peer's preview
+only when that peer is at revision 2 or higher.
 
 ## 5. Data
 
@@ -236,13 +242,14 @@ same OS user is out of scope. Nothing runs as root or SYSTEM.
 | Origin and Host | Exact Host check. Every `/api` request needs an exact allowed `Origin`, or no `Origin` plus `Sec-Fetch-Site: same-origin`. `Sec-Fetch-Mode: no-cors` is refused. Mutations need `X-Pterm-Request`. Strict CSP on every response. |
 | Tailscale | Serve on 443 gives the private HTTPS origin. Funnel and public tunnels are excluded. Tailscale identity headers are ignored. `tailscale status` only narrows multi-computer access; it is never authentication. |
 | Multi-computer | A peer accepts a cross-origin call only from the app origin bound to that exact credential (`devices.app_origin`), with the pinned node ID and same owner (or `--allow-tagged`). Status cached about 60 s, 10-minute grace. A changed node ID revokes devices bound to it. A compromised home compromises every peer paired through it. The phone keeps only `/sw.js` at scope `/` and at the push scope of each peer in its stored list; a registration for a host a compromised home wrote into that list lives until home's list answers. |
-| Preview | Separate origin (8443). Termivoa cookies are never forwarded to or set by a dev server. |
+| Preview | Separate origin (8443) per computer. Termivoa cookies are never forwarded to or set by a dev server. Admission order on the preview listener: Host; then the selection (`/__termivoa/select`) needs no `Origin` and exactly one `Referer` of this computer's own app origin or of a bound app origin (a bound one is forwarded to the broker, which checks it against the credential); every other path needs rule L1 (`Origin` equal to the preview origin, or no `Origin` plus `Sec-Fetch-Site: same-origin`); then the limiter, the cookie and the broker. The selection answers a `200` page that moves the frame to `/`, not a redirect. The broker runs the Tailscale trust check for a bound device on every preview check; open sockets are rechecked every 5 s. The app document's CSP holds its own preview origin and the `:8443` origin of each confirmed computer (never pending, never `wss:`) in `frame-src` and `connect-src`. The app probes a preview origin before it frames it, and marks a peer's frame with the computer's label and **untrusted page**: a peer chooses the page in its frame ([peer-preview.md](peer-preview.md), section 7). |
 | Controller lease | One controller per session. Acquire revokes the old lease, raises the epoch and makes a new 32-byte secret. Input carries generation, lease and a rising sequence; the broker rechecks auth and lease before acceptance. |
 | Input | Bounded `key`, `text`, `paste`, `mouse`, `answer` messages. Reconnect starts as observer. Lost acks show "uncertain delivery"; nothing is resent. |
 
 Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 [ADR 0003](decisions/0003-private-tailscale-networking.md),
-[ADR 0005](decisions/0005-multi-computer.md). Pairing design:
+[ADR 0005](decisions/0005-multi-computer.md),
+[ADR 0006](decisions/0006-peer-preview.md). Pairing design:
 [p4-authentication-design.md](p4-authentication-design.md).
 
 ## 7. Features
@@ -263,7 +270,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Project buttons | Project commands in the Snips sheet; typed into the session as input (Next) | `internal/projecttasks`, `internal/broker/tasks.go` | `web/src/screens/Snippets.tsx` | [project-tasks.md](project-tasks.md) |
 | Files | Browse, search and read project files; tap `path:line` in the terminal (Next) | `internal/projectfiles`, `internal/broker/files.go` | `web/src/screens/Files.tsx`, `web/src/terminal/pathLinks.ts` | — |
 | Worktrees | New session in `~/termivoa/worktrees/<repo>/<name>` on branch `termivoa/<name>` (`git worktree add`); remove it (Next) | `internal/broker/worktree.go`, `internal/gitchanges/worktree.go` | `web/src/screens/Worktree.tsx` | — |
-| Dev-server preview | Proxy one port that the session's own processes listen on (OS scan only) | `internal/broker/devpreview.go`, `internal/ptyhost/listen.go`, `internal/gateway/preview.go` | `web/src/screens/Preview.tsx`, `web/src/screens/PreviewChip.tsx` | [preview.md](preview.md) |
+| Dev-server preview | Proxy one port that the session's own processes listen on (OS scan only); for sessions on every computer in the list: the home app frames a peer's own preview origin, after a reachability probe, with the computer's label and **untrusted page** over a peer's page (Next) | `internal/broker/devpreview.go`, `internal/ptyhost/listen.go`, `internal/gateway/preview.go`, `internal/gateway/handler.go` (`deviceConnectSources`), `internal/broker/gateway_rpc.go` (`gateway.preview.check`) | `web/src/screens/Preview.tsx`, `web/src/screens/PreviewChip.tsx`, `web/src/screens/App.tsx` (`previewFor`), `web/src/computers.ts` (`previewOriginOf`) | [preview.md](preview.md), [peer-preview.md](peer-preview.md), ADR 0006 |
 | Photo and voice | Photo upload into the project folder (controller only); dictation with the Web Speech API | `internal/broker/upload.go` | `web/src/terminal/attachments.ts`, `web/src/terminal/image.ts`, `web/src/terminal/speech.ts` | — |
 | Live folder | Current working folder from the OS or OSC 7 / OSC 9;9; display only | `internal/broker/cwd.go`, `internal/broker/cwd_hook.go`, `internal/ptyhost/cwd.go` | `web/src/screens/folder.ts` | [live-folder.md](live-folder.md) |
 | Snippets, composer and keys | Saved snippets, multi-line composer with drafts in memory, key row, agent keys | — | `web/src/terminal/snippets.ts`, `web/src/terminal/composer.ts`, `web/src/screens/Composer.tsx`, `web/src/screens/Dock.tsx`, `web/src/terminal/agentKeys.ts` | — |
@@ -281,7 +288,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | `.github/workflows/ci.yml` | protocol-generation, go-quality, go-race, web-quality, macOS and Windows integration, Linux release smoke |
 | `.github/workflows/packaging.yml` | Unsigned macOS, Linux and Windows artifacts |
 | `scripts/soak.sh` | Soak probes (build tag `soak`) |
-| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness |
+| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443`) |
 | `scripts/docs-screenshots` | Demo-only screenshots for the docs site |
 
 ## 9. Key invariants
@@ -293,6 +300,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 - A patch applies only to its exact base revision; else the client asks for a snapshot.
 - No offline input queue and no resend after reconnect. Reconnect starts as observer.
 - The broker rechecks credential, Origin binding and lease on every call. The gateway caches no auth decision.
+- The preview listener serves a request only from its own origin, or a selection that names an allowed app origin in `Referer`. The app never frames an origin that a peer sent; it computes `https://<host>:8443` from its own list.
 - Every bound is enforced: dimensions, messages, paste, history, queues, viewers, uploads. A slow viewer is dropped, not waited on.
 - Only credential hashes are stored. No terminal content is written to disk.
 - Production listeners are literal IPv4 loopback addresses. Funnel is never used.
@@ -310,10 +318,12 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | [0003](decisions/0003-private-tailscale-networking.md) | Loopback gateway, private access through Tailscale Serve |
 | [0004](decisions/0004-broker-owned-sqlite.md) | Only the broker owns SQLite |
 | [0005](decisions/0005-multi-computer.md) | Multi-computer through direct same-site links, per-device origin binding |
+| [0006](decisions/0006-peer-preview.md) | Preview for sessions on peers: `Referer` as the app-origin proof on the selection, same-origin-only preview listener, a peer's frame is untrusted |
 
 Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [live-folder.md](live-folder.md), [notifications.md](notifications.md),
-[preview.md](preview.md), [project-tasks.md](project-tasks.md),
+[preview.md](preview.md), [peer-preview.md](peer-preview.md),
+[project-tasks.md](project-tasks.md),
 [multi-computer.md](multi-computer.md),
 [p4-authentication-design.md](p4-authentication-design.md),
 [threat-model.md](threat-model.md). Status and gaps:
