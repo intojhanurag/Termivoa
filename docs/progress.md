@@ -1410,6 +1410,13 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   offscreen or in the background, one try. Evidence: `scripts/check` exit 0,
   site build. Not tested on a real phone.
 
+- **Computer health in Settings** (`feat/computer-health`, 2026-10-03): each
+  row in Settings → Computers shows `hostBuild` and the time of the last good
+  read (memory only); **Check again** calls `reload(origin)` through the
+  scheduler's one-read-per-computer queue. `hostBuild` gains a pattern in the
+  schema and `protocol.ValidHostBuild`; no revision bump (no new field).
+  Evidence: `scripts/check` exit 0, site build. Not run on a real phone.
+
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart

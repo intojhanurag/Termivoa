@@ -894,7 +894,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onRenamed={(device) => { if (settings !== undefined) setSettings({ ...settings, device }); }}
               onFailure={handleFailure}
               onLogout={logout}
-              onRetry={all.retry}
+              onCheck={(origin) => all.reload(origin)}
               onComputersChanged={reloadComputers}
             />
           </Suspense>

@@ -91,7 +91,7 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
 }
 
 export function Settings({
-  settings, entries, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onRetry, onComputersChanged,
+  settings, entries, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onComputersChanged,
 }: {
   /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
   readonly settings: HTTPSettingsResponse | undefined;
@@ -102,7 +102,7 @@ export function Settings({
   readonly onRenamed: (device: HTTPDeviceSummary) => void;
   readonly onFailure: (error: unknown) => string;
   readonly onLogout: () => Promise<void>;
-  readonly onRetry: (origin: string) => void;
+  readonly onCheck: (origin: string) => Promise<void>;
   readonly onComputersChanged: () => void;
 }) {
   const [error, setError] = useState<string>();
@@ -144,7 +144,7 @@ export function Settings({
 
       <ErrorBoundary>
         <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
-          <ComputersSection entries={entries} onRetry={onRetry} onChanged={onComputersChanged} onFailure={onFailure} />
+          <ComputersSection entries={entries} onCheck={onCheck} onChanged={onComputersChanged} onFailure={onFailure} />
         </Suspense>
       </ErrorBoundary>
 

@@ -62,7 +62,7 @@ describe('Settings device name field', () => {
         onFailure={() => ''}
         onLogout={async () => undefined}
         entries={[]}
-        onRetry={() => undefined}
+        onCheck={() => Promise.resolve()}
         onComputersChanged={() => undefined}
       />,
     );
@@ -85,7 +85,7 @@ describe('Settings log out', () => {
       onFailure={() => ''}
       onLogout={async () => undefined}
       entries={entries}
-      onRetry={() => undefined}
+      onCheck={() => Promise.resolve()}
       onComputersChanged={() => undefined}
     />,
   );

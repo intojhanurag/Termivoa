@@ -101,7 +101,10 @@
         "device": { "$ref": "#/$defs/deviceSummary" },
         "projects": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/namedOption" } },
         "shellProfiles": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/namedOption" } },
-        "hostBuild": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "hostBuild": {
+          "description": "The Termivoa build this computer runs, as version+commit (for example 0.1.0-beta.2+1a2b3c4d5e6f). A peer sends it, so it is untrusted text: ASCII letters, digits and . _ + - only, shown as plain text.",
+          "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[0-9A-Za-z._+-]+$"
+        },
         "brokerGeneration": { "$ref": "#/$defs/uuid" },
         "protocolRevision": { "$ref": "#/$defs/protocolRevision" },
         "minProtocolRevision": { "$ref": "#/$defs/protocolRevision" }

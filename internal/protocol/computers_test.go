@@ -130,6 +130,19 @@ func TestSettingsCarryProtocolRevision(t *testing.T) {
 	}
 }
 
+func TestHostBuildIsPlainText(t *testing.T) {
+	for _, build := range []string{"private-dev", "0.1.0-beta.2+1a2b3c4d5e6f.dirty", strings.Repeat("a", 128)} {
+		if !ValidHostBuild(build) {
+			t.Fatalf("%q rejected", build)
+		}
+	}
+	for _, build := range []string{"", " 1.0", "1.0\n", "<b>1</b>", "v1\u202e", "é", strings.Repeat("a", 129)} {
+		if ValidHostBuild(build) {
+			t.Fatalf("%q accepted", build)
+		}
+	}
+}
+
 func TestAdminComputerMessages(t *testing.T) {
 	via, allow := "mac", true
 	for _, payload := range []AdminRPCPairGrantPayload{{}, {Via: &via}, {Via: &via, AllowTagged: &allow}} {

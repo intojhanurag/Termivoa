@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -425,6 +426,14 @@ func validateGatewayPollResult(payload GatewayRPCPairPollResultPayload) error {
 	}
 }
 
+var hostBuildPattern = regexp.MustCompile(`^[0-9A-Za-z._+-]+$`)
+
+// ValidHostBuild applies the settings schema's hostBuild rule: 1..128 ASCII
+// letters, digits and . _ + - (a peer's value is shown as text).
+func ValidHostBuild(build string) bool {
+	return len(build) <= 128 && hostBuildPattern.MatchString(build)
+}
+
 func validateSettings(payload HTTPSettingsResponse) error {
 	if !ValidUUID(payload.Device.ID) || !ValidUUID(payload.BrokerGeneration) {
 		return errors.New("settings contain a non-canonical UUID")
@@ -432,7 +441,7 @@ func validateSettings(payload HTTPSettingsResponse) error {
 	if err := ValidateDeviceLabel(payload.Device.Label); err != nil {
 		return err
 	}
-	if len(payload.HostBuild) == 0 || len(payload.HostBuild) > 128 {
+	if !ValidHostBuild(payload.HostBuild) {
 		return errors.New("hostBuild is outside bounds")
 	}
 	if payload.MinProtocolRevision < 1 || payload.ProtocolRevision < payload.MinProtocolRevision || payload.ProtocolRevision > 1000000 {

@@ -351,6 +351,12 @@ export class Scheduler {
     this.health.delete(origin);
   }
 
+  /** A read outside the poll (Check again, a reload) ended: it counts for the computer's health, and an answer wakes waiting connects. */
+  reported(origin: string, ok: boolean): void {
+    this.record(origin, ok);
+    if (ok) this.pumpConnects();
+  }
+
   /** True after `offlineAfterFailures` failures in a row: show "<label> · can't reach". */
   offline(origin: string): boolean {
     return (this.health.get(origin)?.failures ?? 0) >= this.limits.offlineAfterFailures;
