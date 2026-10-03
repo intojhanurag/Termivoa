@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import type { HostedSession } from './allSessions';
 import { pathFor, previewPortParam, titleFor } from './App';
-import { Preview, PreviewBar, PreviewStatus } from './Preview';
+import { cantPreview, Preview, PreviewBar, PreviewBody, PreviewStatus, probePreview } from './Preview';
 import { isPreviewPort, latestPreview, PreviewChip, previewOrigin, previewSrc } from './PreviewChip';
 
 const session: HostedSession = {
@@ -22,6 +22,11 @@ const session: HostedSession = {
   previews: [{ port: 3000, since: '2026-09-27T10:05:00Z' }, { port: 5173, since: '2026-09-27T10:06:00Z' }],
 };
 const origin = 'https://mac.tailnet.ts.net:8443';
+const vps: HostedSession = {
+  ...session,
+  computer: { origin: 'https://vps.tailnet.ts.net', host: 'vps.tailnet.ts.net', label: 'vps', color: '#F2B544', home: false },
+};
+const vpsOrigin = 'https://vps.tailnet.ts.net:8443';
 const noop = () => undefined;
 
 /** Host buttons of a hookless component's element tree, by visible text or label. */
@@ -91,26 +96,82 @@ describe('preview addresses', () => {
 });
 
 describe('preview screen', () => {
-  it('frames the select address in a sandbox with the address pill', () => {
+  const body = (props: Partial<Parameters<typeof PreviewBody>[0]>) => renderToStaticMarkup(
+    <PreviewBody session={session} origin={origin} port={5173} notice={undefined} reach {...props} />,
+  );
+
+  it('frames the select address in a sandbox, with the app origin as the only referrer', () => {
+    const src = previewSrc(origin, session.id, 5173);
+    expect(src).toBe(`${origin}/__termivoa/select?session=${session.id}&port=5173`);
+    // The whole element: no allow, no allowfullscreen, nothing else.
+    expect(body({})).toBe(
+      `<iframe class="preview-frame" title="Preview of localhost:5173" src="${src.replace('&', '&amp;')}" sandbox="allow-scripts allow-forms allow-same-origin" referrerPolicy="origin"></iframe>`,
+    );
+    expect(body({ session: vps, origin: vpsOrigin })).toBe(
+      `<iframe class="preview-frame" title="Preview of localhost:5173 on vps" src="${previewSrc(vpsOrigin, vps.id, 5173).replace('&', '&amp;')}" sandbox="allow-scripts allow-forms allow-same-origin" referrerPolicy="origin"></iframe>`,
+    );
+  });
+
+  it('shows the address pill, and no frame before the probe answered', () => {
     const html = renderToStaticMarkup(
       <Preview session={session} sessions={[session]} origin={origin} port={5173} onBack={noop} onTell={noop} />,
     );
-    const src = previewSrc(origin, session.id, 5173);
-    expect(src).toBe(`${origin}/__termivoa/select?session=${session.id}&port=5173`);
-    expect(html).toContain(`src="${src.replace('&', '&amp;')}"`);
-    expect(html).toContain('sandbox="allow-scripts allow-forms allow-same-origin"');
-    expect(html).toContain('referrerPolicy="no-referrer"');
-    expect(html).toContain('title="Preview of localhost:5173"');
-    expect(html).not.toContain(' allow="');
     expect(html).toContain('<span class="preview-address"><span class="dot green" aria-hidden="true"></span>localhost:5173</span>');
+    expect(html).toContain('Opening preview…');
+    expect(html).not.toContain('<iframe');
     expect(html).not.toContain('Dev server stopped');
+  });
+
+  it('over a peer, the bar always names the computer and marks the page as untrusted; home has neither', () => {
+    const mark = '<p class="preview-peer"><span class="computer-tag"><span class="dot" style="background:#F2B544" aria-hidden="true"></span>vps</span> · <strong>untrusted page</strong></p>';
+    const screen = (props: Partial<Parameters<typeof Preview>[0]>) => renderToStaticMarkup(
+      <Preview session={vps} sessions={[vps]} origin={vpsOrigin} port={5173} onBack={noop} onTell={noop} {...props} />,
+    );
+    // While the probe runs, with a notice in place of the frame, without an origin, and without the session in the list.
+    for (const html of [screen({}), screen({ notice: 'vps · pair again' }), screen({ origin: undefined }), screen({ sessions: undefined })]) {
+      expect(html).toContain(mark);
+    }
+    const home = screen({ session, sessions: [session], origin });
+    expect(home).not.toContain('preview-peer');
+    expect(home).not.toContain('untrusted page');
+  });
+
+  it('a computer that refuses the phone, cannot be reached or must update has no frame, only its text', () => {
+    for (const notice of ['vps · pair again', 'vps · can\'t reach', 'Update Termivoa on vps']) {
+      const html = body({ session: vps, origin: vpsOrigin, notice });
+      expect(html).toBe(`<div class="banner" role="alert"><span>${notice.replace('\'', '&#x27;')}</span></div>`);
+    }
+    // No origin (a peer that has not answered yet): nothing to frame.
+    expect(body({ session: vps, origin: undefined })).not.toContain('<iframe');
+  });
+
+  it('asks the preview origin before framing it; no answer shows neutral words, never a cause', async () => {
+    const text = 'Can&#x27;t open the preview on vps. If vps does not share dev-server previews yet, run pterm setup on vps and answer yes to the preview question.';
+    expect(body({ session: vps, origin: vpsOrigin, reach: false })).toBe(`<div class="banner" role="alert"><span>${text}</span></div>`);
+    expect(body({ reach: false })).toContain('Can&#x27;t open the preview on mac.');
+    expect(body({ reach: undefined })).toBe('<p role="status" class="muted preview-note">Opening preview…</p>');
+    expect(cantPreview('vps')).not.toMatch(/network|offline|time|blocked|reach/iu);
+
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const answered = vi.fn(async () => new Response(null, { status: 403 }));
+    // Any HTTP answer means the port is served, a refusal too.
+    expect(await probePreview(vpsOrigin, answered as unknown as typeof fetch)).toBe(true);
+    const [url, init] = answered.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${vpsOrigin}/__termivoa/select`);
+    expect(init).toMatchObject({ mode: 'no-cors', credentials: 'omit' });
+    expect(timeout).toHaveBeenCalledWith(5000);
+    // A network error, a CSP block (both a TypeError) and a timeout end the same way.
+    for (const error of [new TypeError('Failed to fetch'), new DOMException('timeout', 'TimeoutError')]) {
+      expect(await probePreview(vpsOrigin, (async () => { throw error; }) as unknown as typeof fetch)).toBe(false);
+    }
+    timeout.mockRestore();
   });
 
   it('wires back, reload, and Tell agent', () => {
     const onBack = vi.fn();
     const onReload = vi.fn();
     const onTell = vi.fn();
-    const bar = buttons(PreviewBar({ port: 5173, onBack, onReload }));
+    const bar = buttons(PreviewBar({ port: 5173, peer: undefined, onBack, onReload }));
     bar.get('‹ terminal')?.();
     bar.get('Reload preview')?.();
     buttons(PreviewStatus({ session, fresh: false, onTell })).get('Tell agent')?.();

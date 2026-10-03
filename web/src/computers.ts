@@ -53,6 +53,15 @@ export function sessionKey(computer: Pick<Computer, 'host'>, sessionId: string):
   return `${computer.host}/${sessionId}`;
 }
 
+/**
+ * Where a computer's dev-server previews are framed from. Home: the origin it
+ * configured (`GET /api/v1/preview`; none means no previews). A peer: always
+ * its own host on port 8443, computed here, never a string the peer sent.
+ */
+export function previewOriginOf(computer: Pick<Computer, 'origin' | 'home'>, homePreviewAt: string | undefined): string | undefined {
+  return computer.home ? homePreviewAt : `https://${new URL(computer.origin).hostname}:8443`;
+}
+
 /** Validated, de-duplicated peers without home, at most MAX_PEERS. */
 function cleanPeers(entries: unknown): HTTPComputer[] {
   let list: HTTPComputer[];
