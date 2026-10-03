@@ -937,6 +937,19 @@ race tests and twenty focused PTY race repetitions passed; native Windows is
 still pending. See `docs/evidence/p3/pty-fixture-activation.md` for the sampled
 failure, exact checks, and distinct cold-launch versus PTY validation scopes.
 
+- **Preview proxy kept a Termivoa cookie name in odd spellings** (#150,
+  `fix/issue-150`, 2026-10-03; from a code read, then tested): one function,
+  `namesTermivoaCookie` in `internal/gateway/preview.go`, now decides for
+  `Set-Cookie` (dev server to browser) and `Cookie` (browser to dev server).
+  Before the fix these passed through in both directions: empty name
+  (`=__Host-pterm_preview=x`), other letter case (`__HOST-pterm_session`,
+  `PTERM_DEV_SESSION`), quoted name, and a Termivoa cookie folded after
+  `;` or `,` in a `Set-Cookie` line. A space or tab before the name was
+  already dropped. Tests `TestPreviewDropsTermivoaSetCookieShapes` and
+  `TestPreviewDoesNotForwardTermivoaCookieShapes` fail before the fix. Not
+  run: a real browser (the report says Chrome and Firefox reject such
+  cookies; WebKit unchecked).
+
 ## P4 pairing and authentication (broker side)
 
 On 2026-09-27 branch `feat/p4-pairing-broker` implemented the broker half of

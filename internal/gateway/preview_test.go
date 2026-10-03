@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,6 +58,9 @@ func newDevServer(t *testing.T) *devServer {
 			http.Redirect(response, request, "http://localhost:"+strconv.Itoa(int(dev.port))+"/next?a=1", http.StatusFound)
 		case "/elsewhere":
 			http.Redirect(response, request, "https://example.com/", http.StatusFound)
+		case "/cookies":
+			// Sets exactly the Set-Cookie lines the test asks for, then one more.
+			response.Header()["Set-Cookie"] = append(request.Header.Values("X-Dev-Set-Cookie"), "app=2; Path=/")
 		default:
 			response.Header().Add("Set-Cookie", productionCookieName+"=tossed; Path=/; Secure")
 			response.Header().Add("Set-Cookie", productionPreviewCookie+"=tossed; Path=/; Secure")
@@ -432,6 +436,82 @@ func TestPreviewShowsAProtocolMismatchAsUnavailable(t *testing.T) {
 		if text := body(t, response); response.StatusCode != http.StatusServiceUnavailable || text != "The computer is not available.\n" || len(response.Cookies()) != 0 {
 			t.Errorf("%s = %d %q", target, response.StatusCode, text)
 		}
+	}
+}
+
+// withLines asks the dev server's /cookies path to set these Set-Cookie lines.
+func withLines(fixture *previewFixture, lines ...string) http.Header {
+	header := cookieHeader(prodCookie, fixture.selection())
+	header["X-Dev-Set-Cookie"] = lines
+	return header
+}
+
+// A dev server's Set-Cookie may not set a Termivoa cookie by any spelling a
+// browser could read as one: an empty name with the name in the value, other
+// letter case (the __Host- prefix is matched without case), a quoted name, or
+// a second cookie folded into the line. Its own cookies pass byte for byte.
+func TestPreviewDropsTermivoaSetCookieShapes(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	hostile := map[string]string{
+		"empty name":             "=__Host-pterm_preview=x; Path=/",
+		"empty name session":     "=__Host-pterm_session=x; Path=/",
+		"empty name dev":         "=pterm_dev_session=x",
+		"empty name spaced":      "= __Host-pterm_session=x",
+		"empty name upper":       "=__HOST-PTERM_SESSION=x",
+		"empty name quoted":      `="__Host-pterm_session"=x`,
+		"upper prefix":           "__HOST-pterm_session=x; Path=/",
+		"lower":                  "__host-pterm_preview=x",
+		"upper dev":              "PTERM_DEV_SESSION=x",
+		"quoted name":            `"__Host-pterm_session"=x`,
+		"space before name":      " __Host-pterm_session=x",
+		"tab before name":        "\t__Host-pterm_session=x",
+		"space before equals":    "__Host-pterm_session =x",
+		"folded after semicolon": "app=3; __Host-pterm_session=x",
+		"folded after comma":     "app=3, __Host-pterm_session=x",
+		"folded empty name":      "app=3, =__Host-pterm_session=x",
+	}
+	for name, line := range hostile {
+		cookies := fixture.get(t, "/cookies", withLines(fixture, line)).Header.Values("Set-Cookie")
+		if len(cookies) != 1 || cookies[0] != "app=2; Path=/" {
+			t.Errorf("%s: %q passed through: %q", name, line, cookies)
+		}
+	}
+	own := []string{"app=1; Path=/; HttpOnly", "theme=dark; Max-Age=60", "a=__Host-pterm_session", "session=1, 2", "=; Path=/", "x=y=z"}
+	response := fixture.get(t, "/cookies", withLines(fixture, own...))
+	if cookies := response.Header.Values("Set-Cookie"); !slices.Equal(cookies, append(own, "app=2; Path=/")) {
+		t.Errorf("dev cookies changed: %q", cookies)
+	}
+}
+
+// The same shapes in the browser's Cookie header never reach the dev server,
+// and the dev site's own cookies arrive byte for byte.
+func TestPreviewDoesNotForwardTermivoaCookieShapes(t *testing.T) {
+	fixture := newPreviewFixture(t)
+	hostile := map[string]string{
+		"empty name":         "=__Host-pterm_session=x",
+		"empty name preview": "=__Host-pterm_preview=x",
+		"empty name dev":     "=pterm_dev_session=x",
+		"empty name spaced":  "= __Host-pterm_session=x",
+		"empty name upper":   "=__HOST-PTERM_SESSION=x",
+		"empty name quoted":  `="__Host-pterm_session"=x`,
+		"upper prefix":       "__HOST-pterm_session=x",
+		"upper dev":          "PTERM_DEV_PREVIEW=x",
+		"quoted name":        `"__Host-pterm_session"=x`,
+		"tab before name":    "\tpterm_dev_session=x",
+		"folded comma":       "app=3, __Host-pterm_session=x",
+		"folded semicolons":  "pterm_dev_session=x; =__Host-pterm_preview=y; pterm_dev_preview=z",
+	}
+	for name, pairs := range hostile {
+		if response := fixture.get(t, "/", cookieHeader("app=1", prodCookie, fixture.selection(), pairs, "theme=dark")); response.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status %d", name, response.StatusCode)
+		}
+		if cookie := fixture.dev.request().Header.Get("Cookie"); cookie != "app=1; theme=dark" {
+			t.Errorf("%s: %q forwarded as %q", name, pairs, cookie)
+		}
+	}
+	fixture.get(t, "/", cookieHeader(prodCookie, fixture.selection(), "app=1", "a=__Host-pterm_session", "x=y=z", "session=1,2"))
+	if cookie := fixture.dev.request().Header.Get("Cookie"); cookie != "app=1; a=__Host-pterm_session; x=y=z; session=1,2" {
+		t.Errorf("dev cookies changed: %q", cookie)
 	}
 }
 

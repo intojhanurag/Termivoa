@@ -204,6 +204,9 @@ The selection page (200) may be framed only by the app origin of its
   tailnet user identity that Serve adds) and all `Forwarded`/`X-Forwarded-*`
   headers. `Authorization` passes, because the dev site may use it.
 - Drops any `Set-Cookie` from the dev server that names a Termivoa cookie.
+  A name counts in any letter case, in quotes, with spaces or a tab around
+  it, with an empty name (`=__Host-pterm_session=x`), or folded after another
+  cookie in one line. The same test removes the cookies from `Cookie`.
 - Never follows redirects. A `Location` to the dev server itself
   (`localhost`, `127.0.0.1` or `[::1]` on the same port) is rewritten to the
   preview origin. Other hosts pass unchanged; the app's `frame-src` keeps the

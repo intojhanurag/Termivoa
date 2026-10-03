@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -49,9 +50,32 @@ var previewRecheckEvery = 5 * time.Second
 
 // termivoaCookies are never forwarded to a dev server, and a dev server may
 // not set them.
-var termivoaCookies = map[string]bool{
-	productionCookieName: true, developmentCookieName: true,
-	productionPreviewCookie: true, developmentPreviewCookie: true,
+var termivoaCookies = []string{
+	productionCookieName, developmentCookieName,
+	productionPreviewCookie, developmentPreviewCookie,
+}
+
+// namesTermivoaCookie reports whether a Cookie pair or a whole Set-Cookie line
+// names a Termivoa cookie in any spelling a browser or dev server may read as
+// one. Per part (split at ";" and ","): spaces, tabs and quotes around the name
+// are ignored, the name is compared without letter case (browsers match the
+// __Host- prefix without case), and an empty name takes the text before the next
+// "=" in the value ("=__Host-pterm_session=x").
+func namesTermivoaCookie(text string) bool {
+	for _, part := range strings.FieldsFunc(text, func(r rune) bool { return r == ';' || r == ',' }) {
+		name, value, _ := strings.Cut(part, "=")
+		if name = strings.Trim(name, " \t\""); name == "" {
+			var found bool
+			if name, _, found = strings.Cut(value, "="); !found {
+				continue
+			}
+			name = strings.Trim(name, " \t\"")
+		}
+		if slices.ContainsFunc(termivoaCookies, func(own string) bool { return strings.EqualFold(own, name) }) {
+			return true
+		}
+	}
+	return false
 }
 
 type previewTargetKey struct{}
@@ -464,8 +488,7 @@ func (handler *previewHandler) modifyResponse(response *http.Response) error {
 	if values := header.Values("Set-Cookie"); len(values) > 0 {
 		header.Del("Set-Cookie")
 		for _, value := range values {
-			name, _, _ := strings.Cut(value, "=")
-			if !termivoaCookies[strings.TrimSpace(name)] {
+			if !namesTermivoaCookie(value) {
 				header.Add("Set-Cookie", value)
 			}
 		}
@@ -480,8 +503,7 @@ func forwardedCookies(values []string) string {
 	for _, value := range values {
 		for _, pair := range strings.Split(value, ";") {
 			pair = strings.TrimSpace(pair)
-			name, _, _ := strings.Cut(pair, "=")
-			if pair != "" && !termivoaCookies[strings.TrimSpace(name)] {
+			if pair != "" && !namesTermivoaCookie(pair) {
 				kept = append(kept, pair)
 			}
 		}
