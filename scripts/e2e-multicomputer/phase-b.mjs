@@ -734,7 +734,7 @@ try {
     const terminalPath = await app.eval('location.pathname');
     await typeLine(app, 'clear');
     await typeLine(app, vpsCommand());
-    await until(async () => (await terminalText(app)).includes('Waiting for the phone'), { what: 'link in terminal' });
+    await until(async () => (await terminalText(app)).replace(/\n/g, '').includes('Waiting for the phone'), { what: 'link in terminal' });
     const link = /https:\/\/vps\.tailx\.ts\.net\/add-computer#grant=[A-Za-z0-9_-]{43}&via=https%3A%2F%2Fmac\.tailx\.ts\.net/.exec((await terminalText(app)).replace(/\n/g, ''))?.[0];
     const started = Date.now();
     await tapTerminalText(app, 'https://vps.tailx.ts.net/add');
