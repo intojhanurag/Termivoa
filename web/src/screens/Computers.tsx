@@ -12,6 +12,7 @@ export function onlineText(entry: ComputerEntry): { readonly text: string; reado
   switch (entry.status.kind) {
     case 'ok': return { text: 'online', tone: 'green' };
     case 'loading': return { text: 'checking', tone: 'muted' };
+    case 'connecting': return { text: 'connecting', tone: 'muted' };
     case 'unreachable': return { text: 'offline', tone: 'muted' };
     default: return { text: 'needs you', tone: 'amber' };
   }

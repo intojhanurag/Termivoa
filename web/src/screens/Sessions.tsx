@@ -5,7 +5,7 @@ import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
-  byChip, cantReach, chipsFor, keyOf, pairAgain, type ComputerEntry, type HostedSession,
+  byChip, cantReach, chipsFor, connectingText, JUST_ADDED, keyOf, pairAgain, type ComputerEntry, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
@@ -236,6 +236,7 @@ export function problemText(entry: ComputerEntry, now: number): string | undefin
   const { computer, status } = entry;
   switch (status.kind) {
     case 'unreachable': return cantReach(computer.label);
+    case 'connecting': return connectingText(computer.label);
     case 'pair': return `${pairAgain(computer.label)} · ${pairHint(computer.label)}`;
     case 'outdated': return status.message;
     default: return undefined;
@@ -245,9 +246,10 @@ export function problemText(entry: ComputerEntry, now: number): string | undefin
 /** Asked under "vps · can't reach" after a network error. The app cannot see why nothing answered, so it names no cause. */
 export const REACH_QUESTION = 'Is it on, and in your tailnet?';
 
-/** The line under problemText: "Last seen 3 h ago. Is it on, and in your tailnet?", or undefined. */
+/** The line under problemText: "Last seen 3 h ago. Is it on, and in your tailnet?", "Just added. Its sessions show in a moment.", or undefined. */
 export function problemDetail(entry: ComputerEntry, now: number): string | undefined {
   const { status } = entry;
+  if (status.kind === 'connecting') return JUST_ADDED;
   if (status.kind !== 'unreachable') return undefined;
   const seen = status.lastSeen === undefined ? undefined : `${ago(status.lastSeen, now).replace(/^l/u, 'L')}.`;
   const parts = [seen, status.network === true ? REACH_QUESTION : undefined].filter((part) => part !== undefined);
@@ -347,7 +349,7 @@ export function Sessions({
   }] as const] : [])));
   const viewed = readViewed();
   const now = Date.now();
-  const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading');
+  const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting');
   const summary = multi
     ? hostSummary(sessions, `${computers.length} computers`)
     : reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying';

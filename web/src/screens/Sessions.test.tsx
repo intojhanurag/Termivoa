@@ -273,6 +273,8 @@ describe('Sessions across computers', () => {
     expect(problemDetail(entry(vps, { kind: 'unreachable', lastSeen, network: false }), NOW)).toBe('Last seen 3 h ago.');
     expect(problemDetail(entry(vps, { kind: 'unreachable' }), NOW)).toBeUndefined();
     expect(problemDetail(entry(vps, { kind: 'pair' }), NOW)).toBeUndefined();
+    expect(problemText(entry(vps, { kind: 'connecting' }), NOW)).toBe('Connecting to vps…');
+    expect(problemDetail(entry(vps, { kind: 'connecting' }), NOW)).toBe('Just added. Its sessions show in a moment.');
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable', lastSeen, network: true })]);
     expect(html).toMatch(/<span class="computer-problem-text">vps · can&#x27;t reach<span class="computer-problem-detail">Last seen [^<]+ ago\. Is it on, and in your tailnet\?<\/span><\/span>/u);
   });

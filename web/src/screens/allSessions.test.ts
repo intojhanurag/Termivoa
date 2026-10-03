@@ -4,7 +4,7 @@ import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import {
-  byChip, chipsFor, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  byChip, chipsFor, CONNECTING_MS, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
   type ComputerEntry, type ComputerStatus,
 } from './allSessions';
 
@@ -88,6 +88,35 @@ describe('nextStatus', () => {
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on vps' });
     expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(0, 'app_outdated', 'Update Termivoa on mac')), false, 0))
       .toEqual({ kind: 'outdated', message: 'Update Termivoa on mac' });
+  });
+});
+
+describe('a computer added in this visit', () => {
+  const network = new ApiError(0, 'network', 'Connection unavailable');
+  const fail = (error: unknown) => ({ ok: false as const, error });
+
+  it('shows a failed read as connecting, also one the user asked for, but a refusal as it is', () => {
+    expect(nextStatus({ kind: 'loading' }, vps, fail(network), false, 10, false, true)).toEqual({ kind: 'connecting' });
+    expect(nextStatus({ kind: 'loading' }, vps, fail(network), true, 10, false, true)).toEqual({ kind: 'connecting' });
+    expect(nextStatus({ kind: 'loading' }, vps, fail(new ApiError(401, 'unauthorized', 'x')), true, 10, false, true)).toEqual({ kind: 'pair' });
+  });
+
+  it('says can\'t reach at the first failure after the connecting time, without waiting for the offline count', () => {
+    expect(nextStatus({ kind: 'connecting' }, vps, fail(network), false, CONNECTING_MS, false, false))
+      .toEqual({ kind: 'unreachable', lastSeen: undefined, network: true });
+    const loaded = { ok: true as const, value: { settings, sessions: [] } };
+    expect(nextStatus({ kind: 'connecting' }, vps, loaded, false, 20, false, true)).toMatchObject({ kind: 'ok' });
+  });
+
+  it('retries quietly after 0.5, 1 and 2 s, then once when the connecting time ends, and never after', () => {
+    expect(connectingRetry(0, 0, 100)).toBe(500);
+    expect(connectingRetry(1, 0, 700)).toBe(1_000);
+    expect(connectingRetry(2, 0, 1_800)).toBe(2_000);
+    expect(connectingRetry(3, 0, 3_900)).toBe(CONNECTING_MS - 3_900);
+    // A slow read: the retry never lands after the connecting time.
+    expect(connectingRetry(0, 0, 4_800)).toBe(200);
+    expect(connectingRetry(0, 0, CONNECTING_MS)).toBeUndefined();
+    expect(connectingRetry(4, 0, 6_000)).toBeUndefined();
   });
 });
 

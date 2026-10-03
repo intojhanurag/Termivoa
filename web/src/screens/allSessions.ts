@@ -25,6 +25,8 @@ export const sameSession = (a: HostedSession, b: HostedSession): boolean =>
 /** What the app knows about one computer right now. */
 export type ComputerStatus =
   | { readonly kind: 'loading' }
+  /** Added in this visit, and its first reads failed: "Connecting to vps…" (connectingText, JUST_ADDED). */
+  | { readonly kind: 'connecting' }
   | { readonly kind: 'ok'; readonly settings: HTTPSettingsResponse; readonly sessions: ReadonlyArray<HostedSession>; readonly at: number }
   /**
    * "vps · can't reach", with when it last answered in this visit. `network`:
@@ -39,6 +41,31 @@ export type ComputerStatus =
 
 /** "vps · can't reach". */
 export const cantReach = (label: string): string => `${label} · can't reach`;
+/**
+ * Right after an add, the new computer's gateway may not allow this app's
+ * origin yet (it refreshes that list about once a second), so its first
+ * reads can fail. For this long after the add a failed read shows
+ * "Connecting to vps…" and is retried quietly (CONNECTING_RETRY_MS), not
+ * after the offline backoff; only then does it say "can't reach".
+ */
+export const CONNECTING_MS = 5_000;
+/** The quiet retries after each failed read of a just-added computer; then one when CONNECTING_MS ends. */
+export const CONNECTING_RETRY_MS: ReadonlyArray<number> = [500, 1_000, 2_000];
+/** "Connecting to vps…". */
+export const connectingText = (label: string): string => `Connecting to ${label}…`;
+/** The line under connectingText. */
+export const JUST_ADDED = 'Just added. Its sessions show in a moment.';
+
+/**
+ * When to read a computer added at `addedAt` again after its failed read
+ * number `attempt` (0 first), or undefined once CONNECTING_MS is over. The
+ * last retry falls when CONNECTING_MS ends, so "can't reach" shows on time.
+ */
+export function connectingRetry(attempt: number, addedAt: number, now: number): number | undefined {
+  const left = addedAt + CONNECTING_MS - now;
+  return left <= 0 ? undefined : Math.min(CONNECTING_RETRY_MS[attempt] ?? left, left);
+}
+
 /** "vps · pair again". */
 export const pairAgain = (label: string): string => `${label} · pair again`;
 
@@ -56,7 +83,9 @@ interface Loaded {
  * The next status after one poll. With several computers, a network failure
  * only shows "can't reach" once the scheduler counts the computer offline;
  * before that the last answer stays on screen. With one computer (`single`)
- * it shows after the first failure, as before multi-computer.
+ * it shows after the first failure, as before multi-computer. `connecting`:
+ * the computer was added less than CONNECTING_MS ago, so a failure that is
+ * not a refusal shows "Connecting to vps…".
  */
 export function nextStatus(
   previous: ComputerStatus,
@@ -65,6 +94,7 @@ export function nextStatus(
   offline: boolean,
   now: number,
   single = false,
+  connecting = false,
 ): ComputerStatus {
   if (outcome.ok) {
     return { kind: 'ok', settings: outcome.value.settings, sessions: outcome.value.sessions.map((item) => hosted(item, computer)), at: now };
@@ -73,7 +103,8 @@ export function nextStatus(
   if (isAuthFailure(error)) return { kind: 'pair' };
   if (error instanceof ApiError && error.code === 'computer_outdated') return { kind: 'outdated', message: updateText(computer.label) };
   if (error instanceof ApiError && error.code === 'app_outdated') return { kind: 'outdated', message: error.message };
-  if (!offline && !single) return previous;
+  if (connecting) return { kind: 'connecting' };
+  if (!offline && !single && previous.kind !== 'connecting') return previous;
   const lastSeen = previous.kind === 'ok' ? previous.at : previous.kind === 'unreachable' ? previous.lastSeen : undefined;
   return { kind: 'unreachable', lastSeen, network: error instanceof ApiError && error.code === 'network' };
 }
@@ -181,13 +212,26 @@ export interface AllSessions {
  * shows each computer's answer as soon as it arrives. A 401 from home calls
  * onHomeAuth (the app goes to Setup); a 401 from a peer only marks that peer.
  */
-export function useAllSessions(active: boolean, computers: ReadonlyArray<Computer>, onHomeAuth: () => void): AllSessions {
+export function useAllSessions(
+  active: boolean,
+  computers: ReadonlyArray<Computer>,
+  onHomeAuth: () => void,
+  /** The origin of the computer added in this visit, once its add is done. */
+  added?: string,
+): AllSessions {
   const [statuses, setStatuses] = useState<ReadonlyMap<string, ComputerStatus>>(new Map());
   const byOrigin = useRef(new Map<string, Computer>());
   byOrigin.current = new Map(computers.map((computer) => [computer.origin, computer]));
   const homeAuth = useRef(onHomeAuth);
   homeAuth.current = onHomeAuth;
   const origins = computers.map((computer) => computer.origin).join(' ');
+  // A computer added in this visit: when, and how many quiet retries it had (CONNECTING_MS).
+  const fresh = useRef(new Map<string, { readonly at: number; attempt: number }>());
+  const retries = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    if (added !== undefined) fresh.current.set(added, { at: Date.now(), attempt: 0 });
+  }, [added]);
+  useEffect(() => () => { for (const timer of retries.current) clearTimeout(timer); }, []);
 
   const publish = useCallback((origin: string, outcome: PollOutcome<Loaded>, asked = false) => {
     const computer = byOrigin.current.get(origin);
@@ -197,9 +241,19 @@ export function useAllSessions(active: boolean, computers: ReadonlyArray<Compute
       return;
     }
     const single = byOrigin.current.size < 2;
+    const now = Date.now();
+    const added = fresh.current.get(origin);
+    if (outcome.ok) fresh.current.delete(origin);
+    const wait = outcome.ok || added === undefined ? undefined : connectingRetry(added.attempt, added.at, now);
+    if (added !== undefined && wait !== undefined) {
+      added.attempt += 1;
+      // retry() also clears the failure count, so no offline backoff builds up meanwhile.
+      const timer = setTimeout(() => { retries.current.delete(timer); scheduler.retry(origin); }, wait);
+      retries.current.add(timer);
+    }
     setStatuses((current) => {
       const next = new Map(current);
-      next.set(origin, nextStatus(current.get(origin) ?? { kind: 'loading' }, computer, outcome, asked || scheduler.offline(origin), Date.now(), single));
+      next.set(origin, nextStatus(current.get(origin) ?? { kind: 'loading' }, computer, outcome, asked || scheduler.offline(origin), now, single, wait !== undefined));
       return next;
     });
   }, []);
