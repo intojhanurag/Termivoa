@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -175,4 +177,58 @@ exit 2
 `, attach, kinds)
 	path := filepath.Join(folder, "herdr")
 	return path, os.WriteFile(path, []byte(script), 0o755)
+}
+
+// Build compiles scripts/fakeherdr to folder/herdr (named herdr, so it is
+// found like the real one) and returns its path. Tests only.
+func Build(folder string) (string, error) {
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		return "", err
+	}
+	module, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(folder, "herdr")
+	build := exec.Command("go", "build", "-o", path, "./scripts/fakeherdr")
+	build.Dir = filepath.Dir(strings.TrimSpace(string(module)))
+	if output, err := build.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("herdrtest: build fakeherdr: %v\n%s", err, output)
+	}
+	return path, nil
+}
+
+// Scenario writes folder/scenario.json for fakeherdr from a herdr snapshot.
+func Scenario(folder string, attachAny bool, kinds []string, snapshot []byte) error {
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(map[string]any{
+		"version": "0.8.2", "protocol": 20, "attachAny": attachAny, "kinds": kinds, "snapshot": json.RawMessage(snapshot),
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(folder, "scenario.json"), data, 0o600)
+}
+
+// Control sends one command to a running fakeherdr server's control.sock.
+func Control(folder string, command map[string]any) error {
+	conn, err := net.Dial("unix", filepath.Join(folder, "control.sock"))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	data, _ := json.Marshal(command)
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	reply, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if reply != "ok\n" {
+		return fmt.Errorf("herdrtest: control %v: %s", command, strings.TrimSpace(reply))
+	}
+	return nil
 }

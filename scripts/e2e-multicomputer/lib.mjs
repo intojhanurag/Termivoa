@@ -2,7 +2,8 @@
 // dev stacks behind the HTTPS front (main.go), a fake Tailscale, curl through
 // the front, and a small CDP client for headless Chrome. Node built-ins only.
 import { spawn } from 'node:child_process';
-import { appendFileSync, chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,11 +20,21 @@ const RESERVED = new Set([8787, 8788, 8789, 8443]);
 // the real Tailscale CLI (internal/tailnet.FindBinary checks these fixed
 // paths before PATH, so the fake on PATH is used), and blocks the installed
 // gateway port and launchctl, so nothing here can read or change the real
-// Tailscale, the installed pterm or launchd.
+// Tailscale, the installed pterm or launchd. It also hides the owner's herdr
+// (docs/herdr-provider.md, S16): its binaries, the Homebrew Cellar they link
+// to, and the real ~/.config/herdr with its socket. Sandbox rules match
+// resolved paths, so every path is resolved first.
 const REAL_TAILSCALE = ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/usr/local/bin/tailscale',
   '/opt/homebrew/bin/tailscale', '/usr/bin/tailscale', '/usr/sbin/tailscale'];
+const real = (path) => { try { return realpathSync(path); } catch { return path; } };
+const REAL_HERDR = ['/opt/homebrew/bin/herdr', '/usr/local/bin/herdr', join(homedir(), '.local/bin/herdr'),
+  join(homedir(), '.cargo/bin/herdr')];
+const REAL_HERDR_TREES = ['/opt/homebrew/Cellar/herdr', '/usr/local/Cellar/herdr', join(homedir(), '.config/herdr')].map(real);
 const SANDBOX = `(version 1)(allow default)
 (deny file-read* process-exec ${REAL_TAILSCALE.map((p) => `(literal "${p}")`).join(' ')})
+(deny file-read* process-exec ${[...new Set([...REAL_HERDR, ...REAL_HERDR.map(real)])].map((p) => `(literal "${p}")`).join(' ')})
+(deny file-read* file-write* process-exec ${REAL_HERDR_TREES.map((p) => `(subpath "${p}")`).join(' ')})
+(deny network-outbound ${REAL_HERDR_TREES.map((p) => `(remote unix-socket (subpath "${p}"))`).join(' ')})
 (deny network-outbound (remote tcp "localhost:8787"))
 (deny process-exec (literal "/bin/launchctl"))`;
 /** argv that runs command inside the harness sandbox. */
