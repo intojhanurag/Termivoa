@@ -1,7 +1,7 @@
 ---
 title: Install on Windows
 description: Install the Termivoa pterm beta on Windows 11 x64 with PowerShell and the GitHub CLI, then start it at every sign-in with two Scheduled Tasks.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa installs on Windows 11 (x64) as one file, `pterm.exe`, that you download with the GitHub CLI and set up with `pterm setup`.
@@ -25,7 +25,7 @@ In PowerShell, make a folder, download the beta and run setup:
 ```powershell
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\Termivoa" | Out-Null
 cd "$env:LOCALAPPDATA\Programs\Termivoa"
-gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
 .\pterm.exe setup
 ```
 

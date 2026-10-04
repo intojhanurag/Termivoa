@@ -6,12 +6,12 @@ lastUpdated: 2026-10-04
 
 Termivoa lets one phone app use several computers, for example a Mac, a Linux server and a VPS, with one Sessions list and one Wall.
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and it is not tested on a real phone yet. See [Is it tested on a real phone?](#is-it-tested-on-a-real-phone)
+:::note
+Not tested on a real phone yet. See [Is it tested on a real phone?](#is-it-tested-on-a-real-phone)
 :::
 
 :::caution[iOS 16.4 or later]
-From the next beta, every Termivoa app needs iOS 16.4 or later, also with one computer. See [The app cannot load after the update](/docs/reference/troubleshooting/#the-app-cannot-load-after-the-update-iphone-next-beta).
+Every Termivoa app needs iOS 16.4 or later, also with one computer. See [The app cannot load after the update](/docs/reference/troubleshooting/#the-app-cannot-load-after-the-update-iphone).
 :::
 
 ## How does it work?
@@ -36,22 +36,22 @@ If home is hacked, every computer you added through it is at risk too, because h
 
 | Rule | Why |
 | --- | --- |
-| Only Termivoa on port 443 of each computer's Tailscale address | Any other Tailscale Serve handler there could control Termivoa. `pterm setup` refuses, and `pterm doctor` shows how to move it. See [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers-next-beta). |
+| Only Termivoa on port 443 of each computer's Tailscale address | Any other Tailscale Serve handler there could control Termivoa. `pterm setup` refuses, and `pterm doctor` shows how to move it. See [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers). |
 | Changing home later means starting over | A new home is a new app, so you add every peer again. |
 
 ## How do I add a computer?
 
 Start a wait on the new computer, then tap **Add** next to it in the app. You need `pterm setup` on the new computer, and both computers in the same tailnet with the same Tailscale user.
 
-:::note[Next beta]
-**Found on your network** and its **Add** button are not in `v0.1.0-beta.2`, and are not tested on real computers or a real phone yet.
+:::note
+**Found on your network** and its **Add** button are not fully tested on real computers and a real phone yet.
 :::
 
 1. **On the new computer** (here `vps`), in a terminal:
    - If Termivoa is not set up there yet, run `pterm setup`. At **Is Termivoa already on your phone?** type `2` (**Yes, add this computer to it**), then pick home. The list shows each computer's full address and system, for example `1) mac — https://mac.tailx.ts.net (macOS)`. Pick the computer whose address your Termivoa app opens.
    - If it is set up, run `pterm pair --via mac`. Use home's machine name, or its full address such as `https://mac.tailx.ts.net`.
 
-   It says **Sent to mac (https://mac.tailx.ts.net).** and waits for your phone for up to 10 minutes. Keep the terminal open. The screen (**Next beta** words):
+   It says **Sent to mac (https://mac.tailx.ts.net).** and waits for your phone for up to 10 minutes. Keep the terminal open. The screen:
 
    ```text
    Adding this computer (vps) to your Termivoa app on mac.
@@ -93,7 +93,7 @@ A row goes away when that computer stops waiting or becomes another Tailscale ma
 
 | If… | Then |
 | --- | --- |
-| No **Add** row shows up | Use the link: see [How do I scan or paste the link?](#how-do-i-scan-or-paste-the-link) and [Troubleshooting](/docs/reference/troubleshooting/#no-add-button-for-a-new-computer-next-beta). |
+| No **Add** row shows up | Use the link: see [How do I scan or paste the link?](#how-do-i-scan-or-paste-the-link) and [Troubleshooting](/docs/reference/troubleshooting/#no-add-button-for-a-new-computer). |
 | The codes are different, or the prompt names another computer | Type `n`, then tap **Codes don't match? Cancel**. |
 | You change your mind | Tap **Cancel** on the sheet, the page or the bar. After a `y`, the app also signs out of vps. |
 | The app says "vps stopped waiting. On vps run pterm pair --via mac, then tap Add again." | vps no longer waits. Run `pterm pair --via mac` on vps, then tap **Add** again. |
@@ -119,8 +119,8 @@ Then check the sheet and compare the code as in steps 3 and 4. Without a termina
 
 In **Settings → Computers**, tap **+ Add a computer**. Termivoa shows two choices: **Scan QR** and **Paste link**.
 
-:::note[Next beta]
-**Scan QR** is not in `v0.1.0-beta.2`, and it is not tested on a real phone yet.
+:::note
+**Scan QR** is not tested on a real phone yet.
 :::
 
 | Choice | What you do | What the app does |
@@ -180,14 +180,10 @@ If home is offline, the app still opens from its saved copy and reaches the peer
 
 Open **Settings → Computers**. Each computer shows the Termivoa version it runs and when the phone last got an answer from it.
 
-:::note[Next beta]
-Not in `v0.1.0-beta.2`.
-:::
-
 | You see | Meaning |
 | --- | --- |
 | **Home** next to a name | This computer is home. Under the heading the app says **Home serves this app to your phone.** |
-| **Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
+| **Termivoa 0.1.0-beta.3+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
 | **vps · can't reach** and **Last seen 3 h ago. Is it on, and in your tailnet?** | vps does not answer now. The phone keeps the time of its last answer until you close the app. The question shows only when nothing answered at all. |
 | **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered in 0.2 s.** or why it did not. |
 

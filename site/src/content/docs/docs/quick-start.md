@@ -1,12 +1,12 @@
 ---
 title: Quick start
 description: Install Termivoa's pterm program, run setup, pair your phone with a QR code and start your first terminal session in about five minutes.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa takes about five minutes to set up, from install to your first session on the phone.
 
-Status: Private beta (`v0.1.0-beta.2`). You need an invite to download it.
+Status: Private beta (`v0.1.0-beta.3`). You need an invite to download it.
 
 ## Before you start
 
@@ -26,7 +26,7 @@ Setup checks first and changes nothing. Then it lists its changes and asks `Cont
 2. A separate question asks to share the page with your Tailscale devices. Type `y` if the command shown is correct.
 3. An optional third question is about dev-server previews (port 8443).
 
-Setup starts Termivoa at every login. If you have no project yet, it adds your home folder as the project **Home folder** (**Next beta**; the latest release names it **Home**).
+Setup starts Termivoa at every login. If you have no project yet, it adds your home folder as the project **Home folder**.
 It never uses Tailscale Funnel; the page is never public.
 
 ## 3. Scan the QR code

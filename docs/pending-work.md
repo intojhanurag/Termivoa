@@ -1,12 +1,12 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-03. Latest tag: `v0.1.0-beta.2`.
+The single roadmap. Updated 2026-10-04. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
-- Private betas `v0.1.0-beta.1` and `v0.1.0-beta.2` (#66); website and docs
+- Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
   (#53, #56).
 - Windows logic: WSL bash profile (#38), Ctrl+] at the attach startup handoff
@@ -101,8 +101,8 @@ designed in Paper first and shown to the owner before any code.
 5. ~~**Scan QR on iPhone:**~~ Done: a camera track that
    stays muted for 2 s ends the scan with "The camera did not start. …".
    Needs a real iPhone check (a call during Scan QR).
-6. **Release `v0.1.0-beta.3`** after the owner's real checks, so a new user
-   gets today's features from `gh release download`.
+6. ~~**Release `v0.1.0-beta.3`**~~ Done: docs prepared for the tag
+   (`docs/beta-3`); a new user gets today's features from `gh release download`.
 
 ## Later
 

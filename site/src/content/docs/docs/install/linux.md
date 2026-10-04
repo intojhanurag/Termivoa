@@ -1,7 +1,7 @@
 ---
 title: Install on Linux
 description: Install the Termivoa pterm beta on Ubuntu desktop, a server, a VPS or WSL, and run it as systemd user services that need no root access.
-lastUpdated: 2026-10-03
+lastUpdated: 2026-10-04
 ---
 
 Termivoa installs on Ubuntu (desktop, server or WSL) as one file, `pterm`, with an install script that runs `pterm setup`.
@@ -24,12 +24,12 @@ No extra packages or Node.js are needed.
 On arm64, use `pterm-linux-arm64` in both commands:
 
 ```sh
-gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
+gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
 sh install-linux.sh ./pterm-linux-amd64
 ```
 
 The script installs `~/.local/bin/pterm` and starts setup.
-If this terminal does not find `pterm` yet, the last lines of setup give the command to fix it (**Next beta**):
+If this terminal does not find `pterm` yet, the last lines of setup give the command to fix it:
 
 ```text
 `pterm` is not on your PATH in this terminal yet. To use it here, run this now:
@@ -45,7 +45,7 @@ Then follow [Pair your phone](/docs/pair-your-phone/). If Termivoa is already on
 
 ### What if I am logged in as root?
 
-The script and `pterm setup` refuse root: your phone would get root's shell. A new VPS often has only root. The script then prints the commands that make a normal user with `sudo` rights (the `wheel` group on Fedora), give it your SSH key, and copy the two files to it (**Next beta**):
+The script and `pterm setup` refuse root: your phone would get root's shell. A new VPS often has only root. The script then prints the commands that make a normal user with `sudo` rights (the `wheel` group on Fedora), give it your SSH key, and copy the two files to it:
 
 ```sh
 adduser <name>
@@ -85,7 +85,7 @@ On Linux, only root or the Tailscale **operator** may share the page. To become 
 sudo tailscale set --operator=$USER
 ```
 
-Until then your phone cannot reach the computer, so setup does not pair a phone. From the next beta, the plan and the last line of setup say so:
+Until then your phone cannot reach the computer, so setup does not pair a phone. The plan and the last line of setup say so:
 
 ```text
 Setup is done, but your phone cannot reach this computer yet: on Linux only root or the Tailscale operator may share it on port 443. Run this once: sudo tailscale set --operator=$USER, then run `pterm setup` again.

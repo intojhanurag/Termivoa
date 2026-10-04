@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest. The project is in private beta (`v0.1.0-beta.2`,
+Thanks for your interest. The project is in private beta (`v0.1.0-beta.3`,
 unsigned, for invited collaborators only), so expect changes. Please open an
 issue before large changes. [AGENTS.md](AGENTS.md) and the
 [implementation plan](docs/implementation-plan.md) describe the design rules

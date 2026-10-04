@@ -6,6 +6,13 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.3] - 2026-10-04
+
+Third private beta. Updating from beta.2 restarts Termivoa on the computer,
+which ends running sessions. It also needs a fresh database (run
+`pterm uninstall --delete-data`, then `pterm setup`, and pair again), iOS
+16.4 or later on iPhone, and no other Tailscale Serve handlers on port 443.
+
 ### Added
 
 - **Found on your network** (ADR 0007, `docs/found-on-network.md`; not yet

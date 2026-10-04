@@ -1,7 +1,7 @@
 ---
 title: Install on macOS
 description: Install the Termivoa pterm beta on an Apple Silicon Mac with the GitHub CLI, then let setup start it at every login with two LaunchAgents.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa installs on an Apple Silicon Mac as one file, `pterm`, that you download with the GitHub CLI and set up with `pterm setup`.
@@ -24,7 +24,7 @@ Make a folder, download the beta, make it runnable and run setup:
 
 ```sh
 mkdir -p ~/.local/bin
-gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
 chmod +x ~/.local/bin/pterm
 ~/.local/bin/pterm setup
 ```

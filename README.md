@@ -9,7 +9,7 @@ The command-line tool is `pterm`. Some data folders and startup entries keep
 the old working name "Phone Terminal" so existing installs keep working (see
 [docs/naming.md](docs/naming.md)).
 
-> **Status:** private beta (`v0.1.0-beta.2`, unsigned, invited testers only;
+> **Status:** private beta (`v0.1.0-beta.3`, unsigned, invited testers only;
 > [install](docs/install.md#private-beta)). The full flow is tested on an
 > Apple Silicon Mac. Windows and Linux support is written but not yet verified
 > on a real Windows or Linux machine (Linux ran in containers only). There are
@@ -35,18 +35,18 @@ the old working name "Phone Terminal" so existing installs keep working (see
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one
   snapshot of their screen, marked Paused.
-- **Computer health (next beta).** Each computer's version and last answer in
+- **Computer health.** Each computer's version and last answer in
   Settings, with Check again.
-- **Several computers (next beta).** Use a Mac, a Linux server and a VPS
+- **Several computers.** Use a Mac, a Linux server and a VPS
   from one phone app: one Sessions list with a chip per computer, one Wall,
   and new sessions on any of them. Each computer approves the phone itself,
   and **Log out** signs out of every computer it can reach. Not yet tested
   on a real phone; choose an always-on, trusted computer as home, because a
-  hacked home reaches every computer added through it. From the next beta,
-  every user needs iOS 16.4 or later on iPhone. Add a computer by scanning
+  hacked home reaches every computer added through it. Every user needs
+  iOS 16.4 or later on iPhone. Add a computer by scanning
   the QR code from `pterm pair --via` inside the app, by pasting the link,
   or by tapping it in a Termivoa session.
-- **Found on your network (next beta).** Run `pterm setup` or
+- **Found on your network.** Run `pterm setup` or
   `pterm pair --via <home>` on a new computer, then tap **Add** next to it in
   **Settings → Computers**: no link to move. You still compare the code and
   type `y` on the new computer. Not yet tested on a real phone.
@@ -73,8 +73,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **"While you were away" recap.** On return, how long the agent worked, what
   changed, and whether it waits for you.
 - **Dev-server preview, photo and voice.** Open the session's dev server on
-  the phone, send a photo without location data, or dictate a prompt. From
-  the next beta, the preview works for sessions on every computer in your
+  the phone, send a photo without location data, or dictate a prompt. The
+  preview works for sessions on every computer in your
   list, with the computer's label and an **untrusted page** mark over pages
   from other computers.
 - **Desktop attach.** `pterm attach` opens the same session from any desktop
@@ -183,10 +183,10 @@ The full list of what still needs real hardware is in
 | `pterm doctor` | Read-only diagnostics. Never prints secrets. |
 | `pterm pair` | Print a pairing link and QR code, then approve the phone after you compare codes. |
 | `pterm pair pending` / `pair approve <id>` | Approve a phone later (with `pair --no-wait`). |
-| `pterm pair --via <name\|url>` | Next beta: add this computer to the phone app on another computer (home). |
+| `pterm pair --via <name\|url>` | Add this computer to the phone app on another computer (home). |
 | `pterm devices` | List paired phones. `devices rename <id> <label>` renames one. |
-| `pterm revoke <device-id>` | Remove a phone's access at once. `revoke --via <url>` (next beta) removes every phone that uses this computer through that home. |
-| `pterm computers` / `computers remove <url>` | Next beta, on home: show each phone's computers, or remove one from every phone's list. |
+| `pterm revoke <device-id>` | Remove a phone's access at once. `revoke --via <url>` removes every phone that uses this computer through that home. |
+| `pterm computers` / `computers remove <url>` | On home: show each phone's computers, or remove one from every phone's list. |
 | `pterm project add [--name <n>] <path>` / `project list` | Save or list project folders. |
 | `pterm list` | List sessions and their state. |
 | `pterm attach [--control] <session-id>` | Open a session in this terminal. Ctrl+] detaches. |

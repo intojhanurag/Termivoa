@@ -1,7 +1,7 @@
 ---
 title: Changes
 description: Use the Termivoa Changes view to review an agent's uncommitted edits on your phone, ask about a file or lines, then commit and push.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 The Termivoa **Changes** view shows what a coding agent changed in your project: the changed files and a red and green diff for each.
@@ -42,10 +42,6 @@ Tap a file to see its diff. Added lines are green, removed lines are red, and th
 3. Write your question and tap **Send ⏎**. Sending needs control.
 
 ## Ask about specific lines
-
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`.
-:::
 
 1. Open a file and tap a line in the diff.
 2. To pick a range, tap a second line. A range has 20 lines at most and stays in one part of the diff.
