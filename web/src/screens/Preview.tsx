@@ -41,7 +41,8 @@ export function reloadForPolicy(blocked: string, origin: string, store: Pick<Sto
 }
 
 /**
- * Top bar: back to the terminal, the previewed address, reload. Over a peer's
+ * Top bar: back to the terminal, the previewed address, reload (off when
+ * there is nothing to load: the notice under it says why). Over a peer's
  * page it always names the computer and marks the page as untrusted: the peer
  * chooses what the frame shows, and the page cannot cover or change this bar.
  */
@@ -49,13 +50,13 @@ export function PreviewBar({ port, peer, onBack, onReload }: {
   readonly port: number;
   readonly peer: Pick<Computer, 'label' | 'color'> | undefined;
   readonly onBack: () => void;
-  readonly onReload: () => void;
+  readonly onReload: (() => void) | undefined;
 }) {
   return (
     <header className="preview-bar">
       <button type="button" className="link preview-back" onClick={onBack}>‹ terminal</button>
       <span className="preview-address"><span className="dot green" aria-hidden="true" />localhost:{port}</span>
-      <button type="button" className="link preview-reload" aria-label="Reload preview" onClick={onReload}><Icon name="refresh" /></button>
+      <button type="button" className="link preview-reload" aria-label="Reload preview" disabled={onReload === undefined} onClick={onReload}><Icon name="refresh" /></button>
       {peer !== undefined && <p className="preview-peer"><ComputerTag computer={peer} /> · <strong>untrusted page</strong></p>}
     </header>
   );
@@ -172,7 +173,7 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
   if (present && !seen) setSeen(true);
   return (
     <main className="preview-screen">
-      <PreviewBar port={port} peer={session.computer.home ? undefined : session.computer} onBack={onBack} onReload={reload} />
+      <PreviewBar port={port} peer={session.computer.home ? undefined : session.computer} onBack={onBack} onReload={notice === undefined && origin !== undefined ? reload : undefined} />
       {notice === undefined && seen && !present && <div className="preview-note"><Notice tone="neutral" role="alert" title="Dev server stopped" /></div>}
       <PreviewBody key={loads} session={session} origin={origin} port={port} notice={notice} reach={reach} />
       <PreviewStatus session={current} fresh={hasNewOutput(current, readViewed())} onTell={onTell} />

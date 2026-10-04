@@ -182,6 +182,16 @@ describe('preview screen', () => {
     expect([onBack, onReload, onTell].map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1]);
   });
 
+  it('turns reload off when there is nothing to load, so the tap is never a dead one', () => {
+    expect(renderToStaticMarkup(<PreviewBar port={5173} peer={undefined} onBack={noop} onReload={noop} />))
+      .toContain('<button type="button" class="link preview-reload" aria-label="Reload preview">');
+    expect(renderToStaticMarkup(<PreviewBar port={5173} peer={undefined} onBack={noop} onReload={undefined} />))
+      .toContain('<button type="button" class="link preview-reload" aria-label="Reload preview" disabled="">');
+    // Under a notice (here: home has no preview origin) the bar's reload is off.
+    expect(renderToStaticMarkup(<Preview session={session} sessions={undefined} port={5173} onBack={noop} onTell={noop} />))
+      .toContain('aria-label="Reload preview" disabled="">');
+  });
+
   it('shows the agent status from the record', () => {
     const status = (agent: BrokerRPCSessionRecord['agent'], fresh = false) =>
       renderToStaticMarkup(<PreviewStatus session={{ ...session, ...(agent === undefined ? {} : { agent }) }} fresh={fresh} onTell={noop} />);

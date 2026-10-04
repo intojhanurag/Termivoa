@@ -383,6 +383,12 @@ describe('commit and push', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('says "Not sent" when a Commit or Push tap sent nothing, instead of doing nothing', () => {
+    expect(flowHtml()).not.toContain('Not sent');
+    expect(flowHtml({ notSent: true })).toContain('<p role="alert" class="error">Not sent. Take control, then try again.</p><div class="ship-actions">');
+    expect(flowHtml({ step: 'push', notSent: true })).toContain('<p role="alert" class="error">Not sent. Take control, then try again.</p><div class="ship-actions">');
+  });
+
   it('says each commit result, shows failure output, and offers Push after a commit', () => {
     const committed = flowHtml({ write: done({ committed: { state: 'committed', commit: 'abc1234' } }) });
     expect(committed).toContain('<p class="ship-text" role="status">Committed <code>abc1234</code></p>');

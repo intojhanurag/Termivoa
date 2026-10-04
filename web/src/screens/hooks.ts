@@ -111,13 +111,27 @@ export function useServiceWorkerUpdate(): { available: boolean; reload: () => vo
     }).catch(() => undefined);
   }, []);
   const reload = useCallback(() => {
-    if (waiting === null) {
-      return;
-    }
-    navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), { once: true });
-    waiting.postMessage({ type: 'skip-waiting' });
+    if (waiting !== null) applyUpdate(waiting, navigator.serviceWorker, () => window.location.reload());
   }, [waiting]);
   return { available: waiting !== null, reload };
+}
+
+/**
+ * The update pill: the waiting worker takes over, then the page reloads into
+ * it. When another tab already let it take over, this page missed that
+ * change: reload now, or the tap would do nothing.
+ */
+export function applyUpdate(
+  waiting: Pick<ServiceWorker, 'state' | 'postMessage'>,
+  container: Pick<ServiceWorkerContainer, 'addEventListener'>,
+  reload: () => void,
+): void {
+  if (waiting.state !== 'installed') {
+    reload();
+    return;
+  }
+  container.addEventListener('controllerchange', reload, { once: true });
+  waiting.postMessage({ type: 'skip-waiting' });
 }
 
 /**

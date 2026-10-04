@@ -112,7 +112,8 @@ describe('Settings notifications', () => {
     const html = render();
     expect(html).toContain('<h2 id="push-heading" class="caps">Notifications</h2>');
     expect(html).toMatch(/<button type="button" role="switch" class="switch" aria-checked="false" aria-labelledby="push-label" disabled="">/u);
-    expect(html).toContain('<button type="button" class="secondary" disabled="">Send a test notification</button>');
+    // Busy, it says "Sending…" in place of its label, so a second test that says "Sent" again is not a dead tap.
+    expect(html).toMatch(/<button type="button" class="secondary" disabled=""><span class="btn-swap"><span>Send a test notification<\/span><span class="off" aria-hidden="true">.*?Sending…<\/span><\/span><\/button>/u);
   });
 
   it('tells an iPhone Safari tab to add the app to the Home Screen', () => {
@@ -137,5 +138,11 @@ describe('LogoutSection', () => {
     expect(busy).toContain('<p role="status" class="muted field-note">Signing out…</p>');
     // Busy: off, marked busy, and the label stays (under the spinner) for screen readers.
     expect(busy).toMatch(/<button[^>]*disabled=""[^>]*aria-busy="true"[^>]*>Log out<svg[^]*<\/svg><\/button>/u);
+  });
+
+  it('shows a failed log out next to its button, not at the top of the page', () => {
+    const failed = renderToStaticMarkup(<LogoutSection multi busy={false} error="Connection unavailable" onLogout={() => undefined} />);
+    expect(failed).toMatch(/aria-labelledby="logout-heading">.*<div class="notice danger" role="alert"><p class="notice-title">Connection unavailable<\/p><\/div><button/u);
+    expect(renderToStaticMarkup(<LogoutSection multi busy={false} onLogout={() => undefined} />)).not.toContain('role="alert"');
   });
 });
