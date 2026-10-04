@@ -71,6 +71,10 @@ In this order.
 4. ~~**Docs picture** of the "Adding vps… approve on vps" bar and of
    **Found on your network** with **Add**.~~ Done: both in
    `guides/computers.md`, from `scripts/docs-screenshots/computers.mjs`.
+5. **herdr on your phone** (ADR 0008, `docs/herdr-provider.md`): design
+   accepted (reviews in its section 20) and protocol types generated. Build
+   M1a (list, push, Integrations), M1b (open, chips) and M2 (new worktree and
+   agent) in a host and a web track (design, section 17). No database change.
 
 ## Polish next
 

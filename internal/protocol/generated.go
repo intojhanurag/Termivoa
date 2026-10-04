@@ -107,6 +107,13 @@ type ProtocolTypes struct {
 	HTTPPairRedeemRequest            HTTPPairRedeemRequest                   `json:"httpPairRedeemRequest"`
 	HTTPPairRedeemResponse           HTTPPairRedeemResponse                  `json:"httpPairRedeemResponse"`
 	HTTPPreviewConfigResponse        HTTPPreviewConfigResponse               `json:"httpPreviewConfigResponse"`
+	HTTPProviderCreateRequest        HTTPProviderCreateRequest               `json:"httpProviderCreateRequest"`
+	HTTPProviderCreateResponse       HTTPProviderCreateResponse              `json:"httpProviderCreateResponse"`
+	HTTPProviderOpenRequest          HTTPProviderOpenRequest                 `json:"httpProviderOpenRequest"`
+	HTTPProviderOpenResponse         HTTPProviderOpenResponse                `json:"httpProviderOpenResponse"`
+	HTTPProviderSession              HTTPProviderSession                     `json:"httpProviderSession"`
+	HTTPProviderSnapshotResponse     HTTPProviderSnapshotResponse            `json:"httpProviderSnapshotResponse"`
+	HTTPProviderUpdateRequest        HTTPProviderUpdateRequest               `json:"httpProviderUpdateRequest"`
 	HTTPPushConfigResponse           HTTPPushConfigResponse                  `json:"httpPushConfigResponse"`
 	HTTPPushSubscribeRequest         HTTPPushSubscribeRequest                `json:"httpPushSubscribeRequest"`
 	HTTPPushTestResponse             HTTPPushTestResponse                    `json:"httpPushTestResponse"`
@@ -941,6 +948,111 @@ type HTTPPreviewConfigResponse struct {
 	Origin *string `json:"origin,omitempty"`
 }
 
+// POST /api/v1/providers/{provider}/create (milestone M2): a new worktree in a group, and
+// optionally an agent in it with a first prompt. name is the new branch and worktree name;
+// the host also refuses a name that ends in .lock or has more than 4 parts. agent must be
+// one of the provider's agentKinds. prompt must hold no control characters other than tab
+// and line feed (no ESC, no other C0 or C1, no DEL).
+type HTTPProviderCreateRequest struct {
+	Agent   *string `json:"agent,omitempty"`
+	GroupID string  `json:"groupId"`
+	Name    string  `json:"name"`
+	Prompt  *string `json:"prompt,omitempty"`
+}
+
+// The new item and the terminal to open. The worktree exists whenever this is returned.
+// agentStarted is false when no agent was asked for or the agent did not start; problem
+// then says why (agentNotReady: it started but waits at a question; agentFailed: it did not
+// start; promptFailed: it started, the first prompt was not sent).
+type HTTPProviderCreateResponse struct {
+	AgentStarted bool                       `json:"agentStarted"`
+	ItemID       string                     `json:"itemId"`
+	Problem      *HTTPProviderCreateProblem `json:"problem,omitempty"`
+	TargetID     string                     `json:"targetId"`
+}
+
+// POST /api/v1/providers/{provider}/open. The host opens (or reuses) one in-memory provider
+// session attached to that terminal. columns and rows are the phone's fitted grid: a new
+// attach starts at that size, which herdr gives the pane on the computer until the session
+// ends. A reused session keeps its size.
+type HTTPProviderOpenRequest struct {
+	Columns  int64  `json:"columns"`
+	Rows     int64  `json:"rows"`
+	TargetID string `json:"targetId"`
+}
+
+// The session to show in Live. reused is true when the host already had a live session for
+// this terminal.
+type HTTPProviderOpenResponse struct {
+	Reused  bool                `json:"reused"`
+	Session HTTPProviderSession `json:"session"`
+}
+
+// A provider session: a broker terminal session that runs the provider's attach client. It
+// lives in broker memory only (never in the sessions table, never in GET /api/v1/sessions)
+// and is attached over /api/v1/ws like any session. It has no project or shell profile, so
+// rename, terminate, uploads, tasks, preview and worktrees do not apply to it.
+type HTTPProviderSession struct {
+	Columns    int64  `json:"columns"`
+	Generation string `json:"generation"`
+	ID         string `json:"id"`
+	Provider   string `json:"provider"`
+	Rows       int64  `json:"rows"`
+	State      State  `json:"state"`
+	TargetID   string `json:"targetId"`
+	Title      string `json:"title"`
+}
+
+// GET /api/v1/providers/{provider}: the host's cached view, never older than about 5 s
+// while state is ready. groups is empty unless state is ready. truncated is true when the
+// host cut the list at its item limits or at its 256 KiB body budget.
+type HTTPProviderSnapshotResponse struct {
+	Groups    []HTTPProviderGroup `json:"groups"`
+	Provider  string              `json:"provider"`
+	State     HTTPProviderState   `json:"state"`
+	Truncated *bool               `json:"truncated,omitempty"`
+}
+
+// One project row (for herdr, a git repository and its worktrees, or a workspace outside
+// git). state is the roll-up of its items.
+type HTTPProviderGroup struct {
+	CanCreate bool               `json:"canCreate"`
+	ID        string             `json:"id"`
+	Items     []HTTPProviderItem `json:"items"`
+	Name      string             `json:"name"`
+	State     string             `json:"state"`
+}
+
+// One row under a group (for herdr, one workspace: the main checkout or a linked worktree).
+// openTarget is the terminal a tap opens (the most urgent agent, else the active tab's
+// terminal); it is absent when nothing can be opened. stateSince is when the host first saw
+// the current state.
+type HTTPProviderItem struct {
+	ID         string               `json:"id"`
+	Name       string               `json:"name"`
+	OpenTarget *string              `json:"openTarget,omitempty"`
+	State      string               `json:"state"`
+	StateSince *string              `json:"stateSince,omitempty"`
+	Targets    []HTTPProviderTarget `json:"targets"`
+}
+
+// One terminal the phone can open: each agent, plus one terminal for each tab without an
+// agent. label is the tab label. canOpen is false when this provider version cannot attach
+// to it. Terminal titles are never sent (a program sets them, often to the task text).
+type HTTPProviderTarget struct {
+	Agent   *string `json:"agent,omitempty"`
+	CanOpen bool    `json:"canOpen"`
+	ID      string  `json:"id"`
+	Label   string  `json:"label"`
+	State   string  `json:"state"`
+}
+
+// PATCH /api/v1/providers/{provider}: Settings → Integrations on this computer.
+type HTTPProviderUpdateRequest struct {
+	Enabled *bool                     `json:"enabled,omitempty"`
+	Notify  []HTTPProviderNotifyState `json:"notify,omitempty"`
+}
+
 // The broker's VAPID application server public key.
 type HTTPPushConfigResponse struct {
 	PublicKey string `json:"publicKey"`
@@ -970,7 +1082,26 @@ type HTTPSettingsResponse struct {
 	MinProtocolRevision int64             `json:"minProtocolRevision"`
 	Projects            []HTTPNamedOption `json:"projects"`
 	ProtocolRevision    int64             `json:"protocolRevision"`
-	ShellProfiles       []HTTPNamedOption `json:"shellProfiles"`
+	// Terminal workspace providers found on this computer (for example herdr). Absent or empty
+	// when none is installed; the app shows a provider tab only for a computer that lists one.
+	Providers     []HTTPProviderInfo `json:"providers,omitempty"`
+	ShellProfiles []HTTPNamedOption  `json:"shellProfiles"`
+}
+
+// One provider on this computer. enabled and notify are this computer's Integrations
+// settings (all devices). canCreate is true when the provider can make a worktree and start
+// an agent (milestone M2). agentKinds lists the kinds offered by the new-worktree sheet:
+// kinds that herdr itself can start (its agent start kinds) and that already run in this
+// herdr, most used first.
+type HTTPProviderInfo struct {
+	AgentKinds []string                  `json:"agentKinds"`
+	CanCreate  bool                      `json:"canCreate"`
+	Enabled    bool                      `json:"enabled"`
+	ID         string                    `json:"id"`
+	Name       string                    `json:"name"`
+	Notify     []HTTPProviderNotifyState `json:"notify"`
+	State      HTTPProviderState         `json:"state"`
+	Version    *string                   `json:"version,omitempty"`
 }
 
 // One image for the session's project folder. data is the file, standard padded base64, 1
@@ -1581,6 +1712,33 @@ type PreviewHost string
 const (
 	The1      PreviewHost = "::1"
 	The127001 PreviewHost = "127.0.0.1"
+)
+
+type HTTPProviderCreateProblem string
+
+const (
+	AgentFailed   HTTPProviderCreateProblem = "agentFailed"
+	AgentNotReady HTTPProviderCreateProblem = "agentNotReady"
+	PromptFailed  HTTPProviderCreateProblem = "promptFailed"
+)
+
+// ready: the host reads the provider. notRunning: installed, but its server does not
+// answer. unsupported: the installed version is too old or its data cannot be read. off:
+// turned off in Settings → Integrations on this computer.
+type HTTPProviderState string
+
+const (
+	HTTPProviderStateReady HTTPProviderState = "ready"
+	NotRunning             HTTPProviderState = "notRunning"
+	Off                    HTTPProviderState = "off"
+	Unsupported            HTTPProviderState = "unsupported"
+)
+
+type HTTPProviderNotifyState string
+
+const (
+	Blocked HTTPProviderNotifyState = "blocked"
+	Done    HTTPProviderNotifyState = "done"
 )
 
 // Image type detected by the broker from the file's magic bytes. The client never names it.
