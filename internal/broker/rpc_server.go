@@ -113,6 +113,9 @@ type ManagementServer struct {
 	outgoing outgoingOffer
 	// providers is herdr on this computer (providers.go); nil without one.
 	providers *providerHost
+	// providerPush sends a provider push (Push.NotifyProvider); nil
+	// without push. A test seam.
+	providerPush func(webpush.ProviderEvent) bool
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -157,6 +160,11 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	}
 	server := &ManagementServer{
 		config: config, connections: make(map[net.Conn]struct{}), trustWake: make(chan struct{}, 1),
+	}
+	if config.Push != nil {
+		server.providerPush = func(event webpush.ProviderEvent) bool {
+			return config.Push.NotifyProvider(context.Background(), event)
+		}
 	}
 	if config.Herdr != nil {
 		host, err := newProviderHost(context.Background(), server, *config.Herdr)

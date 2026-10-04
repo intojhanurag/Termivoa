@@ -461,15 +461,15 @@ func TestGlobalRateLimit(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	notifier := &Notifier{config: NotifierConfig{Now: func() time.Time { return now }}, last: map[string]time.Time{}}
 	for index := range MaxPerMinute {
-		if !notifier.admit(fmt.Sprint(index), CoalesceWindow) {
+		if !notifier.admit(fmt.Sprint(index), CoalesceWindow, &notifier.sessions, MaxPerMinute) {
 			t.Fatalf("admit %d refused", index)
 		}
 	}
-	if notifier.admit("another", CoalesceWindow) {
+	if notifier.admit("another", CoalesceWindow, &notifier.sessions, MaxPerMinute) {
 		t.Fatal("per-minute cap not enforced")
 	}
 	now = now.Add(time.Minute)
-	if !notifier.admit("another", CoalesceWindow) || !notifier.admit("0", CoalesceWindow) {
+	if !notifier.admit("another", CoalesceWindow, &notifier.sessions, MaxPerMinute) || !notifier.admit("0", CoalesceWindow, &notifier.sessions, MaxPerMinute) {
 		t.Fatal("window did not reset")
 	}
 }
@@ -482,5 +482,76 @@ func waitFor(t *testing.T, condition func() bool) {
 			t.Fatal("condition not reached")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestProviderMessagesUseTheFixedFormat(t *testing.T) {
+	target := "w8:p1.term_65d0031602b777"
+	for _, test := range []struct {
+		event ProviderEvent
+		want  Message
+	}{
+		{ProviderEvent{Provider: "herdr", Target: target, Group: "shop", Item: "silver-meadow", Agent: "claude", Kind: KindWaiting},
+			Message{Title: "herdr · shop · silver-meadow", Body: "claude needs you. Tap to answer.", Kind: KindWaiting, Provider: "herdr", Target: target}},
+		{ProviderEvent{Provider: "herdr", Target: target, Group: "shop", Item: "lucky-valley", Agent: "claude", Kind: KindDone, Duration: 12*time.Minute + 50*time.Second},
+			Message{Title: "herdr · shop · lucky-valley", Body: "claude finished after 12 min.", Kind: KindDone, Provider: "herdr", Target: target}},
+		{ProviderEvent{Provider: "herdr", Target: target, Group: "notes", Item: "notes", Agent: "codex", Kind: KindDone, Duration: 40 * time.Second},
+			Message{Title: "herdr · notes", Body: "codex finished.", Kind: KindDone, Provider: "herdr", Target: target}},
+		{ProviderEvent{Provider: "herdr", Target: target, Group: "sh\u202eop\u200b", Item: " a\x1b[2Jb ", Kind: KindWaiting},
+			Message{Title: "herdr · sh op · a [2Jb", Body: "The agent needs you. Tap to answer.", Kind: KindWaiting, Provider: "herdr", Target: target}},
+	} {
+		got, ok := ProviderMessage(test.event)
+		if !ok || got != test.want {
+			t.Errorf("ProviderMessage(%+v) = %+v, %v", test.event, got, ok)
+		}
+	}
+	long, _ := ProviderMessage(ProviderEvent{Provider: "herdr", Target: target, Group: strings.Repeat("g", 100), Item: strings.Repeat("i", 100), Kind: KindWaiting})
+	if long.Title != "herdr · "+strings.Repeat("g", 39)+"… · "+strings.Repeat("i", 39)+"…" {
+		t.Fatalf("names are not cut to 40: %q", long.Title)
+	}
+	for _, event := range []ProviderEvent{
+		{Provider: "herdr", Target: "../x", Kind: KindWaiting},
+		{Provider: "Herdr", Target: target, Kind: KindWaiting},
+		{Provider: "herdr", Target: target, Kind: "other"},
+	} {
+		if _, ok := ProviderMessage(event); ok {
+			t.Errorf("%+v accepted", event)
+		}
+	}
+	// A provider message carries no session ID, a session message no target.
+	data, _ := json.Marshal(test0(target))
+	if strings.Contains(string(data), "sessionId") {
+		t.Fatalf("provider payload %s", data)
+	}
+}
+
+func test0(target string) Message {
+	message, _ := ProviderMessage(ProviderEvent{Provider: "herdr", Target: target, Group: "a", Item: "b", Kind: KindWaiting})
+	return message
+}
+
+// Provider pushes have their own per-minute budget: a flood of herdr changes
+// never takes a session push's budget, and the reverse.
+func TestProviderBudgetIsSeparate(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	notifier := &Notifier{config: NotifierConfig{Now: func() time.Time { return now }}, last: map[string]time.Time{}}
+	for index := range ProviderMaxPerMinute {
+		if !notifier.admit(fmt.Sprintf("provider:t%d:waiting", index), CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) {
+			t.Fatalf("provider admit %d refused", index)
+		}
+	}
+	if notifier.admit("provider:another:waiting", CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) {
+		t.Fatal("provider cap not enforced")
+	}
+	for index := range MaxPerMinute {
+		if !notifier.admit(fmt.Sprint(index), CoalesceWindow, &notifier.sessions, MaxPerMinute) {
+			t.Fatalf("session admit %d refused after a provider flood", index)
+		}
+	}
+	// The same target and kind within a minute is coalesced.
+	now = now.Add(time.Minute)
+	if !notifier.admit("provider:t1:done", CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) ||
+		notifier.admit("provider:t1:done", CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) {
+		t.Fatal("provider coalescing")
 	}
 }

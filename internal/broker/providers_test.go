@@ -14,6 +14,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/herdr/herdrtest"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 // providerFixture is a broker with herdr wired to a fake herdr in a temp
@@ -25,6 +26,7 @@ type providerFixture struct {
 	herdr      *herdrtest.Server
 	config     herdr.Config
 	gateway    *rpcTestClient
+	pushes     chan webpush.ProviderEvent
 }
 
 func newProviderFixture(t *testing.T) *providerFixture {
@@ -53,6 +55,11 @@ func newProviderFixture(t *testing.T) *providerFixture {
 	provider := &providerFixture{
 		managementFixture: fixture, service: service, herdr: server,
 		config: herdr.Config{BinaryPaths: []string{binary}, Home: home},
+		pushes: make(chan webpush.ProviderEvent, 64),
+	}
+	fixture.server.providerPush = func(event webpush.ProviderEvent) bool {
+		provider.pushes <- event
+		return true
 	}
 	provider.attach(t)
 	provider.credential = pairDevice(t, service, "Phone").Credential
@@ -250,4 +257,73 @@ func TestProviderUpdateStoresSettingsAndIsLimitedPerDevice(t *testing.T) {
 	if response := fixture.update(t, other, protocol.HTTPProviderUpdateRequest{Enabled: &on}); response.Type == protocol.GatewayError {
 		t.Fatal("another device shares the limit")
 	}
+}
+
+// TestProviderPushCarriesNamesOnly is design S4: the fake herdr's titles carry
+// a marker that no push payload may contain.
+func TestProviderPushCarriesNamesOnly(t *testing.T) {
+	fixture := newProviderFixture(t)
+	marked, err := os.ReadFile(filepath.Join("..", "herdr", "testdata", "snapshot-0.9.3.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.herdr.Snapshot(marked)
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	time.Sleep(2500 * time.Millisecond) // the baseline poll of the marked snapshot
+	blocked := strings.Replace(string(marked), `"agent":"codex","agent_status":"working"`, `"agent":"codex","agent_status":"blocked"`, 1)
+	if blocked == string(marked) {
+		t.Fatal("fixture changed")
+	}
+	fixture.herdr.Snapshot([]byte(blocked))
+	var event webpush.ProviderEvent
+	select {
+	case event = <-fixture.pushes:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no push for a blocked agent")
+	}
+	message, ok := webpush.ProviderMessage(event)
+	payload, _ := json.Marshal(message)
+	if !ok || message.Title != "herdr · shop · silver-meadow" || message.Body != "codex needs you. Tap to answer." ||
+		message.Target != "w3:p1.term_65d0031602b703" || message.Kind != webpush.KindWaiting || message.SessionID != "" {
+		t.Fatalf("payload = %s", payload)
+	}
+	for _, secret := range []string{"TITLE-MARKER", "secret task", "/home/demo", ".claude"} {
+		if strings.Contains(string(payload), secret) {
+			t.Fatalf("payload leaks %q: %s", secret, payload)
+		}
+	}
+	select {
+	case extra := <-fixture.pushes:
+		t.Fatalf("baseline or repeat pushed: %+v", extra)
+	default:
+	}
+}
+
+func TestProviderPushFollowsTheSettings(t *testing.T) {
+	fixture := newProviderFixture(t)
+	host := fixture.server.providers
+	blocked := herdr.Change{Key: "w1:p1.term_1", Group: "shop", Item: "shop", Agent: "claude", To: "blocked"}
+	done := herdr.Change{Key: "w1:p1.term_1", Group: "shop", Item: "shop", Agent: "claude", To: "done", Worked: 3 * time.Minute}
+	expect := func(change herdr.Change, want bool) {
+		t.Helper()
+		fixture.server.providerChanged(change)
+		select {
+		case event := <-fixture.pushes:
+			if !want {
+				t.Fatalf("pushed %+v", event)
+			}
+		default:
+			if want {
+				t.Fatalf("no push for %+v", change)
+			}
+		}
+	}
+	expect(blocked, true)
+	expect(done, true)
+	notify := []protocol.HTTPProviderNotifyState{protocol.Done}
+	host.notify.Store(&notify)
+	expect(blocked, false)
+	expect(done, true)
+	host.enabled.Store(false)
+	expect(done, false)
 }

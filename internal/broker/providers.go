@@ -12,6 +12,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
 // Terminal workspace providers (docs/herdr-provider.md): herdr. The broker
@@ -84,7 +85,7 @@ func newProviderHost(ctx context.Context, server *ManagementServer, config herdr
 	}
 	host.notify.Store(&notify)
 	config.Enabled = host.enabled.Load
-	host.provider = herdr.New(config, nil)
+	host.provider = herdr.New(config, server.providerChanged)
 	return host, nil
 }
 
@@ -149,6 +150,27 @@ func (host *providerHost) update(ctx context.Context, server *ManagementServer, 
 	}
 	info, _ := host.info()
 	return info, nil
+}
+
+// providerChanged turns a herdr transition into a push (design section 7):
+// only while the provider is on and its notify setting has that state,
+// through the provider's own push budget.
+func (server *ManagementServer) providerChanged(change herdr.Change) {
+	host := server.providers
+	if host == nil || server.providerPush == nil || !host.enabled.Load() {
+		return
+	}
+	event := webpush.ProviderEvent{
+		Provider: herdr.ID, Target: change.Key, Group: change.Group, Item: change.Item, Agent: change.Agent,
+		Kind: webpush.KindWaiting, Duration: change.Worked,
+	}
+	state := protocol.Blocked
+	if change.To == "done" {
+		event.Kind, state = webpush.KindDone, protocol.Done
+	}
+	if host.notifies(state) {
+		server.providerPush(event)
+	}
 }
 
 // providerLimits is the per-device limiter of design S10: a fixed one-minute
