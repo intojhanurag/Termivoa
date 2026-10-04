@@ -14,6 +14,9 @@ import { Button, Notice } from './ui';
  * shown: the host never sends them.
  */
 
+/** Shown on the provider tab when a terminal left (docs/herdr-provider.md, rule 9). */
+export const GONE = 'That terminal is gone.';
+
 /** What a tap on a row opens: one terminal of one provider on one computer. */
 export interface ProviderTap {
   readonly computer: Computer;

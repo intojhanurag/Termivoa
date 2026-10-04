@@ -390,6 +390,10 @@ button.group-add { flex-shrink: 0; margin-right: -12px; color: var(--text); }
 .provider-head-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .provider-head + .rows .provider-item:last-child { border-bottom: 1px solid var(--line); }
 .list-label { padding: 22px 0 8px; border-bottom: 1px solid var(--line); }
+/* Live for a provider terminal: the way back sits before the tab chips; one line says the computer's pane is phone size. */
+.provider-back { flex-shrink: 0; min-height: 44px; padding: 0 6px 0 0; color: var(--text); font-size: 15px; }
+.size-line { margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--line); }
+.status-line .home-badge { flex-shrink: 0; }
 .chip-count { color: var(--amber); font-family: var(--mono); font-size: 11px; font-weight: 400; line-height: 14px; }
 
 /* Wall: every running session as a small live screen. Tiles only watch; a tap opens the session. */

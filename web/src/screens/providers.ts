@@ -113,7 +113,7 @@ export function providerTabs(entries: ReadonlyArray<ProviderEntry>): ReadonlyArr
 }
 
 /** Where a target is: its group and item in a snapshot, or undefined when it left. */
-export function findTarget(snapshot: Pick<HTTPProviderSnapshotResponse, 'groups'>, targetId: string): {
+export function findTarget(snapshot: { readonly groups: ReadonlyArray<HTTPProviderGroup> }, targetId: string): {
   readonly group: HTTPProviderGroup;
   readonly item: HTTPProviderItem;
   readonly target: HTTPProviderTarget;
