@@ -21,7 +21,7 @@ export class TerminalView {
       fontFamily: MONOSPACE,
       fontSize,
       screenReaderMode: false,
-      theme: { background: '#0B0E14', foreground: '#D5DCE5', cursor: '#64D8E8' },
+      theme: { background: '#07090C', foreground: '#ECE8E1', cursor: '#ECE8E1', cursorAccent: '#07090C' },
     });
     this.terminal.loadAddon(this.unicode);
     this.renderer = new FrameRenderer(this.terminal, this.unicode);

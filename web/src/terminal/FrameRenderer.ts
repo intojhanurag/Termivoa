@@ -165,7 +165,7 @@ export class FrameRenderer {
   private async paint(rows: ReadonlyArray<PaintRow>, screen: ScreenMetadata): Promise<void> {
     this.terminal.options.theme = {
       foreground: colorHex(screen.foreground),
-      background: colorHex(screen.background),
+      background: colorHex(onInk(screen.background)),
       cursor: colorHex(screen.cursorColor),
     };
 
@@ -338,6 +338,7 @@ function copyMetadata(screen: ScreenMetadata): ScreenMetadata {
 function styleSequence(style: CellStyle): string {
   validateColor(style.foreground);
   validateColor(style.background);
+  const background = onInk(style.background);
   if (style.underlineColor !== undefined) {
     validateColor(style.underlineColor);
   }
@@ -352,7 +353,7 @@ function styleSequence(style: CellStyle): string {
     style.conceal ? 8 : undefined,
     style.strikethrough ? 9 : undefined,
     `38;2;${style.foreground.r};${style.foreground.g};${style.foreground.b}`,
-    `48;2;${style.background.r};${style.background.g};${style.background.b}`,
+    `48;2;${background.r};${background.g};${background.b}`,
     style.underlineColor === undefined
       ? undefined
       : `58;2;${style.underlineColor.r};${style.underlineColor.g};${style.underlineColor.b}`,
@@ -379,6 +380,14 @@ function cursorStyle(cursor: Cursor): number {
     return cursor.blink ? 5 : 6;
   }
   return cursor.blink ? 1 : 2;
+}
+
+/**
+ * Pure black, the computer's default terminal background, is drawn as the
+ * app's ink (#07090C), so the terminal sits flush with the app around it.
+ */
+function onInk(color: Color): Color {
+  return color.r === 0 && color.g === 0 && color.b === 0 ? { ...color, r: 7, g: 9, b: 12 } : color;
 }
 
 function colorHex(color: Color): string {
