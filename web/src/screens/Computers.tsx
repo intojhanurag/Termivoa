@@ -4,7 +4,7 @@ import { removeComputer, renameComputer, watchFound, type Computer, type FoundSt
 import { foundLink, LINK_PROBLEMS, parseAddComputerLink, type AddComputerLink, type AppLocation } from '../pairing/addComputer';
 import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from '../pairing/scan';
 import { AddComputerSheet } from './AddComputer';
-import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
+import { atLeast, cantReach, CHECKING_MIN_MS, ReadFailure, type ComputerEntry } from './allSessions';
 import { ago, problemDetail, problemText } from './Sessions';
 import { Button, Notice, PairVia } from './ui';
 
@@ -51,18 +51,10 @@ export function checkFailureText(computer: Pick<Computer, 'label'>, failure: unk
 
 /** How long a Check again result stays under its row. */
 const RESULT_MS = 8_000;
-/** Check again shows "Checking…" at least this long: a computer answers in about 0.2 s, and a flash looks like nothing happened. */
-export const CHECKING_MIN_MS = 600;
 
 /** "vps answered in 0.2 s.": seconds with one decimal, never below 0.1. */
 export function answeredText(label: string, ms: number): string {
   return `${label} answered in ${Math.max(0.1, Math.round(ms / 100) / 10).toFixed(1)} s.`;
-}
-
-/** Settles like `work`, but not before `ms` have passed. */
-export function atLeast<T>(work: Promise<T>, ms: number): Promise<T> {
-  const wait = new Promise((resolve) => { setTimeout(resolve, ms); });
-  return Promise.allSettled([work, wait]).then(() => work);
 }
 
 /** Check again on one row: working (`text` undefined) or its result. */
