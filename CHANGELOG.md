@@ -390,6 +390,10 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (host side): on a busy computer `pterm launch` said "broker did not
+  start" or "gateway did not start" after 10 s, and the service started a
+  moment later. It now waits up to 30 s, as `pterm setup` does (#175).
+  Phone: no change.
 - Fix (phone side): **Retry** on "vps · can't reach" in Sessions showed
   nothing when tapped, so it looked dead. It now shows a spinner and
   "Retrying…" for at least 600 ms while it asks the computer again. Host: no

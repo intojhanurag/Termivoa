@@ -1546,8 +1546,10 @@ func startDetached(ctx context.Context, env lifecycleEnv, status lifecycle.Statu
 	return child.Process.Release()
 }
 
+// waitFor waits as long as setup does: on a busy computer, or on the first
+// run of a new binary, a service needs more than waitTimeout to answer (#175).
 func waitFor(ctx context.Context, check func() error) error {
-	return waitWithin(ctx, waitTimeout, check)
+	return waitWithin(ctx, 3*waitTimeout, check)
 }
 
 func waitWithin(ctx context.Context, timeout time.Duration, check func() error) error {
