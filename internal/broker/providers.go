@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -11,7 +12,10 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/herdr"
+	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
+	"github.com/intojhanurag/phone-terminal/internal/terminal"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
@@ -27,6 +31,11 @@ const (
 	providerOpensPerMinute   = 20
 	providerCreatesPerMinute = 3
 	providerUpdatesPerMinute = 10
+
+	// providerIdleEnd ends a provider session this long after its last
+	// viewer left; a new session counts as viewed for as long.
+	providerIdleEnd   = 10 * time.Second
+	providerReapEvery = time.Second
 )
 
 // providerFailure is a provider error with its fixed public code and text.
@@ -62,16 +71,29 @@ func classifyProviderError(err error) (managementFailure, bool) {
 // providerHost is the broker's side of one provider.
 type providerHost struct {
 	provider *herdr.Provider
+	home     string // where a session starts when its checkout folder is refused
 	enabled  atomic.Bool
 	notify   atomic.Pointer[[]protocol.HTTPProviderNotifyState]
 	limits   providerLimits
 	settings sync.Mutex // orders setting writes
+	locks    keyedLocks // one open at a time per target
+
+	mu       sync.Mutex
+	sessions map[string]*providerOpen // by target key
+}
+
+// providerOpen is one live provider session.
+type providerOpen struct {
+	session        *providerSession
+	id, generation string
+	title, target  string
+	viewed         time.Time // guarded by providerHost.mu
 }
 
 // newProviderHost loads the Integrations settings (absent: on, both states)
 // and builds the provider. onChange receives push transitions.
 func newProviderHost(ctx context.Context, server *ManagementServer, config herdr.Config) (*providerHost, error) {
-	host := &providerHost{}
+	host := &providerHost{home: config.Home, sessions: map[string]*providerOpen{}}
 	enabled, found, err := server.config.Store.GetSetting(ctx, providerEnabledKey)
 	if err != nil {
 		return nil, err
@@ -216,17 +238,209 @@ func (server *ManagementServer) providerFor(id string) (*providerHost, error) {
 	return host, nil
 }
 
-// runProviders starts the poll loop; the returned stop waits for it.
+// runProviders starts the poll loop and the session reaper; the returned
+// stop waits for both.
 func (server *ManagementServer) runProviders(ctx context.Context) (stop func()) {
-	if server.providers == nil {
+	host := server.providers
+	if host == nil {
 		return func() {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	var wait sync.WaitGroup
-	wait.Go(func() { server.providers.provider.Run(ctx) })
+	wait.Go(func() { host.provider.Run(ctx) })
+	wait.Go(func() {
+		ticker := time.NewTicker(providerReapEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				host.reap(ctx, time.Now())
+			}
+		}
+	})
 	return func() {
 		cancel()
 		wait.Wait()
+	}
+}
+
+// providerSession is a provider session as the registry hands it out.
+// History (the attach client draws on the alternate screen), preview,
+// tasks and worktrees are refused; Changes and files read the checkout
+// folder only when it passed the project-path checks (N3).
+type providerSession struct {
+	registrySession
+	changes string // "" when Changes is refused
+}
+
+func (session *providerSession) ReadHistory(context.Context, string, terminal.HistoryReadRequest) (terminal.HistoryReadResult, error) {
+	return terminal.HistoryReadResult{}, errProviderFeature
+}
+
+func (session *providerSession) PreviewTarget(context.Context, uint16) (string, error) {
+	return "", errProviderFeature
+}
+
+func (session *providerSession) ChangesFolder(context.Context) (string, error) {
+	if session.changes == "" {
+		return "", errProviderChanges
+	}
+	return session.changes, nil
+}
+
+func (session *providerSession) ProjectFolder() string { return "" }
+
+// providerRefused lists the live requests a provider session refuses.
+func providerRefused(kind protocol.MessageType) bool {
+	switch kind {
+	case protocol.HistoryRead, protocol.TasksList, protocol.BranchesList, protocol.WorktreeRemove:
+		return true
+	}
+	return false
+}
+
+// providerDirectory is N3: the checkout path must pass the project-path
+// checks and be owned by this user. Else the session starts in the home
+// folder and Changes is refused.
+func (host *providerHost) providerDirectory(path string) (start, changes string) {
+	if path == "" {
+		return host.home, ""
+	}
+	resolved, info, err := resolveProjectFolder(path)
+	if err != nil || ipc.RequireCurrentOwner(info) != nil {
+		return host.home, ""
+	}
+	return resolved, resolved
+}
+
+// open opens, or reuses, the provider session of one target (design
+// section 6): one lock per target, never control, never --takeover.
+func (server *ManagementServer) openProvider(
+	ctx context.Context, host *providerHost, device string, request protocol.HTTPProviderOpenRequest,
+) (protocol.HTTPProviderOpenResponse, error) {
+	if !host.enabled.Load() {
+		return protocol.HTTPProviderOpenResponse{}, errProviderUnavailable
+	}
+	if !host.limits.take("open", device, providerOpensPerMinute, server.now()) {
+		return protocol.HTTPProviderOpenResponse{}, errProviderRate
+	}
+	attach, err := host.provider.Attach(request.TargetID)
+	switch {
+	case errors.Is(err, herdr.ErrTargetMissing):
+		return protocol.HTTPProviderOpenResponse{}, errProviderTarget
+	case err != nil:
+		return protocol.HTTPProviderOpenResponse{}, errProviderUnavailable
+	}
+	unlock := host.locks.lock(attach.Key)
+	defer unlock()
+	response := protocol.HTTPProviderOpenResponse{Session: protocol.HTTPProviderSession{
+		Title: attach.Title, Provider: herdr.ID, TargetID: request.TargetID, State: protocol.Running,
+	}}
+	host.mu.Lock()
+	existing := host.sessions[attach.Key]
+	host.mu.Unlock()
+	if existing != nil {
+		if status, err := existing.session.Status(ctx); err == nil && status.State == SessionRunning {
+			host.mu.Lock()
+			existing.viewed = time.Now()
+			host.mu.Unlock()
+			response.Session.ID, response.Session.Generation, response.Session.Title = existing.id, existing.generation, existing.title
+			response.Session.Columns, response.Session.Rows = int64(status.Columns), int64(status.Rows)
+			response.Reused = true
+			return response, nil
+		}
+	}
+	start, changes := host.providerDirectory(attach.Directory)
+	session, id, generation, err := server.config.Registry.CreateProvider(ptyhost.Spec{
+		Executable: attach.Argv[0], Args: attach.Argv[1:], Env: attach.Env, Directory: start,
+		Columns: int(request.Columns), Rows: int(request.Rows),
+	}, changes)
+	if errors.Is(err, ErrProviderLimit) {
+		return protocol.HTTPProviderOpenResponse{}, errProviderSessions
+	}
+	if err != nil {
+		return protocol.HTTPProviderOpenResponse{}, err
+	}
+	host.mu.Lock()
+	host.sessions[attach.Key] = &providerOpen{
+		session: session, id: id, generation: generation, title: attach.Title, target: request.TargetID, viewed: time.Now(),
+	}
+	host.mu.Unlock()
+	response.Session.ID, response.Session.Generation = id, generation
+	response.Session.Columns, response.Session.Rows = request.Columns, request.Rows
+	return response, nil
+}
+
+// reap ends provider sessions (design section 6, rule 6): 10 s after the
+// last viewer left (the first 10 s count as viewed), when the target left
+// the snapshot (herdr restarted or the pane closed), or when the provider
+// is off. Ending the attach gives the laptop its pane size back.
+func (host *providerHost) reap(ctx context.Context, now time.Time) {
+	host.mu.Lock()
+	opens := maps.Clone(host.sessions)
+	host.mu.Unlock()
+	for key, open := range opens {
+		select {
+		case <-open.session.Ended():
+			host.mu.Lock()
+			if host.sessions[key] == open {
+				delete(host.sessions, key)
+			}
+			host.mu.Unlock()
+			continue
+		default:
+		}
+		end := !host.enabled.Load() || !host.provider.Has(key)
+		if !end {
+			presence, err := open.session.Presence(ctx, false)
+			host.mu.Lock()
+			if err == nil && presence.Viewers > 0 {
+				open.viewed = now
+			}
+			end = now.Sub(open.viewed) >= providerIdleEnd
+			host.mu.Unlock()
+		}
+		if end {
+			terminate, cancel := context.WithTimeout(ctx, shutdownTimeout)
+			_ = open.session.Terminate(terminate)
+			cancel()
+		}
+	}
+}
+
+// keyedLocks is one mutex per key, dropped when nobody holds or waits.
+type keyedLocks struct {
+	mu    sync.Mutex
+	locks map[string]*keyedLock
+}
+
+type keyedLock struct {
+	sync.Mutex
+	users int
+}
+
+func (locks *keyedLocks) lock(key string) (unlock func()) {
+	locks.mu.Lock()
+	if locks.locks == nil {
+		locks.locks = map[string]*keyedLock{}
+	}
+	held := locks.locks[key]
+	if held == nil {
+		held = &keyedLock{}
+		locks.locks[key] = held
+	}
+	held.users++
+	locks.mu.Unlock()
+	held.Lock()
+	return func() {
+		held.Unlock()
+		locks.mu.Lock()
+		if held.users--; held.users == 0 {
+			delete(locks.locks, key)
+		}
+		locks.mu.Unlock()
 	}
 }
 
@@ -265,6 +479,20 @@ func (server *ManagementServer) dispatchProvider(
 			return nil, errProviderRate
 		}
 		return host.update(ctx, server, payload.Request)
+	case protocol.GatewayProvidersOpen:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCProviderOpenPayload](request)
+		if err != nil {
+			return nil, err
+		}
+		principal, err := authorize(payload.Credential)
+		if err != nil {
+			return nil, err
+		}
+		host, err := server.providerFor(payload.Provider)
+		if err != nil {
+			return nil, err
+		}
+		return server.openProvider(ctx, host, principal.DeviceID, payload.Request)
 	default:
 		return nil, errors.New("broker: unsupported provider request")
 	}

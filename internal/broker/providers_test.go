@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 	"uuid"
@@ -14,6 +18,8 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/herdr/herdrtest"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
+	"github.com/intojhanurag/phone-terminal/internal/terminal"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
 
@@ -326,4 +332,527 @@ func TestProviderPushFollowsTheSettings(t *testing.T) {
 	expect(done, true)
 	host.enabled.Store(false)
 	expect(done, false)
+}
+
+// fakeStarts makes every registry start a stream-fake session with its own
+// process, and records what was started.
+type fakeStarts struct {
+	mu        sync.Mutex
+	configs   []SessionConfig
+	processes []*streamProcess
+}
+
+func (fixture *managementFixture) fakeStarts() *fakeStarts {
+	starts := &fakeStarts{}
+	fixture.registry.config.start = func(parent context.Context, config SessionConfig) (registrySession, error) {
+		process := &streamProcess{viewerProcess: newViewerProcess()}
+		config.InputQueueCapacity, config.PTYOutputQueue = DefaultInputQueueCapacity, DefaultPTYOutputQueue
+		ctx, cancel := context.WithCancel(context.Background())
+		core, err := terminal.New(ctx, terminal.Config{Columns: config.Process.Columns, Rows: config.Process.Rows})
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		starts.mu.Lock()
+		starts.configs = append(starts.configs, config)
+		starts.processes = append(starts.processes, process)
+		starts.mu.Unlock()
+		return startSessionRuntime(ctx, cancel, parent.Done(), config, process, core)
+	}
+	return starts
+}
+
+func (starts *fakeStarts) count() int {
+	starts.mu.Lock()
+	defer starts.mu.Unlock()
+	return len(starts.configs)
+}
+
+func (starts *fakeStarts) last() (SessionConfig, *streamProcess) {
+	starts.mu.Lock()
+	defer starts.mu.Unlock()
+	return starts.configs[len(starts.configs)-1], starts.processes[len(starts.processes)-1]
+}
+
+func (fixture *providerFixture) open(t *testing.T, credential, target string) protocol.GatewayRPCEnvelope {
+	t.Helper()
+	return fixture.gateway.gateway(t, protocol.GatewayProvidersOpen, protocol.GatewayRPCProviderOpenPayload{
+		Credential: credential, Provider: herdr.ID,
+		Request: protocol.HTTPProviderOpenRequest{TargetID: target, Columns: 45, Rows: 20},
+	})
+}
+
+func (fixture *providerFixture) mustOpen(t *testing.T, target string) protocol.HTTPProviderOpenResponse {
+	t.Helper()
+	response := fixture.open(t, fixture.credential, target)
+	opened, err := protocol.DecodeRPCPayload[protocol.HTTPProviderOpenResponse](response)
+	if err != nil || response.Type != protocol.GatewayProvidersOpenResult {
+		t.Fatalf("open %s = %s %s", target, response.Type, response.Payload)
+	}
+	return opened
+}
+
+const (
+	targetShop   = "w1:p1.term_65d0031602b701"
+	targetLogs   = "w1:p3.term_65d0031602b712"
+	targetNotes  = "w2:p1.term_65d0031602b702"
+	targetSilver = "w3:p1.term_65d0031602b703"
+	targetAPI    = "w4:p1.term_65d0031602b704"
+	targetLucky  = "w5:p1.term_65d0031602b705"
+)
+
+func TestProviderOpenStartsTheAttachClientOnce(t *testing.T) {
+	fixture := newProviderFixture(t)
+	starts := fixture.fakeStarts()
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	opened := fixture.mustOpen(t, targetShop)
+	session := opened.Session
+	if opened.Reused || session.Title != "herdr · shop" || session.Columns != 45 || session.Rows != 20 ||
+		session.Provider != "herdr" || session.TargetID != targetShop || session.State != protocol.Running {
+		t.Fatalf("open = %+v", opened)
+	}
+	config, _ := starts.last()
+	binary := fixture.config.BinaryPaths[0]
+	if config.Process.Executable != binary || strings.Join(config.Process.Args, " ") != "agent attach w1:p1" ||
+		config.Process.Columns != 45 || config.Process.Rows != 20 || !config.DoublePrefix || config.Notify != nil {
+		t.Fatalf("started %+v", config)
+	}
+	// The fixture's checkout path does not exist: the session starts in the
+	// home folder and Changes is refused (N3).
+	if config.Process.Directory != fixture.config.Home {
+		t.Fatalf("directory = %q", config.Process.Directory)
+	}
+	for _, want := range []string{"HOME=" + fixture.config.Home, "HERDR_SOCKET_PATH=" + fixture.herdr.Path, "TERM=xterm-256color"} {
+		if !slices.Contains(config.Process.Env, want) {
+			t.Fatalf("env %v lacks %s", config.Process.Env, want)
+		}
+	}
+	// A second open of the same terminal reuses it, and two at once make one.
+	if again := fixture.mustOpen(t, targetShop); !again.Reused || again.Session.ID != session.ID {
+		t.Fatalf("reopen = %+v", again)
+	}
+	var wait sync.WaitGroup
+	ids := make(chan string, 2)
+	for range 2 {
+		wait.Go(func() {
+			client := startRPCTestClient(t, fixture.server, protocol.Gateway)
+			response := client.gateway(t, protocol.GatewayProvidersOpen, protocol.GatewayRPCProviderOpenPayload{
+				Credential: fixture.credential, Provider: herdr.ID,
+				Request: protocol.HTTPProviderOpenRequest{TargetID: targetSilver, Columns: 45, Rows: 20},
+			})
+			opened, _ := protocol.DecodeRPCPayload[protocol.HTTPProviderOpenResponse](response)
+			ids <- opened.Session.ID
+		})
+	}
+	wait.Wait()
+	if first, second := <-ids, <-ids; first == "" || first != second || starts.count() != 2 {
+		t.Fatalf("parallel opens = %s %s, %d starts", first, second, starts.count())
+	}
+	// Never in the sessions list, pterm ls or the shutdown list.
+	list, _ := protocol.DecodeRPCPayload[protocol.HTTPSessionListResponse](
+		fixture.gateway.gateway(t, protocol.GatewaySessionList, credentialPayload(fixture.credential)))
+	for _, record := range list.Sessions {
+		if record.ID == session.ID {
+			t.Fatal("a provider session is in GET /api/v1/sessions")
+		}
+	}
+	statuses, _ := fixture.registry.List(context.Background())
+	for _, status := range statuses {
+		if status.ID == session.ID {
+			t.Fatal("a provider session is in Registry.List")
+		}
+	}
+	if _, err := fixture.persistence.GetSession(context.Background(), session.ID); err == nil {
+		t.Fatal("a provider session was stored")
+	}
+}
+
+func TestProviderOpenRefusals(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.fakeStarts()
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	// A pane ID with another terminal ID (a restarted herdr), or no such pane.
+	for _, target := range []string{"w1:p1.term_000000000000", "w9:p1.term_1"} {
+		if code := gatewayErrorCode(t, fixture.open(t, fixture.credential, target)); code != protocol.SessionMissing {
+			t.Fatalf("%s = %s", target, code)
+		}
+	}
+	// Cap: 4 provider sessions, apart from the 8 normal ones; no eviction.
+	for _, target := range []string{targetShop, targetSilver, targetAPI, targetLucky} {
+		fixture.mustOpen(t, target)
+	}
+	response := fixture.open(t, fixture.credential, targetLogs)
+	if code := gatewayErrorCode(t, response); code != protocol.LimitExceeded ||
+		gatewayErrorMessage(t, response) != "4 herdr terminals are open; close one and try again" {
+		t.Fatalf("5th open = %s %q", code, gatewayErrorMessage(t, response))
+	}
+	fixture.registry.mu.Lock()
+	normal, provider := fixture.registry.liveCounts()
+	fixture.registry.mu.Unlock()
+	if normal != 1 || provider != 4 {
+		t.Fatalf("live counts = %d normal, %d provider", normal, provider)
+	}
+	// Off: host_unavailable.
+	off := false
+	fixture.update(t, fixture.credential, protocol.HTTPProviderUpdateRequest{Enabled: &off})
+	if code := gatewayErrorCode(t, fixture.open(t, fixture.credential, targetShop)); code != protocol.HostUnavailable {
+		t.Fatalf("open while off = %s", code)
+	}
+	// 20 opens a minute per device.
+	on := true
+	fixture.update(t, fixture.credential, protocol.HTTPProviderUpdateRequest{Enabled: &on})
+	other := pairDevice(t, fixture.service, "Tablet").Credential
+	for range providerOpensPerMinute {
+		fixture.open(t, other, targetShop)
+	}
+	if code := gatewayErrorCode(t, fixture.open(t, other, targetShop)); code != protocol.LimitExceeded {
+		t.Fatalf("21st open = %s", code)
+	}
+}
+
+// attachTo attaches a stream client to any session and applies its snapshot.
+func (client *streamClient) attachTo(t *testing.T, id, generation string) {
+	t.Helper()
+	client.await(t, protocol.Welcome, "")
+	client.send(t, protocol.SessionAttach, &id, &generation, protocol.EmptyPayload{})
+	begin, err := protocol.DecodePayload[protocol.SnapshotBeginPayload](client.await(t, protocol.SnapshotBegin, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.await(t, protocol.SnapshotEnd, "")
+	client.send(t, protocol.SnapshotApplied, &id, &generation, protocol.SnapshotAppliedPayload{SnapshotID: begin.SnapshotID, Revision: begin.Revision})
+}
+
+func TestProviderSessionRefusesFeatures(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.fakeStarts()
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	session := fixture.mustOpen(t, targetShop).Session
+	id, generation := session.ID, session.Generation
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attachTo(t, id, generation)
+	for kind, payload := range map[protocol.MessageType]any{
+		protocol.HistoryRead:    protocol.HistoryReadPayload{HistoryEpoch: "1", HistoryRevision: "1", Offset: 0, Limit: 10},
+		protocol.TasksList:      protocol.EmptyPayload{},
+		protocol.BranchesList:   protocol.EmptyPayload{},
+		protocol.WorktreeRemove: protocol.WorktreeRemovePayload{Lease: strings.Repeat("A", 43)},
+		protocol.ChangesList:    protocol.EmptyPayload{}, // N3: the checkout folder is refused
+		protocol.FilesList:      protocol.FilesListPayload{Path: ""},
+	} {
+		request := client.send(t, kind, &id, &generation, payload)
+		failure, err := protocol.DecodePayload[protocol.ErrorPayload](client.await(t, protocol.Error, request))
+		if err != nil || failure.Code != protocol.InvalidRequest {
+			t.Fatalf("%s = %+v %v", kind, failure, err)
+		}
+	}
+	// Rename, terminate, preview and upload act on stored sessions only.
+	operation := uuid.New().String()
+	if code := gatewayErrorCode(t, fixture.gateway.gateway(t, protocol.GatewaySessionTerminate, protocol.GatewayRPCSessionTerminatePayload{
+		Credential: fixture.credential, SessionID: id, Request: protocol.HTTPSessionTerminateRequest{OperationID: operation, Generation: generation},
+	})); code != protocol.SessionMissing {
+		t.Fatalf("terminate = %s", code)
+	}
+	if code := gatewayErrorCode(t, fixture.gateway.gateway(t, protocol.GatewaySessionRename, protocol.GatewayRPCSessionRenamePayload{
+		Credential: fixture.credential, SessionID: id,
+		Request: protocol.HTTPSessionRenameRequest{OperationID: uuid.New().String(), Generation: generation, Title: "x"},
+	})); code != protocol.SessionMissing {
+		t.Fatalf("rename = %s", code)
+	}
+	if code := gatewayErrorCode(t, fixture.gateway.gateway(t, protocol.GatewayPreviewCheck, protocol.GatewayRPCPreviewCheckPayload{
+		Credential: fixture.credential, SessionID: id, Port: 3000,
+	})); code != protocol.InvalidRequest {
+		t.Fatalf("preview = %s", code)
+	}
+	if status, err := fixture.registry.Get(id); err != nil {
+		t.Fatal(err)
+	} else if presence, _ := status.Presence(context.Background(), false); presence.Viewers != 1 {
+		t.Fatalf("viewers = %d", presence.Viewers)
+	}
+}
+
+func TestProviderSessionChangesUseAnOwnedCheckout(t *testing.T) {
+	fixture := newProviderFixture(t)
+	starts := fixture.fakeStarts()
+	checkout, err := os.MkdirTemp("/tmp", "herdr-checkout-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(checkout) })
+	snapshot, _ := os.ReadFile(filepath.Join("..", "herdr", "testdata", "snapshot-0.8.2.json"))
+	fixture.herdr.Snapshot([]byte(strings.ReplaceAll(string(snapshot), `"checkout_path":"/home/demo/shop"`, `"checkout_path":"`+checkout+`"`)))
+	time.Sleep(2500 * time.Millisecond)
+	session := fixture.mustOpen(t, targetShop).Session
+	config, _ := starts.last()
+	resolved, _ := filepath.EvalSymlinks(checkout)
+	if config.Process.Directory != resolved {
+		t.Fatalf("directory = %q, want %q", config.Process.Directory, resolved)
+	}
+	managed, err := fixture.registry.Get(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if folder, err := managed.ChangesFolder(context.Background()); err != nil || folder != resolved {
+		t.Fatalf("changes folder = %q %v", folder, err)
+	}
+}
+
+func TestProviderSessionsEndWithoutViewers(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.fakeStarts()
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	host := fixture.server.providers
+	ctx := context.Background()
+	opened := fixture.mustOpen(t, targetShop).Session
+	viewed := fixture.mustOpen(t, targetSilver).Session
+	now := time.Now()
+	ended := func(id string) bool {
+		_, err := fixture.registry.Get(id)
+		return err != nil
+	}
+	// The first 10 s count as viewed: the phone may not have attached yet.
+	host.reap(ctx, now.Add(5*time.Second))
+	if ended(opened.ID) || ended(viewed.ID) {
+		t.Fatal("a session ended during its first 10 s")
+	}
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attachTo(t, viewed.ID, viewed.Generation)
+	host.reap(ctx, now.Add(11*time.Second))
+	waitFor(t, func() bool { return ended(opened.ID) })
+	if ended(viewed.ID) {
+		t.Fatal("a watched session ended")
+	}
+	// The viewer leaves: 10 s later the session ends.
+	_ = client.conn.Close()
+	host.mu.Lock()
+	watched := host.sessions[targetSilver].session
+	host.mu.Unlock()
+	waitFor(t, func() bool {
+		presence, err := watched.Presence(ctx, false)
+		return err == nil && presence.Viewers == 0
+	})
+	host.reap(ctx, now.Add(15*time.Second))
+	if ended(viewed.ID) {
+		t.Fatal("ended before 10 s without a viewer")
+	}
+	host.reap(ctx, now.Add(22*time.Second))
+	waitFor(t, func() bool { return ended(viewed.ID) })
+	host.reap(ctx, now.Add(23*time.Second))
+	host.mu.Lock()
+	left := len(host.sessions)
+	host.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("%d ended sessions kept", left)
+	}
+
+	// The target leaves the snapshot (pane closed, herdr restarted): it ends.
+	gone := fixture.mustOpen(t, targetAPI).Session
+	snapshot, _ := os.ReadFile(filepath.Join("..", "herdr", "testdata", "snapshot-0.8.2.json"))
+	fixture.herdr.Snapshot([]byte(strings.ReplaceAll(string(snapshot), "term_65d0031602b704", "term_65d0031602b7ff")))
+	waitFor(t, func() bool { return !host.provider.Has(targetAPI) })
+	host.reap(ctx, time.Now())
+	waitFor(t, func() bool { return ended(gone.ID) })
+
+	// Off ends every provider session.
+	off := fixture.mustOpen(t, targetLucky).Session
+	host.enabled.Store(false)
+	host.reap(ctx, time.Now())
+	waitFor(t, func() bool { return ended(off.ID) })
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not reached")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// providerInputFixture is one provider session (rpcSessionID) on a real
+// terminal core and a recording process, with a controlling CLI client.
+func providerInputFixture(t *testing.T, double bool) (*streamClient, *streamProcess, protocol.ControlChangedPayload) {
+	t.Helper()
+	fixture := newManagementFixture(t)
+	starts := fixture.fakeStarts()
+	spec := ptyhost.Spec{Executable: "/bin/false", Columns: 80, Rows: 24}
+	if double {
+		if _, id, _, err := fixture.registry.CreateProvider(spec, ""); err != nil || id != rpcSessionID {
+			t.Fatalf("create provider = %s %v", id, err)
+		}
+	} else if _, err := fixture.registry.Create(context.Background(), CreateSessionRequest{
+		OperationID: uuid.New().String(), Title: "shell", ProjectID: rpcProjectID, ShellProfileID: rpcProfileID, Process: spec,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	config, process := starts.last()
+	if config.DoublePrefix != double {
+		t.Fatalf("DoublePrefix = %v", config.DoublePrefix)
+	}
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attach(t)
+	return client, process, client.acquire(t)
+}
+
+func sendInput(t *testing.T, client *streamClient, kind protocol.MessageType, payload any) {
+	t.Helper()
+	request := client.action(t, kind, payload)
+	if message := client.await(t, "", request); message.Type != protocol.InputAccepted {
+		for message.Type != protocol.InputAccepted && message.Type != protocol.InputRejected {
+			message = client.await(t, "", request)
+		}
+		if message.Type != protocol.InputAccepted {
+			t.Fatalf("%s rejected: %s", kind, message.Payload)
+		}
+	}
+}
+
+// TestProviderInputDoublesCtrlBForEveryKind is N2: the single PTY writer
+// doubles 0x02 after any input is built. Text and paste cannot carry 0x02
+// (they refuse control bytes), so they prove the path stays unchanged;
+// ctrl+b as a key is doubled; an answer card writes through the same writer.
+func TestProviderInputDoublesCtrlBForEveryKind(t *testing.T) {
+	ctrlB := protocol.InputKeyPayload{Key: protocol.Character, Character: new("b"), Modifiers: protocol.Modifiers{Ctrl: true}}
+	enter := protocol.InputKeyPayload{Key: protocol.Enter}
+	for _, test := range []struct {
+		name  string
+		input func(client *streamClient, lease string)
+		want  string
+	}{
+		{"key", func(client *streamClient, lease string) {
+			ctrlB.Lease, ctrlB.InputSequence = lease, "1"
+			sendInput(t, client, protocol.InputKey, ctrlB)
+		}, "\x02\x02"},
+		{"text", func(client *streamClient, lease string) {
+			sendInput(t, client, protocol.InputText, protocol.InputTextPayload{Lease: lease, InputSequence: "1", Text: "yes"})
+		}, "yes"},
+		{"paste", func(client *streamClient, lease string) {
+			sendInput(t, client, protocol.InputPaste, protocol.InputPastePayload{Lease: lease, InputSequence: "1", Text: "a\tb"})
+		}, "a\tb"},
+		{"compose", func(client *streamClient, lease string) { // the composer: a paste, then enter
+			sendInput(t, client, protocol.InputPaste, protocol.InputPastePayload{Lease: lease, InputSequence: "1", Text: "fix the tests"})
+			enter.Lease, enter.InputSequence = lease, "2"
+			sendInput(t, client, protocol.InputKey, enter)
+		}, "fix the tests\r"},
+		{"snippet", func(client *streamClient, lease string) { // a snippet: a paste, ctrl+b, enter
+			sendInput(t, client, protocol.InputPaste, protocol.InputPastePayload{Lease: lease, InputSequence: "1", Text: "git status"})
+			ctrlB.Lease, ctrlB.InputSequence = lease, "2"
+			sendInput(t, client, protocol.InputKey, ctrlB)
+			enter.Lease, enter.InputSequence = lease, "3"
+			sendInput(t, client, protocol.InputKey, enter)
+		}, "git status\x02\x02\r"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client, process, grant := providerInputFixture(t, true)
+			test.input(client, *grant.Lease)
+			waitStreamInput(t, process, test.want)
+		})
+	}
+	t.Run("answer", func(t *testing.T) {
+		client, process, grant := providerInputFixture(t, true)
+		process.Emit([]byte(agentDialog))
+		question := awaitAgentState(t, client, protocol.Waiting).Question
+		sendInput(t, client, protocol.InputAnswer, protocol.InputAnswerPayload{
+			Lease: *grant.Lease, InputSequence: "1", QuestionID: question.ID, OptionIndex: 1,
+		})
+		waitStreamInput(t, process, "2")
+	})
+	t.Run("normal session", func(t *testing.T) {
+		client, process, grant := providerInputFixture(t, false)
+		ctrlB.Lease, ctrlB.InputSequence = *grant.Lease, "1"
+		sendInput(t, client, protocol.InputKey, ctrlB)
+		waitStreamInput(t, process, "\x02")
+	})
+}
+
+// The doubling sits in the writer, after the emulator built the bytes, so
+// it covers any input kind (and any later one).
+func TestDoublePrefixIsInTheSingleWriter(t *testing.T) {
+	process := &streamProcess{viewerProcess: newViewerProcess()}
+	core := newStubTerminal()
+	ctx, cancel := context.WithCancel(context.Background())
+	session, err := startSessionRuntime(ctx, cancel, nil, SessionConfig{
+		ID: rpcSessionID, Generation: rpcSessionGen, Process: ptyhost.Spec{Columns: 80, Rows: 24}, DoublePrefix: true,
+		InputQueueCapacity: DefaultInputQueueCapacity, PTYOutputQueue: DefaultPTYOutputQueue,
+	}, process, core)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	core.output <- []byte("a\x02b\x02\x02")
+	waitStreamInput(t, process, "a\x02\x02b\x02\x02\x02\x02")
+}
+
+// TestProviderSessionRunsFakeHerdr opens a terminal end to end: the built
+// fakeherdr serves the socket and runs the attach client in a real PTY at
+// the phone's size; ctrl+b reaches it as one literal ctrl+b; the session
+// ends after its viewer leaves and the attach client exits.
+func TestProviderSessionRunsFakeHerdr(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds fakeherdr")
+	}
+	fixture := newProviderFixture(t)
+	root := filepath.Dir(filepath.Dir(fixture.config.BinaryPaths[0]))
+	binary, err := herdrtest.Build(filepath.Join(root, "fake"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.herdr.Stop()
+	folder := filepath.Dir(fixture.herdr.Path)
+	snapshot, _ := os.ReadFile(filepath.Join("..", "herdr", "testdata", "snapshot-0.8.2.json"))
+	if err := herdrtest.Scenario(folder, false, []string{"claude", "codex"}, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	server := exec.Command(binary, "server")
+	server.Env = []string{"HOME=" + fixture.config.Home}
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = server.Process.Signal(syscall.SIGTERM)
+		_ = server.Wait()
+	})
+	waitFor(t, func() bool { _, err := os.Stat(filepath.Join(folder, "control.sock")); return err == nil })
+	fixture.registry.config.start = func(ctx context.Context, config SessionConfig) (registrySession, error) {
+		return StartSession(ctx, config)
+	}
+	fixture.config.BinaryPaths = []string{binary}
+	fixture.attach(t)
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+
+	session := fixture.mustOpen(t, targetShop).Session
+	managed, err := fixture.registry.Get(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		frame, err := managed.Snapshot(context.Background())
+		return err == nil && strings.Contains(screenText(frame), "FAKE-HERDR w1:p1 45x20")
+	})
+	client := startStreamClient(t, fixture.server, protocol.CLI)
+	client.attachTo(t, session.ID, session.Generation)
+	id, generation := session.ID, session.Generation
+	request := client.send(t, protocol.ControlAcquire, &id, &generation, protocol.EmptyPayload{})
+	grant, _ := protocol.DecodePayload[protocol.ControlChangedPayload](client.await(t, protocol.ControlChanged, request))
+	request = client.send(t, protocol.InputKey, &id, &generation, protocol.InputKeyPayload{
+		Lease: *grant.Lease, InputSequence: "1", Key: protocol.Character, Character: new("b"), Modifiers: protocol.Modifiers{Ctrl: true},
+	})
+	client.await(t, protocol.InputAccepted, request)
+	request = client.send(t, protocol.InputText, &id, &generation, protocol.InputTextPayload{Lease: *grant.Lease, InputSequence: "2", Text: "q"})
+	client.await(t, protocol.InputAccepted, request)
+	log := func() string { data, _ := os.ReadFile(filepath.Join(folder, "fake.log")); return string(data) }
+	// One literal ctrl+b then q: never ctrl+b q (detach).
+	waitFor(t, func() bool { return strings.Contains(log(), "input w1:p1 02") && strings.Contains(log(), "71") })
+	if strings.Contains(log(), "exit 0 detach") {
+		t.Fatal("the phone detached the attach client")
+	}
+	_ = client.conn.Close()
+	clock := time.Now()
+	waitFor(t, func() bool {
+		clock = clock.Add(providerIdleEnd + time.Second)
+		fixture.server.providers.reap(context.Background(), clock)
+		return strings.Contains(log(), "attach w1:p1 exit")
+	})
+	waitFor(t, func() bool { _, err := fixture.registry.Get(session.ID); return err != nil })
 }

@@ -395,7 +395,8 @@ func (live *world) agentPrompt(params json.RawMessage) (any, *herdrtest.Error) {
 
 // attach is the TTY client: it draws a marker and its size, echoes input,
 // logs sizes, input and exit, and ends on ctrl+b q (exit 0), when its pane
-// closes (exit 1) or when another client holds the terminal (exit 1).
+// closes, on SIGHUP or SIGTERM (exit 1) or when another client holds the
+// terminal (exit 1).
 // ctrl+b ctrl+b passes one literal ctrl+b; ctrl+b and another key drops the
 // ctrl+b, as herdr's attach client does.
 func attach(folder, pane, terminalID string, byAgent bool) {
@@ -430,8 +431,9 @@ func attach(folder, pane, terminalID string, byAgent bool) {
 	}
 	fmt.Print("\x1b[?1049h")
 	draw()
-	resized := make(chan os.Signal, 1)
+	resized, hangup := make(chan os.Signal, 1), make(chan os.Signal, 1)
 	signal.Notify(resized, syscall.SIGWINCH)
+	signal.Notify(hangup, syscall.SIGHUP, syscall.SIGTERM)
 	input := make(chan []byte)
 	go func() {
 		buffer := make([]byte, 4096)
@@ -460,6 +462,8 @@ func attach(folder, pane, terminalID string, byAgent bool) {
 		select {
 		case <-resized:
 			draw()
+		case <-hangup:
+			end(1, "hangup")
 		case <-ticker.C:
 			if !slices.ContainsFunc(list(readState(folder), "panes"), func(record map[string]any) bool { return record["pane_id"] == pane }) {
 				end(1, "pane closed")

@@ -26,6 +26,9 @@ const (
 	MaxRetainedSessionRecords     = 4096
 	DefaultCreateOperationHistory = 1024
 	MaxCreateOperationHistory     = 16384
+	// MaxProviderSessions bounds provider sessions, which do not count
+	// toward MaxLiveSessions (docs/herdr-provider.md, section 6, rule 5).
+	MaxProviderSessions = 4
 )
 
 var (
@@ -37,6 +40,7 @@ var (
 	ErrOperationLimit    = errors.New("broker: durable operation receipt capacity reached")
 	ErrSessionRetired    = errors.New("broker: session process is no longer live")
 	ErrPersistenceNeeded = errors.New("broker: durable session mutation store is required")
+	ErrProviderLimit     = errors.New("broker: provider session limit reached")
 )
 
 // ManagedSession is the capability exposed to local IPC and the gateway. It
@@ -151,6 +155,9 @@ type TerminateSessionResult struct {
 type registryEntry struct {
 	session registrySession
 	final   *SessionStatus
+	// provider marks an in-memory provider session: never stored, never
+	// listed, dropped when it ends.
+	provider bool
 }
 
 type createOperation struct {
@@ -174,14 +181,16 @@ type Registry struct {
 	operations     map[string]*createOperation
 	operationOrder []string
 	pending        int
-	closed         bool
-	creates        sync.WaitGroup
-	starts         sync.WaitGroup
-	mutations      sync.WaitGroup
-	cleanups       sync.WaitGroup
-	closeDone      chan struct{}
-	closeErr       error
-	lifecycleErrs  []error
+	// providerPending counts provider sessions being started.
+	providerPending int
+	closed          bool
+	creates         sync.WaitGroup
+	starts          sync.WaitGroup
+	mutations       sync.WaitGroup
+	cleanups        sync.WaitGroup
+	closeDone       chan struct{}
+	closeErr        error
+	lifecycleErrs   []error
 }
 
 func NewRegistry(ctx context.Context, config RegistryConfig) (*Registry, error) {
@@ -338,7 +347,7 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		registry.mu.Unlock()
 		return CreateSessionResult{}, ErrRegistryClosed
 	}
-	if len(registry.sessions)+registry.pending >= registry.config.MaxLiveSessions {
+	if normal, _ := registry.liveCounts(); normal+registry.pending >= registry.config.MaxLiveSessions {
 		registry.mu.Unlock()
 		return CreateSessionResult{}, fmt.Errorf("%w: maximum %d", ErrSessionLimit, registry.config.MaxLiveSessions)
 	}
@@ -415,6 +424,78 @@ func (registry *Registry) createOnce(request CreateSessionRequest) (CreateSessio
 		return CreateSessionResult{ID: id, Generation: generation, Snapshot: persistedSnapshot}, ErrRegistryClosed
 	}
 	return CreateSessionResult{ID: id, Generation: generation, Session: session, Snapshot: persistedSnapshot}, nil
+}
+
+// liveCounts returns the live normal and provider sessions. The caller
+// holds mu.
+func (registry *Registry) liveCounts() (normal, provider int) {
+	for _, entry := range registry.sessions {
+		if entry.provider {
+			provider++
+		} else {
+			normal++
+		}
+	}
+	return normal, provider
+}
+
+// CreateProvider starts an in-memory provider session (docs/herdr-provider.md,
+// section 6): no SQLite row or receipt, no agent pushes (the screen parser
+// still runs for answer cards), ctrl+b doubled by the writer, at most
+// MaxProviderSessions apart from MaxLiveSessions. changes is the folder
+// Changes may read, "" when it is refused (N3).
+func (registry *Registry) CreateProvider(process ptyhost.Spec, changes string) (*providerSession, string, string, error) {
+	registry.mu.Lock()
+	if registry.closed {
+		registry.mu.Unlock()
+		return nil, "", "", ErrRegistryClosed
+	}
+	if _, provider := registry.liveCounts(); provider+registry.providerPending >= MaxProviderSessions {
+		registry.mu.Unlock()
+		return nil, "", "", ErrProviderLimit
+	}
+	registry.providerPending++
+	registry.starts.Add(1)
+	registry.mu.Unlock()
+	defer registry.starts.Done()
+	release := func(id string) {
+		registry.mu.Lock()
+		delete(registry.reserved, id)
+		registry.providerPending--
+		registry.mu.Unlock()
+	}
+	id, err := registry.reserveSessionID()
+	if err != nil {
+		release("")
+		return nil, "", "", err
+	}
+	generation, err := registry.config.newID()
+	if err != nil {
+		release(id)
+		return nil, "", "", fmt.Errorf("broker: create session generation: %w", err)
+	}
+	started, err := registry.config.start(registry.ctx, SessionConfig{
+		ID: id, Generation: generation, Process: process, DoublePrefix: true,
+		InputQueueCapacity: registry.config.InputQueueCapacity, PTYOutputQueue: registry.config.PTYOutputQueue,
+	})
+	if err != nil {
+		release(id)
+		return nil, "", "", err
+	}
+	session := &providerSession{registrySession: started, changes: changes}
+	entry := &registryEntry{session: session, provider: true}
+	registry.mu.Lock()
+	registry.providerPending--
+	delete(registry.reserved, id)
+	registry.sessions[id] = entry
+	closed := registry.closed
+	registry.cleanups.Add(1)
+	registry.mu.Unlock()
+	go registry.retireWhenEnded(id, entry)
+	if closed {
+		return nil, "", "", ErrRegistryClosed
+	}
+	return session, id, generation, nil
 }
 
 // agentNotifier returns the session hook for agent push notifications. The
@@ -512,7 +593,7 @@ func (registry *Registry) Terminate(ctx context.Context, request TerminateSessio
 	registry.mu.Lock()
 	entry, exists := registry.sessions[request.SessionID]
 	registry.mu.Unlock()
-	if !exists {
+	if !exists || entry.provider {
 		return TerminateSessionResult{}, ErrSessionMissing
 	}
 	status, err := entry.session.Status(ctx)
@@ -572,7 +653,9 @@ func (registry *Registry) List(ctx context.Context) ([]SessionStatus, error) {
 	}
 	entries := make([]*registryEntry, 0, len(registry.sessions))
 	for _, entry := range registry.sessions {
-		entries = append(entries, entry)
+		if !entry.provider {
+			entries = append(entries, entry)
+		}
 	}
 	statuses := make([]SessionStatus, 0, len(entries)+len(registry.retired))
 	for _, status := range registry.retired {
@@ -671,7 +754,7 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 	defer registry.cleanups.Done()
 	<-entry.session.Ended()
 	status, hasStatus := entry.session.FinalStatus()
-	if hasStatus {
+	if hasStatus && !entry.provider {
 		registry.persistFinalStatus(status)
 		registry.mu.Lock()
 		entry.final = &status
@@ -694,7 +777,7 @@ func (registry *Registry) retireWhenEnded(id string, entry *registryEntry) {
 		return
 	}
 	delete(registry.sessions, id)
-	if hasStatus {
+	if hasStatus && !entry.provider {
 		registry.retired[id] = cloneSessionStatus(status)
 		registry.retiredOrder = append(registry.retiredOrder, id)
 		for len(registry.retiredOrder) > registry.config.RetainedSessionRecords {
