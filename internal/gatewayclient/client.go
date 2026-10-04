@@ -443,15 +443,31 @@ func (client *Client) OpenProvider(
 func (client *Client) CreateProvider(
 	ctx context.Context, credential, provider string, request protocol.HTTPProviderCreateRequest,
 ) (protocol.HTTPProviderCreateResponse, error) {
-	var result protocol.HTTPProviderCreateResponse
+	return dedicated[protocol.HTTPProviderCreateResponse](ctx, client, credential, protocol.GatewayProvidersCreate,
+		protocol.GatewayRPCProviderCreatePayload{Credential: credential, Provider: provider, Request: request})
+}
+
+// ManageProvider runs on a dedicated connection, like CreateProvider: one
+// herdr call can take 15 s.
+func (client *Client) ManageProvider(
+	ctx context.Context, credential, provider string, request protocol.HTTPProviderManageRequest,
+) (protocol.HTTPProviderManageResponse, error) {
+	return dedicated[protocol.HTTPProviderManageResponse](ctx, client, credential, protocol.GatewayProvidersManage,
+		protocol.GatewayRPCProviderManagePayload{Credential: credential, Provider: provider, Request: request})
+}
+
+// dedicated sends one request on its own connection and decodes its result.
+func dedicated[Result any](
+	ctx context.Context, client *Client, credential string, requestType protocol.GatewayRPCMessageType, payload any,
+) (Result, error) {
+	var result Result
 	if ctx == nil {
 		return result, errors.New("gatewayclient: context must not be nil")
 	}
 	if err := checkCredential(credential); err != nil {
 		return result, err
 	}
-	data, requestID, err := encodeRequest(ctx, protocol.GatewayProvidersCreate,
-		protocol.GatewayRPCProviderCreatePayload{Credential: credential, Provider: provider, Request: request})
+	data, requestID, err := encodeRequest(ctx, requestType, payload)
 	if err != nil {
 		return result, err
 	}
@@ -470,16 +486,17 @@ func (client *Client) CreateProvider(
 		return result, err
 	}
 	defer clearDeadline()
-	response, err := connection.exchange(data, requestID, protocol.GatewayProvidersCreate)
+	response, err := connection.exchange(data, requestID, requestType)
 	var remote *gatewayapi.Error
 	if errors.As(err, &remote) {
 		return result, remote
 	}
 	if err == nil {
-		result, err = protocol.DecodeRPCPayload[protocol.HTTPProviderCreateResponse](response)
+		result, err = protocol.DecodeRPCPayload[Result](response)
 	}
 	if err != nil {
-		return protocol.HTTPProviderCreateResponse{}, failure(ctx, err, true)
+		var none Result
+		return none, failure(ctx, err, true)
 	}
 	return result, nil
 }

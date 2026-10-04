@@ -157,6 +157,7 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		mux.HandleFunc("/api/v1/providers/{provider}", handler.provider)
 		mux.HandleFunc("/api/v1/providers/{provider}/open", handler.providerOpen)
 		mux.HandleFunc("/api/v1/providers/{provider}/create", handler.providerCreate)
+		mux.HandleFunc("/api/v1/providers/{provider}/manage", handler.providerManage)
 	}
 	handler.mux = mux
 	return handler, nil

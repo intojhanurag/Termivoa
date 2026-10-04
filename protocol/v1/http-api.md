@@ -58,6 +58,7 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `PATCH /api/v1/providers/{provider}` | cookie | `HTTPProviderUpdateRequest` | `200 HTTPProviderInfo`; this computer's Integrations settings |
 | `POST /api/v1/providers/{provider}/open` | cookie | `HTTPProviderOpenRequest` | `200 HTTPProviderOpenResponse`; see Providers |
 | `POST /api/v1/providers/{provider}/create` | cookie | `HTTPProviderCreateRequest` | `200 HTTPProviderCreateResponse`; may take up to 45 s |
+| `POST /api/v1/providers/{provider}/manage` | cookie | `HTTPProviderManageRequest` | `200 HTTPProviderManageResponse`; revision 5; see Providers |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -167,6 +168,7 @@ every build ID the packaging scripts produce already matches.
 | 2 | Preview listener rules (see "Preview listener"): the selection needs a `Referer` of an app origin and answers `200`; every other request must come from the preview origin itself. No schema change. An app frames a peer's preview only when that peer's `protocolRevision` is 2 or higher. |
 | 3 | Found on your network (see that section): `POST /api/v1/computers/offer` (`HTTPComputerOfferRequest`) and `GET /api/v1/computers/found` (`HTTPComputerFoundResponse`, `HTTPFoundComputer`); `gateway.computers.offer`, `gateway.computers.found`, `admin.pair.offer`, `admin.pair.offer.end` (`authentication-rpc.md`); error code `home_changed`, sent only on the local administration RPC, so no app parses it and `minRevision` stays 1. The app is served by home, so it calls `found` only on its own home. A home below revision 3 answers an offer with `403`, which the new computer reports as `not_accepted`. |
 | 4 | Providers (see that section): `GET` and `PATCH /api/v1/providers/{provider}`, `POST /api/v1/providers/{provider}/open` and `/create`; `HTTPSettingsResponse.providers`; the `HTTPProvider*` bodies; `gateway.providers.get`, `.update`, `.open`, `.create` (`authentication-rpc.md`). No new error code and no enum an older app parses, so `minRevision` stays 1. The app calls a provider route only on a computer whose `protocolRevision` is 4 or higher and that lists the provider. |
+| 5 | Manage a provider (see Providers; `docs/herdr-manage.md`): `POST /api/v1/providers/{provider}/manage` (`HTTPProviderManageRequest`, `HTTPProviderManageResponse`); `gateway.providers.manage` (`authentication-rpc.md`); the `HTTPProviderState` value `notInstalled`; `HTTPProviderInfo.canInstall` and `canStart`; `HTTPProviderItem.linked`; `HTTPSettingsResponse.providers` now lists herdr as `notInstalled` on macOS and Linux when it is not installed (before: absent). `revision.json` names the feature `providerManage: 5`. No new error code. `minRevision` stays 1: an older app drops a provider entry whose state it does not know and ignores unknown fields. The app calls `manage`, and shows what needs it, only on a computer whose `protocolRevision` is 5 or higher. |
 
 ## Computers
 
@@ -240,9 +242,18 @@ home can read the grants it lists.
 ## Providers
 
 A provider is a terminal workspace tool on this computer; herdr is the only
-one (`docs/herdr-provider.md`). `GET /api/v1/settings` lists it in
-`providers` only when herdr is installed; a computer without one sends no
-`providers` and the app shows no provider tab. Every provider route uses the
+one (`docs/herdr-provider.md`, `docs/herdr-manage.md`). `GET /api/v1/settings`
+lists it in `providers` on macOS and Linux. When herdr is not installed its
+`state` is `notInstalled` (revision 5; it wins over `off`): the app shows a
+card in Settings → Integrations, no provider tab, and does not poll it;
+`canInstall` is `true` when herdr's official installer can work on this
+computer (no herdr was found, or refused, at any lookup path). With
+`notRunning`, `canStart` is `true` when the host can start herdr's server
+(a usable herdr, and no server socket that Termivoa refuses). A settings read
+while the state is `notInstalled` or `notRunning` also asks the host to look
+for herdr again at once (at most every 2 s; the read never waits for it); by
+itself the host looks every 30 s for the program and every 5 s for the
+server. A Windows computer sends no `providers`. Every provider route uses the
 same rules as `GET /api/v1/sessions`: cookie, exact own or bound app origin,
 `no-cors` refused, `Cache-Control: no-store`; mutations also need
 `X-Pterm-Request: 1`, JSON and at most 64 KiB, with unknown fields refused.
@@ -251,7 +262,11 @@ computer lists.
 
 - `GET /api/v1/providers/{provider}` answers from the broker's cache (it
   polls herdr every 2 s and never waits on it here). `state` is `ready`,
-  `notRunning`, `unsupported` or `off`; `groups` is empty unless `ready`. The
+  `notRunning`, `unsupported` or `off`; `groups` is empty unless `ready`.
+  A group has `canCreate` when it is a git repository: herdr has a worktree
+  record for it, or (revision 5) one of the workspace's pane folders is in a
+  repository of this user. An item has `linked: true` (revision 5) when it
+  is a linked worktree: only such an item can be removed. The
   body is at most 256 KiB: whole groups are dropped from the end, least
   urgent first, and `truncated` is then `true`. IDs are opaque and never
   paths; a target is `<pane ID>.<terminal ID>`. State words are a pattern,
@@ -272,6 +287,28 @@ computer lists.
   broker's own context, so a phone that disconnects does not cut it short.
   An agent that does not start is not an error: `agentStarted` is `false`
   with `problem`.
+- `POST /api/v1/providers/{provider}/manage` (revision 5; at most 30 per
+  minute per device; one manage or create at a time per computer) changes
+  herdr. It runs in the broker's own context, like create, and the gateway
+  sends it on its own broker connection. `action` selects what happens; a
+  missing field, or one that does not belong to the action, is refused:
+
+  | `action` | Fields | What the host does |
+  | --- | --- | --- |
+  | `closeItem` | `itemId`, `name` | Closes the workspace: its terminals end, no file is deleted. Refused for a main checkout while a linked worktree of its group is open. |
+  | `removeItem` | `itemId`, `name` | Removes a linked worktree (`linked`), never with force: the workspace closes and its folder is deleted, also files that git ignores; the branch stays. |
+  | `newTab` | `itemId` | Makes a tab in the item (at most 32 terminals in an item). |
+  | `newWorkspace` | `projectId` | Makes a workspace in that Termivoa project's folder, named after the project (at most 64 groups). The phone never sends a path. |
+  | `startServer` | – | Starts herdr's server; only with `state: notRunning` and `canStart`. The host waits up to 5 s for `ready`. |
+
+  `name` is the item name the user confirmed. The host reads a fresh
+  snapshot first and refuses when the item is gone or now has another name
+  (herdr's workspace IDs start again after a herdr restart). The answer has
+  `itemId` (the item acted on or made). `newTab` and `newWorkspace` also
+  answer `targetId`, the new terminal, after a poll that has it (at most
+  3 s), so `open` works at once; it is absent when this herdr cannot open a
+  terminal without an agent. `problem: "uncommitted"` (with `200`) means the
+  worktree has changes that are not committed and nothing changed.
 
 Errors use existing codes with fixed Termivoa text, never herdr's or git's:
 an unknown provider, a bad body, an agent kind not offered or a prompt with
@@ -284,6 +321,22 @@ program holds the terminal, or it just closed) is `409 operation_conflict`;
 create also uses `409 not_a_repository`,
 `409 worktree_exists` and `422 worktree_failed`
 ("herdr could not make the worktree.").
+
+A provider that is not installed answers `503 host_unavailable` ("herdr is
+not installed on this computer") on every provider route. `manage` uses:
+
+| Case | Code | Status |
+| --- | --- | --- |
+| A bad body or a field that does not belong to the action (gateway); `removeItem` on an item that is not `linked`; `startServer` when the state is not `notRunning` or without `canStart`; `newTab` in an item with 32 terminals; `newWorkspace` with 64 groups | `invalid_request` | 400 |
+| The provider is off or not installed; an item action while not `ready`; the started server did not come up in 5 s; herdr refused or failed in another way (not `removeItem`) | `host_unavailable` | 503 |
+| The item is not in a fresh snapshot | `session_missing` | 404 |
+| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open | `operation_conflict` | 409 |
+| The project is unknown, or its folder is gone or not this user's | `project_missing` | 404 |
+| More than 30 per minute from this device; another manage or create is running | `limit_exceeded` | 429 |
+| herdr refused or failed a `removeItem` in another way | `worktree_failed` ("herdr could not remove the worktree.") | 422 |
+
+herdr's and git's text never leaves the host; the broker log gets the action
+and herdr's error code only.
 
 ## Pairing flow
 

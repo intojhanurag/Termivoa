@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,8 +99,14 @@ type Provider struct {
 	mu   sync.RWMutex
 	view view
 
-	// create runs one M2 create at a time on this computer.
+	// create runs one create or manage at a time on this computer.
 	create sync.Mutex
+	// child is closed when the herdr server that Manage started has ended;
+	// nil before the first start. Guarded by create.
+	child chan struct{}
+	// lookNow asks the poll loop to forget its retry and lookup timers: after
+	// a start, and when the app reads the settings ("Check again").
+	lookNow atomic.Bool
 	// wake asks the poll loop for a snapshot now (after a create).
 	wake chan struct{}
 	// turns counts the poll loop's turns as they start; view.turn is the
@@ -108,6 +115,8 @@ type Provider struct {
 
 	// Owned by the poll loop (step).
 	binary     string
+	refusedAny bool // the last lookup refused a herdr binary: no install
+	gitChecks  map[string]*gitCheck
 	lookupAt   time.Time
 	retryAt    time.Time
 	discovered bool
@@ -126,16 +135,18 @@ type Provider struct {
 type view struct {
 	installed bool
 	binary    string
-	state     protocol.HTTPProviderState
-	version   string
-	protocol  int
-	caps      capabilities
-	response  protocol.HTTPProviderSnapshotResponse
-	targets   map[string]target
-	live      map[string]struct{} // every pane.terminal herdr has (mapped.live)
-	groups    map[string]groupRef
-	kinds     []string
-	turn      uint64 // the last poll turn that ended (Provider.turns)
+	// canInstall: no herdr binary was found or refused at any lookup path.
+	canInstall bool
+	state      protocol.HTTPProviderState
+	version    string
+	protocol   int
+	caps       capabilities
+	response   protocol.HTTPProviderSnapshotResponse
+	targets    map[string]target
+	live       map[string]struct{} // every pane.terminal herdr has (mapped.live)
+	groups     map[string]groupRef
+	kinds      []string
+	turn       uint64 // the last poll turn that ended (Provider.turns)
 	// refused is why the socket is not used (design S3), with the fix; ""
 	// when it is used or missing. Host only: pterm doctor and the log.
 	refused string
@@ -179,7 +190,9 @@ func (provider *Provider) Run(ctx context.Context) {
 
 // Info is the detection part of HTTPProviderInfo (the broker adds enabled
 // and notify). installed is false when no usable herdr binary was found:
-// then this computer lists no provider at all.
+// the state is then notInstalled, and canInstall says whether herdr's
+// official installer can work here (it has builds for macOS and Linux on
+// x86_64 and aarch64, and no other herdr was found or refused).
 func (provider *Provider) Info() (info protocol.HTTPProviderInfo, installed bool) {
 	provider.mu.RLock()
 	current := provider.view
@@ -191,11 +204,26 @@ func (provider *Provider) Info() (info protocol.HTTPProviderInfo, installed bool
 		version := current.version
 		info.Version = &version
 	}
-	if current.state == protocol.HTTPProviderStateReady {
+	yes := true
+	switch current.state {
+	case protocol.HTTPProviderStateReady:
 		info.CanCreate = true
 		info.AgentKinds = append(info.AgentKinds, current.kinds...)
+	case protocol.NotInstalled:
+		if current.canInstall && (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
+			info.CanInstall = &yes
+		}
+	case protocol.NotRunning:
+		if current.startable() {
+			info.CanStart = &yes
+		}
 	}
 	return info, current.installed
+}
+
+// startable: Manage can start the server (a usable binary, no socket refusal).
+func (current view) startable() bool {
+	return current.state == protocol.NotRunning && current.binary != "" && current.refused == ""
 }
 
 // Snapshot returns the cached response; it never waits on herdr.
@@ -282,6 +310,7 @@ func (provider *Provider) setState(state protocol.HTTPProviderState, version str
 	provider.tracks, provider.since = nil, nil
 	provider.publish(func(current *view) {
 		current.installed, current.binary = provider.binary != "", provider.binary
+		current.canInstall = provider.binary == "" && !provider.refusedAny
 		current.state, current.version, current.protocol = state, version, protocolNumber
 		current.response = emptyResponse(state)
 		current.targets, current.groups, current.kinds, current.refused = nil, nil, nil, ""
@@ -296,13 +325,16 @@ func emptyResponse(state protocol.HTTPProviderState) protocol.HTTPProviderSnapsh
 // It never holds mu while it talks to herdr.
 func (provider *Provider) step(ctx context.Context) time.Duration {
 	now := provider.now()
+	if provider.lookNow.Swap(false) {
+		provider.lookupAt, provider.retryAt = time.Time{}, time.Time{}
+	}
 	if provider.binary == "" && !now.Before(provider.lookupAt) {
 		provider.binary = provider.findBinary()
 		provider.lookupAt = now.Add(lookupEvery)
 		provider.retryAt = time.Time{}
 	}
 	if provider.binary == "" {
-		provider.setState(protocol.NotRunning, "", 0)
+		provider.setState(protocol.NotInstalled, "", 0)
 		return pollEvery
 	}
 	if provider.config.Enabled != nil && !provider.config.Enabled() {
@@ -343,6 +375,13 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 	provider.snapshotVersion = snapshot.Version
 	provider.apply(snapshot, now)
 	return pollEvery
+}
+
+// LookAgain asks the poll loop to look for the binary and the server now,
+// not at its next retry. It never blocks.
+func (provider *Provider) LookAgain() {
+	provider.lookNow.Store(true)
+	provider.Poll()
 }
 
 // Poll asks the poll loop for a turn now.
@@ -400,14 +439,17 @@ func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 	return true
 }
 
-// notRunning also rechecks the binary at the next lookup, so an uninstalled
-// herdr disappears from the settings.
+// notRunning also rechecks the binary, so an uninstalled herdr turns to
+// notInstalled in the settings.
 func (provider *Provider) notRunning(now time.Time) {
-	if provider.findBinaryAgain() {
-		provider.retryAt = now.Add(retryEvery)
-	} else {
-		provider.binary, provider.lookupAt = "", now.Add(lookupEvery)
+	if !provider.findBinaryAgain() {
+		provider.binary, provider.lookupAt = provider.findBinary(), now.Add(lookupEvery)
 	}
+	if provider.binary == "" {
+		provider.setState(protocol.NotInstalled, "", 0)
+		return
+	}
+	provider.retryAt = now.Add(retryEvery)
 	provider.setState(protocol.NotRunning, "", 0)
 }
 

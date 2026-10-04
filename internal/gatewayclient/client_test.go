@@ -975,6 +975,50 @@ func TestMultiComputerMethodsForwardOrigin(t *testing.T) {
 	}
 }
 
+// A manage waits on herdr (15 s a call): it has its own connection too, and
+// its result is not read as a create result (which needs a targetId).
+func TestManageProviderUsesADedicatedConnection(t *testing.T) {
+	release := make(chan struct{})
+	item := "w3"
+	client, dials := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
+		switch request.Type {
+		case protocol.GatewayProvidersManage:
+			<-release
+			return reply(t, request.RequestID, protocol.GatewayProvidersManageResult, protocol.HTTPProviderManageResponse{ItemID: &item})
+		case protocol.GatewayProvidersGet:
+			return reply(t, request.RequestID, protocol.GatewayProvidersGetResult,
+				protocol.HTTPProviderSnapshotResponse{Provider: "herdr", State: protocol.NotInstalled, Groups: []protocol.HTTPProviderGroup{}})
+		}
+		t.Errorf("unexpected %s", request.Type)
+		return nil
+	})
+	managed := make(chan error, 1)
+	go func() {
+		name := "silver-meadow"
+		result, err := client.ManageProvider(context.Background(), testCredential, "herdr",
+			protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &item, Name: &name})
+		if err == nil && (result.ItemID == nil || *result.ItemID != "w3" || result.TargetID != nil) {
+			err = errors.New("wrong manage result")
+		}
+		managed <- err
+	}()
+	for dials.Load() < 1 {
+		time.Sleep(time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if snapshot, err := client.Provider(ctx, testCredential, "herdr"); err != nil || snapshot.State != protocol.NotInstalled {
+		t.Fatalf("a read waited behind manage: %+v %v", snapshot, err)
+	}
+	close(release)
+	if err := <-managed; err != nil {
+		t.Fatal(err)
+	}
+	if dials.Load() != 2 {
+		t.Fatalf("dials = %d, want 2", dials.Load())
+	}
+}
+
 // A create can take 45 s: it must not hold the shared connection that every
 // other request (the sessions list included) waits for.
 func TestCreateProviderUsesADedicatedConnection(t *testing.T) {

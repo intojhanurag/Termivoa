@@ -4,7 +4,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -201,6 +203,156 @@ func TestProbeOnAHerdrWithoutTerminal(t *testing.T) {
 	}
 	if log := readLog(t, folder); strings.Contains(log, "ui started") {
 		t.Fatalf("the probe started the herdr UI:\n%s", log)
+	}
+}
+
+// rawCall sends one request to the fake's socket and returns herdr's error
+// code ("" for a result).
+func rawCall(t *testing.T, folder, method string, params map[string]any) string {
+	t.Helper()
+	conn, err := net.Dial("unix", filepath.Join(folder, "herdr.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	data, _ := json.Marshal(map[string]any{"id": "1", "method": method, "params": params})
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	var reply struct {
+		Error struct{ Code string } `json:"error"`
+	}
+	if err := json.NewDecoder(conn).Decode(&reply); err != nil {
+		t.Fatal(err)
+	}
+	return reply.Error.Code
+}
+
+// TestFakeHerdrManage drives what docs/herdr-manage.md uses through the
+// provider: workspace.create, "+" on a git workspace without worktrees
+// (pane cwd; worktree.create gives the source a worktree record), tab.create,
+// worktree.remove (dirty by scenario) and workspace.close as herdr 0.8.2 and
+// as 0.9.3.
+func TestFakeHerdrManage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds fakeherdr")
+	}
+	root, err := os.MkdirTemp("/tmp", "fakeherdr-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	binary, err := herdrtest.Build(filepath.Join(root, "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(root, "shop")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, groupCloseRequired := range []bool{false, true} {
+		t.Run(map[bool]string{false: "herdr 0.8.2", true: "herdr 0.9.3"}[groupCloseRequired], func(t *testing.T) {
+			home := filepath.Join(root, map[bool]string{false: "a", true: "b"}[groupCloseRequired])
+			folder := filepath.Join(home, ".config", "herdr")
+			if err := os.MkdirAll(folder, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			scenario, _ := json.Marshal(map[string]any{"attachAny": true, "dirty": []string{"w2"}, "groupCloseRequired": groupCloseRequired})
+			if err := os.WriteFile(filepath.Join(folder, "scenario.json"), scenario, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			server := exec.Command(binary, "server")
+			server.Env = []string{"HOME=" + home}
+			if err := server.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				_ = server.Process.Signal(syscall.SIGTERM)
+				_ = server.Wait()
+			})
+			waitFor(t, func() bool { _, err := os.Stat(filepath.Join(folder, "control.sock")); return err == nil })
+			// herdr refuses a second server for a running session.
+			second := exec.Command(binary, "server")
+			second.Env = []string{"HOME=" + home}
+			if output, err := second.CombinedOutput(); err == nil || !strings.Contains(string(output), "herdr server is already running") {
+				t.Fatalf("second server = %v %s", err, output)
+			}
+
+			provider := herdr.New(herdr.Config{BinaryPaths: []string{binary}, Home: home}, nil)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go provider.Run(ctx)
+			waitFor(t, func() bool { return provider.Snapshot().State == protocol.HTTPProviderStateReady })
+			text := func(value string) *string { return &value }
+			manage := func(request protocol.HTTPProviderManageRequest) protocol.HTTPProviderManageResponse {
+				t.Helper()
+				response, err := provider.Manage(ctx, request, herdr.Project{Folder: repo, Name: "shop"})
+				if err != nil {
+					t.Fatalf("%s: %v", request.Action, err)
+				}
+				return response
+			}
+			made := manage(protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace})
+			if made.ItemID == nil || *made.ItemID != "w1" || made.TargetID == nil {
+				t.Fatalf("new workspace = %+v", made)
+			}
+			if _, err := provider.Attach(*made.TargetID); err != nil {
+				t.Fatalf("the new workspace's terminal: %v", err)
+			}
+			// The pane's cwd is in git: "+" without a worktree record.
+			groups := provider.Snapshot().Groups
+			if len(groups) != 1 || groups[0].ID != "ws-w1" || !groups[0].CanCreate {
+				t.Fatalf("groups = %+v", groups)
+			}
+			created, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: "ws-w1", Name: "silver-meadow"})
+			if err != nil || created.ItemID != "w2" {
+				t.Fatalf("create = %+v %v", created, err)
+			}
+			waitFor(t, func() bool {
+				groups := provider.Snapshot().Groups
+				return len(groups) == 1 && strings.HasPrefix(groups[0].ID, "g") && len(groups[0].Items) == 2 &&
+					groups[0].Items[0].Linked == nil && groups[0].Items[1].Linked != nil
+			})
+			tab := manage(protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w2")})
+			if tab.TargetID == nil || *tab.TargetID == created.TargetID {
+				t.Fatalf("new tab = %+v", tab)
+			}
+			if items := provider.Snapshot().Groups[0].Items; len(items[1].Targets) != 2 {
+				t.Fatalf("targets after the new tab = %+v", items[1].Targets)
+			}
+			// w2 is dirty by the scenario: nothing is removed without force, and the provider never forces.
+			remove := protocol.HTTPProviderManageRequest{Action: protocol.RemoveItem, ItemID: text("w2"), Name: text("silver-meadow")}
+			if dirty := manage(remove); dirty.Problem == nil || *dirty.Problem != protocol.Uncommitted {
+				t.Fatalf("dirty remove = %+v", dirty)
+			}
+			if code := rawCall(t, folder, "worktree.remove", map[string]any{"workspace_id": "w1", "force": false}); code != "not_linked_worktree" {
+				t.Fatalf("remove a main checkout = %q", code)
+			}
+			if code := rawCall(t, folder, "workspace.close", map[string]any{"workspace_id": "w77"}); code != "workspace_not_found" {
+				t.Fatalf("close an unknown workspace = %q", code)
+			}
+			// Closing the main checkout: 0.9.3 refuses while a worktree is open; 0.8.2 closes both.
+			code := rawCall(t, folder, "workspace.close", map[string]any{"workspace_id": "w1"})
+			if groupCloseRequired {
+				if code != "workspace_group_close_required" {
+					t.Fatalf("close a main checkout = %q", code)
+				}
+				if code := rawCall(t, folder, "worktree.remove", map[string]any{"workspace_id": "w2", "force": true}); code != "" {
+					t.Fatalf("forced remove = %q", code)
+				}
+				waitFor(t, func() bool {
+					groups := provider.Snapshot().Groups
+					return len(groups) == 1 && len(groups[0].Items) == 1
+				})
+				manage(protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w1"), Name: text("shop")})
+			} else if code != "" {
+				t.Fatalf("close a main checkout = %q", code)
+			}
+			waitFor(t, func() bool { return len(provider.Snapshot().Groups) == 0 })
+			if log := readLog(t, folder); !strings.Contains(log, "workspace.create shop "+repo) || !strings.Contains(log, "tab.create w2") {
+				t.Fatalf("log:\n%s", log)
+			}
+		})
 	}
 }
 

@@ -64,7 +64,7 @@ func validateProviderNotify(notify []HTTPProviderNotifyState) error {
 }
 
 func validProviderState(state HTTPProviderState) bool {
-	return state == HTTPProviderStateReady || state == NotRunning || state == Unsupported || state == Off
+	return state == HTTPProviderStateReady || state == NotRunning || state == Unsupported || state == Off || state == NotInstalled
 }
 
 // ValidateProviderInfo checks one entry of HTTPSettingsResponse.providers.
@@ -77,6 +77,10 @@ func ValidateProviderInfo(info HTTPProviderInfo) error {
 	}
 	if info.Version != nil && !providerVersion.MatchString(*info.Version) {
 		return errors.New("provider version is invalid")
+	}
+	if info.CanInstall != nil && *info.CanInstall && info.State != NotInstalled ||
+		info.CanStart != nil && *info.CanStart && info.State != NotRunning {
+		return errors.New("provider canInstall or canStart does not fit its state")
 	}
 	if info.Notify == nil || info.AgentKinds == nil {
 		return errors.New("provider notify and agentKinds are required")
@@ -247,6 +251,45 @@ func ValidateProviderCreateResponse(response HTTPProviderCreateResponse) error {
 	return nil
 }
 
+// ValidateProviderManageRequest checks POST /api/v1/providers/{provider}/manage:
+// each action takes exactly its own fields (docs/herdr-manage.md, section 3.2).
+func ValidateProviderManageRequest(request HTTPProviderManageRequest) error {
+	item, name, project := false, false, false
+	switch request.Action {
+	case CloseItem, RemoveItem:
+		item, name = true, true
+	case NewTab:
+		item = true
+	case NewWorkspace:
+		project = true
+	case StartServer:
+	default:
+		return errors.New("manage action is invalid")
+	}
+	if (request.ItemID != nil) != item || (request.Name != nil) != name || (request.ProjectID != nil) != project {
+		return errors.New("manage request has a missing field or one that does not belong to the action")
+	}
+	if item && !ValidProviderHandle(*request.ItemID) || project && !ValidUUID(*request.ProjectID) {
+		return errors.New("manage itemId or projectId is invalid")
+	}
+	if name {
+		return validateProviderName(*request.Name, maxProviderNameRunes, maxProviderNameBytes)
+	}
+	return nil
+}
+
+// ValidateProviderManageResponse checks the manage result.
+func ValidateProviderManageResponse(response HTTPProviderManageResponse) error {
+	if response.ItemID != nil && !ValidProviderHandle(*response.ItemID) ||
+		response.TargetID != nil && !ValidProviderHandle(*response.TargetID) {
+		return errors.New("manage result handles are invalid")
+	}
+	if response.Problem != nil && *response.Problem != Uncommitted {
+		return errors.New("manage problem is invalid")
+	}
+	return nil
+}
+
 func validateGatewayProviderPayload(envelope GatewayRPCEnvelope) error {
 	check := func(credential, provider string) error {
 		if err := ValidateSecretText(credential); err != nil {
@@ -282,6 +325,18 @@ func validateGatewayProviderPayload(envelope GatewayRPCEnvelope) error {
 			return err
 		}
 		return errors.Join(check(payload.Credential, payload.Provider), ValidateProviderCreateRequest(payload.Request))
+	case GatewayProvidersManage:
+		payload, err := DecodeRPCPayload[GatewayRPCProviderManagePayload](envelope)
+		if err != nil {
+			return err
+		}
+		return errors.Join(check(payload.Credential, payload.Provider), ValidateProviderManageRequest(payload.Request))
+	case GatewayProvidersManageResult:
+		payload, err := DecodeRPCPayload[HTTPProviderManageResponse](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateProviderManageResponse(payload)
 	case GatewayProvidersGetResult:
 		payload, err := DecodeRPCPayload[HTTPProviderSnapshotResponse](envelope)
 		if err != nil {

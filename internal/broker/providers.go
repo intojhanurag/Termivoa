@@ -15,6 +15,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
+	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
@@ -31,6 +32,11 @@ const (
 	providerOpensPerMinute   = 20
 	providerCreatesPerMinute = 3
 	providerUpdatesPerMinute = 10
+	providerManagesPerMinute = 30
+
+	// providerLookEvery is the least time between two "look again now"
+	// requests that a settings read makes.
+	providerLookEvery = 2 * time.Second
 
 	// providerIdleEnd ends a provider session this long after its last
 	// viewer left; a new session counts as viewed for as long.
@@ -66,6 +72,20 @@ var (
 	errProviderEnded       = providerFailure{managementFailure{protocol.OperationConflict, "herdr did not open this terminal; another program may hold it, or it just closed"}}
 	errProviderFeature     = providerFailure{managementFailure{protocol.InvalidRequest, "this is not available for a herdr terminal"}}
 	errProviderChanges     = providerFailure{managementFailure{protocol.InvalidRequest, "this herdr terminal's folder cannot be read"}}
+
+	// Manage (docs/herdr-manage.md, section 3.2).
+	errProviderNotInstalled = providerFailure{managementFailure{protocol.HostUnavailable, "herdr is not installed on this computer"}}
+	errProviderItem         = providerFailure{managementFailure{protocol.SessionMissing, "that workspace is gone"}}
+	errProviderRenamed      = providerFailure{managementFailure{protocol.OperationConflict, "that workspace changed; look at the list and try again"}}
+	errProviderGroupOpen    = providerFailure{managementFailure{protocol.OperationConflict, "close this project's worktrees first"}}
+	errProviderNotLinked    = providerFailure{managementFailure{protocol.InvalidRequest, "only a linked worktree can be removed"}}
+	errProviderFull         = providerFailure{managementFailure{protocol.InvalidRequest, "herdr has 32 terminals in this workspace or 64 projects; close one first"}}
+	errProviderNotStartable = providerFailure{managementFailure{protocol.InvalidRequest, "herdr cannot be started on this computer now"}}
+	errProviderNoServer     = providerFailure{managementFailure{protocol.HostUnavailable, "herdr did not start; run `herdr server` in a terminal on this computer to see why"}}
+	errProviderProject      = providerFailure{managementFailure{protocol.ProjectMissing, "that project is gone, or its folder cannot be used"}}
+	errProviderManageBusy   = providerFailure{managementFailure{protocol.LimitExceeded, "herdr is busy with another change; try again"}}
+	errProviderManage       = providerFailure{managementFailure{protocol.HostUnavailable, "herdr did not do that; look at the list and try again"}}
+	errProviderRemove       = providerFailure{managementFailure{protocol.WorktreeFailed, "herdr could not remove the worktree."}}
 )
 
 func classifyProviderError(err error) (managementFailure, bool) {
@@ -83,8 +103,9 @@ type providerHost struct {
 	enabled  atomic.Bool
 	notify   atomic.Pointer[[]protocol.HTTPProviderNotifyState]
 	limits   providerLimits
-	settings sync.Mutex // orders setting writes
-	locks    keyedLocks // one open at a time per target
+	looked   atomic.Int64 // when a settings read last asked the provider to look again (Unix ns)
+	settings sync.Mutex   // orders setting writes
+	locks    keyedLocks   // one open at a time per target
 
 	mu       sync.Mutex
 	sessions map[string]*providerOpen // by target key
@@ -134,15 +155,29 @@ func (host *providerHost) notifies(state protocol.HTTPProviderNotifyState) bool 
 }
 
 // info is HTTPProviderInfo with this computer's settings. installed is false
-// when herdr is not installed: the computer then lists no provider.
+// when herdr is not installed: the state is notInstalled, which wins over off.
 func (host *providerHost) info() (protocol.HTTPProviderInfo, bool) {
 	info, installed := host.provider.Info()
 	info.Enabled = host.enabled.Load()
 	info.Notify = append([]protocol.HTTPProviderNotifyState{}, *host.notify.Load()...)
-	if !info.Enabled {
-		info.State, info.CanCreate, info.AgentKinds = protocol.Off, false, []string{}
+	if !info.Enabled && info.State != protocol.NotInstalled {
+		info.State, info.CanCreate, info.AgentKinds, info.CanStart = protocol.Off, false, []string{}, nil
 	}
 	return info, installed
+}
+
+// settingsInfo is info for the settings response. The app reads the settings
+// again for "Check again": while herdr is not installed or not running, the
+// read asks the poll loop to look now (at most once per 2 s), so a new
+// install or a started server shows on the next read. It never waits.
+func (host *providerHost) settingsInfo(now time.Time) protocol.HTTPProviderInfo {
+	info, _ := host.info()
+	if info.State == protocol.NotInstalled || info.State == protocol.NotRunning {
+		if last := host.looked.Load(); now.UnixNano()-last >= int64(providerLookEvery) && host.looked.CompareAndSwap(last, now.UnixNano()) {
+			host.provider.LookAgain()
+		}
+	}
+	return info
 }
 
 func (host *providerHost) snapshot() protocol.HTTPProviderSnapshotResponse {
@@ -238,14 +273,15 @@ func (limits *providerLimits) take(route, device string, perMinute int, now time
 	return true
 }
 
-// providerFor returns the host of an installed provider named id.
+// providerFor returns the host of an installed provider named id. A provider
+// that is not installed has only its settings card: every route refuses it.
 func (server *ManagementServer) providerFor(id string) (*providerHost, error) {
 	host := server.providers
 	if host == nil || id != herdr.ID {
 		return nil, errProviderUnknown
 	}
 	if _, installed := host.provider.Info(); !installed {
-		return nil, errProviderUnknown
+		return nil, errProviderNotInstalled
 	}
 	return host, nil
 }
@@ -439,6 +475,56 @@ func (server *ManagementServer) createProvider(
 	return response, nil
 }
 
+// manageProvider is docs/herdr-manage.md, section 4: close or remove an item,
+// make a tab or a workspace, start the server. ctx is the broker's serve
+// context, like create. The phone names a project by ID, never a path; the
+// folder is checked here, right before the call, because herdr uses another
+// folder without a word when cwd is missing.
+func (server *ManagementServer) manageProvider(
+	ctx context.Context, host *providerHost, device string, request protocol.HTTPProviderManageRequest,
+) (protocol.HTTPProviderManageResponse, error) {
+	var none protocol.HTTPProviderManageResponse
+	if !host.enabled.Load() {
+		return none, errProviderUnavailable
+	}
+	if !host.limits.take("manage", device, providerManagesPerMinute, server.now()) {
+		return none, errProviderRate
+	}
+	var project herdr.Project
+	if request.Action == protocol.NewWorkspace {
+		stored, err := server.config.Store.GetProject(ctx, *request.ProjectID)
+		if errors.Is(err, store.ErrProjectMissing) || err == nil && stored.DisabledAt != nil {
+			return none, errProviderProject
+		}
+		if err != nil {
+			return none, err
+		}
+		resolved, info, err := resolveProjectFolder(stored.CanonicalPath)
+		if err != nil || ipc.RequireCurrentOwner(info) != nil {
+			return none, errProviderProject
+		}
+		project = herdr.Project{Folder: resolved, Name: stored.DisplayName}
+	}
+	response, err := host.provider.Manage(ctx, request, project)
+	for herdrErr, failure := range map[error]providerFailure{
+		herdr.ErrUnavailable: errProviderUnavailable, herdr.ErrTargetMissing: errProviderItem,
+		herdr.ErrBusy: errProviderManageBusy, herdr.ErrRenamed: errProviderRenamed, herdr.ErrGroupOpen: errProviderGroupOpen,
+		herdr.ErrNotLinked: errProviderNotLinked, herdr.ErrFull: errProviderFull,
+		herdr.ErrNotStartable: errProviderNotStartable, herdr.ErrNoServer: errProviderNoServer,
+	} {
+		if errors.Is(err, herdrErr) {
+			return none, failure
+		}
+	}
+	switch {
+	case err != nil && request.Action == protocol.RemoveItem:
+		return none, errProviderRemove
+	case err != nil:
+		return none, errProviderManage
+	}
+	return response, nil
+}
+
 // reap ends provider sessions (design section 6, rule 6): 10 s after the
 // last viewer left (the first 10 s count as viewed), when the target left
 // the snapshot (herdr restarted or the pane closed), or when the provider
@@ -581,6 +667,20 @@ func (server *ManagementServer) dispatchProvider(
 			return nil, err
 		}
 		return server.createProvider(ctx, host, principal.DeviceID, payload.Request)
+	case protocol.GatewayProvidersManage:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCProviderManagePayload](request)
+		if err != nil {
+			return nil, err
+		}
+		principal, err := authorize(payload.Credential)
+		if err != nil {
+			return nil, err
+		}
+		host, err := server.providerFor(payload.Provider)
+		if err != nil {
+			return nil, err
+		}
+		return server.manageProvider(ctx, host, principal.DeviceID, payload.Request)
 	default:
 		return nil, errors.New("broker: unsupported provider request")
 	}

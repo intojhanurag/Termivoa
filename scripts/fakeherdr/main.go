@@ -5,7 +5,8 @@
 // $HERDR_SOCKET_PATH's folder, else $HOME/.config/herdr (or
 // sessions/<name> with --session). It never touches a real herdr.
 //
-//	fakeherdr server                  serve herdr.sock from scenario.json, plus control.sock
+//	fakeherdr server                  serve herdr.sock from scenario.json, plus control.sock;
+//	                                  with no scenario.json it starts empty, like a new herdr
 //	fakeherdr status server --json    herdr's status shape
 //	fakeherdr terminal attach --help  its usage line only when the scenario sets attachAny
 //	fakeherdr agent start --help      the scenario's agent kinds
@@ -21,7 +22,16 @@
 //
 //	{"version":"0.8.2","protocol":20,"attachAny":false,"noTerminal":false,"kinds":["claude"],
 //	 "agentStartDelayMs":0,"snapshot":{...herdr's session.snapshot...},
-//	 "screens":{"w1:p1":"text an attach of w1:p1 draws in place of its marker"}}
+//	 "screens":{"w1:p1":"text an attach of w1:p1 draws in place of its marker"},
+//	 "dirty":["w3"],"groupCloseRequired":false}
+//
+// The socket also answers what docs/herdr-manage.md uses: workspace.close,
+// worktree.remove (never with force for a workspace in "dirty"), tab.create
+// and workspace.create. "groupCloseRequired" makes workspace.close answer
+// like herdr 0.9.3 for a main checkout whose linked worktrees are open; by
+// default it closes them too, like 0.8.2. worktree.create on a workspace
+// without "worktree" works when its first pane's "cwd" is in a git
+// repository, and gives that workspace a worktree record, like herdr.
 //
 // control.sock takes one JSON command per connection: {"op":"status",
 // "pane":"w1:p1","status":"blocked"}, {"op":"close","pane":"w1:p1"},
@@ -33,6 +43,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -61,6 +72,10 @@ type scenario struct {
 	// Screens, by pane ID, replace the marker an attach draws (docs
 	// screenshots: a demo agent screen). Lines end in \n.
 	Screens map[string]string `json:"screens"`
+	// Dirty lists workspace IDs whose worktree has uncommitted changes.
+	Dirty []string `json:"dirty"`
+	// GroupCloseRequired is herdr 0.9.3's workspace.close rule.
+	GroupCloseRequired bool `json:"groupCloseRequired"`
 }
 
 var agentName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
@@ -133,16 +148,23 @@ func load(folder string) scenario {
 	if path == "" {
 		path = filepath.Join(folder, "scenario.json")
 	}
+	var loaded scenario
 	data, err := os.ReadFile(path)
-	if err != nil {
+	// A herdr that was never started has no scenario: an empty server (the start check).
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		fail(folder, "scenario: %v", err)
 	}
-	var loaded scenario
-	if err := json.Unmarshal(data, &loaded); err != nil {
-		fail(folder, "scenario: %v", err)
+	if err == nil {
+		if err := json.Unmarshal(data, &loaded); err != nil {
+			fail(folder, "scenario: %v", err)
+		}
 	}
 	if loaded.Version == "" {
 		loaded.Version, loaded.Protocol = "0.8.2", 20
+	}
+	if loaded.Snapshot == nil {
+		loaded.Snapshot = map[string]any{"version": loaded.Version, "protocol": loaded.Protocol,
+			"workspaces": []any{}, "tabs": []any{}, "panes": []any{}, "layouts": []any{}, "agents": []any{}}
 	}
 	return loaded
 }
@@ -195,6 +217,12 @@ type world struct {
 
 func serve(folder string) error {
 	loaded := load(folder)
+	// herdr refuses a second server for a running session.
+	if conn, err := net.Dial("unix", filepath.Join(folder, "herdr.sock")); err == nil {
+		_ = conn.Close()
+		return errors.New("herdr server is already running")
+	}
+	logf(folder, "server start pid=%d PATH=%s TERM=%s", os.Getpid(), os.Getenv("PATH"), os.Getenv("TERM"))
 	server, err := herdrtest.Listen(filepath.Join(folder, "herdr.sock"))
 	if err != nil {
 		return err
@@ -205,6 +233,10 @@ func serve(folder string) error {
 	server.Handle("worktree.create", live.worktreeCreate)
 	server.Handle("agent.start", live.agentStart)
 	server.Handle("agent.prompt", live.agentPrompt)
+	server.Handle("workspace.close", live.workspaceClose)
+	server.Handle("worktree.remove", live.worktreeRemove)
+	server.Handle("tab.create", live.tabCreate)
+	server.Handle("workspace.create", live.workspaceCreate)
 	control := filepath.Join(folder, "control.sock")
 	_ = os.Remove(control)
 	listener, err := net.Listen("unix", control)
@@ -333,8 +365,23 @@ func decode[T any](params json.RawMessage) (T, *herdrtest.Error) {
 	return value, nil
 }
 
+// repository walks up from folder to a .git entry and returns its folder.
+func repository(folder string) string {
+	for filepath.IsAbs(folder) {
+		if _, err := os.Lstat(filepath.Join(folder, ".git")); err == nil {
+			return folder
+		}
+		if filepath.Dir(folder) == folder {
+			break
+		}
+		folder = filepath.Dir(folder)
+	}
+	return ""
+}
+
 // worktreeCreate adds a linked worktree workspace to the repository of
-// workspace_id, with one tab and one shell pane, like herdr.
+// workspace_id, with one tab and one shell pane, like herdr. A workspace
+// without a worktree record gets one when its first pane's folder is in git.
 func (live *world) worktreeCreate(params json.RawMessage) (any, *herdrtest.Error) {
 	request, failure := decode[struct {
 		WorkspaceID string `json:"workspace_id"`
@@ -347,6 +394,15 @@ func (live *world) worktreeCreate(params json.RawMessage) (any, *herdrtest.Error
 	defer live.mu.Unlock()
 	source := live.find("workspaces", "workspace_id", request.WorkspaceID)
 	tree, _ := source["worktree"].(map[string]any)
+	if source != nil && tree == nil {
+		pane := live.find("panes", "workspace_id", request.WorkspaceID)
+		cwd, _ := pane["cwd"].(string)
+		if root := repository(cwd); root != "" {
+			tree = map[string]any{"repo_key": filepath.Join(root, ".git"), "repo_name": filepath.Base(root),
+				"repo_root": root, "checkout_path": root, "is_linked_worktree": false}
+			source["worktree"] = tree
+		}
+	}
 	if source == nil || tree == nil {
 		return nil, &herdrtest.Error{Code: "not_git_worktree", Message: "Herdr worktree actions require a workspace inside a Git work tree"}
 	}
@@ -354,24 +410,155 @@ func (live *world) worktreeCreate(params json.RawMessage) (any, *herdrtest.Error
 	if live.find("workspaces", "label", request.Branch) != nil {
 		return nil, &herdrtest.Error{Code: "worktree_create_failed", Message: "fatal: '" + path + "' already exists"}
 	}
+	entry, pane := live.addWorkspace(request.Branch, path)
+	entry["worktree"] = map[string]any{"repo_key": tree["repo_key"], "repo_name": tree["repo_name"],
+		"repo_root": tree["repo_root"], "checkout_path": path, "is_linked_worktree": true}
+	live.publish()
+	logf(live.folder, "worktree.create %s %s", request.WorkspaceID, request.Branch)
+	return map[string]any{"type": "worktree_created", "workspace": entry, "root_pane": pane}, nil
+}
+
+// addWorkspace adds a workspace with one tab and one shell pane in cwd. The
+// caller holds mu and publishes.
+func (live *world) addWorkspace(label, cwd string) (workspace, pane map[string]any) {
 	number := len(live.list("workspaces")) + 1
 	for live.find("workspaces", "workspace_id", fmt.Sprintf("w%d", number)) != nil {
 		number++
 	}
-	workspace, tab, pane := fmt.Sprintf("w%d", number), fmt.Sprintf("w%d:t1", number), fmt.Sprintf("w%d:p1", number)
+	id := fmt.Sprintf("w%d", number)
+	workspace = map[string]any{"workspace_id": id, "label": label, "number": number, "active_tab_id": id + ":t1",
+		"agent_status": "unknown", "worktree": nil}
+	live.scenario.Snapshot["workspaces"] = append(live.list("workspaces"), workspace)
+	return workspace, live.addTab(id, cwd)
+}
+
+// addTab adds a tab with one shell pane to a workspace. The caller holds mu
+// and publishes.
+func (live *world) addTab(workspace, cwd string) map[string]any {
+	number := 1
+	for live.find("tabs", "tab_id", fmt.Sprintf("%s:t%d", workspace, number)) != nil ||
+		live.find("panes", "pane_id", fmt.Sprintf("%s:p%d", workspace, number)) != nil {
+		number++
+	}
+	tab, pane := fmt.Sprintf("%s:t%d", workspace, number), fmt.Sprintf("%s:p%d", workspace, number)
 	live.terminal++
-	terminal := fmt.Sprintf("term_fake%06d", live.terminal)
-	entry := map[string]any{"workspace_id": workspace, "label": request.Branch, "number": number, "active_tab_id": tab,
-		"agent_status": "unknown", "worktree": map[string]any{"repo_key": tree["repo_key"], "repo_name": tree["repo_name"],
-			"repo_root": tree["repo_root"], "checkout_path": path, "is_linked_worktree": true}}
-	paneEntry := map[string]any{"pane_id": pane, "tab_id": tab, "workspace_id": workspace, "terminal_id": terminal, "agent_status": "unknown"}
-	live.scenario.Snapshot["workspaces"] = append(live.list("workspaces"), entry)
-	live.scenario.Snapshot["tabs"] = append(live.list("tabs"), map[string]any{"tab_id": tab, "workspace_id": workspace, "label": "1", "number": 1})
-	live.scenario.Snapshot["panes"] = append(live.list("panes"), paneEntry)
+	entry := map[string]any{"pane_id": pane, "tab_id": tab, "workspace_id": workspace,
+		"terminal_id": fmt.Sprintf("term_fake%06d", live.terminal), "agent_status": "unknown", "cwd": cwd}
+	live.scenario.Snapshot["tabs"] = append(live.list("tabs"), map[string]any{"tab_id": tab, "workspace_id": workspace, "label": fmt.Sprint(number), "number": number})
+	live.scenario.Snapshot["panes"] = append(live.list("panes"), entry)
 	live.scenario.Snapshot["layouts"] = append(live.list("layouts"), map[string]any{"tab_id": tab, "workspace_id": workspace, "focused_pane_id": pane})
+	return entry
+}
+
+type workspaceRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+	Force       bool   `json:"force"`
+	Cwd         string `json:"cwd"`
+	Label       string `json:"label"`
+}
+
+// closeWorkspace removes a workspace and everything in it. The caller holds mu.
+func (live *world) closeWorkspace(id string) {
+	for _, name := range []string{"workspaces", "tabs", "panes", "layouts", "agents"} {
+		live.remove(name, "workspace_id", id)
+	}
+}
+
+// linkedOf lists the open linked-worktree workspaces of a main checkout.
+func (live *world) linkedOf(workspace map[string]any) []string {
+	tree, _ := workspace["worktree"].(map[string]any)
+	var linked []string
+	for _, record := range live.list("workspaces") {
+		entry, _ := record.(map[string]any)
+		other, _ := entry["worktree"].(map[string]any)
+		if tree != nil && tree["is_linked_worktree"] != true && other != nil && other["is_linked_worktree"] == true && other["repo_key"] == tree["repo_key"] {
+			linked = append(linked, fmt.Sprint(entry["workspace_id"]))
+		}
+	}
+	return linked
+}
+
+// workspaceClose ends a workspace. A main checkout takes its linked
+// worktrees' workspaces along (herdr 0.8.2), or is refused (0.9.3).
+func (live *world) workspaceClose(params json.RawMessage) (any, *herdrtest.Error) {
+	request, failure := decode[workspaceRequest](params)
+	if failure != nil {
+		return nil, failure
+	}
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	workspace := live.find("workspaces", "workspace_id", request.WorkspaceID)
+	if workspace == nil {
+		return nil, &herdrtest.Error{Code: "workspace_not_found", Message: "workspace " + request.WorkspaceID + " not found"}
+	}
+	linked := live.linkedOf(workspace)
+	if len(linked) > 0 && live.scenario.GroupCloseRequired {
+		return nil, &herdrtest.Error{Code: "workspace_group_close_required", Message: "close the linked worktree workspaces first"}
+	}
+	for _, id := range append(linked, request.WorkspaceID) {
+		live.closeWorkspace(id)
+	}
 	live.publish()
-	logf(live.folder, "worktree.create %s %s", request.WorkspaceID, request.Branch)
-	return map[string]any{"type": "worktree_created", "workspace": entry, "root_pane": paneEntry}, nil
+	logf(live.folder, "workspace.close %s", request.WorkspaceID)
+	return map[string]any{"type": "ok"}, nil
+}
+
+// worktreeRemove closes a linked worktree's workspace (the real one also
+// deletes the folder). A workspace in the scenario's "dirty" needs force.
+func (live *world) worktreeRemove(params json.RawMessage) (any, *herdrtest.Error) {
+	request, failure := decode[workspaceRequest](params)
+	if failure != nil {
+		return nil, failure
+	}
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	workspace := live.find("workspaces", "workspace_id", request.WorkspaceID)
+	if workspace == nil {
+		return nil, &herdrtest.Error{Code: "workspace_not_found", Message: "workspace " + request.WorkspaceID + " not found"}
+	}
+	tree, _ := workspace["worktree"].(map[string]any)
+	if tree == nil || tree["is_linked_worktree"] != true {
+		return nil, &herdrtest.Error{Code: "not_linked_worktree", Message: "workspace is not a linked worktree"}
+	}
+	if slices.Contains(live.scenario.Dirty, request.WorkspaceID) && !request.Force {
+		return nil, &herdrtest.Error{Code: "dirty_worktree_requires_force",
+			Message: fmt.Sprintf("fatal: '%v' contains modified or untracked files, use --force to delete it", tree["checkout_path"])}
+	}
+	live.closeWorkspace(request.WorkspaceID)
+	live.publish()
+	logf(live.folder, "worktree.remove %s force=%t", request.WorkspaceID, request.Force)
+	return map[string]any{"type": "worktree_removed"}, nil
+}
+
+func (live *world) tabCreate(params json.RawMessage) (any, *herdrtest.Error) {
+	request, failure := decode[workspaceRequest](params)
+	if failure != nil {
+		return nil, failure
+	}
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	workspace := live.find("workspaces", "workspace_id", request.WorkspaceID)
+	if workspace == nil {
+		return nil, &herdrtest.Error{Code: "workspace_not_found", Message: "workspace " + request.WorkspaceID + " not found"}
+	}
+	cwd, _ := live.find("panes", "workspace_id", request.WorkspaceID)["cwd"].(string)
+	pane := live.addTab(request.WorkspaceID, cwd)
+	live.publish()
+	logf(live.folder, "tab.create %s", request.WorkspaceID)
+	return map[string]any{"type": "tab_created", "root_pane": pane}, nil
+}
+
+func (live *world) workspaceCreate(params json.RawMessage) (any, *herdrtest.Error) {
+	request, failure := decode[workspaceRequest](params)
+	if failure != nil {
+		return nil, failure
+	}
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	workspace, pane := live.addWorkspace(request.Label, request.Cwd)
+	live.publish()
+	logf(live.folder, "workspace.create %s %s", request.Label, request.Cwd)
+	return map[string]any{"type": "workspace_created", "workspace": workspace, "root_pane": pane}, nil
 }
 
 func (live *world) agentStart(params json.RawMessage) (any, *herdrtest.Error) {

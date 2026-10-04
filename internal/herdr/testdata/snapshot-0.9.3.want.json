@@ -28,6 +28,7 @@
     },
     {
      "id": "w3",
+     "linked": true,
      "name": "silver-meadow",
      "openTarget": "w3:p1.term_65d0031602b703",
      "state": "working",
@@ -91,6 +92,7 @@
     },
     {
      "id": "w5",
+     "linked": true,
      "name": "lucky-valley",
      "openTarget": "w5:p1.term_65d0031602b705",
      "state": "unknown",

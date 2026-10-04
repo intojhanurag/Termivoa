@@ -322,6 +322,14 @@ func (broker *fakeBroker) CreateProvider(_ context.Context, credential, provider
 	return protocol.HTTPProviderCreateResponse{ItemID: "w9", TargetID: "w9:p1.term_1"}, broker.opErr
 }
 
+func (broker *fakeBroker) ManageProvider(_ context.Context, credential, provider string, request protocol.HTTPProviderManageRequest) (protocol.HTTPProviderManageResponse, error) {
+	broker.record("provider-manage:" + string(request.Action))
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPProviderManageResponse{}, err
+	}
+	return protocol.HTTPProviderManageResponse{ItemID: request.ItemID}, broker.opErr
+}
+
 func (broker *fakeBroker) OpenLive(_ context.Context, credential string) (gatewayapi.LiveStream, error) {
 	broker.record("open")
 	if err := broker.authorize(credential); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/herdr/herdrtest"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
+	"github.com/intojhanurag/phone-terminal/internal/store"
 	"github.com/intojhanurag/phone-terminal/internal/terminal"
 	"github.com/intojhanurag/phone-terminal/internal/webpush"
 )
@@ -164,17 +166,28 @@ func TestSettingsListHerdrOnlyWhenInstalled(t *testing.T) {
 		t.Fatalf("provider info = %+v", info)
 	}
 
-	// No herdr binary: no provider at all, as on a computer without herdr.
+	// No herdr binary: a notInstalled card that the official installer can
+	// fill, also when the provider is switched off; every route refuses it.
 	fixture.config.BinaryPaths = []string{filepath.Join(filepath.Dir(fixture.config.BinaryPaths[0]), "missing")}
 	fixture.attach(t)
-	time.Sleep(50 * time.Millisecond)
+	fixture.waitState(t, protocol.NotInstalled)
+	fixture.server.providers.enabled.Store(false)
 	settings, _ = protocol.DecodeRPCPayload[protocol.HTTPSettingsResponse](
 		fixture.gateway.gateway(t, protocol.GatewaySettings, credentialPayload(fixture.credential)))
-	if settings.Providers != nil {
+	if len(settings.Providers) != 1 || settings.Providers[0].State != protocol.NotInstalled || settings.Providers[0].CanStart != nil ||
+		settings.Providers[0].CanInstall == nil || !*settings.Providers[0].CanInstall {
 		t.Fatalf("a computer without herdr lists %+v", settings.Providers)
 	}
-	if code := gatewayErrorCode(t, fixture.get(t, fixture.credential, "herdr")); code != protocol.InvalidRequest {
-		t.Fatalf("get without herdr = %s", code)
+	fixture.server.providers.enabled.Store(true)
+	for name, response := range map[string]protocol.GatewayRPCEnvelope{
+		"get":    fixture.get(t, fixture.credential, "herdr"),
+		"open":   fixture.open(t, fixture.credential, "w1:p1.term_65d0031602b701"),
+		"create": fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: "g7d0f77ccdcfd", Name: "x"}),
+		"manage": fixture.manage(t, fixture.credential, protocol.HTTPProviderManageRequest{Action: protocol.StartServer}),
+	} {
+		if code := gatewayErrorCode(t, response); code != protocol.HostUnavailable || !strings.Contains(gatewayErrorMessage(t, response), "not installed") {
+			t.Fatalf("%s without herdr = %s %q", name, code, gatewayErrorMessage(t, response))
+		}
 	}
 
 	// No Herdr config (Windows, tests): nothing either.
@@ -1038,5 +1051,246 @@ func TestProviderOpenSaysWhenTheAttachEndsAtOnce(t *testing.T) {
 	fixture.server.providers.mu.Unlock()
 	if kept != 0 {
 		t.Fatalf("%d sessions kept", kept)
+	}
+}
+
+func (fixture *providerFixture) manage(t *testing.T, credential string, request protocol.HTTPProviderManageRequest) protocol.GatewayRPCEnvelope {
+	t.Helper()
+	return fixture.gateway.gateway(t, protocol.GatewayProvidersManage, protocol.GatewayRPCProviderManagePayload{
+		Credential: credential, Provider: herdr.ID, Request: request,
+	})
+}
+
+func TestProviderManageRoute(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	var mu sync.Mutex
+	var calls []string
+	var failure *herdrtest.Error
+	for _, method := range []string{"workspace.close", "worktree.remove", "tab.create", "workspace.create"} {
+		fixture.herdr.Handle(method, func(params json.RawMessage) (any, *herdrtest.Error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, method+" "+string(params))
+			if failure != nil {
+				return nil, failure
+			}
+			return map[string]any{"workspace": map[string]any{"workspace_id": "w9"}, "root_pane": map[string]any{"pane_id": "w1:p3", "terminal_id": "term_65d0031602b712"}}, nil
+		})
+	}
+	text := func(value string) *string { return &value }
+	closeTree := protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w3"), Name: text("silver-meadow")}
+	removeTree := protocol.HTTPProviderManageRequest{Action: protocol.RemoveItem, ItemID: text("w3"), Name: text("silver-meadow")}
+	device := func() string { return pairDevice(t, fixture.service, "Phone").Credential } // the limit is per device
+
+	done, err := protocol.DecodeRPCPayload[protocol.HTTPProviderManageResponse](fixture.manage(t, fixture.credential, closeTree))
+	if err != nil || done.ItemID == nil || *done.ItemID != "w3" || done.TargetID != nil || done.Problem != nil ||
+		len(calls) != 1 || calls[0] != `workspace.close {"workspace_id":"w3"}` {
+		t.Fatalf("close = %+v %v %v", done, err, calls)
+	}
+	// A new tab answers its terminal (this herdr has `terminal attach`).
+	tab, err := protocol.DecodeRPCPayload[protocol.HTTPProviderManageResponse](
+		fixture.manage(t, fixture.credential, protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w1")}))
+	if err != nil || tab.TargetID == nil || *tab.TargetID != "w1:p3.term_65d0031602b712" {
+		t.Fatalf("new tab = %+v %v", tab, err)
+	}
+	// Uncommitted changes are an answer, not an error; git's text stays on the host.
+	failure = &herdrtest.Error{Code: "dirty_worktree_requires_force", Message: "fatal: '/home/demo/secret' contains modified or untracked files"}
+	response := fixture.manage(t, fixture.credential, removeTree)
+	dirty, err := protocol.DecodeRPCPayload[protocol.HTTPProviderManageResponse](response)
+	if err != nil || dirty.Problem == nil || *dirty.Problem != protocol.Uncommitted || strings.Contains(string(response.Payload), "secret") {
+		t.Fatalf("remove with changes = %s %v", response.Payload, err)
+	}
+
+	for _, test := range []struct {
+		name    string
+		request protocol.HTTPProviderManageRequest
+		herdr   *herdrtest.Error
+		code    protocol.ErrorCode
+		message string
+	}{
+		{"gone", protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w77")}, nil, protocol.SessionMissing, "that workspace is gone"},
+		{"renamed", protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w3"), Name: text("old-name")}, nil,
+			protocol.OperationConflict, "that workspace changed; look at the list and try again"},
+		{"main checkout", protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w1"), Name: text("shop")}, nil,
+			protocol.OperationConflict, "close this project's worktrees first"},
+		{"not linked", protocol.HTTPProviderManageRequest{Action: protocol.RemoveItem, ItemID: text("w2"), Name: text("notes")}, nil,
+			protocol.InvalidRequest, "only a linked worktree can be removed"},
+		{"remove fails", removeTree, &herdrtest.Error{Code: "worktree_remove_failed", Message: "fatal: /home/demo/secret is locked"},
+			protocol.WorktreeFailed, "herdr could not remove the worktree."},
+		{"close fails", closeTree, &herdrtest.Error{Code: "internal", Message: "/home/demo/secret"},
+			protocol.HostUnavailable, "herdr did not do that; look at the list and try again"},
+		{"start while running", protocol.HTTPProviderManageRequest{Action: protocol.StartServer}, nil,
+			protocol.InvalidRequest, "herdr cannot be started on this computer now"},
+		{"unknown project", protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace, ProjectID: text(uuid.New().String())}, nil,
+			protocol.ProjectMissing, "that project is gone, or its folder cannot be used"},
+		// The saved projects of the fixture name folders that do not exist.
+		{"project folder gone", protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace, ProjectID: text(rpcProjectID)}, nil,
+			protocol.ProjectMissing, "that project is gone, or its folder cannot be used"},
+	} {
+		mu.Lock()
+		failure, calls = test.herdr, nil
+		mu.Unlock()
+		response := fixture.manage(t, device(), test.request)
+		if code, message := gatewayErrorCode(t, response), gatewayErrorMessage(t, response); code != test.code || message != test.message {
+			t.Fatalf("%s = %s %q", test.name, code, message)
+		}
+		if (test.herdr != nil) != (len(calls) == 1) {
+			t.Fatalf("%s: herdr calls = %v", test.name, calls)
+		}
+	}
+	failure = nil
+
+	// The same authorization as create: a credential, and an origin this device is paired with.
+	if code := gatewayErrorCode(t, fixture.manage(t, strings.Repeat("X", 43), closeTree)); code != protocol.Unauthorized {
+		t.Fatalf("bad credential = %s", code)
+	}
+	foreign := fixture.gateway.gatewayFrom(t, "https://evil.tailx.ts.net", protocol.GatewayProvidersManage,
+		protocol.GatewayRPCProviderManagePayload{Credential: fixture.credential, Provider: herdr.ID, Request: closeTree})
+	if code := gatewayErrorCode(t, foreign); code != protocol.InvalidRequest || len(calls) != 0 {
+		t.Fatalf("foreign origin = %s %v", code, calls)
+	}
+
+	// 30 manages a minute per device (3 were used above); another device is not held back.
+	for index := 3; index < providerManagesPerMinute; index++ {
+		if response := fixture.manage(t, fixture.credential, closeTree); response.Type == protocol.GatewayError {
+			t.Fatalf("manage %d = %s", index, gatewayErrorMessage(t, response))
+		}
+	}
+	if code := gatewayErrorCode(t, fixture.manage(t, fixture.credential, closeTree)); code != protocol.LimitExceeded {
+		t.Fatalf("31st manage = %s", code)
+	}
+	if response := fixture.manage(t, device(), closeTree); response.Type == protocol.GatewayError {
+		t.Fatalf("another device = %s", gatewayErrorMessage(t, response))
+	}
+	off := false
+	fixture.update(t, fixture.credential, protocol.HTTPProviderUpdateRequest{Enabled: &off})
+	if code := gatewayErrorCode(t, fixture.manage(t, device(), closeTree)); code != protocol.HostUnavailable {
+		t.Fatalf("manage while off = %s", code)
+	}
+}
+
+// newWorkspace: the phone names a project by ID; the broker resolves and
+// checks the folder, and herdr gets the resolved path and the project's name.
+func TestProviderManageNewWorkspaceUsesAnOwnedProjectFolder(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	var asked map[string]any
+	fixture.herdr.Handle("workspace.create", func(params json.RawMessage) (any, *herdrtest.Error) {
+		_ = json.Unmarshal(params, &asked)
+		return map[string]any{"workspace": map[string]any{"workspace_id": "w9"}, "root_pane": map[string]any{"pane_id": "w9:p1", "terminal_id": "/etc/passwd"}}, nil
+	})
+	folder := filepath.Join(fixture.config.Home, "shop")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(fixture.config.Home, "link")
+	if err := os.Symlink(folder, link); err != nil {
+		t.Fatal(err)
+	}
+	put := func(name, path string) *string {
+		id, now := uuid.New().String(), time.Now().UTC()
+		project := store.Project{ID: id, DisplayName: name, CanonicalPath: path, CreatedAt: now, UpdatedAt: now}
+		if err := fixture.persistence.PutProject(context.Background(), project); err != nil {
+			t.Fatal(err)
+		}
+		return &id
+	}
+	request := protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace, ProjectID: put("Web shop", link)}
+	made, err := protocol.DecodeRPCPayload[protocol.HTTPProviderManageResponse](fixture.manage(t, fixture.credential, request))
+	resolved, _ := filepath.EvalSymlinks(folder)
+	// A terminal ID that is not a handle is never sent to the phone.
+	if err != nil || made.ItemID == nil || *made.ItemID != "w9" || made.TargetID != nil ||
+		asked["cwd"] != resolved || asked["label"] != "Web shop" || asked["focus"] != false {
+		t.Fatalf("new workspace = %+v %v, herdr got %v", made, err, asked)
+	}
+	// A folder of another user (root's /usr) is refused before herdr is asked.
+	if os.Geteuid() != 0 {
+		asked = nil
+		request.ProjectID = put("System", "/usr")
+		if code := gatewayErrorCode(t, fixture.manage(t, fixture.credential, request)); code != protocol.ProjectMissing || asked != nil {
+			t.Fatalf("another user's folder = %s, herdr got %v", code, asked)
+		}
+	}
+}
+
+// "Check again": a settings read makes the poll loop look for herdr now,
+// not at its next 30 s lookup, and never more often than every 2 s.
+func TestSettingsReadLooksForHerdrAgain(t *testing.T) {
+	fixture := newProviderFixture(t)
+	binary := fixture.config.BinaryPaths[0]
+	script, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(binary); err != nil {
+		t.Fatal(err)
+	}
+	fixture.attach(t)
+	fixture.waitState(t, protocol.NotInstalled)
+	if err := os.WriteFile(binary, script, 0o755); err != nil { // the user installs herdr
+		t.Fatal(err)
+	}
+	time.Sleep(2500 * time.Millisecond) // a poll turn passes: the loop does not look by itself yet
+	if info, _ := fixture.server.providers.provider.Info(); info.State != protocol.NotInstalled {
+		t.Fatalf("found without a settings read: %s", info.State)
+	}
+	host := fixture.server.providers
+	host.settingsInfo(time.Now())
+	if first := host.looked.Load(); first == 0 {
+		t.Fatal("the settings read did not ask")
+	} else if host.settingsInfo(time.Now().Add(time.Second)); host.looked.Load() != first {
+		t.Fatal("a second read within 2 s asked again")
+	}
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	// Ready: a read asks nothing.
+	before := host.looked.Load()
+	if host.settingsInfo(time.Now().Add(time.Minute)); host.looked.Load() != before {
+		t.Fatal("a read of a ready provider asked the loop to look")
+	}
+}
+
+// startServer end to end with the fake herdr binary: the broker starts
+// `herdr server`, the provider turns ready, and the server has the session
+// environment.
+func TestProviderManageStartsTheServer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds fakeherdr")
+	}
+	fixture := newProviderFixture(t)
+	fixture.herdr.Stop()
+	binary, err := herdrtest.Build(filepath.Join(filepath.Dir(fixture.config.Home), "fake"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.config.BinaryPaths, fixture.config.PathEnv = []string{binary}, filepath.Dir(binary)
+	fixture.attach(t)
+	fixture.waitState(t, protocol.NotRunning)
+	settings, _ := protocol.DecodeRPCPayload[protocol.HTTPSettingsResponse](
+		fixture.gateway.gateway(t, protocol.GatewaySettings, credentialPayload(fixture.credential)))
+	if len(settings.Providers) != 1 || settings.Providers[0].CanStart == nil || settings.Providers[0].CanInstall != nil {
+		t.Fatalf("settings = %+v", settings.Providers)
+	}
+	folder := filepath.Join(fixture.config.Home, ".config", "herdr")
+	log := func() string { data, _ := os.ReadFile(filepath.Join(folder, "fake.log")); return string(data) }
+	t.Cleanup(func() {
+		var pid int
+		if _, rest, ok := strings.Cut(log(), "pid="); ok {
+			_, _ = fmt.Sscanf(rest, "%d", &pid)
+		}
+		if process, err := os.FindProcess(pid); err == nil && pid > 0 {
+			_ = process.Signal(syscall.SIGTERM)
+			waitFor(t, func() bool { return process.Signal(syscall.Signal(0)) != nil })
+		}
+	})
+	response := fixture.manage(t, fixture.credential, protocol.HTTPProviderManageRequest{Action: protocol.StartServer})
+	if response.Type != protocol.GatewayProvidersManageResult {
+		t.Fatalf("start = %s %q", gatewayErrorCode(t, response), gatewayErrorMessage(t, response))
+	}
+	if info, _ := fixture.server.providers.info(); info.State != protocol.HTTPProviderStateReady || info.CanStart != nil {
+		t.Fatalf("after the start = %+v", info)
+	}
+	if text := log(); !strings.Contains(text, "PATH="+fixture.config.PathEnv+" TERM=xterm-256color") {
+		t.Fatalf("the server's environment: %s", text)
 	}
 }
