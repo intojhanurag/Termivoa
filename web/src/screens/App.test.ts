@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike,
-  STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
+  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, sameScreen,
 } from './App';
 import { ApiError } from '../api/http';
 import type { HTTPSettingsResponse } from '../generated/protocol';
@@ -407,10 +407,10 @@ describe('provider addresses', () => {
   it('are /p/<provider>/<target> on home and /c/<host>/p/… on a peer, and read back', () => {
     expect(providerPath(home, 'herdr', target)).toBe(`/p/herdr/${encoded}`);
     expect(providerPath(vps, 'herdr', target)).toBe(`/c/vps.tailx.ts.net/p/herdr/${encoded}`);
-    expect(pathFor({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: true })).toBe(`/c/vps.tailx.ts.net/p/herdr/${encoded}`);
+    expect(pathFor({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: 1 })).toBe(`/c/vps.tailx.ts.net/p/herdr/${encoded}`);
     expect(parseRoute(`/p/herdr/${encoded}`)).toEqual({ name: 'provider', host: undefined, provider: 'herdr', target });
     expect(parseRoute(`/c/vps.tailx.ts.net/p/herdr/${encoded}`)).toEqual({ name: 'provider', host: 'vps.tailx.ts.net', provider: 'herdr', target });
-    expect(titleFor({ name: 'provider', computer: home, provider: 'herdr', target, tapped: false })).toBe('herdr · Termivoa');
+    expect(titleFor({ name: 'provider', computer: home, provider: 'herdr', target, tapped: 0 })).toBe('herdr · Termivoa');
     for (const path of ['/p/Herdr/w8', '/p/herdr/..%2Fx', '/p/herdr/a%2Fb', '/p/herdr/', '/p/herdr/w8/x', '/c/Evil Host/p/herdr/w8', '/p/herdr/%ZZ', `/p/${'a'.repeat(33)}/w8`]) {
       expect(parseRoute(path), path).toEqual({ name: 'unknown' });
     }
@@ -424,9 +424,34 @@ describe('provider addresses', () => {
     expect(notificationPath({ type: 'open', path: '/p/herdr/..' }, list)).toBeUndefined();
   });
 
+  it('a notification tap opens at once only when the worker confirms it, and each tap is new, also for the same address (route → askWorkerTap → tapped)', async () => {
+    const path = `/p/herdr/${encoded}`;
+    const asked: string[] = [];
+    const yes = async (at: string) => { asked.push(at); return true; };
+    const first = await providerArrival(home, 'herdr', target, path, yes);
+    const second = await providerArrival(home, 'herdr', target, path, yes);
+    expect(asked).toEqual([path, path]);
+    expect(first).toMatchObject({ name: 'provider', computer: home, provider: 'herdr', target });
+    const taps = [first, second].map((view) => (view.name === 'provider' ? view.tapped : -1));
+    expect(taps[0]).toBeGreaterThan(0);
+    // Same address, same screen key: only a new number tells the screen there was a second tap.
+    expect(taps[1]).not.toBe(taps[0]);
+    // A link or a reload (no fresh tap): Open first.
+    expect(await providerArrival(home, 'herdr', target, path, async () => false)).toMatchObject({ tapped: 0 });
+    expect(newTap()).toBeGreaterThan(taps[1] ?? 0);
+  });
+
+  it('a chip replaces the history entry: tabs of one workspace are one screen', () => {
+    const at = (computer: Computer, id: string) => ({ name: 'provider', computer, provider: 'herdr', target: id, tapped: 1 }) as const;
+    expect(sameScreen(at(home, 'w8:p1.a'), at(home, 'w8:p2.b'))).toBe(true);
+    expect(sameScreen(at(home, 'w8:p1.a'), at(vps, 'w8:p2.b'))).toBe(false);
+    expect(sameScreen({ name: 'sessions' }, at(home, 'w8:p2.b'))).toBe(false);
+    expect(sameScreen(at(home, 'w8:p1.a'), { name: 'sessions' })).toBe(false);
+  });
+
   it('leaves a provider terminal whose computer left the list', () => {
-    expect(leaveRemoved({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: false }, [home])).toEqual({ name: 'sessions', message: 'vps is no longer in your list.' });
-    expect(leaveRemoved({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: false }, [home, vps])).toBeUndefined();
+    expect(leaveRemoved({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: 0 }, [home])).toEqual({ name: 'sessions', message: 'vps is no longer in your list.' });
+    expect(leaveRemoved({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: 0 }, [home, vps])).toBeUndefined();
   });
 });
 

@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
-import { ApiError, client } from '../api/http';
+import { useEffect, useRef, useState } from 'react';
+import { ApiError, client, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
+import type { Computer } from '../computers';
 import type { HTTPProviderCreateRequest, HTTPProviderCreateResponse, HTTPProviderGroup } from '../generated/protocol';
 import type { ProviderTap } from './Herdr';
 import type { ProviderEntry } from './providers';
@@ -54,10 +55,17 @@ export function createFailure(error: unknown, name: string, group: string, provi
     case 'worktree_failed': return `${provider} could not make the worktree. Nothing was opened. Try again or pick another name.`;
     case 'limit_exceeded': return 'Too many new worktrees just now. Wait a minute, then try again.';
     case 'invalid_request': return `${provider} on ${label} refused this name or agent. Check them and try again.`;
-    case 'host_unavailable': return `${provider} is not running on ${label}.`;
+    case 'host_unavailable': return `${provider} is off or not running on ${label}.`;
     case 'session_missing': return `${group} is gone from ${provider}. Close this and look again.`;
     default: return undefined;
   }
+}
+
+/** A failed create's words: fixed text, else onFailure for that computer, so a peer's 401 says pair again and never sends the user to Setup. */
+export function createError(
+  failure: unknown, name: string, group: HTTPProviderGroup, entry: ProviderEntry, onFailure: (error: unknown, from: Computer) => string,
+): string {
+  return createFailure(failure, name, group.name, entry.info.name, entry.computer.label) ?? onFailure(failure, entry.computer);
 }
 
 /** The worktree exists; the agent did not start, or the prompt did not go: a notice, not an error. */
@@ -70,8 +78,36 @@ export function startNotice(answer: Pick<HTTPProviderCreateResponse, 'agentStart
   }
 }
 
+/** Said in the sheet when a create took longer than the phone waits: the computer may still finish it. */
+export const stillWorking = (label: string): string => `Still working on ${label}… It shows in the list when it is ready.`;
+
+/**
+ * One create, start to end. A late answer after the sheet is gone (the user left) does nothing, so it never pulls them into Live.
+ * A network failure only after the whole wait is the phone's timeout: the computer may still make it, so it is not an error
+ * of the computer and goes nowhere; the list is read again so the new worktree shows.
+ * ponytail: the timeout is told from the time it took; a timeout code from the HTTP client would be exact.
+ */
+export async function submitCreate({ create, alive, now = Date.now, onCreated, onSlow, onFailed }: {
+  readonly create: () => Promise<HTTPProviderCreateResponse>;
+  readonly alive: () => boolean;
+  readonly now?: () => number;
+  readonly onCreated: (answer: HTTPProviderCreateResponse) => void;
+  readonly onSlow: () => void;
+  readonly onFailed: (failure: unknown) => void;
+}): Promise<void> {
+  const started = now();
+  try {
+    const answer = await create();
+    if (alive()) onCreated(answer);
+  } catch (failure) {
+    if (!alive()) return;
+    if (failure instanceof ApiError && failure.code === 'network' && now() - started >= PROVIDER_CREATE_TIMEOUT_MS) onSlow();
+    else onFailed(failure);
+  }
+}
+
 /** The fields, the button and what went wrong. State comes from props, so each state renders on its own. */
-export function CreateForm({ entry, group, name, agent, prompt, busy, error, onName, onAgent, onPrompt, onCreate, onClose }: {
+export function CreateForm({ entry, group, name, agent, prompt, busy, error, slow = false, onName, onAgent, onPrompt, onCreate, onClose }: {
   readonly entry: ProviderEntry;
   readonly group: HTTPProviderGroup;
   readonly name: string;
@@ -80,6 +116,8 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, onN
   readonly prompt: string;
   readonly busy: boolean;
   readonly error: string | undefined;
+  /** The create took longer than the phone waits (stillWorking). */
+  readonly slow?: boolean;
   readonly onName: (name: string) => void;
   readonly onAgent: (agent: string | undefined) => void;
   readonly onPrompt: (prompt: string) => void;
@@ -101,7 +139,7 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, onN
     >
       <div className="sheet-header create-head">
         <div className="create-title">
-          <p className="caps">{info.name} · {group.name} · on {computer.label}</p>
+          <p className="caps"><bdi>{info.name}</bdi> · <bdi>{group.name}</bdi> · on {computer.label}</p>
           <h2 id="create-title">New worktree</h2>
         </div>
         <button type="button" className="link" disabled={busy} onClick={onClose}>Close</button>
@@ -123,7 +161,7 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, onN
           onChange={(event) => onName(event.target.value.toLowerCase())}
         />
         <p id="create-name-help" className={nameProblem === undefined ? 'hint-text' : 'error hint-text'}>
-          {nameProblem ?? `${info.name} makes the folder and a new branch from where ${group.name} is now.`}
+          {nameProblem ?? <><bdi>{info.name}</bdi> makes the folder and a new branch from where <bdi>{group.name}</bdi> is now.</>}
         </p>
       </div>
       <div className="stack create-field">
@@ -137,7 +175,7 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, onN
               aria-checked={agent === kind.id}
               disabled={busy}
               onClick={() => onAgent(kind.id)}
-            >{kind.label}</button>
+            ><bdi>{kind.label}</bdi></button>
           ))}
         </div>
       </div>
@@ -158,6 +196,7 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, onN
           {prompted !== undefined && <p id="create-prompt-help" role="alert" className="error hint-text">{prompted}</p>}
         </div>
       )}
+      {slow && <p role="status" className="hint-text">{stillWorking(computer.label)}</p>}
       {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
       <Button type="submit" className="primary wide" busy={busy} busyLabel="Creating…" disabled={!ready}>
         {agent === undefined ? 'Create' : 'Create and start'}
@@ -167,11 +206,14 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, onN
 }
 
 /** The sheet with its own state. `onCreated` opens the new terminal; a failure stays here so the name can change. */
-export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onClose, create = (body) => client(entry.computer.origin).providerCreate(entry.info.id, body) }: {
+export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onReload, onClose, create = (body) => client(entry.computer.origin).providerCreate(entry.info.id, body) }: {
   readonly entry: ProviderEntry;
   readonly group: HTTPProviderGroup;
   readonly onCreated: (tap: ProviderTap, notice: string | undefined) => void;
-  readonly onFailure: (error: unknown) => string;
+  /** Words a failure of this computer (a peer's 401 says pair again; it never sends the user to Setup). */
+  readonly onFailure: (error: unknown, from: Computer) => string;
+  /** Reads this provider again, so a slow create shows in the list. */
+  readonly onReload?: () => void;
   readonly onClose: () => void;
   readonly create?: (body: HTTPProviderCreateRequest) => Promise<HTTPProviderCreateResponse>;
 }) {
@@ -180,8 +222,14 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onClos
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [slow, setSlow] = useState(false);
   // One create per tap, even if two taps land before the re-render.
   const running = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   function submit() {
     const body = createRequest(group.id, name, agent, prompt);
@@ -189,14 +237,18 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onClos
     running.current = true;
     setBusy(true);
     setError(undefined);
-    create(body).then(
-      (answer) => onCreated({ computer: entry.computer, provider: entry.info.id, targetId: answer.targetId }, startNotice(answer)),
-      (failure: unknown) => {
-        setError(createFailure(failure, name, group.name, entry.info.name, entry.computer.label) ?? onFailure(failure));
-        setBusy(false);
-        running.current = false;
+    setSlow(false);
+    const settle = () => { setBusy(false); running.current = false; };
+    void submitCreate({
+      create: () => create(body),
+      alive: () => mounted.current,
+      onCreated: (answer) => onCreated({ computer: entry.computer, provider: entry.info.id, targetId: answer.targetId }, startNotice(answer)),
+      onSlow: () => { setSlow(true); settle(); onReload?.(); },
+      onFailed: (failure) => {
+        setError(createError(failure, name, group, entry, onFailure));
+        settle();
       },
-    );
+    });
   }
 
   return (
@@ -210,6 +262,7 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onClos
           prompt={prompt}
           busy={busy}
           error={error}
+          slow={slow}
           onName={(value) => { setName(value); setError(undefined); }}
           onAgent={setAgent}
           onPrompt={setPrompt}

@@ -461,9 +461,17 @@ The herdr pane closed, or herdr restarted. Pick the row again in the **herdr** t
 
 This is on purpose. herdr gives the pane the phone's size while it is open on the phone. Leave Live, or lock the phone; about 10 seconds later the pane has its own size again.
 
-### "Too many herdr terminals are open on mac"
+### "mac cannot open more herdr terminals just now"
 
-At most 4 herdr terminals can be open at once for each computer. Leave some, then wait about 10 seconds.
+There are two limits. At most 4 herdr terminals can be open at once for each computer, and each phone can open 20 a minute. Leave some, wait about 10 seconds, or wait a minute.
+
+### "herdr is off on mac"
+
+**On** is off for that computer in **Settings → Integrations**. Turn it on.
+
+### "Still working on mac… It shows in the list when it is ready."
+
+A new worktree took longer than the phone waits (45 seconds). The computer may still finish it. Close the sheet and look for the new worktree in the **herdr** tab. Do not create it again with the same name.
 
 ### A tab chip is off: "Update herdr to open this tab"
 

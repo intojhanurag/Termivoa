@@ -101,11 +101,12 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 | | |
 | --- | --- |
 | The phone gets from herdr | Project and worktree names, tab labels, agent kinds and state words. |
-| The phone never gets | Terminal titles, screen text, paths or prompts. |
+| The list and the notifications never have | Terminal titles, screen text, paths or prompts. |
+| When you open a herdr terminal | The phone gets that terminal's screen, like any Termivoa session. |
 | A herdr notification has | The provider `herdr`, an opaque terminal ID, the fixed title `herdr · <project> · <worktree>` and a fixed text such as `<agent> needs you. Tap to answer.` It is encrypted to your phone, like other [notifications](/docs/guides/notifications/). |
 
 - **Same access as the Sessions list.** The herdr requests need the same pairing cookie and the same check of where a request comes from. Another computer in your list reads its herdr only through its own Termivoa.
-- **Only through herdr's own socket.** Termivoa talks to herdr only through herdr's own socket, which you own. It checks that the socket and the herdr program belong to you.
+- **Socket and program, both yours.** Termivoa uses herdr's own socket to list, read state and create worktrees. It also runs the herdr program: once for each open terminal, and to check what that herdr version can do. It checks that the socket and the herdr program belong to you.
 - **Limits for each phone.** Open 20 per minute, create 3 per minute, settings 10 per minute.
 - **Opening never takes control.** It is read-only until you tap **Take control**.
 - **No takeover.** Termivoa never kicks another herdr client off a terminal.

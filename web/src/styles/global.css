@@ -241,7 +241,7 @@ label { color: var(--soft); font-size: 14px; }
 /* A confirm before something that cannot be undone: a red rule, like a danger notice. */
 .confirm { padding: 14px 16px; border-left: 2px solid var(--red); border-radius: 0 6px 6px 0; background: var(--surface); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.caps { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.14em; line-height: 16px; text-transform: uppercase; }
+.caps { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.14em; line-height: 16px; text-transform: uppercase; overflow-wrap: anywhere; }
 
 .dot { display: inline-block; flex-shrink: 0; width: 6px; height: 6px; border-radius: 3px; background: var(--muted); }
 .dot.green { background: var(--green); }
@@ -379,7 +379,8 @@ label { color: var(--soft); font-size: 14px; }
 .provider-item.nested .row-text { gap: 4px; }
 .provider-item.nested .row-title { font-family: var(--mono); font-size: 14px; line-height: 20px; }
 .provider-item.nested .row-meta { color: var(--soft); font-family: inherit; font-size: 13px; line-height: 18px; }
-.provider-item.seen, .group-toggle.seen { opacity: 0.55; }
+/* Seen DONE rows are dimmed by colour, not opacity: every label stays --muted on --bg (about 6.4:1, WCAG AA). */
+:is(.provider-item, .group-toggle).seen :is(.row-title, .row-meta, .group-name, .group-where, .state-word) { color: var(--muted); }
 .group-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
 .group-toggle { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 16px 0; border: 0; border-radius: 0; text-align: left; font-weight: 400; }
 .group-toggle:active:not(:disabled) { background: none; opacity: 0.7; }

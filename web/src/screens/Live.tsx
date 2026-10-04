@@ -206,14 +206,16 @@ export function SessionLost({ title, where, onSessions, onStartNew }: {
 export interface ProviderLive {
   /** "herdr". */
   readonly name: string;
-  /** "shop · silver-meadow". */
-  readonly place: string;
+  /** "shop · silver-meadow", each name isolated (bdi): names come from the provider. */
+  readonly place: ReactNode;
   /** The chips row (ProviderChips). */
   readonly chips: ReactNode;
   /** "mac shows this terminal at phone size while it is open here." */
   readonly sizeLine: string;
   /** Opens the same terminal again after the attach ended. */
   readonly onOpenAgain: () => Promise<void>;
+  /** The attach ended (Closed here): the screen must not pause or open again on hide and show. */
+  readonly onEnded?: () => void;
 }
 
 /** The attach ended (the pane closed, or another client holds it): say so, and offer Open again. One tap opens once. */
@@ -661,6 +663,8 @@ export function Live({
   const showPlace = (placeHead.name !== '' || placeTail !== '') && (status.link === 'live' || !slowLink);
 
   const providerEnded = provider !== undefined && (status.link === 'lost' || status.sessionState === 'exited' || status.sessionState === 'exiting');
+  const onProviderEnded = provider?.onEnded;
+  useEffect(() => { if (providerEnded) onProviderEnded?.(); }, [providerEnded, onProviderEnded]);
   if (status.link === 'lost' && provider === undefined) {
     return <SessionLost title={session.title} where={multi ? session.computer.label : 'your computer'} onSessions={onSessions} onStartNew={onStartNew} />;
   }

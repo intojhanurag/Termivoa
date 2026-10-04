@@ -341,7 +341,8 @@ export function Sessions({
   readonly onSettings: () => void;
   readonly onReload: () => Promise<void>;
   readonly onRetry: (origin: string) => Promise<void>;
-  readonly onFailure: (error: unknown) => string;
+  /** `from`: the computer the failure came from; without it, it counts as home's. */
+  readonly onFailure: (error: unknown, from?: Computer) => string;
   /** Present when a new version waits; tapping it reloads into that version. */
   readonly onUpdate?: () => void;
   /** Providers (herdr) of every computer; their trouble shows only in their own part. */
@@ -498,6 +499,7 @@ export function Sessions({
           group={creating.group}
           onCreated={(tap, notice) => onCreated(tap, notice, creating.entry.key)}
           onFailure={onFailure}
+          onReload={() => { void retryProvider(creating.entry.key).catch(() => undefined); }}
           onClose={() => setCreating(undefined)}
         />
       )}

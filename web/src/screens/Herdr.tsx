@@ -1,4 +1,4 @@
-import { useReducer, useState, type ReactNode } from 'react';
+import { Fragment, useReducer, useState, type ReactNode } from 'react';
 import { providerWord, type ProviderWord } from '../api/http';
 import type { Computer } from '../computers';
 import type { HTTPProviderGroup, HTTPProviderItem } from '../generated/protocol';
@@ -39,12 +39,17 @@ export function StateWord({ word, text }: { readonly word: ProviderWord; readonl
   return <span className={`state-word ${TONES[word] ?? 'muted'}`}>{text}</span>;
 }
 
-/** "claude · tab 1", "claude · codex · 3 tabs": agents and tabs, never a terminal title (section 14). */
-export function itemMeta(item: HTTPProviderItem): string {
+/** ["claude", "tab 1"], ["claude", "codex", "3 tabs"]: agents and tabs, never a terminal title (section 14). Shown joined by " · ". */
+export function itemMeta(item: HTTPProviderItem): string[] {
   const agents = [...new Set(item.targets.flatMap((target) => (target.agent === undefined ? [] : [target.agent])))];
   const tabs = [...new Set(item.targets.map((target) => target.label))];
   const where = tabs.length > 1 ? `${tabs.length} tabs` : tabs[0] === undefined ? undefined : `tab ${tabs[0]}`;
-  return [...agents, ...(where === undefined ? [] : [where])].join(' · ');
+  return [...agents, ...(where === undefined ? [] : [where])];
+}
+
+/** Names from a provider, each isolated (bdi), so a right-to-left or control mark in one cannot reorder the rest. */
+export function Names({ parts }: { readonly parts: ReadonlyArray<string> }) {
+  return <>{parts.map((part, index) => <Fragment key={index}>{index > 0 && ' · '}<bdi>{part}</bdi></Fragment>)}</>;
 }
 
 /** Row names of one computer's groups; a repeated name gets its place among the repeats: "notes", "notes · 2". */
@@ -116,10 +121,10 @@ function ItemRow({ entry, item, name, big, now, onOpen }: {
       >
         <span className="row-text">
           <span className="row-head">
-            <span className="row-title">{name}</span>
+            <span className="row-title"><bdi>{name}</bdi></span>
             <StateWord word={word} text={wordText(word, count, since(item.stateSince, now))} />
           </span>
-          <span className="row-meta">{itemMeta(item)}</span>
+          <span className="row-meta"><Names parts={itemMeta(item)} /></span>
         </span>
       </button>
     </li>
@@ -200,7 +205,7 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
                           type="button"
                           className="group-toggle"
                           aria-expanded={open}
-                          aria-controls={id}
+                          {...(open ? { 'aria-controls': id } : {})}
                           onClick={() => { folds.set(foldKey(entry.computer, group), !open); redraw(); }}
                         >
                           <span className="fold-glyph" aria-hidden="true">{open ? '▾' : '▸'}</span>
@@ -239,7 +244,7 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
 function GroupTitle({ name, where, count }: { readonly name: string; readonly where: ReactNode; readonly count?: number | undefined }) {
   return (
     <span className="group-title">
-      <span className="group-name">{name}</span>
+      <span className="group-name"><bdi>{name}</bdi></span>
       {where}
       {count !== undefined && <span className="group-where">{count} worktrees</span>}
     </span>
@@ -317,8 +322,8 @@ export function ProviderSection({ entries, multi, now, onOpen }: {
       {parts.map(({ entry, group, name, items, agents }) => (
         <section key={`${entry.key}/${group.id}`} aria-label={`${entry.info.name} · ${name}${multi ? ` on ${entry.computer.label}` : ''}`}>
           <div className="provider-head">
-            <span className="home-badge">{entry.info.name}</span>
-            <span className="caps provider-head-name">{name}{multi ? ` · on ${entry.computer.label}` : ''}</span>
+            <span className="home-badge"><bdi>{entry.info.name}</bdi></span>
+            <span className="caps provider-head-name"><bdi>{name}</bdi>{multi ? ` · on ${entry.computer.label}` : ''}</span>
             <span className="caps faint">{agents} {agents === 1 ? 'agent' : 'agents'}</span>
           </div>
           <ul className="rows">

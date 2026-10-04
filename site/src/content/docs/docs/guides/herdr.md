@@ -38,7 +38,7 @@ In the **herdr** tab:
 - Under a project, its worktrees, with the main checkout first. A workspace that is not in git is one row.
 - With more than one computer, each project says where it is, such as **on mac** or **on vps**.
 - A folded project with several worktrees says **2 worktrees**.
-- A line under a worktree names the agent and the tab, for example `claude · tab 1`. It never shows terminal titles or screen text.
+- A line under a worktree names the agent and the tab, for example `claude · tab 1`. The list never shows terminal titles or screen text. You see a terminal's screen only when you open it.
 
 A state word shows on the right of a row:
 
@@ -104,7 +104,7 @@ Open **Settings → Integrations**. It has one card for each computer that has h
 
 | Switch | What it does |
 | --- | --- |
-| **On** | Off: the herdr tab leaves out that computer, the computer stops reading herdr and closes its open herdr terminals, and there is no buzz. The card says "This phone does not show or buzz for herdr on mac." |
+| **On** | Off: the herdr tab leaves out that computer, the computer stops reading herdr and closes its open herdr terminals, and there is no buzz. This is for every phone. The card says "Off for every phone: mac does not show herdr or buzz for it." |
 | **Buzz when blocked** | Turns the blocked buzz on or off. |
 | **Buzz when finished** | Turns the finished buzz on or off. |
 
@@ -146,7 +146,7 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 
 | Limit | Detail |
 | --- | --- |
-| Open terminals | At most 4 herdr terminals open at once for each computer. The app says "Too many herdr terminals are open on mac. Close one, or wait a few seconds." They do not count toward Termivoa's own session limit. |
+| Open terminals | At most 4 herdr terminals open at once for each computer. Each phone can also open 20 a minute. At either limit the app says "mac cannot open more herdr terminals just now. Close one you do not use, or wait a minute." They do not count toward Termivoa's own session limit. |
 | Panes | One pane for each open terminal. No split panes. |
 | Input | No mouse. No herdr prefix keys: Termivoa sends `ctrl+b` to the agent as a plain `ctrl+b`, so the phone cannot send herdr's prefix commands. |
 | Custom prefix | If you set another prefix key in herdr's `config.toml`, the phone can send that key. At worst it closes the phone's own view of the terminal. `pterm doctor` warns about it. |

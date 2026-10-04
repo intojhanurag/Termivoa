@@ -4,6 +4,7 @@ import type {
   HTTPDeviceSummary, HTTPProviderInfo, HTTPProviderNotifyState, HTTPProviderUpdateRequest, HTTPSettingsResponse,
 } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush } from '../push';
+import type { Computer } from '../computers';
 import type { ComputerEntry } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
@@ -127,7 +128,7 @@ export function integrationText(info: Pick<HTTPProviderInfo, 'name' | 'state'>, 
     case 'ready': return { word: 'Running', tone: 'green' };
     case 'notRunning': return { word: 'Not running', tone: 'amber', line: `${info.name} is not running on ${label}. Start it there to see its projects.` };
     case 'unsupported': return { word: 'Update', tone: 'amber', line: `Update ${info.name} on ${label}. This version is too old for Termivoa.` };
-    case 'off': return { word: 'Off', tone: 'muted', line: `This phone does not show or buzz for ${info.name} on ${label}.` };
+    case 'off': return { word: 'Off', tone: 'muted', line: `Off for every phone: ${label} does not show ${info.name} or buzz for it.` };
   }
 }
 
@@ -138,12 +139,25 @@ export function notifyWith(current: ReadonlyArray<HTTPProviderNotifyState>, word
 
 type Field = 'enabled' | HTTPProviderNotifyState;
 
+/** One switch saved on its computer: the new info, or the failure's words for that computer (a peer's 401 says pair again, never Setup). */
+export async function saveSwitch(
+  info: HTTPProviderInfo, field: Field, on: boolean, computer: Computer,
+  save: (body: HTTPProviderUpdateRequest) => Promise<HTTPProviderInfo>,
+  onFailure: (error: unknown, from: Computer) => string,
+): Promise<{ readonly info: HTTPProviderInfo } | { readonly error: string }> {
+  try {
+    return { info: await save(field === 'enabled' ? { enabled: on } : { notify: notifyWith(info.notify, field, on) }) };
+  } catch (failure) {
+    return { error: onFailure(failure, computer) };
+  }
+}
+
 /** One provider on one computer: on or off, and which states buzz. Saved on that computer for every device. */
 export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body) }: {
   readonly source: ProviderSource;
   /** The provider's latest read on that computer: its `state` is newer than the settings' (docs/herdr-provider.md, 4.5). */
   readonly entry?: Pick<ProviderEntry, 'status'> | undefined;
-  readonly onFailure: (error: unknown) => string;
+  readonly onFailure: (error: unknown, from: Computer) => string;
   /** Reads the computer's settings and the provider again, so the rest of the app follows. */
   readonly onSaved?: () => void;
   readonly save?: (body: HTTPProviderUpdateRequest) => Promise<HTTPProviderInfo>;
@@ -165,10 +179,16 @@ export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body
     const on = !value(field);
     setPending({ field, on });
     setNote(undefined);
-    save(field === 'enabled' ? { enabled: on } : { notify: notifyWith(info.notify, field, on) }).then(
-      (next) => { setSaved({ info: next, at: Date.now() }); setNote({ text: 'Saved.', error: false }); onSaved?.(); },
-      (failure: unknown) => setNote({ text: onFailure(failure), error: true }),
-    ).finally(() => setPending(undefined));
+    void saveSwitch(info, field, on, computer, save, onFailure).then((result) => {
+      if ('info' in result) {
+        setSaved({ info: result.info, at: Date.now() });
+        setNote({ text: 'Saved.', error: false });
+        onSaved?.();
+      } else {
+        setNote({ text: result.error, error: true });
+      }
+      setPending(undefined);
+    });
   }
 
   const toggle = (field: Field, label: string, off = false) => (
@@ -191,7 +211,7 @@ export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body
     <li className="computer-card">
       <div className="computer-head">
         <span className="row-text">
-          <span className="row-title">{info.name} on {computer.label}</span>
+          <span className="row-title"><bdi>{info.name}</bdi> on {computer.label}</span>
           {info.version !== undefined && <span className="row-meta">{info.version}</span>}
         </span>
         <span className={`computer-state ${text.tone}`}>{text.word}</span>
@@ -212,7 +232,7 @@ export function IntegrationsSection({ entries, providers = [], onFailure, onChec
   readonly entries: ReadonlyArray<ComputerEntry>;
   /** The providers' latest reads, for their state. */
   readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
-  readonly onFailure: (error: unknown) => string;
+  readonly onFailure: (error: unknown, from?: Computer) => string;
   readonly onCheck?: (origin: string) => Promise<void>;
   readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
 }) {
@@ -251,7 +271,7 @@ export function Settings({
   readonly onFontSize: (size: number) => void;
   readonly onBack: () => void;
   readonly onRenamed: (device: HTTPDeviceSummary) => void;
-  readonly onFailure: (error: unknown) => string;
+  readonly onFailure: (error: unknown, from?: Computer) => string;
   readonly onLogout: () => Promise<void>;
   readonly onCheck: (origin: string) => Promise<void>;
   readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;

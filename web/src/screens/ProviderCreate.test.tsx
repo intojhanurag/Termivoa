@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { ApiError } from '../api/http';
-import { branchProblem, createFailure, CreateForm, createRequest, promptProblem, startNotice } from './ProviderCreate';
-import { mac, providerEntry, ready, shopGroups } from './providerFixtures';
+import { describe, expect, it, vi } from 'vitest';
+import { ApiError, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
+import type { Computer } from '../computers';
+import { branchProblem, createError, createFailure, CreateForm, createRequest, promptProblem, startNotice, stillWorking, submitCreate } from './ProviderCreate';
+import { group, item, mac, providerEntry, ready, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
 const shop = shopGroups()[0]!;
@@ -64,11 +65,11 @@ describe('answers', () => {
 describe('the + sheet (H6)', () => {
   it('names the place, offers herdr\'s agent kinds and No agent, and says where the branch starts', () => {
     const page = form();
-    expect(page).toContain('herdr · shop · on mac');
-    expect(page).toContain('herdr makes the folder and a new branch from where shop is now.');
-    expect(page).toContain('role="radio" aria-checked="true">claude</button>');
-    expect(page).toContain('role="radio" aria-checked="false">codex</button>');
-    expect(page).toContain('>No agent</button>');
+    expect(page).toContain('<bdi>herdr</bdi> · <bdi>shop</bdi> · on mac');
+    expect(page).toContain('<bdi>herdr</bdi> makes the folder and a new branch from where <bdi>shop</bdi> is now.');
+    expect(page).toContain('role="radio" aria-checked="true"><bdi>claude</bdi></button>');
+    expect(page).toContain('role="radio" aria-checked="false"><bdi>codex</bdi></button>');
+    expect(page).toContain('><bdi>No agent</bdi></button>');
     expect(page).toContain('Create and start');
     expect(page).not.toContain('disabled=""');
   });
@@ -97,5 +98,62 @@ describe('the + sheet (H6)', () => {
 
   it('shows a failure inside the sheet', () => {
     expect(form({ error: '“fix” already exists in shop. Pick another name.' })).toContain('role="alert"');
+  });
+});
+
+describe('a create, start to end (submitCreate)', () => {
+  const answer = { itemId: 'w10', targetId: 'w10:p1.term_f1', agentStarted: true };
+  const run = (create: () => Promise<typeof answer>, alive = true, took = 0) => {
+    const calls = { created: vi.fn(), slow: vi.fn(), failed: vi.fn() };
+    let clock = 0;
+    const done = submitCreate({
+      create: () => { clock += took; return create(); },
+      alive: () => alive,
+      now: () => clock,
+      onCreated: calls.created, onSlow: calls.slow, onFailed: calls.failed,
+    });
+    return { done, calls };
+  };
+
+  it('opens the new terminal when the sheet is still there', async () => {
+    const { done, calls } = run(async () => answer);
+    await done;
+    expect(calls.created).toHaveBeenCalledWith(answer);
+  });
+
+  it('a create that ends after the user left the screen does not pull them into Live', async () => {
+    const { done, calls } = run(async () => answer, false);
+    await done;
+    expect(calls.created).not.toHaveBeenCalled();
+    const failed = run(async () => { throw new ApiError(409, 'worktree_exists', 'x'); }, false);
+    await failed.done;
+    expect(failed.calls.failed).not.toHaveBeenCalled();
+  });
+
+  it('past the 45 s wait: "Still working…" in the sheet, never the computer\'s failure (no "Can\'t reach", no Setup)', async () => {
+    const { done, calls } = run(async () => { throw new ApiError(0, 'network', 'x'); }, true, PROVIDER_CREATE_TIMEOUT_MS);
+    await done;
+    expect(calls.slow).toHaveBeenCalledOnce();
+    expect(calls.failed).not.toHaveBeenCalled();
+    expect(stillWorking('mac')).toBe('Still working on mac… It shows in the list when it is ready.');
+    expect(form({ slow: true })).toContain('<p role="status" class="hint-text">Still working on mac… It shows in the list when it is ready.</p>');
+  });
+
+  it('a quick network failure or a refusal is a failure', async () => {
+    const quick = run(async () => { throw new ApiError(0, 'network', 'x'); }, true, 1_000);
+    await quick.done;
+    expect(quick.calls.failed).toHaveBeenCalledOnce();
+    expect(quick.calls.slow).not.toHaveBeenCalled();
+  });
+
+  it('words a failure for the computer it came from, so a peer\'s 401 never counts as home\'s', () => {
+    const seen: Array<Computer | undefined> = [];
+    const onFailure = (_error: unknown, from: Computer) => { seen.push(from); return 'Pair vps again'; };
+    const peer = providerEntry(vps, { kind: 'loading' });
+    const shop = group('g1', 'shop', [item('w1', 'main', [target('w1:p1.a', 'idle')])]);
+    expect(createError(new ApiError(401, 'unauthorized', 'x'), 'fix', shop, peer, onFailure)).toBe('Pair vps again');
+    expect(seen).toEqual([vps]);
+    expect(createError(new ApiError(409, 'worktree_exists', 'x'), 'fix', shop, peer, onFailure)).toBe('“fix” already exists in shop. Pick another name.');
+    expect(seen).toHaveLength(1);
   });
 });

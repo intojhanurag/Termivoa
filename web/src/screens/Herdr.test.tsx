@@ -24,7 +24,7 @@ describe('state words', () => {
 
   it('name the agents and the tab, never a terminal title', () => {
     const [shop] = shopGroups();
-    expect(shop?.items.map(itemMeta)).toEqual(['claude · codex · 3 tabs', 'claude · tab 1', 'claude · tab 1']);
+    expect(shop?.items.map((one) => itemMeta(one).join(' · '))).toEqual(['claude · codex · 3 tabs', 'claude · tab 1', 'claude · tab 1']);
   });
 
   it('number a repeated name', () => {
@@ -39,13 +39,13 @@ describe('the herdr tab (H3)', () => {
   it('opens a project with work in it and folds a quiet one, with aria-expanded', () => {
     const page = html();
     expect(page).toContain('aria-expanded="true"');
-    expect(page).toContain('<span class="group-name">shop</span>');
+    expect(page).toContain('<span class="group-name"><bdi>shop</bdi></span>');
     expect(page).toContain('<span class="state-word amber">1 blocked</span>');
-    expect(page).toContain('<span class="row-title">silver-meadow</span><span class="state-word amber">blocked · 4m</span>');
+    expect(page).toContain('<span class="row-title"><bdi>silver-meadow</bdi></span><span class="state-word amber">blocked · 4m</span>');
     expect(page).toContain('<span class="state-word accent">2 working</span>');
     expect(page).toContain('<span class="state-word green">done</span>');
     // A workspace outside git is one row; the repeat is numbered.
-    expect(page).toContain('<span class="group-name">notes · 2</span>');
+    expect(page).toContain('<span class="group-name"><bdi>notes · 2</bdi></span>');
     expect(page).toContain('aria-label="New worktree in shop"');
     expect(isOpen(mac, shopGroups()[1] ?? group('x', 'x', []))).toBe(false);
     expect(foldKey(mac, { id: 'g1' })).toBe('mac.tailx.ts.net/g1');
@@ -62,7 +62,7 @@ describe('the herdr tab (H3)', () => {
   it('keeps a project name and its small labels in one wrapping title, so the labels move under a long name', () => {
     const quiet = group('g2', 'storefront-redesign', [item('w2', 'main', [target('w2:p1.t', 'idle', { agent: 'claude' })]), item('w3', 'draft', [target('w3:p1.t', 'none')])]);
     expect(html([ready(mac, [quiet])], true)).toContain(
-      '<span class="group-title"><span class="group-name">storefront-redesign</span><span class="group-where">on mac</span><span class="group-where">2 worktrees</span></span>',
+      '<span class="group-title"><span class="group-name"><bdi>storefront-redesign</bdi></span><span class="group-where">on mac</span><span class="group-where">2 worktrees</span></span>',
     );
   });
 
@@ -72,6 +72,23 @@ describe('the herdr tab (H3)', () => {
     expect(page).toContain('aria-expanded="false"');
     expect(page).toContain('<span class="group-where">on mac</span><span class="group-where">2 worktrees</span>');
     expect(page).not.toContain('row-title');
+  });
+
+  it('points aria-controls only at a list that is in the page: an open group has it, a folded one does not', () => {
+    const quiet = group('g2', 'blog', [item('w2', 'main', [target('w2:p1.t', 'idle', { agent: 'claude' })]), item('w3', 'draft', [target('w3:p1.t', 'none')])]);
+    expect(html([ready(mac, [quiet])])).not.toContain('aria-controls');
+    const page = html();
+    const ids = [...page.matchAll(/aria-controls="([^"]+)"/gu)].map((match) => match[1]);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(page).toContain(`id="${id}"`);
+  });
+
+  it('isolates every name from a peer (bdi): project, worktree, agent kinds and tab', () => {
+    const rtl = group('g7', 'ab\u202ecd', [item('w7', 'ef\u202egh', [target('w7:p1.t', 'blocked', { agent: 'cl\u202eaude', label: '\u202e1' })]), item('w8', 'x', [target('w8:p1.t', 'none')])]);
+    const page = html([ready(mac, [rtl])]);
+    expect(page).toContain('<span class="group-name"><bdi>ab\u202ecd</bdi></span>');
+    expect(page).toContain('<span class="row-title"><bdi>ef\u202egh</bdi></span>');
+    expect(page).toContain('<span class="row-meta"><bdi>cl\u202eaude</bdi> · <bdi>tab \u202e1</bdi></span>');
   });
 
   it('shows each computer\'s trouble in its own part only', () => {
@@ -112,8 +129,8 @@ describe('the All tab section (H1)', () => {
       ['notes', ['notes'], 1],
     ]);
     const page = renderToStaticMarkup(<ProviderSection entries={[ready(mac)]} multi now={now} onOpen={noop} />);
-    expect(page).toContain('<span class="home-badge">herdr</span><span class="caps provider-head-name">shop · on mac</span><span class="caps faint">4 agents</span>');
-    expect(page).toContain('claude · tab 1');
+    expect(page).toContain('<span class="home-badge"><bdi>herdr</bdi></span><span class="caps provider-head-name"><bdi>shop</bdi> · on mac</span><span class="caps faint">4 agents</span>');
+    expect(page).toContain('<bdi>claude</bdi> · <bdi>tab 1</bdi>');
   });
 });
 

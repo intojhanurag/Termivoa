@@ -4,7 +4,7 @@ import type { Computer } from '../computers';
 import type { HTTPProviderItem, HTTPProviderSession } from '../generated/protocol';
 import { fitGrid, MONOSPACE } from '../terminal/TerminalView';
 import { hosted, type HostedSession } from './allSessions';
-import { GONE, StateWord, wordText } from './Herdr';
+import { GONE, Names, StateWord, wordText } from './Herdr';
 import { Live } from './Live';
 import { findTarget, groupsOf, type ProviderEntry } from './providers';
 import { Button, Notice } from './ui';
@@ -15,7 +15,7 @@ import { Button, Notice } from './ui';
  * notification tap the service worker confirmed); any other arrival shows the
  * terminal's names and Open. It never takes control. While the page is
  * hidden the stream is closed, so the computer gets its pane size back; it
- * opens again on return.
+ * opens again on return, but not after the attach ended (Live shows Open again).
  */
 
 export const sizeLine = (label: string): string => `${label} shows this terminal at phone size while it is open here.`;
@@ -40,12 +40,24 @@ export function phoneGrid(width: number, height: number, fontSize: number, measu
   return fitGrid(width, height - CHROME_PX, measure(fontSize), fontSize * 1.2);
 }
 
-/** What a failed open says, for the cases the app words itself; `gone` sends the user back to the provider tab. */
-export function openProblem(error: unknown, name: string, label: string): { readonly gone: boolean; readonly text: string } | undefined {
+/** "herdr is off on mac…" or "herdr is not running on mac.", from the provider's latest state; unknown says both. */
+export function unavailableText(name: string, label: string, state: string | undefined): string {
+  switch (state) {
+    case 'off': return `${name} is off on ${label}. Turn it on in Settings → Integrations.`;
+    case 'notRunning': return `${name} is not running on ${label}.`;
+    default: return `${name} is off or not running on ${label}.`;
+  }
+}
+
+/**
+ * What a failed open says, for the cases the app words itself; `gone` sends the user back to the provider tab.
+ * `limit_exceeded` is the cap of open terminals or this phone's open rate; the answer does not say which, so the text is true for both.
+ */
+export function openProblem(error: unknown, name: string, label: string, state?: string): { readonly gone: boolean; readonly text: string } | undefined {
   switch (error instanceof ApiError ? error.code : undefined) {
     case 'session_missing': return { gone: true, text: GONE };
-    case 'limit_exceeded': return { gone: false, text: `Too many ${name} terminals are open on ${label}. Close one, or wait a few seconds.` };
-    case 'host_unavailable': return { gone: false, text: `${name} is not running on ${label}.` };
+    case 'limit_exceeded': return { gone: false, text: `${label} cannot open more ${name} terminals just now. Close one you do not use, or wait a minute.` };
+    case 'host_unavailable': return { gone: false, text: unavailableText(name, label, state) };
     default: return undefined;
   }
 }
@@ -57,6 +69,30 @@ export function providerHosted(session: HTTPProviderSession, computer: Computer)
     projectId: '', shellProfileId: '', createdAt: '', updatedAt: '',
   }, computer);
 }
+
+/**
+ * A read that is ready, complete, newer than this screen, and lacks the target: it left.
+ * A cut (truncated) list may just not show it; a read from before the screen (the list before a create) does not know it yet.
+ */
+export function targetLeft(entry: ProviderEntry | undefined, found: boolean, since: number): boolean {
+  return entry?.status.kind === 'ok' && entry.status.snapshot.state === 'ready' && entry.status.snapshot.truncated !== true
+    && entry.status.at >= since && !found;
+}
+
+/** The phase after an open answered: paused when the page was hidden meanwhile, so the 10 s end rule runs. */
+export function openedPhase(session: HTTPProviderSession, hidden: boolean): Phase {
+  return hidden ? { kind: 'paused' } : { kind: 'open', session };
+}
+
+/** What a visibility change does. Hidden: close an open stream. Back: open again. Nothing once the attach ended. */
+export function visibilityStep(phase: Phase['kind'], ended: boolean, hidden: boolean): 'pause' | 'open' | undefined {
+  if (ended) return undefined;
+  if (hidden) return phase === 'open' ? 'pause' : undefined;
+  return phase === 'paused' ? 'open' : undefined;
+}
+
+/** A tap (in the app or a notification) opens, unless this terminal already shows here. */
+export const tapOpens = (phase: Phase['kind'], ended: boolean): boolean => phase !== 'open' || ended;
 
 const DOTS: Partial<Record<string, string>> = { blocked: 'amber', working: 'accent', done: 'green' };
 
@@ -87,7 +123,7 @@ export function ProviderChips({ item, current, onChip, onSessions }: {
               onClick={() => { if (!active && target.canOpen) onChip(target.id); }}
             >
               <span className="tab-face">
-                <span className="tab-label">{repeated(target.label) && target.agent !== undefined ? `${target.label} · ${target.agent}` : target.label}</span>
+                <span className="tab-label"><bdi>{target.label}</bdi>{repeated(target.label) && target.agent !== undefined && <> · <bdi>{target.agent}</bdi></>}</span>
                 {dot !== undefined && <><span className={`dot ${dot}`} aria-hidden="true" /><span className="visually-hidden">, {providerWord(target.state)}</span></>}
                 {!target.canOpen && <span className="visually-hidden">, update herdr to open this tab</span>}
               </span>
@@ -99,7 +135,7 @@ export function ProviderChips({ item, current, onChip, onSessions }: {
   );
 }
 
-type Phase =
+export type Phase =
   | { readonly kind: 'ask' }
   | { readonly kind: 'opening' }
   | { readonly kind: 'open'; readonly session: HTTPProviderSession }
@@ -113,8 +149,8 @@ export function ProviderScreen({
   readonly computer: Computer;
   readonly provider: string;
   readonly targetId: string;
-  /** A tap brought the user here: open at once. */
-  readonly tapped: boolean;
+  /** 0: no tap. Else a tap brought the user here (open at once); a new number is a new tap, also for the same address. */
+  readonly tapped: number;
   /** Said once over the terminal: what did not start after a new worktree. */
   readonly notice?: string | undefined;
   /** The provider's latest read on that computer, for names and chips; undefined until it answers. */
@@ -128,13 +164,17 @@ export function ProviderScreen({
   readonly onFailure: (error: unknown) => string;
   readonly onRevoked: (reason: string | undefined) => void;
 }) {
-  const [phase, setPhase] = useState<Phase>(tapped ? { kind: 'opening' } : { kind: 'ask' });
+  const [phase, setPhase] = useState<Phase>(tapped > 0 ? { kind: 'opening' } : { kind: 'ask' });
   const [note, setNote] = useState(notice);
+  const [since] = useState(Date.now);
   const name = entry?.info.name ?? provider;
+  const state = entry === undefined ? undefined : entry.status.kind === 'ok' ? entry.status.snapshot.state : entry.info.state;
   const found = entry === undefined ? undefined : findTarget({ groups: groupsOf(entry) }, targetId);
-  // A read that is ready and lacks the target: it left. Only before anything opened here.
-  const left = entry?.status.kind === 'ok' && entry.status.snapshot.state === 'ready' && found === undefined;
+  // Only before anything opened here.
+  const left = targetLeft(entry, found !== undefined, since);
   const busy = useRef(false);
+  // Live said the attach ended (Closed here): no pause or open again on hide and show.
+  const ended = useRef(false);
 
   const open = useCallback(async () => {
     if (busy.current) return;
@@ -143,39 +183,42 @@ export function ProviderScreen({
     try {
       const grid = phoneGrid(window.innerWidth, window.innerHeight, fontSize);
       const answer = await client(computer.origin).providerOpen(provider, { targetId, ...grid });
-      setPhase({ kind: 'open', session: answer.session });
+      ended.current = false;
+      setPhase(openedPhase(answer.session, document.visibilityState === 'hidden'));
     } catch (error) {
-      const problem = openProblem(error, name, computer.label);
+      const problem = openProblem(error, name, computer.label, state);
       if (problem?.gone === true) onGone();
       // onFailure also handles home's 401 (Setup) and a peer's (pair again).
       else setPhase({ kind: 'error', text: problem?.text ?? onFailure(error) });
     } finally {
       busy.current = false;
     }
-  }, [computer, provider, targetId, fontSize, name, onGone, onFailure]);
+  }, [computer, provider, targetId, fontSize, name, state, onGone, onFailure]);
 
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
   useEffect(() => {
-    // Once, for the tap that brought the user here.
-    if (tapped) void open();
-  }, []);
+    // Each tap: the one that brought the user here, and a later notification tap for this same address.
+    if (tapped > 0 && tapOpens(phaseRef.current.kind, ended.current)) void open();
+  }, [tapped]);
 
   useEffect(() => {
     if (left && (phase.kind === 'ask' || phase.kind === 'error')) onGone();
   }, [left, phase.kind, onGone]);
 
   // Hidden: close the stream (the host ends the attach 10 s later and the pane gets its size back). Back: open again.
-  const phaseRef = useRef(phase);
-  phaseRef.current = phase;
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden' && phaseRef.current.kind === 'open') setPhase({ kind: 'paused' });
-      else if (document.visibilityState === 'visible' && phaseRef.current.kind === 'paused') void open();
+      const step = visibilityStep(phaseRef.current.kind, ended.current, document.visibilityState === 'hidden');
+      if (step === 'pause') setPhase({ kind: 'paused' });
+      else if (step === 'open') void open();
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [open]);
 
-  const place = [found?.group.name, found?.item.name].filter((part) => part !== undefined && part !== '').filter((part, index, list) => list.indexOf(part) === index).join(' · ');
+  const parts = [found?.group.name, found?.item.name].filter((part): part is string => part !== undefined && part !== '').filter((part, index, list) => list.indexOf(part) === index);
+
   const chips = <ProviderChips item={found?.item} current={targetId} onChip={onChip} onSessions={onSessions} />;
 
   if (phase.kind === 'open') {
@@ -196,7 +239,10 @@ export function ProviderScreen({
         settings={undefined}
         multi={multi}
         fontSize={fontSize}
-        provider={{ name, place: place === '' ? phase.session.title : place, chips, sizeLine: sizeLine(computer.label), onOpenAgain: open }}
+        provider={{
+          name, place: <Names parts={parts.length === 0 ? [phase.session.title] : parts} />, chips, sizeLine: sizeLine(computer.label), onOpenAgain: open,
+          onEnded: () => { ended.current = true; },
+        }}
         onOpen={noop}
         onNew={noop}
         onSessions={onSessions}
@@ -215,13 +261,13 @@ export function ProviderScreen({
     <main className="live">
       {chips}
       <div className="page screen provider-open">
-        <p className="caps">{name} · on {computer.label}</p>
-        <h1>{found?.item.name ?? 'This terminal'}</h1>
+        <p className="caps"><bdi>{name}</bdi> · on {computer.label}</p>
+        <h1>{found === undefined ? 'This terminal' : <bdi>{found.item.name}</bdi>}</h1>
         {found !== undefined && (
           <dl className="facts">
-            {found.group.name !== found.item.name && <><dt>Project</dt><dd>{found.group.name}</dd></>}
-            <dt>Tab</dt><dd>{found.target.label}</dd>
-            {found.target.agent !== undefined && <><dt>Agent</dt><dd>{found.target.agent}</dd></>}
+            {found.group.name !== found.item.name && <><dt>Project</dt><dd><bdi>{found.group.name}</bdi></dd></>}
+            <dt>Tab</dt><dd><bdi>{found.target.label}</bdi></dd>
+            {found.target.agent !== undefined && <><dt>Agent</dt><dd><bdi>{found.target.agent}</bdi></dd></>}
             {wordText(word, 1) !== undefined && <><dt>State</dt><dd><StateWord word={word} text={wordText(word, 1)} /></dd></>}
           </dl>
         )}

@@ -5,7 +5,7 @@ import type { Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import type { ComputerEntry } from './allSessions';
 import * as fixtures from './providerFixtures';
-import { IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, Settings } from './Settings';
+import { IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings } from './Settings';
 
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },
@@ -158,7 +158,7 @@ describe('Settings → Integrations', () => {
     expect(renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { providers: [] }), okEntry(vps, { protocolRevision: 3 })]} onFailure={() => ''} />)).toBe('');
     const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac), okEntry(vps, { providers: [] })]} onFailure={() => ''} />);
     expect(page).toContain('Integrations');
-    expect(page).toContain('herdr on mac');
+    expect(page).toContain('<bdi>herdr</bdi> on mac');
     expect(page).not.toContain('on vps');
   });
 
@@ -172,7 +172,9 @@ describe('Settings → Integrations', () => {
     expect(row('notRunning')).toContain('herdr is not running on mac. Start it there to see its projects.');
     expect(row('unsupported')).toContain('Update herdr on mac. This version is too old for Termivoa.');
     const off = row('off', { enabled: false });
-    expect(off).toContain('This phone does not show or buzz for herdr on mac.');
+    // The switch is per computer, for every phone.
+    expect(off).toContain('Off for every phone: mac does not show herdr or buzz for it.');
+    expect(off).not.toContain('This phone');
     // Off: the buzz switches do not apply.
     expect(off.match(/disabled=""/gu)).toHaveLength(2);
   });
@@ -197,5 +199,24 @@ describe('Settings → Integrations', () => {
     expect(notifyWith(['done'], 'blocked', true)).toEqual(['blocked', 'done']);
     expect(notifyWith([], 'done', true)).toEqual(['done']);
     expect(integrationText({ name: 'herdr', state: 'ready' }, 'mac')).toEqual({ word: 'Running', tone: 'green' });
+  });
+
+  it('saves one switch on its computer and returns what it answered', async () => {
+    const save = vi.fn(async (body: unknown) => info({ enabled: false, ...(body as object) }));
+    const result = await saveSwitch(info(), 'enabled', false, vps, save, () => 'never');
+    expect(save).toHaveBeenCalledWith({ enabled: false });
+    expect(result).toEqual({ info: info({ enabled: false }) });
+    await saveSwitch(info(), 'done', false, vps, save, () => 'never');
+    expect(save).toHaveBeenLastCalledWith({ notify: ['blocked'] });
+  });
+
+  it('a failed save is worded for its computer: a peer\'s 401 says pair again, never Setup for home', async () => {
+    const seen: Array<Computer | undefined> = [];
+    const result = await saveSwitch(info(), 'blocked', false, vps, async () => { throw new ApiError(401, 'unauthorized', 'x'); }, (_error, from) => {
+      seen.push(from);
+      return 'Pair vps again';
+    });
+    expect(result).toEqual({ error: 'Pair vps again' });
+    expect(seen).toEqual([vps]);
   });
 });

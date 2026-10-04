@@ -158,12 +158,12 @@ export function useProviders(active: boolean, computers: ReadonlyArray<ComputerE
   useEffect(() => {
     if (!active || keys === '') return undefined;
     // ponytail: the scheduler polls at most maxComputers keys; one provider per computer fits, more would be cut.
-    return scheduler.poll(keys.split('\n'), load, publish);
+    return scheduler.poll(keys.split('\n'), load, publish, 'providers');
   }, [active, keys, load, publish]);
 
   const reload = useCallback((key: string) => {
     scheduler.retry(key);
-    return scheduler.serial(key, () => load(key)).then(
+    return scheduler.serial(key, () => load(key), 'providers').then(
       (value) => { scheduler.reported(key, true); publish(key, { ok: true, value }, true); },
       (error: unknown) => { scheduler.reported(key, false); publish(key, { ok: false, error }, true); },
     );

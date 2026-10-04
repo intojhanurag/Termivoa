@@ -75,8 +75,11 @@ type View =
   | { readonly name: 'new'; readonly back?: View; readonly computer?: Computer }
   | { readonly name: 'live'; readonly session: HostedSession; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
   | { readonly name: 'preview'; readonly session: HostedSession; readonly port: number }
-  /** One provider terminal (herdr). `tapped`: a tap in the app or a confirmed notification tap brought the user here, so it opens at once. */
-  | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: boolean; readonly notice?: string }
+  /**
+   * One provider terminal (herdr). `tapped`: 0, or a new number (newTap) for each tap in the app or confirmed
+   * notification tap, so it opens at once, also when the tap is for the address already shown.
+   */
+  | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: number; readonly notice?: string }
   | { readonly name: 'settings' }
   | { readonly name: 'add-computer' }
   | { readonly name: 'peer-add' };
@@ -215,6 +218,22 @@ export function notificationPath(data: unknown, computers: ReadonlyArray<Compute
   if (target.name !== 'session' || target.preview || !SESSION_ID.test(target.id)) return undefined;
   const computer = computers.find((item) => (target.host === undefined ? item.home : !item.home && item.host === target.host));
   return computer === undefined ? undefined : sessionPath({ id: target.id, computer });
+}
+
+let taps = 0;
+/** A new tap number for a provider view: each tap differs from the last, so the screen sees it. */
+export const newTap = (): number => ++taps;
+
+/** A chip moves between tabs of the same workspace: one screen, so it replaces the history entry instead of adding one. */
+export function sameScreen(from: View, to: View): boolean {
+  return from.name === 'provider' && to.name === 'provider' && from.computer.origin === to.computer.origin && from.provider === to.provider;
+}
+
+/** The provider view for an address (a load, back or forward, or a notification tap): it opens at once only for a tap the service worker confirms. */
+export async function providerArrival(
+  computer: Computer, provider: string, target: string, path: string, ask: (path: string) => Promise<boolean> = askWorkerTap,
+): Promise<View> {
+  return { name: 'provider', computer, provider, target, tapped: await ask(path) ? newTap() : 0 };
 }
 
 /** How long the page waits for the service worker's answer about a tap. */
@@ -573,7 +592,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const navigate = useCallback((next: View) => {
     const path = pathFor(next);
     if (path !== window.location.pathname + window.location.search) {
-      window.history.pushState(next.name === 'preview' ? PREVIEW_TAP : null, '', path);
+      window.history[sameScreen(viewRef.current, next) ? 'replaceState' : 'pushState'](next.name === 'preview' ? PREVIEW_TAP : null, '', path);
     }
     setView(next);
   }, []);
@@ -676,8 +695,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         return;
       }
       // Opens at once only when the service worker confirms a notification tap; a link or a reload shows Open.
-      const tapped = await askWorkerTap(window.location.pathname);
-      setView({ name: 'provider', computer, provider: target.provider, target: target.target, tapped });
+      setView(await providerArrival(computer, target.provider, target.target, window.location.pathname));
       return;
     }
     if (computer === undefined) {
@@ -869,7 +887,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
 
   const openSession = useCallback((session: HostedSession) => navigate({ name: 'live', session }), [navigate]);
   // A tap on a provider row or chip in the app: open at once.
-  const openTarget = useCallback((tap: ProviderTap) => navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: true }), [navigate]);
+  const openTarget = useCallback((tap: ProviderTap) => navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap() }), [navigate]);
   const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
   const reloadComputers = useCallback(() => setComputers(storedComputers()), []);
   // An add that finished in the background: its computer joins the list.
@@ -976,7 +994,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           onOpenTarget={openTarget}
           onCreated={(tap, notice, key) => {
             void providers.reload(key);
-            navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: true, ...(notice === undefined ? {} : { notice }) });
+            navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap(), ...(notice === undefined ? {} : { notice }) });
           }}
           onProviderRetry={providers.reload}
           offerPush={homeEntry?.status.kind === 'ok'}
