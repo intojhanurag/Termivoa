@@ -623,7 +623,7 @@ export function Live({
           />
           <div className="status-line" role="status">
             <span className="place">
-              <span className={status.link === 'live' ? 'dot green' : 'dot amber'} aria-hidden="true" />
+              <span className={status.link === 'live' ? 'dot accent' : 'dot amber'} aria-hidden="true" />
               {multi && <span className="place-computer"><ComputerTag computer={session.computer} /> · </span>}
               {showPlace ? (
                 // Cut order: the parent folders (from their start), then shell and size, then the last folder.

@@ -56,7 +56,7 @@ describe('age', () => {
 describe('SessionRow', () => {
   it('shows controller, meta, activity dot and preview line', () => {
     const html = row({ ...base, controlled: true, controllerIsYou: true, viewerCount: 1, preview: '✻ Done.' }, true);
-    expect(html).toContain('class="session-row you"');
+    expect(html).toContain('class="session-row"');
     expect(html).toContain('<span class="controller accent">You</span>');
     expect(html).toContain('api · zsh · 2 h');
     expect(html).toContain('<span class="preview">✻ Done.</span>');
@@ -122,11 +122,11 @@ const waiting: BrokerRPCSessionRecord = {
 const working: BrokerRPCSessionRecord = { ...base, id: '84444444-4444-4444-8444-444444444445', agent: { state: 'working', stateSince: '2026-09-27T11:56:00Z' }, preview: 'Thinking…' };
 
 describe('agent status badges', () => {
-  it('highlights a waiting row with a pill, a ? tile, the question as text and an Answer label', () => {
+  it('marks a waiting row with an amber word, the question as text and an Answer label', () => {
     const html = row({ ...waiting, controlled: true, controllerIsYou: true, viewerCount: 1 });
-    expect(html).toContain('class="session-row you asking"');
-    expect(html).toContain('<span class="tile amber" aria-hidden="true">?</span>');
-    expect(html).toContain('<span class="status-pill amber"><span class="dot amber" aria-hidden="true"></span>Waiting<span class="pill-time"> · 2m</span></span>');
+    expect(html).toContain('class="session-row"');
+    expect(html).not.toContain('tile');
+    expect(html).toContain('<span class="status-pill amber"><span class="dot amber" aria-hidden="true"></span>Waiting · 2m</span>');
     expect(html).toContain(', waiting for you');
     expect(html).toContain('<span class="question">Do you want to &lt;b&gt;proceed&lt;/b&gt;?</span>');
     expect(html).not.toContain('<b>');
@@ -135,10 +135,9 @@ describe('agent status badges', () => {
     expect(html).toContain('api · zsh · 2 h · You');
   });
 
-  it('shows a working pill with a spinner and keeps the preview line', () => {
+  it('shows a working word with a live dot and keeps the preview line', () => {
     const html = row(working);
-    expect(html).toContain('<span class="spinner"></span>');
-    expect(html).toContain('Working<span class="pill-time"> · 4m</span>');
+    expect(html).toContain('<span class="status-pill accent"><span class="dot accent" aria-hidden="true"></span>Working · 4m</span>');
     expect(html).toContain('<span class="preview">Thinking…</span>');
     expect(html).not.toContain('waiting for you');
   });
@@ -148,14 +147,13 @@ describe('agent status badges', () => {
     expect(row(shell, true)).not.toContain('status-pill');
     const idle: BrokerRPCSessionRecord = { ...shell, agent: { state: 'idle', stateSince: '2026-09-27T11:48:00Z', afterWork: true } };
     const html = row(idle, true);
-    expect(html).toContain('<span class="status-pill green">Your turn<span class="pill-time"> · 12m</span></span>');
-    expect(html).toContain('<span class="tile green" aria-hidden="true"><svg');
+    expect(html).toContain('<span class="status-pill green">Your turn · 12m</span>');
     expect(row(idle, false)).not.toContain('status-pill');
   });
 
-  it('shows ended sessions as muted text, not a tinted pill', () => {
+  it('shows ended sessions as a muted word', () => {
     const html = row({ ...base, state: 'exited', exitCode: 2, endedAt: '2026-09-27T11:00:00Z' });
-    expect(html).toContain('<span class="status-pill plain muted">Exited · 2</span>');
+    expect(html).toContain('<span class="controller muted">Exited · 2</span>');
   });
 
   it('sorts waiting sessions first and keeps the rest in order', () => {
@@ -211,14 +209,14 @@ describe('Sessions first use', () => {
     const html = renderSessions([entry(mac, ok(settings))]);
     expect(html).toContain('Add a project on your computer first:');
     expect(html).toContain('<code>pterm project add &lt;folder&gt;</code>');
-    expect(html).toContain('>Check again</button>');
+    expect(html).toContain('<span>Check again</span>');
     expect(html).not.toContain('new session</button>');
   });
 
   it('lists waiting sessions first under a summary host line', () => {
     const html = renderSessions([entry(mac, ok(settings, [working, waiting]))]);
     expect(html).toContain('Your computer · 1 waiting · 1 working');
-    expect(html.indexOf('>Waiting<')).toBeLessThan(html.indexOf('>Working<'));
+    expect(html.indexOf('status-pill amber')).toBeLessThan(html.indexOf('status-pill accent'));
   });
 
   it('offers ❯ new session once a project and shell exist', () => {
@@ -242,7 +240,7 @@ describe('Sessions across computers', () => {
   it('merges every computer, waiting first, each row with its colour dot and label', () => {
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, ok(ready, [waiting], vps))]);
     expect(html).toContain('2 computers · 1 waiting · 1 working');
-    expect(html.indexOf('>Waiting<')).toBeLessThan(html.indexOf('>Working<'));
+    expect(html.indexOf('status-pill amber')).toBeLessThan(html.indexOf('status-pill accent'));
     expect(html).toContain('<span class="computer-tag"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</span>');
     expect(html).toContain('<span class="computer-tag"><span class="dot" style="background:#64D8E8" aria-hidden="true"></span>mac</span>');
     expect(html).toContain('new session on…</button>');
@@ -253,7 +251,7 @@ describe('Sessions across computers', () => {
     expect(html.match(/class="session-row/gu)).toHaveLength(2);
   });
 
-  it('offers All plus one chip per computer', () => {
+  it('offers All plus one tab per computer', () => {
     const html = renderToStaticMarkup(<ComputerChips computers={[mac, vps]} chosen={undefined} onChoose={() => undefined} />);
     expect(html).toContain('<button type="button" class="chip" aria-pressed="true">All</button>');
     expect(html).toContain('aria-pressed="false"><span class="dot" style="background:#9B8CFF" aria-hidden="true"></span>vps</button>');
@@ -292,7 +290,7 @@ describe('Sessions across computers', () => {
 
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable' })]);
     expect(html).toContain('<p class="notice-title">vps · can&#x27;t reach</p>');
-    expect(html).toMatch(/<button type="button" class="secondary compact"><svg[^]*?<\/svg>Retry<\/button>/u);
+    expect(html).toContain('<div class="notice-action"><button type="button" class="link">Retry</button></div>');
     const pair = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'pair' })]);
     expect(pair).toContain('vps · pair again');
     expect(pair).not.toContain('Retry');
@@ -365,7 +363,7 @@ describe('PushCard', () => {
     expect(html).toContain('Only the session name and status. Never terminal text.');
     expect(html).toContain('<button type="button" class="secondary">Turn on</button>');
     expect(html).toContain('<button type="button" class="link">Not now</button>');
-    expect(html).toContain('<svg');
+    expect(html).not.toContain('<svg');
   });
 
   it('is not in the first render of Sessions; it appears only after push support is checked', () => {

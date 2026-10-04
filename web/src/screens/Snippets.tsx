@@ -318,7 +318,7 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
             onType={(task) => send(taskSnippet(task), false)}
           />
           <h3 className="caps">Saved snippets</h3>
-          {!canSend && <Notice tone="neutral" icon="lock" role="status">Take control to send snippets. You can still edit them.</Notice>}
+          {!canSend && <Notice tone="neutral" role="status">Take control to send snippets. You can still edit them.</Notice>}
           {problem !== undefined && <p role="alert" className="error">{problem}</p>}
           {list.length === 0 && <p className="muted">No snippets. Tap + new to save one.</p>}
           <ul className="rows snippet-list">
@@ -338,14 +338,14 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
                     }
                   }}
                 >
-                  <span className={snippet.shell ? 'snippet-glyph muted' : 'snippet-glyph accent'} aria-hidden="true">
+                  <span className={snippet.shell ? 'snippet-glyph muted' : 'snippet-glyph'} aria-hidden="true">
                     {snippet.shell ? '$' : '❯'}
                   </span>
                   <span className="row-text">
                     <span className="row-title">{snippet.title}</span>
                     <span className="row-meta">{snippet.shell ? 'shell command' : snippet.text}</span>
                   </span>
-                  <span className={snippet.sendEnter ? 'badge accent' : 'badge'}>
+                  <span className={snippet.sendEnter ? 'badge strong' : 'badge'}>
                     {editing ? 'edit' : snippet.sendEnter ? '⏎ send' : 'paste'}
                   </span>
                 </button>

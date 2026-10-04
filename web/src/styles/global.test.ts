@@ -16,8 +16,9 @@ describe('global styles', () => {
     expect(command).not.toMatch(/overflow-x|white-space|inline-flex/u);
   });
 
-  it('gives "Check again" on a blocked card the same amber as on an unreachable one', () => {
-    const amber = selectorsWith('--ink: var(--amber-text)');
-    expect(amber.some((selector) => selector.includes('.computer-card:is(.is-unreachable, .is-blocked) button.secondary'))).toBe(true);
+
+  it('stays flat: no gradients, and no shadow except none', () => {
+    expect(css).not.toMatch(/gradient/u);
+    expect(selectorsWith('box-shadow')).toEqual([]);
   });
 });

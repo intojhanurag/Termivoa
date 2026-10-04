@@ -115,16 +115,16 @@ export function CockpitDock({
           <span aria-hidden="true" className="glyph">❯</span>type
         </button>
         <button type="button" className="action" onClick={onCompose}>
-          <span aria-hidden="true" className="glyph">¶</span>compose
+          compose
         </button>
         <button type="button" className="action" onClick={onSnippets}>
-          <span aria-hidden="true" className="glyph">⌘</span>snips
+          snips
         </button>
         <button type="button" className="action" disabled={!historyEnabled} onClick={onHistory}>
-          <span aria-hidden="true" className="glyph">↺</span>history
+          history
         </button>
         <button type="button" className="action" disabled={!historyEnabled} onClick={onChanges}>
-          <span aria-hidden="true" className="glyph">±</span>changes
+          changes
         </button>
       </div>
     </section>

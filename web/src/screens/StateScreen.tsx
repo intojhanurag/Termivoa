@@ -41,7 +41,7 @@ export function LinkArt() {
         <path d="M212 70h86" stroke="var(--text)" strokeWidth="2.5" strokeLinecap="round" />
         <path d="M76 49h46" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="2 8" />
         <path d="M178 49h32" stroke="var(--line)" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="2 8" />
-        <circle cx="150" cy="49" r="17" fill="color-mix(in srgb, var(--amber) 14%, transparent)" stroke="var(--amber)" strokeWidth="2" />
+        <circle cx="150" cy="49" r="17" fill="none" stroke="var(--amber)" strokeWidth="2" />
         <path d="M144 43l12 12M156 43l-12 12" stroke="var(--amber)" strokeWidth="2.5" strokeLinecap="round" />
       </svg>
       <div className="link-art-labels"><span>PHONE</span><span>YOUR COMPUTER</span></div>
@@ -55,14 +55,14 @@ export function WindowArt({ mark }: { readonly mark: 'crash' | 'update' | 'gone'
     <svg width="168" height="112" viewBox="0 0 168 112" fill="none">
       <rect x="2" y="2" width="164" height="108" rx="12" stroke="var(--text)" strokeWidth="2.5" />
       <path d="M2 28h164" stroke="var(--line)" strokeWidth="2" />
-      <circle cx="18" cy="15" r="3.5" fill={mark === 'update' ? 'var(--accent)' : 'var(--red)'} />
+      <circle cx="18" cy="15" r="3.5" fill={mark === 'update' ? 'var(--text)' : 'var(--red)'} />
       <circle cx="30" cy="15" r="3.5" fill="var(--line)" />
       <circle cx="42" cy="15" r="3.5" fill="var(--line)" />
-      <path d="M22 52l12 10-12 10" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M22 52l12 10-12 10" stroke="var(--text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M44 72h28" stroke="var(--muted)" strokeWidth="2.5" strokeLinecap="round" />
       {mark === 'crash' && <path d="M112 50l24 24M136 50l-24 24" stroke="var(--red)" strokeWidth="3" strokeLinecap="round" />}
       {mark === 'update' && (
-        <path d="M137 62a13 13 0 1 1-3.8-9.2M137 46v7.5h-7.5" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M137 62a13 13 0 1 1-3.8-9.2M137 46v7.5h-7.5" stroke="var(--text)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       )}
       {mark === 'gone' && <path d="M110 62h28" stroke="var(--red)" strokeWidth="3" strokeLinecap="round" />}
     </svg>

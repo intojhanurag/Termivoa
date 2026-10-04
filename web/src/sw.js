@@ -27,24 +27,24 @@ const PEER_HOST = (/^\/push\/([a-z0-9.-]+)\/$/.exec(new URL(self.registration.sc
 const OFFLINE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="refresh" content="5">
-<meta name="theme-color" content="#0B0E14">
+<meta name="theme-color" content="#07090C">
 <title>Connection unavailable</title>
 <style>
-body{margin:0;min-height:100vh;display:flex;flex-direction:column;box-sizing:border-box;padding:max(28px,env(safe-area-inset-top)) 24px max(32px,env(safe-area-inset-bottom));background:#0B0E14;color:#D5DCE5;font-family:system-ui,-apple-system,sans-serif}
-.label{display:flex;align-items:center;gap:8px;margin:0;font:500 13px ui-monospace,Menlo,monospace;letter-spacing:.08em;color:#8A94A6}
-.label i{width:8px;height:8px;border-radius:4px;background:#F2B544}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;box-sizing:border-box;padding:max(28px,env(safe-area-inset-top)) 24px max(32px,env(safe-area-inset-bottom));background:#07090C;color:#ECE8E1;font-family:system-ui,-apple-system,sans-serif}
+.label{display:flex;align-items:center;gap:8px;margin:0;font:11px ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#8C93A0}
+.label i{width:6px;height:6px;border-radius:3px;background:#F2B544}
 .art{display:flex;justify-content:center;padding:72px 0 40px}
-h1{margin:0;font-size:34px;line-height:38px;font-weight:800;letter-spacing:-.03em}
-p.lead{margin:0;padding:10px 0 28px;color:#8A94A6;font-size:16px;line-height:23px}
-ul{display:flex;flex-direction:column;gap:12px;margin:0;padding:16px;list-style:none;border:1px solid #252D3D;border-radius:12px;background:#080A0F;font:14px ui-monospace,Menlo,monospace}
+h1{margin:0;font:400 40px/44px ui-serif,"New York","Iowan Old Style",Georgia,serif;letter-spacing:-.03em}
+p.lead{margin:0;padding:10px 0 28px;color:#8C93A0;font-size:16px;line-height:23px}
+ul{display:flex;flex-direction:column;gap:12px;margin:0;padding:16px;list-style:none;border:1px solid #22272F;border-radius:8px;background:#0F1217;font:14px ui-monospace,Menlo,monospace}
 b{display:inline-block;width:20px;margin-right:12px;color:#F2B544}
 .actions{display:flex;gap:10px;margin-top:auto;padding-top:24px}
-.pill{flex:1;display:flex;align-items:center;height:52px;padding:0 16px;box-sizing:border-box;border:1px solid #252D3D;border-radius:26px;color:#8A94A6;font:14px ui-monospace,Menlo,monospace}
-a{display:flex;align-items:center;height:52px;padding:0 24px;border-radius:26px;background:#64D8E8;color:#061418;font-weight:700;text-decoration:none}
+.pill{flex:1;display:flex;align-items:center;height:52px;padding:0 16px;box-sizing:border-box;border:1.5px solid #22272F;border-radius:26px;color:#8C93A0;font:14px ui-monospace,Menlo,monospace}
+a{display:flex;align-items:center;height:52px;padding:0 24px;border-radius:26px;background:#ECE8E1;color:#07090C;font-weight:600;text-decoration:none}
 </style>
 </head><body>
 <p class="label"><i></i>TERMIVOA · OFFLINE</p>
-<div class="art"><svg width="300" height="96" viewBox="0 0 300 96" fill="none"><rect x="18" y="14" width="42" height="70" rx="9" stroke="#D5DCE5" stroke-width="2.5"/><rect x="32" y="20" width="14" height="3" rx="1.5" fill="#D5DCE5"/><rect x="224" y="20" width="62" height="42" rx="5" stroke="#D5DCE5" stroke-width="2.5"/><path d="M212 70h86" stroke="#D5DCE5" stroke-width="2.5" stroke-linecap="round"/><path d="M76 49h46" stroke="#64D8E8" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 8"/><path d="M178 49h32" stroke="#252D3D" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 8"/><circle cx="150" cy="49" r="17" fill="rgba(242,181,68,.14)" stroke="#F2B544" stroke-width="2"/><path d="M144 43l12 12M156 43l-12 12" stroke="#F2B544" stroke-width="2.5" stroke-linecap="round"/></svg></div>
+<div class="art"><svg width="300" height="96" viewBox="0 0 300 96" fill="none"><rect x="18" y="14" width="42" height="70" rx="9" stroke="#ECE8E1" stroke-width="2.5"/><rect x="32" y="20" width="14" height="3" rx="1.5" fill="#ECE8E1"/><rect x="224" y="20" width="62" height="42" rx="5" stroke="#ECE8E1" stroke-width="2.5"/><path d="M212 70h86" stroke="#ECE8E1" stroke-width="2.5" stroke-linecap="round"/><path d="M76 49h46" stroke="#64D8E8" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 8"/><path d="M178 49h32" stroke="#22272F" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 8"/><circle cx="150" cy="49" r="17" fill="none" stroke="#F2B544" stroke-width="2"/><path d="M144 43l12 12M156 43l-12 12" stroke="#F2B544" stroke-width="2.5" stroke-linecap="round"/></svg></div>
 <h1>Can't reach<br>your computer</h1>
 <p class="lead">Your sessions are safe. They keep running.</p>
 <ul><li><b>?</b>tailscale on, both devices</li><li><b>?</b>computer awake, not asleep</li></ul>

@@ -6,7 +6,6 @@ import type { HostedSession } from './allSessions';
 import { pathFor, previewPortParam, titleFor } from './App';
 import { cantPreview, Preview, PREVIEW_RELOAD_KEY, PreviewBar, PreviewBody, PreviewStatus, probePreview, reloadForPolicy } from './Preview';
 import { isPreviewPort, latestPreview, PreviewChip, previewOrigin, previewSrc } from './PreviewChip';
-import { Icon } from './ui';
 
 const session: HostedSession = {
   computer: { origin: 'https://mac.tailnet.ts.net', host: 'mac.tailnet.ts.net', label: 'mac', color: '#64D8E8', home: true },
@@ -30,7 +29,7 @@ const vps: HostedSession = {
 const vpsOrigin = 'https://vps.tailnet.ts.net:8443';
 const noop = () => undefined;
 /** A warning notice in place of the frame, up to its text. */
-const warning = `<div class="preview-note"><div class="notice warning" role="alert"><span class="notice-icon">${renderToStaticMarkup(<Icon name="wifi-off" />)}</span><div class="notice-text">`;
+const warning = '<div class="preview-note"><div class="notice warning" role="alert">';
 
 /** Host buttons of a hookless component's element tree, by visible text or label. */
 function buttons(node: ReactNode, found = new Map<string, () => void>()): Map<string, () => void> {
@@ -142,17 +141,17 @@ describe('preview screen', () => {
   it('a computer that refuses the phone, cannot be reached or must update has no frame, only its text', () => {
     for (const notice of ['vps · pair again', 'vps · can\'t reach', 'Update Termivoa on vps']) {
       const html = body({ session: vps, origin: vpsOrigin, notice });
-      expect(html).toBe(`${warning}<p class="notice-title">${notice.replace('\'', '&#x27;')}</p></div></div></div>`);
+      expect(html).toBe(`${warning}<p class="notice-title">${notice.replace('\'', '&#x27;')}</p></div></div>`);
     }
     // No origin (a peer that has not answered yet): nothing to frame.
     expect(body({ session: vps, origin: undefined })).toContain('Opening preview…');
     // Home without a preview origin (its preview read failed while the screen was open): words, not an endless wait.
-    expect(body({ origin: undefined })).toBe(`${warning}<div class="notice-body">Can&#x27;t open the preview on mac. If mac does not share dev-server previews yet, run pterm setup on mac and answer yes to the preview question.</div></div></div></div>`);
+    expect(body({ origin: undefined })).toBe(`${warning}<div class="notice-body">Can&#x27;t open the preview on mac. If mac does not share dev-server previews yet, run pterm setup on mac and answer yes to the preview question.</div></div></div>`);
   });
 
   it('asks the preview origin before framing it; no answer shows neutral words, never a cause', async () => {
     const text = 'Can&#x27;t open the preview on vps. If vps does not share dev-server previews yet, run pterm setup on vps and answer yes to the preview question.';
-    expect(body({ session: vps, origin: vpsOrigin, reach: false })).toBe(`${warning}<div class="notice-body">${text}</div></div></div></div>`);
+    expect(body({ session: vps, origin: vpsOrigin, reach: false })).toBe(`${warning}<div class="notice-body">${text}</div></div></div>`);
     expect(body({ reach: false })).toContain('Can&#x27;t open the preview on mac.');
     expect(body({ reach: undefined })).toBe('<p role="status" class="muted preview-note">Opening preview…</p>');
     expect(cantPreview('vps')).not.toMatch(/network|offline|time|blocked|reach/iu);

@@ -103,9 +103,9 @@ export function Setup({ grant, reason, onPaired }: {
 
   return (
     <main className="page screen setup">
-      <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
+      <p className="wordmark"><span className="dot" aria-hidden="true" />termivoa</p>
       <Step label={phase === 'waiting' ? 'Step 2 of 2' : 'Step 1 of 2'} title={title} />
-      {reason !== undefined && <Notice tone="neutral" icon="lock" role="status" title={reason} />}
+      {reason !== undefined && <Notice tone="neutral" role="status" title={reason} />}
       {phase === 'none' && (
         <>
           {window.location.pathname === '/pair' ? (
@@ -155,7 +155,7 @@ export function Setup({ grant, reason, onPaired }: {
           <p className="muted">If it matches, type y in the terminal on your computer:</p>
           <pre className="command prompt-preview"><code>
             <span className="muted">Phone “{trimmed}” shows code {pending.verificationCode}.</span>{'\n'}
-            Approve? [y/N] <span className="accent strong">y</span><span className="cursor" aria-hidden="true" />
+            Approve? [y/N] <span className="strong">y</span><span className="cursor" aria-hidden="true" />
           </code></pre>
           <p className="hint-text">If your computer is not asking, run this on it:</p>
           <pre className="command"><code>pterm pair approve {pending.pendingId}</code></pre>
@@ -174,7 +174,7 @@ export function Setup({ grant, reason, onPaired }: {
         </section>
       )}
       {phase === 'cancelled' && (
-        <Notice tone="neutral" icon="x" role="alert">
+        <Notice tone="neutral" role="alert">
           Pairing cancelled. This phone stays unpaired; if your computer asks, answer N. Run <code>pterm pair</code> again
           to start over.
         </Notice>

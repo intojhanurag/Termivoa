@@ -151,7 +151,7 @@ export function Composer({ connection, origin, canSend, draftKey, onClose, speec
         <button type="button" className="link" disabled={text === ''} onClick={() => setText('')}>Clear</button>
       </div>
       {!canSend && (
-        <Notice tone="neutral" icon="lock" role="status">
+        <Notice tone="neutral" role="status">
           Sending is off because you are not connected or do not have control. Your draft is kept.
         </Notice>
       )}
