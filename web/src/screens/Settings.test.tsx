@@ -4,7 +4,8 @@ import { ApiError } from '../api/http';
 import type { Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import type { ComputerEntry } from './allSessions';
-import { LogoutSection, NotificationSettings, saveDeviceName, Settings } from './Settings';
+import * as fixtures from './providerFixtures';
+import { IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, Settings } from './Settings';
 
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },
@@ -144,5 +145,42 @@ describe('LogoutSection', () => {
     const failed = renderToStaticMarkup(<LogoutSection multi busy={false} error="Connection unavailable" onLogout={() => undefined} />);
     expect(failed).toMatch(/aria-labelledby="logout-heading">.*<div class="notice danger" role="alert"><p class="notice-title">Connection unavailable<\/p><\/div><button/u);
     expect(renderToStaticMarkup(<LogoutSection multi busy={false} onLogout={() => undefined} />)).not.toContain('role="alert"');
+  });
+});
+
+describe('Settings → Integrations', () => {
+  const { info, mac, okEntry, vps } = fixtures;
+  const row = (state: 'ready' | 'notRunning' | 'unsupported' | 'off', extra = {}) => renderToStaticMarkup(
+    <ul><IntegrationRow source={{ computer: mac, info: info({ state, ...extra }) }} onFailure={() => ''} /></ul>,
+  );
+
+  it('shows only where a computer lists a provider at revision 4', () => {
+    expect(renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { providers: [] }), okEntry(vps, { protocolRevision: 3 })]} onFailure={() => ''} />)).toBe('');
+    const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac), okEntry(vps, { providers: [] })]} onFailure={() => ''} />);
+    expect(page).toContain('Integrations');
+    expect(page).toContain('herdr on mac');
+    expect(page).not.toContain('on vps');
+  });
+
+  it('has On and the two buzz switches, and one short line for each state but Running', () => {
+    const ready = row('ready');
+    expect(ready).toContain('<span class="computer-state green">Running</span>');
+    expect(ready).toContain('<span class="row-meta">0.8.2</span>');
+    expect(ready.match(/role="switch"/gu)).toHaveLength(3);
+    expect(ready.match(/aria-checked="true"/gu)).toHaveLength(3);
+    expect(ready).not.toContain('hint-text');
+    expect(row('notRunning')).toContain('herdr is not running on mac. Start it there to see its projects.');
+    expect(row('unsupported')).toContain('Update herdr on mac. This version is too old for Termivoa.');
+    const off = row('off', { enabled: false });
+    expect(off).toContain('This phone does not show or buzz for herdr on mac.');
+    // Off: the buzz switches do not apply.
+    expect(off.match(/disabled=""/gu)).toHaveLength(2);
+  });
+
+  it('keeps the notify list in one order', () => {
+    expect(notifyWith(['blocked', 'done'], 'blocked', false)).toEqual(['done']);
+    expect(notifyWith(['done'], 'blocked', true)).toEqual(['blocked', 'done']);
+    expect(notifyWith([], 'done', true)).toEqual(['done']);
+    expect(integrationText({ name: 'herdr', state: 'ready' }, 'mac')).toEqual({ word: 'Running', tone: 'green' });
   });
 });
