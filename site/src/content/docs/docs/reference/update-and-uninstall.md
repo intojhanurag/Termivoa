@@ -1,7 +1,7 @@
 ---
 title: Update and uninstall
 description: Update or uninstall pterm, the Termivoa host program, by hand, undo its Tailscale Serve setting, and find the folders that hold its data.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa has no automatic updater: you stop `pterm`, replace the program file, and start it again. Nothing downloads code on its own.
@@ -37,6 +37,10 @@ An update ends all sessions, so finish your work first.
    ```
 
 Paired phones, projects and settings stay. If the phone shows **A new version is ready**, tap **Reload**.
+
+:::caution[From beta.2 to beta.3]
+`v0.1.0-beta.3` does not read data from older betas. After step 2, run `pterm uninstall --delete-data`, then `pterm setup`, and pair your phone again. iPhone needs iOS 16.4 or later. See the [release notes](/docs/reference/release-notes/#v010-beta3-2026-10-04--private-beta).
+:::
 
 :::tip
 To roll back later, copy the old file first: `cp ~/.local/bin/pterm ~/.local/bin/pterm-old`.

@@ -1,14 +1,10 @@
 ---
 title: Worktrees
 description: Termivoa worktrees give each new task its own folder and branch from your phone, so several coding agents can work in one repository at once.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa can start a new task in a git worktree: a second folder of your repository on its own branch, with a new session in it. Two agents in two worktrees do not change each other's files. All worktrees share one history, so you commit and push as usual.
-
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`.
-:::
 
 ![main stays untouched while two worktrees branch off it: brave-otter, where Claude fixes the cache headers, and clever-marten, where Codex writes the tests, each in its own folder under …/worktrees/acme-web; a hand-written note says: one task, one branch. nobody steps on anybody's files.](../../../../assets/docs/illo-worktrees.webp)
 

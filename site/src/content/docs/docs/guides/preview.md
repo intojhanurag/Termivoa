@@ -1,7 +1,7 @@
 ---
 title: Dev-server preview
 description: Termivoa opens a dev server from a session, such as Vite on port 5173, full screen on your phone over a private Tailscale address.
-lastUpdated: 2026-10-03
+lastUpdated: 2026-10-04
 ---
 
 Termivoa opens the web page of a dev server that a session runs, full screen in the app on your phone.
@@ -27,13 +27,13 @@ Live reload works. A stopped server shows "Dev server stopped".
 | Control | What it does |
 | --- | --- |
 | **‹ terminal** | Goes back to the live terminal. |
-| **↻** | Loads the preview again (**Next beta**). |
+| **↻** | Loads the preview again. |
 | **Tell agent** | Goes back with the compose sheet open. |
 
 ## Can I preview a session on another computer?
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and it is not tested on a real phone yet.
+:::note
+Not tested on a real phone yet.
 :::
 
 Yes. With [several computers](/docs/guides/computers/), open a session on that computer, wait for **Preview ready**, and tap **Open ↗**. The bar over the page shows the computer's name and **untrusted page**, such as `vps · untrusted page`.
@@ -47,7 +47,7 @@ Yes. With [several computers](/docs/guides/computers/), open a session on that c
 | You see | Meaning |
 | --- | --- |
 | "Opening preview…" | The app asks that computer's preview address first. It waits at most 5 seconds. |
-| "Can't open the preview on vps. …" | Nothing answered. See [Troubleshooting](/docs/reference/troubleshooting/#cant-open-the-preview-on-vps-next-beta). |
+| "Can't open the preview on vps. …" | Nothing answered. See [Troubleshooting](/docs/reference/troubleshooting/#cant-open-the-preview-on-vps). |
 | **vps · pair again**, **vps · can't reach** or **Update Termivoa on vps** | That computer does not accept or answer the phone now. The open preview is removed and this text shows. See [What if a computer is offline?](/docs/guides/computers/#what-if-a-computer-is-offline) |
 
 If you added the computer after you opened the app, the app reloads itself once when you first open a preview on it, then shows the preview. You do nothing.
@@ -56,8 +56,8 @@ A link alone never opens a preview from another computer. If you open such an ad
 
 ## What does "untrusted page" mean?
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and it is not tested on a real phone yet.
+:::note
+Not tested on a real phone yet.
 :::
 
 It means that the other computer chooses the page in the frame, not the app. The app shows the computer's name and **untrusted page** over every preview from another computer. The page cannot cover or change that bar.
@@ -71,16 +71,16 @@ Do not type pairing links or passwords into a preview. The real app never asks f
 
 ## What does ↻ do?
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and it is not tested on a real phone yet.
+:::note
+Not tested on a real phone yet.
 :::
 
 **↻** loads the preview again from the start. Use it when the page is stuck, or when the frame shows a short refusal text such as "Origin not allowed."
 
 ## What are the limits in Safari?
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and it is not tested on a real phone yet.
+:::note
+Not tested on a real phone yet.
 :::
 
 These limits apply on iPhone and iPad, to previews from home and from other computers.
@@ -97,7 +97,7 @@ These limits apply on iPhone and iPad, to previews from home and from other comp
 - Every request checks that the phone is still paired, so a removed phone loses the preview within 5 seconds.
 - The dev server never gets Termivoa's cookies or your Tailscale identity.
 - The preview is private to your Tailscale devices. Termivoa never uses Tailscale Funnel.
-- A preview from another computer (**Next beta**) is marked **untrusted page**, and only computers you added and confirmed can be shown.
+- A preview from another computer is marked **untrusted page**, and only computers you added and confirmed can be shown.
 
 :::note
 All previews from one computer share one address. Do not treat two dev sites of your own sessions as isolated from each other.

@@ -1,14 +1,10 @@
 ---
 title: Files
 description: Termivoa's Files tab lets you browse the project folder of a session, search file names and read any text file on your phone, without control.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa's **Files** tab shows the project folder of a session on your phone: browse folders, search file names, and read any text file. It only reads; it never changes a file.
-
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`.
-:::
 
 ## Open Files
 

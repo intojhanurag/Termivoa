@@ -1,6 +1,6 @@
 # Installing Termivoa
 
-> Status: **private beta** (`v0.1.0-beta.2`). The binaries are **unsigned**.
+> Status: **private beta** (`v0.1.0-beta.3`). The binaries are **unsigned**.
 > Signed and notarized releases need the owner's Apple Developer ID and Windows
 > code-signing identity. Nothing below has passed the release gate yet. You can
 > also build from source ([README quick start](../README.md#quick-start)) or
@@ -27,7 +27,7 @@ macOS (Apple Silicon):
 
 ```sh
 mkdir -p ~/.local/bin
-gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
+gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm
 chmod +x ~/.local/bin/pterm
 ~/.local/bin/pterm setup
 ```
@@ -35,7 +35,7 @@ chmod +x ~/.local/bin/pterm
 Linux (x86_64; use `pterm-linux-arm64` on arm64):
 
 ```sh
-gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
+gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
 sh install-linux.sh ./pterm-linux-amd64
 ```
 
@@ -44,7 +44,7 @@ Windows 11 (x64, PowerShell):
 ```powershell
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs\Termivoa" | Out-Null
 cd "$env:LOCALAPPDATA\Programs\Termivoa"
-gh release download v0.1.0-beta.2 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
+gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-windows-amd64.exe -O pterm.exe
 .\pterm.exe setup
 ```
 
@@ -297,7 +297,7 @@ tailscale serve --bg --https=443 http://127.0.0.1:8787
 Then open `https://<host>.<tailnet>.ts.net/` on your phone (on the same
 tailnet). If HTTPS 443 already serves something else, setup reports it and
 does not change it: resolve that yourself; do not overwrite another service.
-From the next beta, `pterm setup` (also with `--apply`) refuses to run while
+`pterm setup` (also with `--apply`) refuses to run while
 other Serve handlers share this computer's HTTPS origin, because they would be
 same-origin with the app. It names each handler and the command that removes
 it.

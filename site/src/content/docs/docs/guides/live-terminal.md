@@ -1,7 +1,7 @@
 ---
 title: Live terminal
 description: Read and type in a Termivoa session from your phone, with control, agent keys, snippets, history and copy, and a desktop attach on your computer.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa's live terminal is the screen of one session, where you read output and type from your phone. Open it from the Sessions list or Wall.
@@ -41,7 +41,7 @@ With control, the dock under the terminal shows one-tap agent keys and a key bar
 
 The action buttons are **type** (opens the phone keyboard), **compose**, **snips**, **history** and **changes** (see [Changes](/docs/guides/changes/)).
 
-With the phone keyboard open, all keys fold into one scrolling row, and the terminal keeps its size so full-screen agents do not redraw. `↓` follows `↑` there (Next beta).
+With the phone keyboard open, all keys fold into one scrolling row, and the terminal keeps its size so full-screen agents do not redraw. `↓` follows `↑` there.
 
 ![With the keyboard open, one row of keys stays under the terminal: esc, ^C, mode (⇧⇥), ↑, ↓, 1, 2 and hide keyboard.](../../../../assets/docs/key-row.webp)
 
@@ -56,7 +56,7 @@ Snippets are prompts and commands you send with one tap, saved on this phone onl
 - Save: tap **+ new**, fill in **Title** and **Text to send**, pick **Press Enter after pasting** to run it at once, and tap **save**.
 - Send: tap it (needs control). A snippet with more than one line asks first.
 - Change or delete: tap **edit**, then the snippet.
-- **This project** (Next beta): your project's own commands. See [Project buttons](/docs/guides/project-buttons/).
+- **This project**: your project's own commands. See [Project buttons](/docs/guides/project-buttons/).
 
 ## Scroll the terminal
 

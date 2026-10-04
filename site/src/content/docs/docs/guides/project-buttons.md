@@ -1,14 +1,10 @@
 ---
 title: Project buttons
 description: Termivoa reads your project's package.json, Makefile, Cargo.toml or go.mod and shows its test, dev, build and lint commands as one-tap buttons.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa finds your project's own commands, such as tests or the dev server, and shows them as one-tap buttons in the Snippets sheet.
-
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`.
-:::
 
 ![The Snippets sheet lists the project's own commands, such as test, dev, build and lint, above the saved snippets.](../../../../assets/docs/phone-project-buttons.webp)
 

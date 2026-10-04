@@ -1,7 +1,7 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-03
+lastUpdated: 2026-10-04
 ---
 
 Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted.
@@ -11,10 +11,10 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 - The page listens only on loopback (`127.0.0.1`), so other machines cannot reach it directly.
 - Tailscale Serve offers it as private HTTPS in your tailnet (your private Tailscale network).
 - `pterm setup` asks before it changes Tailscale Serve settings, and never overwrites another service.
-- From the next beta, `pterm setup` refuses to run while other Tailscale Serve handlers share the Termivoa address (port 443), and `pterm doctor` reports them. Such a handler is the same origin as the app, so it could act as the app. Handlers on other ports of the same computer are other origins, but browsers send them the Termivoa cookie, so `pterm doctor` warns about them. Termivoa's own preview port 8443 removes the cookie.
-- From the next beta, `pterm` runs the Tailscale CLI only when no other user can replace it (the file and every folder up to `/` belong to root or to you and are not writable by others), and checks this again before each run. `pterm doctor` says why it refused one.
-- From the next beta, an `/api` request must say where it comes from (`Origin` or `Sec-Fetch-Site: same-origin`), so a page on another computer in your tailnet cannot read your API with your cookie. This needs iOS 16.4 or later on iPhone, also with one computer.
-- Termivoa **never** uses Tailscale Funnel or any public tunnel, which would put your terminal on the public internet. `pterm doctor` reports Funnel as a problem. From the next beta, `pterm setup` refuses to run while Funnel is on for port 443 or 8443, also a Funnel that runs in the foreground (`tailscale funnel` without `--bg`), and prints how to turn it off.
+- `pterm setup` refuses to run while other Tailscale Serve handlers share the Termivoa address (port 443), and `pterm doctor` reports them. Such a handler is the same origin as the app, so it could act as the app. Handlers on other ports of the same computer are other origins, but browsers send them the Termivoa cookie, so `pterm doctor` warns about them. Termivoa's own preview port 8443 removes the cookie.
+- `pterm` runs the Tailscale CLI only when no other user can replace it (the file and every folder up to `/` belong to root or to you and are not writable by others), and checks this again before each run. `pterm doctor` says why it refused one.
+- An `/api` request must say where it comes from (`Origin` or `Sec-Fetch-Site: same-origin`), so a page on another computer in your tailnet cannot read your API with your cookie. This needs iOS 16.4 or later on iPhone, also with one computer.
+- Termivoa **never** uses Tailscale Funnel or any public tunnel, which would put your terminal on the public internet. `pterm doctor` reports Funnel as a problem. `pterm setup` refuses to run while Funnel is on for port 443 or 8443, also a Funnel that runs in the foreground (`tailscale funnel` without `--bg`), and prints how to turn it off.
 
 ## How does pairing work?
 
@@ -26,8 +26,8 @@ Termivoa keeps your terminal reachable only from your own Tailscale devices, let
 
 ## How do several computers trust each other?
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and not tested on a real iPhone or Android phone yet. See [Use several computers](/docs/guides/computers/).
+:::note
+Not tested on a real iPhone or Android phone yet. See [Use several computers](/docs/guides/computers/).
 :::
 
 With [several computers](/docs/guides/computers/), one computer (home) serves the app, and the app talks directly to the others (peers).
@@ -48,8 +48,8 @@ With [several computers](/docs/guides/computers/), one computer (home) serves th
 
 ## What does Found on your network share?
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and not tested on real computers or a real phone yet. See [How do I add a computer?](/docs/guides/computers/#how-do-i-add-a-computer)
+:::note
+Not tested on real computers or a real phone yet. See [How do I add a computer?](/docs/guides/computers/#how-do-i-add-a-computer)
 :::
 
 When you add a computer with **Add** in **Found on your network**, the new computer sends its one-time invite to your home computer, and you still approve on the new computer.
@@ -67,8 +67,8 @@ When you add a computer with **Add** in **Found on your network**, the new compu
 
 ## Can a preview from another computer harm the app?
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`, and not tested on a real iPhone or Android phone yet. See [Dev-server preview](/docs/guides/preview/#can-i-preview-a-session-on-another-computer).
+:::note
+Not tested on a real iPhone or Android phone yet. See [Dev-server preview](/docs/guides/preview/#can-i-preview-a-session-on-another-computer).
 :::
 
 It cannot read the app, but it can lie to you. A [preview](/docs/guides/preview/) of a session on another computer is a page that the other computer chooses.
@@ -93,7 +93,7 @@ It cannot read the app, but it can lie to you. A [preview](/docs/guides/preview/
 ## Who can see changes, commit and push?
 
 - Changes only **reads** git: uncommitted changes and untracked files that git does not ignore.
-- [Files](/docs/guides/files/) (Next beta) only **reads** the session's project: the top of its git repository, or its folder. Paths cannot leave that folder, not even through a link, and `.git` is never shown. Any paired phone that watches the session can read it, as it could read the terminal.
+- [Files](/docs/guides/files/) only **reads** the session's project: the top of its git repository, or its folder. Paths cannot leave that folder, not even through a link, and `.git` is never shown. Any paired phone that watches the session can read it, as it could read the terminal.
 - **Any paired phone can see these diffs**, including secrets in files that are not ignored. Keep secrets in ignored files such as `.env`.
 - Commit and push need **control**, which the computer checks right before git starts.
 - A commit includes only ticked files that git lists as changed, and runs your repository's own hooks.
@@ -107,33 +107,29 @@ It cannot read the app, but it can lie to you. A [preview](/docs/guides/preview/
 | Notification subscriptions | Your typing |
 | Logs | Pairing links and login secrets in clear text (only a one-way hash is kept) |
 
-From the next beta, home also stores each phone's list of other computers (addresses and names), and a peer stores the home address and Tailscale node of each phone that uses it from there. The phone keeps the same list of computers, never their sessions.
+Home also stores each phone's list of other computers (addresses and names), and a peer stores the home address and Tailscale node of each phone that uses it from there. The phone keeps the same list of computers, never their sessions.
 
-From the next beta, **Scan QR** in **+ Add a computer** uses the phone's camera only while you scan. The app reads the camera pictures on the phone to find the QR code. It does not send them to any computer and does not save them. A scanned link is checked like a pasted one, and never adds a computer by itself.
+**Scan QR** in **+ Add a computer** uses the phone's camera only while you scan. The app reads the camera pictures on the phone to find the QR code. It does not send them to any computer and does not save them. A scanned link is checked like a pasted one, and never adds a computer by itself.
 
-All data is private to your user account ([Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)). Photos go to the project's `.termivoa/uploads/`. Snippets and, from the next beta, the Wall tile order (session IDs only) stay on the phone.
+All data is private to your user account ([Where does Termivoa store data?](/docs/reference/update-and-uninstall/#where-does-termivoa-store-data)). Photos go to the project's `.termivoa/uploads/`. Snippets and the Wall tile order (session IDs only) stay on the phone.
 
 ## Can a worktree escape its folder?
-
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`.
-:::
 
 No. [Worktree](/docs/guides/worktrees/) requests send only a session, a name and a branch. The computer checks them and builds the path under `~/termivoa/worktrees` itself, so the phone cannot pick another folder. Removal needs control, keeps the branch, and asks before it deletes uncommitted changes.
 
 ## How do other features stay private?
 
-[Notifications](/docs/guides/notifications/) carry only the session name, project name, status, how long the agent worked and the session ID, encrypted to your phone. [Dev-server previews](/docs/guides/preview/) use a separate address and show only that session's servers; a preview from another computer (**Next beta**) is marked **untrusted page**. Only the device in control can send [photos](/docs/guides/photo-and-voice/).
+[Notifications](/docs/guides/notifications/) carry only the session name, project name, status, how long the agent worked and the session ID, encrypted to your phone. [Dev-server previews](/docs/guides/preview/) use a separate address and show only that session's servers; a preview from another computer is marked **untrusted page**. Only the device in control can send [photos](/docs/guides/photo-and-voice/).
 
-With several computers (**Next beta**), each computer sends its own notifications straight to your phone's push service; no computer sees another computer's notifications. The app puts the computer's name at the start of the title and text from its own list of computers. That computer writes the words after the name, so a hacked computer can send misleading text or many notifications until you remove it.
+With several computers, each computer sends its own notifications straight to your phone's push service; no computer sees another computer's notifications. The app puts the computer's name at the start of the title and text from its own list of computers. That computer writes the words after the name, so a hacked computer can send misleading text or many notifications until you remove it.
 
 ## What is not protected?
 
 - A session runs with your normal user permissions. A project folder is not a sandbox (a closed-off area).
 - Malware already running as your user is not covered.
-- With several computers (next beta), malware or a hacked account on home reaches every computer added through it.
-- With **Found on your network** (next beta), anyone who can reach home in your tailnet can make **Add** fail for a while. Use the QR code or the link then.
-- A preview from another computer (next beta) can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
+- With several computers, malware or a hacked account on home reaches every computer added through it.
+- With **Found on your network** anyone who can reach home in your tailnet can make **Add** fail for a while. Use the QR code or the link then.
+- A preview from another computer can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
 - The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home is offline, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
 - The controls have automated tests, but no independent security audit yet.
 
@@ -141,7 +137,7 @@ With several computers (**Next beta**), each computer sends its own notification
 
 ### What do I do if I lose my phone?
 
-Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access and notifications at once. If it used [several computers](/docs/guides/computers/#what-do-i-do-if-i-lose-my-phone) (next beta), revoke it on each one.
+Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access and notifications at once. If it used [several computers](/docs/guides/computers/#what-do-i-do-if-i-lose-my-phone), revoke it on each one.
 
 ### Can someone on the internet reach my terminal?
 

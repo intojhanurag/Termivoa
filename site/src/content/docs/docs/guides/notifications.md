@@ -1,7 +1,7 @@
 ---
 title: Notifications
 description: Termivoa sends a phone notification when a coding agent waits for you or finishes, with only names and status, never any terminal text.
-lastUpdated: 2026-10-03
+lastUpdated: 2026-10-04
 ---
 
 Termivoa sends a notification to your phone when a coding agent waits for you or finishes.
@@ -25,7 +25,7 @@ It has only the session name, project name, status and work time, never terminal
 
 ## Do notifications come from every computer?
 
-**Next beta.** Yes. With [several computers](/docs/guides/computers/), each computer sends its own notifications, and one switch controls all of them.
+Yes. With [several computers](/docs/guides/computers/), each computer sends its own notifications, and one switch controls all of them.
 
 | Question | Answer |
 | --- | --- |
@@ -36,7 +36,7 @@ It has only the session name, project name, status and work time, never terminal
 | One computer cannot be reached. | The others still notify. **Settings → Notifications** shows **No notifications from vps.** When the computer is back and the app is open, it starts to notify again by itself. |
 | What does **Send a test notification** do? | Each computer sends one. The note says **Sent**, and names a computer that sent none. |
 
-In `v0.1.0-beta.2`, only home sends notifications. On iPhone, notifications from other computers are not tested on a real phone yet; if they do not arrive there, home's notifications still work.
+Before `v0.1.0-beta.3`, only home sent notifications. On iPhone, notifications from other computers are not tested on a real phone yet; if they do not arrive there, home's notifications still work.
 
 ## When do notifications come?
 

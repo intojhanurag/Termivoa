@@ -1,12 +1,12 @@
 ---
 title: Sessions
 description: Use the Termivoa Sessions list on your phone to start, read, rename and end the shells and coding agents that run on your computer.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-04
 ---
 
 Termivoa shows every session on your computer in the Sessions list, the first screen after pairing. A session is one running shell or coding agent, such as Claude Code or Codex.
 
-![The Sessions list: acme-web waits for an answer to "Run the test suite?", a worktree session shows its ⎇ badge (Next beta), and billing-api is working.](../../../../assets/docs/phone-sessions.webp)
+![The Sessions list: acme-web waits for an answer to "Run the test suite?", a worktree session shows its ⎇ badge, and billing-api is working.](../../../../assets/docs/phone-sessions.webp)
 
 ## Read the Sessions list
 

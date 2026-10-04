@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-03
+lastUpdated: 2026-10-04
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -63,7 +63,7 @@ Check the terminal before you send again. The connection broke while you typed; 
 
 Start a new session; a lost one cannot come back. Causes: the computer restarted or logged out, the broker (the background process that owns sessions) crashed, or the program closed the terminal but kept running.
 
-A program that ends normally shows its exit code. On a busy computer, `v0.1.0-beta.2` can still show it as lost; the next beta fixes this.
+A program that ends normally shows its exit code, also on a busy computer. Before `v0.1.0-beta.3`, a busy computer could show it as lost.
 
 ## "A new version is ready"
 
@@ -117,13 +117,13 @@ sudo tailscale set --operator=$USER
 
 Fix the conflict, then run `pterm setup` again. Tailscale Serve already shares another service on HTTPS port 443, and setup leaves it alone. If the message says "to free it, stop the `tailscale serve` or `tailscale funnel` command that runs in the foreground (Ctrl+C)", a `tailscale serve` without `--bg` still runs in a terminal: press Ctrl+C there.
 
-## Setup asks to share the page again after a rename (Next beta)
+## Setup asks to share the page again after a rename
 
-Say yes. When you rename a computer in Tailscale, its Tailscale Serve settings stay under the old name, and the phone cannot reach the new name. From the next beta, `pterm setup` counts only the computer's current name, so it asks to share Termivoa there, and `pterm doctor` says `! tailscale serve: not configured for Termivoa` until you do. The settings under the old name do no harm.
+Say yes. When you rename a computer in Tailscale, its Tailscale Serve settings stay under the old name, and the phone cannot reach the new name. `pterm setup` counts only the computer's current name, so it asks to share Termivoa there, and `pterm doctor` says `! tailscale serve: not configured for Termivoa` until you do. The settings under the old name do no harm.
 
-## Setup refuses other Tailscale Serve handlers (Next beta)
+## Setup refuses other Tailscale Serve handlers
 
-Move the other handlers off this computer's Termivoa address, then run `pterm setup` again. From the next beta, setup stops before it changes anything:
+Move the other handlers off this computer's Termivoa address, then run `pterm setup` again. Setup stops before it changes anything:
 
 ```text
 refusing to set up: other Tailscale Serve handlers share this computer's Termivoa origin (/grafana); move them as shown above, then run `pterm setup` again
@@ -138,9 +138,9 @@ The checks above the message print the commands. For each handler:
 
 The Windows installer runs the same check. When it says that other Tailscale Serve handlers share this computer's Termivoa address (`pterm setup` exit code 3), run `pterm setup --apply` to see the handlers.
 
-## Setup refuses because Tailscale Funnel is on (Next beta)
+## Setup refuses because Tailscale Funnel is on
 
-Turn Funnel off, then run `pterm setup` again. Funnel puts your terminal on the public internet, so from the next beta setup stops before it changes anything while Funnel is on for port 443 or the preview port 8443:
+Turn Funnel off, then run `pterm setup` again. Funnel puts your terminal on the public internet, so setup stops before it changes anything while Funnel is on for port 443 or the preview port 8443:
 
 ```text
 refusing to set up: Tailscale Funnel is on for mac.example.ts.net:443, which puts Termivoa on the public internet; turn it off with `tailscale funnel --https=443 off`, then run `pterm setup` again
@@ -156,9 +156,9 @@ If Funnel runs in the foreground (you ran `tailscale funnel` without `--bg`, and
 ! tailscale serve: Tailscale Funnel is on for mac.example.ts.net:443, which makes it public on the internet; Termivoa must never be public. Turn it off: `tailscale funnel --https=443 off`, then run `pterm setup` again.
 ```
 
-## `pterm pair` refuses because Tailscale Funnel is on (Next beta)
+## `pterm pair` refuses because Tailscale Funnel is on
 
-Turn Funnel off with the command it names, then run the same `pterm pair` command again. From the next beta every `pterm pair` that pairs a phone or adds a computer (`pterm pair`, `pterm pair --via <home>`, `pterm pair approve <pending-id>`) stops before it makes a link while Funnel is on for port 443 or 8443:
+Turn Funnel off with the command it names, then run the same `pterm pair` command again. Every `pterm pair` that pairs a phone or adds a computer (`pterm pair`, `pterm pair --via <home>`, `pterm pair approve <pending-id>`) stops before it makes a link while Funnel is on for port 443 or 8443:
 
 ```text
 refusing to pair: Tailscale Funnel is on for vps.example.ts.net:443, which puts Termivoa on the public internet; turn it off with `tailscale funnel --https=443 off`, then run `pterm pair --via mac` again
@@ -172,7 +172,7 @@ Warning: Tailscale Funnel is on for vps.example.ts.net:443, which puts Termivoa 
 
 Termivoa never runs the command for you. When Termivoa cannot read the Tailscale Serve settings (no Tailscale, or Tailscale does not answer), `pterm pair` and `pterm launch` do not check.
 
-## `pterm doctor` warns that other ports receive the Termivoa cookie (Next beta)
+## `pterm doctor` warns that other ports receive the Termivoa cookie
 
 Decide if you trust what runs there as much as Termivoa. If not, move it to another computer or to its own Tailscale Service hostname, or remove it. The warning is:
 
@@ -182,7 +182,7 @@ Decide if you trust what runs there as much as Termivoa. If not, move it to anot
 
 A handler on another port is a different origin, so it cannot use the Termivoa app. But when the phone opens it, the browser sends it the Termivoa cookie, and it could act as that phone. This is a warning, not a problem: setup does not refuse it, because many people serve their own tools on other ports. Termivoa's own preview port 8443 is not listed; Termivoa removes the cookie there.
 
-## `pterm doctor` says Termivoa will not run tailscale (Next beta)
+## `pterm doctor` says Termivoa will not run tailscale
 
 Fix the owner or permissions that the line names, or install Tailscale from [tailscale.com/download](https://tailscale.com/download). An example line is:
 
@@ -192,11 +192,11 @@ Fix the owner or permissions that the line names, or install Tailscale from [tai
 
 Termivoa runs the Tailscale CLI only when no other user can replace it: the file, each symlink to it and each folder up to `/` must belong to root or to you, and no folder may be writable by others (unless it has the sticky bit, as `/tmp` does). On macOS a folder writable by the `admin` group, such as `/Applications`, is accepted. Termivoa checks this again before each run.
 
-## The app cannot load after the update (iPhone, Next beta)
+## The app cannot load after the update (iPhone)
 
-Update the iPhone or iPad to iOS 16.4 or later. From the next beta, the computer accepts a request from the app only when the browser says where it comes from (the `Origin` or `Sec-Fetch-Site` header). Safari before iOS 16.4 sends neither on reads, so the computer refuses them. This is true for every Termivoa app, also with one computer. Android Chrome is not affected.
+Update the iPhone or iPad to iOS 16.4 or later. The computer accepts a request from the app only when the browser says where it comes from (the `Origin` or `Sec-Fetch-Site` header). Safari before iOS 16.4 sends neither on reads, so the computer refuses them. This is true for every Termivoa app, also with one computer. Android Chrome is not affected.
 
-## The app cannot read settings after the update (Next beta)
+## The app cannot read settings after the update
 
 Close the app fully and open it again, or tap **update** on the Sessions list. An app that was open while you updated the computer can fail to read settings until it reloads.
 
@@ -207,13 +207,13 @@ Close the app fully and open it again, or tap **update** on the Sessions list. A
 
 More in [Dev-server preview](/docs/guides/preview/).
 
-## No "Preview ready" chip on a session of another computer (Next beta)
+## No "Preview ready" chip on a session of another computer
 
 1. Update Termivoa on that computer. A computer on an older Termivoa shows no **Preview ready** chip.
 2. Start the dev server in that session, for example `npm run dev`. Only servers that the session started are offered.
 3. Check that the computer has no **can't reach**, **pair again** or **Update Termivoa on …** row on the Sessions list.
 
-## "Can't open the preview on vps" (Next beta)
+## "Can't open the preview on vps"
 
 The full text is "Can't open the preview on vps. If vps does not share dev-server previews yet, run pterm setup on vps and answer yes to the preview question." Nothing answered at that computer's preview address within 5 seconds. The app cannot see why, so check in this order:
 
@@ -225,7 +225,7 @@ The full text is "Can't open the preview on vps. If vps does not share dev-serve
 
 If you added the computer after you opened the app, the app reloads itself once when you first open a preview on it. This is normal; you do nothing.
 
-## The preview shows a short text and no page (Next beta)
+## The preview shows a short text and no page
 
 Tap **↻**. If the text stays, do what the table says. The computer that runs the session writes this text, not the app.
 
@@ -249,27 +249,27 @@ Run `pterm setup` again and answer `y` to the linger question. More in [Keep ses
 
 `cd` into your project in the terminal, then tap **Refresh**. The session's folder is not in a git repository.
 
-## New worktree says "not in a git repository" (Next beta)
+## New worktree says "not in a git repository"
 
 `cd` into your repository, open the session menu (**⋯**) and tap **New worktree…** again. The session's folder is not in a git repository.
 
-## New worktree says the name "already exists" (Next beta)
+## New worktree says the name "already exists"
 
 Tap 🎲 or type another name. The folder `~/termivoa/worktrees/<repository>/<name>` or branch `termivoa/<name>` exists. A removed worktree keeps its branch (and name) until you run `git branch -d termivoa/<name>`.
 
-## New worktree says there are too many worktrees (Next beta)
+## New worktree says there are too many worktrees
 
 Remove finished worktrees with **Remove worktree…** in their session menu (**⋯**), or run `git worktree remove <folder>`. The limit is 50 per repository in `~/termivoa/worktrees`.
 
-## New worktree says "git worktree add failed" (Next beta)
+## New worktree says "git worktree add failed"
 
 Fix the cause in git's message, then reuse the same name; Termivoa cleans up what it made. Often a repository hook (for example husky or lefthook) fails on checkout.
 
-## Remove worktree asks about uncommitted changes or ignored files (Next beta)
+## Remove worktree asks about uncommitted changes or ignored files
 
 Tap **Remove anyway** only if you do not need those files, else **Keep it**. Uncommitted changes and ignored files (such as `node_modules`, `.env`) are deleted with the folder; the branch is kept.
 
-## Remove worktree fails (Next beta)
+## Remove worktree fails
 
 Fix the cause in git's message, or run `git worktree remove <folder>` on the computer. On Windows, first close any program that uses the folder.
 
@@ -289,63 +289,63 @@ The phone shows git's message. Usual causes:
 - **The ssh key has a passphrase.** Add the key to your ssh agent (macOS: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`). Termivoa cannot type a passphrase; the push stops after 2 minutes.
 - **The remote rejected it.** Read git's message. Termivoa never force-pushes.
 
-## Several computers (Next beta)
+## Several computers
 
-These problems are about [using several computers](/docs/guides/computers/). This is not in `v0.1.0-beta.2`.
+These problems are about [using several computers](/docs/guides/computers/).
 
-### "vps · can't reach" (Next beta)
+### "vps · can't reach"
 
 The line under it is "Last seen 3 h ago. Is it on, and in your tailnet?" when nothing answered from vps. The app cannot see why, so check that vps is on, awake and in your tailnet, then tap **Retry**. The other computers keep working. Without the question, vps answered with an error: run `pterm doctor` on vps.
 
-### "This app page is out of date. Close the app and open it again." (Next beta)
+### "This app page is out of date. Close the app and open it again."
 
 It shows under "vps · can't reach". The app page on your phone does not allow vps yet, so the phone sends nothing to vps. This happens when the page is older than the computer, for example when the phone opened its saved copy because home answered slowly. The app reloads once by itself; this line means the reload did not help. Close the app fully (swipe it away) and open it again. If it stays, check that home is reachable, because a fresh page comes from home.
 
-### "Connecting to vps…" (Next beta)
+### "Connecting to vps…"
 
 The full text is "Connecting to vps…" and "Just added. Its sessions show in a moment." You added vps a moment ago and it does not answer this phone yet. The app tries again by itself for about 5 seconds. If vps still does not answer, the row says "vps · can't reach".
 
-### "vps · pair again" (Next beta)
+### "vps · pair again"
 
 The full line is "vps · pair again · Run pterm pair --via mac on vps". vps no longer accepts this phone: it was revoked or logged out, it expired (30 days, or 7 days unused), or home's Tailscale node changed (for example after you reinstalled Tailscale on home). Run `pterm pair --via <home>` on vps and add it again.
 
-### "Update Termivoa on vps" (Next beta)
+### "Update Termivoa on vps"
 
 Update Termivoa on that computer. Computers can be updated one at a time; the app refuses only one that is too old, or one so old that it does not tell its version. The line uses the name you gave the computer on this phone.
 
-### A computer is gone from the list (Next beta)
+### A computer is gone from the list
 
-Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; from the next beta this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again". A computer you removed from your tailnet stays in the list as "can't reach"; remove it in **Settings → Computers**.
+Add it again: run `pterm pair --via <home>` on that computer. Home pins each computer's Tailscale machine (its node ID). If that changes, for example after you reinstall Tailscale on the computer or give its name to another machine, home drops the computer from the list. When you add it again, home pins the new machine; this also works when the list is full, because dropped computers give up their place. If the name moves to another machine while you add it, the app says "this name now belongs to another Tailscale machine; add the computer again". A computer you removed from your tailnet stays in the list as "can't reach"; remove it in **Settings → Computers**.
 
-### Log out says "Could not sign out of vps" (Next beta)
+### Log out says "Could not sign out of vps"
 
 Run `pterm devices`, then `pterm revoke <device-id>` on vps. **Log out** signs the phone out of every computer it can reach; it lists the ones it could not reach.
 
-### `pterm pair --via` says "no computer with that name is in this tailnet" (Next beta)
+### `pterm pair --via` says "no computer with that name is in this tailnet"
 
 Use home's machine name as Tailscale shows it (the first part of its address), or its full address, for example `pterm pair --via https://mac.tailx.ts.net`. Both computers must be in the same tailnet.
 
-### `pterm pair --via` says "more than one computer has that name" (Next beta)
+### `pterm pair --via` says "more than one computer has that name"
 
 Use home's full address: `pterm pair --via https://mac.tailx.ts.net`.
 
-### `pterm pair --via` says "that computer belongs to another Tailscale user" (Next beta)
+### `pterm pair --via` says "that computer belongs to another Tailscale user"
 
 Home and the new computer must belong to the same Tailscale user. Computers of other users cannot be added.
 
-### `pterm pair --via` says "that computer is a tagged Tailscale node" (Next beta)
+### `pterm pair --via` says "that computer is a tagged Tailscale node"
 
 Check the tags of home and this computer, then run `pterm pair --via <home> --allow-tagged`.
 
-### `pterm pair --via` says "this computer cannot read its Tailscale status" (Next beta)
+### `pterm pair --via` says "this computer cannot read its Tailscale status"
 
 Check that Tailscale runs and is logged in on this computer (`pterm doctor`), then try again. Under WSL, Tailscale usually runs on Windows, so a WSL computer cannot be added.
 
-### `pterm pair --via` says the link "needs this computer's tailnet https address" (Next beta)
+### `pterm pair --via` says the link "needs this computer's tailnet https address"
 
 Run `pterm setup` on this computer so it has a Tailscale address, or pass it with `--origin https://<this-computer>.<tailnet>.ts.net`.
 
-### The pasted link is refused (Next beta)
+### The pasted link is refused
 
 | Message | What to do |
 | --- | --- |
@@ -356,11 +356,11 @@ Run `pterm setup` on this computer so it has a Tailscale address, or pass it wit
 | "The link is damaged or incomplete. Copy it again." | Copy it again; long links can wrap or get cut. |
 | "This add-computer link expired or was already used." | Run `pterm pair --via` again. A link works once, for two minutes. |
 
-### The code expired, or the computer refused it (Next beta)
+### The code expired, or the computer refused it
 
 The app says "The code expired or vps refused it. Run pterm pair --via on vps again, then tap Add again, or scan or paste the new link." Run `pterm pair --via <home>` on that computer again. Then tap **Add** next to it in **Found on your network**, or scan or paste the new link. Answer `y` only when the prompt names that computer and the codes match.
 
-### No Add button for a new computer (Next beta)
+### No Add button for a new computer
 
 **Found on your network** in **Settings → Computers** shows a computer only while it waits in `pterm setup` or `pterm pair --via` in a terminal.
 
@@ -374,11 +374,11 @@ The app says "The code expired or vps refused it. Run pterm pair --via on vps ag
 
 The QR code and the link always work as the other way: **Settings → + Add a computer → Scan QR** or **Paste link**.
 
-### "vps stopped waiting" (Next beta)
+### "vps stopped waiting"
 
 The full text is "vps stopped waiting. On vps run pterm pair --via mac, then tap Add again." The new computer no longer waits (it was stopped, or its 10 minutes ended), or the invite in the list was no longer valid. Run `pterm pair --via mac` on vps, then tap **Add** again.
 
-### `pterm pair --via` says "mac did not answer" or "cannot receive this yet" (Next beta)
+### `pterm pair --via` says "mac did not answer" or "cannot receive this yet"
 
 These lines show on the new computer when the app at home cannot list it. The QR code and the link below them still work.
 
@@ -396,15 +396,15 @@ These lines show on the new computer when the app at home cannot list it. The QR
 | "the link expired before a phone opened it; run `pterm pair --via mac` again" | Nothing reached home, and the link expired after 2 minutes. Run it again. |
 | `pterm setup` ends with "Setup is done, but your phone is not connected yet. To connect it, run `pterm pair --via mac`." | Setup worked, but nobody added the computer in 10 minutes. Run `pterm pair --via mac`, then tap **Add** in the app. |
 
-### `pterm pair --via` says "Add does not work with tagged computers" (Next beta)
+### `pterm pair --via` says "Add does not work with tagged computers"
 
 The full line is "Add does not work with tagged computers: mac is tagged. Use the QR code or the link below." or "…: this computer is tagged. …". Home or this computer is a tagged Tailscale node, so home cannot show it in **Found on your network**. Scan the QR code in the app (**Settings → + Add a computer → Scan QR**) or paste the link.
 
-### The link opens a page that says "This page cannot add the computer" (Next beta)
+### The link opens a page that says "This page cannot add the computer"
 
 You scanned the QR code with the phone's Camera app, or opened the link in Safari. Open the Termivoa app from the Home Screen and go to **Settings → + Add a computer → Scan QR**, then scan the same QR code there. Or tap **Copy link** on that page and use **Paste link** in the app.
 
-### Scan QR does not open the camera (Next beta)
+### Scan QR does not open the camera
 
 | The app says | Do this |
 | --- | --- |
@@ -414,15 +414,15 @@ You scanned the QR code with the phone's Camera app, or opened the link in Safar
 
 **Paste link** always works without the camera.
 
-### `pterm doctor` says the tailnet is unknown (Next beta)
+### `pterm doctor` says the tailnet is unknown
 
 Log in to Tailscale on this computer, then run `pterm doctor` again. The line is `this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked`. A short Tailscale restart or logout does not end the sessions of phones that use this computer through home: the computer keeps its last good Tailscale status for up to 10 minutes.
 
-### `pterm doctor` says "tags changed since pairing" (Next beta)
+### `pterm doctor` says "tags changed since pairing"
 
 Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tailscale tags were added, removed or replaced after pairing, so the rules for it changed. This computer refuses phones from that home until you pair again.
 
-### Settings shows "No notifications from vps." (Next beta)
+### Settings shows "No notifications from vps."
 
 That computer could not be set up for notifications; home and the other computers still notify. Check that the computer is awake and reachable (no **can't reach** or **pair again** on the Sessions list), then open **Settings** again. If it stays, turn the switch in **Settings → Notifications** off and on.
 

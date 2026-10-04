@@ -4,10 +4,9 @@ Last updated: 2026-10-04
 
 ## Start here
 
-- **State on 2026-10-02:** latest tag `v0.1.0-beta.2` (private beta,
-  unsigned). `main` is beta.2 plus project buttons and line comments, Wall
-  drag, the Down key, worktrees, the Files view, multi-computer (#135; Gate 0
-  on real phones is still open) and the docs overhaul.
+- **State on 2026-10-04:** docs prepared for private beta `v0.1.0-beta.3`
+  (unsigned; everything in `git log v0.1.0-beta.2..7e347d3`); Gate 0 on real
+  phones is still open.
 - **Read first:** [`AGENTS.md`](../AGENTS.md) →
   [`docs/architecture.md`](architecture.md) →
   [`docs/pending-work.md`](pending-work.md) (the single roadmap).

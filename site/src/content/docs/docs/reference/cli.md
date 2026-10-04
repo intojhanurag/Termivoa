@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Every command and flag of pterm, the Termivoa host program, for setup, startup, pairing phones, sessions, projects, shells and dev tests.
-lastUpdated: 2026-10-03
+lastUpdated: 2026-10-04
 ---
 
 `pterm` is the Termivoa host program. `pterm help` (or `--help`, `-h`) prints this command list.
@@ -13,12 +13,12 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 
 | Command | What it does |
 | --- | --- |
-| `pterm setup` | First run: checks, one confirmation, startup at login, phone address, Tailscale Serve (asks first), pairing. From the next beta, it refuses before any change while other Tailscale Serve handlers share this computer's Termivoa address (port 443); see [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers-next-beta). It then exits with code 3; other errors exit with 1. |
-| `pterm setup --verbose` | **Next beta.** `pterm setup` now prints a short plan, one line for each change, and any warning of the checks under **Warnings:**. `--verbose` also prints the checks, the startup files and every command. |
-| `pterm setup --apply --yes` | Installer mode: registers startup, asks nothing, sets the phone address only if unset, never changes Tailscale or pairs a phone. From the next beta, it refuses in the same way. |
-| `pterm doctor` | Read-only checks. Never prints secrets. From the next beta it also shows the protocol revision and multi-computer checks. |
+| `pterm setup` | First run: checks, one confirmation, startup at login, phone address, Tailscale Serve (asks first), pairing. It refuses before any change while other Tailscale Serve handlers share this computer's Termivoa address (port 443); see [Setup refuses other Tailscale Serve handlers](/docs/reference/troubleshooting/#setup-refuses-other-tailscale-serve-handlers). It then exits with code 3; other errors exit with 1. |
+| `pterm setup --verbose` | `pterm setup` prints a short plan, one line for each change, and any warning of the checks under **Warnings:**. `--verbose` also prints the checks, the startup files and every command. |
+| `pterm setup --apply --yes` | Installer mode: registers startup, asks nothing, sets the phone address only if unset, never changes Tailscale or pairs a phone. It refuses in the same way. |
+| `pterm doctor` | Read-only checks. Never prints secrets. It also shows the protocol revision and multi-computer checks. |
 | `pterm config origin [<url>]` | Shows or sets the phone's private HTTPS address. |
-| `pterm launch [--no-open]` | Starts the broker and gateway if needed, and opens the local page. **Next beta:** while Tailscale Funnel is on for port 443 or 8443, it first prints a warning with the command that turns Funnel off. |
+| `pterm launch [--no-open]` | Starts the broker and gateway if needed, and opens the local page. While Tailscale Funnel is on for port 443 or 8443, it first prints a warning with the command that turns Funnel off. |
 | `pterm stop` | Stops only the gateway. Sessions keep running, but phones cannot connect. |
 | `pterm shutdown` | Asks first, ends all sessions, and stops the broker and gateway. |
 | `pterm uninstall [--dry-run] [--yes] [--delete-data]` | Removes startup at login. Deletes data only with `--delete-data`. |
@@ -30,10 +30,10 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 
 | Command | What it does |
 | --- | --- |
-| `pterm pair [--origin <url>] [--no-qr] [--no-wait]` | Prints a two-minute, single-use pairing link and QR code, then approves the phone after you compare codes. **Next beta:** every `pterm pair` that pairs (also `--via` and `approve`) refuses while Tailscale Funnel is on for port 443 or 8443; see [troubleshooting](/docs/reference/troubleshooting/#pterm-pair-refuses-because-tailscale-funnel-is-on-next-beta). |
+| `pterm pair [--origin <url>] [--no-qr] [--no-wait]` | Prints a two-minute, single-use pairing link and QR code, then approves the phone after you compare codes. Every `pterm pair` that pairs (also `--via` and `approve`) refuses while Tailscale Funnel is on for port 443 or 8443; see [troubleshooting](/docs/reference/troubleshooting/#pterm-pair-refuses-because-tailscale-funnel-is-on). |
 | `pterm pair pending` | Shows phones waiting for approval, with their codes. |
 | `pterm pair approve <pending-id>` | Approves a phone after you compare its code. |
-| `pterm devices` | Shows paired phones, status and last use. From the next beta, a **VIA** column shows the home address a phone uses this computer from (`-` for this computer's own page). |
+| `pterm devices` | Shows paired phones, status and last use. A **VIA** column shows the home address a phone uses this computer from (`-` for this computer's own page). |
 | `pterm devices rename <device-id> <label>` | Renames a paired phone. |
 | `pterm revoke <device-id>` | Asks first, then removes a phone's access at once. |
 
@@ -41,13 +41,11 @@ The pairing link and QR code are secret. Do not share them.
 
 ## Use several computers
 
-:::note[Next beta]
-Not released yet. This is not in `v0.1.0-beta.2`. See [Use several computers](/docs/guides/computers/).
-:::
+See [Use several computers](/docs/guides/computers/).
 
 | Command | Where | What it does |
 | --- | --- | --- |
-| `pterm pair --via <name\|url>` | New computer | Prints a two-minute, single-use add-computer link for the Termivoa app at home and, on a terminal wide enough for it, a QR code of that link, then approves the phone after you compare codes. `<name>` is home's machine name, such as `mac`; `<url>` is its full address. It tells you to tap the link in a Termivoa session and confirm "Add this computer?", or, in **Settings → + Add a computer**, to scan the QR code (**Scan QR**) or paste the link. Scan it in the app, not with the phone's Camera app: that opens the browser. **Next beta:** in a terminal it also shows this computer in the app at home under **Settings → Computers → Found on your network**, with **Add**, and waits up to 10 minutes (it prints "Sent to mac (https://…)."). Then it shows the QR code and the link only when you press Enter ("No Add button? Press Enter to show a QR code and a link."); when nothing reached home, it prints them at once. The prompt starts `Phone "iPhone" wants to add this computer (vps) to your Termivoa app on mac.`, and success says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` When the link expires and nothing reached home, it ends as before. With piped input or `--no-wait` it sends nothing to home. `pterm setup` does the same when you answer `2` to **Is Termivoa already on your phone?**; its list shows each computer's full address and system. See [How do I add a computer?](/docs/guides/computers/#how-do-i-add-a-computer) |
+| `pterm pair --via <name\|url>` | New computer | Prints a two-minute, single-use add-computer link for the Termivoa app at home and, on a terminal wide enough for it, a QR code of that link, then approves the phone after you compare codes. `<name>` is home's machine name, such as `mac`; `<url>` is its full address. It tells you to tap the link in a Termivoa session and confirm "Add this computer?", or, in **Settings → + Add a computer**, to scan the QR code (**Scan QR**) or paste the link. Scan it in the app, not with the phone's Camera app: that opens the browser. In a terminal it also shows this computer in the app at home under **Settings → Computers → Found on your network**, with **Add**, and waits up to 10 minutes (it prints "Sent to mac (https://…)."). Then it shows the QR code and the link only when you press Enter ("No Add button? Press Enter to show a QR code and a link."); when nothing reached home, it prints them at once. The prompt starts `Phone "iPhone" wants to add this computer (vps) to your Termivoa app on mac.`, and success says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` When the link expires and nothing reached home, it ends as before. With piped input or `--no-wait` it sends nothing to home. `pterm setup` does the same when you answer `2` to **Is Termivoa already on your phone?**; its list shows each computer's full address and system. See [How do I add a computer?](/docs/guides/computers/#how-do-i-add-a-computer) |
 | `pterm pair --via <name\|url> --allow-tagged` | New computer | The same, when home or this computer is a tagged Tailscale node. Check the tags first. **Add** does not work for a tagged computer: use the QR code or the link. |
 | `pterm pair pending` | New computer | Also shows a **VIA** column: the home app a waiting phone comes from. |
 | `pterm computers` | Home | Shows each phone's other computers: device ID, label, address and when added. |
@@ -75,8 +73,8 @@ No device uses this computer from the Termivoa app at https://mac.tailx.ts.net n
 | `! multi-computer: <url>: tags changed since pairing; phones bound to it are refused until paired again` | Home's Tailscale tags were added, removed or replaced after pairing. Pair again. |
 | `! multi-computer: this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked` | This computer is not logged in to Tailscale. Log in. |
 | `! tailscale serve: other handlers share this computer's Termivoa origin https://…: …` | A problem: Tailscale Serve shares more than Termivoa on this address (port 443). Move each handler to another computer or to its own Tailscale Service hostname (another port does not help); the line prints the commands that remove them. `pterm setup` refuses until you do. |
-| `! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, …` | A warning, not a problem: handlers on other ports of this computer get the Termivoa cookie when the phone opens them. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-warns-that-other-ports-receive-the-termivoa-cookie-next-beta). |
-| `! tailscale at <path>: …; Termivoa will not run it` | Another user could replace that Tailscale CLI, so Termivoa does not use it. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-run-tailscale-next-beta). |
+| `! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, …` | A warning, not a problem: handlers on other ports of this computer get the Termivoa cookie when the phone opens them. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-warns-that-other-ports-receive-the-termivoa-cookie). |
+| `! tailscale at <path>: …; Termivoa will not run it` | Another user could replace that Tailscale CLI, so Termivoa does not use it. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-run-tailscale). |
 
 ## Work with sessions
 

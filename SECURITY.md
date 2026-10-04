@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Termivoa is in private beta. The unsigned prereleases `v0.1.0-beta.1` and `v0.1.0-beta.2` are shared only with invited collaborators. There is no public release, signed installer, or security-support window yet. Report problems against the latest beta or `main`. This file will be updated with supported versions before v0.1.0 is published.
+Termivoa is in private beta. The unsigned prereleases `v0.1.0-beta.1`, `v0.1.0-beta.2` and `v0.1.0-beta.3` are shared only with invited collaborators. There is no public release, signed installer, or security-support window yet. Report problems against the latest beta or `main`. This file will be updated with supported versions before v0.1.0 is published.
 
 ## Reporting a vulnerability
 
@@ -29,7 +29,7 @@ Never send real secrets, even by email. If a credential was exposed, revoke or r
 
 ## Security boundaries
 
-The v0 design is single-owner. With multi-computer (next beta), a home
+The v0 design is single-owner. With multi-computer, a home
 computer serves the phone app for its peer computers, so a compromised home
 computer can control every computer paired through it. Browser authentication does not
 protect against malware already running as the same host user. Tailscale
