@@ -27,6 +27,8 @@ function cacheStorage(initial: Record<string, Record<string, Response>> = {}) {
       return {
         match: async (key: string) => entries.get(key)?.clone(),
         put: async (key: string, response: Response) => { await put(key, response); entries.set(key, response); },
+        keys: async () => [...entries.keys()],
+        delete: async (key: string) => entries.delete(key),
       };
     }),
     keys: vi.fn(async () => [...store.keys()]),
@@ -462,5 +464,103 @@ describe('service worker push', () => {
       await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url } } });
       expect(self.clients.openWindow).toHaveBeenCalledWith('https://host.example/');
     }
+  });
+});
+
+const TARGET = 'w8:p1.term_65d0031602b777';
+const TAP_PATH = `/p/herdr/${encodeURIComponent(TARGET)}`;
+
+/** Asks the worker like the /p/… page does; resolves with its answer. */
+async function askTap(handlers: Map<string, Handler>, path: string): Promise<boolean> {
+  let answer: unknown;
+  let work: Promise<unknown> | undefined;
+  handlers.get('message')?.({
+    data: { type: 'tap?', path },
+    ports: [{ postMessage: (value: unknown) => { answer = value; } }],
+    waitUntil: (value: Promise<unknown>) => { work = value; },
+  });
+  await work;
+  return (answer as { fresh?: boolean } | undefined)?.fresh === true;
+}
+
+describe('service worker: provider terminals', () => {
+  it('shows a provider push opening /p/<provider>/<target>, tagged per terminal; a peer\'s under /c/<host>', async () => {
+    const { handlers, self } = loadWorker(async () => new Response(''));
+    await fire(handlers, 'push', pushEvent(() => ({ title: 'herdr · shop · silver-meadow', body: 'claude needs you. Tap to answer.', kind: 'waiting', provider: 'herdr', target: TARGET })));
+    expect(self.registration.showNotification).toHaveBeenCalledWith('herdr · shop · silver-meadow', {
+      body: 'claude needs you. Tap to answer.', tag: `p:herdr:${TARGET}:waiting`, icon: '/icon-192.png', data: { url: TAP_PATH },
+    });
+    const peer = loadWorker(async () => new Response(''), [], cacheStorage(), 'https://host.example/push/vps.tailx.ts.net/');
+    await fire(peer.handlers, 'push', pushEvent(() => ({ title: 'herdr · api', body: 'codex finished.', kind: 'done', provider: 'herdr', target: TARGET })));
+    expect(peer.self.registration.showNotification).toHaveBeenCalledWith('vps · herdr · api', expect.objectContaining({
+      tag: `/c/vps.tailx.ts.netp:herdr:${TARGET}:done`, data: { url: `/c/vps.tailx.ts.net${TAP_PATH}` },
+    }));
+  });
+
+  it('falls back to / for a bad provider or target, or a payload that names a session too', async () => {
+    for (const payload of [
+      { provider: 'Herdr', target: TARGET }, { provider: 'herdr', target: '../settings' }, { provider: 'herdr', target: 'a/b' },
+      { provider: 'herdr' }, { provider: 'herdr', target: TARGET, sessionId: SESSION }, { provider: 'herdr', target: TARGET, sessionId: 'x' },
+    ]) {
+      const { handlers, self } = loadWorker(async () => new Response(''));
+      await fire(handlers, 'push', pushEvent(() => ({ kind: 'waiting', ...payload })));
+      const [, options] = self.registration.showNotification.mock.calls[0] as unknown as [string, { data: { url: string } }];
+      expect(options.data.url, JSON.stringify(payload)).toBe(payload.sessionId === SESSION ? `/sessions/${SESSION}` : '/');
+    }
+  });
+
+  it('a tap with no window open opens the address and leaves one fresh tap for it', async () => {
+    const { handlers, self } = loadWorker(async () => new Response(''));
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: TAP_PATH } } });
+    expect(self.clients.openWindow).toHaveBeenCalledWith(`https://host.example${TAP_PATH}`);
+    expect(await askTap(handlers, `/p/herdr/${encodeURIComponent('w9:p1.term_other')}`)).toBe(false);
+    expect(await askTap(handlers, TAP_PATH)).toBe(true);
+    // One time only: a reload of the same address shows Open.
+    expect(await askTap(handlers, TAP_PATH)).toBe(false);
+  });
+
+  it('a tap with a window open moves it there, and the page finds the tap', async () => {
+    const client = { url: 'https://host.example/', focus: vi.fn(async () => undefined), navigate: vi.fn(async () => ({})) };
+    const { handlers } = loadWorker(async () => new Response(''), [client]);
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: TAP_PATH } } });
+    expect(client.navigate).toHaveBeenCalledWith(`https://host.example${TAP_PATH}`);
+    expect(await askTap(handlers, TAP_PATH)).toBe(true);
+  });
+
+  it('a plain link or reload finds no tap, and a session tap leaves none', async () => {
+    const { handlers, store } = loadWorker(async () => new Response(''));
+    expect(await askTap(handlers, TAP_PATH)).toBe(false);
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/sessions/${SESSION}` } } });
+    expect(store.get('pterm-taps')?.size ?? 0).toBe(0);
+  });
+
+  it('without Cache Storage, a tap still counts once from memory', async () => {
+    const storage = cacheStorage();
+    storage.caches.open.mockImplementation(async () => { throw new Error('no cache'); });
+    const { handlers } = loadWorker(async () => new Response(''), [], storage);
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: TAP_PATH } } });
+    expect(await askTap(handlers, TAP_PATH)).toBe(true);
+    expect(await askTap(handlers, TAP_PATH)).toBe(false);
+  });
+
+  it('a tap expires after 30 s', async () => {
+    vi.useFakeTimers();
+    const { handlers, store } = loadWorker(async () => new Response(''));
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: TAP_PATH } } });
+    await vi.advanceTimersByTimeAsync(30_001);
+    expect(await askTap(handlers, TAP_PATH)).toBe(false);
+    expect(store.get('pterm-taps')?.size).toBe(0);
+  });
+
+  it('a peer\'s tap, or a tap before the worker restarted, is found by the app\'s worker through the cache', async () => {
+    const storage = cacheStorage();
+    const peerPath = `/c/vps.tailx.ts.net${TAP_PATH}`;
+    const window = { url: 'https://host.example/', focus: vi.fn(async () => undefined), postMessage: vi.fn() };
+    const peer = loadWorker(async () => new Response(''), [window], storage, 'https://host.example/push/vps.tailx.ts.net/');
+    await fire(peer.handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: peerPath } } });
+    expect(window.postMessage).toHaveBeenCalledWith({ type: 'open', path: peerPath });
+    const home = loadWorker(async () => new Response(''), [], storage);
+    expect(await askTap(home.handlers, peerPath)).toBe(true);
+    expect(await askTap(peer.handlers, peerPath)).toBe(false);
   });
 });

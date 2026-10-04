@@ -1,5 +1,5 @@
 import '@xterm/xterm/css/xterm.css';
-import { lazy, Suspense, useEffect, type ComponentProps, type ComponentType, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, type ComponentProps, type ComponentType, type ReactNode, useRef, useState, useSyncExternalStore } from 'react';
 import type { HTTPSettingsResponse, KeyName } from '../generated/protocol';
 import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
@@ -197,8 +197,45 @@ export function SessionLost({ title, where, onSessions, onStartNew }: {
   );
 }
 
+/**
+ * Live for a provider terminal (docs/herdr-provider.md, section 6): the
+ * workspace's tabs as chips in place of the session tabs, and none of the
+ * features that need a Termivoa project (history, rename, terminate, photos,
+ * project commands, preview, worktrees, start like this).
+ */
+export interface ProviderLive {
+  /** "herdr". */
+  readonly name: string;
+  /** "shop · silver-meadow". */
+  readonly place: string;
+  /** The chips row (ProviderChips). */
+  readonly chips: ReactNode;
+  /** "mac shows this terminal at phone size while it is open here." */
+  readonly sizeLine: string;
+  /** Opens the same terminal again after the attach ended. */
+  readonly onOpenAgain: () => Promise<void>;
+}
+
+/** The attach ended (the pane closed, or another client holds it): say so, and offer Open again. One tap opens once. */
+export function ProviderEnded({ onOpenAgain, onSessions }: { readonly onOpenAgain: () => Promise<void>; readonly onSessions: () => void }) {
+  const [opening, setOpening] = useState(false);
+  return (
+    <section className="dock readonly" aria-label="Terminal closed">
+      <p className="controller-line muted" role="status"><span className="dot muted" aria-hidden="true" />Closed here</p>
+      <p className="watching">This terminal is no longer open on this phone. Its row in Sessions stays.</p>
+      <Button
+        className="primary take"
+        busy={opening}
+        busyLabel="Opening…"
+        onClick={() => { setOpening(true); void onOpenAgain().finally(() => setOpening(false)); }}
+      >Open again</Button>
+      <div className="spread"><span /><button type="button" className="link" onClick={onSessions}>Sessions</button></div>
+    </section>
+  );
+}
+
 export function Live({
-  session, sessions, settings, multi = false, fontSize, runFirst, openComposer,
+  session, sessions, settings, multi = false, fontSize, runFirst, openComposer, provider,
   onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
 }: {
   readonly session: HostedSession;
@@ -224,6 +261,8 @@ export function Live({
   readonly onRevoked: (reason: string | undefined) => void;
   /** Absent when this host serves no previews. */
   readonly onPreview?: (port: number) => void;
+  /** Present for a provider terminal (herdr). */
+  readonly provider?: ProviderLive | undefined;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLDivElement>(null);
@@ -521,7 +560,7 @@ export function Live({
   }, [status.link, status.notice, onRevoked]);
 
   function openHistory() {
-    if (runtime?.connection.openHistory() === true) {
+    if (provider === undefined && runtime?.connection.openHistory() === true) {
       input.current?.blur();
       setPanel('history');
     }
@@ -621,7 +660,8 @@ export function Live({
     .filter((part) => part !== undefined).join(' · ');
   const showPlace = (placeHead.name !== '' || placeTail !== '') && (status.link === 'live' || !slowLink);
 
-  if (status.link === 'lost') {
+  const providerEnded = provider !== undefined && (status.link === 'lost' || status.sessionState === 'exited' || status.sessionState === 'exiting');
+  if (status.link === 'lost' && provider === undefined) {
     return <SessionLost title={session.title} where={multi ? session.computer.label : 'your computer'} onSessions={onSessions} onStartNew={onStartNew} />;
   }
 
@@ -629,20 +669,24 @@ export function Live({
     <main className={keyboard ? 'live keyboard' : 'live'}>
       {!fullPanel && (
         <>
-          <TabBar
-            tabs={liveTabs(sessions, session)}
-            current={session}
-            viewed={readViewed()}
-            liveCwd={liveCwd}
-            onOpen={onOpen}
-            onNew={onNew}
-            onMenu={() => setPanel('menu')}
-          />
+          {provider === undefined ? (
+            <TabBar
+              tabs={liveTabs(sessions, session)}
+              current={session}
+              viewed={readViewed()}
+              liveCwd={liveCwd}
+              onOpen={onOpen}
+              onNew={onNew}
+              onMenu={() => setPanel('menu')}
+            />
+          ) : provider.chips}
           <div className="status-line" role="status">
             <span className="place">
               <span className={status.link === 'live' ? 'dot accent' : 'dot amber'} aria-hidden="true" />
               {multi && <span className="place-computer"><ComputerTag computer={session.computer} /> · </span>}
-              {showPlace ? (
+              {provider !== undefined ? (
+                <><span className="home-badge">{provider.name}</span><span className="place-tail">{status.link === 'live' ? provider.place : linkLabel(status)}</span></>
+              ) : showPlace ? (
                 // Cut order: the parent folders (from their start), then shell and size, then the last folder.
                 <span className="place-text">
                   {placeHead.dir !== '' && <span className="place-dir"><span dir="ltr">{placeHead.dir}</span></span>}
@@ -656,6 +700,7 @@ export function Live({
             {current.worktree !== undefined && <WorktreeBadge worktree={current.worktree} />}
             <span className={`badge-text ${badge.tone}`}>{badge.text}</span>
           </div>
+          {provider !== undefined && !providerEnded && <p className="hint-text size-line">{provider.sizeLine}</p>}
         </>
       )}
 
@@ -760,19 +805,22 @@ export function Live({
         </div>
       )}
 
-      {panel === 'none' && question === undefined && !keyboard && (
+      {panel === 'none' && question === undefined && !keyboard && provider === undefined && (
         <PreviewChip previews={status.link === 'live' ? status.previews : current.previews} onOpen={onPreview} />
       )}
 
       {!fullPanel && (
         <div className={sheet ? 'dock-slot covered' : 'dock-slot'}>
-          {status.control === 'controller' ? (
+          {providerEnded ? (
+            <ProviderEnded onOpenAgain={provider.onOpenAgain} onSessions={onSessions} />
+          ) : status.control === 'controller' ? (
             <CockpitDock
               compact={keyboard}
               disabled={!canSend}
               latched={latched}
               alternate={!normalBuffer}
               historyEnabled={historyEnabled}
+              history={provider === undefined}
               onAgentKey={(key) => { if (runtime !== undefined) sendAgentKey(runtime.connection, key); }}
               onKey={(key: KeyName) => controller.current?.pressKey(key)}
               onLatch={(modifier) => controller.current?.toggleLatch(modifier)}
@@ -781,7 +829,7 @@ export function Live({
               onCompose={() => setPanel('composer')}
               onSnippets={() => {
                 // One read of the project's commands each time the sheet opens.
-                runtime?.connection.listTasks();
+                if (provider === undefined) runtime?.connection.listTasks();
                 setPanel('snippets');
               }}
               onHistory={openHistory}
@@ -792,6 +840,7 @@ export function Live({
             <ReadOnlyDock
               status={status}
               historyEnabled={historyEnabled}
+              history={provider === undefined}
               onTakeControl={() => runtime?.connection.takeControl()}
               onHistory={openHistory}
               onChanges={() => openChanges()}
@@ -808,6 +857,7 @@ export function Live({
           origin={origin}
           canSend={canSend}
           draftKey={draft}
+          photos={provider === undefined}
           onClose={() => setPanel('none')}
         />
       )}
@@ -818,7 +868,7 @@ export function Live({
           busy={!normalBuffer ? 'fullscreen' : status.agent?.state === 'working' || status.agent?.state === 'waiting' ? 'running' : undefined}
           tasks={tasks}
           onRetryTasks={() => runtime.connection.listTasks()}
-          onRunTask={onStartNew}
+          onRunTask={provider === undefined ? onStartNew : undefined}
           onClose={() => setPanel('none')}
         />
       )}

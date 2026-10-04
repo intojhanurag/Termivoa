@@ -11,6 +11,13 @@ import type {
   HTTPPairPollResponse,
   HTTPPairRedeemResponse,
   HTTPPreviewConfigResponse,
+  HTTPProviderCreateResponse,
+  HTTPProviderGroup,
+  HTTPProviderInfo,
+  HTTPProviderItem,
+  HTTPProviderOpenResponse,
+  HTTPProviderSnapshotResponse,
+  HTTPProviderTarget,
   HTTPPushConfigResponse,
   HTTPPushTestResponse,
   HTTPSessionListResponse,
@@ -42,16 +49,27 @@ export interface HttpBodies {
   readonly computerFoundResponse: HTTPComputerFoundResponse;
   readonly foundComputer: HTTPFoundComputer;
   readonly errorResponse: HTTPErrorResponse;
+  readonly providerInfo: HTTPProviderInfo;
+  readonly providerSnapshotResponse: HTTPProviderSnapshotResponse;
+  readonly providerGroup: HTTPProviderGroup;
+  readonly providerItem: HTTPProviderItem;
+  readonly providerTarget: HTTPProviderTarget;
+  readonly providerOpenResponse: HTTPProviderOpenResponse;
+  readonly providerCreateResponse: HTTPProviderCreateResponse;
 }
 
 export type HttpSchema = keyof HttpBodies;
 
 /** Lists checked item by item: an item that fails is dropped, the rest of the list stays. */
 const ITEMS: { readonly [Name in HttpSchema]?: ReadonlyArray<readonly [field: string, item: HttpSchema]> } = {
-  settingsResponse: [['projects', 'namedOption'], ['shellProfiles', 'namedOption']],
+  settingsResponse: [['projects', 'namedOption'], ['shellProfiles', 'namedOption'], ['providers', 'providerInfo']],
   sessionListResponse: [['sessions', 'sessionRecord']],
   computerListResponse: [['computers', 'computer']],
   computerFoundResponse: [['computers', 'foundComputer']],
+  // A peer's provider list is checked per group, per item and per target: one bad target hides only itself.
+  providerSnapshotResponse: [['groups', 'providerGroup']],
+  providerGroup: [['items', 'providerItem']],
+  providerItem: [['targets', 'providerTarget']],
 };
 
 export class InvalidResponseError extends Error {
@@ -80,7 +98,15 @@ export function parseHttpBody<Name extends HttpSchema>(name: Name, value: unknow
   for (const [field, item] of lists) {
     const list = record[field];
     if (Array.isArray(list)) {
-      record[field] = list.filter((entry) => httpValidators[item](entry));
+      // An item with lists of its own is filtered the same way before it is judged.
+      record[field] = list.filter((entry) => {
+        try {
+          parseHttpBody(item, entry);
+          return true;
+        } catch {
+          return false;
+        }
+      });
     }
   }
   if (!httpValidators[name](value)) {

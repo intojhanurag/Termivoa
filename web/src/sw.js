@@ -163,6 +163,12 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'skip-waiting') {
     self.skipWaiting();
   }
+  // The /p/… page asks whether a notification tap brought it (takeTap). One answer, on the port it sent.
+  const port = event.ports && event.ports[0];
+  if (event.data && event.data.type === 'tap?' && typeof event.data.path === 'string' && port) {
+    const answer = takeTap(event.data.path).catch(() => false).then((fresh) => port.postMessage({ type: 'tap', fresh }));
+    if (typeof event.waitUntil === 'function') event.waitUntil(answer);
+  }
 });
 
 self.addEventListener('fetch', (event) => {
@@ -185,12 +191,74 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-/* Push. A payload carries only a session name, a status and a session id,
- * never terminal text. Every push shows a notification: the subscription is
+/* Push. A payload carries only a name, a status and either a session id or a
+ * provider terminal (provider and target, docs/herdr-provider.md 4.4), never
+ * terminal text. Every push shows a notification: the subscription is
  * userVisibleOnly, and iOS revokes push for a worker that shows nothing. */
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const PROVIDER_ID = /^[a-z][a-z0-9-]{0,31}$/;
+const TARGET_ID = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$/;
 const KINDS = ['waiting', 'done', 'test'];
 const text = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+
+/* A notification tap on a provider terminal opens it at once (it may resize a
+ * pane on the computer), so the page must know a tap brought it there, not a
+ * link or a reload. The tap leaves a one-time record for that address here,
+ * for TAP_TTL_MS: in memory, and in Cache Storage (shared by this origin's
+ * workers, so a restarted worker or the app's worker after a peer's tap
+ * still finds it). The page asks with a 'tap?' message; the answer is never
+ * in the address. */
+const TAP_CACHE = 'pterm-taps';
+const TAP_TTL_MS = 30000;
+const PROVIDER_PATH = /^(\/c\/[a-z0-9.-]+(:\d{1,5})?)?\/p\/[a-z][a-z0-9-]{0,31}\/[^/]+$/;
+const taps = new Map();
+const tapKey = (token) => `/__pterm_tap/${token}`;
+
+async function rememberTap(path) {
+  const token = crypto.randomUUID();
+  const tap = { path, at: Date.now() };
+  taps.set(token, tap);
+  try {
+    await (await caches.open(TAP_CACHE)).put(tapKey(token), new Response(JSON.stringify(tap)));
+  } catch {
+    // Memory still has it while this worker runs.
+  }
+}
+
+/**
+ * Uses up one fresh tap record for `path` and drops records that are too old.
+ * Cache Storage is the record when it works (another worker may have used a
+ * record up); memory counts only when the cache cannot be opened.
+ */
+async function takeTap(path) {
+  const now = Date.now();
+  const fresh = (tap) => tap !== null && typeof tap === 'object' && typeof tap.at === 'number' && now >= tap.at && now - tap.at <= TAP_TTL_MS;
+  let found = false;
+  const use = (tap) => {
+    const match = !found && fresh(tap) && tap.path === path;
+    found = found || match;
+    return match || !fresh(tap);
+  };
+  let cache;
+  try {
+    cache = await caches.open(TAP_CACHE);
+  } catch {
+    for (const [token, tap] of [...taps]) if (use(tap)) taps.delete(token);
+    return found;
+  }
+  try {
+    for (const request of await cache.keys()) {
+      const response = await cache.match(request);
+      if (use(response ? await response.json().catch(() => null) : null)) {
+        await cache.delete(request);
+        taps.delete(String(typeof request === 'string' ? request : new URL(request.url).pathname).slice(tapKey('').length));
+      }
+    }
+  } catch {
+    // A cache that fails half way: what was used up stays used up.
+  }
+  return found;
+}
 
 self.addEventListener('push', (event) => {
   let data = {};
@@ -203,19 +271,24 @@ self.addEventListener('push', (event) => {
     // Not JSON: fall back to the generic notification below.
   }
   const sessionId = typeof data.sessionId === 'string' && SESSION_ID.test(data.sessionId) ? data.sessionId : '';
+  // Exactly one of a session and a provider terminal; anything else opens /.
+  const provider = data.sessionId === undefined && typeof data.provider === 'string' && PROVIDER_ID.test(data.provider)
+    && typeof data.target === 'string' && TARGET_ID.test(data.target) ? { id: data.provider, target: data.target } : undefined;
   const kind = KINDS.includes(data.kind) ? data.kind : 'test';
   const body = text(data.body, 160);
   const title = text(data.title, 120) || 'Termivoa';
-  // A peer's notification opens /c/<host>/sessions/<id>. Its title and body
+  // A peer's notification opens /c/<host>/…. Its title and body
   // both start with its computer (the first DNS label of the scope's host):
   // the peer writes the rest, so it could otherwise name another computer.
   const peer = PEER_HOST && `/c/${PEER_HOST}`;
   const label = PEER_HOST.split('.')[0];
+  const url = provider ? `${peer}/p/${provider.id}/${encodeURIComponent(provider.target)}`
+    : sessionId ? `${peer}/sessions/${sessionId}` : '/';
   event.waitUntil(self.registration.showNotification(PEER_HOST ? `${label} · ${title}` : title, {
     body: PEER_HOST ? [label, body].filter(Boolean).join(' · ') : body,
-    tag: `${peer}${sessionId || 'pterm'}:${kind}`,
+    tag: provider ? `${peer}p:${provider.id}:${provider.target}:${kind}` : `${peer}${sessionId || 'pterm'}:${kind}`,
     icon: '/icon-192.png',
-    data: { url: sessionId ? `${peer}/sessions/${sessionId}` : '/' },
+    data: { url },
   }));
 });
 
@@ -228,7 +301,9 @@ self.addEventListener('notificationclick', (event) => {
   const url = resolved.origin === self.location.origin ? resolved.href : `${self.location.origin}/`;
   // The open app routes to this path itself (App.tsx checks it again).
   const open = { type: 'open', path: new URL(url).pathname };
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+  // Kept before the window moves, so the page finds it when it asks.
+  const remembered = PROVIDER_PATH.test(open.path) ? rememberTap(open.path) : Promise.resolve();
+  event.waitUntil(Promise.all([self.clients.matchAll({ type: 'window', includeUncontrolled: true }), remembered]).then(async ([windows]) => {
     // With several windows, the one the user sees: visible and focused, then visible, then any.
     const ours = windows.filter((item) => new URL(item.url).origin === self.location.origin);
     const client = ours.find((item) => item.visibilityState === 'visible' && item.focused)

@@ -205,8 +205,8 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
   readonly busy: TerminalBusy | undefined;
   readonly tasks: TasksView | undefined;
   readonly onRetryTasks: () => void;
-  /** Starts a new session in the same project and shell that runs this command first; settles when it opened or failed. */
-  readonly onRunTask: (command: string) => Promise<void>;
+  /** Starts a new session in the same project and shell that runs this command first; settles when it opened or failed. Absent: no project commands (a provider terminal). */
+  readonly onRunTask?: ((command: string) => Promise<void>) | undefined;
   readonly onClose: () => void;
 }) {
   const [openTask, setOpenTask] = useState<ProjectTask>();
@@ -309,7 +309,7 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
         </div>
       ) : (
         <>
-          <ProjectTasks
+          {onRunTask !== undefined && <ProjectTasks
             view={tasks}
             open={openTask}
             more={more}
@@ -320,7 +320,7 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
             onRetry={onRetryTasks}
             onRun={(task) => { setStarting(true); void onRunTask(task.command).finally(() => setStarting(false)); }}
             onType={(task) => send(taskSnippet(task), false)}
-          />
+          />}
           <h3 className="caps">Saved snippets</h3>
           {!canSend && <Notice tone="neutral" role="status">Take control to send snippets. You can still edit them.</Notice>}
           {problem !== undefined && <p role="alert" className="error">{problem}</p>}
