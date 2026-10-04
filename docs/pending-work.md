@@ -88,8 +88,6 @@ In this order.
      Termivoa should double the configured key too.
    - **Named herdr sessions:** only the default session shows.
    - **Windows:** herdr is not supported there.
-   - **Landing page:** `site/public/index.html` has no herdr section yet.
-     Design it in Paper first and show the owner (as for #165).
    - **herdr installed later:** the phone shows it only the next time the
      app comes to the front (settings are read again then).
    - **"‹ Sessions" in a herdr terminal** goes to the All tab, not the herdr
