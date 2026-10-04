@@ -550,3 +550,35 @@ func mustStart(t *testing.T, server *herdrtest.Server) {
 		t.Fatal(err)
 	}
 }
+
+func TestInspectAndCustomPrefix(t *testing.T) {
+	root := tempRoot(t)
+	home := filepath.Join(root, "home")
+	binary := fakeBinary(t, root, true)
+	server := startFake(t, home)
+	server.Snapshot(readFixture(t, "snapshot-0.8.2.json"))
+	config := Config{BinaryPaths: []string{binary}, Home: home}
+	status := Inspect(context.Background(), config)
+	if status.Binary != binary || status.State != protocol.HTTPProviderStateReady || status.Version != "0.8.2" ||
+		status.Protocol != 20 || !status.CanCreate || !status.AttachAny || status.CustomPrefix {
+		t.Fatalf("status = %+v", status)
+	}
+	configFile := filepath.Join(home, ".config", "herdr", "config.toml")
+	for text, want := range map[string]bool{
+		"[keys]\n# prefix = \"ctrl+a\"\n":             false,
+		"[keys]\nprefix = \"ctrl+b\" # default\n":     false,
+		"[ui]\nprefix = \"ctrl+a\"\n":                 false,
+		"[keys]\nhelp = \"prefix+?\"\nprefix = 'f12'": true,
+	} {
+		if err := os.WriteFile(configFile, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := Inspect(context.Background(), config).CustomPrefix; got != want {
+			t.Errorf("%q: custom prefix = %v", text, got)
+		}
+	}
+	server.Stop()
+	if status := Inspect(context.Background(), config); status.State != protocol.NotRunning || status.Binary == "" {
+		t.Fatalf("stopped = %+v", status)
+	}
+}
