@@ -17,7 +17,7 @@ Not released yet. This is not in `v0.1.0-beta.2`.
 
 You do not need control. Termivoa remembers the last tab for each session while the app is open.
 
-![The Files tab lists the folders node_modules and src first, then .gitignore, big.log, logo.png, README.md with their sizes; a link that points outside the project is dimmed.](../../../../assets/docs/phone-files-list.webp)
+![The Files tab of the fix-cache-headers worktree lists the folders src and test first, then .gitignore, package.json, README.md and tsconfig.json with their sizes.](../../../../assets/docs/phone-files-list.webp)
 
 ## Which folder does Files show?
 
@@ -34,7 +34,7 @@ Tap a folder to open it. Tap a name in the path at the top to go back up.
 
 Tap a file to read it with line numbers. Long lines scroll sideways and never wrap.
 
-![The file viewer shows src/app.ts with line numbers; line 42 is highlighted, and the Ask agent about this file button is at the bottom.](../../../../assets/docs/phone-files-viewer.webp)
+![The file viewer shows src/lib/cache.ts with line numbers, opened from a tapped path; line 11 is highlighted, Copy path is at the top and the Ask agent about this file button is at the bottom.](../../../../assets/docs/phone-files-viewer.webp)
 
 | You see | What it means |
 | --- | --- |

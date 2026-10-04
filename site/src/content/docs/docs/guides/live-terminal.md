@@ -43,7 +43,7 @@ The action buttons are **type** (opens the phone keyboard), **compose**, **snips
 
 With the phone keyboard open, all keys fold into one scrolling row, and the terminal keeps its size so full-screen agents do not redraw. `↓` follows `↑` there (Next beta).
 
-![With the keyboard open, one row of keys stays under the terminal: esc, ^C, mode, ↑, ↓, 1, 2 and hide keyboard.](../../../../assets/docs/key-row.webp)
+![With the keyboard open, one row of keys stays under the terminal: esc, ^C, mode (⇧⇥), ↑, ↓, 1, 2 and hide keyboard.](../../../../assets/docs/key-row.webp)
 
 ## Write longer text with compose
 

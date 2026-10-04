@@ -1903,6 +1903,24 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   52,089 bytes (gzip 8,506 → 10,791). Not reached in the screenshots: the
   green "vps is added" toast (needs a real approval). Site screenshots are a
   follow-up.
+- **Bone & ink pictures** (`docs/bone-ink-screens`, 2026-10-04): every app
+  picture on the docs site, the landing page and the README retaken in the
+  new look, from isolated dev stacks with demo data only. Docs: 16 phone
+  screens and `key-row.webp` retaken with `scripts/docs-screenshots/capture.mjs`
+  (now also Files, the pairing code and a dev-server preview) and the
+  multi-computer ones with the new `scripts/docs-screenshots/computers.mjs`
+  (two dev stacks through the e2e harness library, demo tailnet only); two
+  new pictures in `guides/computers.md`: **Found on your network** with
+  **Add**, and the bar **Adding vps… approve on vps**. Landing: `answer`,
+  `sessions` and `preview` (was `preview-nightdrive`) are real app screens,
+  `lock.webp` and `og.png` are rendered from `site/public/_lock.html` and
+  `_og.html` (`capture.mjs landing`); the hand-built mock-ups (the phone in
+  "How it works", the Found row in "More computers?") restyled to Bone & ink,
+  glows removed. README: the four PNGs in `docs/images/`. Evidence:
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && pnpm build`;
+  proof screenshots of the built docs and landing at 390 and 1280 px (not
+  committed). Not changed: `docs/images/multi-computer-concept.png` (internal
+  concept drawing).
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit

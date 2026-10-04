@@ -12,7 +12,8 @@
 //
 // The stand-in agent (agent.js) is neutral: no vendor name or logo.
 import { execFileSync, spawn } from 'node:child_process';
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { agentEdits, CODE, HOME, PIDFILE, PTERM, setup, stopStack } from './setup.mjs';
 
 const BASE = 'http://127.0.0.1:8788';
@@ -76,6 +77,16 @@ async function browser(profile) {
       await evaluate(`document.querySelector('.terminal-input').blur()`);
       await sleep(500);
     },
+    // Taps text on the terminal screen, as a finger would (a path opens in Files).
+    async tapTerminal(needle) {
+      const point = await evaluate(`(() => { const walker = document.createTreeWalker(document.querySelector('.xterm-rows'), NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) { const at = node.textContent.indexOf(${JSON.stringify(needle)}); if (at < 0) continue;
+          const range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + 8); const r = range.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; } return null; })()`);
+      if (!point) throw new Error(`"${needle}" is not on the terminal screen`);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+      for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...point });
+      await sleep(1500);
+    },
     async control() { if (await b.tryClick('Take control')) await sleep(1200); },
     // crop: [selector, extra CSS px above, extra below] for a second, cropped image.
     async shot(name, crop) {
@@ -100,12 +111,13 @@ async function browser(profile) {
   return b;
 }
 
-async function pair(b, label) {
+async function pair(b, label, codeShot) {
   const link = pterm('pair', '--no-qr', '--no-wait').match(/http:\/\/\S+\/pair#\S+/)[0];
   await b.go(link);
   await b.setField('#device-label', label);
   await b.click('Pair this device');
   await sleep(1500);
+  if (codeShot) { await b.waitText('Does your computer show this code?'); await b.shot(codeShot); }
   const id = pterm('pair', 'pending').split('\n')[1].split(/\s+/)[0];
   pterm('pair', 'approve', id);
   await b.waitText('Sessions');
@@ -154,7 +166,7 @@ async function capture() {
   const b = await browser('/tmp/demo-chrome-phone');
   try {
     step = 'pair-done';
-    await pair(b, 'iPhone');
+    await pair(b, 'iPhone', 'pair-code');
     await b.waitText('connected');
     await b.shot('pair-done');
 
@@ -179,6 +191,26 @@ async function capture() {
     await b.control();
     await b.type('git log --oneline -3');
     await sleep(1000);
+
+    // Files in the worktree session: the list at the top, then a path tapped in the terminal.
+    step = 'files';
+    await b.click('changes');
+    await b.click('Files');
+    await b.waitText('package.json');
+    await b.evaluate(`document.activeElement?.blur()`);
+    await sleep(1000);
+    await b.shot('files-list');
+    await b.click('Done');
+    await b.type('clear');
+    await b.type('grep -rn --color=never TTL_MS src');
+    await sleep(1000);
+    await b.tapTerminal('src/lib/cache.ts:11');
+    await b.waitText('Ask agent about this file');
+    await b.evaluate(`document.activeElement?.blur()`);
+    await sleep(1200);
+    await b.shot('files-viewer');
+    await b.click('Back to files');
+    await b.click('Done');
 
     step = 'live-terminal';
     await b.go(`${BASE}/`);
@@ -255,6 +287,17 @@ async function capture() {
     await sleep(1500);
     await b.tryClick('Dismiss');
     await b.shot('read-only');
+
+    // A dev server and a working agent in docs-site: the dev-server preview (landing page).
+    step = 'preview';
+    await b.go(`${BASE}/`);
+    await b.openRow('docs-site');
+    await b.control();
+    await b.type('python3 -m http.server 4321 -b 127.0.0.1 -d public >/dev/null 2>&1 & agent work');
+    await b.waitText('Preview ready', 30000);
+    await b.click('Open preview of port 4321');
+    await sleep(4000);
+    await b.shot('preview');
   } catch (e) {
     console.log('ERROR at', step, e.message);
     await b.shot('fail').catch(() => {});
@@ -287,6 +330,34 @@ async function convert() {
   } finally { b.chrome.kill(); }
 }
 
+// The landing page pictures in site/public/assets: three app screens from this run, and
+// the lock screen (_lock.html) and the social card (_og.html) rendered from the site itself.
+async function landing() {
+  const site = new URL('../../site/public/', import.meta.url).pathname;
+  for (const [from, to] of [['answer-card', 'answer'], ['sessions', 'sessions'], ['preview', 'preview']]) copyFileSync(`${DIR}${from}.webp`, `${site}assets/${to}.webp`);
+  const types = { html: 'text/html', css: 'text/css', woff2: 'font/woff2', webp: 'image/webp', svg: 'image/svg+xml' };
+  const server = createServer((req, res) => {
+    try { const path = decodeURIComponent(new URL(req.url, 'http://x').pathname); if (path.includes('..')) throw new Error('no');
+      const body = readFileSync(site + path.slice(1)); res.writeHead(200, { 'Content-Type': types[path.split('.').pop()] ?? 'application/octet-stream' }); res.end(body); } catch { res.writeHead(404); res.end(); }
+  }).listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  const at = `http://127.0.0.1:${server.address().port}`;
+  const b = await browser('/tmp/demo-chrome-landing');
+  try {
+    await b.go(`${at}/_lock.html`);
+    await b.evaluate('document.fonts.ready.then(() => true)');
+    const lock = (await b.send('Page.captureScreenshot', { format: 'webp', quality: 85 })).data;
+    writeFileSync(`${site}assets/lock.webp`, Buffer.from(lock, 'base64'));
+    await b.send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 630, deviceScaleFactor: 1, mobile: false });
+    await b.go(`${at}/_og.html`);
+    await b.evaluate('Promise.all([document.fonts.ready, ...[...document.images].map((i) => i.decode())]).then(() => true)');
+    const og = (await b.send('Page.captureScreenshot', { format: 'png' })).data;
+    writeFileSync(`${site}assets/og.png`, Buffer.from(og, 'base64'));
+    console.log('landing: answer, sessions, preview, lock, og');
+  } finally { b.chrome.kill(); server.close(); }
+}
+
+if (process.argv[2] === 'landing') { await landing(); process.exit(0); }
 if (process.argv[2] !== 'convert') { await freshStack(); await capture(); }
 await convert();
 process.exit(0);

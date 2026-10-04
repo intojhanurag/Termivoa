@@ -3,7 +3,8 @@
   --text: #ECE8E1;
   --muted: #8C93A0;
   --soft: #A9AFB9;
-  --line: #1E232C;
+  --paper: #0F1217;
+  --line: #22272F;
   --line-strong: #3A414D;
   --signal: #64D8E8;
   --amber: #F2B544;
@@ -77,13 +78,12 @@ h2 em { font-style: italic; }
   padding: 10px;
   border-radius: 58px;
   border: 2px solid var(--line-strong);
-  background: #0B0E14;
+  background: var(--paper);
   width: 414px;
   max-width: 100%;
 }
 .device img { width: 100%; border-radius: 48px; }
 .tilt-right { transform: rotate(2.5deg); }
-.glow { box-shadow: 0 40px 120px rgba(100, 216, 232, 0.10); }
 
 /* Hero */
 .hero { display: flex; justify-content: space-between; align-items: center; gap: 40px; padding-block: 48px 120px; }
@@ -115,17 +115,16 @@ h1 { display: inline-flex; flex-direction: column; gap: 6px; font-weight: 400; }
 .node { display: flex; flex-direction: column; align-items: center; gap: 18px; flex-shrink: 0; }
 .label { font-size: 26px; }
 .mini-phone {
-  width: 130px; height: 230px; border: 2px solid var(--text); border-radius: 24px;
-  padding: 22px 14px; display: flex; flex-direction: column; gap: 10px;
-  font-family: var(--mono); font-size: 11px;
+  width: 130px; height: 230px; border: 2px solid var(--text); border-radius: 24px; background: var(--ground);
+  padding: 22px 12px; display: flex; flex-direction: column;
 }
-.grabber { width: 40px; height: 4px; border-radius: 2px; background: var(--line-strong); }
-.dot-row { display: flex; align-items: center; gap: 6px; }
-.dot-row.muted { color: var(--muted); }
-.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-.dot.amber { background: var(--amber); }
-.dot.cyan { background: var(--signal); }
-.dot.ring { border: 1.5px solid var(--muted); }
+/* The app's Sessions screen in small: serif title, hairline rows, mono caps status words. */
+.mini-title { font-size: 22px; line-height: 26px; padding-bottom: 8px; }
+.mini-row { display: flex; flex-direction: column; gap: 1px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.mini-row b { font-family: system-ui, -apple-system, sans-serif; font-size: 12px; font-weight: 600; line-height: 16px; }
+.mini-row i { font-style: normal; font-family: var(--mono); font-size: 9px; line-height: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.mini-row i.amber-text { color: var(--amber); }
+.mini-row i.cyan-text { color: var(--signal); }
 /* The phone box is 230px tall, so its middle is at 115px: the lock and wires line up with it. */
 .wire { flex: 1; min-width: 40px; margin: 114px 22px 0; border-top: 2px dashed var(--muted); opacity: 0.8; }
 .wire-cyan { border-color: var(--signal); }
@@ -146,7 +145,7 @@ h1 { display: inline-flex; flex-direction: column; gap: 6px; font-weight: 400; }
 .fan .device { position: absolute; }
 .fan-left { left: 20px; top: 110px; transform: rotate(-7deg); }
 .fan-right { left: 690px; top: 110px; transform: rotate(7deg); }
-.fan-center { left: 355px; top: 40px; border-color: #4A525F; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7); z-index: 1; }
+.fan-center { left: 355px; top: 40px; border-color: #4A525F; z-index: 1; }
 .captions { display: flex; justify-content: space-between; gap: 40px; padding-block: 40px 160px; }
 .captions > div { max-width: 320px; display: flex; flex-direction: column; gap: 10px; }
 .captions h3 { font-size: 28px; font-weight: 500; line-height: 1.2; }
@@ -170,7 +169,7 @@ h1 { display: inline-flex; flex-direction: column; gap: 6px; font-weight: 400; }
 .setup-card {
   position: relative; width: 580px; max-width: 100%;
   transform: rotate(1.5deg);
-  border: 2px solid var(--text); border-radius: 6px; background: #0D1015;
+  border: 2px solid var(--text); border-radius: 6px; background: var(--paper);
   padding: 36px 40px 40px; display: flex; flex-direction: column; gap: 22px;
 }
 .tape { position: absolute; left: 50%; top: -16px; width: 140px; height: 30px; margin-left: -70px; background: rgba(242, 181, 68, 0.18); transform: rotate(-2deg); }
@@ -181,19 +180,17 @@ h1 { display: inline-flex; flex-direction: column; gap: 6px; font-weight: 400; }
 .card-note { position: absolute; right: 32px; bottom: -44px; font-size: 26px; }
 /* Add a computer: the same card; real CLI lines are long, so they wrap like a terminal. */
 .add-card pre { white-space: pre-wrap; }
-.found-row {
-  display: flex; align-items: center; gap: 14px; width: 420px; max-width: 100%;
-  padding: 12px 12px 12px 16px; border-radius: 16px; background: #121722;
-  box-shadow: inset 0 0 0 1px rgba(100, 216, 232, 0.35);
-}
-.found-row > div { flex: 1; display: flex; flex-direction: column; gap: 3px; }
-.found-row .caps { font-size: 11px; line-height: 14px; letter-spacing: 0.1em; }
-.found-row b { font-family: var(--mono); font-size: 17px; line-height: 22px; font-weight: 600; color: #D5DCE5; }
+/* The app's Settings → Found on your network, as it looks: caps heading with the live dot, a hairline row, a bone Add pill. */
+.found { width: 420px; max-width: 100%; }
+.found-head { display: flex; align-items: center; gap: 8px; font-size: 11px; line-height: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.found-head::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: var(--signal); }
+.found-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.found-row > div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.found-row b { font-family: system-ui, -apple-system, sans-serif; font-size: 17px; line-height: 22px; font-weight: 600; }
+.found-row span:not(.found-add) { font-family: var(--mono); font-size: 13px; line-height: 18px; color: var(--muted); }
 .found-add {
-  display: inline-flex; align-items: center; height: 38px; padding-inline: 16px; border-radius: 999px;
-  background: linear-gradient(in oklab 180deg, oklab(87.2% -0.080 -0.038), oklab(80.2% -0.096 -0.051));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 6px 18px -6px rgba(100, 216, 232, 0.6);
-  color: #061418; font-family: 'Inter', system-ui, sans-serif; font-size: 15px; font-weight: 700; line-height: 18px;
+  display: inline-flex; align-items: center; height: 38px; padding-inline: 18px; border-radius: 999px;
+  background: var(--text); color: var(--ground); font-family: system-ui, -apple-system, sans-serif; font-size: 15px; font-weight: 600; line-height: 18px;
 }
 
 /* Closing and footer */

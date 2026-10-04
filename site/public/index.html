@@ -53,11 +53,11 @@
         </div>
       </div>
       <figure class="hero-phone">
-        <p class="hand note-hero" aria-hidden="true">claude is asking.<br>answer from the bus.
+        <p class="hand note-hero" aria-hidden="true">your agent is asking.<br>answer from the bus.
           <svg width="120" height="46" viewBox="0 0 120 46" fill="none"><path d="M6 6c30 4 64 14 100 30" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M96 38l12-1-6-11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </p>
-        <div class="device tilt-right glow">
-          <img src="/assets/answer.webp" width="390" height="844" alt="Termivoa on a phone: Claude Code asks “Run this command?” and three answer buttons: Yes, Yes and don't ask again, No.">
+        <div class="device tilt-right">
+          <img src="/assets/answer.webp" width="390" height="844" alt="Termivoa on a phone: the agent in acme-web asks “Run the test suite?” and the answer card offers three buttons: Yes; Yes, and don't ask again; No, tell the agent what to do.">
         </div>
       </figure>
     </section>
@@ -70,10 +70,10 @@
       <div class="diagram" role="img" aria-label="Your phone connects to your computer through your private Tailscale network, with a lock in the middle.">
         <div class="node node-phone">
           <div class="mini-phone">
-            <span class="grabber"></span>
-            <span class="dot-row"><i class="dot amber"></i>claude</span>
-            <span class="dot-row"><i class="dot cyan"></i>dev</span>
-            <span class="dot-row muted"><i class="dot ring"></i>codex</span>
+            <span class="mini-title">Sessions</span>
+            <span class="mini-row"><b>claude</b><i class="amber-text">Waiting</i></span>
+            <span class="mini-row"><b>dev</b><i class="cyan-text">Working</i></span>
+            <span class="mini-row"><b>codex</b><i>No one</i></span>
           </div>
           <span class="hand label">your phone</span>
         </div>
@@ -109,13 +109,13 @@ funnel    ✗ off (never)</pre>
       </div>
       <div class="fan">
         <div class="device fan-left">
-          <img src="/assets/lock.webp" width="390" height="844" loading="lazy" alt="Lock screen with two Termivoa notifications: claude is waiting for you, and web is done, your turn.">
+          <img src="/assets/lock.webp" width="390" height="844" loading="lazy" alt="Lock screen with two Termivoa notifications: acme-web is waiting for you, acme-web · tap to answer; and billing-api is done · your turn, Worked for 12 min.">
         </div>
         <div class="device fan-center">
-          <img src="/assets/sessions.webp" width="390" height="844" loading="lazy" alt="Sessions list: claude waiting with an Answer button, codex working, web your turn, zsh exited.">
+          <img src="/assets/sessions.webp" width="390" height="844" loading="lazy" alt="Sessions list on your computer: acme-web waiting with Run the test suite? and Answer, the worktree fix-cache-headers, billing-api working, and docs-site.">
         </div>
         <div class="device fan-right">
-          <img src="/assets/preview-nightdrive.webp" width="390" height="844" loading="lazy" alt="The dev server from localhost:5173 open on the phone: a colourful music player app called nightdrive, with a small claude working pill.">
+          <img src="/assets/preview.webp" width="390" height="844" loading="lazy" alt="The dev server from localhost:4321 open on the phone: the Acme docs page, with a bar below that says the session docs-site is working and a Tell agent button.">
         </div>
       </div>
       <div class="wrap captions">
@@ -213,9 +213,12 @@ Sent to mac.
 Waiting for your phone…
 Approve only if your phone shows 742-172 [y/N] y
 Done. vps is in your Termivoa app on mac.</pre>
-        <div class="found-row">
-          <div><span class="caps">Found on your network</span><b>vps</b></div>
-          <span class="found-add" aria-hidden="true">+ Add</span>
+        <div class="found" aria-hidden="true">
+          <p class="caps found-head">Found on your network</p>
+          <div class="found-row">
+            <div><b>vps</b><span>vps.tailx.ts.net</span></div>
+            <span class="found-add">Add</span>
+          </div>
         </div>
         <span class="hand amber-text card-note">no links. no QR. just y.</span>
       </div>
