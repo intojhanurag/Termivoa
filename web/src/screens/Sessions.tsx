@@ -9,6 +9,7 @@ import {
 } from './allSessions';
 import { sessionName } from './folder';
 import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type ProviderTap } from './Herdr';
+import { ProviderCreateSheet } from './ProviderCreate';
 import { NewSessionHelp } from './NewSession';
 import { providerTabs, wordSummary, type ProviderEntry } from './providers';
 import { Button, Notice, PairVia } from './ui';
@@ -325,7 +326,7 @@ const canStart = (entry: ComputerEntry) => entry.status.kind === 'ok'
 
 export function Sessions({
   entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onReload, onRetry, onFailure, onUpdate,
-  providers = [], tab, onOpenTarget, onProviderRetry, onCreateIn,
+  providers = [], tab, onOpenTarget, onProviderRetry, onCreated,
 }: {
   /** Every computer, home first, with what it answered. */
   readonly entries: ReadonlyArray<ComputerEntry>;
@@ -349,9 +350,10 @@ export function Sessions({
   readonly tab?: string | undefined;
   readonly onOpenTarget?: (tap: ProviderTap) => void;
   readonly onProviderRetry?: (key: string) => Promise<void>;
-  /** The + of a project row (milestone M2). */
-  readonly onCreateIn?: ((entry: ProviderEntry, group: HTTPProviderGroup) => void) | undefined;
+  /** A worktree was made with the + of a project row (milestone M2): open its terminal; `notice` says what did not start. */
+  readonly onCreated?: ((tap: ProviderTap, notice: string | undefined, key: string) => void) | undefined;
 }) {
+  const [creating, setCreating] = useState<{ readonly entry: ProviderEntry; readonly group: HTTPProviderGroup }>();
   const [error, setError] = useState<string | undefined>(message);
   const tabs = providerTabs(providers);
   const [chosenProvider, setProvider] = useState<string | undefined>(tab);
@@ -442,7 +444,7 @@ export function Sessions({
       />
 
       {provider !== undefined && (
-        <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreateIn} onRetry={retryProvider} />
+        <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider} />
       )}
 
       {provider === undefined && help?.kind === 'ok' && (
@@ -488,6 +490,16 @@ export function Sessions({
         <div className="bottom-bar">
           <button type="button" className="primary wide" onClick={() => openTarget(blocked)}>Open the blocked agent</button>
         </div>
+      )}
+
+      {creating !== undefined && onCreated !== undefined && (
+        <ProviderCreateSheet
+          entry={creating.entry}
+          group={creating.group}
+          onCreated={(tap, notice) => onCreated(tap, notice, creating.entry.key)}
+          onFailure={onFailure}
+          onClose={() => setCreating(undefined)}
+        />
       )}
 
       {provider === undefined && canCreate && (

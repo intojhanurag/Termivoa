@@ -108,13 +108,15 @@ type Phase =
   | { readonly kind: 'error'; readonly text: string };
 
 export function ProviderScreen({
-  computer, provider, targetId, tapped, entry, fontSize, multi, onChip, onGone, onSessions, onSettings, onFailure, onRevoked,
+  computer, provider, targetId, tapped, notice, entry, fontSize, multi, onChip, onGone, onSessions, onSettings, onFailure, onRevoked,
 }: {
   readonly computer: Computer;
   readonly provider: string;
   readonly targetId: string;
   /** A tap brought the user here: open at once. */
   readonly tapped: boolean;
+  /** Said once over the terminal: what did not start after a new worktree. */
+  readonly notice?: string | undefined;
   /** The provider's latest read on that computer, for names and chips; undefined until it answers. */
   readonly entry: ProviderEntry | undefined;
   readonly fontSize: number;
@@ -127,6 +129,7 @@ export function ProviderScreen({
   readonly onRevoked: (reason: string | undefined) => void;
 }) {
   const [phase, setPhase] = useState<Phase>(tapped ? { kind: 'opening' } : { kind: 'ask' });
+  const [note, setNote] = useState(notice);
   const name = entry?.info.name ?? provider;
   const found = entry === undefined ? undefined : findTarget({ groups: groupsOf(entry) }, targetId);
   // A read that is ready and lacks the target: it left. Only before anything opened here.
@@ -179,6 +182,13 @@ export function ProviderScreen({
     const noop = () => undefined;
     const none = async () => undefined;
     return (
+      <>
+      {note !== undefined && (
+        <div className="banner" role="status">
+          <span className="banner-text">{note}</span>
+          <span className="banner-actions"><button type="button" className="link" onClick={() => setNote(undefined)}>Dismiss</button></span>
+        </div>
+      )}
       <Live
         key={`${phase.session.id}/${phase.session.generation}`}
         session={providerHosted(phase.session, computer)}
@@ -196,6 +206,7 @@ export function ProviderScreen({
         onStartWorktree={none}
         onRevoked={onRevoked}
       />
+      </>
     );
   }
 

@@ -76,7 +76,7 @@ type View =
   | { readonly name: 'live'; readonly session: HostedSession; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
   | { readonly name: 'preview'; readonly session: HostedSession; readonly port: number }
   /** One provider terminal (herdr). `tapped`: a tap in the app or a confirmed notification tap brought the user here, so it opens at once. */
-  | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: boolean }
+  | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: boolean; readonly notice?: string }
   | { readonly name: 'settings' }
   | { readonly name: 'add-computer' }
   | { readonly name: 'peer-add' };
@@ -977,6 +977,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           providers={providers.entries}
           tab={view.tab}
           onOpenTarget={openTarget}
+          onCreated={(tap, notice, key) => {
+            void providers.reload(key);
+            navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: true, ...(notice === undefined ? {} : { notice }) });
+          }}
           onProviderRetry={providers.reload}
           offerPush={homeEntry?.status.kind === 'ok'}
           onOpen={openSession}
@@ -1066,6 +1070,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               provider={view.provider}
               targetId={view.target}
               tapped={view.tapped}
+              {...(view.notice === undefined ? {} : { notice: view.notice })}
               entry={providers.entries.find((entry) => entry.computer.origin === view.computer.origin && entry.info.id === view.provider)}
               fontSize={fontSize}
               multi={computers.length > 1}
