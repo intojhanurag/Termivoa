@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -61,6 +62,11 @@ type SessionConfig struct {
 	// Notify receives agent transitions worth a push notification. It is
 	// called on the session actor and must not block. Nil disables them.
 	Notify func(webpush.Event)
+	// DoublePrefix doubles every ctrl+b byte (0x02) the single PTY writer
+	// sends, after the input is built: a provider session's attach client
+	// then passes one literal ctrl+b and never sees a prefix command
+	// (docs/herdr-provider.md, section 6, rule 7; N2).
+	DoublePrefix bool
 }
 
 // SessionStatus is an immutable lifecycle snapshot. A nil ExitCode means the
@@ -197,6 +203,7 @@ type Session struct {
 	cwdRepublish bool
 	directory    string              // Project folder the process started in; immutable.
 	termination  *sessionTermination // Actor-owned; one bounded attempt per session.
+	doublePrefix bool                // Immutable; see SessionConfig.DoublePrefix.
 }
 
 type sessionTermination struct {
@@ -371,6 +378,7 @@ func startSessionRuntime(
 		cwdRead:             readOSDirectory(process),
 		cwdResults:          make(chan string, 1),
 		directory:           config.Process.Directory,
+		doublePrefix:        config.DoublePrefix,
 	}
 
 	session.pumpWG.Add(3)
@@ -621,6 +629,9 @@ func (session *Session) readPTY() {
 
 func (session *Session) writePTY() {
 	for output := range session.terminal.Output() {
+		if session.doublePrefix {
+			output = bytes.ReplaceAll(output, []byte{0x02}, []byte{0x02, 0x02})
+		}
 		if _, err := session.process.Write(output); err != nil {
 			session.wrote <- err
 			return

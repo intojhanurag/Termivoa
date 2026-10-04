@@ -447,6 +447,88 @@ func (handler *gatewayHandler) upload(response http.ResponseWriter, request *htt
 	handler.respond(response, request, result, err)
 }
 
+// provider reads one provider of this computer from the broker's cache
+// (GET) or changes its Integrations settings (PATCH). The broker checks the
+// credential and its origin like /api/v1/sessions, and refuses a provider
+// this computer does not have.
+func (handler *gatewayHandler) provider(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodGet, http.MethodPatch) {
+		return
+	}
+	provider := request.PathValue("provider")
+	if request.Method == http.MethodGet {
+		credential, ok := handler.credential(response, request)
+		if !ok {
+			return
+		}
+		if !protocol.ValidProviderID(provider) {
+			writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid provider")
+			return
+		}
+		result, err := handler.api.Provider(request.Context(), credential, provider)
+		handler.respond(response, request, result, err)
+		return
+	}
+	var body protocol.HTTPProviderUpdateRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	if !protocol.ValidProviderID(provider) || protocol.ValidateProviderUpdate(body) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid provider request")
+		return
+	}
+	result, err := handler.api.UpdateProvider(request.Context(), credential, provider, body)
+	handler.respond(response, request, result, err)
+}
+
+// providerOpen opens or reuses the in-memory session of one provider terminal.
+func (handler *gatewayHandler) providerOpen(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body protocol.HTTPProviderOpenRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	provider := request.PathValue("provider")
+	if !protocol.ValidProviderID(provider) || protocol.ValidateProviderOpenRequest(body) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid provider request")
+		return
+	}
+	result, err := handler.api.OpenProvider(request.Context(), credential, provider, body)
+	handler.respond(response, request, result, err)
+}
+
+// providerCreate makes a worktree and may start an agent (milestone M2).
+func (handler *gatewayHandler) providerCreate(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body protocol.HTTPProviderCreateRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	provider := request.PathValue("provider")
+	if !protocol.ValidProviderID(provider) || protocol.ValidateProviderCreateRequest(body) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid provider request")
+		return
+	}
+	result, err := handler.api.CreateProvider(request.Context(), credential, provider, body)
+	handler.respond(response, request, result, err)
+}
+
 func (handler *gatewayHandler) respondEmpty(response http.ResponseWriter, request *http.Request, err error) {
 	if err != nil {
 		handler.respond(response, request, nil, err)

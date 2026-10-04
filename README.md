@@ -31,6 +31,10 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **Worktrees.** Start a task in its own folder and branch from `main` (or
   any branch) with one tap, with a random name you can edit, and Claude or
   Codex already running in it.
+- **herdr.** If your computer runs [herdr](https://herdr.dev), the phone shows
+  its projects and worktrees with BLOCKED, DONE and WORKING, buzzes when an
+  agent is blocked or finished, opens one herdr terminal in Live and makes new
+  worktrees. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one

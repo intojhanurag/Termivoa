@@ -14,8 +14,10 @@ import { Notice } from './ui';
 
 const idleSpeech = () => IDLE_SPEECH;
 
-export function Composer({ connection, origin, canSend, draftKey, onClose, speech = recognizerFactory() ?? null }: {
+export function Composer({ connection, origin, canSend, draftKey, onClose, photos = true, speech = recognizerFactory() ?? null }: {
   readonly connection: Connection;
+  /** False where the session has no project folder to upload to (a provider terminal). */
+  readonly photos?: boolean;
   /** The session's computer; photos upload there. Home when omitted. */
   readonly origin?: string;
   readonly canSend: boolean;
@@ -181,13 +183,13 @@ export function Composer({ connection, origin, canSend, draftKey, onClose, speec
             hidden
             onChange={(event) => { pick(event.target.files?.[0]); event.target.value = ''; }}
           />
-          <button type="button" className="tool" disabled={!canSend || busy} onClick={() => picker.current?.click()}>
+          {photos && <button type="button" className="tool" disabled={!canSend || busy} onClick={() => picker.current?.click()}>
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
               <path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6l8.2-8.2"
                 fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Photo
-          </button>
+          </button>}
           {speech !== null && (
             <button type="button" className="tool" onClick={openVoice}>
               <MicIcon size={18} />

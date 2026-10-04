@@ -6,8 +6,8 @@ import { hosted } from './allSessions';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  AddBanner, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike,
-  STRAY_RELOAD_KEY, takeStartupLinks, titleFor,
+  AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike,
+  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, sameScreen,
 } from './App';
 import { ApiError } from '../api/http';
 import type { HTTPSettingsResponse } from '../generated/protocol';
@@ -397,5 +397,86 @@ describe('a peer preview address on load', () => {
     expect(peerPreviewOnLoad(PREVIEW_TAP, previews, 3000)).toBe(false);
     expect(peerPreviewOnLoad(PREVIEW_TAP, [], 5173)).toBe(false);
     expect(peerPreviewOnLoad(PREVIEW_TAP, undefined, 5173)).toBe(false);
+  });
+});
+
+describe('provider addresses', () => {
+  const target = 'w8:p1.term_65d0031602b777';
+  const encoded = encodeURIComponent(target);
+
+  it('are /p/<provider>/<target> on home and /c/<host>/p/… on a peer, and read back', () => {
+    expect(providerPath(home, 'herdr', target)).toBe(`/p/herdr/${encoded}`);
+    expect(providerPath(vps, 'herdr', target)).toBe(`/c/vps.tailx.ts.net/p/herdr/${encoded}`);
+    expect(pathFor({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: 1 })).toBe(`/c/vps.tailx.ts.net/p/herdr/${encoded}`);
+    expect(parseRoute(`/p/herdr/${encoded}`)).toEqual({ name: 'provider', host: undefined, provider: 'herdr', target });
+    expect(parseRoute(`/c/vps.tailx.ts.net/p/herdr/${encoded}`)).toEqual({ name: 'provider', host: 'vps.tailx.ts.net', provider: 'herdr', target });
+    expect(titleFor({ name: 'provider', computer: home, provider: 'herdr', target, tapped: 0 })).toBe('herdr · Termivoa');
+    for (const path of ['/p/Herdr/w8', '/p/herdr/..%2Fx', '/p/herdr/a%2Fb', '/p/herdr/', '/p/herdr/w8/x', '/c/Evil Host/p/herdr/w8', '/p/herdr/%ZZ', `/p/${'a'.repeat(33)}/w8`]) {
+      expect(parseRoute(path), path).toEqual({ name: 'unknown' });
+    }
+  });
+
+  it('a notification message may open a provider terminal of home or a listed peer, rebuilt here', () => {
+    const list = [home, vps];
+    expect(notificationPath({ type: 'open', path: `/p/herdr/${encoded}` }, list)).toBe(`/p/herdr/${encoded}`);
+    expect(notificationPath({ type: 'open', path: `/c/vps%2Etailx.ts.net/p/herdr/${target}` }, list)).toBe(`/c/vps.tailx.ts.net/p/herdr/${encoded}`);
+    expect(notificationPath({ type: 'open', path: `/c/evil.tailx.ts.net/p/herdr/${encoded}` }, list)).toBeUndefined();
+    expect(notificationPath({ type: 'open', path: '/p/herdr/..' }, list)).toBeUndefined();
+  });
+
+  it('a notification tap opens at once only when the worker confirms it, and each tap is new, also for the same address (route → askWorkerTap → tapped)', async () => {
+    const path = `/p/herdr/${encoded}`;
+    const asked: string[] = [];
+    const yes = async (at: string) => { asked.push(at); return true; };
+    const first = await providerArrival(home, 'herdr', target, path, yes);
+    const second = await providerArrival(home, 'herdr', target, path, yes);
+    expect(asked).toEqual([path, path]);
+    expect(first).toMatchObject({ name: 'provider', computer: home, provider: 'herdr', target });
+    const taps = [first, second].map((view) => (view.name === 'provider' ? view.tapped : -1));
+    expect(taps[0]).toBeGreaterThan(0);
+    // Same address, same screen key: only a new number tells the screen there was a second tap.
+    expect(taps[1]).not.toBe(taps[0]);
+    // A link or a reload (no fresh tap): Open first.
+    expect(await providerArrival(home, 'herdr', target, path, async () => false)).toMatchObject({ tapped: 0 });
+    expect(newTap()).toBeGreaterThan(taps[1] ?? 0);
+  });
+
+  it('a chip replaces the history entry: tabs of one workspace are one screen', () => {
+    const at = (computer: Computer, id: string) => ({ name: 'provider', computer, provider: 'herdr', target: id, tapped: 1 }) as const;
+    expect(sameScreen(at(home, 'w8:p1.a'), at(home, 'w8:p2.b'))).toBe(true);
+    expect(sameScreen(at(home, 'w8:p1.a'), at(vps, 'w8:p2.b'))).toBe(false);
+    expect(sameScreen({ name: 'sessions' }, at(home, 'w8:p2.b'))).toBe(false);
+    expect(sameScreen(at(home, 'w8:p1.a'), { name: 'sessions' })).toBe(false);
+  });
+
+  it('leaves a provider terminal whose computer left the list', () => {
+    expect(leaveRemoved({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: 0 }, [home])).toEqual({ name: 'sessions', message: 'vps is no longer in your list.' });
+    expect(leaveRemoved({ name: 'provider', computer: vps, provider: 'herdr', target, tapped: 0 }, [home, vps])).toBeUndefined();
+  });
+});
+
+describe('askWorkerTap', () => {
+  afterEach(() => { vi.useRealTimers(); });
+  /** A worker that answers on the port it was sent, like sw.js. */
+  const worker = (answer: (path: string) => unknown) => ({
+    postMessage: vi.fn((message: unknown, ports: Transferable[]) => { (ports[0] as MessagePort | undefined)?.postMessage(answer((message as { path: string }).path)); }),
+  });
+
+  it('asks the worker with the page\'s path and believes only a fresh tap for it', async () => {
+    const yes = worker(() => ({ type: 'tap', fresh: true }));
+    await expect(askWorkerTap('/p/herdr/w8', yes)).resolves.toBe(true);
+    expect(yes.postMessage.mock.calls[0]?.[0]).toEqual({ type: 'tap?', path: '/p/herdr/w8' });
+    await expect(askWorkerTap('/p/herdr/w8', worker(() => ({ type: 'tap', fresh: false })))).resolves.toBe(false);
+    await expect(askWorkerTap('/p/herdr/w8', worker(() => ({ type: 'tap', fresh: 'yes' })))).resolves.toBe(false);
+    await expect(askWorkerTap('/p/herdr/w8', worker(() => ({ type: 'open', fresh: true })))).resolves.toBe(false);
+  });
+
+  it('shows Open when no worker controls the page, or it does not answer in time', async () => {
+    await expect(askWorkerTap('/p/herdr/w8', null)).resolves.toBe(false);
+    await expect(askWorkerTap('/p/herdr/w8', undefined)).resolves.toBe(false);
+    vi.useFakeTimers();
+    const silent = askWorkerTap('/p/herdr/w8', { postMessage: vi.fn() }, 1_500);
+    await vi.advanceTimersByTimeAsync(1_500);
+    await expect(silent).resolves.toBe(false);
   });
 });

@@ -42,6 +42,10 @@
     { "$ref": "#/$defs/computersRemoveMessage" },
     { "$ref": "#/$defs/computersOfferMessage" },
     { "$ref": "#/$defs/computersFoundMessage" },
+    { "$ref": "#/$defs/providersGetMessage" },
+    { "$ref": "#/$defs/providersUpdateMessage" },
+    { "$ref": "#/$defs/providersOpenMessage" },
+    { "$ref": "#/$defs/providersCreateMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -67,6 +71,10 @@
     { "$ref": "#/$defs/computersRemoveResultMessage" },
     { "$ref": "#/$defs/computersOfferResultMessage" },
     { "$ref": "#/$defs/computersFoundResultMessage" },
+    { "$ref": "#/$defs/providersGetResultMessage" },
+    { "$ref": "#/$defs/providersUpdateResultMessage" },
+    { "$ref": "#/$defs/providersOpenResultMessage" },
+    { "$ref": "#/$defs/providersCreateResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -81,6 +89,7 @@
         "gateway.upload.begin", "gateway.upload.chunk", "gateway.upload.commit",
         "gateway.preview.check", "gateway.computers.list", "gateway.computers.add", "gateway.computers.remove",
         "gateway.computers.offer", "gateway.computers.found",
+        "gateway.providers.get", "gateway.providers.update", "gateway.providers.open", "gateway.providers.create",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
@@ -90,6 +99,8 @@
         "gateway.upload.begin.result", "gateway.upload.chunk.result", "gateway.upload.commit.result", "gateway.preview.check.result",
         "gateway.computers.list.result", "gateway.computers.add.result", "gateway.computers.remove.result",
         "gateway.computers.offer.result", "gateway.computers.found.result",
+        "gateway.providers.get.result", "gateway.providers.update.result", "gateway.providers.open.result",
+        "gateway.providers.create.result",
         "gateway.error"
       ]
     },
@@ -282,6 +293,53 @@
         "expiresAt": { "$ref": "http-api.schema.json#/$defs/timestamp" }
       }
     },
+    "providerPayload": {
+      "title": "GatewayRPCProviderPayload",
+      "description": "Reads one provider of this computer (docs/herdr-provider.md). The broker answers from its cache and never waits on the provider.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "provider"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "provider": { "$ref": "http-api.schema.json#/$defs/providerId" }
+      }
+    },
+    "providerUpdatePayload": {
+      "title": "GatewayRPCProviderUpdatePayload",
+      "description": "Changes this computer's Integrations settings of one provider, for all devices.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "provider", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "provider": { "$ref": "http-api.schema.json#/$defs/providerId" },
+        "request": { "$ref": "http-api.schema.json#/$defs/providerUpdateRequest" }
+      }
+    },
+    "providerOpenPayload": {
+      "title": "GatewayRPCProviderOpenPayload",
+      "description": "Opens or reuses the in-memory provider session of one terminal in the broker's latest snapshot.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "provider", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "provider": { "$ref": "http-api.schema.json#/$defs/providerId" },
+        "request": { "$ref": "http-api.schema.json#/$defs/providerOpenRequest" }
+      }
+    },
+    "providerCreatePayload": {
+      "title": "GatewayRPCProviderCreatePayload",
+      "description": "Makes a worktree and optionally starts an agent in it (milestone M2). The broker runs it in its own context and answers within 45 s; the gateway sends it on a dedicated connection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "provider", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "provider": { "$ref": "http-api.schema.json#/$defs/providerId" },
+        "request": { "$ref": "http-api.schema.json#/$defs/providerCreateRequest" }
+      }
+    },
     "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
     "pairRedeemMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemRequest" } } },
     "pairPollMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairPollRequest" } } },
@@ -333,6 +391,14 @@
     "computersRemoveResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.remove.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "computersOfferResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.offer.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
     "computersFoundResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.computers.found.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/computerFoundResponse" } } },
+    "providersGetMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.get" }, "payload": { "$ref": "#/$defs/providerPayload" } } },
+    "providersUpdateMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.update" }, "payload": { "$ref": "#/$defs/providerUpdatePayload" } } },
+    "providersOpenMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.open" }, "payload": { "$ref": "#/$defs/providerOpenPayload" } } },
+    "providersCreateMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.create" }, "payload": { "$ref": "#/$defs/providerCreatePayload" } } },
+    "providersGetResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.get.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerSnapshotResponse" } } },
+    "providersUpdateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.update.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerInfo" } } },
+    "providersOpenResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.open.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerOpenResponse" } } },
+    "providersCreateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.create.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerCreateResponse" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "gateway.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }

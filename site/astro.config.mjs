@@ -72,6 +72,10 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Providers',
+					items: ['docs/providers', { label: 'herdr', slug: 'docs/guides/herdr' }],
+				},
+				{
 					label: 'Reference',
 					items: [
 						'docs/reference/cli',

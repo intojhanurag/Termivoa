@@ -26,6 +26,8 @@
  *   computer that keeps failing waits a jittered backoff, then an offline
  *   cooldown, before background attempts.
  * - Reads across all computers pass read: at most `concurrentReads` at once.
+ *   Provider reads use their own lane of `concurrentProviderReads`, so a
+ *   provider read that hangs never holds a slot a session read needs.
  *   poll polls up to `maxComputers` computers with one outstanding poll per
  *   computer and publishes each computer's result as soon as it arrives.
  *
@@ -54,6 +56,8 @@ export const DEFAULT_LIMITS = {
   /** Computers polled at most: home and up to 8 peers. */
   maxComputers: 9,
   concurrentReads: 3,
+  /** Provider reads (lane 'providers'), apart from the session reads above. */
+  concurrentProviderReads: 2,
   concurrentConnects: 2,
   pollIntervalMs: 5_000,
   retryBaseMs: 1_000,
@@ -99,6 +103,9 @@ export interface ConnectGate {
   done(result: 'live' | 'failed' | 'cancelled'): void;
 }
 
+/** The read budget a read uses: session reads, or provider reads with their own smaller budget. */
+export type ReadLane = 'sessions' | 'providers';
+
 export type PollOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: unknown };
 
 interface Tile {
@@ -141,8 +148,10 @@ export class Scheduler {
   private connecting = 0;
   private readonly connectQueue: Waiter[] = [];
   private connectTimer: ReturnType<typeof setTimeout> | undefined;
-  private reading = 0;
-  private readonly readQueue: Array<() => void> = [];
+  private readonly lanes: Record<ReadLane, { reading: number; readonly queue: Array<() => void> }> = {
+    sessions: { reading: 0, queue: [] },
+    providers: { reading: 0, queue: [] },
+  };
   private readonly health = new Map<string, Health>();
   /** The last read queued per computer; the next one starts after it. */
   private readonly flights = new Map<string, Promise<unknown>>();
@@ -258,18 +267,19 @@ export class Scheduler {
     };
   }
 
-  /** Runs `load` when fewer than `concurrentReads` reads are open across all computers. */
-  read<T>(load: () => Promise<T>): Promise<T> {
+  /** Runs `load` when the lane has a free slot: `concurrentReads` for sessions, `concurrentProviderReads` for providers, across all computers. */
+  read<T>(load: () => Promise<T>, lane: ReadLane = 'sessions'): Promise<T> {
+    const slots = this.lanes[lane];
     return new Promise<T>((resolve, reject) => {
-      this.readQueue.push(() => {
-        this.reading++;
+      slots.queue.push(() => {
+        slots.reading++;
         // Promise.resolve().then: a load that throws at once still frees its slot.
         Promise.resolve().then(load).then(resolve, reject).finally(() => {
-          this.reading--;
-          this.pumpReads();
+          slots.reading--;
+          this.pumpReads(lane);
         });
       });
-      this.pumpReads();
+      this.pumpReads(lane);
     });
   }
 
@@ -278,9 +288,9 @@ export class Scheduler {
    * earlier serial read of `origin` has settled. Polls, reloads and route
    * reads all pass here, so at most one request per computer is in flight.
    */
-  serial<T>(origin: string, load: () => Promise<T>): Promise<T> {
+  serial<T>(origin: string, load: () => Promise<T>, lane: ReadLane = 'sessions'): Promise<T> {
     const after = this.flights.get(origin) ?? Promise.resolve();
-    const next = after.then(() => this.read(load));
+    const next = after.then(() => this.read(load, lane));
     const settled = next.then(() => undefined, () => undefined);
     this.flights.set(origin, settled);
     void settled.then(() => {
@@ -301,6 +311,7 @@ export class Scheduler {
     origins: ReadonlyArray<string>,
     load: (origin: string) => Promise<T>,
     publish: (origin: string, outcome: PollOutcome<T>) => void,
+    lane: ReadLane = 'sessions',
   ): () => void {
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     const open = new Set<string>();
@@ -310,7 +321,7 @@ export class Scheduler {
       timers.delete(origin);
       if (stopped || open.has(origin) || !this.foreground) return;
       open.add(origin);
-      this.serial(origin, () => load(origin)).then(
+      this.serial(origin, () => load(origin), lane).then(
         (value) => {
           this.record(origin, true);
           if (!stopped) publish(origin, { ok: true, value });
@@ -375,9 +386,11 @@ export class Scheduler {
     this.health.set(origin, { failures, retryAt: this.now() + base * (0.5 + this.random()) });
   }
 
-  private pumpReads(): void {
-    while (this.reading < this.limits.concurrentReads) {
-      const next = this.readQueue.shift();
+  private pumpReads(lane: ReadLane): void {
+    const slots = this.lanes[lane];
+    const limit = lane === 'providers' ? this.limits.concurrentProviderReads : this.limits.concurrentReads;
+    while (slots.reading < limit) {
+      const next = slots.queue.shift();
       if (next === undefined) return;
       next();
     }

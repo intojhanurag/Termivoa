@@ -204,6 +204,9 @@ func (server *ManagementServer) authorizeUpload(
 	if err != nil {
 		return auth.Principal{}, "", err
 	}
+	if isProviderSession(session) {
+		return auth.Principal{}, "", errProviderFeature // design section 6, rule 8
+	}
 	status, err := session.Status(ctx)
 	if err != nil {
 		return auth.Principal{}, "", err

@@ -1,6 +1,6 @@
 # Owner verification checklist (v0)
 
-Date: 2026-09-27, updated 2026-10-03. Host used for agent testing: Apple Silicon Mac, macOS 26.5.2,
+Date: 2026-09-27, updated 2026-10-04. Host used for agent testing: Apple Silicon Mac, macOS 26.5.2,
 Go 1.27.1, Node 24.11.0.
 
 This file lists every v0 item that the agent could not test. Each item needs
@@ -427,6 +427,56 @@ this build. Design: [found-on-network.md](found-on-network.md), section 10.
       on `vps` says "wants to add this computer (vps)" and the same code. Type `y`: `vps`
       is in the list, its sessions show, and the row is gone.
 - [ ] **The same on Android** (Chrome, installed app).
+
+## 2c. herdr on your phone (real herdr, real iPhone)
+
+Status: **pending, not executed.** The agent tested this against the fake
+herdr (`scripts/fakeherdr`, harness checks `H-*`) and, in an isolated home,
+a real herdr 0.8.2 and 0.9.3 (design, section 1). Push was tested in Go only.
+The harness hides your real herdr on purpose (S16), so these checks are yours.
+You need a Mac with Termivoa from this build, herdr running with your own
+projects, and the iPhone Home Screen app. Design:
+[herdr-provider.md](herdr-provider.md), sections 6, 7 and 15.
+
+- [ ] **Open a blocked agent and answer it.** In your herdr, let an agent
+      reach `blocked`. On the phone, **Sessions → herdr** shows BLOCKED and
+      the count. Tap the row: Live shows that terminal, read-only. Take
+      control and answer (an answer card, or type). The agent goes on.
+- [ ] **The laptop pane and its size.** While the phone shows the terminal,
+      the pane in your herdr window is phone-sized and the line under the
+      chips says "mac shows this terminal at phone size while it is open
+      here." Lock the phone: about 10 s later the pane is back at its normal
+      size. Also leave Live (back to Sessions): same result. Record the time.
+- [ ] **A real push when blocked.** With the phone locked, let an agent
+      become blocked. A notification `herdr · <project> · <worktree>` with
+      "<agent> needs you. Tap to answer." arrives within a few seconds (blocked
+      for at least 2 s). Its text has no terminal text.
+- [ ] **A real push when finished.** Let an agent work for 20 s or more, then
+      finish. "<agent> finished after N min." arrives (also when your herdr
+      window shows that tab and the state is `idle`).
+- [ ] **A tap opens the terminal at once.** Tap each notification: the app
+      opens that terminal in Live with no **Open** button, and the laptop pane
+      goes phone-sized. A pasted `/p/herdr/<target>` link or a reload shows the
+      names and **Open** instead. Record whether it works from a closed app and
+      from an open app.
+- [ ] **Settings → Integrations.** Switch herdr **Off**: the herdr tab leaves
+      this computer, open terminals end (the pane gets its size back), no push
+      comes. Switch **On** again: it returns. **Buzz when blocked** and **Buzz
+      when finished** each stop and start their pushes, and survive a reload.
+- [ ] **M2: create on a real repo.** On a project row tap **+**, give a branch
+      name and an agent (and a first prompt). A new worktree row appears
+      under `~/.herdr/worktrees/<repo>/<branch>`, the agent starts, and
+      **Open** works at once. Remove the test worktree and branch afterwards.
+- [ ] **herdr stopped.** Quit herdr: the tab says herdr is not running on
+      this computer within a few seconds, and Sessions stays as fast as before.
+- [ ] **Each herdr version you install.** Run the opt-in lab test, which uses
+      a temp HOME and its own herdr session and never your real session:
+      `PTERM_HERDR_LAB=1 go test ./internal/herdr -run Lab`
+      (`PTERM_HERDR_LAB_BINARY=<path>` picks another herdr than the one on
+      `PATH`). Record the herdr version and the result.
+- [ ] **`pterm doctor`** shows the herdr line (version, protocol, server
+      running, "can make worktrees") and warns if your `config.toml` sets a
+      prefix other than `ctrl+b`.
 
 ## 3. Windows 11 x64
 

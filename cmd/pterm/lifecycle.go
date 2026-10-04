@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
+	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/localclient"
@@ -52,6 +53,8 @@ type lifecycleEnv struct {
 	// and whether this is WSL.
 	noSystemd string
 	wsl       bool
+	// herdr is the production herdr config for doctor; nil in tests.
+	herdr *herdr.Config
 }
 
 var loadLifecycleEnv = func() (lifecycleEnv, error) {
@@ -92,6 +95,7 @@ var loadLifecycleEnv = func() (lifecycleEnv, error) {
 	env := lifecycleEnv{
 		host: target, paths: paths, runner: lifecycle.ExecRunner{},
 		gateway: strings.TrimSuffix(lifecycle.LocalURL, "/"), tailscale: tailscale, tailscaleRefused: refused,
+		herdr: herdrConfig(),
 	}
 	if runtime.GOOS == "linux" {
 		env.host.Logs = paths.LogDir
@@ -1311,6 +1315,7 @@ func runDoctorCommand(ctx context.Context, args []string, output io.Writer) erro
 	if err != nil {
 		return err
 	}
+	inspectHerdr(ctx, env.herdr, output)
 	if report.problems > 0 {
 		return fmt.Errorf("doctor found %d problem(s); `pterm setup` explains how to fix startup registration", report.problems)
 	}

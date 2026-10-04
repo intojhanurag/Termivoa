@@ -12,9 +12,14 @@ const brokerRPCSchema = path.join(root, 'protocol/v1/broker-rpc.schema.json');
 const httpAPISchema = path.join(root, 'protocol/v1/http-api.schema.json');
 const gatewayRPCSchema = path.join(root, 'protocol/v1/gateway-rpc.schema.json');
 const adminRPCSchema = path.join(root, 'protocol/v1/admin-rpc.schema.json');
-const { revision, minRevision } = JSON.parse(readFileSync(path.join(root, 'protocol/v1/revision.json'), 'utf8'));
+const { revision, minRevision, features } = JSON.parse(readFileSync(path.join(root, 'protocol/v1/revision.json'), 'utf8'));
 if (!Number.isInteger(revision) || !Number.isInteger(minRevision) || minRevision < 1 || minRevision > revision) {
   console.error('protocol/v1/revision.json needs integers 1 <= minRevision <= revision.');
+  process.exit(1);
+}
+// The revision that added each feature an app gates on (http-api.md, Protocol revision).
+if (typeof features !== 'object' || features === null || !Object.entries(features).every(([name, added]) => /^[a-z][A-Za-z]*$/.test(name) && Number.isInteger(added) && added >= 1 && added <= revision)) {
+  console.error('protocol/v1/revision.json needs features: { <camelCase name>: <revision 1..revision that added it> }.');
   process.exit(1);
 }
 // Every $ref must resolve: quicktype skips some unreachable definitions, so a
@@ -49,6 +54,10 @@ const (
 export const PROTOCOL_REVISION = ${revision};
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = ${minRevision};
+/** The revision that added each feature: call it only on a computer whose protocolRevision is at least this. */
+export const FEATURE_REVISION = {
+${Object.entries(features).map(([name, added]) => `    ${name}: ${added},`).join('\n')}
+} as const;
 `,
 };
 // Run quicktype's JS entry point with this Node binary. Spawning `pnpm` (a .cmd shim on

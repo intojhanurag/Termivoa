@@ -2,14 +2,16 @@
 // dev stacks behind the HTTPS front (main.go), a fake Tailscale, curl through
 // the front, and a small CDP client for headless Chrome. Node built-ins only.
 import { spawn } from 'node:child_process';
-import { appendFileSync, chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPO = resolve(HERE, '../..');
-export const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+/** Google Chrome; CHROME names another Chrome build (for example Chrome for Testing). */
+export const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 export const TAILNET = 'tailx.ts.net';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Ports the harness must never use: the installed pterm and its previews.
@@ -19,11 +21,21 @@ const RESERVED = new Set([8787, 8788, 8789, 8443]);
 // the real Tailscale CLI (internal/tailnet.FindBinary checks these fixed
 // paths before PATH, so the fake on PATH is used), and blocks the installed
 // gateway port and launchctl, so nothing here can read or change the real
-// Tailscale, the installed pterm or launchd.
+// Tailscale, the installed pterm or launchd. It also hides the owner's herdr
+// (docs/herdr-provider.md, S16): its binaries, the Homebrew Cellar they link
+// to, and the real ~/.config/herdr with its socket. Sandbox rules match
+// resolved paths, so every path is resolved first.
 const REAL_TAILSCALE = ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/usr/local/bin/tailscale',
   '/opt/homebrew/bin/tailscale', '/usr/bin/tailscale', '/usr/sbin/tailscale'];
+const real = (path) => { try { return realpathSync(path); } catch { return path; } };
+const REAL_HERDR = ['/opt/homebrew/bin/herdr', '/usr/local/bin/herdr', join(homedir(), '.local/bin/herdr'),
+  join(homedir(), '.cargo/bin/herdr')];
+const REAL_HERDR_TREES = ['/opt/homebrew/Cellar/herdr', '/usr/local/Cellar/herdr', join(homedir(), '.config/herdr')].map(real);
 const SANDBOX = `(version 1)(allow default)
 (deny file-read* process-exec ${REAL_TAILSCALE.map((p) => `(literal "${p}")`).join(' ')})
+(deny file-read* process-exec ${[...new Set([...REAL_HERDR, ...REAL_HERDR.map(real)])].map((p) => `(literal "${p}")`).join(' ')})
+(deny file-read* file-write* process-exec ${REAL_HERDR_TREES.map((p) => `(subpath "${p}")`).join(' ')})
+(deny network-outbound ${REAL_HERDR_TREES.map((p) => `(remote unix-socket (subpath "${p}"))`).join(' ')})
 (deny network-outbound (remote tcp "localhost:8787"))
 (deny process-exec (literal "/bin/launchctl"))`;
 /** argv that runs command inside the harness sandbox. */
@@ -198,9 +210,59 @@ export class Stack {
   /**
    * `pterm doctor` on this stack, with HOME=doctorHome, in the sandbox: it
    * can never reach the installed gateway, launchd or the real Tailscale.
+   * home true runs it with the stack's own HOME instead, where the fake
+   * herdr lives (only its herdr line means anything then).
    */
-  doctor() {
-    return run(...sandboxed(this.env.pterm, ['doctor']), { env: { ...this.processEnv, HOME: this.doctorHome } });
+  doctor({ home = false } = {}) {
+    return run(...sandboxed(this.env.pterm, ['doctor']), { env: { ...this.processEnv, HOME: home ? this.home : this.doctorHome } });
+  }
+
+  // ---------- fake herdr (scripts/fakeherdr; docs/herdr-provider.md, S16) ----------
+
+  /** The fake herdr's folder: <HOME>/.config/herdr, as herdr's own. */
+  get herdrDir() { return join(this.home, '.config', 'herdr'); }
+
+  /**
+   * Installs the fake herdr as `herdr` first on this stack's PATH (the real
+   * one is denied by the sandbox), writes its scenario and starts its server
+   * with this stack's HOME. The broker finds it at its next binary lookup
+   * (at most 30 s).
+   */
+  async installHerdr(scenario) {
+    mkdirSync(this.herdrDir, { recursive: true, mode: 0o700 });
+    chmodSync(join(this.home, '.config'), 0o700);
+    writeFileSync(join(this.herdrDir, 'scenario.json'), JSON.stringify(scenario, null, 1));
+    copyFileSync(join(this.env.bin, 'fakeherdr'), join(this.bin, 'herdr'));
+    chmodSync(join(this.bin, 'herdr'), 0o755);
+    this.herdr = spawn(...sandboxed(join(this.bin, 'herdr'), ['server']), { env: this.processEnv, cwd: this.home, stdio: 'ignore' });
+    await until(() => readFileSync(join(this.herdrDir, 'fake.log'), 'utf8').includes('server '), { what: `fake herdr on ${this.name}` });
+  }
+
+  /** Stops the fake herdr and removes it from PATH: the broker drops the provider at its next poll. */
+  async uninstallHerdr() {
+    if (this.herdr && this.herdr.exitCode === null) {
+      const exited = new Promise((r) => this.herdr.once('exit', r));
+      this.herdr.kill('SIGTERM');
+      await Promise.race([exited, sleep(5000)]);
+    }
+    await run('/bin/rm', ['-f', join(this.bin, 'herdr')]);
+  }
+
+  /** One command on the fake's control socket ({op: status|close|hang|stop|start, …}); resolves with its answer line. */
+  herdrControl(command) {
+    return new Promise((res, rej) => {
+      const socket = net.connect(join(this.herdrDir, 'control.sock'));
+      let answer = '';
+      socket.on('connect', () => socket.write(`${JSON.stringify(command)}\n`));
+      socket.on('data', (d) => { answer += d; });
+      socket.on('end', () => (answer.startsWith('ok') ? res(answer.trim()) : rej(new Error(`fake herdr ${JSON.stringify(command)}: ${answer.trim()}`))));
+      socket.on('error', rej);
+    });
+  }
+
+  /** The fake's log lines: server, control, attach sizes, input (hex), exits, worktree.create, agent.start. */
+  herdrLog() {
+    try { return readFileSync(join(this.herdrDir, 'fake.log'), 'utf8').split('\n').filter(Boolean); } catch { return []; }
   }
 }
 
@@ -223,6 +285,8 @@ export class Env {
     const builds = [
       must('go', ['build', '-tags', 'webdist,e2e', '-o', env.pterm, './cmd/pterm'], { timeout: 600000 }),
       must('go', ['build', '-o', join(env.bin, 'front'), './scripts/e2e-multicomputer'], { timeout: 600000 }),
+      // The fake herdr; a stack gets it as `herdr` only through installHerdr.
+      must('go', ['build', '-o', join(env.bin, 'fakeherdr'), './scripts/fakeherdr'], { timeout: 600000 }),
     ];
     if (production) {
       env.production = join(env.bin, 'pterm-production');
@@ -276,6 +340,7 @@ export class Env {
   }
 
   async close() {
+    await Promise.all(Object.values(this.stacks).map((s) => s.uninstallHerdr()));
     await Promise.all(Object.values(this.stacks).map((s) => s.stop()));
     this.front?.kill();
     // A failed step can leave a CLI under script(1) running (pterm setup has no runtime dir).

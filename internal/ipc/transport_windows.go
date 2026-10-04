@@ -301,3 +301,8 @@ func currentUserSID() (*windows.SID, error) {
 }
 
 func syncRuntimeDir(string) error { return nil }
+
+// RequireCurrentOwner accepts every file: Windows guards folders with ACLs
+// that FileInfo does not describe, and herdr (its only caller) does not run
+// on Windows.
+func RequireCurrentOwner(os.FileInfo) error { return nil }

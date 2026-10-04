@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import {
   Browser, Env, HERE, NODES, api, click, freePort, interactive, pageFetch, pairDirect, plain, run, setInput, sleep, tapTerminalText, terminalText, typeLine, until,
 } from './lib.mjs';
+import { herdrSteps } from './herdr.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
@@ -992,6 +993,9 @@ try {
       r.outcome === 'added' && probs.length === 0 && vpsRows > 0 && devices === 1,
       `outcome ${r.outcome}; problems ${JSON.stringify(probs)}; vps rows ${vpsRows}; active bound devices on vps ${devices}`);
   });
+
+  // ---- H: herdr on the phone (docs/herdr-provider.md, section 15; herdr.mjs) ----
+  await herdrSteps({ env, mac, vps, app, tool, browser, step, check, shot, time, openSessions, inApp, jarOf });
 
   // ---- F: Found on your network (docs/found-on-network.md, section 10) ----
   // A second phone ("Found phone") paired with mac: Found leaves out what a

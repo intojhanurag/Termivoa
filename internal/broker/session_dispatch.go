@@ -169,6 +169,10 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 	if *request.Generation != stream.generation {
 		return stream.failure(ctx, request, protocol.GenerationChanged, "session generation changed")
 	}
+	if _, provider := stream.session.(*providerSession); provider && providerRefused(request.Type) {
+		failure := classifySessionError(errProviderFeature)
+		return stream.failure(ctx, request, failure.code, failure.message)
+	}
 	identity := func(lease string) MutationIdentity {
 		identity := MutationIdentity{Generation: stream.generation, ConnectionID: stream.connectionID, DeviceID: stream.deviceID, Lease: lease}
 		if stream.access != nil {

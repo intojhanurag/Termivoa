@@ -107,8 +107,202 @@
         },
         "brokerGeneration": { "$ref": "#/$defs/uuid" },
         "protocolRevision": { "$ref": "#/$defs/protocolRevision" },
-        "minProtocolRevision": { "$ref": "#/$defs/protocolRevision" }
+        "minProtocolRevision": { "$ref": "#/$defs/protocolRevision" },
+        "providers": {
+          "description": "Terminal workspace providers found on this computer (for example herdr). Absent or empty when none is installed; the app shows a provider tab only for a computer that lists one.",
+          "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/providerInfo" }
+        }
       }
+    },
+    "providerState": {
+      "title": "HTTPProviderState",
+      "description": "ready: the host reads the provider. notRunning: installed, but its server does not answer. unsupported: the installed version is too old or its data cannot be read. off: turned off in Settings → Integrations on this computer.",
+      "type": "string",
+      "enum": ["ready", "notRunning", "unsupported", "off"]
+    },
+    "providerItemState": {
+      "description": "Provider state of a terminal, item or group, mapped by the host (docs/herdr-provider.md, State mapping). Known words: blocked, done, working, idle, unknown, none (no agent there). Roll-up order, most urgent first: blocked, done, working, idle, unknown, none. A word, not an enum, so a later provider can add one: the app shows any other word as unknown.",
+      "type": "string", "pattern": "^[a-z][a-zA-Z]{0,23}$"
+    },
+    "providerNotifyState": {
+      "title": "HTTPProviderNotifyState",
+      "type": "string",
+      "enum": ["blocked", "done"]
+    },
+    "providerId": {
+      "description": "A terminal workspace provider on this computer, for example herdr. See docs/herdr-provider.md.",
+      "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "providerTargetId": {
+      "description": "Opaque handle of one provider terminal, issued by the host in its latest snapshot. For herdr it is <pane ID>.<terminal ID> (for example w2:p4.term_65d0031602b777), so a handle from before a herdr restart never names a new terminal. The host accepts only a handle that is in its latest snapshot.",
+      "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$"
+    },
+    "providerAgentKind": {
+      "description": "An agent kind the provider knows, for example claude. Display text and the agent picker value.",
+      "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+    },
+    "providerDisplayName": {
+      "type": "string", "minLength": 1, "maxLength": 80,
+      "maxUtf8Bytes": 240, "safeDisplayText": true
+    },
+    "providerHandle": {
+      "description": "Opaque group or item handle from the host's last snapshot. Never a path.",
+      "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$"
+    },
+    "providerInfo": {
+      "title": "HTTPProviderInfo",
+      "description": "One provider on this computer. enabled and notify are this computer's Integrations settings (all devices). canCreate is true when the provider can make a worktree and start an agent (milestone M2). agentKinds lists the kinds offered by the new-worktree sheet: kinds that herdr itself can start (its agent start kinds) and that already run in this herdr, most used first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "state", "enabled", "notify", "canCreate", "agentKinds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/providerId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 32, "maxUtf8Bytes": 96, "safeDisplayText": true },
+        "state": { "$ref": "#/$defs/providerState" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[0-9A-Za-z._+-]+$" },
+        "enabled": { "type": "boolean" },
+        "notify": { "type": "array", "maxItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/providerNotifyState" } },
+        "canCreate": { "type": "boolean" },
+        "agentKinds": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/providerAgentKind" } }
+      }
+    },
+    "providerTarget": {
+      "title": "HTTPProviderTarget",
+      "description": "One terminal the phone can open: each agent, plus one terminal for each tab without an agent. label is the tab label. canOpen is false when this provider version cannot attach to it. Terminal titles are never sent (a program sets them, often to the task text).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "state", "canOpen"],
+      "properties": {
+        "id": { "$ref": "#/$defs/providerTargetId" },
+        "label": { "$ref": "#/$defs/providerDisplayName" },
+        "state": { "$ref": "#/$defs/providerItemState" },
+        "agent": { "$ref": "#/$defs/providerAgentKind" },
+        "canOpen": { "type": "boolean" }
+      }
+    },
+    "providerItem": {
+      "title": "HTTPProviderItem",
+      "description": "One row under a group (for herdr, one workspace: the main checkout or a linked worktree). openTarget is the terminal a tap opens (the most urgent agent, else the active tab's terminal); it is absent when nothing can be opened. stateSince is when the host first saw the current state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "state", "targets"],
+      "properties": {
+        "id": { "$ref": "#/$defs/providerHandle" },
+        "name": { "$ref": "#/$defs/providerDisplayName" },
+        "state": { "$ref": "#/$defs/providerItemState" },
+        "stateSince": { "$ref": "#/$defs/timestamp" },
+        "openTarget": { "$ref": "#/$defs/providerTargetId" },
+        "targets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/providerTarget" } }
+      }
+    },
+    "providerGroup": {
+      "title": "HTTPProviderGroup",
+      "description": "One project row (for herdr, a git repository and its worktrees, or a workspace outside git). state is the roll-up of its items.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "state", "canCreate", "items"],
+      "properties": {
+        "id": { "$ref": "#/$defs/providerHandle" },
+        "name": { "$ref": "#/$defs/providerDisplayName" },
+        "state": { "$ref": "#/$defs/providerItemState" },
+        "canCreate": { "type": "boolean" },
+        "items": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/providerItem" } }
+      }
+    },
+    "providerSnapshotResponse": {
+      "title": "HTTPProviderSnapshotResponse",
+      "description": "GET /api/v1/providers/{provider}: the host's cached view, never older than about 5 s while state is ready. groups is empty unless state is ready. truncated is true when the host cut the list at its item limits or at its 256 KiB body budget.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "state", "groups"],
+      "properties": {
+        "provider": { "$ref": "#/$defs/providerId" },
+        "state": { "$ref": "#/$defs/providerState" },
+        "groups": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/providerGroup" } },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "providerOpenRequest": {
+      "title": "HTTPProviderOpenRequest",
+      "description": "POST /api/v1/providers/{provider}/open. The host opens (or reuses) one in-memory provider session attached to that terminal. columns and rows are the phone's fitted grid: a new attach starts at that size, which herdr gives the pane on the computer until the session ends. A reused session keeps its size.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetId", "columns", "rows"],
+      "properties": {
+        "targetId": { "$ref": "#/$defs/providerTargetId" },
+        "columns": { "type": "integer", "minimum": 20, "maximum": 400 },
+        "rows": { "type": "integer", "minimum": 5, "maximum": 200 }
+      }
+    },
+    "providerSession": {
+      "title": "HTTPProviderSession",
+      "description": "A provider session: a broker terminal session that runs the provider's attach client. It lives in broker memory only (never in the sessions table, never in GET /api/v1/sessions) and is attached over /api/v1/ws like any session. It has no project or shell profile, so rename, terminate, uploads, tasks, preview and worktrees do not apply to it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "generation", "title", "state", "columns", "rows", "provider", "targetId"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "generation": { "$ref": "#/$defs/uuid" },
+        "title": { "$ref": "#/$defs/providerDisplayName" },
+        "state": { "$ref": "envelope.schema.json#/$defs/sessionLifecycle" },
+        "columns": { "type": "integer", "minimum": 20, "maximum": 400 },
+        "rows": { "type": "integer", "minimum": 5, "maximum": 200 },
+        "provider": { "$ref": "#/$defs/providerId" },
+        "targetId": { "$ref": "#/$defs/providerTargetId" }
+      }
+    },
+    "providerOpenResponse": {
+      "title": "HTTPProviderOpenResponse",
+      "description": "The session to show in Live. reused is true when the host already had a live session for this terminal.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session", "reused"],
+      "properties": {
+        "session": { "$ref": "#/$defs/providerSession" },
+        "reused": { "type": "boolean" }
+      }
+    },
+    "providerUpdateRequest": {
+      "title": "HTTPProviderUpdateRequest",
+      "description": "PATCH /api/v1/providers/{provider}: Settings → Integrations on this computer.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "notify": { "type": "array", "maxItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/providerNotifyState" } }
+      }
+    },
+    "providerCreateRequest": {
+      "title": "HTTPProviderCreateRequest",
+      "description": "POST /api/v1/providers/{provider}/create (milestone M2): a new worktree in a group, and optionally an agent in it with a first prompt. name is the new branch and worktree name; the host also refuses a name that ends in .lock or has more than 4 parts. agent must be one of the provider's agentKinds. prompt must hold no control characters other than tab and line feed (no ESC, no other C0 or C1, no DEL).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groupId", "name"],
+      "properties": {
+        "groupId": { "$ref": "#/$defs/providerHandle" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$" },
+        "agent": { "$ref": "#/$defs/providerAgentKind" },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 4000, "maxUtf8Bytes": 16000, "pattern": "^[^\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F]+$" }
+      }
+    },
+    "providerCreateResponse": {
+      "title": "HTTPProviderCreateResponse",
+      "description": "The new item and the terminal to open. The worktree exists whenever this is returned. agentStarted is false when no agent was asked for or the agent did not start; problem then says why (agentNotReady: it started but waits at a question; agentFailed: it did not start; promptFailed: it started, the first prompt was not sent).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "targetId", "agentStarted"],
+      "properties": {
+        "itemId": { "$ref": "#/$defs/providerHandle" },
+        "targetId": { "$ref": "#/$defs/providerTargetId" },
+        "agentStarted": { "type": "boolean" },
+        "problem": { "$ref": "#/$defs/providerCreateProblem" }
+      }
+    },
+    "providerCreateProblem": {
+      "title": "HTTPProviderCreateProblem",
+      "type": "string",
+      "enum": ["agentNotReady", "agentFailed", "promptFailed"]
     },
     "protocolRevision": {
       "description": "Additive revision of protocol v1 (protocol/v1/revision.json). On the settings response, protocolRevision is this computer's revision and minProtocolRevision the oldest app revision it still serves. See http-api.md, Protocol revision.",

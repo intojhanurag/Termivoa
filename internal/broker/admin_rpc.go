@@ -261,20 +261,9 @@ func (server *ManagementServer) pairingOrigin(ctx context.Context) (*string, err
 // addProject resolves the local path inside the broker, which owns the
 // project registry. Re-adding the same directory returns the saved project.
 func (server *ManagementServer) addProject(ctx context.Context, payload protocol.AdminRPCProjectAddPayload) (protocol.AdminRPCProject, error) {
-	if !filepath.IsAbs(payload.Path) {
-		return protocol.AdminRPCProject{}, errProjectPath
-	}
-	resolved, err := filepath.EvalSymlinks(payload.Path)
+	resolved, _, err := resolveProjectFolder(payload.Path)
 	if err != nil {
-		return protocol.AdminRPCProject{}, errProjectPath
-	}
-	resolved, err = filepath.Abs(resolved)
-	if err != nil {
-		return protocol.AdminRPCProject{}, errProjectPath
-	}
-	if info, err := os.Stat(resolved); err != nil || !info.IsDir() || len(resolved) > protocol.MaxAdminPathBytes ||
-		!utf8.ValidString(resolved) {
-		return protocol.AdminRPCProject{}, errProjectPath
+		return protocol.AdminRPCProject{}, err
 	}
 	projects, err := server.config.Store.ListProjects(ctx, protocol.MaxAdminProjects+1)
 	if err != nil {
@@ -303,6 +292,28 @@ func (server *ManagementServer) addProject(ctx context.Context, payload protocol
 	}
 	record, _ := adminProject(project)
 	return record, nil
+}
+
+// resolveProjectFolder is the project path check: an absolute path whose
+// resolved form is an existing directory of bounded, valid UTF-8 length. It
+// returns the resolved path and its FileInfo.
+func resolveProjectFolder(path string) (string, os.FileInfo, error) {
+	if !filepath.IsAbs(path) {
+		return "", nil, errProjectPath
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", nil, errProjectPath
+	}
+	resolved, err = filepath.Abs(resolved)
+	if err != nil {
+		return "", nil, errProjectPath
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.IsDir() || len(resolved) > protocol.MaxAdminPathBytes || !utf8.ValidString(resolved) {
+		return "", nil, errProjectPath
+	}
+	return resolved, info, nil
 }
 
 // adminDeviceStatus maps the store's live-credential status to the wire

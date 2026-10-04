@@ -54,6 +54,10 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `DELETE /api/v1/computers/{host}` | cookie | `{}` | `204`; removes `https://{host}` from the calling device's list |
 | `POST /api/v1/computers/offer` | none; no `Origin`, no `Sec-Fetch-*` | `HTTPComputerOfferRequest` (body up to 1 KiB) | `204` for every well-formed offer; see Found on your network |
 | `GET /api/v1/computers/found` | cookie; own origin only | – | `200 HTTPComputerFoundResponse`; see Found on your network |
+| `GET /api/v1/providers/{provider}` | cookie | – | `200 HTTPProviderSnapshotResponse`; see Providers |
+| `PATCH /api/v1/providers/{provider}` | cookie | `HTTPProviderUpdateRequest` | `200 HTTPProviderInfo`; this computer's Integrations settings |
+| `POST /api/v1/providers/{provider}/open` | cookie | `HTTPProviderOpenRequest` | `200 HTTPProviderOpenResponse`; see Providers |
+| `POST /api/v1/providers/{provider}/create` | cookie | `HTTPProviderCreateRequest` | `200 HTTPProviderCreateResponse`; may take up to 45 s |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -140,7 +144,10 @@ rules:
   response field needs only the bump.
 - Go decodes requests strictly, so the app sends a new request field or
   message only to a computer whose `protocolRevision` is at least the
-  revision that added it.
+  revision that added it. `revision.json` names those revisions in
+  `features` (for example `providers: 4`); generation emits them as
+  `FEATURE_REVISION` in TypeScript, and the app gates on
+  `FEATURE_REVISION.<feature>`, never on `PROTOCOL_REVISION` (which grows).
 - A new enum value that older apps must parse either raises `minRevision`,
   or the app maps unknown values to `unknown` before validation.
 - Raise `minRevision` only when an older app can no longer work with this
@@ -159,6 +166,7 @@ every build ID the packaging scripts produce already matches.
 | 1 | First revision. |
 | 2 | Preview listener rules (see "Preview listener"): the selection needs a `Referer` of an app origin and answers `200`; every other request must come from the preview origin itself. No schema change. An app frames a peer's preview only when that peer's `protocolRevision` is 2 or higher. |
 | 3 | Found on your network (see that section): `POST /api/v1/computers/offer` (`HTTPComputerOfferRequest`) and `GET /api/v1/computers/found` (`HTTPComputerFoundResponse`, `HTTPFoundComputer`); `gateway.computers.offer`, `gateway.computers.found`, `admin.pair.offer`, `admin.pair.offer.end` (`authentication-rpc.md`); error code `home_changed`, sent only on the local administration RPC, so no app parses it and `minRevision` stays 1. The app is served by home, so it calls `found` only on its own home. A home below revision 3 answers an offer with `403`, which the new computer reports as `not_accepted`. |
+| 4 | Providers (see that section): `GET` and `PATCH /api/v1/providers/{provider}`, `POST /api/v1/providers/{provider}/open` and `/create`; `HTTPSettingsResponse.providers`; the `HTTPProvider*` bodies; `gateway.providers.get`, `.update`, `.open`, `.create` (`authentication-rpc.md`). No new error code and no enum an older app parses, so `minRevision` stays 1. The app calls a provider route only on a computer whose `protocolRevision` is 4 or higher and that lists the provider. |
 
 ## Computers
 
@@ -228,6 +236,54 @@ device. `label` is the first DNS label of the host from home's own status.
 Without a snapshot it is `503 host_unavailable` with the generic message
 "Service Unavailable". Every device paired with
 home can read the grants it lists.
+
+## Providers
+
+A provider is a terminal workspace tool on this computer; herdr is the only
+one (`docs/herdr-provider.md`). `GET /api/v1/settings` lists it in
+`providers` only when herdr is installed; a computer without one sends no
+`providers` and the app shows no provider tab. Every provider route uses the
+same rules as `GET /api/v1/sessions`: cookie, exact own or bound app origin,
+`no-cors` refused, `Cache-Control: no-store`; mutations also need
+`X-Pterm-Request: 1`, JSON and at most 64 KiB, with unknown fields refused.
+`{provider}` must match `^[a-z][a-z0-9-]{0,31}$` and name a provider this
+computer lists.
+
+- `GET /api/v1/providers/{provider}` answers from the broker's cache (it
+  polls herdr every 2 s and never waits on it here). `state` is `ready`,
+  `notRunning`, `unsupported` or `off`; `groups` is empty unless `ready`. The
+  body is at most 256 KiB: whole groups are dropped from the end, least
+  urgent first, and `truncated` is then `true`. IDs are opaque and never
+  paths; a target is `<pane ID>.<terminal ID>`. State words are a pattern,
+  not an enum: the app shows any word it does not know as `unknown`.
+- `PATCH /api/v1/providers/{provider}` sets `enabled` and `notify` for all
+  devices of this computer (at most 10 per minute per device). Off stops
+  polling and ends provider sessions.
+- `POST /api/v1/providers/{provider}/open` opens, or reuses, the in-memory
+  provider session of one target in the latest snapshot (at most 20 per
+  minute per device, 4 sessions per computer). The session is attached over
+  `/api/v1/ws` with `session.attach` like any session but is never in
+  `GET /api/v1/sessions`; rename, terminate, uploads, tasks, preview,
+  history and worktree requests are refused for it. It ends 10 s after its
+  last viewer leaves (the first 10 s count as viewed).
+- `POST /api/v1/providers/{provider}/create` (at most 3 per minute per
+  device, one at a time per computer) makes a worktree in a group and may
+  start an agent of one of `agentKinds` with a first prompt. It runs in the
+  broker's own context, so a phone that disconnects does not cut it short.
+  An agent that does not start is not an error: `agentStarted` is `false`
+  with `problem`.
+
+Errors use existing codes with fixed Termivoa text, never herdr's or git's:
+an unknown provider, a bad body, an agent kind not offered or a prompt with
+control characters is `400 invalid_request`; a provider that is off, not
+running or unsupported is `503 host_unavailable` (open, create); a target or
+group not in the latest snapshot, or one that cannot open, is
+`404 session_missing`; 4 open sessions or a per-device limit is
+`429 limit_exceeded`; an open whose attach client ends at once (another
+program holds the terminal, or it just closed) is `409 operation_conflict`;
+create also uses `409 not_a_repository`,
+`409 worktree_exists` and `422 worktree_failed`
+("herdr could not make the worktree.").
 
 ## Pairing flow
 

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, ApiError, client, CONNECTION_UNAVAILABLE, firstLabel, homeOrigin, isAuthFailure, updateText } from '../api/http';
 import { logOut, previewOriginOf, refreshComputers, storedComputers, type Computer } from '../computers';
-import type { HTTPSettingsResponse } from '../generated/protocol';
+import { FEATURE_REVISION, type HTTPSettingsResponse } from '../generated/protocol';
 import {
   ADD_COMPUTER_PATH, cancelAdd, currentAdd, dismissAdd, PEER_ADD_PATH, resetAdd, subscribeAdd, takeAddComputerFragment,
   type AddComputerLink, type AddTask, type AppLocation,
@@ -19,6 +19,8 @@ import { NewSession } from './NewSession';
 import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
+import { GONE, type ProviderTap } from './Herdr';
+import { useProviders } from './providers';
 import { Sessions } from './Sessions';
 import { Setup } from './Setup';
 import { Banner } from './ui';
@@ -27,6 +29,9 @@ import { Banner } from './ui';
 // so Setup and Sessions start without it.
 const loadLive = () => loadChunk(() => import('./Live'));
 const Live = lazy(() => loadLive().then((module) => ({ default: module.Live })));
+// A provider terminal (herdr) opens in Live too, so it loads with the terminal.
+const loadProviderScreen = () => loadChunk(() => import('./ProviderScreen'));
+const ProviderScreen = lazy(() => loadProviderScreen().then((module) => ({ default: module.ProviderScreen })));
 // The wall draws live terminals too, so it also loads with xterm.
 const Wall = lazy(() => loadChunk(() => import('./Wall')).then((module) => ({ default: module.Wall })));
 const Preview = lazy(() => loadChunk(() => import('./Preview')).then((module) => ({ default: module.Preview })));
@@ -64,11 +69,17 @@ type View =
   | { readonly name: 'boot' }
   | { readonly name: 'offline' }
   | { readonly name: 'setup'; readonly reason?: string }
-  | { readonly name: 'sessions'; readonly message?: string }
+  /** `tab`: a provider tab to open on (herdr). */
+  | { readonly name: 'sessions'; readonly message?: string; readonly tab?: string }
   | { readonly name: 'wall' }
   | { readonly name: 'new'; readonly back?: View; readonly computer?: Computer }
   | { readonly name: 'live'; readonly session: HostedSession; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
   | { readonly name: 'preview'; readonly session: HostedSession; readonly port: number }
+  /**
+   * One provider terminal (herdr). `tapped`: 0, or a new number (newTap) for each tap in the app or confirmed
+   * notification tap, so it opens at once, also when the tap is for the address already shown.
+   */
+  | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: number; readonly notice?: string }
   | { readonly name: 'settings' }
   | { readonly name: 'add-computer' }
   | { readonly name: 'peer-add' };
@@ -96,6 +107,7 @@ export function titleFor(view: View): string {
   switch (view.name) {
     case 'live': return `${view.session.title} · ${APP_NAME}`;
     case 'preview': return `Preview :${view.port} · ${APP_NAME}`;
+    case 'provider': return `${view.provider} · ${APP_NAME}`;
     case 'sessions': return `Sessions · ${APP_NAME}`;
     case 'wall': return `Wall · ${APP_NAME}`;
     case 'new': return `New session · ${APP_NAME}`;
@@ -113,9 +125,16 @@ export function sessionPath(session: Pick<HostedSession, 'id' | 'computer'>): st
   return session.computer.home ? id : `/c/${encodeURIComponent(session.computer.host)}${id}`;
 }
 
+/** `/p/<provider>/<target>` on home, `/c/<host>/p/…` on a peer (docs/herdr-provider.md, rule 9). */
+export function providerPath(computer: Pick<Computer, 'home' | 'host'>, provider: string, target: string): string {
+  const path = `/p/${encodeURIComponent(provider)}/${encodeURIComponent(target)}`;
+  return computer.home ? path : `/c/${encodeURIComponent(computer.host)}${path}`;
+}
+
 export function pathFor(view: View): string {
   switch (view.name) {
     case 'live': return sessionPath(view.session);
+    case 'provider': return providerPath(view.computer, view.provider, view.target);
     case 'preview': return `${sessionPath(view.session)}/preview?port=${view.port}`;
     case 'settings': return '/settings';
     case 'wall': return '/wall';
@@ -131,10 +150,15 @@ export type Route =
   | { readonly name: 'settings' | 'wall' | 'new' | 'add-computer' | 'peer-add' | 'sessions' }
   /** `host` is undefined for home. */
   | { readonly name: 'session'; readonly host: string | undefined; readonly id: string; readonly preview: boolean }
+  /** A provider terminal; `host` is undefined for home. */
+  | { readonly name: 'provider'; readonly host: string | undefined; readonly provider: string; readonly target: string }
   /** Not an app address: show Sessions at `/`. */
   | { readonly name: 'unknown' };
 
 const HOST = /^[a-z0-9.-]+(?::\d{1,5})?$/u;
+/** The schema's providerId and providerTargetId patterns. */
+const PROVIDER_ID = /^[a-z][a-z0-9-]{0,31}$/u;
+const TARGET_ID = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$/u;
 
 function decode(part: string): string | undefined {
   try {
@@ -154,6 +178,16 @@ export function parseRoute(path: string): Route {
     case ADD_COMPUTER_PATH: return { name: 'add-computer' };
     case PEER_ADD_PATH: return { name: 'peer-add' };
     default:
+  }
+  const provider = /^(?:\/c\/([^/]+))?\/p\/([^/]+)\/([^/]+)$/u.exec(path);
+  if (provider !== null) {
+    const host = provider[1] === undefined ? undefined : decode(provider[1]);
+    const id = decode(provider[2] ?? '');
+    const target = decode(provider[3] ?? '');
+    if ((provider[1] !== undefined && (host === undefined || !HOST.test(host))) || id === undefined || !PROVIDER_ID.test(id) || target === undefined || !TARGET_ID.test(target)) {
+      return { name: 'unknown' };
+    }
+    return { name: 'provider', host, provider: id, target };
   }
   const home = /^\/sessions\/([^/]+)(\/preview)?$/u.exec(path);
   const peer = /^\/c\/([^/]+)\/sessions\/([^/]+)(\/preview)?$/u.exec(path);
@@ -177,9 +211,64 @@ export function notificationPath(data: unknown, computers: ReadonlyArray<Compute
   const { type, path } = (typeof data === 'object' && data !== null ? data : {}) as { readonly type?: unknown; readonly path?: unknown };
   if (type !== 'open' || typeof path !== 'string') return undefined;
   const target = parseRoute(path);
+  if (target.name === 'provider') {
+    const computer = computers.find((item) => (target.host === undefined ? item.home : !item.home && item.host === target.host));
+    return computer === undefined ? undefined : providerPath(computer, target.provider, target.target);
+  }
   if (target.name !== 'session' || target.preview || !SESSION_ID.test(target.id)) return undefined;
   const computer = computers.find((item) => (target.host === undefined ? item.home : !item.home && item.host === target.host));
   return computer === undefined ? undefined : sessionPath({ id: target.id, computer });
+}
+
+let taps = 0;
+/** A new tap number for a provider view: each tap differs from the last, so the screen sees it. */
+export const newTap = (): number => ++taps;
+
+/** A chip moves between tabs of the same workspace: one screen, so it replaces the history entry instead of adding one. */
+export function sameScreen(from: View, to: View): boolean {
+  return from.name === 'provider' && to.name === 'provider' && from.computer.origin === to.computer.origin && from.provider === to.provider;
+}
+
+/** The provider view for an address (a load, back or forward, or a notification tap): it opens at once only for a tap the service worker confirms. */
+export async function providerArrival(
+  computer: Computer, provider: string, target: string, path: string, ask: (path: string) => Promise<boolean> = askWorkerTap,
+): Promise<View> {
+  return { name: 'provider', computer, provider, target, tapped: await ask(path) ? newTap() : 0 };
+}
+
+/** How long the page waits for the service worker's answer about a tap. */
+export const TAP_ASK_MS = 1_500;
+
+/**
+ * Whether a notification tap brought this page to `path`: the service worker
+ * keeps a one-time record of each tap for about 30 s (sw.js, takeTap). No
+ * worker, no answer in time, or no fresh record: false, and the page shows
+ * Open. The address itself never says so.
+ */
+export function askWorkerTap(
+  path: string,
+  worker: { postMessage(message: unknown, transfer: Transferable[]): void } | null | undefined = globalThis.navigator?.serviceWorker?.controller,
+  timeoutMs = TAP_ASK_MS,
+): Promise<boolean> {
+  if (worker === null || worker === undefined) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const done = (fresh: boolean) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      resolve(fresh);
+    };
+    const timer = setTimeout(() => done(false), timeoutMs);
+    channel.port1.onmessage = (event: MessageEvent) => {
+      const data = event.data as { readonly type?: unknown; readonly fresh?: unknown } | null;
+      done(data?.type === 'tap' && data.fresh === true);
+    };
+    try {
+      worker.postMessage({ type: 'tap?', path }, [channel.port2]);
+    } catch {
+      done(false);
+    }
+  });
 }
 
 /**
@@ -230,15 +319,12 @@ export function peerPreviewOnLoad(state: unknown, previews: ReadonlyArray<{ read
   return tapped && previews?.some((item) => item.port === port) === true;
 }
 
-/** From this protocol revision on, a peer's preview listener has the rules the frame needs (docs/peer-preview.md). */
-export const PEER_PREVIEW_REVISION = 2;
-
 /**
  * Where a session's preview is framed from (`origin`), or what to say in
  * place of the frame (`notice`); neither while a peer has not answered yet.
  * Home: its configured origin. A peer never needs home's previews: its origin
  * is computed, and it has one only while the app's own poll of that peer
- * answers, at PEER_PREVIEW_REVISION or higher. The app cannot see what the
+ * answers, at FEATURE_REVISION.peerPreview or higher (its listener has the rules the frame needs, docs/peer-preview.md). The app cannot see what the
  * frame is answered, so a peer that refuses the phone or cannot be reached
  * loses its frame.
  */
@@ -249,7 +335,7 @@ export function previewFor(
 ): { readonly origin?: string | undefined; readonly notice?: string } {
   if (computer.home) return { origin: previewOriginOf(computer, homePreviewAt) };
   switch (status?.kind) {
-    case 'ok': return status.settings.protocolRevision >= PEER_PREVIEW_REVISION
+    case 'ok': return status.settings.protocolRevision >= FEATURE_REVISION.peerPreview
       ? { origin: previewOriginOf(computer, undefined) }
       : { notice: updateText(computer.label) };
     case 'pair': return { notice: pairAgain(computer.label) };
@@ -394,8 +480,9 @@ export function homeAdoption(deps: {
 
 /** Home's new list dropped the computer of the open Live view or preview: go to Sessions with a short notice. */
 export function leaveRemoved(view: View, computers: ReadonlyArray<Computer>): View | undefined {
-  if ((view.name !== 'live' && view.name !== 'preview') || computers.some((computer) => computer.origin === view.session.computer.origin)) return undefined;
-  return { name: 'sessions', message: `${view.session.computer.label} is no longer in your list.` };
+  const computer = view.name === 'live' || view.name === 'preview' ? view.session.computer : view.name === 'provider' ? view.computer : undefined;
+  if (computer === undefined || computers.some((item) => item.origin === computer.origin)) return undefined;
+  return { name: 'sessions', message: `${computer.label} is no longer in your list.` };
 }
 
 export interface StartDeps {
@@ -465,7 +552,7 @@ export function AddBanner({ task, onOpen }: { readonly task: AddTask; readonly o
 }
 
 /** Screens that show the add banner: the app's own screens, not pairing, start-up or the add page itself. */
-const BANNER_VIEWS: ReadonlySet<View['name']> = new Set(['sessions', 'wall', 'new', 'live', 'preview', 'settings']);
+const BANNER_VIEWS: ReadonlySet<View['name']> = new Set(['sessions', 'wall', 'new', 'live', 'preview', 'settings', 'provider']);
 
 export function App({ grant, add, peerLink }: StartupLinks) {
   const [view, setView] = useState<View>({ name: 'boot' });
@@ -505,7 +592,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const navigate = useCallback((next: View) => {
     const path = pathFor(next);
     if (path !== window.location.pathname + window.location.search) {
-      window.history.pushState(next.name === 'preview' ? PREVIEW_TAP : null, '', path);
+      window.history[sameScreen(viewRef.current, next) ? 'replaceState' : 'pushState'](next.name === 'preview' ? PREVIEW_TAP : null, '', path);
     }
     setView(next);
   }, []);
@@ -558,8 +645,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
 
   const onHomeAuth = useCallback(() => toSetup(UNPAIRED), [toSetup]);
   const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
-    || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer';
+    || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer' || view.name === 'provider';
   const all = useAllSessions(polling, computers, onHomeAuth, adding?.phase.kind === 'done' ? adding.origin : undefined);
+  // Providers (herdr) are read only while Sessions, a provider terminal or Settings (Integrations) shows; their failures never reach `all`.
+  const providers = useProviders(view.name === 'sessions' || view.name === 'provider' || view.name === 'settings', all.entries);
   // Push from peers follows the list: at start, when a computer is added or
   // removed (log out included), and when one stops or starts being usable
   // (can't reach, pair again, outdated), so a peer that was offline when push
@@ -599,6 +688,16 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       default:
     }
     const computer = computersRef.current.find((item) => (target.host === undefined ? item.home : item.host === target.host));
+    if (target.name === 'provider') {
+      if (computer === undefined) {
+        window.history.replaceState(null, '', '/');
+        setView({ name: 'sessions', message: 'That computer is not in your list.' });
+        return;
+      }
+      // Opens at once only when the service worker confirms a notification tap; a link or a reload shows Open.
+      setView(await providerArrival(computer, target.provider, target.target, window.location.pathname));
+      return;
+    }
     if (computer === undefined) {
       window.history.replaceState(null, '', '/');
       setView({ name: 'sessions', message: 'That computer is not in your list.' });
@@ -782,10 +881,13 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   useEffect(() => {
     if (view.name === 'sessions' || view.name === 'new') {
       loadLive().catch(() => undefined);
+      if (view.name === 'sessions') loadProviderScreen().catch(() => undefined);
     }
   }, [view.name]);
 
   const openSession = useCallback((session: HostedSession) => navigate({ name: 'live', session }), [navigate]);
+  // A tap on a provider row or chip in the app: open at once.
+  const openTarget = useCallback((tap: ProviderTap) => navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap() }), [navigate]);
   const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
   const reloadComputers = useCallback(() => setComputers(storedComputers()), []);
   // An add that finished in the background: its computer joins the list.
@@ -887,6 +989,14 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           entries={all.entries}
           sessions={sessions}
           {...(view.message === undefined ? {} : { message: view.message })}
+          providers={providers.entries}
+          tab={view.tab}
+          onOpenTarget={openTarget}
+          onCreated={(tap, notice, key) => {
+            void providers.reload(key);
+            navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap(), ...(notice === undefined ? {} : { notice }) });
+          }}
+          onProviderRetry={providers.reload}
           offerPush={homeEntry?.status.kind === 'ok'}
           onOpen={openSession}
           onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}
@@ -967,12 +1077,39 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           </Suspense>
         </ErrorBoundary>
       )}
+      {view.name === 'provider' && (
+        <ErrorBoundary key={`${view.computer.host}/${view.provider}/${view.target}`}>
+          <Suspense fallback={<main className="page"><p role="status" className="muted">Opening terminal…</p></main>}>
+            <ProviderScreen
+              computer={view.computer}
+              provider={view.provider}
+              targetId={view.target}
+              tapped={view.tapped}
+              {...(view.notice === undefined ? {} : { notice: view.notice })}
+              entry={providers.entries.find((entry) => entry.computer.origin === view.computer.origin && entry.info.id === view.provider)}
+              fontSize={fontSize}
+              multi={computers.length > 1}
+              onChip={(target) => openTarget({ computer: view.computer, provider: view.provider, targetId: target })}
+              onGone={() => {
+                // Replace the dead address, so Back does not return to it.
+                window.history.replaceState(null, '', '/');
+                setView({ name: 'sessions', tab: view.provider, message: GONE });
+              }}
+              onSessions={toSessions}
+              onSettings={() => navigate({ name: 'settings' })}
+              onFailure={(error) => handleFailure(error, view.computer)}
+              onRevoked={(reason) => revoked(view.computer, reason)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
       {view.name === 'settings' && (
         <ErrorBoundary>
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening settings…</p></main>}>
             <Settings
               settings={settings}
               entries={all.entries}
+              providers={providers.entries}
               fontSize={fontSize}
               onFontSize={setFontSize}
               onBack={toSessions}
@@ -980,6 +1117,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onFailure={handleFailure}
               onLogout={logout}
               onCheck={(origin) => all.reload(origin)}
+              onProviderReload={providers.reload}
               onComputersChanged={reloadComputers}
             />
           </Suspense>

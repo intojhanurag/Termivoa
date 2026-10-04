@@ -78,6 +78,10 @@ export type ProtocolTypes = {
     readonly gatewayRPCPreviewCheck:           GatewayRPCPreviewCheckPayload;
     readonly gatewayRPCPreviewTarget:          GatewayRPCPreviewTargetPayload;
     readonly gatewayRPCPrincipal:              GatewayRPCPrincipalPayload;
+    readonly gatewayRPCProvider:               GatewayRPCProviderPayload;
+    readonly gatewayRPCProviderCreate:         GatewayRPCProviderCreatePayload;
+    readonly gatewayRPCProviderOpen:           GatewayRPCProviderOpenPayload;
+    readonly gatewayRPCProviderUpdate:         GatewayRPCProviderUpdatePayload;
     readonly gatewayRPCPushSubscribe:          GatewayRPCPushSubscribePayload;
     readonly gatewayRPCPushUnsubscribe:        GatewayRPCPushUnsubscribePayload;
     readonly gatewayRPCSessionCreate:          GatewayRPCSessionCreatePayload;
@@ -107,6 +111,13 @@ export type ProtocolTypes = {
     readonly httpPairRedeemRequest:            HTTPPairRedeemRequest;
     readonly httpPairRedeemResponse:           HTTPPairRedeemResponse;
     readonly httpPreviewConfigResponse:        HTTPPreviewConfigResponse;
+    readonly httpProviderCreateRequest:        HTTPProviderCreateRequest;
+    readonly httpProviderCreateResponse:       HTTPProviderCreateResponse;
+    readonly httpProviderOpenRequest:          HTTPProviderOpenRequest;
+    readonly httpProviderOpenResponse:         HTTPProviderOpenResponse;
+    readonly httpProviderSession:              HTTPProviderSession;
+    readonly httpProviderSnapshotResponse:     HTTPProviderSnapshotResponse;
+    readonly httpProviderUpdateRequest:        HTTPProviderUpdateRequest;
     readonly httpPushConfigResponse:           HTTPPushConfigResponse;
     readonly httpPushSubscribeRequest:         HTTPPushSubscribeRequest;
     readonly httpPushTestResponse:             HTTPPushTestResponse;
@@ -881,7 +892,7 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.providers.get" | "gateway.providers.update" | "gateway.providers.open" | "gateway.providers.create" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.providers.get.result" | "gateway.providers.update.result" | "gateway.providers.open.result" | "gateway.providers.create.result" | "gateway.error";
 
 /**
  * origin: the browser origin configured with admin.config.origin, absent when none is set.
@@ -953,6 +964,81 @@ export type GatewayRPCPrincipalPayload = {
     readonly deviceLabel:  string;
     readonly expiresAt:    string;
 }
+
+/**
+ * Reads one provider of this computer (docs/herdr-provider.md). The broker answers from its
+ * cache and never waits on the provider.
+ */
+export type GatewayRPCProviderPayload = {
+    readonly credential: string;
+    readonly provider:   string;
+}
+
+/**
+ * Makes a worktree and optionally starts an agent in it (milestone M2). The broker runs it
+ * in its own context and answers within 45 s; the gateway sends it on a dedicated
+ * connection.
+ */
+export type GatewayRPCProviderCreatePayload = {
+    readonly credential: string;
+    readonly provider:   string;
+    readonly request:    HTTPProviderCreateRequest;
+}
+
+/**
+ * POST /api/v1/providers/{provider}/create (milestone M2): a new worktree in a group, and
+ * optionally an agent in it with a first prompt. name is the new branch and worktree name;
+ * the host also refuses a name that ends in .lock or has more than 4 parts. agent must be
+ * one of the provider's agentKinds. prompt must hold no control characters other than tab
+ * and line feed (no ESC, no other C0 or C1, no DEL).
+ */
+export type HTTPProviderCreateRequest = {
+    readonly agent?:  string;
+    readonly groupId: string;
+    readonly name:    string;
+    readonly prompt?: string;
+}
+
+/**
+ * Opens or reuses the in-memory provider session of one terminal in the broker's latest
+ * snapshot.
+ */
+export type GatewayRPCProviderOpenPayload = {
+    readonly credential: string;
+    readonly provider:   string;
+    readonly request:    HTTPProviderOpenRequest;
+}
+
+/**
+ * POST /api/v1/providers/{provider}/open. The host opens (or reuses) one in-memory provider
+ * session attached to that terminal. columns and rows are the phone's fitted grid: a new
+ * attach starts at that size, which herdr gives the pane on the computer until the session
+ * ends. A reused session keeps its size.
+ */
+export type HTTPProviderOpenRequest = {
+    readonly columns:  number;
+    readonly rows:     number;
+    readonly targetId: string;
+}
+
+/**
+ * Changes this computer's Integrations settings of one provider, for all devices.
+ */
+export type GatewayRPCProviderUpdatePayload = {
+    readonly credential: string;
+    readonly provider:   string;
+    readonly request:    HTTPProviderUpdateRequest;
+}
+
+/**
+ * PATCH /api/v1/providers/{provider}: Settings → Integrations on this computer.
+ */
+export type HTTPProviderUpdateRequest = {
+    readonly enabled?: boolean;
+    readonly notify?:  HTTPProviderNotifyState[];
+}
+
+export type HTTPProviderNotifyState = "blocked" | "done";
 
 /**
  * Saves a push subscription for the device that owns the credential.
@@ -1206,6 +1292,106 @@ export type HTTPPreviewConfigResponse = {
 }
 
 /**
+ * The new item and the terminal to open. The worktree exists whenever this is returned.
+ * agentStarted is false when no agent was asked for or the agent did not start; problem
+ * then says why (agentNotReady: it started but waits at a question; agentFailed: it did not
+ * start; promptFailed: it started, the first prompt was not sent).
+ */
+export type HTTPProviderCreateResponse = {
+    readonly agentStarted: boolean;
+    readonly itemId:       string;
+    readonly problem?:     HTTPProviderCreateProblem;
+    readonly targetId:     string;
+}
+
+export type HTTPProviderCreateProblem = "agentNotReady" | "agentFailed" | "promptFailed";
+
+/**
+ * The session to show in Live. reused is true when the host already had a live session for
+ * this terminal.
+ */
+export type HTTPProviderOpenResponse = {
+    readonly reused:  boolean;
+    readonly session: HTTPProviderSession;
+}
+
+/**
+ * A provider session: a broker terminal session that runs the provider's attach client. It
+ * lives in broker memory only (never in the sessions table, never in GET /api/v1/sessions)
+ * and is attached over /api/v1/ws like any session. It has no project or shell profile, so
+ * rename, terminate, uploads, tasks, preview and worktrees do not apply to it.
+ */
+export type HTTPProviderSession = {
+    readonly columns:    number;
+    readonly generation: string;
+    readonly id:         string;
+    readonly provider:   string;
+    readonly rows:       number;
+    readonly state:      State;
+    readonly targetId:   string;
+    readonly title:      string;
+}
+
+/**
+ * GET /api/v1/providers/{provider}: the host's cached view, never older than about 5 s
+ * while state is ready. groups is empty unless state is ready. truncated is true when the
+ * host cut the list at its item limits or at its 256 KiB body budget.
+ */
+export type HTTPProviderSnapshotResponse = {
+    readonly groups:     HTTPProviderGroup[];
+    readonly provider:   string;
+    readonly state:      HTTPProviderState;
+    readonly truncated?: boolean;
+}
+
+/**
+ * One project row (for herdr, a git repository and its worktrees, or a workspace outside
+ * git). state is the roll-up of its items.
+ */
+export type HTTPProviderGroup = {
+    readonly canCreate: boolean;
+    readonly id:        string;
+    readonly items:     HTTPProviderItem[];
+    readonly name:      string;
+    readonly state:     string;
+}
+
+/**
+ * One row under a group (for herdr, one workspace: the main checkout or a linked worktree).
+ * openTarget is the terminal a tap opens (the most urgent agent, else the active tab's
+ * terminal); it is absent when nothing can be opened. stateSince is when the host first saw
+ * the current state.
+ */
+export type HTTPProviderItem = {
+    readonly id:          string;
+    readonly name:        string;
+    readonly openTarget?: string;
+    readonly state:       string;
+    readonly stateSince?: string;
+    readonly targets:     HTTPProviderTarget[];
+}
+
+/**
+ * One terminal the phone can open: each agent, plus one terminal for each tab without an
+ * agent. label is the tab label. canOpen is false when this provider version cannot attach
+ * to it. Terminal titles are never sent (a program sets them, often to the task text).
+ */
+export type HTTPProviderTarget = {
+    readonly agent?:  string;
+    readonly canOpen: boolean;
+    readonly id:      string;
+    readonly label:   string;
+    readonly state:   string;
+}
+
+/**
+ * ready: the host reads the provider. notRunning: installed, but its server does not
+ * answer. unsupported: the installed version is too old or its data cannot be read. off:
+ * turned off in Settings → Integrations on this computer.
+ */
+export type HTTPProviderState = "ready" | "notRunning" | "unsupported" | "off";
+
+/**
  * The broker's VAPID application server public key.
  */
 export type HTTPPushConfigResponse = {
@@ -1240,7 +1426,30 @@ export type HTTPSettingsResponse = {
     readonly minProtocolRevision: number;
     readonly projects:            HTTPNamedOption[];
     readonly protocolRevision:    number;
-    readonly shellProfiles:       HTTPNamedOption[];
+    /**
+     * Terminal workspace providers found on this computer (for example herdr). Absent or empty
+     * when none is installed; the app shows a provider tab only for a computer that lists one.
+     */
+    readonly providers?:    HTTPProviderInfo[];
+    readonly shellProfiles: HTTPNamedOption[];
+}
+
+/**
+ * One provider on this computer. enabled and notify are this computer's Integrations
+ * settings (all devices). canCreate is true when the provider can make a worktree and start
+ * an agent (milestone M2). agentKinds lists the kinds offered by the new-worktree sheet:
+ * kinds that herdr itself can start (its agent start kinds) and that already run in this
+ * herdr, most used first.
+ */
+export type HTTPProviderInfo = {
+    readonly agentKinds: string[];
+    readonly canCreate:  boolean;
+    readonly enabled:    boolean;
+    readonly id:         string;
+    readonly name:       string;
+    readonly notify:     HTTPProviderNotifyState[];
+    readonly state:      HTTPProviderState;
+    readonly version?:   string;
 }
 
 /**
@@ -1534,6 +1743,11 @@ export type WorktreeRemovedPayload = {
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 
 /** This build's additive protocol v1 revision (protocol/v1/revision.json). */
-export const PROTOCOL_REVISION = 3;
+export const PROTOCOL_REVISION = 4;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;
+/** The revision that added each feature: call it only on a computer whose protocolRevision is at least this. */
+export const FEATURE_REVISION = {
+    peerPreview: 2,
+    providers: 4,
+} as const;

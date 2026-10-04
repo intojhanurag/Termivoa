@@ -194,7 +194,7 @@ func CLIEnv() []string {
 // macOS app bundle (the CLI of the Tailscale app that runs the daemon),
 // /usr/local/bin, and Homebrew's /opt/homebrew/bin last on macOS (often owned
 // by the user). launchd's PATH has neither Homebrew folder, so they must be
-// listed. Every candidate must pass checkBinary; a missing one is skipped
+// listed. Every candidate must pass CheckBinary; a missing one is skipped
 // silently.
 func FindBinary(goos string, getenv func(string) string, lookPath func(string) (string, error)) (path string, refused []string) {
 	var candidates []string
@@ -216,7 +216,7 @@ func FindBinary(goos string, getenv func(string) string, lookPath func(string) (
 		candidates = append(candidates, found)
 	}
 	for _, candidate := range candidates {
-		err := checkBinary(candidate)
+		err := CheckBinary(candidate)
 		switch {
 		case err == nil:
 			return candidate, refused

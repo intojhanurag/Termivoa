@@ -44,6 +44,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   network → Add**), with unit tests and multi-computer harness checks
   `F-*` (`scripts/e2e-multicomputer/README.md`). Open: the real two-computer
   and real-phone checks (Next 3).
+- herdr on your phone (ADR 0008, `docs/herdr-provider.md`): a **herdr** tab,
+  open a herdr terminal in Live, buzz when blocked or finished,
+  **Settings → Integrations**, new worktree with an agent. Open: the real
+  device checks (Next 5).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -71,6 +75,39 @@ In this order.
 4. ~~**Docs picture** of the "Adding vps… approve on vps" bar and of
    **Found on your network** with **Add**.~~ Done: both in
    `guides/computers.md`, from `scripts/docs-screenshots/computers.mjs`.
+5. ~~**herdr on your phone**~~ Done in the next beta (ADR 0008,
+   `docs/herdr-provider.md`): M1a (list, push, Integrations), M1b (open,
+   chips) and M2 (new worktree and agent). Open follow-ups:
+   - **Owner real-device checks.** Open a blocked agent on his live herdr
+     from the phone; check that the laptop pane goes phone-sized and, about
+     10 s after the phone locks, back to its own size; get a real herdr push
+     on an iPhone.
+   - **herdr 0.9 `terminal session observe`:** watch a terminal without
+     resizing the laptop pane; move to it when 0.8 support ends.
+   - **Custom herdr prefix key:** today `pterm doctor` only warns; decide if
+     Termivoa should double the configured key too.
+   - **Named herdr sessions:** only the default session shows.
+   - **Windows:** herdr is not supported there.
+   - **Landing page:** `site/public/index.html` has no herdr section yet.
+     Design it in Paper first and show the owner (as for #165).
+   - **herdr installed later:** the phone shows it only the next time the
+     app comes to the front (settings are read again then).
+   - **"‹ Sessions" in a herdr terminal** goes to the All tab, not the herdr
+     tab.
+   - **Open on its own gateway connection:** the reaper holds a target's
+     open lock while it ends the attach (at most 3 s); an open of that
+     target, and gateway requests behind it, wait. Create already has its
+     own connection.
+   - **A `/p/…` address of a computer below protocol revision 4** shows a
+     general failure text, not "Update Termivoa on …".
+   - **Create timeout text:** the sheet tells a timeout from the elapsed
+     time; give the client a `timeout` code.
+   - **Binary check while herdr runs:** when the herdr program turns unsafe
+     (owner or mode) while its server runs, the list stays "ready" and every
+     open fails; recheck it in the poll and say why in `pterm doctor`.
+   - **Test for a herdr version change between two polls** (rediscovery).
+   - **Session pushes** can be dropped the same way provider pushes were
+     (admitted, then no free delivery slot); see the issue for it.
 
 ## Polish next
 

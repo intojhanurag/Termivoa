@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -153,6 +154,9 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		// Literal paths win over {host}; neither is a valid computer host.
 		mux.HandleFunc(offerPath, handler.offerComputer)
 		mux.HandleFunc("/api/v1/computers/found", handler.foundComputers)
+		mux.HandleFunc("/api/v1/providers/{provider}", handler.provider)
+		mux.HandleFunc("/api/v1/providers/{provider}/open", handler.providerOpen)
+		mux.HandleFunc("/api/v1/providers/{provider}/create", handler.providerCreate)
 	}
 	handler.mux = mux
 	return handler, nil
@@ -470,6 +474,10 @@ var contentTypes = map[string]string{
 	".txt":         "text/plain; charset=utf-8",
 }
 
+// providerRoute is the app's address of one provider terminal, without the
+// leading slash (web/src/screens/App.tsx, parseRoute).
+var providerRoute = regexp.MustCompile(`^(c/[a-z0-9.-]+(:[0-9]{1,5})?/)?p/[a-z][a-z0-9-]{0,31}/[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$`)
+
 // serveStatic serves the embedded build. Unknown extensionless GET paths
 // (such as /pair) fall back to index.html; missing files with an extension,
 // under /assets/ or under /push/ are 404 so a script request never receives
@@ -488,7 +496,9 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 	if hidden := path.Ext(name) == ".map" || strings.HasPrefix(name, ".") || strings.Contains(name, "/."); hidden || err != nil || !info.Mode().IsRegular() {
 		// /push/<host>/ is the scope of a peer's push registration: no page
 		// may load there, or that worker would control it.
-		if strings.HasPrefix(name, "assets/") || name == "push" || strings.HasPrefix(name, "push/") || path.Ext(name) != "" {
+		// A provider terminal's address (/p/<provider>/<target>, /c/<host>/p/…)
+		// is the app although its target ID has a dot.
+		if strings.HasPrefix(name, "assets/") || name == "push" || strings.HasPrefix(name, "push/") || path.Ext(name) != "" && !providerRoute.MatchString(name) {
 			response.Header().Set("Cache-Control", "no-store")
 			http.NotFound(response, request)
 			return

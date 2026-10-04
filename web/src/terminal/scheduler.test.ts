@@ -421,4 +421,21 @@ describe('reads', () => {
     await expect(broken).rejects.toThrow('sync');
     await expect(scheduler.read(async () => 2)).resolves.toBe(2);
   });
+
+  it('gives provider reads their own budget, so hung provider reads never delay home\'s sessions read', async () => {
+    const scheduler = new Scheduler();
+    const started: string[] = [];
+    // Two peers with two providers each; every provider read hangs.
+    const keys = ['p1', 'p2'].flatMap((peer) => ['herdr', 'other'].map((id) => `https://${peer}.t.ts.net provider:${id}`));
+    scheduler.poll(keys, (key) => {
+      started.push(key);
+      return new Promise<never>(() => undefined);
+    }, () => undefined, 'providers');
+    await flush();
+    let sessions = false;
+    void scheduler.serial(ORIGIN, async () => { sessions = true; });
+    await flush();
+    expect(sessions).toBe(true);
+    expect(started).toHaveLength(2);
+  });
 });

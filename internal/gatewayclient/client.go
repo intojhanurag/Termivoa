@@ -398,6 +398,92 @@ func (client *Client) FoundComputers(ctx context.Context, credential string) (pr
 		protocol.GatewayRPCCredentialPayload{Credential: credential}, false, nil)
 }
 
+func (client *Client) Provider(ctx context.Context, credential, provider string) (protocol.HTTPProviderSnapshotResponse, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPProviderSnapshotResponse{}, err
+	}
+	return roundTrip[protocol.HTTPProviderSnapshotResponse](ctx, client, protocol.GatewayProvidersGet,
+		protocol.GatewayRPCProviderPayload{Credential: credential, Provider: provider}, false, nil)
+}
+
+func (client *Client) UpdateProvider(
+	ctx context.Context, credential, provider string, request protocol.HTTPProviderUpdateRequest,
+) (protocol.HTTPProviderInfo, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPProviderInfo{}, err
+	}
+	return roundTrip(ctx, client, protocol.GatewayProvidersUpdate,
+		protocol.GatewayRPCProviderUpdatePayload{Credential: credential, Provider: provider, Request: request}, true,
+		func(result protocol.HTTPProviderInfo) error {
+			if result.ID != provider {
+				return errors.New("gatewayclient: provider result mismatch")
+			}
+			return nil
+		})
+}
+
+func (client *Client) OpenProvider(
+	ctx context.Context, credential, provider string, request protocol.HTTPProviderOpenRequest,
+) (protocol.HTTPProviderOpenResponse, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPProviderOpenResponse{}, err
+	}
+	return roundTrip(ctx, client, protocol.GatewayProvidersOpen,
+		protocol.GatewayRPCProviderOpenPayload{Credential: credential, Provider: provider, Request: request}, true,
+		func(result protocol.HTTPProviderOpenResponse) error {
+			if result.Session.Provider != provider || result.Session.TargetID != request.TargetID {
+				return errors.New("gatewayclient: provider session mismatch")
+			}
+			return nil
+		})
+}
+
+// CreateProvider runs on a dedicated connection: it can take up to 45 s and
+// must not hold the shared one that every other request waits for.
+func (client *Client) CreateProvider(
+	ctx context.Context, credential, provider string, request protocol.HTTPProviderCreateRequest,
+) (protocol.HTTPProviderCreateResponse, error) {
+	var result protocol.HTTPProviderCreateResponse
+	if ctx == nil {
+		return result, errors.New("gatewayclient: context must not be nil")
+	}
+	if err := checkCredential(credential); err != nil {
+		return result, err
+	}
+	data, requestID, err := encodeRequest(ctx, protocol.GatewayProvidersCreate,
+		protocol.GatewayRPCProviderCreatePayload{Credential: credential, Provider: provider, Request: request})
+	if err != nil {
+		return result, err
+	}
+	select {
+	case <-client.done:
+		return result, net.ErrClosed
+	default:
+	}
+	connection, err := dialRPC(ctx, client.dial)
+	if err != nil {
+		return result, err
+	}
+	defer connection.conn.Close()
+	clearDeadline, err := setContextDeadline(ctx, connection.conn.SetDeadline)
+	if err != nil {
+		return result, err
+	}
+	defer clearDeadline()
+	response, err := connection.exchange(data, requestID, protocol.GatewayProvidersCreate)
+	var remote *gatewayapi.Error
+	if errors.As(err, &remote) {
+		return result, remote
+	}
+	if err == nil {
+		result, err = protocol.DecodeRPCPayload[protocol.HTTPProviderCreateResponse](response)
+	}
+	if err != nil {
+		return protocol.HTTPProviderCreateResponse{}, failure(ctx, err, true)
+	}
+	return result, nil
+}
+
 func (client *Client) mutate(
 	ctx context.Context,
 	requestType protocol.GatewayRPCMessageType,

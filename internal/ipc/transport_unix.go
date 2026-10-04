@@ -294,6 +294,9 @@ func securePrivateFile(path string) error {
 	return validatePrivateFile(path)
 }
 
+// RequireCurrentOwner reports whether the current user owns info's file.
+func RequireCurrentOwner(info os.FileInfo) error { return requireCurrentUnixOwner(info) }
+
 func requireCurrentUnixOwner(info os.FileInfo) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {

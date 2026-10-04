@@ -378,6 +378,9 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 	case protocol.GatewayUploadBegin, protocol.GatewayUploadChunk, protocol.GatewayUploadCommit:
 		// An upload must start a fresh connection; see serveUpload.
 		return nil, nil, errUploadOrder
+	case protocol.GatewayProvidersGet, protocol.GatewayProvidersUpdate, protocol.GatewayProvidersOpen, protocol.GatewayProvidersCreate:
+		result, err := server.dispatchProvider(ctx, request, authorize)
+		return result, nil, err
 	default:
 		return nil, nil, errors.New("broker: unsupported gateway request")
 	}
@@ -421,6 +424,12 @@ func (server *ManagementServer) browserSettings(ctx context.Context, principal a
 			result.ShellProfiles = append(result.ShellProfiles, namedOption(profile.ID, profile.DisplayName))
 		}
 	}
+	// A computer without herdr lists no provider (and the app shows no tab).
+	if server.providers != nil {
+		if info, installed := server.providers.info(); installed {
+			result.Providers = []protocol.HTTPProviderInfo{info}
+		}
+	}
 	return result, nil
 }
 
@@ -457,6 +466,9 @@ func formatRPCTime(value time.Time) string { return value.UTC().Format(time.RFC3
 
 func classifyAuthError(err error) (managementFailure, bool) {
 	if failure, ok := classifyComputerError(err); ok {
+		return failure, true
+	}
+	if failure, ok := classifyProviderError(err); ok {
 		return failure, true
 	}
 	switch {

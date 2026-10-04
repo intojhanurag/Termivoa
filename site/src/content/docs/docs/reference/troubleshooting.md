@@ -426,6 +426,77 @@ Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tai
 
 That computer could not be set up for notifications; home and the other computers still notify. Check that the computer is awake and reachable (no **can't reach** or **pair again** on the Sessions list), then open **Settings** again. If it stays, turn the switch in **Settings → Notifications** off and on.
 
+## herdr
+
+:::note[Next beta]
+These entries are not in `v0.1.0-beta.3`. See [Termivoa + herdr](/docs/guides/herdr/).
+:::
+
+### The herdr tab is missing
+
+Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` line when it finds herdr.
+
+- herdr is not installed. Install herdr 0.8.2 or later.
+- Termivoa cannot find it. It looks in the Homebrew folder (macOS), `/usr/local/bin`, `/usr/bin` (Linux), `~/.local/bin` and `~/.cargo/bin`, and then on the `PATH` that Termivoa runs with. It checks again about every 30 seconds.
+- **On** is off for that computer in **Settings → Integrations**. Turn it on.
+- Termivoa on that computer is older than the next beta. Update it.
+
+### "herdr is not running on mac"
+
+Start herdr's server on that computer, for example open herdr there. Its projects then show on the phone. If herdr already runs there, run `pterm doctor` on that computer. A line that starts with `! herdr:` says why Termivoa does not use it.
+
+### `pterm doctor` says Termivoa will not use the herdr socket
+
+The line looks like this:
+
+```text
+! herdr: /usr/local/bin/herdr, Termivoa will not use the server socket /home/me/.config/herdr/herdr.sock: group or others can write /home/me/.config/herdr and /home/me/.config; run: chmod go-w /home/me/.config/herdr /home/me/.config
+```
+
+Another user could reach herdr's socket through a folder that is not private to you, so Termivoa does not use it. The phone then says "herdr is not running on mac". Run the command that the line prints, for example:
+
+```sh
+chmod go-w ~/.config/herdr ~/.config
+```
+
+This is common on Ubuntu: its default file mode lets your own group write the folders that you make, such as `~/.config`. Termivoa refuses these folders even when the group is your own private group, because it cannot prove that nobody else is in that group. Termivoa uses the same rule for its own folders. Within about 10 seconds after the fix, herdr shows on the phone.
+
+### "Update herdr on mac"
+
+herdr is older than 0.8.2. Update herdr on that computer.
+
+### "herdr on vps · can't reach"
+
+Tap **Retry**. If it stays, check that the computer is on and Termivoa runs there.
+
+### "That terminal is gone."
+
+The herdr pane closed, or herdr restarted. Pick the row again in the **herdr** tab.
+
+### The terminal is small on the laptop
+
+This is on purpose. herdr gives the pane the phone's size while it is open on the phone. Leave Live, or lock the phone; about 10 seconds later the pane has its own size again.
+
+### "mac cannot open more herdr terminals just now"
+
+There are two limits. At most 4 herdr terminals can be open at once for each computer, and each phone can open 20 a minute. Leave some, wait about 10 seconds, or wait a minute.
+
+### "herdr is off on mac"
+
+**On** is off for that computer in **Settings → Integrations**. Turn it on.
+
+### "Still working on mac… It shows in the list when it is ready."
+
+A new worktree took longer than the phone waits (45 seconds). The computer may still finish it. Close the sheet and look for the new worktree in the **herdr** tab. Do not create it again with the same name.
+
+### A tab chip is off: "Update herdr to open this tab"
+
+herdr is too old to open a tab that has no agent. Update herdr.
+
+### "herdr on mac did not open this terminal. Another program may hold it, or it just closed."
+
+Someone attached to that terminal directly in herdr, or its pane closed at that moment. Termivoa never takes a terminal over. Close that attach in herdr, then tap **Try again** or open the row again.
+
 ## Where are the logs?
 
 | System | Logs |

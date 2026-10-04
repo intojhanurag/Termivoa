@@ -14,7 +14,8 @@ and no terminal text leaves the computer.
 | test | `Termivoa` | `Notifications are on.` |
 
 The encrypted payload is `{title, body, sessionId, kind}` and nothing else.
-It never carries terminal output, a question text, a preview line, a path or a
+(A herdr terminal push has `provider` and `target` in place of `sessionId`;
+see "herdr pushes" below.) It never carries terminal output, a question text, a preview line, a path or a
 command. Titles and project names are cleaned (control and format characters
 removed) and shortened to 60 characters. Tapping a notification opens
 `/sessions/<id>` in the app (`/c/<host>/sessions/<id>` for another computer,
@@ -218,6 +219,55 @@ closed, and the viewer stays attached until the broker notices. Suppressing on
 "a viewer is attached" would drop the buzz in exactly the locked-phone case,
 and a browser tab left open on another computer would silence the phone too.
 
+## herdr pushes
+
+A computer with herdr ([herdr-provider.md](herdr-provider.md), section 7) also
+pushes when one of herdr's agents is blocked or finished. This is not the
+session detector above: herdr's own state words come from the 2 s poll
+(`internal/herdr/changes.go`), and a herdr terminal is not a Termivoa session.
+The broker hands each change to `Notifier.NotifyProvider`
+(`providerChanged` in `internal/broker/providers.go`).
+
+| Kind | Fires when |
+| --- | --- |
+| `waiting` (blocked) | The agent is `blocked` for at least 2 s (by the clock) after it was not. Not again until it leaves `blocked`. |
+| `done` (finished) | After the host observed the agent `working` for at least 20 s in all (`doneAfter`; time it was `blocked` does not count, and "finished after N min" is that work time), it turns `done` or `idle`. `idle` counts: herdr says `idle` when a herdr window shows that tab, also when nobody sits at the laptop. |
+
+- **Baseline.** The first snapshot after the broker starts, and the first one
+  after herdr is found again (it stopped or restarted), sets states and sends
+  nothing. A target that is already blocked at that time does not push.
+- **Switches.** The provider must be on, and **Settings → Integrations**
+  (**Buzz when blocked**, **Buzz when finished**) must have that state on.
+  They are stored per computer for all devices (`provider.herdr.notify`).
+- **Payload.** `{title, body, kind, provider, target}` and no `sessionId`
+  (a push has one or the other, never both). `target` is herdr's opaque
+  target ID. The phone gets no title, screen text, path or prompt.
+- **Fixed text.** Title `herdr · <group> · <item>` (one name when they are
+  equal, a workspace outside git). Body `<agent> needs you. Tap to answer.`
+  or `<agent> finished after <N> min.` (whole minutes; `<agent> finished.`
+  under one minute). Each name has control and format characters removed,
+  spaces collapsed, and is cut to 39 characters and "…" when longer.
+- **Own budget.** At most 6 per minute (`ProviderMaxPerMinute`), its own
+  coalesce key `provider:<target>:<kind>` (1 minute, `CoalesceWindow`) and its
+  own delivery slot, so herdr never uses up the budget of a session's push.
+  Subscriptions, TTL and urgency are the same as for `waiting` and `done`.
+  Viewers do not suppress it (same rule as above).
+- **Service worker** (`web/src/sw.js`). It accepts a provider payload only
+  with no `sessionId`, and checks `provider` and `target` by pattern. Tag
+  `p:<provider>:<target>:<kind>` (a peer's tag starts with `/c/<host>`), so a
+  repeat replaces the earlier banner. A tap opens
+  `/p/<provider>/<target>` (`/c/<host>/p/…` for a peer).
+- **The tap record.** Opening a herdr terminal can resize a pane on the
+  computer, so the page must know that a tap brought it there, not a pasted
+  link or a reload. On a tap, before the window moves, the worker stores a
+  one-time record for that path in Cache Storage (`pterm-taps`) for 30 s
+  (memory only if the cache cannot be opened). The `/p/…` page asks the
+  worker (`tap?` message); the first answer uses the record up. With a fresh
+  record the page opens the terminal at once; otherwise it shows the names
+  and an **Open** button.
+- **Not verified:** a real push on an iPhone, and that its tap opens the
+  terminal at once (`docs/owner-verification.md`). Push is tested in Go only.
+
 ## The notifier API
 
 ```go
@@ -236,6 +286,8 @@ type Event struct {
 `Notify` returns at once and delivers in the background (detached from
 `ctx` cancellation, 60 s deadline). It returns `false` when the event is
 invalid, coalesced, over the rate limit, or dropped because earlier
-deliveries are still running. The host passes `Notifier.Notify` to the
+deliveries are still running. `NotifyProvider(ctx, webpush.ProviderEvent)` is
+the same for a herdr terminal (`Provider`, `Target`, `Group`, `Item`, `Agent`,
+`Kind`, `Duration`), with the budget and key above. The host passes `Notifier.Notify` to the
 session registry as `RegistryConfig.Notify`; the same notifier is
 `host.BrokerReady.Push` / `ManagementServerConfig.Push`.

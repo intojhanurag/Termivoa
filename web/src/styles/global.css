@@ -235,13 +235,13 @@ label { color: var(--soft); font-size: 14px; }
 .error { color: var(--red); }
 .strong { font-weight: 700; }
 .field-note { margin: 0; }
-.hint-text { color: var(--muted); font-size: 13px; line-height: 18px; }
+.hint-text { color: var(--muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .steps { padding-left: 1.25rem; line-height: 1.6; margin: 0; }
 .command { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 19px; }
 /* A confirm before something that cannot be undone: a red rule, like a danger notice. */
 .confirm { padding: 14px 16px; border-left: 2px solid var(--red); border-radius: 0 6px 6px 0; background: var(--surface); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.caps { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.14em; line-height: 16px; text-transform: uppercase; }
+.caps { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.14em; line-height: 16px; text-transform: uppercase; overflow-wrap: anywhere; }
 
 .dot { display: inline-block; flex-shrink: 0; width: 6px; height: 6px; border-radius: 3px; background: var(--muted); }
 .dot.green { background: var(--green); }
@@ -364,6 +364,51 @@ label { color: var(--soft); font-size: 14px; }
 .preview { padding-top: 2px; color: var(--soft); font-family: var(--mono); font-size: 12.5px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .question { padding-top: 2px; color: var(--text); font-family: var(--mono); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .answer-link { color: var(--amber); font-size: 13px; font-weight: 600; line-height: 16px; }
+
+/* Provider projects (herdr): project rows fold; worktrees sit under them; one state word per row.
+   The muted labels use --muted, not --faint, so they stay readable. */
+.state-word { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; line-height: 14px; text-transform: uppercase; white-space: nowrap; }
+.state-word:is(.amber, .accent, .green)::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
+.state-word.amber { color: var(--amber); }
+.state-word.accent { color: var(--accent); }
+.state-word.green { color: var(--green); }
+.provider-item { padding: 14px 0; }
+/* A block, so a long worktree or branch name ends in "…" (a flex box would just clip it). */
+.provider-item .row-title { display: block; }
+.provider-item.nested { padding: 12px 0 12px 22px; }
+.provider-item.nested .row-text { gap: 4px; }
+.provider-item.nested .row-title { font-family: var(--mono); font-size: 14px; line-height: 20px; }
+.provider-item.nested .row-meta { color: var(--soft); font-family: inherit; font-size: 13px; line-height: 18px; }
+/* Seen DONE rows are dimmed by colour, not opacity: every label stays --muted on --bg (about 6.4:1, WCAG AA). */
+:is(.provider-item, .group-toggle).seen :is(.row-title, .row-meta, .group-name, .group-where, .state-word) { color: var(--muted); }
+.group-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.group-toggle { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 16px 0; border: 0; border-radius: 0; text-align: left; font-weight: 400; }
+.group-toggle:active:not(:disabled) { background: none; opacity: 0.7; }
+.fold-glyph { flex: 0 0 12px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.group-title { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; min-width: 0; }
+.group-name { max-width: 100%; overflow: hidden; font-size: 17px; font-weight: 600; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.group-where, .faint { flex-shrink: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; line-height: 14px; text-transform: uppercase; white-space: nowrap; }
+.group-state { display: flex; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
+button.group-add { flex-shrink: 0; margin-right: -12px; color: var(--text); }
+.provider-head { display: flex; align-items: center; gap: 8px; padding: 18px 0 8px; border-bottom: 1px solid var(--line); }
+.provider-head-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-head + .rows .provider-item:last-child { border-bottom: 1px solid var(--line); }
+.list-label { padding: 22px 0 8px; border-bottom: 1px solid var(--line); }
+/* Live for a provider terminal: the way back sits before the tab chips; one line says the computer's pane is phone size. */
+.provider-back { flex-shrink: 0; min-height: 44px; padding: 0 6px 0 0; color: var(--text); font-size: 15px; }
+.size-line { margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--line); }
+.status-line .home-badge { flex-shrink: 0; }
+/* New worktree (H6): mono branch field, agent kinds that wrap, a short prompt box. */
+.create-form { gap: 18px; }
+.create-head { align-items: flex-end; }
+.create-title { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.create-field { gap: 8px; }
+.create-field input { min-height: 48px; background: var(--bg); font-family: var(--mono); font-size: 16px; }
+.kind-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.kind-chips button { min-height: 44px; padding: 0 16px; font-size: 14px; }
+.kind-chips button[aria-checked="true"] { border-color: var(--text); background: var(--text); color: var(--bg); }
+.create-prompt { width: 100%; min-height: 76px; padding: 12px 14px; border-color: var(--line); background: var(--bg); font-size: 16px; line-height: 21px; resize: vertical; }
+.chip-count { color: var(--amber); font-family: var(--mono); font-size: 11px; font-weight: 400; line-height: 14px; }
 
 /* Wall: every running session as a small live screen. Tiles only watch; a tap opens the session. */
 .page.wall { max-width: 72rem; }
@@ -912,7 +957,7 @@ button.preview-tell { flex-shrink: 0; min-height: 38px; padding: 0 16px; font-si
 /* Multi-computer: a colour dot always comes with the computer's label. */
 .computer-tag { display: inline-flex; align-items: center; gap: 5px; }
 /* Computer filter: underline tabs on a hairline, full bleed. */
-.chips { display: flex; gap: 22px; margin: 0 -22px; padding: 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.chips { display: flex; flex-shrink: 0; gap: 22px; margin: 0 -22px; padding: 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 .chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; min-width: 0; padding: 6px 0 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); font-size: 15px; font-weight: 500; }
 .chip:active:not(:disabled) { background: none; }

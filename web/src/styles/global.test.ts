@@ -17,6 +17,21 @@ describe('global styles', () => {
   });
 
 
+  it('lets a herdr project name keep its line: the small labels wrap under it, never cut it short', () => {
+    expect(selectorsWith('flex-wrap: wrap')).toContain('.group-title');
+    expect(selectorsWith('max-width: 100%')).toContain('.group-name');
+    expect(selectorsWith('min-width: 0').filter((selector) => selector.includes('.group-name'))).toEqual([]);
+  });
+
+  it('wraps small caps text, so one long name in a caps line never makes a 390 px page wider', () => {
+    expect(selectorsWith('overflow-wrap: anywhere')).toContain('.caps');
+  });
+
+  it('dims seen DONE rows by colour, not opacity, so their small text keeps WCAG AA contrast', () => {
+    expect(selectorsWith('opacity').filter((selector) => selector.includes('.seen'))).toEqual([]);
+    expect(selectorsWith('color: var(--muted)').some((selector) => selector.includes('.seen'))).toBe(true);
+  });
+
   it('stays flat: no gradients, and no shadow except none', () => {
     expect(css).not.toMatch(/gradient/u);
     expect(selectorsWith('box-shadow')).toEqual([]);

@@ -974,3 +974,46 @@ func TestMultiComputerMethodsForwardOrigin(t *testing.T) {
 		t.Fatal("null origin was sent")
 	}
 }
+
+// A create can take 45 s: it must not hold the shared connection that every
+// other request (the sessions list included) waits for.
+func TestCreateProviderUsesADedicatedConnection(t *testing.T) {
+	release := make(chan struct{})
+	client, dials := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
+		switch request.Type {
+		case protocol.GatewayProvidersCreate:
+			<-release
+			return reply(t, request.RequestID, protocol.GatewayProvidersCreateResult,
+				protocol.HTTPProviderCreateResponse{ItemID: "w9", TargetID: "w9:p1.term_1", AgentStarted: true})
+		case protocol.GatewayProvidersGet:
+			return reply(t, request.RequestID, protocol.GatewayProvidersGetResult,
+				protocol.HTTPProviderSnapshotResponse{Provider: "herdr", State: protocol.NotRunning, Groups: []protocol.HTTPProviderGroup{}})
+		}
+		t.Errorf("unexpected %s", request.Type)
+		return nil
+	})
+	created := make(chan error, 1)
+	go func() {
+		result, err := client.CreateProvider(context.Background(), testCredential, "herdr",
+			protocol.HTTPProviderCreateRequest{GroupID: "g1", Name: "silver-meadow"})
+		if err == nil && (!result.AgentStarted || result.ItemID != "w9") {
+			err = errors.New("wrong create result")
+		}
+		created <- err
+	}()
+	for dials.Load() < 1 {
+		time.Sleep(time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if snapshot, err := client.Provider(ctx, testCredential, "herdr"); err != nil || snapshot.State != protocol.NotRunning {
+		t.Fatalf("a read waited behind create: %+v %v", snapshot, err)
+	}
+	close(release)
+	if err := <-created; err != nil {
+		t.Fatal(err)
+	}
+	if dials.Load() != 2 {
+		t.Fatalf("dials = %d, want 2", dials.Load())
+	}
+}

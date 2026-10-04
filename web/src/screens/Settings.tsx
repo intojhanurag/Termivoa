@@ -1,10 +1,14 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { api, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
-import type { HTTPDeviceSummary, HTTPSettingsResponse } from '../generated/protocol';
+import { api, client, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
+import type {
+  HTTPDeviceSummary, HTTPProviderInfo, HTTPProviderNotifyState, HTTPProviderUpdateRequest, HTTPSettingsResponse,
+} from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush } from '../push';
+import type { Computer } from '../computers';
 import type { ComputerEntry } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
+import { providerKey, providerSources, type ProviderEntry, type ProviderSource } from './providers';
 import { Button, Notice } from './ui';
 
 // Computers (and the add-computer sheet it opens) load only when Settings opens.
@@ -114,19 +118,164 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   );
 }
 
+/** The state word and its one line for Settings → Integrations (docs/herdr-provider.md, section 8). */
+export function integrationText(info: Pick<HTTPProviderInfo, 'name' | 'state'>, label: string): {
+  readonly word: string;
+  readonly tone: 'green' | 'amber' | 'muted';
+  readonly line?: string;
+} {
+  switch (info.state) {
+    case 'ready': return { word: 'Running', tone: 'green' };
+    case 'notRunning': return { word: 'Not running', tone: 'amber', line: `${info.name} is not running on ${label}. Start it there to see its projects.` };
+    case 'unsupported': return { word: 'Update', tone: 'amber', line: `Update ${info.name} on ${label}. This version is too old for Termivoa.` };
+    case 'off': return { word: 'Off', tone: 'muted', line: `Off for every phone: ${label} does not show ${info.name} or buzz for it.` };
+  }
+}
+
+/** The notify list after one buzz switch: in the fixed order blocked, done. */
+export function notifyWith(current: ReadonlyArray<HTTPProviderNotifyState>, word: HTTPProviderNotifyState, on: boolean): HTTPProviderNotifyState[] {
+  return (['blocked', 'done'] as const).filter((item) => (item === word ? on : current.includes(item)));
+}
+
+type Field = 'enabled' | HTTPProviderNotifyState;
+
+/** One switch saved on its computer: the new info, or the failure's words for that computer (a peer's 401 says pair again, never Setup). */
+export async function saveSwitch(
+  info: HTTPProviderInfo, field: Field, on: boolean, computer: Computer,
+  save: (body: HTTPProviderUpdateRequest) => Promise<HTTPProviderInfo>,
+  onFailure: (error: unknown, from: Computer) => string,
+): Promise<{ readonly info: HTTPProviderInfo } | { readonly error: string }> {
+  try {
+    return { info: await save(field === 'enabled' ? { enabled: on } : { notify: notifyWith(info.notify, field, on) }) };
+  } catch (failure) {
+    return { error: onFailure(failure, computer) };
+  }
+}
+
+/** One provider on one computer: on or off, and which states buzz. Saved on that computer for every device. */
+export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body) }: {
+  readonly source: ProviderSource;
+  /** The provider's latest read on that computer: its `state` is newer than the settings' (docs/herdr-provider.md, 4.5). */
+  readonly entry?: Pick<ProviderEntry, 'status'> | undefined;
+  readonly onFailure: (error: unknown, from: Computer) => string;
+  /** Reads the computer's settings and the provider again, so the rest of the app follows. */
+  readonly onSaved?: () => void;
+  readonly save?: (body: HTTPProviderUpdateRequest) => Promise<HTTPProviderInfo>;
+}) {
+  const [saved, setSaved] = useState<{ readonly info: HTTPProviderInfo; readonly at: number }>();
+  // The switch moves at once; it is off for taps until the computer answered.
+  const [pending, setPending] = useState<{ readonly field: Field; readonly on: boolean }>();
+  const [note, setNote] = useState<Note>();
+  const info = saved?.info ?? source.info;
+  const read = entry?.status.kind === 'ok' ? entry.status : undefined;
+  // The state word: the newest of the provider read and this screen's own save.
+  const state = read !== undefined && (saved === undefined || read.at >= saved.at) ? read.snapshot.state : info.state;
+  const { computer } = source;
+  const text = integrationText({ name: info.name, state }, computer.label);
+  const id = `integration-${computer.host}-${info.id}`.replace(/[^A-Za-z0-9_-]/gu, '-');
+  const value = (field: Field) => (pending?.field === field ? pending.on : field === 'enabled' ? info.enabled : info.notify.includes(field));
+
+  function change(field: Field) {
+    const on = !value(field);
+    setPending({ field, on });
+    setNote(undefined);
+    void saveSwitch(info, field, on, computer, save, onFailure).then((result) => {
+      if ('info' in result) {
+        setSaved({ info: result.info, at: Date.now() });
+        setNote({ text: 'Saved.', error: false });
+        onSaved?.();
+      } else {
+        setNote({ text: result.error, error: true });
+      }
+      setPending(undefined);
+    });
+  }
+
+  const toggle = (field: Field, label: string, off = false) => (
+    <div className="spread">
+      <span id={`${id}-${field}`}>{label}</span>
+      <button
+        type="button"
+        role="switch"
+        className="switch"
+        aria-checked={value(field)}
+        aria-labelledby={`${id}-${field}`}
+        {...(pending?.field === field ? { 'aria-busy': true } : {})}
+        disabled={pending !== undefined || off}
+        onClick={() => change(field)}
+      ><span className="switch-track" aria-hidden="true" /></button>
+    </div>
+  );
+
+  return (
+    <li className="computer-card">
+      <div className="computer-head">
+        <span className="row-text">
+          {/* One inner span: .row-title is a flex row, and its children would be laid out as separate items. */}
+          <span className="row-title"><span><bdi>{info.name}</bdi> on {computer.label}</span></span>
+          {info.version !== undefined && <span className="row-meta">{info.version}</span>}
+        </span>
+        <span className={`computer-state ${text.tone}`}>{text.word}</span>
+      </div>
+      {text.line !== undefined && <p className="hint-text">{text.line}</p>}
+      {toggle('enabled', 'On')}
+      {toggle('blocked', 'Buzz when blocked', !value('enabled'))}
+      {toggle('done', 'Buzz when finished', !value('enabled'))}
+      <div role="status" className="field-note">
+        {note?.error === true ? <Notice tone="danger" title={note.text} /> : <span className="muted">{pending === undefined ? note?.text ?? '' : 'Saving…'}</span>}
+      </div>
+    </li>
+  );
+}
+
+/** Settings → Integrations: only where a computer lists a provider. */
+export function IntegrationsSection({ entries, providers = [], onFailure, onCheck, onProviderReload }: {
+  readonly entries: ReadonlyArray<ComputerEntry>;
+  /** The providers' latest reads, for their state. */
+  readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
+  readonly onFailure: (error: unknown, from?: Computer) => string;
+  readonly onCheck?: (origin: string) => Promise<void>;
+  readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
+}) {
+  const sources = providerSources(entries);
+  if (sources.length === 0) return null;
+  return (
+    <section className="group stack" aria-labelledby="integrations-heading">
+      <h2 id="integrations-heading" className="caps">Integrations</h2>
+      <ul className="computer-list">
+        {sources.map((source) => (
+          <IntegrationRow
+            key={`${source.computer.origin} ${source.info.id}`}
+            source={source}
+            entry={providers.find((entry) => entry.key === providerKey(source.computer.origin, source.info.id))}
+            onFailure={onFailure}
+            onSaved={() => {
+              void onCheck?.(source.computer.origin).catch(() => undefined);
+              void onProviderReload?.(providerKey(source.computer.origin, source.info.id)).catch(() => undefined);
+            }}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function Settings({
-  settings, entries, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onComputersChanged,
+  settings, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onComputersChanged,
 }: {
   /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
   readonly settings: HTTPSettingsResponse | undefined;
   readonly entries: ReadonlyArray<ComputerEntry>;
+  /** Providers (herdr) of every computer, read while Settings shows, for Integrations. */
+  readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
   readonly fontSize: number;
   readonly onFontSize: (size: number) => void;
   readonly onBack: () => void;
   readonly onRenamed: (device: HTTPDeviceSummary) => void;
-  readonly onFailure: (error: unknown) => string;
+  readonly onFailure: (error: unknown, from?: Computer) => string;
   readonly onLogout: () => Promise<void>;
   readonly onCheck: (origin: string) => Promise<void>;
+  readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
   readonly onComputersChanged: () => void;
 }) {
   const [logoutError, setLogoutError] = useState<string>();
@@ -226,6 +375,8 @@ export function Settings({
       </section>
 
       {settings !== undefined && <NotificationSettings onFailure={onFailure} />}
+
+      <IntegrationsSection entries={entries} providers={providers} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} />
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>

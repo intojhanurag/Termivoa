@@ -60,6 +60,10 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.computers.remove` | credential + `origin` | empty |
 | `gateway.computers.offer` | `HTTPComputerOfferRequest` (no credential) | empty, also when the offer is dropped |
 | `gateway.computers.found` | `GatewayRPCCredentialPayload` | `HTTPComputerFoundResponse` |
+| `gateway.providers.get` | `GatewayRPCProviderPayload`: credential + `provider` | `HTTPProviderSnapshotResponse` from the broker's cache |
+| `gateway.providers.update` | credential + `provider` + `HTTPProviderUpdateRequest` | `HTTPProviderInfo` |
+| `gateway.providers.open` | credential + `provider` + `HTTPProviderOpenRequest` | `HTTPProviderOpenResponse` |
+| `gateway.providers.create` | credential + `provider` + `HTTPProviderCreateRequest` | `HTTPProviderCreateResponse`; sent on its own connection (up to 45 s) |
 
 `gateway.origin` and `gateway.computers.offer` are the only requests
 besides pairing that carry no credential: the configured origin is not a

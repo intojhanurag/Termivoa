@@ -23,6 +23,7 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
+	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 	"github.com/intojhanurag/phone-terminal/internal/ptyhost"
@@ -69,6 +70,10 @@ type ManagementServerConfig struct {
 	Development bool
 	// Now is the clock for computer lists and origin probes. Nil is time.Now.
 	Now func() time.Time
+	// Herdr reads herdr on this computer (docs/herdr-provider.md). Nil, as
+	// on Windows and in most tests, means no provider: no polling, no
+	// routes data, no setting.
+	Herdr *herdr.Config
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -106,6 +111,11 @@ type ManagementServer struct {
 	offers offerBook
 	// outgoing is this computer's own offer to its home (offer.go).
 	outgoing outgoingOffer
+	// providers is herdr on this computer (providers.go); nil without one.
+	providers *providerHost
+	// providerPush sends a provider push (Push.NotifyProvider); nil
+	// without push. A test seam.
+	providerPush func(webpush.ProviderEvent) bool
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -150,6 +160,18 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 	}
 	server := &ManagementServer{
 		config: config, connections: make(map[net.Conn]struct{}), trustWake: make(chan struct{}, 1),
+	}
+	if config.Push != nil {
+		server.providerPush = func(event webpush.ProviderEvent) bool {
+			return config.Push.NotifyProvider(context.Background(), event)
+		}
+	}
+	if config.Herdr != nil {
+		host, err := newProviderHost(context.Background(), server, *config.Herdr)
+		if err != nil {
+			return nil, err
+		}
+		server.providers = host
 	}
 	if server.config.Tailnet == nil {
 		var lastRefused string
@@ -204,6 +226,7 @@ func (server *ManagementServer) Serve(ctx context.Context, listener *ipc.BrokerL
 		close(stopTrust)
 		<-trustDone // A sweep must not outlive Serve and the store it reads.
 	}()
+	defer server.runProviders(ctx)()
 	shutdown := sync.OnceFunc(func() {
 		_ = listener.Close()
 		server.stopConnections()

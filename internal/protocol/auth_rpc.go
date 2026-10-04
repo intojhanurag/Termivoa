@@ -63,6 +63,8 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayComputersList: GatewayComputersListResult, GatewayComputersAdd: GatewayComputersAddResult,
 	GatewayComputersRemove: GatewayComputersRemoveResult,
 	GatewayComputersOffer:  GatewayComputersOfferResult, GatewayComputersFound: GatewayComputersFoundResult,
+	GatewayProvidersGet: GatewayProvidersGetResult, GatewayProvidersUpdate: GatewayProvidersUpdateResult,
+	GatewayProvidersOpen: GatewayProvidersOpenResult, GatewayProvidersCreate: GatewayProvidersCreateResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -397,6 +399,9 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		return validateBrokerRPCSessionRecord(payload.Session)
 	case GatewayError:
 		return validateRPCError[GatewayRPCMessageType](envelope)
+	case GatewayProvidersGet, GatewayProvidersUpdate, GatewayProvidersOpen, GatewayProvidersCreate,
+		GatewayProvidersGetResult, GatewayProvidersUpdateResult, GatewayProvidersOpenResult, GatewayProvidersCreateResult:
+		return validateGatewayProviderPayload(envelope)
 	default:
 		return validateGatewayUploadPayload(envelope)
 	}
@@ -459,6 +464,14 @@ func validateSettings(payload HTTPSettingsResponse) error {
 			return errors.New("settings option id must be a canonical UUID")
 		}
 		if err := validateBrokerRPCText(option.Name, MaxNamedOptionBytes, "option name"); err != nil {
+			return err
+		}
+	}
+	if len(payload.Providers) > MaxProviders {
+		return errors.New("settings list too many providers")
+	}
+	for _, provider := range payload.Providers {
+		if err := ValidateProviderInfo(provider); err != nil {
 			return err
 		}
 	}

@@ -86,6 +86,9 @@ func (server *ManagementServer) prepareWorktree(
 	if err != nil {
 		return gitchanges.Created{}, errors.Join(errWorktreeSource, err)
 	}
+	if isProviderSession(source) {
+		return gitchanges.Created{}, errProviderFeature // design section 6, rule 8
+	}
 	folder, err := source.ChangesFolder(ctx)
 	if err != nil {
 		return gitchanges.Created{}, err

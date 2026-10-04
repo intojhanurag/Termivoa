@@ -23,14 +23,21 @@ const (
 
 	// CoalesceWindow allows one notification per session and kind.
 	CoalesceWindow = time.Minute
-	// MaxPerMinute caps all notifications, tests included.
+	// MaxPerMinute caps session notifications, tests included.
 	MaxPerMinute = 12
+	// ProviderMaxPerMinute is the separate budget of provider notifications
+	// (docs/herdr-provider.md, section 7): herdr can never use up the
+	// budget of a session's push.
+	ProviderMaxPerMinute = 6
 
 	testCooldown   = 5 * time.Second
 	deliverTimeout = time.Minute
 	maxInFlight    = 2
 	maxLabelRunes  = 60
-	maxTracked     = 1024
+	// providerLabelRunes bounds each name of a provider push: 39 runes and
+	// "…" when cut, so at most 40 characters.
+	providerLabelRunes = 39
+	maxTracked         = 1024
 
 	// Subject is the VAPID contact claim. It names the project only, so no
 	// tailnet host name or user identity reaches a push service.
@@ -57,12 +64,27 @@ type Event struct {
 	Duration     time.Duration
 }
 
-// Message is the JSON the service worker receives after decryption.
+// ProviderEvent is a provider terminal's change (herdr): names, the agent
+// kind and how long it worked, never a title or terminal text.
+type ProviderEvent struct {
+	Provider string // provider ID, also its display name ("herdr")
+	Target   string // the opaque target ID the app opens
+	Group    string
+	Item     string
+	Agent    string
+	Kind     Kind
+	Duration time.Duration
+}
+
+// Message is the JSON the service worker receives after decryption. It has
+// exactly one of SessionID or (Provider, Target).
 type Message struct {
 	Title     string `json:"title"`
 	Body      string `json:"body"`
 	SessionID string `json:"sessionId,omitempty"`
 	Kind      Kind   `json:"kind"`
+	Provider  string `json:"provider,omitempty"`
+	Target    string `json:"target,omitempty"`
 }
 
 // NotifierConfig wires the broker-owned store. Revoked is the auth
@@ -82,9 +104,17 @@ type Notifier struct {
 	config   NotifierConfig
 	keys     Keys
 	inFlight chan struct{}
+	// providerInFlight is the provider pushes' own delivery slot.
+	providerInFlight chan struct{}
 
-	mu     sync.Mutex
-	last   map[string]time.Time // coalescing key -> last send
+	mu       sync.Mutex
+	last     map[string]time.Time // coalescing key -> last send
+	sessions budget
+	provider budget
+}
+
+// budget is one per-minute cap in a fixed window.
+type budget struct {
 	window time.Time
 	sent   int
 }
@@ -116,7 +146,12 @@ func NewNotifier(ctx context.Context, config NotifierConfig) (*Notifier, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &Notifier{config: config, keys: keys, inFlight: make(chan struct{}, maxInFlight), last: map[string]time.Time{}}, nil
+	return &Notifier{
+		config: config, keys: keys, inFlight: make(chan struct{}, maxInFlight),
+		// Room for two minutes of the budget: an admitted provider push is never dropped because an
+		// earlier one is still on its way (two agents can change in one poll).
+		providerInFlight: make(chan struct{}, 2*ProviderMaxPerMinute), last: map[string]time.Time{},
+	}, nil
 }
 
 // PublicKey is the applicationServerKey for PushManager.subscribe.
@@ -147,20 +182,37 @@ func (notifier *Notifier) Unsubscribe(ctx context.Context, deviceID, endpoint st
 // earlier deliveries are still in flight.
 func (notifier *Notifier) Notify(ctx context.Context, event Event) bool {
 	message, ok := eventMessage(event)
-	if !ok || !notifier.admit(string(event.Kind)+":"+event.SessionID, CoalesceWindow) {
+	if !ok || !notifier.admit(string(event.Kind)+":"+event.SessionID, CoalesceWindow, &notifier.sessions, MaxPerMinute) {
 		return false
 	}
+	return notifier.send(ctx, message, notifier.inFlight)
+}
+
+// NotifyProvider is Notify for a provider terminal (docs/herdr-provider.md,
+// section 7), with its own per-minute budget, coalescing key
+// (provider:<target>:<kind>) and delivery slot.
+func (notifier *Notifier) NotifyProvider(ctx context.Context, event ProviderEvent) bool {
+	message, ok := ProviderMessage(event)
+	if !ok || !notifier.admit("provider:"+event.Target+":"+string(event.Kind), CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) {
+		return false
+	}
+	return notifier.send(ctx, message, notifier.providerInFlight)
+}
+
+// send delivers in the background when a slot is free, with today's TTL and
+// urgency of waiting and done.
+func (notifier *Notifier) send(ctx context.Context, message Message, slots chan struct{}) bool {
 	select {
-	case notifier.inFlight <- struct{}{}:
+	case slots <- struct{}{}:
 	default:
 		return false
 	}
 	urgency, ttl := UrgencyNormal, 2*time.Minute
-	if event.Kind == KindWaiting {
+	if message.Kind == KindWaiting {
 		urgency, ttl = UrgencyHigh, 5*time.Minute
 	}
 	go func() {
-		defer func() { <-notifier.inFlight }()
+		defer func() { <-slots }()
 		deliverCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deliverTimeout)
 		defer cancel()
 		_, _ = notifier.deliver(deliverCtx, "", message, ttl, urgency)
@@ -174,7 +226,7 @@ var ErrRateLimited = errors.New("webpush: notification rate limit reached")
 // Test sends a fixed test notification to one device's subscriptions and
 // returns how many push services accepted it.
 func (notifier *Notifier) Test(ctx context.Context, deviceID string) (int, error) {
-	if !notifier.admit("test:"+deviceID, testCooldown) {
+	if !notifier.admit("test:"+deviceID, testCooldown, &notifier.sessions, MaxPerMinute) {
 		return 0, ErrRateLimited
 	}
 	return notifier.deliver(ctx, deviceID, Message{
@@ -182,21 +234,21 @@ func (notifier *Notifier) Test(ctx context.Context, deviceID string) (int, error
 	}, time.Minute, UrgencyNormal)
 }
 
-// admit applies coalescing for key and the global per-minute cap.
-func (notifier *Notifier) admit(key string, window time.Duration) bool {
+// admit applies coalescing for key and the per-minute cap of limit.
+func (notifier *Notifier) admit(key string, window time.Duration, limit *budget, perMinute int) bool {
 	notifier.mu.Lock()
 	defer notifier.mu.Unlock()
 	now := notifier.config.Now()
 	if last, ok := notifier.last[key]; ok && now.Sub(last) < window && !now.Before(last) {
 		return false
 	}
-	if now.Before(notifier.window) || now.Sub(notifier.window) >= time.Minute {
-		notifier.window, notifier.sent = now, 0
+	if now.Before(limit.window) || now.Sub(limit.window) >= time.Minute {
+		limit.window, limit.sent = now, 0
 	}
-	if notifier.sent >= MaxPerMinute {
+	if limit.sent >= perMinute {
 		return false
 	}
-	notifier.sent++
+	limit.sent++
 	if len(notifier.last) >= maxTracked {
 		for other, when := range notifier.last {
 			if now.Sub(when) >= CoalesceWindow {
@@ -248,8 +300,8 @@ func eventMessage(event Event) (Message, bool) {
 	if !protocol.ValidUUID(event.SessionID) {
 		return Message{}, false
 	}
-	title := cleanLabel(event.SessionTitle, "A session")
-	project := cleanLabel(event.ProjectName, "")
+	title := cleanLabel(event.SessionTitle, "A session", maxLabelRunes)
+	project := cleanLabel(event.ProjectName, "", maxLabelRunes)
 	message := Message{SessionID: event.SessionID, Kind: event.Kind}
 	switch event.Kind {
 	case KindWaiting:
@@ -267,22 +319,51 @@ func eventMessage(event Event) (Message, bool) {
 	return message, true
 }
 
+// ProviderMessage is the fixed format of design 4.4: title
+// "herdr · <group> · <item>" (one name when they are equal), body
+// "<agent> needs you. Tap to answer." or "<agent> finished after <N> min."
+// ("<agent> finished." under a minute). Each name is cleaned and at most 40
+// characters. The provider and target are checked by pattern.
+func ProviderMessage(event ProviderEvent) (Message, bool) {
+	if !protocol.ValidProviderID(event.Provider) || !protocol.ValidProviderHandle(event.Target) {
+		return Message{}, false
+	}
+	group, item := cleanLabel(event.Group, event.Provider, providerLabelRunes), cleanLabel(event.Item, event.Provider, providerLabelRunes)
+	agent := cleanLabel(event.Agent, "The agent", providerLabelRunes)
+	message := Message{Title: event.Provider + " · " + group + " · " + item, Kind: event.Kind, Provider: event.Provider, Target: event.Target}
+	if group == item {
+		message.Title = event.Provider + " · " + group
+	}
+	switch event.Kind {
+	case KindWaiting:
+		message.Body = agent + " needs you. Tap to answer."
+	case KindDone:
+		message.Body = agent + " finished."
+		if minutes := int(event.Duration / time.Minute); minutes >= 1 {
+			message.Body = fmt.Sprintf("%s finished after %d min.", agent, minutes)
+		}
+	default:
+		return Message{}, false
+	}
+	return message, true
+}
+
 // cleanLabel drops control and format characters, collapses spaces, and
-// keeps at most maxLabelRunes runes.
-func cleanLabel(value, fallback string) string {
+// keeps at most limit runes, then "…" when cut.
+func cleanLabel(value, fallback string, limit int) string {
 	var builder strings.Builder
 	runes := 0
 	for _, field := range strings.FieldsFunc(value, func(r rune) bool {
 		return unicode.IsSpace(r) || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == unicode.ReplacementChar
 	}) {
 		for _, character := range field {
-			if runes == maxLabelRunes {
+			if runes == limit {
 				return strings.TrimSpace(builder.String()) + "…"
 			}
 			builder.WriteRune(character)
 			runes++
 		}
-		if runes < maxLabelRunes {
+		if runes < limit {
 			builder.WriteByte(' ')
 			runes++
 		}

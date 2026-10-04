@@ -8,7 +8,9 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 ## Next beta (not released yet)
 
-Nothing yet. New features on `main` show here until the next beta ships.
+New features on `main` show here until the next beta ships.
+
+- **herdr on your phone.** If a computer runs [herdr](https://herdr.dev) 0.8.2 or later, the Sessions list gets a **herdr** tab with its projects and worktrees, and state words (**BLOCKED**, **DONE**, **WORKING**, **IDLE**). Tap a worktree to open its herdr terminal in Live, read-only until you tap **Take control**. The phone buzzes when a herdr agent is blocked or finished. **Settings → Integrations** turns herdr and its buzzes on or off for each computer, and **+** on a git project makes a new worktree and can start an agent in it. There is no setting to turn on: Termivoa finds herdr by itself. See [Termivoa + herdr](/docs/guides/herdr/).
 
 ## v0.1.0-beta.3 (2026-10-04) — private beta
 

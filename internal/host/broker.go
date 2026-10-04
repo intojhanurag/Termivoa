@@ -11,6 +11,7 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/broker"
+	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 	"github.com/intojhanurag/phone-terminal/internal/store"
@@ -24,6 +25,9 @@ type BrokerConfig struct {
 	RuntimeDir string
 	HostBuild  string
 	Profile    platform.Profile
+	// Herdr reads herdr on this computer; nil means no provider (Windows,
+	// tests). cmd/pterm builds it (docs/herdr-provider.md, section 3).
+	Herdr *herdr.Config
 
 	// Ready is an internal integration-test observation point. It receives no
 	// ownership: the broker remains solely responsible for every value and the
@@ -149,7 +153,7 @@ func RunBroker(ctx context.Context, config BrokerConfig) (returnErr error) {
 	server, err := broker.NewManagementServer(broker.ManagementServerConfig{
 		Registry: registry, Store: persistence,
 		BrokerGeneration: generation, HostBuild: config.HostBuild, Auth: authority, Push: notifier,
-		Shutdown: shutdown, Development: config.Profile == platform.DevelopmentProfile,
+		Shutdown: shutdown, Development: config.Profile == platform.DevelopmentProfile, Herdr: config.Herdr,
 	})
 	if err != nil {
 		return err

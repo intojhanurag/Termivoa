@@ -6,6 +6,36 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **herdr on your phone** (ADR 0008, `docs/herdr-provider.md`; docs:
+  `providers.md`, `guides/herdr.md`). Needs herdr 0.8.2 or later on the computer, macOS or
+  Linux, and no setting: Termivoa finds herdr within about 30 s.
+  Phone: Sessions gets a **herdr** tab (next to **All** or with the computer
+  chips) with a count of blocked and done terminals. It shows one row per
+  project, its worktrees under it, state words (BLOCKED, DONE, WORKING,
+  IDLE), and the status line "1 blocked · 1 done · 2 working" or "herdr ·
+  nothing running". **Open the blocked agent** opens the first blocked
+  agent. The **All** tab lists worktrees that have an agent state under
+  **HERDR**. A worktree opens as one herdr terminal in Live, read-only until
+  **Take control**, with the other tabs of its workspace as chips and the
+  line "mac shows this terminal at phone size while it is open here."
+  Problems show on the herdr tab only: "herdr is not running on mac",
+  "Update herdr on mac", "herdr on vps · can't reach" with **Retry**.
+  **Settings → Integrations** has a card for each computer with **On**,
+  **Buzz when blocked** and **Buzz when finished**. A buzz says "<agent>
+  needs you. Tap to answer." or "<agent> finished after N min."; a tap opens
+  the terminal. **+** on a git project opens **New worktree** (**Branch
+  name**, **Start an agent in it**, **First prompt (optional)**, **Create and
+  start**).
+  Host: reads herdr through its own socket (no `--takeover`, never terminal
+  text), at most 4 open herdr terminals for each computer, push limit 6 per
+  minute apart from session notifications, limits per phone (open 20,
+  create 3, settings 10 per minute). `pterm doctor` gets herdr lines (path,
+  version, server, "can make worktrees", the agents the phone can start, and
+  a warning for a herdr prefix key other than ctrl+b). No database change.
+  Not yet tested on a real iPhone.
+
 ## [0.1.0-beta.3] - 2026-10-04
 
 Third private beta. Updating from beta.2 restarts Termivoa on the computer,

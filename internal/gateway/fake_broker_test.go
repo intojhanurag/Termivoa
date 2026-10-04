@@ -287,6 +287,41 @@ func (broker *fakeBroker) FoundComputers(ctx context.Context, credential string)
 	return protocol.HTTPComputerFoundResponse{Computers: append([]protocol.HTTPFoundComputer{}, broker.found...)}, broker.opErr
 }
 
+func (broker *fakeBroker) Provider(_ context.Context, credential, provider string) (protocol.HTTPProviderSnapshotResponse, error) {
+	broker.record("provider:" + provider)
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPProviderSnapshotResponse{}, err
+	}
+	return protocol.HTTPProviderSnapshotResponse{Provider: provider, State: protocol.HTTPProviderStateReady, Groups: []protocol.HTTPProviderGroup{}}, broker.opErr
+}
+
+func (broker *fakeBroker) UpdateProvider(_ context.Context, credential, provider string, _ protocol.HTTPProviderUpdateRequest) (protocol.HTTPProviderInfo, error) {
+	broker.record("provider-update:" + provider)
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPProviderInfo{}, err
+	}
+	return protocol.HTTPProviderInfo{ID: provider, Name: provider, State: protocol.Off, Notify: []protocol.HTTPProviderNotifyState{}, AgentKinds: []string{}}, broker.opErr
+}
+
+func (broker *fakeBroker) OpenProvider(_ context.Context, credential, provider string, request protocol.HTTPProviderOpenRequest) (protocol.HTTPProviderOpenResponse, error) {
+	broker.record("provider-open:" + request.TargetID)
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPProviderOpenResponse{}, err
+	}
+	return protocol.HTTPProviderOpenResponse{Session: protocol.HTTPProviderSession{
+		ID: uuidB, Generation: uuidC, Title: "herdr · shop", State: protocol.Running, Columns: request.Columns, Rows: request.Rows,
+		Provider: provider, TargetID: request.TargetID,
+	}}, broker.opErr
+}
+
+func (broker *fakeBroker) CreateProvider(_ context.Context, credential, provider string, request protocol.HTTPProviderCreateRequest) (protocol.HTTPProviderCreateResponse, error) {
+	broker.record("provider-create:" + request.Name)
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPProviderCreateResponse{}, err
+	}
+	return protocol.HTTPProviderCreateResponse{ItemID: "w9", TargetID: "w9:p1.term_1"}, broker.opErr
+}
+
 func (broker *fakeBroker) OpenLive(_ context.Context, credential string) (gatewayapi.LiveStream, error) {
 	broker.record("open")
 	if err := broker.authorize(credential); err != nil {

@@ -7,6 +7,13 @@ import type {
   HTTPPairRedeemRequest,
   HTTPPairRedeemResponse,
   HTTPPreviewConfigResponse,
+  HTTPProviderCreateRequest,
+  HTTPProviderCreateResponse,
+  HTTPProviderInfo,
+  HTTPProviderOpenRequest,
+  HTTPProviderOpenResponse,
+  HTTPProviderSnapshotResponse,
+  HTTPProviderUpdateRequest,
   HTTPPushConfigResponse,
   HTTPPushSubscribeRequest,
   HTTPPushTestResponse,
@@ -39,6 +46,30 @@ export const REQUEST_TIMEOUT_MS = 15_000;
 export const READ_TIMEOUT_MS = 6_000;
 /** A photo of up to 5 MiB can take a while on a slow phone link. */
 export const UPLOAD_TIMEOUT_MS = 60_000;
+/** Making a worktree and starting an agent in it: the host's steps take up to 40 s together (docs/herdr-provider.md, S6). */
+export const PROVIDER_CREATE_TIMEOUT_MS = 45_000;
+
+/** State words of provider terminals, items and groups that the app knows, most urgent first. */
+export const PROVIDER_WORDS = ['blocked', 'done', 'working', 'idle', 'unknown', 'none'] as const;
+export type ProviderWord = (typeof PROVIDER_WORDS)[number];
+
+/** A provider state word as the app shows it: a word it does not know (a newer provider) is `unknown`. */
+export function providerWord(word: string): ProviderWord {
+  return (PROVIDER_WORDS as ReadonlyArray<string>).includes(word) ? word as ProviderWord : 'unknown';
+}
+
+/** Rewrites every state word of a snapshot to one the app knows (providerWord), in place. */
+export function normalizeSnapshot(snapshot: HTTPProviderSnapshotResponse): HTTPProviderSnapshotResponse {
+  type Mutable = { state: string };
+  for (const group of snapshot.groups) {
+    (group as Mutable).state = providerWord(group.state);
+    for (const item of group.items) {
+      (item as Mutable).state = providerWord(item.state);
+      for (const target of item.targets) (target as Mutable).state = providerWord(target.state);
+    }
+  }
+  return snapshot;
+}
 
 const CONTROL = /\p{Cc}/u;
 const EDGE_SPACE = /^\p{White_Space}|\p{White_Space}$/u;
@@ -180,6 +211,14 @@ export interface Client {
   deleteComputer(host: string): Promise<undefined>;
   /** Home only: computers that wait to be added (Found on your network); undefined when home is too old to list them (404). */
   foundComputers(): Promise<HTTPComputerFoundResponse>;
+  /** A provider's projects and terminals (protocolRevision 4 and later); state words normalized (providerWord). */
+  provider(id: string): Promise<HTTPProviderSnapshotResponse>;
+  /** Opens (or reuses) the provider session of one terminal. */
+  providerOpen(id: string, body: HTTPProviderOpenRequest): Promise<HTTPProviderOpenResponse>;
+  /** Settings → Integrations on that computer. */
+  providerUpdate(id: string, body: HTTPProviderUpdateRequest): Promise<HTTPProviderInfo>;
+  /** A new worktree and maybe an agent in it; waits up to PROVIDER_CREATE_TIMEOUT_MS. */
+  providerCreate(id: string, body: HTTPProviderCreateRequest): Promise<HTTPProviderCreateResponse>;
 }
 
 function createClient(origin: string, home: boolean): Client {
@@ -256,6 +295,7 @@ function createClient(origin: string, home: boolean): Client {
   }
 
   const sessionPath = (id: string) => `/api/v1/sessions/${encodeURIComponent(id)}`;
+  const providerPath = (id: string) => `/api/v1/providers/${encodeURIComponent(id)}`;
   const read = { timeoutMs: READ_TIMEOUT_MS };
   const send = (body: unknown) => ({ body });
 
@@ -292,6 +332,10 @@ function createClient(origin: string, home: boolean): Client {
     foundComputers() {
       return request('GET', '/api/v1/computers/found', 'computerFoundResponse', read);
     },
+    provider: async (id) => normalizeSnapshot(await request('GET', providerPath(id), 'providerSnapshotResponse', read)),
+    providerOpen: (id, body) => request('POST', `${providerPath(id)}/open`, 'providerOpenResponse', send(body)),
+    providerUpdate: (id, body) => request('PATCH', providerPath(id), 'providerInfo', send(body)),
+    providerCreate: (id, body) => request('POST', `${providerPath(id)}/create`, 'providerCreateResponse', { body, timeoutMs: PROVIDER_CREATE_TIMEOUT_MS }),
   };
 }
 

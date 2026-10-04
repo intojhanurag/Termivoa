@@ -207,6 +207,7 @@ func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
 	}
 	return host.BrokerConfig{
 		DataDir: paths.DataDir, RuntimeDir: paths.RuntimeDir, HostBuild: buildID, Profile: profile,
+		Herdr: herdrConfig(),
 	}, nil
 }
 

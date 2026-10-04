@@ -90,6 +90,29 @@ It cannot read the app, but it can lie to you. A [preview](/docs/guides/preview/
 - Typing is never queued or resent after a lost connection.
 - Phones never receive the raw terminal byte stream and cannot send raw bytes, only keys, text, pastes, scroll steps and answer-card choices.
 
+## What does the phone see and do with herdr?
+
+:::note[Next beta]
+Not in `v0.1.0-beta.3`. See [Termivoa + herdr](/docs/guides/herdr/).
+:::
+
+A paired phone can already run any command in a Termivoa session, so herdr gives it no new power on the computer.
+
+| | |
+| --- | --- |
+| The phone gets from herdr | Project and worktree names, tab labels, agent kinds and state words. |
+| The list and the notifications never have | Terminal titles, screen text, paths or prompts. |
+| When you open a herdr terminal | The phone gets that terminal's screen, like any Termivoa session. |
+| A herdr notification has | The provider `herdr`, an opaque terminal ID, the fixed title `herdr · <project> · <worktree>` and a fixed text such as `<agent> needs you. Tap to answer.` It is encrypted to your phone, like other [notifications](/docs/guides/notifications/). |
+
+- **Same access as the Sessions list.** The herdr requests need the same pairing cookie and the same check of where a request comes from. Another computer in your list reads its herdr only through its own Termivoa.
+- **Socket and program, both yours.** Termivoa uses herdr's own socket to list, read state and create worktrees. It also runs the herdr program: once for each open terminal, and to check what that herdr version can do. It checks that the socket and the herdr program belong to you.
+- **Limits for each phone.** Open 20 per minute, create 3 per minute, settings 10 per minute.
+- **Opening never takes control.** It is read-only until you tap **Take control**.
+- **No takeover.** Termivoa never kicks another herdr client off a terminal.
+- **No herdr prefix keys.** Termivoa sends `ctrl+b` to the agent as a plain `ctrl+b`, so the phone cannot send herdr's prefix commands. If you set another prefix key in herdr's `config.toml`, a phone with control could send that key; `pterm doctor` warns about it.
+- **Off switch.** **Settings → Integrations → On** stops Termivoa from reading herdr on that computer.
+
 ## Who can see changes, commit and push?
 
 - Changes only **reads** git: uncommitted changes and untracked files that git does not ignore.
@@ -131,6 +154,7 @@ With several computers, each computer sends its own notifications straight to yo
 - With **Found on your network** anyone who can reach home in your tailnet can make **Add** fail for a while. Use the QR code or the link then.
 - A preview from another computer can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
 - The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home is offline, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
+- **Next beta:** if you change herdr's prefix key from `ctrl+b`, a phone with control of a herdr terminal could send that prefix key to herdr. At worst it detaches the phone. `pterm doctor` warns about it.
 - The controls have automated tests, but no independent security audit yet.
 
 ## Common questions
