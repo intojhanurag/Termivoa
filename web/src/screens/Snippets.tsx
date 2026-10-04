@@ -15,7 +15,7 @@ import {
 import { displayPath } from './folder';
 import { runFirstProblem } from './presets';
 import { Sheet, SheetHeader } from './Sheet';
-import { Notice } from './ui';
+import { Button, Notice } from './ui';
 
 interface Draft {
   readonly id: string | undefined;
@@ -108,9 +108,11 @@ export function taskSnippet(task: ProjectTask): Snippet {
  * The project's commands, read from its files on the computer. Tapping one
  * opens its actions; nothing runs until an action is tapped.
  */
-export function ProjectTasks({ view, open, more, typeProblem, onOpen, onMore, onRetry, onRun, onType }: {
+export function ProjectTasks({ view, open, more, starting = false, typeProblem, onOpen, onMore, onRetry, onRun, onType }: {
   readonly view: TasksView | undefined;
   readonly open: ProjectTask | undefined;
+  /** Run in new tab is starting the session. */
+  readonly starting?: boolean;
   /** Every "other" task is shown. */
   readonly more: boolean;
   readonly typeProblem: string | undefined;
@@ -143,9 +145,9 @@ export function ProjectTasks({ view, open, more, typeProblem, onOpen, onMore, on
       <div className="task-actions stack" role="group" aria-label={`Actions for ${open.name}`}>
         <p className="task-title">{open.name}</p>
         <code className="task-command">{open.command}</code>
-        <button type="button" className="primary" disabled={runProblem !== undefined} onClick={() => onRun(open)}>
+        <Button className="primary" busy={starting} busyLabel="Starting…" disabled={runProblem !== undefined} onClick={() => onRun(open)}>
           Run in new tab
-        </button>
+        </Button>
         {runProblem !== undefined && <p className="hint-text">{runProblem}</p>}
         <button
           type="button"
@@ -203,8 +205,8 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
   readonly busy: TerminalBusy | undefined;
   readonly tasks: TasksView | undefined;
   readonly onRetryTasks: () => void;
-  /** Starts a new session in the same project and shell that runs this command first. */
-  readonly onRunTask: (command: string) => void;
+  /** Starts a new session in the same project and shell that runs this command first; settles when it opened or failed. */
+  readonly onRunTask: (command: string) => Promise<void>;
   readonly onClose: () => void;
 }) {
   const [openTask, setOpenTask] = useState<ProjectTask>();
@@ -214,6 +216,7 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
   const [draft, setDraft] = useState<Draft>();
   const [confirming, setConfirming] = useState<Snippet>();
   const [problem, setProblem] = useState<string>();
+  const [starting, setStarting] = useState(false);
 
   function send(snippet: Snippet, confirmed: boolean) {
     setProblem(undefined);
@@ -310,11 +313,12 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
             view={tasks}
             open={openTask}
             more={more}
+            starting={starting}
             typeProblem={typeHereProblem(canSend, busy)}
             onOpen={setOpenTask}
             onMore={() => setMore(true)}
             onRetry={onRetryTasks}
-            onRun={(task) => onRunTask(task.command)}
+            onRun={(task) => { setStarting(true); void onRunTask(task.command).finally(() => setStarting(false)); }}
             onType={(task) => send(taskSnippet(task), false)}
           />
           <h3 className="caps">Saved snippets</h3>
@@ -352,6 +356,7 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
               </li>
             ))}
           </ul>
+          {list.length >= MAX_SNIPPETS && <p className="hint-text">You can keep {MAX_SNIPPETS} snippets at most. Delete one to add another.</p>}
           <p className="hint-text">Tap to send · edit to change · saved on this phone</p>
         </>
       )}

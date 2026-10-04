@@ -5,7 +5,7 @@ import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
-  atLeast, byChip, cantReach, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
+  atLeast, byChip, cantReach, checkAgain, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
@@ -359,13 +359,8 @@ export function Sessions({
   async function refresh() {
     setBusy(true);
     setError(undefined);
-    try {
-      await onReload();
-    } catch (failure) {
-      setError(onFailure(failure));
-    } finally {
-      setBusy(false);
-    }
+    setError(await checkAgain(onReload(), onFailure));
+    setBusy(false);
   }
 
   return (

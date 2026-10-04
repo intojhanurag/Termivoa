@@ -71,9 +71,9 @@ export function errorText(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
-/** A render error: what broke, a way to copy it, and a reload. */
+/** A render error: what broke, a way to copy it (a failed copy says so), and a reload. */
 export function ErrorScreen({ text }: { readonly text: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'copied' | 'failed'>();
   return (
     <StateScreen
       tone="red"
@@ -87,14 +87,15 @@ export function ErrorScreen({ text }: { readonly text: string }) {
             type="button"
             className="state-pill"
             onClick={() => {
-              void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined);
+              (navigator.clipboard?.writeText(text) ?? Promise.reject(new Error('no clipboard')))
+                .then(() => setCopied('copied'), () => setCopied('failed'));
             }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="5" y="5" width="9" height="9" rx="2" stroke="currentColor" strokeWidth="1.6" />
               <path d="M11 3.5V3a1.5 1.5 0 0 0-1.5-1.5h-6A1.5 1.5 0 0 0 2 3v6a1.5 1.5 0 0 0 1.5 1.5H4" stroke="currentColor" strokeWidth="1.6" />
             </svg>
-            {copied ? 'copied' : 'copy error'}
+            {copied === 'copied' ? 'copied' : copied === 'failed' ? 'copy failed' : 'copy error'}
           </button>
           <button type="button" className="primary" onClick={() => window.location.reload()}>Reload</button>
         </>

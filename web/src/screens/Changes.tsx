@@ -153,12 +153,15 @@ export function Changes({ connection, cwd, switcher, onAsk, onReturn }: {
   const [step, setStep] = useState<ShipStep | undefined>(write?.kind);
   const [message, setMessage] = useState('');
   const [picked, setPicked] = useState<LineSelection>();
+  // Commit or Push was tapped but nothing went out (control or the link was lost).
+  const [notSent, setNotSent] = useState(false);
   const selected = listed(view).filter((file) => !excluded.has(file.path));
   const pending = write?.state === 'pending';
   const control = status.control === 'controller';
 
   function close() {
     connection.dismissChangesWrite();
+    setNotSent(false);
     setStep(undefined);
   }
 
@@ -199,12 +202,13 @@ export function Changes({ connection, cwd, switcher, onAsk, onReturn }: {
             write={write}
             control={control}
             message={message}
+            notSent={notSent}
             count={selected.length}
             branch={view?.summary?.branch}
             onMessage={setMessage}
-            onCommit={() => connection.commitChanges(message.trim(), selected.map((file) => file.path))}
-            onPush={() => setStep('push')}
-            onConfirmPush={() => connection.pushChanges()}
+            onCommit={() => setNotSent(!connection.commitChanges(message.trim(), selected.map((file) => file.path)))}
+            onPush={() => { setNotSent(false); setStep('push'); }}
+            onConfirmPush={() => setNotSent(!connection.pushChanges())}
             onClose={close}
           />
         </Sheet>
@@ -505,15 +509,20 @@ export function StateText({ text, detail, action, alert = false, onAction }: {
 
 type ShipStep = ChangesWrite['kind'];
 
+/** A Commit or Push tap that sent nothing, as Remove worktree says it. */
+const NOT_SENT = 'Not sent. Take control, then try again.';
+
 /**
  * The commit sheet's content: the message form, then the result, then an
  * optional push with its own confirm and result. It sends nothing on its own.
  */
-export function ShipFlow({ step, write, control, message, count, branch, onMessage, onCommit, onPush, onConfirmPush, onClose }: {
+export function ShipFlow({ step, write, control, message, notSent = false, count, branch, onMessage, onCommit, onPush, onConfirmPush, onClose }: {
   readonly step: ShipStep;
   readonly write: ChangesWrite | undefined;
   readonly control: boolean;
   readonly message: string;
+  /** The last Commit or Push tap sent nothing. */
+  readonly notSent?: boolean;
   readonly count: number;
   readonly branch: string | undefined;
   readonly onMessage: (message: string) => void;
@@ -543,6 +552,7 @@ export function ShipFlow({ step, write, control, message, count, branch, onMessa
         <p className="hint-text">
           {count} {count === 1 ? 'file' : 'files'} selected{control ? '' : ' · Take control to commit'}
         </p>
+        {notSent && <p role="alert" className="error">{NOT_SENT}</p>}
         <div className="ship-actions">
           <button type="button" disabled={pending} onClick={onClose}>Cancel</button>
           <button type="button" className="primary" disabled={pending || !control || count === 0 || message.trim() === ''} onClick={onCommit}>
@@ -558,6 +568,7 @@ export function ShipFlow({ step, write, control, message, count, branch, onMessa
       <>
         <SheetHeader id="ship-title" title="Push" />
         <p className="ship-text">Push <code>{name}</code> to its remote? This does not force.</p>
+        {notSent && <p role="alert" className="error">{NOT_SENT}</p>}
         <div className="ship-actions">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="button" className="primary" disabled={!control} onClick={onConfirmPush}>Push</button>

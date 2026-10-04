@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { BranchesListedPayload, BrokerRPCSessionRecord } from '../generated/protocol';
 import type { BranchesView, WorktreeRemoval } from '../terminal/Connection';
@@ -13,6 +14,12 @@ import {
   RemoveWorktree,
   worktreeNameProblem,
 } from './Worktree';
+
+// useState as React's own, so a test can open the menu on one step (static markup cannot tap).
+vi.mock('react', async (importOriginal) => {
+  const react = await importOriginal<typeof import('react')>();
+  return { ...react, useState: vi.fn(react.useState) };
+});
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/u;
 
@@ -212,6 +219,14 @@ describe('session menu', () => {
   it('offers New worktree only while the session runs', () => {
     expect(menu(session, false, true)).toContain('>New worktree…</button>');
     expect(menu(session, true, false)).not.toContain('New worktree');
+  });
+
+  it('says "Saving…" and "Terminating…" while rename and terminate run, so a slow computer is not a dead tap', () => {
+    // The menu's first state is its step.
+    vi.mocked(useState).mockImplementationOnce(() => ['rename', () => undefined]);
+    expect(menu(session, true, true)).toMatch(/<button type="submit" class="primary"><span class="btn-swap"><span>Save title<\/span><span class="off" aria-hidden="true">.*?Saving…<\/span><\/span><\/button>/u);
+    vi.mocked(useState).mockImplementationOnce(() => ['terminate', () => undefined]);
+    expect(menu(session, true, true)).toMatch(/<button type="button" class="danger"><span class="btn-swap"><span>Terminate session<\/span><span class="off" aria-hidden="true">.*?Terminating…<\/span><\/span><\/button>/u);
   });
 
   it('offers Remove worktree only for a worktree session this phone controls', () => {

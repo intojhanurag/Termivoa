@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProjectTask } from '../generated/protocol';
 import type { TasksView } from '../terminal/Connection';
-import { sendSnippet } from '../terminal/snippets';
+import { MAX_SNIPPETS, sendSnippet, SNIPPETS_KEY } from '../terminal/snippets';
 import { ProjectTasks, Snippets, taskGroups, taskSnippet, typeHereProblem } from './Snippets';
 
 const noop = () => undefined;
@@ -38,7 +38,7 @@ function section(props: Partial<Parameters<typeof ProjectTasks>[0]> = {}) {
 }
 const html = (props: Partial<Parameters<typeof ProjectTasks>[0]> = {}) => renderToStaticMarkup(section(props));
 
-/** Host buttons by label or visible text; ProjectTasks has no hooks, so it is called directly. */
+/** Host buttons by label or visible text (a hidden busy label left out); ProjectTasks has no hooks, so it is called directly. */
 function buttons(node: ReactNode, found = new Map<string, () => void>()): Map<string, () => void> {
   if (Array.isArray(node)) {
     node.forEach((child: ReactNode) => buttons(child, found));
@@ -47,7 +47,7 @@ function buttons(node: ReactNode, found = new Map<string, () => void>()): Map<st
     if (typeof node.type === 'function') {
       buttons((node.type as (props: unknown) => ReactNode)(props), found);
     } else if (node.type === 'button' && props.onClick !== undefined) {
-      found.set(props['aria-label'] ?? renderToStaticMarkup(<>{props.children}</>).replace(/<[^>]+>/gu, ''), props.onClick);
+      found.set(props['aria-label'] ?? renderToStaticMarkup(<>{props.children}</>).replace(/<span class="off" aria-hidden="true">.*?<\/span>/gu, '').replace(/<[^>]+>/gu, ''), props.onClick);
     }
     buttons(props.children, found);
   }
@@ -102,7 +102,7 @@ describe('project commands', () => {
     const open = tasks[3];
     const markup = html({ open });
     expect(markup).toContain('role="group" aria-label="Actions for test"');
-    expect(markup).toContain('<code class="task-command">pnpm test</code><button type="button" class="primary">Run in new tab</button>');
+    expect(markup).toContain('<code class="task-command">pnpm test</code><button type="button" class="primary"><span class="btn-swap"><span>Run in new tab</span><span class="off" aria-hidden="true">');
     expect(markup).toContain('<button type="button">Type here</button>');
     expect(markup).not.toContain('task-chip');
 
@@ -129,12 +129,18 @@ describe('project commands', () => {
     const markup = html({ open: tasks[3], typeProblem: typeHereProblem(true, 'fullscreen') });
     expect(markup).toContain('<button type="button" disabled="" aria-describedby="type-here-reason">Type here</button>');
     expect(markup).toContain(`<p id="type-here-reason" class="hint-text">${fullscreen}</p>`);
-    expect(markup).toContain('<button type="button" class="primary">Run in new tab</button>');
+    expect(markup).toContain('<button type="button" class="primary"><span class="btn-swap"><span>Run in new tab</span><span class="off" aria-hidden="true">');
+  });
+
+  it('says "Starting…" and is off while Run in new tab starts the session, so one tap starts one session', () => {
+    const open = tasks[3];
+    const markup = html({ open, starting: true });
+    expect(markup).toMatch(/<button type="button" class="primary" disabled="" aria-busy="true"><span class="btn-swap"><span class="off" aria-hidden="true">Run in new tab<\/span><span>.*?Starting…<\/span><\/span><\/button>/u);
   });
 
   it('turns Run in new tab off for a command that cannot be typed as one line', () => {
     const markup = html({ open: task('odd', 'other', 'make\tall') });
-    expect(markup).toContain('<button type="button" class="primary" disabled="">Run in new tab</button>');
+    expect(markup).toContain('<button type="button" class="primary" disabled=""><span class="btn-swap"><span>Run in new tab</span><span class="off" aria-hidden="true">');
     expect(markup).toContain('Use one line without control characters.');
   });
 
@@ -154,7 +160,7 @@ describe('project commands', () => {
         busy={undefined}
         tasks={ready()}
         onRetryTasks={noop}
-        onRunTask={noop}
+        onRunTask={async () => undefined}
         onClose={noop}
       />,
     );
@@ -165,9 +171,20 @@ describe('project commands', () => {
     expect(markup.indexOf('Run tests and fix failures')).toBeGreaterThan(saved);
   });
 
+  it('says why + new is off when the list is full', () => {
+    const full = Array.from({ length: MAX_SNIPPETS }, (_, at) => ({ id: `s${at}`, title: `s${at}`, text: 'ls', sendEnter: true, shell: true }));
+    vi.stubGlobal('localStorage', { getItem: (key: string) => (key === SNIPPETS_KEY ? JSON.stringify(full) : null) });
+    const markup = renderToStaticMarkup(
+      <Snippets target={{ sendPaste: () => true, sendKey: () => true }} canSend busy={undefined} tasks={ready()} onRetryTasks={noop} onRunTask={async () => undefined} onClose={noop} />,
+    );
+    vi.unstubAllGlobals();
+    expect(markup).toContain('<button type="button" class="link" disabled="">+ new</button>');
+    expect(markup).toContain('<p class="hint-text">You can keep 50 snippets at most. Delete one to add another.</p>');
+  });
+
   it('says to take control in a neutral notice with its icon', () => {
     const markup = renderToStaticMarkup(
-      <Snippets target={{ sendPaste: () => true, sendKey: () => true }} canSend={false} busy={undefined} tasks={ready()} onRetryTasks={noop} onRunTask={noop} onClose={noop} />,
+      <Snippets target={{ sendPaste: () => true, sendKey: () => true }} canSend={false} busy={undefined} tasks={ready()} onRetryTasks={noop} onRunTask={async () => undefined} onClose={noop} />,
     );
     expect(markup).toMatch(/<div class="notice neutral" role="status">.*Take control to send snippets/u);
   });

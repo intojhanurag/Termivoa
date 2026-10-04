@@ -3,6 +3,7 @@ import { client, isAuthFailure } from '../api/http';
 import type { BrokerRPCSessionRecord, SessionWorktree } from '../generated/protocol';
 import type { WorktreeRemoval } from '../terminal/Connection';
 import { Sheet, SheetHeader } from './Sheet';
+import { Button } from './ui';
 import { RemoveWorktree } from './Worktree';
 
 const SAFE_TITLE = /^[^\p{Cc}\s](?:[^\p{Cc}]{0,126}[^\p{Cc}\s])?$/u;
@@ -81,7 +82,7 @@ export function SessionMenu({
           <label htmlFor="session-title">New title</label>
           <input id="session-title" value={title} maxLength={128} autoComplete="off" onChange={(event) => setTitle(event.target.value)} />
           <div className="row">
-            <button type="submit" className="primary" disabled={busy || !titleOk}>Save title</button>
+            <Button type="submit" className="primary" busy={busy} busyLabel="Saving…" disabled={!titleOk}>Save title</Button>
             <button type="button" onClick={() => setMode('menu')}>Cancel</button>
           </div>
         </form>
@@ -93,17 +94,17 @@ export function SessionMenu({
             It is not Ctrl+C and not Detach, and it cannot be undone.
           </p>
           <div className="row">
-            <button
-              type="button"
+            <Button
               className="danger"
-              disabled={busy}
+              busy={busy}
+              busyLabel="Terminating…"
               onClick={() => {
                 void mutate(() => client(origin).terminateSession(session.id, {
                   operationId: crypto.randomUUID(),
                   generation: session.generation,
                 }));
               }}
-            >Terminate session</button>
+            >Terminate session</Button>
             <button type="button" onClick={() => setMode('menu')}>Keep running</button>
           </div>
         </div>

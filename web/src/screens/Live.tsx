@@ -30,6 +30,7 @@ import { ComputerTag, ended } from './Sessions';
 import { SessionMenu } from './SessionMenu';
 import { Snippets } from './Snippets';
 import { StateScreen, WindowArt } from './StateScreen';
+import { Button } from './ui';
 import { NewWorktree, WorktreeBadge } from './Worktree';
 
 // Changes and Files are the only screens that open from a tap and need none of
@@ -166,6 +167,36 @@ export function areaClick(linkTook: boolean, sheet: boolean, canSend: boolean): 
   return canSend ? 'focus' : 'none';
 }
 
+/** The session ended for good. New session stays busy until the new one opens (or fails), so one tap starts one session. */
+export function SessionLost({ title, where, onSessions, onStartNew }: {
+  readonly title: string;
+  readonly where: string;
+  readonly onSessions: () => void;
+  readonly onStartNew: () => Promise<void>;
+}) {
+  const [starting, setStarting] = useState(false);
+  return (
+    <StateScreen
+      tone="red"
+      label="Termivoa · session lost"
+      art={<WindowArt mark="gone" />}
+      title={<>This session<br />is gone</>}
+      lead={`“${title}” ended on ${where}. Nothing was re-run.`}
+      actions={(
+        <>
+          <button type="button" className="state-pill" onClick={onSessions}>sessions</button>
+          <Button
+            className="primary"
+            busy={starting}
+            busyLabel="Starting…"
+            onClick={() => { setStarting(true); void onStartNew().finally(() => setStarting(false)); }}
+          >New session</Button>
+        </>
+      )}
+    />
+  );
+}
+
 export function Live({
   session, sessions, settings, multi = false, fontSize, runFirst, openComposer,
   onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
@@ -186,8 +217,8 @@ export function Live({
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onChanged: () => Promise<void>;
-  /** A new session in the same project and shell; `runFirst` is typed once when it opens. */
-  readonly onStartNew: (runFirst?: string) => void;
+  /** A new session in the same project and shell; `runFirst` is typed once when it opens. Settles when it opened or failed. */
+  readonly onStartNew: (runFirst?: string) => Promise<void>;
   /** Like onStartNew, in a new git worktree of this session's repository; rejects with the API error. */
   readonly onStartWorktree: (worktree: { readonly name: string; readonly base: string }, runFirst: string | undefined) => Promise<void>;
   readonly onRevoked: (reason: string | undefined) => void;
@@ -591,21 +622,7 @@ export function Live({
   const showPlace = (placeHead.name !== '' || placeTail !== '') && (status.link === 'live' || !slowLink);
 
   if (status.link === 'lost') {
-    return (
-      <StateScreen
-        tone="red"
-        label="Termivoa · session lost"
-        art={<WindowArt mark="gone" />}
-        title={<>This session<br />is gone</>}
-        lead={`“${session.title}” ended on ${multi ? session.computer.label : 'your computer'}. Nothing was re-run.`}
-        actions={(
-          <>
-            <button type="button" className="state-pill" onClick={onSessions}>sessions</button>
-            <button type="button" className="primary" onClick={() => onStartNew()}>New session</button>
-          </>
-        )}
-      />
-    );
+    return <SessionLost title={session.title} where={multi ? session.computer.label : 'your computer'} onSessions={onSessions} onStartNew={onStartNew} />;
   }
 
   return (

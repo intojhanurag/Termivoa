@@ -1,9 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ChunkLoadError, ErrorBoundary, ErrorScreen, errorText, loadChunk, UpdateRequired } from './chunks';
+
+// useState as React's own, so a test can show a state that needs a tap (static markup cannot tap).
+vi.mock('react', async (importOriginal) => {
+  const react = await importOriginal<typeof import('react')>();
+  return { ...react, useState: vi.fn(react.useState) };
+});
 
 const src = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -97,6 +104,11 @@ describe('app error boundary', () => {
     expect(html).toContain('copy error');
     expect(html).toContain('TypeError: x is undefined');
     expect(html).toContain('>Reload</button>');
+  });
+
+  it('says when copying the error did not work, instead of doing nothing', () => {
+    vi.mocked(useState).mockImplementationOnce(() => ['failed', () => undefined]);
+    expect(renderToStaticMarkup(<ErrorScreen text="TypeError: x" />)).toMatch(/<button type="button" class="state-pill"><svg[^]*?<\/svg>copy failed<\/button>/u);
   });
 
   it('still asks for an update when screen code could not load', () => {

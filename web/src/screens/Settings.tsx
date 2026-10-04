@@ -38,7 +38,8 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   const [support] = useState(pushSupport);
   // undefined while the browser is asked whether this phone is subscribed.
   const [enabled, setEnabled] = useState<boolean>();
-  const [busy, setBusy] = useState(false);
+  // What runs now: the switch, or a test send.
+  const [busy, setBusy] = useState<'switch' | 'test'>();
   const [note, setNote] = useState<Note>();
 
   // The computers that send no notifications to this phone (home is on).
@@ -55,14 +56,14 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
     return () => { live = false; };
   }, [support]);
 
-  function run(work: Promise<void>) {
-    setBusy(true);
+  function run(what: 'switch' | 'test', work: Promise<void>) {
+    setBusy(what);
     setNote(undefined);
-    work.catch((failure: unknown) => setNote({ text: onFailure(failure), error: true })).finally(() => setBusy(false));
+    work.catch((failure: unknown) => setNote({ text: onFailure(failure), error: true })).finally(() => setBusy(undefined));
   }
 
   // Called straight from the tap: enablePush asks for permission before any await (iOS needs that).
-  const toggle = () => run(enabled === true
+  const toggle = () => run('switch', enabled === true
     ? disablePush().then(() => { setEnabled(false); setMissing([]); })
     : enablePush().then((result) => {
       if (!result.ok) {
@@ -75,7 +76,7 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
     }));
 
   // One test from each computer. Home's answer shows at once; a peer that sent none is named when known.
-  const sendTest = () => run(testPush().then(({ sent, missing: late }) => {
+  const sendTest = () => run('test', testPush().then(({ sent, missing: late }) => {
     setNote(sent ? { text: 'Sent', error: false } : { text: 'No subscription on this phone', error: true });
     if (sent) void late.then((labels) => { if (labels.length > 0) setNote({ text: `Sent. ${noPushFrom(labels)}`, error: true }); });
   }));
@@ -93,13 +94,15 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
               className="switch"
               aria-checked={enabled === true}
               aria-labelledby="push-label"
-              disabled={enabled === undefined || busy}
+              disabled={enabled === undefined || busy !== undefined}
               onClick={toggle}
             ><span className="switch-track" aria-hidden="true" /></button>
           </div>
           <p className="hint-text">Only the session name and status. Never terminal text.</p>
           {enabled === true && missing.length > 0 && <Notice tone="warning" title={noPushFrom(missing)} />}
-          <button type="button" className="secondary" disabled={enabled !== true || busy} onClick={sendTest}>Send a test notification</button>
+          <Button className="secondary" busy={busy === 'test'} busyLabel="Sending…" disabled={enabled !== true || busy === 'switch'} onClick={sendTest}>
+            Send a test notification
+          </Button>
           <div role="status" className="field-note">
             {note?.error === true ? <Notice tone="danger" title={note.text} /> : <span className="muted">{note?.text ?? ''}</span>}
           </div>
@@ -126,7 +129,7 @@ export function Settings({
   readonly onCheck: (origin: string) => Promise<void>;
   readonly onComputersChanged: () => void;
 }) {
-  const [error, setError] = useState<string>();
+  const [logoutError, setLogoutError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const current = settings?.device.label ?? '';
   // Follows home's label (home may answer after this screen opened) until the user types.
@@ -161,8 +164,6 @@ export function Settings({
         <h1 className="display">Settings</h1>
         <button type="button" className="link strong" onClick={onBack}>Done</button>
       </header>
-      {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
-
       <ErrorBoundary>
         <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
           <ComputersSection entries={entries} onCheck={onCheck} onChanged={onComputersChanged} onFailure={onFailure} />
@@ -238,10 +239,12 @@ export function Settings({
         <LogoutSection
           multi={multi}
           busy={busy}
+          error={logoutError}
           onLogout={() => {
             setBusy(true);
+            setLogoutError(undefined);
             onLogout().catch((failure: unknown) => {
-              setError(failure instanceof Error ? failure.message : 'Logout failed');
+              setLogoutError(failure instanceof Error ? failure.message : 'Logout failed');
               setBusy(false);
             });
           }}
@@ -251,10 +254,11 @@ export function Settings({
   );
 }
 
-/** Log out; while it runs (each peer may take a few seconds), the button is off and says why. */
-export function LogoutSection({ multi, busy, onLogout }: {
+/** Log out; while it runs (each peer may take a few seconds), the button is off and says why. A failure shows here by the button, not at the top of the page, out of sight. */
+export function LogoutSection({ multi, busy, error, onLogout }: {
   readonly multi: boolean;
   readonly busy: boolean;
+  readonly error?: string | undefined;
   readonly onLogout: () => void;
 }) {
   return (
@@ -265,6 +269,7 @@ export function LogoutSection({ multi, busy, onLogout }: {
           ? 'Signs this phone out of every computer. Running sessions keep running.'
           : 'Removes this browser\'s access. Running sessions keep running on your computer.'}
       </p>
+      {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
       <Button className="danger" busy={busy} onClick={onLogout}>Log out</Button>
       <p role="status" className="muted field-note">{busy ? 'Signing out…' : ''}</p>
     </section>
