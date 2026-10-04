@@ -145,7 +145,7 @@ The camera stops when the app reads a code, when you tap **Cancel**, and when yo
 
 | Screen | With 2 or more computers |
 | --- | --- |
-| Sessions | Chips **All**, **mac**, **vps** filter by computer. Each row has a colour dot and the computer's name. Waiting sessions come first, from all computers. |
+| Sessions | The tabs **All**, **mac**, **vps** filter by computer. Each row has a colour dot and the computer's name. Waiting sessions come first, from all computers. |
 | New session | **❯ new session on…** and a **Computer** row pick where it runs. Projects and shells come from that computer. |
 | [Wall](/docs/guides/wall/) | Tiles from all computers. At most 4 are live at once (5 updates per second each); the rest show **Paused**. |
 | Live, [Changes](/docs/guides/changes/), [Files](/docs/guides/files/) | Work the same on every computer. |

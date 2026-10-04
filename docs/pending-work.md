@@ -90,11 +90,11 @@ designed in Paper first and shown to the owner before any code.
    names this computer and quotes the phone's code screen; a strong success
    line ("Done. vps is in your Termivoa app on mac. Open the app and tap
    it."); a tip to rename long machine names.
-3. **UI revamp (Paper first):** buttons, notices, banners and the
-   Settings → Computers cards are done (`feat/ui-lit`). Left: the site
-   screenshots (`site/src/assets/docs/phone-*.webp`) still show the old
-   look; the other sheets (session menu, snips, worktree, compose,
-   changes) keep their plain buttons and red error lines.
+3. **UI revamp (Paper first):** "Bone & ink" is on every screen and sheet
+   (`feat/bone-and-ink`; Paper boards "V2 Bone & ink — …"). Left: retake
+   the site screenshots (`site/src/assets/docs/phone-*.webp`, with
+   `scripts/docs-screenshots/`) and the landing page images; they still
+   show the old look.
 4. **Open issues:** #158, #161, #164 fixed; #162 not a defect (see
    `docs/progress.md`); #165 (landing page does not show adding a
    computer) waits for the owner's go on the Paper design.
