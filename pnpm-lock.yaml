@@ -27,8 +27,8 @@ importers:
         specifier: 8.20.0
         version: 8.20.0
       qr:
-        specifier: 0.7.0
-        version: 0.7.0
+        specifier: 0.7.2
+        version: 0.7.2
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -719,8 +719,8 @@ packages:
     resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
     engines: {node: '>= 0.6.0'}
 
-  qr@0.7.0:
-    resolution: {integrity: sha512-/VrrACmOAwZVipuRITwfEwOL5oAMEHH5PTmBWaGtlTom2Thxaa+rhmna4zU9PRN2uLw2wdccbkHOLGZb1Q9SdA==}
+  qr@0.7.2:
+    resolution: {integrity: sha512-yovYRuacJBJkG9fWSwcB2bKZhr58c04DpOXguDU+rAAoJZdi6/J3DtlomkKqdd1MutIptIK+kigWmT7LKz8y7A==}
     engines: {node: '>= 20.19.0'}
 
   quicktype-core@26.0.0:
@@ -1475,7 +1475,7 @@ snapshots:
 
   process@0.11.10: {}
 
-  qr@0.7.0: {}
+  qr@0.7.2: {}
 
   quicktype-core@26.0.0:
     dependencies:
