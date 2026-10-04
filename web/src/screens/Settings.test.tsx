@@ -177,6 +177,21 @@ describe('Settings → Integrations', () => {
     expect(off.match(/disabled=""/gu)).toHaveLength(2);
   });
 
+  it('shows the state of the provider read, which is newer than the settings (F10)', () => {
+    const read = (state: 'ready' | 'notRunning' | 'off') => renderToStaticMarkup(
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }) }} entry={fixtures.providerEntry(mac, { kind: 'ok', snapshot: fixtures.snapshot([], { state }), at: 1 })} onFailure={() => ''} /></ul>,
+    );
+    expect(read('ready')).toContain('<span class="computer-state green">Running</span>');
+    expect(read('off')).toContain('<span class="computer-state muted">Off</span>');
+    // Not read yet, or the read failed: the settings' state.
+    const unread = renderToStaticMarkup(
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }) }} entry={fixtures.providerEntry(mac, { kind: 'unreachable' })} onFailure={() => ''} /></ul>,
+    );
+    expect(unread).toContain('Not running');
+    const section = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { providers: [info({ state: 'notRunning' })] })]} providers={[fixtures.ready(mac, [])]} onFailure={() => ''} />);
+    expect(section).toContain('Running');
+  });
+
   it('keeps the notify list in one order', () => {
     expect(notifyWith(['blocked', 'done'], 'blocked', false)).toEqual(['done']);
     expect(notifyWith(['done'], 'blocked', true)).toEqual(['blocked', 'done']);

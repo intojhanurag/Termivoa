@@ -384,7 +384,8 @@ label { color: var(--soft); font-size: 14px; }
 .group-toggle { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 16px 0; border: 0; border-radius: 0; text-align: left; font-weight: 400; }
 .group-toggle:active:not(:disabled) { background: none; opacity: 0.7; }
 .fold-glyph { flex: 0 0 12px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
-.group-name { min-width: 0; overflow: hidden; font-size: 17px; font-weight: 600; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.group-title { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; min-width: 0; }
+.group-name { max-width: 100%; overflow: hidden; font-size: 17px; font-weight: 600; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
 .group-where, .faint { flex-shrink: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; line-height: 14px; text-transform: uppercase; white-space: nowrap; }
 .group-state { display: flex; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
 button.group-add { flex-shrink: 0; margin-right: -12px; color: var(--text); }

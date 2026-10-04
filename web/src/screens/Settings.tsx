@@ -7,7 +7,7 @@ import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPu
 import type { ComputerEntry } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
-import { providerSources, type ProviderSource } from './providers';
+import { providerKey, providerSources, type ProviderEntry, type ProviderSource } from './providers';
 import { Button, Notice } from './ui';
 
 // Computers (and the add-computer sheet it opens) load only when Settings opens.
@@ -139,20 +139,25 @@ export function notifyWith(current: ReadonlyArray<HTTPProviderNotifyState>, word
 type Field = 'enabled' | HTTPProviderNotifyState;
 
 /** One provider on one computer: on or off, and which states buzz. Saved on that computer for every device. */
-export function IntegrationRow({ source, onFailure, onSaved, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body) }: {
+export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body) }: {
   readonly source: ProviderSource;
+  /** The provider's latest read on that computer: its `state` is newer than the settings' (docs/herdr-provider.md, 4.5). */
+  readonly entry?: Pick<ProviderEntry, 'status'> | undefined;
   readonly onFailure: (error: unknown) => string;
-  /** Reads the computer's settings again, so the rest of the app follows. */
+  /** Reads the computer's settings and the provider again, so the rest of the app follows. */
   readonly onSaved?: () => void;
   readonly save?: (body: HTTPProviderUpdateRequest) => Promise<HTTPProviderInfo>;
 }) {
-  const [saved, setSaved] = useState<HTTPProviderInfo>();
+  const [saved, setSaved] = useState<{ readonly info: HTTPProviderInfo; readonly at: number }>();
   // The switch moves at once; it is off for taps until the computer answered.
   const [pending, setPending] = useState<{ readonly field: Field; readonly on: boolean }>();
   const [note, setNote] = useState<Note>();
-  const info = saved ?? source.info;
+  const info = saved?.info ?? source.info;
+  const read = entry?.status.kind === 'ok' ? entry.status : undefined;
+  // The state word: the newest of the provider read and this screen's own save.
+  const state = read !== undefined && (saved === undefined || read.at >= saved.at) ? read.snapshot.state : info.state;
   const { computer } = source;
-  const text = integrationText(info, computer.label);
+  const text = integrationText({ name: info.name, state }, computer.label);
   const id = `integration-${computer.host}-${info.id}`.replace(/[^A-Za-z0-9_-]/gu, '-');
   const value = (field: Field) => (pending?.field === field ? pending.on : field === 'enabled' ? info.enabled : info.notify.includes(field));
 
@@ -161,7 +166,7 @@ export function IntegrationRow({ source, onFailure, onSaved, save = (body) => cl
     setPending({ field, on });
     setNote(undefined);
     save(field === 'enabled' ? { enabled: on } : { notify: notifyWith(info.notify, field, on) }).then(
-      (next) => { setSaved(next); setNote({ text: 'Saved.', error: false }); onSaved?.(); },
+      (next) => { setSaved({ info: next, at: Date.now() }); setNote({ text: 'Saved.', error: false }); onSaved?.(); },
       (failure: unknown) => setNote({ text: onFailure(failure), error: true }),
     ).finally(() => setPending(undefined));
   }
@@ -203,10 +208,13 @@ export function IntegrationRow({ source, onFailure, onSaved, save = (body) => cl
 }
 
 /** Settings → Integrations: only where a computer lists a provider. */
-export function IntegrationsSection({ entries, onFailure, onCheck }: {
+export function IntegrationsSection({ entries, providers = [], onFailure, onCheck, onProviderReload }: {
   readonly entries: ReadonlyArray<ComputerEntry>;
+  /** The providers' latest reads, for their state. */
+  readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
   readonly onFailure: (error: unknown) => string;
   readonly onCheck?: (origin: string) => Promise<void>;
+  readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
 }) {
   const sources = providerSources(entries);
   if (sources.length === 0) return null;
@@ -218,8 +226,12 @@ export function IntegrationsSection({ entries, onFailure, onCheck }: {
           <IntegrationRow
             key={`${source.computer.origin} ${source.info.id}`}
             source={source}
+            entry={providers.find((entry) => entry.key === providerKey(source.computer.origin, source.info.id))}
             onFailure={onFailure}
-            onSaved={() => { void onCheck?.(source.computer.origin).catch(() => undefined); }}
+            onSaved={() => {
+              void onCheck?.(source.computer.origin).catch(() => undefined);
+              void onProviderReload?.(providerKey(source.computer.origin, source.info.id)).catch(() => undefined);
+            }}
           />
         ))}
       </ul>
@@ -228,11 +240,13 @@ export function IntegrationsSection({ entries, onFailure, onCheck }: {
 }
 
 export function Settings({
-  settings, entries, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onComputersChanged,
+  settings, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onComputersChanged,
 }: {
   /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
   readonly settings: HTTPSettingsResponse | undefined;
   readonly entries: ReadonlyArray<ComputerEntry>;
+  /** Providers (herdr) of every computer, read while Settings shows, for Integrations. */
+  readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
   readonly fontSize: number;
   readonly onFontSize: (size: number) => void;
   readonly onBack: () => void;
@@ -240,6 +254,7 @@ export function Settings({
   readonly onFailure: (error: unknown) => string;
   readonly onLogout: () => Promise<void>;
   readonly onCheck: (origin: string) => Promise<void>;
+  readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
   readonly onComputersChanged: () => void;
 }) {
   const [logoutError, setLogoutError] = useState<string>();
@@ -340,7 +355,7 @@ export function Settings({
 
       {settings !== undefined && <NotificationSettings onFailure={onFailure} />}
 
-      <IntegrationsSection entries={entries} onFailure={onFailure} onCheck={onCheck} />
+      <IntegrationsSection entries={entries} providers={providers} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} />
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>

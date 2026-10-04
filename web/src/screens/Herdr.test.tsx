@@ -51,6 +51,21 @@ describe('the herdr tab (H3)', () => {
     expect(foldKey(mac, { id: 'g1' })).toBe('mac.tailx.ts.net/g1');
   });
 
+  it('gives a git project with only its main checkout one row with its +, and none outside git', () => {
+    const acme = group('g4', 'acme-web', [item('w4', 'acme-web', [target('w4:p1.t', 'idle', { agent: 'claude' })])]);
+    const page = html([ready(mac, [acme, ...shopGroups().slice(1)])]);
+    expect(page).toContain('aria-label="New worktree in acme-web"');
+    expect(page).not.toContain('New worktree in notes');
+    expect(page).not.toContain('aria-expanded');
+  });
+
+  it('keeps a project name and its small labels in one wrapping title, so the labels move under a long name', () => {
+    const quiet = group('g2', 'storefront-redesign', [item('w2', 'main', [target('w2:p1.t', 'idle', { agent: 'claude' })]), item('w3', 'draft', [target('w3:p1.t', 'none')])]);
+    expect(html([ready(mac, [quiet])], true)).toContain(
+      '<span class="group-title"><span class="group-name">storefront-redesign</span><span class="group-where">on mac</span><span class="group-where">2 worktrees</span></span>',
+    );
+  });
+
   it('folds a quiet multi-worktree project and says how many worktrees', () => {
     const quiet = group('g2', 'blog', [item('w2', 'main', [target('w2:p1.t', 'idle', { agent: 'claude' })]), item('w3', 'draft', [target('w3:p1.t', 'none')])]);
     const page = html([ready(mac, [quiet])], true);

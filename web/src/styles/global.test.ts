@@ -17,6 +17,12 @@ describe('global styles', () => {
   });
 
 
+  it('lets a herdr project name keep its line: the small labels wrap under it, never cut it short', () => {
+    expect(selectorsWith('flex-wrap: wrap')).toContain('.group-title');
+    expect(selectorsWith('max-width: 100%')).toContain('.group-name');
+    expect(selectorsWith('min-width: 0').filter((selector) => selector.includes('.group-name'))).toEqual([]);
+  });
+
   it('stays flat: no gradients, and no shadow except none', () => {
     expect(css).not.toMatch(/gradient/u);
     expect(selectorsWith('box-shadow')).toEqual([]);

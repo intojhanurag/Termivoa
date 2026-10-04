@@ -181,15 +181,18 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
                   const name = names[index] ?? group.name;
                   const state = <StateWord word={providerWord(group.state)} text={groupWordText(group)} />;
                   const where = multi ? <span className="group-where">on {entry.computer.label}</span> : null;
+                  // A git project with only its main checkout is one row too, and keeps its +.
+                  const add = onCreate !== undefined && entry.info.canCreate && group.canCreate
+                    ? <AddButton name={name} onClick={() => onCreate(entry, group)} />
+                    : null;
                   const single = singleRow(group);
                   if (single !== undefined) {
                     return (
-                      <ItemGroupRow key={group.id} entry={entry} item={single} name={name} where={where} state={state} onOpen={onOpen} />
+                      <ItemGroupRow key={group.id} entry={entry} item={single} name={name} where={where} state={state} add={add} onOpen={onOpen} />
                     );
                   }
                   const open = isOpen(entry.computer, group);
                   const id = `group-${foldKey(entry.computer, group).replace(/[^A-Za-z0-9_-]/gu, '-')}`;
-                  const canCreate = onCreate !== undefined && entry.info.canCreate && group.canCreate;
                   return (
                     <li key={group.id} className="provider-group">
                       <div className="group-row">
@@ -201,18 +204,10 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
                           onClick={() => { folds.set(foldKey(entry.computer, group), !open); redraw(); }}
                         >
                           <span className="fold-glyph" aria-hidden="true">{open ? '▾' : '▸'}</span>
-                          <span className="group-name">{name}</span>
-                          {where}
-                          {!open && group.items.length > 1 && <span className="group-where">{group.items.length} worktrees</span>}
+                          <GroupTitle name={name} where={where} count={!open && group.items.length > 1 ? group.items.length : undefined} />
                           <span className="group-state">{state}</span>
                         </button>
-                        {canCreate && (
-                          <button type="button" className="round group-add" aria-label={`New worktree in ${name}`} onClick={() => onCreate(entry, group)}>
-                            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                              <path d="M7 1v12M1 7h12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                            </svg>
-                          </button>
-                        )}
+                        {add}
                       </div>
                       {open && (
                         <ul className="rows group-items" id={id}>
@@ -236,13 +231,40 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
   );
 }
 
-/** A workspace outside git: one row like a project row, that opens its terminal. */
-function ItemGroupRow({ entry, item, name, where, state, onOpen }: {
+/**
+ * A project's name and its small labels ("ON MAC", "2 WORKTREES"). The name
+ * has priority: the labels wrap under it when both do not fit on one line,
+ * so the name is cut only when it alone is wider than the row.
+ */
+function GroupTitle({ name, where, count }: { readonly name: string; readonly where: ReactNode; readonly count?: number | undefined }) {
+  return (
+    <span className="group-title">
+      <span className="group-name">{name}</span>
+      {where}
+      {count !== undefined && <span className="group-where">{count} worktrees</span>}
+    </span>
+  );
+}
+
+function AddButton({ name, onClick }: { readonly name: string; readonly onClick: () => void }) {
+  return (
+    <button type="button" className="round group-add" aria-label={`New worktree in ${name}`} onClick={onClick}>
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="M7 1v12M1 7h12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
+
+/** A workspace outside git, or a git project with only its main checkout: one row like a project row, that opens its terminal. */
+function ItemGroupRow({ entry, item, name, where, state, add, onOpen }: {
   readonly entry: ProviderEntry;
   readonly item: HTTPProviderItem;
   readonly name: string;
   readonly where: ReactNode;
   readonly state: ReactNode;
+  /** The + of a git project; null outside git. */
+  readonly add: ReactNode;
   readonly onOpen: (tap: ProviderTap) => void;
 }) {
   const open = item.openTarget;
@@ -260,10 +282,10 @@ function ItemGroupRow({ entry, item, name, where, state, onOpen }: {
           }}
         >
           <span className="fold-glyph" aria-hidden="true" />
-          <span className="group-name">{name}</span>
-          {where}
+          <GroupTitle name={name} where={where} />
           <span className="group-state">{state}</span>
         </button>
+        {add}
       </div>
     </li>
   );

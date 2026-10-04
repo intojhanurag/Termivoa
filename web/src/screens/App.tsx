@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, ApiError, client, CONNECTION_UNAVAILABLE, firstLabel, homeOrigin, isAuthFailure, updateText } from '../api/http';
 import { logOut, previewOriginOf, refreshComputers, storedComputers, type Computer } from '../computers';
-import type { HTTPSettingsResponse } from '../generated/protocol';
+import { FEATURE_REVISION, type HTTPSettingsResponse } from '../generated/protocol';
 import {
   ADD_COMPUTER_PATH, cancelAdd, currentAdd, dismissAdd, PEER_ADD_PATH, resetAdd, subscribeAdd, takeAddComputerFragment,
   type AddComputerLink, type AddTask, type AppLocation,
@@ -300,15 +300,12 @@ export function peerPreviewOnLoad(state: unknown, previews: ReadonlyArray<{ read
   return tapped && previews?.some((item) => item.port === port) === true;
 }
 
-/** From this protocol revision on, a peer's preview listener has the rules the frame needs (docs/peer-preview.md). */
-export const PEER_PREVIEW_REVISION = 2;
-
 /**
  * Where a session's preview is framed from (`origin`), or what to say in
  * place of the frame (`notice`); neither while a peer has not answered yet.
  * Home: its configured origin. A peer never needs home's previews: its origin
  * is computed, and it has one only while the app's own poll of that peer
- * answers, at PEER_PREVIEW_REVISION or higher. The app cannot see what the
+ * answers, at FEATURE_REVISION.peerPreview or higher (its listener has the rules the frame needs, docs/peer-preview.md). The app cannot see what the
  * frame is answered, so a peer that refuses the phone or cannot be reached
  * loses its frame.
  */
@@ -319,7 +316,7 @@ export function previewFor(
 ): { readonly origin?: string | undefined; readonly notice?: string } {
   if (computer.home) return { origin: previewOriginOf(computer, homePreviewAt) };
   switch (status?.kind) {
-    case 'ok': return status.settings.protocolRevision >= PEER_PREVIEW_REVISION
+    case 'ok': return status.settings.protocolRevision >= FEATURE_REVISION.peerPreview
       ? { origin: previewOriginOf(computer, undefined) }
       : { notice: updateText(computer.label) };
     case 'pair': return { notice: pairAgain(computer.label) };
@@ -631,8 +628,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
     || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer' || view.name === 'provider';
   const all = useAllSessions(polling, computers, onHomeAuth, adding?.phase.kind === 'done' ? adding.origin : undefined);
-  // Providers (herdr) are read only while Sessions shows them; their failures never reach `all`.
-  const providers = useProviders(view.name === 'sessions' || view.name === 'provider', all.entries);
+  // Providers (herdr) are read only while Sessions, a provider terminal or Settings (Integrations) shows; their failures never reach `all`.
+  const providers = useProviders(view.name === 'sessions' || view.name === 'provider' || view.name === 'settings', all.entries);
   // Push from peers follows the list: at start, when a computer is added or
   // removed (log out included), and when one stops or starts being usable
   // (can't reach, pair again, outdated), so a peer that was offline when push
@@ -1090,6 +1087,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
             <Settings
               settings={settings}
               entries={all.entries}
+              providers={providers.entries}
               fontSize={fontSize}
               onFontSize={setFontSize}
               onBack={toSessions}
@@ -1097,6 +1095,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onFailure={handleFailure}
               onLogout={logout}
               onCheck={(origin) => all.reload(origin)}
+              onProviderReload={providers.reload}
               onComputersChanged={reloadComputers}
             />
           </Suspense>
