@@ -169,6 +169,6 @@ describe('project commands', () => {
     const markup = renderToStaticMarkup(
       <Snippets target={{ sendPaste: () => true, sendKey: () => true }} canSend={false} busy={undefined} tasks={ready()} onRetryTasks={noop} onRunTask={noop} onClose={noop} />,
     );
-    expect(markup).toMatch(/<div class="notice neutral" role="status"><span class="notice-icon">.*Take control to send snippets/u);
+    expect(markup).toMatch(/<div class="notice neutral" role="status">.*Take control to send snippets/u);
   });
 });

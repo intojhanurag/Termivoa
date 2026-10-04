@@ -6,7 +6,7 @@ import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from 
 import { AddComputerSheet } from './AddComputer';
 import { cantReach, ReadFailure, type ComputerEntry } from './allSessions';
 import { ago, problemDetail, problemText } from './Sessions';
-import { Button, Icon, Notice, PairVia, type IconName } from './ui';
+import { Button, Notice, PairVia } from './ui';
 
 /** The right-hand word for a computer in the list. */
 export function onlineText(entry: ComputerEntry): { readonly text: string; readonly tone: 'green' | 'muted' | 'amber' } {
@@ -16,16 +16,6 @@ export function onlineText(entry: ComputerEntry): { readonly text: string; reado
     case 'connecting': return { text: 'connecting', tone: 'muted' };
     case 'unreachable': return { text: 'offline', tone: 'muted' };
     default: return { text: 'needs you', tone: 'amber' };
-  }
-}
-
-/** The icon in a computer's tile: what is wrong, else a computer (home) or a server. */
-function tileIcon(entry: ComputerEntry): IconName {
-  switch (entry.status.kind) {
-    case 'unreachable': case 'blocked': return 'wifi-off';
-    case 'pair': return 'lock';
-    case 'outdated': return 'download';
-    default: return entry.computer.home ? 'monitor' : 'server';
   }
 }
 
@@ -124,7 +114,7 @@ export function FoundBlock({ found, homeName, working, app, onAdd }: {
       <h3 id="found-heading" className="caps">Found on your network</h3>
       {found.kind === 'no_status' && <Notice tone="warning">{homeName} cannot read its Tailscale status. Check Tailscale on {homeName}.</Notice>}
       {found.kind === 'rows' && rows.length === 0 && (
-        <Notice tone="neutral" icon="monitor">
+        <Notice tone="neutral">
           To add another computer, run <code>pterm setup</code> on it, or <PairVia home={homeName} /> if it is already set up. It shows here while it waits.
         </Notice>
       )}
@@ -133,12 +123,11 @@ export function FoundBlock({ found, homeName, working, app, onAdd }: {
           {rows.map(({ row, link }) => (
             <li key={row.origin} className="computer-card found-row">
               <div className="computer-head">
-                <span className="computer-tile" aria-hidden="true"><Icon name="monitor" /></span>
                 <span className="row-text">
                   <span className="row-title"><span className="computer-name">{row.label}</span></span>
                   <span className="row-meta">{new URL(row.origin).host}</span>
                 </span>
-                <button type="button" className="pill-lit found-add" aria-label={`Add ${row.label}`} onClick={() => onAdd(link)}><Icon name="plus" />Add</button>
+                <button type="button" className="primary compact found-add" aria-label={`Add ${row.label}`} onClick={() => onAdd(link)}>Add</button>
               </div>
             </li>
           ))}
@@ -279,8 +268,10 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
 
   return (
     <section className="group stack" aria-labelledby="computers-heading">
-      <h2 id="computers-heading" className="caps">Computers</h2>
-      <p className="hint-text">Home serves this app to your phone.</p>
+      <div className="section-head">
+        <h2 id="computers-heading" className="caps">Computers</h2>
+        <p className="section-hint">Home serves this app to your phone.</p>
+      </div>
       <ul className="computer-list">
         {entries.map((entry) => {
           const { computer } = entry;
@@ -294,12 +285,11 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           return (
             <li key={computer.origin} className={`computer-card is-${entry.status.kind}`}>
               <div className="computer-head">
-                <span className="computer-tile" aria-hidden="true"><Icon name={tileIcon(entry)} /></span>
                 <span className="row-text">
                   <span className="row-title">
                     <span className="computer-dot" style={{ background: computer.color }} aria-hidden="true" />
                     <span className="computer-name">{computer.label}</span>
-                    {computer.home && <span className="badge accent">Home</span>}
+                    {computer.home && <span className="home-badge">Home</span>}
                   </span>
                   {detail !== '' && <span className="row-meta">{detail}</span>}
                   {health !== undefined && <span className="row-meta">{health}</span>}
@@ -355,7 +345,6 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                 <div className="row computer-actions">
                   <Button
                     className={entry.status.kind === 'ok' || entry.status.kind === 'loading' ? 'link' : 'secondary compact'}
-                    icon={<Icon name="refresh" />}
                     busy={working}
                     busyLabel="Checking…"
                     disabled={busy}
@@ -419,8 +408,8 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           </div>
         </form>
       )}
-      <div className="card stack">
-        <p className="strong">On the new computer, run:</p>
+      <div className="stack add-hint">
+        <p className="hint-text">On the new computer, run:</p>
         <pre className="command"><PairVia home={homeName} /></pre>
         <p className="hint-text">
           Then tap <strong>+ Add a computer</strong> and scan the QR code it shows, or paste the link it prints. If you run it in a Termivoa session, tap the link in the terminal instead.

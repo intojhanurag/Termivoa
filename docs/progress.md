@@ -50,6 +50,47 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### "Bone & ink" visual revamp (2026-10-04, branch `feat/bone-and-ink`)
+
+- **What.** The owner-approved Paper boards "V2 Bone & ink — Sessions",
+  "— Settings → Computers" and "— components" applied to every screen and
+  sheet: pairing, Sessions, Live and the dock, New session, Settings,
+  Computers, Found, + Add a computer (scan, paste, errors), the add-computer
+  code page, the preview bar, the session menu, snips, worktree, compose,
+  changes, history, the Wall, state screens and the offline page in
+  `sw.js`. Phone only; host: no change.
+- **System.** Ink `#07090C`, paper `#0F1217`, raised `#15181D`, hairline
+  `#22272F`, strong line `#3A414D`, bone `#ECE8E1`, soft `#A9AFB9`, muted
+  `#8C93A0`; cyan only for live/connected, amber warnings and your turn,
+  red errors and destructive, green online. Serif titles (system
+  `ui-serif` stack, no font download), mono caps labels. One bone pill per
+  screen; ghost, quiet and red-ghost pills; busy keeps its width. No
+  gradients, glows, inset shadows or tinted cards: `global.test.ts` checks
+  no `gradient` and no `box-shadow` in `global.css`.
+- **Markup.** `Notice` lost its icon (the 2 px rule carries the tone);
+  `Banner` shows a dot; `Button` with a `busyLabel` and no icon puts the
+  spinner in the busy cell. Sessions and Computers rows lost their icon
+  tiles; the Home badge is `.home-badge`; the dock's quiet actions lost
+  their glyphs. The terminal's pure-black default background is drawn as
+  ink (`FrameRenderer` `onInk`, with a test); other colours are unchanged.
+- **Contrast (WCAG AA).** Bone on ink/paper/raised 16.3/15.4/14.6; soft on
+  ink/paper 9.0/8.5; muted on ink/paper/raised 6.5/6.1/5.8; cyan 11.9/11.2;
+  amber 10.9/10.3; red 7.1/6.7; green on ink 11.5; ink on bone 16.3, on
+  pressed bone 11.5; answer number `#55534F` on bone 6.3. Faint `#5D6470`
+  (3.0–3.3) is used only for disabled labels and dots, never for text
+  people must read (the Paper board's faint IDLE and "Home serves this
+  app" use muted instead).
+- **Evidence** (not in the repo): WebKit 2272 (Playwright 1.61.1),
+  390×844, isolated two-computer dev stack (the e2e harness) with demo
+  data: 23 screens before and after. No horizontal overflow at 375 or 390
+  on Sessions, Live, New session and Settings → Computers.
+- **Checks.** `web`: `tsc --noEmit`, `vitest run` (779 passed);
+  `pnpm build:web`; `scripts/embed-web.sh`; `scripts/check` passed;
+  e2e Phase A 32/32, Phase B 79/79 (incl. `B6-fit`), WebKit 8/8, all with
+  `--no-web-build`.
+- **Left.** The site screenshots and landing images still show the old
+  look (`docs/pending-work.md`, Next item 3). Not yet seen on a real phone.
+
 ### Phone screens fit 375 and 390 px again (2026-10-04, branch `fix/phone-overflow`)
 
 - **Report.** On a real iPhone (390 px) the page slid sideways, and in

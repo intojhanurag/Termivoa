@@ -4,7 +4,7 @@ import type { Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 import { hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ComputerChips, problemText } from './Sessions';
-import { Button, Icon, Notice } from './ui';
+import { Button, Notice } from './ui';
 import {
   loadPresets,
   presetFrom,
@@ -169,7 +169,7 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
       ) : !canCreate ? (
         <section className="stack">
           <NewSessionHelp settings={settings} />
-          <Button className="secondary" icon={<Icon name="refresh" />} busy={busy} onClick={() => { void refresh(); }}>Check again</Button>
+          <Button className="secondary" busy={busy} busyLabel="Checking…" onClick={() => { void refresh(); }}>Check again</Button>
         </section>
       ) : (
         <>
@@ -199,7 +199,7 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
                           }
                         }}
                       >
-                        <span className={preset.runFirst === undefined ? 'tile dashed' : 'tile'} aria-hidden="true">
+                        <span className="launch-glyph" aria-hidden="true">
                           {preset.runFirst === undefined ? '$' : '❯'}
                         </span>
                         <span className="row-text">

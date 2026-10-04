@@ -9,7 +9,7 @@ import {
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
-import { Button, Icon, Notice, PairVia } from './ui';
+import { Button, Notice, PairVia } from './ui';
 import { WorktreeBadge } from './Worktree';
 
 type Tone = 'accent' | 'amber' | 'muted';
@@ -44,29 +44,12 @@ export function age(iso: string | undefined, now: number): string {
 
 export const ended = (session: BrokerRPCSessionRecord) => session.state === 'exited' || session.state === 'lost';
 
-function PromptGlyph() {
-  return (
-    <svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true">
-      <path d="M2 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9.5 13H16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CheckGlyph() {
-  return (
-    <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true">
-      <path d="M2 7.5l4.5 4.5L16 2" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 /** The agent status pill: Working, Waiting or Your turn, with how long. */
 export function StatusPill({ badge, duration }: { readonly badge: AgentBadge; readonly duration: string }) {
   return (
     <span className={`status-pill ${badge.tone}`}>
       {badge.tone !== 'green' && <span className={`dot ${badge.tone}`} aria-hidden="true" />}
-      {badge.label}{duration !== '' && <span className="pill-time"> · {duration}</span>}
+      {badge.label}{duration !== '' && ` · ${duration}`}
     </span>
   );
 }
@@ -83,7 +66,7 @@ export function ComputerTag({ computer }: { readonly computer: Pick<Computer, 'l
 
 /**
  * One session. Title, preview and question are terminal-controlled text:
- * rendered as text only. A running agent gets one status pill at the top
+ * rendered as text only. A running agent gets one status word at the top
  * right; the controller then moves into the meta line.
  */
 export function SessionRow<T extends BrokerRPCSessionRecord>({ session, computer, project, shell, fresh, now, onOpen }: {
@@ -98,28 +81,19 @@ export function SessionRow<T extends BrokerRPCSessionRecord>({ session, computer
 }) {
   const done = ended(session);
   const controller = controllerText(session);
-  const you = session.controllerIsYou === true && !done;
   const when = age(done ? session.endedAt ?? session.updatedAt : session.startedAt ?? session.createdAt, now);
   const badge = done ? undefined : agentBadge(session, fresh);
   const question = session.agent?.state === 'waiting' ? session.agent.question?.text : undefined;
   const duration = since(session.agent?.stateSince, now);
-  const tile = done ? 'tile dashed'
-    : badge !== undefined ? `tile ${badge.tone}`
-      : you ? 'tile accent' : 'tile';
-  const glyph = done ? <span className="stop-glyph" />
-    : badge?.tone === 'amber' ? '?'
-      : badge?.tone === 'accent' ? <span className="spinner" />
-        : badge?.tone === 'green' ? <CheckGlyph /> : <PromptGlyph />;
   const meta = [project, shell, when, badge !== undefined && controller !== undefined ? controller.text : ''];
   return (
     <li>
       <button
         type="button"
-        className={`session-row${you ? ' you' : ''}${done ? ' ended' : ''}${badge?.tone === 'amber' ? ' asking' : ''}`}
+        className={`session-row${done ? ' ended' : ''}`}
         disabled={done}
         onClick={() => onOpen(session)}
       >
-        <span className={tile} aria-hidden="true">{glyph}</span>
         <span className="row-text">
           <span className="row-head">
             <span className="row-title">
@@ -128,7 +102,7 @@ export function SessionRow<T extends BrokerRPCSessionRecord>({ session, computer
               {badge?.tone === 'amber' && <span className="visually-hidden">, waiting for you</span>}
             </span>
             {badge !== undefined ? <StatusPill badge={badge} duration={duration} /> : controller !== undefined && (
-              <span className={done ? 'status-pill plain muted' : `controller ${controller.tone}`}>{controller.text}</span>
+              <span className={`controller ${controller.tone}`}>{controller.text}</span>
             )}
           </span>
           <span className="row-meta">
@@ -162,15 +136,6 @@ export function WallGlyph() {
   );
 }
 
-function BellGlyph() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M4.5 12.5V8a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5H3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <path d="M7.3 15.8a1.8 1.8 0 0 0 3.4 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /** One-time offer to turn on push. Hidden for good after "Not now" or once push is on. */
 export function PushCard({ onClose, onFailure }: {
   readonly onClose: () => void;
@@ -197,16 +162,13 @@ export function PushCard({ onClose, onFailure }: {
   }
 
   return (
-    <section className="card push-card" aria-labelledby="push-card-title">
-      <span className="tile accent" aria-hidden="true"><BellGlyph /></span>
-      <div className="push-card-body">
-        <h2 id="push-card-title" className="push-card-title">Get a buzz when an agent needs you</h2>
-        <p className="hint-text">Only the session name and status. Never terminal text.</p>
-        {note !== undefined && <Notice tone="danger" role="alert" title={note} />}
-        <div className="push-card-actions">
-          <Button className="secondary" busy={busy} onClick={turnOn}>Turn on</Button>
-          <button type="button" className="link" disabled={busy} onClick={() => { dismissPushCard(); onClose(); }}>Not now</button>
-        </div>
+    <section className="push-card" aria-labelledby="push-card-title">
+      <h2 id="push-card-title" className="push-card-title">Get a buzz when an agent needs you</h2>
+      <p className="hint-text">Only the session name and status. Never terminal text.</p>
+      {note !== undefined && <Notice tone="danger" role="alert" title={note} />}
+      <div className="push-card-actions">
+        <Button className="secondary" busy={busy} onClick={turnOn}>Turn on</Button>
+        <button type="button" className="link" disabled={busy} onClick={() => { dismissPushCard(); onClose(); }}>Not now</button>
       </div>
     </section>
   );
@@ -280,25 +242,23 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
       {(status.kind === 'unreachable' || status.kind === 'blocked') && (
         <Notice
           tone="warning"
-          icon="wifi-off"
           title={cantReach(computer.label)}
-          {...(status.kind === 'unreachable' ? { action: <button type="button" className="secondary compact" onClick={() => onRetry(computer.origin)}><Icon name="refresh" />Retry</button> } : {})}
+          {...(status.kind === 'unreachable' ? { action: <button type="button" className="link" onClick={() => onRetry(computer.origin)}>Retry</button> } : {})}
         >{detail}</Notice>
       )}
       {status.kind === 'connecting' && <Notice tone="working" title={connectingText(computer.label)}>{detail}</Notice>}
       {status.kind === 'pair' && (
         <Notice
           tone="danger"
-          icon="lock"
           title={pairAgain(computer.label)}
-          action={<button type="button" className="secondary compact" onClick={onSettings}>Computers</button>}
+          action={<button type="button" className="link" onClick={onSettings}>Computers</button>}
         >
           This phone lost access on {computer.label}. On {computer.label}, run:
           <br /><PairVia className="notice-command" home={firstLabel(homeOrigin())} />
         </Notice>
       )}
       {status.kind === 'outdated' && (
-        <Notice tone="neutral" icon="download" title={status.message}>
+        <Notice tone="neutral" title={status.message}>
           It runs an older version than this app. Your other computers still work.
         </Notice>
       )}
@@ -306,7 +266,7 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
   );
 }
 
-/** "All" plus one chip per computer; the pressed chip shows one computer. */
+/** "All" plus one tab per computer; the pressed one shows one computer. */
 export function ComputerChips({ computers, chosen, all = true, disabled, onChoose }: {
   readonly computers: ReadonlyArray<Computer>;
   readonly chosen: string | undefined;
@@ -408,7 +368,7 @@ export function Sessions({
         <div>
           <h1 className="display">Sessions</h1>
           <p className="host-line" role="status">
-            <span className={reachable ? 'dot green' : 'dot amber'} aria-hidden="true" />
+            <span className={reachable ? 'dot accent' : 'dot amber'} aria-hidden="true" />
             {summary}
           </p>
         </div>
@@ -440,15 +400,15 @@ export function Sessions({
       {help?.kind === 'ok' && (
         <section className="card stack" aria-label="Before your first session">
           <NewSessionHelp settings={help.settings} />
-          <Button className="secondary" icon={<Icon name="refresh" />} busy={busy} onClick={() => { void refresh(); }}>Check again</Button>
+          <Button className="secondary" busy={busy} busyLabel="Checking…" onClick={() => { void refresh(); }}>Check again</Button>
         </section>
       )}
 
       {offerPush && <PushCard onClose={() => setOfferPush(false)} onFailure={onFailure} />}
 
-      <section aria-label="Your sessions" className="list-section">
+      <section aria-label="Your sessions">
         {loading && <p role="status" className="muted">Loading…</p>}
-        {!loading && answered.length > 0 && list.length === 0 && <p className="muted empty">No sessions yet.</p>}
+        {!loading && answered.length > 0 && list.length === 0 && <p className="muted">No sessions yet.</p>}
         <ul className="rows">
           {list.map((session) => {
             const name = names.get(session.computer.origin);

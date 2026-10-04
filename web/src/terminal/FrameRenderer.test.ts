@@ -89,6 +89,23 @@ describe('FrameRenderer', () => {
     terminal.dispose();
   });
 
+  it('draws the default black background as the app ink, and other colours as sent', async () => {
+    const { terminal, renderer } = harness();
+    const red = { r: 200, g: 0, b: 0, a: 255 } as const;
+    const tinted: TerminalRow = { runs: [{ ...row('a').runs[0]!, style: { ...style, background: red } }] };
+    await renderer.paintSnapshot({
+      generation: '00000000-0000-4000-8000-000000000001',
+      revision: '1',
+      screen: metadata(),
+      rows: [row('a'), tinted, row(), row(), row()],
+    });
+
+    expect(terminal.options.theme?.background).toBe('#07090c');
+    expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getBgColor()).toBe(0x07090c);
+    expect(terminal.buffer.active.getLine(1)?.getCell(0)?.getBgColor()).toBe(0xc80000);
+    terminal.dispose();
+  });
+
   it('applies a matching whole-row patch', async () => {
     const { terminal, renderer } = harness();
     const generation = '00000000-0000-4000-8000-000000000001';

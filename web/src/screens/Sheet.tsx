@@ -37,7 +37,7 @@ export function SheetHeader({ id, glyph, title, children }: {
   return (
     <div className="sheet-header">
       <h2 id={id}>
-        {glyph !== undefined && <span className="accent" aria-hidden="true">{glyph} </span>}
+        {glyph !== undefined && <span className="sheet-glyph" aria-hidden="true">{glyph} </span>}
         {title}
       </h2>
       <div className="row">{children}</div>

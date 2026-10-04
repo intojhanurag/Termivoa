@@ -37,7 +37,7 @@ describe('composer toolbar', () => {
   });
 
   it('says why sending is off in a neutral notice with its icon', () => {
-    expect(composer(recognizer, false)).toMatch(/<div class="notice neutral" role="status"><span class="notice-icon">.*Sending is off/u);
+    expect(composer(recognizer, false)).toMatch(/<div class="notice neutral" role="status">.*Sending is off/u);
   });
 });
 

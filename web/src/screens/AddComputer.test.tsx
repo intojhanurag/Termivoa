@@ -251,11 +251,11 @@ describe('Settings → Computers', () => {
     expect(onlineText(entries[1] as ComputerEntry)).toEqual({ text: 'offline', tone: 'muted' });
     expect(computerDetail(entries[0] as ComputerEntry, Date.now())).toBe('0 sessions');
     const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
-    expect(html).toContain('<span class="computer-name">mac</span><span class="badge accent">Home</span>');
+    expect(html).toContain('<span class="computer-name">mac</span><span class="home-badge">Home</span>');
     expect(html).toContain('<span class="row-meta">0 sessions</span>');
-    expect(html.match(/class="badge accent">Home</gu)).toHaveLength(1);
+    expect(html.match(/class="home-badge">Home</gu)).toHaveLength(1);
     expect(html).not.toContain('this computer');
-    expect(html).toContain('<p class="hint-text">Home serves this app to your phone.</p>');
+    expect(html).toContain('<p class="section-hint">Home serves this app to your phone.</p>');
     expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach");
     expect(html).toContain('<span class="hint-text">Last seen 3 h ago. Is it on, and in your tailnet?</span>');
   });
@@ -271,7 +271,7 @@ describe('Settings → Computers', () => {
 
   it('offers Check again on every computer, rename and remove for peers only, and + Add a computer', () => {
     const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
-    expect(html.match(/<span>Check again<\/span><span class="off" aria-hidden="true">Checking…<\/span><\/span><\/button>/gu)).toHaveLength(2);
+    expect(html.match(/<span>Check again<\/span><span class="off" aria-hidden="true"><svg[^]*?<\/svg>Checking…<\/span><\/span><\/button>/gu)).toHaveLength(2);
     // One status line per row for its own result, and one for rename and remove.
     expect(html.match(/role="status"/gu)).toHaveLength(3);
     expect(html.match(/>Rename<\/button>/gu)).toHaveLength(1);
@@ -317,8 +317,8 @@ describe('Settings → Computers', () => {
     expect(html).toContain('<h3 id="found-heading" class="caps">Found on your network</h3>');
     expect(html).toContain('<span class="computer-name">nas</span></span><span class="row-meta">nas.tailx.ts.net</span>');
     expect(html).toContain('&lt;b&gt;vps&lt;/b&gt;');
-    expect(html).toMatch(/<button type="button" class="pill-lit found-add" aria-label="Add nas"><svg[^>]*>.*?<\/svg>Add<\/button>/u);
-    expect(html.match(/<\/svg>Add<\/button>/gu)).toHaveLength(2);
+    expect(html).toContain('<button type="button" class="primary compact found-add" aria-label="Add nas">Add</button>');
+    expect(html.match(/>Add<\/button>/gu)).toHaveLength(2);
     expect(html).not.toContain('evil');
     expect(html).not.toContain(grant);
   });

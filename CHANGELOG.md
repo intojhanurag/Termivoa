@@ -282,20 +282,31 @@ All notable changes are documented here. The format follows
   on, and in your tailnet?" (the time moved there from the first line). The
   question shows only after a network error, when nothing answered; after
   an HTTP error the line only says when vps was last seen. Host: no change.
-- Phone: a new look: lit buttons with a pressed and busy state, and notices
-  that say what happened and what to do. One lit button per screen (for
-  example **❯ new session**); others are raised, quiet or red. A pressed
-  button sinks 2 px; a busy one shows a spinner and keeps its width
-  (**Check again** → **Checking…**, **start session** → **starting…**,
-  **Log out**, **Save name**, **Remove vps**, **Turn on**). Problems show as
-  notices with an icon and a colour for how worried to be: "vps · can't
-  reach" (amber, **Retry**), "vps · pair again" (red, with the
-  `pterm pair --via mac` command), "Update Termivoa on vps" (grey). The
-  adding banner is cyan while it waits, green when "vps is added" and red
-  when "vps was not added". **Settings → Computers** shows each computer as
-  a card with its status, **Found on your network** rows have a lit
-  **+ Add**. Commands show without font ligatures and never break inside
-  `--via`. Motion is off with Reduce Motion. Host: no change.
+- Phone: a new look, "Bone & ink", on every screen and sheet. Flat: an
+  ink background, paper surfaces and hairlines; no gradients, glows or
+  tinted cards. Screen and sheet titles (**Sessions**, **Settings**,
+  **Compose**, …) are set in a serif; labels, status words and meta lines
+  in small mono capitals. One bone pill per screen is the main action (for
+  example **❯ new session**); the others are outlined pills, quiet text or
+  red (**Log out**, **Remove vps**). A busy button shows a spinner and a
+  muted label and keeps its width (**Check again** → **Checking…**,
+  **start session** → **starting…**). Cyan now only means live or
+  connected (the host line dot, **Working**, **● CONTROL**, the spinner
+  while a computer is added); amber says warning or your turn (**Waiting**
+  and **Your turn**); red is errors and destructive actions; green is
+  online. Sessions and **Settings → Computers** are rows between hairlines
+  with the state on the right (**online** with a green dot, **offline** in
+  amber, **needs you**), and a small bone **Home** badge. The computer
+  filter is a row of underline tabs. Notices have a 2 px rule in their
+  colour and an underlined action: "vps · can't reach" (amber, **Retry**),
+  "vps · pair again" (red, with the `pterm pair --via mac` command),
+  "Update Termivoa on vps" (grey). The adding banner is an outlined pill
+  with a cyan spinner while it waits, a bone pill when "vps is added" and
+  a red-ruled pill when "vps was not added". The terminal keys are flat;
+  Enter and **❯ type** are bone, **^C** is red. The terminal's black
+  background is drawn in the app's ink, so it sits flush with the app.
+  Commands show without font ligatures and never break inside `--via`.
+  Motion is off with Reduce Motion. Host: no change.
 - A shorter `pterm setup` for a new computer. Host: setup prints a short
   plan, one line for each change (startup at login, where data and logs go,
   the phone address, each Tailscale Serve question, linger, the project

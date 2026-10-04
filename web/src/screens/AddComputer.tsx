@@ -165,7 +165,7 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
 
   return (
     <main className="page screen setup">
-      <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
+      <p className="wordmark"><span className="dot" aria-hidden="true" />termivoa</p>
       <h1>{title}</h1>
       {phase === undefined && link === undefined && (
         <>
@@ -198,7 +198,7 @@ export function AddComputerPage({ link, notice, deviceLabel, onDone, onSettings,
         <Notice tone="danger" role="alert">The code expired or {label} refused it. Run <PairVia /> on {label} again, then tap Add again, or scan or paste the new link.</Notice>
       )}
       {phase?.kind === 'cancelled' && (
-        <Notice tone="neutral" icon="x" role="alert">Adding {label} was cancelled. If {label} asks, answer N.</Notice>
+        <Notice tone="neutral" role="alert">Adding {label} was cancelled. If {label} asks, answer N.</Notice>
       )}
       {phase?.kind === 'error' && <Notice tone="danger" role="alert" title={addFailure(phase.error, label)} />}
       {phase?.kind === 'stale' && (
@@ -247,7 +247,7 @@ export function PeerAddPage({ link }: { readonly link: string | undefined }) {
   const via = viaLabel(link);
   return (
     <main className="page screen setup">
-      <p className="wordmark"><span className="dot accent" aria-hidden="true" />termivoa</p>
+      <p className="wordmark"><span className="dot" aria-hidden="true" />termivoa</p>
       <h1>Add this computer</h1>
       {link === undefined ? (
         <Notice tone="danger" role="alert">This link is incomplete. Run <PairVia /> on this computer again.</Notice>

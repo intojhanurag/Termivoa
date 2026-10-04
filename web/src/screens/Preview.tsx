@@ -173,7 +173,7 @@ export function Preview({ session, sessions, origin, notice, port, onBack, onTel
   return (
     <main className="preview-screen">
       <PreviewBar port={port} peer={session.computer.home ? undefined : session.computer} onBack={onBack} onReload={reload} />
-      {notice === undefined && seen && !present && <div className="preview-note"><Notice tone="neutral" icon="x" role="alert" title="Dev server stopped" /></div>}
+      {notice === undefined && seen && !present && <div className="preview-note"><Notice tone="neutral" role="alert" title="Dev server stopped" /></div>}
       <PreviewBody key={loads} session={session} origin={origin} port={port} notice={notice} reach={reach} />
       <PreviewStatus session={current} fresh={hasNewOutput(current, readViewed())} onTell={onTell} />
     </main>
