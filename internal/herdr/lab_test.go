@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,6 +99,31 @@ func TestLab(t *testing.T) {
 	if err := first.wait(); err != nil {
 		t.Fatalf("detach: %v", err)
 	}
+
+	// M2 create, without an agent: the lab starts no real agent program.
+	group := provider.Snapshot().Groups[0].ID
+	created, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: group, Name: "lab-tree"})
+	if err != nil || created.AgentStarted || created.Problem != nil {
+		t.Fatalf("create = %+v %v", created, err)
+	}
+	provider.step(ctx)
+	if _, err := provider.Attach(created.TargetID); err != nil && !errors.Is(err, ErrTargetMissing) {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range provider.Snapshot().Groups[0].Items {
+		found = found || item.ID == created.ItemID && item.Name == "lab-tree"
+	}
+	if !found {
+		t.Fatalf("new worktree not in the snapshot: %+v", provider.Snapshot().Groups[0])
+	}
+	if _, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: group, Name: "lab-tree"}); !errors.Is(err, ErrExists) {
+		t.Fatalf("second create = %v", err)
+	}
+	notesGroup := provider.Snapshot().Groups[1].ID
+	if _, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: notesGroup, Name: "x"}); !errors.Is(err, ErrNotGit) {
+		t.Fatalf("create outside git = %v", err)
+	}
 }
 
 func startLab(t *testing.T) *lab {
@@ -133,6 +159,14 @@ func startLab(t *testing.T) *lab {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".zshrc"), []byte("PROMPT='%# '\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// No background calls to herdr.dev from the lab.
+	if err := os.MkdirAll(filepath.Join(root, ".config", "herdr"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".config", "herdr", "config.toml"),
+		[]byte("[update]\nversion_check = false\nmanifest_check = false\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	suffix := make([]byte, 4)

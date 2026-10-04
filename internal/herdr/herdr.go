@@ -96,6 +96,8 @@ type Provider struct {
 
 	// create runs one M2 create at a time on this computer.
 	create sync.Mutex
+	// wake asks the poll loop for a snapshot now (after a create).
+	wake chan struct{}
 
 	// Owned by the poll loop (step).
 	binary     string
@@ -136,7 +138,7 @@ func New(config Config, onChange func(Change)) *Provider {
 	if onChange == nil {
 		onChange = func(Change) {}
 	}
-	provider := &Provider{config: config, onChange: onChange, now: time.Now}
+	provider := &Provider{config: config, onChange: onChange, now: time.Now, wake: make(chan struct{}, 1)}
 	provider.view = view{state: protocol.NotRunning, response: emptyResponse(protocol.NotRunning)}
 	return provider
 }
@@ -150,6 +152,8 @@ func (provider *Provider) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+		case <-provider.wake:
+			timer.Stop() // Go 1.23+ timers: no stale tick follows Stop.
 		}
 		timer.Reset(provider.step(ctx))
 	}

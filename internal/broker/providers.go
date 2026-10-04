@@ -373,6 +373,34 @@ func (server *ManagementServer) openProvider(
 	return response, nil
 }
 
+// createProvider is milestone M2 (design sections 4.3 and 10). ctx is the
+// broker's serve context, never the phone's request: a phone that leaves
+// does not cut it short. herdr's and git's text never leaves the host.
+func (server *ManagementServer) createProvider(
+	ctx context.Context, host *providerHost, device string, request protocol.HTTPProviderCreateRequest,
+) (protocol.HTTPProviderCreateResponse, error) {
+	if !host.enabled.Load() {
+		return protocol.HTTPProviderCreateResponse{}, errProviderUnavailable
+	}
+	if !host.limits.take("create", device, providerCreatesPerMinute, server.now()) {
+		return protocol.HTTPProviderCreateResponse{}, errProviderRate
+	}
+	response, err := host.provider.Create(ctx, request)
+	for herdrErr, failure := range map[error]providerFailure{
+		herdr.ErrUnavailable: errProviderUnavailable, herdr.ErrTargetMissing: errProviderGroup,
+		herdr.ErrBusy: errProviderBusy, herdr.ErrKind: errProviderKind, herdr.ErrNotGit: errProviderNotGit,
+		herdr.ErrExists: errProviderExists, herdr.ErrWorktree: errProviderWorktree,
+	} {
+		if errors.Is(err, herdrErr) {
+			return protocol.HTTPProviderCreateResponse{}, failure
+		}
+	}
+	if err != nil {
+		return protocol.HTTPProviderCreateResponse{}, errProviderWorktree
+	}
+	return response, nil
+}
+
 // reap ends provider sessions (design section 6, rule 6): 10 s after the
 // last viewer left (the first 10 s count as viewed), when the target left
 // the snapshot (herdr restarted or the pane closed), or when the provider
@@ -493,6 +521,20 @@ func (server *ManagementServer) dispatchProvider(
 			return nil, err
 		}
 		return server.openProvider(ctx, host, principal.DeviceID, payload.Request)
+	case protocol.GatewayProvidersCreate:
+		payload, err := protocol.DecodeRPCPayload[protocol.GatewayRPCProviderCreatePayload](request)
+		if err != nil {
+			return nil, err
+		}
+		principal, err := authorize(payload.Credential)
+		if err != nil {
+			return nil, err
+		}
+		host, err := server.providerFor(payload.Provider)
+		if err != nil {
+			return nil, err
+		}
+		return server.createProvider(ctx, host, principal.DeviceID, payload.Request)
 	default:
 		return nil, errors.New("broker: unsupported provider request")
 	}

@@ -856,3 +856,78 @@ func TestProviderSessionRunsFakeHerdr(t *testing.T) {
 	})
 	waitFor(t, func() bool { _, err := fixture.registry.Get(session.ID); return err != nil })
 }
+
+func (fixture *providerFixture) create(t *testing.T, credential string, request protocol.HTTPProviderCreateRequest) protocol.GatewayRPCEnvelope {
+	t.Helper()
+	return fixture.gateway.gateway(t, protocol.GatewayProvidersCreate, protocol.GatewayRPCProviderCreatePayload{
+		Credential: credential, Provider: herdr.ID, Request: request,
+	})
+}
+
+func TestProviderCreateRoute(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	const shop = "g7d0f77ccdcfd"
+	base, _ := os.ReadFile(filepath.Join("..", "herdr", "testdata", "snapshot-0.8.2.json"))
+	fixture.herdr.Handle("worktree.create", func(json.RawMessage) (any, *herdrtest.Error) {
+		// herdr adds the workspace: the new terminal is in the next snapshot.
+		snapshot := string(base)
+		for list, record := range map[string]string{
+			"workspaces": `{"workspace_id":"w9","label":"brave-fox","number":9,"active_tab_id":"w9:t1","worktree":{"repo_key":"/home/demo/shop/.git","repo_name":"shop","checkout_path":"/x","is_linked_worktree":true}}`,
+			"tabs":       `{"tab_id":"w9:t1","workspace_id":"w9","label":"1","number":1}`,
+			"panes":      `{"pane_id":"w9:p1","tab_id":"w9:t1","terminal_id":"term_9"}`,
+			"layouts":    `{"tab_id":"w9:t1","focused_pane_id":"w9:p1"}`,
+		} {
+			snapshot = strings.Replace(snapshot, "\""+list+"\":[\n", "\""+list+"\":[\n"+record+",", 1)
+		}
+		fixture.herdr.Snapshot([]byte(snapshot))
+		return map[string]any{"workspace": map[string]any{"workspace_id": "w9"}, "root_pane": map[string]any{"pane_id": "w9:p1", "terminal_id": "term_9"}}, nil
+	})
+	created, err := protocol.DecodeRPCPayload[protocol.HTTPProviderCreateResponse](
+		fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "brave-fox"}))
+	if err != nil || created.ItemID != "w9" || created.TargetID != "w9:p1.term_9" || created.AgentStarted || created.Problem != nil {
+		t.Fatalf("create = %+v %v", created, err)
+	}
+	// herdr's and git's text never reaches the phone.
+	codex, sh := "codex", "pi"
+	for _, test := range []struct {
+		request protocol.HTTPProviderCreateRequest
+		herdr   *herdrtest.Error
+		code    protocol.ErrorCode
+		message string
+	}{
+		{protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "a"}, &herdrtest.Error{Code: "worktree_create_failed", Message: "fatal: '/home/demo/.herdr/worktrees/shop/a' already exists"},
+			protocol.WorktreeExists, "a worktree or branch with this name already exists"},
+		{protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "a"}, &herdrtest.Error{Code: "worktree_create_failed", Message: "fatal: /home/demo/secret is locked"},
+			protocol.WorktreeFailed, "herdr could not make the worktree."},
+		{protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "a"}, &herdrtest.Error{Code: "not_git_worktree", Message: "/home/demo"},
+			protocol.NotARepository, "this project is not in a git repository"},
+		{protocol.HTTPProviderCreateRequest{GroupID: "ws-w2", Name: "a"}, nil, protocol.NotARepository, "this project is not in a git repository"},
+		{protocol.HTTPProviderCreateRequest{GroupID: "gffffffffffff", Name: "a"}, nil, protocol.SessionMissing, "that project is gone"},
+		// pi is a start kind, but no pi runs in this herdr: not offered.
+		{protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "a", Agent: &sh}, nil, protocol.InvalidRequest, "herdr cannot start that agent here"},
+	} {
+		if test.herdr != nil {
+			failure := test.herdr
+			fixture.herdr.Handle("worktree.create", func(json.RawMessage) (any, *herdrtest.Error) { return nil, failure })
+		}
+		other := pairDevice(t, fixture.service, "Phone").Credential // the create limit is per device
+		response := fixture.create(t, other, test.request)
+		if code, message := gatewayErrorCode(t, response), gatewayErrorMessage(t, response); code != test.code || message != test.message {
+			t.Fatalf("%+v = %s %q", test.request, code, message)
+		}
+	}
+	// 3 creates a minute per device.
+	for range providerCreatesPerMinute - 1 {
+		fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b", Agent: &codex})
+	}
+	if code := gatewayErrorCode(t, fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "c"})); code != protocol.LimitExceeded {
+		t.Fatalf("4th create = %s", code)
+	}
+	off := false
+	fixture.update(t, fixture.credential, protocol.HTTPProviderUpdateRequest{Enabled: &off})
+	other := pairDevice(t, fixture.service, "Phone").Credential
+	if code := gatewayErrorCode(t, fixture.create(t, other, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "d"})); code != protocol.HostUnavailable {
+		t.Fatalf("create while off = %s", code)
+	}
+}
