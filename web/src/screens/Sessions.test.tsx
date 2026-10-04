@@ -198,7 +198,7 @@ function renderSessions(entries: ComputerEntry[], extra: { offerPush?: boolean }
       onWall={() => undefined}
       onSettings={() => undefined}
       onReload={async () => undefined}
-      onRetry={() => undefined}
+      onRetry={() => Promise.resolve()}
       onFailure={() => ''}
     />,
   );
@@ -290,7 +290,8 @@ describe('Sessions across computers', () => {
 
     const html = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'unreachable' })]);
     expect(html).toContain('<p class="notice-title">vps · can&#x27;t reach</p>');
-    expect(html).toContain('<div class="notice-action"><button type="button" class="link">Retry</button></div>');
+    // Retry has a busy label, so a tap shows that it works.
+    expect(html).toMatch(/<div class="notice-action"><button type="button" class="link"><span class="btn-swap"><span>Retry<\/span><span class="off" aria-hidden="true">.*?Retrying…<\/span><\/span><\/button><\/div>/u);
     const pair = renderSessions([entry(mac, ok(ready, [working])), entry(vps, { kind: 'pair' })]);
     expect(pair).toContain('vps · pair again');
     expect(pair).not.toContain('Retry');

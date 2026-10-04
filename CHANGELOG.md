@@ -390,6 +390,10 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Fix (phone side): **Retry** on "vps · can't reach" in Sessions showed
+  nothing when tapped, so it looked dead. It now shows a spinner and
+  "Retrying…" for at least 600 ms while it asks the computer again. Host: no
+  change.
 - Fix (phone side): screens fit a narrow phone (375 and 390 px) again. A
   `pterm pair --via <home>` command with a long machine name, in
   **Settings → Computers** (under **Found on your network**), in the

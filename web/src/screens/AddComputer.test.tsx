@@ -9,9 +9,9 @@ import {
   AddComputerConfirm, AddComputerContinue, AddComputerPage, AddComputerSheet, addFailure, LeaveAdd, ownerText, PeerAddPage, viaLabel,
 } from './AddComputer';
 import { ApiError } from '../api/http';
-import { ReadFailure, type ComputerEntry } from './allSessions';
+import { atLeast, CHECKING_MIN_MS, ReadFailure, type ComputerEntry } from './allSessions';
 import {
-  answeredText, atLeast, checkFailureText, CHECKING_MIN_MS, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView,
+  answeredText, checkFailureText, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView,
 } from './Computers';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };

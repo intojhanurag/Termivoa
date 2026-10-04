@@ -5,7 +5,7 @@ import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
-  byChip, cantReach, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
+  atLeast, byChip, cantReach, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { NewSessionHelp } from './NewSession';
@@ -231,19 +231,25 @@ export function problemDetail(entry: ComputerEntry, now: number): string | undef
 export function ComputerProblem({ entry, now, onRetry, onSettings }: {
   readonly entry: ComputerEntry;
   readonly now: number;
-  readonly onRetry: (origin: string) => void;
+  readonly onRetry: (origin: string) => Promise<void>;
   readonly onSettings: () => void;
 }) {
+  const [retrying, setRetrying] = useState(false);
   if (problemText(entry, now) === undefined) return null;
   const detail = problemDetail(entry, now);
   const { computer, status } = entry;
+  // As Check again: stay busy long enough to see, even when the answer is instant.
+  const retry = () => {
+    setRetrying(true);
+    void atLeast(onRetry(computer.origin).catch(() => undefined), CHECKING_MIN_MS).then(() => setRetrying(false));
+  };
   return (
     <li className="computer-problem">
       {(status.kind === 'unreachable' || status.kind === 'blocked') && (
         <Notice
           tone="warning"
           title={cantReach(computer.label)}
-          {...(status.kind === 'unreachable' ? { action: <button type="button" className="link" onClick={() => onRetry(computer.origin)}>Retry</button> } : {})}
+          {...(status.kind === 'unreachable' ? { action: <Button className="link" busy={retrying} busyLabel="Retrying…" onClick={retry}>Retry</Button> } : {})}
         >{detail}</Notice>
       )}
       {status.kind === 'connecting' && <Notice tone="working" title={connectingText(computer.label)}>{detail}</Notice>}
@@ -315,7 +321,7 @@ export function Sessions({
   readonly onWall: () => void;
   readonly onSettings: () => void;
   readonly onReload: () => Promise<void>;
-  readonly onRetry: (origin: string) => void;
+  readonly onRetry: (origin: string) => Promise<void>;
   readonly onFailure: (error: unknown) => string;
   /** Present when a new version waits; tapping it reloads into that version. */
   readonly onUpdate?: () => void;

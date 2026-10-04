@@ -230,6 +230,15 @@ export class ReadFailure extends Error {
   }
 }
 
+/** Check again and Retry stay busy at least this long: a computer answers in about 0.2 s, and a flash looks like nothing happened. */
+export const CHECKING_MIN_MS = 600;
+
+/** Settles like `work`, but not before `ms` have passed. */
+export function atLeast<T>(work: Promise<T>, ms: number): Promise<T> {
+  const wait = new Promise((resolve) => { setTimeout(resolve, ms); });
+  return Promise.allSettled([work, wait]).then(() => work);
+}
+
 /**
  * Reads each computer now (settings included), one read per computer at a
  * time through the scheduler, and publishes every result. Rejects with a
@@ -279,7 +288,7 @@ export interface AllSessions {
   /** Reads these computers (all when omitted) now, settings included; rejects with a ReadFailure (readNow). */
   readonly reload: (origin?: string) => Promise<void>;
   /** The user pressed Retry. */
-  readonly retry: (origin: string) => void;
+  readonly retry: (origin: string) => Promise<void>;
 }
 
 /**
@@ -375,10 +384,12 @@ export function useAllSessions(
     return readNow(list, (item) => load(item, true, () => byOrigin.current.has(item)), publish);
   }, [publish]);
 
+  /** Reads the computer now; resolves when it answered or failed, so Retry can show that it works. */
   const retry = useCallback((origin: string) => {
     settingsCache.delete(origin);
     scheduler.retry(origin);
-  }, []);
+    return reload(origin);
+  }, [reload]);
 
   const entries = useMemo(
     () => computers.map((computer) => ({ computer, status: statuses.get(computer.origin) ?? { kind: 'loading' as const } })),
