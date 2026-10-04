@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_PROTOCOL_REVISION, PROTOCOL_REVISION } from '../generated/protocol';
 import {
   api, ApiError, blobToBase64, client, deviceLabelProblem, firstLabel, forgetClient, MAX_RESPONSE_BYTES, PEER_REQUEST_FAILED,
-  REQUEST_TIMEOUT_MS, revisionProblem, UPLOAD_TIMEOUT_MS,
+  PROVIDER_CREATE_TIMEOUT_MS, providerWord, REQUEST_TIMEOUT_MS, revisionProblem, UPLOAD_TIMEOUT_MS,
 } from './http';
 
 // Pretend this app is at revision 3 and serves computers from revision 2, so a
@@ -286,5 +286,68 @@ describe('api.foundComputers', () => {
     await expect(api.foundComputers()).rejects.toMatchObject({ status: 404 });
     vi.stubGlobal('fetch', vi.fn(async () => json(503, { error: { code: 'host_unavailable', message: 'x' } })));
     await expect(api.foundComputers()).rejects.toMatchObject({ status: 503, code: 'host_unavailable' });
+  });
+});
+
+describe('provider routes', () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+  const target = (id: string, state: string, extra: object = {}) => ({ id, label: '1', state, canOpen: true, ...extra });
+  const snapshot = {
+    provider: 'herdr', state: 'ready', groups: [
+      { id: 'g3f9a0c2b17e4', name: 'shop', state: 'blocked', canCreate: true, items: [
+        { id: 'w8', name: 'silver-meadow', state: 'blocked', openTarget: 'w8:p1.term_1', targets: [target('w8:p1.term_1', 'blocked', { agent: 'claude' }), target('w8:p3.term_2', 'none', { canOpen: false })] },
+        { id: 'w9', name: 'lucky-valley', state: 'snoozing', targets: [target('w9:p1.term_3', 'snoozing'), target('../x', 'done')] },
+      ] },
+      { id: '../etc', name: 'bad', state: 'idle', canCreate: false, items: [] },
+    ],
+  };
+
+  it('reads a snapshot, drops only the bad group and the bad target, and shows unknown words as unknown', async () => {
+    const fetch = vi.fn(async () => json(200, structuredClone(snapshot)));
+    vi.stubGlobal('fetch', fetch);
+    const body = await client('https://vps.tailx.ts.net').provider('herdr');
+    expect((fetch.mock.calls as unknown as Array<[string]>)[0]?.[0]).toBe('https://vps.tailx.ts.net/api/v1/providers/herdr');
+    expect(body.groups.map((group) => group.id)).toEqual(['g3f9a0c2b17e4']);
+    const [first, second] = body.groups[0]?.items ?? [];
+    expect(first?.targets.map((item) => item.state)).toEqual(['blocked', 'none']);
+    expect(second?.state).toBe('unknown');
+    expect(second?.targets).toEqual([target('w9:p1.term_3', 'unknown')]);
+  });
+
+  it('knows six words; any other word is unknown', () => {
+    for (const word of ['blocked', 'done', 'working', 'idle', 'unknown', 'none']) expect(providerWord(word)).toBe(word);
+    for (const word of ['waiting', 'Blocked', '', 'toString']) expect(providerWord(word)).toBe('unknown');
+  });
+
+  it('opens, updates and creates with the mutation header, and create waits 45 s', async () => {
+    const session = {
+      id: '84444444-4444-4444-8444-444444444444', generation: '85555555-5555-4555-8555-555555555555', title: 'herdr · shop · silver-meadow',
+      state: 'running', columns: 45, rows: 20, provider: 'herdr', targetId: 'w8:p1.term_1',
+    };
+    const info = { id: 'herdr', name: 'herdr', state: 'ready', enabled: false, notify: ['blocked'], canCreate: true, agentKinds: ['claude'] };
+    const fetch = vi.fn(async (path: string) => json(200, path.endsWith('/open') ? { session, reused: false }
+      : path.endsWith('/create') ? { itemId: 'w10', targetId: 'w10:p1.term_9', agentStarted: false, problem: 'agentNotReady' } : info));
+    vi.stubGlobal('fetch', fetch);
+    await expect(api.providerOpen('herdr', { targetId: 'w8:p1.term_1', columns: 45, rows: 20 })).resolves.toEqual({ session, reused: false });
+    await expect(api.providerUpdate('herdr', { enabled: false })).resolves.toEqual(info);
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await expect(api.providerCreate('herdr', { groupId: 'g1', name: 'fix/login' })).resolves.toMatchObject({ agentStarted: false, problem: 'agentNotReady' });
+    expect(timeout).toHaveBeenCalledWith(PROVIDER_CREATE_TIMEOUT_MS);
+    expect(PROVIDER_CREATE_TIMEOUT_MS).toBe(45_000);
+    const calls = fetch.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls.map(([path, init]) => `${init.method} ${path}`)).toEqual([
+      'POST /api/v1/providers/herdr/open', 'PATCH /api/v1/providers/herdr', 'POST /api/v1/providers/herdr/create',
+    ]);
+    for (const [, init] of calls) expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Pterm-Request': '1' });
+  });
+
+  it('keeps settings readable when one provider entry is bad', async () => {
+    const settings = {
+      device, projects: [], shellProfiles: [], hostBuild: '0.1.0', brokerGeneration: '00000000-0000-4000-8000-000000000002',
+      protocolRevision: 4, minProtocolRevision: 1,
+      providers: [{ id: 'herdr', name: 'herdr', state: 'ready', enabled: true, notify: ['blocked', 'done'], canCreate: false, agentKinds: [] }, { id: 'Bad Id' }],
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, settings)));
+    await expect(api.settings()).resolves.toMatchObject({ providers: [{ id: 'herdr' }] });
   });
 });
