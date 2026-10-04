@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { client } from '../api/http';
 import type { Computer } from '../computers';
 import type { HTTPSettingsResponse } from '../generated/protocol';
-import { hosted, type ComputerEntry, type HostedSession } from './allSessions';
+import { checkAgain, hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ComputerChips, problemText } from './Sessions';
 import { Button, Notice } from './ui';
 import {
@@ -124,13 +124,8 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
     if (computer === undefined) return;
     setBusy(true);
     setError(undefined);
-    try {
-      await onReload(computer.origin);
-    } catch (failure) {
-      setError(onFailure(failure, computer));
-    } finally {
-      setBusy(false);
-    }
+    setError(await checkAgain(onReload(computer.origin), (failure) => onFailure(failure, computer)));
+    setBusy(false);
   }
 
   const now = Date.now();

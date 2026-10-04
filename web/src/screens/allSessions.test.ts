@@ -5,7 +5,7 @@ import { scheduler } from '../terminal/scheduler';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import {
-  blockedPeer, byChip, homeStillLists, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, reloadFreshPage, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
+  blockedPeer, byChip, checkAgain, CHECKING_MIN_MS, homeStillLists, chipsFor, CONNECTING_MS, freshPageUrl, POLICY_RELOAD_KEY, reloadFreshPage, connectingRetry, forgetComputer, homeSettings, hosted, keyOf, load, mergeSessions, nextStatus, pruneStatuses, readNow, ReadFailure, sameSession,
   type ComputerEntry, type ComputerStatus,
 } from './allSessions';
 
@@ -322,5 +322,25 @@ describe('forgetComputer', () => {
     let started = false;
     scheduler.connectGate(origin).wait(() => { started = true; });
     expect(started).toBe(true);
+  });
+});
+
+describe('checkAgain', () => {
+  // Check again on Sessions and New session: a read that answers at once must not look like a dead tap.
+  it('stays busy at least CHECKING_MIN_MS, then says nothing on an answer and the failure text on an error', async () => {
+    vi.useFakeTimers();
+    const answered = vi.fn();
+    void checkAgain(Promise.resolve(), () => 'unused').then(answered);
+    await vi.advanceTimersByTimeAsync(CHECKING_MIN_MS - 1);
+    expect(answered).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(answered).toHaveBeenCalledWith(undefined);
+    const failed = vi.fn();
+    void checkAgain(Promise.reject(new Error('down')), (error) => `failed: ${(error as Error).message}`).then(failed);
+    await vi.advanceTimersByTimeAsync(CHECKING_MIN_MS - 1);
+    expect(failed).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(failed).toHaveBeenCalledWith('failed: down');
+    vi.useRealTimers();
   });
 });

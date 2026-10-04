@@ -239,6 +239,11 @@ export function atLeast<T>(work: Promise<T>, ms: number): Promise<T> {
   return Promise.allSettled([work, wait]).then(() => work);
 }
 
+/** A Check again read: settles no sooner than CHECKING_MIN_MS, with the failure's text, or undefined when it answered. */
+export function checkAgain(read: Promise<void>, onFailure: (error: unknown) => string): Promise<string | undefined> {
+  return atLeast(read, CHECKING_MIN_MS).then(() => undefined, onFailure);
+}
+
 /**
  * Reads each computer now (settings included), one read per computer at a
  * time through the scheduler, and publishes every result. Rejects with a
