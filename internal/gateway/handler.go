@@ -153,6 +153,9 @@ func newServer(config Config, bound, generation string) (*gatewayHandler, error)
 		// Literal paths win over {host}; neither is a valid computer host.
 		mux.HandleFunc(offerPath, handler.offerComputer)
 		mux.HandleFunc("/api/v1/computers/found", handler.foundComputers)
+		mux.HandleFunc("/api/v1/providers/{provider}", handler.provider)
+		mux.HandleFunc("/api/v1/providers/{provider}/open", handler.providerOpen)
+		mux.HandleFunc("/api/v1/providers/{provider}/create", handler.providerCreate)
 	}
 	handler.mux = mux
 	return handler, nil

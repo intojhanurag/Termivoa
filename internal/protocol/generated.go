@@ -78,6 +78,10 @@ type ProtocolTypes struct {
 	GatewayRPCPreviewCheck           GatewayRPCPreviewCheckPayload           `json:"gatewayRPCPreviewCheck"`
 	GatewayRPCPreviewTarget          GatewayRPCPreviewTargetPayload          `json:"gatewayRPCPreviewTarget"`
 	GatewayRPCPrincipal              GatewayRPCPrincipalPayload              `json:"gatewayRPCPrincipal"`
+	GatewayRPCProvider               GatewayRPCProviderPayload               `json:"gatewayRPCProvider"`
+	GatewayRPCProviderCreate         GatewayRPCProviderCreatePayload         `json:"gatewayRPCProviderCreate"`
+	GatewayRPCProviderOpen           GatewayRPCProviderOpenPayload           `json:"gatewayRPCProviderOpen"`
+	GatewayRPCProviderUpdate         GatewayRPCProviderUpdatePayload         `json:"gatewayRPCProviderUpdate"`
 	GatewayRPCPushSubscribe          GatewayRPCPushSubscribePayload          `json:"gatewayRPCPushSubscribe"`
 	GatewayRPCPushUnsubscribe        GatewayRPCPushUnsubscribePayload        `json:"gatewayRPCPushUnsubscribe"`
 	GatewayRPCSessionCreate          GatewayRPCSessionCreatePayload          `json:"gatewayRPCSessionCreate"`
@@ -797,6 +801,65 @@ type GatewayRPCPrincipalPayload struct {
 	ExpiresAt    string `json:"expiresAt"`
 }
 
+// Reads one provider of this computer (docs/herdr-provider.md). The broker answers from its
+// cache and never waits on the provider.
+type GatewayRPCProviderPayload struct {
+	Credential string `json:"credential"`
+	Provider   string `json:"provider"`
+}
+
+// Makes a worktree and optionally starts an agent in it (milestone M2). The broker runs it
+// in its own context and answers within 45 s; the gateway sends it on a dedicated
+// connection.
+type GatewayRPCProviderCreatePayload struct {
+	Credential string                    `json:"credential"`
+	Provider   string                    `json:"provider"`
+	Request    HTTPProviderCreateRequest `json:"request"`
+}
+
+// POST /api/v1/providers/{provider}/create (milestone M2): a new worktree in a group, and
+// optionally an agent in it with a first prompt. name is the new branch and worktree name;
+// the host also refuses a name that ends in .lock or has more than 4 parts. agent must be
+// one of the provider's agentKinds. prompt must hold no control characters other than tab
+// and line feed (no ESC, no other C0 or C1, no DEL).
+type HTTPProviderCreateRequest struct {
+	Agent   *string `json:"agent,omitempty"`
+	GroupID string  `json:"groupId"`
+	Name    string  `json:"name"`
+	Prompt  *string `json:"prompt,omitempty"`
+}
+
+// Opens or reuses the in-memory provider session of one terminal in the broker's latest
+// snapshot.
+type GatewayRPCProviderOpenPayload struct {
+	Credential string                  `json:"credential"`
+	Provider   string                  `json:"provider"`
+	Request    HTTPProviderOpenRequest `json:"request"`
+}
+
+// POST /api/v1/providers/{provider}/open. The host opens (or reuses) one in-memory provider
+// session attached to that terminal. columns and rows are the phone's fitted grid: a new
+// attach starts at that size, which herdr gives the pane on the computer until the session
+// ends. A reused session keeps its size.
+type HTTPProviderOpenRequest struct {
+	Columns  int64  `json:"columns"`
+	Rows     int64  `json:"rows"`
+	TargetID string `json:"targetId"`
+}
+
+// Changes this computer's Integrations settings of one provider, for all devices.
+type GatewayRPCProviderUpdatePayload struct {
+	Credential string                    `json:"credential"`
+	Provider   string                    `json:"provider"`
+	Request    HTTPProviderUpdateRequest `json:"request"`
+}
+
+// PATCH /api/v1/providers/{provider}: Settings → Integrations on this computer.
+type HTTPProviderUpdateRequest struct {
+	Enabled *bool                     `json:"enabled,omitempty"`
+	Notify  []HTTPProviderNotifyState `json:"notify,omitempty"`
+}
+
 // Saves a push subscription for the device that owns the credential.
 type GatewayRPCPushSubscribePayload struct {
 	Credential string                   `json:"credential"`
@@ -948,18 +1011,6 @@ type HTTPPreviewConfigResponse struct {
 	Origin *string `json:"origin,omitempty"`
 }
 
-// POST /api/v1/providers/{provider}/create (milestone M2): a new worktree in a group, and
-// optionally an agent in it with a first prompt. name is the new branch and worktree name;
-// the host also refuses a name that ends in .lock or has more than 4 parts. agent must be
-// one of the provider's agentKinds. prompt must hold no control characters other than tab
-// and line feed (no ESC, no other C0 or C1, no DEL).
-type HTTPProviderCreateRequest struct {
-	Agent   *string `json:"agent,omitempty"`
-	GroupID string  `json:"groupId"`
-	Name    string  `json:"name"`
-	Prompt  *string `json:"prompt,omitempty"`
-}
-
 // The new item and the terminal to open. The worktree exists whenever this is returned.
 // agentStarted is false when no agent was asked for or the agent did not start; problem
 // then says why (agentNotReady: it started but waits at a question; agentFailed: it did not
@@ -969,16 +1020,6 @@ type HTTPProviderCreateResponse struct {
 	ItemID       string                     `json:"itemId"`
 	Problem      *HTTPProviderCreateProblem `json:"problem,omitempty"`
 	TargetID     string                     `json:"targetId"`
-}
-
-// POST /api/v1/providers/{provider}/open. The host opens (or reuses) one in-memory provider
-// session attached to that terminal. columns and rows are the phone's fitted grid: a new
-// attach starts at that size, which herdr gives the pane on the computer until the session
-// ends. A reused session keeps its size.
-type HTTPProviderOpenRequest struct {
-	Columns  int64  `json:"columns"`
-	Rows     int64  `json:"rows"`
-	TargetID string `json:"targetId"`
 }
 
 // The session to show in Live. reused is true when the host already had a live session for
@@ -1045,12 +1086,6 @@ type HTTPProviderTarget struct {
 	ID      string  `json:"id"`
 	Label   string  `json:"label"`
 	State   string  `json:"state"`
-}
-
-// PATCH /api/v1/providers/{provider}: Settings → Integrations on this computer.
-type HTTPProviderUpdateRequest struct {
-	Enabled *bool                     `json:"enabled,omitempty"`
-	Notify  []HTTPProviderNotifyState `json:"notify,omitempty"`
 }
 
 // The broker's VAPID application server public key.
@@ -1674,6 +1709,14 @@ const (
 	GatewayPairRedeemResult       GatewayRPCMessageType = "gateway.pair.redeem.result"
 	GatewayPreviewCheck           GatewayRPCMessageType = "gateway.preview.check"
 	GatewayPreviewCheckResult     GatewayRPCMessageType = "gateway.preview.check.result"
+	GatewayProvidersCreate        GatewayRPCMessageType = "gateway.providers.create"
+	GatewayProvidersCreateResult  GatewayRPCMessageType = "gateway.providers.create.result"
+	GatewayProvidersGet           GatewayRPCMessageType = "gateway.providers.get"
+	GatewayProvidersGetResult     GatewayRPCMessageType = "gateway.providers.get.result"
+	GatewayProvidersOpen          GatewayRPCMessageType = "gateway.providers.open"
+	GatewayProvidersOpenResult    GatewayRPCMessageType = "gateway.providers.open.result"
+	GatewayProvidersUpdate        GatewayRPCMessageType = "gateway.providers.update"
+	GatewayProvidersUpdateResult  GatewayRPCMessageType = "gateway.providers.update.result"
 	GatewayPushConfig             GatewayRPCMessageType = "gateway.push.config"
 	GatewayPushConfigResult       GatewayRPCMessageType = "gateway.push.config.result"
 	GatewayPushSubscribe          GatewayRPCMessageType = "gateway.push.subscribe"
@@ -1714,6 +1757,13 @@ const (
 	The127001 PreviewHost = "127.0.0.1"
 )
 
+type HTTPProviderNotifyState string
+
+const (
+	Blocked HTTPProviderNotifyState = "blocked"
+	Done    HTTPProviderNotifyState = "done"
+)
+
 type HTTPProviderCreateProblem string
 
 const (
@@ -1732,13 +1782,6 @@ const (
 	NotRunning             HTTPProviderState = "notRunning"
 	Off                    HTTPProviderState = "off"
 	Unsupported            HTTPProviderState = "unsupported"
-)
-
-type HTTPProviderNotifyState string
-
-const (
-	Blocked HTTPProviderNotifyState = "blocked"
-	Done    HTTPProviderNotifyState = "done"
 )
 
 // Image type detected by the broker from the file's magic bytes. The client never names it.
@@ -1987,6 +2030,6 @@ const (
 // ProtocolRevision is this build's additive protocol v1 revision and
 // MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
 const (
-	ProtocolRevision    = 3
+	ProtocolRevision    = 4
 	MinProtocolRevision = 1
 )

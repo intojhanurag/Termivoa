@@ -31,7 +31,8 @@
     "adminRPCPairGrant", "adminRPCRevokeVia", "adminRPCRevokeViaResult", "adminRPCComputer", "adminRPCComputerListResult", "adminRPCComputerRemove", "adminRPCComputerRemoveResult",
     "httpComputerOfferRequest", "httpFoundComputer", "httpComputerFoundResponse",
     "adminRPCPairOffer", "adminRPCPairOfferProblem", "adminRPCPairOfferResult", "adminRPCPairOfferEnd",
-    "httpProviderSnapshotResponse", "httpProviderOpenRequest", "httpProviderSession", "httpProviderOpenResponse", "httpProviderUpdateRequest", "httpProviderCreateRequest", "httpProviderCreateResponse"
+    "httpProviderSnapshotResponse", "httpProviderOpenRequest", "httpProviderSession", "httpProviderOpenResponse", "httpProviderUpdateRequest", "httpProviderCreateRequest", "httpProviderCreateResponse",
+    "gatewayRPCProvider", "gatewayRPCProviderUpdate", "gatewayRPCProviderOpen", "gatewayRPCProviderCreate"
   ],
   "properties": {
     "hello": { "$ref": "envelope.schema.json#/$defs/helloPayload" },
@@ -188,6 +189,10 @@
     "httpProviderOpenResponse": { "$ref": "http-api.schema.json#/$defs/providerOpenResponse" },
     "httpProviderUpdateRequest": { "$ref": "http-api.schema.json#/$defs/providerUpdateRequest" },
     "httpProviderCreateRequest": { "$ref": "http-api.schema.json#/$defs/providerCreateRequest" },
-    "httpProviderCreateResponse": { "$ref": "http-api.schema.json#/$defs/providerCreateResponse" }
+    "httpProviderCreateResponse": { "$ref": "http-api.schema.json#/$defs/providerCreateResponse" },
+    "gatewayRPCProvider": { "$ref": "gateway-rpc.schema.json#/$defs/providerPayload" },
+    "gatewayRPCProviderUpdate": { "$ref": "gateway-rpc.schema.json#/$defs/providerUpdatePayload" },
+    "gatewayRPCProviderOpen": { "$ref": "gateway-rpc.schema.json#/$defs/providerOpenPayload" },
+    "gatewayRPCProviderCreate": { "$ref": "gateway-rpc.schema.json#/$defs/providerCreatePayload" }
   }
 }

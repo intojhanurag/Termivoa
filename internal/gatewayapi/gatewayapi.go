@@ -86,6 +86,15 @@ type Broker interface {
 	// FoundComputers lists the offers for the device that owns the
 	// credential, from this computer's own origin only.
 	FoundComputers(ctx context.Context, credential string) (protocol.HTTPComputerFoundResponse, error)
+	// Providers (docs/herdr-provider.md). Provider answers from the broker's
+	// cache. UpdateProvider changes this computer's Integrations settings.
+	// OpenProvider opens or reuses the in-memory session of one terminal.
+	// CreateProvider makes a worktree and may start an agent; it can take up
+	// to 45 s, so it runs on its own connection.
+	Provider(ctx context.Context, credential, provider string) (protocol.HTTPProviderSnapshotResponse, error)
+	UpdateProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderUpdateRequest) (protocol.HTTPProviderInfo, error)
+	OpenProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderOpenRequest) (protocol.HTTPProviderOpenResponse, error)
+	CreateProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderCreateRequest) (protocol.HTTPProviderCreateResponse, error)
 	// OpenLive binds a new broker live stream to the credential. The stream
 	// starts as an observer and carries canonical envelope JSON both ways.
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)

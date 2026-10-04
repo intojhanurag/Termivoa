@@ -246,3 +246,65 @@ func ValidateProviderCreateResponse(response HTTPProviderCreateResponse) error {
 	}
 	return nil
 }
+
+func validateGatewayProviderPayload(envelope GatewayRPCEnvelope) error {
+	check := func(credential, provider string) error {
+		if err := ValidateSecretText(credential); err != nil {
+			return err
+		}
+		if !ValidProviderID(provider) {
+			return errors.New("provider is invalid")
+		}
+		return nil
+	}
+	switch envelope.Type {
+	case GatewayProvidersGet:
+		payload, err := DecodeRPCPayload[GatewayRPCProviderPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return check(payload.Credential, payload.Provider)
+	case GatewayProvidersUpdate:
+		payload, err := DecodeRPCPayload[GatewayRPCProviderUpdatePayload](envelope)
+		if err != nil {
+			return err
+		}
+		return errors.Join(check(payload.Credential, payload.Provider), ValidateProviderUpdate(payload.Request))
+	case GatewayProvidersOpen:
+		payload, err := DecodeRPCPayload[GatewayRPCProviderOpenPayload](envelope)
+		if err != nil {
+			return err
+		}
+		return errors.Join(check(payload.Credential, payload.Provider), ValidateProviderOpenRequest(payload.Request))
+	case GatewayProvidersCreate:
+		payload, err := DecodeRPCPayload[GatewayRPCProviderCreatePayload](envelope)
+		if err != nil {
+			return err
+		}
+		return errors.Join(check(payload.Credential, payload.Provider), ValidateProviderCreateRequest(payload.Request))
+	case GatewayProvidersGetResult:
+		payload, err := DecodeRPCPayload[HTTPProviderSnapshotResponse](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateProviderSnapshot(payload)
+	case GatewayProvidersUpdateResult:
+		payload, err := DecodeRPCPayload[HTTPProviderInfo](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateProviderInfo(payload)
+	case GatewayProvidersOpenResult:
+		payload, err := DecodeRPCPayload[HTTPProviderOpenResponse](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateProviderOpenResponse(payload)
+	default:
+		payload, err := DecodeRPCPayload[HTTPProviderCreateResponse](envelope)
+		if err != nil {
+			return err
+		}
+		return ValidateProviderCreateResponse(payload)
+	}
+}
