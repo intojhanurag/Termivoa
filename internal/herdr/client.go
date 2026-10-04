@@ -43,6 +43,12 @@ type callError struct{ code, message string }
 
 func (err *callError) Error() string { return "herdr: " + err.code }
 
+// socketRefused: the socket exists but fails design S3. reason is for the
+// owner (pterm doctor, the broker log): it names local paths and the fix.
+type socketRefused struct{ reason string }
+
+func (err *socketRefused) Error() string { return "herdr: will not use the socket: " + err.reason }
+
 // call sends one request on its own connection (herdr closes the socket
 // after each reply) and decodes result. Every call checks the socket first.
 func (provider *Provider) call(ctx context.Context, timeout time.Duration, method string, params, result any) error {
@@ -59,7 +65,7 @@ func (provider *Provider) call(ctx context.Context, timeout time.Duration, metho
 	}
 	defer conn.Close()
 	if err := ipc.VerifyPeer(conn); err != nil {
-		return fmt.Errorf("herdr: socket peer: %w", err)
+		return &socketRefused{"its server is not this user's: " + err.Error()}
 	}
 	deadline, _ := ctx.Deadline()
 	if err := conn.SetDeadline(deadline); err != nil {
@@ -179,8 +185,9 @@ func FindBinary(config Config) (path string, refused []string) {
 	return "", refused
 }
 
-// run runs the herdr CLI with the fixed environment, a time limit and an
-// output cap, and returns its standard output. Never a shell.
+// run runs the herdr CLI with the fixed environment, a time limit, an
+// output cap, standard input from the null device and no controlling
+// terminal, and returns its standard output. Never a shell.
 func (provider *Provider) run(ctx context.Context, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
@@ -189,6 +196,7 @@ func (provider *Provider) run(ctx context.Context, args ...string) ([]byte, erro
 	command.Env = provider.environment(false)
 	command.Dir = provider.config.Home
 	command.WaitDelay = time.Second
+	noTerminal(command)
 	output := &cappedBuffer{}
 	command.Stdout, command.Stderr = output, io.Discard
 	err := command.Run()
@@ -206,11 +214,14 @@ func (buffer *cappedBuffer) Write(data []byte) (int, error) {
 
 // probe reads what this herdr build can do, once per binary and version:
 // `terminal attach` (tabs without an agent can open) and the kinds of
-// `agent start` (the M2 agent picker).
+// `agent start` (the M2 agent picker). Only the help text counts, never the
+// exit status: herdr 0.8.2 answers `--help` after an unknown command with
+// its general help and exit 0, and its default command starts the herdr UI,
+// which run's missing terminal and time limit stop.
 func (provider *Provider) probe(ctx context.Context) capabilities {
-	_, attachErr := provider.run(ctx, "terminal", "attach", "--help")
+	attach, _ := provider.run(ctx, "terminal", "attach", "--help")
 	help, _ := provider.run(ctx, "agent", "start", "--help")
-	return capabilities{attachAny: attachErr == nil, kinds: parseKinds(help)}
+	return capabilities{attachAny: bytes.Contains(attach, []byte("Usage: herdr terminal attach")), kinds: parseKinds(help)}
 }
 
 // parseKinds reads the "[possible values: a, b]" list of `agent start --help`.

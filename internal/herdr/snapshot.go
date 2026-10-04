@@ -245,7 +245,10 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 				if _, ok := terminals[pane]; !ok && len(panesOf[tab.ID]) > 0 {
 					pane = panesOf[tab.ID][0].ID
 				}
-				if terminal, ok := terminals[pane]; ok && handlePattern.MatchString(pane+"."+terminal) {
+				// The terminal ID becomes a CLI argument on its own (herdr's
+				// parser takes no "--"), so it must pass the pattern alone: an
+				// ID like "--takeover" is dropped.
+				if terminal, ok := terminals[pane]; ok && handlePattern.MatchString(terminal) && handlePattern.MatchString(pane+"."+terminal) {
 					wire := protocol.HTTPProviderTarget{ID: pane + "." + terminal, Label: label, State: stateNone, CanOpen: attachAny}
 					tabTargets = append(tabTargets, wire)
 					result.targets[wire.ID] = target{
@@ -307,7 +310,16 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 		result.groups[id] = build.ref
 	}
 	// The body budget: drop whole groups, least urgent first (ties: the last).
-	for len(groups) > 0 && bodySize(groups, truncated) > maxBodyBytes {
+	// Each group is encoded once: the body is the frame plus each group and
+	// its comma (one comma too many, so the sum is never short).
+	sizes := make([]int, len(groups))
+	total := frameSize()
+	for index, group := range groups {
+		data, _ := json.Marshal(group)
+		sizes[index] = len(data) + 1
+		total += sizes[index]
+	}
+	for len(groups) > 0 && total > maxBodyBytes {
 		drop := len(groups) - 1
 		for index := len(groups) - 1; index >= 0; index-- {
 			if rank[groups[index].State] > rank[groups[drop].State] {
@@ -318,7 +330,9 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 			delete(result.targets, key)
 		}
 		delete(result.groups, groups[drop].ID)
-		groups, targetsOf, truncated = slices.Delete(groups, drop, drop+1), slices.Delete(targetsOf, drop, drop+1), true
+		total -= sizes[drop]
+		groups, targetsOf, sizes = slices.Delete(groups, drop, drop+1), slices.Delete(targetsOf, drop, drop+1), slices.Delete(sizes, drop, drop+1)
+		truncated = true
 	}
 	result.response = protocol.HTTPProviderSnapshotResponse{Provider: ID, State: protocol.HTTPProviderStateReady, Groups: groups}
 	if truncated {
@@ -327,9 +341,11 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 	return result
 }
 
-func bodySize(groups []protocol.HTTPProviderGroup, truncated bool) int {
+// frameSize is the encoded response without groups, with "truncated".
+func frameSize() int {
+	truncated := true
 	data, _ := json.Marshal(protocol.HTTPProviderSnapshotResponse{
-		Provider: ID, State: protocol.HTTPProviderStateReady, Groups: groups, Truncated: &truncated,
+		Provider: ID, State: protocol.HTTPProviderStateReady, Groups: []protocol.HTTPProviderGroup{}, Truncated: &truncated,
 	})
 	return len(data)
 }
@@ -386,6 +402,10 @@ func openTarget(targets []protocol.HTTPProviderTarget, active string) string {
 // invisible characters), collapses spaces and keeps at most maxRunes runes
 // and maxNameBytes bytes. An empty result becomes fallback.
 func Clean(value string, maxRunes int, fallback string) string {
+	return clean(value, maxRunes, maxNameBytes, fallback)
+}
+
+func clean(value string, maxRunes, maxBytes int, fallback string) string {
 	var builder strings.Builder
 	runes := 0
 	space := false
@@ -398,14 +418,14 @@ func Clean(value string, maxRunes int, fallback string) string {
 			continue
 		}
 		if space {
-			if runes+1 >= maxRunes || builder.Len()+1 >= maxNameBytes {
+			if runes+1 >= maxRunes || builder.Len()+1 >= maxBytes {
 				break
 			}
 			builder.WriteByte(' ')
 			runes++
 			space = false
 		}
-		if runes == maxRunes || builder.Len()+utf8.RuneLen(character) > maxNameBytes {
+		if runes == maxRunes || builder.Len()+utf8.RuneLen(character) > maxBytes {
 			break
 		}
 		builder.WriteRune(character)
@@ -417,10 +437,16 @@ func Clean(value string, maxRunes int, fallback string) string {
 	return builder.String()
 }
 
+// titleNameBytes is the most bytes one name may have in a Title, so the
+// whole title fits the protocol's name limit (maxNameBytes) even when both
+// names are made of 4-byte characters.
+const titleNameBytes = (maxNameBytes - len(Name+" ·  · ")) / 2
+
 // Title is the fixed "herdr · group · item" format, one name when they are
-// equal (a workspace outside git), each name at most maxRunes runes.
+// equal (a workspace outside git), each name at most maxRunes runes and
+// titleNameBytes bytes.
 func Title(group, item string, maxRunes int) string {
-	group, item = Clean(group, maxRunes, Name), Clean(item, maxRunes, Name)
+	group, item = clean(group, maxRunes, titleNameBytes, Name), clean(item, maxRunes, titleNameBytes, Name)
 	if group == item {
 		return Name + " · " + group
 	}

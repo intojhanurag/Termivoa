@@ -7,14 +7,19 @@
 //
 //	fakeherdr server                  serve herdr.sock from scenario.json, plus control.sock
 //	fakeherdr status server --json    herdr's status shape
-//	fakeherdr terminal attach --help  exit 0 only when the scenario sets attachAny
+//	fakeherdr terminal attach --help  its usage line only when the scenario sets attachAny
 //	fakeherdr agent start --help      the scenario's agent kinds
 //	fakeherdr agent attach <pane>     a TTY client: marker, size, echo, ctrl+b q
 //	fakeherdr terminal attach <term>  the same, by terminal ID (attachAny only)
 //
+// With "noTerminal" in the scenario it is a herdr without the terminal
+// command: any `terminal …` runs herdr's default command, which starts the
+// UI (logged "ui started") when it has a terminal, else prints the general
+// help with exit 0, as herdr 0.8.2 answers `--help` after an unknown command.
+//
 // The scenario is $FAKE_HERDR_SCENARIO or <folder>/scenario.json:
 //
-//	{"version":"0.8.2","protocol":20,"attachAny":false,"kinds":["claude"],
+//	{"version":"0.8.2","protocol":20,"attachAny":false,"noTerminal":false,"kinds":["claude"],
 //	 "agentStartDelayMs":0,"snapshot":{...herdr's session.snapshot...},
 //	 "screens":{"w1:p1":"text an attach of w1:p1 draws in place of its marker"}}
 //
@@ -49,6 +54,7 @@ type scenario struct {
 	Version           string         `json:"version"`
 	Protocol          int            `json:"protocol"`
 	AttachAny         bool           `json:"attachAny"`
+	NoTerminal        bool           `json:"noTerminal"`
 	Kinds             []string       `json:"kinds"`
 	AgentStartDelayMs int            `json:"agentStartDelayMs"`
 	Snapshot          map[string]any `json:"snapshot"`
@@ -67,6 +73,10 @@ func main() {
 	}
 	folder := herdrFolder(session)
 	command := strings.Join(args, " ")
+	if len(args) > 0 && args[0] == "terminal" && load(folder).NoTerminal {
+		defaultCommand(folder)
+		return
+	}
 	switch {
 	case command == "server":
 		if err := serve(folder); err != nil {
@@ -78,7 +88,7 @@ func main() {
 		if !load(folder).AttachAny {
 			os.Exit(2)
 		}
-		fmt.Println("Attach directly to a terminal stream")
+		fmt.Print("Attach directly to a terminal stream\n\nUsage: herdr terminal attach [OPTIONS] <TERMINAL_ID>\n")
 	case command == "agent start --help":
 		fmt.Printf("      --kind <KIND>\n          [possible values: %s]\n", strings.Join(load(folder).Kinds, ", "))
 	case len(args) == 3 && args[0] == "agent" && args[1] == "attach":
@@ -92,6 +102,19 @@ func main() {
 		fmt.Fprintf(os.Stderr, "fakeherdr: unknown command %q\n", command)
 		os.Exit(2)
 	}
+}
+
+// defaultCommand is herdr's `herdr [options]`: with a terminal it starts
+// the UI on the session; without one it prints the general help.
+func defaultCommand(folder string) {
+	if tty, err := os.Open("/dev/tty"); err == nil || term.IsTerminal(os.Stdin.Fd()) {
+		if tty != nil {
+			_ = tty.Close()
+		}
+		logf(folder, "ui started")
+		return
+	}
+	fmt.Print("herdr — terminal workspace manager for AI coding agents\n\nUsage: herdr [options]\n")
 }
 
 func herdrFolder(session string) string {

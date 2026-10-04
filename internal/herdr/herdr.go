@@ -9,6 +9,7 @@ package herdr
 import (
 	"context"
 	"errors"
+	"log"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -24,13 +25,13 @@ const (
 	// MinProtocol is herdr 0.8.2's socket protocol, the oldest supported.
 	MinProtocol = 20
 
-	pollEvery    = 2 * time.Second
-	lookupEvery  = 30 * time.Second // binary missing, or protocol too old
-	retryEvery   = 5 * time.Second  // server not running
-	callTimeout  = time.Second      // one socket call while polling
-	missLimit    = 3                // timeouts in a row before notRunning
-	blockedPolls = 2                // polls in a row before a blocked push
-	doneAfter    = 20 * time.Second // observed work before a finished push
+	pollEvery   = 2 * time.Second
+	lookupEvery = 30 * time.Second // binary missing, or protocol too old
+	retryEvery  = 5 * time.Second  // server not running
+	callTimeout = time.Second      // one socket call while polling
+	missLimit   = 3                // timeouts in a row before notRunning
+	blockedFor  = 2 * time.Second  // blocked this long before a push
+	doneAfter   = 20 * time.Second // observed work before a finished push
 )
 
 var (
@@ -68,8 +69,8 @@ func (config Config) folder() string {
 
 func (config Config) socketPath() string { return filepath.Join(config.folder(), "herdr.sock") }
 
-// Change is one agent transition worth a push: To is "blocked" (two polls in
-// a row) or "done" (done or idle after at least 20 s of observed work). Group
+// Change is one agent transition worth a push: To is "blocked" (for at least
+// 2 s) or "done" (done or idle after at least 20 s of observed work). Group
 // and Item are cleaned names, Agent the kind; never a title or screen text.
 type Change struct {
 	Key, Group, Item, Agent, From, To string
@@ -91,6 +92,7 @@ type Provider struct {
 	config   Config
 	onChange func(Change)
 	now      func() time.Time
+	logf     func(format string, values ...any) // the broker log; Inspect is quiet
 
 	mu   sync.RWMutex
 	view view
@@ -112,6 +114,7 @@ type Provider struct {
 	caps       capabilities
 	capsFor    string
 	baseline   bool
+	logged     string // the socket refusal last logged
 	tracks     map[string]*track
 	since      map[string]stateStamp
 }
@@ -129,6 +132,9 @@ type view struct {
 	groups    map[string]groupRef
 	kinds     []string
 	turn      uint64 // the last poll turn that ended (Provider.turns)
+	// refused is why the socket is not used (design S3), with the fix; ""
+	// when it is used or missing. Host only: pterm doctor and the log.
+	refused string
 }
 
 type capabilities struct {
@@ -143,7 +149,7 @@ func New(config Config, onChange func(Change)) *Provider {
 	if onChange == nil {
 		onChange = func(Change) {}
 	}
-	provider := &Provider{config: config, onChange: onChange, now: time.Now, wake: make(chan struct{}, 1)}
+	provider := &Provider{config: config, onChange: onChange, now: time.Now, logf: log.Printf, wake: make(chan struct{}, 1)}
 	provider.view = view{state: protocol.NotRunning, response: emptyResponse(protocol.NotRunning)}
 	return provider
 }
@@ -267,7 +273,7 @@ func (provider *Provider) setState(state protocol.HTTPProviderState, version str
 		current.installed, current.binary = provider.binary != "", provider.binary
 		current.state, current.version, current.protocol = state, version, protocolNumber
 		current.response = emptyResponse(state)
-		current.targets, current.groups, current.kinds = nil, nil, nil
+		current.targets, current.groups, current.kinds, current.refused = nil, nil, nil, ""
 	})
 }
 
@@ -356,8 +362,10 @@ func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 	pong, err := provider.ping(ctx)
 	if err != nil {
 		provider.notRunning(now)
+		provider.refuse(err)
 		return false
 	}
+	provider.logged = ""
 	if pong.Protocol < MinProtocol {
 		provider.setState(protocol.Unsupported, pong.Version, pong.Protocol)
 		provider.retryAt = now.Add(lookupEvery)
@@ -383,6 +391,21 @@ func (provider *Provider) notRunning(now time.Time) {
 		provider.binary, provider.lookupAt = "", now.Add(lookupEvery)
 	}
 	provider.setState(protocol.NotRunning, "", 0)
+}
+
+// refuse publishes why the socket was refused, if it was, and logs each new
+// reason once (it is not logged again on every 5 s retry).
+func (provider *Provider) refuse(err error) {
+	var refused *socketRefused
+	if !errors.As(err, &refused) {
+		provider.logged = ""
+		return
+	}
+	if refused.reason != provider.logged {
+		provider.logged = refused.reason
+		provider.logf("herdr: %s is not used: %s", provider.config.socketPath(), refused.reason)
+	}
+	provider.publish(func(current *view) { current.refused = refused.reason })
 }
 
 func timedOut(err error) bool {

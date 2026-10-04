@@ -51,4 +51,16 @@ func TestDoctorHerdrLine(t *testing.T) {
 		!strings.Contains(output.String(), "can make worktrees") || !strings.Contains(output.String(), "  ! herdr: config.toml sets a prefix key") {
 		t.Fatalf("running:\n%s", output.String())
 	}
+	// A folder others can write (Ubuntu's umask 002): the line says why the
+	// socket is not used and the exact command, not just "not running".
+	configFolder := filepath.Join(home, ".config")
+	if err := os.Chmod(configFolder, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
+	inspectHerdr(context.Background(), &missing, &output)
+	if want := "  ! herdr: " + binary + ", Termivoa will not use the server socket " + server.Path + ": group or others can write " +
+		configFolder + "; run: chmod go-w " + configFolder + "\n"; !strings.Contains(output.String(), want) {
+		t.Fatalf("refused socket:\n%s\nwant %q", output.String(), want)
+	}
 }

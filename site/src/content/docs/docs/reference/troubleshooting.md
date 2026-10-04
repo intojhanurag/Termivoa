@@ -443,7 +443,23 @@ Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` lin
 
 ### "herdr is not running on mac"
 
-Start herdr's server on that computer, for example open herdr there. Its projects then show on the phone.
+Start herdr's server on that computer, for example open herdr there. Its projects then show on the phone. If herdr already runs there, run `pterm doctor` on that computer. A line that starts with `! herdr:` says why Termivoa does not use it.
+
+### `pterm doctor` says Termivoa will not use the herdr socket
+
+The line looks like this:
+
+```text
+! herdr: /usr/local/bin/herdr, Termivoa will not use the server socket /home/me/.config/herdr/herdr.sock: group or others can write /home/me/.config/herdr and /home/me/.config; run: chmod go-w /home/me/.config/herdr /home/me/.config
+```
+
+Another user could reach herdr's socket through a folder that is not private to you, so Termivoa does not use it. The phone then says "herdr is not running on mac". Run the command that the line prints, for example:
+
+```sh
+chmod go-w ~/.config/herdr ~/.config
+```
+
+This is common on Ubuntu: its default file mode lets your own group write the folders that you make, such as `~/.config`. Termivoa refuses these folders even when the group is your own private group, because it cannot prove that nobody else is in that group. Termivoa uses the same rule for its own folders. Within about 10 seconds after the fix, herdr shows on the phone.
 
 ### "Update herdr on mac"
 

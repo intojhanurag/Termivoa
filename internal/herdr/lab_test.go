@@ -61,6 +61,10 @@ func TestLab(t *testing.T) {
 	if !installed || info.State != protocol.HTTPProviderStateReady || info.Version == nil || len(provider.caps.kinds) == 0 {
 		t.Fatalf("info = %+v, kinds %v", info, provider.caps.kinds)
 	}
+	// The probe reads `terminal attach --help` text (0.8.2 has the command).
+	if !provider.caps.attachAny {
+		t.Fatal("the probe missed terminal attach")
+	}
 	snapshot := provider.Snapshot()
 	if err := protocol.ValidateProviderSnapshot(snapshot); err != nil {
 		t.Fatal(err)

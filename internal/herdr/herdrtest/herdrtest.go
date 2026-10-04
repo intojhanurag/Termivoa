@@ -158,7 +158,7 @@ func (server *Server) serve(conn net.Conn) {
 }
 
 // Script writes an executable herdr shell script in folder that answers the
-// two probes: `terminal attach --help` (exit 0 only with attachAny) and
+// two probes: `terminal attach --help` (its usage line only with attachAny) and
 // `agent start --help` with kinds. It returns its path.
 func Script(folder string, attachAny bool, kinds string) (string, error) {
 	if err := os.MkdirAll(folder, 0o700); err != nil {
@@ -166,7 +166,7 @@ func Script(folder string, attachAny bool, kinds string) (string, error) {
 	}
 	attach := "exit 2"
 	if attachAny {
-		attach = "echo 'Attach directly to a terminal stream'; exit 0"
+		attach = "echo 'Usage: herdr terminal attach [OPTIONS] <TERMINAL_ID>'; exit 0"
 	}
 	script := fmt.Sprintf(`#!/bin/sh
 case "$*" in

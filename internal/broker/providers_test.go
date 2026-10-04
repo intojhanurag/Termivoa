@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -929,5 +930,87 @@ func TestProviderCreateRoute(t *testing.T) {
 	other := pairDevice(t, fixture.service, "Phone").Credential
 	if code := gatewayErrorCode(t, fixture.create(t, other, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "d"})); code != protocol.HostUnavailable {
 		t.Fatalf("create while off = %s", code)
+	}
+}
+
+// TestProviderSessionIsNotAStoredSession: a provider session is never the
+// source of a new session's worktree, nor an upload target (rule 8).
+func TestProviderSessionIsNotAStoredSession(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.fakeStarts()
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	session := fixture.mustOpen(t, targetShop).Session
+	ctx := context.Background()
+	if _, err := fixture.server.prepareWorktree(ctx, protocol.WorktreeCreate{
+		SourceSessionID: session.ID, Name: "feature", Base: "HEAD",
+	}); !errors.Is(err, errProviderFeature) {
+		t.Fatalf("worktree from a provider session = %v", err)
+	}
+	if _, _, err := fixture.server.authorizeUpload(ctx, nil, fixture.credential, session.ID, session.Generation); !errors.Is(err, errProviderFeature) {
+		t.Fatalf("upload to a provider session = %v", err)
+	}
+}
+
+// TestProviderOpenEndsAnAttachItCannotAnswer: an answer the gateway would
+// refuse must not leave the attach client running (the laptop pane stays
+// phone-sized and the phone can never open it).
+func TestProviderOpenEndsAnAttachItCannotAnswer(t *testing.T) {
+	fixture := newProviderFixture(t)
+	starts := fixture.fakeStarts()
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	// Before the title fix, two names of 4-byte characters made such an answer.
+	previous := validateProviderOpen
+	validateProviderOpen = func(protocol.HTTPProviderOpenResponse) error { return errors.New("title too long") }
+	t.Cleanup(func() { validateProviderOpen = previous })
+	host := fixture.server.providers
+	response := fixture.open(t, fixture.credential, targetShop)
+	if response.Type != protocol.GatewayError || starts.count() != 1 {
+		t.Fatalf("open = %s, %d starts", response.Type, starts.count())
+	}
+	waitFor(t, func() bool {
+		fixture.registry.mu.Lock()
+		defer fixture.registry.mu.Unlock()
+		_, provider := fixture.registry.liveCounts()
+		return provider == 0
+	})
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	if len(host.sessions) != 0 {
+		t.Fatalf("kept %d sessions", len(host.sessions))
+	}
+}
+
+// TestReapWaitsForAnOpenOfTheSameTarget: the reaper must not end a session
+// that an open is returning as reused at that moment.
+func TestReapWaitsForAnOpenOfTheSameTarget(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.fakeStarts()
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	host := fixture.server.providers
+	session := fixture.mustOpen(t, targetShop).Session
+	host.mu.Lock()
+	open := host.sessions[targetShop]
+	open.viewed = time.Now().Add(-time.Minute) // idle: due to end
+	host.mu.Unlock()
+	// An open of this target holds its lock and is about to answer "reused".
+	unlock := host.locks.lock(targetShop)
+	reaped := make(chan struct{})
+	go func() {
+		host.reap(context.Background(), time.Now())
+		close(reaped)
+	}()
+	time.Sleep(200 * time.Millisecond)
+	host.mu.Lock()
+	open.viewed = time.Now()
+	host.mu.Unlock()
+	unlock()
+	<-reaped
+	if _, err := fixture.registry.Get(session.ID); err != nil {
+		t.Fatalf("the reaper ended a session an open reused: %v", err)
+	}
+	select {
+	case <-open.session.Ended():
+		t.Fatal("the reaper ended a session an open reused")
+	default:
 	}
 }

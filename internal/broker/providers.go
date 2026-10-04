@@ -38,6 +38,10 @@ const (
 	providerReapEvery = time.Second
 )
 
+// validateProviderOpen is the gateway encoder's check of an open answer
+// (a variable for tests).
+var validateProviderOpen = protocol.ValidateProviderOpenResponse
+
 // providerFailure is a provider error with its fixed public code and text.
 // The text is Termivoa's, never herdr's or git's.
 type providerFailure struct{ managementFailure }
@@ -296,6 +300,14 @@ func (session *providerSession) ChangesFolder(context.Context) (string, error) {
 
 func (session *providerSession) ProjectFolder() string { return "" }
 
+// isProviderSession: Registry.Get also returns provider sessions. A caller
+// that needs a stored session (a worktree source, an upload) refuses them;
+// only attach (Live) and preview (which refuses on its own) take them.
+func isProviderSession(session ManagedSession) bool {
+	_, ok := session.(*providerSession)
+	return ok
+}
+
 // providerRefused lists the live requests a provider session refuses.
 func providerRefused(kind protocol.MessageType) bool {
 	switch kind {
@@ -367,13 +379,21 @@ func (server *ManagementServer) openProvider(
 	if err != nil {
 		return protocol.HTTPProviderOpenResponse{}, err
 	}
+	response.Session.ID, response.Session.Generation = id, generation
+	response.Session.Columns, response.Session.Rows = request.Columns, request.Rows
+	// The gateway encoder checks the answer again; one it would refuse must
+	// not leave the just-started attach squeezing the laptop's pane.
+	if err := validateProviderOpen(response); err != nil {
+		terminate, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+		_ = session.Terminate(terminate)
+		cancel()
+		return protocol.HTTPProviderOpenResponse{}, err
+	}
 	host.mu.Lock()
 	host.sessions[attach.Key] = &providerOpen{
 		session: session, id: id, generation: generation, title: attach.Title, target: request.TargetID, viewed: time.Now(),
 	}
 	host.mu.Unlock()
-	response.Session.ID, response.Session.Generation = id, generation
-	response.Session.Columns, response.Session.Rows = request.Columns, request.Rows
 	return response, nil
 }
 
@@ -414,31 +434,39 @@ func (host *providerHost) reap(ctx context.Context, now time.Time) {
 	opens := maps.Clone(host.sessions)
 	host.mu.Unlock()
 	for key, open := range opens {
-		select {
-		case <-open.session.Ended():
-			host.mu.Lock()
-			if host.sessions[key] == open {
-				delete(host.sessions, key)
-			}
-			host.mu.Unlock()
-			continue
-		default:
+		host.reapOne(ctx, now, key, open)
+	}
+}
+
+// reapOne holds the target's open lock, so an open that reuses this session
+// (and marks it viewed) runs wholly before or after the decision.
+func (host *providerHost) reapOne(ctx context.Context, now time.Time, key string, open *providerOpen) {
+	unlock := host.locks.lock(key)
+	defer unlock()
+	select {
+	case <-open.session.Ended():
+		host.mu.Lock()
+		if host.sessions[key] == open {
+			delete(host.sessions, key)
 		}
-		end := !host.enabled.Load() || !host.provider.Has(key)
-		if !end {
-			presence, err := open.session.Presence(ctx, false)
-			host.mu.Lock()
-			if err == nil && presence.Viewers > 0 {
-				open.viewed = now
-			}
-			end = now.Sub(open.viewed) >= providerIdleEnd
-			host.mu.Unlock()
+		host.mu.Unlock()
+		return
+	default:
+	}
+	end := !host.enabled.Load() || !host.provider.Has(key)
+	if !end {
+		presence, err := open.session.Presence(ctx, false)
+		host.mu.Lock()
+		if err == nil && presence.Viewers > 0 {
+			open.viewed = now
 		}
-		if end {
-			terminate, cancel := context.WithTimeout(ctx, shutdownTimeout)
-			_ = open.session.Terminate(terminate)
-			cancel()
-		}
+		end = now.Sub(open.viewed) >= providerIdleEnd
+		host.mu.Unlock()
+	}
+	if end {
+		terminate, cancel := context.WithTimeout(ctx, shutdownTimeout)
+		_ = open.session.Terminate(terminate)
+		cancel()
 	}
 }
 

@@ -157,6 +157,53 @@ func TestFakeHerdr(t *testing.T) {
 	waitFor(t, func() bool { return !provider.Has("w3:p1.term_65d0031602b703") })
 }
 
+// TestProbeOnAHerdrWithoutTerminal: a herdr without the terminal command
+// answers `terminal attach --help` with its general help and exit 0, and
+// its default command starts the UI. The probe must read "cannot attach any
+// pane" and never start the UI (it runs with no terminal; under a developer's
+// terminal this also proves it has no controlling terminal).
+func TestProbeOnAHerdrWithoutTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds fakeherdr")
+	}
+	root, err := os.MkdirTemp("/tmp", "fakeherdr-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	binary, err := herdrtest.Build(filepath.Join(root, "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "home")
+	folder := filepath.Join(home, ".config", "herdr")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	scenario := `{"version":"0.8.2","protocol":20,"noTerminal":true,"kinds":["claude"],` +
+		`"snapshot":{"workspaces":[],"tabs":[],"panes":[],"layouts":[],"agents":[]}}`
+	if err := os.WriteFile(filepath.Join(folder, "scenario.json"), []byte(scenario), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := exec.Command(binary, "server")
+	server.Env = []string{"HOME=" + home}
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = server.Process.Signal(syscall.SIGTERM)
+		_ = server.Wait()
+	})
+	waitFor(t, func() bool { _, err := os.Stat(filepath.Join(folder, "control.sock")); return err == nil })
+	status := herdr.Inspect(context.Background(), herdr.Config{BinaryPaths: []string{binary}, Home: home})
+	if status.State != protocol.HTTPProviderStateReady || status.AttachAny {
+		t.Fatalf("inspect = %+v", status)
+	}
+	if log := readLog(t, folder); strings.Contains(log, "ui started") {
+		t.Fatalf("the probe started the herdr UI:\n%s", log)
+	}
+}
+
 // inputHex joins the hex input the attach client of pane logged.
 func inputHex(log, pane string) string {
 	var joined strings.Builder

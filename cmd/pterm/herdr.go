@@ -57,6 +57,14 @@ func inspectHerdr(ctx context.Context, config *herdr.Config, output io.Writer) {
 	case protocol.Unsupported:
 		fmt.Fprintf(output, "  ! herdr: %s %s (protocol %d) is too old or unreadable; update herdr (0.8.2 or later)\n",
 			status.Binary, status.Version, status.Protocol)
+	case protocol.NotRunning:
+		if status.SocketRefused != "" {
+			// The app says "not running"; this line says why and how to fix it.
+			fmt.Fprintf(output, "  ! herdr: %s, Termivoa will not use the server socket %s: %s\n",
+				status.Binary, status.Socket, status.SocketRefused)
+			break
+		}
+		fallthrough
 	default:
 		fmt.Fprintf(output, "  herdr: %s, server not running (%s)\n", status.Binary, status.Socket)
 	}

@@ -13,15 +13,18 @@ import (
 // Status is what `pterm doctor` reports about herdr: one read-only pass of
 // the poll loop (ping, probes, one snapshot) without the broker.
 type Status struct {
-	Binary     string   // "" when herdr is not installed
-	Refused    []string // why herdr binaries were not used
-	Socket     string
-	State      protocol.HTTPProviderState
-	Version    string
-	Protocol   int
-	CanCreate  bool
-	AttachAny  bool
-	AgentKinds []string
+	Binary  string   // "" when herdr is not installed
+	Refused []string // why herdr binaries were not used
+	Socket  string
+	// SocketRefused is why the socket was not used, with the fix ("" when it
+	// was used or is missing).
+	SocketRefused string
+	State         protocol.HTTPProviderState
+	Version       string
+	Protocol      int
+	CanCreate     bool
+	AttachAny     bool
+	AgentKinds    []string
 	// CustomPrefix: config.toml sets a prefix other than ctrl+b, which the
 	// broker does not double (design Q1).
 	CustomPrefix bool
@@ -30,13 +33,14 @@ type Status struct {
 // Inspect reads herdr once.
 func Inspect(ctx context.Context, config Config) Status {
 	provider := New(config, nil)
+	provider.logf = func(string, ...any) {}
 	provider.step(ctx)
 	_, refused := FindBinary(config)
 	info, _ := provider.Info()
 	status := Status{
 		Binary: provider.binary, Refused: refused, Socket: config.socketPath(), State: info.State,
 		Version: provider.view.version, Protocol: provider.view.protocol, CanCreate: info.CanCreate,
-		AttachAny: provider.view.caps.attachAny, AgentKinds: info.AgentKinds,
+		AttachAny: provider.view.caps.attachAny, AgentKinds: info.AgentKinds, SocketRefused: provider.view.refused,
 	}
 	if status.Binary != "" {
 		status.CustomPrefix = customPrefix(filepath.Join(config.folder(), "config.toml"))

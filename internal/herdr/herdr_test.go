@@ -524,7 +524,19 @@ func TestFindBinary(t *testing.T) {
 func TestGuardRefusesRealHerdr(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	root := tempRoot(t)
+	// A link in a temp folder to the real home or a real bin folder.
+	linkHome, linkBin := filepath.Join(root, "home"), filepath.Join(root, "bin")
+	if err := os.Symlink(home, linkHome); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/usr/bin", linkBin); err != nil {
+		t.Fatal(err)
+	}
 	for _, config := range []Config{
+		{Home: linkHome},
+		{Home: filepath.Join(linkHome, "not-yet")},
+		{Home: root, BinaryPaths: []string{filepath.Join(linkBin, "herdr")}},
+		{Home: root, PathEnv: linkBin},
 		{Home: home},
 		{Home: root, BinaryPaths: []string{"/opt/homebrew/bin/herdr"}},
 		{Home: root, BinaryPaths: []string{"/opt/homebrew/Cellar/herdr/0.8.2/bin/herdr"}},
@@ -580,5 +592,166 @@ func TestInspectAndCustomPrefix(t *testing.T) {
 	server.Stop()
 	if status := Inspect(context.Background(), config); status.State != protocol.NotRunning || status.Binary == "" {
 		t.Fatalf("stopped = %+v", status)
+	}
+}
+
+// TestSocketRefusalNamesTheFix: a socket in a folder others can write is
+// not dialed, and the reason with the exact chmod reaches pterm doctor and
+// the log (once). A group-writable folder is refused even when the group is
+// the user's own primary group (docs/herdr-provider.md, section 21).
+func TestSocketRefusalNamesTheFix(t *testing.T) {
+	provider, server, _ := newTestProvider(t, false)
+	var logged []string
+	provider.logf = func(format string, values ...any) { logged = append(logged, fmt.Sprintf(format, values...)) }
+	folder := filepath.Dir(server.Path)
+	configFolder := filepath.Dir(folder)
+	for _, path := range []string{folder, configFolder} {
+		if err := os.Chown(path, -1, os.Getgid()); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o775); err != nil { // Ubuntu's umask 002
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	provider.step(ctx)
+	provider.retryAt = time.Time{}
+	provider.step(ctx)
+	want := "run: chmod go-w " + folder + " " + configFolder
+	info, _ := provider.Info()
+	if info.State != protocol.NotRunning || !strings.HasSuffix(provider.view.refused, want) || len(server.Calls()) != 0 {
+		t.Fatalf("state %s, refused %q", info.State, provider.view.refused)
+	}
+	if len(logged) != 1 || !strings.Contains(logged[0], want) {
+		t.Fatalf("logged %q", logged)
+	}
+	status := Inspect(ctx, provider.config)
+	if status.State != protocol.NotRunning || !strings.HasSuffix(status.SocketRefused, want) {
+		t.Fatalf("inspect = %+v", status)
+	}
+	// Fixed as told: used again, no reason left.
+	for _, path := range []string{folder, configFolder} {
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server.Snapshot(readFixture(t, "snapshot-0.8.2.json"))
+	if status := Inspect(ctx, provider.config); status.State != protocol.HTTPProviderStateReady || status.SocketRefused != "" {
+		t.Fatalf("after chmod = %+v", status)
+	}
+}
+
+// TestTitleFitsTheProtocol: two names of 4-byte characters made a title over
+// the protocol's 240 bytes, which the gateway refused after the attach began.
+func TestTitleFitsTheProtocol(t *testing.T) {
+	for _, names := range [][2]string{
+		{strings.Repeat("😀", 40), strings.Repeat("𝔸", 40)},
+		{strings.Repeat("a", 100), strings.Repeat("😀", 100)},
+		{strings.Repeat("😀", 40), strings.Repeat("😀", 40)},
+	} {
+		title := Title(names[0], names[1], 32)
+		response := protocol.HTTPProviderOpenResponse{Session: protocol.HTTPProviderSession{
+			ID: "86666666-6666-4666-8666-666666666661", Generation: "86666666-6666-4666-8666-666666666662",
+			Title: title, State: protocol.Running, Columns: 45, Rows: 20, Provider: ID, TargetID: "w1:p1.term_1",
+		}}
+		if err := protocol.ValidateProviderOpenResponse(response); err != nil {
+			t.Fatalf("%d bytes: %v", len(title), err)
+		}
+	}
+}
+
+// TestTerminalIDIsCheckedAlone: a tab without an agent opens with
+// `terminal attach <terminal ID>`, and herdr's parser takes no "--", so a
+// terminal ID like "--takeover" must never become a target.
+func TestTerminalIDIsCheckedAlone(t *testing.T) {
+	data := strings.ReplaceAll(string(agentSnapshot(t, "", "working")), `"term_1"`, `"--takeover"`)
+	result := mapSnapshot(decodeSnapshot(t, []byte(data)), true, fixedNow, nil)
+	for key, found := range result.targets {
+		if strings.HasPrefix(found.terminal, "-") || strings.HasPrefix(found.pane, "-") {
+			t.Fatalf("target %s attaches %+v", key, found)
+		}
+	}
+	if _, ok := result.targets["w2:p1.term_2"]; !ok || len(result.targets) != 1 {
+		t.Fatalf("targets = %v", result.targets)
+	}
+}
+
+// TestBlockedPushWaitsTwoSeconds: forced polls (a create, the Integrations
+// switch) come 20 ms apart; blocked must last 2 s before a push.
+func TestBlockedPushWaitsTwoSeconds(t *testing.T) {
+	provider, server, changes := newTestProvider(t, false)
+	ctx := context.Background()
+	clock := fixedNow
+	provider.now = func() time.Time { return clock }
+	poll := func(after time.Duration, state string) {
+		clock = clock.Add(after)
+		server.Snapshot(agentSnapshot(t, state))
+		provider.step(ctx)
+	}
+	poll(0, "working")
+	for range 5 {
+		poll(20*time.Millisecond, "blocked")
+	}
+	if len(*changes) != 0 {
+		t.Fatalf("pushed after %d rapid polls: %+v", 5, *changes)
+	}
+	poll(2*time.Second, "blocked")
+	poll(20*time.Millisecond, "blocked")
+	if len(*changes) != 1 || (*changes)[0].To != stateBlocked {
+		t.Fatalf("after 2 s blocked: %+v", *changes)
+	}
+}
+
+// TestBodyBudgetIsFastOnAHostileSnapshot: a 3 MB snapshot of 64 large groups
+// whose names grow 6 times when encoded. Re-encoding the whole body per
+// dropped group cost most of a poll; each group is now encoded once.
+func TestBodyBudgetIsFastOnAHostileSnapshot(t *testing.T) {
+	label := strings.Repeat("<", 80) // 1 byte in, 6 bytes ("\u003c") out
+	var workspaces, tabs, panes, layouts, agents []map[string]any
+	for repo := range 64 {
+		for tree := range 4 {
+			number := repo*4 + tree + 1
+			ws := fmt.Sprintf("w%d", number)
+			workspaces = append(workspaces, map[string]any{"workspace_id": ws, "label": label, "number": number, "active_tab_id": ws + ":t1",
+				"worktree": map[string]any{"repo_key": fmt.Sprintf("/r%d/.git", repo), "repo_name": label, "checkout_path": "/r", "is_linked_worktree": tree > 0}})
+			for tab := 1; tab <= maxTargets; tab++ {
+				tabID, pane, terminal := fmt.Sprintf("%s:t%d", ws, tab), fmt.Sprintf("%s:p%d", ws, tab), fmt.Sprintf("term_%d_%d", number, tab)
+				tabs = append(tabs, map[string]any{"tab_id": tabID, "workspace_id": ws, "label": label, "number": tab})
+				panes = append(panes, map[string]any{"pane_id": pane, "tab_id": tabID, "terminal_id": terminal})
+				layouts = append(layouts, map[string]any{"tab_id": tabID, "focused_pane_id": pane})
+				agents = append(agents, map[string]any{"pane_id": pane, "tab_id": tabID, "terminal_id": terminal, "agent": "claude", "agent_status": "idle"})
+			}
+		}
+	}
+	data, _ := json.Marshal(map[string]any{"workspaces": workspaces, "tabs": tabs, "panes": panes, "layouts": layouts, "agents": agents})
+	data = []byte(strings.ReplaceAll(string(data), `\u003c`, "<"))
+	if len(data) < 2<<20 {
+		t.Fatalf("hostile snapshot is only %d bytes", len(data))
+	}
+	snapshot := decodeSnapshot(t, data)
+	// The fastest of 3 runs, against encoding the input once: the ratio holds
+	// with and without -race (about 4 now, about 15 with one encode per drop).
+	fastest := func(run func()) time.Duration {
+		best := time.Duration(1 << 62)
+		for range 3 {
+			started := time.Now()
+			run()
+			best = min(best, time.Since(started))
+		}
+		return best
+	}
+	var result mapped
+	mapping := fastest(func() { result = mapSnapshot(snapshot, true, fixedNow, nil) })
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	encode := fastest(func() { _, _ = json.Marshal(raw) })
+	body, _ := json.Marshal(result.response)
+	if len(body) > maxBodyBytes || len(body) < maxBodyBytes*3/4 || result.response.Truncated == nil {
+		t.Fatalf("body %d bytes, %d groups", len(body), len(result.response.Groups))
+	}
+	if mapping > 8*encode {
+		t.Fatalf("mapping took %v, %.1f times one encode of the input (%v)", mapping, float64(mapping)/float64(encode), encode)
 	}
 }

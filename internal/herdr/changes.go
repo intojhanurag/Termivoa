@@ -9,12 +9,14 @@ import (
 // track is the push state of one agent target across polls.
 type track struct {
 	state        string
-	blocked      int       // polls in a row it was blocked
+	blockedSince time.Time // first poll of this blocked spell
+	blockedSent  bool      // this spell pushed (or the baseline saw it)
 	workingSince time.Time // first poll of this turn that saw it working
 }
 
 // apply publishes a mapped snapshot and emits the push transitions of
-// section 7: blocked after two polls in a row, finished (done or idle) after
+// section 7: blocked for at least 2 s (by time, not by polls: a create or
+// the Integrations switch forces polls 20 ms apart), finished (done or idle) after
 // at least 20 s of observed work; the first snapshot after discovery is a
 // baseline without pushes.
 func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
@@ -32,18 +34,22 @@ func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
 			if provider.baseline {
 				current.state = found.state
 				if found.state == stateBlocked {
-					current.blocked = blockedPolls
+					current.blockedSince, current.blockedSent = now, true
 				}
 			}
 		}
 		tracks[key] = current
 		from := current.state
 		if found.state == stateBlocked {
-			if current.blocked++; current.blocked == blockedPolls {
+			if current.blockedSince.IsZero() {
+				current.blockedSince = now
+			}
+			if !current.blockedSent && now.Sub(current.blockedSince) >= blockedFor {
+				current.blockedSent = true
 				changes = append(changes, Change{Key: key, Group: found.group, Item: found.item, Agent: found.kind, From: from, To: stateBlocked})
 			}
 		} else {
-			current.blocked = 0
+			current.blockedSince, current.blockedSent = time.Time{}, false
 		}
 		switch found.state {
 		case stateWorking:
