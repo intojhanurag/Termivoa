@@ -1090,7 +1090,11 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               fontSize={fontSize}
               multi={computers.length > 1}
               onChip={(target) => openTarget({ computer: view.computer, provider: view.provider, targetId: target })}
-              onGone={() => navigate({ name: 'sessions', tab: view.provider, message: GONE })}
+              onGone={() => {
+                // Replace the dead address, so Back does not return to it.
+                window.history.replaceState(null, '', '/');
+                setView({ name: 'sessions', tab: view.provider, message: GONE });
+              }}
               onSessions={toSessions}
               onSettings={() => navigate({ name: 'settings' })}
               onFailure={(error) => handleFailure(error, view.computer)}

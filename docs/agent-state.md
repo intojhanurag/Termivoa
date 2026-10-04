@@ -50,7 +50,7 @@ differences (`Registry.CreateProvider`, `internal/broker/providers.go`):
 
 | Topic | Provider session |
 | --- | --- |
-| Storage | An in-memory registry entry only. No `session_metadata` row, no receipt, no final status. Not in `GET /api/v1/sessions`, `pterm ls`, the Wall or New session. The entry is dropped when it ends. |
+| Storage | An in-memory registry entry only. No `session_metadata` row, no receipt, no final status. Not in `GET /api/v1/sessions`, `pterm list`, the Wall or New session. The entry is dropped when it ends. |
 | Termivoa pushes | `Notify` is nil, so the `waiting` and `done` pushes of `docs/notifications.md` are off for it. herdr's own state (a separate poll) pushes instead. |
 | Screen parser | Still runs: `agent` status and answer cards work. The attach client draws a full screen, and the parser reads that screen. |
 | Input | The single PTY writer doubles every `ctrl+b` byte (`0x02`), for key, text, paste, compose, snippets and answer cards alike. The attach client then passes one literal `ctrl+b` to the agent, and the phone can never send herdr's prefix `ctrl+b q`. |

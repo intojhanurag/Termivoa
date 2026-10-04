@@ -449,8 +449,8 @@ projects, and the iPhone Home Screen app. Design:
       size. Also leave Live (back to Sessions): same result. Record the time.
 - [ ] **A real push when blocked.** With the phone locked, let an agent
       become blocked. A notification `herdr · <project> · <worktree>` with
-      "<agent> needs you. Tap to answer." arrives within a few seconds (two
-      polls). Its text has no terminal text.
+      "<agent> needs you. Tap to answer." arrives within a few seconds (blocked
+      for at least 2 s). Its text has no terminal text.
 - [ ] **A real push when finished.** Let an agent work for 20 s or more, then
       finish. "<agent> finished after N min." arrives (also when your herdr
       window shows that tab and the state is `idle`).

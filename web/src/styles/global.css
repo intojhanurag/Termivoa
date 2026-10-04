@@ -235,7 +235,7 @@ label { color: var(--soft); font-size: 14px; }
 .error { color: var(--red); }
 .strong { font-weight: 700; }
 .field-note { margin: 0; }
-.hint-text { color: var(--muted); font-size: 13px; line-height: 18px; }
+.hint-text { color: var(--muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .steps { padding-left: 1.25rem; line-height: 1.6; margin: 0; }
 .command { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 19px; }
 /* A confirm before something that cannot be undone: a red rule, like a danger notice. */

@@ -555,3 +555,27 @@ func TestProviderBudgetIsSeparate(t *testing.T) {
 		t.Fatal("provider coalescing")
 	}
 }
+
+// Two agents can change in one poll: the second push must go out while the
+// first is still on its way.
+func TestSecondProviderPushIsNotDroppedWhileTheFirstIsInFlight(t *testing.T) {
+	ctx := context.Background()
+	persistence, err := store.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = persistence.Close() })
+	authority, err := auth.NewService(auth.ServiceConfig{Store: persistence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier, err := NewNotifier(ctx, NotifierConfig{Store: persistence, Revoked: authority.DeviceRevoked, CredentialIdle: auth.BrowserInactivityLifetime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier.providerInFlight <- struct{}{} // a delivery in flight
+	event := ProviderEvent{Provider: "herdr", Target: "w2:p1.term_b", Group: "shop", Item: "lucky-valley", Agent: "claude", Kind: KindWaiting}
+	if !notifier.NotifyProvider(ctx, event) {
+		t.Fatal("the second provider push was dropped")
+	}
+}

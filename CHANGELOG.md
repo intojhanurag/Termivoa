@@ -9,7 +9,7 @@ All notable changes are documented here. The format follows
 ### Added
 
 - **herdr on your phone** (ADR 0008, `docs/herdr-provider.md`; docs:
-  `guides/herdr.md`). Needs herdr 0.8.2 or later on the computer, macOS or
+  `providers.md`, `guides/herdr.md`). Needs herdr 0.8.2 or later on the computer, macOS or
   Linux, and no setting: Termivoa finds herdr within about 30 s.
   Phone: Sessions gets a **herdr** tab (next to **All** or with the computer
   chips) with a count of blocked and done terminals. It shows one row per

@@ -1,6 +1,6 @@
 # herdr on your phone: design
 
-Status: **accepted for build, version 2 (2026-10-04).** ADR [0008](decisions/0008-herdr-provider.md). The owner approved the product in Paper (file `termivoa`, artboards H1–H6) and delegated the approval of this feature in writing to the coordinating agent ("approve if all looks good, then ship"). Under AGENTS.md rule 24 the coordinator approves after the independent security and feasibility reviews; section 20 records every finding and its resolution. The protocol types are in `protocol/v1` and generated; no route serves them yet.
+Status: **accepted for build, version 2 (2026-10-04).** ADR [0008](decisions/0008-herdr-provider.md). The owner approved the product in Paper (file `termivoa`, artboards H1–H6) and delegated the approval of this feature in writing to the coordinating agent ("approve if all looks good, then ship"). Under AGENTS.md rule 24 the coordinator approves after the independent security and feasibility reviews; section 20 records every finding and its resolution. Built on branch `feat/herdr` (M1a, M1b, M2; protocol revision 4). Where the build differs from the text below, section 21 is right.
 
 What it does: a **herdr** tab in Sessions shows each computer's herdr projects (fold and unfold), their worktrees, and agent state words with a roll-up; a tap opens that one real terminal full screen in the existing Live screen; the workspace's tabs are chips on top; the phone buzzes when an agent is blocked or finished; **Settings → Integrations** turns it on or off per computer. M2 adds **+** on a project row: a new worktree and an agent in it.
 
@@ -142,6 +142,7 @@ Existing codes only (no enum widens); HTTP status from the gateway's code mappin
 | Provider off, not running or unsupported (open, create) | `host_unavailable` | 503 |
 | Target or group not in the latest snapshot, or `canOpen` false | `session_missing` | 404 |
 | 4 provider sessions in use, or the per-device limit | `limit_exceeded` | 429 |
+| Open: the attach client ends at once (another program holds the terminal, or it just closed) | `operation_conflict` | 409 |
 | Create: group not in git | `not_a_repository` | as today |
 | Create: worktree or branch path exists | `worktree_exists` | as today |
 | Create: any other herdr or git failure | `worktree_failed` ("herdr could not make the worktree.") | as today |
@@ -179,10 +180,10 @@ Roll-up (item from its targets, group from its items): most urgent wins, in the 
 
 Grouping:
 - A workspace with `worktree` belongs to the group of its `repo_key`; the group name is `repo_name`. Items: the main checkout first, then linked worktrees by herdr's `number`.
-- A workspace without `worktree` is its own group with one item. The phone shows such a group as one row; when two rows have the same name, it adds herdr's workspace number ("notes · 5").
+- A workspace without `worktree` is its own group with one item. The phone shows such a group as one row; when two rows have the same name, it adds the row's place among the repeats ("notes · 2").
 - Targets of an item, by tab number: each agent pane of the tab (label = tab label), and for a tab with no agent one target for the tab's focused pane (`layouts[].focused_pane_id`), `state: none`, `canOpen` only when this herdr can attach any pane (section 13).
 - `openTarget`: the most urgent agent target (ties: lowest tab number), else the active tab's target when it can open, else absent.
-- Every herdr string (labels, names, kinds) is cleaned on the host: Cc and Cf removed, cut to the schema length. Paths (`cwd`, `repo_root`, `checkout_path`, `repo_key`) never leave the host.
+- Every herdr string (labels, names, kinds) is cleaned on the host: Cc and Cf removed, cut to the schema length. Paths (`cwd`, `repo_root`, `checkout_path`, `repo_key`) are in no list, HTTP body or push; only Live shows the folder of the terminal that is open in it.
 
 ## 6. Opening a terminal
 
@@ -204,7 +205,7 @@ herdr gives the pane the attach client's size from the moment it attaches, gives
 
 ### Rules for provider sessions
 
-1. **In memory only.** A registry entry flagged as a provider session: not written to `session_metadata` or `mutation_receipts`, no final status persisted, not in `GET /api/v1/sessions`, `pterm ls`, the Wall or New session. `Notify: nil`, so Termivoa's own `waiting` and `done` pushes are off; the screen parser still runs, so answer cards work. Ended entries are dropped.
+1. **In memory only.** A registry entry flagged as a provider session: not written to `session_metadata` or `mutation_receipts`, no final status persisted, not in `GET /api/v1/sessions`, `pterm list`, the Wall or New session. `Notify: nil`, so Termivoa's own `waiting` and `done` pushes are off; the screen parser still runs, so answer cards work. Ended entries are dropped.
 2. **Argv**: `[<herdr>, "agent", "attach", <paneId>]`; for a target without an agent when herdr can attach any pane: `[<herdr>, "terminal", "attach", <terminalId>]`. Never `--takeover`. Directory: the workspace checkout path, so Changes and the away recap work. Env: section 11.
 3. **Start size**: the phone's `columns` × `rows` from the open request. herdr makes the pane that size on the laptop until the session ends. Only the controller resizes after that (unchanged lease rules).
 4. **One per target**: key = pane ID + terminal ID. `open` runs under one lock per key: two taps or two phones get the same session (`reused: true`).
@@ -221,7 +222,7 @@ Honest consequence, shown in Live under the chips: "mac shows this terminal at p
 
 Per agent target, from each 2 s poll (previous → new state), keyed by pane ID + terminal ID:
 
-- **Blocked**: `blocked` in two polls in a row after it was not → one push. Not again until it leaves `blocked`.
+- **Blocked**: `blocked` for at least 2 s by the clock after it was not (section 21) → one push. Not again until it leaves `blocked`.
 - **Finished**: after the host saw the agent `working` for at least 20 s in this turn (`agentDoneAfter`), it turns `done` **or** `idle` → one push. (`idle` counts too: herdr says `idle` when a herdr UI shows that tab, also when nobody sits at the laptop.)
 - **Baseline**: the first snapshot after the broker starts, or after herdr is rediscovered (all per-target state dropped), sets states without pushes.
 - Respect the provider's `enabled` and `notify`, existing subscriptions, today's TTL and urgency of `waiting` and `done`. Open viewers do not suppress pushes (today's rule).
@@ -230,7 +231,7 @@ Per agent target, from each 2 s poll (previous → new state), keyed by pane ID 
 
 ## 8. Settings → Integrations
 
-- One section, one row per computer that lists a provider: "herdr on mac · 0.8.2", a switch (**On**), and two switches **Buzz when blocked** and **Buzz when finished**. State words: "Running", "herdr is not running", "Update herdr" (`unsupported`), "Off".
+- One section, one row per computer that lists a provider: "herdr on mac", the version on its own line, a switch (**On**), and two switches **Buzz when blocked** and **Buzz when finished**. State words: "Running", "Not running", "Update" (`unsupported`), "Off".
 - Stored on that computer in the existing key/value `settings` table (`key`, `value`, `updated_at_ms`; `Store.GetSetting`, `Store.PutSetting`): `provider.herdr.enabled` (`1`/`0`), `provider.herdr.notify` (`blocked,done`). Absent means on, both. No schema change.
 - Off: the broker stops polling, ends provider sessions, reports `state: off`; the herdr tab hides that computer.
 
@@ -277,7 +278,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | S6 | herdr slow or hung slows Termivoa | Reads come from the cache; 1 s socket deadline per poll; CLI calls with time limits, `WaitDelay` and 64 KiB output caps; the Sessions list never waits on herdr; M2 steps 15 s (`worktree.create`), 20 s (`agent.start`), 5 s (`agent.prompt`) in a broker-owned context |
 | S7 | Too many processes | 4 provider sessions; 10 s end rule; one create at a time per computer |
 | S8 | Kicking the owner's own attach | Never `--takeover` |
-| S9 | Path or private text disclosure | No paths and no terminal titles in any body; group IDs are hashes |
+| S9 | Path or private text disclosure | No paths and no terminal titles in the list, in any HTTP body or in a push; group IDs are hashes. Live shows the open terminal's own folder to its viewer, as for every session |
 | S10 | Abuse of routes | A limiter in the broker keyed by device ID: `open` 20 per minute, `create` 3 per minute, `PATCH` 10 per minute (`limit_exceeded`) |
 | S11 | Environment leak to herdr children | Fixed env: `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the broker's lookup path), `TERM=xterm-256color`, `COLORTERM=truecolor`, `HERDR_SOCKET_PATH` |
 | S12 | A peer computer lies in its herdr data | Same as any peer response: lenient per-item validation, generic peer errors, text only |
@@ -310,7 +311,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | --- | --- | --- |
 | H1: the question line under a blocked agent | herdr gives no question text, only the terminal | No question line; the answer card shows it after the tap |
 | H1, H3: the task title ("Predicate-based sampling") | The terminal title is set by programs and often holds the task text a person typed; it is not sent | The row shows the agent kind and the tab ("claude · tab 4") |
-| H3: "<project> · 2 worktrees" (two workspaces outside git with one name) | Workspaces outside git are not linked in herdr | Two rows, each with that name, and herdr's workspace number when names repeat |
+| H3: "<project> · 2 worktrees" (two workspaces outside git with one name) | Workspaces outside git are not linked in herdr | Two rows, each with that name, and its place among the repeats ("notes · 2") |
 | H2: every tab as a chip | A tab with several panes shows one | One terminal per agent, else the tab's focused pane. Tabs without an agent open with `terminal attach`, which 0.8.2 has too (section 21); only a herdr whose `terminal attach --help` fails gets them as disabled chips ("Update herdr to open this tab") |
 | H2: opens fitted to the phone, in **CONTROL** | Fitted: yes (the attach starts at the phone's size). Control: opening never takes control | Opens read-only at the phone's size with **Take control**; one line under the chips: "mac shows this terminal at phone size while it is open here." |
 | H4: "<project> · silver-meadow needs you" | Fixed push format | "herdr · shop · silver-meadow" / "claude needs you. Tap to answer." |
@@ -341,6 +342,8 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 ### New phase-B checks (`scripts/e2e-multicomputer/phase-b.mjs`, ids `H-*`, `--only H`)
 
 Fake herdr on mac (two git groups, one workspace outside git, three agents), none on vps.
+
+The table is the plan; the built set is 25 `H-*` checks, listed in `scripts/e2e-multicomputer/README.md`.
 
 | ID | Check |
 | --- | --- |
@@ -410,7 +413,7 @@ Until H2 lands, the web side tests against a stubbed `client`.
 
 ## 18. Docs to update (rules 22 and 25)
 
-`CHANGELOG.md` (Unreleased: phone and host), `README.md` feature list, `docs/progress.md`, `docs/architecture.md` (Features row, code map), `docs/pending-work.md`, `docs/notifications.md` (provider pushes, own budget), `docs/agent-state.md` (provider sessions), `docs/threat-model.md` (provider routes, herdr socket), `protocol/v1/http-api.md` (routes, revision 4), `docs/owner-verification.md`; site: new guide `site/src/content/docs/docs/herdr.md` ("Termivoa + herdr") and its sidebar entry in `site/astro.config.mjs`, `reference/release-notes.md` (Next beta), `reference/security.md` (what a phone sees and can do), `reference/troubleshooting.md` (not running, update herdr, phone-sized pane), `reference/cli.md` (doctor line); the landing page in `site/public/`. No internal package names on the site (rule 25).
+`CHANGELOG.md` (Unreleased: phone and host), `README.md` feature list, `docs/progress.md`, `docs/architecture.md` (Features row, code map), `docs/pending-work.md`, `docs/notifications.md` (provider pushes, own budget), `docs/agent-state.md` (provider sessions), `docs/threat-model.md` (provider routes, herdr socket), `protocol/v1/http-api.md` (routes, revision 4), `docs/owner-verification.md`; site: new guide `site/src/content/docs/docs/guides/herdr.md` ("Termivoa + herdr") and its sidebar entry in `site/astro.config.mjs`, `reference/release-notes.md` (Next beta), `reference/security.md` (what a phone sees and can do), `reference/troubleshooting.md` (not running, update herdr, phone-sized pane), `reference/cli.md` (doctor line); the landing page in `site/public/`. No internal package names on the site (rule 25).
 
 ## 19. Open questions (defaults chosen)
 
@@ -487,6 +490,31 @@ Two independent reviews ran on version 1: security, and feasibility with alterna
 | N2 | `0x02` doubling must cover every input kind, not only keys | The broker's single PTY writer doubles every `0x02` after the emulator built the input (`SessionConfig.DoublePrefix`, provider sessions only), so key, text, paste, compose, snippets and answer cards are all covered, and any later kind. Tests: one per input kind and one at the writer. A custom herdr prefix is an accepted, documented risk (at worst a phone detaches its own attach client); `pterm doctor` warns when herdr's `config.toml` sets `[keys] prefix` to anything but `ctrl+b` |
 | N3 | The checkout path from herdr's snapshot became a session folder unchecked | It must pass the project-path checks (`resolveProjectFolder`, shared with `pterm project add`: absolute, resolved, an existing directory) and be owned by this user. Else the session starts in the home folder and Changes and files are refused for it |
 | F11 (remainder) | The socket's parent chain was not checked | Before every dial the socket's folder must be the user's and not group- or other-writable, and its whole parent chain up to `/` passes the folder check of the binary lookup (`tailnet.CheckFolders`) |
+
+### Pre-push review (2026-10-04: security, host logic, phone app, docs)
+
+Four independent reviews of the built branch. Each fix has a test that fails without it, unless the row says otherwise.
+
+| # | Finding (severity) | Resolution |
+| --- | --- | --- |
+| P1 | Two agents change in one poll: the second push was admitted, then dropped because the one delivery slot was busy, and never sent again (high) | Provider pushes have 12 delivery slots (two minutes of the budget of 6) (`TestSecondProviderPushIsNotDroppedWhileTheFirstIsInFlight`) |
+| P2 | herdr's free-text agent name (`herdr pane report-agent --agent "…"`) reached the push body (medium; S4, S5) | A name that is not a kind word stays on the host; the push says "The agent" (`TestAgentNameThatIsNotAKindStaysOnTheHost`) |
+| P3 | An attach client that ends at once (herdr refuses a second client; the pane closes during the open) left no session, and the phone said "That terminal is gone." (medium) | `open` waits 150 ms for the attach client; if it ended, it answers `operation_conflict` and the app says "herdr on mac did not open this terminal. Another program may hold it, or it just closed." (`TestProviderOpenSaysWhenTheAttachEndsAtOnce`). This replaces "herdr's reason shows in the last frame" of rule 10 for an attach that never stayed |
+| P4 | A herdr that restarted between two polls was not seen: no baseline, so a push burst; stale version and probes (medium) | A new snapshot version starts discovery again; a snapshot in which no earlier terminal survives is a baseline (`TestPushRulesAtTheEdges`) |
+| P5 | A name cut at the byte limit could end in a space; the wire check then refused the whole list of that computer (medium) | `clean` trims it (`TestClean`) |
+| P6 | Moving the focus on the laptop, or an agent starting beside it, ended a terminal open on the phone (the tab's target moved to another pane) (low) | `Has` asks for the live pane and terminal, not for the target (`TestPushRulesAtTheEdges`) |
+| P7 | A reply cut off in the middle showed "Update herdr" for 30 s (low) | A cut reply is "not running" (5 s retry). No test: neither fake cuts a reply |
+| P8 | "finished after N min" counted blocked time as work (low) | Work is the time between polls that saw `working` (`TestPushRulesAtTheEdges`) |
+| P9 | After a `worktree.create` timeout, an older workspace with the same name was taken for the new one, and the answer did not wait for the poll (low) | Only an item that was not there before the call counts; the answer waits for the poll like every create. No new test |
+| P10 | Over 64 groups, the first 64 by number stayed, so a blocked agent in a late group was hidden (low) | The group limit drops the least urgent first, like the body budget (`TestGroupCapKeepsTheUrgentGroups`) |
+| P11 | The socket check did not look behind a linked folder (low; S3) | The resolved chain is checked too (`TestSocketBehindALinkedFolder`) |
+| P12 | The binary was checked at lookup only (low; S3) | Checked again before every attach and every CLI run |
+| P13 | `pterm doctor` missed `keys.prefix = …` and `keys = { prefix = … }` (low) | Both forms are read (`TestInspectAndCustomPrefix`) |
+| P14 | S9 said no path leaves the host, but Live shows the open terminal's folder (low) | S9 and section 5 reworded; no code change |
+| P15 | Phone: a late open answer moved the user after they left the screen; Back returned to a terminal that is gone; a first open after the phone woke failed once; herdr terminals filled the "viewed" store; a long project name could widen the + sheet (medium to low) | A mounted check; the dead address is replaced; one retry after 1 s on a network failure; no "viewed" record for a herdr terminal; the hint wraps. No unit test (the repo has no DOM test tool); phase B covers open, hide and gone |
+| P16 | The Integrations card title was laid out as two flex items after the `<bdi>` change; phase B `H-settings` and `H-cap` still looked for texts that the phone review had changed (found by running phase B again) | One inner span; the two texts in `herdr.mjs` updated. Phase B had not been run after the two review commits |
+
+Not changed, with the reason: the reaper holds a target's open lock while it ends the attach (at most 3 s when the attach client is slow to end; an open of that same target waits, and other gateway requests wait behind it); a `/p/…` address of a computer below protocol revision 4 shows a general failure text in place of "Update Termivoa on …"; the create sheet guesses a timeout from the elapsed time. All three are in `docs/pending-work.md`.
 
 ### Rejected
 

@@ -279,7 +279,9 @@ control characters is `400 invalid_request`; a provider that is off, not
 running or unsupported is `503 host_unavailable` (open, create); a target or
 group not in the latest snapshot, or one that cannot open, is
 `404 session_missing`; 4 open sessions or a per-device limit is
-`429 limit_exceeded`; create also uses `409 not_a_repository`,
+`429 limit_exceeded`; an open whose attach client ends at once (another
+program holds the terminal, or it just closed) is `409 operation_conflict`;
+create also uses `409 not_a_repository`,
 `409 worktree_exists` and `422 worktree_failed`
 ("herdr could not make the worktree.").
 

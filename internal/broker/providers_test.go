@@ -1014,3 +1014,29 @@ func TestReapWaitsForAnOpenOfTheSameTarget(t *testing.T) {
 	default:
 	}
 }
+
+// TestProviderOpenSaysWhenTheAttachEndsAtOnce: herdr refuses a second client
+// and a pane can close during the open. The open answers with that, and
+// keeps no session (design section 6, rule 10).
+func TestProviderOpenSaysWhenTheAttachEndsAtOnce(t *testing.T) {
+	fixture := newProviderFixture(t)
+	fixture.fakeStarts()
+	start := fixture.registry.config.start
+	fixture.registry.config.start = func(parent context.Context, config SessionConfig) (registrySession, error) {
+		session, err := start(parent, config)
+		if err == nil {
+			_ = session.Terminate(context.Background())
+		}
+		return session, err
+	}
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	if code := gatewayErrorCode(t, fixture.open(t, fixture.credential, targetShop)); code != protocol.OperationConflict {
+		t.Fatalf("open = %s", code)
+	}
+	fixture.server.providers.mu.Lock()
+	kept := len(fixture.server.providers.sessions)
+	fixture.server.providers.mu.Unlock()
+	if kept != 0 {
+		t.Fatalf("%d sessions kept", kept)
+	}
+}

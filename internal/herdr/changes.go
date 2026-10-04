@@ -9,9 +9,10 @@ import (
 // track is the push state of one agent target across polls.
 type track struct {
 	state        string
-	blockedSince time.Time // first poll of this blocked spell
-	blockedSent  bool      // this spell pushed (or the baseline saw it)
-	workingSince time.Time // first poll of this turn that saw it working
+	blockedSince time.Time     // first poll of this blocked spell
+	blockedSent  bool          // this spell pushed (or the baseline saw it)
+	workingAt    time.Time     // the latest poll that saw it working; zero when it is not
+	worked       time.Duration // observed work in this turn, without blocked time
 }
 
 // apply publishes a mapped snapshot and emits the push transitions of
@@ -22,6 +23,18 @@ type track struct {
 func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
 	result := mapSnapshot(snapshot, provider.caps.attachAny, now, provider.since)
 	provider.since = result.since
+	// A restart of the same herdr version between two polls: every terminal ID is new. A new baseline, no push burst.
+	if previous := provider.view.targets; len(previous) > 0 && len(result.targets) > 0 {
+		survived := false
+		for key := range result.targets {
+			if _, survived = previous[key]; survived {
+				break
+			}
+		}
+		if !survived {
+			provider.baseline = true
+		}
+	}
 	var changes []Change
 	tracks := make(map[string]*track, len(result.targets))
 	for key, found := range result.targets {
@@ -51,16 +64,19 @@ func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
 		} else {
 			current.blockedSince, current.blockedSent = time.Time{}, false
 		}
+		// Time between two polls counts as work only when the earlier one saw it working.
+		if !current.workingAt.IsZero() {
+			current.worked += now.Sub(current.workingAt)
+		}
+		current.workingAt = time.Time{}
 		switch found.state {
 		case stateWorking:
-			if current.workingSince.IsZero() {
-				current.workingSince = now
-			}
+			current.workingAt = now
 		case stateDone, stateIdle:
-			if worked := now.Sub(current.workingSince); !current.workingSince.IsZero() && worked >= doneAfter {
-				changes = append(changes, Change{Key: key, Group: found.group, Item: found.item, Agent: found.kind, From: from, To: stateDone, Worked: worked})
+			if current.worked >= doneAfter {
+				changes = append(changes, Change{Key: key, Group: found.group, Item: found.item, Agent: found.kind, From: from, To: stateDone, Worked: current.worked})
 			}
-			current.workingSince = time.Time{}
+			current.worked = 0
 		}
 		current.state = found.state
 	}
@@ -70,6 +86,7 @@ func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
 		current.installed, current.binary = true, provider.binary
 		current.state, current.caps = result.response.State, provider.caps
 		current.response, current.targets, current.groups, current.kinds = result.response, result.targets, result.groups, kinds
+		current.live = result.live
 	})
 	slices.SortFunc(changes, func(a, b Change) int { return cmp.Compare(a.Key, b.Key) })
 	for _, change := range changes {

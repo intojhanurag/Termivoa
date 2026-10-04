@@ -44,6 +44,9 @@ var validateProviderOpen = protocol.ValidateProviderOpenResponse
 
 // providerFailure is a provider error with its fixed public code and text.
 // The text is Termivoa's, never herdr's or git's.
+// providerStartCheck is how long an open waits to see that the attach client stayed.
+const providerStartCheck = 150 * time.Millisecond
+
 type providerFailure struct{ managementFailure }
 
 func (failure providerFailure) Error() string { return "broker: provider: " + failure.message }
@@ -60,6 +63,7 @@ var (
 	errProviderNotGit      = providerFailure{managementFailure{protocol.NotARepository, "this project is not in a git repository"}}
 	errProviderExists      = providerFailure{managementFailure{protocol.WorktreeExists, "a worktree or branch with this name already exists"}}
 	errProviderWorktree    = providerFailure{managementFailure{protocol.WorktreeFailed, "herdr could not make the worktree."}}
+	errProviderEnded       = providerFailure{managementFailure{protocol.OperationConflict, "herdr did not open this terminal; another program may hold it, or it just closed"}}
 	errProviderFeature     = providerFailure{managementFailure{protocol.InvalidRequest, "this is not available for a herdr terminal"}}
 	errProviderChanges     = providerFailure{managementFailure{protocol.InvalidRequest, "this herdr terminal's folder cannot be read"}}
 )
@@ -388,6 +392,16 @@ func (server *ManagementServer) openProvider(
 		_ = session.Terminate(terminate)
 		cancel()
 		return protocol.HTTPProviderOpenResponse{}, err
+	}
+	// herdr refuses a second client, and a pane can close during the open: that attach client ends at
+	// once, and the entry is gone before the phone attaches. Say so here, not "that terminal is gone".
+	started := time.NewTimer(providerStartCheck)
+	defer started.Stop()
+	select {
+	case <-session.Ended():
+		return protocol.HTTPProviderOpenResponse{}, errProviderEnded
+	case <-started.C:
+	case <-ctx.Done():
 	}
 	host.mu.Lock()
 	host.sessions[attach.Key] = &providerOpen{

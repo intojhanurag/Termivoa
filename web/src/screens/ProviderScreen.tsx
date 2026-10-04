@@ -58,6 +58,7 @@ export function openProblem(error: unknown, name: string, label: string, state?:
     case 'session_missing': return { gone: true, text: GONE };
     case 'limit_exceeded': return { gone: false, text: `${label} cannot open more ${name} terminals just now. Close one you do not use, or wait a minute.` };
     case 'host_unavailable': return { gone: false, text: unavailableText(name, label, state) };
+    case 'operation_conflict': return { gone: false, text: `${name} on ${label} did not open this terminal. Another program may hold it, or it just closed.` };
     default: return undefined;
   }
 }
@@ -97,7 +98,9 @@ export const tapOpens = (phase: Phase['kind'], ended: boolean): boolean => phase
 const DOTS: Partial<Record<string, string>> = { blocked: 'amber', working: 'accent', done: 'green' };
 
 /** The workspace's tabs as chips (H2), and the way back. A tab this provider version cannot open is off. */
-export function ProviderChips({ item, current, onChip, onSessions }: {
+export function ProviderChips({ name, item, current, onChip, onSessions }: {
+  /** The provider's display name ("herdr"). */
+  readonly name: string;
   readonly item: HTTPProviderItem | undefined;
   readonly current: string;
   readonly onChip: (targetId: string) => void;
@@ -119,13 +122,13 @@ export function ProviderChips({ item, current, onChip, onSessions }: {
               className={active ? 'tab active' : 'tab'}
               disabled={!active && !target.canOpen}
               {...(active ? { 'aria-current': 'page' as const } : {})}
-              {...(target.canOpen ? {} : { title: 'Update herdr to open this tab' })}
+              {...(target.canOpen ? {} : { title: `Update ${name} to open this tab` })}
               onClick={() => { if (!active && target.canOpen) onChip(target.id); }}
             >
               <span className="tab-face">
                 <span className="tab-label"><bdi>{target.label}</bdi>{repeated(target.label) && target.agent !== undefined && <> · <bdi>{target.agent}</bdi></>}</span>
                 {dot !== undefined && <><span className={`dot ${dot}`} aria-hidden="true" /><span className="visually-hidden">, {providerWord(target.state)}</span></>}
-                {!target.canOpen && <span className="visually-hidden">, update herdr to open this tab</span>}
+                {!target.canOpen && <span className="visually-hidden">, update {name} to open this tab</span>}
               </span>
             </button>
           );
@@ -175,17 +178,31 @@ export function ProviderScreen({
   const busy = useRef(false);
   // Live said the attach ended (Closed here): no pause or open again on hide and show.
   const ended = useRef(false);
+  // An answer that comes after the user left this screen must not move them or change the app's state.
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
-  const open = useCallback(async () => {
+  const open = useCallback(async (retry = false) => {
     if (busy.current) return;
     busy.current = true;
     setPhase({ kind: 'opening' });
     try {
       const grid = phoneGrid(window.innerWidth, window.innerHeight, fontSize);
-      const answer = await client(computer.origin).providerOpen(provider, { targetId, ...grid });
+      let answer;
+      try {
+        answer = await client(computer.origin).providerOpen(provider, { targetId, ...grid });
+      } catch (error) {
+        // Back from hidden, the first request often fails while the phone's network wakes up: one more try.
+        if (!retry || !mounted.current || !(error instanceof ApiError) || error.code !== 'network') throw error;
+        await new Promise((resolve) => { setTimeout(resolve, 1000); });
+        if (!mounted.current) return;
+        answer = await client(computer.origin).providerOpen(provider, { targetId, ...grid });
+      }
+      if (!mounted.current) return;
       ended.current = false;
       setPhase(openedPhase(answer.session, document.visibilityState === 'hidden'));
     } catch (error) {
+      if (!mounted.current) return;
       const problem = openProblem(error, name, computer.label, state);
       if (problem?.gone === true) onGone();
       // onFailure also handles home's 401 (Setup) and a peer's (pair again).
@@ -211,7 +228,7 @@ export function ProviderScreen({
     const onVisibility = () => {
       const step = visibilityStep(phaseRef.current.kind, ended.current, document.visibilityState === 'hidden');
       if (step === 'pause') setPhase({ kind: 'paused' });
-      else if (step === 'open') void open();
+      else if (step === 'open') void open(true);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
@@ -219,7 +236,7 @@ export function ProviderScreen({
 
   const parts = [found?.group.name, found?.item.name].filter((part): part is string => part !== undefined && part !== '').filter((part, index, list) => list.indexOf(part) === index);
 
-  const chips = <ProviderChips item={found?.item} current={targetId} onChip={onChip} onSessions={onSessions} />;
+  const chips = <ProviderChips name={name} item={found?.item} current={targetId} onChip={onChip} onSessions={onSessions} />;
 
   if (phase.kind === 'open') {
     const noop = () => undefined;

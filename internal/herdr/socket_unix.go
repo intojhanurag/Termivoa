@@ -70,6 +70,16 @@ func checkSocket(path string) error {
 	if err := tailnet.CheckFolders(folder); err != nil {
 		return &socketRefused{err.Error()}
 	}
+	// Also the chain behind a link (~/.config linked into another folder), as the binary check does.
+	resolved, err := filepath.EvalSymlinks(folder)
+	if err != nil {
+		return &socketRefused{err.Error()}
+	}
+	if resolved != folder {
+		if err := tailnet.CheckFolders(resolved); err != nil {
+			return &socketRefused{err.Error()}
+		}
+	}
 	return nil
 }
 

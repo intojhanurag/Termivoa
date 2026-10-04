@@ -12,7 +12,7 @@ This page describes features that are not in `v0.1.0-beta.3` yet. Update Termivo
 
 ## What is herdr?
 
-[herdr](https://herdr.dev) is a terminal workspace tool. It runs coding agents in workspaces, tabs and panes. Termivoa reads each computer's herdr and shows its projects on the phone. It opens one herdr terminal at a time in [Live](/docs/guides/live-terminal/).
+[herdr](https://herdr.dev) is a terminal workspace tool, and the first [provider](/docs/providers/) that Termivoa supports. It runs coding agents in workspaces, tabs and panes. Termivoa reads each computer's herdr and shows its projects on the phone. It opens one herdr terminal at a time in [Live](/docs/guides/live-terminal/).
 
 A computer without herdr shows no herdr tab, and nothing changes.
 
@@ -20,7 +20,7 @@ A computer without herdr shows no herdr tab, and nothing changes.
 
 | Need | Detail |
 | --- | --- |
-| herdr 0.8.2 or later | Installed on that computer: Homebrew `herdr`, or on your `PATH`, or in `~/.local/bin` or `~/.cargo/bin`. |
+| herdr 0.8.2 or later | Installed on that computer: Homebrew `herdr`, or in `~/.local/bin` or `~/.cargo/bin`, or on the `PATH` that Termivoa runs with. |
 | herdr running | Its server must run. Only the default herdr session shows. Named herdr sessions do not show. |
 | macOS or Linux | Windows is not supported. |
 | Termivoa from the next beta | On that computer. |
@@ -30,14 +30,14 @@ A computer without herdr shows no herdr tab, and nothing changes.
 
 On the Sessions list, a **herdr** tab sits next to **All** (with one computer) or with the computers' chips. A number on the tab counts the terminals that are blocked or done, over all computers.
 
-![The herdr tab in Sessions: the status line 1 BLOCKED · 1 DONE · 2 WORKING, the tabs All, herdr 2, mac and vps, the project shop ON MAC with 1 BLOCKED and a + button, its worktrees shop (WORKING, claude · 2 tabs), silver-meadow (BLOCKED, claude · tab 1) and lucky-valley (DONE, codex · tab 1), the project acme-web ON VPS with 1 WORKING, and the button Open the blocked agent.](../../../../assets/docs/phone-herdr-tab.webp)
+![The herdr tab in Sessions: the status line 1 BLOCKED · 1 DONE · 2 WORKING, the tabs All, herdr 2, mac and vps, the project shop ON MAC with 1 BLOCKED and a + button, its worktrees shop (WORKING · 2S, claude · 2 tabs), silver-meadow (BLOCKED · 2S, claude · tab 1) and lucky-valley (DONE · 2S, codex · tab 1), the project acme-web ON VPS with 1 WORKING and a + button, and the button Open the blocked agent.](../../../../assets/docs/phone-herdr-tab.webp)
 
 In the **herdr** tab:
 
 - One row for each project (a git repository). Tap ▸ or ▾ to fold or unfold it.
-- Under a project, its worktrees, with the main checkout first. A workspace that is not in git is one row.
-- With more than one computer, each project says where it is, such as **on mac** or **on vps**.
-- A folded project with several worktrees says **2 worktrees**.
+- Under a project, its worktrees, with the main checkout first. A workspace that is not in git is one row. A git project with only its main checkout is one row too, and keeps its **+**.
+- With more than one computer, each project says where it is, such as **ON MAC** or **ON VPS**.
+- A folded project with several worktrees says **2 WORKTREES**.
 - A line under a worktree names the agent and the tab, for example `claude · tab 1`. The list never shows terminal titles or screen text. You see a terminal's screen only when you open it.
 
 A state word shows on the right of a row:
@@ -52,7 +52,7 @@ A state word shows on the right of a row:
 
 A project shows its most urgent word with a count, such as **1 BLOCKED** or **2 WORKING**.
 
-The status line says, for example, `1 blocked · 1 done · 2 working`, or `herdr · nothing running`. When something is blocked, the button **Open the blocked agent** opens the first blocked agent.
+The status line says, for example, `1 BLOCKED · 1 DONE · 2 WORKING`, or `herdr · nothing running`. When something is blocked, the button **Open the blocked agent** opens the first blocked agent.
 
 The **All** tab also lists the herdr worktrees that have an agent with a state, under **HERDR**, above **Termivoa sessions**.
 
@@ -72,11 +72,11 @@ The problem shows on the **herdr** tab only. The Sessions list never waits for h
 2. The herdr terminal opens full screen in Live. The tabs of that herdr workspace show as chips on top. **‹ Sessions** goes back.
 3. It opens read-only. Tap **Take control** to type. See [Take control to type](/docs/guides/live-terminal/#take-control-to-type).
 
-![A herdr terminal in Live: the chip 1 next to ‹ Sessions, the line mac · HERDR shop · silver-meadow READ-ONLY, the note mac shows this terminal at phone size while it is open here., an agent asking Run the cart tests? with the answers 1. Yes, 2. Yes, and don't ask again and 3. No, tell the agent what to do (esc), and the Take control button.](../../../../assets/docs/phone-herdr-live.webp)
+![A herdr terminal in Live: the chip 1 next to ‹ Sessions, the line mac · HERDR shop · silver-meadow READ-ONLY, the words NO ONE HAS CONTROL, the note mac shows this terminal at phone size while it is open here., an agent asking Run the cart tests? with the answers 1. Yes, 2. Yes, and don't ask again and 3. No, tell the agent what to do (esc), the line You are watching. The agent keeps working., and the buttons Changes, Sessions and Take control.](../../../../assets/docs/phone-herdr-live.webp)
 
 The keys, typing, compose, snippets, answer cards and Changes work as in any session. These are not offered for a herdr terminal: History, rename, end session, photos, project buttons that start a new session, preview and the worktree menu.
 
-A tab without an agent opens too (herdr 0.8.2 and later). If herdr cannot open it, its chip is off and says **Update herdr to open this tab**.
+A tab without an agent opens too (herdr 0.8.2 and later). If herdr cannot open it, its chip is off (greyed). Update herdr to open that tab.
 
 If the herdr pane closes while you watch, Live says **Closed here** and "This terminal is no longer open on this phone. Its row in Sessions stays." Tap **Open again**.
 
@@ -91,7 +91,7 @@ The phone buzzes when a herdr agent is blocked or finished. Turn on notification
 
 - The title is `herdr · <project> · <worktree>` (one name when both are equal). A name is cut to 40 characters.
 - A finished buzz needs at least 20 seconds of work that Termivoa saw.
-- A blocked buzz needs the agent to stay blocked for two checks in a row (about 2 seconds), so a short blip does not buzz.
+- A blocked buzz needs the agent to stay blocked for about 2 seconds, so a short blip does not buzz.
 - A tap opens that terminal at once.
 - herdr buzzes have their own limit, 6 per minute, so they never use up the buzzes of your normal sessions.
 - The text has only the agent and the project and worktree names, never terminal text.
@@ -100,7 +100,7 @@ The phone buzzes when a herdr agent is blocked or finished. Turn on notification
 
 Open **Settings → Integrations**. It has one card for each computer that has herdr, such as **herdr on mac**. The card shows the herdr version and a state word: **Running**, **Not running**, **Update** or **Off**.
 
-![Settings → Integrations with two cards, herdr on mac 0.8.2 and herdr on vps 0.8.2, each RUNNING with the switches On, Buzz when blocked and Buzz when finished turned on.](../../../../assets/docs/phone-herdr-integrations.webp)
+![Settings → Integrations with two cards, herdr on mac 0.8.2 and herdr on vps 0.8.2, each RUNNING with the switches On, Buzz when blocked and Buzz when finished turned on, and below them BUILD with Host build private-dev and Web build phone-terminal-web/0.0.0-private, and LOG OUT.](../../../../assets/docs/phone-herdr-integrations.webp)
 
 | Switch | What it does |
 | --- | --- |
@@ -115,7 +115,7 @@ The switches are saved on that computer, for every phone.
 A worktree is a second folder of a git repository on its own branch. herdr makes it and can start an agent in it.
 
 1. In the **herdr** tab, tap **+** on a git project row.
-2. In the sheet **New worktree**, type a **Branch name**: lowercase letters and digits joined by `-`, `.`, `_` or `/`, such as `fix/login-redirect`. It can have up to 64 characters and at most 4 parts.
+2. In the sheet **New worktree**, type a **Branch name**: lowercase letters and digits joined by `-`, `.`, `_` or `/`, such as `fix/login-redirect`. It can have up to 64 characters and at most 4 parts, and cannot end in `.lock`.
 3. Under **Start an agent in it**, tap an agent that already runs in this herdr (such as `claude` or `codex`), or **No agent**.
 4. Optional: write a **First prompt (optional)**. It cannot have control characters such as Esc.
 5. Tap **Create and start** (or **Create** with **No agent**).
@@ -128,7 +128,7 @@ If something goes wrong, the app says why:
 
 | Message | What to do |
 | --- | --- |
-| "fix-login" already exists in shop. Pick another name. | Use another branch name. |
+| “fix-login” already exists in shop. Pick another name. | Use another branch name. |
 | shop is not in git, so it cannot have worktrees. | Use a project that is in git. |
 | herdr could not make the worktree. Nothing was opened. Try again or pick another name. | Try again, or pick another name. |
 | Too many new worktrees just now. Wait a minute, then try again. | Wait a minute. |

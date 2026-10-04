@@ -96,6 +96,9 @@ func (provider *Provider) call(ctx context.Context, timeout time.Duration, metho
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(line, &reply); err != nil {
+		if !bytes.HasSuffix(line, []byte("\n")) {
+			return io.ErrUnexpectedEOF // herdr went away in the middle of a reply: not running, not "too old"
+		}
 		return fmt.Errorf("herdr: malformed reply: %w", err)
 	}
 	if reply.Error != nil {
@@ -189,6 +192,9 @@ func FindBinary(config Config) (path string, refused []string) {
 // output cap, standard input from the null device and no controlling
 // terminal, and returns its standard output. Never a shell.
 func (provider *Provider) run(ctx context.Context, args ...string) ([]byte, error) {
+	if err := tailnet.CheckBinary(provider.binary); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
 	argv := append(provider.command(provider.binary), args...)

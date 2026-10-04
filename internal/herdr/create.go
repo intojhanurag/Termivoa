@@ -66,13 +66,24 @@ func (provider *Provider) Create(ctx context.Context, request protocol.HTTPProvi
 			TerminalID string `json:"terminal_id"`
 		} `json:"root_pane"`
 	}
+	// The group's items before the call: after a timeout only a new one can be the worktree this call made.
+	before := map[string]bool{}
+	provider.mu.RLock()
+	for _, existing := range provider.view.response.Groups {
+		if existing.ID == request.GroupID {
+			for _, item := range existing.Items {
+				before[item.ID] = true
+			}
+		}
+	}
+	provider.mu.RUnlock()
 	err := provider.call(ctx, createTimeouts.worktree, "worktree.create", map[string]any{
 		"workspace_id": group.workspace, "branch": request.Name, "focus": false,
 	}, &created)
 	var failure *callError
 	switch {
 	case timedOut(err):
-		item, found := provider.findItem(ctx, request.GroupID, request.Name)
+		item, found := provider.findItem(ctx, request.GroupID, request.Name, before)
 		if !found {
 			return response, ErrWorktree
 		}
@@ -80,7 +91,11 @@ func (provider *Provider) Create(ctx context.Context, request protocol.HTTPProvi
 		if request.Agent != nil {
 			response.Problem = problem(protocol.AgentFailed)
 		}
-		return response, validCreated(response)
+		if err := validCreated(response); err != nil {
+			return response, err
+		}
+		provider.settle(ctx, createTimeouts.refresh, response.TargetID)
+		return response, nil
 	case errors.As(err, &failure) && failure.code == "not_git_worktree":
 		return response, ErrNotGit
 	case errors.As(err, &failure) && strings.Contains(failure.message, "already exists"):
@@ -157,7 +172,7 @@ func (provider *Provider) readMapped(ctx context.Context) (mapped, bool) {
 
 // findItem looks for the item a timed-out worktree.create made: herdr names
 // the new workspace after the branch.
-func (provider *Provider) findItem(ctx context.Context, groupID, name string) (protocol.HTTPProviderItem, bool) {
+func (provider *Provider) findItem(ctx context.Context, groupID, name string, before map[string]bool) (protocol.HTTPProviderItem, bool) {
 	result, ok := provider.readMapped(ctx)
 	if !ok {
 		return protocol.HTTPProviderItem{}, false
@@ -167,7 +182,7 @@ func (provider *Provider) findItem(ctx context.Context, groupID, name string) (p
 			continue
 		}
 		for _, item := range group.Items {
-			if item.Name == name {
+			if item.Name == name && !before[item.ID] {
 				return item, true
 			}
 		}

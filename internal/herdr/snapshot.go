@@ -135,6 +135,9 @@ type mapped struct {
 	groups   map[string]groupRef
 	kinds    map[string]int
 	since    map[string]stateStamp
+	// live is every pane ID + "." + terminal ID herdr has, also panes that
+	// are no target: an open provider session lives as long as its pane.
+	live map[string]struct{}
 }
 
 // mapSnapshot is section 5 of the design: groups by repository, items by
@@ -151,10 +154,11 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 	for _, tab := range tabs {
 		tabsOf[tab.WorkspaceID] = append(tabsOf[tab.WorkspaceID], tab)
 	}
-	panesOf, terminals := map[string][]wirePane{}, map[string]string{}
+	panesOf, terminals, live := map[string][]wirePane{}, map[string]string{}, map[string]struct{}{}
 	for _, pane := range panes {
 		panesOf[pane.TabID] = append(panesOf[pane.TabID], pane)
 		terminals[pane.ID] = pane.TerminalID
+		live[pane.ID+"."+pane.TerminalID] = struct{}{}
 	}
 	focused := map[string]string{}
 	for _, layout := range layouts {
@@ -171,7 +175,7 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 
 	result := mapped{
 		targets: map[string]target{}, groups: map[string]groupRef{}, kinds: map[string]int{},
-		since: map[string]stateStamp{},
+		since: map[string]stateStamp{}, live: live,
 	}
 	truncated := false
 	type groupBuild struct {
@@ -196,10 +200,6 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 		}
 		build := builds[groupID]
 		if build == nil {
-			if len(order) == maxGroups {
-				truncated = true
-				continue
-			}
 			build = &groupBuild{
 				group: protocol.HTTPProviderGroup{ID: groupID, Name: Clean(groupName, maxNameRunes, "workspace "+strconv.Itoa(workspace.Number)), CanCreate: git},
 				ref:   groupRef{git: git, workspace: workspace.ID},
@@ -227,15 +227,17 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 				wire := protocol.HTTPProviderTarget{
 					ID: agent.PaneID + "." + agent.TerminalID, Label: label, State: agentWord(agent.Status), CanOpen: true,
 				}
+				// A program in a pane can report any text as its agent name: only a kind word leaves the host (S4, S5).
+				kind := ""
 				if kindPattern.MatchString(agent.Agent) {
-					kind := agent.Agent
+					kind = agent.Agent
 					wire.Agent = &kind
 					result.kinds[kind]++
 				}
 				if handlePattern.MatchString(wire.ID) && handlePattern.MatchString(agent.TerminalID) {
 					tabTargets = append(tabTargets, wire)
 					result.targets[wire.ID] = target{
-						pane: agent.PaneID, terminal: agent.TerminalID, agent: true, kind: agent.Agent, state: wire.State,
+						pane: agent.PaneID, terminal: agent.TerminalID, agent: true, kind: kind, state: wire.State,
 						canOpen: true, group: build.group.Name, item: item.Name, directory: directory,
 					}
 				}
@@ -319,20 +321,38 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 		sizes[index] = len(data) + 1
 		total += sizes[index]
 	}
-	for len(groups) > 0 && total > maxBodyBytes {
-		drop := len(groups) - 1
-		for index := len(groups) - 1; index >= 0; index-- {
-			if rank[groups[index].State] > rank[groups[drop].State] {
-				drop = index
+	// The group cap uses the same rule, so a blocked agent in a late group stays.
+	if len(groups) > maxGroups || total > maxBodyBytes {
+		drops := make([]int, len(groups))
+		for index := range drops {
+			drops[index] = index
+		}
+		slices.SortFunc(drops, func(a, b int) int {
+			if order := rank[groups[b].State] - rank[groups[a].State]; order != 0 {
+				return order
+			}
+			return b - a
+		})
+		dropped, left := make([]bool, len(groups)), len(groups)
+		for _, drop := range drops {
+			if left <= maxGroups && total <= maxBodyBytes {
+				break
+			}
+			for _, key := range targetsOf[drop] {
+				delete(result.targets, key)
+			}
+			delete(result.groups, groups[drop].ID)
+			total -= sizes[drop]
+			dropped[drop] = true
+			left--
+		}
+		kept := make([]protocol.HTTPProviderGroup, 0, left)
+		for index, group := range groups {
+			if !dropped[index] {
+				kept = append(kept, group)
 			}
 		}
-		for _, key := range targetsOf[drop] {
-			delete(result.targets, key)
-		}
-		delete(result.groups, groups[drop].ID)
-		total -= sizes[drop]
-		groups, targetsOf, sizes = slices.Delete(groups, drop, drop+1), slices.Delete(targetsOf, drop, drop+1), slices.Delete(sizes, drop, drop+1)
-		truncated = true
+		groups, truncated = kept, true
 	}
 	result.response = protocol.HTTPProviderSnapshotResponse{Provider: ID, State: protocol.HTTPProviderStateReady, Groups: groups}
 	if truncated {
@@ -431,10 +451,12 @@ func clean(value string, maxRunes, maxBytes int, fallback string) string {
 		builder.WriteRune(character)
 		runes++
 	}
-	if builder.Len() == 0 {
+	// A space is written before the rune after it; when that rune does not fit, the space must go too.
+	result := strings.TrimRight(builder.String(), " ")
+	if result == "" {
 		return fallback
 	}
-	return builder.String()
+	return result
 }
 
 // titleNameBytes is the most bytes one name may have in a Title, so the

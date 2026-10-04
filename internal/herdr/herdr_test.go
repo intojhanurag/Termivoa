@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -207,6 +208,10 @@ func TestClean(t *testing.T) {
 		if got := Clean(test.in, maxNameRunes, "fallback"); got != test.want {
 			t.Errorf("Clean(%q) = %q, want %q", test.in, got, test.want)
 		}
+	}
+	// A space written just before the byte cap must not end the name (the wire refuses such a name).
+	if got := Clean(strings.Repeat("😀", 59)+"a 😀x", maxNameRunes, ""); got != strings.TrimSpace(got) || len(got) > maxNameBytes {
+		t.Fatalf("Clean left a space at the end: %q", got)
 	}
 	if got := Clean(strings.Repeat("😀", 70), maxNameRunes, ""); len(got) > maxNameBytes {
 		t.Fatalf("Clean kept %d bytes", len(got))
@@ -577,10 +582,14 @@ func TestInspectAndCustomPrefix(t *testing.T) {
 	}
 	configFile := filepath.Join(home, ".config", "herdr", "config.toml")
 	for text, want := range map[string]bool{
-		"[keys]\n# prefix = \"ctrl+a\"\n":             false,
-		"[keys]\nprefix = \"ctrl+b\" # default\n":     false,
-		"[ui]\nprefix = \"ctrl+a\"\n":                 false,
-		"[keys]\nhelp = \"prefix+?\"\nprefix = 'f12'": true,
+		"[keys]\n# prefix = \"ctrl+a\"\n":              false,
+		"[keys]\nprefix = \"ctrl+b\" # default\n":      false,
+		"[ui]\nprefix = \"ctrl+a\"\n":                  false,
+		"[keys]\nhelp = \"prefix+?\"\nprefix = 'f12'":  true,
+		"keys.prefix = \"ctrl+a\"\n":                   true,
+		"keys.prefix = \"ctrl+b\"\n":                   false,
+		"keys = { help = \"x\", prefix = \"ctrl+a\" }": true,
+		"keys = { prefix = \"ctrl+b\" }\n":             false,
 	} {
 		if err := os.WriteFile(configFile, []byte(text), 0o600); err != nil {
 			t.Fatal(err)
@@ -753,5 +762,130 @@ func TestBodyBudgetIsFastOnAHostileSnapshot(t *testing.T) {
 	}
 	if mapping > 8*encode {
 		t.Fatalf("mapping took %v, %.1f times one encode of the input (%v)", mapping, float64(mapping)/float64(encode), encode)
+	}
+}
+
+// TestAgentNameThatIsNotAKindStaysOnTheHost: a program in a pane can report
+// any text as its agent name (herdr pane report-agent). Only a kind word may
+// reach the list or a push (S4, S5).
+func TestAgentNameThatIsNotAKindStaysOnTheHost(t *testing.T) {
+	const hostile = "Your bank: call 555-0100 now. It"
+	raw := strings.Replace(string(readFixture(t, "snapshot-0.8.2.json")), `"agent":"claude","agent_status":"blocked"`, `"agent":"`+hostile+`","agent_status":"blocked"`, 1)
+	result := mapSnapshot(decodeSnapshot(t, []byte(raw)), false, fixedNow, nil)
+	found, ok := result.targets["w1:p1.term_65d0031602b701"]
+	if !ok || !found.agent || found.kind != "" {
+		t.Fatalf("target = %+v, found %v", found, ok)
+	}
+	body, err := json.Marshal(result.response)
+	if err != nil || strings.Contains(string(body), "bank") {
+		t.Fatalf("the name is in the list: %v %s", err, body)
+	}
+}
+
+// TestSocketBehindALinkedFolder: when a folder of the socket's path is a
+// link, the folders behind the link are checked too (S3).
+func TestSocketBehindALinkedFolder(t *testing.T) {
+	root := tempRoot(t)
+	open := filepath.Join(root, "open")
+	real := filepath.Join(open, "cfg", "herdr")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(open, "cfg"), filepath.Join(home, ".config")); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", filepath.Join(real, "herdr.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	path := filepath.Join(home, ".config", "herdr", "herdr.sock")
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkSocket(path); err != nil {
+		t.Fatalf("a private socket behind a link is refused: %v", err)
+	}
+	if err := os.Chmod(open, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkSocket(path); err == nil {
+		t.Fatal("a world-writable folder behind a link is accepted")
+	}
+}
+
+// TestPushRulesAtTheEdges: blocked time is not work; a restart of the same
+// herdr between two polls (every terminal ID new) is a baseline; a session's
+// pane stays "there" when its tab's target moves to another pane.
+func TestPushRulesAtTheEdges(t *testing.T) {
+	provider, server, changes := newTestProvider(t, false)
+	ctx := context.Background()
+	clock := fixedNow
+	provider.now = func() time.Time { return clock }
+	poll := func(snapshot []byte, step time.Duration) {
+		server.Snapshot(snapshot)
+		provider.step(ctx)
+		clock = clock.Add(step)
+	}
+	poll(agentSnapshot(t, "idle"), pollEvery)
+	// 2 s of work, a long wait for the user, 2 s of work, done: 4 s of work, no "finished" push.
+	poll(agentSnapshot(t, "working"), pollEvery)
+	poll(agentSnapshot(t, "blocked"), 10*time.Minute)
+	poll(agentSnapshot(t, "working"), pollEvery)
+	*changes = nil
+	poll(agentSnapshot(t, "done"), pollEvery)
+	if len(*changes) != 0 {
+		t.Fatalf("blocked time counted as work: %+v", *changes)
+	}
+	if !provider.Has("w1:p1.term_1") {
+		t.Fatal("the live pane is not there")
+	}
+	// The same herdr version restarted between two polls: new terminal IDs, agents already blocked.
+	restarted := []byte(strings.ReplaceAll(string(agentSnapshot(t, "blocked", "blocked")), "term_", "term_r"))
+	poll(restarted, pollEvery)
+	poll(restarted, pollEvery)
+	poll(restarted, pollEvery)
+	if len(*changes) != 0 {
+		t.Fatalf("a restart pushed a burst: %+v", *changes)
+	}
+	if provider.Has("w1:p1.term_1") || !provider.Has("w1:p1.term_r1") {
+		t.Fatal("Has after a restart")
+	}
+}
+
+// TestGroupCapKeepsTheUrgentGroups: over 64 groups, the least urgent go
+// first, so a blocked agent in a late group stays (and can push).
+func TestGroupCapKeepsTheUrgentGroups(t *testing.T) {
+	var workspaces, tabs, panes, layouts, agents []map[string]any
+	for number := 1; number <= maxGroups+6; number++ {
+		ws, tab, pane, terminal := fmt.Sprintf("w%d", number), fmt.Sprintf("w%d:t1", number), fmt.Sprintf("w%d:p1", number), fmt.Sprintf("term_%d", number)
+		state := "idle"
+		if number == maxGroups+6 {
+			state = "blocked"
+		}
+		workspaces = append(workspaces, map[string]any{"workspace_id": ws, "label": ws, "number": number, "active_tab_id": tab})
+		tabs = append(tabs, map[string]any{"tab_id": tab, "workspace_id": ws, "label": "1", "number": 1})
+		panes = append(panes, map[string]any{"pane_id": pane, "tab_id": tab, "terminal_id": terminal})
+		layouts = append(layouts, map[string]any{"tab_id": tab, "focused_pane_id": pane})
+		agents = append(agents, map[string]any{"pane_id": pane, "tab_id": tab, "terminal_id": terminal, "agent": "claude", "agent_status": state})
+	}
+	data, _ := json.Marshal(map[string]any{"version": "0.8.2", "protocol": 20, "workspaces": workspaces, "tabs": tabs, "panes": panes, "layouts": layouts, "agents": agents})
+	result := mapSnapshot(decodeSnapshot(t, data), false, fixedNow, nil)
+	groups := result.response.Groups
+	if len(groups) > maxGroups || result.response.Truncated == nil {
+		t.Fatalf("%d groups, truncated %v", len(groups), result.response.Truncated)
+	}
+	blocked := 0
+	for _, group := range groups {
+		if group.State == stateBlocked {
+			blocked++
+		}
+	}
+	if blocked != 1 {
+		t.Fatalf("the blocked group was dropped (%d blocked of %d)", blocked, len(groups))
 	}
 }

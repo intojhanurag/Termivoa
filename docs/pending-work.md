@@ -88,6 +88,22 @@ In this order.
      Termivoa should double the configured key too.
    - **Named herdr sessions:** only the default session shows.
    - **Windows:** herdr is not supported there.
+   - **Landing page:** `site/public/index.html` has no herdr section yet.
+     Design it in Paper first and show the owner (as for #165).
+   - **herdr installed later:** the phone shows it only the next time the
+     app comes to the front (settings are read again then).
+   - **"‹ Sessions" in a herdr terminal** goes to the All tab, not the herdr
+     tab.
+   - **Open on its own gateway connection:** the reaper holds a target's
+     open lock while it ends the attach (at most 3 s); an open of that
+     target, and gateway requests behind it, wait. Create already has its
+     own connection.
+   - **A `/p/…` address of a computer below protocol revision 4** shows a
+     general failure text, not "Update Termivoa on …".
+   - **Create timeout text:** the sheet tells a timeout from the elapsed
+     time; give the client a `timeout` code.
+   - **Session pushes** can be dropped the same way provider pushes were
+     (admitted, then no free delivery slot); see the issue for it.
 
 ## Polish next
 

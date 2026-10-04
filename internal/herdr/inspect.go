@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -48,8 +49,11 @@ func Inspect(ctx context.Context, config Config) Status {
 	return status
 }
 
-// customPrefix reports whether config.toml's [keys] section sets prefix to
-// anything other than "ctrl+b". It reads the file only.
+var inlinePrefix = regexp.MustCompile(`(?:^|[{,])\s*prefix\s*=\s*("[^"]*"|'[^']*')`)
+
+// customPrefix reports whether config.toml sets the keys prefix ([keys]
+// prefix, keys.prefix, or keys = { prefix = … }) to anything other than
+// "ctrl+b". It reads the file only.
 func customPrefix(path string) bool {
 	file, err := os.Open(path)
 	if err != nil {
@@ -65,7 +69,14 @@ func customPrefix(path string) bool {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
-		if !ok || section != "keys" || strings.TrimSpace(key) != "prefix" {
+		key = strings.TrimSpace(key)
+		if ok && section == "" && key == "keys" {
+			if found := inlinePrefix.FindStringSubmatch(strings.TrimSpace(value)); found != nil {
+				return strings.Trim(found[1], `"'`) != "ctrl+b"
+			}
+			continue
+		}
+		if !ok || !(section == "keys" && key == "prefix") && !(section == "" && key == "keys.prefix") {
 			continue
 		}
 		value, _, _ = strings.Cut(value, "#")

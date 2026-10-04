@@ -230,8 +230,8 @@ The broker hands each change to `Notifier.NotifyProvider`
 
 | Kind | Fires when |
 | --- | --- |
-| `waiting` (blocked) | The agent is `blocked` in two polls in a row after it was not. Not again until it leaves `blocked`. |
-| `done` (finished) | After the host observed the agent `working` for at least 20 s (`doneAfter`), it turns `done` or `idle`. `idle` counts: herdr says `idle` when a herdr window shows that tab, also when nobody sits at the laptop. |
+| `waiting` (blocked) | The agent is `blocked` for at least 2 s (by the clock) after it was not. Not again until it leaves `blocked`. |
+| `done` (finished) | After the host observed the agent `working` for at least 20 s in all (`doneAfter`; time it was `blocked` does not count, and "finished after N min" is that work time), it turns `done` or `idle`. `idle` counts: herdr says `idle` when a herdr window shows that tab, also when nobody sits at the laptop. |
 
 - **Baseline.** The first snapshot after the broker starts, and the first one
   after herdr is found again (it stopped or restarted), sets states and sends

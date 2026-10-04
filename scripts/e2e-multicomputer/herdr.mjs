@@ -350,9 +350,9 @@ export async function herdrSteps(ctx) {
     // The app says it in its own words.
     await herdrTab({ load: false });
     await tapItem('storefront-redesign');
-    const said = await until(async () => { const text = await app.text(); return text.includes('Too many herdr terminals are open on mac') && text; }, { what: 'limit text', timeout: 10000 }).catch(() => '');
+    const said = await until(async () => { const text = await app.text(); return text.includes('mac cannot open more herdr terminals just now') && text; }, { what: 'limit text', timeout: 10000 }).catch(() => '');
     await shot('h-cap');
-    check('H-cap', 'With 4 herdr terminals open, the 5th open gets 429 limit_exceeded and the app says "Too many herdr terminals are open on mac…"',
+    check('H-cap', 'With 4 herdr terminals open, the 5th open gets 429 limit_exceeded and the app says "mac cannot open more herdr terminals just now…"',
       JSON.stringify(statuses) === '[200,200,200,429]' && limited.json?.error?.code === 'limit_exceeded' && said !== '',
       `opens ${JSON.stringify(statuses)}; 5th ${limited?.status} ${limited?.json?.error?.code} "${limited?.json?.error?.message}"; app: ${said ? 'limit text shown' : 'no limit text'}`);
     await inApp('/');
@@ -508,7 +508,7 @@ export async function herdrSteps(ctx) {
     await flip('Buzz when finished');
     await until(async () => (await card()).text.includes('saved.'), { what: 'saved' });
     await flip('On');
-    await until(async () => (await card()).text.includes('this phone does not show or buzz for herdr on mac.'), { what: 'Off' });
+    await until(async () => (await card()).text.includes('off for every phone: mac does not show herdr or buzz for it.'), { what: 'Off' });
     await inApp('/');
     await sleep(6000);
     const hidden = await herdrChip();

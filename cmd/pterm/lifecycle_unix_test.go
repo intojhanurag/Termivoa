@@ -44,8 +44,10 @@ func TestUpDevRunsIndependentProcessGroups(t *testing.T) {
 	runtimeDir := filepath.Join(root, "runtime")
 	dataDir := filepath.Join(root, "data")
 	up := exec.Command(binary, "up", "--dev", "--data-dir", dataDir, "--runtime-dir", runtimeDir, "--listen", freeLoopbackAddress(t))
-	// Its own HOME and no herdr on PATH: the broker must never read the
-	// owner's herdr (docs/herdr-provider.md, S16).
+	// Its own HOME and no herdr on PATH: the broker never runs the owner's
+	// herdr and never dials its socket (docs/herdr-provider.md, S16). It may
+	// still stat a herdr at a fixed system path; with no socket under this
+	// HOME that herdr is "not running" and is never started.
 	up.Env = append(os.Environ(), "HOME="+root, "PATH=/usr/bin:/bin:/usr/sbin:/sbin")
 	stdout, err := up.StdoutPipe()
 	if err != nil {

@@ -49,6 +49,50 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### herdr on your phone: pre-push review and fixes (2026-10-04, branch `feat/herdr`)
+
+- **What.** Four independent reviews of the built branch before its first
+  push: security (host), host logic and concurrency, the phone app, and the
+  docs against rules 18, 22, 23 and 25. Findings and resolutions:
+  [herdr-provider.md](herdr-provider.md), section 20, "Pre-push review"
+  (P1–P16). One high finding (a second herdr push in the same poll was
+  dropped for good), four medium, the rest low. No critical finding.
+- **Found by running phase B again.** Phase B had not been run after the two
+  earlier review commits (`e53ce10`, `a1e47ec`): `H-cap` and `H-settings`
+  failed. Causes: two screen texts those commits changed, and the
+  Integrations card title laid out as two flex items (a real defect, fixed).
+- **Docs.** About 20 wrong or stale lines corrected in the site guide,
+  `reference/cli.md`, `reference/troubleshooting.md`, the design, the ADR,
+  `notifications.md`, `agent-state.md` and `owner-verification.md`; the new
+  open refusal (`409 operation_conflict`) is in `protocol/v1/http-api.md` and
+  the troubleshooting page. The chip text uses the provider's name, so the
+  app has no fixed "herdr" word.
+  The docs site has a **Providers** group in the sidebar: a new page
+  `site/src/content/docs/docs/providers.md` (what a provider is, the list
+  with herdr as the first) and the herdr guide under it.
+- **Checks (after the last change).** `scripts/check` passed (876 vitest);
+  `go vet ./...` also with `-tags e2e`, `GOOS=windows` and `CGO_ENABLED=0
+  GOOS=linux`; `go test -race` on `internal/herdr`, `internal/broker`,
+  `internal/webpush`, `internal/gateway`, `internal/gatewayclient`,
+  `cmd/pterm`, `scripts/...`: ok; `PTERM_HERDR_LAB=1 go test
+  ./internal/herdr -run Lab` passed (herdr 0.8.2, isolated); e2e Phase A
+  32/32 and Phase B 104/104 on Playwright's Chrome for Testing
+  (`CHROME=…`), evidence in `docs/evidence/herdr/phase-a.md` and
+  `phase-b.md`; `cd site && npx astro build` with valid links.
+- **Seen once, not again.** In the first Phase B run, with three reviewers
+  and the race tests on the same machine, `F-add` timed out ("timeout
+  waiting for add outcome"). It passed in the final run with nothing else
+  running. Not a herdr check.
+- **Not run.** WebKit (`webkit.mjs`, 8 checks): pending. The owner's
+  real-device checks ([owner-verification.md](owner-verification.md), 2c):
+  pending.
+- **Open.** In [pending-work.md](pending-work.md), Next 5. The landing page
+  section is drawn in Paper (file `termivoa`, board "Landing — section:
+  herdr (for owner review)", a general "providers" section with herdr as the
+  first one); it is not in `site/public/` until the owner approves it.
+  The session-push drop (the same fault as P1, in code that is on `main`)
+  needs its own issue and pull request (rule 21).
+
 ### herdr on your phone: integration, e2e and docs (2026-10-04, branch `feat/herdr`)
 
 - **What.** The host (H1–H7) and web (W1–W7) halves of

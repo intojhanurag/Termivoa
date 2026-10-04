@@ -18,7 +18,7 @@ const screen = (tapped: number, entry = ready(mac)) => renderToStaticMarkup(
 );
 
 describe('a provider terminal before it opens', () => {
-  it('after a link or a reload: shows its names and Open, and opens nothing', () => {
+  it('after a link or a reload: shows its names and Open, not busy', () => {
     const page = screen(0);
     expect(page).toContain('<h1><bdi>silver-meadow</bdi></h1>');
     expect(page).toContain('<dt>Project</dt><dd><bdi>shop</bdi></dd>');
@@ -28,13 +28,13 @@ describe('a provider terminal before it opens', () => {
     expect(page).not.toContain('aria-busy');
   });
 
-  it('after a tap: busy at once (it opens), so a second tap does nothing', () => {
+  it('after a tap: busy at once', () => {
     expect(screen(1)).toContain('aria-busy="true"');
   });
 
   it('chips are the workspace\'s tabs; a tab this herdr cannot open is off and says why', () => {
     const page = renderToStaticMarkup(
-      <ProviderChips
+      <ProviderChips name="herdr"
         item={item('w1', 'main', [target('w1:p1.a', 'blocked', { agent: 'claude', label: '1' }), target('w1:p2.b', 'working', { agent: 'codex', label: '1' }), target('w1:p3.c', 'none', { label: 'logs', canOpen: false })])}
         current="w1:p2.b" onChip={noop} onSessions={noop}
       />,
@@ -57,6 +57,7 @@ describe('opening', () => {
   it('words the refusals it knows; a terminal that left is gone', () => {
     expect(openProblem(new ApiError(404, 'session_missing', 'x'), 'herdr', 'mac')).toEqual({ gone: true, text: 'That terminal is gone.' });
     expect(openProblem(new ApiError(0, 'network', 'x'), 'herdr', 'mac')).toBeUndefined();
+    expect(openProblem(new ApiError(409, 'operation_conflict', 'x'), 'herdr', 'mac')).toEqual({ gone: false, text: 'herdr on mac did not open this terminal. Another program may hold it, or it just closed.' });
   });
 
   it('limit_exceeded (the cap of open terminals, or this phone\'s open rate) says what is true for both', () => {
@@ -159,7 +160,7 @@ describe('That terminal is gone', () => {
 describe('names from a peer', () => {
   it('are isolated (bdi), so a right-to-left mark in one cannot reorder the line', () => {
     const page = renderToStaticMarkup(
-      <ProviderChips item={item('w1', 'main', [target('w1:p1.a', 'idle', { agent: 'cl\u202eaude', label: '\u202e1' }), target('w1:p2.b', 'idle', { label: '\u202e1' })])}
+      <ProviderChips name="herdr" item={item('w1', 'main', [target('w1:p1.a', 'idle', { agent: 'cl\u202eaude', label: '\u202e1' }), target('w1:p2.b', 'idle', { label: '\u202e1' })])}
         current="w1:p2.b" onChip={noop} onSessions={noop} />,
     );
     expect(page).toContain('<bdi>\u202e1</bdi> · <bdi>cl\u202eaude</bdi>');

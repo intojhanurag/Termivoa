@@ -211,7 +211,8 @@ export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body
     <li className="computer-card">
       <div className="computer-head">
         <span className="row-text">
-          <span className="row-title"><bdi>{info.name}</bdi> on {computer.label}</span>
+          {/* One inner span: .row-title is a flex row, and its children would be laid out as separate items. */}
+          <span className="row-title"><span><bdi>{info.name}</bdi> on {computer.label}</span></span>
           {info.version !== undefined && <span className="row-meta">{info.version}</span>}
         </span>
         <span className={`computer-state ${text.tone}`}>{text.word}</span>

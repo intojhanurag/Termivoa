@@ -341,8 +341,10 @@ export function Live({
   // This device is looking at the session: its output is not "new" here.
   const latest = useRef(current);
   latest.current = current;
-  useEffect(() => { markViewed(latest.current); }, [current]);
-  useEffect(() => () => markViewed(latest.current), []);
+  // Not a provider terminal: each open is a new session ID, and would push stored sessions out of the list.
+  const stored = provider === undefined;
+  useEffect(() => { if (stored) markViewed(latest.current); }, [current, stored]);
+  useEffect(() => () => { if (stored) markViewed(latest.current); }, [stored]);
 
   // The open terminal comes first: Wall tiles pause while it is open.
   const activeKey = keyOf(session);

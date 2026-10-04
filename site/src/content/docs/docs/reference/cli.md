@@ -79,7 +79,7 @@ No device uses this computer from the Termivoa app at https://mac.tailx.ts.net n
 | `herdr agents the phone can start: claude, codex` | **Next beta.** The agents that already run in herdr, which **New worktree** offers. |
 | `! herdr: <path> <version> (protocol <n>) is too old or unreadable; update herdr (0.8.2 or later)` | **Next beta.** Update herdr. See [Update herdr on mac](/docs/reference/troubleshooting/#update-herdr-on-mac). |
 | `! herdr: config.toml sets a prefix key other than ctrl+b; …` | **Next beta.** Termivoa doubles only `ctrl+b`, so a phone can send that other prefix key to a herdr terminal it opened. At worst it detaches the phone. Set herdr's prefix key back to `ctrl+b`. |
-| `! <reason>` after a herdr line | **Next beta.** Termivoa refused a herdr program, for example one that belongs to another user or sits in a folder that others can write. |
+| `! herdr at <path>: <reason>; Termivoa will not run it` | **Next beta.** It shows before the herdr line, or alone when no other herdr is found. Termivoa refused a herdr program, for example one that belongs to another user or sits in a folder that others can write. |
 | `! tailscale at <path>: …; Termivoa will not run it` | Another user could replace that Tailscale CLI, so Termivoa does not use it. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-run-tailscale). |
 
 ## Work with sessions

@@ -148,7 +148,9 @@ func NewNotifier(ctx context.Context, config NotifierConfig) (*Notifier, error) 
 	}
 	return &Notifier{
 		config: config, keys: keys, inFlight: make(chan struct{}, maxInFlight),
-		providerInFlight: make(chan struct{}, 1), last: map[string]time.Time{},
+		// Room for two minutes of the budget: an admitted provider push is never dropped because an
+		// earlier one is still on its way (two agents can change in one poll).
+		providerInFlight: make(chan struct{}, 2*ProviderMaxPerMinute), last: map[string]time.Time{},
 	}, nil
 }
 

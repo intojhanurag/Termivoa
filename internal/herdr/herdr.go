@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
+	"github.com/intojhanurag/phone-terminal/internal/tailnet"
 )
 
 const (
@@ -114,9 +115,11 @@ type Provider struct {
 	caps       capabilities
 	capsFor    string
 	baseline   bool
-	logged     string // the socket refusal last logged
-	tracks     map[string]*track
-	since      map[string]stateStamp
+	// snapshotVersion is the herdr version of the last applied snapshot; a new one means herdr was updated.
+	snapshotVersion string
+	logged          string // the socket refusal last logged
+	tracks          map[string]*track
+	since           map[string]stateStamp
 }
 
 // view is what readers see; replaced as a whole under mu.
@@ -129,6 +132,7 @@ type view struct {
 	caps      capabilities
 	response  protocol.HTTPProviderSnapshotResponse
 	targets   map[string]target
+	live      map[string]struct{} // every pane.terminal herdr has (mapped.live)
 	groups    map[string]groupRef
 	kinds     []string
 	turn      uint64 // the last poll turn that ended (Provider.turns)
@@ -201,12 +205,15 @@ func (provider *Provider) Snapshot() protocol.HTTPProviderSnapshotResponse {
 	return provider.view.response
 }
 
-// Has reports whether key (a target ID) is in the latest ready snapshot.
-// Provider sessions end when it turns false.
+// Has reports whether key (a target ID) still names a live pane and terminal
+// in the latest ready snapshot. Provider sessions end when it turns false.
+// It asks for the pane, not for the target: a tab's target moves to another
+// pane when the laptop's focus moves or an agent starts beside it, and that
+// must not end a terminal that is open on a phone.
 func (provider *Provider) Has(key string) bool {
 	provider.mu.RLock()
 	defer provider.mu.RUnlock()
-	_, ok := provider.view.targets[key]
+	_, ok := provider.view.live[key]
 	return ok && provider.view.state == protocol.HTTPProviderStateReady
 }
 
@@ -221,6 +228,10 @@ func (provider *Provider) Attach(targetID string) (Attach, error) {
 	found, ok := current.targets[targetID]
 	if !ok || !found.canOpen {
 		return Attach{}, ErrTargetMissing
+	}
+	// Checked again at each start, like every Tailscale run: the file may have changed since the lookup.
+	if tailnet.CheckBinary(current.binary) != nil {
+		return Attach{}, ErrUnavailable
 	}
 	argv := provider.command(current.binary)
 	if found.agent {
@@ -323,6 +334,13 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 		provider.notRunning(now)
 		return pollEvery
 	}
+	// A herdr that was updated and restarted between two polls never fails a call: find it by its version.
+	if provider.snapshotVersion != "" && snapshot.Version != provider.snapshotVersion {
+		provider.discovered, provider.snapshotVersion = false, ""
+		provider.Poll()
+		return pollEvery
+	}
+	provider.snapshotVersion = snapshot.Version
 	provider.apply(snapshot, now)
 	return pollEvery
 }
@@ -353,7 +371,7 @@ func (provider *Provider) settle(ctx context.Context, timeout time.Duration, tar
 		if !time.Now().Before(deadline) || ctx.Err() != nil {
 			return false
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -374,7 +392,7 @@ func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 	if key := provider.binary + "\x00" + pong.Version; key != provider.capsFor {
 		provider.caps, provider.capsFor = provider.probe(ctx), key
 	}
-	provider.discovered, provider.misses, provider.baseline = true, 0, true
+	provider.discovered, provider.misses, provider.baseline, provider.snapshotVersion = true, 0, true, ""
 	provider.tracks, provider.since = map[string]*track{}, map[string]stateStamp{}
 	provider.publish(func(current *view) {
 		current.version, current.protocol, current.caps = pong.Version, pong.Protocol, provider.caps

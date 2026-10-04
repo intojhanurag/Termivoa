@@ -437,7 +437,7 @@ These entries are not in `v0.1.0-beta.3`. See [Termivoa + herdr](/docs/guides/he
 Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` line when it finds herdr.
 
 - herdr is not installed. Install herdr 0.8.2 or later.
-- Termivoa cannot find it. It looks for Homebrew's `herdr`, then your `PATH`, `~/.local/bin` and `~/.cargo/bin`. It checks again about every 30 seconds.
+- Termivoa cannot find it. It looks in the Homebrew folder (macOS), `/usr/local/bin`, `/usr/bin` (Linux), `~/.local/bin` and `~/.cargo/bin`, and then on the `PATH` that Termivoa runs with. It checks again about every 30 seconds.
 - **On** is off for that computer in **Settings → Integrations**. Turn it on.
 - Termivoa on that computer is older than the next beta. Update it.
 
@@ -493,9 +493,9 @@ A new worktree took longer than the phone waits (45 seconds). The computer may s
 
 herdr is too old to open a tab that has no agent. Update herdr.
 
-### A herdr terminal ends at once and says "already has an attached client"
+### "herdr on mac did not open this terminal. Another program may hold it, or it just closed."
 
-Someone attached to that terminal directly in herdr. Termivoa never takes it over. Close that attach in herdr, then open the row again.
+Someone attached to that terminal directly in herdr, or its pane closed at that moment. Termivoa never takes a terminal over. Close that attach in herdr, then tap **Try again** or open the row again.
 
 ## Where are the logs?
 
