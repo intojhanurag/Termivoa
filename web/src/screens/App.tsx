@@ -946,7 +946,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onSessions={toSessions}
               onSettings={() => navigate({ name: 'settings' })}
               onChanged={() => refresh(view.session.computer.origin)}
-              onStartNew={(runFirst) => { void startNew(view.session, runFirst); }}
+              onStartNew={(runFirst) => startNew(view.session, runFirst)}
               onStartWorktree={(worktree, runFirst) => startWorktree(view.session, worktree, runFirst)}
               onRevoked={(reason) => revoked(view.session.computer, reason)}
             />

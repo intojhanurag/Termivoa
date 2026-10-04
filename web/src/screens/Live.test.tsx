@@ -7,7 +7,7 @@ import { INITIAL_STATUS, type ConnectionStatus } from '../terminal/Connection';
 import { viewedKey } from './activity';
 import type { HostedSession } from './allSessions';
 import { canTakeControl, CockpitDock, controlBadge, controllerLine, ReadOnlyDock } from './Dock';
-import { areaClick, ChangesWait, liveTabs, TabBar } from './Live';
+import { areaClick, ChangesWait, liveTabs, SessionLost, TabBar } from './Live';
 
 const live: ConnectionStatus = { ...INITIAL_STATUS, link: 'live', control: 'observer', sessionState: 'running' };
 const noop = () => undefined;
@@ -221,5 +221,13 @@ describe('ChangesWait', () => {
       expect(markup).toContain('>Back</button>');
       expect(markup.includes('Check your connection')).toBe(failed);
     }
+  });
+});
+
+describe('session lost', () => {
+  it('says "Starting…" on New session while the new one starts, so one tap starts one session', () => {
+    const html = renderToStaticMarkup(<SessionLost title="build" where="vps" onSessions={noop} onStartNew={async () => undefined} />);
+    expect(html).toContain('“build” ended on vps. Nothing was re-run.');
+    expect(html).toMatch(/<button type="button" class="primary"><span class="btn-swap"><span>New session<\/span><span class="off" aria-hidden="true">.*?Starting…<\/span><\/span><\/button>/u);
   });
 });
