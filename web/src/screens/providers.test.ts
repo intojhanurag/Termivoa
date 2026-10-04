@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api/http';
 import { Scheduler } from '../terminal/scheduler';
-import { group, item, mac, okEntry, providerEntry, ready, settingsWith, snapshot, target, vps } from './providerFixtures';
+import { group, info, item, mac, okEntry, providerEntry, ready, settingsWith, snapshot, target, vps } from './providerFixtures';
 import {
-  attentionCount, findTarget, nextProviderStatus, providerKey, providerSources, providerState, providerTabs, rollUp, shown, wordSummary,
+  attentionCount, findTarget, INSTALL_COMMANDS, nextProviderStatus, polled, providerKey, providerSources, providerState, providerTabs, rollUp, shown, staleSettings, wordSummary,
 } from './providers';
 
 describe('providerSources', () => {
@@ -16,6 +16,34 @@ describe('providerSources', () => {
     expect(sources.map((source) => `${source.computer.label} ${source.info.id}`)).toEqual(['mac herdr']);
     const { providers: _absent, ...without } = settingsWith();
     expect(providerSources([{ computer: mac, status: { kind: 'ok', settings: without, sessions: [], at: 0 } }, okEntry(vps, { providers: [] })])).toEqual([]);
+  });
+
+  it('shows the manage actions only for a computer at revision 5 or later', () => {
+    expect(providerSources([okEntry(mac), okEntry(vps, { protocolRevision: 5 })]).map((source) => source.manage)).toEqual([false, true]);
+  });
+
+  it('does not poll a provider that is not installed, and gives it no tab and no count', () => {
+    const absent = info({ state: 'notInstalled', canInstall: true });
+    const [source] = providerSources([okEntry(mac, { protocolRevision: 5, providers: [absent] })]);
+    // It stays a source (its card in Settings → Integrations), but the scheduler never gets its key.
+    expect(source?.info.state).toBe('notInstalled');
+    expect(polled({ info: absent })).toBe(false);
+    expect(polled({ info: info() })).toBe(true);
+    // A read that finds it gone (uninstalled meanwhile) hides the tab too.
+    const gone = providerEntry(mac, { kind: 'ok', snapshot: snapshot([], { state: 'notInstalled' }), at: 0 });
+    expect(shown(gone)).toBe(false);
+    expect(providerTabs([gone])).toEqual([]);
+    expect(attentionCount([gone])).toBe(0);
+  });
+
+  it('types the same install command on every computer: a constant of the app', () => {
+    expect(INSTALL_COMMANDS).toEqual({ herdr: 'curl -fsSL https://herdr.dev/install.sh | sh' });
+    expect(INSTALL_COMMANDS.other).toBeUndefined();
+  });
+
+  it('names the computers whose settings are older than their provider read', () => {
+    const stopped = providerEntry(mac, { kind: 'ok', snapshot: snapshot([], { state: 'notRunning' }), at: 0 });
+    expect(staleSettings([stopped, ready(vps), providerEntry(vps, { kind: 'unreachable' })])).toEqual(['https://mac.tailx.ts.net notRunning']);
   });
 
   it('reads each provider under its own key, never the computer\'s origin', () => {

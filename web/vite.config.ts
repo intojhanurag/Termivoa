@@ -80,7 +80,7 @@ const HTTP_NAMES = [
   'pairRedeemResponse', 'pairPollResponse', 'previewConfigResponse', 'pushConfigResponse', 'pushTestResponse',
   'uploadResponse', 'computerListResponse', 'computer', 'computerAddResponse', 'computerFoundResponse', 'foundComputer',
   'errorResponse', 'providerInfo', 'providerSnapshotResponse', 'providerGroup', 'providerItem', 'providerTarget',
-  'providerOpenResponse', 'providerCreateResponse',
+  'providerOpenResponse', 'providerCreateResponse', 'providerManageResponse',
 ] as const satisfies ReadonlyArray<HttpSchema>;
 
 /** Every HttpSchema name to its schema ref; a name missing here fails the type check. */

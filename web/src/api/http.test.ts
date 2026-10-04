@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_PROTOCOL_REVISION, PROTOCOL_REVISION } from '../generated/protocol';
 import {
   api, ApiError, blobToBase64, client, deviceLabelProblem, firstLabel, forgetClient, MAX_RESPONSE_BYTES, PEER_REQUEST_FAILED,
-  PROVIDER_CREATE_TIMEOUT_MS, providerWord, REQUEST_TIMEOUT_MS, revisionProblem, UPLOAD_TIMEOUT_MS,
+  PROVIDER_CREATE_TIMEOUT_MS, PROVIDER_MANAGE_TIMEOUT_MS, providerWord, REQUEST_TIMEOUT_MS, revisionProblem, UPLOAD_TIMEOUT_MS,
 } from './http';
 
 // Pretend this app is at revision 3 and serves computers from revision 2, so a
@@ -339,6 +339,53 @@ describe('provider routes', () => {
       'POST /api/v1/providers/herdr/open', 'PATCH /api/v1/providers/herdr', 'POST /api/v1/providers/herdr/create',
     ]);
     for (const [, init] of calls) expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Pterm-Request': '1' });
+  });
+
+  it('manages with the mutation header and waits 30 s; an answer keeps only the fields the schema knows', async () => {
+    const fetch = vi.fn(async () => json(200, { itemId: 'w10', targetId: 'w10:p1.term_9', path: '/Users/demo' }));
+    vi.stubGlobal('fetch', fetch);
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await expect(api.providerManage('herdr', { action: 'newTab', itemId: 'w10' })).resolves.toEqual({ itemId: 'w10', targetId: 'w10:p1.term_9' });
+    expect(timeout).toHaveBeenCalledWith(PROVIDER_MANAGE_TIMEOUT_MS);
+    expect(PROVIDER_MANAGE_TIMEOUT_MS).toBe(30_000);
+    const [path, init] = (fetch.mock.calls as unknown as Array<[string, RequestInit]>)[0] ?? ['', {}];
+    expect(`${init.method} ${path}`).toBe('POST /api/v1/providers/herdr/manage');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'X-Pterm-Request': '1' });
+    expect(JSON.parse(String(init.body))).toEqual({ action: 'newTab', itemId: 'w10' });
+
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { problem: 'uncommitted' })));
+    await expect(api.providerManage('herdr', { action: 'removeItem', itemId: 'w8', name: 'silver-meadow' })).resolves.toEqual({ problem: 'uncommitted' });
+    // A problem or a target the app does not know is refused, never shown or opened.
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { problem: 'rm -rf' })));
+    await expect(api.providerManage('herdr', { action: 'removeItem', itemId: 'w8', name: 'silver-meadow' })).rejects.toMatchObject({ code: 'invalid_response' });
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { targetId: '../x' })));
+    await expect(api.providerManage('herdr', { action: 'newTab', itemId: 'w8' })).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it('keeps a manage refusal\'s code, with home\'s own words and never a peer\'s', async () => {
+    const refusal = () => json(409, { error: { code: 'operation_conflict', message: 'The item changed.' } });
+    vi.stubGlobal('fetch', vi.fn(async () => refusal()));
+    await expect(api.providerManage('herdr', { action: 'closeItem', itemId: 'w8', name: 'x' })).rejects.toMatchObject({ code: 'operation_conflict', message: 'The item changed.' });
+    await expect(client('https://vps.tailx.ts.net').providerManage('herdr', { action: 'closeItem', itemId: 'w8', name: 'x' }))
+      .rejects.toMatchObject({ code: 'operation_conflict', message: PEER_REQUEST_FAILED });
+  });
+
+  it('reads revision 5: not installed with canInstall, canStart, and a linked worktree', async () => {
+    const base = { id: 'herdr', name: 'herdr', enabled: true, notify: [], canCreate: false, agentKinds: [] };
+    const settings = {
+      device, projects: [], shellProfiles: [], hostBuild: '0.1.0', brokerGeneration: '00000000-0000-4000-8000-000000000002',
+      protocolRevision: 3, minProtocolRevision: 1,
+      providers: [{ ...base, state: 'notInstalled', canInstall: true }],
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, settings)));
+    await expect(api.settings()).resolves.toMatchObject({ providers: [{ state: 'notInstalled', canInstall: true }] });
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { ...settings, providers: [{ ...base, state: 'notRunning', canStart: true }] })));
+    await expect(api.settings()).resolves.toMatchObject({ providers: [{ state: 'notRunning', canStart: true }] });
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { provider: 'herdr', state: 'ready', groups: [
+      { id: 'g1', name: 'shop', state: 'idle', canCreate: true, items: [{ id: 'w8', name: 'silver-meadow', state: 'idle', linked: true, targets: [] }, { id: 'w1', name: 'main', state: 'idle', targets: [] }] },
+    ] })));
+    const list = await api.provider('herdr');
+    expect(list.groups[0]?.items.map((one) => one.linked)).toEqual([true, undefined]);
   });
 
   it('keeps settings readable when one provider entry is bad', async () => {

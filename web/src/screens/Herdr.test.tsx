@@ -115,6 +115,54 @@ describe('the herdr tab (H3)', () => {
     expect(page).not.toContain('New worktree');
   });
 
+  describe('manage (docs/herdr-manage.md)', () => {
+    const handlers = { onMenu: noop, onWorkspace: noop, onFailure: () => '' };
+    const tree = (entries = [ready(mac)], multi = false) =>
+      renderToStaticMarkup(<ProviderTree entries={entries} multi={multi} now={now} onOpen={noop} onCreate={noop} onRetry={retry} manage={handlers} />);
+    const stopped = (extra = {}) => providerEntry(mac, { kind: 'ok', snapshot: snapshot([], { state: 'notRunning' }), at: 0 }, { state: 'notRunning', ...extra });
+
+    it('puts a ⋯ menu button by every item row, beside the row and never inside it', () => {
+      const page = tree();
+      for (const name of ['main', 'silver-meadow', 'lucky-valley', 'notes', 'notes · 2']) expect(page).toContain(`aria-label="Menu for ${name}"`);
+      // The project row of a folding group has no menu: its items have.
+      expect(page).not.toContain('aria-label="Menu for shop"');
+      expect(page).toContain('<li class="item-line"><button type="button" class="session-row provider-item nested"');
+      expect(page).toContain('</button><button type="button" class="round item-menu" aria-label="Menu for silver-meadow" aria-haspopup="dialog"><span aria-hidden="true">⋯</span></button></li>');
+    });
+
+    it('has no menu, no New workspace and no Start without the handlers or below revision 5', () => {
+      for (const page of [html([ready(mac)]), tree([{ ...ready(mac), manage: false }]), html([stopped({ canStart: true })]), tree([{ ...stopped({ canStart: true }), manage: false }])]) {
+        expect(page).not.toContain('Menu for');
+        expect(page).not.toContain('New workspace');
+        expect(page).not.toContain('<span>Start');
+      }
+      // The All tab's rows never have a menu.
+      expect(renderToStaticMarkup(<ProviderSection entries={[ready(mac)]} multi={false} now={now} onOpen={noop} />)).not.toContain('Menu for');
+    });
+
+    it('offers New workspace for each computer whose provider is ready, also with an empty list', () => {
+      expect(tree()).toContain('aria-haspopup="dialog">New workspace</button>');
+      const empty = tree([ready(mac, [])]);
+      expect(empty).toContain('No herdr projects on mac.');
+      expect(empty).toContain('>New workspace</button>');
+      const two = tree([ready(mac), ready(vps, []), stopped()], true);
+      expect(two).toContain('>New workspace on mac</button>');
+      expect(two).toContain('>New workspace on vps</button>');
+      expect(two.match(/New workspace/gu)).toHaveLength(2);
+      expect(tree([providerEntry(mac, { kind: 'loading' })])).not.toContain('New workspace');
+    });
+
+    it('has Start herdr on the not-running notice only where the computer can start it', () => {
+      const can = tree([stopped({ canStart: true })]);
+      expect(can).toContain('herdr is not running on mac');
+      expect(can).toContain('<span>Start <bdi>herdr</bdi></span>');
+      expect(can).not.toContain('Start it there');
+      const cannot = tree([stopped()]);
+      expect(cannot).toContain('Start it there; its projects show here.');
+      expect(cannot).not.toContain('<span>Start');
+    });
+  });
+
   it('finds the first blocked agent for the bottom button', () => {
     expect(firstBlocked([ready(mac)])).toEqual({ computer: mac, provider: 'herdr', targetId: 'w8:p1.term_b1' });
     expect(firstBlocked([ready(mac, [])])).toBeUndefined();

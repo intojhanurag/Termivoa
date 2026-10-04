@@ -4,6 +4,7 @@ import type { Computer } from '../computers';
 import type { HTTPProviderGroup, HTTPProviderItem } from '../generated/protocol';
 import { since } from './activity';
 import { atLeast, cantReach, CHECKING_MIN_MS } from './allSessions';
+import { StartButton } from './ProviderManage';
 import { countWords, groupsOf, providerState, rollUp, shown, type ProviderEntry } from './providers';
 import { Button, Notice } from './ui';
 
@@ -95,7 +96,23 @@ export function firstBlocked(entries: ReadonlyArray<ProviderEntry>): ProviderTap
   return undefined;
 }
 
-function ItemRow({ entry, item, name, big, now, onOpen }: {
+/** What the provider tab needs for the manage actions (docs/herdr-manage.md, section 6); shown only for a computer at FEATURE_REVISION.providerManage. */
+export interface ManageHandlers {
+  /** The ⋯ of an item row. */
+  readonly onMenu: (entry: ProviderEntry, group: HTTPProviderGroup, item: HTTPProviderItem) => void;
+  readonly onWorkspace: (entry: ProviderEntry) => void;
+  readonly onFailure: (error: unknown, from: Computer) => string;
+}
+
+function MenuButton({ name, onClick }: { readonly name: string; readonly onClick: () => void }) {
+  return (
+    <button type="button" className="round item-menu" aria-label={`Menu for ${name}`} aria-haspopup="dialog" onClick={onClick}>
+      <span aria-hidden="true">⋯</span>
+    </button>
+  );
+}
+
+function ItemRow({ entry, item, name, big, now, onOpen, onMenu }: {
   readonly entry: ProviderEntry;
   readonly item: HTTPProviderItem;
   readonly name: string;
@@ -103,12 +120,14 @@ function ItemRow({ entry, item, name, big, now, onOpen }: {
   readonly big: boolean;
   readonly now: number;
   readonly onOpen: (tap: ProviderTap) => void;
+  /** herdr tab only, where the computer can manage: the ⋯ by the row. */
+  readonly onMenu?: (() => void) | undefined;
 }) {
   const word = providerWord(item.state);
   const count = countWords(item.targets).get(word) ?? 0;
   const open = item.openTarget;
   return (
-    <li>
+    <li {...(onMenu === undefined ? {} : { className: 'item-line' })}>
       <button
         type="button"
         className={`session-row provider-item${big ? '' : ' nested'}${dimmed(entry.computer, item) ? ' seen' : ''}`}
@@ -127,12 +146,18 @@ function ItemRow({ entry, item, name, big, now, onOpen }: {
           <span className="row-meta"><Names parts={itemMeta(item)} /></span>
         </span>
       </button>
+      {onMenu !== undefined && <MenuButton name={name} onClick={onMenu} />}
     </li>
   );
 }
 
 /** A provider's trouble on one computer, or nothing while it is fine. */
-export function ProviderProblem({ entry, onRetry }: { readonly entry: ProviderEntry; readonly onRetry: (key: string) => Promise<void> }) {
+export function ProviderProblem({ entry, onRetry, onFailure }: {
+  readonly entry: ProviderEntry;
+  readonly onRetry: (key: string) => Promise<void>;
+  /** Present where Start may show (ManageHandlers). */
+  readonly onFailure?: ManageHandlers['onFailure'] | undefined;
+}) {
   const [retrying, setRetrying] = useState(false);
   const { computer, info } = entry;
   if (entry.status.kind === 'unreachable') {
@@ -149,14 +174,16 @@ export function ProviderProblem({ entry, onRetry }: { readonly entry: ProviderEn
     );
   }
   switch (providerState(entry)) {
-    case 'notRunning': return <Notice tone="neutral" title={`${info.name} is not running on ${computer.label}`}>Start it there; its projects show here.</Notice>;
+    case 'notRunning': return onFailure !== undefined && entry.manage && info.canStart === true
+      ? <Notice tone="neutral" title={`${info.name} is not running on ${computer.label}`} action={<StartButton source={entry} className="link" onStarted={() => onRetry(entry.key)} onFailure={onFailure} />} />
+      : <Notice tone="neutral" title={`${info.name} is not running on ${computer.label}`}>Start it there; its projects show here.</Notice>;
     case 'unsupported': return <Notice tone="neutral" title={`Update ${info.name} on ${computer.label}`}>This version is too old for Termivoa.</Notice>;
     default: return null;
   }
 }
 
 /** The herdr tab (H3): each computer's projects, fold and unfold, worktrees with state words. */
-export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }: {
+export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, manage }: {
   readonly entries: ReadonlyArray<ProviderEntry>;
   /** The phone uses more than one computer: "ON MAC" by each project. */
   readonly multi: boolean;
@@ -165,6 +192,8 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
   /** Absent until the + sheet is wired; shown only where both the provider and the group can create. */
   readonly onCreate?: ((entry: ProviderEntry, group: HTTPProviderGroup) => void) | undefined;
   readonly onRetry: (key: string) => Promise<void>;
+  /** Absent: no item menu, no New workspace, no Start. */
+  readonly manage?: ManageHandlers | undefined;
 }) {
   const [, redraw] = useReducer((value: number) => value + 1, 0);
   const list = entries.filter(shown);
@@ -176,9 +205,10 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
         const groups = groupsOf(entry);
         const names = numberedNames(groups);
         const ready = entry.status.kind === 'ok' && entry.status.snapshot.state === 'ready';
+        const handlers = entry.manage ? manage : undefined;
         return (
           <div key={entry.key} className="stack provider-computer">
-            <ProviderProblem entry={entry} onRetry={onRetry} />
+            <ProviderProblem entry={entry} onRetry={onRetry} onFailure={handlers?.onFailure} />
             {ready && groups.length === 0 && <p className="muted">No {entry.info.name} projects on {entry.computer.label}.</p>}
             {groups.length > 0 && (
               <ul className="rows">
@@ -193,7 +223,10 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
                   const single = singleRow(group);
                   if (single !== undefined) {
                     return (
-                      <ItemGroupRow key={group.id} entry={entry} item={single} name={name} where={where} state={state} add={add} onOpen={onOpen} />
+                      <ItemGroupRow
+                        key={group.id} entry={entry} item={single} name={name} where={where} state={state} add={add} onOpen={onOpen}
+                        menu={handlers === undefined ? null : <MenuButton name={name} onClick={() => handlers.onMenu(entry, group, single)} />}
+                      />
                     );
                   }
                   const open = isOpen(entry.computer, group);
@@ -217,7 +250,10 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
                       {open && (
                         <ul className="rows group-items" id={id}>
                           {group.items.map((item) => (
-                            <ItemRow key={item.id} entry={entry} item={item} name={item.name} big={false} now={now} onOpen={onOpen} />
+                            <ItemRow
+                              key={item.id} entry={entry} item={item} name={item.name} big={false} now={now} onOpen={onOpen}
+                              onMenu={handlers === undefined ? undefined : () => handlers.onMenu(entry, group, item)}
+                            />
                           ))}
                         </ul>
                       )}
@@ -228,6 +264,11 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry }:
             )}
             {entry.status.kind === 'ok' && entry.status.snapshot.truncated === true && (
               <p className="hint-text">Some projects on {entry.computer.label} are not shown.</p>
+            )}
+            {ready && handlers !== undefined && (
+              <button type="button" className="secondary" aria-haspopup="dialog" onClick={() => handlers.onWorkspace(entry)}>
+                New workspace{multi ? ` on ${entry.computer.label}` : ''}
+              </button>
             )}
           </div>
         );
@@ -262,7 +303,7 @@ function AddButton({ name, onClick }: { readonly name: string; readonly onClick:
 }
 
 /** A workspace outside git, or a git project with only its main checkout: one row like a project row, that opens its terminal. */
-function ItemGroupRow({ entry, item, name, where, state, add, onOpen }: {
+function ItemGroupRow({ entry, item, name, where, state, add, menu, onOpen }: {
   readonly entry: ProviderEntry;
   readonly item: HTTPProviderItem;
   readonly name: string;
@@ -270,6 +311,8 @@ function ItemGroupRow({ entry, item, name, where, state, add, onOpen }: {
   readonly state: ReactNode;
   /** The + of a git project; null outside git. */
   readonly add: ReactNode;
+  /** The ⋯ of the item; null where the computer cannot manage. */
+  readonly menu: ReactNode;
   readonly onOpen: (tap: ProviderTap) => void;
 }) {
   const open = item.openTarget;
@@ -290,6 +333,7 @@ function ItemGroupRow({ entry, item, name, where, state, add, onOpen }: {
           <GroupTitle name={name} where={where} />
           <span className="group-state">{state}</span>
         </button>
+        {menu}
         {add}
       </div>
     </li>

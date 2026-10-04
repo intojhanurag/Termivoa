@@ -20,7 +20,7 @@ import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { GONE, type ProviderTap } from './Herdr';
-import { useProviders } from './providers';
+import { staleSettings, useProviders } from './providers';
 import { Sessions } from './Sessions';
 import { Setup } from './Setup';
 import { Banner } from './ui';
@@ -649,6 +649,12 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const all = useAllSessions(polling, computers, onHomeAuth, adding?.phase.kind === 'done' ? adding.origin : undefined);
   // Providers (herdr) are read only while Sessions, a provider terminal or Settings (Integrations) shows; their failures never reach `all`.
   const providers = useProviders(view.name === 'sessions' || view.name === 'provider' || view.name === 'settings', all.entries);
+  // Settings are kept for the visit, and they carry what the provider can do (canStart, canInstall): when a provider's
+  // own read says another state, read that computer's settings again, once per change.
+  const staleProviders = staleSettings(providers.entries).join('\n');
+  useEffect(() => {
+    for (const line of staleProviders === '' ? [] : staleProviders.split('\n')) void all.reload(line.split(' ')[0]).catch(() => undefined);
+  }, [staleProviders, all.reload]);
   // Push from peers follows the list: at start, when a computer is added or
   // removed (log out included), and when one stops or starts being usable
   // (can't reach, pair again, outdated), so a peer that was offline when push
@@ -1118,6 +1124,11 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onLogout={logout}
               onCheck={(origin) => all.reload(origin)}
               onProviderReload={providers.reload}
+              onInstall={(session, command) => {
+                void refresh(session.computer.origin);
+                // Typed, not run: the user reads the command and presses Enter (docs/herdr-manage.md, A7).
+                navigate({ name: 'live', session, runFirst: { command, settled: false, typeOnly: true } });
+              }}
               onComputersChanged={reloadComputers}
             />
           </Suspense>

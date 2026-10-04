@@ -390,6 +390,16 @@ label { color: var(--soft); font-size: 14px; }
 .group-where, .faint { flex-shrink: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; line-height: 14px; text-transform: uppercase; white-space: nowrap; }
 .group-state { display: flex; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
 button.group-add { flex-shrink: 0; margin-right: -12px; color: var(--text); }
+/* The ⋯ of an item (its menu): beside the row, never inside it; the row gives way, the button stays whole. */
+.item-line { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.item-line > .session-row { flex: 1; width: auto; min-width: 0; border-bottom: 0; }
+button.item-menu { flex-shrink: 0; color: var(--text); font-size: 20px; line-height: 1; }
+button.item-menu:last-child { margin-right: -12px; }
+/* Sheet lists with a busy row (New tab, a project): the label stays at the left; a long name wraps. */
+.menu-list .btn-swap { max-width: 100%; overflow-wrap: anywhere; }
+.menu-list .btn-swap > * { justify-content: flex-start; min-width: 0; }
+.menu-list .hint-text { margin: 0; padding: 8px 4px; }
+.create-title h2 { overflow-wrap: anywhere; }
 .provider-head { display: flex; align-items: center; gap: 8px; padding: 18px 0 8px; border-bottom: 1px solid var(--line); }
 .provider-head-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .provider-head + .rows .provider-item:last-child { border-bottom: 1px solid var(--line); }
