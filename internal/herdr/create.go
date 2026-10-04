@@ -66,24 +66,20 @@ func (provider *Provider) Create(ctx context.Context, request protocol.HTTPProvi
 			TerminalID string `json:"terminal_id"`
 		} `json:"root_pane"`
 	}
-	// The group's items before the call: after a timeout only a new one can be the worktree this call made.
+	// The items before the call: after a timeout only a new one can be the worktree this call made.
 	before := map[string]bool{}
-	provider.mu.RLock()
-	for _, existing := range provider.view.response.Groups {
-		if existing.ID == request.GroupID {
-			for _, item := range existing.Items {
-				before[item.ID] = true
-			}
+	for _, existing := range current.response.Groups {
+		for _, item := range existing.Items {
+			before[item.ID] = true
 		}
 	}
-	provider.mu.RUnlock()
 	err := provider.call(ctx, createTimeouts.worktree, "worktree.create", map[string]any{
 		"workspace_id": group.workspace, "branch": request.Name, "focus": false,
 	}, &created)
 	var failure *callError
 	switch {
 	case timedOut(err):
-		item, found := provider.findItem(ctx, request.GroupID, request.Name, before)
+		item, found := provider.findItem(ctx, request.Name, before)
 		if !found {
 			return response, ErrWorktree
 		}
@@ -167,20 +163,18 @@ func (provider *Provider) readMapped(ctx context.Context) (mapped, bool) {
 	provider.mu.RLock()
 	attachAny := provider.view.caps.attachAny
 	provider.mu.RUnlock()
-	return mapSnapshot(snapshot, attachAny, provider.now(), nil), true
+	return mapSnapshot(snapshot, attachAny, provider.now(), nil, nil), true
 }
 
 // findItem looks for the item a timed-out worktree.create made: herdr names
-// the new workspace after the branch.
-func (provider *Provider) findItem(ctx context.Context, groupID, name string, before map[string]bool) (protocol.HTTPProviderItem, bool) {
+// the new workspace after the branch. It looks in every group: the first
+// worktree of a repository moves its group from ws-<id> to g<hash>.
+func (provider *Provider) findItem(ctx context.Context, name string, before map[string]bool) (protocol.HTTPProviderItem, bool) {
 	result, ok := provider.readMapped(ctx)
 	if !ok {
 		return protocol.HTTPProviderItem{}, false
 	}
 	for _, group := range result.response.Groups {
-		if group.ID != groupID {
-			continue
-		}
 		for _, item := range group.Items {
 			if item.Name == name && !before[item.ID] {
 				return item, true

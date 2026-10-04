@@ -107,7 +107,9 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 
 - **Same access as the Sessions list.** The herdr requests need the same pairing cookie and the same check of where a request comes from. Another computer in your list reads its herdr only through its own Termivoa.
 - **Socket and program, both yours.** Termivoa uses herdr's own socket to list, read state and create worktrees. It also runs the herdr program: once for each open terminal, and to check what that herdr version can do. It checks that the socket and the herdr program belong to you.
-- **Limits for each phone.** Open 20 per minute, create 3 per minute, settings 10 per minute.
+- **Limits for each phone.** Open 20 per minute, create 3 per minute, settings 10 per minute, manage 30 per minute.
+- **Manage asks first and never forces.** The phone can close a herdr workspace or one of its tabs, remove a worktree, and make a tab or a workspace in one of your Termivoa projects. A removal is refused when the worktree has changes that are not committed; it does delete files that git ignores, and the app says so before you confirm. The phone sends a project, never a folder path.
+- **Termivoa downloads nothing.** **Install herdr** opens a session with herdr's own install command typed in; it runs only when you press Enter. **Start herdr** runs the herdr program that is already on the computer, after the same checks.
 - **Opening never takes control.** It is read-only until you tap **Take control**.
 - **No takeover.** Termivoa never kicks another herdr client off a terminal.
 - **No herdr prefix keys.** Termivoa sends `ctrl+b` to the agent as a plain `ctrl+b`, so the phone cannot send herdr's prefix commands. If you set another prefix key in herdr's `config.toml`, a phone with control could send that key; `pterm doctor` warns about it.

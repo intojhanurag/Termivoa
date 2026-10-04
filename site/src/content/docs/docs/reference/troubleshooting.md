@@ -441,6 +441,30 @@ Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` lin
 - **On** is off for that computer in **Settings → Integrations**. Turn it on.
 - Termivoa on that computer is older than the next beta. Update it.
 
+### The herdr card says "Not installed"
+
+herdr is not on that computer. Tap **Install herdr**: Termivoa opens a session there with herdr's install command typed in. Press Enter to run it, wait until it ends, then tap **Check again** on the card. The card then says **Not running** and has **Start herdr**.
+
+If the card says "Run `pterm doctor` on mac." and has no **Install herdr**, a herdr program is there but Termivoa will not use it. `pterm doctor` names the reason and the fix.
+
+### "herdr did not start"
+
+Termivoa started herdr's server, but it did not answer in time. Run `herdr server` in a terminal on that computer to see why. On a peer computer the app says only "That computer could not do this."; the fix is the same.
+
+### "The list changed. Look again, then try again."
+
+The workspace was renamed, closed, or herdr restarted after the phone read the list. Nothing was closed or removed. Look at the row again and repeat the action.
+
+### "silver-meadow has changes that are not committed"
+
+Termivoa never removes a worktree that has modified or new files. Open its terminal, commit or discard the changes, then tap **Remove worktree** again.
+
+### "Close its worktrees first."
+
+A project's main checkout cannot be closed while one of its worktrees is open in herdr. Close or remove each worktree, then close the main one.
+
+On herdr 0.9 or later, two workspaces that are both at the main folder of one repository close only together. Termivoa never closes two workspaces in one tap, so close them in herdr on that computer.
+
 ### "herdr is not running on mac"
 
 Start herdr's server on that computer, for example open herdr there. Its projects then show on the phone. If herdr already runs there, run `pterm doctor` on that computer. A line that starts with `! herdr:` says why Termivoa does not use it.

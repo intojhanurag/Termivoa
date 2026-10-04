@@ -65,6 +65,7 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayComputersOffer:  GatewayComputersOfferResult, GatewayComputersFound: GatewayComputersFoundResult,
 	GatewayProvidersGet: GatewayProvidersGetResult, GatewayProvidersUpdate: GatewayProvidersUpdateResult,
 	GatewayProvidersOpen: GatewayProvidersOpenResult, GatewayProvidersCreate: GatewayProvidersCreateResult,
+	GatewayProvidersManage: GatewayProvidersManageResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -399,8 +400,9 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		return validateBrokerRPCSessionRecord(payload.Session)
 	case GatewayError:
 		return validateRPCError[GatewayRPCMessageType](envelope)
-	case GatewayProvidersGet, GatewayProvidersUpdate, GatewayProvidersOpen, GatewayProvidersCreate,
-		GatewayProvidersGetResult, GatewayProvidersUpdateResult, GatewayProvidersOpenResult, GatewayProvidersCreateResult:
+	case GatewayProvidersGet, GatewayProvidersUpdate, GatewayProvidersOpen, GatewayProvidersCreate, GatewayProvidersManage,
+		GatewayProvidersGetResult, GatewayProvidersUpdateResult, GatewayProvidersOpenResult, GatewayProvidersCreateResult,
+		GatewayProvidersManageResult:
 		return validateGatewayProviderPayload(envelope)
 	default:
 		return validateGatewayUploadPayload(envelope)

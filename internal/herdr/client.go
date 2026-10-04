@@ -153,9 +153,11 @@ func (provider *Provider) readSnapshot(ctx context.Context) (wireSnapshot, error
 }
 
 // findBinary returns the first BinaryPaths entry, then the first herdr on
-// PathEnv, that passes tailnet.CheckBinary; "" when none does.
+// PathEnv, that passes tailnet.CheckBinary; "" when none does. It also
+// remembers whether a herdr was refused.
 func (provider *Provider) findBinary() string {
-	path, _ := FindBinary(provider.config)
+	path, refused := FindBinary(provider.config)
+	provider.refusedAny = len(refused) > 0
 	return path
 }
 

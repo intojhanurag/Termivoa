@@ -251,6 +251,21 @@ describe('readNow and the computer\'s health', () => {
     (...args) => published.push(args),
   ).catch(() => undefined);
 
+  it('publishes a read the user asked for as asked, and the app\'s own re-read as not: one quiet failure is not "can\'t reach"', async () => {
+    scheduler.forget(origin);
+    const asked: unknown[][] = [];
+    await reads(true, asked);
+    expect(asked[0]?.[2]).toBe(true);
+    const quiet: unknown[][] = [];
+    await readNow([peer], async () => { throw down; }, (...args) => quiet.push(args), false).catch(() => undefined);
+    expect(quiet[0]?.[2]).toBe(false);
+    // The status keeps the last answer while the scheduler does not count the computer offline.
+    const ok: ComputerStatus = { kind: 'ok', settings, sessions: [], at: 1 };
+    expect(nextStatus(ok, peer, { ok: false, error: down }, quiet[0]?.[2] === true || scheduler.offline(origin), 2)).toBe(ok);
+    expect(nextStatus(ok, peer, { ok: false, error: down }, true, 2).kind).toBe('unreachable');
+    scheduler.forget(origin);
+  });
+
   it('counts a failed read, and an answer clears the backoff and starts a waiting connect', async () => {
     scheduler.forget(origin);
     const gate = scheduler.connectGate(origin);

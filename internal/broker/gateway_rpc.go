@@ -378,7 +378,8 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 	case protocol.GatewayUploadBegin, protocol.GatewayUploadChunk, protocol.GatewayUploadCommit:
 		// An upload must start a fresh connection; see serveUpload.
 		return nil, nil, errUploadOrder
-	case protocol.GatewayProvidersGet, protocol.GatewayProvidersUpdate, protocol.GatewayProvidersOpen, protocol.GatewayProvidersCreate:
+	case protocol.GatewayProvidersGet, protocol.GatewayProvidersUpdate, protocol.GatewayProvidersOpen,
+		protocol.GatewayProvidersCreate, protocol.GatewayProvidersManage:
 		result, err := server.dispatchProvider(ctx, request, authorize)
 		return result, nil, err
 	default:
@@ -424,11 +425,9 @@ func (server *ManagementServer) browserSettings(ctx context.Context, principal a
 			result.ShellProfiles = append(result.ShellProfiles, namedOption(profile.ID, profile.DisplayName))
 		}
 	}
-	// A computer without herdr lists no provider (and the app shows no tab).
+	// A computer without herdr lists it as notInstalled: a card in Settings, no tab.
 	if server.providers != nil {
-		if info, installed := server.providers.info(); installed {
-			result.Providers = []protocol.HTTPProviderInfo{info}
-		}
+		result.Providers = []protocol.HTTPProviderInfo{server.providers.settingsInfo(server.now())}
 	}
 	return result, nil
 }

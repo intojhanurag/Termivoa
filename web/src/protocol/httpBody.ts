@@ -15,6 +15,7 @@ import type {
   HTTPProviderGroup,
   HTTPProviderInfo,
   HTTPProviderItem,
+  HTTPProviderManageResponse,
   HTTPProviderOpenResponse,
   HTTPProviderSnapshotResponse,
   HTTPProviderTarget,
@@ -56,6 +57,7 @@ export interface HttpBodies {
   readonly providerTarget: HTTPProviderTarget;
   readonly providerOpenResponse: HTTPProviderOpenResponse;
   readonly providerCreateResponse: HTTPProviderCreateResponse;
+  readonly providerManageResponse: HTTPProviderManageResponse;
 }
 
 export type HttpSchema = keyof HttpBodies;

@@ -86,6 +86,19 @@ In this order.
      resizing the laptop pane; move to it when 0.8 support ends.
    - **Custom herdr prefix key:** today `pterm doctor` only warns; decide if
      Termivoa should double the configured key too.
+   - ~~**Manage herdr from the phone**~~ Done in the next beta (ADR 0009,
+     `docs/herdr-manage.md`): close, remove, new tab, new workspace, start,
+     the install command, and **+** on every git project. Open: the real `systemd-run`
+     start on a Linux computer; a peer computer's start failure shows only
+     "That computer could not do this."; force-remove and rename are not offered; on herdr 0.9.3 two
+     workspaces at one repository's main checkout close only in herdr
+     (it wants `close_group`); the git check can leave more than one
+     waiting goroutine for a workspace on a hung mount that leaves and
+     comes back; the create route's busy text still says "another
+     worktree is being made"; `SessionMenu.tsx` Terminate has the
+     double-tap pattern that the herdr confirmations no longer have;
+     `ProviderCreate.tsx` shows its field errors muted (`error
+     hint-text`).
    - **Named herdr sessions:** only the default session shows.
    - **Windows:** herdr is not supported there.
    - **herdr installed later:** the phone shows it only the next time the

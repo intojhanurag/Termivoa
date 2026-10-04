@@ -24,15 +24,16 @@ herdr is the only provider today. Termivoa is built so that other workspace tool
 | --- | --- |
 | Sessions | A tab with the provider's name, such as **herdr**, with its projects, worktrees and agent state words. |
 | Live | One terminal of the provider, opened with a tap. It is read-only until you tap **Take control**. |
+| The **⋯** menu on a row | **New tab**, **Close tab**, **Close workspace** and **Remove worktree**, each after a confirmation where it ends or deletes something. **New workspace** is under the list. |
 | Notifications | A buzz when an agent is blocked or finished. |
-| **Settings → Integrations** | One card for each computer that has the provider, with the switches **On**, **Buzz when blocked** and **Buzz when finished**. |
+| **Settings → Integrations** | One card for each computer. With the provider installed: the switches **On**, **Buzz when blocked** and **Buzz when finished**, and **Start herdr** when it does not run. Without it: **Not installed** and **Install herdr**. |
 
-A computer without a provider shows no tab and no card, and nothing changes.
+A computer without a provider shows no tab. Its card in **Settings → Integrations** says **Not installed**.
 
 ## How do I turn a provider on?
 
-You do not. Termivoa finds a supported provider on the computer by itself. To turn it off for one computer, open **Settings → Integrations** and turn **On** off.
+You do not. Termivoa finds a supported provider on the computer by itself. If the provider is not installed, **Install herdr** opens a terminal with the install command typed in, and you press Enter. See [Termivoa + herdr](/docs/guides/herdr/#how-do-i-install-or-start-herdr-from-the-phone). To turn it off for one computer, open **Settings → Integrations** and turn **On** off.
 
 ## What can a phone see and do through a provider?
 
-A paired phone sees the provider's project names, worktree names, tab labels and agent kinds, and can type into a terminal that it opens. It does not get folder paths or terminal titles in the list or in notifications. See [Security](/docs/reference/security/).
+A paired phone sees the provider's project names, worktree names, tab labels and agent kinds, can type into a terminal that it opens, and can close a workspace, remove a worktree that has no uncommitted change, and make a tab or a workspace. It does not get folder paths or terminal titles in the list or in notifications. See [Security](/docs/reference/security/).

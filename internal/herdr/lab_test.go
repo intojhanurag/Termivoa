@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -128,6 +129,278 @@ func TestLab(t *testing.T) {
 	if _, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: notesGroup, Name: "x"}); !errors.Is(err, ErrNotGit) {
 		t.Fatalf("create outside git = %v", err)
 	}
+	lab.manage(provider)
+}
+
+// manage is docs/herdr-manage.md on the real herdr: A1 to A6, that the
+// server stays up with no workspace, and $PATH in a pane of a server that
+// the provider started. From here the poll loop runs; nothing calls step.
+func (lab *lab) manage(provider *Provider) {
+	t := lab.t
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); provider.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	text := func(value string) *string { return &value }
+	if info, _ := provider.Info(); info.Version != nil {
+		t.Logf("manage on herdr %s", *info.Version)
+	}
+	// group waits for a poll that shows the group named name (nil want: any) and returns it.
+	group := func(name string, want func(protocol.HTTPProviderGroup) bool) protocol.HTTPProviderGroup {
+		t.Helper()
+		var found protocol.HTTPProviderGroup
+		for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			provider.Poll()
+			for _, candidate := range provider.Snapshot().Groups {
+				if candidate.Name == name && (want == nil || want(candidate)) {
+					return candidate
+				}
+				if candidate.Name == name {
+					found = candidate
+				}
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("group %q never matched: %+v (all: %+v)", name, found, provider.Snapshot().Groups)
+			}
+		}
+	}
+	manage := func(request protocol.HTTPProviderManageRequest, project Project) protocol.HTTPProviderManageResponse {
+		t.Helper()
+		response, err := provider.Manage(ctx, request, project)
+		if err != nil {
+			t.Fatalf("%s: %v", request.Action, err)
+		}
+		return response
+	}
+	// checkout is the folder of a workspace, from herdr's own record.
+	checkout := func(item string) string {
+		t.Helper()
+		snapshot, err := provider.readSnapshot(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, workspace := range records(snapshot.Workspaces, func(record wireWorkspace) string { return record.ID }) {
+			if workspace.ID == item && workspace.Worktree != nil {
+				return workspace.Worktree.CheckoutPath
+			}
+		}
+		t.Fatalf("no checkout path for %s", item)
+		return ""
+	}
+
+	// A1: a git workspace that herdr gave no worktree record has "+"; one outside git has none.
+	site := lab.repo("site")
+	if err := os.WriteFile(filepath.Join(site, ".gitignore"), []byte(".env\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lab.git("-C", site, "add", ".gitignore")
+	lab.git("-C", site, "-c", "user.email=lab@example.com", "-c", "user.name=lab", "commit", "-q", "-m", "ignore")
+	lab.run("workspace", "create", "--cwd", site, "--label", "site", "--no-focus")
+	before := group("site", func(found protocol.HTTPProviderGroup) bool { return found.CanCreate })
+	if !strings.HasPrefix(before.ID, "ws-") || before.Items[0].Linked != nil {
+		t.Fatalf("a git workspace without worktrees = %+v", before)
+	}
+	if notes := group("notes", nil); notes.CanCreate {
+		t.Fatalf("a workspace outside git can create: %+v", notes)
+	}
+	// A1: "+" works there, and the group moves from ws-<id> to g<hash>.
+	created, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: before.ID, Name: "clean-tree"})
+	if err != nil {
+		t.Fatalf("create on a git workspace without worktrees = %v", err)
+	}
+	after := group("site", func(found protocol.HTTPProviderGroup) bool { return len(found.Items) == 2 })
+	if !strings.HasPrefix(after.ID, "g") || after.Items[0].Linked != nil || after.Items[1].Linked == nil || after.Items[1].ID != created.ItemID {
+		t.Fatalf("after the first worktree = %+v", after)
+	}
+
+	// A1: which folder counts when a pane changed folder. A workspace made outside git whose shell then moved into a repository.
+	moved := filepath.Join(lab.root, "moved")
+	if err := os.MkdirAll(moved, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	made := manage(protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace}, Project{Folder: moved, Name: "moved"})
+	if made.ItemID == nil || made.TargetID == nil {
+		t.Fatalf("new workspace = %+v", made)
+	}
+	shell := lab.attach(provider, *made.TargetID)
+	time.Sleep(time.Second)
+	shell.write("cd " + site + "\r")
+	time.Sleep(2 * time.Second)
+	shell.write("\x02q")
+	_ = shell.wait()
+	time.Sleep(3 * time.Second)
+	// The moved workspace has no worktree record yet: its own group, named after it.
+	movedGroup := group("moved", nil)
+	_, err = provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: movedGroup.ID, Name: "moved-tree"})
+	// herdr 0.8.2: the pane's cwd follows its shell, the host sees the repository there, and worktree.create uses it.
+	t.Logf("a pane that moved into a repository: group %q, host canCreate=%t, herdr's worktree.create error=%v", movedGroup.ID, movedGroup.CanCreate, err)
+	if movedGroup.CanCreate != (err == nil) {
+		t.Fatalf("the host and herdr disagree about the moved pane: canCreate=%t, create=%v", movedGroup.CanCreate, err)
+	}
+
+	// A2: a new tab opens at once.
+	tab := manage(protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: &after.Items[0].ID}, Project{})
+	if tab.TargetID == nil {
+		t.Fatalf("new tab = %+v", tab)
+	}
+	if _, err := provider.Attach(*tab.TargetID); err != nil {
+		t.Fatalf("the new tab cannot open: %v", err)
+	}
+
+	// A3: close. A main checkout with an open worktree is refused by the host; herdr is not asked.
+	main := after.Items[0]
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &main.ID, Name: &main.Name}, Project{}); !errors.Is(err, ErrGroupOpen) {
+		t.Fatalf("close a main checkout with a worktree = %v", err)
+	}
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &main.ID, Name: text("other")}, Project{}); !errors.Is(err, ErrRenamed) {
+		t.Fatalf("close under another name = %v", err)
+	}
+
+	// A4: remove. Uncommitted work is never deleted; a clean worktree goes, files that git ignores go with it, the branch stays.
+	tree := checkout(created.ItemID)
+	if err := os.WriteFile(filepath.Join(tree, "work.txt"), []byte("not committed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	remove := protocol.HTTPProviderManageRequest{Action: protocol.RemoveItem, ItemID: &created.ItemID, Name: text("clean-tree")}
+	if dirty := manage(remove, Project{}); dirty.Problem == nil || *dirty.Problem != protocol.Uncommitted {
+		t.Fatalf("remove with uncommitted work = %+v", dirty)
+	}
+	if _, err := os.Stat(filepath.Join(tree, "work.txt")); err != nil {
+		t.Fatalf("uncommitted work was touched: %v", err)
+	}
+	if err := os.Remove(filepath.Join(tree, "work.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, ".env"), []byte("SECRET=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if clean := manage(remove, Project{}); clean.Problem != nil {
+		t.Fatalf("remove a clean worktree = %+v", clean)
+	}
+	group("site", func(found protocol.HTTPProviderGroup) bool {
+		return !slices.ContainsFunc(found.Items, func(item protocol.HTTPProviderItem) bool { return item.ID == created.ItemID })
+	})
+	if _, err := os.Stat(tree); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the worktree folder (with an ignored .env) stayed: %v", err)
+	}
+	if branches := lab.git("-C", site, "branch", "--list", "clean-tree"); !strings.Contains(branches, "clean-tree") {
+		t.Fatalf("the branch is gone: %q", branches)
+	}
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.RemoveItem, ItemID: &main.ID, Name: &main.Name}, Project{}); !errors.Is(err, ErrNotLinked) {
+		t.Fatalf("remove a main checkout = %v", err)
+	}
+
+	// A3 and "the server stays up with no workspace": close everything, worktrees before their main checkout.
+	for round := 0; len(provider.Snapshot().Groups) > 0; round++ {
+		if round == 20 {
+			t.Fatalf("workspaces stayed: %+v", provider.Snapshot().Groups)
+		}
+		for _, found := range provider.Snapshot().Groups {
+			// Last item first. herdr 0.9.3 refuses to close the workspace that owns a repository's
+			// worktrees while another workspace of that repository is open: then the other one goes first.
+			closed := false
+			for index := len(found.Items) - 1; index >= 0 && !closed; index-- {
+				item := found.Items[index]
+				_, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &item.ID, Name: &item.Name}, Project{})
+				t.Logf("close %s %q (linked %v, %d items in the group): %v", item.ID, item.Name, item.Linked != nil, len(found.Items), err)
+				if closed = err == nil; !closed && !errors.Is(err, ErrGroupOpen) {
+					t.Fatalf("closeItem: %v", err)
+				}
+			}
+			if !closed {
+				// herdr 0.9.3: two workspaces at one repository's main checkout close only as a group
+				// (close_group), which Termivoa never sends (a close ends one workspace). The lab does,
+				// to go on; docs/herdr-manage.md, section 13.
+				if len(found.Items) < 2 || found.Items[0].Linked != nil || found.Items[1].Linked != nil {
+					t.Fatalf("no workspace of group %s can be closed: %+v", found.ID, found.Items)
+				}
+				if err := provider.call(ctx, manageTimeouts.call, "workspace.close",
+					map[string]any{"workspace_id": found.Items[0].ID, "close_group": true}, &struct{}{}); err != nil {
+					t.Fatalf("close_group: %v", err)
+				}
+				t.Logf("herdr closes group %s only as a group", found.ID)
+			}
+		}
+		time.Sleep(300 * time.Millisecond)
+		provider.Poll()
+		time.Sleep(300 * time.Millisecond)
+	}
+	time.Sleep(3 * time.Second)
+	if state := provider.Snapshot().State; state != protocol.HTTPProviderStateReady {
+		t.Fatalf("the server left with its last workspace: %s", state)
+	}
+	if _, err := os.Stat(filepath.Join(lab.root, "shop")); err != nil {
+		t.Fatalf("close deleted a folder: %v", err)
+	}
+
+	// A6: stop the lab's server; the provider starts it again (isolated HOME, the lab's session).
+	lab.stop()
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		if info, _ := provider.Info(); info.State == protocol.NotRunning && info.CanStart != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			info, _ := provider.Info()
+			t.Fatalf("after the stop = %+v", info)
+		}
+	}
+	provider.config.PathEnv = filepath.Dir(lab.binary)
+	began := time.Now()
+	manage(protocol.HTTPProviderManageRequest{Action: protocol.StartServer}, Project{})
+	t.Logf("startServer answered ready after %v", time.Since(began).Round(10*time.Millisecond))
+	if info, _ := provider.Info(); info.State != protocol.HTTPProviderStateReady {
+		t.Fatalf("after the start = %+v", info)
+	}
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.StartServer}, Project{}); !errors.Is(err, ErrNotStartable) {
+		t.Fatalf("start while running = %v", err)
+	}
+	// A pane of that server has the PATH the provider gave it.
+	opened := manage(protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace}, Project{Folder: moved, Name: "started"})
+	if opened.TargetID == nil {
+		t.Fatalf("new workspace in the started server = %+v", opened)
+	}
+	client := lab.attach(provider, *opened.TargetID)
+	time.Sleep(time.Second)
+	// To a file: the 45-column pane wraps a long PATH.
+	seen := filepath.Join(lab.root, "pane-env.txt")
+	client.write("echo \"PATH=$PATH HOME=$HOME\" > " + seen + "\r")
+	var env string
+	for deadline := time.Now().Add(10 * time.Second); !strings.HasSuffix(env, "\n"); time.Sleep(100 * time.Millisecond) {
+		data, _ := os.ReadFile(seen)
+		if env = string(data); time.Now().After(deadline) {
+			t.Fatalf("the pane never wrote its environment: %q", env)
+		}
+	}
+	t.Logf("a pane of the started server: %s", strings.TrimSpace(env))
+	path, home, _ := strings.Cut(strings.TrimSpace(env), " HOME=")
+	if !slices.Contains(filepath.SplitList(strings.TrimPrefix(path, "PATH=")), filepath.Dir(lab.binary)) || home != lab.root {
+		t.Fatalf("the pane's environment is not the provider's: %s", env)
+	}
+	client.write("\x02q")
+	_ = client.wait()
+}
+
+// stop stops the lab's own session, as its cleanup does.
+func (lab *lab) stop() {
+	lab.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stop := exec.CommandContext(ctx, lab.binary, "session", "stop", lab.session)
+	stop.Env, stop.Dir = lab.env, lab.root
+	if output, err := stop.CombinedOutput(); err != nil {
+		lab.t.Fatalf("session stop: %v\n%s", err, output)
+	}
+}
+
+func (lab *lab) git(args ...string) string {
+	lab.t.Helper()
+	command := exec.Command("git", args...)
+	command.Env = lab.env
+	output, err := command.CombinedOutput()
+	if err != nil {
+		lab.t.Fatalf("git %v: %v\n%s", args, err, output)
+	}
+	return string(output)
 }
 
 func startLab(t *testing.T) *lab {

@@ -95,6 +95,9 @@ type Broker interface {
 	UpdateProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderUpdateRequest) (protocol.HTTPProviderInfo, error)
 	OpenProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderOpenRequest) (protocol.HTTPProviderOpenResponse, error)
 	CreateProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderCreateRequest) (protocol.HTTPProviderCreateResponse, error)
+	// ManageProvider closes or removes an item, makes a tab or a workspace,
+	// or starts the provider's server (docs/herdr-manage.md).
+	ManageProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderManageRequest) (protocol.HTTPProviderManageResponse, error)
 	// OpenLive binds a new broker live stream to the credential. The stream
 	// starts as an observer and carries canonical envelope JSON both ways.
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)

@@ -416,6 +416,24 @@ feature gives it no new authority on the computer. What is new:
 Not verified on a real herdr and a real iPhone: see
 [owner-verification.md](owner-verification.md), "herdr on your phone".
 
+### Manage (ADR 0009)
+
+See [herdr-manage.md](herdr-manage.md), section 5 (M1 to M10). The manage
+route (`closeItem`, `removeItem`, `newTab`, `newWorkspace`, `startServer`)
+has the admission, authorization and mutation rules of create and a device
+limit of 30 per minute. It adds no authority: a paired phone could do each
+action by typing in a session. The risks it adds are accidents and wrong
+targets, so: the app asks first; the request carries the confirmed name and
+the host checks it on a fresh snapshot; a removal never forces (uncommitted
+work is refused; files that git ignores are deleted, and the confirmation
+says so); a close ends one workspace and deletes no file; a new workspace
+takes a project ID, never a path, and the folder and its owner are checked
+right before the call. `startServer` has no parameter from the phone and runs
+only a herdr binary that passed the checks of S3. The broker downloads
+nothing: **Install herdr** types herdr's install command into a normal
+session, and the user presses Enter. herdr's and git's text is neither sent
+nor logged (the log has the action and herdr's error code).
+
 ## Operational and release limits
 
 Do not install startup tasks, configure Tailscale Serve/HTTPS, use a coding-agent

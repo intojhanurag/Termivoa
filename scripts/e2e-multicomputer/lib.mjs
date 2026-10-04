@@ -23,8 +23,11 @@ const RESERVED = new Set([8787, 8788, 8789, 8443]);
 // gateway port and launchctl, so nothing here can read or change the real
 // Tailscale, the installed pterm or launchd. It also hides the owner's herdr
 // (docs/herdr-provider.md, S16): its binaries, the Homebrew Cellar they link
-// to, and the real ~/.config/herdr with its socket. Sandbox rules match
-// resolved paths, so every path is resolved first.
+// to, and the real ~/.config/herdr with its socket. The binaries answer "no
+// such file" (not "not permitted"), so a stack without the fake is a computer
+// where herdr is not installed, also on a Mac that has the real herdr: a
+// refused binary would turn Install herdr off (docs/herdr-manage.md, 3.1).
+// Sandbox rules match resolved paths, so every path is resolved first.
 const REAL_TAILSCALE = ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/usr/local/bin/tailscale',
   '/opt/homebrew/bin/tailscale', '/usr/bin/tailscale', '/usr/sbin/tailscale'];
 const real = (path) => { try { return realpathSync(path); } catch { return path; } };
@@ -33,7 +36,7 @@ const REAL_HERDR = ['/opt/homebrew/bin/herdr', '/usr/local/bin/herdr', join(home
 const REAL_HERDR_TREES = ['/opt/homebrew/Cellar/herdr', '/usr/local/Cellar/herdr', join(homedir(), '.config/herdr')].map(real);
 const SANDBOX = `(version 1)(allow default)
 (deny file-read* process-exec ${REAL_TAILSCALE.map((p) => `(literal "${p}")`).join(' ')})
-(deny file-read* process-exec ${[...new Set([...REAL_HERDR, ...REAL_HERDR.map(real)])].map((p) => `(literal "${p}")`).join(' ')})
+(deny file-read* process-exec ${[...new Set([...REAL_HERDR, ...REAL_HERDR.map(real)])].map((p) => `(literal "${p}")`).join(' ')} (with errno ENOENT))
 (deny file-read* file-write* process-exec ${REAL_HERDR_TREES.map((p) => `(subpath "${p}")`).join(' ')})
 (deny network-outbound ${REAL_HERDR_TREES.map((p) => `(remote unix-socket (subpath "${p}"))`).join(' ')})
 (deny network-outbound (remote tcp "localhost:8787"))
@@ -238,14 +241,26 @@ export class Stack {
     await until(() => readFileSync(join(this.herdrDir, 'fake.log'), 'utf8').includes('server '), { what: `fake herdr on ${this.name}` });
   }
 
-  /** Stops the fake herdr and removes it from PATH: the broker drops the provider at its next poll. */
-  async uninstallHerdr() {
+  /** Ends the fake herdr's server process and leaves the binary: herdr installed and not running (Start herdr). */
+  async stopHerdrServer() {
     if (this.herdr && this.herdr.exitCode === null) {
       const exited = new Promise((r) => this.herdr.once('exit', r));
       this.herdr.kill('SIGTERM');
       await Promise.race([exited, sleep(5000)]);
     }
+    // A server that the broker started (Start herdr) is not this process's child.
+    await run('/usr/bin/pkill', ['-f', `${join(this.bin, 'herdr')} server`]);
+  }
+
+  /** Stops the fake herdr and removes it from PATH: the broker drops the provider at its next poll. */
+  async uninstallHerdr() {
+    await this.stopHerdrServer();
     await run('/bin/rm', ['-f', join(this.bin, 'herdr')]);
+  }
+
+  /** The fake's live snapshot (state.json), or undefined while no server runs. */
+  herdrState() {
+    try { return JSON.parse(readFileSync(join(this.herdrDir, 'state.json'), 'utf8')); } catch { return undefined; }
   }
 
   /** One command on the fake's control socket ({op: status|close|hang|stop|start, …}); resolves with its answer line. */

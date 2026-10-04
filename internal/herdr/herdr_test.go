@@ -75,7 +75,7 @@ var fixedNow = time.Date(2026, 10, 4, 9, 51, 2, 0, time.UTC)
 func TestMapSnapshotFixtures(t *testing.T) {
 	for _, name := range []string{"snapshot-0.8.2", "snapshot-0.9.3"} {
 		t.Run(name, func(t *testing.T) {
-			result := mapSnapshot(decodeSnapshot(t, readFixture(t, name+".json")), name == "snapshot-0.9.3", fixedNow, nil)
+			result := mapSnapshot(decodeSnapshot(t, readFixture(t, name+".json")), name == "snapshot-0.9.3", fixedNow, nil, nil)
 			got, err := json.MarshalIndent(result.response, "", " ")
 			if err != nil {
 				t.Fatal(err)
@@ -102,7 +102,7 @@ func TestMapSnapshotFixtures(t *testing.T) {
 }
 
 func TestMapRulesAndHostView(t *testing.T) {
-	result := mapSnapshot(decodeSnapshot(t, readFixture(t, "snapshot-0.9.3.json")), false, fixedNow, nil)
+	result := mapSnapshot(decodeSnapshot(t, readFixture(t, "snapshot-0.9.3.json")), false, fixedNow, nil, nil)
 	groups := result.response.Groups
 	if len(groups) != 3 || groups[0].Name != "shop" || groups[1].Name != "notes" || groups[2].Name != "api" {
 		t.Fatalf("groups: %+v", groups)
@@ -139,7 +139,7 @@ func TestMapRulesAndHostView(t *testing.T) {
 		t.Fatalf("kinds: %v", result.kinds)
 	}
 	// stateSince keeps the first time a state was seen.
-	later := mapSnapshot(decodeSnapshot(t, readFixture(t, "snapshot-0.9.3.json")), false, fixedNow.Add(time.Minute), result.since)
+	later := mapSnapshot(decodeSnapshot(t, readFixture(t, "snapshot-0.9.3.json")), false, fixedNow.Add(time.Minute), result.since, nil)
 	if got := *later.response.Groups[0].Items[0].StateSince; got != "2026-10-04T09:51:02Z" {
 		t.Fatalf("stateSince moved: %s", got)
 	}
@@ -162,7 +162,7 @@ func TestMapCapsAndBodyBudget(t *testing.T) {
 		data, _ := json.Marshal(map[string]any{"workspaces": workspaces, "tabs": tabs, "panes": panes, "layouts": layouts, "agents": agents})
 		return decodeSnapshot(t, data)
 	}
-	many := mapSnapshot(build(70, 1, "notes", func(int) string { return "idle" }), true, fixedNow, nil)
+	many := mapSnapshot(build(70, 1, "notes", func(int) string { return "idle" }), true, fixedNow, nil, nil)
 	if len(many.response.Groups) != maxGroups || many.response.Truncated == nil || !*many.response.Truncated {
 		t.Fatalf("70 groups: %d truncated=%v", len(many.response.Groups), many.response.Truncated)
 	}
@@ -174,7 +174,7 @@ func TestMapCapsAndBodyBudget(t *testing.T) {
 			return "blocked"
 		}
 		return "idle"
-	}), true, fixedNow, nil)
+	}), true, fixedNow, nil, nil)
 	body, _ := json.Marshal(big.response)
 	if len(body) > maxBodyBytes || big.response.Truncated == nil || len(big.response.Groups) >= 60 {
 		t.Fatalf("budget: %d bytes, %d groups", len(body), len(big.response.Groups))
@@ -674,7 +674,7 @@ func TestTitleFitsTheProtocol(t *testing.T) {
 // terminal ID like "--takeover" must never become a target.
 func TestTerminalIDIsCheckedAlone(t *testing.T) {
 	data := strings.ReplaceAll(string(agentSnapshot(t, "", "working")), `"term_1"`, `"--takeover"`)
-	result := mapSnapshot(decodeSnapshot(t, []byte(data)), true, fixedNow, nil)
+	result := mapSnapshot(decodeSnapshot(t, []byte(data)), true, fixedNow, nil, nil)
 	for key, found := range result.targets {
 		if strings.HasPrefix(found.terminal, "-") || strings.HasPrefix(found.pane, "-") {
 			t.Fatalf("target %s attaches %+v", key, found)
@@ -750,7 +750,7 @@ func TestBodyBudgetIsFastOnAHostileSnapshot(t *testing.T) {
 		return best
 	}
 	var result mapped
-	mapping := fastest(func() { result = mapSnapshot(snapshot, true, fixedNow, nil) })
+	mapping := fastest(func() { result = mapSnapshot(snapshot, true, fixedNow, nil, nil) })
 	var raw any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
@@ -771,7 +771,7 @@ func TestBodyBudgetIsFastOnAHostileSnapshot(t *testing.T) {
 func TestAgentNameThatIsNotAKindStaysOnTheHost(t *testing.T) {
 	const hostile = "Your bank: call 555-0100 now. It"
 	raw := strings.Replace(string(readFixture(t, "snapshot-0.8.2.json")), `"agent":"claude","agent_status":"blocked"`, `"agent":"`+hostile+`","agent_status":"blocked"`, 1)
-	result := mapSnapshot(decodeSnapshot(t, []byte(raw)), false, fixedNow, nil)
+	result := mapSnapshot(decodeSnapshot(t, []byte(raw)), false, fixedNow, nil, nil)
 	found, ok := result.targets["w1:p1.term_65d0031602b701"]
 	if !ok || !found.agent || found.kind != "" {
 		t.Fatalf("target = %+v, found %v", found, ok)
@@ -874,7 +874,7 @@ func TestGroupCapKeepsTheUrgentGroups(t *testing.T) {
 		agents = append(agents, map[string]any{"pane_id": pane, "tab_id": tab, "terminal_id": terminal, "agent": "claude", "agent_status": state})
 	}
 	data, _ := json.Marshal(map[string]any{"version": "0.8.2", "protocol": 20, "workspaces": workspaces, "tabs": tabs, "panes": panes, "layouts": layouts, "agents": agents})
-	result := mapSnapshot(decodeSnapshot(t, data), false, fixedNow, nil)
+	result := mapSnapshot(decodeSnapshot(t, data), false, fixedNow, nil, nil)
 	groups := result.response.Groups
 	if len(groups) > maxGroups || result.response.Truncated == nil {
 		t.Fatalf("%d groups, truncated %v", len(groups), result.response.Truncated)

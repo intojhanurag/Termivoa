@@ -21,6 +21,8 @@ export interface ProviderSource {
   readonly computer: Computer;
   /** From the computer's settings; its `state` may be old, the snapshot's is the one to show. */
   readonly info: HTTPProviderInfo;
+  /** The computer answered at FEATURE_REVISION.providerManage or later: the app shows the manage actions (docs/herdr-manage.md). */
+  readonly manage: boolean;
 }
 
 export type ProviderStatus =
@@ -40,9 +42,11 @@ export const providerKey = (origin: string, id: string): string => `${origin} pr
 
 /** Every provider of every computer that answered at FEATURE_REVISION.providers or later, in the computers' order. */
 export function providerSources(entries: ReadonlyArray<ComputerEntry>): ProviderSource[] {
-  return entries.flatMap((entry) => (entry.status.kind === 'ok' && entry.status.settings.protocolRevision >= FEATURE_REVISION.providers
-    ? (entry.status.settings.providers ?? []).map((info) => ({ computer: entry.computer, info }))
-    : []));
+  return entries.flatMap((entry) => {
+    if (entry.status.kind !== 'ok' || entry.status.settings.protocolRevision < FEATURE_REVISION.providers) return [];
+    const manage = entry.status.settings.protocolRevision >= FEATURE_REVISION.providerManage;
+    return (entry.status.settings.providers ?? []).map((info) => ({ computer: entry.computer, info, manage }));
+  });
 }
 
 /** The next status after one read: a failure shows at once when nothing was read yet or the user asked, else after the scheduler counts it offline. */
@@ -56,8 +60,27 @@ export function providerState(entry: Pick<ProviderEntry, 'info' | 'status'>): HT
   return entry.status.kind === 'ok' ? entry.status.snapshot.state : entry.info.state;
 }
 
-/** Turned off in Settings → Integrations: the provider tab leaves that computer out. */
-export const shown = (entry: Pick<ProviderEntry, 'info' | 'status'>): boolean => providerState(entry) !== 'off';
+/** Each provider whose own read says another state than its computer's settings: "<origin> <state>", so one change is one line. */
+export function staleSettings(entries: ReadonlyArray<Pick<ProviderEntry, 'computer' | 'info' | 'status'>>): string[] {
+  return entries.flatMap((entry) => (entry.status.kind === 'ok' && entry.status.snapshot.state !== entry.info.state
+    ? [`${entry.computer.origin} ${entry.status.snapshot.state}`] : []));
+}
+
+/** Turned off in Settings → Integrations, or not installed: the provider tab leaves that computer out. */
+export const shown = (entry: Pick<ProviderEntry, 'info' | 'status'>): boolean => !['off', 'notInstalled'].includes(providerState(entry));
+
+/** A provider that is not installed has no list to read: only its card in Settings → Integrations. */
+export const polled = (source: Pick<ProviderSource, 'info'>): boolean => source.info.state !== 'notInstalled';
+
+/** The computers with a provider that is not installed: nothing polls it, so Settings reads their settings when it opens. */
+export const unpolledOrigins = (entries: ReadonlyArray<ComputerEntry>): string[] =>
+  [...new Set(providerSources(entries).filter((source) => !polled(source)).map((source) => source.computer.origin))];
+
+/**
+ * What **Install** types into a new session, by provider ID (docs/herdr-manage.md, A7). Constants of the app:
+ * nothing from a computer or from a provider is ever put into them. Typed, not run: the user presses Enter.
+ */
+export const INSTALL_COMMANDS: Readonly<Partial<Record<string, string>>> = { herdr: 'curl -fsSL https://herdr.dev/install.sh | sh' };
 
 const rank = (word: string): number => PROVIDER_WORDS.indexOf(providerWord(word));
 
@@ -133,7 +156,7 @@ export interface Providers {
 
 /** Polls every listed provider while `active`, beside (never inside) the sessions read of useAllSessions. */
 export function useProviders(active: boolean, computers: ReadonlyArray<ComputerEntry>): Providers {
-  const sources = providerSources(computers);
+  const sources = providerSources(computers).filter(polled);
   const byKey = useRef(new Map<string, ProviderSource>());
   byKey.current = new Map(sources.map((source) => [providerKey(source.computer.origin, source.info.id), source]));
   const keys = [...byKey.current.keys()].join('\n');

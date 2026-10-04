@@ -1,6 +1,6 @@
 ---
 title: Termivoa + herdr
-description: Termivoa shows your computers' herdr projects on your phone, buzzes when an agent is blocked or done, opens one herdr terminal, and starts new worktrees.
+description: Termivoa shows your computers' herdr projects on your phone, buzzes when an agent is blocked or done, opens herdr terminals, and manages workspaces.
 lastUpdated: 2026-10-04
 ---
 
@@ -21,7 +21,7 @@ A computer without herdr shows no herdr tab, and nothing changes.
 | Need | Detail |
 | --- | --- |
 | herdr 0.8.2 or later | Installed on that computer: Homebrew `herdr`, or in `~/.local/bin` or `~/.cargo/bin`, or on the `PATH` that Termivoa runs with. |
-| herdr running | Its server must run. Only the default herdr session shows. Named herdr sessions do not show. |
+| herdr running | Its server must run. If it does not, tap **Start herdr** on the phone. Only the default herdr session shows. Named herdr sessions do not show. |
 | macOS or Linux | Windows is not supported. |
 | Termivoa from the next beta | On that computer. |
 | A setting | None. Termivoa finds herdr by itself within about 30 seconds, also when you install herdr while Termivoa runs. The phone shows it the next time you open Termivoa or switch back to it. |
@@ -62,7 +62,7 @@ The problem shows on the **herdr** tab only. The Sessions list never waits for h
 
 | Message | What to do |
 | --- | --- |
-| **herdr is not running on mac** | Start herdr there. Its projects then show here. |
+| **herdr is not running on mac** | Tap **Start herdr** on that notice. If there is no button, start herdr on that computer. Its projects then show here. |
 | **Update herdr on mac** | This version is too old for Termivoa. Update to herdr 0.8.2 or later. |
 | **herdr on vps · can't reach** | Tap **Retry**. |
 
@@ -136,6 +136,40 @@ If something goes wrong, the app says why:
 | The agent started and waits at a question. Your prompt was not sent. | Answer the question, then send the prompt. |
 | The agent started, but your first prompt was not sent. | Send the prompt yourself. |
 
+## How do I manage workspaces and worktrees?
+
+In the **herdr** tab, each row has a **⋯** button. It opens a menu for that workspace.
+
+| Action | What it does | Before it acts |
+| --- | --- | --- |
+| **New tab** | Makes a tab in that workspace and opens its terminal. | Nothing to confirm. |
+| **Close tab** | Ends one tab of that workspace. The menu lists the tabs. The last tab has no **Close tab**: use **Close workspace**. | Asks "Close tab 2? Its terminals end." |
+| **Close workspace** | Ends the terminals of that workspace. | Asks "Close silver-meadow? Its terminals end. Files stay." |
+| **Remove worktree** | Closes a worktree and deletes its folder. Only a worktree has this action, never the main checkout. | Asks "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." |
+| **New workspace** | A button under the list. Pick one of that computer's Termivoa projects; herdr opens a workspace in its folder and the phone opens its terminal. | Nothing to confirm. |
+
+What Termivoa never does:
+
+- **It never removes work that is not committed.** The app then says "silver-meadow has changes that are not committed. Commit or discard them first." and nothing changes.
+- **It never closes two workspaces in one tap.** For a project's main checkout with open worktrees, **Close workspace** is off and says "Close its worktrees first."
+- **It checks the name again.** If the list changed after you looked, the app says "The list changed. Look again, then try again." and nothing changes.
+
+**Remove worktree** deletes files that git ignores, such as `.env` and build output, with the folder. The branch and its commits stay.
+
+The **+** on a project row shows for every project whose folder is a git repository. A project that is not in git has no **+**.
+
+## How do I install or start herdr from the phone?
+
+Open **Settings → Integrations**. Each computer (macOS or Linux) has a herdr card.
+
+| The card says | What you can do |
+| --- | --- |
+| **Not installed**, with **Install herdr** | Tap it. Termivoa opens a new session on that computer with herdr's install command typed in: `curl -fsSL https://herdr.dev/install.sh \| sh`. Read it, then press Enter there to run it. Termivoa itself downloads nothing. Then tap **Check again**. |
+| **Not installed**, with "Run `pterm doctor` on mac." | A herdr is on that computer, but Termivoa will not use it. `pterm doctor` says why. |
+| **Not running**, with **Start herdr** | Tap it. Termivoa starts herdr's server on that computer. The same button is on the notice "herdr is not running on mac" in the **herdr** tab. |
+
+A herdr that Termivoa started keeps running when you leave the app. On Linux it also keeps running when Termivoa restarts, if the computer has `systemd-run`; without it, herdr ends when Termivoa's service stops.
+
 ## Why is the pane small on my laptop?
 
 herdr gives a pane the size of whoever attached last. Termivoa opens the herdr terminal at the phone's size, so it fits the screen. The line under the chips says it: "mac shows this terminal at phone size while it is open here."
@@ -153,6 +187,8 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 | Control | Opening never takes control. You tap **Take control**. |
 | Where they show | herdr terminals are not in the Sessions list, the Wall or `pterm list`. |
 | After a restart | Termivoa does not keep them when it restarts. Open the row again. |
+| Manage | Each phone can do 30 manage actions a minute, and one at a time for each computer. A workspace has at most 32 terminals and herdr at most 64 projects in the list. |
+| Not from the phone | Force-removing a worktree, renaming, split panes, updating herdr. |
 | Platforms | macOS and Linux. Not Windows. |
 | herdr sessions | Only the default herdr session. Not named sessions. |
 

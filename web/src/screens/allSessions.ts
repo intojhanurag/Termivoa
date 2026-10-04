@@ -255,10 +255,12 @@ export async function readNow(
   load: (origin: string) => Promise<Loaded>,
   /** `asked` is true: the user or a change asked for this read, so a failure shows at once ("can't reach"), not after three. */
   publish: (origin: string, outcome: PollOutcome<Loaded>, asked?: boolean) => void,
+  /** False for a read the app starts by itself: its failure counts as a poll's does. */
+  asked = true,
 ): Promise<void> {
   const failures = await Promise.all(computers.map((computer) => scheduler.serial(computer.origin, () => load(computer.origin)).then(
-    (value) => { scheduler.reported(computer.origin, true); publish(computer.origin, { ok: true, value }, true); return undefined; },
-    (error: unknown) => { scheduler.reported(computer.origin, false); publish(computer.origin, { ok: false, error }, true); return new ReadFailure(computer, error); },
+    (value) => { scheduler.reported(computer.origin, true); publish(computer.origin, { ok: true, value }, asked); return undefined; },
+    (error: unknown) => { scheduler.reported(computer.origin, false); publish(computer.origin, { ok: false, error }, asked); return new ReadFailure(computer, error); },
   )));
   const first = failures.find((failure) => failure !== undefined);
   if (first !== undefined) throw first;
@@ -290,8 +292,8 @@ export async function load(origin: string, fresh: boolean, listed: () => boolean
 export interface AllSessions {
   /** One entry per computer, in the computers' order. */
   readonly entries: ReadonlyArray<ComputerEntry>;
-  /** Reads these computers (all when omitted) now, settings included; rejects with a ReadFailure (readNow). */
-  readonly reload: (origin?: string) => Promise<void>;
+  /** Reads these computers (all when omitted) now, settings included; rejects with a ReadFailure (readNow). `quiet`: the app's own re-read, not asked. */
+  readonly reload: (origin?: string, quiet?: boolean) => Promise<void>;
   /** The user pressed Retry. */
   readonly retry: (origin: string) => Promise<void>;
 }
@@ -384,9 +386,9 @@ export function useAllSessions(
     return () => document.removeEventListener('securitypolicyviolation', onBlocked);
   }, []);
 
-  const reload = useCallback((origin?: string) => {
+  const reload = useCallback((origin?: string, quiet = false) => {
     const list = [...byOrigin.current.values()].filter((computer) => origin === undefined || computer.origin === origin);
-    return readNow(list, (item) => load(item, true, () => byOrigin.current.has(item)), publish);
+    return readNow(list, (item) => load(item, true, () => byOrigin.current.has(item)), publish, !quiet);
   }, [publish]);
 
   /** Reads the computer now; resolves when it answered or failed, so Retry can show that it works. */

@@ -15,8 +15,8 @@ export interface RunFirstTarget {
  * Types a new session's "run first" command exactly once.
  *
  * After the first snapshot is applied (link becomes live), it asks for control
- * only when no one holds it, then sends the command and Enter and keeps
- * control. Any other outcome (someone else has control, the grant fails, the
+ * only when no one holds it, then sends the command and Enter (no Enter for a
+ * `typeOnly` request: the text stays at the prompt) and keeps control. Any other outcome (someone else has control, the grant fails, the
  * link drops, the shell ends) gives up without sending and reports why. It
  * never retries: a reconnect starts read-only like every other attach.
  */
@@ -25,7 +25,9 @@ export function runFirstCommand(
   request: RunFirstRequest,
   report: (message: string) => void,
 ): () => void {
+  const typeOnly = request.typeOnly === true;
   const quoted = `“${request.command}”`;
+  const not = typeOnly ? 'Did not type' : 'Did not run';
   let acquiring = false;
   let unsubscribe: () => void = () => undefined;
 
@@ -41,12 +43,12 @@ export function runFirstCommand(
     const ended = status.sessionState === 'exited' || status.sessionState === 'exiting' || status.link === 'lost';
     if (!acquiring) {
       if (ended) {
-        settle(`Did not run ${quoted}: the session ended.`);
+        settle(`${not} ${quoted}: the session ended.`);
         return;
       }
       if (status.link !== 'live') return;
       if (status.otherController || status.control !== 'observer') {
-        settle(`Did not run ${quoted}: another connection has control. Nothing was sent.`);
+        settle(`${not} ${quoted}: another connection has control. Nothing was sent.`);
         return;
       }
       acquiring = true;
@@ -57,12 +59,12 @@ export function runFirstCommand(
     if (status.control === 'controller' && canSendWith(status)) {
       // Settle first: sending updates the status and re-enters this listener.
       settle();
-      if (!target.sendText(request.command) || !target.sendKey('enter', NO_MODIFIERS)) {
+      if (!target.sendText(request.command) || (!typeOnly && !target.sendKey('enter', NO_MODIFIERS))) {
         report(`${quoted} may not have been sent. Check the terminal before sending again.`);
       }
       return;
     }
-    settle(`Did not run ${quoted}: this phone could not take control. Nothing was sent.`);
+    settle(`${not} ${quoted}: this phone could not take control. Nothing was sent.`);
   };
 
   unsubscribe = target.subscribe(check);

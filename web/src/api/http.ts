@@ -10,6 +10,8 @@ import type {
   HTTPProviderCreateRequest,
   HTTPProviderCreateResponse,
   HTTPProviderInfo,
+  HTTPProviderManageRequest,
+  HTTPProviderManageResponse,
   HTTPProviderOpenRequest,
   HTTPProviderOpenResponse,
   HTTPProviderSnapshotResponse,
@@ -48,6 +50,8 @@ export const READ_TIMEOUT_MS = 6_000;
 export const UPLOAD_TIMEOUT_MS = 60_000;
 /** Making a worktree and starting an agent in it: the host's steps take up to 40 s together (docs/herdr-provider.md, S6). */
 export const PROVIDER_CREATE_TIMEOUT_MS = 45_000;
+/** One manage action: the host waits up to 15 s for the provider, then a few seconds for the new terminal or the started server (docs/herdr-manage.md, section 4). */
+export const PROVIDER_MANAGE_TIMEOUT_MS = 30_000;
 
 /** State words of provider terminals, items and groups that the app knows, most urgent first. */
 export const PROVIDER_WORDS = ['blocked', 'done', 'working', 'idle', 'unknown', 'none'] as const;
@@ -219,6 +223,8 @@ export interface Client {
   providerUpdate(id: string, body: HTTPProviderUpdateRequest): Promise<HTTPProviderInfo>;
   /** A new worktree and maybe an agent in it; waits up to PROVIDER_CREATE_TIMEOUT_MS. */
   providerCreate(id: string, body: HTTPProviderCreateRequest): Promise<HTTPProviderCreateResponse>;
+  /** Closes, removes, makes or starts (protocolRevision 5 and later); waits up to PROVIDER_MANAGE_TIMEOUT_MS. */
+  providerManage(id: string, body: HTTPProviderManageRequest): Promise<HTTPProviderManageResponse>;
 }
 
 function createClient(origin: string, home: boolean): Client {
@@ -336,6 +342,7 @@ function createClient(origin: string, home: boolean): Client {
     providerOpen: (id, body) => request('POST', `${providerPath(id)}/open`, 'providerOpenResponse', send(body)),
     providerUpdate: (id, body) => request('PATCH', providerPath(id), 'providerInfo', send(body)),
     providerCreate: (id, body) => request('POST', `${providerPath(id)}/create`, 'providerCreateResponse', { body, timeoutMs: PROVIDER_CREATE_TIMEOUT_MS }),
+    providerManage: (id, body) => request('POST', `${providerPath(id)}/manage`, 'providerManageResponse', { body, timeoutMs: PROVIDER_MANAGE_TIMEOUT_MS }),
   };
 }
 

@@ -2,10 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { Computer } from '../computers';
-import type { HTTPSettingsResponse } from '../generated/protocol';
-import type { ComputerEntry } from './allSessions';
+import type { HTTPSessionCreateRequest, HTTPSettingsResponse } from '../generated/protocol';
+import type { ComputerEntry, HostedSession } from './allSessions';
 import * as fixtures from './providerFixtures';
-import { IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings } from './Settings';
+import { InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, startInstall, installAndOpen } from './Settings';
 
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },
@@ -151,7 +151,7 @@ describe('LogoutSection', () => {
 describe('Settings → Integrations', () => {
   const { info, mac, okEntry, vps } = fixtures;
   const row = (state: 'ready' | 'notRunning' | 'unsupported' | 'off', extra = {}) => renderToStaticMarkup(
-    <ul><IntegrationRow source={{ computer: mac, info: info({ state, ...extra }) }} onFailure={() => ''} /></ul>,
+    <ul><IntegrationRow source={{ computer: mac, info: info({ state, ...extra }), manage: true }} onFailure={() => ''} /></ul>,
   );
 
   it('shows only where a computer lists a provider at revision 4', () => {
@@ -181,17 +181,99 @@ describe('Settings → Integrations', () => {
 
   it('shows the state of the provider read, which is newer than the settings (F10)', () => {
     const read = (state: 'ready' | 'notRunning' | 'off') => renderToStaticMarkup(
-      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }) }} entry={fixtures.providerEntry(mac, { kind: 'ok', snapshot: fixtures.snapshot([], { state }), at: 1 })} onFailure={() => ''} /></ul>,
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }), manage: true }} entry={fixtures.providerEntry(mac, { kind: 'ok', snapshot: fixtures.snapshot([], { state }), at: 1 })} onFailure={() => ''} /></ul>,
     );
     expect(read('ready')).toContain('<span class="computer-state green">Running</span>');
     expect(read('off')).toContain('<span class="computer-state muted">Off</span>');
     // Not read yet, or the read failed: the settings' state.
     const unread = renderToStaticMarkup(
-      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }) }} entry={fixtures.providerEntry(mac, { kind: 'unreachable' })} onFailure={() => ''} /></ul>,
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }), manage: true }} entry={fixtures.providerEntry(mac, { kind: 'unreachable' })} onFailure={() => ''} /></ul>,
     );
     expect(unread).toContain('Not running');
     const section = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { providers: [info({ state: 'notRunning' })] })]} providers={[fixtures.ready(mac, [])]} onFailure={() => ''} />);
     expect(section).toContain('Running');
+  });
+
+  describe('not installed, and Start (docs/herdr-manage.md)', () => {
+    const projects = [{ id: '00000000-0000-4000-8000-0000000000a1', name: 'shop' }, { id: '00000000-0000-4000-8000-0000000000a2', name: 'notes' }];
+    const shellProfiles = [{ id: 'zsh', name: 'zsh' }, { id: 'bash', name: 'bash' }];
+    const absent = (extra = {}, manage = true) => renderToStaticMarkup(
+      <ul><IntegrationRow
+        source={{ computer: vps, info: info({ state: 'notInstalled', enabled: false, ...extra }), manage }}
+        settings={fixtures.settingsWith({ projects, shellProfiles })} onInstall={() => undefined} onFailure={() => ''}
+      /></ul>,
+    );
+
+    it('says Not installed with no switches; Install herdr and its line only where the installer can work', () => {
+      const can = absent({ canInstall: true });
+      expect(can).toContain('<span class="computer-state muted">Not installed</span>');
+      expect(can).not.toContain('role="switch"');
+      expect(can).toContain('Opens a terminal on vps with <bdi>herdr</bdi>&#x27;s install command. Press Enter there to run it.');
+      expect(can).toContain('<span>Install <bdi>herdr</bdi></span>');
+      expect(can).toContain('Check again');
+      expect(can).not.toContain('pterm doctor');
+
+      const cannot = absent();
+      expect(cannot).toContain('Run <code>pterm doctor</code> on vps.');
+      expect(cannot).not.toContain('Install');
+      expect(cannot).not.toContain('role="switch"');
+      // A provider the app has no install command for is never offered one.
+      expect(absent({ canInstall: true, id: 'other', name: 'other' })).not.toContain('Install');
+    });
+
+    it('shows Install busy, an error, and New session\'s own help when the computer has no project', () => {
+      const source = { computer: vps, info: info({ state: 'notInstalled', canInstall: true }), manage: true };
+      const card = (extra: Partial<Parameters<typeof InstallCard>[0]>) => renderToStaticMarkup(
+        <InstallCard source={source} command="x" busy={undefined} error={undefined} onInstall={() => undefined} onCheck={() => undefined} {...extra} />,
+      );
+      const busy = card({ busy: 'install' });
+      expect(busy.match(/disabled=""/gu)).toHaveLength(2);
+      expect(busy.match(/aria-busy="true"/gu)).toHaveLength(1);
+      expect(busy).toContain('Opening…');
+      expect(card({ error: 'That computer could not do this.' })).toContain('<p class="notice-title">That computer could not do this.</p>');
+      const help = card({ help: fixtures.settingsWith() });
+      expect(help).toContain('Add a project on your computer first:');
+      expect(help).toContain('pterm project add &lt;folder&gt;');
+    });
+
+    it('starts the install session as New session does: the first project and the default shell, on that computer', async () => {
+      const record = { id: '84444444-4444-4444-8444-444444444444', generation: '85555555-5555-4555-8555-555555555555', title: 'shop', state: 'running' as const,
+        columns: 80, rows: 24, projectId: projects[0]!.id, shellProfileId: 'zsh', createdAt: '', updatedAt: '' };
+      const create = vi.fn(async (_body: HTTPSessionCreateRequest) => ({ operationId: '86666666-6666-4666-8666-666666666666', session: record }));
+      const session = await startInstall(vps, { projects, shellProfiles }, create);
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0]).toMatchObject([{ projectId: projects[0]!.id, shellProfileId: 'zsh' }]);
+      expect(session).toMatchObject({ id: record.id, computer: vps });
+      // No project, or no shell: no session; the card shows New session's help.
+      expect(await startInstall(vps, { projects: [], shellProfiles }, create)).toBeUndefined();
+      expect(await startInstall(vps, { projects, shellProfiles: [] }, create)).toBeUndefined();
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the new session only while Settings still shows; a user who left is not moved to Live', async () => {
+      const session = { id: 'new', computer: vps } as HostedSession;
+      const open = vi.fn();
+      expect(await installAndOpen(async () => session, () => true, open)).toBe(true);
+      expect(open).toHaveBeenCalledExactlyOnceWith(session);
+      expect(await installAndOpen(async () => session, () => false, open)).toBe(true);
+      expect(open).toHaveBeenCalledTimes(1);
+      // No project or shell: nothing opens, and the card shows New session's help.
+      expect(await installAndOpen(async () => undefined, () => true, open)).toBe(false);
+      expect(open).toHaveBeenCalledTimes(1);
+    });
+
+    it('has Start herdr on a card that is not running, only where the computer says it can start it', () => {
+      const can = row('notRunning', { canStart: true });
+      expect(can).toContain('<span>Start <bdi>herdr</bdi></span>');
+      expect(can).toContain('herdr is not running on mac. Start it to see its projects.');
+      expect(can.match(/role="switch"/gu)).toHaveLength(3);
+      expect(row('notRunning')).not.toContain('<span>Start');
+      expect(row('ready', { canStart: true })).not.toContain('<span>Start');
+      // A computer below revision 5 has no manage route.
+      const old = renderToStaticMarkup(<ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning', canStart: true }), manage: false }} onFailure={() => ''} /></ul>);
+      expect(old).not.toContain('<span>Start');
+      expect(old).toContain('Start it there to see its projects.');
+    });
   });
 
   it('keeps the notify list in one order', () => {

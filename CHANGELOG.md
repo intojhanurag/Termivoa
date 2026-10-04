@@ -8,6 +8,25 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **Manage herdr from the phone** (ADR 0009, `docs/herdr-manage.md`; docs:
+  `guides/herdr.md`). Phone: each row of the **herdr** tab has a **⋯** menu
+  with **New tab**, **Close tab** (never a workspace's last tab), **Close
+  workspace** ("Close silver-meadow? Its terminals end. Files stay.") and, for a worktree, **Remove worktree** ("Its folder is
+  deleted, also files that git ignores (such as .env). The branch stays.");
+  a worktree with changes that are not committed is never removed. **New
+  workspace** opens one of the computer's Termivoa projects in herdr. **+**
+  shows on every git project, also before herdr made a worktree there.
+  **Settings → Integrations** has a herdr card on every macOS and Linux
+  computer: **Start herdr** when it does not run (also on the tab's "herdr is
+  not running" notice), and **Not installed** with **Install herdr**, which
+  opens a session with herdr's install command typed and not run.
+  Host: `POST /api/v1/providers/{provider}/manage` (`closeItem`,
+  `removeItem` without force, `newTab`, `closeTab`, `newWorkspace` with a
+  project ID,
+  `startServer`), 30 per minute for each phone and one at a time; the
+  confirmed name is checked on a fresh read; the provider state
+  `notInstalled` with `canInstall`, `canStart` and `linked`; protocol
+  revision 5. The broker downloads nothing. No database change.
 - Landing page: a **Providers** section with a tile for each provider (herdr
   first) that opens its guide, and a **Providers** link in the navigation.
 - **herdr on your phone** (ADR 0008, `docs/herdr-provider.md`; docs:

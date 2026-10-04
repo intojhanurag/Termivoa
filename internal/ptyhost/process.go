@@ -185,6 +185,10 @@ func inheritedEnvironment(environ []string, goos string) []string {
 	return kept
 }
 
+// HostEnvironment is what every session inherits from host (hostEnvironment).
+// The broker also gives it to a provider server it starts.
+func HostEnvironment(host []string) []string { return hostEnvironment(host) }
+
 // launcherVariablePrefixes name variables set by the program or terminal
 // that started the broker. windowsEnvironment removes them even from the
 // user's default environment block. Matching is case-insensitive.

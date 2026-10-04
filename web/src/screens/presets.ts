@@ -14,6 +14,8 @@ export interface LaunchPreset {
  */
 export interface RunFirstRequest {
   readonly command: string;
+  /** Type the text and stop: the user reads it and presses Enter (Install herdr). */
+  readonly typeOnly?: boolean;
   settled: boolean;
 }
 

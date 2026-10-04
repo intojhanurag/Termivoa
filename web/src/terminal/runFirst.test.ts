@@ -114,4 +114,26 @@ describe('run first', () => {
     expect(first.calls).toEqual([]);
     expect(second.calls).toEqual(['control.acquire', 'text:claude', 'key:enter']);
   });
+
+  it('types a typeOnly command and never presses Enter; a refusal says nothing was typed', () => {
+    const { calls, set, target } = fake();
+    const run: RunFirstRequest = { command: 'curl -fsSL https://herdr.dev/install.sh | sh', settled: false, typeOnly: true };
+    runFirstCommand(target, run, () => undefined);
+    set(live);
+    set({ control: 'controller' });
+    expect(calls).toEqual(['control.acquire', 'text:curl -fsSL https://herdr.dev/install.sh | sh']);
+    expect(run.settled).toBe(true);
+    // A reconnect starts read-only and types nothing more.
+    set({ link: 'reconnecting', control: 'observer' });
+    set(live);
+    set({ control: 'controller' });
+    expect(calls).toHaveLength(2);
+
+    const taken = fake();
+    const reports: string[] = [];
+    taken.set({ ...live, otherController: true });
+    runFirstCommand(taken.target, { command: 'x', settled: false, typeOnly: true }, (message) => reports.push(message));
+    expect(taken.calls).toEqual([]);
+    expect(reports).toEqual(['Did not type “x”: another connection has control. Nothing was sent.']);
+  });
 });

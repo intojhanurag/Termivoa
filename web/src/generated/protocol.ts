@@ -80,6 +80,7 @@ export type ProtocolTypes = {
     readonly gatewayRPCPrincipal:              GatewayRPCPrincipalPayload;
     readonly gatewayRPCProvider:               GatewayRPCProviderPayload;
     readonly gatewayRPCProviderCreate:         GatewayRPCProviderCreatePayload;
+    readonly gatewayRPCProviderManage:         GatewayRPCProviderManagePayload;
     readonly gatewayRPCProviderOpen:           GatewayRPCProviderOpenPayload;
     readonly gatewayRPCProviderUpdate:         GatewayRPCProviderUpdatePayload;
     readonly gatewayRPCPushSubscribe:          GatewayRPCPushSubscribePayload;
@@ -113,6 +114,8 @@ export type ProtocolTypes = {
     readonly httpPreviewConfigResponse:        HTTPPreviewConfigResponse;
     readonly httpProviderCreateRequest:        HTTPProviderCreateRequest;
     readonly httpProviderCreateResponse:       HTTPProviderCreateResponse;
+    readonly httpProviderManageRequest:        HTTPProviderManageRequest;
+    readonly httpProviderManageResponse:       HTTPProviderManageResponse;
     readonly httpProviderOpenRequest:          HTTPProviderOpenRequest;
     readonly httpProviderOpenResponse:         HTTPProviderOpenResponse;
     readonly httpProviderSession:              HTTPProviderSession;
@@ -892,7 +895,7 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.providers.get" | "gateway.providers.update" | "gateway.providers.open" | "gateway.providers.create" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.providers.get.result" | "gateway.providers.update.result" | "gateway.providers.open.result" | "gateway.providers.create.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.providers.get" | "gateway.providers.update" | "gateway.providers.open" | "gateway.providers.create" | "gateway.providers.manage" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.providers.get.result" | "gateway.providers.update.result" | "gateway.providers.open.result" | "gateway.providers.create.result" | "gateway.providers.manage.result" | "gateway.error";
 
 /**
  * origin: the browser origin configured with admin.config.origin, absent when none is set.
@@ -998,6 +1001,40 @@ export type HTTPProviderCreateRequest = {
     readonly name:    string;
     readonly prompt?: string;
 }
+
+/**
+ * Closes, removes or makes something in a provider, or starts its server (revision 5,
+ * docs/herdr-manage.md). The broker runs it in its own context; the gateway sends it on a
+ * dedicated connection.
+ */
+export type GatewayRPCProviderManagePayload = {
+    readonly credential: string;
+    readonly provider:   string;
+    readonly request:    HTTPProviderManageRequest;
+}
+
+/**
+ * POST /api/v1/providers/{provider}/manage (revision 5, docs/herdr-manage.md). closeItem
+ * ends an item's terminals and deletes no file; an item that is a main checkout cannot be
+ * closed while a linked worktree of its group is open. removeItem deletes a linked
+ * worktree's folder without force (the branch stays; files that git ignores go with the
+ * folder). newTab makes a tab in an item. closeTab ends the tab of one of an item's
+ * terminals (all terminals of that tab); the last tab of an item cannot be closed (close
+ * the item). newWorkspace makes an item in a Termivoa project's folder. startServer starts
+ * the provider's server. itemId and name are required for closeItem and removeItem (name is
+ * the item name the user confirmed: the host refuses when the item now has another name);
+ * itemId alone for newTab; itemId and targetId for closeTab; projectId for newWorkspace;
+ * none for startServer. A field that does not belong to the action is refused.
+ */
+export type HTTPProviderManageRequest = {
+    readonly action:     HTTPProviderManageAction;
+    readonly itemId?:    string;
+    readonly name?:      string;
+    readonly projectId?: string;
+    readonly targetId?:  string;
+}
+
+export type HTTPProviderManageAction = "closeItem" | "removeItem" | "newTab" | "closeTab" | "newWorkspace" | "startServer";
 
 /**
  * Opens or reuses the in-memory provider session of one terminal in the broker's latest
@@ -1307,6 +1344,20 @@ export type HTTPProviderCreateResponse = {
 export type HTTPProviderCreateProblem = "agentNotReady" | "agentFailed" | "promptFailed";
 
 /**
+ * itemId is the item acted on or made. targetId is the new terminal of newTab and
+ * newWorkspace; it is absent when this provider version cannot open a terminal without an
+ * agent. problem is set when nothing changed: uncommitted (removeItem: the worktree has
+ * changes that are not committed).
+ */
+export type HTTPProviderManageResponse = {
+    readonly itemId?:   string;
+    readonly problem?:  HTTPProviderManageProblem;
+    readonly targetId?: string;
+}
+
+export type HTTPProviderManageProblem = "uncommitted";
+
+/**
  * The session to show in Live. reused is true when the host already had a live session for
  * this terminal.
  */
@@ -1363,7 +1414,11 @@ export type HTTPProviderGroup = {
  * the current state.
  */
 export type HTTPProviderItem = {
-    readonly id:          string;
+    readonly id: string;
+    /**
+     * Revision 5. True for a linked worktree: manage removeItem applies to it.
+     */
+    readonly linked?:     boolean;
     readonly name:        string;
     readonly openTarget?: string;
     readonly state:       string;
@@ -1387,9 +1442,11 @@ export type HTTPProviderTarget = {
 /**
  * ready: the host reads the provider. notRunning: installed, but its server does not
  * answer. unsupported: the installed version is too old or its data cannot be read. off:
- * turned off in Settings → Integrations on this computer.
+ * turned off in Settings → Integrations on this computer. notInstalled (revision 5): the
+ * provider's program is not on this computer; it has no tab and no list, only a card in
+ * Settings → Integrations.
  */
-export type HTTPProviderState = "ready" | "notRunning" | "unsupported" | "off";
+export type HTTPProviderState = "ready" | "notRunning" | "unsupported" | "off" | "notInstalled";
 
 /**
  * The broker's VAPID application server public key.
@@ -1444,12 +1501,22 @@ export type HTTPSettingsResponse = {
 export type HTTPProviderInfo = {
     readonly agentKinds: string[];
     readonly canCreate:  boolean;
-    readonly enabled:    boolean;
-    readonly id:         string;
-    readonly name:       string;
-    readonly notify:     HTTPProviderNotifyState[];
-    readonly state:      HTTPProviderState;
-    readonly version?:   string;
+    /**
+     * Revision 5. True only with notInstalled, when the official installer can put the provider
+     * on this computer (no other copy was found or refused).
+     */
+    readonly canInstall?: boolean;
+    /**
+     * Revision 5. True only with notRunning, when the host can start the provider's server
+     * (manage, action startServer).
+     */
+    readonly canStart?: boolean;
+    readonly enabled:   boolean;
+    readonly id:        string;
+    readonly name:      string;
+    readonly notify:    HTTPProviderNotifyState[];
+    readonly state:     HTTPProviderState;
+    readonly version?:  string;
 }
 
 /**
@@ -1743,11 +1810,12 @@ export type WorktreeRemovedPayload = {
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 
 /** This build's additive protocol v1 revision (protocol/v1/revision.json). */
-export const PROTOCOL_REVISION = 4;
+export const PROTOCOL_REVISION = 5;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;
 /** The revision that added each feature: call it only on a computer whose protocolRevision is at least this. */
 export const FEATURE_REVISION = {
     peerPreview: 2,
     providers: 4,
+    providerManage: 5,
 } as const;

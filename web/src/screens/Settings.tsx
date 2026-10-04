@@ -1,14 +1,17 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { api, client, CLIENT_BUILD, deviceLabelProblem } from '../api/http';
 import type {
-  HTTPDeviceSummary, HTTPProviderInfo, HTTPProviderNotifyState, HTTPProviderUpdateRequest, HTTPSettingsResponse,
+  HTTPDeviceSummary, HTTPProviderInfo, HTTPProviderNotifyState, HTTPProviderUpdateRequest, HTTPSessionCreateRequest, HTTPSessionMutationResponse,
+  HTTPSettingsResponse,
 } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush } from '../push';
 import type { Computer } from '../computers';
-import type { ComputerEntry } from './allSessions';
+import { checkAgain, hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
-import { providerKey, providerSources, type ProviderEntry, type ProviderSource } from './providers';
+import { NewSessionHelp } from './NewSession';
+import { StartButton } from './ProviderManage';
+import { INSTALL_COMMANDS, providerKey, providerSources, type ProviderEntry, type ProviderSource } from './providers';
 import { Button, Notice } from './ui';
 
 // Computers (and the add-computer sheet it opens) load only when Settings opens.
@@ -119,14 +122,16 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
 }
 
 /** The state word and its one line for Settings → Integrations (docs/herdr-provider.md, section 8). */
-export function integrationText(info: Pick<HTTPProviderInfo, 'name' | 'state'>, label: string): {
+export function integrationText(info: Pick<HTTPProviderInfo, 'name' | 'state'>, label: string, canStart = false): {
   readonly word: string;
   readonly tone: 'green' | 'amber' | 'muted';
+  /** Absent for Running, and for Not installed (InstallCard has its own). */
   readonly line?: string;
 } {
   switch (info.state) {
     case 'ready': return { word: 'Running', tone: 'green' };
-    case 'notRunning': return { word: 'Not running', tone: 'amber', line: `${info.name} is not running on ${label}. Start it there to see its projects.` };
+    case 'notRunning': return { word: 'Not running', tone: 'amber', line: `${info.name} is not running on ${label}. Start it ${canStart ? '' : 'there '}to see its projects.` };
+    case 'notInstalled': return { word: 'Not installed', tone: 'muted' };
     case 'unsupported': return { word: 'Update', tone: 'amber', line: `Update ${info.name} on ${label}. This version is too old for Termivoa.` };
     case 'off': return { word: 'Off', tone: 'muted', line: `Off for every phone: ${label} does not show ${info.name} or buzz for it.` };
   }
@@ -152,14 +157,80 @@ export async function saveSwitch(
   }
 }
 
-/** One provider on one computer: on or off, and which states buzz. Saved on that computer for every device. */
-export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body) }: {
+/**
+ * Install (docs/herdr-manage.md, A7): a new session on that computer, as New session starts one (its first project and
+ * default shell). Undefined when it has no project or no shell: New session's own help says what to do.
+ */
+export async function startInstall(
+  computer: Computer, settings: Pick<HTTPSettingsResponse, 'projects' | 'shellProfiles'>,
+  create: (body: HTTPSessionCreateRequest) => Promise<HTTPSessionMutationResponse> = (body) => client(computer.origin).createSession(body),
+): Promise<HostedSession | undefined> {
+  const [project] = settings.projects;
+  const [shell] = settings.shellProfiles;
+  if (project === undefined || shell === undefined) return undefined;
+  return hosted((await create({ operationId: crypto.randomUUID(), projectId: project.id, shellProfileId: shell.id })).session, computer);
+}
+
+/**
+ * Install, start to end. The new session opens in Live only while Settings still shows (`shown`): a user who left during
+ * the request stays where they are, and finds the session in the list. False: the computer has no project or shell.
+ */
+export async function installAndOpen(start: () => Promise<HostedSession | undefined>, shown: () => boolean, open: (session: HostedSession) => void): Promise<boolean> {
+  const session = await start();
+  if (session !== undefined && shown()) open(session);
+  return session !== undefined;
+}
+
+/** The body of a card whose provider is not installed: no switches; Install where the official installer can work, else `pterm doctor`. */
+export function InstallCard({ source, command, help, busy, error, onInstall, onCheck }: {
   readonly source: ProviderSource;
+  /** What Install types (INSTALL_COMMANDS); undefined: this computer cannot run the installer. */
+  readonly command: string | undefined;
+  /** The computer has no project or shell for the session: New session's help. */
+  readonly help?: HTTPSettingsResponse | undefined;
+  readonly busy: 'install' | 'check' | undefined;
+  readonly error: string | undefined;
+  readonly onInstall: () => void;
+  readonly onCheck: () => void;
+}) {
+  const { computer, info } = source;
+  return (
+    <>
+      <p className="hint-text">
+        {command === undefined
+          ? <>Run <code>pterm doctor</code> on {computer.label}.</>
+          : <>Opens a terminal on {computer.label} with <bdi>{info.name}</bdi>{'\'s install command. Press Enter there to run it.'}</>}
+      </p>
+      {help !== undefined && <NewSessionHelp settings={help} />}
+      <div className="row">
+        {command !== undefined && (
+          <Button className="secondary" busy={busy === 'install'} busyLabel="Opening…" disabled={busy !== undefined} onClick={onInstall}>
+            <span>Install <bdi>{info.name}</bdi></span>
+          </Button>
+        )}
+        <Button className="link" busy={busy === 'check'} busyLabel="Checking…" disabled={busy !== undefined} onClick={onCheck}>Check again</Button>
+      </div>
+      <div role="status" className="field-note">{error !== undefined && <Notice tone="danger" title={error} />}</div>
+    </>
+  );
+}
+
+/** One provider on one computer: on or off, and which states buzz. Saved on that computer for every device. */
+export function IntegrationRow({
+  source, entry, settings, onFailure, onSaved, onInstall, onCheck, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body),
+}: {
+  readonly source: ProviderSource;
+  /** That computer's settings: the project and shell Install starts its session with. */
+  readonly settings?: HTTPSettingsResponse | undefined;
+  /** Install made a session: open it in Live and type `command` there, without Enter. */
+  readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
+  /** Reads that computer again, settings included (Check again). */
+  readonly onCheck?: (() => Promise<void>) | undefined;
   /** The provider's latest read on that computer: its `state` is newer than the settings' (docs/herdr-provider.md, 4.5). */
   readonly entry?: Pick<ProviderEntry, 'status'> | undefined;
   readonly onFailure: (error: unknown, from: Computer) => string;
-  /** Reads the computer's settings and the provider again, so the rest of the app follows. */
-  readonly onSaved?: () => void;
+  /** Reads the computer's settings and the provider again, so the rest of the app follows; never rejects. */
+  readonly onSaved?: () => Promise<void>;
   readonly save?: (body: HTTPProviderUpdateRequest) => Promise<HTTPProviderInfo>;
 }) {
   const [saved, setSaved] = useState<{ readonly info: HTTPProviderInfo; readonly at: number }>();
@@ -171,8 +242,42 @@ export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body
   // The state word: the newest of the provider read and this screen's own save.
   const state = read !== undefined && (saved === undefined || read.at >= saved.at) ? read.snapshot.state : info.state;
   const { computer } = source;
-  const text = integrationText({ name: info.name, state }, computer.label);
+  const canStart = source.manage && state === 'notRunning' && info.canStart === true;
+  const text = integrationText({ name: info.name, state }, computer.label, canStart);
   const id = `integration-${computer.host}-${info.id}`.replace(/[^A-Za-z0-9_-]/gu, '-');
+  const command = source.manage && info.canInstall === true && settings !== undefined && onInstall !== undefined ? INSTALL_COMMANDS[info.id] : undefined;
+  const [working, setWorking] = useState<'install' | 'check'>();
+  const [needsProject, setNeedsProject] = useState(false);
+  // One session per tap, even if two taps land before the re-render.
+  const running = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  function act(what: 'install' | 'check', work: () => Promise<string | undefined>) {
+    if (running.current) return;
+    running.current = true;
+    setWorking(what);
+    setNote(undefined);
+    void work().then((problem) => {
+      if (problem !== undefined) setNote({ text: problem, error: true });
+      setWorking(undefined);
+      running.current = false;
+    });
+  }
+
+  const install = () => act('install', async () => {
+    if (settings === undefined || command === undefined) return undefined;
+    try {
+      setNeedsProject(!await installAndOpen(() => startInstall(computer, settings), () => mounted.current, (session) => onInstall?.(session, command)));
+      return undefined;
+    } catch (failure) {
+      return onFailure(failure, computer);
+    }
+  });
+  const check = () => act('check', () => checkAgain(onCheck?.() ?? Promise.resolve(), (failure) => onFailure(failure, computer)));
   const value = (field: Field) => (pending?.field === field ? pending.on : field === 'enabled' ? info.enabled : info.notify.includes(field));
 
   function change(field: Field) {
@@ -183,7 +288,7 @@ export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body
       if ('info' in result) {
         setSaved({ info: result.info, at: Date.now() });
         setNote({ text: 'Saved.', error: false });
-        onSaved?.();
+        void onSaved?.();
       } else {
         setNote({ text: result.error, error: true });
       }
@@ -218,26 +323,46 @@ export function IntegrationRow({ source, entry, onFailure, onSaved, save = (body
         <span className={`computer-state ${text.tone}`}>{text.word}</span>
       </div>
       {text.line !== undefined && <p className="hint-text">{text.line}</p>}
-      {toggle('enabled', 'On')}
-      {toggle('blocked', 'Buzz when blocked', !value('enabled'))}
-      {toggle('done', 'Buzz when finished', !value('enabled'))}
-      <div role="status" className="field-note">
-        {note?.error === true ? <Notice tone="danger" title={note.text} /> : <span className="muted">{pending === undefined ? note?.text ?? '' : 'Saving…'}</span>}
-      </div>
+      {state === 'notInstalled' ? (
+        <InstallCard
+          source={source}
+          command={command}
+          help={needsProject ? settings : undefined}
+          busy={working}
+          error={note?.error === true ? note.text : undefined}
+          onInstall={install}
+          onCheck={check}
+        />
+      ) : (
+        <>
+          {canStart && <StartButton source={source} onStarted={async () => { await onSaved?.(); }} onFailure={onFailure} />}
+          {toggle('enabled', 'On')}
+          {toggle('blocked', 'Buzz when blocked', !value('enabled'))}
+          {toggle('done', 'Buzz when finished', !value('enabled'))}
+          <div role="status" className="field-note">
+            {note?.error === true ? <Notice tone="danger" title={note.text} /> : <span className="muted">{pending === undefined ? note?.text ?? '' : 'Saving…'}</span>}
+          </div>
+        </>
+      )}
     </li>
   );
 }
 
 /** Settings → Integrations: only where a computer lists a provider. */
-export function IntegrationsSection({ entries, providers = [], onFailure, onCheck, onProviderReload }: {
+export function IntegrationsSection({ entries, providers = [], onFailure, onCheck, onProviderReload, onInstall }: {
   readonly entries: ReadonlyArray<ComputerEntry>;
   /** The providers' latest reads, for their state. */
   readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
   readonly onFailure: (error: unknown, from?: Computer) => string;
   readonly onCheck?: (origin: string) => Promise<void>;
   readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
+  readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
 }) {
   const sources = providerSources(entries);
+  const settingsOf = (origin: string) => {
+    const status = entries.find((entry) => entry.computer.origin === origin)?.status;
+    return status?.kind === 'ok' ? status.settings : undefined;
+  };
   if (sources.length === 0) return null;
   return (
     <section className="group stack" aria-labelledby="integrations-heading">
@@ -248,10 +373,15 @@ export function IntegrationsSection({ entries, providers = [], onFailure, onChec
             key={`${source.computer.origin} ${source.info.id}`}
             source={source}
             entry={providers.find((entry) => entry.key === providerKey(source.computer.origin, source.info.id))}
+            settings={settingsOf(source.computer.origin)}
+            onInstall={onInstall}
+            {...(onCheck === undefined ? {} : { onCheck: () => onCheck(source.computer.origin) })}
             onFailure={onFailure}
-            onSaved={() => {
-              void onCheck?.(source.computer.origin).catch(() => undefined);
-              void onProviderReload?.(providerKey(source.computer.origin, source.info.id)).catch(() => undefined);
+            onSaved={async () => {
+              await Promise.all([
+                onCheck?.(source.computer.origin).catch(() => undefined),
+                onProviderReload?.(providerKey(source.computer.origin, source.info.id)).catch(() => undefined),
+              ]);
             }}
           />
         ))}
@@ -261,7 +391,7 @@ export function IntegrationsSection({ entries, providers = [], onFailure, onChec
 }
 
 export function Settings({
-  settings, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onComputersChanged,
+  settings, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onComputersChanged,
 }: {
   /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
   readonly settings: HTTPSettingsResponse | undefined;
@@ -276,6 +406,8 @@ export function Settings({
   readonly onLogout: () => Promise<void>;
   readonly onCheck: (origin: string) => Promise<void>;
   readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
+  /** Install herdr made a session on a computer: open it in Live with the install command typed, not run. */
+  readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
   readonly onComputersChanged: () => void;
 }) {
   const [logoutError, setLogoutError] = useState<string>();
@@ -376,7 +508,7 @@ export function Settings({
 
       {settings !== undefined && <NotificationSettings onFailure={onFailure} />}
 
-      <IntegrationsSection entries={entries} providers={providers} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} />
+      <IntegrationsSection entries={entries} providers={providers} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} onInstall={onInstall} />
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>

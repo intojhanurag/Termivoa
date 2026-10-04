@@ -529,6 +529,29 @@ func (handler *gatewayHandler) providerCreate(response http.ResponseWriter, requ
 	handler.respond(response, request, result, err)
 }
 
+// providerManage closes or removes an item, makes a tab or a workspace, or
+// starts the provider's server (docs/herdr-manage.md).
+func (handler *gatewayHandler) providerManage(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body protocol.HTTPProviderManageRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	provider := request.PathValue("provider")
+	if !protocol.ValidProviderID(provider) || protocol.ValidateProviderManageRequest(body) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid provider request")
+		return
+	}
+	result, err := handler.api.ManageProvider(request.Context(), credential, provider, body)
+	handler.respond(response, request, result, err)
+}
+
 func (handler *gatewayHandler) respondEmpty(response http.ResponseWriter, request *http.Request, err error) {
 	if err != nil {
 		handler.respond(response, request, nil, err)

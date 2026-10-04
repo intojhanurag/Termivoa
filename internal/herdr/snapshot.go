@@ -75,9 +75,11 @@ type wireTab struct {
 }
 
 type wirePane struct {
-	ID         string `json:"pane_id"`
-	TabID      string `json:"tab_id"`
-	TerminalID string `json:"terminal_id"`
+	ID          string `json:"pane_id"`
+	TabID       string `json:"tab_id"`
+	WorkspaceID string `json:"workspace_id"`
+	TerminalID  string `json:"terminal_id"`
+	Cwd         string `json:"cwd"` // host only: where apply looks for a repository
 }
 
 type wireLayout struct {
@@ -115,6 +117,7 @@ type target struct {
 	canOpen        bool
 	group, item    string // cleaned names
 	directory      string // checkout path (host only)
+	tab            string // herdr's tab ID (host only): closeTab
 }
 
 // groupRef is the host-only view of one group: what Create needs.
@@ -143,7 +146,9 @@ type mapped struct {
 // mapSnapshot is section 5 of the design: groups by repository, items by
 // workspace, a target per agent and per tab without one, roll-ups, caps and
 // the body budget. since carries each item's first-seen state across polls.
-func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map[string]stateStamp) mapped {
+// git names the workspaces without a worktree record whose folder is in a
+// repository (apply finds them): their group can create.
+func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map[string]stateStamp, git map[string]bool) mapped {
 	workspaces := records(snapshot.Workspaces, func(record wireWorkspace) string { return record.ID })
 	tabs := records(snapshot.Tabs, func(record wireTab) string { return record.ID })
 	panes := records(snapshot.Panes, func(record wirePane) string { return record.ID })
@@ -187,10 +192,12 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 	var order []string
 	builds := map[string]*groupBuild{}
 	for _, workspace := range workspaces {
-		groupID, groupName, git, linked, directory := "ws-"+workspace.ID, workspace.Label, false, workspace.Number, ""
+		groupID, groupName, git, linked, directory := "ws-"+workspace.ID, workspace.Label, git[workspace.ID], workspace.Number, ""
+		removable := false // a linked worktree, by herdr's record
 		if tree := workspace.Worktree; tree != nil && tree.RepoKey != "" {
 			sum := sha256.Sum256([]byte(tree.RepoKey))
 			groupID, groupName, git, directory = "g"+hex.EncodeToString(sum[:groupHashBytes]), tree.RepoName, true, tree.CheckoutPath
+			removable = tree.Linked
 			if !tree.Linked {
 				linked = 0
 			}
@@ -216,6 +223,9 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 			ID: workspace.ID, Name: Clean(workspace.Label, maxNameRunes, "workspace "+strconv.Itoa(workspace.Number)),
 			Targets: []protocol.HTTPProviderTarget{},
 		}
+		if removable {
+			item.Linked = &removable
+		}
 		var keys []string
 		workspaceTabs := tabsOf[workspace.ID]
 		slices.SortStableFunc(workspaceTabs, func(a, b wireTab) int { return a.Number - b.Number })
@@ -239,7 +249,7 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 					live[wire.ID] = struct{}{} // the agent record names its terminal itself
 					result.targets[wire.ID] = target{
 						pane: agent.PaneID, terminal: agent.TerminalID, agent: true, kind: kind, state: wire.State,
-						canOpen: true, group: build.group.Name, item: item.Name, directory: directory,
+						canOpen: true, group: build.group.Name, item: item.Name, directory: directory, tab: tab.ID,
 					}
 				}
 			}
@@ -256,7 +266,7 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 					tabTargets = append(tabTargets, wire)
 					result.targets[wire.ID] = target{
 						pane: pane, terminal: terminal, state: stateNone, canOpen: attachAny,
-						group: build.group.Name, item: item.Name, directory: directory,
+						group: build.group.Name, item: item.Name, directory: directory, tab: tab.ID,
 					}
 				}
 			}

@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Computer } from '../computers';
-import type { BrokerRPCSessionRecord, HTTPProviderGroup } from '../generated/protocol';
+import type { BrokerRPCSessionRecord, HTTPProviderGroup, HTTPProviderItem, HTTPSettingsResponse } from '../generated/protocol';
 import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
-  atLeast, byChip, cantReach, checkAgain, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
+  atLeast, byChip, cantReach, checkAgain, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
 import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type ProviderTap } from './Herdr';
 import { ProviderCreateSheet } from './ProviderCreate';
+import { ItemMenuSheet, WorkspaceSheet } from './ProviderManage';
 import { NewSessionHelp } from './NewSession';
 import { providerTabs, wordSummary, type ProviderEntry } from './providers';
 import { Button, Notice, PairVia } from './ui';
@@ -324,6 +325,10 @@ export function ComputerChips({ computers, chosen, all = true, disabled, onChoos
 const canStart = (entry: ComputerEntry) => entry.status.kind === 'ok'
   && entry.status.settings.projects.length > 0 && entry.status.settings.shellProfiles.length > 0;
 
+/** The settings an open sheet shows: the computer's newest, or the last good ones while it does not answer (the sheet stays, with its own messages). */
+export const keptSettings = (kept: HTTPSettingsResponse | undefined, status: ComputerStatus | undefined): HTTPSettingsResponse | undefined =>
+  (status?.kind === 'ok' ? status.settings : kept);
+
 export function Sessions({
   entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onReload, onRetry, onFailure, onUpdate,
   providers = [], tab, onOpenTarget, onProviderRetry, onCreated,
@@ -355,6 +360,9 @@ export function Sessions({
   readonly onCreated?: ((tap: ProviderTap, notice: string | undefined, key: string) => void) | undefined;
 }) {
   const [creating, setCreating] = useState<{ readonly entry: ProviderEntry; readonly group: HTTPProviderGroup }>();
+  // The ⋯ of an item, and New workspace (docs/herdr-manage.md): one sheet at a time.
+  const [menu, setMenu] = useState<{ readonly entry: ProviderEntry; readonly group: HTTPProviderGroup; readonly item: HTTPProviderItem }>();
+  const [workspace, setWorkspace] = useState<ProviderEntry>();
   const [error, setError] = useState<string | undefined>(message);
   const tabs = providerTabs(providers);
   const [chosenProvider, setProvider] = useState<string | undefined>(tab);
@@ -387,6 +395,20 @@ export function Sessions({
   const blocked = provider === undefined ? undefined : firstBlocked(shownProviders);
   const openTarget = onOpenTarget ?? (() => undefined);
   const retryProvider = onProviderRetry ?? (async () => undefined);
+  const reloadProvider = (key: string) => retryProvider(key).catch(() => undefined);
+  // The projects New workspace lists: that computer's own, read live, so Check again shows a new one. A read that
+  // fails while the sheet is open keeps the last good ones: the sheet stays, shows its own error and uses its answer.
+  const statusOf = (entry: ProviderEntry) => entries.find((one) => one.computer.origin === entry.computer.origin)?.status;
+  const workspaceKept = useRef<HTTPSettingsResponse | undefined>(undefined);
+  workspaceKept.current = workspace === undefined ? undefined : keptSettings(workspaceKept.current, statusOf(workspace));
+  const workspaceSettings = workspaceKept.current;
+  // Opens with the settings the tap saw, so the sheet never waits for a later read to show.
+  const openWorkspace = (entry: ProviderEntry) => {
+    const settings = keptSettings(undefined, statusOf(entry));
+    if (settings === undefined) return;
+    workspaceKept.current = settings;
+    setWorkspace(entry);
+  };
 
   useEffect(() => {
     if (!pushAllowed) return undefined;
@@ -445,7 +467,9 @@ export function Sessions({
       />
 
       {provider !== undefined && (
-        <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider} />
+        <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}
+          manage={onCreated === undefined ? undefined : { onMenu: (entry, group, item) => setMenu({ entry, group, item }), onWorkspace: openWorkspace, onFailure }}
+        />
       )}
 
       {provider === undefined && help?.kind === 'ok' && (
@@ -501,6 +525,30 @@ export function Sessions({
           onFailure={onFailure}
           onReload={() => { void retryProvider(creating.entry.key).catch(() => undefined); }}
           onClose={() => setCreating(undefined)}
+        />
+      )}
+
+      {menu !== undefined && onCreated !== undefined && (
+        <ItemMenuSheet
+          entry={menu.entry}
+          group={menu.group}
+          item={menu.item}
+          onOpened={(tap) => onCreated(tap, undefined, menu.entry.key)}
+          onReload={() => reloadProvider(menu.entry.key)}
+          onFailure={onFailure}
+          onClose={() => setMenu(undefined)}
+        />
+      )}
+
+      {workspace !== undefined && workspaceSettings !== undefined && onCreated !== undefined && (
+        <WorkspaceSheet
+          entry={workspace}
+          settings={workspaceSettings}
+          onOpened={(tap) => onCreated(tap, undefined, workspace.key)}
+          onReload={() => reloadProvider(workspace.key)}
+          onCheck={() => onRetry(workspace.computer.origin)}
+          onFailure={onFailure}
+          onClose={() => setWorkspace(undefined)}
         />
       )}
 
