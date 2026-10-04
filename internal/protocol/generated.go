@@ -80,6 +80,7 @@ type ProtocolTypes struct {
 	GatewayRPCPrincipal              GatewayRPCPrincipalPayload              `json:"gatewayRPCPrincipal"`
 	GatewayRPCProvider               GatewayRPCProviderPayload               `json:"gatewayRPCProvider"`
 	GatewayRPCProviderCreate         GatewayRPCProviderCreatePayload         `json:"gatewayRPCProviderCreate"`
+	GatewayRPCProviderManage         GatewayRPCProviderManagePayload         `json:"gatewayRPCProviderManage"`
 	GatewayRPCProviderOpen           GatewayRPCProviderOpenPayload           `json:"gatewayRPCProviderOpen"`
 	GatewayRPCProviderUpdate         GatewayRPCProviderUpdatePayload         `json:"gatewayRPCProviderUpdate"`
 	GatewayRPCPushSubscribe          GatewayRPCPushSubscribePayload          `json:"gatewayRPCPushSubscribe"`
@@ -113,6 +114,8 @@ type ProtocolTypes struct {
 	HTTPPreviewConfigResponse        HTTPPreviewConfigResponse               `json:"httpPreviewConfigResponse"`
 	HTTPProviderCreateRequest        HTTPProviderCreateRequest               `json:"httpProviderCreateRequest"`
 	HTTPProviderCreateResponse       HTTPProviderCreateResponse              `json:"httpProviderCreateResponse"`
+	HTTPProviderManageRequest        HTTPProviderManageRequest               `json:"httpProviderManageRequest"`
+	HTTPProviderManageResponse       HTTPProviderManageResponse              `json:"httpProviderManageResponse"`
 	HTTPProviderOpenRequest          HTTPProviderOpenRequest                 `json:"httpProviderOpenRequest"`
 	HTTPProviderOpenResponse         HTTPProviderOpenResponse                `json:"httpProviderOpenResponse"`
 	HTTPProviderSession              HTTPProviderSession                     `json:"httpProviderSession"`
@@ -829,6 +832,31 @@ type HTTPProviderCreateRequest struct {
 	Prompt  *string `json:"prompt,omitempty"`
 }
 
+// Closes, removes or makes something in a provider, or starts its server (revision 5,
+// docs/herdr-manage.md). The broker runs it in its own context; the gateway sends it on a
+// dedicated connection.
+type GatewayRPCProviderManagePayload struct {
+	Credential string                    `json:"credential"`
+	Provider   string                    `json:"provider"`
+	Request    HTTPProviderManageRequest `json:"request"`
+}
+
+// POST /api/v1/providers/{provider}/manage (revision 5, docs/herdr-manage.md). closeItem
+// ends an item's terminals and deletes no file; an item that is a main checkout cannot be
+// closed while a linked worktree of its group is open. removeItem deletes a linked
+// worktree's folder without force (the branch stays; files that git ignores go with the
+// folder). newTab makes a tab in an item. newWorkspace makes an item in a Termivoa
+// project's folder. startServer starts the provider's server. itemId and name are required
+// for closeItem and removeItem (name is the item name the user confirmed: the host refuses
+// when the item now has another name); itemId alone for newTab; projectId for newWorkspace;
+// none for startServer. A field that does not belong to the action is refused.
+type HTTPProviderManageRequest struct {
+	Action    HTTPProviderManageAction `json:"action"`
+	ItemID    *string                  `json:"itemId,omitempty"`
+	Name      *string                  `json:"name,omitempty"`
+	ProjectID *string                  `json:"projectId,omitempty"`
+}
+
 // Opens or reuses the in-memory provider session of one terminal in the broker's latest
 // snapshot.
 type GatewayRPCProviderOpenPayload struct {
@@ -1022,6 +1050,16 @@ type HTTPProviderCreateResponse struct {
 	TargetID     string                     `json:"targetId"`
 }
 
+// itemId is the item acted on or made. targetId is the new terminal of newTab and
+// newWorkspace; it is absent when this provider version cannot open a terminal without an
+// agent. problem is set when nothing changed: uncommitted (removeItem: the worktree has
+// changes that are not committed).
+type HTTPProviderManageResponse struct {
+	ItemID   *string                    `json:"itemId,omitempty"`
+	Problem  *HTTPProviderManageProblem `json:"problem,omitempty"`
+	TargetID *string                    `json:"targetId,omitempty"`
+}
+
 // The session to show in Live. reused is true when the host already had a live session for
 // this terminal.
 type HTTPProviderOpenResponse struct {
@@ -1069,7 +1107,9 @@ type HTTPProviderGroup struct {
 // terminal); it is absent when nothing can be opened. stateSince is when the host first saw
 // the current state.
 type HTTPProviderItem struct {
-	ID         string               `json:"id"`
+	ID string `json:"id"`
+	// Revision 5. True for a linked worktree: manage removeItem applies to it.
+	Linked     *bool                `json:"linked,omitempty"`
 	Name       string               `json:"name"`
 	OpenTarget *string              `json:"openTarget,omitempty"`
 	State      string               `json:"state"`
@@ -1129,14 +1169,20 @@ type HTTPSettingsResponse struct {
 // kinds that herdr itself can start (its agent start kinds) and that already run in this
 // herdr, most used first.
 type HTTPProviderInfo struct {
-	AgentKinds []string                  `json:"agentKinds"`
-	CanCreate  bool                      `json:"canCreate"`
-	Enabled    bool                      `json:"enabled"`
-	ID         string                    `json:"id"`
-	Name       string                    `json:"name"`
-	Notify     []HTTPProviderNotifyState `json:"notify"`
-	State      HTTPProviderState         `json:"state"`
-	Version    *string                   `json:"version,omitempty"`
+	AgentKinds []string `json:"agentKinds"`
+	CanCreate  bool     `json:"canCreate"`
+	// Revision 5. True only with notInstalled, when the official installer can put the provider
+	// on this computer (no other copy was found or refused).
+	CanInstall *bool `json:"canInstall,omitempty"`
+	// Revision 5. True only with notRunning, when the host can start the provider's server
+	// (manage, action startServer).
+	CanStart *bool                     `json:"canStart,omitempty"`
+	Enabled  bool                      `json:"enabled"`
+	ID       string                    `json:"id"`
+	Name     string                    `json:"name"`
+	Notify   []HTTPProviderNotifyState `json:"notify"`
+	State    HTTPProviderState         `json:"state"`
+	Version  *string                   `json:"version,omitempty"`
 }
 
 // One image for the session's project folder. data is the file, standard padded base64, 1
@@ -1713,6 +1759,8 @@ const (
 	GatewayProvidersCreateResult  GatewayRPCMessageType = "gateway.providers.create.result"
 	GatewayProvidersGet           GatewayRPCMessageType = "gateway.providers.get"
 	GatewayProvidersGetResult     GatewayRPCMessageType = "gateway.providers.get.result"
+	GatewayProvidersManage        GatewayRPCMessageType = "gateway.providers.manage"
+	GatewayProvidersManageResult  GatewayRPCMessageType = "gateway.providers.manage.result"
 	GatewayProvidersOpen          GatewayRPCMessageType = "gateway.providers.open"
 	GatewayProvidersOpenResult    GatewayRPCMessageType = "gateway.providers.open.result"
 	GatewayProvidersUpdate        GatewayRPCMessageType = "gateway.providers.update"
@@ -1757,6 +1805,16 @@ const (
 	The127001 PreviewHost = "127.0.0.1"
 )
 
+type HTTPProviderManageAction string
+
+const (
+	CloseItem    HTTPProviderManageAction = "closeItem"
+	NewTab       HTTPProviderManageAction = "newTab"
+	NewWorkspace HTTPProviderManageAction = "newWorkspace"
+	RemoveItem   HTTPProviderManageAction = "removeItem"
+	StartServer  HTTPProviderManageAction = "startServer"
+)
+
 type HTTPProviderNotifyState string
 
 const (
@@ -1772,13 +1830,22 @@ const (
 	PromptFailed  HTTPProviderCreateProblem = "promptFailed"
 )
 
+type HTTPProviderManageProblem string
+
+const (
+	Uncommitted HTTPProviderManageProblem = "uncommitted"
+)
+
 // ready: the host reads the provider. notRunning: installed, but its server does not
 // answer. unsupported: the installed version is too old or its data cannot be read. off:
-// turned off in Settings → Integrations on this computer.
+// turned off in Settings → Integrations on this computer. notInstalled (revision 5): the
+// provider's program is not on this computer; it has no tab and no list, only a card in
+// Settings → Integrations.
 type HTTPProviderState string
 
 const (
 	HTTPProviderStateReady HTTPProviderState = "ready"
+	NotInstalled           HTTPProviderState = "notInstalled"
 	NotRunning             HTTPProviderState = "notRunning"
 	Off                    HTTPProviderState = "off"
 	Unsupported            HTTPProviderState = "unsupported"
@@ -2030,6 +2097,6 @@ const (
 // ProtocolRevision is this build's additive protocol v1 revision and
 // MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
 const (
-	ProtocolRevision    = 4
+	ProtocolRevision    = 5
 	MinProtocolRevision = 1
 )

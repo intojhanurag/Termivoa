@@ -46,6 +46,7 @@
     { "$ref": "#/$defs/providersUpdateMessage" },
     { "$ref": "#/$defs/providersOpenMessage" },
     { "$ref": "#/$defs/providersCreateMessage" },
+    { "$ref": "#/$defs/providersManageMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -75,6 +76,7 @@
     { "$ref": "#/$defs/providersUpdateResultMessage" },
     { "$ref": "#/$defs/providersOpenResultMessage" },
     { "$ref": "#/$defs/providersCreateResultMessage" },
+    { "$ref": "#/$defs/providersManageResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -89,7 +91,7 @@
         "gateway.upload.begin", "gateway.upload.chunk", "gateway.upload.commit",
         "gateway.preview.check", "gateway.computers.list", "gateway.computers.add", "gateway.computers.remove",
         "gateway.computers.offer", "gateway.computers.found",
-        "gateway.providers.get", "gateway.providers.update", "gateway.providers.open", "gateway.providers.create",
+        "gateway.providers.get", "gateway.providers.update", "gateway.providers.open", "gateway.providers.create", "gateway.providers.manage",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
@@ -100,7 +102,7 @@
         "gateway.computers.list.result", "gateway.computers.add.result", "gateway.computers.remove.result",
         "gateway.computers.offer.result", "gateway.computers.found.result",
         "gateway.providers.get.result", "gateway.providers.update.result", "gateway.providers.open.result",
-        "gateway.providers.create.result",
+        "gateway.providers.create.result", "gateway.providers.manage.result",
         "gateway.error"
       ]
     },
@@ -340,6 +342,18 @@
         "request": { "$ref": "http-api.schema.json#/$defs/providerCreateRequest" }
       }
     },
+    "providerManagePayload": {
+      "title": "GatewayRPCProviderManagePayload",
+      "description": "Closes, removes or makes something in a provider, or starts its server (revision 5, docs/herdr-manage.md). The broker runs it in its own context; the gateway sends it on a dedicated connection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "provider", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "provider": { "$ref": "http-api.schema.json#/$defs/providerId" },
+        "request": { "$ref": "http-api.schema.json#/$defs/providerManageRequest" }
+      }
+    },
     "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
     "pairRedeemMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemRequest" } } },
     "pairPollMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairPollRequest" } } },
@@ -395,6 +409,8 @@
     "providersUpdateMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.update" }, "payload": { "$ref": "#/$defs/providerUpdatePayload" } } },
     "providersOpenMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.open" }, "payload": { "$ref": "#/$defs/providerOpenPayload" } } },
     "providersCreateMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.create" }, "payload": { "$ref": "#/$defs/providerCreatePayload" } } },
+    "providersManageMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.manage" }, "payload": { "$ref": "#/$defs/providerManagePayload" } } },
+    "providersManageResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.manage.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerManageResponse" } } },
     "providersGetResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.get.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerSnapshotResponse" } } },
     "providersUpdateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.update.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerInfo" } } },
     "providersOpenResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.open.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerOpenResponse" } } },

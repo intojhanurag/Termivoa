@@ -116,9 +116,9 @@
     },
     "providerState": {
       "title": "HTTPProviderState",
-      "description": "ready: the host reads the provider. notRunning: installed, but its server does not answer. unsupported: the installed version is too old or its data cannot be read. off: turned off in Settings → Integrations on this computer.",
+      "description": "ready: the host reads the provider. notRunning: installed, but its server does not answer. unsupported: the installed version is too old or its data cannot be read. off: turned off in Settings → Integrations on this computer. notInstalled (revision 5): the provider's program is not on this computer; it has no tab and no list, only a card in Settings → Integrations.",
       "type": "string",
-      "enum": ["ready", "notRunning", "unsupported", "off"]
+      "enum": ["ready", "notRunning", "unsupported", "off", "notInstalled"]
     },
     "providerItemState": {
       "description": "Provider state of a terminal, item or group, mapped by the host (docs/herdr-provider.md, State mapping). Known words: blocked, done, working, idle, unknown, none (no agent there). Roll-up order, most urgent first: blocked, done, working, idle, unknown, none. A word, not an enum, so a later provider can add one: the app shows any other word as unknown.",
@@ -163,7 +163,9 @@
         "enabled": { "type": "boolean" },
         "notify": { "type": "array", "maxItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/providerNotifyState" } },
         "canCreate": { "type": "boolean" },
-        "agentKinds": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/providerAgentKind" } }
+        "agentKinds": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/providerAgentKind" } },
+        "canInstall": { "description": "Revision 5. True only with notInstalled, when the official installer can put the provider on this computer (no other copy was found or refused).", "type": "boolean" },
+        "canStart": { "description": "Revision 5. True only with notRunning, when the host can start the provider's server (manage, action startServer).", "type": "boolean" }
       }
     },
     "providerTarget": {
@@ -191,6 +193,7 @@
         "name": { "$ref": "#/$defs/providerDisplayName" },
         "state": { "$ref": "#/$defs/providerItemState" },
         "stateSince": { "$ref": "#/$defs/timestamp" },
+        "linked": { "description": "Revision 5. True for a linked worktree: manage removeItem applies to it.", "type": "boolean" },
         "openTarget": { "$ref": "#/$defs/providerTargetId" },
         "targets": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/providerTarget" } }
       }
@@ -298,6 +301,40 @@
         "agentStarted": { "type": "boolean" },
         "problem": { "$ref": "#/$defs/providerCreateProblem" }
       }
+    },
+    "providerManageRequest": {
+      "title": "HTTPProviderManageRequest",
+      "description": "POST /api/v1/providers/{provider}/manage (revision 5, docs/herdr-manage.md). closeItem ends an item's terminals and deletes no file; an item that is a main checkout cannot be closed while a linked worktree of its group is open. removeItem deletes a linked worktree's folder without force (the branch stays; files that git ignores go with the folder). newTab makes a tab in an item. newWorkspace makes an item in a Termivoa project's folder. startServer starts the provider's server. itemId and name are required for closeItem and removeItem (name is the item name the user confirmed: the host refuses when the item now has another name); itemId alone for newTab; projectId for newWorkspace; none for startServer. A field that does not belong to the action is refused.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": { "$ref": "#/$defs/providerManageAction" },
+        "itemId": { "$ref": "#/$defs/providerHandle" },
+        "name": { "$ref": "#/$defs/providerDisplayName" },
+        "projectId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "providerManageAction": {
+      "title": "HTTPProviderManageAction",
+      "type": "string",
+      "enum": ["closeItem", "removeItem", "newTab", "newWorkspace", "startServer"]
+    },
+    "providerManageResponse": {
+      "title": "HTTPProviderManageResponse",
+      "description": "itemId is the item acted on or made. targetId is the new terminal of newTab and newWorkspace; it is absent when this provider version cannot open a terminal without an agent. problem is set when nothing changed: uncommitted (removeItem: the worktree has changes that are not committed).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "itemId": { "$ref": "#/$defs/providerHandle" },
+        "targetId": { "$ref": "#/$defs/providerTargetId" },
+        "problem": { "$ref": "#/$defs/providerManageProblem" }
+      }
+    },
+    "providerManageProblem": {
+      "title": "HTTPProviderManageProblem",
+      "type": "string",
+      "enum": ["uncommitted"]
     },
     "providerCreateProblem": {
       "title": "HTTPProviderCreateProblem",
