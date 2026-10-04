@@ -144,7 +144,10 @@ rules:
   response field needs only the bump.
 - Go decodes requests strictly, so the app sends a new request field or
   message only to a computer whose `protocolRevision` is at least the
-  revision that added it.
+  revision that added it. `revision.json` names those revisions in
+  `features` (for example `providers: 4`); generation emits them as
+  `FEATURE_REVISION` in TypeScript, and the app gates on
+  `FEATURE_REVISION.<feature>`, never on `PROTOCOL_REVISION` (which grows).
 - A new enum value that older apps must parse either raises `minRevision`,
   or the app maps unknown values to `unknown` before validation.
 - Raise `minRevision` only when an older app can no longer work with this
@@ -162,8 +165,8 @@ every build ID the packaging scripts produce already matches.
 | --- | --- |
 | 1 | First revision. |
 | 2 | Preview listener rules (see "Preview listener"): the selection needs a `Referer` of an app origin and answers `200`; every other request must come from the preview origin itself. No schema change. An app frames a peer's preview only when that peer's `protocolRevision` is 2 or higher. |
-| 4 | Providers (see that section): `GET` and `PATCH /api/v1/providers/{provider}`, `POST /api/v1/providers/{provider}/open` and `/create`; `HTTPSettingsResponse.providers`; the `HTTPProvider*` bodies; `gateway.providers.get`, `.update`, `.open`, `.create` (`authentication-rpc.md`). No new error code and no enum an older app parses, so `minRevision` stays 1. The app calls a provider route only on a computer whose `protocolRevision` is 4 or higher and that lists the provider. |
 | 3 | Found on your network (see that section): `POST /api/v1/computers/offer` (`HTTPComputerOfferRequest`) and `GET /api/v1/computers/found` (`HTTPComputerFoundResponse`, `HTTPFoundComputer`); `gateway.computers.offer`, `gateway.computers.found`, `admin.pair.offer`, `admin.pair.offer.end` (`authentication-rpc.md`); error code `home_changed`, sent only on the local administration RPC, so no app parses it and `minRevision` stays 1. The app is served by home, so it calls `found` only on its own home. A home below revision 3 answers an offer with `403`, which the new computer reports as `not_accepted`. |
+| 4 | Providers (see that section): `GET` and `PATCH /api/v1/providers/{provider}`, `POST /api/v1/providers/{provider}/open` and `/create`; `HTTPSettingsResponse.providers`; the `HTTPProvider*` bodies; `gateway.providers.get`, `.update`, `.open`, `.create` (`authentication-rpc.md`). No new error code and no enum an older app parses, so `minRevision` stays 1. The app calls a provider route only on a computer whose `protocolRevision` is 4 or higher and that lists the provider. |
 
 ## Computers
 

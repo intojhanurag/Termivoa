@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { client, PROVIDER_WORDS, providerWord, type ProviderWord } from '../api/http';
 import type { Computer } from '../computers';
-import type {
-  HTTPProviderGroup, HTTPProviderInfo, HTTPProviderItem, HTTPProviderSnapshotResponse, HTTPProviderState, HTTPProviderTarget,
+import {
+  FEATURE_REVISION,
+  type HTTPProviderGroup, type HTTPProviderInfo, type HTTPProviderItem, type HTTPProviderSnapshotResponse, type HTTPProviderState, type HTTPProviderTarget,
 } from '../generated/protocol';
 import { scheduler, type PollOutcome } from '../terminal/scheduler';
 import type { ComputerEntry } from './allSessions';
@@ -15,9 +16,6 @@ import type { ComputerEntry } from './allSessions';
  * changes a computer's sessions, its status or the Sessions status line.
  * Snapshots live in memory only.
  */
-
-/** The first protocol revision with the provider routes. */
-export const PROVIDER_REVISION = 4;
 
 export interface ProviderSource {
   readonly computer: Computer;
@@ -40,9 +38,9 @@ export interface ProviderEntry extends ProviderSource {
 /** The scheduler key of one provider read: never a computer's origin, so its failures stay its own. */
 export const providerKey = (origin: string, id: string): string => `${origin} provider:${id}`;
 
-/** Every provider of every computer that answered at PROVIDER_REVISION or later, in the computers' order. */
+/** Every provider of every computer that answered at FEATURE_REVISION.providers or later, in the computers' order. */
 export function providerSources(entries: ReadonlyArray<ComputerEntry>): ProviderSource[] {
-  return entries.flatMap((entry) => (entry.status.kind === 'ok' && entry.status.settings.protocolRevision >= PROVIDER_REVISION
+  return entries.flatMap((entry) => (entry.status.kind === 'ok' && entry.status.settings.protocolRevision >= FEATURE_REVISION.providers
     ? (entry.status.settings.providers ?? []).map((info) => ({ computer: entry.computer, info }))
     : []));
 }

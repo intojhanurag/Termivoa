@@ -1746,3 +1746,8 @@ export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 export const PROTOCOL_REVISION = 4;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;
+/** The revision that added each feature: call it only on a computer whose protocolRevision is at least this. */
+export const FEATURE_REVISION = {
+    peerPreview: 2,
+    providers: 4,
+} as const;
