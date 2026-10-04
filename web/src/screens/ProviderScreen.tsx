@@ -4,7 +4,7 @@ import type { Computer } from '../computers';
 import type { HTTPProviderItem, HTTPProviderSession } from '../generated/protocol';
 import { fitGrid, MONOSPACE } from '../terminal/TerminalView';
 import { hosted, type HostedSession } from './allSessions';
-import { GONE, itemMeta, StateWord, wordText } from './Herdr';
+import { GONE, StateWord, wordText } from './Herdr';
 import { Live } from './Live';
 import { findTarget, groupsOf, type ProviderEntry } from './providers';
 import { Button, Notice } from './ui';
@@ -225,7 +225,6 @@ export function ProviderScreen({
             {wordText(word, 1) !== undefined && <><dt>State</dt><dd><StateWord word={word} text={wordText(word, 1)} /></dd></>}
           </dl>
         )}
-        {found !== undefined && <p className="hint-text">{itemMeta(found.item)}</p>}
         <p className="muted">Open shows it here, read-only. {sizeLine(computer.label)}</p>
         <div role="status" className="field-note">
           {phase.kind === 'error' && <Notice tone="danger" title={phase.text} />}

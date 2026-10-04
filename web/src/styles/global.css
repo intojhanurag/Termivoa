@@ -373,6 +373,8 @@ label { color: var(--soft); font-size: 14px; }
 .state-word.accent { color: var(--accent); }
 .state-word.green { color: var(--green); }
 .provider-item { padding: 14px 0; }
+/* A block, so a long worktree or branch name ends in "…" (a flex box would just clip it). */
+.provider-item .row-title { display: block; }
 .provider-item.nested { padding: 12px 0 12px 22px; }
 .provider-item.nested .row-text { gap: 4px; }
 .provider-item.nested .row-title { font-family: var(--mono); font-size: 14px; line-height: 20px; }
@@ -953,7 +955,7 @@ button.preview-tell { flex-shrink: 0; min-height: 38px; padding: 0 16px; font-si
 /* Multi-computer: a colour dot always comes with the computer's label. */
 .computer-tag { display: inline-flex; align-items: center; gap: 5px; }
 /* Computer filter: underline tabs on a hairline, full bleed. */
-.chips { display: flex; gap: 22px; margin: 0 -22px; padding: 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.chips { display: flex; flex-shrink: 0; gap: 22px; margin: 0 -22px; padding: 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 .chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; min-width: 0; padding: 6px 0 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); font-size: 15px; font-weight: 500; }
 .chip:active:not(:disabled) { background: none; }
