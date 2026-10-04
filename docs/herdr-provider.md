@@ -17,7 +17,7 @@ Every row was run on 2026-10-04 against an **isolated** herdr: `HOME=<tmp> herdr
 | Question | Finding |
 | --- | --- |
 | Detect herdr | `herdr status server --json` gives `running`, `version`, `protocol`, `socket`, `compatible`. The socket's `ping` also returns `version` and `protocol`. 0.8.2 = protocol 20, 0.9.3 = protocol 22. Homebrew installs `/opt/homebrew/bin/herdr`, a symlink into `/opt/homebrew/Cellar/herdr/<version>/bin/herdr`. |
-| Socket | Newline-delimited JSON: `{"id","method","params"}` → `{"id","result"}` or `{"id","error":{"code","message"}}`. Default `~/.config/herdr/herdr.sock`, mode `0600`, folder `0755`, owned by the user; named sessions use `~/.config/herdr/sessions/<name>/herdr.sock`. An unknown method gives `invalid_request` with the list of methods. |
+| Socket | Newline-delimited JSON: `{"id","method","params"}` → `{"id","result"}` or `{"id","error":{"code","message"}}`, **one request per connection** (herdr closes the socket after each reply). Default `~/.config/herdr/herdr.sock`, mode `0600`, folder `0755`, owned by the user; named sessions use `~/.config/herdr/sessions/<name>/herdr.sock`. An unknown method gives `invalid_request` with the list of methods. |
 | Snapshot | `session.snapshot` → `result.snapshot` with `protocol`, `version`, `workspaces`, `tabs`, `panes`, `layouts`, `agents`, `focused_*`. Same field set in 0.8.2 and 0.9.3 (titles and `agent_session` optional). IDs: workspace `w2`, tab `w2:t1`, pane `w2:p4`, terminal `term_…`. |
 | Worktree grouping | A workspace in git has `worktree {repo_key, repo_name, repo_root, checkout_path, is_linked_worktree}`. The main checkout has `is_linked_worktree: false`; linked worktrees share its `repo_key`. A workspace outside git has no `worktree`. Two workspaces can have the same label. |
 | States | Agents and panes: `idle`, `working`, `blocked`, `done`, `unknown`; panes without an agent say `unknown`. `idle` reported to a headless server became `done` (unseen); once a herdr UI focused the tab it was `idle`. `state_change_seq` grows with each change. Terminal titles often hold the task text a person typed. |
@@ -51,10 +51,11 @@ func (p *Provider) Attach(targetID string) (Attach, error)               // chec
 func (p *Provider) Create(ctx context.Context, request protocol.HTTPProviderCreateRequest) (protocol.HTTPProviderCreateResponse, error) // M2
 
 type Config struct {
-	BinaryPaths []string // fixed paths tried before PATH; set by cmd/pterm, empty in tests
+	BinaryPaths []string // fixed paths tried before PathEnv; set by cmd/pterm, empty in tests
+	PathEnv     string   // the PATH searched after them, and PATH of every herdr child
 	Home        string   // for ~/.config/herdr; set by cmd/pterm, a temp dir in tests
+	Session     string   // empty (the default session); only the opt-in lab test names one
 	Enabled     func() bool
-	Notify      func() []string
 }
 
 type Attach struct {
@@ -300,7 +301,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 
 - Supported: protocol 20 (0.8.2) and later. Below: `unsupported`.
 - Read leniently: unknown fields ignored, optional fields optional, records without a required ID dropped.
-- Probed once per discovered version: `herdr terminal attach --help` exit 0 → targets without an agent can open (0.9+); `herdr agent start --help` → the start kinds from its `[possible values: …]` line (if that line is missing, `agentKinds` is empty and M2 offers **No agent** only).
+- Probed once per discovered version: `herdr terminal attach --help` exit 0 → targets without an agent can open (0.9+; the host lab found that 0.8.2 also has `terminal attach`, and it attached a pane without an agent, so the probe enables those tabs on 0.8.2 too — section 21); `herdr agent start --help` → the start kinds from its `[possible values: …]` line (if that line is missing, `agentKinds` is empty and M2 offers **No agent** only).
 - The opt-in lab test runs against every herdr version the owner installs; CI uses the fake.
 
 ## 14. What the drawings need that herdr cannot give
@@ -478,6 +479,36 @@ Two independent reviews ran on version 1: security, and feasibility with alterna
 | R13 | M2 create tied to the request context; prompt control characters | Broker-owned context and snapshot re-check after a timeout; ESC, C0 (except tab and line feed), DEL and C1 refused in the schema and in Go |
 | R14 | Reaping before the phone attaches | First 10 s count as viewed (rule 6) |
 
+### Final security pass (resolved in the host build)
+
+| # | Finding | Resolution |
+| --- | --- | --- |
+| N1 | (web) | Web task; no host work |
+| N2 | `0x02` doubling must cover every input kind, not only keys | The broker's single PTY writer doubles every `0x02` after the emulator built the input (`SessionConfig.DoublePrefix`, provider sessions only), so key, text, paste, compose, snippets and answer cards are all covered, and any later kind. Tests: one per input kind and one at the writer. A custom herdr prefix is an accepted, documented risk (at worst a phone detaches its own attach client); `pterm doctor` warns when herdr's `config.toml` sets `[keys] prefix` to anything but `ctrl+b` |
+| N3 | The checkout path from herdr's snapshot became a session folder unchecked | It must pass the project-path checks (`resolveProjectFolder`, shared with `pterm project add`: absolute, resolved, an existing directory) and be owned by this user. Else the session starts in the home folder and Changes and files are refused for it |
+| F11 (remainder) | The socket's parent chain was not checked | Before every dial the socket's folder must be the user's and not group- or other-writable, and its whole parent chain up to `/` passes the folder check of the binary lookup (`tailnet.CheckFolders`) |
+
 ### Rejected
 
 - **Restore the laptop's size from the snapshot when control changes** (R2, F6): the lab shows the `layouts` rect is not the real PTY size (borders; stale when headless) and herdr has no other size field; a 0×0 size breaks the pane (0.8.2) or ends the attach (0.9.3). Resizing to the rect would leave the laptop pane wrong. Ending the attach is the only proven restore.
+
+## 21. Host implementation notes (differences from version 2)
+
+Each difference and why. Everything else is built as written above.
+
+| Where | Built | Why |
+| --- | --- | --- |
+| Detection (sections 1, 10, 13) | The broker detects with the socket's `ping` (version, protocol), not `herdr status server --json`; `pterm doctor` uses the same pass (`herdr.Inspect`) | Same fields, no process per discovery, and the binary never runs unless the server answers. The probes run once per binary and server version |
+| Retry timing (section 10) | Binary lookup every 30 s; a server that does not answer is tried again every 5 s; an unsupported one every 30 s | A not-running server costs one `lstat` and a refused dial; 5 s finds a restarted herdr sooner |
+| `Config` (section 3) | `PathEnv` replaces the process PATH lookup; `Session` exists for the lab test; `Notify` is gone (the broker filters pushes by its own setting) | No test can find a herdr through the test runner's PATH; the lab needs its own session |
+| S16 guard | In a test binary `herdr.New` panics when any `Config` path is outside a temp folder (`testing.Testing()`); `TestGuardRefusesRealHerdr` proves it. The dev-stack lifecycle test runs with its own HOME and PATH | Enforced for every test, not only by review |
+| Environment (S11) | Provider sessions get the ptyhost allowlist every Termivoa session gets (HOME, USER, LOGNAME, SHELL, PATH, TMPDIR, SSH_AUTH_SOCK, LANG, LANGUAGE, TZ, `LC_*`; Linux adds the session-bus variables), then `HOME`, `PATH`, `HERDR_SOCKET_PATH`, `TERM`, `COLORTERM`. Probes get only `HOME`, `PATH`, `HERDR_SOCKET_PATH` | One environment rule for every broker session |
+| Socket checks (S3, F11) | The folder chain is checked up to `/`, not only up to the config folder | A superset; it reuses the binary lookup's check |
+| 0.8.2 attach (sections 1, 13) | `terminal attach` exists in 0.8.2 too; the probe decides | Lab, 2026-10-04 |
+| Open (section 6) | A reused session answers its live size, and a reuse counts as a new view (another 10 s grace). The reaper runs every second | The phone attaches right after the answer |
+| Create (sections 4.3, 10) | The agent's herdr name is its kind. After a successful create the poll loop refreshes at once and create waits up to 3 s for the new terminal, so **Open** works at once. Create runs in the broker's serve context and the gateway sends it on its own connection | A 45 s create never holds the gateway's shared broker connection |
+| Limiter (S10) | A fixed one-minute window per route and device | The same shape as the upload limiter |
+| Push (section 7) | Names are cleaned twice (herdr, then the push builder); a cut name is 39 characters and "…" | Reuses the push builder's cleaning |
+| `pterm doctor` | A herdr line only when herdr is installed; never counts as a problem | Nothing changes on a computer without herdr |
+
+How to run the fake herdr: `go build -o /tmp/fh/bin/herdr ./scripts/fakeherdr`, write `scenario.json` (`{"version","protocol","attachAny","kinds","snapshot"}`, see the package comment) into `$HOME/.config/herdr`, then `HOME=<that home> /tmp/fh/bin/herdr server`. A broker finds it with that `HOME` and the fake's folder on `PATH` (or in `BinaryPaths`). `control.sock` in the same folder changes states (`{"op":"status","pane":"w1:p1","status":"blocked"}`), closes panes, hangs or stops the server; `fake.log` records attach sizes, input and exits.
