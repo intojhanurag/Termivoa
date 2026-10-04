@@ -16,6 +16,12 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
+// VerifyPeer reports whether the process at the other end of a Unix socket
+// connection runs as the current user (LOCAL_PEERCRED on macOS, SO_PEERCRED
+// on Linux). On Windows it accepts every connection. The herdr client uses it
+// to refuse a socket served by another account.
+func VerifyPeer(connection net.Conn) error { return verifyPlatformPeer(connection) }
+
 const (
 	EndpointDescriptorVersion = 1
 	maxEndpointDescriptorSize = 16 * 1024

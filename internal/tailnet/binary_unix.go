@@ -11,18 +11,18 @@ import (
 	"syscall"
 )
 
-// maxLinks bounds the symlink chain checkBinary follows.
+// maxLinks bounds the symlink chain CheckBinary follows.
 const maxLinks = 40
 
-// checkBinary accepts an existing regular file only when another account
-// cannot replace the tailscale the broker runs: the file, every link in its
+// CheckBinary accepts an existing regular file only when another account
+// cannot replace the program the broker runs (tailscale, herdr): the file, every link in its
 // symlink chain, and every folder up to / on the way to each of them (as
 // listed and as resolved) must be owned by root or the current user, and no
 // folder may be writable by group or others unless it has the sticky bit.
 // The file itself may not be writable by group or others at all. A folder
 // writable only by group root, or by group admin on macOS, passes: members
 // of those groups can already become root.
-func checkBinary(path string) error {
+func CheckBinary(path string) error {
 	for range maxLinks {
 		info, err := os.Lstat(path)
 		if err != nil {
@@ -32,7 +32,7 @@ func checkBinary(path string) error {
 			return err
 		}
 		for _, folder := range []string{filepath.Dir(path), resolved(filepath.Dir(path))} {
-			if err := checkFolders(folder); err != nil {
+			if err := CheckFolders(folder); err != nil {
 				return err
 			}
 		}
@@ -67,10 +67,10 @@ func resolved(folder string) string {
 	return folder
 }
 
-// checkFolders checks folder and each parent up to /. Lstat checks who owns
+// CheckFolders checks folder and each parent up to /. Lstat checks who owns
 // the entry (a symlink's owner can replace it in a sticky folder); Stat checks
 // the folder it leads to.
-func checkFolders(folder string) error {
+func CheckFolders(folder string) error {
 	for {
 		info, err := os.Lstat(folder)
 		if err != nil {

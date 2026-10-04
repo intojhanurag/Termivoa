@@ -1,0 +1,114 @@
+{
+ "groups": [
+  {
+   "canCreate": true,
+   "id": "g7d0f77ccdcfd",
+   "items": [
+    {
+     "id": "w1",
+     "name": "shop",
+     "openTarget": "w1:p1.term_65d0031602b701",
+     "state": "blocked",
+     "stateSince": "2026-10-04T09:51:02Z",
+     "targets": [
+      {
+       "agent": "claude",
+       "canOpen": true,
+       "id": "w1:p1.term_65d0031602b701",
+       "label": "1",
+       "state": "blocked"
+      },
+      {
+       "canOpen": false,
+       "id": "w1:p3.term_65d0031602b712",
+       "label": "logs",
+       "state": "none"
+      }
+     ]
+    },
+    {
+     "id": "w3",
+     "name": "silver-meadow",
+     "openTarget": "w3:p1.term_65d0031602b703",
+     "state": "working",
+     "stateSince": "2026-10-04T09:51:02Z",
+     "targets": [
+      {
+       "agent": "codex",
+       "canOpen": true,
+       "id": "w3:p1.term_65d0031602b703",
+       "label": "1",
+       "state": "working"
+      }
+     ]
+    }
+   ],
+   "name": "shop",
+   "state": "blocked"
+  },
+  {
+   "canCreate": false,
+   "id": "ws-w2",
+   "items": [
+    {
+     "id": "w2",
+     "name": "notes",
+     "state": "none",
+     "stateSince": "2026-10-04T09:51:02Z",
+     "targets": [
+      {
+       "canOpen": false,
+       "id": "w2:p1.term_65d0031602b702",
+       "label": "1",
+       "state": "none"
+      }
+     ]
+    }
+   ],
+   "name": "notes",
+   "state": "none"
+  },
+  {
+   "canCreate": true,
+   "id": "g4221a2c8b6dc",
+   "items": [
+    {
+     "id": "w4",
+     "name": "api",
+     "openTarget": "w4:p1.term_65d0031602b704",
+     "state": "idle",
+     "stateSince": "2026-10-04T09:51:02Z",
+     "targets": [
+      {
+       "agent": "claude",
+       "canOpen": true,
+       "id": "w4:p1.term_65d0031602b704",
+       "label": "1",
+       "state": "idle"
+      }
+     ]
+    },
+    {
+     "id": "w5",
+     "name": "lucky-valley",
+     "openTarget": "w5:p1.term_65d0031602b705",
+     "state": "done",
+     "stateSince": "2026-10-04T09:51:02Z",
+     "targets": [
+      {
+       "agent": "claude",
+       "canOpen": true,
+       "id": "w5:p1.term_65d0031602b705",
+       "label": "1",
+       "state": "done"
+      }
+     ]
+    }
+   ],
+   "name": "api",
+   "state": "done"
+  }
+ ],
+ "provider": "herdr",
+ "state": "ready"
+}
