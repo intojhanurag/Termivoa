@@ -44,6 +44,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   network → Add**), with unit tests and multi-computer harness checks
   `F-*` (`scripts/e2e-multicomputer/README.md`). Open: the real two-computer
   and real-phone checks (Next 3).
+- herdr on your phone (ADR 0008, `docs/herdr-provider.md`): a **herdr** tab,
+  open a herdr terminal in Live, buzz when blocked or finished,
+  **Settings → Integrations**, new worktree with an agent. Open: the real
+  device checks (Next 5).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -71,10 +75,19 @@ In this order.
 4. ~~**Docs picture** of the "Adding vps… approve on vps" bar and of
    **Found on your network** with **Add**.~~ Done: both in
    `guides/computers.md`, from `scripts/docs-screenshots/computers.mjs`.
-5. **herdr on your phone** (ADR 0008, `docs/herdr-provider.md`): design
-   accepted (reviews in its section 20) and protocol types generated. Build
-   M1a (list, push, Integrations), M1b (open, chips) and M2 (new worktree and
-   agent) in a host and a web track (design, section 17). No database change.
+5. ~~**herdr on your phone**~~ Done in the next beta (ADR 0008,
+   `docs/herdr-provider.md`): M1a (list, push, Integrations), M1b (open,
+   chips) and M2 (new worktree and agent). Open follow-ups:
+   - **Owner real-device checks.** Open a blocked agent on his live herdr
+     from the phone; check that the laptop pane goes phone-sized and, about
+     10 s after the phone locks, back to its own size; get a real herdr push
+     on an iPhone.
+   - **herdr 0.9 `terminal session observe`:** watch a terminal without
+     resizing the laptop pane; move to it when 0.8 support ends.
+   - **Custom herdr prefix key:** today `pterm doctor` only warns; decide if
+     Termivoa should double the configured key too.
+   - **Named herdr sessions:** only the default session shows.
+   - **Windows:** herdr is not supported there.
 
 ## Polish next
 

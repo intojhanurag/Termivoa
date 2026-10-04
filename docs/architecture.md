@@ -133,15 +133,18 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | Path | Purpose |
 | --- | --- |
 | `cmd/pterm` | CLI entry, argument parsing, `setup`/`doctor`/`launch`/`up`/`stop`, hidden process modes. `lifecycle_e2e.go` is compiled only with the `e2e` tag (section 8) |
+| `cmd/pterm/herdr.go` | The production `herdr.Config` (`herdrConfig`: fixed install paths, then `PATH`, the user's home; none on Windows) and the herdr line of `pterm doctor` (`inspectHerdr`: only when herdr is installed, never counted as a problem; warns on a custom prefix key) |
 | `internal/agentstate` | Pure classifier: working, waiting on a question, or idle, from sanitized screen text and timing |
 | `internal/auth` | Secrets, pairing grant (2 min) and browser credential lifetimes (30 days absolute, 7 days idle) |
 | `internal/broker` | Sessions, registry, controller leases, input inbox and writer, viewers, RPC servers (management, admin, gateway), agent state, Changes, Files, tasks, worktrees, uploads, preview scans, live folder, multi-computer trust, Found on your network (`offer.go`: this computer's offer to its home and the pinned dial; `offers.go`: home's offer book and found list; `peerdial_e2e.go` is compiled only with the `e2e` tag) |
+| `internal/broker/providers.go` | The broker's side of herdr: Integrations settings (`provider.herdr.enabled`, `provider.herdr.notify` in the `settings` table), the `gateway.providers.get/open/update/create` handlers, the per-device limiter (open 20, create 3, update 10 per minute), in-memory provider sessions (`CreateProvider` in `registry.go`, at most `MaxProviderSessions` = 4, outside the 8-session limit), the reaper (10 s after the last viewer, or when the target leaves the snapshot, or when off), and herdr changes to pushes |
 | `internal/cli` | User-facing local commands (pair, devices, list, attach orchestration, QR); owns no state |
 | `internal/desktop` | Desktop attach client: outer TTY modes, renderer of normalized frames, bounded input decoding |
 | `internal/gateway` | HTTP/WebSocket server, static assets, CSP, Origin/CORS, cookies, preview proxy |
 | `internal/gatewayapi` | Interface between gateway and broker (the gateway transports, the broker authorizes) |
 | `internal/gatewayclient` | Gateway's IPC client of the broker (RPC and live streams) |
 | `internal/gitchanges` | Bounded git: read changes, commit, push, worktree add/remove; never a shell, never force |
+| `internal/herdr` | herdr provider, the only package that knows herdr ([herdr-provider.md](herdr-provider.md)): finds the binary (`FindBinary`, the checks of `tailnet.CheckBinary`), the socket client (`ping`, `session.snapshot`; `worktree.create`, `agent.start`, `agent.prompt` for create) with the socket checks and peer credential, the 2 s poll loop that fills a cache, mapping to the generic provider wire shape, push changes (`Change`), the attach argv (`Attach`), create (`Create`), `Inspect` for doctor. `guard.go` makes a test config that names a path outside a temp folder panic. `herdrtest` is an in-process fake socket server for Go tests |
 | `internal/host` | Process bootstrap for broker and gateway, gateway control endpoint |
 | `internal/ipc` | Length-prefixed local IPC, handshake, current-user peer checks, Unix socket and Windows named pipe |
 | `internal/lifecycle` | LaunchAgent plist, systemd unit and Task XML generation; install/uninstall plans; doctor checks (Tailscale Serve) |
@@ -159,17 +162,19 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `internal/webpush` | Web Push with the standard library (RFC 8291, RFC 8292 VAPID), push host allow-list |
 | `protocol/v1` | Canonical JSON Schemas and protocol docs (section 4) |
 | `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets; `ui.tsx` holds the shared icons, the busy `Button`, `Notice` and `Banner` (styles and tokens in `web/src/styles/global.css`) |
+| `web/src/screens/{providers.ts,Herdr.tsx,ProviderScreen.tsx,ProviderCreate.tsx}` | herdr on the phone. `providers.ts`: one scheduler read per computer that lists a provider (own status, memory only), roll-up, count, tabs. `Herdr.tsx`: the herdr tab (projects, worktrees, state words). `ProviderScreen.tsx`: one terminal in Live (`/p/<provider>/<target>`, chips, Open, closes the stream when the page is hidden). `ProviderCreate.tsx`: the **+** sheet (new worktree and agent) |
 | `web/src/terminal` | xterm display, frame renderer, snapshot assembly, input sender, composer, snippets, speech, phone-wide scheduler |
 | `web/src/protocol` | Ajv validators generated at build time (no runtime `eval`) |
 | `web/src/api` | HTTP client with timeouts |
 | `web/src/pairing` | Pairing and add-computer flows; `scan.ts` reads the add-computer QR code in the app (`BarcodeDetector` or the lazy `qr` decoder chunk) and hands the text to the same parser and confirm sheet as paste |
 | `web/src/generated` | Generated protocol TypeScript types |
-| `web/src/sw.js` | Service worker: precache, network-first pages, push display (home and per-peer scopes) |
+| `web/src/sw.js` | Service worker: precache, network-first pages, push display (home and per-peer scopes; session and herdr terminal payloads, the one-time tap record) |
 | `web/src/storage.ts` | The one safe `localStorage`/`sessionStorage` accessor (private browsing may refuse storage) |
 | `third_party` | Patched copies of `ansi`, `vt`, `xpty`, `ultraviolet` ([dependency-patches.md](dependency-patches.md)) |
 | `tests` | Integration, soak, agent replay and PTY fixtures |
 | `site/` | Public docs site (Astro Starlight) and landing page in `site/public/`, deployed to Vercel |
 | `scripts/` | Checks, protocol generation, web embedding, Linux install, soak, Gate 0, multi-computer e2e, docs screenshots |
+| `scripts/fakeherdr` | A fake herdr binary (`server`, `status`, `terminal attach`, `agent attach`) with a control socket, for Go tests and the e2e harness. It reads only its own folder; the harness sandbox hides the real herdr |
 | `packaging/` | Unsigned macOS app/DMG, Linux binaries, Windows Inno Setup installer; signing scripts |
 
 ## 4. Protocols
@@ -185,7 +190,7 @@ All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.
 | `envelope.schema.json` | Live WebSocket and live IPC messages: snapshots, patches, history, input, control, session state, Changes, Files, tasks, branches, worktree remove |
 | `http-api.schema.json` | Browser HTTP API bodies |
 | `types.schema.json` | Index of named types for generation |
-| `revision.json` | Additive protocol revision (now `revision: 3`, `minRevision: 1`; revision 2 is the preview listener rules, no schema change; revision 3 is Found on your network: the offer and found routes, `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`, error `home_changed`) |
+| `revision.json` | Additive protocol revision (now `revision: 4`, `minRevision: 1`; revision 2 is the preview listener rules, no schema change; revision 3 is Found on your network: the offer and found routes, `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`, error `home_changed`; revision 4 is providers: the `/api/v1/providers/{provider}` routes, `gateway.providers.*`, `providers` in settings). Its `features` map (`peerPreview` 2, `providers` 4) is emitted as `FEATURE_REVISION` in `web/src/generated/protocol.ts`; the app gates each feature on it |
 
 Prose specs: [http-api.md](../protocol/v1/http-api.md) (routes, headers,
 cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transport.md),
@@ -207,7 +212,7 @@ unresolved `$ref`. Drift check: `pnpm protocol:check` regenerates and runs
 The phone reads `protocolRevision` and `minProtocolRevision` from
 `GET /api/v1/settings`. It refuses a peer below the minimum, sends new
 request fields only to peers that support them, and frames a peer's preview
-only when that peer is at revision 2 or higher.
+only when that peer is at revision 2 or higher (`FEATURE_REVISION.peerPreview`). It reads a computer's providers and calls the provider routes only at revision 4 or higher (`FEATURE_REVISION.providers`).
 
 ## 5. Data
 
@@ -288,6 +293,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Snippets, composer and keys | Saved snippets, multi-line composer with drafts in memory, key row, agent keys | — | `web/src/terminal/snippets.ts`, `web/src/terminal/composer.ts`, `web/src/screens/Composer.tsx`, `web/src/screens/Dock.tsx`, `web/src/terminal/agentKeys.ts` | — |
 | Multi-computer | One app on home talks directly to up to 8 peers; Settings → Computers shows each computer's `hostBuild` and last good read (memory only), **Check again** reads one computer through the scheduler | `internal/broker/computers.go`, `internal/store/computers.go`, `internal/tailnet`, `cmd/pterm/computers.go` | `web/src/computers.ts`, `web/src/screens/allSessions.ts`, `web/src/screens/Computers.tsx`, `web/src/screens/AddComputer.tsx`, `web/src/pairing/addComputer.ts` | [multi-computer.md](multi-computer.md), ADR 0005 |
 | Found on your network | A new computer that waits in `pterm pair --via <home>` (or setup's answer 2) at a terminal pushes its bound grant to home every 30 s for up to 10 minutes; **Settings → Computers → Found on your network** lists it with **Add**, which runs the pasted-link flow. Routes `POST /api/v1/computers/offer` (no auth) and `GET /api/v1/computers/found` (cookie, own origin); RPCs `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`; protocol revision 3 | `internal/broker/offer.go` (`offerPairing`, `endOffer`, `pushOffer`, `dialHome`, `dialPinned`), `internal/broker/offers.go` (`offerComputer`, `foundComputers`, `offerBook`), `internal/gateway/handler.go` (`admitAPI` exception), `internal/gateway/api.go` (`offerComputer`, `foundComputers`), `internal/cli/admin.go` (`offerAndWait`, `waitForPhone`, `pairingPrompt`), `cmd/pterm/lifecycle.go` (`offerPairing`, `askHome`) | `web/src/computers.ts` (`watchFound`), `web/src/screens/Computers.tsx` (`FoundBlock`), `web/src/pairing/addComputer.ts` (`foundLink`, the one retry), `web/src/screens/AddComputer.tsx` | [found-on-network.md](found-on-network.md), ADR 0007 |
+| herdr on your phone | A **herdr** tab in Sessions lists each computer's herdr projects, worktrees and agent state words; a tap opens that one real terminal in Live (an in-memory provider session that runs `herdr agent attach`, never `--takeover`); a push when an agent is blocked or finished; **Settings → Integrations** switches it per computer; **+** makes a worktree and starts an agent. Off and invisible on a computer without herdr. Protocol revision 4 | `internal/herdr`, `internal/broker/providers.go`, `internal/broker/registry.go` (`CreateProvider`), `internal/webpush` (`NotifyProvider`), `cmd/pterm/herdr.go`, `scripts/fakeherdr` | `web/src/screens/providers.ts`, `web/src/screens/Herdr.tsx`, `web/src/screens/ProviderScreen.tsx`, `web/src/screens/ProviderCreate.tsx`, `web/src/sw.js` | [herdr-provider.md](herdr-provider.md), ADR 0008 |
 | Desktop attach | `pterm attach` in any terminal app; Ctrl+] detaches | `internal/desktop`, `internal/liveclient`, `internal/cli/desktop.go`, `cmd/pterm/desktop.go` | — | — |
 | Packaging | Unsigned macOS app and DMG (launcher runs `pterm launch`), Linux static binaries and installer script, Windows Inno Setup installer | `packaging/macos`, `packaging/linux`, `packaging/windows`, `scripts/install-linux.sh` | — | [install.md](install.md) |
 | Docs site | Astro Starlight site with `llms.txt` and per-page Markdown | `site/` | — | AGENTS.md rules 22–23 |
@@ -301,7 +307,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | `.github/workflows/ci.yml` | protocol-generation, go-quality, go-race, web-quality, macOS and Windows integration, Linux release smoke |
 | `.github/workflows/packaging.yml` | Unsigned macOS, Linux and Windows artifacts |
 | `scripts/soak.sh` | Soak probes (build tag `soak`) |
-| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443` and Found on your network). The harness builds `pterm` with `-tags webdist,e2e` |
+| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443`, Found on your network and herdr with the fake herdr, checks `H-*`). The harness builds `pterm` with `-tags webdist,e2e` |
 | Build tag `e2e` | Test builds only. `internal/broker/peerdial_e2e.go` replaces the offer dial (`dialHome`) with a `CONNECT` through the harness front when `PTERM_E2E_FRONT` is set, checking the certificate by `PTERM_E2E_SPKI` in place of the pinned-IP guard; `cmd/pterm/lifecycle_e2e.go` makes `pterm setup` check the gateway in `PTERM_E2E_GATEWAY`. Production builds do not compile either file; a unit test and a harness check confirm that a production binary does not contain `PTERM_E2E` |
 | `scripts/docs-screenshots` | Demo-only screenshots for the docs site |
 
@@ -334,6 +340,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | [0005](decisions/0005-multi-computer.md) | Multi-computer through direct same-site links, per-device origin binding |
 | [0006](decisions/0006-peer-preview.md) | Preview for sessions on peers: `Referer` as the app-origin proof on the selection, same-origin-only preview listener, a peer's frame is untrusted |
 | [0007](decisions/0007-found-on-network.md) | Found on your network: a waiting new computer pushes its own bound grant to the home it names; the app adds it with **Add** |
+| [0008](decisions/0008-herdr-provider.md) | herdr on your phone: a read-only provider seam, in-memory provider sessions that attach the real herdr client, no database change |
 
 Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [live-folder.md](live-folder.md), [notifications.md](notifications.md),
@@ -341,6 +348,7 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [project-tasks.md](project-tasks.md),
 [multi-computer.md](multi-computer.md),
 [found-on-network.md](found-on-network.md),
+[herdr-provider.md](herdr-provider.md),
 [p4-authentication-design.md](p4-authentication-design.md),
 [threat-model.md](threat-model.md). Status and gaps:
 [progress.md](progress.md), [pending-work.md](pending-work.md),

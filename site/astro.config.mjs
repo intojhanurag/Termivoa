@@ -66,6 +66,7 @@ export default defineConfig({
 						'docs/guides/changes',
 						'docs/guides/files',
 						'docs/guides/worktrees',
+						'docs/guides/herdr',
 						'docs/guides/notifications',
 						'docs/guides/preview',
 						'docs/guides/photo-and-voice',

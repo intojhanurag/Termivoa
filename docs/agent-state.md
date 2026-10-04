@@ -41,6 +41,23 @@ Waiting uses "the same question for 1 s", not "no output for 1 s". Claude
 Code blinks a dot about every 0.6 s while its permission dialog is open, so
 its output never goes quiet (seen in the real capture).
 
+## herdr provider sessions
+
+A herdr terminal that the phone opens (`docs/herdr-provider.md`, section 6) is
+a **provider session**: a broker session that runs `herdr agent attach <pane>`
+(or `terminal attach`). It follows the same state rules above, with these
+differences (`Registry.CreateProvider`, `internal/broker/providers.go`):
+
+| Topic | Provider session |
+| --- | --- |
+| Storage | An in-memory registry entry only. No `session_metadata` row, no receipt, no final status. Not in `GET /api/v1/sessions`, `pterm ls`, the Wall or New session. The entry is dropped when it ends. |
+| Termivoa pushes | `Notify` is nil, so the `waiting` and `done` pushes of `docs/notifications.md` are off for it. herdr's own state (a separate poll) pushes instead. |
+| Screen parser | Still runs: `agent` status and answer cards work. The attach client draws a full screen, and the parser reads that screen. |
+| Input | The single PTY writer doubles every `ctrl+b` byte (`0x02`), for key, text, paste, compose, snippets and answer cards alike. The attach client then passes one literal `ctrl+b` to the agent, and the phone can never send herdr's prefix `ctrl+b q`. |
+| Refused | History, tasks, branches and worktree remove (`providerRefused`), dev-server preview (`PreviewTarget`). Rename, terminate and photo upload find no stored session and fail. Changes reads the checkout folder only when it passed the project-path checks. |
+| Cap | At most 4 (`MaxProviderSessions`), outside the 8-session limit. |
+| End | 10 s after the last viewer left, when the target leaves herdr's snapshot, or when herdr is turned off. |
+
 ## Recognized questions
 
 All rules read only the broker's canonical screen. Concealed (SGR 8) cells are

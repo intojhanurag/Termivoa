@@ -51,6 +51,7 @@ safe, and private networking does not replace application authentication.
 | Home → paired devices (found list) | `GET /api/v1/computers/found` needs the cookie and home's own origin (a bound app origin is refused by the broker); it lists unexpired offers whose host still has the stored node ID and passes the owner rule, with labels from home's own status. It carries grants: every device paired with home can read them, and each such device is treated as the owner's (it already has a shell on home). A row still needs **Add**, the confirm sheet, the code and `y` on the new computer, whose prompt names THIS computer | `internal/broker/offers_test.go`, `internal/gateway/multicomputer_test.go`, `web/src/computers.test.ts`; harness check `F-add` (Chrome and WebKit); real iPhone and Android pending owner |
 | Peer responses → home app (multi-computer) | Lenient precompiled schema validation of every HTTP body and WebSocket frame (no `unsafe-eval`), per-item list validation, `redirect: 'error'`, 1 MiB response cap, peer error text replaced by generic text. The preview frame is the one place where a peer chooses what shows (next row) | `web/src/protocol/*.test.ts`, `web/src/api/http.test.ts` |
 | Peer preview origin → home app's frame (peer preview, ADR 0006) | The peer's listener admits the selection only with home's `Referer`, forwarded to the peer's broker and checked against the request's own credential (per-device origin binding); every other request only from the preview origin itself; every preview check of a bound device also needs Tailscale trust of the pinned node and tags; home's CSP holds `https://<peer>:8443` in `frame-src` and `connect-src` for confirmed computers only, never pending, never `wss:`; the origin is computed by the app, never read from a peer; the frame is sandboxed (no top navigation, popups, full screen or device features); the bar always shows the computer's label and **untrusted page**; the frame is removed when that computer refuses the phone, cannot be reached or must update. Not limited: what the framed page shows, and the cookies it sets (see "Dev-server preview", "A peer's frame") | `internal/gateway/preview_test.go`, `internal/gateway/multicomputer_test.go`, `internal/broker/computers_test.go`, `web/src/screens/Preview.test.tsx`, `web/src/screens/App.test.ts`; Chrome and Playwright WebKit in the multi-computer harness (`scripts/e2e-multicomputer/README.md`; results in `docs/progress.md`); real iPhone and Android pending owner |
+| Phone → herdr on a computer (herdr provider, ADR 0008) | The provider routes pass the same `admitAPI` and broker `authorize` as `/api/v1/sessions` (cookie, exact own or bound `Origin`, `no-store`); `{provider}`, target and group IDs are checked by pattern and against the latest snapshot; the herdr binary and socket are checked before use (next section); no herdr title or screen text leaves the host; a per-device limiter; never `--takeover`; tests cannot reach the owner's herdr | `internal/herdr/*_test.go`, `internal/broker/providers_test.go`, `internal/gateway` route tests; harness checks `H-*` with `scripts/fakeherdr`; a real herdr and a real iPhone pending owner |
 | Dependency/build → distributed executable | Exact pins, patches/notices, secret and vulnerability scans, signed artifacts | Private source scans/build checks exist; signing and release review pending |
 
 ## Pairing and credential acceptance criteria (P4)
@@ -355,6 +356,65 @@ Browser requirement: `/api` admits an Origin-less request only with
 before iOS 16.4 sends neither header on GET, so it is refused; iOS 16.4 is the
 minimum. The preview listener has the same rule for every request other
 than the selection.
+
+## herdr on your phone
+
+See [herdr-provider.md](herdr-provider.md), section 11 (S1 to S16), and ADR
+[0008](decisions/0008-herdr-provider.md). A paired phone can already run any
+command in a Termivoa session, including `herdr agent send-keys`, so this
+feature gives it no new authority on the computer. What is new:
+
+- **Routes.** `GET` and `PATCH /api/v1/providers/{provider}`, `POST .../open`
+  and `POST .../create` use the same `admitAPI` and `authorize` as the
+  session routes. Mutations need `X-Pterm-Request: 1`, JSON and strict
+  decoding. Errors use fixed Termivoa text, never herdr's or git's.
+- **The herdr binary and socket (S3).** The binary comes from fixed install
+  paths, then `PATH`, with the owner and mode checks of the Tailscale binary
+  lookup (`tailnet.CheckBinary`). Before every dial the socket must be a
+  socket owned by this user with no group or other access, in a folder owned
+  by this user that group and others cannot write, and the folder's parent
+  chain up to `/` passes `tailnet.CheckFolders`. After connect, the peer
+  credential (`LOCAL_PEERCRED` on macOS, `SO_PEERCRED` on Linux) must be this
+  user. A reply is at most 4 MiB and a call has a 1 s deadline. Same-user
+  malware stays out of scope.
+- **What leaves the host (S4, S5, S9).** Group and item names, the agent kind,
+  the state word, tab labels and a duration. Never a terminal title (a
+  program can set it, and it often holds the task text a person typed), screen
+  text, a path or a prompt. Every herdr string has control and format
+  characters removed and is cut. Push text has a fixed format
+  (`docs/notifications.md`). A peer's herdr data is untrusted like any peer
+  response.
+- **Limits (S6, S7, S10).** The list is read from a cache, never from herdr on
+  request. At most 4 provider sessions, ended 10 s after the last viewer. A
+  limiter keyed by device ID (not by address, since all clients reach the
+  gateway from loopback): `open` 20, `create` 3, `PATCH` 10 per minute, then
+  `limit_exceeded`. One create at a time per computer.
+- **Never `--takeover` (S8).** A terminal that another herdr client holds
+  ends at once with herdr's reason; the owner's own attach is not kicked.
+- **No prefix commands (S13).** The broker doubles `ctrl+b` in provider
+  session input. **Accepted risk:** herdr's prefix key can be changed in its
+  config. Termivoa does not read it and doubles only `ctrl+b`; with a custom
+  prefix a phone can send herdr's prefix commands to the terminal it opened
+  (at worst it detaches its own attach client). `pterm doctor` warns when
+  `config.toml` sets `[keys] prefix` to anything but `ctrl+b`.
+- **A link opens a terminal (S14).** Opening can resize the pane on the
+  computer, so `/p/…` opens at once only after an in-app tap or a notification
+  tap that the service worker confirmed (one-time record, 30 s). Any other
+  arrival shows an **Open** button. Opening never takes control.
+- **Tests never reach the owner's herdr (S16).** No provider exists unless
+  `cmd/pterm` builds one; `herdr.New` has no default path or home. In a test
+  binary `herdr.New` panics when any path in its config is outside a temp
+  folder (`internal/herdr/guard.go`, proven by `TestGuardRefusesRealHerdr`).
+  The e2e harness sandbox denies the real herdr binaries, the Homebrew Cellar
+  they link to and `~/.config/herdr` (file access, exec and socket connect),
+  and gives each stack its own `HOME`; `pterm doctor` in the harness reports
+  the fake's version (the sandbox is macOS only). The opt-in lab test
+  (`PTERM_HERDR_LAB=1`) runs a copy of the installed herdr binary with a temp
+  `HOME` (never inside the real home) and its own named session, and stops
+  only that session.
+
+Not verified on a real herdr and a real iPhone: see
+[owner-verification.md](owner-verification.md), "herdr on your phone".
 
 ## Operational and release limits
 

@@ -426,6 +426,53 @@ Pair the phone again: run `pterm pair --via <home>` on this computer. Home's Tai
 
 That computer could not be set up for notifications; home and the other computers still notify. Check that the computer is awake and reachable (no **can't reach** or **pair again** on the Sessions list), then open **Settings** again. If it stays, turn the switch in **Settings → Notifications** off and on.
 
+## herdr
+
+:::note[Next beta]
+These entries are not in `v0.1.0-beta.3`. See [Termivoa + herdr](/docs/guides/herdr/).
+:::
+
+### The herdr tab is missing
+
+Check each cause, then run `pterm doctor` on the computer; it has a `herdr:` line when it finds herdr.
+
+- herdr is not installed. Install herdr 0.8.2 or later.
+- Termivoa cannot find it. It looks for Homebrew's `herdr`, then your `PATH`, `~/.local/bin` and `~/.cargo/bin`. It checks again about every 30 seconds.
+- **On** is off for that computer in **Settings → Integrations**. Turn it on.
+- Termivoa on that computer is older than the next beta. Update it.
+
+### "herdr is not running on mac"
+
+Start herdr's server on that computer, for example open herdr there. Its projects then show on the phone.
+
+### "Update herdr on mac"
+
+herdr is older than 0.8.2. Update herdr on that computer.
+
+### "herdr on vps · can't reach"
+
+Tap **Retry**. If it stays, check that the computer is on and Termivoa runs there.
+
+### "That terminal is gone."
+
+The herdr pane closed, or herdr restarted. Pick the row again in the **herdr** tab.
+
+### The terminal is small on the laptop
+
+This is on purpose. herdr gives the pane the phone's size while it is open on the phone. Leave Live, or lock the phone; about 10 seconds later the pane has its own size again.
+
+### "Too many herdr terminals are open on mac"
+
+At most 4 herdr terminals can be open at once for each computer. Leave some, then wait about 10 seconds.
+
+### A tab chip is off: "Update herdr to open this tab"
+
+herdr is too old to open a tab that has no agent. Update herdr.
+
+### A herdr terminal ends at once and says "already has an attached client"
+
+Someone attached to that terminal directly in herdr. Termivoa never takes it over. Close that attach in herdr, then open the row again.
+
 ## Where are the logs?
 
 | System | Logs |

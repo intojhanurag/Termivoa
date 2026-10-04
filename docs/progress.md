@@ -49,6 +49,72 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### herdr on your phone: integration, e2e and docs (2026-10-04, branch `feat/herdr`)
+
+- **What.** The host (H1–H7) and web (W1–W7) halves of
+  [herdr-provider.md](herdr-provider.md) run against each other for the
+  first time, with the fake herdr (`scripts/fakeherdr`) in the e2e harness
+  sandbox (own `HOME` and `PATH`; the real herdr binaries, Cellar and
+  `~/.config/herdr` denied). Nothing touched the owner's live herdr.
+- **Defects found and fixed (each with a test that fails without the fix).**
+  1. A herdr terminal's address (`/p/herdr/<pane>.<terminal>`) answered
+     "404 page not found" on a reload, a link or a cold notification tap:
+     the gateway's "a path with an extension is a file" rule matched the dot
+     in the target ID (`TestStaticSite`).
+  2. Create answered as soon as any cached snapshot had the new terminal; a
+     poll between `worktree.create` and `agent.start` cached the pane
+     without its agent, which a herdr without `terminal attach` cannot open
+     (`TestCreateAnswersAfterAReadThatSawTheAgent`). It now waits for a poll
+     turn that started after its last step.
+  3. Settings → Integrations showed the cached settings' state (F10); it
+     now shows the provider read's state, and turning herdr on wakes the
+     poll loop, so "Running" shows within about 0.1 s (`Settings.test.tsx`).
+  4. A long project name was cut early by "ON MAC" / "2 WORKTREES"; the
+     labels now wrap under the name (`Herdr.test.tsx`, `global.test.ts`).
+  5. A git project with only its main checkout had no **+**
+     (`Herdr.test.tsx`).
+  6. The web's private `PROVIDER_REVISION`: `revision.json` now has
+     `features` (`peerPreview` 2, `providers` 4), emitted as
+     `FEATURE_REVISION`.
+- **Checked and already right.** The provider push omits `sessionId`
+  (`TestProviderMessagesUseTheFixedFormat` in `internal/webpush`); `canOpen` follows the
+  `terminal attach --help` probe, so 0.8.2 tabs without an agent open; Live
+  hides History, rename, terminate, photos, preview and worktrees, and the
+  host refuses them (H-feature, `TestProviderSessionRefusesFeatures`).
+- **e2e.** 25 `H-*` checks in Phase B (`scripts/e2e-multicomputer/herdr.mjs`,
+  README). Final runs: Phase A 32/32, Phase B 104/104 (79 + 25), WebKit 8/8.
+  Google Chrome was removed from this Mac during the session (not by this
+  work), so the last Phase B run and the docs screenshots used Playwright's
+  Chrome for Testing 151 (`CHROME=…`); Phase A and the first full Phase B
+  (103/104, a harness-only CDP issue since fixed) ran on Google Chrome.
+- **Measurements** (Phase B, Apple Silicon, dev profile). `GET
+  /api/v1/sessions` p50 / p95: herdr absent 2.0 / 6.1 ms, running 1.7 /
+  3.6 ms, hung 2.0 / 3.4 ms (no difference); `GET /api/v1/providers/herdr`
+  0.8 / 1.1 ms; state change → BLOCKED on the phone 3.0 s; tap → terminal
+  painted 0.41 s; leave Live → attach ends 9.9 s; herdr stopped → "herdr is
+  not running on mac" 4.5 s; hung → the same after 10.1 s (3 missed
+  polls). Broker CPU idle over 60 s: 0.13 % of a core without herdr,
+  0.20 % with the fake serving 12 workspaces (poll cost about 0.07 %).
+- **Not automated, and why.** A real push (headless Chrome has no push
+  service; Go tests cover the rules and payloads); the browser's own
+  `focus()`/`navigate()` after a notification tap (refused for a synthetic
+  click; the harness loads the address the worker would open, and the peer
+  path runs end to end); the real laptop pane size coming back (the fake
+  logs the attach exit; the opt-in lab test proves the size on real herdr).
+  Owner items: [owner-verification.md](owner-verification.md), 2c.
+- **Other checks.** `gofmt -l` clean; `go vet ./...` (also `-tags e2e`,
+  `CGO_ENABLED=0 GOOS=linux`, `GOOS=windows`); `go test -race ./internal/...
+  ./cmd/... ./scripts/...`; `internal/broker` with `-race` 5 more times and
+  its provider tests 20 times, `internal/herdr` 10 times: no failure (the
+  host engineer's one unexplained broker failure did not show again);
+  `PTERM_HERDR_LAB=1 go test ./internal/herdr -run Lab` passed (herdr
+  0.8.2, isolated); `pnpm protocol:check`; `scripts/check` (852 vitest);
+  `cd site && pnpm build` with valid links.
+- **Open.** After herdr is installed on a computer, the phone shows it the
+  next time the app comes to the front (settings are re-read then). "‹
+  Sessions" in a herdr terminal goes to the All tab, not the herdr tab.
+  Landing page (`site/public/`) not updated for herdr yet.
+
 ### No dead taps: an audit of every control (2026-10-04, branch `fix/button-feedback`)
 
 - **Why.** After #174 (Retry on "vps · can't reach" showed nothing), every
