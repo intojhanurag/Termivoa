@@ -19,6 +19,7 @@ import { NewSession } from './NewSession';
 import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
+import { useProviders } from './providers';
 import { Sessions } from './Sessions';
 import { Setup } from './Setup';
 import { Banner } from './ui';
@@ -64,7 +65,8 @@ type View =
   | { readonly name: 'boot' }
   | { readonly name: 'offline' }
   | { readonly name: 'setup'; readonly reason?: string }
-  | { readonly name: 'sessions'; readonly message?: string }
+  /** `tab`: a provider tab to open on (herdr). */
+  | { readonly name: 'sessions'; readonly message?: string; readonly tab?: string }
   | { readonly name: 'wall' }
   | { readonly name: 'new'; readonly back?: View; readonly computer?: Computer }
   | { readonly name: 'live'; readonly session: HostedSession; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
@@ -560,6 +562,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const polling = view.name === 'sessions' || view.name === 'wall' || view.name === 'live' || view.name === 'preview'
     || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer';
   const all = useAllSessions(polling, computers, onHomeAuth, adding?.phase.kind === 'done' ? adding.origin : undefined);
+  // Providers (herdr) are read only while Sessions shows them; their failures never reach `all`.
+  const providers = useProviders(view.name === 'sessions', all.entries);
   // Push from peers follows the list: at start, when a computer is added or
   // removed (log out included), and when one stops or starts being usable
   // (can't reach, pair again, outdated), so a peer that was offline when push
@@ -887,6 +891,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           entries={all.entries}
           sessions={sessions}
           {...(view.message === undefined ? {} : { message: view.message })}
+          providers={providers.entries}
+          tab={view.tab}
+          onProviderRetry={providers.reload}
           offerPush={homeEntry?.status.kind === 'ok'}
           onOpen={openSession}
           onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}

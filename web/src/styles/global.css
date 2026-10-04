@@ -365,6 +365,33 @@ label { color: var(--soft); font-size: 14px; }
 .question { padding-top: 2px; color: var(--text); font-family: var(--mono); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .answer-link { color: var(--amber); font-size: 13px; font-weight: 600; line-height: 16px; }
 
+/* Provider projects (herdr): project rows fold; worktrees sit under them; one state word per row.
+   The muted labels use --muted, not --faint, so they stay readable. */
+.state-word { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; line-height: 14px; text-transform: uppercase; white-space: nowrap; }
+.state-word:is(.amber, .accent, .green)::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
+.state-word.amber { color: var(--amber); }
+.state-word.accent { color: var(--accent); }
+.state-word.green { color: var(--green); }
+.provider-item { padding: 14px 0; }
+.provider-item.nested { padding: 12px 0 12px 22px; }
+.provider-item.nested .row-text { gap: 4px; }
+.provider-item.nested .row-title { font-family: var(--mono); font-size: 14px; line-height: 20px; }
+.provider-item.nested .row-meta { color: var(--soft); font-family: inherit; font-size: 13px; line-height: 18px; }
+.provider-item.seen, .group-toggle.seen { opacity: 0.55; }
+.group-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.group-toggle { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 16px 0; border: 0; border-radius: 0; text-align: left; font-weight: 400; }
+.group-toggle:active:not(:disabled) { background: none; opacity: 0.7; }
+.fold-glyph { flex: 0 0 12px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.group-name { min-width: 0; overflow: hidden; font-size: 17px; font-weight: 600; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.group-where, .faint { flex-shrink: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; line-height: 14px; text-transform: uppercase; white-space: nowrap; }
+.group-state { display: flex; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
+button.group-add { flex-shrink: 0; margin-right: -12px; color: var(--text); }
+.provider-head { display: flex; align-items: center; gap: 8px; padding: 18px 0 8px; border-bottom: 1px solid var(--line); }
+.provider-head-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-head + .rows .provider-item:last-child { border-bottom: 1px solid var(--line); }
+.list-label { padding: 22px 0 8px; border-bottom: 1px solid var(--line); }
+.chip-count { color: var(--amber); font-family: var(--mono); font-size: 11px; font-weight: 400; line-height: 14px; }
+
 /* Wall: every running session as a small live screen. Tiles only watch; a tap opens the session. */
 .page.wall { max-width: 72rem; }
 .wall-grid { position: relative; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

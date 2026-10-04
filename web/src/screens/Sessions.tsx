@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Computer } from '../computers';
-import type { BrokerRPCSessionRecord } from '../generated/protocol';
+import type { BrokerRPCSessionRecord, HTTPProviderGroup } from '../generated/protocol';
 import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
@@ -8,7 +8,9 @@ import {
   atLeast, byChip, cantReach, checkAgain, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
+import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type ProviderTap } from './Herdr';
 import { NewSessionHelp } from './NewSession';
+import { providerTabs, wordSummary, type ProviderEntry } from './providers';
 import { Button, Notice, PairVia } from './ui';
 import { WorktreeBadge } from './Worktree';
 
@@ -272,8 +274,8 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
   );
 }
 
-/** "All" plus one tab per computer; the pressed one shows one computer. */
-export function ComputerChips({ computers, chosen, all = true, disabled, onChoose }: {
+/** "All", the provider tabs ("herdr 2"), then one tab per computer; the pressed one shows one of them. */
+export function ComputerChips({ computers, chosen, all = true, disabled, onChoose, providers = [], provider, onProvider }: {
   readonly computers: ReadonlyArray<Computer>;
   readonly chosen: string | undefined;
   /** False to pick one computer (New session): no "All" chip. */
@@ -281,24 +283,39 @@ export function ComputerChips({ computers, chosen, all = true, disabled, onChoos
   /** Computers that cannot be picked now. */
   readonly disabled?: (host: string) => boolean;
   readonly onChoose: (host: string | undefined) => void;
+  /** Provider tabs with their count of blocked and done terminals. */
+  readonly providers?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly count: number }>;
+  /** The provider tab that is pressed, if any. */
+  readonly provider?: string | undefined;
+  readonly onProvider?: (id: string) => void;
 }) {
-  const chips = chipsFor(computers).filter((chip) => all || chip.host !== undefined);
+  const chips = (computers.length < 2 && providers.length > 0 && all ? [{ host: undefined, label: 'All' }] : chipsFor(computers))
+    .filter((chip) => all || chip.host !== undefined);
   if (chips.length === 0) return null;
+  const [first, ...rest] = chips;
+  const chip = (item: (typeof chips)[number]) => (
+    <button
+      key={item.host ?? ''}
+      type="button"
+      className="chip"
+      aria-pressed={provider === undefined && chosen === item.host}
+      disabled={item.host !== undefined && disabled?.(item.host) === true}
+      onClick={() => onChoose(item.host)}
+    >
+      {'color' in item && item.color !== undefined && <span className="dot" style={{ background: item.color }} aria-hidden="true" />}
+      {item.label}
+    </button>
+  );
   return (
-    <div className="chips" role="group" aria-label="Computers">
-      {chips.map((chip) => (
-        <button
-          key={chip.host ?? ''}
-          type="button"
-          className="chip"
-          aria-pressed={chosen === chip.host}
-          disabled={chip.host !== undefined && disabled?.(chip.host) === true}
-          onClick={() => onChoose(chip.host)}
-        >
-          {chip.color !== undefined && <span className="dot" style={{ background: chip.color }} aria-hidden="true" />}
-          {chip.label}
+    <div className="chips" role="group" aria-label={providers.length > 0 ? 'Show' : 'Computers'}>
+      {first !== undefined && chip(first)}
+      {first?.host === undefined && providers.map((tab) => (
+        <button key={`provider:${tab.id}`} type="button" className="chip" aria-pressed={provider === tab.id} onClick={() => onProvider?.(tab.id)}>
+          {tab.name}
+          {tab.count > 0 && <><span className="chip-count" aria-hidden="true">{tab.count}</span><span className="visually-hidden">, {tab.count} need you</span></>}
         </button>
       ))}
+      {rest.map(chip)}
     </div>
   );
 }
@@ -308,6 +325,7 @@ const canStart = (entry: ComputerEntry) => entry.status.kind === 'ok'
 
 export function Sessions({
   entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onReload, onRetry, onFailure, onUpdate,
+  providers = [], tab, onOpenTarget, onProviderRetry, onCreateIn,
 }: {
   /** Every computer, home first, with what it answered. */
   readonly entries: ReadonlyArray<ComputerEntry>;
@@ -325,8 +343,19 @@ export function Sessions({
   readonly onFailure: (error: unknown) => string;
   /** Present when a new version waits; tapping it reloads into that version. */
   readonly onUpdate?: () => void;
+  /** Providers (herdr) of every computer; their trouble shows only in their own part. */
+  readonly providers?: ReadonlyArray<ProviderEntry>;
+  /** The provider tab to open on (after "That terminal is gone."). */
+  readonly tab?: string | undefined;
+  readonly onOpenTarget?: (tap: ProviderTap) => void;
+  readonly onProviderRetry?: (key: string) => Promise<void>;
+  /** The + of a project row (milestone M2). */
+  readonly onCreateIn?: ((entry: ProviderEntry, group: HTTPProviderGroup) => void) | undefined;
 }) {
   const [error, setError] = useState<string | undefined>(message);
+  const tabs = providerTabs(providers);
+  const [chosenProvider, setProvider] = useState<string | undefined>(tab);
+  const provider = tabs.some((item) => item.id === chosenProvider) ? chosenProvider : undefined;
   const [busy, setBusy] = useState(false);
   const [offerPush, setOfferPush] = useState(false);
   const [chip, setChip] = useState<string>();
@@ -345,9 +374,16 @@ export function Sessions({
   const viewed = readViewed();
   const now = Date.now();
   const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting');
-  const summary = multi
-    ? hostSummary(sessions, `${computers.length} computers`)
-    : reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying';
+  const shownProviders = provider === undefined ? byChip(providers, chip) : providers.filter((entry) => entry.info.id === provider);
+  // The provider tab says its own counts; the sessions line never depends on a provider.
+  const summary = provider !== undefined
+    ? wordSummary(shownProviders) ?? `${tabs.find((item) => item.id === provider)?.name ?? provider} · nothing running`
+    : multi
+      ? hostSummary(sessions, `${computers.length} computers`)
+      : reachable ? hostSummary(sessions) : 'Your computer · not reachable, retrying';
+  const blocked = provider === undefined ? undefined : firstBlocked(shownProviders);
+  const openTarget = onOpenTarget ?? (() => undefined);
+  const retryProvider = onProviderRetry ?? (async () => undefined);
 
   useEffect(() => {
     if (!pushAllowed) return undefined;
@@ -369,7 +405,7 @@ export function Sessions({
         <div>
           <h1 className="display">Sessions</h1>
           <p className="host-line" role="status">
-            <span className={reachable ? 'dot accent' : 'dot amber'} aria-hidden="true" />
+            <span className={provider !== undefined ? (blocked === undefined ? 'dot accent' : 'dot amber') : reachable ? 'dot accent' : 'dot amber'} aria-hidden="true" />
             {summary}
           </p>
         </div>
@@ -396,9 +432,20 @@ export function Sessions({
       </header>
       {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
 
-      <ComputerChips computers={computers} chosen={chip} onChoose={setChip} />
+      <ComputerChips
+        computers={computers}
+        chosen={chip}
+        onChoose={(host) => { setProvider(undefined); setChip(host); }}
+        providers={tabs}
+        provider={provider}
+        onProvider={(id) => { setChip(undefined); setProvider(id); }}
+      />
 
-      {help?.kind === 'ok' && (
+      {provider !== undefined && (
+        <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreateIn} onRetry={retryProvider} />
+      )}
+
+      {provider === undefined && help?.kind === 'ok' && (
         <section className="card stack" aria-label="Before your first session">
           <NewSessionHelp settings={help.settings} />
           <Button className="secondary" busy={busy} busyLabel="Checking…" onClick={() => { void refresh(); }}>Check again</Button>
@@ -407,7 +454,11 @@ export function Sessions({
 
       {offerPush && <PushCard onClose={() => setOfferPush(false)} onFailure={onFailure} />}
 
+      {provider === undefined && <ProviderSection entries={shownProviders} multi={multi} now={now} onOpen={openTarget} />}
+
+      {provider === undefined && (
       <section aria-label="Your sessions">
+        {sectionParts(shownProviders).length > 0 && list.length > 0 && <h2 className="caps list-label">Termivoa sessions</h2>}
         {loading && <p role="status" className="muted">Loading…</p>}
         {!loading && answered.length > 0 && list.length === 0 && <p className="muted">No sessions yet.</p>}
         <ul className="rows">
@@ -431,8 +482,15 @@ export function Sessions({
           ))}
         </ul>
       </section>
+      )}
 
-      {canCreate && (
+      {provider !== undefined && blocked !== undefined && (
+        <div className="bottom-bar">
+          <button type="button" className="primary wide" onClick={() => openTarget(blocked)}>Open the blocked agent</button>
+        </div>
+      )}
+
+      {provider === undefined && canCreate && (
         <div className="bottom-bar">
           <button type="button" className="primary wide" onClick={onNew}>
             <span aria-hidden="true" className="prompt">❯</span> {multi ? 'new session on…' : 'new session'}
