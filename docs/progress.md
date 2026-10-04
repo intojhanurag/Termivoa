@@ -50,6 +50,39 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### No dead taps: an audit of every control (2026-10-04, branch `fix/button-feedback`)
+
+- **Why.** After #174 (Retry on "vps · can't reach" showed nothing), every
+  button, link and form in `web/src` was traced and sorted: changes the
+  screen at once; network work with busy and result; or a defect (nothing
+  while it waits, no result, a swallowed error, a no-op, two actions on a
+  double tap, off with no reason). Phone only; host: no change.
+- **Fixed.** Check again on Sessions and New session (a 0.2 s flash; now
+  `checkAgain` in `allSessions.ts`, at least `CHECKING_MIN_MS`); Save title
+  and Terminate session (session menu: off but no busy); New session on the
+  lost screen and Run in new tab (no feedback, and a double tap made two
+  sessions: `onStartNew` now returns its promise); Send a test notification
+  (a second "Sent" looked like nothing); a failed Log out (its error was at
+  the top of Settings, out of sight); Commit and Push that sent nothing
+  (`commitChanges`/`pushChanges` returned false and nothing showed); copy
+  error on the error screen (a failure was swallowed); the preview's ↻
+  under a notice (a no-op, now off); the update pill after another tab
+  took the update (`applyUpdate` in `hooks.ts` reloads at once); + new in
+  snips off at 50 with no reason.
+- **Not changed (owner's call).** Listed in the pull request: the push
+  switch only greys out while it works; Take control falls back without a
+  word after a `resync_required`; Files taps do nothing while the link
+  reconnects (the full-screen panel hides the status line); Paste N lines
+  in snips is off with no reason if control is lost while it asks; Add on
+  the add sheet is a full page load with no busy state.
+- **Tests.** One vitest per fix; each fails on the old code (checked by
+  reverting the source files: 15 failed). The session menu and error
+  screen tests set the first `useState` through `vi.mock('react')`, since
+  static markup cannot tap.
+- **Checks.** `web`: `tsc --noEmit`, `vitest run` (790 passed);
+  `pnpm build:web`; `scripts/embed-web.sh`; `scripts/check` passed;
+  e2e Phase B 79/79, Phase A 32/32 (`--no-web-build`).
+
 ### "Bone & ink" visual revamp (2026-10-04, branch `feat/bone-and-ink`)
 
 - **What.** The owner-approved Paper boards "V2 Bone & ink — Sessions",

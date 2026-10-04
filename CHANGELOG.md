@@ -394,6 +394,22 @@ All notable changes are documented here. The format follows
   start" or "gateway did not start" after 10 s, and the service started a
   moment later. It now waits up to 30 s, as `pterm setup` does (#175).
   Phone: no change.
+- Fix (phone side): no more taps that look dead. Phone: **Check again** on
+  Sessions and on New session stays on "Checking…" for at least 600 ms, as
+  in **Settings → Computers**. **Save title** and **Terminate session** in
+  the session menu say "Saving…" and "Terminating…" while the computer
+  answers. **New session** on "This session is gone" and **Run in new tab**
+  in snips say "Starting…" and are off until the new session opens, so a
+  second tap no longer starts a second session. **Send a test
+  notification** says "Sending…". A failed **Log out** shows its error next
+  to the button, not at the top of the page out of sight. **Commit** and
+  **Push** that send nothing (control or the link was lost) say "Not sent.
+  Take control, then try again." **copy error** on "This screen broke" says
+  "copy failed" when the copy does not work. The preview's **↻** is off
+  while a notice says why there is nothing to load. The **update** pill
+  reloads at once when another tab of the app already took the update.
+  **+ new** in snips, off at 50 snippets, says "You can keep 50 snippets at
+  most. Delete one to add another." Host: no change.
 - Fix (phone side): **Retry** on "vps · can't reach" in Sessions showed
   nothing when tapped, so it looked dead. It now shows a spinner and
   "Retrying…" for at least 600 ms while it asks the computer again. Host: no
