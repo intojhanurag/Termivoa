@@ -24,9 +24,10 @@ func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
 	result := mapSnapshot(snapshot, provider.caps.attachAny, now, provider.since)
 	provider.since = result.since
 	// A restart of the same herdr version between two polls: every terminal ID is new. A new baseline, no push burst.
-	if previous := provider.view.targets; len(previous) > 0 && len(result.targets) > 0 {
+	// Panes, not targets: a tab's target moves between its panes without a restart.
+	if previous := provider.view.live; len(previous) > 0 && len(result.live) > 0 {
 		survived := false
-		for key := range result.targets {
+		for key := range result.live {
 			if _, survived = previous[key]; survived {
 				break
 			}
@@ -80,7 +81,8 @@ func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
 		}
 		current.state = found.state
 	}
-	provider.tracks, provider.baseline = tracks, false
+	// An empty snapshot keeps the baseline: a restarted herdr can bring its panes back a poll later.
+	provider.tracks, provider.baseline = tracks, len(result.live) == 0
 	kinds := agentKinds(provider.caps.kinds, result.kinds)
 	provider.publish(func(current *view) {
 		current.installed, current.binary = true, provider.binary

@@ -102,6 +102,10 @@ In this order.
      general failure text, not "Update Termivoa on …".
    - **Create timeout text:** the sheet tells a timeout from the elapsed
      time; give the client a `timeout` code.
+   - **Binary check while herdr runs:** when the herdr program turns unsafe
+     (owner or mode) while its server runs, the list stays "ready" and every
+     open fails; recheck it in the poll and say why in `pterm doctor`.
+   - **Test for a herdr version change between two polls** (rediscovery).
    - **Session pushes** can be dropped the same way provider pushes were
      (admitted, then no free delivery slot); see the issue for it.
 

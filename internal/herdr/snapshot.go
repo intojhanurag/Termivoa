@@ -236,6 +236,7 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 				}
 				if handlePattern.MatchString(wire.ID) && handlePattern.MatchString(agent.TerminalID) {
 					tabTargets = append(tabTargets, wire)
+					live[wire.ID] = struct{}{} // the agent record names its terminal itself
 					result.targets[wire.ID] = target{
 						pane: agent.PaneID, terminal: agent.TerminalID, agent: true, kind: kind, state: wire.State,
 						canOpen: true, group: build.group.Name, item: item.Name, directory: directory,
