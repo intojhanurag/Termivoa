@@ -481,6 +481,10 @@ func TestStaticSite(t *testing.T) {
 		{"/push/vps.tailx.ts.net/x", "", "no-store", "", 404},
 		{"/push/vps.tailx.ts.net/sessions/abc", "", "no-store", "", 404},
 		{"/pushed", "text/html; charset=utf-8", "no-store", "<title>app</title>", 200},
+		// A provider terminal's address: its target ID has a dot (pane.terminal), yet it is the app.
+		{"/p/herdr/w8%3Ap1.term_65d0031602b777", "text/html; charset=utf-8", "no-store", "<title>app</title>", 200},
+		{"/c/vps.tailx.ts.net/p/herdr/w8:p1.term_65d0031602b777", "text/html; charset=utf-8", "no-store", "<title>app</title>", 200},
+		{"/p/herdr/x/y.js", "", "no-store", "", 404},
 	} {
 		response := do(handler, http.MethodGet, test.path, "", requestOptions{})
 		header := response.Header()
