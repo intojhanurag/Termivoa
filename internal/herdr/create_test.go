@@ -92,6 +92,34 @@ func readyProvider(t *testing.T) (*Provider, *herdrtest.Server, *createWorld) {
 	return provider, server, world
 }
 
+// A poll that ran between worktree.create and agent.start cached the new
+// pane without its agent, which herdr 0.8.2 without terminal attach cannot
+// open. Create must answer only after a read that saw the agent.
+func TestCreateAnswersAfterAReadThatSawTheAgent(t *testing.T) {
+	provider, server, world := readyProvider(t)
+	server.Handle("agent.start", func(json.RawMessage) (any, *herdrtest.Error) {
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			provider.Poll()
+			provider.mu.RLock()
+			_, cached := provider.view.targets["w9:p1.term_9"]
+			provider.mu.RUnlock()
+			if cached {
+				break
+			}
+		}
+		world.add(true)
+		return map[string]any{"type": "agent_started"}, nil
+	})
+	agent := "claude"
+	response, err := provider.Create(context.Background(), protocol.HTTPProviderCreateRequest{GroupID: shopGroup, Name: "brave-fox", Agent: &agent})
+	if err != nil || !response.AgentStarted {
+		t.Fatalf("create = %+v %v", response, err)
+	}
+	if _, err := provider.Attach(response.TargetID); err != nil {
+		t.Fatalf("attach right after create: %v", err)
+	}
+}
+
 func TestCreateMakesAWorktreeAndStartsAnAgent(t *testing.T) {
 	provider, _, world := readyProvider(t)
 	agent, prompt := "claude", "fix the flaky test\n\tthen run it"

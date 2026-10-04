@@ -11,6 +11,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -98,6 +99,9 @@ type Provider struct {
 	create sync.Mutex
 	// wake asks the poll loop for a snapshot now (after a create).
 	wake chan struct{}
+	// turns counts the poll loop's turns as they start; view.turn is the
+	// last turn that ended. A turn above a count taken now saw herdr after now.
+	turns atomic.Uint64
 
 	// Owned by the poll loop (step).
 	binary     string
@@ -124,6 +128,7 @@ type view struct {
 	targets   map[string]target
 	groups    map[string]groupRef
 	kinds     []string
+	turn      uint64 // the last poll turn that ended (Provider.turns)
 }
 
 type capabilities struct {
@@ -155,7 +160,10 @@ func (provider *Provider) Run(ctx context.Context) {
 		case <-provider.wake:
 			timer.Stop() // Go 1.23+ timers: no stale tick follows Stop.
 		}
-		timer.Reset(provider.step(ctx))
+		turn := provider.turns.Add(1)
+		wait := provider.step(ctx)
+		provider.publish(func(current *view) { current.turn = turn })
+		timer.Reset(wait)
 	}
 }
 
@@ -311,6 +319,36 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 	}
 	provider.apply(snapshot, now)
 	return pollEvery
+}
+
+// Poll asks the poll loop for a turn now.
+func (provider *Provider) Poll() {
+	select {
+	case provider.wake <- struct{}{}:
+	default:
+	}
+}
+
+// settle asks for a turn now and waits, at most timeout, until a turn that
+// started after the call ended with targetID in its view. It reports whether
+// that happened.
+func (provider *Provider) settle(ctx context.Context, timeout time.Duration, targetID string) bool {
+	after := provider.turns.Load()
+	deadline := time.Now().Add(timeout)
+	for {
+		provider.Poll()
+		provider.mu.RLock()
+		_, ok := provider.view.targets[targetID]
+		fresh := provider.view.turn > after
+		provider.mu.RUnlock()
+		if ok && fresh {
+			return true
+		}
+		if !time.Now().Before(deadline) || ctx.Err() != nil {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // discover pings the server and probes a new binary or server version once.

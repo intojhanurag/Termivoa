@@ -158,6 +158,10 @@ func (host *providerHost) update(ctx context.Context, server *ManagementServer, 
 			return protocol.HTTPProviderInfo{}, err
 		}
 		host.enabled.Store(*request.Enabled)
+		// The poll loop reads herdr now, so the phone's next read shows its
+		// state, not "off". Never waited for here: this answer shares the
+		// gateway's connection with the Sessions list.
+		host.provider.Poll()
 	}
 	if request.Notify != nil {
 		var states []string

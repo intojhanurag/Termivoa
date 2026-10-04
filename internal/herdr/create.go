@@ -93,7 +93,8 @@ func (provider *Provider) Create(ctx context.Context, request protocol.HTTPProvi
 	if err := validCreated(response); err != nil {
 		return response, err
 	}
-	defer provider.refresh(ctx, response.TargetID)
+	// Answer once a snapshot read after the last step has the new terminal.
+	defer provider.settle(ctx, createTimeouts.refresh, response.TargetID)
 	if request.Agent == nil {
 		return response, nil
 	}
@@ -177,23 +178,4 @@ func (provider *Provider) findItem(ctx context.Context, groupID, name string) (p
 func (provider *Provider) hasAgent(ctx context.Context, targetID string) bool {
 	result, ok := provider.readMapped(ctx)
 	return ok && result.targets[targetID].agent
-}
-
-// refresh asks the poll loop for a snapshot now and waits a little until it
-// has targetID, so the phone can open the new terminal at once.
-func (provider *Provider) refresh(ctx context.Context, targetID string) {
-	deadline := time.Now().Add(createTimeouts.refresh)
-	for time.Now().Before(deadline) && ctx.Err() == nil {
-		select {
-		case provider.wake <- struct{}{}:
-		default:
-		}
-		provider.mu.RLock()
-		_, ok := provider.view.targets[targetID]
-		provider.mu.RUnlock()
-		if ok {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 }
