@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=390"><title>lock screen</title>
+<!-- Source of /assets/lock.webp (390×844 at 2x): node scripts/docs-screenshots/capture.mjs landing. The texts are the real notification texts (internal/webpush). -->
+<style>
+body { margin: 0; width: 390px; height: 844px; overflow: hidden; background: #07090C; color: #ECE8E1;
+  font-family: system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+.date { padding-top: 84px; text-align: center; font-size: 17px; font-weight: 600; color: #A9AFB9; }
+.time { text-align: center; font-size: 96px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; padding-top: 4px; }
+.list { display: flex; flex-direction: column; gap: 8px; padding: 44px 16px 0; }
+.note { display: flex; gap: 12px; align-items: center; padding: 14px 14px; border-radius: 22px; background: #15181D; border: 1px solid #22272F; }
+.note svg { flex-shrink: 0; }
+.text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.top { display: flex; justify-content: space-between; gap: 8px; }
+.top b { font-size: 15px; font-weight: 600; }
+.top span { font-size: 13px; color: #8C93A0; flex-shrink: 0; }
+.body { font-size: 15px; color: #A9AFB9; }
+</style></head>
+<body>
+<p class="date">Sunday, 4 October</p>
+<p class="time">9:41</p>
+<div class="list">
+  <div class="note">
+    <svg width="38" height="38" viewBox="0 0 30 30" fill="none"><rect width="30" height="30" rx="8" fill="#07090C"/><rect x="1.5" y="1.5" width="27" height="27" rx="7" stroke="#ECE8E1" stroke-width="2"/><path d="M9 11l5 4-5 4" stroke="#64D8E8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 20h5" stroke="#ECE8E1" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <div class="text"><div class="top"><b>acme-web is waiting for you</b><span>now</span></div><span class="body">acme-web · tap to answer</span></div>
+  </div>
+  <div class="note">
+    <svg width="38" height="38" viewBox="0 0 30 30" fill="none"><rect width="30" height="30" rx="8" fill="#07090C"/><rect x="1.5" y="1.5" width="27" height="27" rx="7" stroke="#ECE8E1" stroke-width="2"/><path d="M9 11l5 4-5 4" stroke="#64D8E8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 20h5" stroke="#ECE8E1" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <div class="text"><div class="top"><b>billing-api is done · your turn</b><span>4m ago</span></div><span class="body">Worked for 12 min</span></div>
+  </div>
+</div>
+</body></html>

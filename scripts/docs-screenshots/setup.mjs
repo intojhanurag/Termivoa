@@ -216,6 +216,34 @@ test('health answers ok', async () => {
     'package.json': '{\n  "name": "docs-site",\n  "private": true,\n  "scripts": { "dev": "astro dev", "build": "astro build" }\n}\n',
     'src/pages/index.md': '# Acme docs\n\nStart here.\n',
     'src/pages/api.md': '# API\n\n`GET /api/orders` lists orders.\n',
+    // The built page, served in a session for the dev-server preview shot.
+    'public/index.html': `
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Acme docs</title>
+<style>
+  body { margin: 0; font: 16px/1.55 system-ui, sans-serif; color: #1d2433; background: #f7f5f0; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; border-bottom: 1px solid #e3ded3; }
+  header b { font-size: 18px; } header span { font-size: 14px; color: #6b7280; }
+  main { padding: 28px 22px; }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 12px; }
+  p { margin: 0 0 18px; color: #4b5563; }
+  .card { background: #fff; border: 1px solid #e3ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  .card b { display: block; margin-bottom: 4px; }
+  code { font: 14px ui-monospace, Menlo, monospace; background: #efebe3; padding: 2px 6px; border-radius: 6px; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; color: #166534; background: #dcfce7; border-radius: 999px; padding: 2px 10px; margin-bottom: 10px; }
+</style></head>
+<body>
+<header><b>Acme docs</b><span>v0.4 · Search</span></header>
+<main>
+  <span class="tag">New: orders API</span>
+  <h1>Build on the Acme storefront</h1>
+  <p>Everything you need to list, read and ship orders from your own app.</p>
+  <div class="card"><b>List orders</b><code>GET /api/orders</code></div>
+  <div class="card"><b>Read one order</b><code>GET /api/orders/:id</code></div>
+  <div class="card"><b>Rate limits</b>60 requests a minute per client. Over that, the API answers <code>429</code>.</div>
+</main>
+</body></html>
+`,
   });
   commit(docs, 'docs: describe the orders API', { 'src/pages/api.md': '# API\n\n`GET /api/orders` lists orders.\n\n`GET /api/orders/:id` returns one order.\n' });
 }

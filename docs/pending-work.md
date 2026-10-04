@@ -68,8 +68,9 @@ In this order.
    iPhone Home Screen app and on Android. Can run in the same sitting as
    Gate 0. The owner's first real add (Mac home + Ubuntu VPS, 2026-10-03)
    worked end to end with **Found on your network → Add** and `y`.
-4. **Docs picture** of the "Adding vps… approve on vps" bar (needs a clean
-   re-shoot), and a picture of **Found on your network** with **Add**.
+4. ~~**Docs picture** of the "Adding vps… approve on vps" bar and of
+   **Found on your network** with **Add**.~~ Done: both in
+   `guides/computers.md`, from `scripts/docs-screenshots/computers.mjs`.
 
 ## Polish next
 
@@ -90,11 +91,10 @@ designed in Paper first and shown to the owner before any code.
    names this computer and quotes the phone's code screen; a strong success
    line ("Done. vps is in your Termivoa app on mac. Open the app and tap
    it."); a tip to rename long machine names.
-3. **UI revamp (Paper first):** "Bone & ink" is on every screen and sheet
-   (`feat/bone-and-ink`; Paper boards "V2 Bone & ink — …"). Left: retake
-   the site screenshots (`site/src/assets/docs/phone-*.webp`, with
-   `scripts/docs-screenshots/`) and the landing page images; they still
-   show the old look.
+3. ~~**UI revamp (Paper first):**~~ Done: "Bone & ink" is on every screen
+   and sheet (`feat/bone-and-ink`; Paper boards "V2 Bone & ink — …"), and
+   the site screenshots, the landing page pictures and mock-ups, and the
+   README pictures are retaken in it (`docs/bone-ink-screens`).
 4. **Open issues:** #158, #161, #164 fixed; #162 not a defect (see
    `docs/progress.md`); #165 (landing page does not show adding a
    computer) waits for the owner's go on the Paper design.

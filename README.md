@@ -16,10 +16,10 @@ the old working name "Phone Terminal" so existing installs keep working (see
 > no signed builds.
 
 <p align="center">
-  <img src="docs/images/sessions.png" width="220" alt="Session list with project, shell, last output preview and a new-output dot">
-  <img src="docs/images/live.png" width="220" alt="Live terminal session with session tabs and the agent key row">
-  <img src="docs/images/snippets.png" width="220" alt="Snippets sheet with saved prompts and shell commands">
-  <img src="docs/images/pair.png" width="220" alt="Pairing screen that shows the code to compare on the computer">
+  <img src="docs/images/sessions.png" width="220" alt="Sessions list: acme-web waits with Run the test suite? and Answer, billing-api is working, each row with its project, shell and last output">
+  <img src="docs/images/live.png" width="220" alt="Live terminal with session tabs, an agent at work, and the agent keys and dock below">
+  <img src="docs/images/snippets.png" width="220" alt="Snippets sheet with the project's own commands (test, dev, build, lint) above saved prompts and shell commands">
+  <img src="docs/images/pair.png" width="220" alt="Pairing screen: Does your computer show this code? with six digits to compare on the computer">
 </p>
 
 ## Features

@@ -1,7 +1,7 @@
 ---
 title: Use several computers
 description: Termivoa can use several computers, such as a Mac, a Linux server and a VPS, from one phone app, with one Sessions list and one Wall for all of them.
-lastUpdated: 2026-10-03
+lastUpdated: 2026-10-04
 ---
 
 Termivoa lets one phone app use several computers, for example a Mac, a Linux server and a VPS, with one Sessions list and one Wall.
@@ -61,6 +61,8 @@ Start a wait on the new computer, then tap **Add** next to it in the app. You ne
    No Add button? Press Enter to show a QR code and a link.
    ```
 2. **On your phone**, open **Settings → Computers**. Under **Found on your network**, tap **Add** next to **vps**.
+
+   ![Settings with the Computers list (mac, HOME, ONLINE) and below it FOUND ON YOUR NETWORK: vps, vps.tailx.ts.net, and an Add button.](../../../../assets/docs/phone-computers-found.webp)
 3. **Check the sheet.** **Add this computer?** shows the **Address**, **Machine** and **Owner** that home found in its Tailscale status. Tap **Add vps**, then **Continue**.
 
    ![The Add this computer? sheet with Address https://vps.tailx.ts.net, Machine vps, Owner ada@example.com, and the buttons Add vps and Cancel.](../../../../assets/docs/phone-computers-confirm.webp)
@@ -75,9 +77,11 @@ Start a wait on the new computer, then tap **Add** next to it in the app. You ne
 
    Type `y` only if it names this computer (vps), home's address is the one your app opens, and the phone shows the same code. The app says **vps is added**, and vps says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` With a machine name longer than 12 characters it adds `Tip: give it a short name in the app: Settings → Computers → Rename.`
 
-   ![The screen Does vps show this code? with the code 742-172, the text If it matches, type y in the terminal on vps., Waiting for vps, and Codes don't match? Cancel.](../../../../assets/docs/phone-computers-code.webp)
+   ![The screen Does vps show this code? with a six-digit code, the text If it matches, type y in the terminal on vps., Waiting for vps, and Codes don't match? Cancel.](../../../../assets/docs/phone-computers-code.webp)
 
-You can leave the page to type `y` in the app's own terminal: tap **Back to terminal**. A bar says **Adding vps… approve on vps** until it is done.
+You can leave the page while you approve: tap **Sessions**, or **Back to terminal** when you opened the link from a terminal in the app (to type `y` there). A bar says **Adding vps… approve on vps** until it is done.
+
+![The bar Adding vps… approve on vps, with the buttons Open and Cancel, above the Sessions screen.](../../../../assets/docs/phone-computers-adding.webp)
 
 | **Found on your network** shows | Meaning |
 | --- | --- |
@@ -141,7 +145,7 @@ The camera stops when the app reads a code, when you tap **Cancel**, and when yo
 
 ## What changes in the app?
 
-![Sessions with 2 computers · connected, the chips All, mac and vps, and the sessions mac-1 and vps-1, each with its computer's colour dot and name, above the button new session on….](../../../../assets/docs/phone-computers-sessions.webp)
+![Sessions with 2 computers · connected, the tabs All, mac and vps, and the sessions mac-2, mac-1 and vps-1, each with its computer's colour dot and name, above the button new session on….](../../../../assets/docs/phone-computers-sessions.webp)
 
 | Screen | With 2 or more computers |
 | --- | --- |
@@ -158,7 +162,7 @@ With one computer, the app looks the same as before.
 
 The other computers keep working. The one that does not answer gets its own row.
 
-![Sessions with three mac sessions and a dashed row vps · can't reach with a Retry button.](../../../../assets/docs/phone-computers-offline.webp)
+![Sessions with two mac sessions and the row vps · can't reach, Is it on, and in your tailnet?, with a Retry button.](../../../../assets/docs/phone-computers-offline.webp)
 
 | Row | Meaning | Do this |
 | --- | --- | --- |
