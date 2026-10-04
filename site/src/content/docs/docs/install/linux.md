@@ -7,7 +7,7 @@ lastUpdated: 2026-10-04
 Termivoa installs on Ubuntu (desktop, server or WSL) as one file, `pterm`, with an install script that runs `pterm setup`.
 
 :::note
-Private beta. Linux was tested in Ubuntu 24.04 containers only, not yet on real hardware.
+Private beta. Linux was tested in Ubuntu 24.04 containers and on one real Ubuntu 24.04 VPS (x86_64). arm64 and desktop Ubuntu are not yet tested on real hardware.
 :::
 
 ## Requirements

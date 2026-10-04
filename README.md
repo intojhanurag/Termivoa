@@ -11,8 +11,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 > **Status:** private beta (`v0.1.0-beta.3`, unsigned, invited testers only;
 > [install](docs/install.md#private-beta)). The full flow is tested on an
-> Apple Silicon Mac. Windows and Linux support is written but not yet verified
-> on a real Windows or Linux machine (Linux ran in containers only). There are
+> Apple Silicon Mac. Linux ran in containers and on one real Ubuntu 24.04 VPS.
+> Windows support is written but not yet verified on a real Windows machine. There are
 > no signed builds.
 
 <p align="center">
@@ -162,11 +162,11 @@ the [threat model](docs/threat-model.md) and [SECURITY.md](SECURITY.md).
 | --- | --- | --- |
 | Host | macOS on Apple Silicon | Tested (automated suites and a real end-to-end run, macOS 26.5) |
 | Host | Windows 11 x64 | Written; cross-compiled only, not run natively yet |
-| Host | Linux: Ubuntu 22.04/24.04 desktop, server/VPS and WSL (x86_64, arm64) | Supported; systemd user units, XDG paths. Tested in Ubuntu 24.04 containers (incl. real systemd); not yet on real hardware |
+| Host | Linux: Ubuntu 22.04/24.04 desktop, server/VPS and WSL (x86_64, arm64) | Supported; systemd user units, XDG paths. Tested in Ubuntu 24.04 containers (incl. real systemd) and on one real Ubuntu 24.04 x86_64 VPS (setup, sessions, add a computer); arm64 and desktop not yet on real hardware |
 | Phone | iPhone Safari and Home Screen app | Tested in desktop Chromium at 390×844; real iPhone pending |
 | Phone | Android Chrome | Real device pending |
 | Shell | zsh | Tested in isolated fixtures |
-| Shell | Linux bash, zsh, fish (login shells) | bash tested in containers; zsh and fish not tested |
+| Shell | Linux bash, zsh, fish (login shells) | bash tested in containers and on one real VPS; zsh and fish not tested |
 | Shell | Windows PowerShell / PowerShell 7 | Not tested |
 | Shell | WSL bash (if installed) | Not tested |
 | Network | Tailscale Serve HTTPS | Real tailnet run pending |
