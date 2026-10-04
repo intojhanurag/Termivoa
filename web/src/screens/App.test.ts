@@ -6,7 +6,7 @@ import { hosted } from './allSessions';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike,
+  AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike, installView,
   STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, sameScreen,
 } from './App';
 import { ApiError } from '../api/http';
@@ -61,6 +61,15 @@ describe('run in new tab', () => {
     }));
     await startLike(from);
     expect(create.mock.lastCall?.[0]).not.toHaveProperty('worktree');
+  });
+});
+
+describe('Install opens Live with the command typed, not run (installView)', () => {
+  it('always asks for typeOnly: the user presses Enter', () => {
+    const session = hosted({ id: 'new', projectId: 'project-1', shellProfileId: 'zsh' } as BrokerRPCSessionRecord, vps);
+    expect(installView(session, 'curl -fsSL https://herdr.dev/install.sh | sh')).toEqual({
+      name: 'live', session, runFirst: { command: 'curl -fsSL https://herdr.dev/install.sh | sh', settled: false, typeOnly: true },
+    });
   });
 });
 

@@ -3,7 +3,7 @@ import { ApiError } from '../api/http';
 import { Scheduler } from '../terminal/scheduler';
 import { group, info, item, mac, okEntry, providerEntry, ready, settingsWith, snapshot, target, vps } from './providerFixtures';
 import {
-  attentionCount, findTarget, INSTALL_COMMANDS, nextProviderStatus, polled, providerKey, providerSources, providerState, providerTabs, rollUp, shown, staleSettings, wordSummary,
+  attentionCount, findTarget, INSTALL_COMMANDS, nextProviderStatus, polled, providerKey, providerSources, providerState, providerTabs, rollUp, shown, staleSettings, unpolledOrigins, wordSummary,
 } from './providers';
 
 describe('providerSources', () => {
@@ -29,6 +29,9 @@ describe('providerSources', () => {
     expect(source?.info.state).toBe('notInstalled');
     expect(polled({ info: absent })).toBe(false);
     expect(polled({ info: info() })).toBe(true);
+    // Settings reads that computer's settings when it opens: nothing else would show a new install.
+    expect(unpolledOrigins([okEntry(mac, { protocolRevision: 5, providers: [absent] }), okEntry(vps, { protocolRevision: 5 })])).toEqual([mac.origin]);
+    expect(unpolledOrigins([okEntry(mac), { computer: vps, status: { kind: 'unreachable' } }])).toEqual([]);
     // A read that finds it gone (uninstalled meanwhile) hides the tab too.
     const gone = providerEntry(mac, { kind: 'ok', snapshot: snapshot([], { state: 'notInstalled' }), at: 0 });
     expect(shown(gone)).toBe(false);

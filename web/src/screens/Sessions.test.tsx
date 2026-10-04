@@ -5,7 +5,7 @@ import type { Computer } from '../computers';
 import { hosted, type ComputerEntry, type ComputerStatus } from './allSessions';
 import { NewSession } from './NewSession';
 import { waitingFirst } from './allSessions';
-import { age, ComputerChips, controllerText, hostSummary, pairHint, problemDetail, problemText, PushCard, SessionRow, Sessions } from './Sessions';
+import { age, ComputerChips, controllerText, hostSummary, pairHint, problemDetail, keptSettings, problemText, PushCard, SessionRow, Sessions } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -369,5 +369,17 @@ describe('PushCard', () => {
 
   it('is not in the first render of Sessions; it appears only after push support is checked', () => {
     expect(renderSessions([entry(mac, ok(settings))], { offerPush: true })).not.toContain('Get a buzz');
+  });
+});
+
+describe('New workspace while its computer does not answer (keptSettings)', () => {
+  it('keeps the last good settings, so the open sheet stays with its own messages; a new answer replaces them', () => {
+    const newer = { ...settings, hostBuild: 'pterm/newer' };
+    expect(keptSettings(undefined, { kind: 'ok', settings, sessions: [], at: 0 })).toBe(settings);
+    expect(keptSettings(settings, { kind: 'unreachable' })).toBe(settings);
+    expect(keptSettings(settings, { kind: 'pair' })).toBe(settings);
+    expect(keptSettings(settings, undefined)).toBe(settings);
+    expect(keptSettings(settings, { kind: 'ok', settings: newer, sessions: [], at: 1 })).toBe(newer);
+    expect(keptSettings(undefined, { kind: 'loading' })).toBeUndefined();
   });
 });

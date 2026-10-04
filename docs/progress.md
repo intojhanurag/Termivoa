@@ -49,6 +49,50 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Manage herdr from the phone (2026-10-04, branch `feat/herdr-manage`)
+
+- **Why.** On the first day of real use the owner had nine stale `mastra`
+  workspaces and no way to close them from the phone, two git projects
+  without **+**, and nothing on a computer without herdr. He asked to manage
+  herdr from the app, to install it from **Settings → Integrations**, and
+  (during the build) to close tabs too.
+- **What.** ADR [0009](decisions/0009-provider-manage.md), design
+  [herdr-manage.md](herdr-manage.md). One route, `POST
+  /api/v1/providers/{provider}/manage` (`closeItem`, `removeItem` without
+  force, `newTab`, `closeTab`, `newWorkspace` by project ID, `startServer`);
+  **+** on every git project (the host looks for `.git`); herdr listed as
+  `notInstalled` with **Install herdr**, which opens a session with the
+  install command typed and not run. Protocol revision 5. No database change.
+- **Rule 24.** Two reviews of the design (security; feasibility) before any
+  code, then two reviews of the code (host; phone app). Findings and
+  resolutions: design, section 12. The security review cut the first
+  design's download by the broker; the owner's words asked for an install by
+  Termivoa, so the pull request names this change.
+- **Lab (real herdr, isolated home and session).** `PTERM_HERDR_LAB=1 go
+  test ./internal/herdr -run Lab` passed on herdr 0.8.2 and, with
+  `PTERM_HERDR_LAB_BINARY`, on the 0.9.3 release binary (in `/tmp`, never
+  installed): **+** on a git workspace without a worktree record, a moved
+  pane, new tab, new workspace, close, remove (clean, uncommitted, with an
+  ignored `.env`), the server staying up with no workspace, start through
+  the provider. Found on 0.9.3: two workspaces at one repository's main
+  checkout close only as a group (design, section 13). `tab.close` was run
+  by hand in the same kind of lab on both versions (design, section 1).
+- **e2e.** 12 new `H-*` checks (`scripts/e2e-multicomputer/README.md`).
+  Final runs: Phase A 32/32, Phase B 116/116 (37 `H-*`), Playwright's Chrome
+  for Testing. Evidence: `docs/evidence/herdr-manage/phase-a.md` and
+  `phase-b.md`. Measured: new tab → Live 0.51 s; new workspace → Live
+  0.51 s; Install herdr → command typed 0.20 s; Start herdr → projects back
+  0.31 s. No product defect showed in the first run of both halves together.
+- **Checks.** `scripts/check` (926 vitest); `go vet ./...` also with `-tags
+  e2e`, `GOOS=windows`, `CGO_ENABLED=0 GOOS=linux`; `go test -race
+  ./internal/... ./cmd/... ./scripts/...`; `cd site && npx astro build`
+  with valid links.
+- **Not run.** WebKit (`webkit.mjs`). The `systemd-run` start on a real
+  Linux computer (argv and fallback are tested with a script in its place).
+  The owner's checks: [owner-verification.md](owner-verification.md), 2c,
+  "Manage herdr".
+- **Open.** [pending-work.md](pending-work.md), Next 5.
+
 ### Landing page: Providers section (2026-10-04, branch `feat/landing-providers`)
 
 - **What.** `site/public/index.html` gets a **Providers** section after

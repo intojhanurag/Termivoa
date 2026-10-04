@@ -845,16 +845,19 @@ type GatewayRPCProviderManagePayload struct {
 // ends an item's terminals and deletes no file; an item that is a main checkout cannot be
 // closed while a linked worktree of its group is open. removeItem deletes a linked
 // worktree's folder without force (the branch stays; files that git ignores go with the
-// folder). newTab makes a tab in an item. newWorkspace makes an item in a Termivoa
-// project's folder. startServer starts the provider's server. itemId and name are required
-// for closeItem and removeItem (name is the item name the user confirmed: the host refuses
-// when the item now has another name); itemId alone for newTab; projectId for newWorkspace;
+// folder). newTab makes a tab in an item. closeTab ends the tab of one of an item's
+// terminals (all terminals of that tab); the last tab of an item cannot be closed (close
+// the item). newWorkspace makes an item in a Termivoa project's folder. startServer starts
+// the provider's server. itemId and name are required for closeItem and removeItem (name is
+// the item name the user confirmed: the host refuses when the item now has another name);
+// itemId alone for newTab; itemId and targetId for closeTab; projectId for newWorkspace;
 // none for startServer. A field that does not belong to the action is refused.
 type HTTPProviderManageRequest struct {
 	Action    HTTPProviderManageAction `json:"action"`
 	ItemID    *string                  `json:"itemId,omitempty"`
 	Name      *string                  `json:"name,omitempty"`
 	ProjectID *string                  `json:"projectId,omitempty"`
+	TargetID  *string                  `json:"targetId,omitempty"`
 }
 
 // Opens or reuses the in-memory provider session of one terminal in the broker's latest
@@ -1809,6 +1812,7 @@ type HTTPProviderManageAction string
 
 const (
 	CloseItem    HTTPProviderManageAction = "closeItem"
+	CloseTab     HTTPProviderManageAction = "closeTab"
 	NewTab       HTTPProviderManageAction = "newTab"
 	NewWorkspace HTTPProviderManageAction = "newWorkspace"
 	RemoveItem   HTTPProviderManageAction = "removeItem"

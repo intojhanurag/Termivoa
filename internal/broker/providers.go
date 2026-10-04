@@ -78,6 +78,7 @@ var (
 	errProviderItem         = providerFailure{managementFailure{protocol.SessionMissing, "that workspace is gone"}}
 	errProviderRenamed      = providerFailure{managementFailure{protocol.OperationConflict, "that workspace changed; look at the list and try again"}}
 	errProviderGroupOpen    = providerFailure{managementFailure{protocol.OperationConflict, "close this project's worktrees first"}}
+	errProviderLastTab      = providerFailure{managementFailure{protocol.OperationConflict, "this is the workspace's last tab; close the workspace"}}
 	errProviderNotLinked    = providerFailure{managementFailure{protocol.InvalidRequest, "only a linked worktree can be removed"}}
 	errProviderFull         = providerFailure{managementFailure{protocol.InvalidRequest, "herdr has 32 terminals in this workspace or 64 projects; close one first"}}
 	errProviderNotStartable = providerFailure{managementFailure{protocol.InvalidRequest, "herdr cannot be started on this computer now"}}
@@ -508,7 +509,7 @@ func (server *ManagementServer) manageProvider(
 	response, err := host.provider.Manage(ctx, request, project)
 	for herdrErr, failure := range map[error]providerFailure{
 		herdr.ErrUnavailable: errProviderUnavailable, herdr.ErrTargetMissing: errProviderItem,
-		herdr.ErrBusy: errProviderManageBusy, herdr.ErrRenamed: errProviderRenamed, herdr.ErrGroupOpen: errProviderGroupOpen,
+		herdr.ErrBusy: errProviderManageBusy, herdr.ErrRenamed: errProviderRenamed, herdr.ErrGroupOpen: errProviderGroupOpen, herdr.ErrLastTab: errProviderLastTab,
 		herdr.ErrNotLinked: errProviderNotLinked, herdr.ErrFull: errProviderFull,
 		herdr.ErrNotStartable: errProviderNotStartable, herdr.ErrNoServer: errProviderNoServer,
 	} {

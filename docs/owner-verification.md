@@ -478,6 +478,30 @@ projects, and the iPhone Home Screen app. Design:
       running, "can make worktrees") and warns if your `config.toml` sets a
       prefix other than `ctrl+b`.
 
+### Manage herdr (ADR 0009)
+
+Automated with the fake herdr (harness checks `H-*`) and, in an isolated
+home, a real herdr 0.8.2 (the lab test). On your live herdr and your VPS
+these are yours:
+
+- [ ] **+ on a git project.** `personal-website` (a git repository where
+      herdr made no worktree yet) has **+**; a new worktree from the phone
+      works.
+- [ ] **Close workspace.** **⋯ → Close workspace** on a workspace you do
+      not need: it asks, then the row goes away; its folder is still there.
+- [ ] **Remove worktree.** On a worktree with a changed file: "…has changes
+      that are not committed…" and nothing is removed. After a commit: it is
+      removed and the branch is still there.
+- [ ] **New tab and New workspace** open their terminal at once.
+- [ ] **Install herdr on the VPS.** **Settings → Integrations → Install
+      herdr** opens a session on the VPS with the install command typed and
+      not run. Press Enter; after it ends, **Check again**, then **Start
+      herdr**; the herdr tab shows the VPS.
+- [ ] **Linux start survives a Termivoa restart.** After **Start herdr** on
+      the VPS, `systemctl --user restart phone-terminal-broker.service`:
+      herdr still runs (`herdr status server`). This is the `systemd-run`
+      path, which no test ran on Linux.
+
 ## 3. Windows 11 x64
 
 Only cross-compiled `go vet` and PE checks ran here. CI has a native Windows job,

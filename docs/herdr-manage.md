@@ -9,6 +9,7 @@ What it does. From the phone, for a computer's herdr:
 | A1 | **+** on every git project, also one where herdr has made no worktree yet | project row (as today) |
 | A2 | **New tab** in a workspace, opened at once | item menu |
 | A3 | **Close workspace** | item menu, after a confirmation |
+| A3b | **Close tab** (added on the owner's request during the build) | item menu, after a confirmation |
 | A4 | **Remove worktree** (a linked worktree; never with force) | item menu, after a confirmation |
 | A5 | **New workspace** in a Termivoa project folder, opened at once | herdr tab |
 | A6 | **Start herdr** when it is installed and not running | Settings → Integrations, and the herdr tab's "not running" notice |
@@ -30,6 +31,7 @@ Run against an isolated herdr 0.8.2 (a copy of the binary, a temp `HOME`, its ow
 | `worktree.remove {workspace_id, force:false}` | Clean worktree (also with commits that are not pushed): closes the workspace and deletes the folder; the branch stays. Modified or untracked files: `dirty_worktree_requires_force` (git's text, with the path), nothing changes. Main checkout: `not_linked_worktree`. |
 | Install | The official installer (`https://herdr.dev/install.sh`) reads `https://herdr.dev/latest.json` (`version`, `assets {<os>-<arch>: URL}`, `sha256 {<os>-<arch>: hex}`), downloads the asset from `https://github.com/herdrdev/herdr/releases/download/…`, checks the SHA-256, and writes `~/.local/bin/herdr` (mode `+x`). Targets: `linux-x86_64`, `linux-aarch64`, `macos-x86_64`, `macos-aarch64`. `~/.local/bin/herdr` is already one of Termivoa's fixed lookup paths. |
 | Start | `herdr server` runs the default session's server in the foreground with no terminal (the lab runs `herdr --session <name> server` this way). |
+| `tab.close {tab_id}` | Ends the tab and its panes; the labels of later tabs are counted again (tab "3" becomes "2"), the IDs stay. **Closing the last tab closes the workspace.** Unknown ID: `tab_not_found`. Same on 0.8.2 and 0.9.3. |
 | Files that git ignores | `worktree.remove` without force deletes a worktree that has only ignored files (a `.env`): they go with the folder (0.8.2 and 0.9.3). |
 | herdr 0.9.3 | Same results, except: closing a main checkout's workspace while a linked worktree's workspace is open answers `workspace_group_close_required` and closes nothing. A second `herdr server` for a running session answers "herdr server is already running" and exits. |
 | Service stop | Termivoa's systemd user unit has the default `KillMode` (control group): stopping the broker ends every process it started. |
@@ -38,7 +40,7 @@ Run against an isolated herdr 0.8.2 (a copy of the binary, a temp `HOME`, its ow
 
 Goals: A1–A7 above; every destructive action asks first and says exactly what ends or is deleted; nothing new for a paired phone to reach that it could not already reach by typing in a session; Termivoa itself downloads nothing.
 
-Non-goals: `force` removal (uncommitted work is never deleted from the phone); closing a main checkout together with its worktrees; renames; closing one tab or pane; splits and layout; updating or uninstalling herdr; a download by the broker; Windows; named herdr sessions; starting herdr at login.
+Non-goals: `force` removal (uncommitted work is never deleted from the phone); closing a main checkout together with its worktrees; renames; closing one pane; splits and layout; updating or uninstalling herdr; a download by the broker; Windows; named herdr sessions; starting herdr at login.
 
 ## 3. Wire contract (protocol revision 5)
 
@@ -57,13 +59,14 @@ Bodies in `protocol/v1/http-api.schema.json`, generated into Go and TypeScript. 
 
 `POST /api/v1/providers/{provider}/manage`, under `admitAPI` and `handler.mutation` like `…/create` (cookie, exact own or bound `Origin`, `X-Pterm-Request: 1`, JSON, at most 64 KiB, unknown fields refused), on the gateway's own broker connection (like create). Gateway RPC: `gateway.providers.manage` with its own cases in the payload validators.
 
-`HTTPProviderManageRequest`: `action` (`closeItem` | `removeItem` | `newTab` | `newWorkspace` | `startServer`), `itemId?`, `name?`, `projectId?`.
+`HTTPProviderManageRequest`: `action` (`closeItem` | `removeItem` | `newTab` | `closeTab` | `newWorkspace` | `startServer`), `itemId?`, `name?`, `targetId?`, `projectId?`.
 
 | Action | Required | Meaning |
 | --- | --- | --- |
 | `closeItem` | `itemId`, `name` | `workspace.close` |
 | `removeItem` | `itemId`, `name` | `worktree.remove {force:false}` |
 | `newTab` | `itemId` | `tab.create` |
+| `closeTab` | `itemId`, `targetId` | `tab.close` for the tab of that terminal |
 | `newWorkspace` | `projectId` | `workspace.create` in that project's folder |
 | `startServer` | – | start `herdr server` |
 
@@ -76,7 +79,7 @@ A field that does not belong to the action is refused. `name` is the item name t
 | Bad body, a field that does not belong to the action, `removeItem` on an item that is not `linked`, `startServer` when not `notRunning` or without `canStart`, `newTab` in an item that has 32 terminals, `newWorkspace` with 64 groups | `invalid_request` | 400 |
 | Provider off or not installed; an item action while not `ready`; the server did not come up | `host_unavailable` | 503 |
 | Item not in a fresh snapshot | `session_missing` | 404 |
-| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open | `operation_conflict` | 409 |
+| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open; `closeTab` on the item's last tab | `operation_conflict` | 409 |
 | Project unknown, or its folder is gone or not this user's | `project_missing` | 404 |
 | The per-device limit (30 per minute), or another manage or create is running | `limit_exceeded` | 429 |
 | herdr refused or failed in any other way | `worktree_failed` for `removeItem`; `host_unavailable` for the rest | as today |
@@ -97,9 +100,10 @@ The snapshot's panes carry `cwd`. In `apply` (not in `mapSnapshot`, which stays 
 
 - One manage or create at a time per computer (the create lock, `TryLock`). Broker-owned context, 15 s per herdr call.
 - Item actions read a **fresh** snapshot under the lock. The item must be there, and for `closeItem` and `removeItem` its name must equal `name` (workspace IDs start again after a herdr restart, and the phone's list can be 5 s old).
-- `closeItem`: refused with `operation_conflict` when the item is a main checkout and another item of its group is in the fresh snapshot (herdr 0.8.2 would close them too; 0.9.3 refuses). Else `workspace.close`.
+- `closeItem`: refused with `operation_conflict` when the item is a main checkout and a **linked worktree** of its group is in the fresh snapshot (herdr 0.8.2 would close it too; 0.9.3 refuses). Else `workspace.close`.
 - `removeItem`: needs `linked`. `worktree.remove {force:false}`; `dirty_worktree_requires_force` → `problem: uncommitted`.
 - `newTab`: refused when the item already has 32 terminals. `tab.create {workspace_id, focus:false}`.
+- `closeTab`: `targetId` must be a terminal of the item in the fresh snapshot (the terminal ID is part of it, so an ID from before a herdr restart never matches); the host finds its tab there. The item's last tab is refused with `operation_conflict` (herdr would close the workspace: **Close workspace** says what that ends). `tab.close {tab_id}`; `tab_not_found` is `session_missing`. Tab labels are counted again by herdr, so the phone names the tab by its terminal, never by its label.
 - `newWorkspace`: refused at 64 groups. The broker resolves `projectId` through the store, then the folder must pass `resolveProjectFolder` and `ipc.RequireCurrentOwner` right before the call (herdr falls back to another folder when `cwd` is missing). `workspace.create {cwd, label: <project name, cleaned>, focus:false}`.
 - `newTab` and `newWorkspace` answer `targetId = pane_id.terminal_id` (each part and the whole checked by the handle pattern) only when this herdr can attach a terminal without an agent (`attachAny`), and wait for a poll turn that has it (`settle`, at most 3 s), so it opens at once.
 - After every success the poll loop runs at once. Provider sessions of a closed or removed workspace end by the existing rule (their pane left the snapshot).
@@ -133,6 +137,7 @@ Trust statement (unchanged): a paired phone can already run any command in a ses
 
 - **Item menu**: a `⋯` button on each item row opens a sheet with **New tab**, **Close workspace** and, for a linked worktree, **Remove worktree**. **Close workspace** on a main checkout with open worktrees is off, with the line "Close its worktrees first."
 - **Close** confirmation: "Close silver-meadow? Its terminals end. Files stay."
+- **Close tab**: the item menu lists the item's terminals by tab label; each has **Close tab**, with the confirmation "Close tab 2? Its terminals end." An item with one terminal has the line "Close the workspace to end its last tab." In every confirmation **Cancel** comes first, and a tap in the first 400 ms does nothing, so a double tap on the menu row cannot confirm.
 - **Remove** confirmation: "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." `problem: uncommitted`: "silver-meadow has changes that are not committed. Commit or discard them first."
 - **New workspace**: a button on the herdr tab (also when the list is empty) opens a sheet with that computer's Termivoa projects; a tap makes the workspace and opens its terminal. With no projects the sheet says how to add one, as New session does.
 - **Integrations**: `notInstalled` shows "Not installed"; with `canInstall`, **Install herdr** and the line "Opens a terminal on mac with herdr's install command. Press Enter there to run it."; without it, "Run `pterm doctor` on mac." `notRunning` with `canStart` shows **Start herdr** (also on the herdr tab's "herdr is not running on mac" notice). A `notInstalled` card has no switches.
@@ -175,7 +180,7 @@ HOST owns `internal/`, `cmd/`, `scripts/fakeherdr/`, `protocol/v1/http-api.md`; 
 | --- | --- | --- |
 | Q1 | Force-remove a worktree with uncommitted changes from the phone? | No |
 | Q2 | Close a main checkout and its worktrees in one tap? | No (close the worktrees first) |
-| Q3 | Close one tab? | No (close the workspace, or type `exit`) |
+| Q3 | Close one tab? | Yes (A3b), but never the last one |
 | Q4 | Start herdr at login? | No |
 | Q5 | Should the broker download herdr itself? | No (version 1 had it; the security review cut it) |
 
@@ -229,4 +234,44 @@ Two independent reviews ran on version 1 of this design: security, and feasibili
 
 ### Review of the built branch
 
-(Filled in after the build.)
+Two independent reviews of the code (host: security and correctness; phone app), and the end-to-end run of both halves.
+
+| # | Finding | Resolution |
+| --- | --- | --- |
+| B-H1 | `canStart` was true, and `startServer` ran, for up to 5 s after the socket turned refused (the state and the refusal were two publishes) (medium) | One publish (`notRunning` takes the error) |
+| B-H2 | herdr's `dirty_worktree_requires_force` became `problem: uncommitted` with status 200 for every action, also a close (low) | Only for `removeItem`; else a failure (`TestManageItemActions`) |
+| B-H3 | A herdr that was removed while the provider was off stayed `off` (low) | The off branch looks for the binary again: `notInstalled` wins |
+| B-H4 | The 64-group limit of `newWorkspace` did not hold when the body budget cut the list (low) | A cut list counts as full |
+| B-H5 | A1 can leave more than one hung goroutine for a workspace on a hung mount that leaves and comes back (low, plausible) | Not changed; in `docs/pending-work.md` |
+| B-H6 | No test for a `systemd-run` that lives without a ready server; the in-process fake never changes its snapshot | Not changed; the reviewer's own test showed the guard works; the e2e fake does change state |
+| B-W1 | A double tap on a menu row could land on the danger button of the confirmation that took its place (medium) | **Cancel** is first; a confirm tap in the first 400 ms does nothing (`confirmReady`; phase B `H-close` taps at 11 ms and nothing closes) |
+| B-W2 | The New workspace sheet went away without its message when its computer's read failed, and came back by itself (medium) | The sheet keeps the last good settings while it is open |
+| B-W3 | Focus was lost when the menu became a confirmation; Escape stopped working (medium) | Focus goes to the confirmation container, never to the danger button |
+| B-W4 | The card stayed "Not installed" after an install (a `notInstalled` provider is not polled) (low) | Settings reads those computers when it opens and once more 2.5 s later, quietly |
+| B-W5 | One failed automatic settings read showed "can't reach" (low) | A quiet read |
+| B-W6 | The app's close rule had no 64-item case (low) | Same rule as the host |
+| B-W7 | Install could move the user to Live after they left Settings (low) | A mounted check |
+| B-W8 | No test failed if Install lost `typeOnly` (the command would run) | `installView` with its test; phase B `H-install-herdr` checks that nothing ran |
+| B-E1 | Phase B, first run of both halves together: no product defect. The harness hid the real herdr as "not permitted", which made `canInstall` false on this Mac | The sandbox now answers "no such file" for the real herdr paths |
+
+## 13. Implementation notes (differences from the text above)
+
+| Where | Built | Why |
+| --- | --- | --- |
+| `closeItem` on a main checkout (section 4) | Refused only when another item of the group is a linked worktree (or the group is at its 64 items, where the list may be cut) | The lab showed two main checkouts in one group (a second workspace whose shell moved into the same repository); "another item" would make both impossible to close. The app uses the same rule |
+| Start failure text | "herdr did not start; run `herdr server` in a terminal on this computer to see why" | The broker's fixed texts say "this computer" |
+| A second `startServer` while the first child lives | `host_unavailable` with the start-failure text | That text is the right hint |
+| Wait for ready | 5 s for each start try, and 500 ms more after a child ends; on Linux the systemd try and the plain try can add up to about 10 s | Two tries |
+| `canInstall` | Also needs x86_64 or aarch64 | herdr's installer has builds only for those |
+| `PATCH` on a provider that is not installed | `503 host_unavailable` | The same answer as every other route |
+| `canInstall`, `canStart` | The validator refuses `canInstall` outside `notInstalled` and `canStart` outside `notRunning` | The schema text |
+| A1 bounds | At most 64 workspaces without a worktree record and 32 pane folders each are checked in one poll | Rule 11 |
+| The log | A herdr error code that is not `[a-z0-9_]{1,64}` is logged as `other`, no answer as `no_answer` | No herdr text in the log |
+| The busy text | Manage: "herdr is busy with another change; try again"; create keeps its own | Each route's own words |
+| "Look again now" | Set by a settings read while the provider is `notInstalled` or `notRunning`, at most once per 2 s; the app's **Check again** on the card reads the settings | The card turns within about 2 s |
+| Phone: a peer's manage error | The app shows "That computer could not do this." for every peer error (its rule against a peer's own words), so the start hint shows for the home computer only | An existing rule of the app |
+| Phone: settings while herdr changes | The app reads a computer's settings again when its provider read shows another state than the settings | `canStart` comes from the settings, which the app keeps for a visit |
+| Phone: no `targetId` | "The tab is made. Update herdr to open it from the phone." / "The workspace is made. Update herdr to open it from the phone." | The design had no text for it |
+| Phone: install | `runFirst` with `typeOnly`: the existing run-first path sends the text and skips Enter; control rules are unchanged (it types only when this phone has control, never after a reconnect) | One input path (rules 9 and 10) |
+| Two workspaces at one repository's main checkout, herdr 0.9.3 | Neither can be closed from the phone: herdr answers `workspace_group_close_required` for each and wants `close_group`, which Termivoa never sends (a close ends one workspace). The answer is `operation_conflict` ("close this project's worktrees first"); the user closes them in herdr. herdr 0.8.2 closes each alone | Lab, 2026-10-04 (0.9.3 release binary, isolated). Rare: it needs a second workspace whose shell moved into a repository that already has a workspace, and a worktree made from it |
+| `closeTab` (A3b) | Added during the build on the owner's request; the lab ran `tab.close` on 0.8.2 and 0.9.3 (section 1) | The owner asked to close tabs too |

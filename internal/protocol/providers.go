@@ -254,23 +254,25 @@ func ValidateProviderCreateResponse(response HTTPProviderCreateResponse) error {
 // ValidateProviderManageRequest checks POST /api/v1/providers/{provider}/manage:
 // each action takes exactly its own fields (docs/herdr-manage.md, section 3.2).
 func ValidateProviderManageRequest(request HTTPProviderManageRequest) error {
-	item, name, project := false, false, false
+	item, name, target, project := false, false, false, false
 	switch request.Action {
 	case CloseItem, RemoveItem:
 		item, name = true, true
 	case NewTab:
 		item = true
+	case CloseTab:
+		item, target = true, true
 	case NewWorkspace:
 		project = true
 	case StartServer:
 	default:
 		return errors.New("manage action is invalid")
 	}
-	if (request.ItemID != nil) != item || (request.Name != nil) != name || (request.ProjectID != nil) != project {
+	if (request.ItemID != nil) != item || (request.Name != nil) != name || (request.TargetID != nil) != target || (request.ProjectID != nil) != project {
 		return errors.New("manage request has a missing field or one that does not belong to the action")
 	}
-	if item && !ValidProviderHandle(*request.ItemID) || project && !ValidUUID(*request.ProjectID) {
-		return errors.New("manage itemId or projectId is invalid")
+	if item && !ValidProviderHandle(*request.ItemID) || target && !ValidProviderHandle(*request.TargetID) || project && !ValidUUID(*request.ProjectID) {
+		return errors.New("manage itemId, targetId or projectId is invalid")
 	}
 	if name {
 		return validateProviderName(*request.Name, maxProviderNameRunes, maxProviderNameBytes)

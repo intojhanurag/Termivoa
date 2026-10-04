@@ -35,7 +35,7 @@ Every row was run on 2026-10-04 against an **isolated** herdr: `HOME=<tmp> herdr
 
 Goals: herdr tab with groups, items, state words, roll-up and a count; the All tab section of H1; open one target in Live with tab chips; push on blocked and finished; Settings → Integrations; nothing changes for a computer without herdr; no re-pairing. M2: create a worktree and start an agent with an optional first prompt.
 
-Non-goals: split panes, the mouse, prefix keys (never); herdr layout changes, renames, closing anything; named herdr sessions (default session only); Windows; events; terminal titles or screen text in the list or in pushes; other providers (the wire is generic; none is built).
+Non-goals: split panes, the mouse, prefix keys (never); herdr layout changes, renames, closing anything (closing a workspace, removing a worktree, a new tab, a new workspace and starting herdr came later: [herdr-manage.md](herdr-manage.md), ADR 0009); named herdr sessions (default session only); Windows; events; terminal titles or screen text in the list or in pushes; other providers (the wire is generic; none is built).
 
 ## 3. The provider seam
 

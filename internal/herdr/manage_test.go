@@ -43,7 +43,7 @@ func newManageWorld(t *testing.T, attachAny bool) *manageWorld {
 	}
 	base := string(readFixture(t, "snapshot-0.8.2.json"))
 	server.Snapshot([]byte(base))
-	for _, method := range []string{"workspace.close", "worktree.remove", "tab.create", "workspace.create"} {
+	for _, method := range []string{"workspace.close", "worktree.remove", "tab.create", "tab.close", "workspace.create"} {
 		server.Handle(method, func(params json.RawMessage) (any, *herdrtest.Error) {
 			world.mu.Lock()
 			defer world.mu.Unlock()
@@ -100,6 +100,10 @@ func manageRequest(action protocol.HTTPProviderManageAction, item, name string) 
 	return request
 }
 
+func tabRequest(item, target string) protocol.HTTPProviderManageRequest {
+	return protocol.HTTPProviderManageRequest{Action: protocol.CloseTab, ItemID: &item, TargetID: &target}
+}
+
 func TestManageItemActions(t *testing.T) {
 	world := newManageWorld(t, false)
 	ctx := context.Background()
@@ -128,10 +132,17 @@ func TestManageItemActions(t *testing.T) {
 			&herdrtest.Error{Code: "dirty_worktree_requires_force", Message: "fatal: '/home/demo/secret' contains modified or untracked files"}, nil, "worktree.remove", true},
 		{"herdr fails the remove", manageRequest(protocol.RemoveItem, "w3", "silver-meadow"),
 			&herdrtest.Error{Code: "worktree_remove_failed", Message: "fatal: /home/demo/secret is locked"}, ErrManage, "worktree.remove", false},
+		{"a close that herdr calls dirty is a failure, not a problem", manageRequest(protocol.CloseItem, "w2", "notes"),
+			&herdrtest.Error{Code: "dirty_worktree_requires_force", Message: "x"}, ErrManage, "workspace.close", false},
 		{"herdr says it is not linked", manageRequest(protocol.RemoveItem, "w3", "silver-meadow"),
 			&herdrtest.Error{Code: "not_linked_worktree", Message: "x"}, ErrNotLinked, "worktree.remove", false},
 		{"new tab", manageRequest(protocol.NewTab, "w3", ""), nil, nil, `tab.create {"focus":false,"workspace_id":"w3"}`, false},
 		{"new tab in an unknown item", manageRequest(protocol.NewTab, "w77", ""), nil, ErrTargetMissing, "", false},
+		{"close a tab", tabRequest("w1", "w1:p3.term_65d0031602b712"), nil, nil, `tab.close {"tab_id":"w1:t2"}`, false},
+		{"close the last tab of a workspace", tabRequest("w2", "w2:p1.term_65d0031602b702"), nil, ErrLastTab, "", false},
+		{"close a tab of another workspace", tabRequest("w1", "w3:p1.term_65d0031602b703"), nil, ErrTargetMissing, "", false},
+		{"herdr lost the tab", tabRequest("w1", "w1:p3.term_65d0031602b712"),
+			&herdrtest.Error{Code: "tab_not_found", Message: "x"}, ErrTargetMissing, "tab.close", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			world.mu.Lock()

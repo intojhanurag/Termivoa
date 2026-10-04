@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
-import { CHANGED, closeWorktreesFirst, ItemMenu, itemRequest, manageStep, StartButton, WorkspaceList, type ManageNote } from './ProviderManage';
+import { CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, ItemMenu, itemRequest, LAST_TAB, manageStep, StartButton, WorkspaceList, type ManageNote } from './ProviderManage';
 import { group, item, mac, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -19,6 +19,26 @@ describe('one manage action', () => {
     expect(itemRequest('newTab', linked)).toEqual({ action: 'newTab', itemId: 'w8' });
     expect(itemRequest('closeItem', linked)).toEqual({ action: 'closeItem', itemId: 'w8', name: 'silver-meadow' });
     expect(itemRequest('removeItem', linked)).toEqual({ action: 'removeItem', itemId: 'w8', name: 'silver-meadow' });
+  });
+
+  it('sends the item and the terminal for Close tab, and no name', () => {
+    expect(itemRequest({ closeTab: 'w8:p1.t' }, linked)).toEqual({ action: 'closeTab', itemId: 'w8', targetId: 'w8:p1.t' });
+  });
+
+  it('reads the list again after a tab closed, and is done', async () => {
+    const reload = vi.fn(async () => undefined);
+    await expect(manageStep(itemRequest({ closeTab: 'w8:p1.t' }, linked), answer({ itemId: 'w8' }), reload, words)).resolves.toEqual({ kind: 'done' });
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the last tab in its own words (nothing changed, nothing read); a terminal that left is "the list changed"', async () => {
+    const reload = vi.fn(async () => undefined);
+    await expect(manageStep(itemRequest({ closeTab: 'w8:p1.t' }, linked), refuse('operation_conflict', 409), reload, words))
+      .resolves.toEqual({ kind: 'note', note: { kind: 'error', text: 'This is the workspace\'s last tab. Close the workspace.' } });
+    expect(LAST_TAB).toBe('This is the workspace\'s last tab. Close the workspace.');
+    expect(reload).not.toHaveBeenCalled();
+    await expect(manageStep(itemRequest({ closeTab: 'w8:p1.t' }, linked), refuse('session_missing', 404), reload, words)).resolves.toEqual({ kind: 'changed' });
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it('opens a new terminal as a tap does; the caller reads the list with the move', async () => {
@@ -66,6 +86,21 @@ describe('one manage action', () => {
     expect(closeWorktreesFirst(shop, linked)).toBe(false);
     expect(closeWorktreesFirst(group('ws-w5', 'notes', [main]), main)).toBe(false);
   });
+
+  it('follows the host\'s rule: two main checkouts close; a full group (64 items, the list may be cut) blocks a main checkout only', () => {
+    const mains = (count: number) => Array.from({ length: count }, (_, index) => item(`m${index}`, 'main', []));
+    expect(closeWorktreesFirst(group('g1', 'shop', mains(2)), main)).toBe(false);
+    expect(closeWorktreesFirst(group('g1', 'shop', mains(63)), main)).toBe(false);
+    expect(closeWorktreesFirst(group('g1', 'shop', mains(64)), main)).toBe(true);
+    expect(closeWorktreesFirst(group('g1', 'shop', mains(64)), linked)).toBe(false);
+  });
+
+  it('takes no confirm tap for 400 ms after the confirmation shows (a double tap on the menu)', () => {
+    expect(CONFIRM_AFTER_MS).toBe(400);
+    expect(confirmReady(1_000, 1_000)).toBe(false);
+    expect(confirmReady(1_000, 1_399)).toBe(false);
+    expect(confirmReady(1_000, 1_400)).toBe(true);
+  });
 });
 
 describe('the item menu', () => {
@@ -110,11 +145,60 @@ describe('the item menu', () => {
     expect(page).not.toContain('New tab');
   });
 
+  it('puts Cancel first in every confirmation, and gives the confirmation (not a button) the focus target', () => {
+    for (const mode of ['close', 'remove', { closeTab: 'w8:p1.t' }] as const) {
+      const page = menu({ mode });
+      expect(page).toContain('<div role="alertdialog" aria-labelledby="manage-confirm" tabindex="-1" class="confirm stack">');
+      expect(page).toMatch(/<div class="row confirm-pair"><button type="button">Cancel<\/button><button type="button" class="danger">/u);
+      expect(page.match(/<button/gu)).toHaveLength(3);
+    }
+  });
+
   it('asks before a remove, and says that ignored files go and the branch stays', () => {
     const page = menu({ mode: 'remove' });
     expect(page).toContain('<p id="manage-confirm">Remove the worktree <bdi>silver-meadow</bdi>? Its folder is deleted, also files that git ignores (such as .env). The branch stays.</p>');
     expect(page).toContain('Remove worktree');
     expect(page).toContain('>Cancel</button>');
+  });
+
+  describe('Tabs (Close tab)', () => {
+    const three = shopGroups()[0]!.items[0]!;
+
+    it('lists each terminal by its label, with its agent when it has one, names isolated', () => {
+      const page = menu({ item: three });
+      expect(page).toContain('<h3 id="item-tabs" class="caps">Tabs</h3>');
+      expect(page).toContain('<span class="tab-row-name"><bdi>1</bdi> · <bdi>claude</bdi></span>');
+      expect(page).toContain('<span class="tab-row-name"><bdi>2</bdi> · <bdi>codex</bdi></span>');
+      expect(page).toContain('<span class="tab-row-name"><bdi>logs</bdi></span>');
+      expect(page.match(/>Close tab<\/button>/gu)).toHaveLength(3);
+      expect(page).not.toContain('Close the workspace to end its last tab.');
+      // Under New tab, above Close workspace.
+      expect(page.indexOf('New tab')).toBeLessThan(page.indexOf('item-tabs'));
+      expect(page.indexOf('item-tabs')).toBeLessThan(page.indexOf('Close workspace'));
+    });
+
+    it('has no Close tab for an item with one terminal, and says what to do', () => {
+      const page = menu();
+      expect(page).toContain('<span class="tab-row-name"><bdi>1</bdi></span>');
+      expect(page).not.toContain('Close tab');
+      expect(page).toContain('<p class="hint-text">Close the workspace to end its last tab.</p>');
+      expect(menu({ item: item('w5', 'notes', []) })).toContain('Close the workspace to end its last tab.');
+    });
+
+    it('asks before a tab closes, by its label; busy says Closing…', () => {
+      const page = menu({ item: three, mode: { closeTab: 'w1:p3.term_a3' } });
+      expect(page).toContain('<p id="manage-confirm">Close tab <bdi>logs</bdi>? Its terminals end.</p>');
+      expect(page).toContain('>Close tab</span>');
+      expect(page).not.toContain('New tab');
+      const closing = menu({ item: three, mode: { closeTab: 'w1:p3.term_a3' }, busy: 'closeTab' });
+      expect(closing).toContain('Closing…');
+      expect(closing.match(/disabled=""/gu)).toHaveLength(3);
+    });
+
+    it('turns every Close tab off while another action runs', () => {
+      // Close (the header), New tab, three Close tab, Close workspace.
+      expect(menu({ item: three, busy: 'newTab' }).match(/disabled=""/gu)).toHaveLength(6);
+    });
   });
 
   it('shows one action busy and every other button off, so a second tap sends nothing', () => {

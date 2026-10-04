@@ -399,6 +399,18 @@ button.item-menu:last-child { margin-right: -12px; }
 .menu-list .btn-swap { max-width: 100%; overflow-wrap: anywhere; }
 .menu-list .btn-swap > * { justify-content: flex-start; min-width: 0; }
 .menu-list .hint-text { margin: 0; padding: 8px 4px; }
+/* The item menu and its confirmation take focus from the app, never from a tap: no ring. */
+.item-menu-body:focus, .confirm:focus { outline: none; }
+/* Cancel and the danger button, one half each: Cancel is under the left of the menu row that was tapped. */
+.confirm-pair { flex-wrap: nowrap; }
+.confirm-pair > button { flex: 1; min-width: 0; padding: 0 10px; }
+/* An item's tabs (Close tab): a long list scrolls here, so the rows under it stay in view; a long label wraps. */
+.tab-rows { display: flex; flex-direction: column; gap: 4px; padding: 0 4px; }
+.tab-rows ul { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
+.tab-rows li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--line); }
+.tab-row-name { flex: 1; min-width: 0; font-family: var(--mono); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.tab-rows li button { flex-shrink: 0; }
+.tab-rows .hint-text { margin: 0; padding: 8px 0; }
 .create-title h2 { overflow-wrap: anywhere; }
 .provider-head { display: flex; align-items: center; gap: 8px; padding: 18px 0 8px; border-bottom: 1px solid var(--line); }
 .provider-head-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

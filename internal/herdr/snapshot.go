@@ -117,6 +117,7 @@ type target struct {
 	canOpen        bool
 	group, item    string // cleaned names
 	directory      string // checkout path (host only)
+	tab            string // herdr's tab ID (host only): closeTab
 }
 
 // groupRef is the host-only view of one group: what Create needs.
@@ -248,7 +249,7 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 					live[wire.ID] = struct{}{} // the agent record names its terminal itself
 					result.targets[wire.ID] = target{
 						pane: agent.PaneID, terminal: agent.TerminalID, agent: true, kind: kind, state: wire.State,
-						canOpen: true, group: build.group.Name, item: item.Name, directory: directory,
+						canOpen: true, group: build.group.Name, item: item.Name, directory: directory, tab: tab.ID,
 					}
 				}
 			}
@@ -265,7 +266,7 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 					tabTargets = append(tabTargets, wire)
 					result.targets[wire.ID] = target{
 						pane: pane, terminal: terminal, state: stateNone, canOpen: attachAny,
-						group: build.group.Name, item: item.Name, directory: directory,
+						group: build.group.Name, item: item.Name, directory: directory, tab: tab.ID,
 					}
 				}
 			}

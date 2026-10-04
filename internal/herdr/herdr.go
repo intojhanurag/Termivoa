@@ -127,6 +127,7 @@ type Provider struct {
 	// snapshotVersion is the herdr version of the last applied snapshot; a new one means herdr was updated.
 	snapshotVersion string
 	logged          string // the socket refusal last logged
+	refusing        string // the socket refusal that the next setState publishes
 	tracks          map[string]*track
 	since           map[string]stateStamp
 }
@@ -313,8 +314,9 @@ func (provider *Provider) setState(state protocol.HTTPProviderState, version str
 		current.canInstall = provider.binary == "" && !provider.refusedAny
 		current.state, current.version, current.protocol = state, version, protocolNumber
 		current.response = emptyResponse(state)
-		current.targets, current.groups, current.kinds, current.refused = nil, nil, nil, ""
+		current.targets, current.groups, current.kinds, current.refused = nil, nil, nil, provider.refusing
 	})
+	provider.refusing = ""
 }
 
 func emptyResponse(state protocol.HTTPProviderState) protocol.HTTPProviderSnapshotResponse {
@@ -338,6 +340,11 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 		return pollEvery
 	}
 	if provider.config.Enabled != nil && !provider.config.Enabled() {
+		// notInstalled wins over off: a herdr that was removed while off must show Install.
+		if !provider.findBinaryAgain() {
+			provider.binary, provider.lookupAt = "", time.Time{}
+			return 0
+		}
 		provider.setState(protocol.Off, "", 0)
 		return pollEvery
 	}
@@ -363,7 +370,7 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 		}
 		fallthrough
 	default:
-		provider.notRunning(now)
+		provider.notRunning(now, err)
 		return pollEvery
 	}
 	// A herdr that was updated and restarted between two polls never fails a call: find it by its version.
@@ -418,8 +425,7 @@ func (provider *Provider) settle(ctx context.Context, timeout time.Duration, tar
 func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 	pong, err := provider.ping(ctx)
 	if err != nil {
-		provider.notRunning(now)
-		provider.refuse(err)
+		provider.notRunning(now, err)
 		return false
 	}
 	provider.logged = ""
@@ -441,7 +447,10 @@ func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 
 // notRunning also rechecks the binary, so an uninstalled herdr turns to
 // notInstalled in the settings.
-func (provider *Provider) notRunning(now time.Time) {
+func (provider *Provider) notRunning(now time.Time, err error) {
+	// The state and the socket refusal go out in one publish: canStart must
+	// never be true, not for one read, while the socket is refused.
+	provider.refusing = provider.refusal(err)
 	if !provider.findBinaryAgain() {
 		provider.binary, provider.lookupAt = provider.findBinary(), now.Add(lookupEvery)
 	}
@@ -453,19 +462,19 @@ func (provider *Provider) notRunning(now time.Time) {
 	provider.setState(protocol.NotRunning, "", 0)
 }
 
-// refuse publishes why the socket was refused, if it was, and logs each new
+// refusal returns why the socket was refused, if it was, and logs each new
 // reason once (it is not logged again on every 5 s retry).
-func (provider *Provider) refuse(err error) {
+func (provider *Provider) refusal(err error) string {
 	var refused *socketRefused
 	if !errors.As(err, &refused) {
 		provider.logged = ""
-		return
+		return ""
 	}
 	if refused.reason != provider.logged {
 		provider.logged = refused.reason
 		provider.logf("herdr: %s is not used: %s", provider.config.socketPath(), refused.reason)
 	}
-	provider.publish(func(current *view) { current.refused = refused.reason })
+	return refused.reason
 }
 
 func timedOut(err error) bool {

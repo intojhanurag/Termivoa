@@ -72,6 +72,10 @@ export const shown = (entry: Pick<ProviderEntry, 'info' | 'status'>): boolean =>
 /** A provider that is not installed has no list to read: only its card in Settings → Integrations. */
 export const polled = (source: Pick<ProviderSource, 'info'>): boolean => source.info.state !== 'notInstalled';
 
+/** The computers with a provider that is not installed: nothing polls it, so Settings reads their settings when it opens. */
+export const unpolledOrigins = (entries: ReadonlyArray<ComputerEntry>): string[] =>
+  [...new Set(providerSources(entries).filter((source) => !polled(source)).map((source) => source.computer.origin))];
+
 /**
  * What **Install** types into a new session, by provider ID (docs/herdr-manage.md, A7). Constants of the app:
  * nothing from a computer or from a provider is ever put into them. Typed, not run: the user presses Enter.

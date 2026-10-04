@@ -236,6 +236,7 @@ func serve(folder string) error {
 	server.Handle("workspace.close", live.workspaceClose)
 	server.Handle("worktree.remove", live.worktreeRemove)
 	server.Handle("tab.create", live.tabCreate)
+	server.Handle("tab.close", live.tabClose)
 	server.Handle("workspace.create", live.workspaceCreate)
 	control := filepath.Join(folder, "control.sock")
 	_ = os.Remove(control)
@@ -546,6 +547,33 @@ func (live *world) tabCreate(params json.RawMessage) (any, *herdrtest.Error) {
 	live.publish()
 	logf(live.folder, "tab.create %s", request.WorkspaceID)
 	return map[string]any{"type": "tab_created", "root_pane": pane}, nil
+}
+
+// tabClose ends a tab and its panes; with the last tab the workspace goes too
+// (real herdr 0.8.2 and 0.9.3).
+func (live *world) tabClose(params json.RawMessage) (any, *herdrtest.Error) {
+	request, failure := decode[struct {
+		TabID string `json:"tab_id"`
+	}](params)
+	if failure != nil {
+		return nil, failure
+	}
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	tab := live.find("tabs", "tab_id", request.TabID)
+	if tab == nil {
+		return nil, &herdrtest.Error{Code: "tab_not_found", Message: "tab " + request.TabID + " not found"}
+	}
+	workspace := fmt.Sprint(tab["workspace_id"])
+	for _, name := range []string{"tabs", "panes", "layouts", "agents"} {
+		live.remove(name, "tab_id", request.TabID)
+	}
+	if live.find("tabs", "workspace_id", workspace) == nil {
+		live.closeWorkspace(workspace)
+	}
+	live.publish()
+	logf(live.folder, "tab.close %s", request.TabID)
+	return map[string]any{"type": "ok"}, nil
 }
 
 func (live *world) workspaceCreate(params json.RawMessage) (any, *herdrtest.Error) {

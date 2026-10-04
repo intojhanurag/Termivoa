@@ -298,6 +298,7 @@ computer lists.
   | `closeItem` | `itemId`, `name` | Closes the workspace: its terminals end, no file is deleted. Refused for a main checkout while a linked worktree of its group is open. |
   | `removeItem` | `itemId`, `name` | Removes a linked worktree (`linked`), never with force: the workspace closes and its folder is deleted, also files that git ignores; the branch stays. |
   | `newTab` | `itemId` | Makes a tab in the item (at most 32 terminals in an item). |
+  | `closeTab` | `itemId`, `targetId` | Closes the tab that holds that terminal of the item (all terminals of the tab). Refused for the item's last tab. |
   | `newWorkspace` | `projectId` | Makes a workspace in that Termivoa project's folder, named after the project (at most 64 groups). The phone never sends a path. |
   | `startServer` | – | Starts herdr's server; only with `state: notRunning` and `canStart`. The host waits up to 5 s for `ready`. |
 
@@ -330,7 +331,7 @@ not installed on this computer") on every provider route. `manage` uses:
 | A bad body or a field that does not belong to the action (gateway); `removeItem` on an item that is not `linked`; `startServer` when the state is not `notRunning` or without `canStart`; `newTab` in an item with 32 terminals; `newWorkspace` with 64 groups | `invalid_request` | 400 |
 | The provider is off or not installed; an item action while not `ready`; the started server did not come up in 5 s; herdr refused or failed in another way (not `removeItem`) | `host_unavailable` | 503 |
 | The item is not in a fresh snapshot | `session_missing` | 404 |
-| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open | `operation_conflict` | 409 |
+| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open; `closeTab` on the item's last tab | `operation_conflict` | 409 |
 | The project is unknown, or its folder is gone or not this user's | `project_missing` | 404 |
 | More than 30 per minute from this device; another manage or create is running | `limit_exceeded` | 429 |
 | herdr refused or failed a `removeItem` in another way | `worktree_failed` ("herdr could not remove the worktree.") | 422 |

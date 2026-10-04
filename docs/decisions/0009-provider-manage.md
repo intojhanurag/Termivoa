@@ -13,8 +13,8 @@ Lab facts (isolated herdr 0.8.2; design, section 1): `workspace.close` deletes n
 
 ## Decision
 
-1. **One new mutation route**, `POST /api/v1/providers/{provider}/manage`, with an `action` word (`closeItem`, `removeItem`, `newTab`, `newWorkspace`, `startServer`), an item ID with the name the user confirmed, or a project ID, and nothing else from the phone. Protocol revision 5.
-2. **The phone never forces, and a close ends one workspace.** `removeItem` is `worktree.remove` without force: uncommitted work answers `problem: uncommitted`. `closeItem` deletes no file and is refused for a main checkout while its worktrees are open. The host checks the confirmed name on a fresh snapshot.
+1. **One new mutation route**, `POST /api/v1/providers/{provider}/manage`, with an `action` word (`closeItem`, `removeItem`, `newTab`, `closeTab`, `newWorkspace`, `startServer`), an item ID with the name the user confirmed, or a project ID, and nothing else from the phone. Protocol revision 5.
+2. **The phone never forces, and a close ends one workspace.** `removeItem` is `worktree.remove` without force: uncommitted work answers `problem: uncommitted`. `closeItem` deletes no file and is refused for a main checkout while its worktrees are open. `closeTab` is refused for a workspace's last tab, because herdr would close the workspace. The host checks the confirmed name on a fresh snapshot.
 3. **The host finds git projects itself** (a `.git` entry at or above the workspace's folder, after an owner check, with a time limit), so **+** shows before herdr's first worktree.
 4. **New workspace takes a Termivoa project ID**, never a path; the host checks the folder and its owner right before the call.
 5. **The broker downloads nothing.** **Install herdr** opens a Termivoa session with herdr's official install command typed and not run; the user presses Enter.

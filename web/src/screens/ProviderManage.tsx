@@ -13,7 +13,7 @@ import { Button, Notice } from './ui';
 
 /*
  * Manage a provider from the phone (docs/herdr-manage.md, sections 3 and 6):
- * the item menu (New tab, Close workspace, Remove worktree), New workspace and
+ * the item menu (New tab, Close tab, Close workspace, Remove worktree), New workspace and
  * Start. The app asks before anything ends or is deleted; the request carries
  * the name the user confirmed, and the host checks it on a fresh list. A
  * failure shows the computer's own fixed words (a peer's text is never shown:
@@ -22,6 +22,10 @@ import { Button, Notice } from './ui';
 
 /** Said when the item left or was renamed between the list and the action: nothing changed. */
 export const CHANGED = 'The list changed. Look again, then try again.';
+/** Said when Close tab is refused for an item's only tab: the provider would close the whole workspace with it. */
+export const LAST_TAB = 'This is the workspace\'s last tab. Close the workspace.';
+/** Shown in place of the Close tab buttons while an item has one terminal. */
+export const LAST_TAB_HINT = 'Close the workspace to end its last tab.';
 
 type Manage = (body: HTTPProviderManageRequest) => Promise<HTTPProviderManageResponse>;
 
@@ -54,6 +58,8 @@ export async function manageStep(
   try {
     answer = await manage(body);
   } catch (error) {
+    // Nothing changed: the tab is the item's last one.
+    if (error instanceof ApiError && error.code === 'operation_conflict' && body.action === 'closeTab') return { kind: 'note', note: { kind: 'error', text: LAST_TAB } };
     if (error instanceof ApiError && (error.code === 'operation_conflict' || error.code === 'session_missing')) {
       await reload();
       return { kind: 'changed' };
@@ -68,14 +74,29 @@ export async function manageStep(
   return { kind: 'done' };
 }
 
-/** Close and remove carry the item's name as the user confirmed it. */
-export function itemRequest(action: 'newTab' | 'closeItem' | 'removeItem', item: Pick<HTTPProviderItem, 'id' | 'name'>): HTTPProviderManageRequest {
+/** Close tab names one of the item's terminals: its whole tab ends. */
+export interface CloseTab { readonly closeTab: string }
+type ItemAction = 'newTab' | 'closeItem' | 'removeItem' | CloseTab;
+
+/** Close and remove carry the item's name as the user confirmed it; Close tab carries the terminal. */
+export function itemRequest(action: ItemAction, item: Pick<HTTPProviderItem, 'id' | 'name'>): HTTPProviderManageRequest {
+  if (typeof action === 'object') return { action: 'closeTab', itemId: item.id, targetId: action.closeTab };
   return action === 'newTab' ? { action, itemId: item.id } : { action, itemId: item.id, name: item.name };
 }
 
-/** A main checkout whose project has an open linked worktree: herdr would close it too (or refuse), so the worktrees go first (the host's rule). */
+/** The most items a group lists; at this count the list may be cut, and a worktree may be out of sight. */
+const GROUP_ITEMS_MAX = 64;
+
+/**
+ * A main checkout whose project has an open linked worktree: herdr would close it too (or refuse), so the worktrees go
+ * first. The host's rule (docs/herdr-manage.md, section 13): also when the group is full, where a worktree may be cut off.
+ */
 export const closeWorktreesFirst = (group: Pick<HTTPProviderGroup, 'items'>, item: Pick<HTTPProviderItem, 'linked'>): boolean =>
-  item.linked !== true && group.items.some((other) => other.linked === true);
+  item.linked !== true && (group.items.length >= GROUP_ITEMS_MAX || group.items.some((other) => other.linked === true));
+
+/** A confirmation takes no tap for this long after it shows: the second tap of a double tap on the menu never confirms. */
+export const CONFIRM_AFTER_MS = 400;
+export const confirmReady = (shownAt: number, now: number): boolean => now - shownAt >= CONFIRM_AFTER_MS;
 
 /** One action at a time per sheet, also when two taps land before the re-render; an answer after the sheet left does nothing. */
 function useAction<Busy>() {
@@ -132,16 +153,17 @@ function Head({ id, caption, title, busy, onClose }: {
   );
 }
 
-export type ItemMenuMode = 'menu' | 'close' | 'remove' | 'changed';
-type ItemAction = 'newTab' | 'closeItem' | 'removeItem';
+export type ItemMenuMode = 'menu' | 'close' | 'remove' | 'changed' | CloseTab;
+/** The action that runs now. */
+type ItemBusy = 'newTab' | 'closeItem' | 'removeItem' | 'closeTab';
 
-/** The item menu and its two confirmations. State comes from props, so each state renders on its own. */
+/** The item menu and its confirmations. State comes from props, so each state renders on its own. */
 export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onAction, onClose }: {
   readonly entry: Pick<ProviderEntry, 'computer' | 'info'>;
   readonly group: HTTPProviderGroup;
   readonly item: HTTPProviderItem;
   readonly mode: ItemMenuMode;
-  readonly busy: ItemAction | undefined;
+  readonly busy: ItemBusy | undefined;
   readonly note: ManageNote | undefined;
   readonly onMode: (mode: ItemMenuMode) => void;
   readonly onAction: (action: ItemAction) => void;
@@ -150,8 +172,28 @@ export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onActio
   const { info, computer } = entry;
   const off = busy !== undefined;
   const first = closeWorktreesFirst(group, item);
+  const closing = typeof mode === 'object' ? item.targets.find((target) => target.id === mode.closeTab) : undefined;
+  // Focus stays in the sheet (Escape closes it) through every change: on the confirmation when one shows, never on its
+  // danger button (Enter must not confirm), else on the menu; again when a busy action ends and its button comes back.
+  const menu = useRef<HTMLDivElement>(null);
+  const confirmation = useRef<HTMLDivElement>(null);
+  const shownAt = useRef(0);
+  useEffect(() => { shownAt.current = Date.now(); }, [mode]);
+  useEffect(() => { if (!off) (confirmation.current ?? menu.current)?.focus(); }, [mode, off]);
+
+  // Cancel is first, where the finger is after a tap on a menu row; the danger button takes no tap at first (confirmReady).
+  const confirm = (question: ReactNode, action: ItemAction, label: string, busyLabel: string) => (
+    <div ref={confirmation} role="alertdialog" aria-labelledby="manage-confirm" tabIndex={-1} className="confirm stack">
+      <p id="manage-confirm">{question}</p>
+      <div className="row confirm-pair">
+        <button type="button" disabled={off} onClick={() => onMode('menu')}>Cancel</button>
+        <Button className="danger" busy={off} busyLabel={busyLabel} onClick={() => { if (confirmReady(shownAt.current, Date.now())) onAction(action); }}>{label}</Button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="stack">
+    <div ref={menu} tabIndex={-1} className="stack item-menu-body">
       <Head
         id="item-menu-title"
         caption={<><bdi>{info.name}</bdi>{group.name !== item.name && <> · <bdi>{group.name}</bdi></>} · on {computer.label}</>}
@@ -162,35 +204,39 @@ export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onActio
       {mode === 'changed' && <Notice tone="danger" role="alert" title={CHANGED} />}
       {mode !== 'changed' && note !== undefined && <NoteLine note={note} name={item.name} provider={info.name} />}
       {mode === 'menu' && (
-        <ul className="menu-list">
-          <li><Button busy={busy === 'newTab'} busyLabel="Opening…" disabled={off} onClick={() => onAction('newTab')}>New tab</Button></li>
-          <li>
-            <button type="button" className="danger" disabled={off || first} {...(first ? { 'aria-describedby': 'close-first' } : {})} onClick={() => onMode('close')}>Close workspace</button>
-            {first && <p id="close-first" className="hint-text">Close its worktrees first.</p>}
-          </li>
-          {item.linked === true && (
-            <li><button type="button" className="danger" disabled={off} onClick={() => onMode('remove')}>Remove worktree</button></li>
-          )}
-        </ul>
+        <>
+          <ul className="menu-list">
+            <li><Button busy={busy === 'newTab'} busyLabel="Opening…" disabled={off} onClick={() => onAction('newTab')}>New tab</Button></li>
+          </ul>
+          <section className="tab-rows" aria-labelledby="item-tabs">
+            <h3 id="item-tabs" className="caps">Tabs</h3>
+            <ul>
+              {item.targets.map((target) => (
+                <li key={target.id}>
+                  <span className="tab-row-name"><bdi>{target.label}</bdi>{target.agent !== undefined && <> · <bdi>{target.agent}</bdi></>}</span>
+                  {item.targets.length > 1 && <button type="button" className="link danger-text" disabled={off} onClick={() => onMode({ closeTab: target.id })}>Close tab</button>}
+                </li>
+              ))}
+            </ul>
+            {item.targets.length < 2 && <p className="hint-text">{LAST_TAB_HINT}</p>}
+          </section>
+          <ul className="menu-list">
+            <li>
+              <button type="button" className="danger" disabled={off || first} {...(first ? { 'aria-describedby': 'close-first' } : {})} onClick={() => onMode('close')}>Close workspace</button>
+              {first && <p id="close-first" className="hint-text">Close its worktrees first.</p>}
+            </li>
+            {item.linked === true && (
+              <li><button type="button" className="danger" disabled={off} onClick={() => onMode('remove')}>Remove worktree</button></li>
+            )}
+          </ul>
+        </>
       )}
-      {mode === 'close' && (
-        <div role="alertdialog" aria-labelledby="manage-confirm" className="confirm stack">
-          <p id="manage-confirm">Close <bdi>{item.name}</bdi>? Its terminals end. Files stay.</p>
-          <div className="row">
-            <Button className="danger" busy={busy === 'closeItem'} busyLabel="Closing…" onClick={() => onAction('closeItem')}>Close workspace</Button>
-            <button type="button" disabled={off} onClick={() => onMode('menu')}>Cancel</button>
-          </div>
-        </div>
+      {mode === 'close' && confirm(<>Close <bdi>{item.name}</bdi>? Its terminals end. Files stay.</>, 'closeItem', 'Close workspace', 'Closing…')}
+      {mode === 'remove' && confirm(
+        <>Remove the worktree <bdi>{item.name}</bdi>? Its folder is deleted, also files that git ignores (such as .env). The branch stays.</>,
+        'removeItem', 'Remove worktree', 'Removing…',
       )}
-      {mode === 'remove' && (
-        <div role="alertdialog" aria-labelledby="manage-confirm" className="confirm stack">
-          <p id="manage-confirm">Remove the worktree <bdi>{item.name}</bdi>? Its folder is deleted, also files that git ignores (such as .env). The branch stays.</p>
-          <div className="row">
-            <Button className="danger" busy={busy === 'removeItem'} busyLabel="Removing…" onClick={() => onAction('removeItem')}>Remove worktree</Button>
-            <button type="button" disabled={off} onClick={() => onMode('menu')}>Cancel</button>
-          </div>
-        </div>
-      )}
+      {typeof mode === 'object' && confirm(<>Close tab <bdi>{closing?.label}</bdi>? Its terminals end.</>, mode, 'Close tab', 'Closing…')}
     </div>
   );
 }
@@ -210,13 +256,13 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onFailur
 }) {
   const [mode, setMode] = useState<ItemMenuMode>('menu');
   const [note, setNote] = useState<ManageNote>();
-  const { busy, running, run } = useAction<ItemAction>();
+  const { busy, running, run } = useAction<ItemBusy>();
   useReturnFocus();
   const close = () => { if (!running.current) onClose(); };
 
   function act(action: ItemAction) {
     setNote(undefined);
-    run(action, () => manageStep(itemRequest(action, item), manage, onReload, (error) => onFailure(error, entry.computer)), (step) => {
+    run(typeof action === 'object' ? 'closeTab' : action, () => manageStep(itemRequest(action, item), manage, onReload, (error) => onFailure(error, entry.computer)), (step) => {
       switch (step.kind) {
         case 'open': onOpened({ computer: entry.computer, provider: entry.info.id, targetId: step.targetId }); break;
         case 'done': onClose(); break;

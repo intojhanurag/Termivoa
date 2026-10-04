@@ -171,6 +171,16 @@ export async function startInstall(
   return hosted((await create({ operationId: crypto.randomUUID(), projectId: project.id, shellProfileId: shell.id })).session, computer);
 }
 
+/**
+ * Install, start to end. The new session opens in Live only while Settings still shows (`shown`): a user who left during
+ * the request stays where they are, and finds the session in the list. False: the computer has no project or shell.
+ */
+export async function installAndOpen(start: () => Promise<HostedSession | undefined>, shown: () => boolean, open: (session: HostedSession) => void): Promise<boolean> {
+  const session = await start();
+  if (session !== undefined && shown()) open(session);
+  return session !== undefined;
+}
+
 /** The body of a card whose provider is not installed: no switches; Install where the official installer can work, else `pterm doctor`. */
 export function InstallCard({ source, command, help, busy, error, onInstall, onCheck }: {
   readonly source: ProviderSource;
@@ -240,6 +250,11 @@ export function IntegrationRow({
   const [needsProject, setNeedsProject] = useState(false);
   // One session per tap, even if two taps land before the re-render.
   const running = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   function act(what: 'install' | 'check', work: () => Promise<string | undefined>) {
     if (running.current) return;
@@ -256,9 +271,7 @@ export function IntegrationRow({
   const install = () => act('install', async () => {
     if (settings === undefined || command === undefined) return undefined;
     try {
-      const session = await startInstall(computer, settings);
-      setNeedsProject(session === undefined);
-      if (session !== undefined) onInstall?.(session, command);
+      setNeedsProject(!await installAndOpen(() => startInstall(computer, settings), () => mounted.current, (session) => onInstall?.(session, command)));
       return undefined;
     } catch (failure) {
       return onFailure(failure, computer);

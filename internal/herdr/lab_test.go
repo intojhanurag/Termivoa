@@ -296,8 +296,30 @@ func (lab *lab) manage(provider *Provider) {
 			t.Fatalf("workspaces stayed: %+v", provider.Snapshot().Groups)
 		}
 		for _, found := range provider.Snapshot().Groups {
-			item := found.Items[len(found.Items)-1]
-			manage(protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &item.ID, Name: &item.Name}, Project{})
+			// Last item first. herdr 0.9.3 refuses to close the workspace that owns a repository's
+			// worktrees while another workspace of that repository is open: then the other one goes first.
+			closed := false
+			for index := len(found.Items) - 1; index >= 0 && !closed; index-- {
+				item := found.Items[index]
+				_, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &item.ID, Name: &item.Name}, Project{})
+				t.Logf("close %s %q (linked %v, %d items in the group): %v", item.ID, item.Name, item.Linked != nil, len(found.Items), err)
+				if closed = err == nil; !closed && !errors.Is(err, ErrGroupOpen) {
+					t.Fatalf("closeItem: %v", err)
+				}
+			}
+			if !closed {
+				// herdr 0.9.3: two workspaces at one repository's main checkout close only as a group
+				// (close_group), which Termivoa never sends (a close ends one workspace). The lab does,
+				// to go on; docs/herdr-manage.md, section 13.
+				if len(found.Items) < 2 || found.Items[0].Linked != nil || found.Items[1].Linked != nil {
+					t.Fatalf("no workspace of group %s can be closed: %+v", found.ID, found.Items)
+				}
+				if err := provider.call(ctx, manageTimeouts.call, "workspace.close",
+					map[string]any{"workspace_id": found.Items[0].ID, "close_group": true}, &struct{}{}); err != nil {
+					t.Fatalf("close_group: %v", err)
+				}
+				t.Logf("herdr closes group %s only as a group", found.ID)
+			}
 		}
 		time.Sleep(300 * time.Millisecond)
 		provider.Poll()

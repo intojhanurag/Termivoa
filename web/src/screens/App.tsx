@@ -20,7 +20,7 @@ import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { GONE, type ProviderTap } from './Herdr';
-import { staleSettings, useProviders } from './providers';
+import { staleSettings, unpolledOrigins, useProviders } from './providers';
 import { Sessions } from './Sessions';
 import { Setup } from './Setup';
 import { Banner } from './ui';
@@ -293,6 +293,13 @@ export async function startLike(
     ? { name: 'live', session }
     : { name: 'live', session, runFirst: { command: runFirst, settled: false } };
 }
+
+/** Install's session in Live with the command typed, not run: the user reads it and presses Enter (docs/herdr-manage.md, A7). */
+export const installView = (session: HostedSession, command: string): View =>
+  ({ name: 'live', session, runFirst: { command, settled: false, typeOnly: true } });
+
+/** A not-installed provider is read when Settings opens, and once more after this: the first read makes the computer look, the second shows what it found. */
+export const INSTALL_RECHECK_MS = 2_500;
 
 /** The port of a preview address's `?port=`, or undefined unless it is a plain valid port number. */
 export function previewPortParam(search: string): number | undefined {
@@ -653,8 +660,18 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   // own read says another state, read that computer's settings again, once per change.
   const staleProviders = staleSettings(providers.entries).join('\n');
   useEffect(() => {
-    for (const line of staleProviders === '' ? [] : staleProviders.split('\n')) void all.reload(line.split(' ')[0]).catch(() => undefined);
+    for (const line of staleProviders === '' ? [] : staleProviders.split('\n')) void all.reload(line.split(' ')[0], true).catch(() => undefined);
   }, [staleProviders, all.reload]);
+  // A provider that is not installed is not polled: each time Settings opens, read those computers' settings (quietly), so a new install shows.
+  const entriesRef = useRef(all.entries);
+  entriesRef.current = all.entries;
+  useEffect(() => {
+    if (view.name !== 'settings') return undefined;
+    const read = () => { for (const origin of unpolledOrigins(entriesRef.current)) void all.reload(origin, true).catch(() => undefined); };
+    read();
+    const again = setTimeout(read, INSTALL_RECHECK_MS);
+    return () => clearTimeout(again);
+  }, [view.name, all.reload]);
   // Push from peers follows the list: at start, when a computer is added or
   // removed (log out included), and when one stops or starts being usable
   // (can't reach, pair again, outdated), so a peer that was offline when push
@@ -1126,8 +1143,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onProviderReload={providers.reload}
               onInstall={(session, command) => {
                 void refresh(session.computer.origin);
-                // Typed, not run: the user reads the command and presses Enter (docs/herdr-manage.md, A7).
-                navigate({ name: 'live', session, runFirst: { command, settled: false, typeOnly: true } });
+                navigate(installView(session, command));
               }}
               onComputersChanged={reloadComputers}
             />

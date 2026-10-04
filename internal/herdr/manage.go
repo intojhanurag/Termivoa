@@ -22,6 +22,7 @@ var (
 	ErrRenamed      = errors.New("herdr: the item has another name now")
 	ErrGroupOpen    = errors.New("herdr: a linked worktree of this main checkout is open")
 	ErrNotLinked    = errors.New("herdr: the item is not a linked worktree")
+	ErrLastTab      = errors.New("herdr: the item's last tab cannot be closed")
 	ErrFull         = errors.New("herdr: the terminal or group limit is reached")
 	ErrNotStartable = errors.New("herdr: the server cannot be started now")
 	ErrNoServer     = errors.New("herdr: the server did not come up")
@@ -114,8 +115,27 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 			return response, ErrFull
 		}
 		method, params["focus"] = "tab.create", false
+	case protocol.CloseTab:
+		// The tab of one of this item's terminals. herdr closes the whole workspace with its last
+		// tab, so that one is refused: Close workspace says what it ends.
+		found, tabs := "", map[string]bool{}
+		for _, wire := range item.Targets {
+			tab := fresh.targets[wire.ID].tab
+			tabs[tab] = true
+			if request.TargetID != nil && wire.ID == *request.TargetID {
+				found = tab
+			}
+		}
+		if found == "" {
+			return response, ErrTargetMissing
+		}
+		if len(tabs) < 2 {
+			return response, ErrLastTab
+		}
+		method, params = "tab.close", map[string]any{"tab_id": found}
 	case protocol.NewWorkspace:
-		if len(fresh.response.Groups) >= maxGroups {
+		// A cut list hides groups: the count is then at least the limit.
+		if len(fresh.response.Groups) >= maxGroups || fresh.response.Truncated != nil {
 			return response, ErrFull
 		}
 		if !filepath.IsAbs(project.Folder) { // herdr would pick a folder of its own
@@ -140,10 +160,13 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 		provider.Poll()
 		switch code {
 		case "dirty_worktree_requires_force":
+			if request.Action != protocol.RemoveItem {
+				return response, ErrManage
+			}
 			problem := protocol.Uncommitted
 			response.Problem = &problem
 			return response, nil
-		case "workspace_not_found":
+		case "workspace_not_found", "tab_not_found":
 			return response, ErrTargetMissing
 		case "workspace_group_close_required":
 			return response, ErrGroupOpen

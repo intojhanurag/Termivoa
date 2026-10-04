@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { Computer } from '../computers';
 import type { HTTPSessionCreateRequest, HTTPSettingsResponse } from '../generated/protocol';
-import type { ComputerEntry } from './allSessions';
+import type { ComputerEntry, HostedSession } from './allSessions';
 import * as fixtures from './providerFixtures';
-import { InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, startInstall } from './Settings';
+import { InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, startInstall, installAndOpen } from './Settings';
 
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },
@@ -248,6 +248,18 @@ describe('Settings → Integrations', () => {
       expect(await startInstall(vps, { projects: [], shellProfiles }, create)).toBeUndefined();
       expect(await startInstall(vps, { projects, shellProfiles: [] }, create)).toBeUndefined();
       expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the new session only while Settings still shows; a user who left is not moved to Live', async () => {
+      const session = { id: 'new', computer: vps } as HostedSession;
+      const open = vi.fn();
+      expect(await installAndOpen(async () => session, () => true, open)).toBe(true);
+      expect(open).toHaveBeenCalledExactlyOnceWith(session);
+      expect(await installAndOpen(async () => session, () => false, open)).toBe(true);
+      expect(open).toHaveBeenCalledTimes(1);
+      // No project or shell: nothing opens, and the card shows New session's help.
+      expect(await installAndOpen(async () => undefined, () => true, open)).toBe(false);
+      expect(open).toHaveBeenCalledTimes(1);
     });
 
     it('has Start herdr on a card that is not running, only where the computer says it can start it', () => {
