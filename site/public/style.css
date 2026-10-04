@@ -193,6 +193,36 @@ h1 { display: inline-flex; flex-direction: column; gap: 6px; font-weight: 400; }
   background: var(--text); color: var(--ground); font-family: system-ui, -apple-system, sans-serif; font-size: 15px; font-weight: 600; line-height: 18px;
 }
 
+/* Providers: the same copy and card as Setup; the card shows the app's herdr list, and below it one tile for each provider. */
+.providers { padding-bottom: 140px; }
+.providers .setup { padding-bottom: 110px; }
+.provider-card { width: 520px; gap: 0; }
+.provider-list { display: flex; flex-direction: column; gap: 14px; }
+.provider-list .caps { font-size: 12px; letter-spacing: 0.12em; line-height: 16px; }
+.provider-project { display: flex; align-items: center; gap: 12px; padding: 6px 0 12px; border-bottom: 1px solid var(--line); }
+.provider-project b { flex: 1; font-family: system-ui, -apple-system, sans-serif; font-size: 19px; line-height: 24px; font-weight: 600; }
+.provider-plus { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--line-strong); border-radius: 16px; font-family: system-ui, -apple-system, sans-serif; font-size: 18px; line-height: 20px; }
+.provider-row { display: flex; align-items: center; gap: 12px; padding-left: 20px; }
+.provider-row > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-family: var(--mono); }
+.provider-row b { font-size: 15px; line-height: 20px; font-weight: 400; overflow-wrap: anywhere; }
+.provider-row > div span { font-size: 12px; line-height: 16px; color: var(--muted); }
+.provider-list .provider-done { color: var(--text); }
+.provider-list .amber-text { color: var(--amber); }
+.provider-push { margin-top: 8px; padding: 12px 16px; border: 1px solid var(--line-strong); border-radius: 16px; display: flex; flex-direction: column; gap: 3px; }
+.provider-push p:last-child { font-family: system-ui, -apple-system, sans-serif; font-size: 16px; line-height: 22px; font-weight: 600; }
+.provider-tiles-head { padding-bottom: 20px; }
+.provider-tiles { display: flex; flex-wrap: wrap; gap: 20px; padding: 0; margin: 0; list-style: none; }
+.provider-tile { display: flex; align-items: center; gap: 18px; width: 360px; max-width: 100%; padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); color: var(--text); text-decoration: none; transition: border-color 0.15s ease; }
+.provider-tiles li { max-width: 100%; }
+a.provider-tile:hover, a.provider-tile:focus-visible { border-color: var(--signal); }
+.provider-tile img, .provider-slot { width: 64px; height: 64px; border-radius: 14px; flex-shrink: 0; }
+.provider-tile > span:not(.provider-slot):not(.provider-arrow) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.provider-tile b { font-family: system-ui, -apple-system, sans-serif; font-size: 20px; line-height: 26px; font-weight: 600; }
+.provider-tile b + span { font-size: 17px; line-height: 22px; color: var(--muted); }
+.provider-arrow { font-family: system-ui, -apple-system, sans-serif; font-size: 22px; color: var(--signal); }
+.provider-tile.later { background: none; border: 1px dashed var(--line-strong); color: var(--muted); }
+.provider-slot { display: inline-flex; align-items: center; justify-content: center; border: 1px dashed var(--line-strong); font-family: system-ui, -apple-system, sans-serif; font-size: 26px; }
+
 /* Closing and footer */
 .closing { display: flex; flex-direction: column; align-items: center; gap: 36px; padding-block: 40px 120px; text-align: center; }
 .closing > .hand { font-size: 40px; line-height: 52px; max-width: 720px; }

@@ -49,6 +49,31 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Landing page: Providers section (2026-10-04, branch `feat/landing-providers`)
+
+- **What.** `site/public/index.html` gets a **Providers** section after
+  "More computers?": the copy "Your agent workspace, in your pocket.", a
+  card with the app's herdr list (demo names), and one tile for each
+  provider. The herdr tile shows herdr's logo (`site/public/assets/herdr.png`,
+  128 px, from `herdr.dev/assets/logo.png`) and opens `/docs/guides/herdr/`;
+  a dashed tile says "More later" and names no tool. A **Providers** link is
+  in the top navigation. Designed in Paper first (file `termivoa`, board
+  "Landing — section: herdr (for owner review)"); the owner approved it
+  ("yes ship it"), with the logo.
+- **Checks.** The section rendered in headless Chrome at 1440 px and in a
+  390 px frame: nothing wider than the page. `cd site && npx astro build`
+  with valid links.
+- **Open.** The logo belongs to the herdr project; the owner tells its
+  author that Termivoa shows it.
+- **herdr merge record (#185, `97bc251`).** Hosted CI is off
+  (`CI disabled_manually`), so the ten required checks cannot run. As for
+  #27 and #28, "include administrators" was turned off only for the squash
+  merge and turned back on right after (checked: on). A fifth review read
+  the fix commit before the merge (design section 20). After the merge the
+  site was deployed (`vercel deploy --prod`), and `pterm` build
+  `0.1.0-beta.3+97bc251fa51f` was installed on the owner's Mac and VPS
+  (`pterm doctor`: no problems on both; protocol revision 4).
+
 ### herdr on your phone: pre-push review and fixes (2026-10-04, branch `feat/herdr`)
 
 - **What.** Four independent reviews of the built branch before its first

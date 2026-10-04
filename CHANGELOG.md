@@ -8,6 +8,8 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Landing page: a **Providers** section with a tile for each provider (herdr
+  first) that opens its guide, and a **Providers** link in the navigation.
 - **herdr on your phone** (ADR 0008, `docs/herdr-provider.md`; docs:
   `providers.md`, `guides/herdr.md`). Needs herdr 0.8.2 or later on the computer, macOS or
   Linux, and no setting: Termivoa finds herdr within about 30 s.
