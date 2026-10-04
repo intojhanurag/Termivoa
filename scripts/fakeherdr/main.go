@@ -15,7 +15,8 @@
 // The scenario is $FAKE_HERDR_SCENARIO or <folder>/scenario.json:
 //
 //	{"version":"0.8.2","protocol":20,"attachAny":false,"kinds":["claude"],
-//	 "agentStartDelayMs":0,"snapshot":{...herdr's session.snapshot...}}
+//	 "agentStartDelayMs":0,"snapshot":{...herdr's session.snapshot...},
+//	 "screens":{"w1:p1":"text an attach of w1:p1 draws in place of its marker"}}
 //
 // control.sock takes one JSON command per connection: {"op":"status",
 // "pane":"w1:p1","status":"blocked"}, {"op":"close","pane":"w1:p1"},
@@ -51,6 +52,9 @@ type scenario struct {
 	Kinds             []string       `json:"kinds"`
 	AgentStartDelayMs int            `json:"agentStartDelayMs"`
 	Snapshot          map[string]any `json:"snapshot"`
+	// Screens, by pane ID, replace the marker an attach draws (docs
+	// screenshots: a demo agent screen). Lines end in \n.
+	Screens map[string]string `json:"screens"`
 }
 
 var agentName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
@@ -426,7 +430,11 @@ func attach(folder, pane, terminalID string, byAgent bool) {
 	columns, rows, _ := term.GetSize(os.Stdout.Fd())
 	draw := func() {
 		columns, rows, _ = term.GetSize(os.Stdout.Fd())
-		fmt.Printf("\x1b[2J\x1b[HFAKE-HERDR %s %dx%d\r\n", pane, columns, rows)
+		if screen, ok := load(folder).Screens[pane]; ok {
+			fmt.Print("\x1b[2J\x1b[H" + strings.ReplaceAll(screen, "\n", "\r\n"))
+		} else {
+			fmt.Printf("\x1b[2J\x1b[HFAKE-HERDR %s %dx%d\r\n", pane, columns, rows)
+		}
 		logf(folder, "attach %s size %dx%d", pane, columns, rows)
 	}
 	fmt.Print("\x1b[?1049h")

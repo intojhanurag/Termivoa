@@ -11,13 +11,14 @@ node scripts/e2e-multicomputer/phase-a.mjs --no-web-build  # reuse internal/weba
 node scripts/e2e-multicomputer/phase-b.mjs --no-web-build  # the phone flow through the screens (Chrome)
 node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only PV  # pairing, the first add, then only the preview steps
 node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only F   # pairing, the first add, then only Found on your network
+node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only H   # pairing, the first add, then only herdr (the fake herdr)
 go test ./scripts/e2e-multicomputer/                       # the front's rewrite rules and the dev site
 PW=<playwright-core dir> WEBKIT=<webkit executable> node scripts/e2e-multicomputer/webkit.mjs --no-web-build
 ```
 
 WebKit needs a Playwright whose WebKit build is installed, for example playwright-core 1.61.1 with `WEBKIT=~/Library/Caches/ms-playwright/webkit-2272/pw_run.sh`. The harness installs nothing.
 
-Options: `--out <dir>` writes the results table, JSON and screenshots there (default `<root>/evidence`), and Phase B writes each failed step's whole error, with a CLI's output so far, as `fail-<ID>.txt` (links hidden); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 32 checks, Phase B 79 (33 of them `PV-*`, the preview; 2 `SCAN-*`; 12 `F-*`, Found on your network; 1 `B6-fit`, nothing wider than the 390 px phone), WebKit 8. Needs macOS, Go, Node 24, pnpm and Google Chrome.
+Options: `--out <dir>` writes the results table, JSON and screenshots there (default `<root>/evidence`), and Phase B writes each failed step's whole error, with a CLI's output so far, as `fail-<ID>.txt` (links hidden); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 32 checks, Phase B 104 (33 of them `PV-*`, the preview; 2 `SCAN-*`; 12 `F-*`, Found on your network; 25 `H-*`, herdr; 1 `B6-fit`, nothing wider than the 390 px phone), WebKit 8. Needs macOS, Go, Node 24, pnpm and Google Chrome (`CHROME=<executable>` uses another Chrome build, such as Playwright's Chrome for Testing).
 
 `--no-web-build` reuses `internal/webassets/dist`; after a change in `web/`, run once without it (or run `pnpm build:web` and `sh scripts/embed-web.sh`: `pnpm build:web` alone only writes `web/dist`). Every run builds `pterm` again, with `-tags webdist,e2e`; Phase A also builds it without `e2e` (check A8).
 
@@ -79,7 +80,28 @@ So every check of a **peer** preview (the bound `Referer`, the forwarded origin,
 | `F-old` | With the front's `-old-home` for mac, vps prints "Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below." and the link; Ctrl+C ends it. |
 | `F-setup-list`, `F-setup` | `pterm setup` on vps in a terminal (HOME at the stack's install paths, fake `launchctl`, `PTERM_E2E_GATEWAY`): answer 2, the list shows "1) mac — https://mac.tailx.ts.net (macOS)", the add screen says "Sent to mac (https://mac.tailx.ts.net).", **Add** on the found phone, `y` in setup, "Setup is done". The transcript (grant and QR hidden) is `f-setup.txt`. |
 
-**Sandbox.** Every `pterm` the harness starts (stacks, CLI, doctor) runs under `sandbox-exec` with a profile that denies reading or running the real Tailscale CLI, connecting to `127.0.0.1:8787` and running `/bin/launchctl`.
+**herdr checks (Phase B `H-*`; `docs/herdr-provider.md`, section 15; `herdr.mjs`).** They run after `B7-readd`, with the fake herdr (`scripts/fakeherdr`, built as `<root>/bin/fakeherdr`): `Stack.installHerdr(scenario)` copies it as `herdr` into that stack's `bin` (first on its `PATH`), writes `<HOME>/.config/herdr/scenario.json` and starts `herdr server` in the sandbox with the stack's own `HOME`. The check drives it through `control.sock` (state changes, `stop`/`start`, `hang`) and reads `fake.log` (attach sizes, input in hex, exits, `worktree.create`, `agent.start`, `agent.prompt`). mac gets two git projects (`shop` with the worktree `silver-meadow`, `acme-web`), `notes` outside git and `storefront-redesign` with a worktree, as herdr 0.8.2 with `terminal attach`; vps later gets `acme-web` without `terminal attach`. At the end both are uninstalled, so the `F-*` checks run as without herdr.
+
+| Check | What it proves |
+| --- | --- |
+| `H-none` | No herdr anywhere: no herdr tab, no `/api/v1/providers` request in the whole run (front log), no `providers` in settings; `GET /api/v1/sessions` latency without herdr. |
+| `H-install`, `H-doctor` | herdr installed while the broker runs is found within its 30 s lookup; `pterm doctor` (with the stack's `HOME`) names the fake on the stack's `PATH`, 0.8.2, server running, and the real herdr only as refused by the sandbox. |
+| `H-tab`, `H-group` | The herdr tab with mac's count; projects "on mac"; fold and unfold, worktrees under their project, roll-up words, a workspace outside git as one row. |
+| `H-fit` | The herdr tab and the **+** sheet at 390 and 375 px: nothing wider; a long project name is not cut while its labels wrap under it. |
+| `H-state` | The fake turns an agent blocked: BLOCKED and the count within 10 s (time logged). |
+| `H-open`, `H-type`, `H-chips` | A tap opens Live with the fake's terminal at the phone grid (the size the fake logs), read-only, not in `GET /api/v1/sessions` or `pterm list`; after **Take control** the fake logs the typed text and one literal `0x02` for ctrl+b (doubled by the broker); the chips switch to the tab without an agent (`terminal attach`). |
+| `H-end`, `H-hidden` | Leaving Live, or the page hidden, ends the fake attach 9–15 s later; back in front it opens again. |
+| `H-reuse`, `H-cap` | Two opens of one target: one session, one attach; a 5th terminal gets `429 limit_exceeded` and the app's limit text. |
+| `H-auth`, `H-feature` | No cookie 401, bad target 400, unknown target 404, unknown provider 400, `Origin` evil 403; Live offers no History, rename, terminate, photo, preview or worktree, and the host refuses rename, terminate and upload for the provider session (history over the stream: Go `TestProviderSessionRefusesFeatures`). |
+| `H-link`, `H-tap`, `H-peer-tap` | A loaded `/p/herdr/<target>` shows **Open** and attaches nothing for 5 s; a provider push (CDP `deliverPushMessage`) shows `herdr · acme-web` with no `sessionId`, its `notificationclick` leaves the one-time tap record, and loading the address then opens at once (the browser refuses `focus()`/`navigate()` for a synthetic click, so the harness loads it); the same address again shows **Open**. A vps push tapped with the app open opens the vps terminal at once in the same page load (the peer worker's message path, end to end). |
+| `H-down`, `H-hang` | The fake stopped, or its socket accepting and never answering: "herdr is not running on mac" on the herdr tab (stop: one poll; hang: after 3 missed polls), while the Sessions list, its status line and `GET /api/v1/sessions` latency stay as without herdr. |
+| `H-settings` | Integrations **On** off hides mac's herdr from the tab, on brings it back and the card reads Running from the provider read; **Buzz when finished** off survives a reload. |
+| `H-create`, `H-create-errors` | **+** → **New worktree**: the app refuses a bad name and an ESC in the prompt; two taps make one `worktree.create`, `agent.start claude` and `agent.prompt`, Live opens the new terminal and `fix-login` lists under `shop`; the same name again shows the fixed "already exists" text; the host answers `not_a_repository` outside git and 400 for a bad name or an ESC prompt. |
+| `H-peer` | herdr installed on vps shows "on vps" after the app returns to the front (it reads settings again then), opens through vps (vps's fake attaches, mac's does not), its tab without an agent is a disabled chip, and vps refuses `Origin` evil. |
+
+Pushes from herdr changes (blocked, finished, own budget, marker text never in a payload) are Go tests only (`internal/herdr`, `internal/webpush`, `internal/broker`): headless Chrome has no push service.
+
+**Sandbox.** Every `pterm` the harness starts (stacks, CLI, doctor), and the fake herdr, runs under `sandbox-exec` with a profile that denies reading or running the real Tailscale CLI, connecting to `127.0.0.1:8787`, running `/bin/launchctl`, and reading, running or connecting to the real herdr (its binaries, the Homebrew Cellar and `~/.config/herdr` with its socket).
 
 **`pterm doctor`.** Doctor reads only the installed paths, which follow `HOME`, and probes `127.0.0.1:8787`. Each stack therefore keeps its data and runtime dirs exactly where doctor looks under a second home (`<root>/<name>/dh`), and doctor runs with that `HOME`. The "gateway not healthy" (sandbox) and "startup not registered" lines are expected there.
 
