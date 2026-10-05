@@ -115,7 +115,18 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
           </div>
         </>
       ) : (
-        <p className="muted">{support === 'needs-home-screen' ? 'Add to Home Screen to get notifications' : 'Not supported in this browser'}</p>
+        support === 'needs-home-screen' ? (
+          // iOS gives a web app no way to add itself: these are the taps the user makes.
+          <Notice tone="neutral" title="To get notifications on iPhone, add Termivoa to your Home Screen.">
+            <p>iPhone sends notifications only to an app on the Home Screen, not to a Safari tab.</p>
+            <ol className="steps-list">
+              <li>In Safari, tap the Share button (the square with an arrow up).</li>
+              <li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+              <li>Open Termivoa from the new icon. If it asks, pair this phone again.</li>
+              <li>Come back to Settings there and turn notifications on.</li>
+            </ol>
+          </Notice>
+        ) : <p className="muted">This browser cannot show notifications. Try Chrome, Edge, Firefox or Safari.</p>
       )}
     </section>
   );

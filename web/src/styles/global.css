@@ -235,6 +235,8 @@ label { color: var(--soft); font-size: 14px; }
 .error { color: var(--red); }
 .strong { font-weight: 700; }
 .field-note { margin: 0; }
+/* Numbered steps inside a notice (Add to Home Screen). */
+.steps-list { margin: 8px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
 .hint-text { color: var(--muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .steps { padding-left: 1.25rem; line-height: 1.6; margin: 0; }
 .command { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 19px; }
