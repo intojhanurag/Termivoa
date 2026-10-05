@@ -276,3 +276,41 @@ Two independent reviews of the code (host: security and correctness; phone app),
 | Two workspaces at one repository's main checkout, herdr 0.9.3 | Neither can be closed from the phone: herdr answers `workspace_group_close_required` for each and wants `close_group`, which Termivoa never sends (a close ends one workspace). The answer is `operation_conflict` ("close this project's worktrees first"); the user closes them in herdr. herdr 0.8.2 closes each alone | Lab, 2026-10-04 (0.9.3 release binary, isolated). Rare: it needs a second workspace whose shell moved into a repository that already has a workspace, and a worktree made from it |
 | Add a folder (after the merge, on the owner's request) | The **New workspace** sheet has **Add a folder**: a new session on that computer with `pterm project add ` typed and not run (`runFirst` with `typeOnly`, the Install herdr path), and **Check again** | The Mac had one project, "Home folder", and the phone sends no path (M2). The user types the folder in a terminal on that computer |
 | `closeTab` (A3b) | Added during the build on the owner's request; the lab ran `tab.close` on 0.8.2 and 0.9.3 (section 1) | The owner asked to close tabs too |
+
+## 14. Second round (proposal, protocol revision 6): an agent in a new tab, closed worktrees, the menu in the terminal
+
+Status: **proposed; not merged.** The owner asked for the herdr features that were still missing, each drawn, built on a branch and opened as a pull request for his review. No new route: the manage route gets two optional fields for `newTab`, one new action and one new list. `features.providerAgentTab` is 6; the app shows these controls only for a computer at revision 6.
+
+### Lab facts (herdr 0.8.2, isolated, 2026-10-05)
+
+| Question | Finding |
+| --- | --- |
+| `worktree.list {workspace_id}` | Answers every worktree of that repository: `branch`, `path`, `is_linked_worktree`, `is_prunable`, `is_bare`, `is_detached`, and `open_workspace_id` only for one that has a workspace. A linked worktree whose workspace was closed is in the list without `open_workspace_id`. |
+| `worktree.open {workspace_id, branch, focus:false}` | Opens a workspace for that existing worktree again and answers `root_pane` and `already_open` (true, with no new workspace, when it was open). |
+| `agent.start {name, kind, pane_id, timeout_ms}` on the pane of a new tab | The same call that create uses on a new worktree's pane (ADR 0008, section 1). |
+
+### B1. New tab with an agent
+
+`newTab` may carry `agent` (one of the provider's `agentKinds`, as in create) and, with `agent`, `prompt` (the create request's rules: no ESC, C0 except tab and line feed, DEL or C1). The host makes the tab (`tab.create`), then starts the agent in its pane and sends the prompt with the code that create uses (`agent.start` 20 s, `agent.prompt` 5 s), and answers `agentStarted` and, when false, `agentProblem` (`agentNotReady`, `agentFailed`, `promptFailed`); the tab exists either way. A `newTab` with `agent` counts against the create limit of the device (3 per minute) as well as the manage limit. Without `agent` nothing changes.
+
+Phone: **New tab** in the item menu shows the choices **Shell** and one for each agent kind of that computer. **Shell** makes the tab at once (as today). An agent shows **First prompt (optional)** (the create sheet's field and checks) and **Start**. What did not start is said once over the terminal, with create's texts.
+
+### B2. Open a closed worktree again
+
+**Close workspace** on a worktree keeps its folder, and until now nothing on the phone could open it again. The host asks herdr for each git group's worktrees (`worktree.list` with the group's main workspace; at most 4 groups in one poll turn, each group at most every 10 s, 1 s limit, results kept between polls) and puts into `HTTPProviderGroup.closed` (at most 16) the branch names of linked worktrees that have no workspace, are not prunable, bare or detached, and whose name passes the create name pattern (`providerWorktreeName`); any other is left out. Paths never leave the host.
+
+New action `openItem` with `groupId` and `worktree`: under the create lock the host reads a fresh snapshot and a fresh `worktree.list` for that group; the name must be in the fresh closed list (so the phone can only name what herdr itself lists); the group must have fewer than 64 items; then `worktree.open {workspace_id: <the group's main workspace>, branch, focus:false}`. The answer is `itemId` and, when this herdr can attach a terminal without an agent, `targetId` (after `settle`). `already_open` is a success. Errors: `session_missing` (the group or the name is gone), `invalid_request` (the group is full), else `host_unavailable`.
+
+Phone: under a project's items, each closed worktree is a dimmed row with its name, the word **CLOSED** and **Open**. A tap opens it and goes to its terminal. Closed rows are not counted in the status line or the tab count.
+
+### B3. The menu inside a herdr terminal
+
+Live for a herdr terminal gets the same **⋯** button (in its chip row) that opens the item menu of that terminal's workspace: **New tab**, the tabs with **Close tab**, **Close workspace**, **Remove worktree**. After an action that ends the terminal on screen (its tab or its workspace), the app goes back to the herdr tab. Phone only.
+
+### Security
+
+Nothing new in kind. B1 is create's agent start in an existing workspace: the same kind check, prompt filter and limits. B2 names a worktree by a branch name from herdr's own list, checked again under the lock, and never a path; it deletes nothing. B3 reuses reviewed actions. `worktree.list` runs in the poll loop with a 1 s limit and at most 4 calls per turn (rule 11); its text and paths never leave the host.
+
+### Tests
+
+Unit tests for each rule above (host and phone); the fake herdr learns `worktree.list` and `worktree.open`; the lab test covers B1 without a real agent program (the start fails cleanly: `agentFailed`), and B2 on real herdr; Phase B: `H-agent-tab`, `H-closed`, `H-live-menu`.

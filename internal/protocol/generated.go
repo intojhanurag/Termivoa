@@ -851,13 +851,25 @@ type GatewayRPCProviderManagePayload struct {
 // the provider's server. itemId and name are required for closeItem and removeItem (name is
 // the item name the user confirmed: the host refuses when the item now has another name);
 // itemId alone for newTab; itemId and targetId for closeTab; projectId for newWorkspace;
-// none for startServer. A field that does not belong to the action is refused.
+// none for startServer. Revision 6: newTab may carry agent, and prompt with agent; openItem
+// takes groupId and worktree and opens a closed worktree of that group again. A field that
+// does not belong to the action is refused.
 type HTTPProviderManageRequest struct {
-	Action    HTTPProviderManageAction `json:"action"`
-	ItemID    *string                  `json:"itemId,omitempty"`
-	Name      *string                  `json:"name,omitempty"`
-	ProjectID *string                  `json:"projectId,omitempty"`
-	TargetID  *string                  `json:"targetId,omitempty"`
+	Action HTTPProviderManageAction `json:"action"`
+	// Revision 6. newTab only: start this agent in the new tab; one of the provider's
+	// agentKinds.
+	Agent *string `json:"agent,omitempty"`
+	// Revision 6. openItem: the group whose closed worktree is opened.
+	GroupID   *string `json:"groupId,omitempty"`
+	ItemID    *string `json:"itemId,omitempty"`
+	Name      *string `json:"name,omitempty"`
+	ProjectID *string `json:"projectId,omitempty"`
+	// Revision 6. newTab with agent only: the first prompt; the rules of the create request's
+	// prompt.
+	Prompt   *string `json:"prompt,omitempty"`
+	TargetID *string `json:"targetId,omitempty"`
+	// Revision 6. openItem: one of that group's closed names.
+	Worktree *string `json:"worktree,omitempty"`
 }
 
 // Opens or reuses the in-memory provider session of one terminal in the broker's latest
@@ -1053,14 +1065,18 @@ type HTTPProviderCreateResponse struct {
 	TargetID     string                     `json:"targetId"`
 }
 
-// itemId is the item acted on or made. targetId is the new terminal of newTab and
-// newWorkspace; it is absent when this provider version cannot open a terminal without an
+// itemId is the item acted on or made. agentStarted (revision 6) is set for newTab with an
+// agent: false when the agent did not start, and agentProblem then says why (as in the
+// create response); the tab exists. targetId is the new terminal of newTab, newWorkspace
+// and openItem; it is absent when this provider version cannot open a terminal without an
 // agent. problem is set when nothing changed: uncommitted (removeItem: the worktree has
 // changes that are not committed).
 type HTTPProviderManageResponse struct {
-	ItemID   *string                    `json:"itemId,omitempty"`
-	Problem  *HTTPProviderManageProblem `json:"problem,omitempty"`
-	TargetID *string                    `json:"targetId,omitempty"`
+	AgentProblem *HTTPProviderCreateProblem `json:"agentProblem,omitempty"`
+	AgentStarted *bool                      `json:"agentStarted,omitempty"`
+	ItemID       *string                    `json:"itemId,omitempty"`
+	Problem      *HTTPProviderManageProblem `json:"problem,omitempty"`
+	TargetID     *string                    `json:"targetId,omitempty"`
 }
 
 // The session to show in Live. reused is true when the host already had a live session for
@@ -1098,11 +1114,14 @@ type HTTPProviderSnapshotResponse struct {
 // One project row (for herdr, a git repository and its worktrees, or a workspace outside
 // git). state is the roll-up of its items.
 type HTTPProviderGroup struct {
-	CanCreate bool               `json:"canCreate"`
-	ID        string             `json:"id"`
-	Items     []HTTPProviderItem `json:"items"`
-	Name      string             `json:"name"`
-	State     string             `json:"state"`
+	CanCreate bool `json:"canCreate"`
+	// Revision 6. Linked worktrees of this group whose folder exists and that have no item
+	// (their workspace was closed): manage openItem opens one again. Branch names, at most 16.
+	Closed []string           `json:"closed,omitempty"`
+	ID     string             `json:"id"`
+	Items  []HTTPProviderItem `json:"items"`
+	Name   string             `json:"name"`
+	State  string             `json:"state"`
 }
 
 // One row under a group (for herdr, one workspace: the main checkout or a linked worktree).
@@ -1815,6 +1834,7 @@ const (
 	CloseTab     HTTPProviderManageAction = "closeTab"
 	NewTab       HTTPProviderManageAction = "newTab"
 	NewWorkspace HTTPProviderManageAction = "newWorkspace"
+	OpenItem     HTTPProviderManageAction = "openItem"
 	RemoveItem   HTTPProviderManageAction = "removeItem"
 	StartServer  HTTPProviderManageAction = "startServer"
 )
@@ -2101,6 +2121,6 @@ const (
 // ProtocolRevision is this build's additive protocol v1 revision and
 // MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
 const (
-	ProtocolRevision    = 5
+	ProtocolRevision    = 6
 	MinProtocolRevision = 1
 )

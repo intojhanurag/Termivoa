@@ -1024,17 +1024,37 @@ export type GatewayRPCProviderManagePayload = {
  * the provider's server. itemId and name are required for closeItem and removeItem (name is
  * the item name the user confirmed: the host refuses when the item now has another name);
  * itemId alone for newTab; itemId and targetId for closeTab; projectId for newWorkspace;
- * none for startServer. A field that does not belong to the action is refused.
+ * none for startServer. Revision 6: newTab may carry agent, and prompt with agent; openItem
+ * takes groupId and worktree and opens a closed worktree of that group again. A field that
+ * does not belong to the action is refused.
  */
 export type HTTPProviderManageRequest = {
-    readonly action:     HTTPProviderManageAction;
+    readonly action: HTTPProviderManageAction;
+    /**
+     * Revision 6. newTab only: start this agent in the new tab; one of the provider's
+     * agentKinds.
+     */
+    readonly agent?: string;
+    /**
+     * Revision 6. openItem: the group whose closed worktree is opened.
+     */
+    readonly groupId?:   string;
     readonly itemId?:    string;
     readonly name?:      string;
     readonly projectId?: string;
-    readonly targetId?:  string;
+    /**
+     * Revision 6. newTab with agent only: the first prompt; the rules of the create request's
+     * prompt.
+     */
+    readonly prompt?:   string;
+    readonly targetId?: string;
+    /**
+     * Revision 6. openItem: one of that group's closed names.
+     */
+    readonly worktree?: string;
 }
 
-export type HTTPProviderManageAction = "closeItem" | "removeItem" | "newTab" | "closeTab" | "newWorkspace" | "startServer";
+export type HTTPProviderManageAction = "closeItem" | "removeItem" | "newTab" | "closeTab" | "newWorkspace" | "startServer" | "openItem";
 
 /**
  * Opens or reuses the in-memory provider session of one terminal in the broker's latest
@@ -1344,15 +1364,19 @@ export type HTTPProviderCreateResponse = {
 export type HTTPProviderCreateProblem = "agentNotReady" | "agentFailed" | "promptFailed";
 
 /**
- * itemId is the item acted on or made. targetId is the new terminal of newTab and
- * newWorkspace; it is absent when this provider version cannot open a terminal without an
+ * itemId is the item acted on or made. agentStarted (revision 6) is set for newTab with an
+ * agent: false when the agent did not start, and agentProblem then says why (as in the
+ * create response); the tab exists. targetId is the new terminal of newTab, newWorkspace
+ * and openItem; it is absent when this provider version cannot open a terminal without an
  * agent. problem is set when nothing changed: uncommitted (removeItem: the worktree has
  * changes that are not committed).
  */
 export type HTTPProviderManageResponse = {
-    readonly itemId?:   string;
-    readonly problem?:  HTTPProviderManageProblem;
-    readonly targetId?: string;
+    readonly agentProblem?: HTTPProviderCreateProblem;
+    readonly agentStarted?: boolean;
+    readonly itemId?:       string;
+    readonly problem?:      HTTPProviderManageProblem;
+    readonly targetId?:     string;
 }
 
 export type HTTPProviderManageProblem = "uncommitted";
@@ -1401,10 +1425,15 @@ export type HTTPProviderSnapshotResponse = {
  */
 export type HTTPProviderGroup = {
     readonly canCreate: boolean;
-    readonly id:        string;
-    readonly items:     HTTPProviderItem[];
-    readonly name:      string;
-    readonly state:     string;
+    /**
+     * Revision 6. Linked worktrees of this group whose folder exists and that have no item
+     * (their workspace was closed): manage openItem opens one again. Branch names, at most 16.
+     */
+    readonly closed?: string[];
+    readonly id:      string;
+    readonly items:   HTTPProviderItem[];
+    readonly name:    string;
+    readonly state:   string;
 }
 
 /**
@@ -1810,7 +1839,7 @@ export type WorktreeRemovedPayload = {
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 
 /** This build's additive protocol v1 revision (protocol/v1/revision.json). */
-export const PROTOCOL_REVISION = 5;
+export const PROTOCOL_REVISION = 6;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;
 /** The revision that added each feature: call it only on a computer whose protocolRevision is at least this. */
@@ -1818,4 +1847,5 @@ export const FEATURE_REVISION = {
     peerPreview: 2,
     providers: 4,
     providerManage: 5,
+    providerAgentTab: 6,
 } as const;
