@@ -69,14 +69,14 @@ on their own date.
   0.9.3.
 - **e2e.** 10 new `H-*` checks and `H-newtab` changed. Runs before the
   review fixes: Phase A 32/32, Phase B 127/127 (48 `H-*`), `--only H`
-  52/52. **After the review fixes the e2e run is pending:** four `--only H`
-  runs stalled (15 to 21 checks passed, then no progress until the tool's
-  time limit) while the Mac's lid was closed (`AppleClamshellState = Yes`):
-  with no display the headless Chrome stops drawing, so a check that reads
-  the terminal's rows waits (a screenshot of the same page shows the text).
-  The run on the code from before the review fixes stalled the same way, so
-  it is the environment. Chrome flags against background throttling did not
-  help. To do: `--only H` and the full Phase B with the lid open.
+  52/52. After the review fixes and the rebase on #190: Phase B
+  127/127 and Phase A 32/32 (`docs/evidence/herdr-round2/phase-a.md` and
+  `phase-b.md`), run with the display kept on (`caffeinate -d`). Before
+  that, four runs stalled part-way while the display was off (the power log
+  shows it off from 18:11 to 23:49): with no display the headless Chrome
+  stops drawing and a check that reads the terminal's rows waits (issue
+  #199). An earlier line of this entry blamed a closed lid; the power log
+  shows the display.
 - **Review.** One adversarial review of both commits: no critical or high
   finding; seven findings, four fixed, three written down (design, section
   14).
