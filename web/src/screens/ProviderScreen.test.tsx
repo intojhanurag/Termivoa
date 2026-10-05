@@ -6,14 +6,14 @@ import { CockpitDock, ReadOnlyDock } from './Dock';
 import { ProviderEnded } from './Live';
 import { item, mac, providerEntry, ready, shopGroups, snapshot, target } from './providerFixtures';
 import {
-  openedPhase, openProblem, phoneGrid, ProviderChips, providerHosted, ProviderScreen, sizeLine, tapOpens, targetLeft, unavailableText, visibilityStep,
+  liveMenu, openedPhase, openProblem, phoneGrid, ProviderChips, providerHosted, ProviderScreen, sizeLine, tapOpens, targetLeft, unavailableText, visibilityStep,
 } from './ProviderScreen';
 
 const noop = () => undefined;
 const screen = (tapped: number, entry = ready(mac)) => renderToStaticMarkup(
   <ProviderScreen
     computer={mac} provider="herdr" targetId="w8:p1.term_b1" tapped={tapped} entry={entry} fontSize={13} multi={false}
-    onChip={noop} onGone={noop} onSessions={noop} onSettings={noop} onFailure={() => 'x'} onRevoked={noop}
+    onChip={noop} onGone={noop} onClosed={noop} onOpened={noop} onReload={async () => undefined} onSessions={noop} onSettings={noop} onFailure={() => 'x'} onRevoked={noop}
   />,
 );
 
@@ -44,6 +44,29 @@ describe('a provider terminal before it opens', () => {
     expect(page).toContain('aria-current="page"');
     expect(page).toContain('title="Update herdr to open this tab"');
     expect(page.match(/disabled=""/gu)).toHaveLength(1);
+  });
+});
+
+describe('the ⋯ menu in a provider terminal (docs/herdr-manage.md, section 14, B3)', () => {
+  it('shows only where the computer can manage, for an item in the latest list', () => {
+    expect(liveMenu(ready(mac), true)).toBe(true);
+    expect(liveMenu(ready(mac), false)).toBe(false);
+    expect(liveMenu({ ...ready(mac), manage: false }, true)).toBe(false);
+    expect(liveMenu(undefined, true)).toBe(false);
+    // Not a revision 6 control: it reuses the revision 5 actions.
+    expect(liveMenu({ ...ready(mac), agentTab: false }, true)).toBe(true);
+  });
+
+  it('is the item menu\'s own button, after the tab chips, named for the workspace', () => {
+    const page = screen(0);
+    expect(page).toContain('</div><button type="button" class="round item-menu" aria-label="Menu for silver-meadow" aria-haspopup="dialog"><span aria-hidden="true">⋯</span></button></nav>');
+    expect(page).not.toContain('role="dialog"');
+  });
+
+  it('is away below revision 5, and for a terminal the list does not have', () => {
+    expect(screen(0, { ...ready(mac), manage: false })).not.toContain('Menu for');
+    expect(screen(0, ready(mac, shopGroups().filter((one) => one.name !== 'shop')))).not.toContain('Menu for');
+    expect(screen(0, providerEntry(mac, { kind: 'loading' }))).not.toContain('Menu for');
   });
 });
 

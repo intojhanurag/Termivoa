@@ -20,7 +20,7 @@ import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { GONE, type ProviderTap } from './Herdr';
-import { staleSettings, unpolledOrigins, useProviders } from './providers';
+import { providerKey, staleSettings, unpolledOrigins, useProviders } from './providers';
 import { Sessions } from './Sessions';
 import { Setup } from './Setup';
 import { Banner } from './ui';
@@ -222,6 +222,10 @@ export function notificationPath(data: unknown, computers: ReadonlyArray<Compute
 }
 
 let taps = 0;
+/** Sessions on a provider's tab (herdr): the way back from its terminal, and where a terminal that left sends the user (with `message`). */
+export const providerTabView = (provider: string, message?: string): Extract<View, { name: 'sessions' }> =>
+  ({ name: 'sessions', tab: provider, ...(message === undefined ? {} : { message }) });
+
 /** A new tap number for a provider view: each tap differs from the last, so the screen sees it. */
 export const newTap = (): number => ++taps;
 
@@ -1119,9 +1123,18 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onGone={() => {
                 // Replace the dead address, so Back does not return to it.
                 window.history.replaceState(null, '', '/');
-                setView({ name: 'sessions', tab: view.provider, message: GONE });
+                setView(providerTabView(view.provider, GONE));
               }}
-              onSessions={toSessions}
+              onClosed={() => {
+                window.history.replaceState(null, '', '/');
+                setView(providerTabView(view.provider));
+              }}
+              onOpened={(target, notice) => {
+                void providers.reload(providerKey(view.computer.origin, view.provider));
+                navigate({ name: 'provider', computer: view.computer, provider: view.provider, target, tapped: newTap(), ...(notice === undefined ? {} : { notice }) });
+              }}
+              onReload={providers.reload}
+              onSessions={() => navigate(providerTabView(view.provider))}
               onSettings={() => navigate({ name: 'settings' })}
               onFailure={(error) => handleFailure(error, view.computer)}
               onRevoked={(reason) => revoked(view.computer, reason)}

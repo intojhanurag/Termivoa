@@ -22,6 +22,18 @@ describe('providerSources', () => {
     expect(providerSources([okEntry(mac), okEntry(vps, { protocolRevision: 5 })]).map((source) => source.manage)).toEqual([false, true]);
   });
 
+  it('shows an agent in a new tab and closed worktrees only for a computer at revision 6 or later', () => {
+    expect(providerSources([okEntry(mac, { protocolRevision: 5 }), okEntry(vps, { protocolRevision: 6 })]).map((source) => [source.manage, source.agentTab])).toEqual([[true, false], [true, true]]);
+  });
+
+  it('counts no closed worktree: not in the tab count, the status line or the roll-up', () => {
+    const quiet = [ready(mac, [group('g1', 'shop', [item('w1', 'main', [target('w1:p1.t', 'idle')])])])];
+    const withClosed = [ready(mac, [group('g1', 'shop', [item('w1', 'main', [target('w1:p1.t', 'idle')])], { closed: ['fix/login', 'blocked', 'done'] })])];
+    expect(attentionCount(withClosed)).toBe(attentionCount(quiet));
+    expect(wordSummary(withClosed)).toBe(wordSummary(quiet));
+    expect(providerTabs(withClosed)).toEqual(providerTabs(quiet));
+  });
+
   it('does not poll a provider that is not installed, and gives it no tab and no count', () => {
     const absent = info({ state: 'notInstalled', canInstall: true });
     const [source] = providerSources([okEntry(mac, { protocolRevision: 5, providers: [absent] })]);

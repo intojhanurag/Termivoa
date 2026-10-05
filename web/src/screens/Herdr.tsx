@@ -1,10 +1,10 @@
-import { Fragment, useReducer, useState, type ReactNode } from 'react';
-import { providerWord, type ProviderWord } from '../api/http';
+import { Fragment, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import { client, providerWord, type ProviderWord } from '../api/http';
 import type { Computer } from '../computers';
 import type { HTTPProviderGroup, HTTPProviderItem } from '../generated/protocol';
 import { since } from './activity';
 import { atLeast, cantReach, CHECKING_MIN_MS } from './allSessions';
-import { StartButton } from './ProviderManage';
+import { CHANGED, manageStep, NoteLine, openRequest, StartButton, useAction, type ManageNote } from './ProviderManage';
 import { countWords, groupsOf, providerState, rollUp, shown, type ProviderEntry } from './providers';
 import { Button, Notice } from './ui';
 
@@ -101,10 +101,33 @@ export interface ManageHandlers {
   /** The ⋯ of an item row. */
   readonly onMenu: (entry: ProviderEntry, group: HTTPProviderGroup, item: HTTPProviderItem) => void;
   readonly onWorkspace: (entry: ProviderEntry) => void;
+  /** A closed worktree was opened again (section 14, B2): open its terminal. */
+  readonly onOpened: (entry: ProviderEntry, tap: ProviderTap) => void;
   readonly onFailure: (error: unknown, from: Computer) => string;
 }
 
-function MenuButton({ name, onClick }: { readonly name: string; readonly onClick: () => void }) {
+/** The closed worktrees a project shows (docs/herdr-manage.md, section 14, B2): only where the computer can open one again. */
+export const closedOf = (entry: Pick<ProviderEntry, 'manage' | 'agentTab'>, group: Pick<HTTPProviderGroup, 'closed'>): ReadonlyArray<string> =>
+  (entry.manage && entry.agentTab ? group.closed ?? [] : []);
+
+/** A worktree whose workspace was closed: its folder is there, no terminal. Not an item: no state, no count. */
+export function ClosedRow({ name, busy, off, onOpen }: {
+  readonly name: string;
+  readonly busy: boolean;
+  /** Another closed worktree is being opened. */
+  readonly off: boolean;
+  readonly onOpen: () => void;
+}) {
+  return (
+    <li className="item-line closed-line">
+      <span className="closed-name"><bdi>{name}</bdi></span>
+      <span className="state-word muted">closed</span>
+      <Button className="link" busy={busy} busyLabel="Opening…" disabled={off} aria-label={`Open ${name}`} onClick={onOpen}>Open</Button>
+    </li>
+  );
+}
+
+export function MenuButton({ name, onClick }: { readonly name: string; readonly onClick: () => void }) {
   return (
     <button type="button" className="round item-menu" aria-label={`Menu for ${name}`} aria-haspopup="dialog" onClick={onClick}>
       <span aria-hidden="true">⋯</span>
@@ -196,6 +219,26 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
   readonly manage?: ManageHandlers | undefined;
 }) {
   const [, redraw] = useReducer((value: number) => value + 1, 0);
+  // Open of a closed worktree: one at a time over the whole tab; what it said shows by that computer's list.
+  const opening = useAction<string>();
+  const [closedNote, setClosedNote] = useState<{ readonly key: string; readonly note: ManageNote }>();
+  const noteLine = useRef<HTMLDivElement>(null);
+  useEffect(() => { noteLine.current?.scrollIntoView({ block: 'nearest' }); }, [closedNote]);
+  function openClosed(entry: ProviderEntry, group: HTTPProviderGroup, name: string, handlers: ManageHandlers) {
+    setClosedNote(undefined);
+    opening.run(
+      `${entry.key}/${group.id}/${name}`,
+      () => manageStep(
+        openRequest(group, name), (body) => client(entry.computer.origin).providerManage(entry.info.id, body),
+        () => onRetry(entry.key).catch(() => undefined), (error) => handlers.onFailure(error, entry.computer),
+      ),
+      (step) => {
+        if (step.kind === 'open') handlers.onOpened(entry, { computer: entry.computer, provider: entry.info.id, targetId: step.targetId });
+        else if (step.kind === 'changed') setClosedNote({ key: entry.key, note: { kind: 'error', text: CHANGED } });
+        else if (step.kind === 'note') setClosedNote({ key: entry.key, note: step.note });
+      },
+    );
+  }
   const list = entries.filter(shown);
   const loading = list.length > 0 && list.every((entry) => entry.status.kind === 'loading');
   return (
@@ -209,6 +252,7 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
         return (
           <div key={entry.key} className="stack provider-computer">
             <ProviderProblem entry={entry} onRetry={onRetry} onFailure={handlers?.onFailure} />
+            {closedNote?.key === entry.key && <div ref={noteLine}><NoteLine note={closedNote.note} name="" provider={entry.info.name} /></div>}
             {ready && groups.length === 0 && <p className="muted">No {entry.info.name} projects on {entry.computer.label}.</p>}
             {groups.length > 0 && (
               <ul className="rows">
@@ -220,7 +264,9 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
                   const add = onCreate !== undefined && entry.info.canCreate && group.canCreate
                     ? <AddButton name={name} onClick={() => onCreate(entry, group)} />
                     : null;
-                  const single = singleRow(group);
+                  // A project with a closed worktree is a group, also with one item: its closed rows need a place.
+                  const closed = handlers === undefined ? [] : closedOf(entry, group);
+                  const single = closed.length > 0 ? undefined : singleRow(group);
                   if (single !== undefined) {
                     return (
                       <ItemGroupRow
@@ -253,6 +299,13 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
                             <ItemRow
                               key={item.id} entry={entry} item={item} name={item.name} big={false} now={now} onOpen={onOpen}
                               onMenu={handlers === undefined ? undefined : () => handlers.onMenu(entry, group, item)}
+                            />
+                          ))}
+                          {handlers !== undefined && closed.map((closedName) => (
+                            <ClosedRow
+                              key={`closed/${closedName}`} name={closedName}
+                              busy={opening.busy === `${entry.key}/${group.id}/${closedName}`} off={opening.busy !== undefined}
+                              onOpen={() => openClosed(entry, group, closedName, handlers)}
                             />
                           ))}
                         </ul>

@@ -154,7 +154,7 @@ describe('LogoutSection', () => {
 describe('Settings → Integrations', () => {
   const { info, mac, okEntry, vps } = fixtures;
   const row = (state: 'ready' | 'notRunning' | 'unsupported' | 'off', extra = {}) => renderToStaticMarkup(
-    <ul><IntegrationRow source={{ computer: mac, info: info({ state, ...extra }), manage: true }} onFailure={() => ''} /></ul>,
+    <ul><IntegrationRow source={{ computer: mac, info: info({ state, ...extra }), manage: true, agentTab: true }} onFailure={() => ''} /></ul>,
   );
 
   it('shows only where a computer lists a provider at revision 4', () => {
@@ -184,13 +184,13 @@ describe('Settings → Integrations', () => {
 
   it('shows the state of the provider read, which is newer than the settings (F10)', () => {
     const read = (state: 'ready' | 'notRunning' | 'off') => renderToStaticMarkup(
-      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }), manage: true }} entry={fixtures.providerEntry(mac, { kind: 'ok', snapshot: fixtures.snapshot([], { state }), at: 1 })} onFailure={() => ''} /></ul>,
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }), manage: true, agentTab: true }} entry={fixtures.providerEntry(mac, { kind: 'ok', snapshot: fixtures.snapshot([], { state }), at: 1 })} onFailure={() => ''} /></ul>,
     );
     expect(read('ready')).toContain('<span class="computer-state green">Running</span>');
     expect(read('off')).toContain('<span class="computer-state muted">Off</span>');
     // Not read yet, or the read failed: the settings' state.
     const unread = renderToStaticMarkup(
-      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }), manage: true }} entry={fixtures.providerEntry(mac, { kind: 'unreachable' })} onFailure={() => ''} /></ul>,
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning' }), manage: true, agentTab: true }} entry={fixtures.providerEntry(mac, { kind: 'unreachable' })} onFailure={() => ''} /></ul>,
     );
     expect(unread).toContain('Not running');
     const section = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { providers: [info({ state: 'notRunning' })] })]} providers={[fixtures.ready(mac, [])]} onFailure={() => ''} />);
@@ -202,7 +202,7 @@ describe('Settings → Integrations', () => {
     const shellProfiles = [{ id: 'zsh', name: 'zsh' }, { id: 'bash', name: 'bash' }];
     const absent = (extra = {}, manage = true) => renderToStaticMarkup(
       <ul><IntegrationRow
-        source={{ computer: vps, info: info({ state: 'notInstalled', enabled: false, ...extra }), manage }}
+        source={{ computer: vps, info: info({ state: 'notInstalled', enabled: false, ...extra }), manage, agentTab: manage }}
         settings={fixtures.settingsWith({ projects, shellProfiles })} onInstall={() => undefined} onFailure={() => ''}
       /></ul>,
     );
@@ -225,7 +225,7 @@ describe('Settings → Integrations', () => {
     });
 
     it('shows Install busy, an error, and New session\'s own help when the computer has no project', () => {
-      const source = { computer: vps, info: info({ state: 'notInstalled', canInstall: true }), manage: true };
+      const source = { computer: vps, info: info({ state: 'notInstalled', canInstall: true }), manage: true, agentTab: true };
       const card = (extra: Partial<Parameters<typeof InstallCard>[0]>) => renderToStaticMarkup(
         <InstallCard source={source} command="x" busy={undefined} error={undefined} onInstall={() => undefined} onCheck={() => undefined} {...extra} />,
       );
@@ -273,7 +273,7 @@ describe('Settings → Integrations', () => {
       expect(row('notRunning')).not.toContain('<span>Start');
       expect(row('ready', { canStart: true })).not.toContain('<span>Start');
       // A computer below revision 5 has no manage route.
-      const old = renderToStaticMarkup(<ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning', canStart: true }), manage: false }} onFailure={() => ''} /></ul>);
+      const old = renderToStaticMarkup(<ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning', canStart: true }), manage: false, agentTab: false }} onFailure={() => ''} /></ul>);
       expect(old).not.toContain('<span>Start');
       expect(old).toContain('Start it there to see its projects.');
     });

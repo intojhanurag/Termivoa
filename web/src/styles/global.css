@@ -403,12 +403,17 @@ button.group-add { flex-shrink: 0; margin-right: -12px; color: var(--text); }
 .item-line > .session-row { flex: 1; width: auto; min-width: 0; border-bottom: 0; }
 button.item-menu { flex-shrink: 0; color: var(--text); font-size: 20px; line-height: 1; }
 button.item-menu:last-child { margin-right: -12px; }
+/* A closed worktree under its project: dimmed by colour (as a seen row). A long name wraps (names differ at the end); Open stays whole, at the right. */
+.closed-line { gap: 10px; min-height: 44px; padding-left: 22px; }
+.closed-name { flex: 1; min-width: 0; padding: 6px 0; color: var(--muted); font-family: var(--mono); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.closed-line > button { flex-shrink: 0; min-height: 44px; margin-right: -4px; color: var(--text); }
+.closed-line > button .btn-swap > * { justify-content: flex-end; }
 /* Sheet lists with a busy row (New tab, a project): the label stays at the left; a long name wraps. */
 .menu-list .btn-swap { max-width: 100%; overflow-wrap: anywhere; }
 .menu-list .btn-swap > * { justify-content: flex-start; min-width: 0; }
 .menu-list .hint-text { margin: 0; padding: 8px 4px; }
 /* The item menu and its confirmation take focus from the app, never from a tap: no ring. */
-.item-menu-body:focus, .confirm:focus { outline: none; }
+.item-menu-body:focus, .confirm:focus, .new-tab:focus { outline: none; }
 /* Cancel and the danger button, one half each: Cancel is under the left of the menu row that was tapped. */
 /* Two plain actions side by side in a sheet (Add a folder, Check again). */
 .sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -428,6 +433,7 @@ button.item-menu:last-child { margin-right: -12px; }
 .list-label { padding: 22px 0 8px; border-bottom: 1px solid var(--line); }
 /* Live for a provider terminal: the way back sits before the tab chips; one line says the computer's pane is phone size. */
 .provider-back { flex-shrink: 0; min-height: 44px; padding: 0 6px 0 0; color: var(--text); font-size: 15px; }
+.provider-chips > .item-menu { margin-left: auto; }
 .size-line { margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--line); }
 .status-line .home-badge { flex-shrink: 0; }
 /* New worktree (H6): mono branch field, agent kinds that wrap, a short prompt box. */
@@ -438,7 +444,7 @@ button.item-menu:last-child { margin-right: -12px; }
 .create-field input { min-height: 48px; background: var(--bg); font-family: var(--mono); font-size: 16px; }
 .kind-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .kind-chips button { min-height: 44px; padding: 0 16px; font-size: 14px; }
-.kind-chips button[aria-checked="true"] { border-color: var(--text); background: var(--text); color: var(--bg); }
+.kind-chips button:is([aria-checked="true"], [aria-pressed="true"]) { border-color: var(--text); background: var(--text); color: var(--bg); }
 .create-prompt { width: 100%; min-height: 76px; padding: 12px 14px; border-color: var(--line); background: var(--bg); font-size: 16px; line-height: 21px; resize: vertical; }
 .chip-count { color: var(--amber); font-family: var(--mono); font-size: 11px; font-weight: 400; line-height: 14px; }
 

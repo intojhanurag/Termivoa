@@ -69,10 +69,10 @@ export function createError(
 }
 
 /** The worktree exists; the agent did not start, or the prompt did not go: a notice, not an error. */
-export function startNotice(answer: Pick<HTTPProviderCreateResponse, 'agentStarted' | 'problem'>): string | undefined {
+export function startNotice(answer: { readonly agentStarted?: boolean; readonly problem?: HTTPProviderCreateResponse['problem'] | undefined }, made: 'worktree' | 'tab' = 'worktree'): string | undefined {
   switch (answer.problem) {
     case 'agentNotReady': return 'The agent started and waits at a question. Your prompt was not sent.';
-    case 'agentFailed': return 'The worktree is ready, but the agent did not start.';
+    case 'agentFailed': return `The ${made} is ready, but the agent did not start.`;
     case 'promptFailed': return 'The agent started, but your first prompt was not sent.';
     default: return undefined;
   }
@@ -106,6 +106,28 @@ export async function submitCreate({ create, alive, now = Date.now, onCreated, o
   }
 }
 
+/** The first prompt of a new agent, with its check: in New worktree, and in New tab of the item menu (docs/herdr-manage.md, B1). */
+export function PromptField({ prompt, busy, onPrompt }: { readonly prompt: string; readonly busy: boolean; readonly onPrompt: (prompt: string) => void }) {
+  const problem = promptProblem(prompt);
+  return (
+    <div className="stack create-field">
+      <label className="caps" htmlFor="create-prompt">First prompt (optional)</label>
+      <textarea
+        id="create-prompt"
+        className="create-prompt"
+        value={prompt}
+        rows={3}
+        placeholder="Tell the agent what to do…"
+        aria-invalid={problem !== undefined}
+        aria-describedby="create-prompt-help"
+        disabled={busy}
+        onChange={(event) => onPrompt(event.target.value)}
+      />
+      {problem !== undefined && <p id="create-prompt-help" role="alert" className="error hint-text">{problem}</p>}
+    </div>
+  );
+}
+
 /** The fields, the button and what went wrong. State comes from props, so each state renders on its own. */
 export function CreateForm({ entry, group, name, agent, prompt, busy, error, slow = false, onName, onAgent, onPrompt, onCreate, onClose }: {
   readonly entry: ProviderEntry;
@@ -126,7 +148,6 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, slo
 }) {
   const { info, computer } = entry;
   const nameProblem = name === '' ? undefined : branchProblem(name);
-  const prompted = agent === undefined ? undefined : promptProblem(prompt);
   const ready = createRequest(group.id, name, agent, prompt) !== undefined;
   const kinds = [...info.agentKinds.map((kind) => ({ id: kind as string | undefined, label: kind })), { id: undefined, label: 'No agent' }];
   return (
@@ -179,23 +200,7 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, slo
           ))}
         </div>
       </div>
-      {agent !== undefined && (
-        <div className="stack create-field">
-          <label className="caps" htmlFor="create-prompt">First prompt (optional)</label>
-          <textarea
-            id="create-prompt"
-            className="create-prompt"
-            value={prompt}
-            rows={3}
-            placeholder="Tell the agent what to do…"
-            aria-invalid={prompted !== undefined}
-            aria-describedby="create-prompt-help"
-            disabled={busy}
-            onChange={(event) => onPrompt(event.target.value)}
-          />
-          {prompted !== undefined && <p id="create-prompt-help" role="alert" className="error hint-text">{prompted}</p>}
-        </div>
-      )}
+      {agent !== undefined && <PromptField prompt={prompt} busy={busy} onPrompt={onPrompt} />}
       {slow && <p role="status" className="hint-text">{stillWorking(computer.label)}</p>}
       {error !== undefined && <Notice tone="danger" role="alert" title={error} />}
       <Button type="submit" className="primary wide" busy={busy} busyLabel="Creating…" disabled={!ready}>

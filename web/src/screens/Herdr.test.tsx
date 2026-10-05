@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { HostedSession } from './allSessions';
-import { firstBlocked, foldKey, groupWordText, isOpen, itemMeta, numberedNames, ProviderSection, ProviderTree, sectionParts, wordText } from './Herdr';
+import { ClosedRow, closedOf, firstBlocked, foldKey, groupWordText, isOpen, itemMeta, numberedNames, ProviderSection, ProviderTree, sectionParts, wordText } from './Herdr';
 import { group, item, mac, okEntry, providerEntry, ready, shopGroups, snapshot, target, vps } from './providerFixtures';
 import { Sessions } from './Sessions';
 
@@ -116,7 +116,7 @@ describe('the herdr tab (H3)', () => {
   });
 
   describe('manage (docs/herdr-manage.md)', () => {
-    const handlers = { onMenu: noop, onWorkspace: noop, onFailure: () => '' };
+    const handlers = { onMenu: noop, onWorkspace: noop, onOpened: noop, onFailure: () => '' };
     const tree = (entries = [ready(mac)], multi = false) =>
       renderToStaticMarkup(<ProviderTree entries={entries} multi={multi} now={now} onOpen={noop} onCreate={noop} onRetry={retry} manage={handlers} />);
     const stopped = (extra = {}) => providerEntry(mac, { kind: 'ok', snapshot: snapshot([], { state: 'notRunning' }), at: 0 }, { state: 'notRunning', ...extra });
@@ -150,6 +150,78 @@ describe('the herdr tab (H3)', () => {
       expect(two).toContain('>New workspace on vps</button>');
       expect(two.match(/New workspace/gu)).toHaveLength(2);
       expect(tree([providerEntry(mac, { kind: 'loading' })])).not.toContain('New workspace');
+    });
+
+    describe('closed worktrees (section 14, B2)', () => {
+      const main = item('w1', 'main', [target('w1:p1.t', 'working', { agent: 'claude' })]);
+      const busyShop = (closed: string[]) => group('g1', 'shop', [main, item('w8', 'silver-meadow', [target('w8:p1.t', 'idle')], { linked: true })], { closed });
+      const row = (name: string) => `<li class="item-line closed-line"><span class="closed-name"><bdi>${name}</bdi></span><span class="state-word muted">closed</span><button type="button" class="link" aria-label="Open ${name}">`;
+
+      it('shows each under its project\'s items: the name as text, CLOSED and Open', () => {
+        const page = tree([ready(mac, [busyShop(['fix/login', 'lucky-valley'])])]);
+        expect(page).toContain(row('fix/login'));
+        expect(page).toContain(row('lucky-valley'));
+        expect(page.match(/>Open<\/span>/gu)).toHaveLength(2);
+        // After the items, in the project's own list.
+        expect(page.indexOf('Menu for silver-meadow')).toBeLessThan(page.indexOf('closed-line'));
+        expect(page.indexOf('closed-line')).toBeLessThan(page.indexOf('New workspace'));
+      });
+
+      it('shows them only where the computer can open one: revision 6, the manage gate and the handlers', () => {
+        const shop = busyShop(['fix/login']);
+        expect(closedOf(ready(mac), shop)).toEqual(['fix/login']);
+        expect(closedOf({ manage: true, agentTab: false }, shop)).toEqual([]);
+        expect(closedOf({ manage: false, agentTab: true }, shop)).toEqual([]);
+        expect(closedOf(ready(mac), group('g2', 'none', []))).toEqual([]);
+        expect(tree([{ ...ready(mac, [shop]), agentTab: false }])).not.toContain('closed-line');
+        expect(html([ready(mac, [shop])])).not.toContain('closed-line');
+      });
+
+      it('counts none of them: the project word, the folded count and the status line stay', () => {
+        const withClosed = busyShop(['fix/login', 'lucky-valley']);
+        expect(groupWordText(withClosed)).toBe(groupWordText(busyShop([])));
+        expect(tree([ready(mac, [withClosed])])).toContain('<span class="state-word accent">1 working</span>');
+        const quiet = group('g7', 'quiet', [item('w1', 'main', [target('w1:p1.t', 'idle')]), item('w2', 'two', [target('w2:p1.t', 'idle')])], { closed: ['fix/login'] });
+        expect(tree([ready(mac, [quiet])])).toContain('<span class="group-where">2 worktrees</span>');
+      });
+
+      it('a folded project shows none', () => {
+        const quiet = group('g7', 'quiet', [item('w1', 'main', [target('w1:p1.t', 'idle')]), item('w2', 'two', [target('w2:p1.t', 'idle')])], { closed: ['fix/login'] });
+        const page = tree([ready(mac, [quiet])]);
+        expect(page).toContain('aria-expanded="false"');
+        expect(page).not.toContain('closed-line');
+      });
+
+      it('a project with one item is a group (not one row) while it has a closed worktree, so the rows have a place', () => {
+        const lone = (closed: string[]) => group('g4', 'acme-web', [item('w4', 'acme-web', [target('w4:p1.t', 'working', { agent: 'claude' })])], { closed });
+        expect(tree([ready(mac, [lone([])])])).not.toContain('aria-expanded');
+        const page = tree([ready(mac, [lone(['fix/login'])])]);
+        expect(page).toContain('aria-expanded="true"');
+        expect(page).toContain(row('fix/login'));
+        expect(page).toContain('aria-label="Menu for acme-web"');
+        // One item is not "1 worktrees" when it folds.
+        const folded = tree([ready(mac, [group('g5', 'still', [item('w5', 'still', [target('w5:p1.t', 'idle')])], { closed: ['fix/login'] })])]);
+        expect(folded).toContain('aria-expanded="false"');
+        expect(folded).not.toContain('worktrees</span>');
+        // Below revision 6 it stays one row.
+        expect(tree([{ ...ready(mac, [lone(['fix/login'])]), agentTab: false }])).not.toContain('aria-expanded');
+      });
+
+      it('shows the tapped row busy and every other Open off', () => {
+        const rows = (busy: boolean, off: boolean) => renderToStaticMarkup(<ClosedRow name="fix/login" busy={busy} off={off} onOpen={noop} />);
+        expect(rows(true, true)).toContain('aria-busy="true"');
+        expect(rows(true, true)).toContain('Opening…');
+        expect(rows(false, true)).toContain('disabled=""');
+        expect(rows(false, true)).not.toContain('aria-busy');
+        expect(rows(false, false)).not.toContain('disabled');
+      });
+
+      it('holds 16 long names, each isolated and never as markup', () => {
+        const names = Array.from({ length: 16 }, (_, index) => `feature/a-very-long-branch-name-for-the-phone-screen-${index}`);
+        const page = tree([ready(mac, [busyShop(names)])]);
+        expect(page.match(/closed-line/gu)).toHaveLength(16);
+        expect(renderToStaticMarkup(<ClosedRow name={'<b>\u202ex</b>'} busy={false} off={false} onOpen={noop} />)).toContain('<bdi>&lt;b&gt;\u202ex&lt;/b&gt;</bdi>');
+      });
     });
 
     it('has Start herdr on the not-running notice only where the computer can start it', () => {
@@ -197,6 +269,14 @@ describe('Sessions with a provider', () => {
     expect(page).toContain('1 blocked · 1 done · 2 working');
     expect(page).toContain('Open the blocked agent');
     expect(page).not.toContain('new session');
+  });
+
+  it('opens on the herdr tab when asked (the way back from a herdr terminal), and on All when not', () => {
+    const on = (tab?: string) => renderToStaticMarkup(<Sessions {...base} entries={[okEntry(mac)]} providers={[ready(mac)]} {...(tab === undefined ? {} : { tab })} />);
+    expect(on('herdr')).toContain('class="provider-tree"');
+    expect(on('herdr')).toMatch(/aria-pressed="true">herdr</u);
+    expect(on()).not.toContain('class="provider-tree"');
+    expect(on()).toMatch(/aria-pressed="true">All</u);
   });
 
   it('keeps the sessions line when the provider cannot be read', () => {

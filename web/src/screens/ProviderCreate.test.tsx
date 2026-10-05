@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
 import type { Computer } from '../computers';
-import { branchProblem, createError, createFailure, CreateForm, createRequest, promptProblem, startNotice, stillWorking, submitCreate } from './ProviderCreate';
+import { branchProblem, createError, createFailure, CreateForm, createRequest, PromptField, promptProblem, startNotice, stillWorking, submitCreate } from './ProviderCreate';
 import { group, item, mac, providerEntry, ready, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -38,6 +38,19 @@ describe('first prompt', () => {
     expect(createRequest('g1', 'fix', undefined, '\u001b')).toEqual({ groupId: 'g1', name: 'fix' });
     expect(createRequest('g1', 'Fix', 'claude', '')).toBeUndefined();
     expect(createRequest('g1', 'fix', 'claude', '\u001b')).toBeUndefined();
+  });
+});
+
+describe('the prompt field (New worktree, and New tab of the item menu)', () => {
+  const field = (prompt: string, busy = false) => renderToStaticMarkup(<PromptField prompt={prompt} busy={busy} onPrompt={() => undefined} />);
+
+  it('is one labelled box; a prompt that breaks the rules says so by the box', () => {
+    expect(field('Fix the test.\n\tThen stop.')).toContain('<label class="caps" for="create-prompt">First prompt (optional)</label>');
+    expect(field('Fix the test.')).toContain('aria-invalid="false"');
+    expect(field('Fix the test.')).not.toContain('role="alert"');
+    expect(field('a\u001bb')).toContain('aria-invalid="true"');
+    expect(field('a\u001bb')).toContain('<p id="create-prompt-help" role="alert" class="error hint-text">Remove control characters (such as Esc) from the prompt.</p>');
+    expect(field('', true)).toContain('disabled=""');
   });
 });
 

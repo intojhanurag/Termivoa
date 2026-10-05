@@ -362,6 +362,24 @@ describe('provider routes', () => {
     await expect(api.providerManage('herdr', { action: 'newTab', itemId: 'w8' })).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
+  it('waits as long as a create for a new tab with an agent (the agent starts, the prompt goes)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { itemId: 'w10', targetId: 'w10:p2.term_9', agentStarted: false, agentProblem: 'agentFailed' })));
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    await expect(api.providerManage('herdr', { action: 'newTab', itemId: 'w10', agent: 'claude' }))
+      .resolves.toEqual({ itemId: 'w10', targetId: 'w10:p2.term_9', agentStarted: false, agentProblem: 'agentFailed' });
+    expect(timeout).toHaveBeenCalledWith(PROVIDER_CREATE_TIMEOUT_MS);
+    // A problem the app has no words for is refused.
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { itemId: 'w10', agentStarted: false, agentProblem: 'rm -rf' })));
+    await expect(api.providerManage('herdr', { action: 'newTab', itemId: 'w10', agent: 'claude' })).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it('drops a closed worktree name that is not a branch name; the group and its other names stay', async () => {
+    const closed = ['fix/login', '../etc', 'Has Space', '<b>x</b>', 'lucky-valley', ''];
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, { provider: 'herdr', state: 'ready', groups: [{ id: 'g1', name: 'shop', state: 'idle', canCreate: true, items: [], closed }] })));
+    const body = await client('https://vps.tailx.ts.net').provider('herdr');
+    expect(body.groups.map((group) => group.closed)).toEqual([['fix/login', 'lucky-valley']]);
+  });
+
   it('keeps a manage refusal\'s code, with home\'s own words and never a peer\'s', async () => {
     const refusal = () => json(409, { error: { code: 'operation_conflict', message: 'The item changed.' } });
     vi.stubGlobal('fetch', vi.fn(async () => refusal()));

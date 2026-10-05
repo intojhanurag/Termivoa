@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
 import { ADD_FOLDER_COMMAND } from './providers';
-import { addFolderStep, NO_SESSION, CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, ItemMenu, itemRequest, LAST_TAB, manageStep, StartButton, WorkspaceList, type ManageNote } from './ProviderManage';
-import { group, item, mac, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
+import { addFolderStep, NO_SESSION, CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
+import { group, item, mac, providerEntry, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
 const main = item('w1', 'main', [target('w1:p1.t', 'idle')]);
@@ -24,6 +24,56 @@ describe('one manage action', () => {
 
   it('sends the item and the terminal for Close tab, and no name', () => {
     expect(itemRequest({ closeTab: 'w8:p1.t' }, linked)).toEqual({ action: 'closeTab', itemId: 'w8', targetId: 'w8:p1.t' });
+  });
+
+  it('sends the agent for a new tab with one, and the prompt only when it has text', () => {
+    expect(itemRequest({ agent: 'claude', prompt: '' }, linked)).toEqual({ action: 'newTab', itemId: 'w8', agent: 'claude' });
+    expect(itemRequest({ agent: 'claude', prompt: ' \n' }, linked)).toEqual({ action: 'newTab', itemId: 'w8', agent: 'claude' });
+    expect(itemRequest({ agent: 'codex', prompt: 'Fix the login test.\n' }, linked)).toEqual({ action: 'newTab', itemId: 'w8', agent: 'codex', prompt: 'Fix the login test.\n' });
+  });
+
+  it('opens a closed worktree by its group and its name, never an item or a path', () => {
+    expect(openRequest(shop, 'fix/login')).toEqual({ action: 'openItem', groupId: 'g1', worktree: 'fix/login' });
+  });
+
+  it('opens the reopened worktree\'s terminal; without one reads the list and says so; a name that left is "the list changed"', async () => {
+    const reload = vi.fn(async () => undefined);
+    const body = openRequest(shop, 'fix/login');
+    await expect(manageStep(body, answer({ itemId: 'w12', targetId: 'w12:p1.term_1' }), reload, words)).resolves.toEqual({ kind: 'open', targetId: 'w12:p1.term_1' });
+    expect(reload).not.toHaveBeenCalled();
+    await expect(manageStep(body, answer({ itemId: 'w12' }), reload, words)).resolves.toEqual({ kind: 'note', note: { kind: 'made', what: 'worktree' } });
+    expect(reload).toHaveBeenCalledTimes(1);
+    await expect(manageStep(body, refuse('session_missing', 404), reload, words)).resolves.toEqual({ kind: 'changed' });
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(renderToStaticMarkup(<NoteLine note={{ kind: 'made', what: 'worktree' }} name="" provider="herdr" />))
+      .toContain('<p class="notice-title">The worktree is open. Update <bdi>herdr</bdi> to open it from the phone.</p>');
+  });
+
+  it('opens an agent tab and says, with create\'s words, what did not start; nothing when it started', async () => {
+    const reload = vi.fn(async () => undefined);
+    const body = itemRequest({ agent: 'claude', prompt: 'Go.' }, linked);
+    const opened = (extra: HTTPProviderManageResponse) => manageStep(body, answer({ itemId: 'w8', targetId: 'w8:p2.term_9', ...extra }), reload, words);
+    await expect(opened({ agentStarted: true })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9' });
+    await expect(opened({ agentStarted: false, agentProblem: 'agentNotReady' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started and waits at a question. Your prompt was not sent.' });
+    await expect(opened({ agentStarted: false, agentProblem: 'agentFailed' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The tab is ready, but the agent did not start.' });
+    // herdr can say "started" and then refuse the prompt: the problem still shows.
+    await expect(opened({ agentStarted: true, agentProblem: 'promptFailed' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started, but your first prompt was not sent.' });
+    await expect(opened({ agentStarted: false, agentProblem: 'promptFailed' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started, but your first prompt was not sent.' });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('knows which action ends the terminal on screen: its workspace, or its own tab (every terminal of that tab)', () => {
+    const two = item('w1', 'main', [target('w1:p1.a', 'idle', { label: '1' }), target('w1:p2.b', 'idle', { label: '1' }), target('w1:p3.c', 'idle', { label: 'logs' })]);
+    expect(endsTerminal('closeItem', two, 'w1:p1.a')).toBe(true);
+    expect(endsTerminal('removeItem', two, 'w1:p1.a')).toBe(true);
+    expect(endsTerminal({ closeTab: 'w1:p1.a' }, two, 'w1:p1.a')).toBe(true);
+    // Another terminal of the tab on screen: the tab ends, and this terminal with it.
+    expect(endsTerminal({ closeTab: 'w1:p2.b' }, two, 'w1:p1.a')).toBe(true);
+    expect(endsTerminal({ closeTab: 'w1:p3.c' }, two, 'w1:p1.a')).toBe(false);
+    expect(endsTerminal('newTab', two, 'w1:p1.a')).toBe(false);
+    expect(endsTerminal({ agent: 'claude', prompt: '' }, two, 'w1:p1.a')).toBe(false);
+    // A terminal the list no longer has is not "the same tab" as another one it lacks.
+    expect(endsTerminal({ closeTab: 'gone:1' }, two, 'gone:2')).toBe(false);
   });
 
   it('reads the list again after a tab closed, and is done', async () => {
@@ -198,12 +248,84 @@ describe('the item menu', () => {
 
     it('turns every Close tab off while another action runs', () => {
       // Close (the header), New tab, three Close tab, Close workspace.
-      expect(menu({ item: three, busy: 'newTab' }).match(/disabled=""/gu)).toHaveLength(6);
+      expect(menu({ item: three, busy: 'closeItem' }).match(/disabled=""/gu)).toHaveLength(6);
+    });
+  });
+
+  describe('New tab (section 14, B1)', () => {
+    const old = { ...ready(vps), agentTab: false };
+    const noKinds = providerEntry(vps, { kind: 'loading' }, { agentKinds: [] });
+    const chooser = (extra: Partial<Parameters<typeof ItemMenu>[0]> = {}) => menu({ mode: 'newTab', ...extra });
+
+    it('asks what to start only at revision 6 with an agent kind', () => {
+      expect(tabChooser(ready(vps))).toBe(true);
+      expect(tabChooser(old)).toBe(false);
+      expect(tabChooser(noKinds)).toBe(false);
+    });
+
+    it('below revision 6, or with no agent kind, New tab is the action itself (a busy button), as before; at revision 6 it is a plain row that opens the chooser', () => {
+      for (const entry of [old, noKinds]) {
+        expect(menu({ entry })).toContain('<li><button type="button"><span class="btn-swap"><span>New tab</span>');
+        const page = menu({ entry, busy: 'newTab' });
+        expect(page).toContain('aria-busy="true"');
+        expect(page).toContain('Opening…');
+        // A chooser cannot show there, whatever the mode's history: no kinds to pick.
+        expect(menu({ entry })).not.toContain('role="group"');
+      }
+      const page = menu({ busy: 'newTab' });
+      expect(page).toContain('<li><button type="button" disabled="">New tab</button></li>');
+      expect(page).not.toContain('aria-busy');
+      expect(menu()).not.toContain('role="group"');
+    });
+
+    it('offers Shell and each agent kind (isolated), with no prompt and no Start until an agent is picked', () => {
+      const page = chooser();
+      expect(page).toContain('<div role="group" aria-labelledby="new-tab-title" tabindex="-1" class="stack new-tab"><p id="new-tab-title" class="caps">New tab</p>');
+      expect(page).toContain('<span>Shell</span>');
+      expect(page).toContain('<button type="button" aria-pressed="false"><bdi>claude</bdi></button><button type="button" aria-pressed="false"><bdi>codex</bdi></button>');
+      expect(page).toContain('>Cancel</button>');
+      expect(page).not.toContain('First prompt');
+      expect(page).not.toContain('Start');
+      // The menu's own rows are away while the chooser shows.
+      expect(page).not.toContain('Close workspace');
+    });
+
+    it('with an agent picked shows the create sheet\'s prompt field and Start', () => {
+      const page = chooser({ agent: 'codex' });
+      expect(page).toContain('<button type="button" aria-pressed="true"><bdi>codex</bdi></button>');
+      expect(page).toContain('<label class="caps" for="create-prompt">First prompt (optional)</label>');
+      expect(page).toContain('<button type="button" class="primary"><span class="btn-swap"><span>Start</span>');
+    });
+
+    it('turns Start off and says why while the prompt breaks create\'s rules', () => {
+      const page = chooser({ agent: 'claude', prompt: 'go\u001b[2J' });
+      expect(page).toContain('Remove control characters (such as Esc) from the prompt.');
+      expect(page).toContain('<button type="button" class="primary" disabled="">');
+      expect(chooser({ agent: 'claude', prompt: 'x'.repeat(4001) })).toContain('Use 4000 characters at most.');
+    });
+
+    it('shows Shell busy, or Start busy, and every other control off', () => {
+      const shell = chooser({ busy: 'newTab' });
+      expect(shell.match(/aria-busy="true"/gu)).toHaveLength(1);
+      expect(shell).toContain('Opening…');
+      // Close (the header), Shell, two kinds, Cancel.
+      expect(shell.match(/disabled=""/gu)).toHaveLength(5);
+      const start = chooser({ busy: 'newTab', agent: 'claude' });
+      expect(start.match(/aria-busy="true"/gu)).toHaveLength(1);
+      expect(start).toContain('<textarea id="create-prompt" class="create-prompt" rows="3" placeholder="Tell the agent what to do…" aria-invalid="false" aria-describedby="create-prompt-help" disabled="">');
+      // Close (the header), Shell, two kinds, the prompt, Cancel, Start.
+      expect(start.match(/disabled=""/gu)).toHaveLength(7);
+    });
+
+    it('keeps a refusal in the chooser, over its choices', () => {
+      const page = chooser({ agent: 'claude', note: { kind: 'error', text: 'Too many requests. Wait a minute.' } });
+      expect(page).toContain('Too many requests. Wait a minute.');
+      expect(page).toContain('First prompt (optional)');
     });
   });
 
   it('shows one action busy and every other button off, so a second tap sends nothing', () => {
-    const tab = menu({ busy: 'newTab' });
+    const tab = menu({ entry: { ...ready(vps), agentTab: false }, busy: 'newTab' });
     expect(tab.match(/aria-busy="true"/gu)).toHaveLength(1);
     expect(tab).toContain('Opening…');
     // Close (the header), New tab, Close workspace, Remove worktree.
