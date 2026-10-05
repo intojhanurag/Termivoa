@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -291,26 +292,41 @@ func TestCreateRecheckAfterTimeout(t *testing.T) {
 func TestStartAgentWaitsForHerdrsRecord(t *testing.T) {
 	saved := createTimeouts
 	t.Cleanup(func() { createTimeouts = saved })
-	createTimeouts.seen, createTimeouts.agent = 500*time.Millisecond, 1500*time.Millisecond
+	createTimeouts.look = 10 * time.Millisecond
+	// A case that ends by itself has a step limit it never meets, also on a loaded computer; one that
+	// ends at the step limit has a short one.
+	const never, short = time.Minute, time.Second
 	prompt := "go"
+	blocked := `{"agent":"claude","agent_status":"blocked","launch_pending":true}`
+	refuses := func(code string) herdrtest.Handler {
+		return func(json.RawMessage) (any, *herdrtest.Error) {
+			return nil, &herdrtest.Error{Code: code, Message: "agent target w9:p1"}
+		}
+	}
 	for _, test := range []struct {
 		name    string
+		limit   time.Duration
 		get     herdrtest.Handler
 		prompt  *string
 		started bool
 		problem protocol.HTTPProviderCreateProblem // "": none
 		sent    bool                               // the prompt reached herdr
 	}{
-		{"the prompt waits until herdr takes it", agentGet(typedAgent, shownAgent, shownAgent, readyAgent), &prompt, true, "", true},
-		{"herdr's launch limit ended for a program that shows: it takes the prompt", agentGet(shownAgent, `{"agent":"claude","agent_status":"unknown"}`), &prompt, true, "", true},
-		{"without a prompt, a program that shows is enough", agentGet(typedAgent, shownAgent), nil, true, "", false},
-		{"the program never shows", agentGet(typedAgent), &prompt, false, protocol.AgentFailed, false},
-		{"the program never shows, no prompt", agentGet(typedAgent), nil, false, protocol.AgentFailed, false},
-		{"herdr dropped the launch", func(json.RawMessage) (any, *herdrtest.Error) {
-			return nil, &herdrtest.Error{Code: "agent_not_found", Message: "agent target w9:p1 not found"}
-		}, &prompt, false, protocol.AgentFailed, false},
-		{"the agent waits at a question", agentGet(shownAgent, `{"agent":"claude","agent_status":"blocked","launch_pending":true}`), &prompt, false, protocol.AgentNotReady, false},
-		{"the agent is not ready in time", agentGet(shownAgent), &prompt, true, protocol.PromptFailed, false},
+		{"the prompt waits until herdr takes it", never, agentGet(typedAgent, shownAgent, shownAgent, readyAgent), &prompt, true, "", true},
+		{"herdr's launch limit ended for a program that shows: it takes the prompt", never, agentGet(shownAgent, `{"agent":"claude","agent_status":"unknown"}`), &prompt, true, "", true},
+		{"without a prompt, a program that shows is enough", never, agentGet(typedAgent, shownAgent), nil, true, "", false},
+		// A slow start (a heavy shell, a loaded computer): many looks pass before the program shows.
+		{"the program shows late", never, agentGet(append(slices.Repeat([]string{typedAgent}, 60), readyAgent)...), &prompt, true, "", true},
+		{"the program never shows", short, agentGet(typedAgent), &prompt, false, protocol.AgentFailed, false},
+		{"the program never shows, no prompt", short, agentGet(typedAgent), nil, false, protocol.AgentFailed, false},
+		{"herdr dropped the launch", never, refuses("agent_not_found"), &prompt, false, protocol.AgentFailed, false},
+		{"the agent waits at a question", never, agentGet(shownAgent, blocked), &prompt, false, protocol.AgentNotReady, false},
+		// No prompt was to be sent: an agent that is there is started, also at a question.
+		{"the agent waits at a question, no prompt", never, agentGet(typedAgent, blocked), nil, true, "", false},
+		{"the agent is not ready in time", short, agentGet(shownAgent), &prompt, true, protocol.PromptFailed, false},
+		// A herdr whose agent.get answers another error cannot say: started, and the prompt is tried once.
+		{"herdr has no agent.get", never, refuses("invalid_request"), nil, true, "", false},
+		{"herdr has no agent.get: the prompt is tried once", never, refuses("invalid_request"), &prompt, true, protocol.PromptFailed, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			provider, server, world := readyProvider(t)
@@ -340,6 +356,7 @@ func TestStartAgentWaitsForHerdrsRecord(t *testing.T) {
 				return map[string]any{"type": "agent_prompted"}, nil
 			})
 			agent := "claude"
+			createTimeouts.agent = test.limit
 			began := time.Now()
 			response, err := provider.Create(context.Background(), protocol.HTTPProviderCreateRequest{GroupID: shopGroup, Name: "brave-fox", Agent: &agent, Prompt: test.prompt})
 			if err != nil || response.AgentStarted != test.started || (response.Problem == nil) != (test.problem == "") ||
@@ -355,7 +372,7 @@ func TestStartAgentWaitsForHerdrsRecord(t *testing.T) {
 				t.Fatalf("prompt sent = %t", sent)
 			}
 			// Inside the step limit, and the 3 s wait for the list after it.
-			if took := time.Since(began); took > createTimeouts.agent+createTimeouts.refresh+time.Second {
+			if took := time.Since(began); took > min(test.limit, 10*time.Second)+createTimeouts.refresh+time.Second {
 				t.Fatalf("took %v", took)
 			}
 		})

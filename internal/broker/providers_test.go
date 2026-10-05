@@ -945,15 +945,26 @@ func TestProviderCreateRoute(t *testing.T) {
 		_, _ = fixture.server.providers.provider.Manage(context.Background(), protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: &item}, herdr.Project{})
 	}()
 	<-entered
-	busy := fixture.create(t, pairDevice(t, fixture.service, "Phone").Credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b"})
+	// "Busy" started nothing: it takes none of the device's 3 creates a minute, from create or from an agent tab.
+	item, claude := "w1", "claude"
+	answers := []protocol.GatewayRPCEnvelope{
+		fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b"}),
+		fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b"}),
+		fixture.manage(t, fixture.credential, protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: &item, Agent: &claude}),
+		fixture.manage(t, fixture.credential, protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: &item, Agent: &claude}),
+	}
 	close(release)
 	<-slow
-	if code, message := gatewayErrorCode(t, busy), gatewayErrorMessage(t, busy); code != protocol.LimitExceeded || message != "herdr is busy with another change; try again" {
-		t.Fatalf("create while another change runs = %s %q", code, message)
+	for _, busy := range answers {
+		if code, message := gatewayErrorCode(t, busy), gatewayErrorMessage(t, busy); code != protocol.LimitExceeded || message != "herdr is busy with another change; try again" {
+			t.Fatalf("a change while another change runs = %s %q", code, message)
+		}
 	}
-	// 3 creates a minute per device.
+	// 3 creates a minute per device: one was made above, so two more start, and the 4th is refused.
 	for range providerCreatesPerMinute - 1 {
-		fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b", Agent: &codex})
+		if code := gatewayErrorCode(t, fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b", Agent: &codex})); code == protocol.LimitExceeded {
+			t.Fatal("a busy answer used up one of the device's creates")
+		}
 	}
 	if code := gatewayErrorCode(t, fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "c"})); code != protocol.LimitExceeded {
 		t.Fatalf("4th create = %s", code)

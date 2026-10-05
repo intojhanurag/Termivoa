@@ -432,12 +432,15 @@ func (provider *Provider) settle(ctx context.Context, timeout time.Duration, tar
 // learn probes the binary for key (its path and the server's version). A
 // probe that ended by itself is kept for that key. One that did not (a slow
 // run on a loaded computer) is no answer: what it missed stays as it was
-// (nothing, the first time), and it runs again at the next discovery or after
-// a wait that doubles from 30 s to 8 min, never on every poll. Poll loop only.
+// (nothing, the first time), and it runs again after a wait that doubles from
+// 30 s to 8 min, never on every poll or discovery. The wait starts again for
+// a new key. Poll loop only.
 func (provider *Provider) learn(ctx context.Context, now time.Time, key string) {
 	var last capabilities
 	if key == provider.capsFor {
 		last = provider.caps
+	} else {
+		provider.probeWait = 0
 	}
 	caps, ended := provider.probe(ctx, last)
 	provider.caps, provider.capsFor = caps, key
@@ -462,7 +465,8 @@ func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 		provider.retryAt = now.Add(lookupEvery)
 		return false
 	}
-	if key := provider.binary + "\x00" + pong.Version; key != provider.capsFor || !provider.probeAt.IsZero() {
+	// A probe of this key that did not end runs again at probeAt (step), not at each discovery.
+	if key := provider.binary + "\x00" + pong.Version; key != provider.capsFor {
 		provider.learn(ctx, now, key)
 	}
 	provider.discovered, provider.misses, provider.baseline, provider.snapshotVersion = true, 0, true, ""

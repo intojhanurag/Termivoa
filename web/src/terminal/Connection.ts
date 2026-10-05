@@ -589,6 +589,14 @@ export class Connection {
     return true;
   }
 
+  /**
+   * The user looks at Changes and nothing they asked for is read or shown: no read at all, or only the quiet one
+   * still on its way (its refusal would leave no state, and nothing to show).
+   */
+  needsChanges(): boolean {
+    return this.changes === undefined || (this.changes.listRequest !== undefined && this.changes.listRequest === this.quietList);
+  }
+
   /** Reads the list again, and the open file's diff; cached diffs are dropped. */
   refreshChanges(): void {
     const changes = this.changes;
@@ -965,7 +973,7 @@ export class Connection {
           return;
         }
         {
-          const quiet = message.requestId !== undefined && message.requestId === this.quietList;
+          const quiet = message.requestId !== undefined && (message.requestId === this.quietList || this.rootReadAhead(message.requestId));
           if (quiet && this.changes?.listRequest === message.requestId) {
             this.changes = undefined;
             this.emit();
@@ -1518,6 +1526,17 @@ export class Connection {
     for (const resolve of waiters) {
       resolve(root);
     }
+  }
+
+  /**
+   * The request is the listing that reads the files root ahead (Live asks on attach and on each cwd change, for
+   * tapped paths) and the Files view does not wait for it: nobody asked, so its refusal says nothing (a herdr
+   * terminal outside git has no folder to read).
+   */
+  private rootReadAhead(requestId: string): boolean {
+    const request = this.filesRequest;
+    const folder = this.files?.folder;
+    return request?.id === requestId && request.kind === 'list' && !(folder?.state === 'loading' && folder.path === request.key);
   }
 
   /** Sends what the Files view waits for next, unless a files request is in flight. */

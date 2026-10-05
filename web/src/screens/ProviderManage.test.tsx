@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
 import { ADD_FOLDER_COMMAND } from './providers';
-import { SLOW, addFolderStep, NO_SESSION, CHANGED, closesTogether, closeWorktreesFirst, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, offeredAgent, openRequest, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
+import { SLOW, addFolderStep, NO_SESSION, CHANGED, closesTogether, closeWorktreesFirst, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, readsKinds, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
 import { group, item, mac, providerEntry, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -60,6 +60,9 @@ describe('one manage action', () => {
     await expect(opened({ agentStarted: true, agentProblem: 'promptFailed' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started, but your first prompt was not sent.' });
     await expect(opened({ agentStarted: false, agentProblem: 'promptFailed' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started, but your first prompt was not sent.' });
     expect(reload).not.toHaveBeenCalled();
+    // No prompt was sent: the notice does not say that one was not sent.
+    await expect(manageStep(itemRequest({ agent: 'claude', prompt: '' }, linked), answer({ itemId: 'w8', targetId: 'w8:p2.term_9', agentStarted: false, agentProblem: 'agentNotReady' }), reload, words))
+      .resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started and waits at a question.' });
   });
 
   it('a wait that ran out is not "can\'t reach": it reads the list and says so; a fast network failure keeps its words', async () => {
@@ -170,10 +173,10 @@ describe('one manage action', () => {
     expect(closesTogether(group('ws-w5', 'notes', [main]), main)).toBe(false);
   });
 
-  it('drops a picked agent kind that the computer no longer offers (issue 195)', () => {
-    expect(offeredAgent('codex', ['claude', 'codex'])).toBe('codex');
-    expect(offeredAgent('codex', ['claude'])).toBeUndefined();
-    expect(offeredAgent(undefined, ['claude'])).toBeUndefined();
+  it('reads the agent kinds again when the menu opens and when the chooser opens, not when the chooser closes', () => {
+    expect(readsKinds(false, true)).toBe(true);
+    expect(readsKinds(true, false)).toBe(true);
+    expect(readsKinds(false, false)).toBe(false);
   });
 });
 
@@ -292,6 +295,13 @@ describe('the item menu', () => {
       expect(tabChooser(ready(vps))).toBe(true);
       expect(tabChooser(old)).toBe(false);
       expect(tabChooser(noKinds)).toBe(false);
+    });
+
+    it('says so when a fresh settings read took the picked agent away: no agent is started in its place (issue 195)', () => {
+      const page = chooser({ agent: undefined, dropped: 'codex is not running in herdr now.' });
+      expect(page).toContain('<p role="status" class="hint-text">codex is not running in herdr now.</p>');
+      expect(page).not.toContain('>Start</button>');
+      expect(chooser()).not.toContain('is not running in');
     });
 
     it('below revision 6, or with no agent kind, New tab is the action itself (a busy button), as before; at revision 6 it is a plain row that opens the chooser', () => {

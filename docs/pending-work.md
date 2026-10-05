@@ -103,7 +103,10 @@ In this order.
      (`docs/herdr-manage.md`, "Fixes after the second round"). Open from
      that work: the first prompt and the missing-program check are proven
      with a stand-in program, not with a real agent (a real one costs
-     credits); a herdr terminal outside git still sends one quiet changes
+     credits); a missing agent program is reported after about 15 s
+     (herdr's own launch limit), not sooner; the item menu's settings read
+     has only a unit test of its rule, because the web tests cannot run
+     effects; a herdr terminal outside git still sends a quiet files request and one quiet changes
      request for the "while you were away" line (the phone cannot know that
      the terminal has no folder).
    - **Named herdr sessions:** only the default session shows.

@@ -7,7 +7,7 @@ import type {
 import { checkAgain } from './allSessions';
 import type { ProviderTap } from './Herdr';
 import { NewSessionHelp } from './NewSession';
-import { PromptField, promptProblem, startNotice } from './ProviderCreate';
+import { droppedAgent, offeredAgent, PromptField, promptProblem, startNotice } from './ProviderCreate';
 import type { ProviderEntry, ProviderSource } from './providers';
 import { Sheet } from './Sheet';
 import { Button, ConfirmPair, confirmReady, Notice } from './ui';
@@ -79,12 +79,12 @@ export async function manageStep(
   if (answer.problem === 'uncommitted') return { kind: 'note', note: { kind: 'uncommitted' } };
   if (answer.targetId !== undefined) {
     // Also when the agent started and only the prompt was not sent (agentStarted is then true).
-    const notice = startNotice({ problem: answer.agentProblem }, 'tab');
+    const notice = startNotice({ problem: answer.agentProblem }, body.prompt !== undefined, 'tab');
     return { kind: 'open', targetId: answer.targetId, ...(notice === undefined ? {} : { notice }) };
   }
   await reload();
   // No terminal to say it over (this herdr cannot open the tab): say here what the agent did.
-  const problem = startNotice({ problem: answer.agentProblem }, 'tab');
+  const problem = startNotice({ problem: answer.agentProblem }, body.prompt !== undefined, 'tab');
   if (problem !== undefined) return { kind: 'note', note: { kind: 'error', text: problem } };
   if (body.action === 'newTab') return { kind: 'note', note: { kind: 'made', what: 'tab' } };
   if (body.action === 'openItem') return { kind: 'note', note: { kind: 'made', what: 'worktree' } };
@@ -144,9 +144,8 @@ export const closeWorktreesFirst = (group: Pick<HTTPProviderGroup, 'items'>, ite
 export const closesTogether = (group: Pick<HTTPProviderGroup, 'items'>, item: Pick<HTTPProviderItem, 'linked'>): boolean =>
   item.linked !== true && group.items.length > 1 && !closeWorktreesFirst(group, item);
 
-/** The New tab chooser's agent: the picked kind while the computer still offers it (a fresh settings read can take it away). */
-export const offeredAgent = (picked: string | undefined, kinds: ReadonlyArray<string>): string | undefined =>
-  picked !== undefined && kinds.includes(picked) ? picked : undefined;
+/** The settings are read again when the menu opens and when the New tab chooser opens, never when it closes. */
+export const readsKinds = (chooser: boolean, first: boolean): boolean => chooser || first;
 
 /** One action at a time per sheet, also when two taps land before the re-render; an answer after the sheet left does nothing. */
 export function useAction<Busy>() {
@@ -209,7 +208,7 @@ export type ItemMenuMode = 'menu' | 'newTab' | 'close' | 'remove' | 'changed' | 
 type ItemBusy = 'newTab' | 'closeItem' | 'removeItem' | 'closeTab';
 
 /** The item menu and its confirmations. State comes from props, so each state renders on its own. */
-export function ItemMenu({ entry, group, item, mode, busy, note, agent, prompt = '', onMode, onAction, onAgent = () => undefined, onPrompt = () => undefined, onClose }: {
+export function ItemMenu({ entry, group, item, mode, busy, note, agent, dropped, prompt = '', onMode, onAction, onAgent = () => undefined, onPrompt = () => undefined, onClose }: {
   readonly entry: Pick<ProviderEntry, 'computer' | 'info' | 'agentTab'>;
   readonly group: HTTPProviderGroup;
   readonly item: HTTPProviderItem;
@@ -218,6 +217,8 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, prompt =
   readonly note: ManageNote | undefined;
   /** The chooser: the agent kind picked (undefined: none yet) and its first prompt. */
   readonly agent?: string | undefined;
+  /** droppedAgent's words. */
+  readonly dropped?: string | undefined;
   readonly prompt?: string;
   readonly onMode: (mode: ItemMenuMode) => void;
   readonly onAction: (action: ItemAction) => void;
@@ -300,6 +301,7 @@ export function ItemMenu({ entry, group, item, mode, busy, note, agent, prompt =
               <button key={kind} type="button" aria-pressed={agent === kind} disabled={off} onClick={() => onAgent(kind)}><bdi>{kind}</bdi></button>
             ))}
           </div>
+          {dropped !== undefined && <p role="status" className="hint-text">{dropped}</p>}
           {agent !== undefined && <PromptField prompt={prompt} busy={off} onPrompt={onPrompt} />}
           <div className="row confirm-pair">
             <button type="button" disabled={off} onClick={() => onMode('menu')}>Cancel</button>
@@ -347,7 +349,11 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
   // The kinds are from the app's last settings read, and the computer offers a kind only while an agent of it runs:
   // read them again when the menu opens (New tab asks only when there is a kind) and when the chooser opens.
   const chooser = mode === 'newTab';
-  useEffect(() => { onKinds?.(); }, [chooser]);
+  const first = useRef(true);
+  useEffect(() => {
+    if (readsKinds(chooser, first.current)) onKinds?.();
+    first.current = false;
+  }, [chooser]);
   const close = () => { if (!running.current) onClose(); };
 
   function act(action: ItemAction) {
@@ -376,6 +382,7 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
           busy={busy}
           note={note}
           agent={agent}
+          dropped={droppedAgent(picked, entry.info.agentKinds, entry.info.name)}
           prompt={prompt}
           onMode={(next) => { setNote(undefined); setMode(next); }}
           onAction={act}

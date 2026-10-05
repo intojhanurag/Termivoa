@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ApiError, client, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
+import { ApiError, client, PEER_REQUEST_FAILED, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
 import type { Computer } from '../computers';
 import type { HTTPProviderCreateRequest, HTTPProviderCreateResponse, HTTPProviderGroup } from '../generated/protocol';
 import type { ProviderTap } from './Herdr';
@@ -47,13 +47,17 @@ export function createRequest(groupId: string, name: string, agent: string | und
   };
 }
 
-/** Fixed words for each refusal; never the host's, herdr's or git's text. */
+/**
+ * Fixed words for each refusal; never herdr's or git's text, nor a peer's. `limit_exceeded` is this phone's create rate
+ * or "the provider is busy with another change": the home computer's own fixed words say which (undefined here, so
+ * they show); a peer's words are never shown, so its text is true for both.
+ */
 export function createFailure(error: unknown, name: string, group: string, provider: string, label: string): string | undefined {
   switch (error instanceof ApiError ? error.code : undefined) {
     case 'worktree_exists': return `“${name}” already exists in ${group}. Pick another name.`;
     case 'not_a_repository': return `${group} is not in git, so it cannot have worktrees.`;
     case 'worktree_failed': return `${provider} could not make the worktree. Nothing was opened. Try again or pick another name.`;
-    case 'limit_exceeded': return 'Too many new worktrees just now. Wait a minute, then try again.';
+    case 'limit_exceeded': return error instanceof ApiError && error.message === PEER_REQUEST_FAILED ? `${provider} on ${label} is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again.` : undefined;
     case 'invalid_request': return `${provider} on ${label} refused this name or agent. Check them and try again.`;
     case 'host_unavailable': return `${provider} is off or not running on ${label}.`;
     case 'session_missing': return `${group} is gone from ${provider}. Close this and look again.`;
@@ -68,14 +72,21 @@ export function createError(
   return createFailure(failure, name, group.name, entry.info.name, entry.computer.label) ?? onFailure(failure, entry.computer);
 }
 
-/** The agent to start: the picked kind while the computer still offers it, else the first kind it offers, as when the sheet opens (none: no agent). */
-export const offeredKind = (picked: string | undefined, kinds: ReadonlyArray<string>): string | undefined =>
-  picked === undefined || kinds.includes(picked) ? picked : kinds[0];
+/**
+ * The agent to start: the picked kind while the computer still offers it (a fresh settings read can take it away),
+ * else none. A picked agent never changes to another agent.
+ */
+export const offeredAgent = (picked: string | undefined, kinds: ReadonlyArray<string>): string | undefined =>
+  picked !== undefined && kinds.includes(picked) ? picked : undefined;
 
-/** The worktree exists; the agent did not start, or the prompt did not go: a notice, not an error. */
-export function startNotice(answer: { readonly agentStarted?: boolean; readonly problem?: HTTPProviderCreateResponse['problem'] | undefined }, made: 'worktree' | 'tab' = 'worktree'): string | undefined {
+/** Said when a fresh settings read took the picked agent away, so the change to no agent is not silent. */
+export const droppedAgent = (picked: string | undefined, kinds: ReadonlyArray<string>, provider: string): string | undefined =>
+  picked !== undefined && !kinds.includes(picked) ? `${picked} is not running in ${provider} now.` : undefined;
+
+/** The worktree exists; the agent did not start, or the prompt did not go: a notice, not an error. `prompted`: a first prompt was sent with the request. */
+export function startNotice(answer: { readonly agentStarted?: boolean; readonly problem?: HTTPProviderCreateResponse['problem'] | undefined }, prompted: boolean, made: 'worktree' | 'tab' = 'worktree'): string | undefined {
   switch (answer.problem) {
-    case 'agentNotReady': return 'The agent started and waits at a question. Your prompt was not sent.';
+    case 'agentNotReady': return `The agent started and waits at a question.${prompted ? ' Your prompt was not sent.' : ''}`;
     case 'agentFailed': return `The ${made} is ready, but the agent did not start.`;
     case 'promptFailed': return 'The agent started, but your first prompt was not sent.';
     default: return undefined;
@@ -133,12 +144,14 @@ export function PromptField({ prompt, busy, onPrompt }: { readonly prompt: strin
 }
 
 /** The fields, the button and what went wrong. State comes from props, so each state renders on its own. */
-export function CreateForm({ entry, group, name, agent, prompt, busy, error, slow = false, onName, onAgent, onPrompt, onCreate, onClose }: {
+export function CreateForm({ entry, group, name, agent, dropped, prompt, busy, error, slow = false, onName, onAgent, onPrompt, onCreate, onClose }: {
   readonly entry: ProviderEntry;
   readonly group: HTTPProviderGroup;
   readonly name: string;
   /** undefined: No agent. */
   readonly agent: string | undefined;
+  /** droppedAgent's words. */
+  readonly dropped?: string | undefined;
   readonly prompt: string;
   readonly busy: boolean;
   readonly error: string | undefined;
@@ -203,6 +216,7 @@ export function CreateForm({ entry, group, name, agent, prompt, busy, error, slo
             ><bdi>{kind.label}</bdi></button>
           ))}
         </div>
+        {dropped !== undefined && <p role="status" className="hint-text">{dropped}</p>}
       </div>
       {agent !== undefined && <PromptField prompt={prompt} busy={busy} onPrompt={onPrompt} />}
       {slow && <p role="status" className="hint-text">{stillWorking(computer.label)}</p>}
@@ -230,7 +244,7 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onRelo
 }) {
   const [name, setName] = useState('');
   const [picked, setAgent] = useState<string | undefined>(entry.info.agentKinds[0]);
-  const agent = offeredKind(picked, entry.info.agentKinds);
+  const agent = offeredAgent(picked, entry.info.agentKinds);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -257,7 +271,7 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onRelo
     void submitCreate({
       create: () => create(body),
       alive: () => mounted.current,
-      onCreated: (answer) => onCreated({ computer: entry.computer, provider: entry.info.id, targetId: answer.targetId }, startNotice(answer)),
+      onCreated: (answer) => onCreated({ computer: entry.computer, provider: entry.info.id, targetId: answer.targetId }, startNotice(answer, body.prompt !== undefined)),
       onSlow: () => { setSlow(true); settle(); onReload?.(); },
       onFailed: (failure) => {
         setError(createError(failure, name, group, entry, onFailure));
@@ -274,6 +288,7 @@ export function ProviderCreateSheet({ entry, group, onCreated, onFailure, onRelo
           group={group}
           name={name}
           agent={agent}
+          dropped={droppedAgent(picked, entry.info.agentKinds, entry.info.name)}
           prompt={prompt}
           busy={busy}
           error={error}

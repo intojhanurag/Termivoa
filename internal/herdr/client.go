@@ -247,10 +247,11 @@ func (provider *Provider) probe(ctx context.Context, last capabilities) (caps ca
 	return caps, ranToItsEnd(attachErr) && ranToItsEnd(helpErr)
 }
 
-// ranToItsEnd: the command ran and exited, with any status.
+// ranToItsEnd: the command ran and exited by itself, with any status. A run
+// that a signal ended (exit code -1) did not.
 func ranToItsEnd(err error) bool {
 	var exit *exec.ExitError
-	return err == nil || errors.As(err, &exit)
+	return err == nil || errors.As(err, &exit) && exit.ExitCode() >= 0
 }
 
 // parseKinds reads the "[possible values: a, b]" list of `agent start --help`.

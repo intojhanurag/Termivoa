@@ -464,8 +464,9 @@ func TestFakeHerdrClosedWorktreesAndAgentTab(t *testing.T) {
 	if err != nil || missing.AgentStarted == nil || *missing.AgentStarted || missing.AgentProblem == nil || *missing.AgentProblem != protocol.AgentFailed || missing.TargetID == nil {
 		t.Fatalf("an agent tab whose program is missing = %+v %v", missing, err)
 	}
-	if took := time.Since(began); took > 10*time.Second {
-		t.Fatalf("the missing program took %v to show", took)
+	// Known when herdr drops the launch at its own limit (the start's timeout_ms, 15 s), inside the 20 s step and the 3 s wait for the list.
+	if took := time.Since(began); took < 10*time.Second || took > 25*time.Second {
+		t.Fatalf("the missing program was reported after %v", took)
 	}
 	// Closing a linked worktree's workspace keeps the worktree: it is closed now.
 	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w3"), Name: text("silver-meadow")}, herdr.Project{}); err != nil {

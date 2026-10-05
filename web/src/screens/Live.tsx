@@ -598,7 +598,7 @@ export function Live({
   function switchTab(next: ChangesTab) {
     const connection = runtime?.connection;
     showTab(next);
-    if (next === 'changes' && connection?.getChanges() === undefined) connection?.openChanges();
+    if (next === 'changes' && connection?.needsChanges() === true) connection.openChanges();
     if (next === 'files' && connection?.getFiles() === undefined) connection?.openFilesFolder('');
   }
 

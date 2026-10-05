@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -544,6 +545,7 @@ func (lab *lab) manage(provider *Provider) {
 				t.Fatalf("%s tab %d = started %t, problem %q", kind, round, *tab.AgentStarted, problem)
 			}
 			// Inside the host's step limits (tab 15 s, agent 20 s, prompt 5 s, list 3 s) and the phone's 45 s wait.
+			// A missing program is known when herdr drops the launch, at its own limit (agentReadyMs, 15 s).
 			if took > createTimeouts.agent+createTimeouts.prompt+createTimeouts.refresh {
 				t.Fatalf("%s tab %d took %v", kind, round, took)
 			}
@@ -780,4 +782,96 @@ func (client *labClient) wait() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return client.process.Wait(ctx)
+}
+
+// TestLabCloseBesideAMainCheckout asks the real herdr what one workspace.close
+// does to a second workspace in the same repository folder when herdr's
+// worktree records differ: the host refuses a close only where herdr would
+// end more than the one workspace (Manage, closeItem).
+func TestLabCloseBesideAMainCheckout(t *testing.T) {
+	if os.Getenv("PTERM_HERDR_LAB") != "1" {
+		t.Skip("opt-in: PTERM_HERDR_LAB=1 go test ./internal/herdr -run Lab")
+	}
+	lab := startLab(t)
+	ctx := context.Background()
+	provider := New(Config{BinaryPaths: []string{lab.binary}, Home: lab.root, Session: lab.session}, nil)
+	if pong, err := provider.ping(ctx); err != nil {
+		t.Fatal(err)
+	} else {
+		t.Logf("herdr %s", pong.Version)
+	}
+	workspaces := func() map[string]wireWorkspace {
+		t.Helper()
+		snapshot, err := provider.readSnapshot(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]wireWorkspace{}
+		for _, workspace := range records(snapshot.Workspaces, func(record wireWorkspace) string { return record.ID }) {
+			found[workspace.ID] = workspace
+		}
+		return found
+	}
+	create := func(folder, label string) string {
+		t.Helper()
+		var made struct {
+			Workspace struct {
+				ID string `json:"workspace_id"`
+			} `json:"workspace"`
+		}
+		if err := provider.call(ctx, manageTimeouts.call, "workspace.create", map[string]any{"cwd": folder, "label": label, "focus": false}, &made); err != nil {
+			t.Fatal(err)
+		}
+		return made.Workspace.ID
+	}
+	for _, test := range []struct {
+		name          string
+		record, first bool // the main workspace has herdr's worktree record; the close names the main workspace
+	}{
+		{"main with a record, close the main", true, true},
+		{"main with a record, close the second", true, false},
+		{"no records, close the first", false, true},
+		{"no records, close the second", false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := lab.repo("pair-" + strconv.FormatBool(test.record) + "-" + strconv.FormatBool(test.first))
+			main := create(repo, "main")
+			if test.record {
+				// herdr records a main checkout at its first worktree; that worktree's workspace is closed again.
+				var tree struct {
+					Workspace struct {
+						ID string `json:"workspace_id"`
+					} `json:"workspace"`
+				}
+				if err := provider.call(ctx, createTimeouts.worktree, "worktree.create", map[string]any{"workspace_id": main, "branch": "tree-" + main, "focus": false}, &tree); err != nil {
+					t.Fatal(err)
+				}
+				if err := provider.call(ctx, manageTimeouts.call, "workspace.close", map[string]any{"workspace_id": tree.Workspace.ID}, &struct{}{}); err != nil {
+					t.Fatalf("close the worktree's workspace: %v", err)
+				}
+			}
+			second := create(repo, "second")
+			time.Sleep(2 * time.Second) // herdr's own git look
+			before := workspaces()
+			if (before[main].Worktree != nil) != test.record {
+				t.Fatalf("the main workspace's record = %+v", before[main].Worktree)
+			}
+			t.Logf("before: main %s record=%t, second %s record=%t", main, before[main].Worktree != nil, second, before[second].Worktree != nil)
+			closing, other := second, main
+			if test.first {
+				closing, other = main, second
+			}
+			err := provider.call(ctx, manageTimeouts.call, "workspace.close", map[string]any{"workspace_id": closing}, &struct{}{})
+			after := workspaces()
+			_, closedStays := after[closing]
+			_, otherStays := after[other]
+			t.Logf("workspace.close %s: err=%v; it is open: %t; the other (%s) is open: %t", closing, err, closedStays, other, otherStays)
+			if !otherStays {
+				t.Errorf("one workspace.close ended a second workspace")
+			}
+			for id := range after {
+				_ = provider.call(ctx, manageTimeouts.call, "workspace.close", map[string]any{"workspace_id": id, "close_group": true}, &struct{}{})
+			}
+		})
+	}
 }
