@@ -120,15 +120,23 @@ func (provider *Provider) Create(ctx context.Context, request protocol.HTTPProvi
 
 var notAgentName = regexp.MustCompile(`[^a-z0-9]+`)
 
+// agentName is the herdr name of an agent: its kind and its pane, at most
+// maxAgentName characters. The pane part tells two agents of one kind apart,
+// so a cut takes from the kind and keeps the pane's end.
+func agentName(kind, pane string) string {
+	tail := strings.Trim(notAgentName.ReplaceAllString(strings.ToLower(pane), "-"), "-")
+	tail = tail[max(0, len(tail)-(maxAgentName-2)):]
+	return kind[:min(len(kind), maxAgentName-1-len(tail))] + "-" + tail
+}
+
 // startAgent starts an agent of kind in pane (agent.start, 20 s) and then
 // sends prompt, if any (agent.prompt, 5 s): the part that Create and Manage's
 // newTab share. targetID is the pane's terminal. A nil problem: all worked.
 // herdr refuses a name that another agent has (agent_name_taken), so the
 // name is the kind and the pane: "claude-w3-p2".
 func (provider *Provider) startAgent(ctx context.Context, pane, targetID, kind string, prompt *string) (started bool, _ *protocol.HTTPProviderCreateProblem) {
-	name := kind + "-" + strings.Trim(notAgentName.ReplaceAllString(strings.ToLower(pane), "-"), "-")
 	err := provider.call(ctx, createTimeouts.agent, "agent.start", map[string]any{
-		"name": name[:min(len(name), maxAgentName)], "kind": kind, "pane_id": pane, "timeout_ms": agentReadyMs,
+		"name": agentName(kind, pane), "kind": kind, "pane_id": pane, "timeout_ms": agentReadyMs,
 	}, &struct{}{})
 	if err != nil {
 		var failure *callError

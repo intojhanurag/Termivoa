@@ -314,3 +314,44 @@ Nothing new in kind. B1 is create's agent start in an existing workspace: the sa
 ### Tests
 
 Unit tests for each rule above (host and phone); the fake herdr learns `worktree.list` and `worktree.open`; the lab test covers B1 without a real agent program (the start fails cleanly: `agentFailed`), and B2 on real herdr; Phase B: `H-agent-tab`, `H-closed`, `H-live-menu`.
+
+### Build notes (differences from the text of section 14)
+
+| Where | Built | Why |
+| --- | --- | --- |
+| Agent name (also changes create) | An agent's herdr name is its kind and pane, such as `claude-w3-p2`, cut to 32 characters. Create sent the kind alone | herdr takes each name once: a second agent of one kind answered `agent_name_taken` (lab, herdr 0.8.2) |
+| "The start fails cleanly" (Tests) | With no agent program, herdr 0.8.2 answers "started" at once (`launch_pending`) and the prompt then fails: the lab sees `agentStarted: true`, `agentProblem: promptFailed` | Lab |
+| A second `openItem` for one name | `session_missing`: the name is then not in the fresh closed list. `already_open` is a success only when another client opened it between the list and the open | The spec's own rule |
+| When lists are asked again | Also when the set of workspaces changes (still at most 4 in one turn), so an opened worktree does not show as an item and as closed for 10 s. A group seen for the first time gets its list one poll later; a list that fails is empty until the next try | The 10 s rule alone left a stale row |
+| The 4 calls of one turn | Run at the same time, so a hung herdr costs a turn about 1 s | Rule 11 |
+| `openItem`'s own `worktree.list` | The 15 s manage limit; it checks the whole filtered list, not the 16 names of the wire | It runs under the create lock, not in the poll |
+| The name rule | Create's Go rule (`ValidateProviderBranch`): the pattern, at most 4 parts, no `.lock` ending | One rule for names the phone sends |
+| `targetId` of an agent tab | Given when herdr can attach a terminal without an agent, or the agent started | A pane with an agent can always be attached |
+| A git worktree made by hand | Counts as closed when it passes the filter | herdr lists it |
+| Phone: the wait for an agent tab | 45 s (create's wait), else 30 s | The host needs up to 20 s and 5 s after the tab |
+| Phone: **Shell** in the chooser | Takes no tap in the first 400 ms | A double tap on **New tab** would make a tab |
+| Phone: "the tab on screen" | Known by its tab label; two tabs with one label count as one | The list has no tab ID |
+| Phone: texts | "The tab is ready, but the agent did not start."; the prompt problem shows also when herdr said the agent started | A tab is not a worktree; herdr can say "started" and then refuse the prompt |
+| Phone: the **⋯** in a herdr terminal | Shows for a computer at revision 5 (it reuses those actions); the chooser in it needs revision 6 | The gates of each part |
+
+### Review of the built branch (second round)
+
+One independent review of both commits (security and correctness) and the end-to-end run of both halves. No critical or high finding; no security finding; the end-to-end run found no product defect.
+
+| # | Finding | Resolution |
+| --- | --- | --- |
+| R2-1 | The phone's wait for an agent tab (45 s) equals the host's worst case, and `openItem` could take 34 s against a 30 s wait: the timeout showed as a network failure (the Offline screen with one computer), and a second tap could make a second tab and agent (medium) | A wait that ran out says "This takes longer than the phone waits. Look at the list before you try again." and reads the list; `openItem`'s own `worktree.list` has a 5 s limit, so its worst case is 24 s |
+| R2-2 | On a herdr that cannot attach a terminal without an agent, an agent that waits at a question gave no `targetId`, and the phone dropped the agent problem (low to medium) | `targetId` also for `agentNotReady` (as in create); an agent problem with no terminal is said in the sheet |
+| R2-3 | A workspace that comes and goes every turn kept the same four groups in front and the others never got a list (low) | Lists are marked old, not dropped; the longest wait goes first; an open item wins over an old closed name |
+| R2-4 | A long kind or pane ID cut the pane part from the agent name, so two panes could share a name (low) | The cut takes from the kind and keeps the pane's end (`TestAgentNameKeepsThePane`) |
+| R2-5 | Two tabs with one label: closing the other one from a terminal sends the user to the herdr tab though their terminal lives (low) | Not changed; the wire has no tab ID |
+| R2-6 | `open_workspace_id` is proven on herdr 0.8.2 only (low) | An open item now wins over a closed name of the same name; the lab on 0.9.3 is open |
+| R2-7 | Limit order: an agent tab that the create limit refuses still takes a manage unit (low) | As create does; written here |
+
+### Found in this build, not part of it (rule 21)
+
+- A first prompt may always fail on herdr 0.8.2, in create too: `agent.start` answers before the agent is ready (`launch_pending: true`), and `agent.prompt` right after answers `agent_not_ready`. Seen with a stand-in program, not with a real agent.
+- `agentStarted: true` does not prove that the agent runs: herdr 0.8.2 says "started" when the program is missing.
+- A herdr terminal outside git shows "this herdr terminal's folder cannot be read" right after it opens, though nobody tapped Changes: the away recap in Live asks for the changes, and the host refuses a folder that is not a checkout. It is on `main`; an agent tab's notice sits over it.
+- The app offers the agent kinds of its last settings read; the host offers a kind only while an agent of it runs. A kind that left still shows, and **Start** answers "herdr cannot start that agent here". The **+** sheet has the same rule.
+- The `terminal attach --help` probe has a 3 s limit and its result is kept for that herdr version: one slow first probe (seen once under a full parallel test run) turns off tabs without an agent until herdr's version changes or the broker restarts.

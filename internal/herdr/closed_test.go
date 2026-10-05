@@ -179,11 +179,12 @@ func TestClosedWorktreesBounds(t *testing.T) {
 	turn(closedEvery-3*pollEvery, closedPerTurn, "the first 4 again after 10 s")
 	turn(pollEvery, 2, "the other 2 after their 10 s")
 
-	// A workspace came or left: every list is old. It is dropped and asked again, 4 in one turn.
+	// A workspace came or left: every list may be old. Each is asked again, 4 in one turn, the
+	// longest wait first; a list stays on screen until its turn.
 	server.Snapshot(gitGroups(7))
 	turn(pollEvery, closedPerTurn, "after a change of workspaces")
-	if listed() != closedPerTurn {
-		t.Fatalf("old lists stayed: %d", listed())
+	if listed() != 6 {
+		t.Fatalf("lists that were not asked again yet went away: %d", listed())
 	}
 	turn(pollEvery, 3, "the rest, with the new group")
 	// A group that left takes its list along.
@@ -437,7 +438,8 @@ func TestManageNewTabAgentProblems(t *testing.T) {
 	}{
 		{"the agent fails", false, &herdrtest.Error{Code: "agent_start_failed", Message: "no claude on PATH"}, nil, false, protocol.AgentFailed, false},
 		{"the agent fails, a herdr that opens shells", true, &herdrtest.Error{Code: "agent_start_failed"}, nil, false, protocol.AgentFailed, true},
-		{"the agent is not ready", false, &herdrtest.Error{Code: "agent_not_ready"}, nil, false, protocol.AgentNotReady, false},
+		// The agent runs and waits at a question: its pane can be attached, as in create.
+		{"the agent is not ready", false, &herdrtest.Error{Code: "agent_not_ready"}, nil, false, protocol.AgentNotReady, true},
 		{"the prompt fails", false, nil, &herdrtest.Error{Code: "agent_not_ready"}, true, protocol.PromptFailed, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {

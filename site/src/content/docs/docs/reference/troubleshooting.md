@@ -451,6 +451,10 @@ If the card says "Run `pterm doctor` on mac." and has no **Install herdr**, a he
 
 Termivoa started herdr's server, but it did not answer in time. Run `herdr server` in a terminal on that computer to see why. On a peer computer the app says only "That computer could not do this."; the fix is the same.
 
+### "The tab is ready, but the agent did not start."
+
+herdr made the tab, but the agent did not come up in time. Open the tab and start the agent there. If the app says "The agent started, but your first prompt was not sent.", type the prompt in the terminal.
+
 ### "The list changed. Look again, then try again."
 
 The workspace was renamed, closed, or herdr restarted after the phone read the list. Nothing was closed or removed. Look at the row again and repeat the action.

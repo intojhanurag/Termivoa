@@ -8,6 +8,16 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **More herdr from the phone** (`docs/herdr-manage.md`, section 14).
+  Phone: **New tab** in the **⋯** menu offers **Shell** or an agent, with
+  **First prompt (optional)** and **Start**; a worktree whose workspace was
+  closed shows under its project as **CLOSED** with **Open**; a herdr
+  terminal has the **⋯** menu of its workspace; **‹ Sessions** in a herdr
+  terminal returns to the **herdr** tab. Host: `newTab` may carry `agent`
+  and `prompt` (create's rules and its limit of 3 per minute); the group
+  field `closed` and the action `openItem`; protocol revision 6. An agent's
+  herdr name is now its kind and pane (herdr takes each name once, so a
+  second agent of one kind failed before).
 - Phone: the **New workspace** sheet has **Add a folder**. It opens a session
   on that computer with `pterm project add ` typed and not run; type the
   folder, press Enter, then **Check again**. Host: no change.

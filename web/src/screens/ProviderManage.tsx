@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ApiError, client } from '../api/http';
+import { ApiError, client, manageTimeout } from '../api/http';
 import type { Computer } from '../computers';
 import type {
   HTTPProviderGroup, HTTPProviderItem, HTTPProviderManageRequest, HTTPProviderManageResponse, HTTPSettingsResponse,
@@ -47,18 +47,27 @@ export type ManageStep =
   /** CHANGED, and the list was read again. */
   | { readonly kind: 'changed' };
 
+export const SLOW = 'This takes longer than the phone waits. Look at the list before you try again.';
+
 /**
  * One manage action, start to end. After every success, and after "the list
  * changed", the provider's list is read again at once (a new terminal's read
  * is the caller's, with the move to Live). `reload` must not reject.
  */
 export async function manageStep(
-  body: HTTPProviderManageRequest, manage: Manage, reload: () => Promise<void>, words: (error: unknown) => string,
+  body: HTTPProviderManageRequest, manage: Manage, reload: () => Promise<void>, words: (error: unknown) => string, clock: () => number = Date.now,
 ): Promise<ManageStep> {
   let answer: HTTPProviderManageResponse;
+  const started = clock();
   try {
     answer = await manage(body);
   } catch (error) {
+    // The phone's own wait ran out: the computer may still finish, so this is not "can't reach" (and no Offline screen),
+    // and the list says what exists before the user tries again.
+    if (error instanceof ApiError && error.code === 'network' && clock() - started >= manageTimeout(body) - 1000) {
+      await reload();
+      return { kind: 'note', note: { kind: 'error', text: SLOW } };
+    }
     // Nothing changed: the tab is the item's last one.
     if (error instanceof ApiError && error.code === 'operation_conflict' && body.action === 'closeTab') return { kind: 'note', note: { kind: 'error', text: LAST_TAB } };
     if (error instanceof ApiError && (error.code === 'operation_conflict' || error.code === 'session_missing')) {
@@ -74,6 +83,9 @@ export async function manageStep(
     return { kind: 'open', targetId: answer.targetId, ...(notice === undefined ? {} : { notice }) };
   }
   await reload();
+  // No terminal to say it over (this herdr cannot open the tab): say here what the agent did.
+  const problem = startNotice({ problem: answer.agentProblem }, 'tab');
+  if (problem !== undefined) return { kind: 'note', note: { kind: 'error', text: problem } };
   if (body.action === 'newTab') return { kind: 'note', note: { kind: 'made', what: 'tab' } };
   if (body.action === 'openItem') return { kind: 'note', note: { kind: 'made', what: 'worktree' } };
   if (body.action === 'newWorkspace') return { kind: 'note', note: { kind: 'made', what: 'workspace' } };

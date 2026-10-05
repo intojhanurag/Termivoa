@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
 import { ADD_FOLDER_COMMAND } from './providers';
-import { addFolderStep, NO_SESSION, CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
+import { SLOW, addFolderStep, NO_SESSION, CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
 import { group, item, mac, providerEntry, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -60,6 +60,21 @@ describe('one manage action', () => {
     await expect(opened({ agentStarted: true, agentProblem: 'promptFailed' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started, but your first prompt was not sent.' });
     await expect(opened({ agentStarted: false, agentProblem: 'promptFailed' })).resolves.toEqual({ kind: 'open', targetId: 'w8:p2.term_9', notice: 'The agent started, but your first prompt was not sent.' });
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a wait that ran out is not "can\'t reach": it reads the list and says so; a fast network failure keeps its words', async () => {
+    const reload = vi.fn(async () => undefined);
+    const lost = vi.fn(async () => { throw new ApiError(0, 'network', 'x'); });
+    let now = 0;
+    const slow = manageStep(itemRequest({ agent: 'claude', prompt: '' }, linked), async () => { now = 45_000; throw new ApiError(0, 'network', 'x'); }, reload, () => 'offline', () => now);
+    await expect(slow).resolves.toEqual({ kind: 'note', note: { kind: 'error', text: SLOW } });
+    expect(reload).toHaveBeenCalledTimes(1);
+    await expect(manageStep(itemRequest('newTab', linked), lost, reload, () => 'offline', () => 5)).resolves.toEqual({ kind: 'note', note: { kind: 'error', text: 'offline' } });
+  });
+
+  it('an agent problem with no terminal to open is said in the sheet', async () => {
+    const step = manageStep(itemRequest({ agent: 'claude', prompt: '' }, linked), async () => ({ itemId: 'w8', agentStarted: false, agentProblem: 'agentFailed' as const }), async () => undefined, () => 'x');
+    await expect(step).resolves.toEqual({ kind: 'note', note: { kind: 'error', text: 'The tab is ready, but the agent did not start.' } });
   });
 
   it('knows which action ends the terminal on screen: its workspace, or its own tab (every terminal of that tab)', () => {

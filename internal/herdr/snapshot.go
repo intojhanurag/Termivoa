@@ -319,7 +319,12 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 		}
 		build.group.Items = items
 		build.group.State = rollGroup(items)
-		build.group.Closed = closed[id]
+		// A list from before a worktree was opened can still name it: an open item wins.
+		for _, name := range closed[id] {
+			if !slices.ContainsFunc(items, func(item protocol.HTTPProviderItem) bool { return item.Name == name }) {
+				build.group.Closed = append(build.group.Closed, name)
+			}
+		}
 		groups = append(groups, build.group)
 		targetsOf = append(targetsOf, build.targets)
 		result.groups[id] = build.ref

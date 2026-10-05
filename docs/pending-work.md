@@ -99,6 +99,14 @@ In this order.
      double-tap pattern that the herdr confirmations no longer have;
      `ProviderCreate.tsx` shows its field errors muted (`error
      hint-text`).
+   - **herdr, second round (pull request open, not merged):** an agent in a
+     new tab, closed worktrees with **Open**, the menu inside a herdr
+     terminal (`docs/herdr-manage.md`, section 14). Found while building
+     it, each for its own issue: a first prompt may always fail on herdr
+     0.8.2 (`agent.prompt` right after `agent.start` answers
+     `agent_not_ready`), in create too; `agentStarted: true` does not prove
+     that the agent runs; one slow `terminal attach --help` probe turns off
+     tabs without an agent until the broker restarts.
    - **Named herdr sessions:** only the default session shows.
    - **Windows:** herdr is not supported there.
    - **herdr installed later:** the phone shows it only the next time the

@@ -30,8 +30,8 @@ var (
 )
 
 // manageTimeouts are the step limits of Manage. A test seam.
-var manageTimeouts = struct{ call, refresh, ready, gone time.Duration }{
-	call: 15 * time.Second, refresh: 3 * time.Second, ready: 5 * time.Second, gone: 500 * time.Millisecond,
+var manageTimeouts = struct{ call, list, refresh, ready, gone time.Duration }{
+	call: 15 * time.Second, list: 5 * time.Second, refresh: 3 * time.Second, ready: 5 * time.Second, gone: 500 * time.Millisecond,
 }
 
 // Project is the Termivoa project of newWorkspace: its resolved folder, which
@@ -162,7 +162,7 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 		}
 		workspace := fresh.groups[*request.GroupID].workspace
 		var names []string
-		if names, err = provider.listClosed(ctx, manageTimeouts.call, workspace); err == nil && !slices.Contains(names, *request.Worktree) {
+		if names, err = provider.listClosed(ctx, manageTimeouts.list, workspace); err == nil && !slices.Contains(names, *request.Worktree) {
 			return response, ErrTargetMissing
 		}
 		method, params = "worktree.open", map[string]any{"workspace_id": workspace, "branch": *request.Worktree, "focus": false}
@@ -215,7 +215,9 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 		}
 	}
 	// Without `terminal attach` this herdr cannot open a terminal that has no agent: no targetId.
-	if (makes || request.Action == protocol.NewTab) && (current.caps.attachAny || started) && valid {
+	// A pane with an agent can always be attached, also one whose agent waits at a question (as in create).
+	waits := response.AgentProblem != nil && *response.AgentProblem == protocol.AgentNotReady
+	if (makes || request.Action == protocol.NewTab) && (current.caps.attachAny || started || waits) && valid {
 		response.TargetID = &target
 		// Answer once a snapshot read after the last step has the new terminal, so it opens at once.
 		provider.settle(ctx, manageTimeouts.refresh, target)

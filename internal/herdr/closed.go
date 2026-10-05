@@ -21,6 +21,7 @@ const (
 type closedTrees struct {
 	names []string
 	at    time.Time // when herdr was asked; zero: ask at the next turn
+	stale bool      // the workspaces changed since: ask again, longest wait first
 }
 
 // listClosed asks herdr for the worktrees of workspace's repository and
@@ -58,18 +59,22 @@ func (provider *Provider) listClosed(ctx context.Context, timeout time.Duration,
 // with the 1 s limit of a poll call: a slow herdr costs a turn one second.
 // A list that herdr did not give is empty until the next try. A group that
 // left takes its list along. When the set of workspaces changed, every list
-// is old (a worktree was opened or closed): all are dropped and asked again.
-// Poll loop only.
+// may be old (a worktree was opened or closed): each is asked again, the one
+// that waited longest first, so a workspace that comes and goes every turn
+// cannot keep the same four groups in front. Until then mapSnapshot leaves
+// out a closed name that an open item of the group has. Poll loop only.
 func (provider *Provider) closedWorktrees(ctx context.Context, snapshot wireSnapshot, now time.Time) map[string][]string {
 	var ids []string
 	for _, workspace := range records(snapshot.Workspaces, func(record wireWorkspace) string { return record.ID }) {
 		ids = append(ids, workspace.ID)
 	}
 	slices.Sort(ids)
-	// ponytail: one change drops every group's list; with more than 4 git groups the other groups'
-	// closed rows come back a few turns later. Drop only the changed group's list if that shows.
 	if key := strings.Join(ids, " "); key != provider.closedFor {
-		provider.closed, provider.closedFor = nil, key
+		provider.closedFor = key
+		for id, list := range provider.closed {
+			list.stale = true
+			provider.closed[id] = list
+		}
 	}
 	groups := provider.view.groups
 	kept := map[string]closedTrees{}
@@ -80,7 +85,7 @@ func (provider *Provider) closedWorktrees(ctx context.Context, snapshot wireSnap
 			continue
 		}
 		kept[id] = provider.closed[id]
-		if !now.Before(kept[id].at.Add(closedEvery)) {
+		if kept[id].stale || !now.Before(kept[id].at.Add(closedEvery)) {
 			due = append(due, id)
 		}
 	}
