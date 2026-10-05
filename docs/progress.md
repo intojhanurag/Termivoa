@@ -49,6 +49,32 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### UI consistency pass, all screens except herdr (2026-10-05, branch `polish/ui-consistency`; pull request open, not merged)
+
+- **Why.** The owner asked: fix the UI inconsistencies that remain, remove
+  nothing, and less text on screen. He reviews the pull request from
+  pictures.
+- **What.** An audit of every screen and sheet outside the herdr files
+  (about 50 screens seen in a browser at 390 and 375 px, the rest read from
+  markup), then the smallest fix for each inconsistency: one `ConfirmPair`
+  (the way out first, no confirm tap in the first 400 ms) for six
+  confirmations; 44 px tap areas where they were smaller; one title size,
+  one hint and error size, one edge for text actions, one case for buttons;
+  shorter lines in four places; a one-line Home Screen hint on Sessions for
+  an iPhone Safari tab. No control, state or screen is gone. Phone only.
+- **Evidence.** Nine before and after pairs, demo data only:
+  `docs/evidence/ui-polish/before/` and `after/`.
+- **Checks.** `pnpm typecheck`; vitest 933 passed (4 new); `pnpm
+  build:web`; e2e Phase B 117/117 with no check changed; widths at 390 and
+  375 px. `cd site && npx astro build` with valid links. Not run: Phase A,
+  WebKit, a real phone.
+- **Proposals not built** (in the pull request): Settings as sub-pages; one
+  confirmation component for the herdr sheets too; shorter iPhone steps.
+- **Seen, not part of it (rule 21).** `scripts/docs-screenshots/capture.mjs`
+  has a fixed Google Chrome path and ignores `CHROME`, so it cannot run on
+  a Mac without Google Chrome; a CSS comment about `.confirm-pair` sits
+  above `.sheet-actions`.
+
 ### iPhone Safari tab: a notification hint a person can follow (2026-10-05, branch `fix/home-screen-hint`)
 
 - **Why.** The owner used Termivoa in a Safari tab on his iPhone, saw only

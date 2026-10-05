@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BrokerRPCSessionRecord, HTTPSettingsResponse } from '../generated/protocol';
 import type { Computer } from '../computers';
 import { hosted, type ComputerEntry, type ComputerStatus } from './allSessions';
 import { NewSession } from './NewSession';
 import { waitingFirst } from './allSessions';
-import { age, ComputerChips, controllerText, hostSummary, pairHint, problemDetail, keptSettings, problemText, PushCard, SessionRow, Sessions } from './Sessions';
+import { age, ComputerChips, controllerText, hostSummary, pairHint, problemDetail, keptSettings, problemText, HomeScreenHint, PushCard, SessionRow, Sessions } from './Sessions';
 
 const base: BrokerRPCSessionRecord = {
   id: '84444444-4444-4444-8444-444444444444',
@@ -186,7 +186,7 @@ const ok = (value: HTTPSettingsResponse, sessions: BrokerRPCSessionRecord[] = []
   ({ kind: 'ok', settings: value, sessions: sessions.map((item) => hosted(item, computer)), at: NOW });
 const entry = (computer: Computer, status: ComputerStatus): ComputerEntry => ({ computer, status });
 
-function renderSessions(entries: ComputerEntry[], extra: { offerPush?: boolean } = {}) {
+function renderSessions(entries: ComputerEntry[], extra: { offerPush?: boolean; onHomeScreenSteps?: () => void } = {}) {
   const all = entries.flatMap((item) => (item.status.kind === 'ok' ? item.status.sessions : []));
   return renderToStaticMarkup(
     <Sessions
@@ -197,6 +197,7 @@ function renderSessions(entries: ComputerEntry[], extra: { offerPush?: boolean }
       onNew={() => undefined}
       onWall={() => undefined}
       onSettings={() => undefined}
+      onHomeScreenSteps={extra.onHomeScreenSteps}
       onReload={async () => undefined}
       onRetry={() => Promise.resolve()}
       onFailure={() => ''}
@@ -339,7 +340,7 @@ describe('New session', () => {
     expect(html).toMatch(/<select id="shell"><option value="zsh" selected="">zsh<\/option>/u);
     expect(html).toContain('<input id="run-first"');
     expect(html).toContain('<span>start session</span><span class="off" aria-hidden="true">starting…</span>');
-    expect(html).toContain('save as preset');
+    expect(html).toContain('Save as preset');
     expect(html).not.toContain('Launch');
     expect(html).not.toContain('computer-heading');
   });
@@ -369,6 +370,26 @@ describe('PushCard', () => {
 
   it('is not in the first render of Sessions; it appears only after push support is checked', () => {
     expect(renderSessions([entry(mac, ok(settings))], { offerPush: true })).not.toContain('Get a buzz');
+  });
+});
+
+describe('HomeScreenHint', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const TITLE = 'For notifications, add Termivoa to your Home Screen';
+  const sessionsOn = (userAgent: string, standalone = false) => {
+    vi.stubGlobal('navigator', { userAgent, maxTouchPoints: 0, standalone });
+    return renderSessions([entry(mac, ok(settings))], { offerPush: true, onHomeScreenSteps: () => undefined });
+  };
+
+  it('is one line with See how and Not now', () => {
+    const html = renderToStaticMarkup(<HomeScreenHint onSteps={() => undefined} onClose={() => undefined} />);
+    expect(html).toContain(`>${TITLE}</h2><div class="push-card-actions"><button type="button" class="secondary">See how</button><button type="button" class="link">Not now</button>`);
+  });
+
+  it('shows on Sessions in an iPhone Safari tab, never in the Home Screen app or another browser', () => {
+    expect(sessionsOn('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1')).toContain(TITLE);
+    expect(sessionsOn('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1', true)).not.toContain(TITLE);
+    expect(sessionsOn('Mozilla/5.0 (Linux; Android 15) Chrome/130.0 Mobile Safari/537.36')).not.toContain(TITLE);
   });
 });
 

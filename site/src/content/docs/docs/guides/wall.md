@@ -14,7 +14,7 @@ Termivoa shows every running session as a small live screen on one page, the Wal
 2. Tap a tile to open that session in the [live terminal](/docs/guides/live-terminal/).
 3. To go back, tap the list button at the top, or use the back gesture.
 
-If no session runs, the Wall shows **No running sessions** and a **new session** button.
+If no session runs, the Wall shows **No running sessions.** and a **new session** button.
 
 ## What does a tile show?
 

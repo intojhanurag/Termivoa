@@ -90,8 +90,7 @@ p { margin: 0; }
 
 /* Screen and sheet titles are set in a serif; names and body in the sans; labels in mono caps. */
 h1, h2 { margin: 0; font-family: var(--serif); font-weight: 400; letter-spacing: -0.03em; overflow-wrap: anywhere; }
-h1 { font-size: 40px; line-height: 44px; }
-h1.display { font-size: 44px; line-height: 46px; }
+h1 { font-size: 44px; line-height: 46px; }
 h2 { font-size: 32px; line-height: 36px; }
 h3 { font-size: 17px; margin: 0; }
 
@@ -234,7 +233,8 @@ label { color: var(--soft); font-size: 14px; }
 .green { color: var(--green); }
 .error { color: var(--red); }
 .strong { font-weight: 700; }
-.field-note { margin: 0; }
+/* The line under a field (saved, a problem): the size of a hint, so the text does not jump when a hint turns into an error. */
+.field-note { margin: 0; font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 /* Numbered steps inside a notice (Add to Home Screen). */
 .steps-list { margin: 8px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
 .hint-text { color: var(--muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
@@ -253,8 +253,8 @@ label { color: var(--soft); font-size: 14px; }
 .dot.muted { background: var(--faint); }
 
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
-.facts dt { color: var(--muted); }
-.facts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; }
+.facts dt { color: var(--muted); font-size: 13px; line-height: 20px; }
+.facts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; line-height: 20px; }
 
 /*
  * Notices: what happened (bold), how to fix it (one line), one action. The
@@ -289,7 +289,7 @@ label { color: var(--soft); font-size: 14px; }
 /* A command in a notice: mono bone, typed as shown; it wraps when the phone is narrow. */
 .notice-command { display: block; max-width: 100%; margin-top: 4px; color: var(--text); font-size: 13px; line-height: 19px; overflow-wrap: anywhere; }
 
-/* Banners over the app: in progress (paper, cyan spinner), done (bone), failed (paper, red). */
+/* Banners over the app: in progress (paper, cyan spinner), done (bone), failed (paper, red), a notice (paper, amber). */
 .banner {
   display: flex;
   flex-shrink: 0;
@@ -308,6 +308,8 @@ label { color: var(--soft); font-size: 14px; }
 .banner.success .banner-dot { background: var(--green-on-bone); }
 .banner.danger { border-color: var(--red-line); }
 .banner.danger .banner-dot { background: var(--red); }
+/* A notice in Live (input not sent, control lost): amber, it needs you. */
+.banner.warning .banner-dot { background: var(--amber); }
 .banner-text { flex: 1; min-width: 0; color: inherit; font-size: 15px; font-weight: 600; line-height: 18px; overflow-wrap: anywhere; }
 .banner-actions { display: flex; flex-shrink: 0; }
 .banner-actions button.link { padding: 0 10px; font-size: 14px; }
@@ -318,6 +320,8 @@ label { color: var(--soft); font-size: 14px; }
 /* Screen headers */
 /* The action sits on the title's line, also when a line follows the title. */
 .screen-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-top: 24px; }
+/* A text action in a header ends where the hairlines end. */
+.screen-header > button.link, .sheet-header .row > button.link:last-child, .answer-head > button.link { margin-right: -4px; }
 .subtitle { color: var(--muted); font-size: 14px; line-height: 18px; margin-top: 6px; }
 .host-line { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; line-height: 16px; text-transform: uppercase; }
 /* Title and actions share the first row; the host line gets the full width below. */
@@ -327,7 +331,9 @@ label { color: var(--soft); font-size: 14px; }
 .sessions-header .header-actions { grid-column: 2; grid-row: 1; }
 /* A section label with a hairline under it, and a note or an action on the right. */
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.section-head button.link { min-height: 0; padding: 0; }
+/* Small to the eye, 44 px to the thumb; its text ends at the hairline's end. */
+.section-head button.link { position: relative; min-width: 0; min-height: 0; padding: 0; }
+.section-head button.link::after { content: ""; position: absolute; inset: -14px -12px; }
 .section-hint { min-width: 0; color: var(--muted); font-size: 12px; line-height: 16px; text-align: right; }
 .group { display: flex; flex-direction: column; gap: 8px; }
 .settings-screen { gap: 32px; }
@@ -641,7 +647,7 @@ button.action {
   font-size: 14px;
   font-weight: 500;
 }
-button.action.primary { flex-grow: 1.15; color: var(--bg); font-weight: 600; }
+button.action.primary { flex-grow: 1.15; border-color: var(--text); color: var(--bg); font-weight: 600; }
 .action .glyph { font-family: var(--mono); font-weight: 700; }
 /* Five actions side by side down to 320 px. */
 @media (max-width: 429px) {
@@ -771,7 +777,8 @@ button.mic.listening::after { content: ""; position: absolute; inset: -6px; bord
   border-radius: 20px 20px 0 0;
 }
 .answer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.answer-head .link { min-height: 36px; font-family: var(--mono); font-size: 13px; }
+.answer-head .link { position: relative; min-height: 36px; font-family: var(--mono); font-size: 13px; }
+.answer-head .link::after { content: ""; position: absolute; inset: -4px 0; }
 .answer-asks { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--amber); font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .answer-question { font-family: inherit; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 28px; }
 .answer-detail { flex-shrink: 0; margin: 0; max-height: calc(6 * 19px + 22px); overflow-y: auto; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--soft); font-size: 13px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -780,13 +787,16 @@ button.mic.listening::after { content: ""; position: absolute; inset: -6px; bord
 .answer-option { display: flex; flex-shrink: 0; align-items: center; gap: 12px; min-height: 54px; padding: 0 18px; border: 1px solid var(--line-strong); font-size: 16px; text-align: left; }
 .answer-option.first { border-color: var(--text); background: var(--text); color: var(--bg); }
 .answer-option.first:active:not(:disabled) { background: var(--press); }
+/* Off (no control yet): flat and dim, like a primary button. */
+.answer-option.first:disabled:not([aria-busy="true"]) { opacity: 1; border-color: var(--raised); background: var(--raised); color: var(--faint); }
+.answer-option.first:disabled:not([aria-busy="true"]) .answer-number { color: var(--faint); }
 .answer-number { flex-shrink: 0; color: var(--muted); font-family: var(--mono); font-size: 14px; }
 .answer-option.first .answer-number, .answer-option.first .answer-hint { color: #55534f; }
 .answer-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .answer-hint { flex-shrink: 0; color: var(--muted); font-family: var(--mono); font-size: 13px; }
 .answer-option .spinner { border-color: var(--line-strong); border-top-color: currentColor; }
 button.answer-take { flex-shrink: 0; min-height: 54px; font-size: 16px; }
-.answer-pill { position: absolute; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--amber); font-family: var(--mono); font-size: 13px; font-weight: 400; }
+.answer-pill { position: absolute; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--amber); font-family: var(--mono); font-size: 13px; font-weight: 400; }
 
 /* History */
 .history { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -859,12 +869,13 @@ h2.changes-file-name { font-family: var(--mono); font-size: 17px; letter-spacing
 
 /* Changes | Files switch, in place of the screen title */
 .segmented { display: inline-flex; justify-self: start; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; }
-.segmented button { min-height: 36px; padding: 0 14px; border: 0; color: var(--muted); }
+.segmented button { position: relative; min-height: 36px; padding: 0 14px; border: 0; color: var(--muted); }
+.segmented button::after { content: ""; position: absolute; inset: -4px 0; }
 .segmented button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
 
 /* Files: read-only browsing of the session's project */
 .files-bar { row-gap: 10px; }
-.files-search { grid-column: 1 / -1; width: 100%; min-height: 40px; padding: 0 12px; font-family: var(--mono); font-size: 16px; }
+.files-search { grid-column: 1 / -1; width: 100%; min-height: 44px; padding: 0 12px; font-family: var(--mono); font-size: 16px; }
 .crumbs { grid-column: 1 / -1; margin: -8px 0 -10px; }
 .crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 14px; }
 .crumbs li + li::before { content: "/"; padding: 0 2px; color: var(--muted); }
@@ -943,7 +954,7 @@ p.state-pill { justify-content: flex-start; }
 .push-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-left: 2px solid var(--muted); border-radius: 0 6px 6px 0; background: var(--surface); }
 .push-card-title { font-family: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0; line-height: 20px; }
 .push-card-actions { display: flex; align-items: center; gap: 8px; padding-top: 8px; }
-.push-card-actions button { min-height: 40px; }
+.push-card-actions button { min-height: 44px; }
 
 /* On/off switch: a 44 px tap target around a small track. */
 button.switch { flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 0; min-width: 56px; }
@@ -960,8 +971,9 @@ button.switch:active:not(:disabled) { background: none; }
 .preview-ready { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-port, .preview-more { font-family: var(--mono); font-size: 13px; font-weight: 400; }
 .preview-more { color: var(--muted); font-size: 12px; }
-button.preview-open { min-height: 36px; padding: 0 16px; border: 0; background: var(--text); color: var(--bg); font-size: 14px; }
+button.preview-open { position: relative; min-height: 36px; padding: 0 16px; border: 0; background: var(--text); color: var(--bg); font-size: 14px; }
 button.preview-open:active:not(:disabled) { background: var(--press); }
+button.preview-open::after, button.preview-tell::after { content: ""; position: absolute; inset: -4px 0; }
 
 /* .app already pads the status-bar safe area, so the bar sits just below it. */
 .preview-screen { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
@@ -978,15 +990,17 @@ button.preview-open:active:not(:disabled) { background: var(--press); }
 .preview-status { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 5px 0 16px; border: 1.5px solid var(--line); border-radius: 24px; background: var(--surface); }
 .preview-agent { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; color: var(--text); font-family: var(--mono); font-size: 13px; }
 .preview-agent-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-button.preview-tell { flex-shrink: 0; min-height: 38px; padding: 0 16px; font-size: 14px; }
+button.preview-tell { position: relative; flex-shrink: 0; min-height: 38px; padding: 0 16px; font-size: 14px; }
 
 /* Multi-computer: a colour dot always comes with the computer's label. */
 .computer-tag { display: inline-flex; align-items: center; gap: 5px; }
 /* Computer filter: underline tabs on a hairline, full bleed. */
 .chips { display: flex; flex-shrink: 0; gap: 22px; margin: 0 -22px; padding: 0 22px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
-.chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; min-width: 0; padding: 6px 0 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); font-size: 15px; font-weight: 500; }
+.chip { position: relative; display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; min-width: 0; padding: 6px 0 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); font-size: 15px; font-weight: 500; }
 .chip:active:not(:disabled) { background: none; }
+/* A short label ("All") is still 44 px wide to the thumb. */
+.chip::after { content: ""; position: absolute; inset: 0 -13px; }
 .chip[aria-pressed="true"] { border-color: var(--text); color: var(--text); font-weight: 600; }
 .computer-problem { list-style: none; margin: 18px 0 0; }
 .computer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -995,6 +1009,11 @@ button.preview-tell { flex-shrink: 0; min-height: 38px; padding: 0 16px; font-si
 .computer-head { display: flex; align-items: flex-start; gap: 12px; }
 .computer-card .row-text { gap: 4px; }
 .computer-card .row-meta { white-space: normal; overflow-wrap: anywhere; }
+/* Name and state share the first row; the lines under the name get the full width (a build and "last seen" fit on one line). */
+.computer-head.split { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 4px; }
+.computer-head.split > .row-text { display: contents; }
+.computer-head.split > .row-text > :not(.row-title) { grid-column: 1 / -1; }
+.computer-head.split > .computer-state { grid-column: 2; grid-row: 1; }
 .computer-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 3px; }
 .home-badge { flex-shrink: 0; padding: 1px 6px; border-radius: 3px; background: var(--text); color: var(--bg); font-family: var(--mono); font-size: 10px; font-weight: 400; letter-spacing: 0.14em; line-height: 14px; text-transform: uppercase; }
 /* Status on the right: a dot (or a spinner while it is read) and one word. */

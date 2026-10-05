@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Banner, Button, Icon, Notice } from './ui';
+import { Banner, Button, ConfirmPair, Icon, Notice } from './ui';
 
 describe('Button', () => {
   it('is a plain button when idle', () => {
@@ -49,6 +49,13 @@ describe('Notice', () => {
     expect(html).not.toContain('notice-body');
     expect(html).not.toContain('notice-action');
     expect(renderToStaticMarkup(<Notice tone="danger">Run it again.</Notice>)).toBe('<div class="notice danger"><div class="notice-body">Run it again.</div></div>');
+  });
+});
+
+describe('ConfirmPair', () => {
+  it('puts the way out first and the danger button second', () => {
+    expect(renderToStaticMarkup(<ConfirmPair cancel="Keep running" confirm="Terminate session" onCancel={() => undefined} onConfirm={() => undefined} />))
+      .toBe('<div class="row confirm-pair"><button type="button">Keep running</button><button type="button" class="danger">Terminate session</button></div>');
   });
 });
 

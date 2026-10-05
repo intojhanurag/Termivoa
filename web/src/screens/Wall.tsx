@@ -523,7 +523,7 @@ export function Wall({ sessions, multi = false, onOpen, onNew, onList }: {
       <header className="screen-header">
         <div>
           <h1 className="display">Wall</h1>
-          <p className="subtitle">Watch only. Tap a session to open it. Hold and drag to move it.</p>
+          <p className="subtitle">Watch only. Tap to open, hold to move.</p>
         </div>
         <button type="button" className="round" aria-label="Session list" onClick={onList}>
           <svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true">
@@ -535,7 +535,7 @@ export function Wall({ sessions, multi = false, onOpen, onNew, onList }: {
       {sessions === undefined && <p role="status" className="muted">Loading…</p>}
       {sessions !== undefined && wall.shown.length === 0 && (
         <section className="stack wall-empty">
-          <p className="muted">No running sessions</p>
+          <p className="muted">No running sessions.</p>
           <button type="button" className="primary" onClick={onNew}>
             <span aria-hidden="true" className="prompt">❯</span> new session
           </button>

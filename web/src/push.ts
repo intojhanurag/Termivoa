@@ -110,6 +110,22 @@ export function dismissPushCard(): void {
   }
 }
 
+/** Set to '1' after "Not now" on the Home Screen hint, so it shows until then and never again. */
+export const HOME_SCREEN_KEY = 'pterm.homeScreenHint.dismissed';
+
+/** Whether Sessions shows the Home Screen hint: only an iPhone or iPad browser tab (never the Home Screen app, never another phone), until "Not now". */
+export function shouldOfferHomeScreen(): boolean {
+  return pushSupport() === 'needs-home-screen' && storage()?.getItem(HOME_SCREEN_KEY) !== '1';
+}
+
+export function dismissHomeScreenHint(): void {
+  try {
+    storage()?.setItem(HOME_SCREEN_KEY, '1');
+  } catch {
+    // Private mode or full storage: the hint simply shows again next time.
+  }
+}
+
 /** Whether the Sessions screen should offer the one-time card. Never rejects. */
 export async function shouldOfferPush(): Promise<boolean> {
   try {

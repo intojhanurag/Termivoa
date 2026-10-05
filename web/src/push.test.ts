@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  disablePush, dismissPushCard, enablePush, fromBase64Url, peerScope, PUSH_BLOCKED, PUSH_CARD_KEY, pushEnabled, pushSupport,
-  removeStrayWorkers, shouldOfferPush, syncHomePush, syncPeerPush, testPush, toBase64Url, workersSafe,
+  disablePush, dismissHomeScreenHint, dismissPushCard, enablePush, fromBase64Url, peerScope, PUSH_BLOCKED, PUSH_CARD_KEY, pushEnabled, pushSupport,
+  removeStrayWorkers, shouldOfferHomeScreen, shouldOfferPush, syncHomePush, syncPeerPush, testPush, toBase64Url, workersSafe,
 } from './push';
 import { COMPUTERS_KEY, refreshComputers } from './computers';
 
@@ -146,6 +146,19 @@ describe('pushSupport', () => {
     vi.stubGlobal('PushManager', undefined);
     Reflect.deleteProperty(globalThis, 'PushManager');
     expect(pushSupport()).toBe('unsupported');
+  });
+});
+
+describe('shouldOfferHomeScreen', () => {
+  it('is for an iPhone browser tab only, until Not now', () => {
+    browser({ agent: IPHONE, standalone: true });
+    expect(shouldOfferHomeScreen()).toBe(false);
+    browser();
+    expect(shouldOfferHomeScreen()).toBe(false);
+    browser({ agent: IPHONE });
+    expect(shouldOfferHomeScreen()).toBe(true);
+    dismissHomeScreenHint();
+    expect(shouldOfferHomeScreen()).toBe(false);
   });
 });
 

@@ -130,7 +130,7 @@ the [quick start](https://termivoa.vercel.app/docs/quick-start/):
 - [ ] iPhone: answer a Claude Code permission prompt from the answer card.
       The card shows the command, one tap answers once, and the card closes.
 - [ ] iPhone: a question that changes just before the tap refuses the old
-      answer. The card says "The question changed — check the new one", and
+      answer. The card says "The question changed. Check the new one.", and
       the phone keeps control.
 
 ### Compose: photo and voice

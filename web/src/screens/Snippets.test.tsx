@@ -171,14 +171,14 @@ describe('project commands', () => {
     expect(markup.indexOf('Run tests and fix failures')).toBeGreaterThan(saved);
   });
 
-  it('says why + new is off when the list is full', () => {
+  it('says why + New is off when the list is full', () => {
     const full = Array.from({ length: MAX_SNIPPETS }, (_, at) => ({ id: `s${at}`, title: `s${at}`, text: 'ls', sendEnter: true, shell: true }));
     vi.stubGlobal('localStorage', { getItem: (key: string) => (key === SNIPPETS_KEY ? JSON.stringify(full) : null) });
     const markup = renderToStaticMarkup(
       <Snippets target={{ sendPaste: () => true, sendKey: () => true }} canSend busy={undefined} tasks={ready()} onRetryTasks={noop} onRunTask={async () => undefined} onClose={noop} />,
     );
     vi.unstubAllGlobals();
-    expect(markup).toContain('<button type="button" class="link" disabled="">+ new</button>');
+    expect(markup).toContain('<button type="button" class="link" disabled="">+ New</button>');
     expect(markup).toContain('<p class="hint-text">You can keep 50 snippets at most. Delete one to add another.</p>');
   });
 

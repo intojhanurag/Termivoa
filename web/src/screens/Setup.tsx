@@ -141,7 +141,7 @@ export function Setup({ grant, reason, onPaired }: {
             onChange={(event) => setLabel(event.target.value)}
           />
           <p id="device-label-help" className={labelValid ? 'hint-text' : 'error field-note'}>
-            {labelProblem ?? 'Your computer shows this name in pterm devices. You can change it later in Settings.'}
+            {labelProblem ?? 'Shows in pterm devices on your computer. You can change it in Settings.'}
           </p>
           <button type="submit" className="primary wide" disabled={!labelValid}>
             <span aria-hidden="true" className="prompt">❯</span> Pair this device

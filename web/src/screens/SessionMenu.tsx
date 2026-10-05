@@ -3,7 +3,7 @@ import { client, isAuthFailure } from '../api/http';
 import type { BrokerRPCSessionRecord, SessionWorktree } from '../generated/protocol';
 import type { WorktreeRemoval } from '../terminal/Connection';
 import { Sheet, SheetHeader } from './Sheet';
-import { Button } from './ui';
+import { Button, ConfirmPair } from './ui';
 import { RemoveWorktree } from './Worktree';
 
 const SAFE_TITLE = /^[^\p{Cc}\s](?:[^\p{Cc}]{0,126}[^\p{Cc}\s])?$/u;
@@ -93,20 +93,19 @@ export function SessionMenu({
             Terminate “{session.title}”? This ends the shell and every program running in it.
             It is not Ctrl+C and not Detach, and it cannot be undone.
           </p>
-          <div className="row">
-            <Button
-              className="danger"
-              busy={busy}
-              busyLabel="Terminating…"
-              onClick={() => {
-                void mutate(() => client(origin).terminateSession(session.id, {
-                  operationId: crypto.randomUUID(),
-                  generation: session.generation,
-                }));
-              }}
-            >Terminate session</Button>
-            <button type="button" onClick={() => setMode('menu')}>Keep running</button>
-          </div>
+          <ConfirmPair
+            cancel="Keep running"
+            confirm="Terminate session"
+            busy={busy}
+            busyLabel="Terminating…"
+            onCancel={() => setMode('menu')}
+            onConfirm={() => {
+              void mutate(() => client(origin).terminateSession(session.id, {
+                operationId: crypto.randomUUID(),
+                generation: session.generation,
+              }));
+            }}
+          />
         </div>
       )}
       {mode === 'remove' && removing !== undefined && (
@@ -144,7 +143,7 @@ export function SessionMenu({
             </li>
           )}
           <li><button type="button" className="danger" disabled={ended} onClick={() => setMode('terminate')}>Terminate…</button></li>
-          <li><button type="button" onClick={onSessions}>All sessions</button></li>
+          <li><button type="button" onClick={onSessions}>Sessions</button></li>
           <li><button type="button" onClick={onSettings}>Settings</button></li>
         </ul>
       )}

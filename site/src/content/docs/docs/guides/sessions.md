@@ -26,7 +26,7 @@ Sessions that wait for you are at the top. Tap a row to open it in the [live ter
 3. Optional: in **run first**, type one command, such as `claude` or `codex`.
 4. Tap **start session**.
 
-The **run first** command is typed once, with Enter, only if no one else has control. Otherwise Termivoa sends nothing and says why. **save as preset** keeps your choices under **Launch** for a one-tap start. Add projects on the computer with `pterm project add <folder>`.
+The **run first** command is typed once, with Enter, only if no one else has control. Otherwise Termivoa sends nothing and says why. **Save as preset** keeps your choices under **Launch** for a one-tap start. Add projects on the computer with `pterm project add <folder>`.
 
 ## What do the status badges mean?
 
@@ -48,7 +48,7 @@ A plain shell at its prompt shows no badge. Waiting sessions can [notify your ph
 ## End a session
 
 1. Open the session menu (**⋯**) and tap **Terminate…**.
-2. Tap **Terminate session**, or **Keep running** to cancel.
+2. Tap **Terminate session**, or **Keep running** to cancel. **Keep running** comes first, and a tap in the first moment does nothing, so a double tap cannot end a session.
 
 This stops the program and everything it started. On the computer, get the ID from `pterm list` and run `pterm terminate <session-id>`.
 

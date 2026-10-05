@@ -69,11 +69,11 @@ describe('answer card', () => {
   it('says the question changed and waits for a fresh question before enabling answers', () => {
     const answer: AnswerState = { questionId: id, optionIndex: 0, phase: 'changed' };
     const old = card({ ...controller, answer });
-    expect(old).toContain('The question changed — check the new one');
+    expect(old).toContain('The question changed. Check the new one.');
     expect(options(old).every((match) => match[3]?.includes('disabled'))).toBe(true);
 
     const fresh = card({ ...controller, answer }, { ...question, id: 'cd'.repeat(16) });
-    expect(fresh).toContain('The question changed — check the new one');
+    expect(fresh).toContain('The question changed. Check the new one.');
     expect(options(fresh).some((match) => match[3]?.includes('disabled'))).toBe(false);
   });
 

@@ -89,7 +89,7 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   }));
 
   return (
-    <section className="group stack" aria-labelledby="push-heading">
+    <section id="notifications" className="group stack" aria-labelledby="push-heading">
       <h2 id="push-heading" className="caps">Notifications</h2>
       {support === 'available' ? (
         <>
@@ -387,11 +387,19 @@ export function IntegrationsSection({ entries, providers = [], onFailure, onChec
   );
 }
 
+/** Brings a section into view once the Computers section over it has its full height. */
+function ScrollTo({ id }: { readonly id: string }) {
+  useEffect(() => { document.getElementById(id)?.scrollIntoView(); }, [id]);
+  return null;
+}
+
 export function Settings({
-  settings, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onComputersChanged,
+  settings, section, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onComputersChanged,
 }: {
   /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
   readonly settings: HTTPSettingsResponse | undefined;
+  /** Opens scrolled to this section. */
+  readonly section?: 'notifications';
   readonly entries: ReadonlyArray<ComputerEntry>;
   /** Providers (herdr) of every computer, read while Settings shows, for Integrations. */
   readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
@@ -445,6 +453,7 @@ export function Settings({
       <ErrorBoundary>
         <Suspense fallback={<p role="status" className="muted">Loading computers…</p>}>
           <ComputersSection entries={entries} onCheck={onCheck} onChanged={onComputersChanged} onFailure={onFailure} />
+          {section !== undefined && <ScrollTo id={section} />}
         </Suspense>
       </ErrorBoundary>
 
@@ -544,7 +553,7 @@ export function LogoutSection({ multi, busy, error, onLogout }: {
   return (
     <section className="group stack" aria-labelledby="logout-heading">
       <h2 id="logout-heading" className="caps">Log out</h2>
-      <p className="muted">
+      <p className="hint-text">
         {multi
           ? 'Signs this phone out of every computer. Running sessions keep running.'
           : 'Removes this browser\'s access. Running sessions keep running on your computer.'}
