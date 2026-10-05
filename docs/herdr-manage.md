@@ -27,7 +27,7 @@ Run against an isolated herdr 0.8.2 (a copy of the binary, a temp `HOME`, its ow
 | Create on such a workspace | `worktree.create {workspace_id, branch, focus:false}` works on a workspace with `worktree: null`; after it, the main workspace and the new one both have `worktree`. |
 | `tab.create {workspace_id, focus:false}` | Makes a tab; answers `root_pane {pane_id, terminal_id, cwd}`. |
 | `workspace.create {cwd, label, focus:false}` | Makes a workspace with one shell pane; answers `root_pane`. With a `cwd` that does not exist, herdr silently uses another folder. |
-| `workspace.close {workspace_id}` | Ends the workspace's terminals. A linked worktree's folder stays. **Closing the main checkout's workspace also closes every linked-worktree workspace of that repository.** Unknown ID: `workspace_not_found`. |
+| `workspace.close {workspace_id}` | Ends the workspace's terminals. A linked worktree's folder stays. **Closing the main checkout's workspace also closes every linked-worktree workspace of that repository**, and every other workspace at that main checkout (lab, 2026-10-06; section 14, "Fixes after the second round"). Unknown ID: `workspace_not_found`. |
 | `worktree.remove {workspace_id, force:false}` | Clean worktree (also with commits that are not pushed): closes the workspace and deletes the folder; the branch stays. Modified or untracked files: `dirty_worktree_requires_force` (git's text, with the path), nothing changes. Main checkout: `not_linked_worktree`. |
 | Install | The official installer (`https://herdr.dev/install.sh`) reads `https://herdr.dev/latest.json` (`version`, `assets {<os>-<arch>: URL}`, `sha256 {<os>-<arch>: hex}`), downloads the asset from `https://github.com/herdrdev/herdr/releases/download/…`, checks the SHA-256, and writes `~/.local/bin/herdr` (mode `+x`). Targets: `linux-x86_64`, `linux-aarch64`, `macos-x86_64`, `macos-aarch64`. `~/.local/bin/herdr` is already one of Termivoa's fixed lookup paths. |
 | Start | `herdr server` runs the default session's server in the foreground with no terminal (the lab runs `herdr --session <name> server` this way). |
@@ -79,7 +79,7 @@ A field that does not belong to the action is refused. `name` is the item name t
 | Bad body, a field that does not belong to the action, `removeItem` on an item that is not `linked`, `startServer` when not `notRunning` or without `canStart`, `newTab` in an item that has 32 terminals, `newWorkspace` with 64 groups | `invalid_request` | 400 |
 | Provider off or not installed; an item action while not `ready`; the server did not come up | `host_unavailable` | 503 |
 | Item not in a fresh snapshot | `session_missing` | 404 |
-| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open; `closeTab` on the item's last tab | `operation_conflict` | 409 |
+| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open, or while another workspace is at the same main checkout; `closeTab` on the item's last tab | `operation_conflict` | 409 |
 | Project unknown, or its folder is gone or not this user's | `project_missing` | 404 |
 | The per-device limit (30 per minute), or another manage or create is running | `limit_exceeded` | 429 |
 | herdr refused or failed in any other way | `worktree_failed` for `removeItem`; `host_unavailable` for the rest | as today |
@@ -100,7 +100,7 @@ The snapshot's panes carry `cwd`. In `apply` (not in `mapSnapshot`, which stays 
 
 - One manage or create at a time per computer (the create lock, `TryLock`). Broker-owned context, 15 s per herdr call.
 - Item actions read a **fresh** snapshot under the lock. The item must be there, and for `closeItem` and `removeItem` its name must equal `name` (workspace IDs start again after a herdr restart, and the phone's list can be 5 s old).
-- `closeItem`: refused with `operation_conflict` when the item is a main checkout and a **linked worktree** of its group is in the fresh snapshot (herdr 0.8.2 would close it too; 0.9.3 refuses). Else `workspace.close`.
+- `closeItem`: refused with `operation_conflict` when the item is a main checkout and a **linked worktree** of its group is in the fresh snapshot (herdr 0.8.2 would close it too; 0.9.3 refuses), and, with its own text, when another workspace at the same main checkout is in it (section 13). Else `workspace.close`.
 - `removeItem`: needs `linked`. `worktree.remove {force:false}`; `dirty_worktree_requires_force` → `problem: uncommitted`.
 - `newTab`: refused when the item already has 32 terminals. `tab.create {workspace_id, focus:false}`.
 - `closeTab`: `targetId` must be a terminal of the item in the fresh snapshot (the terminal ID is part of it, so an ID from before a herdr restart never matches); the host finds its tab there. The item's last tab is refused with `operation_conflict` (herdr would close the workspace: **Close workspace** says what that ends). `tab.close {tab_id}`; `tab_not_found` is `session_missing`. Tab labels are counted again by herdr, so the phone names the tab by its terminal, never by its label.
@@ -135,7 +135,7 @@ Trust statement (unchanged): a paired phone can already run any command in a ses
 
 ## 6. Phone
 
-- **Item menu**: a `⋯` button on each item row opens a sheet with **New tab**, **Close workspace** and, for a linked worktree, **Remove worktree**. **Close workspace** on a main checkout with open worktrees is off, with the line "Close its worktrees first."
+- **Item menu**: a `⋯` button on each item row opens a sheet with **New tab**, **Close workspace** and, for a linked worktree, **Remove worktree**. **Close workspace** on a main checkout with open worktrees is off, with the line "Close its worktrees first."; with another workspace at the same main checkout it is off with "herdr closes the workspaces at this project's main folder only together. Close them in herdr on mac."
 - **Close** confirmation: "Close silver-meadow? Its terminals end. Files stay."
 - **Close tab**: the item menu lists the item's terminals by tab label; each has **Close tab**, with the confirmation "Close tab 2? Its terminals end." An item with one terminal has the line "Close the workspace to end its last tab." In every confirmation **Cancel** comes first, and a tap in the first 400 ms does nothing, so a double tap on the menu row cannot confirm.
 - **Remove** confirmation: "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." `problem: uncommitted`: "silver-meadow has changes that are not committed. Commit or discard them first."
@@ -258,7 +258,7 @@ Two independent reviews of the code (host: security and correctness; phone app),
 
 | Where | Built | Why |
 | --- | --- | --- |
-| `closeItem` on a main checkout (section 4) | Refused only when another item of the group is a linked worktree (or the group is at its 64 items, where the list may be cut) | The lab showed two main checkouts in one group (a second workspace whose shell moved into the same repository); "another item" would make both impossible to close. The app uses the same rule |
+| `closeItem` on a main checkout (section 4) | Refused when another item of the group is a linked worktree (or the group is at its 64 items, where the list may be cut): "close this project's worktrees first". Refused with its own text when the group has another main checkout and no linked worktree (the row "Two workspaces at one repository's main checkout" below). The app uses the same two rules | First built as "refused only for a linked worktree", because the lab showed two main checkouts in one group and "another item" would make both impossible to close. The lab of 2026-10-06 showed that herdr does not close one of them alone on any version |
 | Start failure text | "herdr did not start; run `herdr server` in a terminal on this computer to see why" | The broker's fixed texts say "this computer" |
 | A second `startServer` while the first child lives | `host_unavailable` with the start-failure text | That text is the right hint |
 | Wait for ready | 5 s for each start try, and 500 ms more after a child ends; on Linux the systemd try and the plain try can add up to about 10 s | Two tries |
@@ -267,13 +267,13 @@ Two independent reviews of the code (host: security and correctness; phone app),
 | `canInstall`, `canStart` | The validator refuses `canInstall` outside `notInstalled` and `canStart` outside `notRunning` | The schema text |
 | A1 bounds | At most 64 workspaces without a worktree record and 32 pane folders each are checked in one poll | Rule 11 |
 | The log | A herdr error code that is not `[a-z0-9_]{1,64}` is logged as `other`, no answer as `no_answer` | No herdr text in the log |
-| The busy text | Manage: "herdr is busy with another change; try again"; create keeps its own | Each route's own words |
+| The busy text | "herdr is busy with another change; try again" for manage and for create (issue 200; create said "another worktree is being made; try again") | One lock, so one text |
 | "Look again now" | Set by a settings read while the provider is `notInstalled` or `notRunning`, at most once per 2 s; the app's **Check again** on the card reads the settings | The card turns within about 2 s |
 | Phone: a peer's manage error | The app shows "That computer could not do this." for every peer error (its rule against a peer's own words), so the start hint shows for the home computer only | An existing rule of the app |
 | Phone: settings while herdr changes | The app reads a computer's settings again when its provider read shows another state than the settings | `canStart` comes from the settings, which the app keeps for a visit |
 | Phone: no `targetId` | "The tab is made. Update herdr to open it from the phone." / "The workspace is made. Update herdr to open it from the phone." | The design had no text for it |
 | Phone: install | `runFirst` with `typeOnly`: the existing run-first path sends the text and skips Enter; control rules are unchanged (it types only when this phone has control, never after a reconnect) | One input path (rules 9 and 10) |
-| Two workspaces at one repository's main checkout, herdr 0.9.3 | Neither can be closed from the phone: herdr answers `workspace_group_close_required` for each and wants `close_group`, which Termivoa never sends (a close ends one workspace). The answer is `operation_conflict` ("close this project's worktrees first"); the user closes them in herdr. herdr 0.8.2 closes each alone | Lab, 2026-10-04 (0.9.3 release binary, isolated). Rare: it needs a second workspace whose shell moved into a repository that already has a workspace, and a worktree made from it |
+| Two workspaces at one repository's main checkout | Neither can be closed from the phone, on any herdr: the host refuses before it asks herdr, with `operation_conflict` and "herdr closes the workspaces at this project's main folder only together; close them in herdr on this computer". The app turns **Close workspace** off for each with the same words. Termivoa never sends `close_group` (a close ends one workspace) | Lab, 2026-10-06, both versions, isolated: herdr 0.9.3 answers `workspace_group_close_required` for each ("workspace has linked worktree workspaces; use --group"); herdr 0.8.2 answers success and closes **both** workspaces for one close (the note "0.8.2 closes each alone" of 2026-10-04 was wrong: the lab's loop did not see that the second one was gone). Rare: it needs a second workspace of the repository from which a worktree was made |
 | Add a folder (after the merge, on the owner's request) | The **New workspace** sheet has **Add a folder**: a new session on that computer with `pterm project add ` typed and not run (`runFirst` with `typeOnly`, the Install herdr path), and **Check again** | The Mac had one project, "Home folder", and the phone sends no path (M2). The user types the folder in a terminal on that computer |
 | `closeTab` (A3b) | Added during the build on the owner's request; the lab ran `tab.close` on 0.8.2 and 0.9.3 (section 1) | The owner asked to close tabs too |
 
@@ -291,7 +291,7 @@ Status: **proposed; not merged.** The owner asked for the herdr features that we
 
 ### B1. New tab with an agent
 
-`newTab` may carry `agent` (one of the provider's `agentKinds`, as in create) and, with `agent`, `prompt` (the create request's rules: no ESC, C0 except tab and line feed, DEL or C1). The host makes the tab (`tab.create`), then starts the agent in its pane and sends the prompt with the code that create uses (`agent.start` 20 s, `agent.prompt` 5 s), and answers `agentStarted` and, when false, `agentProblem` (`agentNotReady`, `agentFailed`, `promptFailed`); the tab exists either way. A `newTab` with `agent` counts against the create limit of the device (3 per minute) as well as the manage limit. Without `agent` nothing changes.
+`newTab` may carry `agent` (one of the provider's `agentKinds`, as in create) and, with `agent`, `prompt` (the create request's rules: no ESC, C0 except tab and line feed, DEL or C1). The host makes the tab (`tab.create`), then starts the agent in its pane and sends the prompt with the code that create uses (`agent.start` and the wait for the agent 20 s, `agent.prompt` 5 s; "Fixes after the second round" below), and answers `agentStarted` and, when false, `agentProblem` (`agentNotReady`, `agentFailed`, `promptFailed`); the tab exists either way. A `newTab` with `agent` counts against the create limit of the device (3 per minute) as well as the manage limit. Without `agent` nothing changes.
 
 Phone: **New tab** in the item menu shows the choices **Shell** and one for each agent kind of that computer. **Shell** makes the tab at once (as today). An agent shows **First prompt (optional)** (the create sheet's field and checks) and **Start**. What did not start is said once over the terminal, with create's texts.
 
@@ -313,14 +313,14 @@ Nothing new in kind. B1 is create's agent start in an existing workspace: the sa
 
 ### Tests
 
-Unit tests for each rule above (host and phone); the fake herdr learns `worktree.list` and `worktree.open`; the lab test covers B1 without a real agent program (the start fails cleanly: `agentFailed`), and B2 on real herdr; Phase B: `H-agent-tab`, `H-closed`, `H-live-menu`.
+Unit tests for each rule above (host and phone); the fake herdr learns `worktree.list` and `worktree.open`; the lab test covers B1 with a stand-in agent program and with a kind that has no program, never a real agent, and B2 on real herdr; Phase B: `H-agent-tab`, `H-closed`, `H-live-menu`.
 
 ### Build notes (differences from the text of section 14)
 
 | Where | Built | Why |
 | --- | --- | --- |
 | Agent name (also changes create) | An agent's herdr name is its kind and pane, such as `claude-w3-p2`, cut to 32 characters. Create sent the kind alone | herdr takes each name once: a second agent of one kind answered `agent_name_taken` (lab, herdr 0.8.2) |
-| "The start fails cleanly" (Tests) | With no agent program, herdr 0.8.2 answers "started" at once (`launch_pending`) and the prompt then fails: the lab sees `agentStarted: true`, `agentProblem: promptFailed` | Lab |
+| "The start fails cleanly" (Tests) | First built: with no agent program, herdr answers "started" at once (`launch_pending`) and the prompt then fails, so the lab saw `agentStarted: true`, `agentProblem: promptFailed`. Fixed (issues 192 and 193): the lab now has a stand-in agent program (started, prompt read) and a kind with no program (`agentStarted: false`, `agentFailed`) | Lab |
 | A second `openItem` for one name | `session_missing`: the name is then not in the fresh closed list. `already_open` is a success only when another client opened it between the list and the open | The spec's own rule |
 | When lists are asked again | Also when the set of workspaces changes (still at most 4 in one turn), so an opened worktree does not show as an item and as closed for 10 s. A group seen for the first time gets its list one poll later; a list that fails is empty until the next try | The 10 s rule alone left a stale row |
 | The 4 calls of one turn | Run at the same time, so a hung herdr costs a turn about 1 s | Rule 11 |
@@ -345,13 +345,42 @@ One independent review of both commits (security and correctness) and the end-to
 | R2-3 | A workspace that comes and goes every turn kept the same four groups in front and the others never got a list (low) | Lists are marked old, not dropped; the longest wait goes first; an open item wins over an old closed name |
 | R2-4 | A long kind or pane ID cut the pane part from the agent name, so two panes could share a name (low) | The cut takes from the kind and keeps the pane's end (`TestAgentNameKeepsThePane`) |
 | R2-5 | Two tabs with one label: closing the other one from a terminal sends the user to the herdr tab though their terminal lives (low) | Not changed; the wire has no tab ID |
-| R2-6 | `open_workspace_id` is proven on herdr 0.8.2 only (low) | An open item now wins over a closed name of the same name; the lab on 0.9.3 is open |
+| R2-6 | `open_workspace_id` is proven on herdr 0.8.2 only (low) | An open item now wins over a closed name of the same name. The whole lab test ran on the 0.9.3 release binary on 2026-10-06: closed lists, `worktree.open`, `already_open`, `tab.close`, agent tabs and `openItem` answer as on 0.8.2 |
 | R2-7 | Limit order: an agent tab that the create limit refuses still takes a manage unit (low) | As create does; written here |
 
 ### Found in this build, not part of it (rule 21)
 
-- A first prompt may always fail on herdr 0.8.2, in create too: `agent.start` answers before the agent is ready (`launch_pending: true`), and `agent.prompt` right after answers `agent_not_ready`. Seen with a stand-in program, not with a real agent.
-- `agentStarted: true` does not prove that the agent runs: herdr 0.8.2 says "started" when the program is missing.
-- A herdr terminal outside git shows "this herdr terminal's folder cannot be read" right after it opens, though nobody tapped Changes: the away recap in Live asks for the changes, and the host refuses a folder that is not a checkout. It is on `main`; an agent tab's notice sits over it.
-- The app offers the agent kinds of its last settings read; the host offers a kind only while an agent of it runs. A kind that left still shows, and **Start** answers "herdr cannot start that agent here". The **+** sheet has the same rule.
-- The `terminal attach --help` probe has a 3 s limit and its result is kept for that herdr version: one slow first probe (seen once under a full parallel test run) turns off tabs without an agent until herdr's version changes or the broker restarts.
+All five are fixed on the branch `fix/herdr-bugs`; the next part says how.
+
+- **Fixed (issue 192).** A first prompt always failed, in create too: `agent.start` answers before the agent is ready (`launch_pending: true`), and `agent.prompt` right after answers `agent_not_ready`.
+- **Fixed (issue 193).** `agentStarted: true` did not prove that the agent runs: herdr says "started" when the program is missing.
+- **Fixed (issue 194).** A herdr terminal outside git showed "this herdr terminal's folder cannot be read" right after it opened, though nobody tapped Changes: the away recap in Live asked for the changes, and the host refuses a folder that is not a checkout.
+- **Fixed (issue 195).** The app offered the agent kinds of its last settings read; the host offers a kind only while an agent of it runs. A kind that left still showed, and **Start** answered "herdr cannot start that agent here". The **+** sheet had the same rule.
+- **Fixed (issue 196).** The `terminal attach --help` probe has a 3 s limit and its result was kept for that herdr version: one slow first probe turned off tabs without an agent until herdr's version changed or the broker restarted.
+
+### Fixes after the second round (2026-10-06; issues 192 to 196 and 200)
+
+Lab facts, each run on herdr 0.8.2 and on the 0.9.3 release binary (isolated: a copy of the binary, a temp `HOME` under `/tmp`, its own session, stopped and deleted after). The agent programs were stand-ins: a script named `claude` that prints a prompt and reads lines, and no program at all. No real agent was started.
+
+| Question | Finding (the same on 0.8.2 and 0.9.3) |
+| --- | --- |
+| `agent.start {name, kind, pane_id, timeout_ms}` on the socket | Answers in 1 to 110 ms with `agent {name, agent: null, agent_status: "unknown", launch_pending: true}`. herdr has typed the kind's command into the pane's shell, no more. `timeout_ms` (more than 3000) is herdr's limit for the launch, not for the answer |
+| `agent.get {target: <pane>}` during a launch | `agent` turns to the kind when herdr sees the program in the pane (0.1 to 0.3 s with the stand-in). When herdr takes input for it: `interactive_ready: true`, `launch_pending` gone, `agent_status: "idle"` (3.5 s with the stand-in) |
+| `agent.prompt` during a launch | `agent_not_ready` ("agent … is not an active named agent") while `launch_pending` is true; it works as soon as it is gone. For an agent at a question: `agent_blocked` |
+| No program on `PATH` | The shell says "command not found"; `agent.start` still answers as above. `agent` stays null. When `timeout_ms` ends, herdr drops the record: `agent.get` answers `agent_not_found` |
+| A program that ends at once | `agent.get` answers `agent_not_found` 0.5 s after the start |
+| A program that herdr sees but that is not ready when `timeout_ms` ends | herdr clears `launch_pending` and the name; `agent.prompt` by pane then works |
+| `agent.wait {target, timeout_ms}` | Answers the ready agent, but it sees a dropped launch only when its own time limit ends (`agent_not_running`): not used |
+| `workspace.close` on one of two workspaces at one repository's main checkout (a worktree was made from each; no worktree is open) | 0.9.3: `workspace_group_close_required` for each. 0.8.2: success, and **both** workspaces are closed |
+| `worktree.list` and `open_workspace_id`, `worktree.open` and `already_open`, `tab.close`, `openItem`, agent tabs | The whole lab test passes on both versions with the same answers |
+
+| Issue | Fix |
+| --- | --- |
+| 192 | After `agent.start`, the host asks `agent.get` for the pane every 200 ms. With a prompt it waits until herdr sees the program and `launch_pending` is gone, then sends `agent.prompt` (5 s). `agent.start` and this wait share the 20 s step limit, so create and an agent tab still end inside the phone's 45 s wait (15 s + 20 s + 5 s + 3 s). An agent that is not ready when the limit ends answers `agentStarted: true`, `promptFailed`, and the prompt is not sent. An agent at a question (`blocked`) answers `agentNotReady`. Without a prompt the host answers as soon as herdr sees the program |
+| 193 | The same wait: when herdr sees no program in the pane 5 s after the start, or answers `agent_not_found` or `agent_not_running` (it dropped the launch), the answer is `agentStarted: false`, `agentFailed`. The tab or worktree stays. A program that takes more than 5 s to show in the pane counts as failed; the user sees it in the terminal that opens |
+| 194 | The recap's own read of the changes is quiet: when the host refuses it, the phone shows no notice and keeps no state, so a later tap on **Changes** asks again and shows the host's words. The phone cannot know that a herdr terminal has no folder (the wire does not say), so the one quiet request is still sent |
+| 195 | The **New worktree** sheet reads that computer's settings again when it opens, and the item menu when it opens and when its **New tab** chooser opens (quietly; home or a peer). The sheets show the provider's latest entry, so the kinds change in place. A picked kind that is no longer offered is dropped (the chooser) or replaced by the first kind offered (the sheet's default) |
+| 196 | A probe run that did not end by itself (the 3 s limit, or it did not start) is no answer. The part it missed stays as it was, the result is not kept for that herdr version, and the probe runs again at the next discovery or after 30 s, then 1, 2, 4 and at most 8 minutes; never on every poll |
+| 200 | (1) One busy text. (2) Field errors use `error field-note`. (3) The CSS comment is above `.confirm-pair`. (4) `confirmReady` and its 400 ms are in `ui.tsx`; the item menu's confirmations use the shared `ConfirmPair`. (5) Section 13, "Two workspaces at one repository's main checkout" |
+
+The fake herdr (`scripts/fakeherdr`) follows these facts: `agent.start` answers at once with `launch_pending`, the agent is ready `agentStartDelayMs` later (200 ms at least), `agent.prompt` answers `agent_not_ready` until then, a kind in the scenario's `missing` never shows a program, `agent.get` answers the pane's record, and `workspace.close` on a main checkout takes every other workspace of the repository along (or is refused with `groupCloseRequired`).

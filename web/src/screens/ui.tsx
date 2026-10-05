@@ -1,5 +1,4 @@
 import { useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
-import { confirmReady } from './ProviderManage';
 
 /** Inline icons (24 px grid, stroked in currentColor). Always decorative: the text next to them says it. */
 const PATHS = {
@@ -45,6 +44,10 @@ export function Button({ busy = false, busyLabel, icon, className, disabled, typ
     </button>
   );
 }
+
+/** A confirmation takes no tap for this long after it shows: the second tap of a double tap on the menu never confirms. */
+export const CONFIRM_AFTER_MS = 400;
+export const confirmReady = (shownAt: number, now: number): boolean => now - shownAt >= CONFIRM_AFTER_MS;
 
 /**
  * The two buttons of a confirmation, one half each. The way out is first,

@@ -246,6 +246,17 @@ func (lab *lab) manage(provider *Provider) {
 	if _, err := provider.Attach(*tab.TargetID); err != nil {
 		t.Fatalf("the new tab cannot open: %v", err)
 	}
+	// A3b: close that tab (tab.close); the workspace and its first tab stay. The last tab is refused: herdr is not asked.
+	manage(protocol.HTTPProviderManageRequest{Action: protocol.CloseTab, ItemID: &after.Items[0].ID, TargetID: tab.TargetID}, Project{})
+	one := group("site", func(found protocol.HTTPProviderGroup) bool {
+		return found.Items[0].ID == after.Items[0].ID && len(found.Items[0].Targets) == 1
+	})
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseTab, ItemID: &one.Items[0].ID, TargetID: &one.Items[0].Targets[0].ID}, Project{}); !errors.Is(err, ErrLastTab) {
+		t.Fatalf("close the last tab = %v", err)
+	}
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseTab, ItemID: &one.Items[0].ID, TargetID: tab.TargetID}, Project{}); !errors.Is(err, ErrTargetMissing) {
+		t.Fatalf("close a tab that is gone = %v", err)
+	}
 
 	// A3: close. A main checkout with an open worktree is refused by the host; herdr is not asked.
 	main := after.Items[0]
@@ -291,39 +302,62 @@ func (lab *lab) manage(provider *Provider) {
 	}
 
 	// A3 and "the server stays up with no workspace": close everything, worktrees before their main checkout.
+	shared := false
 	for round := 0; len(provider.Snapshot().Groups) > 0; round++ {
 		if round == 20 {
 			t.Fatalf("workspaces stayed: %+v", provider.Snapshot().Groups)
 		}
 		for _, found := range provider.Snapshot().Groups {
-			// Last item first. herdr 0.9.3 refuses to close the workspace that owns a repository's
-			// worktrees while another workspace of that repository is open: then the other one goes first.
+			// Last item first: worktrees before their main checkout.
 			closed := false
 			for index := len(found.Items) - 1; index >= 0 && !closed; index-- {
 				item := found.Items[index]
 				_, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &item.ID, Name: &item.Name}, Project{})
 				t.Logf("close %s %q (linked %v, %d items in the group): %v", item.ID, item.Name, item.Linked != nil, len(found.Items), err)
-				if closed = err == nil; !closed && !errors.Is(err, ErrGroupOpen) {
+				if closed = err == nil; !closed && !errors.Is(err, ErrGroupShared) {
 					t.Fatalf("closeItem: %v", err)
 				}
 			}
 			if !closed {
-				// herdr 0.9.3: two workspaces at one repository's main checkout close only as a group
-				// (close_group), which Termivoa never sends (a close ends one workspace). The lab does,
-				// to go on; docs/herdr-manage.md, section 13.
-				if len(found.Items) < 2 || found.Items[0].Linked != nil || found.Items[1].Linked != nil {
+				// Two workspaces at one repository's main checkout ("site", and "moved" whose shell went there):
+				// the provider refuses each, because herdr does not close one alone. What herdr does is checked
+				// here, on the real one: 0.9.3 refuses each and wants close_group; 0.8.2 closes both for one
+				// close. Termivoa never sends close_group (a close ends one workspace); the lab does, to go on.
+				if len(found.Items) != 2 || found.Items[0].Linked != nil || found.Items[1].Linked != nil {
 					t.Fatalf("no workspace of group %s can be closed: %+v", found.ID, found.Items)
 				}
-				if err := provider.call(ctx, manageTimeouts.call, "workspace.close",
-					map[string]any{"workspace_id": found.Items[0].ID, "close_group": true}, &struct{}{}); err != nil {
-					t.Fatalf("close_group: %v", err)
+				var failure *callError
+				err := provider.call(ctx, manageTimeouts.call, "workspace.close", map[string]any{"workspace_id": found.Items[1].ID}, &struct{}{})
+				switch {
+				case errors.As(err, &failure) && failure.code == "workspace_group_close_required":
+					t.Logf("herdr refuses to close %s alone (workspace_group_close_required)", found.Items[1].ID)
+					if err := provider.call(ctx, manageTimeouts.call, "workspace.close",
+						map[string]any{"workspace_id": found.Items[0].ID, "close_group": true}, &struct{}{}); err != nil {
+						t.Fatalf("close_group: %v", err)
+					}
+				case err == nil:
+					snapshot, err := provider.readSnapshot(ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
+					other := slices.ContainsFunc(records(snapshot.Workspaces, func(record wireWorkspace) string { return record.ID }),
+						func(record wireWorkspace) bool { return record.ID == found.Items[0].ID })
+					t.Logf("herdr closed %s; the other workspace at that main checkout (%s) is still open: %t", found.Items[1].ID, found.Items[0].ID, other)
+					if other {
+						t.Fatalf("herdr closed one workspace of two at a main checkout alone")
+					}
+				default:
+					t.Fatalf("herdr's own close of one of two workspaces at a main checkout: %v", err)
 				}
-				t.Logf("herdr closes group %s only as a group", found.ID)
+				shared = true
 			}
 		}
 		time.Sleep(300 * time.Millisecond)
 		provider.Poll()
 		time.Sleep(300 * time.Millisecond)
+	}
+	if !shared {
+		t.Fatal("the lab never met two workspaces at one main checkout")
 	}
 	time.Sleep(3 * time.Second)
 	if state := provider.Snapshot().State; state != protocol.HTTPProviderStateReady {
@@ -451,36 +485,100 @@ func (lab *lab) manage(provider *Provider) {
 	}
 
 	// Section 14, B1: a new tab with an agent. An agent must run in this herdr for its kind to be offered.
-	// The lab has no agent program. herdr 0.8.2 types the kind's command into the tab's shell and answers
-	// "started" at once (launch_pending); the prompt then fails (agent_not_ready): promptFailed. A herdr
-	// that fails the start answers agentFailed. Either way the tab is made and the answer has a problem.
+	// The lab never starts a real agent program: "claude" is a stand-in script in the lab's own bin folder
+	// (it prints a prompt and writes each line it reads to a file), and "codex" has no program at all.
+	standIn := filepath.Join(filepath.Dir(lab.binary), "claude")
+	heard := filepath.Join(lab.root, "stand-in.txt")
+	if err := os.WriteFile(standIn, []byte("#!/bin/sh\nprintf 'stand-in agent\\n> '\nwhile IFS= read -r line; do printf '%s\\n' \"$line\" >> "+heard+"; printf '> '; done\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	pane, _, _ := strings.Cut(*opened.TargetID, ".")
-	lab.run("pane", "report-agent", pane, "--source", "lab", "--agent", "claude", "--state", "idle")
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
-		if info, _ := provider.Info(); slices.Contains(info.AgentKinds, "claude") {
+	// What a pane's shell runs for each kind's command, from the pane itself: only the stand-in, or nothing.
+	which := filepath.Join(lab.root, "which.txt")
+	shell = lab.attach(provider, *opened.TargetID)
+	time.Sleep(time.Second)
+	shell.write("{ command -v claude; echo \"codex=$(command -v codex)\"; } > " + which + "\r")
+	var programs string
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(programs, "codex="); time.Sleep(100 * time.Millisecond) {
+		data, _ := os.ReadFile(which)
+		if programs = string(data); time.Now().After(deadline) {
+			t.Fatalf("the pane never said what it runs: %q", programs)
+		}
+	}
+	shell.write("\x02q")
+	_ = shell.wait()
+	if strings.TrimSpace(programs) != standIn+"\ncodex=" {
+		t.Fatalf("a real agent program is on the lab's PATH; the lab does not start it: %q", programs)
+	}
+	for _, kind := range []string{"claude", "codex"} {
+		lab.run("pane", "report-agent", pane, "--source", "lab", "--agent", kind, "--state", "idle")
+		for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			if info, _ := provider.Info(); slices.Contains(info.AgentKinds, kind) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s is not offered", kind)
+			}
+		}
+		// Issue 192: herdr answers agent.start at once (launch_pending) and refuses a prompt until the agent is
+		// ready. The provider waits for that: the agent starts, and its first prompt reaches the program.
+		agentTab := protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: opened.ItemID, Agent: &kind, Prompt: text("hello " + kind)}
+		rounds := 2 // herdr takes an agent name once: the second tab needs another
+		if kind == "codex" {
+			// Issue 193: no program. herdr still answers "started"; no agent shows in the pane: agentFailed.
+			rounds = 1
+		}
+		for round := range rounds {
+			began = time.Now()
+			tab := manage(agentTab, Project{})
+			if tab.AgentStarted == nil {
+				t.Fatalf("%s tab %d = %+v", kind, round, tab)
+			}
+			problem := ""
+			if tab.AgentProblem != nil {
+				problem = string(*tab.AgentProblem)
+			}
+			took := time.Since(began)
+			t.Logf("%s tab %d after %v: agentStarted=%t agentProblem=%q targetId=%t", kind, round, took.Round(10*time.Millisecond), *tab.AgentStarted, problem, tab.TargetID != nil)
+			if started := kind == "claude"; *tab.AgentStarted != started || started != (problem == "") || !started && problem != string(protocol.AgentFailed) {
+				t.Fatalf("%s tab %d = started %t, problem %q", kind, round, *tab.AgentStarted, problem)
+			}
+			// Inside the host's step limits (tab 15 s, agent 20 s, prompt 5 s, list 3 s) and the phone's 45 s wait.
+			if took > createTimeouts.agent+createTimeouts.prompt+createTimeouts.refresh {
+				t.Fatalf("%s tab %d took %v", kind, round, took)
+			}
+			if tab.TargetID == nil {
+				t.Fatalf("%s tab %d has no terminal: %+v", kind, round, tab)
+			}
+			if _, err := provider.Attach(*tab.TargetID); err != nil {
+				t.Fatalf("%s tab %d cannot open: %v", kind, round, err)
+			}
+			if kind == "codex" {
+				// The tab that the phone opens after "the agent did not start" shows why.
+				seen := lab.attach(provider, *tab.TargetID)
+				for deadline := time.Now().Add(10 * time.Second); !strings.Contains(seen.output(), "command not found"); time.Sleep(100 * time.Millisecond) {
+					if time.Now().After(deadline) {
+						t.Fatalf("the tab of the missing program does not show the shell's error: %q", seen.output())
+					}
+				}
+				seen.write("\x02q")
+				_ = seen.wait()
+			}
+		}
+	}
+	// The stand-in read both first prompts.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		data, _ := os.ReadFile(heard)
+		if strings.Count(string(data), "hello claude\n") == 2 {
+			t.Logf("the stand-in agent read: %q", data)
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("claude is not offered")
+			t.Fatalf("the first prompts did not reach the agent: %q", data)
 		}
 	}
-	agentTab := protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: opened.ItemID, Agent: text("claude"), Prompt: text("hello")}
-	for round := range 2 { // herdr takes an agent name once: the second tab needs another
-		began = time.Now()
-		tab := manage(agentTab, Project{})
-		if tab.AgentStarted == nil || tab.AgentProblem == nil || *tab.AgentStarted != (*tab.AgentProblem == protocol.PromptFailed) {
-			t.Fatalf("agent tab %d = %+v", round, tab)
-		}
-		t.Logf("agent tab %d after %v: agentStarted=%t agentProblem=%q targetId=%t", round, time.Since(began).Round(10*time.Millisecond), *tab.AgentStarted, *tab.AgentProblem, tab.TargetID != nil)
-		if tab.TargetID == nil {
-			t.Fatalf("agent tab %d has no terminal: %+v", round, tab)
-		}
-		if _, err := provider.Attach(*tab.TargetID); err != nil {
-			t.Fatalf("agent tab %d cannot open: %v", round, err)
-		}
-	}
-	agentTab.Agent = text("codex") // a start kind of herdr, but no codex runs here
-	if _, err := provider.Manage(ctx, agentTab, Project{}); !errors.Is(err, ErrKind) {
+	// gemini is a start kind of herdr, but no gemini runs here.
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: opened.ItemID, Agent: text("gemini")}, Project{}); !errors.Is(err, ErrKind) {
 		t.Fatalf("an agent that is not offered = %v", err)
 	}
 }

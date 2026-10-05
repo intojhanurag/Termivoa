@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -887,5 +888,69 @@ func TestGroupCapKeepsTheUrgentGroups(t *testing.T) {
 	}
 	if blocked != 1 {
 		t.Fatalf("the blocked group was dropped (%d blocked of %d)", blocked, len(groups))
+	}
+}
+
+// A `terminal attach --help` run that the time limit stopped (a loaded
+// computer) is no answer: it is not kept as "cannot", and runs again after a
+// wait, not on every poll (issue 196).
+func TestAProbeThatTimedOutIsNotKept(t *testing.T) {
+	saved := commandTimeout
+	t.Cleanup(func() { commandTimeout = saved })
+	commandTimeout = 500 * time.Millisecond
+	provider, server, _ := newTestProvider(t, true)
+	// The first attach probe sleeps past the limit; each run of it leaves a line in "runs".
+	binary := provider.config.BinaryPaths[0]
+	script := `#!/bin/sh
+case "$*" in
+"terminal attach --help") echo run >> "$0.runs"; if [ ! -e "$0.slow" ]; then : > "$0.slow"; exec /bin/sleep 5; fi
+  echo 'Usage: herdr terminal attach [OPTIONS] <TERMINAL_ID>'; exit 0;;
+"agent start --help") printf '          [possible values: claude, codex]\n'; exit 0;;
+esac
+exit 2
+`
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The first run of a new file can be slow by itself (macOS checks it): not the run this test is about.
+	_ = exec.Command(binary, "warm").Run()
+	count := func() int {
+		data, err := os.ReadFile(binary + ".runs")
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		return strings.Count(string(data), "run")
+	}
+	ctx := context.Background()
+	now := time.Now()
+	provider.now = func() time.Time { return now }
+	server.Snapshot(readFixture(t, "snapshot-0.8.2.json"))
+	provider.step(ctx)
+	// The slow run counts as "cannot" for now; the kinds, whose run ended, are kept.
+	if info, _ := provider.Info(); info.State != protocol.HTTPProviderStateReady || provider.caps.attachAny ||
+		!reflect.DeepEqual(provider.caps.kinds, []string{"claude", "codex"}) || count() != 1 {
+		t.Fatalf("after the slow probe: %+v caps %+v runs %d", info, provider.caps, count())
+	}
+	// Not on every poll.
+	provider.step(ctx)
+	now = now.Add(lookupEvery - time.Second)
+	provider.step(ctx)
+	if provider.caps.attachAny || count() != 1 {
+		t.Fatalf("before the wait ended: caps %+v runs %d", provider.caps, count())
+	}
+	// After the wait it runs again, and tabs without an agent open.
+	now = now.Add(time.Second)
+	provider.step(ctx)
+	target := "w2:p1.term_65d0031602b702"
+	if _, err := provider.Attach(target); !provider.caps.attachAny || count() != 2 || err != nil {
+		t.Fatalf("after the wait: caps %+v runs %d attach %v", provider.caps, count(), err)
+	}
+	// A probe that ended is kept: no more runs, also after a new discovery of the same herdr.
+	now = now.Add(time.Hour)
+	provider.step(ctx)
+	provider.discovered = false
+	provider.step(ctx)
+	if !provider.caps.attachAny || count() != 2 {
+		t.Fatalf("a kept probe ran again: caps %+v runs %d", provider.caps, count())
 	}
 }

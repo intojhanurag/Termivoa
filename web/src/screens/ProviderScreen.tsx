@@ -154,7 +154,7 @@ export type Phase =
   | { readonly kind: 'error'; readonly text: string };
 
 export function ProviderScreen({
-  computer, provider, targetId, tapped, notice, entry, fontSize, multi, onChip, onGone, onClosed, onOpened, onReload, onSessions, onSettings, onFailure, onRevoked,
+  computer, provider, targetId, tapped, notice, entry, fontSize, multi, onChip, onGone, onClosed, onOpened, onReload, onKinds, onSessions, onSettings, onFailure, onRevoked,
 }: {
   readonly computer: Computer;
   readonly provider: string;
@@ -175,6 +175,8 @@ export function ProviderScreen({
   readonly onOpened: (targetId: string, notice: string | undefined) => void;
   /** Reads a provider's list again (its key). */
   readonly onReload: (key: string) => Promise<void>;
+  /** Reads that computer's settings again, quietly: the ⋯ menu's New tab then offers the agent kinds of now. */
+  readonly onKinds?: (() => void) | undefined;
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onFailure: (error: unknown) => string;
@@ -265,6 +267,7 @@ export function ProviderScreen({
       item={menu.item}
       onOpened={(tap, said) => onOpened(tap.targetId, said)}
       onReload={() => onReload(entry.key).catch(() => undefined)}
+      onKinds={onKinds}
       onFailure={(error) => onFailure(error)}
       onClose={() => setMenu(undefined)}
       onDone={(action) => { if (endsTerminal(action, menu.item, targetId)) onClosed(); else setMenu(undefined); }}

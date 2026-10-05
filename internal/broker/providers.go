@@ -64,7 +64,7 @@ var (
 	errProviderGroup       = providerFailure{managementFailure{protocol.SessionMissing, "that project is gone"}}
 	errProviderSessions    = providerFailure{managementFailure{protocol.LimitExceeded, "4 herdr terminals are open; close one and try again"}}
 	errProviderRate        = providerFailure{managementFailure{protocol.LimitExceeded, "too many requests; wait a minute and try again"}}
-	errProviderBusy        = providerFailure{managementFailure{protocol.LimitExceeded, "another worktree is being made; try again"}}
+	errProviderBusy        = providerFailure{managementFailure{protocol.LimitExceeded, "herdr is busy with another change; try again"}}
 	errProviderKind        = providerFailure{managementFailure{protocol.InvalidRequest, "herdr cannot start that agent here"}}
 	errProviderNotGit      = providerFailure{managementFailure{protocol.NotARepository, "this project is not in a git repository"}}
 	errProviderExists      = providerFailure{managementFailure{protocol.WorktreeExists, "a worktree or branch with this name already exists"}}
@@ -78,13 +78,13 @@ var (
 	errProviderItem         = providerFailure{managementFailure{protocol.SessionMissing, "that workspace is gone"}}
 	errProviderRenamed      = providerFailure{managementFailure{protocol.OperationConflict, "that workspace changed; look at the list and try again"}}
 	errProviderGroupOpen    = providerFailure{managementFailure{protocol.OperationConflict, "close this project's worktrees first"}}
+	errProviderGroupShared  = providerFailure{managementFailure{protocol.OperationConflict, "herdr closes the workspaces at this project's main folder only together; close them in herdr on this computer"}}
 	errProviderLastTab      = providerFailure{managementFailure{protocol.OperationConflict, "this is the workspace's last tab; close the workspace"}}
 	errProviderNotLinked    = providerFailure{managementFailure{protocol.InvalidRequest, "only a linked worktree can be removed"}}
 	errProviderFull         = providerFailure{managementFailure{protocol.InvalidRequest, "herdr has 32 terminals in this workspace or 64 projects; close one first"}}
 	errProviderNotStartable = providerFailure{managementFailure{protocol.InvalidRequest, "herdr cannot be started on this computer now"}}
 	errProviderNoServer     = providerFailure{managementFailure{protocol.HostUnavailable, "herdr did not start; run `herdr server` in a terminal on this computer to see why"}}
 	errProviderProject      = providerFailure{managementFailure{protocol.ProjectMissing, "that project is gone, or its folder cannot be used"}}
-	errProviderManageBusy   = providerFailure{managementFailure{protocol.LimitExceeded, "herdr is busy with another change; try again"}}
 	errProviderManage       = providerFailure{managementFailure{protocol.HostUnavailable, "herdr did not do that; look at the list and try again"}}
 	errProviderRemove       = providerFailure{managementFailure{protocol.WorktreeFailed, "herdr could not remove the worktree."}}
 
@@ -520,8 +520,9 @@ func (server *ManagementServer) manageProvider(
 	}
 	for herdrErr, failure := range map[error]providerFailure{
 		herdr.ErrUnavailable: errProviderUnavailable, herdr.ErrTargetMissing: missing,
-		herdr.ErrBusy: errProviderManageBusy, herdr.ErrRenamed: errProviderRenamed, herdr.ErrGroupOpen: errProviderGroupOpen, herdr.ErrLastTab: errProviderLastTab,
-		herdr.ErrNotLinked: errProviderNotLinked, herdr.ErrFull: full, herdr.ErrKind: errProviderKind,
+		herdr.ErrBusy: errProviderBusy, herdr.ErrRenamed: errProviderRenamed, herdr.ErrGroupOpen: errProviderGroupOpen, herdr.ErrLastTab: errProviderLastTab,
+		herdr.ErrGroupShared: errProviderGroupShared,
+		herdr.ErrNotLinked:   errProviderNotLinked, herdr.ErrFull: full, herdr.ErrKind: errProviderKind,
 		herdr.ErrNotStartable: errProviderNotStartable, herdr.ErrNoServer: errProviderNoServer,
 	} {
 		if errors.Is(err, herdrErr) {

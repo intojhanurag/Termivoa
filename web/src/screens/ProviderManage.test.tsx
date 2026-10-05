@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
 import { ADD_FOLDER_COMMAND } from './providers';
-import { SLOW, addFolderStep, NO_SESSION, CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
+import { SLOW, addFolderStep, NO_SESSION, CHANGED, closesTogether, closeWorktreesFirst, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, offeredAgent, openRequest, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
 import { group, item, mac, providerEntry, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -153,7 +153,7 @@ describe('one manage action', () => {
     expect(closeWorktreesFirst(group('ws-w5', 'notes', [main]), main)).toBe(false);
   });
 
-  it('follows the host\'s rule: two main checkouts close; a full group (64 items, the list may be cut) blocks a main checkout only', () => {
+  it('follows the host\'s rule: a full group (64 items, the list may be cut) blocks a main checkout only', () => {
     const mains = (count: number) => Array.from({ length: count }, (_, index) => item(`m${index}`, 'main', []));
     expect(closeWorktreesFirst(group('g1', 'shop', mains(2)), main)).toBe(false);
     expect(closeWorktreesFirst(group('g1', 'shop', mains(63)), main)).toBe(false);
@@ -161,11 +161,19 @@ describe('one manage action', () => {
     expect(closeWorktreesFirst(group('g1', 'shop', mains(64)), linked)).toBe(false);
   });
 
-  it('takes no confirm tap for 400 ms after the confirmation shows (a double tap on the menu)', () => {
-    expect(CONFIRM_AFTER_MS).toBe(400);
-    expect(confirmReady(1_000, 1_000)).toBe(false);
-    expect(confirmReady(1_000, 1_399)).toBe(false);
-    expect(confirmReady(1_000, 1_400)).toBe(true);
+  it('does not close one of two workspaces at a main checkout: herdr closes them only together (issue 200)', () => {
+    const mains = [item('w5', 'site', []), item('w7', 'moved', [])];
+    expect(closesTogether(group('g1', 'site', mains), main)).toBe(true);
+    // Its own rule: not "close its worktrees first", and not for a worktree or a lone workspace.
+    expect(closesTogether(shop, main)).toBe(false);
+    expect(closesTogether(shop, linked)).toBe(false);
+    expect(closesTogether(group('ws-w5', 'notes', [main]), main)).toBe(false);
+  });
+
+  it('drops a picked agent kind that the computer no longer offers (issue 195)', () => {
+    expect(offeredAgent('codex', ['claude', 'codex'])).toBe('codex');
+    expect(offeredAgent('codex', ['claude'])).toBeUndefined();
+    expect(offeredAgent(undefined, ['claude'])).toBeUndefined();
   });
 });
 
@@ -193,6 +201,14 @@ describe('the item menu', () => {
     const lone = menu({ group: group('ws-w5', 'main', [main]), item: main });
     expect(lone).not.toContain('Remove worktree');
     expect(lone).not.toContain('Close its worktrees first.');
+  });
+
+  it('turns Close workspace off for one of two workspaces at a main checkout, and says the true cause', () => {
+    const site = item('w5', 'site', []);
+    const page = menu({ group: group('g1', 'site', [site, item('w7', 'moved', [])]), item: site });
+    expect(page).toContain('<button type="button" class="danger" disabled="" aria-describedby="close-first">Close workspace</button>');
+    expect(page).toContain('<p id="close-first" class="hint-text"><bdi>herdr</bdi> closes the workspaces at this project&#x27;s main folder only together. Close them in <bdi>herdr</bdi> on vps.</p>');
+    expect(page).not.toContain('Close its worktrees first.');
   });
 
   it('turns Close workspace off for a main checkout with worktrees, and says why', () => {

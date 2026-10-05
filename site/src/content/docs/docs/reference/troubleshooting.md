@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -453,7 +453,9 @@ Termivoa started herdr's server, but it did not answer in time. Run `herdr serve
 
 ### "The tab is ready, but the agent did not start."
 
-herdr made the tab, but the agent did not come up in time. Open the tab and start the agent there. If the app says "The agent started, but your first prompt was not sent.", type the prompt in the terminal.
+herdr made the tab, but no agent showed in it within 5 seconds. Open the tab and look at its terminal. If it says "command not found", that agent is not installed on the computer. Else start the agent there. The **New worktree** sheet says "The worktree is ready, but the agent did not start." for the same cause.
+
+If the app says "The agent started, but your first prompt was not sent.", the agent was not ready for input in time (about 20 seconds). Type the prompt in the terminal.
 
 ### "The list changed. Look again, then try again."
 
@@ -467,7 +469,9 @@ Termivoa never removes a worktree that has modified or new files. Open its termi
 
 A project's main checkout cannot be closed while one of its worktrees is open in herdr. Close or remove each worktree, then close the main one.
 
-On herdr 0.9 or later, two workspaces that are both at the main folder of one repository close only together. Termivoa never closes two workspaces in one tap, so close them in herdr on that computer.
+### "herdr closes the workspaces at this project's main folder only together."
+
+Two workspaces are at the main folder of one repository. herdr does not close one of them alone: herdr 0.9 refuses, and herdr 0.8 closes both. Termivoa never closes two workspaces in one tap, so **Close workspace** is off for both. Close them in herdr on that computer.
 
 ### "herdr is not running on mac"
 

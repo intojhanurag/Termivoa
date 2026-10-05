@@ -931,6 +931,26 @@ func TestProviderCreateRoute(t *testing.T) {
 			t.Fatalf("%+v = %s %q", test.request, code, message)
 		}
 	}
+	// One create or manage at a time: the lock is shared, and the text says so (issue 200). A manage holds it here.
+	entered, release := make(chan struct{}), make(chan struct{})
+	fixture.herdr.Handle("tab.create", func(json.RawMessage) (any, *herdrtest.Error) {
+		close(entered)
+		<-release
+		return nil, &herdrtest.Error{Code: "internal"}
+	})
+	slow := make(chan struct{})
+	go func() {
+		defer close(slow)
+		item := "w1"
+		_, _ = fixture.server.providers.provider.Manage(context.Background(), protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: &item}, herdr.Project{})
+	}()
+	<-entered
+	busy := fixture.create(t, pairDevice(t, fixture.service, "Phone").Credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b"})
+	close(release)
+	<-slow
+	if code, message := gatewayErrorCode(t, busy), gatewayErrorMessage(t, busy); code != protocol.LimitExceeded || message != "herdr is busy with another change; try again" {
+		t.Fatalf("create while another change runs = %s %q", code, message)
+	}
 	// 3 creates a minute per device.
 	for range providerCreatesPerMinute - 1 {
 		fixture.create(t, fixture.credential, protocol.HTTPProviderCreateRequest{GroupID: shop, Name: "b", Agent: &codex})
@@ -1141,6 +1161,19 @@ func TestProviderManageRoute(t *testing.T) {
 	}
 	failure = nil
 
+	// Two workspaces at one repository's main checkout: herdr closes them only together, which a close from
+	// the phone never does. Its own text; herdr is not asked (issue 200).
+	base, _ := os.ReadFile(filepath.Join("..", "herdr", "testdata", "snapshot-0.8.2.json"))
+	tree := `"worktree":{"repo_key":"/home/demo/site/.git","repo_name":"site","checkout_path":"/home/demo/site","is_linked_worktree":false}`
+	fixture.herdr.Snapshot([]byte(`{"version":"0.8.2","protocol":20,"workspaces":[{"workspace_id":"w5","label":"site","number":1,` + tree +
+		`},{"workspace_id":"w7","label":"moved","number":2,` + tree + `}],"tabs":[],"panes":[],"layouts":[],"agents":[]}`))
+	shared := fixture.manage(t, device(), protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w7"), Name: text("moved")})
+	if code, message := gatewayErrorCode(t, shared), gatewayErrorMessage(t, shared); code != protocol.OperationConflict ||
+		message != "herdr closes the workspaces at this project's main folder only together; close them in herdr on this computer" || len(calls) != 0 {
+		t.Fatalf("close one of two workspaces at a main checkout = %s %q %v", code, message, calls)
+	}
+	fixture.herdr.Snapshot(base)
+
 	// The same authorization as create: a credential, and an origin this device is paired with.
 	if code := gatewayErrorCode(t, fixture.manage(t, strings.Repeat("X", 43), closeTree)); code != protocol.Unauthorized {
 		t.Fatalf("bad credential = %s", code)
@@ -1191,6 +1224,10 @@ func TestProviderManageAgentTabAndClosedWorktrees(t *testing.T) {
 	record("worktree.open", made)
 	record("agent.start", map[string]any{})
 	record("agent.prompt", map[string]any{})
+	// The host asks herdr for the agent before the prompt: it is ready.
+	fixture.herdr.Handle("agent.get", func(json.RawMessage) (any, *herdrtest.Error) {
+		return json.RawMessage(`{"agent":{"agent":"claude","agent_status":"idle","interactive_ready":true}}`), nil
+	})
 	fixture.herdr.Handle("worktree.list", func(json.RawMessage) (any, *herdrtest.Error) {
 		return json.RawMessage(`{"worktrees":[
 			{"path":"/home/demo/secret/old-idea","branch":"old-idea","is_linked_worktree":true},

@@ -91,6 +91,46 @@ All notable changes are documented here. The format follows
   "This browser cannot show notifications. Try Chrome, Edge, Firefox or
   Safari." Host: no change.
 
+### Fixed
+
+- herdr: the first prompt of a new agent now reaches it (#192). It was
+  refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
+  once (`launch_pending`) and takes no prompt until the agent is ready.
+  Host: after the start, the host asks herdr for the agent (`agent.get`)
+  until herdr takes input for it, then sends the prompt; the start and this
+  wait share the 20 s step limit. An agent that is not ready in time still
+  answers `promptFailed`. Phone: no change (it waits 45 s, as before).
+- herdr: "The worktree is ready, but the agent did not start." (or "The tab
+  is ready, …") now also shows when the agent's program is not installed
+  (#193). herdr says "started" in that case too. Host: the agent's program
+  must show in the pane within 5 s of the start, else the answer is
+  `agentFailed`. Phone: no change.
+- Phone: a herdr terminal outside git no longer shows "this herdr terminal's
+  folder cannot be read" right after it opens (#194). The "while you were
+  away" line read the changes by itself; that read is now quiet. The text
+  shows only after a tap on **Changes**. Host: no change.
+- Phone: the **New worktree** sheet and the **New tab** chooser read that
+  computer's settings again when they open, so they offer the agent kinds
+  that the computer offers now (#195). Before, a kind whose last agent had
+  left herdr was still offered, and **Start** answered "herdr cannot start
+  that agent here". Host: no change.
+- Host: a slow herdr check no longer turns off tabs without an agent until
+  the next restart (#196). A `herdr terminal attach --help` or `herdr agent
+  start --help` run that the 3 s limit stopped is no answer: it runs again
+  after 30 s (then 1, 2, 4 and 8 minutes), never on every poll. Phone: no
+  change.
+- herdr, two workspaces at the main folder of one repository (#200): **Close
+  workspace** is off for each, with "herdr closes the workspaces at this
+  project's main folder only together. Close them in herdr on mac." Host: a
+  close of one of them answers `409 operation_conflict` with its own text,
+  and herdr is not asked. herdr 0.9.3 refuses such a close, and herdr 0.8.2
+  closed **both** workspaces for one tap; Termivoa never closes two.
+- Small herdr fixes (#200). Host: a create that waits for another herdr
+  change says "herdr is busy with another change; try again" (before:
+  "another worktree is being made; try again"). Phone: a wrong branch name
+  or prompt in **New worktree** and **New tab** shows in the error colour
+  (it was grey).
+
 ## [0.1.0-beta.3] - 2026-10-04
 
 Third private beta. Updating from beta.2 restarts Termivoa on the computer,

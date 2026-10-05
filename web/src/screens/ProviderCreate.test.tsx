@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
 import type { Computer } from '../computers';
-import { branchProblem, createError, createFailure, CreateForm, createRequest, PromptField, promptProblem, startNotice, stillWorking, submitCreate } from './ProviderCreate';
+import { branchProblem, createError, createFailure, CreateForm, createRequest, offeredKind, PromptField, promptProblem, startNotice, stillWorking, submitCreate } from './ProviderCreate';
 import { group, item, mac, providerEntry, ready, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -49,7 +49,7 @@ describe('the prompt field (New worktree, and New tab of the item menu)', () => 
     expect(field('Fix the test.')).toContain('aria-invalid="false"');
     expect(field('Fix the test.')).not.toContain('role="alert"');
     expect(field('a\u001bb')).toContain('aria-invalid="true"');
-    expect(field('a\u001bb')).toContain('<p id="create-prompt-help" role="alert" class="error hint-text">Remove control characters (such as Esc) from the prompt.</p>');
+    expect(field('a\u001bb')).toContain('<p id="create-prompt-help" role="alert" class="error field-note">Remove control characters (such as Esc) from the prompt.</p>');
     expect(field('', true)).toContain('disabled=""');
   });
 });
@@ -85,6 +85,19 @@ describe('the + sheet (H6)', () => {
     expect(page).toContain('><bdi>No agent</bdi></button>');
     expect(page).toContain('Create and start');
     expect(page).not.toContain('disabled=""');
+  });
+
+  it('a kind that left with a fresh settings read is not started: the first kind offered now, as when the sheet opens (issue 195)', () => {
+    expect(offeredKind('codex', ['claude', 'codex'])).toBe('codex');
+    expect(offeredKind('codex', ['claude'])).toBe('claude');
+    expect(offeredKind('codex', [])).toBeUndefined();
+    // No agent stays the user's choice.
+    expect(offeredKind(undefined, ['claude'])).toBeUndefined();
+  });
+
+  it('shows a field problem in the error colour, at the size of a hint (issue 200)', () => {
+    expect(form({ name: 'Bad Name' })).toContain('<p id="create-name-help" class="error field-note">');
+    expect(form({ name: '' })).toContain('<p id="create-name-help" class="hint-text">');
   });
 
   it('with no kinds from herdr offers only No agent and no prompt', () => {

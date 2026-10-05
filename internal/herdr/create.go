@@ -21,16 +21,21 @@ var (
 	ErrWorktree = errors.New("herdr: worktree create failed")
 )
 
-// createTimeouts are design S6's step limits. A test seam.
-var createTimeouts = struct{ worktree, agent, prompt, refresh time.Duration }{
-	worktree: 15 * time.Second, agent: 20 * time.Second, prompt: 5 * time.Second, refresh: 3 * time.Second,
+// createTimeouts are design S6's step limits. agent is agent.start and the
+// wait for the agent after it; seen is how long the agent's program may take
+// to show in herdr. A test seam.
+var createTimeouts = struct{ worktree, agent, seen, prompt, refresh time.Duration }{
+	worktree: 15 * time.Second, agent: 20 * time.Second, seen: 5 * time.Second, prompt: 5 * time.Second, refresh: 3 * time.Second,
 }
 
-// agentReadyMs is herdr's own readiness wait for agent.start; it answers
-// before the 20 s step limit. maxAgentName is herdr's limit for an agent name.
+// agentReadyMs is herdr's own limit for a launch: after it herdr drops a
+// launch whose program never showed, and takes prompts for one that did. It
+// ends before the 20 s step limit. maxAgentName is herdr's limit for an agent
+// name. agentLookEvery is the time between two looks at a starting agent.
 const (
-	agentReadyMs = 15000
-	maxAgentName = 32
+	agentReadyMs   = 15000
+	maxAgentName   = 32
+	agentLookEvery = 200 * time.Millisecond
 )
 
 // Create is milestone M2: a worktree in a group's repository
@@ -129,29 +134,70 @@ func agentName(kind, pane string) string {
 	return kind[:min(len(kind), maxAgentName-1-len(tail))] + "-" + tail
 }
 
-// startAgent starts an agent of kind in pane (agent.start, 20 s) and then
-// sends prompt, if any (agent.prompt, 5 s): the part that Create and Manage's
-// newTab share. targetID is the pane's terminal. A nil problem: all worked.
+// startAgent starts an agent of kind in pane (agent.start) and then sends
+// prompt, if any (agent.prompt, 5 s): the part that Create and Manage's newTab
+// share. targetID is the pane's terminal. A nil problem: all worked.
 // herdr refuses a name that another agent has (agent_name_taken), so the
 // name is the kind and the pane: "claude-w3-p2".
+//
+// herdr (0.8.2 and 0.9.3) answers agent.start at once, with launch_pending:
+// it has typed the kind's command into the pane's shell, no more. While the
+// launch is pending it refuses a prompt (agent_not_ready), and it says
+// "started" also when the program is missing. So startAgent then asks herdr
+// (agent.get) until the agent's program shows in the pane, and before a
+// prompt until herdr takes input for it; agent.start and this wait share the
+// 20 s step limit. A program that does not show within createTimeouts.seen,
+// or a launch that herdr dropped, is agentFailed. An agent at a question is
+// agentNotReady. One that is not ready for the prompt in time is promptFailed.
 func (provider *Provider) startAgent(ctx context.Context, pane, targetID, kind string, prompt *string) (started bool, _ *protocol.HTTPProviderCreateProblem) {
+	deadline := time.Now().Add(createTimeouts.agent)
 	err := provider.call(ctx, createTimeouts.agent, "agent.start", map[string]any{
 		"name": agentName(kind, pane), "kind": kind, "pane_id": pane, "timeout_ms": agentReadyMs,
 	}, &struct{}{})
+	var failure *callError
 	if err != nil {
-		var failure *callError
 		if timedOut(err) && provider.hasAgent(ctx, targetID) ||
 			errors.As(err, &failure) && (strings.Contains(failure.code, "timeout") || strings.Contains(failure.code, "not_ready")) {
 			return false, problem(protocol.AgentNotReady)
 		}
 		return false, problem(protocol.AgentFailed)
 	}
-	if prompt != nil {
-		if err := provider.call(ctx, createTimeouts.prompt, "agent.prompt", map[string]any{"target": pane, "text": *prompt}, &struct{}{}); err != nil {
+	for seen, asked := false, time.Now(); ; time.Sleep(agentLookEvery) {
+		var got struct {
+			Agent struct {
+				Agent   string `json:"agent"` // the program herdr sees in the pane; empty until it shows
+				Status  string `json:"agent_status"`
+				Pending bool   `json:"launch_pending"`
+			} `json:"agent"`
+		}
+		err := provider.call(ctx, min(callTimeout, time.Until(deadline)), "agent.get", map[string]any{"target": pane}, &got)
+		switch {
+		case errors.As(err, &failure) && (failure.code == "agent_not_found" || failure.code == "agent_not_running"):
+			return false, problem(protocol.AgentFailed) // herdr dropped the launch: the program ended, or never showed
+		case err == nil && got.Agent.Agent != "" && got.Agent.Status == stateBlocked:
+			return false, problem(protocol.AgentNotReady)
+		case err == nil && got.Agent.Agent != "":
+			seen = true
+			if prompt == nil {
+				return true, nil
+			}
+			if !got.Agent.Pending {
+				if err := provider.call(ctx, createTimeouts.prompt, "agent.prompt", map[string]any{"target": pane, "text": *prompt}, &struct{}{}); err != nil {
+					return true, problem(protocol.PromptFailed)
+				}
+				return true, nil
+			}
+		}
+		switch {
+		case !seen && time.Since(asked) >= createTimeouts.seen:
+			return false, problem(protocol.AgentFailed)
+		case time.Until(deadline) <= agentLookEvery || ctx.Err() != nil:
+			if !seen {
+				return false, problem(protocol.AgentFailed)
+			}
 			return true, problem(protocol.PromptFailed)
 		}
 	}
-	return true, nil
 }
 
 func problem(value protocol.HTTPProviderCreateProblem) *protocol.HTTPProviderCreateProblem {

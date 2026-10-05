@@ -26,8 +26,10 @@ import (
 const (
 	maxLineBytes   = 4 << 20 // one socket reply
 	maxOutputBytes = 64 << 10
-	commandTimeout = 3 * time.Second
 )
+
+// commandTimeout is the time limit of one herdr CLI run. A test seam.
+var commandTimeout = 3 * time.Second
 
 var (
 	errDeadline    = os.ErrDeadlineExceeded
@@ -192,7 +194,8 @@ func FindBinary(config Config) (path string, refused []string) {
 
 // run runs the herdr CLI with the fixed environment, a time limit, an
 // output cap, standard input from the null device and no controlling
-// terminal, and returns its standard output. Never a shell.
+// terminal, and returns its standard output. Never a shell. A run that the
+// time limit (or ctx) stopped returns the context's error.
 func (provider *Provider) run(ctx context.Context, args ...string) ([]byte, error) {
 	if err := tailnet.CheckBinary(provider.binary); err != nil {
 		return nil, err
@@ -208,6 +211,9 @@ func (provider *Provider) run(ctx context.Context, args ...string) ([]byte, erro
 	output := &cappedBuffer{}
 	command.Stdout, command.Stderr = output, io.Discard
 	err := command.Run()
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	return output.Bytes(), err
 }
 
@@ -220,16 +226,31 @@ func (buffer *cappedBuffer) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-// probe reads what this herdr build can do, once per binary and version:
-// `terminal attach` (tabs without an agent can open) and the kinds of
-// `agent start` (the M2 agent picker). Only the help text counts, never the
-// exit status: herdr 0.8.2 answers `--help` after an unknown command with
-// its general help and exit 0, and its default command starts the herdr UI,
-// which run's missing terminal and time limit stop.
-func (provider *Provider) probe(ctx context.Context) capabilities {
-	attach, _ := provider.run(ctx, "terminal", "attach", "--help")
-	help, _ := provider.run(ctx, "agent", "start", "--help")
-	return capabilities{attachAny: bytes.Contains(attach, []byte("Usage: herdr terminal attach")), kinds: parseKinds(help)}
+// probe reads what this herdr build can do: `terminal attach` (tabs without
+// an agent can open) and the kinds of `agent start` (the M2 agent picker).
+// Only the help text counts, never the exit status: herdr 0.8.2 answers
+// `--help` after an unknown command with its general help and exit 0, and its
+// default command starts the herdr UI, which run's missing terminal and time
+// limit stop. A run that did not end by itself (the time limit on a loaded
+// computer, or it did not start) says nothing about this herdr: its part of
+// last stays, and ended is false so that the caller asks again.
+func (provider *Provider) probe(ctx context.Context, last capabilities) (caps capabilities, ended bool) {
+	caps = last
+	attach, attachErr := provider.run(ctx, "terminal", "attach", "--help")
+	if ranToItsEnd(attachErr) {
+		caps.attachAny = bytes.Contains(attach, []byte("Usage: herdr terminal attach"))
+	}
+	help, helpErr := provider.run(ctx, "agent", "start", "--help")
+	if ranToItsEnd(helpErr) {
+		caps.kinds = parseKinds(help)
+	}
+	return caps, ranToItsEnd(attachErr) && ranToItsEnd(helpErr)
+}
+
+// ranToItsEnd: the command ran and exited, with any status.
+func ranToItsEnd(err error) bool {
+	var exit *exec.ExitError
+	return err == nil || errors.As(err, &exit)
 }
 
 // parseKinds reads the "[possible values: a, b]" list of `agent start --help`.
