@@ -292,7 +292,11 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onFailur
 }
 
 /** New workspace: the computer's Termivoa projects, or how to add one, as New session says. */
-export function WorkspaceList({ entry, settings, busy, checking, note, onPick, onCheck, onClose }: {
+/** Add a folder's own busy key: no project has this ID. */
+export const ADDING = 'add-folder';
+export const NO_SESSION = 'A terminal could not be opened there. Open a session on that computer and run `pterm project add <folder>`.';
+
+export function WorkspaceList({ entry, settings, busy, checking, note, onPick, onCheck, onAddFolder, onClose }: {
   readonly entry: Pick<ProviderEntry, 'computer' | 'info'>;
   /** The settings of that computer: its projects are the ones New session lists. */
   readonly settings: HTTPSettingsResponse;
@@ -302,6 +306,8 @@ export function WorkspaceList({ entry, settings, busy, checking, note, onPick, o
   readonly note: ManageNote | undefined;
   readonly onPick: (projectId: string) => void;
   readonly onCheck: () => void;
+  /** Opens a session with `pterm project add ` typed; absent: not offered. */
+  readonly onAddFolder?: (() => void) | undefined;
   readonly onClose: () => void;
 }) {
   const { info, computer } = entry;
@@ -325,13 +331,31 @@ export function WorkspaceList({ entry, settings, busy, checking, note, onPick, o
               </li>
             ))}
           </ul>
+          {onAddFolder !== undefined && (
+            <>
+              <p className="hint-text">Another folder? This opens a terminal on {computer.label} with <code>pterm project add</code> typed. Type the folder, press Enter, then tap Check again here.</p>
+              <div className="sheet-actions">
+                <Button className="secondary" busy={busy === ADDING} busyLabel="Opening…" disabled={off} onClick={onAddFolder}>Add a folder</Button>
+                <Button className="secondary" busy={checking} busyLabel="Checking…" disabled={off} onClick={onCheck}>Check again</Button>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
   );
 }
 
-export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, onFailure, onClose, manage = (body) => client(entry.computer.origin).providerManage(entry.info.id, body) }: {
+/** Add a folder, start to end: false from `open` (no project or shell there) and a failure both become words. */
+export async function addFolderStep(open: () => Promise<boolean>, words: (error: unknown) => string): Promise<ManageStep> {
+  try {
+    return await open() ? { kind: 'done' } : { kind: 'note', note: { kind: 'error', text: NO_SESSION } };
+  } catch (error) {
+    return { kind: 'note', note: { kind: 'error', text: words(error) } };
+  }
+}
+
+export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, onAddFolder, onFailure, onClose, manage = (body) => client(entry.computer.origin).providerManage(entry.info.id, body) }: {
   readonly entry: ProviderEntry;
   readonly settings: HTTPSettingsResponse;
   readonly onOpened: (tap: ProviderTap) => void;
@@ -339,6 +363,8 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
   readonly onReload: () => Promise<void>;
   /** Reads that computer again, settings included (Check again). */
   readonly onCheck: () => Promise<void>;
+  /** Starts a session on that computer and goes to Live with the command typed; false: it has no project or shell. */
+  readonly onAddFolder?: (() => Promise<boolean>) | undefined;
   readonly onFailure: (error: unknown, from: Computer) => string;
   readonly onClose: () => void;
   readonly manage?: Manage;
@@ -362,6 +388,11 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
     });
   }
 
+  function addFolder(open: () => Promise<boolean>) {
+    setNote(undefined);
+    run(ADDING, () => addFolderStep(open, words), (step) => { if (step.kind === 'note') setNote(step.note); });
+  }
+
   function check() {
     setChecking(true);
     setNote(undefined);
@@ -374,7 +405,7 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
   return (
     <div className="sheet-backdrop">
       <Sheet labelledBy="workspace-title" onClose={close}>
-        <WorkspaceList entry={entry} settings={settings} busy={busy} checking={checking} note={note} onPick={pick} onCheck={check} onClose={close} />
+        <WorkspaceList entry={entry} settings={settings} busy={busy} checking={checking} note={note} onPick={pick} onCheck={check} onAddFolder={onAddFolder === undefined ? undefined : () => addFolder(onAddFolder)} onClose={close} />
       </Sheet>
     </div>
   );

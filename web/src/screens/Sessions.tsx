@@ -12,7 +12,7 @@ import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type Provide
 import { ProviderCreateSheet } from './ProviderCreate';
 import { ItemMenuSheet, WorkspaceSheet } from './ProviderManage';
 import { NewSessionHelp } from './NewSession';
-import { providerTabs, wordSummary, type ProviderEntry } from './providers';
+import { ADD_FOLDER_COMMAND, providerTabs, startInstall, wordSummary, type ProviderEntry } from './providers';
 import { Button, Notice, PairVia } from './ui';
 import { WorktreeBadge } from './Worktree';
 
@@ -331,7 +331,7 @@ export const keptSettings = (kept: HTTPSettingsResponse | undefined, status: Com
 
 export function Sessions({
   entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onReload, onRetry, onFailure, onUpdate,
-  providers = [], tab, onOpenTarget, onProviderRetry, onCreated,
+  providers = [], tab, onOpenTarget, onProviderRetry, onCreated, onTypeIn,
 }: {
   /** Every computer, home first, with what it answered. */
   readonly entries: ReadonlyArray<ComputerEntry>;
@@ -358,6 +358,8 @@ export function Sessions({
   readonly onProviderRetry?: (key: string) => Promise<void>;
   /** A worktree was made with the + of a project row (milestone M2): open its terminal; `notice` says what did not start. */
   readonly onCreated?: ((tap: ProviderTap, notice: string | undefined, key: string) => void) | undefined;
+  /** Add a folder: a new session opens in Live with this command typed, not run. */
+  readonly onTypeIn?: ((session: HostedSession, command: string) => void) | undefined;
 }) {
   const [creating, setCreating] = useState<{ readonly entry: ProviderEntry; readonly group: HTTPProviderGroup }>();
   // The ⋯ of an item, and New workspace (docs/herdr-manage.md): one sheet at a time.
@@ -547,6 +549,11 @@ export function Sessions({
           onOpened={(tap) => onCreated(tap, undefined, workspace.key)}
           onReload={() => reloadProvider(workspace.key)}
           onCheck={() => onRetry(workspace.computer.origin)}
+          onAddFolder={onTypeIn === undefined ? undefined : async () => {
+            const session = await startInstall(workspace.computer, workspaceSettings);
+            if (session !== undefined) onTypeIn(session, ADD_FOLDER_COMMAND);
+            return session !== undefined;
+          }}
           onFailure={onFailure}
           onClose={() => setWorkspace(undefined)}
         />

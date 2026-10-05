@@ -5,7 +5,8 @@ import type { Computer } from '../computers';
 import type { HTTPSessionCreateRequest, HTTPSettingsResponse } from '../generated/protocol';
 import type { ComputerEntry, HostedSession } from './allSessions';
 import * as fixtures from './providerFixtures';
-import { InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, startInstall, installAndOpen } from './Settings';
+import { InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, installAndOpen } from './Settings';
+import { startInstall } from './providers';
 
 const settings: HTTPSettingsResponse = {
   device: { id: '00000000-0000-4000-8000-000000000020', label: 'iPhone' },

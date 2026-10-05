@@ -4,9 +4,10 @@ import type { Computer } from '../computers';
 import {
   FEATURE_REVISION,
   type HTTPProviderGroup, type HTTPProviderInfo, type HTTPProviderItem, type HTTPProviderSnapshotResponse, type HTTPProviderState, type HTTPProviderTarget,
+  type HTTPSessionCreateRequest, type HTTPSessionMutationResponse, type HTTPSettingsResponse,
 } from '../generated/protocol';
 import { scheduler, type PollOutcome } from '../terminal/scheduler';
-import type { ComputerEntry } from './allSessions';
+import { hosted, type ComputerEntry, type HostedSession } from './allSessions';
 
 /**
  * Terminal workspace providers (herdr) across computers (docs/herdr-provider.md,
@@ -80,6 +81,23 @@ export const unpolledOrigins = (entries: ReadonlyArray<ComputerEntry>): string[]
  * What **Install** types into a new session, by provider ID (docs/herdr-manage.md, A7). Constants of the app:
  * nothing from a computer or from a provider is ever put into them. Typed, not run: the user presses Enter.
  */
+/** Add a folder: typed into a new session, not run; the user types the folder and presses Enter. */
+export const ADD_FOLDER_COMMAND = 'pterm project add ';
+
+/**
+ * A new session on that computer, as New session starts one (its first project and default shell), for a command the
+ * app types and does not run (Install herdr, Add a folder; docs/herdr-manage.md, A7). Undefined when it has no project or no shell: New session's own help says what to do.
+ */
+export async function startInstall(
+  computer: Computer, settings: Pick<HTTPSettingsResponse, 'projects' | 'shellProfiles'>,
+  create: (body: HTTPSessionCreateRequest) => Promise<HTTPSessionMutationResponse> = (body) => client(computer.origin).createSession(body),
+): Promise<HostedSession | undefined> {
+  const [project] = settings.projects;
+  const [shell] = settings.shellProfiles;
+  if (project === undefined || shell === undefined) return undefined;
+  return hosted((await create({ operationId: crypto.randomUUID(), projectId: project.id, shellProfileId: shell.id })).session, computer);
+}
+
 export const INSTALL_COMMANDS: Readonly<Partial<Record<string, string>>> = { herdr: 'curl -fsSL https://herdr.dev/install.sh | sh' };
 
 const rank = (word: string): number => PROVIDER_WORDS.indexOf(providerWord(word));

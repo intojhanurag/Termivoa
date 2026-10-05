@@ -63,6 +63,26 @@ on their own date.
   the new texts); `cd site && npx astro build` with valid links. Not run:
   e2e (headless Chrome is not an iPhone Safari tab; the text is covered by
   vitest) and a real iPhone (owner).
+### Add a folder in the New workspace sheet (2026-10-04, branch `feat/add-folder`)
+
+- **Why.** After #187 the owner's **New workspace** sheet listed only "Home
+  folder": his Mac has one Termivoa project, and the phone sends no folder
+  path (design M2).
+- **What.** **Add a folder** in that sheet opens a session on that computer
+  with `pterm project add ` typed and not run (the Install herdr path:
+  `runFirst` with `typeOnly`); **Check again** is beside it. Phone only;
+  host: no change. `startInstall` moved to `providers.ts` (both buttons use
+  it).
+- **Checks.** `pnpm typecheck`; vitest 929 passed (3 new); e2e Phase B
+  `--only H` 42/42 with the new `H-addfolder` (one new session, the command
+  on the prompt line, one prompt, no new project); README counts 117 and 38.
+  `cd site && npx astro build` with valid links. Not run: the full Phase B,
+  Phase A, WebKit.
+- **#187 record.** Merged as `059319c` the same way as #185 (hosted CI is
+  off; "include administrators" off only for the merge, checked on after).
+  The site was deployed and the owner's Mac runs build
+  `0.1.0-beta.3+059319cf13db`; his VPS was not updated (one running
+  session).
 
 ### Manage herdr from the phone (2026-10-04, branch `feat/herdr-manage`)
 

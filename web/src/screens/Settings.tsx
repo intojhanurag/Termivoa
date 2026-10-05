@@ -11,7 +11,7 @@ import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 import { NewSessionHelp } from './NewSession';
 import { StartButton } from './ProviderManage';
-import { INSTALL_COMMANDS, providerKey, providerSources, type ProviderEntry, type ProviderSource } from './providers';
+import { INSTALL_COMMANDS, providerKey, providerSources, startInstall, type ProviderEntry, type ProviderSource } from './providers';
 import { Button, Notice } from './ui';
 
 // Computers (and the add-computer sheet it opens) load only when Settings opens.
@@ -166,20 +166,6 @@ export async function saveSwitch(
   } catch (failure) {
     return { error: onFailure(failure, computer) };
   }
-}
-
-/**
- * Install (docs/herdr-manage.md, A7): a new session on that computer, as New session starts one (its first project and
- * default shell). Undefined when it has no project or no shell: New session's own help says what to do.
- */
-export async function startInstall(
-  computer: Computer, settings: Pick<HTTPSettingsResponse, 'projects' | 'shellProfiles'>,
-  create: (body: HTTPSessionCreateRequest) => Promise<HTTPSessionMutationResponse> = (body) => client(computer.origin).createSession(body),
-): Promise<HostedSession | undefined> {
-  const [project] = settings.projects;
-  const [shell] = settings.shellProfiles;
-  if (project === undefined || shell === undefined) return undefined;
-  return hosted((await create({ operationId: crypto.randomUUID(), projectId: project.id, shellProfileId: shell.id })).session, computer);
 }
 
 /**

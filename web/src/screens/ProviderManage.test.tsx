@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
-import { CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, ItemMenu, itemRequest, LAST_TAB, manageStep, StartButton, WorkspaceList, type ManageNote } from './ProviderManage';
+import { ADD_FOLDER_COMMAND } from './providers';
+import { addFolderStep, NO_SESSION, CHANGED, closeWorktreesFirst, CONFIRM_AFTER_MS, confirmReady, ItemMenu, itemRequest, LAST_TAB, manageStep, StartButton, WorkspaceList, type ManageNote } from './ProviderManage';
 import { group, item, mac, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -244,6 +245,23 @@ describe('New workspace', () => {
     expect(page).toContain('<bdi>shop</bdi>');
     expect(page).toContain('<bdi>notes</bdi>');
     expect(page).not.toContain('pterm project add');
+  });
+
+  it('offers Add a folder under the projects, and says what it does', () => {
+    const page = list({ onAddFolder: noop });
+    expect(page).toContain('This opens a terminal on vps with <code>pterm project add</code> typed. Type the folder, press Enter, then tap Check again here.');
+    expect(page).toMatch(/<button type="button" class="secondary"><span class="btn-swap"><span>Add a folder<\/span>/u);
+    expect(page).toMatch(/<span>Check again<\/span>/u);
+  });
+
+  it('types the command and never runs it: no newline in it, and a space for the folder', () => {
+    expect(ADD_FOLDER_COMMAND).toBe('pterm project add ');
+  });
+
+  it('Add a folder: done when the session opened; words when it could not or failed', async () => {
+    expect(await addFolderStep(async () => true, () => 'x')).toEqual({ kind: 'done' });
+    expect(await addFolderStep(async () => false, () => 'x')).toEqual({ kind: 'note', note: { kind: 'error', text: NO_SESSION } });
+    expect(await addFolderStep(async () => { throw new Error('no'); }, () => 'vps · can\'t reach')).toEqual({ kind: 'note', note: { kind: 'error', text: 'vps · can\'t reach' } });
   });
 
   it('with no project says what New session says, with Check again', () => {

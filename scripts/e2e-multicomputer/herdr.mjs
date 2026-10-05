@@ -957,6 +957,33 @@ export async function herdrSteps(ctx) {
   });
 
   // ---- Install: vps has no herdr yet (H-peer installs the fake there) ----
+  await step('H-addfolder', 'New workspace → Add a folder opens a session with "pterm project add " typed, not run', async () => {
+    await backToTab();
+    const projects = (await api(tool, `${mac.origin}/api/v1/settings`)).json.projects.length;
+    const before = (await api(tool, `${mac.origin}/api/v1/sessions`)).json.sessions.map((s) => s.id);
+    const sheet = await openWorkspaceSheet();
+    const text = await app.eval(`document.querySelector('[role="dialog"][aria-labelledby="workspace-title"]').innerText.replace(/\\s+/g, ' ')`);
+    await shot('h-addfolder-sheet');
+    await sheetTap(WORKSPACE, '.sheet-actions', 'Add a folder');
+    const squash = (x) => x.replace(/\s+/g, '');
+    await until(async () => squash(await terminalText(app)).includes('ptermprojectadd'), { what: 'the command in Live', timeout: 30000 });
+    const path = await app.eval('location.pathname');
+    // Long enough for a command that ran to print its usage error, or for a new prompt.
+    await sleep(4000);
+    const screen = await terminalText(app);
+    await shot('h-addfolder-typed');
+    const prompts = (screen.match(/ % /g) ?? []).length;
+    const session = (await api(tool, `${mac.origin}/api/v1/sessions`)).json.sessions.filter((s) => !before.includes(s.id));
+    const after = (await api(tool, `${mac.origin}/api/v1/settings`)).json.projects.length;
+    for (const s of session) await api(tool, `${mac.origin}/api/v1/sessions/${s.id}/terminate`, 'POST', { operationId: crypto.randomUUID(), generation: s.generation });
+    check('H-addfolder', 'The New workspace sheet has Add a folder and Check again and says what the button does; a tap opens one new session on mac in Live with "pterm project add " on the prompt line, not run (one prompt, no output, no new project)',
+      text.includes('Add a folder') && text.includes('Check again')
+        && text.includes('This opens a terminal on mac with pterm project add typed. Type the folder, press Enter, then tap Check again here.')
+        && session.length === 1 && path.startsWith('/sessions/') && prompts === 1 && squash(screen).endsWith('ptermprojectadd') && after === projects,
+      `sheet ${JSON.stringify(sheet.title)}; Live ${path}; screen ${JSON.stringify(screen.trim())} (${prompts} prompt); new sessions ${session.length}; projects ${projects} → ${after}`);
+    await inApp('/');
+  });
+
   await step('H-install-herdr', 'Settings → Integrations on a computer without herdr: Not installed, Install herdr opens a session with the command typed, not run', async () => {
     await backToTab();
     const tabGroups = await groups();
