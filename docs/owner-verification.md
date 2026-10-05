@@ -177,7 +177,8 @@ Real delivery cannot be tested without a phone. See `docs/notifications.md`.
 - [ ] After reloading the app, a finished agent session with output you have
       not opened still shows **Your turn**; opening it clears the pill.
 - [ ] iPhone Safari in a normal tab shows no card, and Settings says
-      "Add to Home Screen to get notifications".
+      "To get notifications on iPhone, add Termivoa to your Home Screen."
+      with the four steps.
 - [ ] Android Chrome: the same card, test, "waiting" and "done" checks.
 - [ ] Tapping a notification opens the app at that session
       (`/sessions/<id>`), both with the app closed and with it open on

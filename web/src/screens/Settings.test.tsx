@@ -120,13 +120,15 @@ describe('Settings notifications', () => {
   it('tells an iPhone Safari tab to add the app to the Home Screen', () => {
     stubBrowser('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1');
     const html = render();
-    expect(html).toContain('Add to Home Screen to get notifications');
+    expect(html).toContain('To get notifications on iPhone, add Termivoa to your Home Screen.');
+    expect(html).toContain('iPhone sends notifications only to an app on the Home Screen, not to a Safari tab.');
+    expect(html).toContain('<li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>');
     expect(html).not.toContain('role="switch"');
   });
 
   it('says when the browser has no push', () => {
     vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (X11; Linux) Firefox/130.0', maxTouchPoints: 0 });
-    expect(render()).toContain('Not supported in this browser');
+    expect(render()).toContain('This browser cannot show notifications. Try Chrome, Edge, Firefox or Safari.');
   });
 });
 

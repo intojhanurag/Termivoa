@@ -57,6 +57,15 @@ All notable changes are documented here. The format follows
   a warning for a herdr prefix key other than ctrl+b). No database change.
   Not yet tested on a real iPhone.
 
+### Changed
+
+- Phone: in a Safari tab on iPhone, **Settings → Notifications** now says why
+  there is no switch and what to do: "To get notifications on iPhone, add
+  Termivoa to your Home Screen." with four steps (before: one line, "Add to
+  Home Screen to get notifications"). A browser without notifications gets
+  "This browser cannot show notifications. Try Chrome, Edge, Firefox or
+  Safari." Host: no change.
+
 ## [0.1.0-beta.3] - 2026-10-04
 
 Third private beta. Updating from beta.2 restarts Termivoa on the computer,

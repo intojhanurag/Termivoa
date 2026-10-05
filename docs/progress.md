@@ -49,6 +49,21 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### iPhone Safari tab: a notification hint a person can follow (2026-10-05, branch `fix/home-screen-hint`)
+
+- **Why.** The owner used Termivoa in a Safari tab on his iPhone, saw only
+  "Add to Home Screen to get notifications" in Settings, and did not know
+  what it meant or why no notification came.
+- **What.** That line is now a notice: "To get notifications on iPhone, add
+  Termivoa to your Home Screen.", one sentence of why, and four steps. iOS
+  gives a web app no way to add itself, so the steps are the taps the user
+  makes. The other case says "This browser cannot show notifications. Try
+  Chrome, Edge, Firefox or Safari." Phone only; host: no change.
+- **Checks.** `pnpm typecheck`; `vitest run` (the two Settings tests follow
+  the new texts); `cd site && npx astro build` with valid links. Not run:
+  e2e (headless Chrome is not an iPhone Safari tab; the text is covered by
+  vitest) and a real iPhone (owner).
+
 ### Manage herdr from the phone (2026-10-04, branch `feat/herdr-manage`)
 
 - **Why.** On the first day of real use the owner had nine stale `mastra`

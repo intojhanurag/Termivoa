@@ -185,8 +185,9 @@ The endpoint URL comes from the browser, so the broker treats it as untrusted:
 ## Phone setup
 
 - **iPhone / iPad:** Web Push works only in the Home Screen app (iOS 16.4+).
-  In a normal Safari tab, Settings shows "Add to Home Screen to get
-  notifications" and the Sessions card is not shown.
+  In a normal Safari tab, Settings shows the notice "To get notifications on
+  iPhone, add Termivoa to your Home Screen." with the four steps (iOS gives a
+  web app no way to add itself), and the Sessions card is not shown.
 - **Android Chrome, desktop Chrome, Edge, Firefox:** use the Sessions card
   ("Get a buzz when an agent needs you") or the Settings switch.
 - Settings has **Send a test notification** to check the whole path.
