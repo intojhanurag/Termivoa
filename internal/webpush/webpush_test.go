@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -610,8 +611,11 @@ func TestSessionPushIsNotDroppedWhileEarlierOnesAreInFlight(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := slowService{release: make(chan struct{}), started: make(chan struct{}, MaxPerMinute)}
+	// A clock the test can move: deliveries read it from their own goroutines.
+	var later atomic.Int64
+	clock := func() time.Time { return time.Now().Add(time.Duration(later.Load())) }
 	notifier, err := NewNotifier(ctx, NotifierConfig{Store: persistence, Revoked: authority.DeviceRevoked,
-		CredentialIdle: auth.BrowserInactivityLifetime, Client: &http.Client{Transport: service}})
+		CredentialIdle: auth.BrowserInactivityLifetime, Client: &http.Client{Transport: service}, Now: clock})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,6 +639,18 @@ func TestSessionPushIsNotDroppedWhileEarlierOnesAreInFlight(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("an admitted push never reached the push service")
 		}
+	}
+	// Two windows can be alive together: a minute later the budget is new while these 12 are still
+	// on their way (a delivery may take a minute). The next 12 must go out too, and the 25th not.
+	later.Store(int64(time.Minute))
+	for index := range MaxPerMinute {
+		event := Event{SessionID: fmt.Sprintf("22222222-2222-4333-8444-%012d", index), SessionTitle: "claude", Kind: KindWaiting}
+		if !notifier.Notify(ctx, event) {
+			t.Fatalf("push %d of the next minute was dropped while %d were in flight", index+1, MaxPerMinute+index)
+		}
+	}
+	if notifier.Notify(ctx, Event{SessionID: "22222222-2222-4333-8444-999999999999", Kind: KindWaiting}) {
+		t.Fatal("a 25th push was accepted")
 	}
 	close(service.release)
 	waitFor(t, func() bool { return len(notifier.inFlight) == 0 })

@@ -111,7 +111,7 @@ Open **Settings → Integrations**. It has one card for each computer that has h
 
 The switches are saved on that computer, for every phone.
 
-**Next beta:** under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and this phone cannot get that computer's notifications. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → Notifications**.
+**Next beta:** under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and Termivoa can tell that this phone has no notifications from that computer. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → Notifications**.
 
 ## How do I create a worktree?
 

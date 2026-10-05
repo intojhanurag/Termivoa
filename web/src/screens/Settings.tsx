@@ -117,7 +117,7 @@ export function NotificationSettings({ onFailure, onPush }: {
   }));
 
   return (
-    <section id="notifications" className="group stack" aria-labelledby="push-heading">
+    <section id="notifications" className="group stack" aria-labelledby="push-heading" tabIndex={-1}>
       <h2 id="push-heading" className="caps">Notifications</h2>
       {support === 'available' ? (
         <>
@@ -371,8 +371,10 @@ export function IntegrationRow({
           {gap !== undefined && value('enabled') && (value('blocked') || value('done')) && (
             <Notice
               tone="warning"
+              role="status"
               title="This phone gets no buzz yet."
-              action={<button type="button" className="link" onClick={() => document.getElementById('notifications')?.scrollIntoView()}>{BUZZ_LINKS[gap]}</button>}
+              // Focus moves with the view, so a screen reader lands on Notifications too.
+              action={<button type="button" className="link" onClick={() => { const to = document.getElementById('notifications'); to?.scrollIntoView(); to?.focus({ preventScroll: true }); }}>{BUZZ_LINKS[gap]}</button>}
             />
           )}
           <div role="status" className="field-note">

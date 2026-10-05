@@ -89,12 +89,13 @@ All notable changes are documented here. The format follows
   the budget of 12 per minute (#197; provider pushes had this fix in #185).
   Phone: no change.
 - Phone: a herdr card in **Settings → Integrations** says "This phone gets
-  no buzz yet." under the buzz switches while a buzz switch is on and this
-  phone cannot get that computer's notifications (not turned on, an iPhone
+  no buzz yet." under the buzz switches while a buzz switch is on and the
+  app can tell that this phone has no notifications from that computer (not
+  turned on, an iPhone
   Safari tab, a browser without push, or on at home and not at that
   computer). Its link (**Turn on notifications**, **Add to Home Screen** or
   **See why**) goes to **Settings → Notifications**. Docs: troubleshooting
-  has "I hear a sound but see no notification" (the sound is herdr's own).
+  has "I hear a sound but see no notification" (with herdr, the sound is most likely herdr's own).
   Host: no change.
 
 ## [0.1.0-beta.3] - 2026-10-04

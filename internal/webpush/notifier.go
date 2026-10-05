@@ -194,7 +194,7 @@ func (notifier *Notifier) Notify(ctx context.Context, event Event) bool {
 
 // NotifyProvider is Notify for a provider terminal (docs/herdr-provider.md,
 // section 7), with its own per-minute budget, coalescing key
-// (provider:<target>:<kind>) and delivery slot.
+// (provider:<target>:<kind>) and delivery slots.
 func (notifier *Notifier) NotifyProvider(ctx context.Context, event ProviderEvent) bool {
 	message, ok := ProviderMessage(event)
 	if !ok || !notifier.admit("provider:"+event.Target+":"+string(event.Kind), CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) {
@@ -281,6 +281,10 @@ func (notifier *Notifier) deliver(ctx context.Context, deviceID string, message 
 	accepted := 0
 	// ponytail: sequential fan-out under one deadline; fine for a handful of phones.
 	for _, subscription := range subscriptions {
+		// Past the deadline nothing more can be sent: stop, so the slot is free on time.
+		if ctx.Err() != nil {
+			break
+		}
 		if notifier.config.Revoked(subscription.DeviceID) {
 			continue
 		}

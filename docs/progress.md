@@ -49,7 +49,7 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
-### A dropped session push, and "buzz on" where no buzz can come (2026-10-06, branch `fix/push-drop-and-buzz-hint`; not committed, not merged)
+### A dropped session push, and "buzz on" where no buzz can come (pull request #201, not merged)
 
 - **Why.** Issue #197, and the owner's report: "I only hear a sound, no
   message on the screen."
@@ -67,7 +67,7 @@ on their own date.
   **Buzz when blocked** and **Buzz when finished** on, although no
   notification could reach that phone.
 - **Task 1, #197 (host).** Reproduced first:
-  `TestSessionPushIsNotDroppedWhileEarlierOnesAreInFlight`
+  `TestSessionPushIsNotDroppedWhileEarlierOnesAreInFlight` (12 held, a minute later 12 more go out, the 25th is refused)
   (`internal/webpush/webpush_test.go`; a push service that holds every
   request, one subscribed phone, 12 sessions turn `waiting`) failed on
   `main`'s code with "session push 3 was dropped while 2 were in flight".
