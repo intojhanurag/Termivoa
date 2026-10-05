@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPProviderGroup, HTTPProviderItem, HTTPSettingsResponse } from '../generated/protocol';
-import { dismissPushCard, enablePush, shouldOfferPush } from '../push';
+import { dismissHomeScreenHint, dismissPushCard, enablePush, shouldOfferHomeScreen, shouldOfferPush } from '../push';
 import { agentBadge, hasNewOutput, readViewed, since, type AgentBadge } from './activity';
 import { firstLabel, homeOrigin } from '../api/http';
 import {
@@ -178,6 +178,19 @@ export function PushCard({ onClose, onFailure }: {
   );
 }
 
+/** iPhone in a Safari tab: one line and the way to the steps (Settings → Notifications). Hidden for good after "Not now". */
+export function HomeScreenHint({ onSteps, onClose }: { readonly onSteps: () => void; readonly onClose: () => void }) {
+  return (
+    <section className="push-card" aria-labelledby="home-screen-title">
+      <h2 id="home-screen-title" className="push-card-title">For notifications, add Termivoa to your Home Screen</h2>
+      <div className="push-card-actions">
+        <button type="button" className="secondary" onClick={onSteps}>See how</button>
+        <button type="button" className="link" onClick={() => { dismissHomeScreenHint(); onClose(); }}>Not now</button>
+      </div>
+    </section>
+  );
+}
+
 /** "Your computer · 1 waiting · 1 working", or "· connected" when no agent is busy. */
 export function hostSummary(sessions: ReadonlyArray<BrokerRPCSessionRecord> | undefined, name = 'Your computer'): string {
   const count = (state: string) => (sessions ?? []).filter((session) => session.agent?.state === state).length;
@@ -330,7 +343,7 @@ export const keptSettings = (kept: HTTPSettingsResponse | undefined, status: Com
   (status?.kind === 'ok' ? status.settings : kept);
 
 export function Sessions({
-  entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onReload, onRetry, onFailure, onUpdate,
+  entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onHomeScreenSteps, onReload, onRetry, onFailure, onUpdate,
   providers = [], tab, onOpenTarget, onProviderRetry, onCreated, onTypeIn,
 }: {
   /** Every computer, home first, with what it answered. */
@@ -344,6 +357,8 @@ export function Sessions({
   readonly onNew: () => void;
   readonly onWall: () => void;
   readonly onSettings: () => void;
+  /** Opens Settings at Notifications, where the Add to Home Screen steps are. Absent: no hint. */
+  readonly onHomeScreenSteps?: (() => void) | undefined;
   readonly onReload: () => Promise<void>;
   readonly onRetry: (origin: string) => Promise<void>;
   /** `from`: the computer the failure came from; without it, it counts as home's. */
@@ -371,6 +386,7 @@ export function Sessions({
   const provider = tabs.some((item) => item.id === chosenProvider) ? chosenProvider : undefined;
   const [busy, setBusy] = useState(false);
   const [offerPush, setOfferPush] = useState(false);
+  const [hintClosed, setHintClosed] = useState(false);
   const [chip, setChip] = useState<string>();
   const computers = entries.map((entry) => entry.computer);
   const multi = computers.length > 1;
@@ -482,6 +498,9 @@ export function Sessions({
       )}
 
       {offerPush && <PushCard onClose={() => setOfferPush(false)} onFailure={onFailure} />}
+      {pushAllowed && onHomeScreenSteps !== undefined && !hintClosed && shouldOfferHomeScreen() && (
+        <HomeScreenHint onSteps={onHomeScreenSteps} onClose={() => setHintClosed(true)} />
+      )}
 
       {provider === undefined && <ProviderSection entries={shownProviders} multi={multi} now={now} onOpen={openTarget} />}
 

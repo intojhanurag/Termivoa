@@ -53,9 +53,9 @@ Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**,
 
 Snippets are prompts and commands you send with one tap, saved on this phone only. Tap **snips** to open the Snippets sheet.
 
-- Save: tap **+ new**, fill in **Title** and **Text to send**, pick **Press Enter after pasting** to run it at once, and tap **save**.
+- Save: tap **+ New**, fill in **Title** and **Text to send**, pick **Press Enter after pasting** to run it at once, and tap **Save**.
 - Send: tap it (needs control). A snippet with more than one line asks first.
-- Change or delete: tap **edit**, then the snippet.
+- Change or delete: tap **Edit**, then the snippet.
 - **This project**: your project's own commands. See [Project buttons](/docs/guides/project-buttons/).
 
 ## Scroll the terminal

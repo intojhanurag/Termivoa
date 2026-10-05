@@ -154,7 +154,7 @@ describe('changes file', () => {
     const path = 'logo.png';
     expect(html(open({ path, state: 'loading', patch: undefined }))).toContain('<p role="status">Loading diff…</p>');
     expect(html(open({ path, state: 'ready', patch: patch({ path, state: 'binary', lines: [] }) })))
-      .toContain('<p role="status">Binary file — not shown.</p>');
+      .toContain('<p role="status">Binary file. Not shown.</p>');
     expect(html(open({ path, state: 'ready', patch: patch({ path, state: 'missing', lines: [] }) })))
       .toContain('<p role="status">This file has no changes anymore.</p><button type="button">Refresh</button>');
     expect(html(open({ path, state: 'unavailable', patch: undefined })))

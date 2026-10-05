@@ -15,7 +15,7 @@ import {
 import { displayPath } from './folder';
 import { runFirstProblem } from './presets';
 import { Sheet, SheetHeader } from './Sheet';
-import { Button, Notice } from './ui';
+import { Button, ConfirmPair, Notice } from './ui';
 
 interface Draft {
   readonly id: string | undefined;
@@ -67,9 +67,9 @@ function SnippetForm({ draft, onChange, onSave, onDelete, onCancel, problem }: {
       </label>
       {problem !== undefined && <p role="alert" className="error">{problem}</p>}
       <div className="row">
-        <button type="submit" className="primary">save</button>
-        <button type="button" onClick={onCancel}>cancel</button>
-        {onDelete !== undefined && <button type="button" className="danger" onClick={onDelete}>delete</button>}
+        <button type="submit" className="primary">Save</button>
+        <button type="button" onClick={onCancel}>Cancel</button>
+        {onDelete !== undefined && <button type="button" className="danger" onClick={onDelete}>Delete</button>}
       </div>
     </form>
   );
@@ -272,14 +272,14 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
         {draft === undefined && (
           <>
             <button type="button" className="link" aria-pressed={editing} onClick={() => setEditing(!editing)}>
-              {editing ? 'done' : 'edit'}
+              {editing ? 'Done' : 'Edit'}
             </button>
             <button
               type="button"
               className="link"
               disabled={list.length >= MAX_SNIPPETS}
               onClick={() => { setProblem(undefined); setDraft(EMPTY); }}
-            >+ new</button>
+            >+ New</button>
           </>
         )}
         <button type="button" className="link" onClick={onClose}>Close</button>
@@ -300,12 +300,12 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
             “{confirming.title}” has {lineCount(confirming.text)} lines. A shell without safe bracketed paste can run
             each line as a command.
           </p>
-          <div className="row">
-            <button type="button" className="danger" disabled={!canSend} onClick={() => send(confirming, true)}>
-              Paste {lineCount(confirming.text)} lines
-            </button>
-            <button type="button" onClick={() => setConfirming(undefined)}>Cancel</button>
-          </div>
+          <ConfirmPair
+            confirm={`Paste ${lineCount(confirming.text)} lines`}
+            disabled={!canSend}
+            onCancel={() => setConfirming(undefined)}
+            onConfirm={() => send(confirming, true)}
+          />
         </div>
       ) : (
         <>
@@ -324,7 +324,7 @@ export function Snippets({ target, canSend, busy, tasks, onRetryTasks, onRunTask
           <h3 className="caps">Saved snippets</h3>
           {!canSend && <Notice tone="neutral" role="status">Take control to send snippets. You can still edit them.</Notice>}
           {problem !== undefined && <p role="alert" className="error">{problem}</p>}
-          {list.length === 0 && <p className="muted">No snippets. Tap + new to save one.</p>}
+          {list.length === 0 && <p className="muted">No snippets. Tap + New to save one.</p>}
           <ul className="rows snippet-list">
             {list.map((snippet) => (
               <li key={snippet.id}>

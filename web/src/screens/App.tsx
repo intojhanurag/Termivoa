@@ -80,7 +80,8 @@ type View =
    * notification tap, so it opens at once, also when the tap is for the address already shown.
    */
   | { readonly name: 'provider'; readonly computer: Computer; readonly provider: string; readonly target: string; readonly tapped: number; readonly notice?: string }
-  | { readonly name: 'settings' }
+  /** `section`: scroll to it once (the Home Screen hint on Sessions). */
+  | { readonly name: 'settings'; readonly section?: 'notifications' }
   | { readonly name: 'add-computer' }
   | { readonly name: 'peer-add' };
 
@@ -1026,6 +1027,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}
           onWall={() => navigate({ name: 'wall' })}
           onSettings={() => navigate({ name: 'settings' })}
+          onHomeScreenSteps={() => navigate({ name: 'settings', section: 'notifications' })}
           onReload={() => all.reload()}
           onRetry={all.retry}
           onFailure={handleFailure}
@@ -1132,6 +1134,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           <Suspense fallback={<main className="page"><p role="status" className="muted">Opening settings…</p></main>}>
             <Settings
               settings={settings}
+              {...(view.section === undefined ? {} : { section: view.section })}
               entries={all.entries}
               providers={providers.entries}
               fontSize={fontSize}

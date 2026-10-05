@@ -62,6 +62,18 @@ All notable changes are documented here. The format follows
 
 ### Changed
 
+- Phone, UI consistency (no feature removed; less text): every
+  confirmation of a destructive or multi-line action (Terminate session,
+  Send N lines, Paste N lines, Remove worktree, Remove anyway, Remove a
+  computer) has the way out first and ignores a confirm tap in its first
+  400 ms, so a double tap cannot confirm; tap areas that were under 44 px
+  (computer tabs, the push card, the answer pill, "terminal", the
+  Changes/Files switch, preview Open, Tell agent, file search) are 44 px;
+  screen titles, text actions, hint and error sizes, and button case follow
+  one rule ("Edit", "+ New", "Save", "Save as preset", "Sessions"); shorter
+  lines on the Wall, pairing and Settings → Computers. In an iPhone Safari
+  tab, Sessions shows one line, "For notifications, add Termivoa to your
+  Home Screen", with **See how** and **Not now**. Host: no change.
 - Phone: in a Safari tab on iPhone, **Settings → Notifications** now says why
   there is no switch and what to do: "To get notifications on iPhone, add
   Termivoa to your Home Screen." with four steps (before: one line, "Add to

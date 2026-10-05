@@ -711,15 +711,17 @@ export function Live({
       )}
 
       {status.notice !== undefined && (
-        <div className="banner" role="alert">
-          <span>{status.notice}</span>
-          <button type="button" onClick={() => runtime?.connection.dismissNotice()}>Dismiss</button>
+        <div className="banner warning" role="alert">
+          <span className="banner-dot" aria-hidden="true" />
+          <span className="banner-text">{status.notice}</span>
+          <span className="banner-actions"><button type="button" className="link" onClick={() => runtime?.connection.dismissNotice()}>Dismiss</button></span>
         </div>
       )}
       {runFirstNotice !== undefined && (
-        <div className="banner" role="alert">
-          <span>{runFirstNotice}</span>
-          <button type="button" onClick={() => setRunFirstNotice(undefined)}>Dismiss</button>
+        <div className="banner warning" role="alert">
+          <span className="banner-dot" aria-hidden="true" />
+          <span className="banner-text">{runFirstNotice}</span>
+          <span className="banner-actions"><button type="button" className="link" onClick={() => setRunFirstNotice(undefined)}>Dismiss</button></span>
         </div>
       )}
 

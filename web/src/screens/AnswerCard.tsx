@@ -57,7 +57,7 @@ export function AnswerCard({ title, question, stateSince, status, canTake, onAns
       </div>
       <h2 id="answer-question" className="answer-question">{question.text}</h2>
       {question.detail !== undefined && <pre className="answer-detail">{question.detail}</pre>}
-      {changed && <p className="answer-note" role="status">The question changed — check the new one</p>}
+      {changed && <p className="answer-note" role="status">The question changed. Check the new one.</p>}
       {!controller && (
         <button type="button" className="primary answer-take" disabled={!canTake} onMouseDown={keepFocus} onClick={onTakeControl}>
           {status.control === 'acquiring' ? 'Taking control…' : 'Take control to answer'}

@@ -6,7 +6,7 @@ import { SCAN_ASKING, SCAN_POINT, SCAN_PROBLEMS, startScan, type ScanEnd } from 
 import { AddComputerSheet } from './AddComputer';
 import { atLeast, cantReach, CHECKING_MIN_MS, ReadFailure, type ComputerEntry } from './allSessions';
 import { ago, problemDetail, problemText } from './Sessions';
-import { Button, Notice, PairVia } from './ui';
+import { Button, ConfirmPair, Notice, PairVia } from './ui';
 
 /** The right-hand word for a computer in the list. */
 export function onlineText(entry: ComputerEntry): { readonly text: string; readonly tone: 'green' | 'muted' | 'amber' } {
@@ -276,7 +276,7 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           const working = checked !== undefined && checked.text === undefined;
           return (
             <li key={computer.origin} className={`computer-card is-${entry.status.kind}`}>
-              <div className="computer-head">
+              <div className="computer-head split">
                 <span className="row-text">
                   <span className="row-title">
                     <span className="computer-dot" style={{ background: computer.color }} aria-hidden="true" />
@@ -319,17 +319,16 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
                   <p id="remove-computer">
                     Remove {computer.label}? This phone signs out of {computer.label} first. Its sessions keep running there.
                   </p>
-                  <div className="row">
-                    <Button
-                      className="danger"
-                      busy={busy}
-                      onClick={() => run(async () => {
-                        const result = await removeComputer(computer);
-                        return result.loggedOut ? `${computer.label} is removed.` : `${computer.label} is removed. ${result.hint}`;
-                      })}
-                    >Remove {computer.label}</Button>
-                    <button type="button" className="secondary" onClick={() => setEdit({ kind: 'none' })}>Keep</button>
-                  </div>
+                  <ConfirmPair
+                    cancel="Keep"
+                    confirm={`Remove ${computer.label}`}
+                    busy={busy}
+                    onCancel={() => setEdit({ kind: 'none' })}
+                    onConfirm={() => run(async () => {
+                      const result = await removeComputer(computer);
+                      return result.loggedOut ? `${computer.label} is removed.` : `${computer.label} is removed. ${result.hint}`;
+                    })}
+                  />
                 </div>
               )}
               <p role="status" className={checked?.error === true ? 'error field-note' : 'muted field-note'}>{checked === undefined ? '' : (checked.text ?? `Checking ${computer.label}…`)}</p>
@@ -400,13 +399,14 @@ export function ComputersSection({ entries, onCheck, onChanged, onFailure }: {
           </div>
         </form>
       )}
-      <div className="stack add-hint">
-        <p className="hint-text">On the new computer, run:</p>
-        <pre className="command"><PairVia home={homeName} /></pre>
-        <p className="hint-text">
-          Then tap <strong>+ Add a computer</strong> and scan the QR code it shows, or paste the link it prints. If you run it in a Termivoa session, tap the link in the terminal instead.
-        </p>
-      </div>
+      {/* While adding, or when the Found block has no answer: with one, it says what to run (or lists the computer). */}
+      {(adding !== 'closed' || found?.kind !== 'rows') && (
+        <div className="stack add-hint">
+          <p className="hint-text">On the new computer, run:</p>
+          <pre className="command"><PairVia home={homeName} /></pre>
+          <p className="hint-text">Then scan its QR code or paste its link. In a Termivoa session, tap the link in the terminal instead.</p>
+        </div>
+      )}
       {confirm !== undefined && <AddComputerSheet link={confirm} onClose={() => setConfirm(undefined)} />}
     </section>
   );

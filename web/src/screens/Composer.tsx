@@ -10,7 +10,7 @@ import {
 } from '../terminal/speech';
 import { formatSize } from './folder';
 import { Sheet, SheetHeader } from './Sheet';
-import { Notice } from './ui';
+import { ConfirmPair, Notice } from './ui';
 
 const idleSpeech = () => IDLE_SPEECH;
 
@@ -167,12 +167,7 @@ export function Composer({ connection, origin, canSend, draftKey, onClose, photo
           <p id="paste-warning">
             This draft has {lines} lines. A shell without safe bracketed paste can run each line as a command.
           </p>
-          <div className="row">
-            <button type="button" className="danger" disabled={!canSend} onClick={() => send(true)}>
-              Send {lines} lines
-            </button>
-            <button type="button" onClick={() => setConfirming(false)}>Cancel</button>
-          </div>
+          <ConfirmPair confirm={`Send ${lines} lines`} disabled={!canSend} onCancel={() => setConfirming(false)} onConfirm={() => send(true)} />
         </div>
       ) : (
         <div className="composer-toolbar">

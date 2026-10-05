@@ -418,7 +418,7 @@ function FileDiff({ file, entry, selection, onRefresh, onBack, onAsk, onSelect }
   } else if (patch === undefined) {
     state = <StateText text="Loading diff…" />;
   } else if (patch.state === 'binary') {
-    state = <StateText text="Binary file — not shown." />;
+    state = <StateText text="Binary file. Not shown." />;
   } else if (patch.state === 'missing') {
     state = <StateText text="This file has no changes anymore." action="Refresh" onAction={onRefresh} />;
   } else if (lines.length === 0) {

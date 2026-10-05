@@ -173,7 +173,7 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
               <div className="section-head">
                 <h2 id="launch-heading" className="caps">Launch</h2>
                 <button type="button" className="link" aria-pressed={editing} onClick={() => setEditing(!editing)}>
-                  {editing ? 'done' : 'edit'}
+                  {editing ? 'Done' : 'Edit'}
                 </button>
               </div>
               <ul className="rows">
@@ -245,12 +245,12 @@ export function NewSession({ entries, initial, onCancel, onStarted, onReload, on
                 />
               </div>
             </div>
-            <p id="run-first-help" className={commandProblem === undefined ? 'hint-text' : 'error'}>
+            <p id="run-first-help" className={commandProblem === undefined ? 'hint-text' : 'error field-note'}>
               {commandProblem ?? 'Typed once with Enter when the session opens, only if no one else has control.'}
             </p>
             <div className="row">
-              <button type="button" disabled={commandProblem !== undefined} onClick={saveCustom}>save as preset</button>
-              {note !== undefined && <span role="status" className="muted">{note}</span>}
+              <button type="button" disabled={commandProblem !== undefined} onClick={saveCustom}>Save as preset</button>
+              {note !== undefined && <span role="status" className="hint-text">{note}</span>}
             </div>
           </section>
 

@@ -3,6 +3,7 @@ import { ApiError, isAuthFailure } from '../api/http';
 import type { BranchesListedPayload, BranchRef, SessionWorktree } from '../generated/protocol';
 import type { BranchesView, WorktreeRemoval } from '../terminal/Connection';
 import { Sheet, SheetHeader } from './Sheet';
+import { ConfirmPair } from './ui';
 
 /** Mirrors the `worktreeName` schema. */
 const WORKTREE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/u;
@@ -278,10 +279,8 @@ export function RemoveWorktree({ worktree, removal, onRemove, onCancel }: {
       return (
         <div role="alertdialog" aria-labelledby="worktree-dirty" className="confirm stack">
           <p id="worktree-dirty">It has uncommitted changes or ignored files, such as <code>node_modules</code> or <code>.env</code>. Remove anyway deletes them for good. The branch {branch} is kept.</p>
-          <div className="row">
-            <button type="button" className="danger" onClick={() => onRemove(true)}>Remove anyway</button>
-            <button type="button" onClick={onCancel}>Keep it</button>
-          </div>
+          {/* Its own key: a new pair, so the tap that asked for the first remove never lands on this one. */}
+          <ConfirmPair key="anyway" cancel="Keep it" confirm="Remove anyway" onCancel={onCancel} onConfirm={() => onRemove(true)} />
         </div>
       );
     case 'failed':
@@ -299,10 +298,7 @@ export function RemoveWorktree({ worktree, removal, onRemove, onCancel }: {
             Remove worktree “{worktree.name}”? This deletes the folder <code>{worktreeFolder(worktree.repo, worktree.name)}</code> and
             ends this session. The branch {branch} is kept.
           </p>
-          <div className="row">
-            <button type="button" className="danger" onClick={() => onRemove(false)}>Remove worktree</button>
-            <button type="button" onClick={onCancel}>Keep it</button>
-          </div>
+          <ConfirmPair cancel="Keep it" confirm="Remove worktree" onCancel={onCancel} onConfirm={() => onRemove(false)} />
         </div>
       );
   }

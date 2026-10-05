@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { confirmReady } from './ProviderManage';
 
 /** Inline icons (24 px grid, stroked in currentColor). Always decorative: the text next to them says it. */
 const PATHS = {
@@ -42,6 +43,29 @@ export function Button({ busy = false, busyLabel, icon, className, disabled, typ
       {label}
       {overlay && <Icon name="spinner" />}
     </button>
+  );
+}
+
+/**
+ * The two buttons of a confirmation, one half each. The way out is first,
+ * where the finger is after the tap that opened it; the danger button takes
+ * no tap at first (confirmReady), so a double tap never confirms.
+ */
+export function ConfirmPair({ cancel = 'Cancel', confirm, busy = false, busyLabel, disabled, onCancel, onConfirm }: {
+  readonly cancel?: string;
+  readonly confirm: ReactNode;
+  readonly busy?: boolean;
+  readonly busyLabel?: ReactNode;
+  readonly disabled?: boolean;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}) {
+  const shownAt = useRef(Date.now());
+  return (
+    <div className="row confirm-pair">
+      <button type="button" disabled={busy} onClick={onCancel}>{cancel}</button>
+      <Button className="danger" busy={busy} busyLabel={busyLabel} disabled={disabled} onClick={() => { if (confirmReady(shownAt.current, Date.now())) onConfirm(); }}>{confirm}</Button>
+    </div>
   );
 }
 
