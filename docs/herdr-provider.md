@@ -234,6 +234,7 @@ Per agent target, from each 2 s poll (previous → new state), keyed by pane ID 
 - One section, one row per computer that lists a provider: "herdr on mac", the version on its own line, a switch (**On**), and two switches **Buzz when blocked** and **Buzz when finished**. State words: "Running", "Not running", "Update" (`unsupported`), "Off".
 - Stored on that computer in the existing key/value `settings` table (`key`, `value`, `updated_at_ms`; `Store.GetSetting`, `Store.PutSetting`): `provider.herdr.enabled` (`1`/`0`), `provider.herdr.notify` (`blocked,done`). Absent means on, both. No schema change.
 - Off: the broker stops polling, ends provider sessions, reports `state: off`; the herdr tab hides that computer.
+- The switches are the computer's, for every phone, so they can be on while this phone has no push subscription there. Then the card says "This phone gets no buzz yet." under them, with a link to the Notifications section ([notifications.md](notifications.md), "This phone").
 
 ## 9. Multi-computer
 

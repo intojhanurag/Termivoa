@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -78,6 +78,30 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 5. Keep the computer awake; it sends them.
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
+
+## I hear a sound but see no notification
+
+The sound comes from herdr on the computer, not from Termivoa. Termivoa makes no sound on the computer.
+
+| What you notice | Where it comes from | What to do |
+| --- | --- | --- |
+| A sound on the computer when an agent changes state | herdr. `ui.sound.enabled` is `true` by default. | To stop it, set it to `false`. |
+| No popup on the computer | herdr. `ui.toast.delivery` is `"off"` by default. | Set it to `"herdr"`, `"terminal"` or `"system"`. |
+| No notification on the phone | Termivoa notifies a phone only after notifications are on for that phone. | See [Turn on notifications](/docs/guides/notifications/#turn-on-notifications). |
+
+The herdr settings are in `~/.config/herdr/config.toml` on the computer (macOS and Linux):
+
+```toml
+[ui.sound]
+enabled = false
+
+[ui.toast]
+delivery = "herdr"
+```
+
+`delivery` can be `"off"`, `"herdr"`, `"terminal"` or `"system"`. Then run `herdr server reload-config`.
+
+**Next beta:** in **Settings → Integrations**, a herdr card with a buzz switch on says "This phone gets no buzz yet." while this phone cannot get that computer's notifications. The buzz switches are for every phone, so they can be on before this phone has notifications.
 
 ## macOS blocks pterm (Gatekeeper)
 

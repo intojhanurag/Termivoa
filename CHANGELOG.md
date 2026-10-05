@@ -81,6 +81,22 @@ All notable changes are documented here. The format follows
   "This browser cannot show notifications. Try Chrome, Edge, Firefox or
   Safari." Host: no change.
 
+### Fixed
+
+- Host: a session notification is no longer dropped when two deliveries are
+  still on their way (three sessions turn `waiting` together while the push
+  service is slow). Session pushes have 24 delivery slots, two minutes of
+  the budget of 12 per minute (#197; provider pushes had this fix in #185).
+  Phone: no change.
+- Phone: a herdr card in **Settings → Integrations** says "This phone gets
+  no buzz yet." under the buzz switches while a buzz switch is on and this
+  phone cannot get that computer's notifications (not turned on, an iPhone
+  Safari tab, a browser without push, or on at home and not at that
+  computer). Its link (**Turn on notifications**, **Add to Home Screen** or
+  **See why**) goes to **Settings → Notifications**. Docs: troubleshooting
+  has "I hear a sound but see no notification" (the sound is herdr's own).
+  Host: no change.
+
 ## [0.1.0-beta.3] - 2026-10-04
 
 Third private beta. Updating from beta.2 restarts Termivoa on the computer,
