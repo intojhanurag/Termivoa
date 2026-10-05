@@ -14,10 +14,11 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+// One rule for Chrome (CHROME) and one sandbox for every pterm, shared with the e2e harness.
+import { CHROME, sandboxed } from '../e2e-multicomputer/lib.mjs';
 import { agentEdits, CODE, HOME, PIDFILE, PTERM, setup, stopStack } from './setup.mjs';
 
 const BASE = 'http://127.0.0.1:8788';
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const DIR = new URL('.', import.meta.url).pathname;
 const PNG = `${DIR}png`;
 const ENV = { ...process.env, HOME };
@@ -25,7 +26,8 @@ const crops = {};
 // The PNG height in CSS px (PNG bytes 20..24 hold the pixel height; DPR is 2).
 const innerHeightOf = (r) => Buffer.from(r.data, 'base64').readUInt32BE(20) / 2;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const pterm = (...args) => execFileSync(PTERM, [...args, '--dev'], { env: ENV }).toString();
+// Every pterm runs in the e2e harness sandbox: it hides a real herdr (and the real Tailscale CLI) on this computer.
+const pterm = (...args) => execFileSync(...sandboxed(PTERM, [...args, '--dev']), { env: ENV }).toString();
 let step = 'start';
 
 async function browser(profile) {
@@ -138,12 +140,12 @@ async function newSession(b, project, runFirst) {
 async function freshStack() {
   await stopStack(); // only the stack an earlier run of this script recorded
   setup();
-  const up = spawn(PTERM, ['up', '--dev'], { env: ENV, cwd: HOME, detached: true, stdio: 'ignore' });
+  const up = spawn(...sandboxed(PTERM, ['up', '--dev']), { env: ENV, cwd: HOME, detached: true, stdio: 'ignore' });
   writeFileSync(PIDFILE, `${up.pid}\n`);
   up.unref();
   for (let i = 0; i < 50; i++) { try { await fetch(BASE); break; } catch { await sleep(200); } }
   await sleep(1000);
-  for (const name of ['acme-web', 'billing-api', 'docs-site']) execFileSync(PTERM, ['project', 'add', '--dev', '--name', name, `${CODE}/${name}`], { env: ENV });
+  for (const name of ['acme-web', 'billing-api', 'docs-site']) execFileSync(...sandboxed(PTERM, ['project', 'add', '--dev', '--name', name, `${CODE}/${name}`]), { env: ENV });
 }
 
 async function capture() {
@@ -156,6 +158,9 @@ async function capture() {
   const helper = await browser('/tmp/demo-chrome-helper');
   try {
     await pair(helper, 'iPad');
+    // Demo data only (AGENTS.md rule 23): stop when the stack sees a provider (herdr) of this computer.
+    const providers = await helper.evaluate(`fetch('/api/v1/settings', { credentials: 'include' }).then((r) => r.json()).then((s) => (s.providers ?? []).map((p) => p.state))`);
+    if (providers.some((state) => state !== 'notInstalled')) throw new Error(`the demo stack sees a provider of this computer (${providers}); the sandbox must hide it`);
     await newSession(helper, 'docs-site', 'git log --oneline -3');
     await newSession(helper, 'billing-api', 'git status -sb');
     await newSession(helper, 'acme-web', 'git log --oneline -5');
