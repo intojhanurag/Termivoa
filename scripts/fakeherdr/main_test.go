@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -353,6 +354,145 @@ func TestFakeHerdrManage(t *testing.T) {
 				t.Fatalf("log:\n%s", log)
 			}
 		})
+	}
+}
+
+// TestFakeHerdrClosedWorktreesAndAgentTab drives docs/herdr-manage.md,
+// section 14, through the provider: a closed worktree of the scenario and
+// one whose workspace was closed show as closed, openItem opens one again,
+// worktree.remove takes it out for good, and a new tab starts an agent in
+// its pane under a name no other agent has.
+func TestFakeHerdrClosedWorktreesAndAgentTab(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds fakeherdr")
+	}
+	root, err := os.MkdirTemp("/tmp", "fakeherdr-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	binary, err := herdrtest.Build(filepath.Join(root, "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "home")
+	folder := filepath.Join(home, ".config", "herdr")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := os.ReadFile(filepath.Join("..", "..", "internal", "herdr", "testdata", "snapshot-0.8.2.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenario, _ := json.Marshal(map[string]any{
+		"attachAny": true, "kinds": []string{"claude", "codex"}, "snapshot": json.RawMessage(snapshot),
+		"closed": []map[string]string{{"repo_key": "/home/demo/shop/.git", "branch": "old-idea"}, {"repo_key": "/home/demo/other/.git", "branch": "elsewhere"}},
+	})
+	if err := os.WriteFile(filepath.Join(folder, "scenario.json"), scenario, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := exec.Command(binary, "server")
+	server.Env = []string{"HOME=" + home}
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = server.Process.Signal(syscall.SIGTERM)
+		_ = server.Wait()
+	})
+	waitFor(t, func() bool { _, err := os.Stat(filepath.Join(folder, "control.sock")); return err == nil })
+	provider := herdr.New(herdr.Config{BinaryPaths: []string{binary}, Home: home}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go provider.Run(ctx)
+	text := func(value string) *string { return &value }
+	// shop waits for a poll where the shop group has these closed names and this many items.
+	shop := func(items int, closed ...string) protocol.HTTPProviderGroup {
+		t.Helper()
+		var found protocol.HTTPProviderGroup
+		waitFor(t, func() bool {
+			groups := provider.Snapshot().Groups
+			if len(groups) == 0 {
+				return false
+			}
+			found = groups[0]
+			return found.Name == "shop" && len(found.Items) == items && slices.Equal(found.Closed, closed)
+		})
+		return found
+	}
+	group := shop(2, "old-idea")
+	// Closing a linked worktree's workspace keeps the worktree: it is closed now.
+	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w3"), Name: text("silver-meadow")}, herdr.Project{}); err != nil {
+		t.Fatal(err)
+	}
+	shop(1, "old-idea", "silver-meadow")
+	open := protocol.HTTPProviderManageRequest{Action: protocol.OpenItem, GroupID: &group.ID, Worktree: text("silver-meadow")}
+	opened, err := provider.Manage(ctx, open, herdr.Project{})
+	if err != nil || opened.ItemID == nil || opened.TargetID == nil {
+		t.Fatalf("open = %+v %v", opened, err)
+	}
+	if _, err := provider.Attach(*opened.TargetID); err != nil {
+		t.Fatalf("the opened worktree's terminal: %v", err)
+	}
+	// An open worktree is not closed; it is an item again, a linked one.
+	if again := shop(2, "old-idea"); again.Items[1].ID != *opened.ItemID || again.Items[1].Name != "silver-meadow" || again.Items[1].Linked == nil {
+		t.Fatalf("after the open = %+v", again)
+	}
+	// herdr answers the open workspace (already_open) and makes no second one; the provider refuses a name that is not closed.
+	if code := rawCall(t, folder, "worktree.open", map[string]any{"workspace_id": "w1", "branch": "silver-meadow", "focus": false}); code != "" {
+		t.Fatalf("open an open worktree = %q", code)
+	}
+	if _, err := provider.Manage(ctx, open, herdr.Project{}); !errors.Is(err, herdr.ErrTargetMissing) {
+		t.Fatalf("openItem for an open worktree = %v", err)
+	}
+	shop(2, "old-idea")
+	for _, test := range []struct{ workspace, branch, want string }{
+		{"w1", "ghost", "worktree_not_found"},
+		{"w1", "elsewhere", "worktree_not_found"}, // another repository's
+		{"w2", "old-idea", "not_git_worktree"},
+	} {
+		if code := rawCall(t, folder, "worktree.open", map[string]any{"workspace_id": test.workspace, "branch": test.branch}); code != test.want {
+			t.Fatalf("worktree.open %+v = %q", test, code)
+		}
+	}
+	if code := rawCall(t, folder, "worktree.list", map[string]any{"workspace_id": "w2"}); code != "not_git_worktree" {
+		t.Fatalf("list outside git = %q", code)
+	}
+	if code := rawCall(t, folder, "worktree.list", map[string]any{"workspace_id": "w77"}); code != "workspace_not_found" {
+		t.Fatalf("list an unknown workspace = %q", code)
+	}
+	// A closed worktree still has its branch: a create with that name fails.
+	if _, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: group.ID, Name: "old-idea"}); !errors.Is(err, herdr.ErrExists) {
+		t.Fatalf("create over a closed worktree = %v", err)
+	}
+	// worktree.remove takes the worktree out for good: it is not closed after it.
+	if removed, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.RemoveItem, ItemID: opened.ItemID, Name: text("silver-meadow")}, herdr.Project{}); err != nil || removed.Problem != nil {
+		t.Fatalf("remove = %+v %v", removed, err)
+	}
+	shop(1, "old-idea")
+
+	// A new tab with an agent: agent.start and agent.prompt in the tab's pane.
+	agentTab := protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w1"), Agent: text("claude"), Prompt: text("fix it")}
+	for range 2 { // the second agent of a kind needs another name
+		tab, err := provider.Manage(ctx, agentTab, herdr.Project{})
+		if err != nil || tab.AgentStarted == nil || !*tab.AgentStarted || tab.AgentProblem != nil || tab.TargetID == nil {
+			t.Fatalf("agent tab = %+v %v", tab, err)
+		}
+		if _, err := provider.Attach(*tab.TargetID); err != nil {
+			t.Fatalf("the agent tab's terminal: %v", err)
+		}
+	}
+	if code := rawCall(t, folder, "agent.start", map[string]any{"name": "claude-w1-p4", "kind": "claude", "pane_id": "w1:p2"}); code != "agent_name_taken" {
+		t.Fatalf("a taken agent name = %q", code)
+	}
+	log := readLog(t, folder)
+	for _, want := range []string{"worktree.open w1 silver-meadow\n", "agent.start claude claude-w1-p4 w1:p4\n", "agent.start claude claude-w1-p5 w1:p5\n", `agent.prompt w1:p4 "fix it"`} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("the log lacks %q:\n%s", want, log)
+		}
+	}
+	if strings.Count(log, "worktree.open w1 silver-meadow\n") != 1 {
+		t.Fatalf("a second workspace was opened:\n%s", log)
 	}
 }
 

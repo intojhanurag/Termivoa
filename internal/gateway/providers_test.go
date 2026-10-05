@@ -29,6 +29,8 @@ func TestProviderRoutesReachTheBroker(t *testing.T) {
 		{http.MethodPost, managePath, `{"action":"newTab","itemId":"w3"}`, "provider-manage:newTab", `"itemId":"w3"`},
 		{http.MethodPost, managePath, `{"action":"newWorkspace","projectId":"81111111-1111-4111-8111-111111111111"}`, "provider-manage:newWorkspace", `{}`},
 		{http.MethodPost, managePath, `{"action":"startServer"}`, "provider-manage:startServer", `{}`},
+		{http.MethodPost, managePath, `{"action":"newTab","itemId":"w3","agent":"claude","prompt":"fix it"}`, "provider-manage:newTab", `"itemId":"w3"`},
+		{http.MethodPost, managePath, `{"action":"openItem","groupId":"g7d0f77ccdcfd","worktree":"fix/old-idea"}`, "provider-manage:openItem", `{}`},
 	} {
 		response := do(handler, test.method, test.path, test.body, requestOptions{cookie: prodCookie})
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), test.want) || !broker.called(test.call) {
@@ -80,6 +82,11 @@ func TestProviderRoutesRefuseBadRequests(t *testing.T) {
 		{"manage unknown field", http.MethodPost, managePath, `{"action":"removeItem","itemId":"w3","name":"a","force":true}`, requestOptions{cookie: prodCookie}, 400},
 		{"close without the confirmed name", http.MethodPost, managePath, `{"action":"closeItem","itemId":"w3"}`, requestOptions{cookie: prodCookie}, 400},
 		{"new tab with a name", http.MethodPost, managePath, `{"action":"newTab","itemId":"w3","name":"a"}`, requestOptions{cookie: prodCookie}, 400},
+		{"a prompt without an agent", http.MethodPost, managePath, `{"action":"newTab","itemId":"w3","prompt":"go"}`, requestOptions{cookie: prodCookie}, 400},
+		{"an agent on a close", http.MethodPost, managePath, `{"action":"closeItem","itemId":"w3","name":"a","agent":"claude"}`, requestOptions{cookie: prodCookie}, 400},
+		{"an agent that is a command", http.MethodPost, managePath, `{"action":"newTab","itemId":"w3","agent":"claude --yolo"}`, requestOptions{cookie: prodCookie}, 400},
+		{"open a path", http.MethodPost, managePath, `{"action":"openItem","groupId":"g7d0f77ccdcfd","worktree":"../shop"}`, requestOptions{cookie: prodCookie}, 400},
+		{"open without a group", http.MethodPost, managePath, `{"action":"openItem","worktree":"old-idea"}`, requestOptions{cookie: prodCookie}, 400},
 		{"new workspace with a path", http.MethodPost, managePath, `{"action":"newWorkspace","projectId":"/etc"}`, requestOptions{cookie: prodCookie}, 400},
 		{"new workspace with an item", http.MethodPost, managePath, `{"action":"newWorkspace","projectId":"81111111-1111-4111-8111-111111111111","itemId":"w3"}`, requestOptions{cookie: prodCookie}, 400},
 		{"start with a field", http.MethodPost, managePath, `{"action":"startServer","itemId":"w3"}`, requestOptions{cookie: prodCookie}, 400},

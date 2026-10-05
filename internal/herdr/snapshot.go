@@ -147,8 +147,9 @@ type mapped struct {
 // workspace, a target per agent and per tab without one, roll-ups, caps and
 // the body budget. since carries each item's first-seen state across polls.
 // git names the workspaces without a worktree record whose folder is in a
-// repository (apply finds them): their group can create.
-func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map[string]stateStamp, git map[string]bool) mapped {
+// repository (apply finds them): their group can create. closed is each
+// group's closed worktrees, by group ID (apply asks herdr for them).
+func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map[string]stateStamp, git map[string]bool, closed map[string][]string) mapped {
 	workspaces := records(snapshot.Workspaces, func(record wireWorkspace) string { return record.ID })
 	tabs := records(snapshot.Tabs, func(record wireTab) string { return record.ID })
 	panes := records(snapshot.Panes, func(record wirePane) string { return record.ID })
@@ -318,6 +319,7 @@ func mapSnapshot(snapshot wireSnapshot, attachAny bool, now time.Time, since map
 		}
 		build.group.Items = items
 		build.group.State = rollGroup(items)
+		build.group.Closed = closed[id]
 		groups = append(groups, build.group)
 		targetsOf = append(targetsOf, build.targets)
 		result.groups[id] = build.ref

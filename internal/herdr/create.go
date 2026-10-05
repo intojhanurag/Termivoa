@@ -3,6 +3,7 @@ package herdr
 import (
 	"context"
 	"errors"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -26,8 +27,11 @@ var createTimeouts = struct{ worktree, agent, prompt, refresh time.Duration }{
 }
 
 // agentReadyMs is herdr's own readiness wait for agent.start; it answers
-// before the 20 s step limit.
-const agentReadyMs = 15000
+// before the 20 s step limit. maxAgentName is herdr's limit for an agent name.
+const (
+	agentReadyMs = 15000
+	maxAgentName = 32
+)
 
 // Create is milestone M2: a worktree in a group's repository
 // (worktree.create from its main checkout), then optionally an agent
@@ -110,26 +114,36 @@ func (provider *Provider) Create(ctx context.Context, request protocol.HTTPProvi
 		return response, nil
 	}
 
-	err = provider.call(ctx, createTimeouts.agent, "agent.start", map[string]any{
-		"name": *request.Agent, "kind": *request.Agent, "pane_id": created.RootPane.PaneID, "timeout_ms": agentReadyMs,
+	response.AgentStarted, response.Problem = provider.startAgent(ctx, created.RootPane.PaneID, response.TargetID, *request.Agent, request.Prompt)
+	return response, nil
+}
+
+var notAgentName = regexp.MustCompile(`[^a-z0-9]+`)
+
+// startAgent starts an agent of kind in pane (agent.start, 20 s) and then
+// sends prompt, if any (agent.prompt, 5 s): the part that Create and Manage's
+// newTab share. targetID is the pane's terminal. A nil problem: all worked.
+// herdr refuses a name that another agent has (agent_name_taken), so the
+// name is the kind and the pane: "claude-w3-p2".
+func (provider *Provider) startAgent(ctx context.Context, pane, targetID, kind string, prompt *string) (started bool, _ *protocol.HTTPProviderCreateProblem) {
+	name := kind + "-" + strings.Trim(notAgentName.ReplaceAllString(strings.ToLower(pane), "-"), "-")
+	err := provider.call(ctx, createTimeouts.agent, "agent.start", map[string]any{
+		"name": name[:min(len(name), maxAgentName)], "kind": kind, "pane_id": pane, "timeout_ms": agentReadyMs,
 	}, &struct{}{})
 	if err != nil {
-		response.Problem = problem(protocol.AgentFailed)
-		if timedOut(err) && provider.hasAgent(ctx, response.TargetID) ||
+		var failure *callError
+		if timedOut(err) && provider.hasAgent(ctx, targetID) ||
 			errors.As(err, &failure) && (strings.Contains(failure.code, "timeout") || strings.Contains(failure.code, "not_ready")) {
-			response.Problem = problem(protocol.AgentNotReady)
+			return false, problem(protocol.AgentNotReady)
 		}
-		return response, nil
+		return false, problem(protocol.AgentFailed)
 	}
-	response.AgentStarted = true
-	if request.Prompt != nil {
-		if err := provider.call(ctx, createTimeouts.prompt, "agent.prompt", map[string]any{
-			"target": created.RootPane.PaneID, "text": *request.Prompt,
-		}, &struct{}{}); err != nil {
-			response.Problem = problem(protocol.PromptFailed)
+	if prompt != nil {
+		if err := provider.call(ctx, createTimeouts.prompt, "agent.prompt", map[string]any{"target": pane, "text": *prompt}, &struct{}{}); err != nil {
+			return true, problem(protocol.PromptFailed)
 		}
 	}
-	return response, nil
+	return true, nil
 }
 
 func problem(value protocol.HTTPProviderCreateProblem) *protocol.HTTPProviderCreateProblem {
@@ -163,7 +177,7 @@ func (provider *Provider) readMapped(ctx context.Context) (mapped, bool) {
 	provider.mu.RLock()
 	attachAny := provider.view.caps.attachAny
 	provider.mu.RUnlock()
-	return mapSnapshot(snapshot, attachAny, provider.now(), nil, nil), true
+	return mapSnapshot(snapshot, attachAny, provider.now(), nil, nil, nil), true
 }
 
 // findItem looks for the item a timed-out worktree.create made: herdr names

@@ -117,6 +117,8 @@ type Provider struct {
 	binary     string
 	refusedAny bool // the last lookup refused a herdr binary: no install
 	gitChecks  map[string]*gitCheck
+	closed     map[string]closedTrees // by group ID (closedWorktrees)
+	closedFor  string                 // the workspace IDs those lists were asked for
 	lookupAt   time.Time
 	retryAt    time.Time
 	discovered bool
@@ -380,7 +382,7 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 		return pollEvery
 	}
 	provider.snapshotVersion = snapshot.Version
-	provider.apply(snapshot, now)
+	provider.apply(ctx, snapshot, now)
 	return pollEvery
 }
 

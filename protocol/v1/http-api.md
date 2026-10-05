@@ -58,7 +58,7 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `PATCH /api/v1/providers/{provider}` | cookie | `HTTPProviderUpdateRequest` | `200 HTTPProviderInfo`; this computer's Integrations settings |
 | `POST /api/v1/providers/{provider}/open` | cookie | `HTTPProviderOpenRequest` | `200 HTTPProviderOpenResponse`; see Providers |
 | `POST /api/v1/providers/{provider}/create` | cookie | `HTTPProviderCreateRequest` | `200 HTTPProviderCreateResponse`; may take up to 45 s |
-| `POST /api/v1/providers/{provider}/manage` | cookie | `HTTPProviderManageRequest` | `200 HTTPProviderManageResponse`; revision 5; see Providers |
+| `POST /api/v1/providers/{provider}/manage` | cookie | `HTTPProviderManageRequest` | `200 HTTPProviderManageResponse`; revision 5 (revision 6: an agent in `newTab`, `openItem`); see Providers |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -169,6 +169,7 @@ every build ID the packaging scripts produce already matches.
 | 3 | Found on your network (see that section): `POST /api/v1/computers/offer` (`HTTPComputerOfferRequest`) and `GET /api/v1/computers/found` (`HTTPComputerFoundResponse`, `HTTPFoundComputer`); `gateway.computers.offer`, `gateway.computers.found`, `admin.pair.offer`, `admin.pair.offer.end` (`authentication-rpc.md`); error code `home_changed`, sent only on the local administration RPC, so no app parses it and `minRevision` stays 1. The app is served by home, so it calls `found` only on its own home. A home below revision 3 answers an offer with `403`, which the new computer reports as `not_accepted`. |
 | 4 | Providers (see that section): `GET` and `PATCH /api/v1/providers/{provider}`, `POST /api/v1/providers/{provider}/open` and `/create`; `HTTPSettingsResponse.providers`; the `HTTPProvider*` bodies; `gateway.providers.get`, `.update`, `.open`, `.create` (`authentication-rpc.md`). No new error code and no enum an older app parses, so `minRevision` stays 1. The app calls a provider route only on a computer whose `protocolRevision` is 4 or higher and that lists the provider. |
 | 5 | Manage a provider (see Providers; `docs/herdr-manage.md`): `POST /api/v1/providers/{provider}/manage` (`HTTPProviderManageRequest`, `HTTPProviderManageResponse`); `gateway.providers.manage` (`authentication-rpc.md`); the `HTTPProviderState` value `notInstalled`; `HTTPProviderInfo.canInstall` and `canStart`; `HTTPProviderItem.linked`; `HTTPSettingsResponse.providers` now lists herdr as `notInstalled` on macOS and Linux when it is not installed (before: absent). `revision.json` names the feature `providerManage: 5`. No new error code. `minRevision` stays 1: an older app drops a provider entry whose state it does not know and ignores unknown fields. The app calls `manage`, and shows what needs it, only on a computer whose `protocolRevision` is 5 or higher. |
+| 6 | An agent in a new tab, and closed worktrees (see Providers; `docs/herdr-manage.md`, section 14). No new route or RPC message: `HTTPProviderManageRequest` gets `agent` and `prompt` (for `newTab`), `groupId` and `worktree` (for the new action `openItem`); `HTTPProviderManageResponse` gets `agentStarted` and `agentProblem`; `HTTPProviderGroup` gets `closed`. `revision.json` names the feature `providerAgentTab: 6`. No new error code. `minRevision` stays 1: an older app ignores the new fields and never sends the new action or fields. The app sends them, and shows what needs them, only to a computer whose `protocolRevision` is 6 or higher; an older computer refuses the new fields as unknown (`400`). |
 
 ## Computers
 
@@ -266,7 +267,15 @@ computer lists.
   A group has `canCreate` when it is a git repository: herdr has a worktree
   record for it, or (revision 5) one of the workspace's pane folders is in a
   repository of this user. An item has `linked: true` (revision 5) when it
-  is a linked worktree: only such an item can be removed. The
+  is a linked worktree: only such an item can be removed. A group has
+  `closed` (revision 6) when its repository has linked worktrees without a
+  workspace (their workspace was closed; the folder is still there): at most
+  16 branch names, sorted, which `manage` with `openItem` opens again. The
+  host asks herdr for them outside this read (each git group at most every
+  10 s and when the set of workspaces changed, at most 4 groups in one 2 s
+  poll, 1 s limit), so a new closed worktree can show some seconds late. A
+  worktree that is prunable, bare or detached, or whose branch is not a name
+  that `create` accepts, is never listed; no path is sent. The
   body is at most 256 KiB: whole groups are dropped from the end, least
   urgent first, and `truncated` is then `true`. IDs are opaque and never
   paths; a target is `<pane ID>.<terminal ID>`. State words are a pattern,
@@ -297,19 +306,32 @@ computer lists.
   | --- | --- | --- |
   | `closeItem` | `itemId`, `name` | Closes the workspace: its terminals end, no file is deleted. Refused for a main checkout while a linked worktree of its group is open. |
   | `removeItem` | `itemId`, `name` | Removes a linked worktree (`linked`), never with force: the workspace closes and its folder is deleted, also files that git ignores; the branch stays. |
-  | `newTab` | `itemId` | Makes a tab in the item (at most 32 terminals in an item). |
+  | `newTab` | `itemId`; revision 6: optional `agent`, and `prompt` only with `agent` | Makes a tab in the item (at most 32 terminals in an item). With `agent` (one of `agentKinds`), it then starts that agent in the tab and sends `prompt`, as create does; this also counts as one of the device's 3 creates per minute. |
   | `closeTab` | `itemId`, `targetId` | Closes the tab that holds that terminal of the item (all terminals of the tab). Refused for the item's last tab. |
   | `newWorkspace` | `projectId` | Makes a workspace in that Termivoa project's folder, named after the project (at most 64 groups). The phone never sends a path. |
   | `startServer` | – | Starts herdr's server; only with `state: notRunning` and `canStart`. The host waits up to 5 s for `ready`. |
+  | `openItem` (revision 6) | `groupId`, `worktree` | Opens a workspace for a closed worktree of the group again (at most 64 items in a group). `worktree` must be one of the names herdr lists as closed for that group at that moment: the host asks herdr again and does not trust its cached list. Nothing is deleted. |
 
   `name` is the item name the user confirmed. The host reads a fresh
   snapshot first and refuses when the item is gone or now has another name
   (herdr's workspace IDs start again after a herdr restart). The answer has
-  `itemId` (the item acted on or made). `newTab` and `newWorkspace` also
-  answer `targetId`, the new terminal, after a poll that has it (at most
-  3 s), so `open` works at once; it is absent when this herdr cannot open a
-  terminal without an agent. `problem: "uncommitted"` (with `200`) means the
-  worktree has changes that are not committed and nothing changed.
+  `itemId` (the item acted on or made). `newTab`, `newWorkspace` and
+  `openItem` also answer `targetId`, the new terminal, after a poll that has
+  it (at most 3 s), so `open` works at once; it is absent when this herdr
+  cannot open a terminal without an agent (a tab whose agent started always
+  has it). `problem: "uncommitted"` (with `200`) means the worktree has
+  changes that are not committed and nothing changed.
+
+  `newTab` with `agent` (revision 6) answers `agentStarted`, and
+  `agentProblem` when something did not work: `agentFailed` or
+  `agentNotReady` (`agentStarted: false`), or `promptFailed` (the agent
+  started, the prompt was not sent). These are the words and the time limits
+  of create (20 s for the start, 5 s for the prompt). The tab exists in every
+  case; none of these is an error. Without `agent` both fields are absent.
+  The host refuses an `agent` that is not in `agentKinds` before it makes
+  the tab. `agent` or `prompt` with any other action, and `prompt` without
+  `agent`, are refused as a bad body. When herdr already has that worktree
+  open, `openItem` answers the open workspace.
 
 Errors use existing codes with fixed Termivoa text, never herdr's or git's:
 an unknown provider, a bad body, an agent kind not offered or a prompt with
@@ -328,12 +350,12 @@ not installed on this computer") on every provider route. `manage` uses:
 
 | Case | Code | Status |
 | --- | --- | --- |
-| A bad body or a field that does not belong to the action (gateway); `removeItem` on an item that is not `linked`; `startServer` when the state is not `notRunning` or without `canStart`; `newTab` in an item with 32 terminals; `newWorkspace` with 64 groups | `invalid_request` | 400 |
+| A bad body or a field that does not belong to the action (gateway); `removeItem` on an item that is not `linked`; `startServer` when the state is not `notRunning` or without `canStart`; `newTab` in an item with 32 terminals; `newWorkspace` with 64 groups; `newTab` with an `agent` that is not in `agentKinds` ("herdr cannot start that agent here"); `openItem` in a group with 64 items ("this project has 64 workspaces; close one first") | `invalid_request` | 400 |
 | The provider is off or not installed; an item action while not `ready`; the started server did not come up in 5 s; herdr refused or failed in another way (not `removeItem`) | `host_unavailable` | 503 |
-| The item is not in a fresh snapshot | `session_missing` | 404 |
+| The item is not in a fresh snapshot; `openItem`: the group is not in a fresh snapshot, or `worktree` is not one of its closed worktrees now ("that worktree is not there to open; look at the list and try again") | `session_missing` | 404 |
 | The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open; `closeTab` on the item's last tab | `operation_conflict` | 409 |
 | The project is unknown, or its folder is gone or not this user's | `project_missing` | 404 |
-| More than 30 per minute from this device; another manage or create is running | `limit_exceeded` | 429 |
+| More than 30 per minute from this device; `newTab` with `agent` when the device used its 3 creates of this minute; another manage or create is running | `limit_exceeded` | 429 |
 | herdr refused or failed a `removeItem` in another way | `worktree_failed` ("herdr could not remove the worktree.") | 422 |
 
 herdr's and git's text never leaves the host; the broker log gets the action

@@ -135,7 +135,7 @@ func TestCreateMakesAWorktreeAndStartsAnAgent(t *testing.T) {
 	if call := world.call("worktree.create"); call["workspace_id"] != "w1" || call["branch"] != "brave-fox" || call["focus"] != false {
 		t.Fatalf("worktree.create %v", call)
 	}
-	if call := world.call("agent.start"); call["kind"] != "claude" || call["name"] != "claude" || call["pane_id"] != "w9:p1" || call["timeout_ms"] != float64(agentReadyMs) {
+	if call := world.call("agent.start"); call["kind"] != "claude" || call["name"] != "claude-w9-p1" || call["pane_id"] != "w9:p1" || call["timeout_ms"] != float64(agentReadyMs) {
 		t.Fatalf("agent.start %v", call)
 	}
 	if call := world.call("agent.prompt"); call["target"] != "w9:p1" || call["text"] != prompt {
