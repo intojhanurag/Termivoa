@@ -11,7 +11,7 @@ import { syncHomePush, syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
-  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, useAllSessions, type ComputerStatus, type HostedSession,
+  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, sameSession, useAllSessions, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
@@ -20,7 +20,7 @@ import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
 import { GONE, markOpened, type ProviderTap } from './Herdr';
-import { inboxItems, itemAt, queueStep, type InboxItem, type Place, type Queue } from './Inbox';
+import { inboxItems, itemAt, nextReady, queueStep, type InboxItem, type Place, type Queue } from './Inbox';
 import { readViewed } from './activity';
 import { providerKey, staleSettings, unpolledOrigins, useProviders } from './providers';
 import { Sessions } from './Sessions';
@@ -254,6 +254,13 @@ export function queueNext(items: ReadonlyArray<InboxItem>, visited: ReadonlySet<
   const { next, left } = queueStep(items, visited, current);
   return { left, next, visited: new Set([...visited, ...(current === undefined ? [] : [current]), ...(next === undefined ? [] : [next.key])]) };
 }
+
+/** Sessions from a terminal (‹ Sessions, Back, the last Next, a terminal that is gone): on the "Needs you" tab while a queue run is on. */
+export const sessionsView = (run: boolean, message?: string): Extract<View, { name: 'sessions' }> =>
+  ({ name: 'sessions', ...(run ? { inbox: true } : {}), ...(message === undefined ? {} : { message }) });
+
+/** True while `view` is still Live on `session`: a late answer about a notification tap starts the queue only then. */
+export const liveOn = (view: View, session: HostedSession): boolean => view.name === 'live' && sameSession(view.session, session);
 
 /** A session address the page arrived at: a notification tap the service worker confirms starts the queue with nothing shown yet; a link, a reload, Back or Forward starts none. */
 export async function queueOnArrival(path: string, ask: (path: string) => Promise<boolean> = askWorkerTap): Promise<ReadonlySet<string> | undefined> {
@@ -606,6 +613,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   // The "Needs you" queue: the items this run already showed; undefined while no queue runs. Set by a tap on an
   // inbox row or a confirmed notification tap, never by an address.
   const [visited, setVisited] = useState<ReadonlySet<string>>();
+  // True while a queue run is on (for the callbacks made once); and when the queue last moved (nextReady).
+  const runRef = useRef(false);
+  const movedAt = useRef(0);
   const [fontSize, setFontSize] = useFontSize();
   const update = useServiceWorkerUpdate();
   useVisualViewport();
@@ -731,7 +741,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       case 'new': setView({ name: 'new' }); return;
       case 'add-computer': setView({ name: 'add-computer' }); return;
       case 'peer-add': setView({ name: 'peer-add' }); return;
-      case 'sessions': setView({ name: 'sessions' }); return;
+      case 'sessions': setView(sessionsView(runRef.current)); return;
       case 'unknown':
         window.history.replaceState(null, '', '/');
         setView({ name: 'sessions' });
@@ -774,9 +784,12 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       } else {
         // A bad port, no preview origin, or a peer's preview address that no tap here opened falls back to the terminal.
         if (target.preview) window.history.replaceState(null, '', pathFor({ name: 'live', session }));
+        // Live shows first: the worker's answer can take up to TAP_ASK_MS. The ref is set here because the answer can come before the next render.
+        const live: View = { name: 'live', session };
+        viewRef.current = live;
+        setView(live);
         const started = await tapped;
-        if (started !== undefined) setVisited(started);
-        setView({ name: 'live', session });
+        if (started !== undefined && liveOn(viewRef.current, session)) setVisited(started);
       }
     } catch (error) {
       const message = handleFailure(error, computer);
@@ -945,7 +958,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const openSession = useCallback((session: HostedSession) => navigate({ name: 'live', session }), [navigate]);
   // A tap on a provider row or chip in the app: open at once.
   const openTarget = useCallback((tap: ProviderTap) => navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap() }), [navigate]);
-  const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
+  const toSessions = useCallback(() => navigate(sessionsView(runRef.current)), [navigate]);
   const openItem = useCallback((item: InboxItem) => {
     if (item.open.kind === 'session') {
       openSession(item.open.session);
@@ -955,6 +968,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     openTarget(item.open.tap);
   }, [openSession, openTarget]);
   const queueOn = visited !== undefined && queueScreen(view.name);
+  runRef.current = queueOn;
   useEffect(() => { if (!queueScreen(view.name)) setVisited(undefined); }, [view.name]);
   const place: Place | undefined = view.name === 'live' || view.name === 'preview' ? { session: view.session }
     : view.name === 'provider' ? { tap: { computer: view.computer, provider: view.provider, targetId: view.target } } : undefined;
@@ -962,8 +976,10 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const queue: Queue | undefined = step === undefined ? undefined : {
     left: step.left,
     onNext: () => {
+      if (!nextReady(movedAt.current, Date.now())) return;
+      movedAt.current = Date.now();
       if (step.next === undefined) {
-        navigate({ name: 'sessions', inbox: true });
+        navigate(sessionsView(true));
         return;
       }
       setVisited(step.visited);
@@ -1073,7 +1089,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           providers={providers.entries}
           tab={view.tab}
           inbox={view.inbox}
-          onOpenItem={(item) => { setVisited(new Set([item.key])); openItem(item); }}
+          onOpenItem={(item) => { movedAt.current = Date.now(); setVisited(new Set([item.key])); openItem(item); }}
           onOpenTarget={openTarget}
           onCreated={(tap, notice, key) => {
             void providers.reload(key);
@@ -1180,7 +1196,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onGone={() => {
                 // Replace the dead address, so Back does not return to it.
                 window.history.replaceState(null, '', '/');
-                setView(providerTabView(view.provider, GONE));
+                // In a queue run: back to the inbox, where the rest waits.
+                setView(queueOn ? sessionsView(true, GONE) : providerTabView(view.provider, GONE));
               }}
               onClosed={() => {
                 window.history.replaceState(null, '', '/');
@@ -1191,7 +1208,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
                 navigate({ name: 'provider', computer: view.computer, provider: view.provider, target, tapped: newTap(), ...(notice === undefined ? {} : { notice }) });
               }}
               onReload={providers.reload}
-              onSessions={() => navigate(providerTabView(view.provider))}
+              onSessions={() => navigate(queueOn ? sessionsView(true) : providerTabView(view.provider))}
               onSettings={() => navigate({ name: 'settings' })}
               onFailure={(error) => handleFailure(error, view.computer)}
               onRevoked={(reason) => revoked(view.computer, reason)}

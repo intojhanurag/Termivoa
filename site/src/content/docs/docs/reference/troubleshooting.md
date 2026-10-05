@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -78,6 +78,16 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 5. Keep the computer awake; it sends them.
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
+
+## Next is not there after a notification tap
+
+**Next beta.** Reload Termivoa once after an update, then tap a new notification. The **Next** button of [Needs you](/docs/guides/needs-you/) needs the updated app to be active; right after an update the old one can still handle the tap.
+
+| You opened the session with | Next shows |
+| --- | --- |
+| A tap on a notification | Yes |
+| A tap on a row in the **Needs you** tab | Yes |
+| A link, a typed address or a reload | No. This is as designed. |
 
 ## macOS blocks pterm (Gatekeeper)
 

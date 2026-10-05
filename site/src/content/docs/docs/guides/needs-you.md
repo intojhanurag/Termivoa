@@ -20,6 +20,7 @@ On the Sessions list, **Needs you** is a tab in the tab row, right after **All**
 | Nothing waits | No **Needs you** tab. |
 | One computer and no herdr | The tab row shows only while something waits, with **All** and **Needs you**. |
 | You are on the tab and the last item is answered | The tab stays while it is open. The list says "Nothing needs you." |
+| A computer does not answer | The list says "Some computers did not answer. See All." It does not say "Nothing needs you." then. |
 
 The count is the same whichever tab or computer you look at. It counts all your computers.
 
@@ -54,7 +55,10 @@ The list has two parts. The app shows the state words, **Finished** and the stat
 | Does **Next** send anything to the agent? | No. **Next** only opens another item. It never types, answers or takes control. |
 | I tapped **Next** without an answer. | That item stays in **Needs you**. This round does not show it again. |
 | An agent got its answer somewhere else. | **Next** never opens it. The list and the number follow what waits now. |
-| When does the round end? | When you leave the terminal: Sessions, Wall, Settings or a new session. Open a row in **Needs you** to start again. |
+| I tapped **Next** twice by mistake. | The second tap does nothing. **Next** takes no tap for a moment after it moved, so no item is skipped. |
+| The next item is gone. | A session that ended shows "This session is gone" with the **Next** row above it. A herdr terminal that is gone takes you back to the **Needs you** tab, which says "That terminal is gone." |
+| Where do **‹ Sessions** and Back go? | To the **Needs you** tab, while the round is on. |
+| When does the round end? | When you leave the terminal: Sessions, Wall, Settings or a new session. Open a row in **Needs you** to start again. A session that you open from the tabs on top keeps the round. |
 | Where did the button go while I type? | The row hides while the keyboard is up. |
 
 ## What does a notification tap do?
@@ -63,19 +67,19 @@ A tap on a [notification](/docs/guides/notifications/) opens that session or her
 
 | Phone | What a notification can do |
 | --- | --- |
-| iPhone and iPad | Notifications need the Home Screen app. iPhone shows no answer buttons in a notification from a web app. A tap opens Termivoa on the item; you answer there. |
-| Android | Termivoa shows no answer buttons in the notification. A tap opens Termivoa on the item; you answer there. |
+| iPhone and iPad | Notifications need the Home Screen app. Termivoa shows no answer buttons in a notification; a tap opens the item. You answer there. |
+| Android | Termivoa shows no answer buttons in a notification; a tap opens the item. You answer there. |
 
 On both, you cannot answer from the lock screen. Every answer is a tap inside the open app.
 
-A link to a session, a reload, and Back or Forward open the session with no **Next** button. Only a tap on a row in **Needs you** or on a notification starts it.
+A link to a session, a reload, and Back or Forward do not start it. Only a tap on a row in **Needs you** or on a notification starts it. If it does not show after a tap, see [Next is not there after a notification tap](/docs/reference/troubleshooting/#next-is-not-there-after-a-notification-tap).
 
 ## What does the list not show?
 
 | Not shown | Why |
 | --- | --- |
 | Terminal text | A row shows names and a state word. The only screen text is the question, the same one the Sessions row shows. |
-| A computer that cannot be reached | Its notice is on the **All** tab. Its agents come back when the computer answers. |
+| A computer that cannot be reached | Its notice is on the **All** tab, and the list says "Some computers did not answer. See All." Its agents come back when the computer answers. |
 | herdr that is off, not running or too old | Its notice is on the **herdr** tab. See [What if herdr has a problem?](/docs/guides/herdr/#what-if-herdr-has-a-problem) |
 | Sessions that work, exited or are lost | They do not wait for you. They are on the **All** tab. |
 

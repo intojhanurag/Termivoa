@@ -507,7 +507,7 @@ export function Sessions({
         onNeeds={() => { setChip(undefined); setInbox(true); }}
       />
 
-      {inbox && onOpenItem !== undefined && <InboxList items={needsYou} multi={multi} now={now} onOpen={onOpenItem} />}
+      {inbox && onOpenItem !== undefined && <InboxList items={needsYou} multi={multi} now={now} partial={!reachable} onOpen={onOpenItem} />}
 
       {provider !== undefined && (
         <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}

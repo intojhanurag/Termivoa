@@ -55,6 +55,7 @@ One change in polling scope: the provider read ran only while Sessions, a herdr 
 - The **Finished** label (caps) shows only when that part has rows.
 - The count on the tab, the status line and the queue use only the first part (`waitingCount`).
 - On the tab the Sessions status line says `3 need you` or `1 needs you` (`needsYouText`) with an amber dot while something waits. While nothing waits, the status line is the usual one and the list has one line: `Nothing needs you.` (`NOTHING`); what finished still shows under it.
+- While a computer did not answer (can't reach, pair again, out of date: `reachable` in `Sessions.tsx` is false), the list never says `Nothing needs you.`. It has one muted line, `Some computers did not answer. See All.` (`NO_ANSWER`), under what waits. The notices with the reason stay on the **All** tab.
 - A session that exited or was lost is never an item. A session that is `working` is never an item.
 - A herdr item without an `openTarget` is never an item (nothing to open).
 - A row is one button. A tap opens the item (section 4).
@@ -77,10 +78,13 @@ A "queue run" is the state `visited` in `App.tsx`: the set of item keys this run
 | Where | A row under the status line of Live, and above the **Open** page of a herdr terminal: the caps label `Needs you` and one button |
 | The button | `Next · 2 left ›`. The number counts the items that still wait, were not shown in this run, and are not the one on screen. With none left: `Inbox ›` |
 | `Inbox ›` | Goes to Sessions on the **Needs you** tab. That tab says `Nothing needs you.` when nothing waits |
+| A double tap | Next takes no tap for 400 ms after the queue moved (`nextReady`, `NEXT_AFTER_MS`): the button is at the same place on the next screen, so a double tap would skip an item |
+| **‹ Sessions**, **Sessions** and Back | From a terminal in a run they go to the **Needs you** tab, not to **All** or the herdr tab (`sessionsView`) |
+| The item is gone | A session that ended: "This session is gone" shows with the Next row above it. A herdr terminal that is gone (`onGone`): Sessions on the **Needs you** tab with "That terminal is gone." |
 | Always fresh | `queueStep` is computed from the newest lists on every render. An item that was answered, or that is gone, is never a step |
 | No repeats | An item shown in this run is not offered again in the same run. An item the user skipped stays in the inbox |
-| End of a run | The run ends when the user leaves the terminal screens (Sessions, Wall, Settings, New session). `queueScreen` names the screens where it stays on: Live, a herdr terminal, and the preview of the session on screen |
-| No auto-advance | When the host accepts this phone's answer (answer phase `sent`), the Next button turns into the primary (filled) style. Nothing moves by itself |
+| End of a run | The run ends when the user leaves the terminal screens (Sessions, Wall, Settings, New session). `queueScreen` names the screens where it stays on: Live, a herdr terminal, and the preview of the session on screen. So Next also shows on a session opened in a run from Live's tabs, from a herdr chip, or with "New session" on "This session is gone" |
+| No auto-advance | When the host accepts this phone's answer (answer phase `sent`), the Next button turns into the primary (filled) style. Nothing moves by itself. It is plain again when the same session asks another question (`nextFilled`) |
 | Keyboard | The row hides while the keyboard is up |
 
 The queue never sends input, never takes control, and never queues or sends anything again (AGENTS.md rule 10). It is navigation only.
@@ -96,7 +100,9 @@ The address never carries this. The guard is the one-time tap record that `/p/�
 3. The page asks the worker (`tap?`). The first answer uses the record up.
 4. A fresh record: the queue starts (`queueOnArrival` for a session; `providerArrival` with `tapped` for a herdr terminal).
 
-A link, a typed address, a reload, Back and Forward find no record and start no queue. For a session, the record changes nothing else: a session address opened Live at once before, and still does.
+A link, a typed address, a reload, Back and Forward find no record and start no queue (Back and Forward inside a run keep the run). For a session, the record changes nothing else: a session address opened Live at once before, and still does. Live does not wait for the worker's answer (it can take `TAP_ASK_MS`, 1.5 s, when the worker is silent): the run starts when the answer comes, and only if Live still shows that session (`liveOn`).
+
+A page that an older service worker still controls gets no record for a session tap: Next shows from the first tap after the new worker is active (one reload after an update).
 
 ## 7. What it never does
 
@@ -104,7 +110,7 @@ A link, a typed address, a reload, Back and Forward find no record and start no 
 - Names from a peer or from herdr are text only (`<bdi>`). They are never part of an address.
 - It shows nothing from a computer that cannot be reached.
 - It shows no herdr item from a herdr that is off, not installed, not running or unsupported, or from a computer below the provider revision (`FEATURE_REVISION.providers` = 4). Sessions of such a computer still show.
-- It adds no notice of its own for these cases. The existing notices stay where they are (the **All** tab and the **herdr** tab).
+- It adds no notice of its own for these cases, but one line while a computer did not answer (section 3). The existing notices stay where they are (the **All** tab and the **herdr** tab).
 - It sends no input, takes no control, and makes no new kind of request.
 
 ## 8. Known limits
@@ -120,10 +126,10 @@ A link, a typed address, a reload, Back and Forward find no record and start no 
 
 | File | What |
 | --- | --- |
-| `web/src/screens/Inbox.tsx` | The whole feature: `inboxItems`, `waitingCount`, `inboxTabShown`, `needsYouText`, `itemAt`, `queueStep`, `nextLabel`, `QueueNext`, `InboxList` |
+| `web/src/screens/Inbox.tsx` | The whole feature: `inboxItems`, `waitingCount`, `inboxTabShown`, `needsYouText`, `itemAt`, `queueStep`, `nextLabel`, `nextReady`, `nextFilled`, `QueueNext`, `InboxList` |
 | `web/src/screens/Sessions.tsx` | The **Needs you** chip in `ComputerChips` (`needs`, `needsOpen`, `onNeeds`); the `inbox` tab state; the status line |
-| `web/src/screens/App.tsx` | `visited` (the run), `queueScreen`, `queueNext`, `queueOnArrival`, `openItem`; the wider `useProviders` condition |
-| `web/src/screens/Live.tsx` | The `queue` prop; `answered` (answer phase `sent`); renders `QueueNext` |
+| `web/src/screens/App.tsx` | `visited` (the run), `queueScreen`, `queueNext`, `queueOnArrival`, `liveOn`, `sessionsView`, `openItem`; the wider `useProviders` condition |
+| `web/src/screens/Live.tsx` | The `queue` prop; `answered` (answer phase `sent`, `nextFilled`); renders `QueueNext`, also above "This session is gone" |
 | `web/src/screens/ProviderScreen.tsx` | Passes `queue` to Live; renders `QueueNext` above the **Open** page |
 | `web/src/sw.js` | `SESSION_PATH`: a session notification tap leaves the tap record |
 | `web/src/styles/global.css` | `.inbox-row`, `.queue-bar` (hidden with `.live.keyboard`) |
@@ -132,11 +138,28 @@ A link, a typed address, a reload, Back and Forward find no record and start no 
 
 | Where | What |
 | --- | --- |
-| `web/src/screens/Inbox.test.tsx` | The list, the count, the tab rule, the texts, the queue step |
-| `web/src/screens/App.test.ts`, "the Needs you queue" | A confirmed tap starts a run and a link does not; the run is on only in terminal screens; Next order; answered and on-screen items |
+| `web/src/screens/Inbox.test.tsx` | The list, the count, the tab rule, the texts, the queue step; the line while a computer did not answer; the 400 ms rule of Next (`nextReady`); when Next is filled (`nextFilled`) |
+| `web/src/screens/App.test.ts`, "the Needs you queue" | A confirmed tap starts a run and a link does not; the run is on only in terminal screens; Next order; answered and on-screen items; Sessions from a terminal in a run is the **Needs you** tab (`sessionsView`); a late tap answer counts only while Live shows that session (`liveOn`) |
 | `web/src/sw.test.ts` | A session tap leaves one fresh tap for its address (home and peer); a tap that opens `/` or `/settings` leaves none |
 | End to end | `N-inbox`, `N-open`, `N-fit`, `N-answer`, `N-next`, `N-tap`, `N-last` in `scripts/e2e-multicomputer/herdr.mjs` (see that folder's README; `--only N`) |
 | Pictures | `node scripts/needs-you-pictures/capture.mjs` draws the app's components with demo data into `docs/evidence/needs-you-inbox/` and checks the widths at 375 and 390 px |
+
+Checks run on 2026-10-06 (macOS, Node 24, Go 1.27.1, Playwright's Chrome for Testing), after the review fixes:
+
+| Check | Result |
+| --- | --- |
+| `pnpm typecheck` | Pass |
+| `pnpm --filter @phone-terminal/web exec vitest run` | 56 files, 996 tests, all pass |
+| `pnpm build:web` | Pass |
+| `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` | Pass |
+| `phase-b.mjs --no-web-build --only N` | 11 of 11 pass (B1, B2 and the seven `N-*`), on the first run |
+| `phase-b.mjs --no-web-build` (all of Phase B) | 134 of 134 pass: [phase-b.md](evidence/needs-you-inbox/phase-b.md) |
+| `phase-a.mjs --no-web-build` | 32 of 32 pass: [phase-a.md](evidence/needs-you-inbox/phase-a.md) |
+| `node scripts/needs-you-pictures/capture.mjs` | 8 of 8 width checks pass |
+
+Real screenshots from that Phase B run (demo data): [real-inbox.png](evidence/needs-you-inbox/real-inbox.png), [real-live-next.png](evidence/needs-you-inbox/real-live-next.png).
+
+Not run: WebKit, `./scripts/check`, Go tests (no Go file changed), and the real-phone check ([owner-verification.md](owner-verification.md)).
 
 ## Answer from the notification: what each phone can do
 

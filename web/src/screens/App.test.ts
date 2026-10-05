@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike, installView,
-  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, providerTabView, sameScreen, queueNext, queueOnArrival, queueScreen,
+  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, providerTabView, sameScreen, liveOn, queueNext, queueOnArrival, queueScreen, sessionsView,
 } from './App';
 import { inboxItems } from './Inbox';
 import { ApiError } from '../api/http';
@@ -529,6 +529,19 @@ describe('the Needs you queue', () => {
     expect(second).toMatchObject({ left: 1, next: { names: ['c'] } });
     // On the last one nothing is left, also while a and b still wait (they were shown): back to the inbox.
     expect(queueNext(items, second.visited, { session: c })).toMatchObject({ left: 0, next: undefined });
+  });
+
+  it('leaves a terminal for the Needs you tab while a run is on (‹ Sessions, Back, a terminal that is gone), and for All otherwise', () => {
+    expect(sessionsView(true)).toEqual({ name: 'sessions', inbox: true });
+    expect(sessionsView(true, 'That terminal is gone.')).toEqual({ name: 'sessions', inbox: true, message: 'That terminal is gone.' });
+    expect(sessionsView(false)).toEqual({ name: 'sessions' });
+  });
+
+  it('a late answer about a notification tap counts only while Live still shows that session', () => {
+    expect(liveOn({ name: 'live', session: a }, a)).toBe(true);
+    expect(liveOn({ name: 'live', session: b }, a)).toBe(false);
+    expect(liveOn({ name: 'sessions' }, a)).toBe(false);
+    expect(liveOn({ name: 'preview', session: a, port: 3000 }, a)).toBe(false);
   });
 
   it('counts an item the user answered as gone, and does not count the one on screen', () => {

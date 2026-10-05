@@ -81,6 +81,8 @@ export const inboxTabShown = (count: number, open: boolean): boolean => count > 
 
 /** The one line of the "Needs you" tab while nothing waits. */
 export const NOTHING = 'Nothing needs you.';
+/** The one line of the "Needs you" tab while a computer did not answer: the list may miss what waits there. */
+export const NO_ANSWER = 'Some computers did not answer. See All.';
 /** The Sessions status line on the "Needs you" tab while something waits: "1 needs you", "3 need you". */
 export const needsYouText = (count: number): string => (count === 1 ? '1 needs you' : `${count} need you`);
 
@@ -107,7 +109,14 @@ export function queueStep(items: ReadonlyArray<InboxItem>, visited: ReadonlySet<
 /** "Next · 2 left ›", or "Inbox ›" on the last one. */
 export const nextLabel = (left: number): string => (left > 0 ? `Next · ${left} left ›` : 'Inbox ›');
 
-/** What Live needs for the queue: present only for an item opened from the inbox or from a notification tap. */
+/** A Next tap this soon after the last queue move is not taken: the button is at the same place on the next screen, so a double tap would skip an item. */
+export const NEXT_AFTER_MS = 400;
+export const nextReady = (movedAt: number, now: number): boolean => now - movedAt >= NEXT_AFTER_MS;
+
+/** Next is filled after the answer to `answeredId` was accepted, until the session asks another question (`asked`: the question it waits on now). */
+export const nextFilled = (answeredId: string | undefined, asked: string | undefined): boolean => answeredId !== undefined && (asked === undefined || asked === answeredId);
+
+/** What Live needs for the queue: present while a queue run is on (started by a tap on an inbox row or on a notification). */
 export interface Queue {
   readonly left: number;
   readonly onNext: () => void;
@@ -152,9 +161,11 @@ function InboxRow({ item, multi, now, onOpen }: { readonly item: InboxItem; read
   );
 }
 
-/** The "Needs you" tab: what waits (or one line when nothing does), then, under "Finished", what is done and not looked at. */
-export function InboxList({ items, multi, now, onOpen }: {
+/** The "Needs you" tab: what waits (or one line when nothing does; another one when a computer did not answer), then, under "Finished", what is done and not looked at. */
+export function InboxList({ items, multi, now, partial = false, onOpen }: {
   readonly items: ReadonlyArray<InboxItem>;
+  /** A computer did not answer: never say that nothing waits. */
+  readonly partial?: boolean;
   /** The phone uses more than one computer: name each row's computer. */
   readonly multi: boolean;
   readonly now: number;
@@ -167,8 +178,9 @@ export function InboxList({ items, multi, now, onOpen }: {
   );
   return (
     <section aria-label="Needs you">
-      {waiting.length === 0 && <p className="muted">{NOTHING}</p>}
+      {waiting.length === 0 && !partial && <p className="muted">{NOTHING}</p>}
       {rows(waiting)}
+      {partial && <p className="muted">{NO_ANSWER}</p>}
       {finished.length > 0 && <h2 className="caps list-label">Finished</h2>}
       {rows(finished)}
     </section>

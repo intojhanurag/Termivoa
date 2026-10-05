@@ -168,7 +168,7 @@ export function ProviderScreen({
   readonly entry: ProviderEntry | undefined;
   readonly fontSize: number;
   readonly multi: boolean;
-  /** Present when this terminal was opened from the "Needs you" inbox or a notification tap: the Next control. */
+  /** Present while a "Needs you" queue run is on: the Next control. A run starts from the inbox or a notification tap, and stays on for a tab opened with the chips here. */
   readonly queue?: Queue | undefined;
   readonly onChip: (targetId: string) => void;
   readonly onGone: () => void;

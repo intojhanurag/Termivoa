@@ -238,7 +238,7 @@ Per agent target, from each 2 s poll (previous → new state), keyed by pane ID 
 ## 9. Multi-computer
 
 - The phone reads `providers` from each computer's settings. A computer without a provider shows nothing.
-- The herdr list is one more read per computer (`GET /api/v1/providers/herdr`) through the existing scheduler, every 5 s while Sessions is visible, separate from the sessions read: its failure shows only on the herdr part ("herdr on vps · can't reach").
+- The herdr list is one more read per computer (`GET /api/v1/providers/herdr`) through the existing scheduler, every 5 s while Sessions is visible (and, since the "Needs you" inbox, while a terminal shows in a queue run: [needs-you-inbox.md](needs-you-inbox.md), section 2), separate from the sessions read: its failure shows only on the herdr part ("herdr on vps · can't reach").
 - Groups show the computer label ("shop · on mac"). `open` and `create` go to that computer's origin.
 - Peer data is untrusted: lenient validation per item, names as text, IDs by pattern; the app never builds a URL from a name.
 
@@ -283,7 +283,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | S11 | Environment leak to herdr children | Fixed env: `HOME`, `USER`, `LOGNAME`, `LANG`, `PATH` (the broker's lookup path), `TERM=xterm-256color`, `COLORTERM=truecolor`, `HERDR_SOCKET_PATH` |
 | S12 | A peer computer lies in its herdr data | Same as any peer response: lenient per-item validation, generic peer errors, text only |
 | S13 | Prefix commands from the phone | `0x02` doubled in provider-session input (section 6, rule 7) |
-| S14 | A link opens a herdr terminal (and resizes the laptop pane) without intent | `/p/…` opens at once only after an in-app tap or a notification tap reported by the service worker; else an **Open** button; never takes control |
+| S14 | A link opens a herdr terminal (and resizes the laptop pane) without intent | `/p/…` opens at once only after an in-app tap (a herdr row or chip, a row of the **Needs you** tab, or the queue's **Next**) or a notification tap reported by the service worker; else an **Open** button; never takes control |
 | S15 | Stale target after a herdr restart | Target = pane ID + terminal ID; state dropped on rediscovery |
 | S16 | Tests or the e2e harness reach the owner's live herdr | No provider unless `cmd/pterm` builds one: `herdr.New` has no default paths or home; Go tests pass a temp `Home` and empty `BinaryPaths` with a fake; a guard test fails if any test config names the real home or a real herdr path; the harness sandbox denies the real binary and its resolved paths (`/opt/homebrew/bin/herdr`, `/opt/homebrew/Cellar/herdr`, `/usr/local/bin/herdr`, `/usr/local/Cellar/herdr`, `~/.local/bin/herdr`, `~/.cargo/bin/herdr`) and the real `~/.config/herdr`, and gives each stack its own `HOME`; `pterm doctor` in the harness must report the fake's version |
 
@@ -295,7 +295,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | Host CPU | < 0.5 % of one core for 12 workspaces | Measure in M1 (`pprof`) |
 | `GET /providers/herdr` | Broker ≤ 1 ms (cache); body ≤ 256 KiB | Cached |
 | `open` | ≤ 300 ms to the session when the target is in the cache | One PTY spawn |
-| Phone | One read per computer per 5 s only while Sessions is visible; no change to the Sessions read | Scheduler |
+| Phone | One read per computer per 5 s only while Sessions is visible, or while a terminal shows in a "Needs you" queue run; no change to the Sessions read | Scheduler |
 | Live through attach | Key-to-frame p95 within the release gate (30 ms) plus herdr's hop; measured in M1b | `docs/implementation-plan.md` §13 |
 
 ## 13. herdr versions
@@ -472,7 +472,7 @@ Two independent reviews ran on version 1: security, and feasibility with alterna
 | R3 | Tests could reach the real herdr | S16: no provider unless injected; paths and HOME are config; guard test; sandbox deny list |
 | R4 | Push text from herdr-controlled names; session pushes could be starved | Fixed `herdr · group · item` format, Cc/Cf removed, own budget and coalesce key (4.4, 7) |
 | R5 | Rate limits keyed by IP behind Serve | Broker limiter keyed by device (S10) |
-| R6 | A link can open a terminal (and squeeze the laptop) | `/p/…` opens at once only on an in-app or notification tap; **Open** button otherwise; never takes control (S14) |
+| R6 | A link can open a terminal (and squeeze the laptop) | `/p/…` opens at once only on an in-app tap (also a **Needs you** row and **Next**) or a notification tap; **Open** button otherwise; never takes control (S14) |
 | R7 | `ProjectID` sites break | Moot (C1) |
 | R8 | Pane IDs repeat after a herdr restart | Target = pane ID + terminal ID; state dropped on rediscovery (S15) |
 | R9 | Terminal titles carry private text | `title` removed from the contract; S9 corrected |

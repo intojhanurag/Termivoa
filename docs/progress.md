@@ -49,7 +49,7 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
-### "Needs you" inbox and its queue (2026-10-06, branch `feat/needs-you-inbox`, on top of `feat/herdr-agent-tab`; not committed, not merged)
+### "Needs you" inbox and its queue (2026-10-06, branch `feat/needs-you-inbox`, on top of `feat/herdr-agent-tab`; pull request work, not merged)
 
 - **Why.** The owner asked for one place on the phone that shows everything
   that waits for him on every computer (Termivoa sessions and herdr agents),
@@ -86,14 +86,32 @@ on their own date.
   `live-next.png` is put together from Live's parts (tabs, status line, the
   Next row, the answer card) with a drawn terminal text, because Live needs
   a browser and a socket.
+- **Review fixes (same day).** An adversarial review found no critical or
+  high issue. Fixed: the tab does not say "Nothing needs you." while a
+  computer did not answer ("Some computers did not answer. See All.");
+  Next shows above "This session is gone", and a herdr terminal that is
+  gone goes back to the **Needs you** tab; Next takes no tap for 400 ms
+  after a move (double tap); **‹ Sessions** and Back in a run go to the
+  **Needs you** tab; Live shows before the service worker answers about
+  the tap; the filled Next is plain again on a new question. The e2e
+  script: `--only N` makes the app read mac's settings again after the
+  install; the width loops put the viewport back in a `finally`; the
+  sessions it starts end in a `finally` and each terminate must answer 200.
+- **End-to-end (after the fixes; `--no-web-build`, after `pnpm build:web`
+  and `sh scripts/embed-web.sh`).**
+  - `phase-b.mjs --only N --out /tmp/inbox-e2e-n`: 11/11 pass (B1, B2,
+    the seven `N-*`), on the first run.
+  - `phase-b.mjs --out /tmp/inbox-e2e-b`: 134/134 pass.
+  - `phase-a.mjs --out /tmp/inbox-e2e-a`: 32/32 pass.
+  - No product defect was found by these runs.
+  - Evidence: `docs/evidence/needs-you-inbox/phase-a.md`, `phase-b.md`,
+    and two real screenshots from the Phase B run (demo data):
+    `real-inbox.png`, `real-live-next.png`.
+  - Again after the fixes: `pnpm typecheck` pass; vitest 56 files, 996
+    tests, all pass; `pnpm build:web` pass; the site build pass;
+    `capture.mjs` 8/8.
 - **Not run (pending).**
-  - The new end-to-end checks `N-inbox`, `N-open`, `N-fit`, `N-answer`,
-    `N-next`, `N-tap`, `N-last` (`scripts/e2e-multicomputer/herdr.mjs`; run
-    with `node scripts/e2e-multicomputer/phase-b.mjs --only N`, after a web
-    build and `sh scripts/embed-web.sh`). They were written from the
-    existing checks and not executed: the harness is shared tonight.
-  - Phase A, the rest of Phase B, WebKit, `./scripts/check`, Go tests (no Go
-    file changed).
+  - WebKit, `./scripts/check`, Go tests (no Go file changed).
   - A real notification tap on an iPhone and on Android
     ([owner-verification.md](owner-verification.md)).
 

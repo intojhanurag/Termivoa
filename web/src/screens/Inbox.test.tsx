@@ -4,7 +4,7 @@ import type { BrokerRPCSessionRecord } from '../generated/protocol';
 import { viewedKey } from './activity';
 import { hosted, type HostedSession } from './allSessions';
 import { markOpened } from './Herdr';
-import { InboxList, inboxItems, inboxTabShown, itemAt, needsYouText, nextLabel, NOTHING, QueueNext, queueStep, waitingCount } from './Inbox';
+import { InboxList, inboxItems, inboxTabShown, itemAt, needsYouText, NEXT_AFTER_MS, nextFilled, nextLabel, nextReady, NO_ANSWER, NOTHING, QueueNext, queueStep, waitingCount } from './Inbox';
 import { group, item, mac, okEntry, providerEntry, ready, shopGroups, snapshot, target, vps } from './providerFixtures';
 import { providerSources } from './providers';
 import { ComputerChips, Sessions } from './Sessions';
@@ -168,6 +168,37 @@ describe('InboxList', () => {
   });
 });
 
+describe('InboxList while a computer did not answer', () => {
+  const list = (sessions: HostedSession[]) => renderToStaticMarkup(<InboxList items={inboxItems(sessions, [], {})} multi partial now={NOW} onOpen={() => undefined} />);
+
+  it('never says that nothing needs you: one short line instead, and the same line under what waits', () => {
+    expect(NO_ANSWER).toBe('Some computers did not answer. See All.');
+    expect(list([])).toBe(`<section aria-label="Needs you"><p class="muted">${NO_ANSWER}</p></section>`);
+    const waits = list([waiting(mac, 'api', '2026-10-04T09:56:00Z')]);
+    expect(waits).not.toContain(NOTHING);
+    expect(waits.indexOf('api')).toBeLessThan(waits.indexOf(NO_ANSWER));
+    expect(waits.split(NO_ANSWER)).toHaveLength(2);
+  });
+});
+
+describe('the Next button', () => {
+  it('takes no tap for 400 ms after the queue moved, so a double tap does not skip an item', () => {
+    expect(NEXT_AFTER_MS).toBe(400);
+    expect(nextReady(1_000, 1_000)).toBe(false);
+    expect(nextReady(1_000, 1_399)).toBe(false);
+    expect(nextReady(1_000, 1_400)).toBe(true);
+    expect(nextReady(0, 1_000)).toBe(true);
+  });
+
+  it('is filled after the accepted answer, also once the question left, until the session asks another question', () => {
+    expect(nextFilled(undefined, 'q1')).toBe(false);
+    expect(nextFilled(undefined, undefined)).toBe(false);
+    expect(nextFilled('q1', 'q1')).toBe(true);
+    expect(nextFilled('q1', undefined)).toBe(true);
+    expect(nextFilled('q1', 'q2')).toBe(false);
+  });
+});
+
 describe('QueueNext', () => {
   it('is one button with the count left; bold once the answer was accepted', () => {
     const html = renderToStaticMarkup(<QueueNext queue={{ left: 2, onNext: () => undefined }} />);
@@ -218,5 +249,13 @@ describe('Sessions with the Needs you tab', () => {
     expect(page).toContain('<span class="dot accent" aria-hidden="true"></span>Your computer · connected</p>');
     expect(page).toContain('<section aria-label="Needs you"><p class="muted">Nothing needs you.</p></section>');
     expect(page.match(/Nothing needs you\./gu)).toHaveLength(1);
+  });
+
+  it('opened on the tab while a computer cannot answer: it does not say that nothing needs you', () => {
+    for (const kind of ['unreachable', 'pair', 'blocked'] as const) {
+      const page = renderToStaticMarkup(<Sessions {...base} inbox entries={[okEntry(mac), { computer: vps, status: { kind } }]} sessions={[]} />);
+      expect(page).toContain(`<section aria-label="Needs you"><p class="muted">${NO_ANSWER}</p></section>`);
+      expect(page).not.toContain(NOTHING);
+    }
   });
 });
