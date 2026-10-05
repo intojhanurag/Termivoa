@@ -163,7 +163,7 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'skip-waiting') {
     self.skipWaiting();
   }
-  // The /p/… page asks whether a notification tap brought it (takeTap). One answer, on the port it sent.
+  // The page asks whether a notification tap brought it to this address (takeTap). One answer, on the port it sent.
   const port = event.ports && event.ports[0];
   if (event.data && event.data.type === 'tap?' && typeof event.data.path === 'string' && port) {
     const answer = takeTap(event.data.path).catch(() => false).then((fresh) => port.postMessage({ type: 'tap', fresh }));
@@ -211,6 +211,8 @@ const text = (value, max) => (typeof value === 'string' ? value.slice(0, max) : 
 const TAP_CACHE = 'pterm-taps';
 const TAP_TTL_MS = 30000;
 const PROVIDER_PATH = /^(\/c\/[a-z0-9.-]+(:\d{1,5})?)?\/p\/[a-z][a-z0-9-]{0,31}\/[^/]+$/;
+/* A tap on a session's notification leaves the same record: the page then starts the "Needs you" queue (Next). */
+const SESSION_PATH = /^(\/c\/[a-z0-9.-]+(:\d{1,5})?)?\/sessions\/[0-9a-f-]{36}$/;
 const taps = new Map();
 const tapKey = (token) => `/__pterm_tap/${token}`;
 
@@ -302,7 +304,7 @@ self.addEventListener('notificationclick', (event) => {
   // The open app routes to this path itself (App.tsx checks it again).
   const open = { type: 'open', path: new URL(url).pathname };
   // Kept before the window moves, so the page finds it when it asks.
-  const remembered = PROVIDER_PATH.test(open.path) ? rememberTap(open.path) : Promise.resolve();
+  const remembered = PROVIDER_PATH.test(open.path) || SESSION_PATH.test(open.path) ? rememberTap(open.path) : Promise.resolve();
   event.waitUntil(Promise.all([self.clients.matchAll({ type: 'window', includeUncontrolled: true }), remembered]).then(async ([windows]) => {
     // With several windows, the one the user sees: visible and focused, then visible, then any.
     const ours = windows.filter((item) => new URL(item.url).origin === self.location.origin);

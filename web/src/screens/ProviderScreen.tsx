@@ -5,6 +5,7 @@ import type { HTTPProviderGroup, HTTPProviderItem, HTTPProviderSession } from '.
 import { fitGrid, MONOSPACE } from '../terminal/TerminalView';
 import { hosted, type HostedSession } from './allSessions';
 import { GONE, MenuButton, Names, StateWord, wordText } from './Herdr';
+import { QueueNext, type Queue } from './Inbox';
 import { Live } from './Live';
 import { endsTerminal, ItemMenuSheet } from './ProviderManage';
 import { findTarget, groupsOf, type ProviderEntry } from './providers';
@@ -154,7 +155,7 @@ export type Phase =
   | { readonly kind: 'error'; readonly text: string };
 
 export function ProviderScreen({
-  computer, provider, targetId, tapped, notice, entry, fontSize, multi, onChip, onGone, onClosed, onOpened, onReload, onSessions, onSettings, onFailure, onRevoked,
+  computer, provider, targetId, tapped, notice, entry, fontSize, multi, queue, onChip, onGone, onClosed, onOpened, onReload, onSessions, onSettings, onFailure, onRevoked,
 }: {
   readonly computer: Computer;
   readonly provider: string;
@@ -167,6 +168,8 @@ export function ProviderScreen({
   readonly entry: ProviderEntry | undefined;
   readonly fontSize: number;
   readonly multi: boolean;
+  /** Present when this terminal was opened from the "Needs you" inbox or a notification tap: the Next control. */
+  readonly queue?: Queue | undefined;
   readonly onChip: (targetId: string) => void;
   readonly onGone: () => void;
   /** The user closed or removed what is on screen from the ⋯ menu: back to the provider tab, with no message. */
@@ -289,6 +292,7 @@ export function ProviderScreen({
         settings={undefined}
         multi={multi}
         fontSize={fontSize}
+        queue={queue}
         provider={{
           name, place: <Names parts={parts.length === 0 ? [phase.session.title] : parts} />, chips, sizeLine: sizeLine(computer.label), onOpenAgain: open,
           onEnded: () => { ended.current = true; },
@@ -311,6 +315,7 @@ export function ProviderScreen({
   return (
     <main className="live">
       {chips}
+      {queue !== undefined && <QueueNext queue={queue} />}
       <div className="page screen provider-open">
         <p className="caps"><bdi>{name}</bdi> · on {computer.label}</p>
         <h1>{found === undefined ? 'This terminal' : <bdi>{found.item.name}</bdi>}</h1>

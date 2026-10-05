@@ -7,8 +7,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike, installView,
-  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, providerTabView, sameScreen,
+  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, providerTabView, sameScreen, queueNext, queueOnArrival, queueScreen,
 } from './App';
+import { inboxItems } from './Inbox';
 import { ApiError } from '../api/http';
 import type { HTTPSettingsResponse } from '../generated/protocol';
 
@@ -495,5 +496,45 @@ describe('askWorkerTap', () => {
     const silent = askWorkerTap('/p/herdr/w8', { postMessage: vi.fn() }, 1_500);
     await vi.advanceTimersByTimeAsync(1_500);
     await expect(silent).resolves.toBe(false);
+  });
+});
+
+describe('the Needs you queue', () => {
+  const waiting = (computer: Computer, id: string, since: string) => hosted({
+    id, generation: 'g', title: id, projectId: 'p', shellProfileId: 's', state: 'running', columns: 80, rows: 24, createdAt: since, updatedAt: since,
+    agent: { state: 'waiting', stateSince: since },
+  }, computer);
+  const a = waiting(home, 'a', '2026-10-04T09:00:00Z');
+  const b = waiting(vps, 'b', '2026-10-04T09:10:00Z');
+  const c = waiting(home, 'c', '2026-10-04T09:20:00Z');
+
+  it('a notification tap the worker confirms starts it with nothing shown; a link, a reload or Back does not', async () => {
+    const asked: string[] = [];
+    await expect(queueOnArrival('/sessions/x', async (path) => { asked.push(path); return true; })).resolves.toEqual(new Set());
+    await expect(queueOnArrival('/sessions/x', async () => false)).resolves.toBeUndefined();
+    expect(asked).toEqual(['/sessions/x']);
+  });
+
+  it('runs only while a terminal shows', () => {
+    expect((['live', 'provider', 'preview'] as const).every(queueScreen)).toBe(true);
+    expect((['sessions', 'wall', 'new', 'settings', 'setup', 'boot', 'offline', 'add-computer'] as const).some(queueScreen)).toBe(false);
+  });
+
+  it('from a notification tap on b: Next goes to a, then c, then the inbox; each shown item is remembered', () => {
+    const items = inboxItems([a, b, c], [], {});
+    const first = queueNext(items, new Set(), { session: b });
+    expect(first).toMatchObject({ left: 2, next: { names: ['a'] } });
+    expect(first.visited).toEqual(new Set(['s:vps.tailx.ts.net/b/g', 's:mac.tailx.ts.net/a/g']));
+    const second = queueNext(items, first.visited, { session: a });
+    expect(second).toMatchObject({ left: 1, next: { names: ['c'] } });
+    // On the last one nothing is left, also while a and b still wait (they were shown): back to the inbox.
+    expect(queueNext(items, second.visited, { session: c })).toMatchObject({ left: 0, next: undefined });
+  });
+
+  it('counts an item the user answered as gone, and does not count the one on screen', () => {
+    const items = inboxItems([b, c], [], {});
+    // a was answered (it is not in the lists any more) and is still on screen.
+    expect(queueNext(items, new Set(['s:mac.tailx.ts.net/a/g']), { session: a })).toMatchObject({ left: 2, next: { names: ['b'] } });
+    expect(queueNext(items, new Set(), undefined)).toMatchObject({ left: 2 });
   });
 });

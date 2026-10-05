@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-04
+Last updated: 2026-10-06
 
 ## Start here
 
@@ -48,6 +48,54 @@ Not yet verified (owner checklist in
 
 The dated entries below are the history log; older entries describe the state
 on their own date.
+
+### "Needs you" inbox and its queue (2026-10-06, branch `feat/needs-you-inbox`, on top of `feat/herdr-agent-tab`; not committed, not merged)
+
+- **Why.** The owner asked for one place on the phone that shows everything
+  that waits for him on every computer (Termivoa sessions and herdr agents),
+  so he can tap, answer and go to the next one, and for a notification tap
+  that lands on the thing to answer.
+- **What.** Design: [needs-you-inbox.md](needs-you-inbox.md). Web app only
+  (no protocol, host or database change). A **Needs you** tab in Sessions
+  (after **All**, with a count, only while something waits); the list
+  (`inboxItems`); a queue in Live and in a herdr terminal (**Next · 2 left ›**,
+  **Inbox ›** on the last one); a session notification tap now leaves the
+  one-time tap record too, so the page starts the queue (`sw.js`
+  `SESSION_PATH`, `queueOnArrival`). Android notification answer buttons are
+  a proposal only (critical, rule 24), in the design document.
+- **Commands run (this worktree, macOS, Node 24).**
+  - `pnpm install --frozen-lockfile`: done.
+  - `pnpm typecheck`: pass.
+  - `pnpm --filter @phone-terminal/web exec vitest run`: 56 files, 990
+    tests, all pass (new: `web/src/screens/Inbox.test.tsx`; "the Needs you
+    queue" in `App.test.ts`; the session tap in `sw.test.ts`).
+  - `pnpm build:web`: pass.
+  - `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx
+    astro build`: pass (28 pages, all internal links valid).
+  - `node scripts/needs-you-pictures/capture.mjs` (with `CHROME` set to
+    Playwright's Chrome for Testing): 8/8 width checks pass (four pages at
+    375 and 390 px: nothing wider than the screen).
+  - `node --check scripts/e2e-multicomputer/herdr.mjs`: pass (syntax only).
+  - One probe of `internal/agentstate.Parse` with the screen that the new
+    e2e script draws (a temporary test, removed): it is a question only
+    when the cursor is hidden, so the script hides it.
+- **Evidence.** `docs/evidence/needs-you-inbox/`: `inbox.png`,
+  `sessions-entry.png`, `live-next.png`, `inbox-empty.png` (390×844 at 2×,
+  demo data only). They are static renders of the app's own components with
+  the app's stylesheet (`scripts/needs-you-pictures/`), not a running app.
+  `live-next.png` is put together from Live's parts (tabs, status line, the
+  Next row, the answer card) with a drawn terminal text, because Live needs
+  a browser and a socket.
+- **Not run (pending).**
+  - The new end-to-end checks `N-inbox`, `N-open`, `N-fit`, `N-answer`,
+    `N-next`, `N-tap`, `N-last` (`scripts/e2e-multicomputer/herdr.mjs`; run
+    with `node scripts/e2e-multicomputer/phase-b.mjs --only N`, after a web
+    build and `sh scripts/embed-web.sh`). They were written from the
+    existing checks and not executed: the harness is shared tonight.
+  - Phase A, the rest of Phase B, WebKit, `./scripts/check`, Go tests (no Go
+    file changed).
+  - A real notification tap on an iPhone and on Android
+    ([owner-verification.md](owner-verification.md)).
 
 ### herdr, second round: agent tabs, closed worktrees, the menu in a terminal (2026-10-05, branch `feat/herdr-agent-tab`; pull request open, not merged)
 

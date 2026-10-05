@@ -446,6 +446,10 @@ button.item-menu:last-child { margin-right: -12px; }
 .kind-chips button { min-height: 44px; padding: 0 16px; font-size: 14px; }
 .kind-chips button:is([aria-checked="true"], [aria-pressed="true"]) { border-color: var(--text); background: var(--text); color: var(--bg); }
 .create-prompt { width: 100%; min-height: 76px; padding: 12px 14px; border-color: var(--line); background: var(--bg); font-size: 16px; line-height: 21px; resize: vertical; }
+/* "Needs you": rows like session rows (a long name ends in "…"); in Live, one row with the queue's Next. */
+.inbox-row .row-title { display: block; }
+.queue-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--line); }
+.live.keyboard .queue-bar { display: none; }
 .chip-count { color: var(--amber); font-family: var(--mono); font-size: 11px; font-weight: 400; line-height: 14px; }
 
 /* Wall: every running session as a small live screen. Tiles only watch; a tap opens the session. */

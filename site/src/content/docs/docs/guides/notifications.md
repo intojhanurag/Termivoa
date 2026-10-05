@@ -1,7 +1,7 @@
 ---
 title: Notifications
 description: Termivoa sends a phone notification when a coding agent waits for you or finishes, with only names and status, never any terminal text.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 Termivoa sends a notification to your phone when a coding agent waits for you or finishes.
@@ -22,6 +22,8 @@ Termivoa sends a notification to your phone when a coding agent waits for you or
 | You tap **Send a test notification** | `Termivoa` | `Notifications are on.` |
 
 It has only the session name, project name, status and work time, never terminal text (no output, question, path or command). The content is encrypted to your phone. Tapping it opens that session.
+
+**Next beta:** after a tap, the session also shows a **Next** button that goes to the next agent that waits. A notification has no answer buttons, on iPhone or on Android. See [What does a notification tap do?](/docs/guides/needs-you/#what-does-a-notification-tap-do)
 
 ## Do notifications come from every computer?
 

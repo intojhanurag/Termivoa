@@ -2,7 +2,7 @@
 // docs/herdr-manage.md, sections 8 and 14): the fake herdr (scripts/fakeherdr) on
 // mac, later on vps, inside the harness sandbox with each stack's own HOME.
 // Nothing here reaches the real herdr.
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { api, click, run, setInput, sleep, terminalText, typeLine, until } from './lib.mjs';
 
@@ -1478,6 +1478,211 @@ export async function herdrSteps(ctx) {
       await app.eval('window.__sameLoad === true') && !(await app.text()).includes('Open shows it here'), `worker: ${clicked}; ${await app.eval('location.pathname')}`);
     await app.eval(`navigator.serviceWorker.getRegistration(${JSON.stringify(scope)}).then((r) => r?.unregister())`);
     await inApp('/');
+  });
+
+  // ---- N-*: the "Needs you" inbox and its queue (docs/needs-you-inbox.md) ----
+  // One Termivoa session on vps that waits on a question (a script that draws a numbered menu, as an agent does),
+  // and one blocked herdr agent on mac (shop): two items on two computers.
+  const ASK = 'Run the demo check?';
+  const needs = {};
+  const needsChip = () => app.eval(`(() => { const c = [...document.querySelectorAll('.chips .chip')].find((e) => e.innerText.trim().startsWith('Needs you'));
+    return c ? { count: Number(c.querySelector('.chip-count')?.innerText ?? 0), pressed: c.getAttribute('aria-pressed') } : null; })()`);
+  const inboxRows = () => app.eval(`(() => { const part = document.querySelector('section[aria-label="Needs you"]'); if (!part) return null;
+    const label = part.querySelector('.list-label');
+    return [...part.querySelectorAll('.inbox-row')].map((b) => ({ title: b.querySelector('.row-title').innerText.trim(), state: b.querySelector('.state-word').innerText.trim().toLowerCase(),
+      meta: b.querySelector('.row-meta')?.innerText.replace(/\\s+/g, ' ').trim() ?? '', question: b.querySelector('.question')?.innerText.trim() ?? '',
+      finished: label !== null && Boolean(label.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), preview: b.querySelector('.preview') !== null })); })()`);
+  const tapInboxRow = async (title) => {
+    const ok = await app.eval(`(() => { const b = [...document.querySelectorAll('section[aria-label="Needs you"] .inbox-row')].find((e) => e.querySelector('.row-title').innerText.trim() === ${JSON.stringify(title)});
+      if (!b) return false; b.click(); return true; })()`);
+    if (!ok) throw new Error(`no Needs you row "${title}"`);
+  };
+  const queueButton = () => app.eval(`(() => { const b = document.querySelector('.queue-bar button'); return b ? { text: b.innerText.trim(), filled: b.classList.contains('primary'), height: Math.round(b.getBoundingClientRect().height) } : null; })()`);
+  const waitingOn = async (stack) => (await api(tool, `${stack.origin}/api/v1/sessions`)).json.sessions.filter((one) => one.agent?.state === 'waiting');
+  const blockedOn = async (stack) => ((await api(tool, `${stack.origin}/api/v1/providers/herdr`)).json?.groups ?? []).flatMap((g) => g.items).filter((i) => i.state === 'blocked' && i.openTarget !== undefined);
+  const openNeedsYou = async () => {
+    await inApp('/');
+    await until(() => needsChip(), { what: 'the Needs you tab', timeout: 20000 });
+    await click(app, 'Needs you');
+    await until(async () => (await inboxRows()) !== null, { what: 'the Needs you list' });
+  };
+
+  await step('N-inbox', 'Needs you lists the waiting vps session and the blocked mac herdr agent, with the count 2', async () => {
+    // With --only N the H-* steps did not run: install the fake on mac now.
+    if ((await api(tool, `${mac.origin}/api/v1/settings`)).json?.providers?.[0]?.state !== 'ready') {
+      await mac.installHerdr(macHerdr.scenario);
+      await until(async () => (await api(tool, `${mac.origin}/api/v1/settings`)).json?.providers?.[0]?.state === 'ready', { what: 'herdr ready on mac', timeout: 45000, every: 500 });
+    }
+    // Exactly one blocked herdr agent: shop on mac. Every other blocked one goes idle.
+    const shopPane = paneOf(t['shop/1']);
+    for (const stack of [mac, vps]) {
+      const groupsNow = (await api(tool, `${stack.origin}/api/v1/providers/herdr`)).json?.groups ?? [];
+      for (const target of groupsNow.flatMap((g) => g.items).flatMap((i) => i.targets).filter((x) => x.state === 'blocked')) await stack.herdrControl({ op: 'status', pane: paneOf(target.id), status: 'idle' });
+    }
+    await mac.herdrControl({ op: 'status', pane: shopPane, status: 'blocked' });
+    // The waiting session on vps: made through the API, its question drawn by a script typed in Live.
+    const own = (await api(tool, `${vps.origin}/api/v1/settings`)).json;
+    const made = await api(tool, `${vps.origin}/api/v1/sessions`, 'POST', { operationId: crypto.randomUUID(), projectId: own.projects[0].id, shellProfileId: own.shellProfiles[0].id });
+    if (made.status !== 200 && made.status !== 201) throw new Error(`session on vps: ${made.status} ${made.body}`);
+    const session = made.json.session ?? made.json;
+    const renamed = await api(tool, `${vps.origin}/api/v1/sessions/${session.id}`, 'PATCH', { operationId: crypto.randomUUID(), generation: session.generation, title: 'needs-you-vps' });
+    if (renamed.status !== 200) throw new Error(`rename on vps: ${renamed.status} ${renamed.body}`);
+    const script = join(vps.home, 'needs-you-ask.sh');
+    // Clears the screen, hides the cursor (a visible cursor under a menu reads as a shell prompt, not a dialog), draws the
+    // question with a marked option 1, then waits for one key (the host presses Enter for the marked option).
+    writeFileSync(script, `printf '\\033[2J\\033[H\\033[?25l\\n ${ASK}\\n\\n\\342\\235\\257 1. Yes\\n  2. No\\n'\nread -n 1 -s key\nprintf '\\033[?25h\\nanswered\\n'\n`);
+    needs.session = session;
+    needs.path = `/c/${vps.host}/sessions/${session.id}`;
+    await inApp(needs.path);
+    await until(async () => /[%$#]\s*$/m.test(await terminalText(app)), { what: 'shell prompt on vps', timeout: 30000 });
+    await click(app, 'Take control');
+    await until(async () => !(await app.text()).includes('Take control'), { what: 'control taken' });
+    await typeLine(app, `/bin/bash ${script}`);
+    await until(async () => (await waitingOn(vps)).some((one) => one.id === session.id && one.agent.question?.text === ASK), { what: 'vps session waiting on the question', timeout: 20000 });
+    await until(async () => (await blockedOn(mac)).length === 1 && (await blockedOn(vps)).length === 0, { what: 'one blocked herdr item (shop on mac)', timeout: 20000 });
+    const expected = (await waitingOn(mac)).length + (await waitingOn(vps)).length + 1;
+    needs.expected = expected;
+
+    await inApp('/');
+    const started = Date.now();
+    await until(async () => (await needsChip())?.count === expected, { what: `Needs you ${expected}`, timeout: 20000 });
+    time('a session waits and a herdr agent is blocked → Needs you count on Sessions', Date.now() - started);
+    const order = await app.eval(`[...document.querySelectorAll('.chips .chip')].map((e) => e.innerText.replace(/\\s+/g, ' ').trim())`);
+    await shot('n-sessions-entry');
+    await click(app, 'Needs you');
+    const rows = await until(async () => { const r = await inboxRows(); return r !== null && r.length >= expected && r; }, { what: 'Needs you rows' });
+    needs.fit = {};
+    for (const width of [390, 375]) {
+      await app.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 3, mobile: true });
+      await sleep(300);
+      needs.fit[`inbox${width}`] = await overflow();
+    }
+    await app.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+    await shot('n-inbox');
+    const asked = rows.find((r) => r.title === 'needs-you-vps');
+    const shop = rows.find((r) => r.title === 'shop');
+    const line = (await statusLine()).toLowerCase();
+    check('N-inbox', 'Sessions has the Needs you tab right after All with the count 2; on it: the vps session (waiting, its question, on vps) and mac\'s shop (blocked, herdr, on mac), nothing finished before them, no terminal preview line, and "2 need you"',
+      expected === 2 && order[0] === 'All' && order[1].replace(/\s/g, '') === 'Needsyou2' && (await needsChip()).pressed === 'true'
+        && asked?.state.startsWith('waiting') && asked.question === ASK && asked.meta === 'vps' && !asked.finished
+        && shop?.state.startsWith('blocked') && shop.meta === 'mac · herdr' && !shop.finished && shop.question === ''
+        && rows.filter((r) => !r.finished).length === expected && rows.every((r) => !r.preview) && line === `${expected} need you`,
+      `tabs ${JSON.stringify(order)}; rows ${JSON.stringify(rows)}; status line "${line}"; host: ${expected} waits`);
+  });
+
+  await step('N-open', 'A tap on the waiting row opens it in Live, read-only, with the answer card and Next · 1 left', async () => {
+    await openNeedsYou();
+    await tapInboxRow('needs-you-vps');
+    await until(() => app.eval(`location.pathname === ${JSON.stringify(needs.path)}`), { what: 'the session address' });
+    const button = await until(() => queueButton(), { what: 'the Next control' });
+    await app.waitText('Take control to answer');
+    for (const width of [390, 375]) {
+      await app.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 3, mobile: true });
+      await sleep(300);
+      needs.fit[`live${width}`] = await overflow();
+    }
+    await app.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+    await shot('n-live-next');
+    const text = await app.text();
+    const badge = await app.eval(`document.querySelector('.status-line .badge-text')?.innerText.trim()`);
+    check('N-open', 'Live for the vps session shows its question in the answer card with "Take control to answer" (opening took no control: READ-ONLY) and one "Next · 1 left ›" button, 36 px or more high',
+      button.text === 'Next · 1 left ›' && !button.filled && button.height >= 36 && text.includes(ASK) && badge === 'READ-ONLY',
+      `button ${JSON.stringify(button)}; badge ${badge}`);
+  });
+
+  await step('N-fit', 'Nothing wider than 375 or 390 px on the Needs you tab and in Live with the Next row', async () => {
+    const keys = ['inbox390', 'inbox375', 'live390', 'live375'];
+    check('N-fit', 'Nothing wider than 375 or 390 px: the Needs you tab with its rows, and Live with the Next row and the answer card',
+      keys.every((k) => Array.isArray(needs.fit?.[k]) && needs.fit[k].length === 0), JSON.stringify(needs.fit ?? {}));
+  });
+
+  await step('N-answer', 'An answer the host accepts fills the Next button; nothing moves by itself', async () => {
+    if ((await app.eval('location.pathname')) !== needs.path) { await openNeedsYou(); await tapInboxRow('needs-you-vps'); await until(() => queueButton(), { what: 'the Next control' }); }
+    await click(app, 'Take control to answer');
+    await until(() => app.eval(`document.querySelector('.answer-option') !== null && !document.querySelector('.answer-option').disabled`), { what: 'answers enabled', timeout: 15000 });
+    const sent = (await terminalText(app)).includes('answered');
+    await app.eval(`document.querySelector('.answer-option').click()`);
+    const button = await until(async () => { const b = await queueButton(); return b?.filled && b; }, { what: 'Next filled after the accepted answer', timeout: 15000 });
+    await until(async () => (await terminalText(app)).includes('answered'), { what: 'the script got one key', timeout: 15000 });
+    await until(async () => !(await waitingOn(vps)).some((one) => one.id === needs.session.id), { what: 'the vps session stops waiting', timeout: 15000 });
+    await sleep(2000);
+    const path = await app.eval('location.pathname');
+    await shot('n-answered');
+    check('N-answer', 'After "Take control to answer" and a tap on answer 1 the script gets its key once, the Next button is filled and still says "Next · 1 left ›" (the answered session is not counted), and the app stays on the session',
+      !sent && button.text === 'Next · 1 left ›' && path === needs.path, `button ${JSON.stringify(button)}; still at ${path}`);
+  });
+
+  await step('N-next', 'Next opens the blocked herdr agent on mac; there it says Inbox', async () => {
+    if ((await queueButton()) === null) { await openNeedsYou(); await tapInboxRow((await inboxRows()).find((r) => r.title === 'needs-you-vps') ? 'needs-you-vps' : 'shop'); await until(() => queueButton(), { what: 'the Next control' }); }
+    const pane = paneOf(t['shop/1']);
+    const mark = mac.herdrLog().length;
+    if ((await app.eval('location.pathname')) === needs.path) await click(app, 'Next · 1 left ›');
+    await until(() => app.eval(`location.pathname === ${JSON.stringify(`/p/herdr/${enc(t['shop/1'])}`)}`), { what: 'the shop terminal address' });
+    await liveMarker(pane);
+    await attachedSince(mac, pane, mark);
+    const button = await until(async () => { const b = await queueButton(); return b?.text === 'Inbox ›' && b; }, { what: 'Inbox › on the last item' });
+    await shot('n-next-herdr');
+    const text = await app.text();
+    check('N-next', 'Next goes straight to mac\'s shop terminal (one attach in the fake, opened at once, read-only with Take control); it is the last one, so the button says "Inbox ›"',
+      button.text === 'Inbox ›' && text.includes('Take control') && !text.includes('Open shows it here'), `button ${JSON.stringify(button)}; ${await app.eval('location.pathname')}`);
+  });
+
+  await step('N-tap', 'A tapped session notification opens the session with Next; the same address loaded again has none', async () => {
+    await inApp('/');
+    await settle();
+    const own = (await api(tool, `${mac.origin}/api/v1/settings`)).json;
+    const made = await api(tool, `${mac.origin}/api/v1/sessions`, 'POST', { operationId: crypto.randomUUID(), projectId: own.projects[0].id, shellProfileId: own.shellProfiles[0].id });
+    if (made.status !== 200 && made.status !== 201) throw new Error(`session on mac: ${made.status} ${made.body}`);
+    const session = made.json.session ?? made.json;
+    needs.tapped = session;
+    const path = `/sessions/${session.id}`;
+    await browser.send('Browser.grantPermissions', { origin: mac.origin, permissions: ['notifications'] });
+    const ids = new Map();
+    browser.listeners.push((m) => { if (m.method === 'ServiceWorker.workerRegistrationUpdated') for (const r of m.params.registrations) ids.set(r.scopeURL, r.registrationId); });
+    await app.send('ServiceWorker.disable').catch(() => undefined);
+    await app.send('ServiceWorker.enable');
+    const registrationId = await until(() => ids.get(`${mac.origin}/`), { what: 'home worker registration' });
+    const title = 'needs-you-mac is waiting for you';
+    await app.send('ServiceWorker.deliverPushMessage', { origin: mac.origin, registrationId, data: JSON.stringify({ title, body: 'demo · tap to answer', kind: 'waiting', sessionId: session.id }) });
+    const shown = await until(() => app.eval(`navigator.serviceWorker.getRegistration('/').then((r) => r.getNotifications()).then((n) => n.map((x) => ({ title: x.title, url: x.data?.url }))
+      .find((x) => x.title === ${JSON.stringify(title)}))`), { what: 'session notification' });
+    const clicked = await clickNotification(browser, `${mac.origin}/`, title);
+    // As in H-tap: the browser refuses focus() and navigate() for a synthetic click, so the harness loads the address.
+    await app.go(`${mac.origin}${shown.url}`);
+    const button = await until(() => queueButton(), { what: 'Next after the notification tap', timeout: 20000 });
+    const tappedText = await until(async () => { const b = await queueButton(); return b?.text === 'Next · 1 left ›' && b.text; }, { what: 'Next · 1 left (shop still blocked)', timeout: 20000 });
+    await shot('n-tap');
+    // The record is used up: the same address again is a plain link.
+    await app.go(`${mac.origin}${shown.url}`);
+    await until(() => app.eval(`document.querySelector('.terminal-host') !== null`), { what: 'Live again' });
+    await sleep(3000);
+    const again = await queueButton();
+    check('N-tap', 'A session push tapped (notificationclick in the worker), then its address loaded: Live shows "Next · 1 left ›" (the blocked shop agent); the address carries nothing; loaded a second time it shows no Next',
+      shown.url === path && button !== null && tappedText === 'Next · 1 left ›' && again === null && (await app.eval('location.pathname + location.search + location.hash')) === path,
+      `notification ${JSON.stringify(shown)}; worker click: ${clicked}; first load "${tappedText}"; second load ${JSON.stringify(again)}`);
+  });
+
+  await step('N-last', 'The last Next returns to the Needs you tab: "Nothing needs you."; the tab leaves when another tab is chosen', async () => {
+    await openNeedsYou();
+    await tapInboxRow('shop');
+    await until(async () => (await queueButton())?.text === 'Inbox ›', { what: 'Inbox › in the shop terminal', timeout: 20000 });
+    // Nothing waits any more: the herdr agent goes idle, and the sessions of these checks end.
+    await mac.herdrControl({ op: 'status', pane: paneOf(t['shop/1']), status: 'idle' });
+    for (const [stack, one] of [[vps, needs.session], [mac, needs.tapped]]) {
+      if (one !== undefined) await api(tool, `${stack.origin}/api/v1/sessions/${one.id}/terminate`, 'POST', { operationId: crypto.randomUUID(), generation: one.generation });
+    }
+    await click(app, 'Inbox ›');
+    await until(() => app.eval(`location.pathname === '/'`), { what: 'back on Sessions' });
+    const chip = await until(async () => { const c = await needsChip(); return c?.pressed === 'true' && c; }, { what: 'the Needs you tab pressed' });
+    await until(() => app.eval(`document.querySelector('section[aria-label="Needs you"]')?.innerText.includes('Nothing needs you.') === true`), { what: '"Nothing needs you."', timeout: 20000 });
+    const left = (await inboxRows()).filter((r) => !r.finished);
+    const empty = await needsChip();
+    await shot('n-empty');
+    await click(app, 'All');
+    await until(async () => (await needsChip()) === null, { what: 'the Needs you tab leaves with nothing waiting', timeout: 10000 });
+    check('N-last', '"Inbox ›" on the last item goes to Sessions on the Needs you tab; with nothing waiting it says "Nothing needs you." once, with no count and no waiting row; after a tap on All the tab is gone',
+      chip.pressed === 'true' && empty.count === 0 && left.length === 0, `tab ${JSON.stringify(empty)}; waiting rows ${left.length}; after All: no Needs you tab`);
+    await settle();
   });
 
   // ---- the end: no herdr again, so the later checks run as without it ----

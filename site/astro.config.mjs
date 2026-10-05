@@ -63,6 +63,7 @@ export default defineConfig({
 						'docs/guides/live-terminal',
 						'docs/guides/project-buttons',
 						'docs/guides/answer-cards',
+						'docs/guides/needs-you',
 						'docs/guides/changes',
 						'docs/guides/files',
 						'docs/guides/worktrees',

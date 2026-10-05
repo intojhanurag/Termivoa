@@ -527,11 +527,24 @@ describe('service worker: provider terminals', () => {
     expect(await askTap(handlers, TAP_PATH)).toBe(true);
   });
 
-  it('a plain link or reload finds no tap, and a session tap leaves none', async () => {
+  it('a plain link or reload finds no tap, and a tap that opens / leaves none', async () => {
     const { handlers, store } = loadWorker(async () => new Response(''));
     expect(await askTap(handlers, TAP_PATH)).toBe(false);
-    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/sessions/${SESSION}` } } });
+    expect(await askTap(handlers, `/sessions/${SESSION}`)).toBe(false);
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: '/' } } });
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: '/settings' } } });
     expect(store.get('pterm-taps')?.size ?? 0).toBe(0);
+  });
+
+  it('a session tap leaves one fresh tap for its address, home\'s or a peer\'s (the page then starts the Needs you queue)', async () => {
+    const { handlers } = loadWorker(async () => new Response(''));
+    const peerPath = `/c/vps.tailx.ts.net/sessions/${SESSION}`;
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: `/sessions/${SESSION}` } } });
+    expect(await askTap(handlers, peerPath)).toBe(false);
+    expect(await askTap(handlers, `/sessions/${SESSION}`)).toBe(true);
+    expect(await askTap(handlers, `/sessions/${SESSION}`)).toBe(false);
+    await fire(handlers, 'notificationclick', { notification: { close: vi.fn(), data: { url: peerPath } } });
+    expect(await askTap(handlers, peerPath)).toBe(true);
   });
 
   it('without Cache Storage, a tap still counts once from memory', async () => {

@@ -1,6 +1,6 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-04. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-06. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
@@ -48,6 +48,16 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   open a herdr terminal in Live, buzz when blocked or finished,
   **Settings → Integrations**, new worktree with an agent. Open: the real
   device checks (Next 5).
+- "Needs you" inbox (`docs/needs-you-inbox.md`): a **Needs you** tab in
+  Sessions with what waits on every computer (sessions and herdr), a
+  **Next** queue in Live, and a notification tap that starts the queue. Web
+  app only. Open: the real-phone check of a notification tap that starts
+  the queue (iPhone and Android). Follow-ups:
+  - **Android notification action buttons** (proposal in
+    `docs/needs-you-inbox.md`; critical, rule 24: ADR, security and
+    feasibility reviews, and the owner's approval before any code).
+  - **Remember herdr done "seen" across visits** (today it is in memory, so
+    an opened `done` item is under **Finished** again after a reload).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 

@@ -1,7 +1,7 @@
 ---
 title: Release notes
 description: Termivoa private beta release history, with the new features, fixes and known limits of each version, and what is coming in the next beta.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
@@ -10,6 +10,7 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **Needs you.** While an agent waits, the Sessions list has a **Needs you** tab with a count, right after **All**. It lists every session that waits and every herdr worktree that is blocked, on all your computers, the longest wait first; **Finished** work is below. Tap one to open it, answer, then tap **Next · 2 left ›** to go to the next one. A tap on a notification opens the item with **Next** too. See [Needs you](/docs/guides/needs-you/).
 - **More herdr from the phone.** **New tab** can start an agent with a first prompt. A worktree whose workspace you closed shows as **CLOSED** with **Open**. A herdr terminal has the **⋯** menu of its workspace, and **‹ Sessions** goes back to the **herdr** tab.
 - **Manage herdr from the phone.** In the **herdr** tab, the **⋯** menu on a row has **New tab**, **Close tab**, **Close workspace** and **Remove worktree** (each asks first; a worktree with changes that are not committed is never removed), and **New workspace** opens one of your Termivoa projects in herdr. **+** now shows on every git project. **Settings → Integrations** has **Start herdr** when herdr does not run, and **Install herdr** on a computer without it (it opens a session with herdr's install command typed in; you press Enter). See [Termivoa + herdr](/docs/guides/herdr/#how-do-i-manage-workspaces-and-worktrees).
 - **herdr on your phone.** If a computer runs [herdr](https://herdr.dev) 0.8.2 or later, the Sessions list gets a **herdr** tab with its projects and worktrees, and state words (**BLOCKED**, **DONE**, **WORKING**, **IDLE**). Tap a worktree to open its herdr terminal in Live, read-only until you tap **Take control**. The phone buzzes when a herdr agent is blocked or finished. **Settings → Integrations** turns herdr and its buzzes on or off for each computer, and **+** on a git project makes a new worktree and can start an agent in it. There is no setting to turn on: Termivoa finds herdr by itself. See [Termivoa + herdr](/docs/guides/herdr/).

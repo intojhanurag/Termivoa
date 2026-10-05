@@ -22,6 +22,7 @@ import type { ChangesTab } from './Files';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { displayPath, sessionName, splitPath } from './folder';
 import { History } from './History';
+import { QueueNext, type Queue } from './Inbox';
 import { PreviewChip } from './PreviewChip';
 import { autoDismiss, RecapCard } from './Recap';
 import { useKeyboardOpen, websocketUrl } from './hooks';
@@ -237,7 +238,7 @@ export function ProviderEnded({ onOpenAgain, onSessions }: { readonly onOpenAgai
 }
 
 export function Live({
-  session, sessions, settings, multi = false, fontSize, runFirst, openComposer, provider,
+  session, sessions, settings, multi = false, fontSize, runFirst, openComposer, provider, queue,
   onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
 }: {
   readonly session: HostedSession;
@@ -265,6 +266,8 @@ export function Live({
   readonly onPreview?: (port: number) => void;
   /** Present for a provider terminal (herdr). */
   readonly provider?: ProviderLive | undefined;
+  /** Present when this item was opened from the "Needs you" inbox or a notification tap: the Next control. */
+  readonly queue?: Queue | undefined;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLDivElement>(null);
@@ -301,6 +304,9 @@ export function Live({
     runtime?.connection.getStatus ?? initialStatus,
   );
   const canSend = canSendWith(status);
+  // The host accepted this phone's answer here: Next stands out. Nothing moves by itself.
+  const [answered, setAnswered] = useState(false);
+  useEffect(() => { if (status.answer?.phase === 'sent') setAnswered(true); }, [status.answer?.phase]);
   const [slowLink, setSlowLink] = useState(false);
   useEffect(() => {
     setSlowLink(false);
@@ -707,6 +713,7 @@ export function Live({
             <span className={`badge-text ${badge.tone}`}>{badge.text}</span>
           </div>
           {provider !== undefined && !providerEnded && <p className="hint-text size-line">{provider.sizeLine}</p>}
+          {queue !== undefined && <QueueNext queue={queue} answered={answered} />}
         </>
       )}
 

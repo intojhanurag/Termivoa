@@ -12,13 +12,14 @@ node scripts/e2e-multicomputer/phase-b.mjs --no-web-build  # the phone flow thro
 node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only PV  # pairing, the first add, then only the preview steps
 node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only F   # pairing, the first add, then only Found on your network
 node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only H   # pairing, the first add, then only herdr (the fake herdr)
+node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only N   # pairing, the first add, then only the Needs you inbox (installs the fake herdr on mac itself)
 go test ./scripts/e2e-multicomputer/                       # the front's rewrite rules and the dev site
 PW=<playwright-core dir> WEBKIT=<webkit executable> node scripts/e2e-multicomputer/webkit.mjs --no-web-build
 ```
 
 WebKit needs a Playwright whose WebKit build is installed, for example playwright-core 1.61.1 with `WEBKIT=~/Library/Caches/ms-playwright/webkit-2272/pw_run.sh`. The harness installs nothing.
 
-Options: `REVIEW_SHOTS=<dir>` makes the `H-*` steps of section 14 also save their six review pictures there (390×844 at 2×; the ones in `docs/evidence/herdr-round2/`); `--out <dir>` writes the results table, JSON and screenshots there (default `<root>/evidence`), and Phase B writes each failed step's whole error, with a CLI's output so far, as `fail-<ID>.txt` (links hidden); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 32 checks, Phase B 127 (33 of them `PV-*`, the preview; 2 `SCAN-*`; 12 `F-*`, Found on your network; 48 `H-*`, herdr; 1 `B6-fit`, nothing wider than the 390 px phone), WebKit 8. Needs macOS, Go, Node 24, pnpm and Google Chrome (`CHROME=<executable>` uses another Chrome build, such as Playwright's Chrome for Testing).
+Options: `REVIEW_SHOTS=<dir>` makes the `H-*` steps of section 14 also save their six review pictures there (390×844 at 2×; the ones in `docs/evidence/herdr-round2/`); `--out <dir>` writes the results table, JSON and screenshots there (default `<root>/evidence`), and Phase B writes each failed step's whole error, with a CLI's output so far, as `fail-<ID>.txt` (links hidden); `--keep` leaves everything running until Ctrl+C. Exit status 0 means every check passed: Phase A has 32 checks, Phase B 134 (33 of them `PV-*`, the preview; 2 `SCAN-*`; 12 `F-*`, Found on your network; 48 `H-*`, herdr; 7 `N-*`, the Needs you inbox; 1 `B6-fit`, nothing wider than the 390 px phone), WebKit 8. Needs macOS, Go, Node 24, pnpm and Google Chrome (`CHROME=<executable>` uses another Chrome build, such as Playwright's Chrome for Testing).
 
 `--no-web-build` reuses `internal/webassets/dist`; after a change in `web/`, run once without it (or run `pnpm build:web` and `sh scripts/embed-web.sh`: `pnpm build:web` alone only writes `web/dist`). Every run builds `pterm` again, with `-tags webdist,e2e`; Phase A also builds it without `e2e` (check A8).
 
@@ -114,6 +115,18 @@ So every check of a **peer** preview (the bound `Referer`, the forwarded origin,
 | `H-install-herdr` | vps has no herdr yet: its Integrations card says "Not installed", has no switches, and **Install herdr**; the herdr tab has nothing from vps and the app sent vps no provider request; a tap opens one new session on vps whose terminal shows `curl -fsSL https://herdr.dev/install.sh \| sh` on the prompt line, typed and not run (one prompt, nothing after the command 5 s later, no `~/.local/bin/herdr`, no request to herdr.dev in the front log); the session is then terminated. |
 | `H-start` | The fake's server process ended and its binary stays: "herdr is not running on mac" with **Start herdr** on the herdr tab, the same button on the Integrations card (`canStart`); a tap makes the broker run `herdr server` once (the fake's `server start` line has the stack's `PATH` and `TERM`), the state is ready and the projects are back; a second start is refused. From here mac's fake runs from `scenario.json` again. |
 | `H-peer` | herdr installed on vps shows "on vps" after the app returns to the front (it reads settings again then), opens through vps (vps's fake attaches, mac's does not), its tab without an agent is a disabled chip, and vps refuses `Origin` evil. |
+
+**Needs you checks (Phase B `N-*`; `docs/needs-you-inbox.md`; `herdr.mjs`).** They run after `H-peer-tap`, while both computers have the fake herdr (with `--only N` the first step installs it on mac). Setup: every blocked fake agent goes idle and mac's `shop` agent goes blocked (`control.sock`); a new session on vps, `needs-you-vps`, runs a script that the harness writes into vps's home and types in Live: it clears the screen, draws "Run the demo check?" with a marked option 1 and waits for one key, so the host reports `waiting` with that question.
+
+| Check | What it proves |
+| --- | --- |
+| `N-inbox` | Sessions shows the **Needs you** tab right after **All** with the count 2 (the host's own lists say 2: one waiting session, one blocked herdr item). On the tab: `needs-you-vps` (waiting, its question, "vps") and `shop` (blocked, "mac · herdr"), nothing from **Finished** before them, no terminal preview line, and the status line "2 need you". |
+| `N-open` | A tap on the session row opens `/c/vps.tailx.ts.net/sessions/<id>` in Live with the question in the answer card, **Take control to answer** and READ-ONLY (opening took no control), and one **Next · 1 left ›** button. |
+| `N-fit` | The **Needs you** tab and Live with the Next row and the answer card at 390 and 375 px: nothing wider. |
+| `N-answer` | **Take control to answer**, then a tap on answer 1: the script gets its key (it prints "answered"), the host stops reporting `waiting`, the Next button becomes filled and still says **Next · 1 left ›**, and 2 s later the app is still on the session (no move by itself). |
+| `N-next` | **Next** opens mac's `shop` terminal at once (the fake logs the attach), read-only; it is the last item, so the button says **Inbox ›**. |
+| `N-tap` | A session push (CDP `deliverPushMessage`) and its `notificationclick` in the worker, then its address loaded (as in `H-tap`): Live shows **Next · 1 left ›**; the address is only `/sessions/<id>`; the same address loaded again shows no Next (the tap record is used up). |
+| `N-last` | `shop` opened from the tab says **Inbox ›**; the agent goes idle and the two sessions end; **Inbox ›** returns to Sessions on the **Needs you** tab, which says "Nothing needs you." with no count and no waiting row; after a tap on **All** the tab is gone. |
 
 Pushes from herdr changes (blocked, finished, own budget, marker text never in a payload) are Go tests only (`internal/herdr`, `internal/webpush`, `internal/broker`): headless Chrome has no push service.
 
