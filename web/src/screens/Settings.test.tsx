@@ -293,10 +293,12 @@ describe('Settings → Integrations', () => {
       expect(buzzGap({ support: 'needs-home-screen', enabled: undefined, missing: [] }, mac)).toBe('homeScreen');
       expect(buzzGap({ support: 'unsupported', enabled: undefined, missing: [] }, vps)).toBe('why');
       // On at home, not at that peer: only the peer's card says so.
-      expect(buzzGap({ ...on, missing: [vps.label] }, vps)).toBe('why');
-      expect(buzzGap({ ...on, missing: [vps.label] }, mac)).toBeUndefined();
-      // Home is never "missing", whatever its label.
-      expect(buzzGap({ ...on, missing: [mac.label] }, mac)).toBeUndefined();
+      expect(buzzGap({ ...on, missing: [vps.host] }, vps)).toBe('why');
+      expect(buzzGap({ ...on, missing: [vps.host] }, mac)).toBeUndefined();
+      // Home is never "missing".
+      expect(buzzGap({ ...on, missing: [mac.host] }, mac)).toBeUndefined();
+      // Two computers with one label: only the one whose host is missing.
+      expect(buzzGap({ ...on, missing: [vps.host] }, { ...vps, host: 'vps2.tailx.ts.net' })).toBeUndefined();
     });
 
     const card = (push: Parameters<typeof buzzGap>[0], extra = {}) => renderToStaticMarkup(
@@ -320,7 +322,7 @@ describe('Settings → Integrations', () => {
     });
 
     it('reaches each card of the section', () => {
-      const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac), okEntry(vps)]} push={{ ...on, missing: [vps.label] }} onFailure={() => ''} />);
+      const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac), okEntry(vps)]} push={{ ...on, missing: [vps.host] }} onFailure={() => ''} />);
       expect(page.match(/This phone gets no buzz yet\./gu)).toHaveLength(1);
       expect(page).toMatch(/herdr<\/bdi> on vps.*This phone gets no buzz yet\./u);
     });

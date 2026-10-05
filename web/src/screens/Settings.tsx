@@ -5,7 +5,7 @@ import type {
   HTTPSettingsResponse,
 } from '../generated/protocol';
 import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush, type PushSupport } from '../push';
-import type { Computer } from '../computers';
+import { storedComputers, type Computer } from '../computers';
 import { checkAgain, hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
@@ -37,10 +37,12 @@ type NameState =
 
 type Note = { readonly text: string; readonly error: boolean };
 
-/** "No notifications from vps, pi." */
-export const noPushFrom = (labels: ReadonlyArray<string>): string => `No notifications from ${labels.join(', ')}.`;
+/** "No notifications from vps, pi.": the labels of the computers with these hosts. */
+export function noPushFrom(hosts: ReadonlyArray<string>, computers: ReadonlyArray<Pick<Computer, 'host' | 'label'>> = storedComputers()): string {
+  return `No notifications from ${hosts.map((host) => computers.find((computer) => computer.host === host)?.label ?? host).join(', ')}.`;
+}
 
-/** What the Notifications section knows about this phone's push: `enabled` is undefined until the browser answered, `missing` has the labels of the peers that send none. */
+/** What the Notifications section knows about this phone's push: `enabled` is undefined until the browser answered, `missing` has the hosts of the peers that send none. */
 export type PushState = { readonly support: PushSupport; readonly enabled: boolean | undefined; readonly missing: ReadonlyArray<string> };
 
 /** The link of a card's "no buzz" line, by why this phone gets no buzz from that computer. All go to the Notifications section. */
@@ -55,11 +57,11 @@ export const BUZZ_LINKS = {
  * that is not known yet). `why`: a browser without push, or push is on at
  * home and this peer still sends none (Notifications names it).
  */
-export function buzzGap(push: PushState | undefined, computer: Pick<Computer, 'home' | 'label'>): keyof typeof BUZZ_LINKS | undefined {
+export function buzzGap(push: PushState | undefined, computer: Pick<Computer, 'home' | 'host'>): keyof typeof BUZZ_LINKS | undefined {
   if (push === undefined) return undefined;
   if (push.support !== 'available') return push.support === 'needs-home-screen' ? 'homeScreen' : 'why';
   if (push.enabled !== true) return push.enabled === false ? 'off' : undefined;
-  return !computer.home && push.missing.includes(computer.label) ? 'why' : undefined;
+  return !computer.home && push.missing.includes(computer.host) ? 'why' : undefined;
 }
 
 /** Push on/off for this phone on every computer, plus a test send. */
@@ -75,7 +77,7 @@ export function NotificationSettings({ onFailure, onPush }: {
   const [busy, setBusy] = useState<'switch' | 'test'>();
   const [note, setNote] = useState<Note>();
 
-  // The computers that send no notifications to this phone (home is on).
+  // The hosts of the computers that send no notifications to this phone (home is on).
   const [missing, setMissing] = useState<ReadonlyArray<string>>([]);
 
   useEffect(() => {
@@ -85,7 +87,7 @@ export function NotificationSettings({ onFailure, onPush }: {
       if (live) setEnabled(value);
       // Tries each peer again, so this also says which ones are still without.
       return value ? syncPeerPush() : [];
-    }).then((labels) => { if (live) setMissing(labels); });
+    }).then((hosts) => { if (live) setMissing(hosts); });
     return () => { live = false; };
   }, [support]);
 
@@ -113,7 +115,7 @@ export function NotificationSettings({ onFailure, onPush }: {
   // One test from each computer. Home's answer shows at once; a peer that sent none is named when known.
   const sendTest = () => run('test', testPush().then(({ sent, missing: late }) => {
     setNote(sent ? { text: 'Sent', error: false } : { text: 'No subscription on this phone', error: true });
-    if (sent) void late.then((labels) => { if (labels.length > 0) setNote({ text: `Sent. ${noPushFrom(labels)}`, error: true }); });
+    if (sent) void late.then((hosts) => { if (hosts.length > 0) setNote({ text: `Sent. ${noPushFrom(hosts)}`, error: true }); });
   }));
 
   return (

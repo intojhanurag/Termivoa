@@ -49,6 +49,46 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### Test sends, hung push endpoints, and two computers with one label (2026-10-06, issue #202, branch `fix/push-budget-fanout` on top of pull request #201; not merged)
+
+- **Why.** Issue #202, three notes from the review of #201. Each was
+  reproduced with a failing test before the fix.
+- **1, test budget (host).** `Notifier.Test` used the session budget.
+  `TestTestSendsDoNotUseTheSessionBudget` (a test send every 5 s for one
+  minute, then 12 sessions turn `waiting`) failed on the old code with
+  "session push 1 was refused after a minute of test sends". Fix: tests have
+  their own budget, `TestMaxPerMinute` = 6 for all devices together; the 5 s
+  cooldown per device stays. `Test` now also ends within `deliverTimeout`.
+- **2, fan-out (host).** `deliver` sent one after another.
+  `TestHungEndpointsDoNotStarveALaterPhone` (3 endpoints that hang, listed
+  first, then one that answers) failed on the old code after its 5 s wait
+  with "the later phone got no push while earlier endpoints hang". Fix: 4
+  workers for each delivery (`deliverFanOut`); `deliver` waits for them.
+  `TestDeliveryFanOutIsBoundedAndEndsAtTheDeadline` (8 hung endpoints)
+  checks: at most 4 requests at once, none started after the deadline, none
+  alive when `deliver` returns. Bound on open push requests: 4 × (24 session
+  + 12 provider + 12 test deliveries) = 192. Known limit, marked `ponytail`
+  in the code: 24 hung endpoints ahead of a phone still use the whole 60 s.
+  Accepted count, pruning on 404/410 and the skip of revoked devices are the
+  same code, now inside the worker.
+- **3, the "no buzz" line (phone).** `subscribePeers`, `syncPeerPush` and
+  `testPush` (`web/src/push.ts`) returned labels. The new case in
+  `web/src/push.test.ts` (two peers with the label `vps`, one of them down)
+  failed on the old code with "expected 'why' to be undefined": the card of
+  the peer that works also had the line. Fix: they return hosts; `buzzGap`
+  matches `computer.host`; `noPushFrom` finds the label of each host in the
+  stored list, so the text "No notifications from vps." is as before.
+- **Checks.** `GOTOOLCHAIN=go1.27.1`: `gofmt -l cmd internal scripts` empty;
+  `go vet ./...`, `GOOS=windows go vet ./...`, `CGO_ENABLED=0 GOOS=linux go
+  vet ./...`; `go test -race -count=3 ./internal/webpush` ok; `go test -race
+  -count=1 ./internal/webpush ./internal/broker` ok. `pnpm install
+  --frozen-lockfile`; `pnpm typecheck`; `pnpm --filter @phone-terminal/web
+  exec vitest run` 938 passed (1 new, 1 with a new case); `pnpm build:web`;
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro
+  build` with valid links.
+- **Not run.** The e2e scripts, a real push service that hangs, and a real
+  phone (owner).
+
 ### A dropped session push, and "buzz on" where no buzz can come (pull request #201, not merged)
 
 - **Why.** Issue #197, and the owner's report: "I only hear a sound, no

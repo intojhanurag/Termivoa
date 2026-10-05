@@ -9,7 +9,7 @@ export const PUSH_CARD_KEY = 'pterm.pushCard.dismissed';
 export const PUSH_BLOCKED = 'Notifications are blocked. Allow them in Settings.';
 
 export type PushSupport = 'available' | 'needs-home-screen' | 'unsupported';
-/** `missing` settles (it never rejects) with the labels of the peers that could not be subscribed; home is on already. */
+/** `missing` settles (it never rejects) with the hosts of the peers that could not be subscribed; home is on already. */
 export type PushResult = { readonly ok: true; readonly missing: Promise<string[]> } | { readonly ok: false; readonly message: string };
 
 type Peer = Pick<Computer, 'origin' | 'host' | 'label'>;
@@ -181,8 +181,8 @@ async function subscribeOn(computer: Client, registration: () => Promise<Service
 
 /**
  * Subscribes each peer on its own scoped registration, all at once. One peer
- * that fails never stops the others. Returns the labels of the peers left
- * without notifications. A peer that answers "pair again" (401) loses its
+ * that fails never stops the others. Returns the hosts of the peers left
+ * without notifications (a host names one computer; two can have one label). A peer that answers "pair again" (401) loses its
  * registration.
  */
 async function subscribePeers(peers: ReadonlyArray<Peer>): Promise<string[]> {
@@ -202,10 +202,10 @@ async function subscribePeers(peers: ReadonlyArray<Peer>): Promise<string[]> {
       return undefined;
     } catch (error) {
       if (isAuthFailure(error)) await forget();
-      return peer.label;
+      return peer.host;
     }
   }));
-  return missing.filter((label) => label !== undefined);
+  return missing.filter((host) => host !== undefined);
 }
 
 /**
@@ -214,7 +214,7 @@ async function subscribePeers(peers: ReadonlyArray<Peer>): Promise<string[]> {
  * permission prompt only inside a user gesture, so nothing is awaited before
  * requestPermission. Home's network and API failures throw ApiError. The
  * peers are not waited for (one that cannot be reached takes up to 15 s):
- * `missing` settles later with the labels of the peers that failed.
+ * `missing` settles later with the hosts of the peers that failed.
  */
 export async function enablePush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<PushResult> {
   const permission = await Notification.requestPermission();
@@ -245,7 +245,7 @@ export async function syncHomePush(): Promise<void> {
  * peer is subscribed (also one added later; permission is already granted, so
  * there is no prompt). Every other peer registration is unsubscribed and
  * unregistered (a removed computer, log out, push off). Run it on every load
- * and when the list changes. Never rejects; returns the labels of the peers
+ * and when the list changes. Never rejects; returns the hosts of the peers
  * left without notifications.
  */
 export async function syncPeerPush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<string[]> {
@@ -263,13 +263,13 @@ export async function syncPeerPush(peers: ReadonlyArray<Peer> = storedPeers()): 
 /**
  * Sends a test notification from every computer. `sent` is home's answer;
  * home's failures throw ApiError. The peers are not waited for: `missing`
- * settles later (it never rejects) with the labels of the peers that sent
+ * settles later (it never rejects) with the hosts of the peers that sent
  * none (not reachable, or no subscription there).
  */
 export async function testPush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<{ readonly sent: boolean; readonly missing: Promise<string[]> }> {
   const missing = Promise.all(peers.map((peer) => client(peer.origin).pushTest()
-    .then(({ sent }) => (sent > 0 ? undefined : peer.label), () => peer.label)))
-    .then((labels) => labels.filter((label) => label !== undefined));
+    .then(({ sent }) => (sent > 0 ? undefined : peer.host), () => peer.host)))
+    .then((hosts) => hosts.filter((host) => host !== undefined));
   return { sent: (await api.pushTest()).sent > 0, missing };
 }
 
