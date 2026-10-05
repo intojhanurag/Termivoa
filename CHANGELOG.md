@@ -8,6 +8,9 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- Phone: the **New workspace** sheet has **Add a folder**. It opens a session
+  on that computer with `pterm project add ` typed and not run; type the
+  folder, press Enter, then **Check again**. Host: no change.
 - **Manage herdr from the phone** (ADR 0009, `docs/herdr-manage.md`; docs:
   `guides/herdr.md`). Phone: each row of the **herdr** tab has a **⋯** menu
   with **New tab**, **Close tab** (never a workspace's last tab), **Close

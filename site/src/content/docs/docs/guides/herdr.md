@@ -146,7 +146,7 @@ In the **herdr** tab, each row has a **⋯** button. It opens a menu for that wo
 | **Close tab** | Ends one tab of that workspace. The menu lists the tabs. The last tab has no **Close tab**: use **Close workspace**. | Asks "Close tab 2? Its terminals end." |
 | **Close workspace** | Ends the terminals of that workspace. | Asks "Close silver-meadow? Its terminals end. Files stay." |
 | **Remove worktree** | Closes a worktree and deletes its folder. Only a worktree has this action, never the main checkout. | Asks "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." |
-| **New workspace** | A button under the list. Pick one of that computer's Termivoa projects; herdr opens a workspace in its folder and the phone opens its terminal. | Nothing to confirm. |
+| **New workspace** | A button under the list. Pick one of that computer's Termivoa projects; herdr opens a workspace in its folder and the phone opens its terminal. For a folder that is not a project yet, tap **Add a folder** in that sheet. | Nothing to confirm. |
 
 What Termivoa never does:
 
@@ -155,6 +155,8 @@ What Termivoa never does:
 - **It checks the name again.** If the list changed after you looked, the app says "The list changed. Look again, then try again." and nothing changes.
 
 **Remove worktree** deletes files that git ignores, such as `.env` and build output, with the folder. The branch and its commits stay.
+
+**Add a folder** opens a terminal on that computer with `pterm project add ` typed in. Type the folder, such as `~/shop`, press Enter, go back, and tap **Check again** in the **New workspace** sheet. The phone never sends a folder path by itself: you type it in a terminal on that computer.
 
 The **+** on a project row shows for every project whose folder is a git repository. A project that is not in git has no **+**.
 

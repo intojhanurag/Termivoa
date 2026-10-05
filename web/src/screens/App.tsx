@@ -294,7 +294,7 @@ export async function startLike(
     : { name: 'live', session, runFirst: { command: runFirst, settled: false } };
 }
 
-/** Install's session in Live with the command typed, not run: the user reads it and presses Enter (docs/herdr-manage.md, A7). */
+/** A session in Live with a command typed, not run (Install herdr, Add a folder): the user reads it and presses Enter (docs/herdr-manage.md, A7). */
 export const installView = (session: HostedSession, command: string): View =>
   ({ name: 'live', session, runFirst: { command, settled: false, typeOnly: true } });
 
@@ -1020,6 +1020,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
             navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap(), ...(notice === undefined ? {} : { notice }) });
           }}
           onProviderRetry={providers.reload}
+          onTypeIn={(session, command) => navigate(installView(session, command))}
           offerPush={homeEntry?.status.kind === 'ok'}
           onOpen={openSession}
           onNew={() => navigate({ name: 'new', back: { name: 'sessions' } })}
