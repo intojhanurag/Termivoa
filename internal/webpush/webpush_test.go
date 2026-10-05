@@ -705,7 +705,8 @@ func TestTestSendsDoNotUseTheSessionBudget(t *testing.T) {
 	for tap := range int(time.Minute / testCooldown) {
 		later.Store(int64(time.Duration(tap) * testCooldown))
 		// The test budget holds: the first TestMaxPerMinute go out, the rest are refused.
-		if _, err := notifier.Test(ctx, "device"); (err == nil) != (tap < TestMaxPerMinute) || (err != nil && err != ErrRateLimited) {
+		// A new device for each tap: the budget is one for all devices (the 5 s cooldown is per device).
+		if _, err := notifier.Test(ctx, fmt.Sprintf("device-%d", tap)); (err == nil) != (tap < TestMaxPerMinute) || (err != nil && err != ErrRateLimited) {
 			t.Fatalf("test send %d = %v", tap+1, err)
 		}
 	}

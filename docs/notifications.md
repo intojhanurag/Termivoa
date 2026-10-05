@@ -47,7 +47,10 @@ and a same-origin path.
   budget: one per device per 5 s and at most 6 per minute for all devices
   together (`TestMaxPerMinute`), so **Send a test notification** can never
   use up the budget of a session's push; a test over the budget gets
-  `limit_exceeded`. `waiting` is sent with `Urgency: high` and a 5-minute
+  `limit_exceeded`. The budget of 6 is for all devices, so one phone that
+  tests every 5 s can keep another phone's test waiting for the rest of that
+  minute; a peer's refusal for this limit is not shown as "No notifications
+  from …". `waiting` is sent with `Urgency: high` and a 5-minute
   TTL; `done` with `normal` and 2 minutes.
 - **Fan-out.** One delivery sends to its subscriptions (at most 64) with 4
   requests open at once (`deliverFanOut`), under one 60 s deadline; each

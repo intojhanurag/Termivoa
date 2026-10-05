@@ -44,7 +44,8 @@ const (
 	// = 4 * (24 + 12 + 12) = 192: every delivery ends within deliverTimeout,
 	// so the ones alive together come from at most two windows of their
 	// budget (see Notifier.inFlight), and a delivery waits for its workers
-	// before it ends. Each request is one goroutine and one small POST to an
+	// before it ends. Each request is one worker goroutine (plus the HTTP
+	// transport's own) and one small POST to an
 	// allowed push service, so 192 is far under the memory and the 1024 file
 	// descriptors of a small VPS. It needs every push service to hang for two
 	// minutes while every budget is full.

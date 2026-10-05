@@ -1,4 +1,4 @@
-import { api, client, isAuthFailure, type Client } from './api/http';
+import { api, ApiError, client, isAuthFailure, type Client } from './api/http';
 import { storedComputers, type Computer } from './computers';
 import type { HTTPPushSubscribeRequest } from './generated/protocol';
 import { storage } from './storage';
@@ -264,11 +264,12 @@ export async function syncPeerPush(peers: ReadonlyArray<Peer> = storedPeers()): 
  * Sends a test notification from every computer. `sent` is home's answer;
  * home's failures throw ApiError. The peers are not waited for: `missing`
  * settles later (it never rejects) with the hosts of the peers that sent
- * none (not reachable, or no subscription there).
+ * none (not reachable, or no subscription there). A peer that only refused
+ * the test for its rate limit is not missing: its notifications work.
  */
 export async function testPush(peers: ReadonlyArray<Peer> = storedPeers()): Promise<{ readonly sent: boolean; readonly missing: Promise<string[]> }> {
   const missing = Promise.all(peers.map((peer) => client(peer.origin).pushTest()
-    .then(({ sent }) => (sent > 0 ? undefined : peer.host), () => peer.host)))
+    .then(({ sent }) => (sent > 0 ? undefined : peer.host), (error: unknown) => (error instanceof ApiError && error.code === 'limit_exceeded' ? undefined : peer.host))))
     .then((hosts) => hosts.filter((host) => host !== undefined));
   return { sent: (await api.pushTest()).sent > 0, missing };
 }

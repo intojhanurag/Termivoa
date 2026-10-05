@@ -91,7 +91,7 @@ const PEER_KEY = toBase64Url(PEER_KEY_BYTES.buffer);
 
 /** Home and peers that answer the push routes; `down` hosts fail, `revoked` hosts answer 401. */
 function servers({
-  down = [] as string[], revoked = [] as string[], sent = 1,
+  down = [] as string[], revoked = [] as string[], limited = [] as string[], sent = 1,
   /** Peers answer their key only after this settles (a slow or hostile peer). */
   hold = Promise.resolve() as Promise<unknown>,
   /** Home's computer list. */
@@ -104,6 +104,7 @@ function servers({
     if (pathname === '/api/v1/computers') return json(200, { computers: listed.map(({ origin, label }) => ({ origin, label })) });
     if (pathname === '/api/v1/push' && host !== 'mac.tailx.ts.net') await hold;
     if (pathname === '/api/v1/push') return json(200, { publicKey: host === 'mac.tailx.ts.net' ? PUBLIC_KEY : PEER_KEY });
+    if (pathname === '/api/v1/push/test' && limited.includes(host)) return json(429, { error: { code: 'limit_exceeded', message: 'x' } });
     if (pathname === '/api/v1/push/test') return json(200, { sent });
     return json(204);
   });
@@ -396,6 +397,12 @@ describe('push from peers', () => {
     expect(missing).toEqual([TWIN.host]);
     expect(noPushFrom(missing)).toBe('No notifications from vps.');
     await expect((await testPush()).missing).resolves.toEqual([TWIN.host]);
+  });
+
+  it('a peer that only refused the test for its rate limit is not "no notifications"', async () => {
+    browser({ peers: [VPS, PI] });
+    servers({ limited: [VPS.host] });
+    await expect((await testPush()).missing).resolves.toEqual([]);
   });
 
   it('tests every computer and names the peers that sent nothing', async () => {

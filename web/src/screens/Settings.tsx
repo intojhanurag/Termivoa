@@ -39,7 +39,9 @@ type Note = { readonly text: string; readonly error: boolean };
 
 /** "No notifications from vps, pi.": the labels of the computers with these hosts. */
 export function noPushFrom(hosts: ReadonlyArray<string>, computers: ReadonlyArray<Pick<Computer, 'host' | 'label'>> = storedComputers()): string {
-  return `No notifications from ${hosts.map((host) => computers.find((computer) => computer.host === host)?.label ?? host).join(', ')}.`;
+  // Two computers can have one label: say it once.
+  const labels = hosts.map((host) => computers.find((computer) => computer.host === host)?.label ?? host);
+  return `No notifications from ${[...new Set(labels)].join(', ')}.`;
 }
 
 /** What the Notifications section knows about this phone's push: `enabled` is undefined until the browser answered, `missing` has the hosts of the peers that send none. */
