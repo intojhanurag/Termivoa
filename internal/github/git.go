@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/tailnet"
@@ -176,12 +177,27 @@ func (service *Service) helper() string {
 	return helperCommand(service.config.Pterm, service.config.Profile, service.config.RuntimeDir)
 }
 
+// cloneHelper is the helper for the clone itself. git runs with HOME set to
+// an empty temp folder there, and pterm finds its runtime folder from HOME
+// (macOS) or XDG_RUNTIME_DIR (Linux): so the helper gets the broker's own
+// values back in front of it. The helper saved in the clone has no such
+// prefix: a later git pull runs in the user's own environment.
+func (service *Service) cloneHelper() string {
+	prefix := "HOME='" + service.config.Home + "' "
+	for _, name := range []string{"XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
+		if value := os.Getenv(name); value != "" && !strings.Contains(value, "'") {
+			prefix += name + "='" + value + "' "
+		}
+	}
+	return "!" + prefix + strings.TrimPrefix(service.helper(), "!")
+}
+
 // cloneConfig is the config of the clone, given through GIT_CONFIG_COUNT
 // (design 6.5), in this order.
 func (service *Service) cloneConfig(owner, name string) [][2]string {
 	config := [][2]string{
 		{"credential.helper", ""},
-		{"credential." + service.opts.git + "/" + owner + "/" + name + ".git.helper", service.helper()},
+		{"credential." + service.opts.git + "/" + owner + "/" + name + ".git.helper", service.cloneHelper()},
 		{"protocol.allow", "never"},
 		{"protocol.https.allow", "always"},
 	}
@@ -204,9 +220,6 @@ func (service *Service) cloneConfig(owner, name string) [][2]string {
 func (service *Service) cloneCommand(ctx context.Context, binary, gitHome, owner, name, target string) *exec.Cmd {
 	env := service.fixedEnv(binary, gitHome)
 	env = append(env, "GIT_LFS_SKIP_SMUDGE=1")
-	if service.config.RuntimeDir != "" {
-		env = append(env, "PTERM_RUNTIME_DIR="+service.config.RuntimeDir)
-	}
 	config := service.cloneConfig(owner, name)
 	env = append(env, "GIT_CONFIG_COUNT="+strconv.Itoa(len(config)))
 	for index, pair := range config {

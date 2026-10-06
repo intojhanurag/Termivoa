@@ -544,3 +544,30 @@ func TestNoNewWorkAfterClose(t *testing.T) {
 	h.service.State("a") // no install check starts
 	h.service.Close()
 }
+
+// A Cancel while GitHub has not answered the code request yet is the user's
+// own act: the Connect answers the state, not "GitHub cannot be reached".
+func TestCancelDuringTheCodeRequestIsNotAnError(t *testing.T) {
+	fake := newFake(t)
+	h := newHarness(t, fake, false, nil)
+	fake.with(func() { fake.codeDelay = 5 * time.Second })
+	type result struct {
+		response protocol.HTTPGitHubResponse
+		err      error
+	}
+	done := make(chan result, 1)
+	go func() {
+		response, err := h.service.Connect(context.Background(), "a")
+		done <- result{response, err}
+	}()
+	waitFor(t, "the code request to reach the fake", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.counts["/login/device/code"] > 0
+	})
+	h.service.Cancel("a")
+	got := <-done
+	if got.err != nil || got.response.Problem != nil || got.response.State != protocol.HTTPGitHubStateNotConnected {
+		t.Fatalf("%+v %v", got.response, got.err)
+	}
+}

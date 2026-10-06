@@ -50,11 +50,10 @@ type Config struct {
 	// folder name, so one profile's start-up sweep never removes the other
 	// profile's clone.
 	Profile string
-	// RuntimeDir is this broker's runtime folder. The clone passes it to
-	// `pterm github-credential` as PTERM_RUNTIME_DIR (its only way to find
-	// this broker's admin socket: git runs it with HOME set to an empty
-	// temp folder). Later git runs in the folder do not set it; pterm then
-	// finds its runtime folder as usual.
+	// RuntimeDir is this broker's runtime folder. A development broker
+	// names it in the helper line (`--dev --runtime-dir`); a production
+	// helper finds it from HOME or XDG_RUNTIME_DIR, which the clone puts back
+	// in front of the helper (git runs with an empty temp HOME there).
 	RuntimeDir string
 }
 
@@ -117,6 +116,7 @@ type Service struct {
 	installChecked time.Time
 	installRunning bool
 	cache          *reposCache
+	cacheGen       uint64 // guarded by mu: dropCache counts up, so a list run that started before it never writes its old result
 	reposRun       *reposRun
 	origins        map[string]originEntry
 
@@ -147,7 +147,7 @@ func newService(config Config, deps Deps, opts options) (*Service, error) {
 	}
 	// The helper value quotes both paths for the shell; a path with a
 	// single quote cannot be quoted that way, so the feature is off.
-	if config.ClientID == "" || strings.Contains(config.Pterm, "'") || strings.Contains(config.RuntimeDir, "'") {
+	if config.ClientID == "" || strings.Contains(config.Pterm, "'") || strings.Contains(config.RuntimeDir, "'") || strings.Contains(config.Home, "'") {
 		return nil, nil
 	}
 	if !filepath.IsAbs(config.Home) || !filepath.IsAbs(config.DataDir) {

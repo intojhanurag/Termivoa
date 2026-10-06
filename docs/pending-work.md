@@ -88,11 +88,6 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
     every peer error), not the GitHub line.
   - **"Update Termivoa on pi to use GitHub."** A computer below revision 7
     shows no GitHub row and no line that says why.
-  - **Install git.** A computer without git says "git is not on pi. GitHub
-    needs it." with **Check again**, but has no **Install git** button
-    (design, section 9).
-  - **Also in the docs:** the herdr guide's **New workspace** text does not
-    name **From GitHub** yet.
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 

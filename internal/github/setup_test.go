@@ -167,6 +167,11 @@ func TestSetupClonesThroughTheHelper(t *testing.T) {
 	if setup.Percent == nil || *setup.Percent != 100 {
 		t.Fatalf("percent %v", setup.Percent)
 	}
+	// git ran the helper with an empty temp HOME; the clone's helper value put the
+	// broker's HOME back, so a production pterm finds its runtime folder.
+	if got := readAll(t, filepath.Join(filepath.Dir(h.config.Pterm), "helper-home")); got != h.config.Home {
+		t.Fatalf("helper HOME = %q, want %q", got, h.config.Home)
+	}
 	final := filepath.Join(h.service.home, "hello")
 	if readAll(t, filepath.Join(final, "README")) != "hello\n" || len(tempFolders(t, h.service.home)) != 0 {
 		t.Fatal("the clone is not in ~/hello")
@@ -286,16 +291,21 @@ func TestSetupStopAndTimeoutLeaveNothing(t *testing.T) {
 }
 
 func TestCloneCommandIsFixed(t *testing.T) {
+	for _, name := range []string{"XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/501")
 	fake := newFake(t)
 	h := newHarness(t, fake, true, nil)
 	service := h.service
 	service.opts = defaultOptions // the production list (no http)
 	command := service.cloneCommand(context.Background(), "/opt/git/bin/git", "/tmp/gh", "octo", "hello", "/home/u/.termivoa-clone-test-1")
-	helper := "!'" + h.config.Pterm + "' github-credential"
+	// The clone's helper gets the broker's HOME and XDG_RUNTIME_DIR back: git runs with an empty temp HOME.
+	helper := "!HOME='" + h.config.Home + "' XDG_RUNTIME_DIR='/run/user/501' '" + h.config.Pterm + "' github-credential"
 	want := []string{
 		"HOME=/tmp/gh", "PATH=/opt/git/bin:/usr/bin:/bin", "LC_ALL=C", "GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1",
-		"PTERM_RUNTIME_DIR=/run/termivoa-test", "GIT_CONFIG_COUNT=10",
+		"GIT_CONFIG_COUNT=10",
 		"GIT_CONFIG_KEY_0=credential.helper", "GIT_CONFIG_VALUE_0=",
 		"GIT_CONFIG_KEY_1=credential.https://github.com/octo/hello.git.helper", "GIT_CONFIG_VALUE_1=" + helper,
 		"GIT_CONFIG_KEY_2=protocol.allow", "GIT_CONFIG_VALUE_2=never",

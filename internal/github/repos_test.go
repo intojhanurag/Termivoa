@@ -238,3 +238,32 @@ func TestReposCacheDropsAfterASetup(t *testing.T) {
 		t.Fatalf("%+v %v", after, err)
 	}
 }
+
+// A list run that started before a set-up ended must not write its old
+// result into the cache after the set-up dropped it.
+func TestReposRunStartedBeforeADropDoesNotCache(t *testing.T) {
+	fake := newFake(t)
+	fake.with(func() { fake.repos[7] = []map[string]any{{"full_name": "octo/hello"}} })
+	h := newHarness(t, fake, true, nil)
+	fake.with(func() { fake.apiDelay = 300 * time.Millisecond })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = h.service.Repos(context.Background())
+	}()
+	waitFor(t, "the list run to reach the fake", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.counts["/user/installations"] > 0
+	})
+	h.service.mu.Lock()
+	h.service.dropCache()
+	h.service.mu.Unlock()
+	<-done
+	h.service.mu.Lock()
+	cached := h.service.cache
+	h.service.mu.Unlock()
+	if cached != nil {
+		t.Fatal("a run that started before dropCache wrote its result")
+	}
+}

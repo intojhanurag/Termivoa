@@ -69,7 +69,11 @@ func (service *Service) Connect(ctx context.Context, device string) (protocol.HT
 	}, &code)
 	expires := time.Duration(min(max(code.ExpiresIn, 1), int64(maxConnect/time.Second))) * service.opts.second
 	if err != nil || status != http.StatusOK || code.DeviceCode == "" || !userCodePattern.MatchString(code.UserCode) {
+		cancelled := runCtx.Err() != nil // Cancel, Disconnect or Close during the request
 		cancel()
+		if cancelled {
+			return service.State(device), nil
+		}
 		service.finishConnect(run, protocol.HTTPGitHubProblemGitHubDown)
 		return service.State(device), ErrGitHubDown
 	}

@@ -50,7 +50,7 @@ type reposCache struct {
 }
 
 // dropCache forgets the list. The caller holds mu.
-func (service *Service) dropCache() { service.cache = nil }
+func (service *Service) dropCache() { service.cache, service.cacheGen = nil, service.cacheGen+1 }
 
 // Repos is GET /api/v1/github/repos: at most 1000 rows, cached 60 s, one
 // shared run, 15 s in total, with here and taken for each row.
@@ -77,6 +77,7 @@ func (service *Service) Repos(ctx context.Context) (protocol.HTTPGitHubReposResp
 	if run == nil {
 		run = &reposRun{done: make(chan struct{})}
 		service.reposRun = run
+		gen := service.cacheGen
 		service.wg.Add(1)
 		go func() {
 			defer service.wg.Done()
@@ -86,7 +87,7 @@ func (service *Service) Repos(ctx context.Context) (protocol.HTTPGitHubReposResp
 			run.result, run.err = service.listRepos(runCtx)
 			service.mu.Lock()
 			service.reposRun = nil
-			if run.err == nil && acc != nil && service.account == acc {
+			if run.err == nil && acc != nil && service.account == acc && service.cacheGen == gen {
 				service.cache = &reposCache{at: service.now(), account: acc, result: run.result}
 			}
 			service.mu.Unlock()

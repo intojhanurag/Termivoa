@@ -44,6 +44,7 @@ type fakeGitHub struct {
 	repoInfo     map[string]map[string]any
 	counts       map[string]int
 	apiDelay     time.Duration
+	codeDelay    time.Duration // before the device code answer
 	gitRoot      string
 	gitBlock     chan struct{}
 	gitAuthSeen  int
@@ -135,8 +136,13 @@ func (fake *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "/login/device/code":
 		fake.mu.Lock()
-		answer := fake.deviceCode
+		answer, wait := fake.deviceCode, fake.codeDelay
 		fake.mu.Unlock()
+		select {
+		case <-time.After(wait):
+		case <-r.Context().Done():
+			return
+		}
 		writeJSON(w, http.StatusOK, answer)
 	case path == "/login/oauth/access_token":
 		_ = r.ParseForm()
@@ -397,7 +403,7 @@ func writeHelper(t *testing.T, fake *fakeGitHub) string {
 		t.Fatal(err)
 	}
 	script := filepath.Join(dir, "pterm")
-	body := "#!/bin/sh\n[ \"$1\" = github-credential ] || exit 0\nshift\n[ \"$1\" = --dev ] && shift\n[ \"$1\" = --runtime-dir ] && shift 2\n[ \"$1\" = get ] || exit 0\ncat >/dev/null\necho username=x\necho \"password=$(cat '" + tokenFile + "')\"\n"
+	body := "#!/bin/sh\n[ \"$1\" = github-credential ] || exit 0\nshift\n[ \"$1\" = --dev ] && shift\n[ \"$1\" = --runtime-dir ] && shift 2\n[ \"$1\" = get ] || exit 0\ncat >/dev/null\nprintf %s \"$HOME\" > '" + filepath.Join(dir, "helper-home") + "'\necho username=x\necho \"password=$(cat '" + tokenFile + "')\"\n"
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}

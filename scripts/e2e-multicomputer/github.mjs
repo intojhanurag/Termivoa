@@ -85,6 +85,17 @@ export async function githubSteps(ctx) {
     await until(() => card('mac'), { what: 'the GitHub on mac row', timeout: 20000 });
     await app.eval(`document.querySelector('#integrations-heading')?.scrollIntoView()`);
   };
+  /** Integrations → Set up a repository → the list (a kept set-up result opens first: Close goes back to the list). */
+  const openList = async () => {
+    await integrations();
+    await cardTap('mac', 'Set up a repository');
+    return until(async () => {
+      const s = await sheet();
+      if (s?.rows.some((r) => r.text.includes('pdf-editor'))) return s;
+      if (s && !/Set up a repository/.test(s.text) && s.buttons.some((b) => b.text === 'Close')) await sheetTap('Close');
+      return false;
+    }, { what: 'the repository list', timeout: 30000, every: 500 });
+  };
   /** The code the open sheet shows, as one string. */
   const shownCode = async () => {
     const s = await sheet();
@@ -222,7 +233,7 @@ export async function githubSteps(ctx) {
     });
 
     await step('G5', 'notes is a plain folder: "name taken", not tappable; shop-api is a real clone: "on mac"', async () => {
-      if (!(await sheet())?.rows.length) { await integrations(); await cardTap('mac', 'Set up a repository'); }
+      if (!(await sheet())?.rows.length) await openList();
       const notes = await until(() => rowOf('octo-demo/notes').then((r) => r ?? rowOf('notes')), { what: 'the notes row', timeout: 20000 });
       const shop = await rowOf('shop-api');
       const repos = (await api(tool, `${mac.origin}/api/v1/github/repos`)).json?.repos ?? [];
@@ -236,7 +247,7 @@ export async function githubSteps(ctx) {
     });
 
     await step('G6', 'Set up pdf-editor: progress, then "Ready on mac" with New session; the folder, its helper lines, the project, a token-auth clone, no token in ps', async () => {
-      if (!(await rowOf('pdf-editor'))) { await integrations(); await cardTap('mac', 'Set up a repository'); }
+      if (!(await rowOf('pdf-editor'))) await openList();
       await until(() => rowOf('pdf-editor'), { what: 'the pdf-editor row' });
       const authsBefore = (await gitAuths()).length;
       await gh('/_test/gitdelay?ms=2000', 'POST'); // a clone that lasts long enough to watch
@@ -304,8 +315,7 @@ export async function githubSteps(ctx) {
 
     await step('G8', 'shop-api "on mac": a tap answers "Already on mac." with New session, and nothing is cloned', async () => {
       const authsBefore = (await gitAuths()).length;
-      await integrations();
-      await cardTap('mac', 'Set up a repository');
+      await openList();
       await until(() => rowOf('shop-api'), { what: 'the shop-api row', timeout: 20000 });
       await rowTap('shop-api');
       if (await app.eval(`document.querySelector('#gh-confirm') !== null`)) await sheetTap('Set up');

@@ -65,6 +65,8 @@ export function githubSources(entries: ReadonlyArray<ComputerEntry>, kept = new 
   });
 }
 
+/** How often a row reads again while a clone runs: 12 reads a minute, under the computer's limit of 60. */
+export const ROW_CLONE_READ_MS = 5_000;
 /** Install git types this, not run: macOS's installer, else Debian's or Ubuntu's (the settings do not say the platform). */
 export const INSTALL_GIT = 'if [ "$(uname)" = Darwin ]; then xcode-select --install; else sudo apt-get install -y git; fi';
 /** A device code lives 15 minutes: the time left never shows more, whatever the clocks say. */
@@ -352,6 +354,13 @@ export function GitHubRow({ source, provider, handlers, onSheet }: {
   const read = () => client(computer.origin).github().then(setLive, () => undefined);
   useEffect(() => { void read(); }, [computer.origin, info.state]);
   useVisible(() => { void read(); });
+  // While a clone runs (and no sheet shows it), the row reads again every 5 s, so "Setting up" turns into "is ready".
+  const cloning = live?.setup?.phase === 'cloning' && sheet === undefined;
+  useEffect(() => {
+    if (!cloning) return undefined;
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void read(); }, ROW_CLONE_READ_MS);
+    return () => window.clearInterval(timer);
+  }, [cloning, computer.origin]);
   const setSheet = (next: typeof sheet) => {
     setSheetState(next);
     onSheet?.(next !== undefined);
