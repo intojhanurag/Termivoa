@@ -88,6 +88,7 @@ A "done" notification needs at least 20 seconds of agent work. More in [Notifica
 | A tap on a notification | Yes, when another item waits. With nothing else waiting, there is no row. |
 | A tap on a row in the **Needs you** tab | Yes |
 | A link, a typed address or a reload | No. This is as designed. |
+
 ## I hear a sound but see no notification
 
 If the computer runs herdr, the sound is most likely herdr's own: herdr plays a sound when an agent in a background workspace changes state. Termivoa makes no sound on the computer.
