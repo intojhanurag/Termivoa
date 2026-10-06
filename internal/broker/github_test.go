@@ -14,11 +14,12 @@ import (
 
 // fakeGitHub is a githubService that records calls and returns err.
 type fakeGitHub struct {
-	mu     sync.Mutex
-	calls  []string
-	err    error
-	login  *string
-	closed bool
+	mu       sync.Mutex
+	calls    []string
+	err      error
+	login    *string
+	closed   bool
+	noExpiry bool
 }
 
 func (fake *fakeGitHub) record(call string) {
@@ -64,6 +65,9 @@ func (fake *fakeGitHub) Stop(device string) protocol.HTTPGitHubResponse {
 }
 func (fake *fakeGitHub) Credential(context.Context) (string, string, time.Time, error) {
 	fake.record("credential")
+	if fake.noExpiry {
+		return "octo", "ghu_" + strings.Repeat("a", 36), time.Time{}, fake.err
+	}
 	return "octo", "ghu_" + strings.Repeat("a", 36), time.Unix(1_800_000_000, 0), fake.err
 }
 func (fake *fakeGitHub) Close() { fake.closed = true }
@@ -204,6 +208,13 @@ func TestGitHubAdmin(t *testing.T) {
 	if err != nil || credential.Username != "octo" || !strings.HasPrefix(credential.Password, "ghu_") || credential.ExpiresAt != 1_800_000_000 {
 		t.Fatalf("credential = %v %v", credential.Username, err)
 	}
+	// A token without expiry is sent as 0, which the result check accepts.
+	fake.noExpiry = true
+	if credential, err := protocol.DecodeRPCPayload[protocol.AdminRPCGitHubCredentialPayload](
+		client.admin(t, protocol.AdminGithubCredential, protocol.BrokerRPCEmptyPayload{})); err != nil || credential.ExpiresAt != 0 || credential.Username != "octo" {
+		t.Fatalf("no-expiry credential = %d %v", credential.ExpiresAt, err)
+	}
+	fake.noExpiry = false
 	fake.err = github.ErrNotConnected
 	response := client.admin(t, protocol.AdminGithubCredential, protocol.BrokerRPCEmptyPayload{})
 	payload, _ := protocol.DecodeRPCPayload[protocol.BrokerRPCErrorPayload](response)

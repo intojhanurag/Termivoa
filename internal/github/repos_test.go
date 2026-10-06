@@ -181,6 +181,15 @@ func TestParseOrigin(t *testing.T) {
 		"https://github.com/o":                "",
 		"file:///home/u/n":                    "",
 		"https://github.com.evil.com/o/n.git": "",
+		"https://www.github.com/o/n":          "o/n",
+		"https://github.com:443/o/n":          "o/n",
+		"https://github.com:8443/o/n":         "",
+		"github.com:o/n.git":                  "o/n",
+		"https://github.com/o/n.GIT":          "o/n",
+		"git@github.com:o/n.Git":              "o/n",
+		"ssh://git@github.com:22/o/n":         "o/n",
+		"git@www.github.com:o/n":              "o/n",
+		"git@evilgithub.com:o/n":              "",
 	} {
 		owner, name, ok := service.parseOrigin(remote)
 		got := ""
@@ -190,5 +199,42 @@ func TestParseOrigin(t *testing.T) {
 		if got != want {
 			t.Errorf("%s: %q, want %q", remote, got, want)
 		}
+	}
+}
+
+func TestParseOriginE2EHost(t *testing.T) {
+	service := &Service{opts: options{git: "http://127.0.0.1:41234"}}
+	for remote, want := range map[string]string{
+		"http://127.0.0.1:41234/o/n.git": "o/n",
+		"http://127.0.0.1:41235/o/n.git": "",
+		"http://127.0.0.1/o/n.git":       "",
+		"https://127.0.0.1:41234/o/n":    "",
+		"git@127.0.0.1:o/n.git":          "o/n",
+	} {
+		owner, name, ok := service.parseOrigin(remote)
+		if got := owner + "/" + name; ok != (want != "") || ok && got != want {
+			t.Errorf("%s: %q %v, want %q", remote, got, ok, want)
+		}
+	}
+}
+
+func TestReposCacheDropsAfterASetup(t *testing.T) {
+	fake := newFake(t)
+	fake.addFixture(t, "octo", "hello")
+	fake.with(func() { fake.repos[7] = []map[string]any{{"full_name": "octo/hello"}} })
+	h := newHarness(t, fake, true, nil)
+	before, err := h.service.Repos(context.Background())
+	if err != nil || len(before.Repos) != 1 || before.Repos[0].Here {
+		t.Fatalf("%+v %v", before, err)
+	}
+	if _, err := h.service.Setup(context.Background(), "a", "octo/hello"); err != nil {
+		t.Fatal(err)
+	}
+	if setup := setupDone(t, h); setup.Phase != protocol.Finished {
+		t.Fatalf("%+v", setup)
+	}
+	after, err := h.service.Repos(context.Background())
+	if err != nil || len(after.Repos) != 1 || !after.Repos[0].Here {
+		t.Fatalf("%+v %v", after, err)
 	}
 }

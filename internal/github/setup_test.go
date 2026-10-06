@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -394,5 +395,42 @@ func TestSweepRemovesOnlyThisProfilesTempFolders(t *testing.T) {
 		if _, err := os.Stat(kept); err != nil {
 			t.Fatalf("%s was removed", kept)
 		}
+	}
+}
+
+func TestRenameFallsBackWithoutExclusiveRename(t *testing.T) {
+	old := renameNoReplace
+	t.Cleanup(func() { renameNoReplace = old })
+	for _, unsupported := range []error{syscall.EINVAL, syscall.ENOSYS, syscall.ENOTSUP, syscall.EOPNOTSUPP} {
+		renameNoReplace = func(string, string) error { return unsupported }
+		dir := t.TempDir()
+		from, to := filepath.Join(dir, "from"), filepath.Join(dir, "to")
+		if err := os.Mkdir(from, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := renameExclusive(from, to); err != nil {
+			t.Fatalf("%v: %v", unsupported, err)
+		}
+		if err := os.Mkdir(from, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := renameExclusive(from, to); !errors.Is(err, syscall.EEXIST) {
+			t.Fatalf("%v: an existing folder gave %v", unsupported, err)
+		}
+	}
+	renameNoReplace = func(string, string) error { return syscall.EACCES }
+	if err := renameExclusive("/a", "/b"); !errors.Is(err, syscall.EACCES) {
+		t.Fatal(err)
+	}
+	renameNoReplace = old
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "from"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "to"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := renameExclusive(filepath.Join(dir, "from"), filepath.Join(dir, "to")); !errors.Is(err, syscall.EEXIST) && !errors.Is(err, syscall.ENOTEMPTY) {
+		t.Fatalf("the system rename replaced an empty folder: %v", err)
 	}
 }

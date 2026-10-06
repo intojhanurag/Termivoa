@@ -77,6 +77,10 @@ export default defineConfig({
 					items: ['docs/providers', { label: 'herdr', slug: 'docs/guides/herdr' }],
 				},
 				{
+					label: 'Integrations',
+					items: [{ label: 'GitHub', slug: 'docs/guides/github' }],
+				},
+				{
 					label: 'Reference',
 					items: [
 						'docs/reference/cli',

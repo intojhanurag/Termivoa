@@ -221,7 +221,12 @@ func (server *ManagementServer) dispatchAdminGitHub(ctx context.Context, request
 		if err != nil {
 			return nil, githubError(err)
 		}
-		return protocol.AdminRPCGitHubCredentialPayload{Username: login, Password: token, ExpiresAt: expires.Unix()}, nil
+		// A token without expiry (an app with expiry off) has a zero time: 0 means "no expiry".
+		var expiresAt int64
+		if !expires.IsZero() {
+			expiresAt = expires.Unix()
+		}
+		return protocol.AdminRPCGitHubCredentialPayload{Username: login, Password: token, ExpiresAt: expiresAt}, nil
 	default:
 		return nil, errors.New("broker: unsupported github administration request")
 	}

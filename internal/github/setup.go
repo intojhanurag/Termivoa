@@ -51,6 +51,10 @@ func (service *Service) Setup(ctx context.Context, device, repo string) (protoco
 		return protocol.HTTPGitHubResponse{}, ErrNotConnected
 	}
 	service.mu.Lock()
+	if service.closed {
+		service.mu.Unlock()
+		return service.State(device), ErrGitHubDown
+	}
 	if service.setup != nil && service.setup.running {
 		service.mu.Unlock()
 		return service.State(device), ErrBusy
@@ -141,7 +145,13 @@ func (service *Service) Setup(ctx context.Context, device, repo string) (protoco
 	if free, err := service.freeSpace(service.home); err != nil || free < limit {
 		return fail(protocol.NoSpace)
 	}
+	service.mu.Lock()
+	if service.closed {
+		service.mu.Unlock()
+		return fail(protocol.Stopped)
+	}
 	service.wg.Add(1)
+	service.mu.Unlock()
 	go func() {
 		defer service.wg.Done()
 		defer cancel()
@@ -166,9 +176,12 @@ func (service *Service) Stop(device string) protocol.HTTPGitHubResponse {
 	return service.State(device)
 }
 
+// endSetup records the result and drops the list cache: here and taken
+// may have changed.
 func (service *Service) endSetup(run *setupRun, problem protocol.HTTPGitHubSetupProblem, projectID string, already bool) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	service.dropCache()
 	if problem == "" {
 		run.view.Phase = protocol.Finished
 		run.view.ProjectID = &projectID
@@ -182,6 +195,7 @@ func (service *Service) endSetup(run *setupRun, problem protocol.HTTPGitHubSetup
 }
 
 func (service *Service) endSetupLocked(run *setupRun, problem protocol.HTTPGitHubSetupProblem) {
+	service.dropCache()
 	run.view.Phase = protocol.HTTPGitHubSetupPhaseFailed
 	run.view.Problem = &problem
 	run.running, run.ended = false, service.now()

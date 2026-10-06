@@ -39,6 +39,11 @@ the old working name "Phone Terminal" so existing installs keep working (see
   herdr. A new tab can start a coding agent with a first prompt, a closed
   worktree shows as CLOSED with **Open**, and a herdr terminal has the same
   **⋯** menu. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
+- **GitHub.** Connect each computer to GitHub from **Settings →
+  Integrations** with a code, see your repositories, and clone one onto a
+  computer with one tap, ready for a new session. No `gh` needed, only git;
+  a folder that is already there is never deleted or overwritten. Pull and
+  push work in the clone. macOS and Linux, github.com only; next beta.
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one
@@ -163,6 +168,8 @@ a time. Details: [docs/architecture.md](docs/architecture.md).
   with several computers, revoke it on each one.
 - Clients never receive raw terminal bytes and cannot send arbitrary bytes.
 - Terminal content is not stored on disk. No telemetry.
+- GitHub (next beta) is off until you tap **Connect** for a computer. Each
+  computer then keeps its own GitHub login, which never goes to the phone.
 
 A session runs with your user's permissions; projects are not sandboxes. Read
 the [threat model](docs/threat-model.md) and [SECURITY.md](SECURITY.md).
@@ -199,6 +206,7 @@ The full list of what still needs real hardware is in
 | `pterm revoke <device-id>` | Remove a phone's access at once. `revoke --via <url>` removes every phone that uses this computer through that home. |
 | `pterm computers` / `computers remove <url>` | On home: show each phone's computers, or remove one from every phone's list. |
 | `pterm project add [--name <n>] <path>` / `project list` | Save or list project folders. |
+| `pterm github status` / `github disconnect` | Show or remove this computer's GitHub login (next beta). |
 | `pterm list` | List sessions and their state. |
 | `pterm attach [--control] <session-id>` | Open a session in this terminal. Ctrl+] detaches. |
 | `pterm new --project <id> --shell <id>` | Start a session and take control. |

@@ -54,10 +54,11 @@ One Go binary, `pterm` (`cmd/pterm`). Node.js is a build-time tool only.
 | Pairing and devices | `pair [--origin] [--no-qr] [--no-wait]`, `pair pending`, `pair approve <id>`, `devices`, `devices rename`, `revoke <device>` |
 | Multi-computer | `pair --via <name\|url> [--allow-tagged]` (in a terminal it also offers this computer to home for up to 10 minutes: Found on your network), `revoke --via <url>`, `computers`, `computers remove <url>` |
 | Configuration | `project add`, `project list`, `profile list`, `profile detect`, `config origin [<url>]` |
+| GitHub | `github status`, `github disconnect` (the GitHub login of this computer; connect is only in the app) |
 | Install and run | `setup`, `setup --apply --yes` (installer mode), `doctor`, `uninstall [--dry-run] [--yes] [--delete-data]`, `launch [--no-open]` |
 | Stop | `stop` (gateway only, sessions keep running), `shutdown` (ends all sessions, stops both) |
 | Development | `up --dev [--listen <addr>]`; `--dev` and `--runtime-dir` on any command |
-| Hidden process modes | `__broker`, `__gateway` (started by startup registration) |
+| Hidden process modes | `__broker`, `__gateway` (started by startup registration); `github-credential` (git's credential helper in a folder that Termivoa cloned; checked before any flag parsing in `main.go`) |
 
 The help text is `commandHelp` in `cmd/pterm/management.go`. Local commands
 talk to the running broker; they never start or replace it (`launch` and
@@ -82,7 +83,7 @@ another name (an old machine name) is neither configured nor a problem
 
 | Process | Responsibilities | Entry |
 | --- | --- | --- |
-| Broker | Takes the data lock and runtime lock, opens SQLite, runs the session registry (default limit 8 live sessions), one actor per session, emulators, controller leases, input writer, pairing and device auth, Web Push, agent-state scans, git (Changes, worktrees), Files, project tasks, uploads, preview port scans, Tailscale status snapshots for multi-computer trust. Serves IPC to `cli` and `gateway` clients. | `internal/host/broker.go`, `internal/broker` |
+| Broker | Takes the data lock and runtime lock, opens SQLite, runs the session registry (default limit 8 live sessions), one actor per session, emulators, controller leases, input writer, pairing and device auth, Web Push, agent-state scans, git (Changes, worktrees), Files, project tasks, uploads, preview port scans, Tailscale status snapshots for multi-computer trust, the GitHub login and clones (`internal/github`). Serves IPC to `cli` and `gateway` clients. | `internal/host/broker.go`, `internal/broker` |
 | Gateway | Loopback HTTP and WebSocket server; embedded web assets; CSP, Host, Origin and CORS checks; cookie set and refresh; forwards the raw cookie credential and the request `Origin` to the broker on every call; second loopback listener for dev-server preview; answers 404 under `/push/` (peer push scopes). Has a private control endpoint that `pterm stop` uses. Holds no Store, Registry or PTY. | `internal/gateway`, `internal/gatewayclient`, `internal/host/gateway_control.go` |
 
 Shutdown order (broker): stop IPC accept, wait for registry cleanup, close
@@ -133,6 +134,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | Path | Purpose |
 | --- | --- |
 | `cmd/pterm` | CLI entry, argument parsing, `setup`/`doctor`/`launch`/`up`/`stop`, hidden process modes. `lifecycle_e2e.go` is compiled only with the `e2e` tag (section 8) |
+| `cmd/pterm/github.go` | The production `github.Config` (`githubConfig`: git's install paths, then `PATH`, the home folder, this `pterm`'s resolved path; nil on Windows), `pterm github status`/`disconnect`, the GitHub line of `pterm doctor` (`inspectGitHub`), and the hidden helper `pterm github-credential` (`runGitHubCredential`: answers only `get` for `protocol=https`, `host=github.com`, with `password_expiry_utc`; asks the broker over the admin channel). `github_e2e.go`/`github_release.go` pick the helper's allowed host by build tag |
 | `cmd/pterm/herdr.go` | The production `herdr.Config` (`herdrConfig`: fixed install paths, then `PATH`, the user's home; none on Windows) and the herdr line of `pterm doctor` (`inspectHerdr`: only when herdr is installed, never counted as a problem; warns on a custom prefix key) |
 | `internal/agentstate` | Pure classifier: working, waiting on a question, or idle, from sanitized screen text and timing |
 | `internal/auth` | Secrets, pairing grant (2 min) and browser credential lifetimes (30 days absolute, 7 days idle) |
@@ -144,6 +146,8 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `internal/gatewayapi` | Interface between gateway and broker (the gateway transports, the broker authorizes) |
 | `internal/gatewayclient` | Gateway's IPC client of the broker (RPC and live streams) |
 | `internal/gitchanges` | Bounded git: read changes, commit, push, worktree add/remove; never a shell, never force |
+| `internal/github` | GitHub, the only package that talks to GitHub ([github-integration.md](github-integration.md)): `client.go` (outbound HTTPS client: hosts `github.com` and `api.github.com` only, no proxy, no redirects, public addresses only, 5 s dial, 10 s a request, 1 MiB an answer), `connect.go` (device flow, cancel, Disconnect with `POST /credentials/revoke`), `token.go` (the token pair in `<data>/github.json`, a `secret` type that prints `[REDACTED]`, refresh under one lock that writes the new pair before it returns it, `Credential` for the helper), `repos.go` (installations and repositories: at most 10 installations and 1000 rows, 15 s, cached 60 s, one shared run; `here` and `taken` from one `Lstat` of `~/<name>` and `git config --file` of its `origin`), `setup.go` and `git.go` (the clone job: checks, free space, temp folder `~/.termivoa-clone-<profile>-<random>`, the fixed git environment and config, the size watch, the helper lines and commit name in the clone's config, the exclusive rename in `rename_darwin.go`/`rename_linux.go`, the start-up sweep of this profile's temp folders). `ClientID` and `AppSlug` are package variables (empty: no feature); `github_e2e.go` (build tag `e2e`) points the hosts at `scripts/fakegithub` |
+| `internal/broker/github.go` | The broker's side of GitHub: builds the `*github.Service` (a service that cannot start turns the feature off), the `gateway.github.*` handlers with the per-device limiter (read 60, list 10, connect 3, set up 3, cancel/disconnect/stop 10 per minute), fixed error texts, and the `admin.github.*` messages (status, disconnect, credential) |
 | `internal/herdr` | herdr provider, the only package that knows herdr ([herdr-provider.md](herdr-provider.md)): finds the binary (`FindBinary`, the checks of `tailnet.CheckBinary`), the socket client (`ping`, `session.snapshot`; `worktree.create`, `agent.start`, `agent.get`, `agent.prompt` for create) with the socket checks and peer credential, the 2 s poll loop that fills a cache, mapping to the generic provider wire shape, push changes (`Change`), the attach argv (`Attach`), create (`Create`), `Inspect` for doctor. `guard.go` makes a test config that names a path outside a temp folder panic. `herdrtest` is an in-process fake socket server for Go tests |
 | `internal/host` | Process bootstrap for broker and gateway, gateway control endpoint |
 | `internal/ipc` | Length-prefixed local IPC, handshake, current-user peer checks, Unix socket and Windows named pipe |
@@ -163,6 +167,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `protocol/v1` | Canonical JSON Schemas and protocol docs (section 4) |
 | `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets; `ui.tsx` holds the shared icons, the busy `Button`, `Notice` and `Banner` (styles and tokens in `web/src/styles/global.css`) |
 | `web/src/screens/{providers.ts,Herdr.tsx,ProviderScreen.tsx,ProviderCreate.tsx}` | herdr on the phone. `providers.ts`: one scheduler read per computer that lists a provider (own status, memory only), roll-up, count, tabs. `Herdr.tsx`: the herdr tab (projects, worktrees, state words). `ProviderScreen.tsx`: one terminal in Live (`/p/<provider>/<target>`, chips, Open, closes the stream when the page is hidden). `ProviderCreate.tsx`: the **+** sheet (new worktree and agent) |
+| `web/src/screens/GitHub.tsx` | GitHub on the phone: the row of each computer in **Settings → Integrations** (`GitHubRow`), and one sheet (`GitHubSheet`) for Connect (code, step 2), the repository list with search, and a set-up (progress, **Stop**, ready, problems), drawn from `GET /api/v1/github` and polled every 2 s while it waits. Fixed GitHub addresses only. Loaded on demand from Settings and from **From GitHub** in the **New workspace** sheet (`ProviderManage.tsx`, `Sessions.tsx`) |
 | `web/src/screens/Inbox.tsx` | The **Needs you** tab and its queue: one list of what waits on every computer (sessions in `waiting`, herdr items in `blocked`; then **Finished**), built from the session lists and the provider lists; the **Next** control in Live. No request of its own ([needs-you-inbox.md](needs-you-inbox.md)) |
 | `web/src/terminal` | xterm display, frame renderer, snapshot assembly, input sender, composer, snippets, speech, phone-wide scheduler |
 | `web/src/protocol` | Ajv validators generated at build time (no runtime `eval`) |
@@ -175,6 +180,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `tests` | Integration, soak, agent replay and PTY fixtures |
 | `site/` | Public docs site (Astro Starlight) and landing page in `site/public/`, deployed to Vercel |
 | `scripts/` | Checks, protocol generation, web embedding, Linux install, soak, Gate 0, multi-computer e2e, docs screenshots |
+| `scripts/fakegithub` | A fake GitHub for the e2e harness and Go tests: one loopback server for the device flow, the API and git smart HTTP over bare fixture repositories, with `/_test/*` controls. It never contacts github.com |
 | `scripts/fakeherdr` | A fake herdr binary (`server`, `status`, `terminal attach`, `agent attach`) with a control socket, for Go tests and the e2e harness. It reads only its own folder; the harness sandbox hides the real herdr |
 | `packaging/` | Unsigned macOS app/DMG, Linux binaries, Windows Inno Setup installer; signing scripts |
 
@@ -186,12 +192,12 @@ All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.
 | --- | --- |
 | `ipc.schema.json` | Local IPC handshake (`ipc.hello`, `ipc.welcome`, `ipc.error`); client kind `cli` or `gateway` |
 | `broker-rpc.schema.json` | Session management RPC: `session.create/list/rename/terminate/status`, worktree create on session create |
-| `admin-rpc.schema.json` | Local admin RPC, `cli` only: pairing, devices, revoke, computers, projects, profiles, origin, shutdown; `admin.gateway.stop` (gateway control endpoint only) |
-| `gateway-rpc.schema.json` | Gateway → broker RPC: auth check, pairing, settings, sessions, uploads, push, preview check, computers, origin probe, live open |
+| `admin-rpc.schema.json` | Local admin RPC, `cli` only: pairing, devices, revoke, computers, projects, profiles, origin, `admin.github.status`/`disconnect`/`credential` (the credential is the only admin answer that carries a secret: the GitHub access token, never the refresh token), shutdown; `admin.gateway.stop` (gateway control endpoint only) |
+| `gateway-rpc.schema.json` | Gateway → broker RPC: auth check, pairing, settings, sessions, uploads, push, preview check, computers, origin probe, live open, `gateway.github.get`/`action`/`repos` |
 | `envelope.schema.json` | Live WebSocket and live IPC messages: snapshots, patches, history, input, control, session state, Changes, Files, tasks, branches, worktree remove |
 | `http-api.schema.json` | Browser HTTP API bodies |
 | `types.schema.json` | Index of named types for generation |
-| `revision.json` | Additive protocol revision (now `revision: 6`, `minRevision: 1`; revision 2 is the preview listener rules, no schema change; revision 3 is Found on your network: the offer and found routes, `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`, error `home_changed`; revision 4 is providers: the `/api/v1/providers/{provider}` routes, `gateway.providers.*`, `providers` in settings; revision 5 is herdr manage; revision 6 is the agent tab, `openItem` and the `closed` list of a group). Its `features` map (`peerPreview` 2, `providers` 4, `providerManage` 5, `providerAgentTab` 6) is emitted as `FEATURE_REVISION` in `web/src/generated/protocol.ts`; the app gates each feature on it |
+| `revision.json` | Additive protocol revision (now `revision: 7`, `minRevision: 1`; revision 2 is the preview listener rules, no schema change; revision 3 is Found on your network: the offer and found routes, `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`, error `home_changed`; revision 4 is providers: the `/api/v1/providers/{provider}` routes, `gateway.providers.*`, `providers` in settings; revision 5 is herdr manage; revision 6 is the agent tab, `openItem` and the `closed` list of a group; revision 7 is GitHub: `GET`/`POST /api/v1/github`, `GET /api/v1/github/repos`, `github` in settings, `gateway.github.*`, `admin.github.*`). Its `features` map (`peerPreview` 2, `providers` 4, `providerManage` 5, `providerAgentTab` 6, `github` 7) is emitted as `FEATURE_REVISION` in `web/src/generated/protocol.ts`; the app gates each feature on it |
 
 Prose specs: [http-api.md](../protocol/v1/http-api.md) (routes, headers,
 cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transport.md),
@@ -213,7 +219,7 @@ unresolved `$ref`. Drift check: `pnpm protocol:check` regenerates and runs
 The phone reads `protocolRevision` and `minProtocolRevision` from
 `GET /api/v1/settings`. It refuses a peer below the minimum, sends new
 request fields only to peers that support them, and frames a peer's preview
-only when that peer is at revision 2 or higher (`FEATURE_REVISION.peerPreview`). It reads a computer's providers and calls the provider routes only at revision 4 or higher (`FEATURE_REVISION.providers`). It shows herdr manage at revision 5 or higher (`providerManage`) and the agent tab, closed worktrees and the terminal menu at revision 6 or higher (`providerAgentTab`).
+only when that peer is at revision 2 or higher (`FEATURE_REVISION.peerPreview`). It reads a computer's providers and calls the provider routes only at revision 4 or higher (`FEATURE_REVISION.providers`). It shows herdr manage at revision 5 or higher (`providerManage`) and the agent tab, closed worktrees and the terminal menu at revision 6 or higher (`providerAgentTab`). It shows a computer's GitHub row, and **From GitHub**, only at revision 7 or higher and when that computer's settings carry `github` (`githubShown`).
 
 ## 5. Data
 
@@ -232,7 +238,8 @@ fresh). `schema_migrations` keeps the file's name and SHA-256 to detect this.
 | Web push | `push_subscriptions`, `push_vapid_key` |
 | Multi-computer | `computers` (with `node_id`: home pins each peer's node) |
 
-Only credential hashes are stored.
+Only credential hashes are stored, with one exception outside the database:
+the GitHub token pair (below).
 Terminal content, raw output, controller leases and process handles are never
 stored.
 
@@ -243,6 +250,12 @@ stored.
 | macOS | `~/Library/Application Support/Phone Terminal` | `~/Library/Caches/Phone Terminal/runtime` | `<data>/logs` |
 | Linux | `$XDG_DATA_HOME/phone-terminal` (`~/.local/share`) | `/run/user/<uid>/phone-terminal`, else `$XDG_RUNTIME_DIR/phone-terminal`, else `<data>/runtime` | `$XDG_STATE_HOME/phone-terminal/logs` |
 | Windows | `%LOCALAPPDATA%\Phone Terminal` | `%LOCALAPPDATA%\Phone Terminal\runtime` (IPC is a named pipe with a current-user ACL) | `<data>\logs` |
+
+`<data>/github.json` (mode 0600, written atomically, zeroed then removed on
+Disconnect) holds this computer's GitHub login: login, account ID, access
+token and refresh token with their expiries. It is a file and not a table
+so that the schema stays the same (a schema change refuses every existing
+database). `pterm uninstall --delete-data` removes it with the data folder.
 
 Dev profile: same layout with the development directory name. Source:
 `internal/platform/paths.go`. The Unix IPC socket is `<runtime>/broker.sock`.
@@ -262,12 +275,14 @@ same OS user is out of scope. Nothing runs as root or SYSTEM.
 | Preview | Separate origin (8443) per computer. Termivoa cookies are never forwarded to or set by a dev server. Admission order on the preview listener: Host; then the selection (`/__termivoa/select`) needs no `Origin` and exactly one `Referer` of this computer's own app origin or of a bound app origin (a bound one is forwarded to the broker, which checks it against the credential); every other path needs rule L1 (`Origin` equal to the preview origin, or no `Origin` plus `Sec-Fetch-Site: same-origin`); then the cookie and the broker (failed attempts are not counted: no client can lock out a paired phone). The selection answers a `200` page that moves the frame to `/`, not a redirect. The broker runs the Tailscale trust check for a bound device on every preview check; open sockets are rechecked every 5 s. The app document's CSP holds its own preview origin and the `:8443` origin of each confirmed computer (never pending, never `wss:`) in `frame-src` and `connect-src`. The app probes a preview origin before it frames it, and marks a peer's frame with the computer's label and **untrusted page**: a peer chooses the page in its frame ([peer-preview.md](peer-preview.md), section 7). |
 | Controller lease | One controller per session. Acquire revokes the old lease, raises the epoch and makes a new 32-byte secret. Input carries generation, lease and a rising sequence; the broker rechecks auth and lease before acceptance. |
 | Input | Bounded `key`, `text`, `paste`, `mouse`, `answer` messages. Reconnect starts as observer. Lost acks show "uncertain delivery"; nothing is resent. |
+| GitHub | A second outbound client (`github.com`, `api.github.com`), used after **Connect**. The token pair never leaves the broker except the access token to `pterm github-credential` (same-user peer check of the admin channel). The phone sends only actions and `owner/name`; the setup route registers one project root, `~/<name>`, that the broker cloned or checked. The clone runs with a fixed environment (no token in it) and config: https to github.com only, no hooks, templates, submodules or LFS download, `transfer.fsckObjects`; it never deletes or overwrites a folder ([github-integration.md](github-integration.md), ADR 0010) |
 
 Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 [ADR 0003](decisions/0003-private-tailscale-networking.md),
 [ADR 0005](decisions/0005-multi-computer.md),
 [ADR 0006](decisions/0006-peer-preview.md),
-[ADR 0007](decisions/0007-found-on-network.md). Pairing design:
+[ADR 0007](decisions/0007-found-on-network.md),
+[ADR 0010](decisions/0010-github-integration.md). Pairing design:
 [p4-authentication-design.md](p4-authentication-design.md).
 
 ## 7. Features
@@ -298,6 +313,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Needs you inbox | A **Needs you** tab in Sessions (after **All**, with a count, only while something waits) lists what waits for an answer on every computer: sessions in `waiting` and herdr items in `blocked`, the longest wait first, then **Finished** ("Your turn" sessions, herdr `done` not opened here). A tap opens the item and starts a queue: **Next · 2 left ›** in Live goes to the next waiting item, **Inbox ›** on the last. A notification tap starts the queue too (the service worker's one-time tap record; never the address). Navigation only: no input, no control, no new request, no protocol or host change | — | `web/src/screens/Inbox.tsx`, `web/src/screens/Sessions.tsx` (`ComputerChips`), `web/src/screens/App.tsx` (`queueNext`, `queueOnArrival`, `queueScreen`), `web/src/screens/Live.tsx`, `web/src/screens/ProviderScreen.tsx`, `web/src/sw.js` (`SESSION_PATH`) | [needs-you-inbox.md](needs-you-inbox.md) |
 | Desktop attach | `pterm attach` in any terminal app; Ctrl+] detaches | `internal/desktop`, `internal/liveclient`, `internal/cli/desktop.go`, `cmd/pterm/desktop.go` | — | — |
 | Packaging | Unsigned macOS app and DMG (launcher runs `pterm launch`), Linux static binaries and installer script, Windows Inno Setup installer | `packaging/macos`, `packaging/linux`, `packaging/windows`, `scripts/install-linux.sh` | — | [install.md](install.md) |
+| GitHub | **Settings → Integrations** has one row for each computer (macOS and Linux, a build with `ClientID`, revision 7): **Connect** runs the device flow of the Termivoa GitHub App in the broker (no client secret; Contents read and write, Metadata read) and keeps one token pair for each computer in `github.json`; **Set up a repository** lists the chosen repositories with `here`/`taken`, and **Set up** runs one clone job for each computer in the broker (not in a session): into a temp folder in the home folder, then an exclusive rename to `~/<name>` and `addProject`. The phone polls the job's state. In the clone's own config, a reset line and `!<pterm> github-credential` make git use Termivoa's login for that one repository (never stored by git). **Disconnect** revokes both tokens at GitHub and deletes the file. Routes `GET`/`POST /api/v1/github`, `GET /api/v1/github/repos`; protocol revision 7; no database change | `internal/github`, `internal/broker/github.go`, `cmd/pterm/github.go`, `scripts/fakegithub` | `web/src/screens/GitHub.tsx`, `web/src/screens/Settings.tsx`, `web/src/screens/ProviderManage.tsx` (**From GitHub**), `web/src/screens/Sessions.tsx` | [github-integration.md](github-integration.md), ADR 0010 |
 | Docs site | Astro Starlight site with `llms.txt` and per-page Markdown | `site/` | — | AGENTS.md rules 22–23 |
 
 ## 8. Build and checks
@@ -309,8 +325,8 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | `.github/workflows/ci.yml` | protocol-generation, go-quality, go-race, web-quality, macOS and Windows integration, Linux release smoke |
 | `.github/workflows/packaging.yml` | Unsigned macOS, Linux and Windows artifacts |
 | `scripts/soak.sh` | Soak probes (build tag `soak`) |
-| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443`, Found on your network and herdr with the fake herdr, checks `H-*`). The harness builds `pterm` with `-tags webdist,e2e` |
-| Build tag `e2e` | Test builds only. `internal/broker/peerdial_e2e.go` replaces the offer dial (`dialHome`) with a `CONNECT` through the harness front when `PTERM_E2E_FRONT` is set, checking the certificate by `PTERM_E2E_SPKI` in place of the pinned-IP guard; `cmd/pterm/lifecycle_e2e.go` makes `pterm setup` check the gateway in `PTERM_E2E_GATEWAY`. Production builds do not compile either file; a unit test and a harness check confirm that a production binary does not contain `PTERM_E2E` |
+| `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443`, Found on your network, herdr with the fake herdr, checks `H-*`, and GitHub with `scripts/fakegithub`, `scripts/e2e-multicomputer/github.mjs`). The harness builds `pterm` with `-tags webdist,e2e` |
+| Build tag `e2e` | Test builds only. `internal/broker/peerdial_e2e.go` replaces the offer dial (`dialHome`) with a `CONNECT` through the harness front when `PTERM_E2E_FRONT` is set, checking the certificate by `PTERM_E2E_SPKI` in place of the pinned-IP guard; `cmd/pterm/lifecycle_e2e.go` makes `pterm setup` check the gateway in `PTERM_E2E_GATEWAY`; `internal/github/github_e2e.go` points the GitHub hosts at the fake in `PTERM_E2E_GITHUB` (and sets the client ID and slug from `PTERM_E2E_GITHUB_CLIENT`/`_APP`), and `cmd/pterm/github_e2e.go` lets the helper answer for that host. Production builds do not compile these files; a unit test and a harness check confirm that a production binary does not contain `PTERM_E2E` |
 | `scripts/docs-screenshots` | Demo-only screenshots for the docs site |
 
 ## 9. Key invariants
@@ -344,6 +360,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | [0007](decisions/0007-found-on-network.md) | Found on your network: a waiting new computer pushes its own bound grant to the home it names; the app adds it with **Add** |
 | [0008](decisions/0008-herdr-provider.md) | herdr on your phone: a read-only provider seam, in-memory provider sessions that attach the real herdr client, no database change |
 | [0009](decisions/0009-provider-manage.md) | Manage a provider from the phone: one manage route, never force, a close ends one workspace, the broker downloads nothing |
+| [0010](decisions/0010-github-integration.md) | GitHub login in the broker (device flow, one token pair for each computer), and a phone route that clones a repository and registers one project root |
 
 Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [live-folder.md](live-folder.md), [notifications.md](notifications.md),

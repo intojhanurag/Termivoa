@@ -1,13 +1,14 @@
+import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { HTTPGitHubRepo, HTTPGitHubResponse, HTTPGitHubSetup } from '../generated/protocol';
 import {
-  BIG_KB, clock, ConnectBody, connectProblem, copyCode, DEVICE_URL, filterRepos, GitHubRowView, githubInfo, githubSources, installUrl, isBig,
-  pushedText, RepoList, repoMeta, setupProblem, SetupBody, sizeText, type ReposStatus,
+  BIG_KB, clock, ConnectBody, connectProblem, copyCode, DEVICE_URL, filterRepos, GitHubRowView, githubInfo, githubSources, INSTALL_GIT, installUrl, isBig,
+  nextMode, pushedText, RepoList, repoMeta, setupProblem, SetupBody, sizeText, timeLeft, unreadableText, type GitHubSource, type ReposStatus,
 } from './GitHub';
 import { IntegrationsSection } from './Settings';
 import { WorkspaceList } from './ProviderManage';
-import { mac, okEntry, ready, settingsWith, vps } from './providerFixtures';
+import { info, mac, okEntry, ready, settingsWith, vps } from './providerFixtures';
 
 const noop = () => undefined;
 const NOW = Date.UTC(2026, 9, 7, 12, 0, 0);
@@ -133,9 +134,10 @@ describe('the Settings row', () => {
     expect(row({ state: 'notConnected', note: { kind: 'disconnected' } })).toContain('GitHub is disconnected on mac.');
     expect(row({ state: 'notConnected', note: { kind: 'disconnected' } })).not.toContain('Also remove Termivoa on GitHub.');
     expect(row({ state: 'notConnected', note: { kind: 'disconnected', revokeFailed: true } })).toContain('>Also remove Termivoa on GitHub.</a>');
-    const failed = row({ note: { kind: 'error', text: 'Connection unavailable', revoke: true } });
+    const failed = row({ note: { kind: 'error', text: 'Connection unavailable' } });
     expect(failed).toContain('Connection unavailable');
-    expect(failed).toContain('>Also remove Termivoa on GitHub.</a>');
+    expect(failed).not.toContain('Also remove');
+    expect(row({ state: 'notConnected', note: { kind: 'disconnected', revokeFailed: true } })).toContain('>Also remove Termivoa on GitHub.</a>');
   });
 
   it('Integrations shows GitHub rows also on a computer with no herdr', () => {
@@ -196,16 +198,16 @@ describe('the Connect sheet', () => {
     expect(body(answer({ problem: 'denied' }))).toContain('Try again');
     expect(body(answer({ problem: 'gitHubDown' }))).toContain('vps cannot reach GitHub.');
     expect(body(answer({ problem: 'gitHubDown' }))).toContain('Retry');
-    expect(body(answer())).toContain('>Connect</span>');
+    expect(body(answer())).toContain('>Connect</button>');
     expect(body(answer({ state: 'noGit' }))).toContain('git is not on vps. GitHub needs it.');
   });
 });
 
 describe('the repository list', () => {
   const list = (repos: ReposStatus, query = '') => renderToStaticMarkup(
-    <RepoList label="mac" repos={repos} query={query} now={NOW} app="termivoa" busy={undefined} onQuery={noop} onSetUp={noop} onRetry={noop} />,
+    <RepoList label="mac" repos={repos} query={query} app="termivoa" busy={undefined} onQuery={noop} onSetUp={noop} onRetry={noop} />,
   );
-  const ok = (repos: HTTPGitHubRepo[], truncated?: boolean): ReposStatus => ({ kind: 'ok', body: { repos, ...(truncated === undefined ? {} : { truncated }) } });
+  const ok = (repos: HTTPGitHubRepo[], truncated?: boolean): ReposStatus => ({ kind: 'ok', at: NOW, body: { repos, ...(truncated === undefined ? {} : { truncated }) } });
 
   it('loading, error and empty', () => {
     expect(list({ kind: 'loading' })).toContain('Reading your repositories…');
@@ -215,6 +217,7 @@ describe('the repository list', () => {
     const empty = list(ok([]));
     expect(empty).toContain('Termivoa sees no repository yet.');
     expect(empty).toContain('>Choose on GitHub</a>');
+    expect(empty).toContain('>Check again</button>');
   });
 
   it('rows: on mac, name taken, size in amber, Set up', () => {
@@ -294,5 +297,102 @@ describe('From GitHub in New workspace', () => {
     expect(list({ protocolRevision: 7, github: { state: 'ready' } })).toContain('>From GitHub</button>');
     expect(list({ protocolRevision: 7 })).not.toContain('From GitHub');
     expect(list({ protocolRevision: 6, github: { state: 'ready' } })).not.toContain('From GitHub');
+  });
+});
+
+/** Every element in a tree that a component returned, without rendering it. */
+function elements(node: ReactNode): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(node)) return node.flatMap(elements);
+  if (!isValidElement<Record<string, unknown>>(node)) return [];
+  return [node, ...elements(node.props.children as ReactNode)];
+}
+
+describe('review fixes', () => {
+  const setupOf = (extra: Partial<HTTPGitHubSetup>): HTTPGitHubSetup => ({ repo: 'octo-demo/pdf-editor', phase: 'cloning', ...extra });
+  const ready7 = (setup?: HTTPGitHubSetup) => answer({ state: 'ready', login: 'octo-demo', ...(setup === undefined ? {} : { setup }) });
+
+  it('the sheet steps: code, step 2, list', () => {
+    const code = answer({ state: 'connecting', connect: { userCode: 'WDJB-MJHT', expiresAt: NOW } });
+    expect(nextMode('connect', { kind: 'answer', state: code }, 'vps')).toEqual({ mode: 'connect' });
+    expect(nextMode('connect', { kind: 'answer', state: answer({ state: 'needsInstall' }) }, 'vps')).toEqual({ mode: 'connect' });
+    expect(nextMode('connect', { kind: 'answer', state: ready7() }, 'vps')).toEqual({ mode: 'list', changed: true });
+    expect(nextMode('list', { kind: 'answer', state: answer() }, 'vps')).toEqual({ mode: 'connect' });
+  });
+
+  it('on open only a running clone covers the list; an old result or notFound does not', () => {
+    expect(nextMode('list', { kind: 'opened', state: ready7(setupOf({})) }, 'mac')).toEqual({ mode: 'setup' });
+    expect(nextMode('list', { kind: 'opened', state: ready7(setupOf({ phase: 'finished' })) }, 'mac')).toEqual({ mode: 'list' });
+    expect(nextMode('list', { kind: 'opened', state: ready7(setupOf({ phase: 'failed', problem: 'notFound' })) }, 'mac')).toEqual({ mode: 'list' });
+    expect(nextMode('connect', { kind: 'opened', state: ready7() }, 'mac')).toEqual({ mode: 'list', changed: true });
+  });
+
+  it('cloning to finished stays; notFound goes to the list, with its line, and reads it again', () => {
+    expect(nextMode('list', { kind: 'started', state: ready7(setupOf({})) }, 'mac')).toEqual({ mode: 'setup' });
+    expect(nextMode('setup', { kind: 'answer', state: ready7(setupOf({ phase: 'finished' })) }, 'mac')).toEqual({ mode: 'setup' });
+    expect(nextMode('setup', { kind: 'answer', state: ready7(setupOf({ phase: 'failed', problem: 'notFound' })) }, 'mac'))
+      .toEqual({ mode: 'list', reload: true, note: 'That repository is not on GitHub under this name now.' });
+  });
+
+  it('back: a clone closes, a finished one of this sheet closes, a failed one goes to the list with its line', () => {
+    const back = (setup: HTTPGitHubSetup, startedHere: boolean) => nextMode('setup', { kind: 'back', state: ready7(setup), startedHere }, 'mac');
+    expect(back(setupOf({}), false)).toEqual({ mode: 'setup', close: true });
+    expect(back(setupOf({ phase: 'finished' }), true)).toEqual({ mode: 'setup', close: true });
+    expect(back(setupOf({ phase: 'finished' }), false)).toEqual({ mode: 'list', reload: true });
+    expect(back(setupOf({ phase: 'failed', problem: 'stopped' }), true)).toEqual({ mode: 'list', reload: true, note: 'The clone stopped. Nothing was left on mac.' });
+  });
+
+  it('the Connect link itself copies the code when tapped', () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const tree = ConnectBody({ label: 'vps', state: answer({ state: 'connecting', connect: { userCode: 'WDJB-MJHT', expiresAt: NOW } }), now: NOW, busy: false, onConnect: noop });
+    const link = elements(tree).find((element) => element.props.href === DEVICE_URL);
+    expect(link).toBeDefined();
+    (link?.props.onClick as () => void)();
+    expect(writeText).toHaveBeenCalledWith('WDJB-MJHT');
+    vi.unstubAllGlobals();
+  });
+
+  it('says Getting a code while the Connect is asked for, and clamps the time left', () => {
+    expect(renderToStaticMarkup(<ConnectBody label="vps" state={undefined} now={NOW} busy onConnect={noop} />)).toContain('Getting a code…');
+    expect(timeLeft(NOW + 60 * 60_000, NOW)).toBe('15:00 left');
+    expect(timeLeft(NOW - 1000, NOW)).toBe('0:00 left');
+    expect(unreadableText('mac')).toBe('mac answered something this app cannot read. Update Termivoa on mac.');
+  });
+
+  it('no "0 MB so far"', () => {
+    const page = renderToStaticMarkup(<SetupBody label="mac" setup={setupOf({ bytes: 0 })} now={NOW} busy={undefined} onStop={noop} onRetry={noop} onConnect={noop} onNewSession={noop} onWorkspace={noop} />);
+    expect(page).not.toContain('MB so far');
+  });
+
+  it('the row: Install git, a running set-up, a ready one', () => {
+    const row = (extra: Partial<Parameters<typeof GitHubRowView>[0]>) => renderToStaticMarkup(
+      <GitHubRowView label="mac" state="ready" onConnect={noop} onContinue={noop} onSetUp={noop} onDisconnect={noop} onConfirm={noop} onCancel={noop} onCheck={noop} onRetry={noop} onShow={noop} onNewSession={noop} {...extra} />,
+    );
+    const git = row({ state: 'noGit', onInstall: noop });
+    expect(git).toContain('Install git');
+    expect(git).toContain('Check again');
+    expect(INSTALL_GIT).toBe('xcode-select --install 2>/dev/null || sudo apt-get install -y git');
+    const cloning = row({ setup: setupOf({}) });
+    expect(cloning).toContain('Setting up <bdi>pdf-editor</bdi>…');
+    expect(cloning).toContain('>Show</button>');
+    const done = row({ setup: setupOf({ phase: 'finished', projectId: '00000000-0000-4000-8000-000000000001' }) });
+    expect(done).toContain('<bdi>pdf-editor</bdi> is ready.');
+    expect(done).toContain('New session');
+    expect(row({ setup: setupOf({ phase: 'failed', problem: 'stopped' }) })).not.toContain('pdf-editor');
+  });
+
+  it('a computer whose sheet is open keeps its row through a failed read', () => {
+    const kept = new Map<string, GitHubSource>();
+    const good = okEntry(mac, { protocolRevision: 7, github: { state: 'ready' } });
+    expect(githubSources([good], kept)).toHaveLength(1);
+    const failed = { computer: mac, status: { kind: 'unreachable' } } as unknown as Parameters<typeof githubSources>[0][number];
+    expect(githubSources([failed], kept, new Set([mac.origin])).map((one) => one.computer.label)).toEqual(['mac']);
+    expect(githubSources([failed], kept)).toEqual([]);
+  });
+
+  it('Integrations with herdr and no GitHub shows only the herdr row', () => {
+    const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { protocolRevision: 7, providers: [info()] })]} onFailure={() => ''} />);
+    expect(page).toContain('<bdi>herdr</bdi> on mac');
+    expect(page).not.toContain('GitHub on');
   });
 });

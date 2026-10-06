@@ -69,6 +69,10 @@ func (service *Service) Repos(ctx context.Context) (protocol.HTTPGitHubReposResp
 		service.mu.Unlock()
 		return copyRepos(cache.result), nil
 	}
+	if service.closed {
+		service.mu.Unlock()
+		return empty, ErrGitHubDown
+	}
 	run := service.reposRun
 	if run == nil {
 		run = &reposRun{done: make(chan struct{})}
@@ -352,19 +356,25 @@ func (service *Service) originOf(ctx context.Context, dir string) (string, bool)
 	return entry.origin, entry.ok
 }
 
-var scpOrigin = regexp.MustCompile(`^[A-Za-z0-9._-]+@([^:/]+):(.+)$`)
+var scpOrigin = regexp.MustCompile(`^(?:[A-Za-z0-9._-]+@)?([^@:/]+):(.+)$`)
 
 // parseOrigin reads owner and name of a GitHub remote URL: https (with or
-// without user@), git@host:o/n and ssh://git@host/o/n, ".git" optional.
-// The host is the git host of this build.
+// without user@, www., the default port), [user@]host:o/n and
+// ssh://[user@]host[:port]/o/n, with an optional ".git" in any case. The
+// host is the git host of this build.
 func (service *Service) parseOrigin(remote string) (owner, name string, ok bool) {
 	base, err := url.Parse(service.opts.git)
 	if err != nil {
 		return "", "", false
 	}
+	sameHost := func(host string) bool {
+		host = strings.ToLower(host)
+		want := strings.ToLower(base.Hostname())
+		return host == want || host == "www."+want
+	}
 	var path string
 	if match := scpOrigin.FindStringSubmatch(remote); match != nil && !strings.Contains(remote, "://") {
-		if !strings.EqualFold(match[1], base.Hostname()) {
+		if !sameHost(match[1]) {
 			return "", "", false
 		}
 		path = match[2]
@@ -375,11 +385,11 @@ func (service *Service) parseOrigin(remote string) (owner, name string, ok bool)
 		}
 		switch parsed.Scheme {
 		case "ssh":
-			if !strings.EqualFold(parsed.Hostname(), base.Hostname()) {
+			if !sameHost(parsed.Hostname()) {
 				return "", "", false
 			}
 		case base.Scheme:
-			if !strings.EqualFold(parsed.Host, base.Host) {
+			if !sameHost(parsed.Hostname()) || effectivePort(parsed) != effectivePort(base) {
 				return "", "", false
 			}
 		default:
@@ -387,10 +397,24 @@ func (service *Service) parseOrigin(remote string) (owner, name string, ok bool)
 		}
 		path = parsed.Path
 	}
-	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+	path = strings.Trim(path, "/")
+	if strings.HasSuffix(strings.ToLower(path), ".git") {
+		path = path[:len(path)-len(".git")]
+	}
 	owner, name, found := strings.Cut(path, "/")
 	if !found || owner == "" || name == "" || strings.Contains(name, "/") {
 		return "", "", false
 	}
 	return owner, name, true
+}
+
+// effectivePort is the URL's port, or its scheme's default.
+func effectivePort(target *url.URL) string {
+	if port := target.Port(); port != "" {
+		return port
+	}
+	if target.Scheme == "http" {
+		return "80"
+	}
+	return "443"
 }

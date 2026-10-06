@@ -103,8 +103,11 @@ type Service struct {
 	// tokenMu serializes every token change (refresh, login, disconnect).
 	// Order: tokenMu before mu.
 	tokenMu sync.Mutex
+	// generation counts Disconnects (guarded by tokenMu).
+	generation uint64
 
 	mu             sync.Mutex
+	closed         bool // Close ran: no new background work
 	account        *account
 	problem        *protocol.HTTPGitHubProblem
 	connect        *connectRun
@@ -230,7 +233,7 @@ func (service *Service) State(device string) protocol.HTTPGitHubResponse {
 	default:
 		response.State = protocol.HTTPGitHubStateReady
 	}
-	if service.account != nil && (!service.installKnown || service.needsInstall) &&
+	if !service.closed && service.account != nil && (!service.installKnown || service.needsInstall) &&
 		!service.installRunning && service.now().Sub(service.installChecked) >= installRecheck {
 		service.installRunning, service.installChecked = true, service.now()
 		service.wg.Add(1)
@@ -246,11 +249,15 @@ func (service *Service) State(device string) protocol.HTTPGitHubResponse {
 }
 
 // Close stops the Connect poll, the list run and the set-up job and waits
-// for them. A clone that Close stops leaves no temp folder.
+// for them. A clone that Close stops leaves no temp folder. After Close,
+// Connect, Repos and Setup answer ErrGitHubDown.
 func (service *Service) Close() {
 	if service == nil {
 		return
 	}
+	service.mu.Lock()
+	service.closed = true
+	service.mu.Unlock()
 	service.cancel()
 	service.wg.Wait()
 }

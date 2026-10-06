@@ -1098,7 +1098,10 @@ a.gh-inline.strong { font-size: 15px; }
 .gh-repo-meta { color: var(--muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .gh-repo.taken .gh-repo-name { color: var(--muted); }
 .gh-big { color: var(--amber); }
-.gh-slot { display: flex; flex: 0 0 92px; justify-content: flex-end; }
+.gh-slot { display: flex; flex: 0 0 auto; justify-content: flex-end; min-width: 92px; max-width: 45%; }
+button.gh-tag { max-width: 100%; min-width: 0; }
+.gh-tag-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gh-row-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0; color: var(--soft); font-size: 14px; line-height: 20px; }
 .gh-taken { color: var(--muted); font-size: 13px; white-space: nowrap; }
 button.gh-tag { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; white-space: nowrap; }
 .gh-foot { display: flex; flex-direction: column; gap: 4px; }

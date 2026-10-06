@@ -8,7 +8,7 @@ import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPu
 import { storedComputers, type Computer } from '../computers';
 import { checkAgain, hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
-import { GitHubRow, githubSources, readyProvider } from './GitHub';
+import { GitHubRow, githubSources, readyProvider, type GitHubSource } from './GitHub';
 import type { ProviderTap } from './Herdr';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 import { NewSessionHelp } from './NewSession';
@@ -408,7 +408,10 @@ export function IntegrationsSection({ entries, providers = [], push, onFailure, 
   readonly onProviderOpened?: ((tap: ProviderTap, key: string) => void) | undefined;
 }) {
   const sources = providerSources(entries);
-  const github = githubSources(entries);
+  // A computer whose GitHub sheet is open keeps its row (and the sheet) through a failed settings read.
+  const keptGitHub = useRef(new Map<string, GitHubSource>());
+  const [openGitHub, setOpenGitHub] = useState<ReadonlySet<string>>(new Set());
+  const github = githubSources(entries, keptGitHub.current, openGitHub);
   const settingsOf = (origin: string) => {
     const status = entries.find((entry) => entry.computer.origin === origin)?.status;
     return status?.kind === 'ok' ? status.settings : undefined;
@@ -445,9 +448,16 @@ export function IntegrationsSection({ entries, providers = [], push, onFailure, 
               onFailure,
               onChanged: () => onCheck?.(source.computer.origin) ?? Promise.resolve(),
               onOpenSession,
+              onTypeIn: onInstall,
               onProviderOpened,
               onProviderReload,
             }}
+            onSheet={(open) => setOpenGitHub((current) => {
+              const next = new Set(current);
+              if (open) next.add(source.computer.origin);
+              else next.delete(source.computer.origin);
+              return next;
+            })}
           />
         ))}
       </ul>

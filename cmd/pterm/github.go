@@ -38,10 +38,10 @@ func githubConfig() *github.Config {
 	if runtime.GOOS == "windows" || err != nil || !filepath.IsAbs(home) {
 		return nil
 	}
+	// Not resolved through symlinks: each clone's helper line keeps this path,
+	// and the path that started the broker (~/.local/bin/pterm) outlives an
+	// update; a resolved versioned path might not.
 	pterm, err := os.Executable()
-	if err == nil {
-		pterm, err = filepath.EvalSymlinks(pterm)
-	}
 	if err != nil || !filepath.IsAbs(pterm) {
 		return nil
 	}
@@ -169,8 +169,11 @@ func runGitHubCredential(
 		fmt.Fprintln(stdout, "quit=1")
 		return 1
 	}
-	if _, err := fmt.Fprintf(stdout, "username=%s\npassword=%s\npassword_expiry_utc=%d\n",
-		answer.Username, answer.Password, answer.ExpiresAt); err != nil {
+	text := "username=" + answer.Username + "\npassword=" + answer.Password + "\n"
+	if answer.ExpiresAt > 0 {
+		text += fmt.Sprintf("password_expiry_utc=%d\n", answer.ExpiresAt)
+	}
+	if _, err := io.WriteString(stdout, text); err != nil {
 		return 1
 	}
 	return 0
@@ -193,19 +196,13 @@ func githubCredentialFlags(args []string) (rest []string, dev bool, runtimeDir s
 	return args, dev, runtimeDir
 }
 
-// brokerGitHubCredential asks the broker in PTERM_RUNTIME_DIR (set by the
-// broker for its clone), else the one the helper line names (--dev,
-// --runtime-dir), else the production broker.
+// brokerGitHubCredential asks the broker that the helper line names (--dev,
+// --runtime-dir), else the production broker, after the same runtime folder
+// checks as the other admin commands.
 func brokerGitHubCredential(ctx context.Context, dev bool, flagRuntimeDir string) (protocol.AdminRPCGitHubCredentialPayload, error) {
-	runtimeDir := os.Getenv("PTERM_RUNTIME_DIR")
-	if runtimeDir == "" {
-		var err error
-		if runtimeDir, err = adminRuntimeDir(dev, flagRuntimeDir); err != nil {
-			return protocol.AdminRPCGitHubCredentialPayload{}, err
-		}
-	}
-	if !filepath.IsAbs(runtimeDir) {
-		return protocol.AdminRPCGitHubCredentialPayload{}, errors.New("runtime directory must be absolute")
+	runtimeDir, err := adminRuntimeDir(dev, flagRuntimeDir)
+	if err != nil {
+		return protocol.AdminRPCGitHubCredentialPayload{}, err
 	}
 	// The broker may refresh the token at GitHub (10 s per request).
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

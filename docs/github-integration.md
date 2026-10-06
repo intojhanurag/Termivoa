@@ -94,7 +94,7 @@ The client ID is public: anyone can copy it and show a login page that says "Ter
 - One row, one writer. Every use goes through one function that holds a lock, refreshes when less than 5 minutes are left, and **commits the new pair to the database before it returns it**. The old pair is dead from GitHub's answer on, so there is nothing to keep. The pair is lost when the broker stops between GitHub's answer and the commit, or when the answer does not arrive in the 10 s limit after GitHub already rotated; the broker then tries one time more with the same refresh token (a lab item: does GitHub accept it?), and after that the row says **Connect** again.
 - An expired refresh token (6 months) → the pair is deleted; "GitHub is not connected on mac now."
 - A `bad_refresh_token` that the broker does not expect (the token is not old) means that something else used it. It gets its own line: "Another program used this login. Revoke Termivoa on GitHub, then connect again." with the link. Connecting again does **not** cut off a thief; only the revoke on github.com does.
-- **Disconnect** sends both tokens to `POST https://api.github.com/credentials/revoke` (best effort, 10 s), then deletes the row. The table is made with SQLite `secure_delete`, so a deleted token does not stay in free pages. When the revoke call fails, the sheet says so and gives the link to **Settings → Applications → Authorized GitHub Apps**.
+- **Disconnect** sends both tokens to `POST https://api.github.com/credentials/revoke` (best effort, 10 s), then deletes the stored pair (as built: the file `github.json`, overwritten with zeros, then removed; section 17). When the revoke call fails, the sheet says so and gives the link to **Settings → Applications → Authorized GitHub Apps**.
 - The tokens are a secret type that prints as `[redacted]` (as `internal/auth/secret.go` does), not a formatter rule. `pterm doctor` prints only "GitHub: connected as <login>".
 
 ### 6.3 The list
@@ -175,7 +175,7 @@ Problems (fixed words; the phone has the text): `nameTaken`, `noSpace`, `tooMany
 
 `HTTPSettingsResponse` gets `github: { state, login }` so the row needs no second request (no repository count: it would cost GitHub calls on every settings read). Schemas in `protocol/v1`, generated Go and TypeScript, `FEATURE_REVISION.github = 7`. A computer below revision 7 shows "Update Termivoa on pi to use GitHub."
 
-Stored data (rule 26: changed directly, no migration code): one table `github_account` with one row: login, account ID, access token, its expiry, refresh token, its expiry, updated time. **The schema file is checksummed, so every computer needs a fresh database and a new pairing when the first pull request lands** (the owner is told then, and the notes say so).
+Stored data (as built: a 0600 file `github.json`, not a table, so no computer needs a fresh database; section 17): login, account ID, access token, its expiry, refresh token, its expiry, updated time. No database change.
 
 ## 8. Existing folders ("drop" = skip)
 
@@ -343,3 +343,27 @@ Held under attack: the SQLite storage (the same exposure as the VAPID key and a 
 | F10 | The two steps are needed (the one-step install flow needs the client secret); a `gh` computer entering one code is fine; `DELETE` routes work with a `{}` body; progress needs `--progress` and only the "Receiving objects" phase has a useful percent | Kept; section 7; 6.5 |
 
 One incident in this review: the feasibility reviewer ran `git credential fill` on the owner's Mac to learn the helper order, and the Keychain helper printed the owner's real `gh` token into that reviewer's session log. It was not used and is not in this repository. The owner was told at once and advised to make a new token. Reviewer briefs now forbid every command that can read a credential; the same test belongs in a temp `HOME` with a fake helper (section 12).
+
+## 17. Build notes (2026-10-07)
+
+What the build does differently from sections 1–14, and why. Each line was checked against the code.
+
+| Design | Build | Why |
+| --- | --- | --- |
+| One table `github_account` in the database (section 7) | One file `github.json` (mode 0600) in the broker's data folder, written with a 0600 temp file and a rename; deleted by writing zeros over it, then removing it. A damaged file reads as "not connected" | The schema file is checksummed: a new table would have forced every computer to delete its database and pair the phone again. The file has the same exposure as the database (same user, same folder) |
+| `secure_delete` on the table (6.2) | Zeros over the file before the remove | No table. The ceiling is the same: a copy-on-write file system or a backup can keep old blocks |
+| Six routes (section 7) | Three: `GET /api/v1/github`, `POST /api/v1/github` with `action` (connect, cancel, disconnect, setup, stop), `GET /api/v1/github/repos` | One action route is the pattern of herdr manage; fewer routes, the same limits for each action |
+| State `unavailable` | No GitHub field at all in the settings when the build has no app or the computer is not macOS or Linux; the phone shows no row | The phone cannot tell "no app" from "old Termivoa" anyway |
+| Problem word `githubUnreachable` | `gitHubDown`; connect problem `codeExpired`; set-up phase `finished` | The generated Go names of `expired`, `unreachable` and `done` clashed with existing protocol names |
+| No field for a failed revoke | `revokeFailed` in the disconnect answer; the row then links to GitHub's settings page | Design 6.2 asks the sheet to say when the revoke failed |
+| `GIT_ASKPASS` (already removed by the review) | The helper value is `!'<pterm>' github-credential`; a development broker writes `--dev --runtime-dir '<dir>'` after it. During the clone the helper also gets `PTERM_RUNTIME_DIR` | A later `git pull` in a terminal must reach the broker that cloned the folder; a development broker has its own runtime folder. A path with a single quote turns the feature off |
+| The helper prints a line when not connected | It also answers `quit=1` | Without it git asks "Username for…" in the terminal, because the reset line turned the user's other helpers off for that address |
+| — | macOS uses `/usr/bin/git` only when the developer tools are installed | Otherwise running it opens Apple's install window on the computer |
+| Install git (section 9) | The row offers **Check again** only | The settings answer does not say the computer's operating system, so the app cannot pick the install command |
+| "Update Termivoa on pi to use GitHub." (section 9) | Not shown | A computer below revision 7 looks the same as one with no app |
+| — | `pterm github status`, `pterm github disconnect`, `pterm doctor` line | Section 12 asked for them |
+
+Known limits found while building (in `docs/pending-work.md`):
+
+- A refusal from a computer other than home shows the app's general "That computer could not do this." (existing app behaviour for every peer error), so "GitHub is busy…" shows only for home.
+- An organisation member who is not an owner sees an empty list until an owner approves the app; the sheet offers **Choose on GitHub**.

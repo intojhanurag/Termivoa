@@ -39,7 +39,8 @@ export async function githubSteps(ctx) {
   const card = (name) => app.eval(`(() => { ${LABEL}
     const li = [...document.querySelectorAll('.computer-card')].find((e) => text(e.querySelector('.row-title')) === ${JSON.stringify(`GitHub on ${name}`)});
     if (!li) return null;
-    return { state: text(li.querySelector('.computer-state')).toLowerCase(), text: text(li), buttons: [...li.querySelectorAll('button:not([role=switch])')].filter(seen).map(label) }; })()`);
+    const head = li.querySelector('.computer-head');
+    return { state: (text(head.querySelector('.computer-state')) || text(head.querySelector('.row-meta'))).toLowerCase(), meta: text(head.querySelector('.row-meta')), text: text(head), buttons: [...li.querySelectorAll(':scope > .computer-head button, :scope > .gh-links button, :scope > [role=alertdialog] button')].filter(seen).map(label) }; })()`);
   const cardTap = async (name, button) => {
     const ok = await app.eval(`(() => { ${LABEL}
       const li = [...document.querySelectorAll('.computer-card')].find((e) => text(e.querySelector('.row-title')) === ${JSON.stringify(`GitHub on ${name}`)});
@@ -73,8 +74,8 @@ export async function githubSteps(ctx) {
   };
   const rowOf = async (repo) => (await sheet())?.rows.find((r) => r.text.includes(repo));
   const closeSheets = async () => {
-    for (let i = 0; i < 3 && await sheet(); i += 1) {
-      await sheetTap('Close').catch(() => sheetTap('Cancel')).catch(() => sheetTap('Done')).catch(() => app.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }));
+    for (let i = 0; i < 4 && await app.eval(`document.querySelector('[role=dialog]') !== null`); i += 1) {
+      await sheetTap('Done').catch(() => sheetTap('Close')).catch(() => sheetTap('Later')).catch(() => sheetTap('Cancel')).catch(() => app.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }));
       await sleep(300);
     }
   };
@@ -179,22 +180,22 @@ export async function githubSteps(ctx) {
     await step('G3', 'Authorize with no installation → "Choose" with the install link; one installation → the sheet moves on by itself, the row says CONNECTED with octo-demo', async () => {
       const code = (await state(mac))?.connect?.userCode ?? await shownCode();
       const authorized = await gh(`/_test/authorize?code=${code}`, 'POST');
+      await watchVps('after mac authorized');
       const choose = await until(async () => { const s = await sheet(); return s?.links.some((l) => l.href === INSTALL_URL) && s; }, { what: 'the install link', timeout: 20000 });
       const needs = await state(mac);
       await shot('g3-choose');
       await gh('/_test/install?count=1', 'POST');
       const installed = Date.now();
-      const left = await until(async () => { const s = await sheet(); return !s?.links.some((l) => l.href === INSTALL_URL) && (s ?? { text: '(closed)' }); }, { what: 'the sheet leaves the choose step', timeout: 20000, every: 250 });
+      const left = await until(async () => { const s = await sheet(); return !/step 2 of 2/i.test(s?.text ?? '') && (s ?? { text: '(closed)' }); }, { what: 'the sheet leaves the choose step', timeout: 20000, every: 250 });
       const ms = Date.now() - installed;
       time('install on GitHub → the sheet moves on (no tap)', ms);
       await closeSheets();
       const row = await until(async () => { const c = await card('mac'); return c?.state === 'connected' && c; }, { what: 'CONNECTED', timeout: 10000 });
       await shot('g3-connected');
       const ready = await state(mac);
-      await watchVps('after connect on mac');
-      check('G3', 'needsInstall: the sheet links to https://github.com/apps/termivoa-e2e/installations/new and says Termivoa sees no repository yet; after the install the sheet moves on in under 10 s with no tap; the row reads CONNECTED, octo-demo, Set up a repository and Disconnect',
-        authorized.status === 200 && needs?.state === 'needsInstall' && choose.text.includes('Termivoa sees no repository yet.') && ms < 10000
-          && ready?.state === 'ready' && ready.login === 'octo-demo' && row.text.includes('octo-demo') && row.buttons.includes('Set up a repository') && row.buttons.includes('Disconnect'),
+      check('G3', 'needsInstall: the sheet "Choose repositories" says Signed in as octo-demo and links to https://github.com/apps/termivoa-e2e/installations/new; after the install the sheet moves on in under 10 s with no tap; the row reads CONNECTED, octo-demo, Set up a repository and Disconnect',
+        authorized.status === 200 && needs?.state === 'needsInstall' && choose.text.includes('Choose repositories') && choose.text.includes('Signed in as octo-demo') && ms < 10000
+          && ready?.state === 'ready' && ready.login === 'octo-demo' && row.meta === 'octo-demo' && row.buttons.includes('Set up a repository') && row.buttons.includes('Disconnect'),
         `choose "${choose.text.slice(0, 160)}"; state ${needs?.state} → ${ready?.state} ${ready?.login}; moved on after ${ms} ms to "${left.text.slice(0, 80)}"; row ${JSON.stringify(row)}`);
     });
 
@@ -202,8 +203,13 @@ export async function githubSteps(ctx) {
       await gh('/_test/install?count=2&extra=120', 'POST');
       await integrations();
       await cardTap('mac', 'Set up a repository');
-      const list = await until(async () => { const s = await sheet(); return s?.rows.some((r) => r.text.includes('pdf-editor')) && s; }, { what: 'the repository list', timeout: 20000 });
-      const repos = (await api(tool, `${mac.origin}/api/v1/github/repos`)).json?.repos ?? [];
+      await until(async () => { const s = await sheet(); return s?.rows.some((r) => r.text.includes('pdf-editor')) && s; }, { what: 'the repository list', timeout: 20000 });
+      // The broker caches the list for 60 s (design 6.3), and it read it when the sheet moved on in G3.
+      const repos = await until(async () => { const r = (await api(tool, `${mac.origin}/api/v1/github/repos`)).json?.repos; return r?.length === 125 && r; },
+        { what: '125 repositories after the cache', timeout: 75000, every: 3000 }).catch(async () => (await api(tool, `${mac.origin}/api/v1/github/repos`)).json?.repos ?? []);
+      await closeSheets();
+      await cardTap('mac', 'Set up a repository');
+      const list = await until(async () => { const s = await sheet(); return s?.rows.some((r) => r.text.includes('pdf-editor')) && s; }, { what: 'the repository list again', timeout: 20000 });
       const big = list.rows.find((r) => r.text.includes('game-assets'));
       await shot('g4-list');
       await setInput(app, '[role=dialog] input', 'pdf');
@@ -238,7 +244,7 @@ export async function githubSteps(ctx) {
       made.push('pdf-editor');
       await rowTap('pdf-editor');
       // A confirmation first, when the app asks for one.
-      if ((await sheet())?.buttons.some((b) => b.text === 'Set up' && !b.disabled)) await sheetTap('Set up');
+      if (await app.eval(`document.querySelector('#gh-confirm') !== null`)) await sheetTap('Set up');
       // While it clones: the progress view, and the arguments of the broker's own processes (never others').
       // Their environment cannot be read here: macOS 26 ps prints none with -E or e, also for the user's own processes.
       const fake = (await gh('/_test/tokens')).json.flatMap((p) => [p.access, p.refresh]);
@@ -256,7 +262,9 @@ export async function githubSteps(ctx) {
         const live = (await gh('/_test/tokens')).json.flatMap((p) => [p.access, p.refresh]);
         leaked += [...new Set([...fake, ...live])].filter((t) => ps.includes(t)).length;
         return s?.text.includes('Ready on mac') && s;
-      }, { what: 'Ready on mac', timeout: 90000, every: 300 });
+      }, { what: 'Ready on mac', timeout: 90000, every: 300 }).catch(async (error) => {
+        throw new Error(`${error.message}; sheet "${(await sheet())?.text.slice(0, 300)}"; setup ${JSON.stringify((await state(mac))?.setup)}; git auths ${JSON.stringify((await gitAuths()).slice(authsBefore).map((a) => [a.path, a.n, a.ok]))}`);
+      });
       time('Set up → Ready on mac (git requests delayed 2 s each)', Date.now() - started);
       await gh('/_test/gitdelay?ms=0', 'POST');
       const ready = await sheet();
@@ -300,7 +308,7 @@ export async function githubSteps(ctx) {
       await cardTap('mac', 'Set up a repository');
       await until(() => rowOf('shop-api'), { what: 'the shop-api row', timeout: 20000 });
       await rowTap('shop-api');
-      if ((await sheet())?.buttons.some((b) => b.text === 'Set up' && !b.disabled)) await sheetTap('Set up');
+      if (await app.eval(`document.querySelector('#gh-confirm') !== null`)) await sheetTap('Set up');
       const s = await until(async () => { const x = await sheet(); return x?.text.includes('Already on mac.') && x; }, { what: 'Already on mac.', timeout: 20000 });
       await shot('g8-already');
       const setup = (await state(mac))?.setup;
@@ -360,13 +368,17 @@ export async function githubSteps(ctx) {
           && pull.code !== 0 && pull.stderr.includes(NOT_CONNECTED),
         `row ${JSON.stringify(row)}; broker pairs ${pairs.length}, the last one revoked: access ${revoked.includes(latest?.access)}, refresh ${revoked.includes(latest?.refresh)}; pull exit ${pull.code}, stderr ${JSON.stringify(pull.stderr.trim().replaceAll(env.root, '<root>').slice(0, 300))}`);
       // The same in Live, as a person types it: git must not stop at a "Username for" prompt.
-      await pdfLive().catch(() => undefined);
+      try {
+      await pdfLive();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL2-EXIT=$?"');
       const done = await until(async () => { const t = squash(await terminalText(app)); return (/PULL2-EXIT=\d+/.test(t) || /Username for/.test(t)) && t; }, { what: 'pull ends or prompts', timeout: 30000 }).catch(() => '');
       const prompted = /Username for/.test(done);
       if (prompted) await app.send('Input.insertText', { text: '\x03' }).catch(() => undefined);
       check('G10-live', 'In Live, git pull after Disconnect shows the helper\'s line and ends; it does not stop at a "Username for" prompt',
         !prompted && done.replace(/\s/g, '').includes(NOT_CONNECTED.replace(/\s/g, '')) && /PULL2-EXIT=[1-9]/.test(done), `screen ${JSON.stringify(done.slice(-240))}`);
+      } catch (error) {
+        check('G10-live', 'In Live, git pull after Disconnect shows the helper\'s line and ends', false, error.message.split('\n')[0]);
+      }
     });
 
     await step('G11', 'Connect again: an expired code says "The code ran out." with Get a new code; a denied one says "GitHub did not connect."', async () => {

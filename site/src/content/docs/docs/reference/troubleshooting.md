@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -566,6 +566,86 @@ herdr is too old to open a tab that has no agent. Update herdr.
 ### "herdr on mac did not open this terminal. Another program may hold it, or it just closed."
 
 Someone attached to that terminal directly in herdr, or its pane closed at that moment. Termivoa never takes a terminal over. Close that attach in herdr, then tap **Try again** or open the row again.
+
+## GitHub
+
+:::note[Next beta]
+These entries are not in `v0.1.0-beta.3`. See [Set up a GitHub repository](/docs/guides/github/).
+:::
+
+### There is no GitHub row in Settings → Integrations
+
+Check each cause. `pterm github status` on the computer says "GitHub: not available in this build" when the build has no GitHub.
+
+- Termivoa on that computer is older than the next beta. Update it.
+- The computer runs Windows. GitHub is for macOS and Linux only.
+- The Termivoa build has no GitHub App. Use a release build of the next beta.
+
+### "git is not on mac. GitHub needs it."
+
+Install git 2.31 or later on that computer, for example with Homebrew (`brew install git`) or your Linux package manager. Then tap **Check again** on the row.
+
+### "The code ran out."
+
+You did not enter the code on GitHub within 15 minutes. Tap **Get a new code**, then **Copy code and open GitHub** again.
+
+### "GitHub did not connect."
+
+You cancelled on GitHub's page, or GitHub refused. Tap **Try again**.
+
+### "Termivoa sees no repository yet."
+
+Termivoa can see only the repositories that you chose for it on GitHub. Tap **Choose on GitHub** and pick the repositories. A repository that is still not in the list: tap **Choose repositories on GitHub** under the list.
+
+For a repository of an organization where you are not an owner, GitHub sends a request to the organization's owners. The repository shows after an owner approves it.
+
+### "Another program used this login. Revoke Termivoa on GitHub, then connect again."
+
+Something other than this computer's Termivoa used its GitHub login, for example a copy of the login file. Someone may have the login. Tap **Revoke Termivoa on GitHub** and revoke **Termivoa** under **Authorized GitHub Apps**, then tap **Connect** on each computer. Connecting again without the revoke does not stop the other program. See [What does GitHub change?](/docs/reference/security/#what-does-github-change)
+
+### "GitHub is not connected on mac now."
+
+The login ended: you revoked Termivoa on GitHub, or the computer did not use it for 6 months. Tap **Connect**.
+
+### "mac cannot reach GitHub."
+
+The computer has no internet, or GitHub does not answer. Wait, then tap **Retry**.
+
+### A repository says "name taken"
+
+A folder of that name is already in the home folder of that computer (`~/<name>`), and it is not this repository. Termivoa never deletes or overwrites it. Rename or move that folder on the computer, then open the list again. Two repositories with the same name from two owners cannot both be set up on one computer.
+
+### "mac has too little free space for this repository."
+
+The computer needs free space of 3 times the repository's size, plus 1 GB. Free some space, then tap **Set up** again.
+
+### "The clone stopped. Nothing was left on mac."
+
+The clone failed, or you tapped **Stop**. Termivoa removed the partial clone. Tap **Try again**. If it stops again, check the computer's internet.
+
+### "The clone took more than 30 minutes and stopped."
+
+A clone can take at most 30 minutes. For a very large repository, clone it in a session on the computer, then add it with `pterm project add`.
+
+### "That repository is not on GitHub under this name now."
+
+The repository was renamed, moved or deleted after the list was read. The list reloads. Pick the new name.
+
+### "Large files were not downloaded. Run `git lfs pull` in a session."
+
+The repository uses Git LFS, and Termivoa does not download large files. Open a session in the repository and run `git lfs pull`. This needs Git LFS on the computer.
+
+### A push that changes a workflow file is refused
+
+GitHub refuses a push from Termivoa's login when it changes a file in `.github/workflows`. Termivoa's login does not have that permission. Push that change from a computer or a folder that uses your own git login.
+
+### git fails with "Termivoa is not connected to GitHub on this computer."
+
+You disconnected GitHub on that computer, and the folder was cloned by Termivoa, so git uses Termivoa's login there. Connect again in **Settings → Integrations**. Or, to use your own git login in that folder, remove Termivoa's lines from the folder's git settings:
+
+```sh
+git config --unset-all credential.https://github.com/<owner>/<name>.git.helper
+```
 
 ## Where are the logs?
 

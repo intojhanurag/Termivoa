@@ -138,10 +138,21 @@ func saveAccount(dataDir string, acc *account) error {
 }
 
 // deleteAccount overwrites the file's bytes with zeros, syncs and removes
-// it. No file is not an error.
+// it. No file is not an error. A path that is not a regular file (a
+// symlink) is removed without writing through it.
 func deleteAccount(dataDir string) error {
 	path := filepath.Join(dataDir, tokenFileName)
-	file, err := os.OpenFile(path, os.O_WRONLY, 0)
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return os.Remove(path)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|openNoFollow, 0)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -205,7 +216,9 @@ func (service *Service) fresh(ctx context.Context) (*account, error) {
 	call := request{method: http.MethodPost, url: service.opts.web + "/login/oauth/access_token", form: form, login: true}
 	var answer tokenAnswer
 	_, err := service.do(ctx, call, &answer)
+	retried := false
 	if errors.Is(err, errTransport) && ctx.Err() == nil {
+		retried = true
 		// The answer may be lost after GitHub rotated: one more try with the
 		// same refresh token (design 6.2).
 		answer = tokenAnswer{}
@@ -216,8 +229,9 @@ func (service *Service) fresh(ctx context.Context) (*account, error) {
 	}
 	switch {
 	case answer.Error == "bad_refresh_token":
+		// After the retry, the lost first try already rotated the pair.
 		problem := protocol.OtherProgram
-		if !acc.refreshExpiry.IsZero() && acc.refreshExpiry.Sub(service.now()) < time.Minute {
+		if retried || !acc.refreshExpiry.IsZero() && acc.refreshExpiry.Sub(service.now()) < time.Minute {
 			problem = protocol.Ended
 		}
 		service.end(acc, problem)

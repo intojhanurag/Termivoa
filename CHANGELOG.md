@@ -8,6 +8,30 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **GitHub: set up a repository on a computer from the phone** (ADR 0010,
+  `docs/github-integration.md`; docs: `guides/github.md`). Phone:
+  **Settings → Integrations** has one row for each computer, "GitHub on
+  mac", also with no herdr. **Connect** shows an 8-character code and
+  **Copy code and open GitHub**; one time for each GitHub account,
+  **Choose on GitHub** picks the repositories. **Set up a repository** lists
+  them with search and the tags "on mac" and "name taken"; **Set up** clones
+  into `~/<name>` with a percent and **Stop**, then "Ready on mac" with
+  **New session** and **New workspace in herdr**. **From GitHub** sits next
+  to **Add a folder** in herdr's **New workspace** sheet. **Disconnect** asks
+  first; when GitHub did not confirm the revoke, the row links "Also remove
+  Termivoa on GitHub.". Host: the broker logs in with the device flow of the
+  Termivoa GitHub App (no client secret; Contents read and write, Metadata
+  read), keeps one token pair for each computer in `github.json` (mode 0600)
+  in its data folder, refreshes it, and revokes it on Disconnect. It clones
+  with a fixed git environment (https to github.com only, no hooks, no
+  templates, no submodules, no LFS download, objects checked) into a temp
+  folder, renamed only when the name is still free; it never deletes or
+  overwrites a folder. In a folder it cloned, git uses Termivoa's login for
+  that repository through the hidden helper `pterm github-credential`. New:
+  `GET` and `POST /api/v1/github`, `GET /api/v1/github/repos`,
+  `HTTPSettingsResponse.github`, protocol revision 7; `pterm github status`,
+  `pterm github disconnect`, and a GitHub line in `pterm doctor`. No
+  database change. Hidden until the build carries the app's client ID.
 - **Needs you** (`docs/needs-you-inbox.md`; docs: `guides/needs-you.md`).
   Phone: a **Needs you** tab in Sessions, right after **All**, with a count
   (`Needs you 3`), while something waits. It lists what waits for an answer

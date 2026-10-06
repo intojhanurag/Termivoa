@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { client } from '../api/http';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ApiError, client } from '../api/http';
 import type { Computer } from '../computers';
 import type {
   HTTPGitHubInfo, HTTPGitHubProblem, HTTPGitHubRepo, HTTPGitHubReposResponse, HTTPGitHubResponse,
@@ -9,7 +9,7 @@ import { checkAgain, hosted, type ComputerEntry, type HostedSession } from './al
 import type { ProviderTap } from './Herdr';
 import { NewSessionHelp } from './NewSession';
 import { CHANGED, githubShown, manageStep, NoteLine, type ManageNote } from './ProviderManage';
-import { providerState, type ProviderEntry } from './providers';
+import { providerState, startInstall, type ProviderEntry } from './providers';
 import { age } from './Sessions';
 import { Sheet, SheetHeader } from './Sheet';
 import { Button, ConfirmPair, Notice } from './ui';
@@ -45,12 +45,44 @@ export interface GitHubSource {
   readonly info: HTTPGitHubInfo;
 }
 
-/** Every computer with a GitHub row, in the computers' order. */
-export const githubSources = (entries: ReadonlyArray<ComputerEntry>): GitHubSource[] => entries.flatMap((entry) => {
-  if (entry.status.kind !== 'ok') return [];
-  const info = githubInfo(entry.status.settings);
-  return info === undefined ? [] : [{ computer: entry.computer, settings: entry.status.settings, info }];
-});
+/**
+ * Every computer with a GitHub row, in the computers' order. `kept` holds each row's last good read; a computer whose
+ * sheet is `open` keeps it through a read that fails, so one failed settings read never closes a code or a clone on
+ * screen (the pattern of keptSettings in Sessions.tsx). `kept` is updated in place.
+ */
+export function githubSources(entries: ReadonlyArray<ComputerEntry>, kept = new Map<string, GitHubSource>(), open: ReadonlySet<string> = new Set()): GitHubSource[] {
+  return entries.flatMap((entry) => {
+    const { origin } = entry.computer;
+    const info = entry.status.kind === 'ok' ? githubInfo(entry.status.settings) : undefined;
+    if (entry.status.kind === 'ok' && info !== undefined) {
+      const source = { computer: entry.computer, settings: entry.status.settings, info };
+      kept.set(origin, source);
+      return [source];
+    }
+    const last = entry.status.kind !== 'ok' && open.has(origin) ? kept.get(origin) : undefined;
+    if (last === undefined) kept.delete(origin);
+    return last === undefined ? [] : [last];
+  });
+}
+
+/** Install git types this, not run: macOS's installer, else Debian's or Ubuntu's (the settings do not say the platform). */
+export const INSTALL_GIT = 'xcode-select --install 2>/dev/null || sudo apt-get install -y git';
+/** A device code lives 15 minutes: the time left never shows more, whatever the clocks say. */
+export const CODE_MS = 15 * 60_000;
+/** Polls that the app cannot read, in a row, before the sheet says so. */
+export const UNREADABLE_AFTER = 3;
+export const unreadableText = (label: string): string => `${label} answered something this app cannot read. Update Termivoa on ${label}.`;
+
+/**
+ * A new session in that project, with the computer's first shell, as New session starts one. Undefined when the
+ * computer has no shell: New session's own help says what to do.
+ */
+export async function newSessionIn(computer: Computer, settings: Pick<HTTPSettingsResponse, 'shellProfiles'> | undefined, projectId: string): Promise<HostedSession | undefined> {
+  const shell = settings?.shellProfiles[0];
+  if (shell === undefined) return undefined;
+  const made = await client(computer.origin).createSession({ operationId: crypto.randomUUID(), projectId, shellProfileId: shell.id });
+  return hosted(made.session, computer);
+}
 
 export const repoName = (repo: string): string => repo.slice(repo.indexOf('/') + 1);
 const repoOwner = (repo: string): string => repo.slice(0, repo.indexOf('/'));
@@ -72,7 +104,7 @@ export function repoMeta(repo: HTTPGitHubRepo, now: number): string {
 }
 
 /** Search by name and owner, in memory. */
-export function filterRepos(repos: ReadonlyArray<HTTPGitHubRepo>, query: string): ReadonlyArray<HTTPGitHubRepo> {
+export function filterRepos<Row extends Pick<HTTPGitHubRepo, 'repo'>>(repos: ReadonlyArray<Row>, query: string): ReadonlyArray<Row> {
   const wanted = query.trim().toLowerCase();
   return wanted === '' ? repos : repos.filter((repo) => repo.repo.toLowerCase().includes(wanted));
 }
@@ -143,6 +175,17 @@ function useNow(on: boolean): number {
   return now;
 }
 
+/** Calls `then` each time the page shows again (the user comes back from GitHub). */
+function useVisible(then: () => void): void {
+  const latest = useRef(then);
+  latest.current = then;
+  useEffect(() => {
+    const seen = () => { if (document.visibilityState === 'visible') latest.current(); };
+    document.addEventListener('visibilitychange', seen);
+    return () => document.removeEventListener('visibilitychange', seen);
+  }, []);
+}
+
 /** Calls `read` every POLL_MS while `on` and the page shows, and at once when it shows again (back from GitHub). */
 function usePoll(on: boolean, read: () => void): void {
   const latest = useRef(read);
@@ -161,19 +204,27 @@ function usePoll(on: boolean, read: () => void): void {
 
 // ---------------------------------------------------------------- Settings row
 
-type RowNote = { readonly kind: 'disconnected'; readonly revokeFailed?: boolean } | { readonly kind: 'error'; readonly text: string; readonly revoke?: boolean };
+type RowNote = { readonly kind: 'disconnected'; readonly revokeFailed?: boolean } | { readonly kind: 'error'; readonly text: string };
+type RowBusy = 'disconnect' | 'check' | 'install' | 'session';
 
 /** The row of one computer in Settings → Integrations. State comes from props, so each state renders on its own. */
-export function GitHubRowView({ label, state, login, mine, problem, confirming = false, busy, note, children, onConnect, onContinue, onSetUp, onDisconnect, onConfirm, onCancel, onCheck, onRetry }: {
+export function GitHubRowView({
+  label, state, login, mine, problem, setup, confirming = false, busy, note, help, children,
+  onConnect, onContinue, onSetUp, onDisconnect, onConfirm, onCancel, onCheck, onRetry, onInstall, onShow, onNewSession,
+}: {
   readonly label: string;
   readonly state: HTTPGitHubState;
   readonly login?: string | undefined;
   /** This phone started the Connect that runs (the answer has its code). */
   readonly mine?: boolean;
   readonly problem?: HTTPGitHubProblem | undefined;
+  /** A set-up that runs, or one that ended in the last 10 minutes (the host keeps it that long). */
+  readonly setup?: HTTPGitHubSetup | undefined;
   readonly confirming?: boolean;
-  readonly busy?: 'disconnect' | 'check' | undefined;
+  readonly busy?: RowBusy | undefined;
   readonly note?: RowNote | undefined;
+  /** Install git or New session found no project or shell there: New session's own help. */
+  readonly help?: HTTPSettingsResponse | undefined;
   /** The row's sheet, kept inside its list item. */
   readonly children?: ReactNode;
   readonly onConnect: () => void;
@@ -185,7 +236,13 @@ export function GitHubRowView({ label, state, login, mine, problem, confirming =
   readonly onCancel: () => void;
   readonly onCheck: () => void;
   readonly onRetry: () => void;
+  /** Absent: this screen cannot open a terminal, so no Install git. */
+  readonly onInstall?: (() => void) | undefined;
+  /** Opens the sheet at the set-up that runs. */
+  readonly onShow?: () => void;
+  readonly onNewSession?: () => void;
 }) {
+  const confirmId = useId();
   const meta = state === 'ready' || state === 'needsInstall' ? login
     : state === 'notConnected' ? 'not connected'
       : state === 'noGit' ? `git is not on ${label}`
@@ -194,6 +251,7 @@ export function GitHubRowView({ label, state, login, mine, problem, confirming =
     : state === 'noGit' ? { text: 'Git missing', tone: 'amber' }
       : state === 'needsInstall' ? { text: 'Signed in', tone: 'amber' } : undefined;
   const off = busy !== undefined;
+  const name = setup === undefined ? '' : repoName(setup.repo);
   return (
     <li className="computer-card">
       <div className="computer-head gh-head">
@@ -205,6 +263,15 @@ export function GitHubRowView({ label, state, login, mine, problem, confirming =
         {state === 'notConnected' && <button type="button" className="primary compact" onClick={onConnect}>Connect</button>}
         {state === 'connecting' && mine === true && <button type="button" className="primary compact" onClick={onContinue}>Continue</button>}
       </div>
+      {state === 'ready' && setup?.phase === 'cloning' && onShow !== undefined && (
+        <p className="gh-row-line"><span>Setting up <bdi>{name}</bdi>…</span><button type="button" className="link accent" onClick={onShow}>Show</button></p>
+      )}
+      {state === 'ready' && setup?.phase === 'finished' && setup.projectId !== undefined && onNewSession !== undefined && (
+        <p className="gh-row-line">
+          <span><bdi>{name}</bdi> is ready.</span>
+          <Button className="link accent" busy={busy === 'session'} busyLabel="Opening…" disabled={off} onClick={onNewSession}>New session</Button>
+        </p>
+      )}
       {!confirming && state === 'ready' && (
         <div className="gh-links">
           <button type="button" className="link accent" disabled={off} onClick={onSetUp}>Set up a repository</button>
@@ -216,9 +283,11 @@ export function GitHubRowView({ label, state, login, mine, problem, confirming =
       )}
       {state === 'noGit' && (
         <div className="gh-links">
-          <Button className="link" busy={busy === 'check'} busyLabel="Checking…" onClick={onCheck}>Check again</Button>
+          {onInstall !== undefined && <Button className="link accent" busy={busy === 'install'} busyLabel="Opening…" disabled={off} onClick={onInstall}>Install git</Button>}
+          <Button className="link" busy={busy === 'check'} busyLabel="Checking…" disabled={off} onClick={onCheck}>Check again</Button>
         </div>
       )}
+      {help !== undefined && <NewSessionHelp settings={help} />}
       {problem === 'otherProgram' && (
         <p className="hint-text">Another program used this login. <OutLink className="gh-inline" href={AUTHORIZED_APPS_URL}>Revoke Termivoa on GitHub</OutLink>, then connect again.</p>
       )}
@@ -227,8 +296,8 @@ export function GitHubRowView({ label, state, login, mine, problem, confirming =
         <Notice tone="warning" title={reachText(label)} action={<button type="button" className="link" onClick={onRetry}>Retry</button>} />
       )}
       {confirming && (
-        <div role="alertdialog" aria-labelledby={`gh-disconnect-${label}`} className="confirm stack">
-          <p id={`gh-disconnect-${label}`}>Disconnect GitHub on {label}?</p>
+        <div role="alertdialog" aria-labelledby={confirmId} className="confirm stack">
+          <p id={confirmId}>Disconnect GitHub on {label}?</p>
           <ConfirmPair confirm="Disconnect" busy={busy === 'disconnect'} busyLabel="Disconnecting…" onCancel={onCancel} onConfirm={onConfirm} />
         </div>
       )}
@@ -236,7 +305,6 @@ export function GitHubRowView({ label, state, login, mine, problem, confirming =
         {note?.kind === 'disconnected' && <span className="muted">GitHub is disconnected on {label}.</span>}
         {note?.kind === 'disconnected' && note.revokeFailed === true && <p className="hint-text"><OutLink className="gh-inline" href={AUTHORIZED_APPS_URL}>Also remove Termivoa on GitHub.</OutLink></p>}
         {note?.kind === 'error' && <Notice tone="danger" title={note.text} />}
-        {note?.kind === 'error' && note.revoke === true && <p className="hint-text"><OutLink className="gh-inline" href={AUTHORIZED_APPS_URL}>Also remove Termivoa on GitHub.</OutLink></p>}
       </div>
       {children}
     </li>
@@ -251,6 +319,8 @@ export interface GitHubHandlers {
   readonly onChanged: () => Promise<void>;
   /** New session made a session: open it in Live. */
   readonly onOpenSession?: ((session: HostedSession) => void) | undefined;
+  /** Install git made a session: open it in Live with the command typed, not run. Absent: no Install git. */
+  readonly onTypeIn?: ((session: HostedSession, command: string) => void) | undefined;
   /** New workspace in herdr opened a terminal. `key` is the provider read's. */
   readonly onProviderOpened?: ((tap: ProviderTap, key: string) => void) | undefined;
   /** Reads a provider's list again; never rejects. */
@@ -263,38 +333,68 @@ export function readyProvider(providers: ReadonlyArray<ProviderEntry>, origin: s
 }
 
 /** One computer's row and its sheet. */
-export function GitHubRow({ source, provider, handlers }: {
+export function GitHubRow({ source, provider, handlers, onSheet }: {
   readonly source: GitHubSource;
   readonly provider?: ProviderEntry | undefined;
   readonly handlers: GitHubHandlers;
+  /** Says when the row's sheet opens and closes, so the row stays through a failed settings read. */
+  readonly onSheet?: (open: boolean) => void;
 }) {
   const { computer, info, settings } = source;
-  // The row's own read: the problem line, and whether this phone started the Connect. Settings has only state and login.
+  // The row's own read (once on open, and when the page shows again): the problem line, a set-up, and whether this
+  // phone started the Connect. Settings has only state and login.
   const [live, setLive] = useState<HTTPGitHubResponse>();
-  const [sheet, setSheet] = useState<'connect' | 'resume' | 'list'>();
+  const [sheet, setSheetState] = useState<'connect' | 'resume' | 'list'>();
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState<'disconnect' | 'check'>();
+  const [busy, setBusy] = useState<RowBusy>();
   const [note, setNote] = useState<RowNote>();
+  const [help, setHelp] = useState<HTTPSettingsResponse>();
   const read = () => client(computer.origin).github().then(setLive, () => undefined);
   useEffect(() => { void read(); }, [computer.origin, info.state]);
+  useVisible(() => { void read(); });
+  const setSheet = (next: typeof sheet) => {
+    setSheetState(next);
+    onSheet?.(next !== undefined);
+  };
+  const words = (error: unknown) => handlers.onFailure(error, computer);
+
+  function run(what: RowBusy, work: () => Promise<void>) {
+    if (busy !== undefined) return;
+    setBusy(what);
+    setNote(undefined);
+    setHelp(undefined);
+    work().catch((error: unknown) => setNote({ kind: 'error', text: words(error) })).finally(() => setBusy(undefined));
+  }
 
   const state = live?.state ?? info.state;
-  const disconnect = () => {
-    setBusy('disconnect');
-    setNote(undefined);
-    client(computer.origin).githubAction({ action: 'disconnect' }).then(
-      (answer) => { setLive(answer); setNote({ kind: 'disconnected', revokeFailed: answer.revokeFailed === true }); void handlers.onChanged().catch(() => undefined); },
-      (error: unknown) => setNote({ kind: 'error', text: handlers.onFailure(error, computer), revoke: true }),
-    ).finally(() => { setBusy(undefined); setConfirming(false); });
-  };
-  const check = () => {
-    setBusy('check');
-    setNote(undefined);
-    void checkAgain(handlers.onChanged(), (error) => handlers.onFailure(error, computer)).then((problem) => {
-      if (problem !== undefined) setNote({ kind: 'error', text: problem });
-      return read();
-    }).finally(() => setBusy(undefined));
-  };
+  const disconnect = () => run('disconnect', async () => {
+    try {
+      const answer = await client(computer.origin).githubAction({ action: 'disconnect' });
+      setLive(answer);
+      setNote({ kind: 'disconnected', revokeFailed: answer.revokeFailed === true });
+      void handlers.onChanged().catch(() => undefined);
+    } finally {
+      setConfirming(false);
+    }
+  });
+  const check = () => run('check', async () => {
+    const problem = await checkAgain(handlers.onChanged(), words);
+    if (problem !== undefined) setNote({ kind: 'error', text: problem });
+    await read();
+  });
+  const { onTypeIn } = handlers;
+  const install = onTypeIn === undefined ? undefined : () => run('install', async () => {
+    const session = await startInstall(computer, settings);
+    if (session === undefined) setHelp(settings);
+    else onTypeIn(session, INSTALL_GIT);
+  });
+  const { onOpenSession } = handlers;
+  const projectId = live?.setup?.projectId;
+  const newSession = onOpenSession === undefined || projectId === undefined ? undefined : () => run('session', async () => {
+    const session = await newSessionIn(computer, settings, projectId);
+    if (session === undefined) setHelp(settings);
+    else onOpenSession(session);
+  });
 
   return (
     <GitHubRowView
@@ -303,9 +403,11 @@ export function GitHubRow({ source, provider, handlers }: {
       login={live?.login ?? info.login}
       mine={live?.connect !== undefined}
       problem={live?.problem}
+      {...(sheet === undefined ? { setup: live?.setup } : {})}
       confirming={confirming}
       busy={busy}
       note={note}
+      help={help}
       onConnect={() => { setNote(undefined); setSheet('connect'); }}
       onContinue={() => setSheet('resume')}
       onSetUp={() => { setNote(undefined); setSheet('list'); }}
@@ -314,6 +416,9 @@ export function GitHubRow({ source, provider, handlers }: {
       onCancel={() => setConfirming(false)}
       onCheck={check}
       onRetry={() => { void read(); }}
+      onInstall={install}
+      onShow={() => setSheet('list')}
+      {...(newSession === undefined ? {} : { onNewSession: newSession })}
     >
       {sheet !== undefined && (
         <GitHubSheet
@@ -342,15 +447,20 @@ const Status = ({ tone, text, time }: { readonly tone: 'amber' | 'accent' | 'gre
   </p>
 );
 
+/** The time left of a code, never below 0 or above 15 minutes. ponytail: uses the phone's clock; a computer clock that is off by minutes shows a wrong time left (the host still ends the code itself). */
+export const timeLeft = (expiresAt: number, now: number): string => `${clock(Math.min(CODE_MS, Math.max(0, expiresAt - now)))} left`;
+
 /** The Connect sheet's body for one answer: the code, step 2, or a problem with its action. */
 export function ConnectBody({ label, state, now, busy, onConnect }: {
   readonly label: string;
   readonly state: HTTPGitHubResponse | undefined;
   readonly now: number;
+  /** A Connect is being asked for. */
   readonly busy: boolean;
   /** Get a new code, Try again, Retry, Connect: a new Connect. */
   readonly onConnect: () => void;
 }) {
+  if (busy && (state === undefined || state.state === 'notConnected')) return <Status tone="amber" text="Getting a code…" />;
   if (state === undefined) return <p role="status" className="muted field-note" />;
   const down = state.problem === 'gitHubDown' ? <p className="hint-text">{reachText(label)}</p> : undefined;
   if (state.state === 'needsInstall') {
@@ -377,7 +487,7 @@ export function ConnectBody({ label, state, now, busy, onConnect }: {
           <p className="gh-code">{connect.userCode}</p>
         </div>
         <OutLink href={DEVICE_URL} onClick={() => copyCode(connect.userCode)}>Copy code and open GitHub</OutLink>
-        <Status tone="amber" text="Waiting for GitHub…" time={`${clock(connect.expiresAt - now)} left`} />
+        <Status tone="amber" text="Waiting for GitHub…" time={timeLeft(connect.expiresAt, now)} />
         {down ?? <p className="hint-text">Enter a code only when you started Connect yourself.</p>}
       </>
     );
@@ -392,7 +502,7 @@ export function ConnectBody({ label, state, now, busy, onConnect }: {
   return (
     <>
       {problem !== undefined && <p role="alert" className="gh-line">{problem.text}</p>}
-      <Button className="primary wide" busy={busy} busyLabel="Connecting…" onClick={onConnect}>{problem?.action ?? 'Connect'}</Button>
+      <Button className="primary wide" onClick={onConnect}>{problem?.action ?? 'Connect'}</Button>
     </>
   );
 }
@@ -401,43 +511,46 @@ export function ConnectBody({ label, state, now, busy, onConnect }: {
 
 export type ReposStatus =
   | { readonly kind: 'loading' }
-  | { readonly kind: 'ok'; readonly body: HTTPGitHubReposResponse }
+  /** `at`: when the list arrived; each row's "2 h ago" is worked out once, from it. */
+  | { readonly kind: 'ok'; readonly body: HTTPGitHubReposResponse; readonly at: number }
   | { readonly kind: 'error'; readonly text: string };
 
 /** The repository list: search, rows, and the way to choose more on GitHub. */
-export function RepoList({ label, repos, query, now, app, busy, onQuery, onSetUp, onRetry }: {
+export function RepoList({ label, repos, query, app, busy, onQuery, onSetUp, onRetry }: {
   readonly label: string;
   readonly repos: ReposStatus;
   readonly query: string;
-  readonly now: number;
   readonly app: string | undefined;
   /** The repository whose set-up is being asked for. */
   readonly busy: string | undefined;
   readonly onQuery: (query: string) => void;
   readonly onSetUp: (repo: HTTPGitHubRepo) => void;
+  /** Retry, and Check again on an empty list: reads the list again. */
   readonly onRetry: () => void;
 }) {
+  // Each row's words once per list; a key stroke only filters (1000 rows stay smooth on a phone).
+  const rows = useMemo(() => (repos.kind === 'ok' ? repos.body.repos.map((repo) => ({ ...repo, name: repoName(repo.repo), meta: repoMeta(repo, repos.at) })) : []), [repos]);
+  const shown = useMemo(() => filterRepos(rows, query), [rows, query]);
   const url = installUrl(app);
   if (repos.kind === 'loading') return <p role="status" className="muted">Reading your repositories…</p>;
   if (repos.kind === 'error') return <Notice tone="danger" role="alert" title={repos.text} action={<button type="button" className="link" onClick={onRetry}>Retry</button>} />;
-  const all = repos.body.repos;
-  if (all.length === 0) {
+  if (rows.length === 0) {
     return (
       <>
         <p className="gh-line">Termivoa sees no repository yet.</p>
         {url !== undefined && <OutLink href={url}>Choose on GitHub</OutLink>}
+        <button type="button" className="link gh-center" onClick={onRetry}>Check again</button>
       </>
     );
   }
-  const shown = filterRepos(all, query);
   const off = busy !== undefined;
   return (
     <>
       <input
         type="search"
         className="files-search"
-        aria-label={`Search ${all.length} repositories`}
-        placeholder={`Search ${all.length} repositories`}
+        aria-label={`Search ${rows.length} repositories`}
+        placeholder={`Search ${rows.length} repositories`}
         maxLength={140}
         enterKeyHint="search"
         autoCapitalize="off"
@@ -449,21 +562,21 @@ export function RepoList({ label, repos, query, now, app, busy, onQuery, onSetUp
       />
       <ul className="gh-repos">
         {shown.map((repo) => {
-          const name = repoName(repo.repo);
+          const { name } = repo;
           const taken = repo.taken && !repo.here;
           return (
             <li key={repo.repo} className={taken ? 'gh-repo taken' : 'gh-repo'}>
               <span className="row-text">
                 <span className="gh-repo-name">{name}</span>
                 <span className="gh-repo-meta">
-                  {taken ? `Another folder named ${name} is on ${label}.` : repoMeta(repo, now)}
+                  {taken ? `Another folder named ${name} is on ${label}.` : repo.meta}
                   {!taken && isBig(repo) && <> · <span className="gh-big">{sizeText(repo.sizeKb)}</span></>}
                 </span>
               </span>
               <span className="gh-slot">
                 {repo.here ? (
                   <Button className="gh-tag" aria-label={`${name}: on ${label}`} busy={busy === repo.repo} disabled={off} onClick={() => onSetUp(repo)}>
-                    <span className="dot green" aria-hidden="true" />on {label}
+                    <span className="dot green" aria-hidden="true" /><span className="gh-tag-text">on {label}</span>
                   </Button>
                 ) : taken ? <span className="gh-taken">name taken</span> : (
                   <Button className="link accent" aria-label={`Set up ${name}`} busy={busy === repo.repo} disabled={off} onClick={() => onSetUp(repo)}>Set up</Button>
@@ -473,7 +586,7 @@ export function RepoList({ label, repos, query, now, app, busy, onQuery, onSetUp
           );
         })}
       </ul>
-      {repos.body.truncated === true && <p className="hint-text">Showing {all.length} repositories.</p>}
+      {repos.body.truncated === true && <p className="hint-text">Showing {rows.length} repositories.</p>}
       {url !== undefined && (
         <div className="gh-foot">
           <p className="hint-text">Not in the list?</p>
@@ -513,7 +626,7 @@ export function SetupBody({ label, setup, now, busy, provider, note, help, onSto
         <div className="gh-box gh-progress">
           <div className="spread"><span className="gh-mono">{setup.repo}</span>{setup.percent !== undefined && <span className="gh-mono">{setup.percent}%</span>}</div>
           <progress aria-label={`Cloning ${setup.repo}`} max={100} {...(setup.percent === undefined ? {} : { value: setup.percent })} />
-          {setup.bytes !== undefined && <p className="gh-small">{Math.round(setup.bytes / (1024 * 1024))} MB so far</p>}
+          {setup.bytes !== undefined && setup.bytes > 0 && <p className="gh-small">{Math.round(setup.bytes / (1024 * 1024))} MB so far</p>}
         </div>
         <Button className="secondary wide" busy={busy === 'stop'} busyLabel="Stopping…" onClick={onStop}>Stop</Button>
         <Status tone="accent" text={`Cloning on ${label}…`} time={elapsed} />
@@ -551,14 +664,63 @@ export function SetupBody({ label, setup, now, busy, provider, note, help, onSto
   );
 }
 
-// ---------------------------------------------------------------- The sheet
+// ---------------------------------------------------------------- The sheet's steps
 
-type Mode = 'connect' | 'list' | 'setup';
+export type Mode = 'connect' | 'list' | 'setup';
+
+export type ModeEvent =
+  /** The first read of a sheet opened with `resume` or `list`. */
+  | { readonly kind: 'opened'; readonly state: HTTPGitHubResponse }
+  /** Any later answer: a poll, or an action's. */
+  | { readonly kind: 'answer'; readonly state: HTTPGitHubResponse }
+  /** Set up answered. */
+  | { readonly kind: 'started'; readonly state: HTTPGitHubResponse }
+  /** Done or Close in the set-up view, Escape, or the backdrop. `startedHere`: the set-up began in this sheet. */
+  | { readonly kind: 'back'; readonly state: HTTPGitHubResponse | undefined; readonly startedHere: boolean };
+
+export interface ModeStep {
+  readonly mode: Mode;
+  /** The sheet closes. */
+  readonly close?: true;
+  /** The list is read again. */
+  readonly reload?: true;
+  /** One line over the list. */
+  readonly note?: string;
+  /** The computer's settings are read again (a new login). */
+  readonly changed?: true;
+}
+
+/** Where the sheet goes next. Only a clone that runs covers the list when the sheet opens; only a finished set-up of this sheet closes on Done. */
+export function nextMode(mode: Mode, event: ModeEvent, label: string): ModeStep {
+  const setup = event.state?.setup;
+  const failedLine = (one: HTTPGitHubSetup) => setupProblem(one.problem, repoName(one.repo), label).text;
+  switch (event.kind) {
+    case 'opened':
+      if (mode === 'list' && event.state.state === 'ready' && setup?.phase === 'cloning') return { mode: 'setup' };
+      return nextMode(mode, { kind: 'answer', state: event.state }, label);
+    case 'started':
+      return { mode: setup === undefined ? mode : 'setup' };
+    case 'back':
+      if (setup === undefined) return { mode: 'list', reload: true };
+      if (setup.phase === 'cloning' || (setup.phase === 'finished' && event.startedHere)) return { mode, close: true };
+      if (setup.phase === 'failed') return { mode: 'list', reload: true, note: failedLine(setup) };
+      return { mode: 'list', reload: true };
+    case 'answer': {
+      const { state } = event;
+      if (mode === 'connect' && state.state === 'ready') return { mode: 'list', changed: true };
+      if (mode === 'list' && state.state !== 'ready') return { mode: 'connect' };
+      if (mode === 'setup' && setup?.phase === 'failed' && setup.problem === 'notFound') return { mode: 'list', reload: true, note: failedLine(setup) };
+      return { mode };
+    }
+  }
+}
+
+// ---------------------------------------------------------------- The sheet
 
 /**
  * Connect, the list and a set-up, in one sheet for one computer. Everything is drawn from GET /api/v1/github, so the
  * sheet comes back in the same step after iOS reloads the app. `connect` starts a Connect; `resume` shows the one that
- * runs (or step 2); `list` opens the list, or a set-up that runs or just ended.
+ * runs (or step 2); `list` opens the list, or the clone that runs.
  */
 export function GitHubSheet({ computer, settings, provider, start, handlers, onClose }: {
   readonly computer: Computer;
@@ -572,7 +734,10 @@ export function GitHubSheet({ computer, settings, provider, start, handlers, onC
 }) {
   const api = client(computer.origin);
   const { label } = computer;
-  const [mode, setMode] = useState<Mode>(start === 'list' ? 'list' : 'connect');
+  const titleId = useId();
+  const confirmId = useId();
+  const [mode, setModeState] = useState<Mode>(start === 'list' ? 'list' : 'connect');
+  const modeRef = useRef(mode);
   const [state, setState] = useState<HTTPGitHubResponse>();
   const [repos, setRepos] = useState<ReposStatus>();
   const [query, setQuery] = useState('');
@@ -581,108 +746,109 @@ export function GitHubSheet({ computer, settings, provider, start, handlers, onC
   const [manageNote, setManageNote] = useState<ManageNote>();
   const [help, setHelp] = useState<HTTPSettingsResponse>();
   const [busy, setBusy] = useState<string>();
-  // Set-ups started in this sheet: Done closes it. One shown from earlier goes back to the list.
+  const [unreadable, setUnreadable] = useState(false);
   const startedHere = useRef(false);
   const reading = useRef(false);
   const running = useRef(false);
+  const misses = useRef(0);
   const words = (error: unknown) => handlers.onFailure(error, computer);
+
+  function go(step: ModeStep) {
+    if (step.close === true) {
+      onClose();
+      return;
+    }
+    modeRef.current = step.mode;
+    setModeState(step.mode);
+    if (step.reload === true) setRepos(undefined);
+    if (step.note !== undefined) setNote(step.note);
+    if (step.changed === true) void handlers.onChanged().catch(() => undefined);
+  }
+  function receive(answer: HTTPGitHubResponse, kind: 'opened' | 'answer' | 'started' = 'answer') {
+    setState(answer);
+    go(nextMode(modeRef.current, { kind, state: answer }, label));
+  }
 
   const read = () => {
     if (reading.current) return;
     reading.current = true;
-    api.github().then(setState, () => undefined).finally(() => { reading.current = false; });
+    api.github().then((answer) => {
+      misses.current = 0;
+      setUnreadable(false);
+      receive(answer);
+    }, (error: unknown) => {
+      // A poll that keeps failing to validate says so, instead of freezing on the last good answer.
+      if (error instanceof ApiError && error.code === 'invalid_response' && ++misses.current >= UNREADABLE_AFTER) setUnreadable(true);
+    }).finally(() => { reading.current = false; });
   };
 
   /** One action at a time; its answer is the new state. */
-  function act(what: string, work: () => Promise<HTTPGitHubResponse>, then?: (answer: HTTPGitHubResponse) => void) {
+  function act(what: string, work: () => Promise<HTTPGitHubResponse>, kind: 'answer' | 'started' = 'answer', then?: () => void) {
     if (running.current) return;
     running.current = true;
     setBusy(what);
     setNote(undefined);
     work().then(
-      (answer) => { setState(answer); then?.(answer); },
+      (answer) => { then?.(); receive(answer, kind); },
       (error: unknown) => setNote(words(error)),
     ).finally(() => { running.current = false; setBusy(undefined); });
   }
   const connect = () => act('connect', () => api.githubAction({ action: 'connect' }));
-  const setUp = (repo: string) => act(repo, () => api.githubAction({ action: 'setup', repo }), (answer) => {
+  const setUp = (repo: string) => act(repo, () => api.githubAction({ action: 'setup', repo }), 'started', () => {
     startedHere.current = true;
     setConfirm(undefined);
     setManageNote(undefined);
     setHelp(undefined);
-    if (answer.setup !== undefined) setMode('setup');
   });
 
-  // The first read: a set-up that runs or just ended shows before the list.
-  const open = () => api.github().then((answer) => {
-    setState(answer);
-    if (start === 'list' && answer.setup !== undefined) setMode('setup');
-  }, (error: unknown) => (start === 'list' ? setRepos({ kind: 'error', text: words(error) }) : setNote(words(error))));
+  const open = () => api.github().then((answer) => receive(answer, 'opened'), (error: unknown) => (start === 'list' ? setRepos({ kind: 'error', text: words(error) }) : setNote(words(error))));
   useEffect(() => {
     if (start === 'connect') connect();
     else void open();
   }, []);
 
-  // The steps follow the computer's state.
+  // A finished set-up made a project: New workspace and New session list it.
   const notified = useRef<string>(undefined);
   useEffect(() => {
-    if (state === undefined) return;
-    if (mode === 'connect' && state.state === 'ready') {
-      setMode('list');
-      void handlers.onChanged().catch(() => undefined);
-    } else if (mode === 'list' && state.state !== 'ready') {
-      setMode('connect');
-    }
-    const { setup } = state;
-    if (mode === 'setup' && setup?.phase === 'finished' && notified.current !== `${setup.repo} ${setup.startedAt}`) {
-      // The new project: New workspace and New session list it.
-      notified.current = `${setup.repo} ${setup.startedAt}`;
-      void handlers.onChanged().catch(() => undefined);
-    }
-    if (mode === 'setup' && setup?.phase === 'failed' && setup.problem === 'notFound') {
-      setNote(setupProblem('notFound', repoName(setup.repo), label).text);
-      setRepos(undefined);
-      setMode('list');
-    }
+    const setup = state?.setup;
+    if (mode !== 'setup' || setup?.phase !== 'finished' || notified.current === `${setup.repo} ${setup.startedAt}`) return;
+    notified.current = `${setup.repo} ${setup.startedAt}`;
+    void handlers.onChanged().catch(() => undefined);
   }, [state, mode]);
 
-  // The list is read when it shows; again after Retry or a set-up that found the repository gone.
+  const loadRepos = (quiet: boolean) => {
+    if (!quiet) setRepos({ kind: 'loading' });
+    api.githubRepos().then(
+      (body) => setRepos({ kind: 'ok', body, at: Date.now() }),
+      (error: unknown) => { if (!quiet) setRepos({ kind: 'error', text: words(error) }); },
+    );
+  };
+  // The list is read when it shows; again after Retry, Check again, or a set-up that found the repository gone.
   useEffect(() => {
     if (mode === 'connect' || (mode === 'setup' && state?.setup !== undefined) || state?.state !== 'ready' || repos !== undefined) return;
-    setRepos({ kind: 'loading' });
-    api.githubRepos().then((body) => setRepos({ kind: 'ok', body }), (error: unknown) => setRepos({ kind: 'error', text: words(error) }));
+    loadRepos(false);
   }, [mode, state, repos]);
+  // Back from GitHub (Choose on GitHub): the list again, without a blank in between.
+  useVisible(() => { if (modeRef.current === 'list' && repos?.kind === 'ok') loadRepos(true); });
 
   const waiting = mode === 'connect' ? state === undefined || state.state === 'connecting' || state.state === 'needsInstall'
     : mode === 'setup' && state?.setup?.phase === 'cloning';
   usePoll(waiting, read);
-  const now = useNow(mode !== 'list' || repos?.kind === 'ok');
+  const now = useNow(mode !== 'list');
 
   const cancel = () => {
     if (state?.state === 'connecting' && state.connect !== undefined) void api.githubAction({ action: 'cancel' }).catch(() => undefined);
     onClose();
   };
-  const back = () => {
-    if (startedHere.current) {
-      onClose();
-      return;
-    }
-    setRepos(undefined);
-    setMode('list');
-  };
+  const back = () => go(nextMode(modeRef.current, { kind: 'back', state, startedHere: startedHere.current }, label));
 
   function newSession(projectId: string) {
-    const shell = settings?.shellProfiles[0];
-    if (shell === undefined) {
-      setHelp(settings);
-      return;
-    }
     if (running.current) return;
     running.current = true;
     setBusy('session');
     setNote(undefined);
-    api.createSession({ operationId: crypto.randomUUID(), projectId, shellProfileId: shell.id }).then(
-      (made) => handlers.onOpenSession?.(hosted(made.session, computer)),
+    newSessionIn(computer, settings, projectId).then(
+      (session) => { if (session === undefined) setHelp(settings); else handlers.onOpenSession?.(session); },
       (error: unknown) => setNote(words(error)),
     ).finally(() => { running.current = false; setBusy(undefined); });
   }
@@ -707,13 +873,16 @@ export function GitHubSheet({ computer, settings, provider, start, handlers, onC
 
   const caps = `GitHub · on ${label}`;
   const setup = state?.setup;
+  const step2 = state?.state === 'needsInstall';
   let header: ReactNode;
   let body: ReactNode;
+  // Escape and the backdrop do what the header's button does.
+  let dismiss = onClose;
   if (mode === 'setup' && setup !== undefined) {
-    const cloning = setup.phase === 'cloning';
+    dismiss = back;
     header = (
-      <SheetHeader id="github-title" caps={caps} title={<span className="gh-mono">{repoName(setup.repo)}</span>}>
-        <button type="button" className="link" onClick={cloning ? onClose : back}>{setup.phase === 'finished' ? 'Done' : 'Close'}</button>
+      <SheetHeader id={titleId} caps={caps} title={<span className="gh-mono">{repoName(setup.repo)}</span>}>
+        <button type="button" className="link" onClick={back}>{setup.phase === 'finished' ? 'Done' : 'Close'}</button>
       </SheetHeader>
     );
     body = (
@@ -727,20 +896,20 @@ export function GitHubSheet({ computer, settings, provider, start, handlers, onC
         help={help}
         onStop={() => act('stop', () => api.githubAction({ action: 'stop' }))}
         onRetry={() => setUp(setup.repo)}
-        onConnect={() => { setMode('connect'); connect(); }}
+        onConnect={() => { go({ mode: 'connect' }); connect(); }}
         onNewSession={() => { if (setup.projectId !== undefined) newSession(setup.projectId); }}
         onWorkspace={() => { if (setup.projectId !== undefined) newWorkspace(setup.projectId); }}
       />
     );
   } else if (mode !== 'connect') {
     header = (
-      <SheetHeader id="github-title" caps={caps} title="Set up a repository">
+      <SheetHeader id={titleId} caps={caps} title="Set up a repository">
         <button type="button" className="link" onClick={onClose}>Close</button>
       </SheetHeader>
     );
     body = confirm !== undefined ? (
-      <div role="alertdialog" aria-labelledby="gh-confirm" className="confirm gh-ask stack">
-        <p id="gh-confirm"><bdi>{repoName(confirm.repo)}</bdi> is {sizeText(confirm.sizeKb)}. Set it up on {label}?</p>
+      <div role="alertdialog" aria-labelledby={confirmId} className="confirm gh-ask stack">
+        <p id={confirmId}><bdi>{repoName(confirm.repo)}</bdi> is {sizeText(confirm.sizeKb)}. Set it up on {label}?</p>
         <div className="row confirm-pair">
           <button type="button" disabled={busy !== undefined} onClick={() => setConfirm(undefined)}>Cancel</button>
           <Button className="primary" busy={busy === confirm.repo} onClick={() => setUp(confirm.repo)}>Set up</Button>
@@ -751,11 +920,10 @@ export function GitHubSheet({ computer, settings, provider, start, handlers, onC
         label={label}
         repos={repos ?? { kind: 'loading' }}
         query={query}
-        now={now}
         app={state?.app}
         busy={busy}
         onQuery={setQuery}
-        onSetUp={(repo) => { if (!repo.here && isBig(repo)) setConfirm(repo); else setUp(repo.repo); }}
+        onSetUp={(repo) => { setNote(undefined); if (!repo.here && isBig(repo)) setConfirm(repo); else setUp(repo.repo); }}
         onRetry={() => {
           setRepos(undefined);
           if (state === undefined) void open();
@@ -763,19 +931,20 @@ export function GitHubSheet({ computer, settings, provider, start, handlers, onC
       />
     );
   } else {
-    const step2 = state?.state === 'needsInstall';
+    dismiss = step2 ? onClose : cancel;
     header = (
-      <SheetHeader id="github-title" caps={step2 ? `${caps} · step 2 of 2` : caps} title={step2 ? 'Choose repositories' : 'Connect'}>
-        <button type="button" className="link" onClick={step2 ? onClose : cancel}>{step2 ? 'Later' : 'Cancel'}</button>
+      <SheetHeader id={titleId} caps={step2 ? `${caps} · step 2 of 2` : caps} title={step2 ? 'Choose repositories' : 'Connect'}>
+        <button type="button" className="link" onClick={dismiss}>{step2 ? 'Later' : 'Cancel'}</button>
       </SheetHeader>
     );
     body = <ConnectBody label={label} state={state} now={now} busy={busy === 'connect'} onConnect={connect} />;
   }
 
   return (
-    <div className="sheet-backdrop">
-      <Sheet labelledBy="github-title" onClose={mode === 'setup' && setup?.phase !== 'cloning' ? back : onClose}>
+    <div className="sheet-backdrop" onClick={(event) => { if (event.target === event.currentTarget) dismiss(); }}>
+      <Sheet labelledBy={titleId} onClose={dismiss}>
         {header}
+        {unreadable && <Notice tone="warning" role="alert" title={unreadableText(label)} />}
         {note !== undefined && <Notice tone="danger" role="alert" title={note} />}
         {body}
       </Sheet>

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -15,6 +16,14 @@ import (
 
 func TestGitHubCredentialHelper(t *testing.T) {
 	const answer = "username=octo\npassword=ghu_token\npassword_expiry_utc=1790000000\n"
+	noExpiry := func(context.Context) (protocol.AdminRPCGitHubCredentialPayload, error) {
+		return protocol.AdminRPCGitHubCredentialPayload{Username: "octo", Password: "ghu_token"}, nil
+	}
+	var out bytes.Buffer
+	if code := runGitHubCredential(context.Background(), []string{"get"}, strings.NewReader("protocol=https\nhost=github.com\n"), &out, io.Discard, noExpiry); code != 0 ||
+		out.String() != "username=octo\npassword=ghu_token\n" {
+		t.Fatalf("no expiry: %d %q", code, out.String())
+	}
 	ok := func(context.Context) (protocol.AdminRPCGitHubCredentialPayload, error) {
 		return protocol.AdminRPCGitHubCredentialPayload{Username: "octo", Password: "ghu_token", ExpiresAt: 1790000000}, nil
 	}

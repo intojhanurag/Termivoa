@@ -3,6 +3,7 @@
 package github
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -38,4 +39,28 @@ func killGroup(command *exec.Cmd) {
 	if command.Process != nil {
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 	}
+}
+
+// openNoFollow makes an open fail on a symlink.
+const openNoFollow = syscall.O_NOFOLLOW
+
+// renameNoReplace is the system's exclusive rename (a seam for tests).
+var renameNoReplace = renameNoReplaceSystem
+
+// renameExclusive renames from to to and fails with EEXIST when to exists
+// (os.Rename would replace an empty folder). A file system without the
+// exclusive rename gets a check and a plain rename.
+func renameExclusive(from, to string) error {
+	err := renameNoReplace(from, to)
+	if !errors.Is(err, syscall.EINVAL) && !errors.Is(err, syscall.ENOSYS) &&
+		!errors.Is(err, syscall.ENOTSUP) && !errors.Is(err, syscall.EOPNOTSUPP) {
+		return err
+	}
+	// ponytail: a folder made at to between this Lstat and the rename is
+	// replaced when it is empty; only on file systems without
+	// RENAME_EXCL/RENAME_NOREPLACE (some network and FUSE ones).
+	if _, statErr := os.Lstat(to); !errors.Is(statErr, os.ErrNotExist) {
+		return syscall.EEXIST
+	}
+	return os.Rename(from, to)
 }

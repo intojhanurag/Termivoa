@@ -17,3 +17,6 @@ func freeSpace(string) (uint64, error)     { return 0, errUnsupported }
 func ownGroup(*exec.Cmd)                   {}
 func killGroup(*exec.Cmd)                  {}
 func renameExclusive(string, string) error { return errUnsupported }
+
+// openNoFollow: no flag here (New never builds the service).
+const openNoFollow = 0

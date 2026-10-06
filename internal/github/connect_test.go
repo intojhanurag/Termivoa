@@ -426,3 +426,121 @@ func TestDamagedTokenFileReadsAsNotConnected(t *testing.T) {
 		t.Fatalf("%+v", state)
 	}
 }
+
+func TestDisconnectDuringLoginRevokesTheNewPair(t *testing.T) {
+	fake := newFake(t)
+	fake.with(func() {
+		fake.pollAnswers = []any{"tokens"}
+		fake.apiDelay = 400 * time.Millisecond
+	})
+	h := newHarness(t, fake, false, nil)
+	if _, err := h.service.Connect(context.Background(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the /user call", func() bool { return fake.count("/user") > 0 })
+	if _, _, err := h.service.Disconnect(context.Background(), "b"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the revoke", func() bool {
+		var seen bool
+		fake.with(func() {
+			for _, call := range fake.revokes {
+				seen = seen || strings.Join(call.credentials, ",") == "ghu_1,ghr_1"
+			}
+		})
+		return seen
+	})
+	waitFor(t, "the end of the Connect", func() bool { return h.service.State("a").State != protocol.Connecting })
+	if state := h.service.State("a"); state.State != protocol.HTTPGitHubStateNotConnected || state.Login != nil {
+		t.Fatalf("%+v", state)
+	}
+	if _, err := os.Stat(filepath.Join(h.config.DataDir, tokenFileName)); !os.IsNotExist(err) {
+		t.Fatal("the new pair was saved after Disconnect")
+	}
+}
+
+func TestCancelFromAnotherDeviceChangesNothing(t *testing.T) {
+	fake := newFake(t)
+	h := newHarness(t, fake, false, nil)
+	if _, err := h.service.Connect(context.Background(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	if state := h.service.Cancel("b"); state.State != protocol.Connecting {
+		t.Fatalf("%+v", state)
+	}
+	if state := h.service.State("a"); state.Connect == nil {
+		t.Fatal("another device's Cancel ended the Connect")
+	}
+	if state := h.service.Cancel("a"); state.State != protocol.HTTPGitHubStateNotConnected {
+		t.Fatalf("%+v", state)
+	}
+}
+
+func TestConnectOutlivesThePhonesRequest(t *testing.T) {
+	fake := newFake(t)
+	h := newHarness(t, fake, false, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if response, err := h.service.Connect(ctx, "a"); err != nil || response.Connect == nil {
+		t.Fatalf("%+v %v", response, err)
+	}
+}
+
+func TestRefreshRetryThenBadTokenIsEnded(t *testing.T) {
+	fake := newFake(t)
+	h := newHarness(t, fake, true, func(_ *Config, opts *options) { opts.requestTimeout = 300 * time.Millisecond })
+	expiring(t, h, 30*24*time.Hour)
+	fake.with(func() {
+		fake.refreshHook = func(call int, w http.ResponseWriter) bool {
+			if call == 1 {
+				time.Sleep(time.Second) // GitHub rotated; the answer is lost
+				return true
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"error": "bad_refresh_token"})
+			return true
+		}
+	})
+	if _, _, _, err := h.service.Credential(context.Background()); !errors.Is(err, ErrNotConnected) {
+		t.Fatal(err)
+	}
+	if state := h.service.State("a"); state.Problem == nil || *state.Problem != protocol.Ended {
+		t.Fatalf("%+v", state)
+	}
+}
+
+func TestDeleteDoesNotFollowASymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "other")
+	if err := os.WriteFile(target, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, tokenFileName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteAccount(dir); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(target); string(data) != "keep" {
+		t.Fatalf("the link's target was written: %q", data)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, tokenFileName)); !os.IsNotExist(err) {
+		t.Fatal("the link is still there")
+	}
+}
+
+func TestNoNewWorkAfterClose(t *testing.T) {
+	fake := newFake(t)
+	h := newHarness(t, fake, true, nil)
+	h.service.Close()
+	if _, err := h.service.Connect(context.Background(), "a"); !errors.Is(err, ErrGitHubDown) {
+		t.Fatal(err)
+	}
+	if _, err := h.service.Setup(context.Background(), "a", "o/n"); !errors.Is(err, ErrGitHubDown) {
+		t.Fatal(err)
+	}
+	if _, err := h.service.Repos(context.Background()); !errors.Is(err, ErrGitHubDown) {
+		t.Fatal(err)
+	}
+	h.service.State("a") // no install check starts
+	h.service.Close()
+}

@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Every command and flag of pterm, the Termivoa host program, for setup, startup, pairing phones, sessions, projects, shells and dev tests.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-07
 ---
 
 `pterm` is the Termivoa host program. `pterm help` (or `--help`, `-h`) prints this command list.
@@ -80,6 +80,7 @@ No device uses this computer from the Termivoa app at https://mac.tailx.ts.net n
 | `! herdr: <path> <version> (protocol <n>) is too old or unreadable; update herdr (0.8.2 or later)` | **Next beta.** Update herdr. See [Update herdr on mac](/docs/reference/troubleshooting/#update-herdr-on-mac). |
 | `! herdr: config.toml sets a prefix key other than ctrl+b; …` | **Next beta.** Termivoa doubles only `ctrl+b`, so a phone can send that other prefix key to a herdr terminal it opened. At worst it detaches the phone. Set herdr's prefix key back to `ctrl+b`. |
 | `! herdr at <path>: <reason>; Termivoa will not run it` | **Next beta.** It shows before the herdr line, or alone when no other herdr is found. Termivoa refused a herdr program, for example one that belongs to another user or sits in a folder that others can write. |
+| `GitHub: connected as <login>` or `GitHub: not connected` | **Next beta.** Whether this computer is connected to GitHub. It shows only when the broker runs and the build has GitHub, and is never a problem. See [Set up a GitHub repository](/docs/guides/github/). |
 | `! tailscale at <path>: …; Termivoa will not run it` | Another user could replace that Tailscale CLI, so Termivoa does not use it. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-run-tailscale). |
 
 ## Work with sessions
@@ -101,3 +102,13 @@ In `pterm attach`, Ctrl+] leaves without ending the session. With control, Ctrl+
 | `pterm project list` | Shows saved projects with IDs. |
 | `pterm profile list` | Shows saved shell profiles with IDs. |
 | `pterm profile detect` | Finds this computer's shells and saves them as profiles. |
+
+## GitHub
+
+**Next beta.** See [Set up a GitHub repository](/docs/guides/github/). You connect a computer in the app, in **Settings → Integrations**; there is no command to connect.
+
+| Command | What it does |
+| --- | --- |
+| `pterm github status` | Prints one line, for example `GitHub: connected as octo-demo`, `GitHub: not connected`, `GitHub: connecting`, `GitHub: git is not installed on this computer` or `GitHub: not available in this build`. |
+| `pterm github disconnect` | Removes this computer's GitHub login at GitHub and on the computer, then prints `GitHub: disconnected` and the address of GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) page, where you can check that Termivoa is gone. |
+| `pterm github-credential` | Used by git in a folder that Termivoa cloned, to get the GitHub login. Do not run it yourself. |
