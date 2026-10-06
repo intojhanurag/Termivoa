@@ -2299,8 +2299,56 @@ a real phone remain pending. See `docs/evidence/p4/pairing-broker.md`.
   proof screenshots of the built docs and landing at 390 and 1280 px (not
   committed). Not changed: `docs/images/multi-computer-concept.png` (internal
   concept drawing).
+- **Tooling: docs screenshots stay demo-only; the e2e harness keeps the
+  display on** (`fix/screenshots-and-e2e-display`, 2026-10-06; #198, #199).
+  No product code and nothing user-visible changed.
+  - #198, reproduced on a Mac without Google Chrome and with a real herdr:
+    `node scripts/docs-screenshots/capture.mjs` ended with `spawn
+    /Applications/Google Chrome.app/… ENOENT`; on the stack it had started,
+    `GET /api/v1/settings` listed one provider with state `notRunning` and the
+    app showed a **herdr** tab (the demo `HOME` hides the socket, but `pterm`
+    finds `/opt/homebrew/bin/herdr` at its fixed path). Fix: `capture.mjs`
+    takes `CHROME` and `sandboxed` from `scripts/e2e-multicomputer/lib.mjs`,
+    runs every `pterm` in that sandbox, and stops when settings list a
+    provider that is not `notInstalled`. After: `CHROME=<Chrome for Testing>
+    node scripts/docs-screenshots/capture.mjs` exit 0 (17 shots, 23 WebP);
+    the same read gives `notInstalled` and no herdr tab;
+    `node scripts/docs-screenshots/herdr.mjs` exit 0 (4 shots, fake herdr);
+    `node scripts/docs-screenshots/setup.mjs clean` stops the sandboxed stack.
+    Only `state` and `version` were read from the real herdr's provider entry.
+  - #199: `lib.mjs` `Env.keepDisplayOn` starts `/usr/bin/caffeinate -d -i -u
+    -w <pid>` (macOS only; seen in `ps` during the runs, gone 2 s after
+    `kill -9` of the run); `Page.frame` (a 1×1 `Page.captureScreenshot`)
+    before `terminalText` and with the mouse move of `tapTerminalText`;
+    `Browser.send` fails after 60 s without an answer; one try inside `until`
+    cannot outlast its timeout. Cause, from the code and a stand-in test (a
+    tab behind another tab, which also gets no frames): xterm draws
+    `.xterm-rows` only in `requestAnimationFrame` (the app's own frame
+    fallback timer writes to xterm, but xterm has none); with no frames
+    `Input.dispatchMouseEvent` `mouseMoved` never answers (no answer in 5 s;
+    27 ms with `Page.frame`), which had no timeout; a 1×1 screenshot ran 2
+    animation frames in 30 ms.
+  - Runs with the display on: Phase A 32 of 32 (`/tmp/tooling-e2e-a`).
+    Phase B three times: the first run 103 PASS, 7 FAIL (`B4`, `B5`, `B6`,
+    `B6-fit`, `B2b-back`, `B2b-same`, `PV-node`: "timeout waiting for shell
+    prompt", in a row after `B8`, no failure screenshots written; 18 minutes;
+    `/tmp/tooling-e2e-b`); the second and third 117 of 117 in 9 minutes each
+    (`/tmp/tooling-e2e-b2`, `/tmp/tooling-e2e-b3`; with a temporary log line
+    in `Page.frame`, removed after). The cause of the first run's failures
+    was not found; `--only B` also passed.
+  - Not run: any run with the display off (the owner's order: no power
+    setting changes), so `Page.frame` with the display off is not proven;
+    `computers.mjs`; `capture.mjs landing`; WebKit.
 
 Still pending: real Linux, Windows and Android devices; CI after the Actions
 minutes reset; the 24-hour soak; the history secret scan and licence audit
 (see `docs/pending-work.md`). Features from #60 and #62 need a broker restart
 on the owner's Mac, which ends running sessions.
+- **Three more Phase B runs** after the pull request was opened, with
+  little other work on the computer: 117/117 each. In all, 5 of 6 full runs
+  passed; the one with 7 failures ran while other builds and tests used the
+  computer. The cause of that one run is still not proven.
+- **Merge-gate review (2026-10-06):** duplicate copy of this file removed;
+  `frame()` logs a timeout and keeps one capture open at a time; the
+  screenshot demo guard fails closed. The cause of the one stalled run in six
+  is still not found.

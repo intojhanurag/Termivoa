@@ -16,6 +16,8 @@ export const TAILNET = 'tailx.ts.net';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Ports the harness must never use: the installed pterm and its previews.
 const RESERVED = new Set([8787, 8788, 8789, 8443]);
+// The longest a CDP call may stay without an answer (Browser.send).
+const CDP_TIMEOUT_MS = 60000;
 
 // Every pterm process of the harness runs in this macOS sandbox. It hides
 // the real Tailscale CLI (internal/tailnet.FindBinary checks these fixed
@@ -77,18 +79,33 @@ async function must(cmd, args, options) {
   return result;
 }
 
-/** Waits until fn returns a truthy value. */
+/**
+ * Waits until fn returns a truthy value. One call of fn cannot outlast the
+ * timeout either: a browser or process that never answers fails the check
+ * with this error, it does not hang the run.
+ */
 export async function until(fn, { timeout = 20000, every = 200, what = 'condition' } = {}) {
   const end = Date.now() + timeout;
+  const late = Symbol('late');
+  let timer;
+  const cut = new Promise((res) => { timer = setTimeout(res, timeout, late); });
   let last;
-  while (Date.now() < end) {
-    try {
-      const value = await fn();
-      if (value) return value;
-    } catch (error) {
-      last = error;
+  try {
+    while (Date.now() < end) {
+      try {
+        const value = await Promise.race([fn(), cut]);
+        if (value === late) {
+          last = new Error(`the last try did not return in ${timeout} ms`);
+          break;
+        }
+        if (value) return value;
+      } catch (error) {
+        last = error;
+      }
+      await sleep(every);
     }
-    await sleep(every);
+  } finally {
+    clearTimeout(timer);
   }
   throw new Error(`timeout waiting for ${what}${last ? `: ${last.message}` : ''}`);
 }
@@ -289,6 +306,7 @@ export class Env {
    */
   static async create({ buildWeb = true, names = ['mac', 'vps'], production = false } = {}) {
     const env = new Env();
+    env.keepDisplayOn();
     env.root = mkdtempSync('/tmp/mce2e.');
     env.bin = join(env.root, 'bin');
     mkdirSync(env.bin);
@@ -314,6 +332,20 @@ export class Env {
     await env.startFront();
     await Promise.all(Object.values(env.stacks).map((s) => s.start()));
     return env;
+  }
+
+  /**
+   * macOS: holds a display-on and no-idle-sleep assertion for the life of
+   * this process (README, "Display"). With the display off, headless Chrome
+   * makes no frames: the terminal's rows stop and some CDP calls never
+   * answer. -u turns on a display that is already off; -w ends caffeinate
+   * with this process, also after a crash or a kill. Nothing on other systems.
+   */
+  keepDisplayOn() {
+    if (process.platform !== 'darwin') return;
+    this.caffeinate = spawn('/usr/bin/caffeinate', ['-d', '-i', '-u', '-w', String(process.pid)], { stdio: 'ignore' });
+    this.caffeinate.on('error', (error) => console.log(`caffeinate did not start (${error.message}): keep the display on yourself`));
+    this.caffeinate.unref();
   }
 
   async startFront() {
@@ -358,6 +390,7 @@ export class Env {
     await Promise.all(Object.values(this.stacks).map((s) => s.uninstallHerdr()));
     await Promise.all(Object.values(this.stacks).map((s) => s.stop()));
     this.front?.kill();
+    this.caffeinate?.kill();
     // A failed step can leave a CLI under script(1) running (pterm setup has no runtime dir).
     await run('/usr/bin/pkill', ['-f', `${this.root}/bin/`]);
   }
@@ -386,6 +419,7 @@ export class Browser {
       if (m.id && this.pending.has(m.id)) {
         const p = this.pending.get(m.id);
         this.pending.delete(m.id);
+        clearTimeout(p.timer);
         if (m.error) p.rej(new Error(`${p.method}: ${m.error.message}`)); else p.res(m.result);
       } else if (m.method) {
         for (const l of this.listeners) l(m);
@@ -393,10 +427,20 @@ export class Browser {
     });
   }
 
-  send(method, params = {}, sessionId) {
+  /**
+   * One CDP call. Chrome does not answer some calls while it makes no frames
+   * (Input.dispatchMouseEvent mouseMoved in a tab that is not drawn), and
+   * never after it died: no answer in `timeout` ms is an error that names
+   * the call.
+   */
+  send(method, params = {}, sessionId, timeout = CDP_TIMEOUT_MS) {
     const id = ++this.id;
     return new Promise((res, rej) => {
-      this.pending.set(id, { res, rej, method });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        rej(new Error(`${method}: no answer from Chrome in ${timeout} ms`));
+      }, timeout);
+      this.pending.set(id, { res, rej, method, timer });
       this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     });
   }
@@ -425,7 +469,24 @@ export class Browser {
 
 export class Page {
   constructor(browser, sessionId, targetId) { Object.assign(this, { browser, sessionId, targetId }); }
-  send(method, params) { return this.browser.send(method, params, this.sessionId); }
+  send(method, params, timeout) { return this.browser.send(method, params, this.sessionId, timeout); }
+
+  /**
+   * Makes Chrome draw one frame now (a 1×1 screenshot). Without a lit
+   * display Chrome makes no frames of its own, and what waits for a frame
+   * waits with it: xterm draws the terminal's rows in requestAnimationFrame,
+   * and a mouse move is delivered with a frame. Never fails: a reader that
+   * gets no frame in 5 s reads the page as it is, and stderr gets one line.
+   * One capture per page at a time: while Chrome has not answered (or
+   * Browser.send has not given up on it), the next call waits for the same one.
+   */
+  frame() {
+    this.capture ??= this.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } })
+      .catch(() => undefined).finally(() => { this.capture = undefined; });
+    let timer;
+    const late = new Promise((r) => { timer = setTimeout(() => { console.error(`frame(): no frame in 5 s on page ${this.targetId}`); r(); }, 5000); });
+    return Promise.race([this.capture, late]).finally(() => clearTimeout(timer));
+  }
 
   async eval(expression) {
     const r = await this.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
@@ -569,8 +630,11 @@ export async function typeLine(page, text) {
   }
 }
 
-/** The visible text of the Live terminal. */
-export const terminalText = (page) => page.eval(`[...document.querySelectorAll('.terminal-host .xterm-rows')].map((e) => e.innerText).join('\\n')`);
+/** The visible text of the Live terminal, after a frame: xterm draws its rows only in a frame (Page.frame). */
+export async function terminalText(page) {
+  await page.frame();
+  return page.eval(`[...document.querySelectorAll('.terminal-host .xterm-rows')].map((e) => e.innerText).join('\\n')`);
+}
 
 /** Taps the first place where needle starts in the Live terminal (xterm link providers act on mouse events). */
 export async function tapTerminalText(page, needle) {
@@ -587,7 +651,11 @@ export async function tapTerminalText(page, needle) {
     }
     return null; })()`);
   if (!point) throw new Error(`"${needle}" is not on the terminal screen`);
-  await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+  // Chrome answers a mouse move only with a frame (Page.frame).
+  const moved = page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+  moved.catch(() => {}); // no unhandled rejection during frame(); `await moved` still throws
+  await page.frame();
+  await moved;
   await sleep(200);
   await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
   await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
