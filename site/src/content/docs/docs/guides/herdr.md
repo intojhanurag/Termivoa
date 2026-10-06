@@ -203,7 +203,7 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 | Not from the phone | Force-removing a worktree, renaming, split panes, updating herdr. |
 | Platforms | macOS and Linux. Not Windows. |
 | herdr sessions | Only the default herdr session. Not named sessions. |
-| herdr versions | Termivoa tests with herdr 0.8.2. Closed worktrees and agent tabs are not yet tested with herdr 0.9.3. |
+| herdr versions | Termivoa is tested with herdr 0.8.2 and herdr 0.9.3. |
 
 ## Common questions
 
