@@ -58,6 +58,8 @@ export interface HttpBodies {
   readonly providerOpenResponse: HTTPProviderOpenResponse;
   readonly providerCreateResponse: HTTPProviderCreateResponse;
   readonly providerManageResponse: HTTPProviderManageResponse;
+  /** One name of a group's `closed` list. */
+  readonly providerWorktreeName: string;
 }
 
 export type HttpSchema = keyof HttpBodies;
@@ -70,7 +72,7 @@ const ITEMS: { readonly [Name in HttpSchema]?: ReadonlyArray<readonly [field: st
   computerFoundResponse: [['computers', 'foundComputer']],
   // A peer's provider list is checked per group, per item and per target: one bad target hides only itself.
   providerSnapshotResponse: [['groups', 'providerGroup']],
-  providerGroup: [['items', 'providerItem']],
+  providerGroup: [['items', 'providerItem'], ['closed', 'providerWorktreeName']],
   providerItem: [['targets', 'providerTarget']],
 };
 

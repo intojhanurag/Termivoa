@@ -2,6 +2,7 @@ package herdr
 
 import (
 	"cmp"
+	"context"
 	"slices"
 	"time"
 )
@@ -20,8 +21,9 @@ type track struct {
 // the Integrations switch forces polls 20 ms apart), finished (done or idle) after
 // at least 20 s of observed work; the first snapshot after discovery is a
 // baseline without pushes.
-func (provider *Provider) apply(snapshot wireSnapshot, now time.Time) {
-	result := mapSnapshot(snapshot, provider.caps.attachAny, now, provider.since, provider.gitWorkspaces(snapshot, now))
+func (provider *Provider) apply(ctx context.Context, snapshot wireSnapshot, now time.Time) {
+	result := mapSnapshot(snapshot, provider.caps.attachAny, now, provider.since,
+		provider.gitWorkspaces(snapshot, now), provider.closedWorktrees(ctx, snapshot, now))
 	provider.since = result.since
 	// A restart of the same herdr version between two polls: every terminal ID is new. A new baseline, no push burst.
 	// Panes, not targets: a tab's target moves between its panes without a restart.

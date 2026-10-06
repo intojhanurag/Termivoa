@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, client, providerWord } from '../api/http';
 import type { Computer } from '../computers';
-import type { HTTPProviderItem, HTTPProviderSession } from '../generated/protocol';
+import type { HTTPProviderGroup, HTTPProviderItem, HTTPProviderSession } from '../generated/protocol';
 import { fitGrid, MONOSPACE } from '../terminal/TerminalView';
 import { hosted, type HostedSession } from './allSessions';
-import { GONE, Names, StateWord, wordText } from './Herdr';
+import { GONE, MenuButton, Names, StateWord, wordText } from './Herdr';
 import { Live } from './Live';
+import { endsTerminal, ItemMenuSheet } from './ProviderManage';
 import { findTarget, groupsOf, type ProviderEntry } from './providers';
 import { Button, Notice } from './ui';
 
@@ -95,14 +96,19 @@ export function visibilityStep(phase: Phase['kind'], ended: boolean, hidden: boo
 /** A tap (in the app or a notification) opens, unless this terminal already shows here. */
 export const tapOpens = (phase: Phase['kind'], ended: boolean): boolean => phase !== 'open' || ended;
 
+/** The ⋯ in Live (docs/herdr-manage.md, section 14, B3): where the computer can manage, for an item in the latest list. */
+export const liveMenu = (entry: ProviderEntry | undefined, found: boolean): entry is ProviderEntry => entry?.manage === true && found;
+
 const DOTS: Partial<Record<string, string>> = { blocked: 'amber', working: 'accent', done: 'green' };
 
 /** The workspace's tabs as chips (H2), and the way back. A tab this provider version cannot open is off. */
-export function ProviderChips({ name, item, current, onChip, onSessions }: {
+export function ProviderChips({ name, item, current, menu, onChip, onSessions }: {
   /** The provider's display name ("herdr"). */
   readonly name: string;
   readonly item: HTTPProviderItem | undefined;
   readonly current: string;
+  /** The ⋯ of this workspace (MenuButton), where it shows. */
+  readonly menu?: ReactNode;
   readonly onChip: (targetId: string) => void;
   readonly onSessions: () => void;
 }) {
@@ -134,6 +140,7 @@ export function ProviderChips({ name, item, current, onChip, onSessions }: {
           );
         })}
       </div>
+      {menu}
     </nav>
   );
 }
@@ -147,7 +154,7 @@ export type Phase =
   | { readonly kind: 'error'; readonly text: string };
 
 export function ProviderScreen({
-  computer, provider, targetId, tapped, notice, entry, fontSize, multi, onChip, onGone, onSessions, onSettings, onFailure, onRevoked,
+  computer, provider, targetId, tapped, notice, entry, fontSize, multi, onChip, onGone, onClosed, onOpened, onReload, onSessions, onSettings, onFailure, onRevoked,
 }: {
   readonly computer: Computer;
   readonly provider: string;
@@ -162,6 +169,12 @@ export function ProviderScreen({
   readonly multi: boolean;
   readonly onChip: (targetId: string) => void;
   readonly onGone: () => void;
+  /** The user closed or removed what is on screen from the ⋯ menu: back to the provider tab, with no message. */
+  readonly onClosed: () => void;
+  /** New tab from the ⋯ menu: open its terminal; `notice` says what did not start. */
+  readonly onOpened: (targetId: string, notice: string | undefined) => void;
+  /** Reads a provider's list again (its key). */
+  readonly onReload: (key: string) => Promise<void>;
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onFailure: (error: unknown) => string;
@@ -170,6 +183,8 @@ export function ProviderScreen({
   const [phase, setPhase] = useState<Phase>(tapped > 0 ? { kind: 'opening' } : { kind: 'ask' });
   const [note, setNote] = useState(notice);
   const [since] = useState(Date.now);
+  // The ⋯ menu keeps the group and item of its tap, as on the provider tab: the sheet stays while the list changes under it.
+  const [menu, setMenu] = useState<{ readonly group: HTTPProviderGroup; readonly item: HTTPProviderItem }>();
   const name = entry?.info.name ?? provider;
   const state = entry === undefined ? undefined : entry.status.kind === 'ok' ? entry.status.snapshot.state : entry.info.state;
   const found = entry === undefined ? undefined : findTarget({ groups: groupsOf(entry) }, targetId);
@@ -219,9 +234,10 @@ export function ProviderScreen({
     if (tapped > 0 && tapOpens(phaseRef.current.kind, ended.current)) void open();
   }, [tapped]);
 
+  // Not while the ⋯ menu is open: a close the user asked for leaves by onClosed, without "That terminal is gone."
   useEffect(() => {
-    if (left && (phase.kind === 'ask' || phase.kind === 'error')) onGone();
-  }, [left, phase.kind, onGone]);
+    if (left && menu === undefined && (phase.kind === 'ask' || phase.kind === 'error')) onGone();
+  }, [left, menu, phase.kind, onGone]);
 
   // Hidden: close the stream (the host ends the attach 10 s later and the pane gets its size back). Back: open again.
   useEffect(() => {
@@ -236,7 +252,24 @@ export function ProviderScreen({
 
   const parts = [found?.group.name, found?.item.name].filter((part): part is string => part !== undefined && part !== '').filter((part, index, list) => list.indexOf(part) === index);
 
-  const chips = <ProviderChips name={name} item={found?.item} current={targetId} onChip={onChip} onSessions={onSessions} />;
+  const chips = (
+    <ProviderChips
+      name={name} item={found?.item} current={targetId} onChip={onChip} onSessions={onSessions}
+      menu={liveMenu(entry, found !== undefined) && found !== undefined ? <MenuButton name={found.item.name} onClick={() => setMenu({ group: found.group, item: found.item })} /> : null}
+    />
+  );
+  const sheet = menu !== undefined && entry !== undefined && (
+    <ItemMenuSheet
+      entry={entry}
+      group={menu.group}
+      item={menu.item}
+      onOpened={(tap, said) => onOpened(tap.targetId, said)}
+      onReload={() => onReload(entry.key).catch(() => undefined)}
+      onFailure={(error) => onFailure(error)}
+      onClose={() => setMenu(undefined)}
+      onDone={(action) => { if (endsTerminal(action, menu.item, targetId)) onClosed(); else setMenu(undefined); }}
+    />
+  );
 
   if (phase.kind === 'open') {
     const noop = () => undefined;
@@ -269,6 +302,7 @@ export function ProviderScreen({
         onStartWorktree={none}
         onRevoked={onRevoked}
       />
+      {sheet}
       </>
     );
   }
@@ -299,6 +333,7 @@ export function ProviderScreen({
           </Button>
         </div>
       </div>
+      {sheet}
     </main>
   );
 }

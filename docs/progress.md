@@ -49,6 +49,48 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### herdr, second round: agent tabs, closed worktrees, the menu in a terminal (2026-10-05, branch `feat/herdr-agent-tab`; pull request open, not merged)
+
+- **Why.** The owner asked for the herdr features that were still missing,
+  each planned, built on a branch and opened as a pull request with
+  pictures for his review, not merged.
+- **What.** Design: [herdr-manage.md](herdr-manage.md), section 14. **New
+  tab** with **Shell** or an agent and a first prompt; closed worktrees as
+  **CLOSED** rows with **Open** (`worktree.list` in the poll, bounded;
+  `openItem`); the **⋯** menu inside a herdr terminal; **‹ Sessions** back
+  to the herdr tab. Protocol revision 6. No database change. An agent's
+  herdr name is now its kind and pane (this also changes create).
+- **Paper.** Not drawn: Paper Desktop was not running. The pull request has
+  six screenshots of the built screens (`docs/evidence/herdr-round2/`, demo
+  data only).
+- **Lab.** herdr 0.8.2, isolated: `worktree.list`, `worktree.open`,
+  `already_open`, a second agent of one kind, closed lists (detached,
+  prunable, odd-named and removed worktrees never listed). Not run on
+  0.9.3.
+- **e2e.** 10 new `H-*` checks and `H-newtab` changed. Runs before the
+  review fixes: Phase A 32/32, Phase B 127/127 (48 `H-*`), `--only H`
+  52/52. After the review fixes and the rebase on #190: Phase B
+  127/127 and Phase A 32/32 (`docs/evidence/herdr-round2/phase-a.md` and
+  `phase-b.md`), run with the display kept on (`caffeinate -d`). Before
+  that, four runs stalled part-way while the display was off (the power log
+  shows it off from 18:11 to 23:49): with no display the headless Chrome
+  stops drawing and a check that reads the terminal's rows waits (issue
+  #199). An earlier line of this entry blamed a closed lid; the power log
+  shows the display.
+- **Review.** One adversarial review of both commits: no critical or high
+  finding; seven findings, four fixed, three written down (design, section
+  14).
+- **Checks.** `scripts/check` (960 vitest); `go vet` for all platforms;
+  `go test -race ./internal/... ./cmd/... ./scripts/...`; `cd site && npx
+  astro build` with valid links.
+- **Found, not part of it (rule 21).** Listed in the design (section 14)
+  and in [pending-work.md](pending-work.md): a first prompt that may always
+  fail on herdr 0.8.2; `agentStarted` that does not prove the agent runs; a
+  slow capability probe that sticks; an unasked "folder cannot be read"
+  notice in a herdr terminal outside git; stale agent kinds in the app.
+- **Merge-gate review (2026-10-06).** No code finding; README, architecture,
+  security page and herdr guide brought up to date.
+
 ### Test sends, hung push endpoints, and two computers with one label (2026-10-06, issue #202, branch `fix/push-budget-fanout` on top of pull request #201; not merged)
 
 - **Why.** Issue #202, three notes from the review of #201. Each was

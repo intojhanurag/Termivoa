@@ -10,6 +10,7 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **More herdr from the phone.** **New tab** can start an agent with a first prompt. A worktree whose workspace you closed shows as **CLOSED** with **Open**. A herdr terminal has the **⋯** menu of its workspace, and **‹ Sessions** goes back to the **herdr** tab.
 - **Fixed: buzz switches that look on while this phone gets no buzz.** A herdr card in **Settings → Integrations** now says "This phone gets no buzz yet." with a link to **Settings → Notifications**. See [I hear a sound but see no notification](/docs/reference/troubleshooting/#i-hear-a-sound-but-see-no-notification).
 - **Fixed: test notifications could stop real ones.** A phone that sent a test every 5 seconds could use up the limit of 12 notifications per minute. **Send a test notification** now has its own limit (6 per minute for all phones together). Also, up to 3 phones whose push service does not answer no longer hold back the notifications of the other phones, and with two computers of the same name, only the right herdr card says "This phone gets no buzz yet." See [When do notifications come?](/docs/guides/notifications/#when-do-notifications-come)
 - **Fixed: a lost notification.** When three or more sessions needed you at the same time and the push service was slow, one notification could be lost. It is no longer lost this way.

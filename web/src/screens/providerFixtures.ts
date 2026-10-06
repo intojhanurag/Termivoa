@@ -45,7 +45,7 @@ export const snapshot = (groups: HTTPProviderGroup[] = shopGroups(), extra: Part
 });
 
 export const providerEntry = (computer: Computer, status: ProviderEntry['status'], extra: Partial<HTTPProviderInfo> = {}): ProviderEntry => ({
-  computer, info: info(extra), manage: true, key: `${computer.origin} provider:herdr`, status,
+  computer, info: info(extra), manage: true, agentTab: true, key: `${computer.origin} provider:herdr`, status,
 });
 
 export const ready = (computer: Computer = mac, groups: HTTPProviderGroup[] = shopGroups()): ProviderEntry =>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ApiError, client } from '../api/http';
+import { ApiError, client, manageTimeout } from '../api/http';
 import type { Computer } from '../computers';
 import type {
   HTTPProviderGroup, HTTPProviderItem, HTTPProviderManageRequest, HTTPProviderManageResponse, HTTPSettingsResponse,
@@ -7,6 +7,7 @@ import type {
 import { checkAgain } from './allSessions';
 import type { ProviderTap } from './Herdr';
 import { NewSessionHelp } from './NewSession';
+import { PromptField, promptProblem, startNotice } from './ProviderCreate';
 import type { ProviderEntry, ProviderSource } from './providers';
 import { Sheet } from './Sheet';
 import { Button, Notice } from './ui';
@@ -34,17 +35,19 @@ export type ManageNote =
   /** Removed nothing: the worktree has changes that are not committed. */
   | { readonly kind: 'uncommitted' }
   /** Made, but this provider version cannot open a terminal without an agent. */
-  | { readonly kind: 'made'; readonly what: 'tab' | 'workspace' }
+  | { readonly kind: 'made'; readonly what: 'tab' | 'workspace' | 'worktree' }
   | { readonly kind: 'error'; readonly text: string };
 
 export type ManageStep =
-  /** A new terminal: open it in Live, as a tap does. */
-  | { readonly kind: 'open'; readonly targetId: string }
+  /** A new terminal: open it in Live, as a tap does. `notice`: what did not start in a new tab with an agent (create's words). */
+  | { readonly kind: 'open'; readonly targetId: string; readonly notice?: string }
   /** Done, and the list was read again. */
   | { readonly kind: 'done' }
   | { readonly kind: 'note'; readonly note: ManageNote }
   /** CHANGED, and the list was read again. */
   | { readonly kind: 'changed' };
+
+export const SLOW = 'This takes longer than the phone waits. Look at the list before you try again.';
 
 /**
  * One manage action, start to end. After every success, and after "the list
@@ -52,12 +55,19 @@ export type ManageStep =
  * is the caller's, with the move to Live). `reload` must not reject.
  */
 export async function manageStep(
-  body: HTTPProviderManageRequest, manage: Manage, reload: () => Promise<void>, words: (error: unknown) => string,
+  body: HTTPProviderManageRequest, manage: Manage, reload: () => Promise<void>, words: (error: unknown) => string, clock: () => number = Date.now,
 ): Promise<ManageStep> {
   let answer: HTTPProviderManageResponse;
+  const started = clock();
   try {
     answer = await manage(body);
   } catch (error) {
+    // The phone's own wait ran out: the computer may still finish, so this is not "can't reach" (and no Offline screen),
+    // and the list says what exists before the user tries again.
+    if (error instanceof ApiError && error.code === 'network' && clock() - started >= manageTimeout(body) - 1000) {
+      await reload();
+      return { kind: 'note', note: { kind: 'error', text: SLOW } };
+    }
     // Nothing changed: the tab is the item's last one.
     if (error instanceof ApiError && error.code === 'operation_conflict' && body.action === 'closeTab') return { kind: 'note', note: { kind: 'error', text: LAST_TAB } };
     if (error instanceof ApiError && (error.code === 'operation_conflict' || error.code === 'session_missing')) {
@@ -67,21 +77,53 @@ export async function manageStep(
     return { kind: 'note', note: { kind: 'error', text: words(error) } };
   }
   if (answer.problem === 'uncommitted') return { kind: 'note', note: { kind: 'uncommitted' } };
-  if (answer.targetId !== undefined) return { kind: 'open', targetId: answer.targetId };
+  if (answer.targetId !== undefined) {
+    // Also when the agent started and only the prompt was not sent (agentStarted is then true).
+    const notice = startNotice({ problem: answer.agentProblem }, 'tab');
+    return { kind: 'open', targetId: answer.targetId, ...(notice === undefined ? {} : { notice }) };
+  }
   await reload();
+  // No terminal to say it over (this herdr cannot open the tab): say here what the agent did.
+  const problem = startNotice({ problem: answer.agentProblem }, 'tab');
+  if (problem !== undefined) return { kind: 'note', note: { kind: 'error', text: problem } };
   if (body.action === 'newTab') return { kind: 'note', note: { kind: 'made', what: 'tab' } };
+  if (body.action === 'openItem') return { kind: 'note', note: { kind: 'made', what: 'worktree' } };
   if (body.action === 'newWorkspace') return { kind: 'note', note: { kind: 'made', what: 'workspace' } };
   return { kind: 'done' };
 }
 
 /** Close tab names one of the item's terminals: its whole tab ends. */
 export interface CloseTab { readonly closeTab: string }
-type ItemAction = 'newTab' | 'closeItem' | 'removeItem' | CloseTab;
+/** New tab with an agent (section 14, B1): one of the provider's agent kinds, and the first prompt as typed. */
+export interface AgentTab { readonly agent: string; readonly prompt: string }
+export type ItemAction = 'newTab' | 'closeItem' | 'removeItem' | CloseTab | AgentTab;
 
-/** Close and remove carry the item's name as the user confirmed it; Close tab carries the terminal. */
+/** Close and remove carry the item's name as the user confirmed it; Close tab carries the terminal; a blank prompt is left out, as in create. */
 export function itemRequest(action: ItemAction, item: Pick<HTTPProviderItem, 'id' | 'name'>): HTTPProviderManageRequest {
-  if (typeof action === 'object') return { action: 'closeTab', itemId: item.id, targetId: action.closeTab };
+  if (typeof action === 'object') {
+    return 'closeTab' in action
+      ? { action: 'closeTab', itemId: item.id, targetId: action.closeTab }
+      : { action: 'newTab', itemId: item.id, agent: action.agent, ...(action.prompt.trim() === '' ? {} : { prompt: action.prompt }) };
+  }
   return action === 'newTab' ? { action, itemId: item.id } : { action, itemId: item.id, name: item.name };
+}
+
+/** Open a closed worktree again (section 14, B2): the group and one of its `closed` names; never a path. */
+export const openRequest = (group: Pick<HTTPProviderGroup, 'id'>, worktree: string): HTTPProviderManageRequest =>
+  ({ action: 'openItem', groupId: group.id, worktree });
+
+/** New tab asks what to start only where the computer can start an agent in a tab and has an agent kind; else it makes the tab at once. */
+export const tabChooser = (entry: Pick<ProviderEntry, 'agentTab' | 'info'>): boolean => entry.agentTab && entry.info.agentKinds.length > 0;
+
+/**
+ * The action ends the terminal on screen (Live, B3): its workspace closed or removed, or its own tab closed.
+ * ponytail: a tab is known by its label (the list has no tab ID); two tabs with one label count as one here.
+ */
+export function endsTerminal(action: ItemAction, item: Pick<HTTPProviderItem, 'targets'>, current: string): boolean {
+  if (action === 'closeItem' || action === 'removeItem') return true;
+  if (typeof action !== 'object' || !('closeTab' in action)) return false;
+  const label = (id: string) => item.targets.find((target) => target.id === id)?.label;
+  return action.closeTab === current || (label(current) !== undefined && label(action.closeTab) === label(current));
 }
 
 /** The most items a group lists; at this count the list may be cut, and a worktree may be out of sight. */
@@ -99,7 +141,7 @@ export const CONFIRM_AFTER_MS = 400;
 export const confirmReady = (shownAt: number, now: number): boolean => now - shownAt >= CONFIRM_AFTER_MS;
 
 /** One action at a time per sheet, also when two taps land before the re-render; an answer after the sheet left does nothing. */
-function useAction<Busy>() {
+export function useAction<Busy>() {
   const [busy, setBusy] = useState<Busy>();
   const running = useRef(false);
   const mounted = useRef(true);
@@ -127,10 +169,10 @@ function useReturnFocus(): void {
   useEffect(() => () => { if (opener instanceof HTMLElement && opener.isConnected) opener.focus(); }, [opener]);
 }
 
-function NoteLine({ note, name, provider }: { readonly note: ManageNote; readonly name: string; readonly provider: string }) {
+export function NoteLine({ note, name, provider }: { readonly note: ManageNote; readonly name: string; readonly provider: string }) {
   switch (note.kind) {
     case 'uncommitted': return <Notice tone="warning" role="alert" title={<><bdi>{name}</bdi> has changes that are not committed. Commit or discard them first.</>} />;
-    case 'made': return <Notice tone="neutral" role="status" title={<>The {note.what} is made. Update <bdi>{provider}</bdi> to open it from the phone.</>} />;
+    case 'made': return <Notice tone="neutral" role="status" title={<>The {note.what} is {note.what === 'worktree' ? 'open' : 'made'}. Update <bdi>{provider}</bdi> to open it from the phone.</>} />;
     case 'error': return <Notice tone="danger" role="alert" title={note.text} />;
   }
 }
@@ -153,20 +195,26 @@ function Head({ id, caption, title, busy, onClose }: {
   );
 }
 
-export type ItemMenuMode = 'menu' | 'close' | 'remove' | 'changed' | CloseTab;
+/** `newTab`: the chooser of New tab (Shell or an agent). */
+export type ItemMenuMode = 'menu' | 'newTab' | 'close' | 'remove' | 'changed' | CloseTab;
 /** The action that runs now. */
 type ItemBusy = 'newTab' | 'closeItem' | 'removeItem' | 'closeTab';
 
 /** The item menu and its confirmations. State comes from props, so each state renders on its own. */
-export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onAction, onClose }: {
-  readonly entry: Pick<ProviderEntry, 'computer' | 'info'>;
+export function ItemMenu({ entry, group, item, mode, busy, note, agent, prompt = '', onMode, onAction, onAgent = () => undefined, onPrompt = () => undefined, onClose }: {
+  readonly entry: Pick<ProviderEntry, 'computer' | 'info' | 'agentTab'>;
   readonly group: HTTPProviderGroup;
   readonly item: HTTPProviderItem;
   readonly mode: ItemMenuMode;
   readonly busy: ItemBusy | undefined;
   readonly note: ManageNote | undefined;
+  /** The chooser: the agent kind picked (undefined: none yet) and its first prompt. */
+  readonly agent?: string | undefined;
+  readonly prompt?: string;
   readonly onMode: (mode: ItemMenuMode) => void;
   readonly onAction: (action: ItemAction) => void;
+  readonly onAgent?: (agent: string | undefined) => void;
+  readonly onPrompt?: (prompt: string) => void;
   readonly onClose: () => void;
 }) {
   const { info, computer } = entry;
@@ -176,7 +224,7 @@ export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onActio
   // Focus stays in the sheet (Escape closes it) through every change: on the confirmation when one shows, never on its
   // danger button (Enter must not confirm), else on the menu; again when a busy action ends and its button comes back.
   const menu = useRef<HTMLDivElement>(null);
-  const confirmation = useRef<HTMLDivElement>(null);
+  const confirmation = useRef<HTMLDivElement>(null); // also the New tab chooser
   const shownAt = useRef(0);
   useEffect(() => { shownAt.current = Date.now(); }, [mode]);
   useEffect(() => { if (!off) (confirmation.current ?? menu.current)?.focus(); }, [mode, off]);
@@ -206,7 +254,11 @@ export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onActio
       {mode === 'menu' && (
         <>
           <ul className="menu-list">
-            <li><Button busy={busy === 'newTab'} busyLabel="Opening…" disabled={off} onClick={() => onAction('newTab')}>New tab</Button></li>
+            <li>
+              {tabChooser(entry)
+                ? <button type="button" disabled={off} onClick={() => onMode('newTab')}>New tab</button>
+                : <Button busy={busy === 'newTab'} busyLabel="Opening…" disabled={off} onClick={() => onAction('newTab')}>New tab</Button>}
+            </li>
           </ul>
           <section className="tab-rows" aria-labelledby="item-tabs">
             <h3 id="item-tabs" className="caps">Tabs</h3>
@@ -231,6 +283,25 @@ export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onActio
           </ul>
         </>
       )}
+      {mode === 'newTab' && (
+        // Shell makes the tab at once, so it takes no tap at first either (a double tap on New tab lands here).
+        <div ref={confirmation} role="group" aria-labelledby="new-tab-title" tabIndex={-1} className="stack new-tab">
+          <p id="new-tab-title" className="caps">New tab</p>
+          <div className="kind-chips">
+            <Button busy={busy === 'newTab' && agent === undefined} busyLabel="Opening…" disabled={off} onClick={() => { if (confirmReady(shownAt.current, Date.now())) { onAgent(undefined); onAction('newTab'); } }}>Shell</Button>
+            {info.agentKinds.map((kind) => (
+              <button key={kind} type="button" aria-pressed={agent === kind} disabled={off} onClick={() => onAgent(kind)}><bdi>{kind}</bdi></button>
+            ))}
+          </div>
+          {agent !== undefined && <PromptField prompt={prompt} busy={off} onPrompt={onPrompt} />}
+          <div className="row confirm-pair">
+            <button type="button" disabled={off} onClick={() => onMode('menu')}>Cancel</button>
+            {agent !== undefined && (
+              <Button className="primary" busy={busy === 'newTab'} busyLabel="Starting…" disabled={promptProblem(prompt) !== undefined} onClick={() => onAction({ agent, prompt })}>Start</Button>
+            )}
+          </div>
+        </div>
+      )}
       {mode === 'close' && confirm(<>Close <bdi>{item.name}</bdi>? Its terminals end. Files stay.</>, 'closeItem', 'Close workspace', 'Closing…')}
       {mode === 'remove' && confirm(
         <>Remove the worktree <bdi>{item.name}</bdi>? Its folder is deleted, also files that git ignores (such as .env). The branch stays.</>,
@@ -241,33 +312,41 @@ export function ItemMenu({ entry, group, item, mode, busy, note, onMode, onActio
   );
 }
 
-/** The ⋯ of an item row, with its own state. `onOpened` opens a new tab's terminal; anything else stays here or closes. */
-export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onFailure, onClose, manage = (body) => client(entry.computer.origin).providerManage(entry.info.id, body) }: {
+/** The ⋯ of an item row (and of its terminal in Live), with its own state. `onOpened` opens a new tab's terminal; anything else stays here or closes. */
+export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onFailure, onClose, onDone = onClose, manage = (body) => client(entry.computer.origin).providerManage(entry.info.id, body) }: {
   readonly entry: ProviderEntry;
   readonly group: HTTPProviderGroup;
   readonly item: HTTPProviderItem;
-  readonly onOpened: (tap: ProviderTap) => void;
+  /** `notice`: what did not start in a new tab with an agent; said once over its terminal. */
+  readonly onOpened: (tap: ProviderTap, notice: string | undefined) => void;
   /** Reads this provider's list again; never rejects. */
   readonly onReload: () => Promise<void>;
   /** Words a failure of this computer (a peer's 401 says pair again; it never sends the user to Setup). */
   readonly onFailure: (error: unknown, from: Computer) => string;
   readonly onClose: () => void;
+  /** A close or a remove is done (Live leaves a terminal that ended with it); absent: the sheet closes. */
+  readonly onDone?: (action: ItemAction) => void;
   readonly manage?: Manage;
 }) {
   const [mode, setMode] = useState<ItemMenuMode>('menu');
   const [note, setNote] = useState<ManageNote>();
+  const [agent, setAgent] = useState<string>();
+  const [prompt, setPrompt] = useState('');
   const { busy, running, run } = useAction<ItemBusy>();
   useReturnFocus();
   const close = () => { if (!running.current) onClose(); };
 
   function act(action: ItemAction) {
+    const agentTab = typeof action === 'object' && 'agent' in action;
+    if (agentTab && promptProblem(action.prompt) !== undefined) return;
     setNote(undefined);
-    run(typeof action === 'object' ? 'closeTab' : action, () => manageStep(itemRequest(action, item), manage, onReload, (error) => onFailure(error, entry.computer)), (step) => {
+    run(typeof action !== 'object' ? action : agentTab ? 'newTab' : 'closeTab', () => manageStep(itemRequest(action, item), manage, onReload, (error) => onFailure(error, entry.computer)), (step) => {
       switch (step.kind) {
-        case 'open': onOpened({ computer: entry.computer, provider: entry.info.id, targetId: step.targetId }); break;
-        case 'done': onClose(); break;
+        case 'open': onOpened({ computer: entry.computer, provider: entry.info.id, targetId: step.targetId }, step.notice); break;
+        case 'done': onDone(action); break;
         case 'changed': setMode('changed'); break;
-        case 'note': setNote(step.note); setMode('menu'); break;
+        // A refused agent tab stays in the chooser, with its prompt.
+        case 'note': setNote(step.note); setMode(agentTab ? 'newTab' : 'menu'); break;
       }
     });
   }
@@ -282,8 +361,12 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onFailur
           mode={mode}
           busy={busy}
           note={note}
+          agent={agent}
+          prompt={prompt}
           onMode={(next) => { setNote(undefined); setMode(next); }}
           onAction={act}
+          onAgent={setAgent}
+          onPrompt={setPrompt}
           onClose={close}
         />
       </Sheet>

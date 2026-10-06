@@ -17,6 +17,7 @@ const (
 	MaxProviderItems      = 64
 	MaxProviderTargets    = 32
 	MaxProviderAgentKinds = 16
+	MaxProviderClosed     = 16
 	maxProviderNameRunes  = 80
 	maxProviderNameBytes  = 240
 	maxProviderInfoRunes  = 32
@@ -110,8 +111,13 @@ func ValidateProviderSnapshot(response HTTPProviderSnapshotResponse) error {
 	}
 	for _, group := range response.Groups {
 		if !ValidProviderHandle(group.ID) || !providerWordPattern.MatchString(group.State) ||
-			group.Items == nil || len(group.Items) > MaxProviderItems {
+			group.Items == nil || len(group.Items) > MaxProviderItems || len(group.Closed) > MaxProviderClosed {
 			return fmt.Errorf("group %q is invalid", group.ID)
+		}
+		for _, name := range group.Closed {
+			if ValidateProviderBranch(name) != nil {
+				return fmt.Errorf("group %q has an invalid closed worktree name", group.ID)
+			}
 		}
 		if err := validateProviderName(group.Name, maxProviderNameRunes, maxProviderNameBytes); err != nil {
 			return err
@@ -252,30 +258,43 @@ func ValidateProviderCreateResponse(response HTTPProviderCreateResponse) error {
 }
 
 // ValidateProviderManageRequest checks POST /api/v1/providers/{provider}/manage:
-// each action takes exactly its own fields (docs/herdr-manage.md, section 3.2).
+// each action takes exactly its own fields (docs/herdr-manage.md, sections 3.2
+// and 14). Only newTab takes agent, and prompt only with agent.
 func ValidateProviderManageRequest(request HTTPProviderManageRequest) error {
-	item, name, target, project := false, false, false, false
+	item, name, target, project, group, agent := false, false, false, false, false, false
 	switch request.Action {
 	case CloseItem, RemoveItem:
 		item, name = true, true
 	case NewTab:
-		item = true
+		item, agent = true, request.Agent != nil
 	case CloseTab:
 		item, target = true, true
 	case NewWorkspace:
 		project = true
+	case OpenItem:
+		group = true
 	case StartServer:
 	default:
 		return errors.New("manage action is invalid")
 	}
-	if (request.ItemID != nil) != item || (request.Name != nil) != name || (request.TargetID != nil) != target || (request.ProjectID != nil) != project {
+	if (request.ItemID != nil) != item || (request.Name != nil) != name || (request.TargetID != nil) != target || (request.ProjectID != nil) != project ||
+		(request.GroupID != nil) != group || (request.Worktree != nil) != group || (request.Agent != nil) != agent || request.Prompt != nil && !agent {
 		return errors.New("manage request has a missing field or one that does not belong to the action")
 	}
-	if item && !ValidProviderHandle(*request.ItemID) || target && !ValidProviderHandle(*request.TargetID) || project && !ValidUUID(*request.ProjectID) {
-		return errors.New("manage itemId, targetId or projectId is invalid")
+	if item && !ValidProviderHandle(*request.ItemID) || target && !ValidProviderHandle(*request.TargetID) || project && !ValidUUID(*request.ProjectID) ||
+		group && !ValidProviderHandle(*request.GroupID) {
+		return errors.New("manage itemId, targetId, projectId or groupId is invalid")
 	}
-	if name {
+	if agent && !providerKindPattern.MatchString(*request.Agent) {
+		return errors.New("agent kind is invalid")
+	}
+	switch {
+	case name:
 		return validateProviderName(*request.Name, maxProviderNameRunes, maxProviderNameBytes)
+	case group:
+		return ValidateProviderBranch(*request.Worktree)
+	case request.Prompt != nil:
+		return ValidateProviderPrompt(*request.Prompt)
 	}
 	return nil
 }
@@ -288,6 +307,13 @@ func ValidateProviderManageResponse(response HTTPProviderManageResponse) error {
 	}
 	if response.Problem != nil && *response.Problem != Uncommitted {
 		return errors.New("manage problem is invalid")
+	}
+	if response.AgentProblem != nil {
+		switch *response.AgentProblem {
+		case AgentNotReady, AgentFailed, PromptFailed:
+		default:
+			return errors.New("manage agent problem is invalid")
+		}
 	}
 	return nil
 }

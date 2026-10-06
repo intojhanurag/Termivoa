@@ -371,7 +371,7 @@ export function Sessions({
   readonly tab?: string | undefined;
   readonly onOpenTarget?: (tap: ProviderTap) => void;
   readonly onProviderRetry?: (key: string) => Promise<void>;
-  /** A worktree was made with the + of a project row (milestone M2): open its terminal; `notice` says what did not start. */
+  /** A worktree was made with the + of a project row (milestone M2), or a tab, a workspace or a closed worktree was opened: open its terminal; `notice` says what did not start. */
   readonly onCreated?: ((tap: ProviderTap, notice: string | undefined, key: string) => void) | undefined;
   /** Add a folder: a new session opens in Live with this command typed, not run. */
   readonly onTypeIn?: ((session: HostedSession, command: string) => void) | undefined;
@@ -486,7 +486,7 @@ export function Sessions({
 
       {provider !== undefined && (
         <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}
-          manage={onCreated === undefined ? undefined : { onMenu: (entry, group, item) => setMenu({ entry, group, item }), onWorkspace: openWorkspace, onFailure }}
+          manage={onCreated === undefined ? undefined : { onMenu: (entry, group, item) => setMenu({ entry, group, item }), onWorkspace: openWorkspace, onOpened: (entry, tap) => onCreated(tap, undefined, entry.key), onFailure }}
         />
       )}
 
@@ -554,7 +554,7 @@ export function Sessions({
           entry={menu.entry}
           group={menu.group}
           item={menu.item}
-          onOpened={(tap) => onCreated(tap, undefined, menu.entry.key)}
+          onOpened={(tap, notice) => onCreated(tap, notice, menu.entry.key)}
           onReload={() => reloadProvider(menu.entry.key)}
           onFailure={onFailure}
           onClose={() => setMenu(undefined)}

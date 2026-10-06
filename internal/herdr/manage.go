@@ -30,8 +30,8 @@ var (
 )
 
 // manageTimeouts are the step limits of Manage. A test seam.
-var manageTimeouts = struct{ call, refresh, ready, gone time.Duration }{
-	call: 15 * time.Second, refresh: 3 * time.Second, ready: 5 * time.Second, gone: 500 * time.Millisecond,
+var manageTimeouts = struct{ call, list, refresh, ready, gone time.Duration }{
+	call: 15 * time.Second, list: 5 * time.Second, refresh: 3 * time.Second, ready: 5 * time.Second, gone: 500 * time.Millisecond,
 }
 
 // Project is the Termivoa project of newWorkspace: its resolved folder, which
@@ -40,8 +40,9 @@ type Project struct{ Folder, Name string }
 
 var errorCodePattern = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 
-// Manage closes or removes an item, makes a tab or a workspace, or starts the
-// server (docs/herdr-manage.md, section 4). One manage or create runs at a
+// Manage closes or removes an item, makes a tab (with an agent, if asked) or
+// a workspace, opens a closed worktree again, or starts the server
+// (docs/herdr-manage.md, sections 4 and 14). One manage or create runs at a
 // time. ctx must be broker-owned, never a request's. Item actions read a
 // fresh snapshot first: IDs start again after a herdr restart, so the item
 // must be there under the name the user confirmed. Nothing is ever forced.
@@ -60,13 +61,16 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 	if current.state != protocol.HTTPProviderStateReady {
 		return response, ErrUnavailable
 	}
+	if request.Agent != nil && !slices.Contains(current.kinds, *request.Agent) {
+		return response, ErrKind
+	}
 	fresh, ok := provider.readMapped(ctx)
 	if !ok {
 		return response, ErrUnavailable
 	}
 	var group protocol.HTTPProviderGroup
 	var item protocol.HTTPProviderItem
-	if request.Action != protocol.NewWorkspace {
+	if request.Action != protocol.NewWorkspace && request.Action != protocol.OpenItem {
 		found := false
 		for _, group = range fresh.response.Groups {
 			for _, item = range group.Items {
@@ -93,6 +97,7 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 		} `json:"root_pane"`
 	}
 	method, params := "", map[string]any{"workspace_id": item.ID}
+	var err error
 	switch request.Action {
 	case protocol.CloseItem, protocol.RemoveItem:
 		if request.Name == nil || item.Name != *request.Name {
@@ -143,10 +148,30 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 		}
 		method = "workspace.create"
 		params = map[string]any{"cwd": project.Folder, "label": Clean(project.Name, maxNameRunes, "workspace"), "focus": false}
+	case protocol.OpenItem:
+		// A closed worktree of this group, by a name that herdr lists as closed right now: the phone
+		// can name nothing else. herdr opens a workspace for it (or answers the one that is open).
+		index := slices.IndexFunc(fresh.response.Groups, func(group protocol.HTTPProviderGroup) bool {
+			return request.GroupID != nil && group.ID == *request.GroupID
+		})
+		if index < 0 || request.Worktree == nil {
+			return response, ErrTargetMissing
+		}
+		if len(fresh.response.Groups[index].Items) >= maxItems {
+			return response, ErrFull
+		}
+		workspace := fresh.groups[*request.GroupID].workspace
+		var names []string
+		if names, err = provider.listClosed(ctx, manageTimeouts.list, workspace); err == nil && !slices.Contains(names, *request.Worktree) {
+			return response, ErrTargetMissing
+		}
+		method, params = "worktree.open", map[string]any{"workspace_id": workspace, "branch": *request.Worktree, "focus": false}
 	default:
 		return response, ErrManage
 	}
-	err := provider.call(ctx, manageTimeouts.call, method, params, &made)
+	if err == nil {
+		err = provider.call(ctx, manageTimeouts.call, method, params, &made)
+	}
 	var failure *callError
 	if err != nil {
 		code := "no_answer"
@@ -166,7 +191,7 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 			problem := protocol.Uncommitted
 			response.Problem = &problem
 			return response, nil
-		case "workspace_not_found", "tab_not_found":
+		case "workspace_not_found", "tab_not_found", "worktree_not_found":
 			return response, ErrTargetMissing
 		case "workspace_group_close_required":
 			return response, ErrGroupOpen
@@ -175,16 +200,26 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 		}
 		return response, ErrManage
 	}
-	if request.Action == protocol.NewWorkspace && handlePattern.MatchString(made.Workspace.ID) {
+	makes := request.Action == protocol.NewWorkspace || request.Action == protocol.OpenItem
+	if makes && handlePattern.MatchString(made.Workspace.ID) {
 		response.ItemID = &made.Workspace.ID
 	}
 	target := made.RootPane.PaneID + "." + made.RootPane.TerminalID
-	opens := request.Action == protocol.NewTab || request.Action == protocol.NewWorkspace
+	valid := handlePattern.MatchString(made.RootPane.PaneID) && handlePattern.MatchString(made.RootPane.TerminalID) && handlePattern.MatchString(target)
+	started := false
+	if request.Action == protocol.NewTab && request.Agent != nil {
+		// The tab is made; what the agent did is in the answer, as in create.
+		response.AgentStarted, response.AgentProblem = &started, problem(protocol.AgentFailed)
+		if valid {
+			started, response.AgentProblem = provider.startAgent(ctx, made.RootPane.PaneID, target, *request.Agent, request.Prompt)
+		}
+	}
 	// Without `terminal attach` this herdr cannot open a terminal that has no agent: no targetId.
-	if opens && current.caps.attachAny && handlePattern.MatchString(made.RootPane.PaneID) &&
-		handlePattern.MatchString(made.RootPane.TerminalID) && handlePattern.MatchString(target) {
+	// A pane with an agent can always be attached, also one whose agent waits at a question (as in create).
+	waits := response.AgentProblem != nil && *response.AgentProblem == protocol.AgentNotReady
+	if (makes || request.Action == protocol.NewTab) && (current.caps.attachAny || started || waits) && valid {
 		response.TargetID = &target
-		// Answer once a snapshot read after the call has the new terminal, so it opens at once.
+		// Answer once a snapshot read after the last step has the new terminal, so it opens at once.
 		provider.settle(ctx, manageTimeouts.refresh, target)
 	}
 	provider.Poll()

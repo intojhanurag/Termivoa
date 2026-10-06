@@ -1170,6 +1170,107 @@ func TestProviderManageRoute(t *testing.T) {
 	}
 }
 
+// Revision 6 (docs/herdr-manage.md, section 14): an agent in a new tab, with
+// create's kind check and create's limit; closed worktrees in the list, and
+// openItem for one of them.
+func TestProviderManageAgentTabAndClosedWorktrees(t *testing.T) {
+	fixture := newProviderFixture(t)
+	const shop = "g7d0f77ccdcfd"
+	var mu sync.Mutex
+	var calls []string
+	record := func(method string, result any) {
+		fixture.herdr.Handle(method, func(params json.RawMessage) (any, *herdrtest.Error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, method+" "+string(params))
+			return result, nil
+		})
+	}
+	made := map[string]any{"workspace": map[string]any{"workspace_id": "w9"}, "root_pane": map[string]any{"pane_id": "w1:p3", "terminal_id": "term_65d0031602b712"}}
+	record("tab.create", made)
+	record("worktree.open", made)
+	record("agent.start", map[string]any{})
+	record("agent.prompt", map[string]any{})
+	fixture.herdr.Handle("worktree.list", func(json.RawMessage) (any, *herdrtest.Error) {
+		return json.RawMessage(`{"worktrees":[
+			{"path":"/home/demo/secret/old-idea","branch":"old-idea","is_linked_worktree":true},
+			{"path":"/home/demo/secret/open","branch":"silver-meadow","is_linked_worktree":true,"open_workspace_id":"w3"},
+			{"path":"/home/demo/secret/odd","branch":"Odd_Name","is_linked_worktree":true}]}`), nil
+	})
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	text := func(value string) *string { return &value }
+	device := func() string { return pairDevice(t, fixture.service, "Phone").Credential }
+
+	// The list has the closed worktree's name, and nothing else of herdr's answer.
+	var listed protocol.GatewayRPCEnvelope
+	waitFor(t, func() bool {
+		listed = fixture.get(t, fixture.credential, herdr.ID)
+		snapshot, err := protocol.DecodeRPCPayload[protocol.HTTPProviderSnapshotResponse](listed)
+		return err == nil && len(snapshot.Groups) == 3 && slices.Equal(snapshot.Groups[0].Closed, []string{"old-idea"}) && snapshot.Groups[1].Closed == nil
+	})
+	if strings.Contains(string(listed.Payload), "secret") || strings.Contains(string(listed.Payload), "Odd_Name") {
+		t.Fatalf("the list = %s", listed.Payload)
+	}
+
+	open := protocol.HTTPProviderManageRequest{Action: protocol.OpenItem, GroupID: text(shop), Worktree: text("old-idea")}
+	opened, err := protocol.DecodeRPCPayload[protocol.HTTPProviderManageResponse](fixture.manage(t, fixture.credential, open))
+	if err != nil || opened.ItemID == nil || *opened.ItemID != "w9" || opened.TargetID == nil ||
+		len(calls) != 1 || calls[0] != `worktree.open {"branch":"old-idea","focus":false,"workspace_id":"w1"}` {
+		t.Fatalf("open = %+v %v %v", opened, err, calls)
+	}
+	calls = nil
+	for _, test := range []struct {
+		name    string
+		request protocol.HTTPProviderManageRequest
+		code    protocol.ErrorCode
+		message string
+	}{
+		{"a name that is not closed", protocol.HTTPProviderManageRequest{Action: protocol.OpenItem, GroupID: text(shop), Worktree: text("silver-meadow")},
+			protocol.SessionMissing, "that worktree is not there to open; look at the list and try again"},
+		{"a name herdr does not list", protocol.HTTPProviderManageRequest{Action: protocol.OpenItem, GroupID: text(shop), Worktree: text("ghost")},
+			protocol.SessionMissing, "that worktree is not there to open; look at the list and try again"},
+		{"an unknown group", protocol.HTTPProviderManageRequest{Action: protocol.OpenItem, GroupID: text("gffffffffffff"), Worktree: text("old-idea")},
+			protocol.SessionMissing, "that worktree is not there to open; look at the list and try again"},
+		// pi is a start kind, but no pi runs in this herdr: not offered (create's rule).
+		{"an agent that is not offered", protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w1"), Agent: text("pi")},
+			protocol.InvalidRequest, "herdr cannot start that agent here"},
+	} {
+		response := fixture.manage(t, device(), test.request)
+		if code, message := gatewayErrorCode(t, response), gatewayErrorMessage(t, response); code != test.code || message != test.message {
+			t.Fatalf("%s = %s %q", test.name, code, message)
+		}
+		if len(calls) != 0 {
+			t.Fatalf("%s: herdr calls = %v", test.name, calls)
+		}
+	}
+
+	// A new tab with an agent: the tab, then create's agent start and prompt.
+	agentTab := protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w1"), Agent: text("claude"), Prompt: text("fix it")}
+	phone := device()
+	tab, err := protocol.DecodeRPCPayload[protocol.HTTPProviderManageResponse](fixture.manage(t, phone, agentTab))
+	if err != nil || tab.AgentStarted == nil || !*tab.AgentStarted || tab.AgentProblem != nil || tab.TargetID == nil || len(calls) != 3 ||
+		!strings.HasPrefix(calls[1], `agent.start {"kind":"claude","name":"claude-w1-p3","pane_id":"w1:p3"`) || calls[2] != `agent.prompt {"target":"w1:p3","text":"fix it"}` {
+		t.Fatalf("agent tab = %+v %v %v", tab, err, calls)
+	}
+	// It is also a create: 3 a minute per device, counted with the creates.
+	if response := fixture.create(t, phone, protocol.HTTPProviderCreateRequest{GroupID: "gffffffffffff", Name: "a"}); gatewayErrorCode(t, response) != protocol.SessionMissing {
+		t.Fatalf("a create after one agent tab = %s", gatewayErrorMessage(t, response))
+	}
+	if response := fixture.manage(t, phone, agentTab); response.Type == protocol.GatewayError {
+		t.Fatalf("the 3rd create or agent tab = %s", gatewayErrorMessage(t, response))
+	}
+	calls = nil
+	response := fixture.manage(t, phone, agentTab)
+	if code, message := gatewayErrorCode(t, response), gatewayErrorMessage(t, response); code != protocol.LimitExceeded ||
+		message != "too many requests; wait a minute and try again" || len(calls) != 0 {
+		t.Fatalf("the 4th = %s %q %v", code, message, calls)
+	}
+	// A tab without an agent is not a create.
+	if response := fixture.manage(t, phone, protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w1")}); response.Type == protocol.GatewayError {
+		t.Fatalf("a shell tab after the create limit = %s", gatewayErrorMessage(t, response))
+	}
+}
+
 // newWorkspace: the phone names a project by ID; the broker resolves and
 // checks the folder, and herdr gets the resolved path and the project's name.
 func TestProviderManageNewWorkspaceUsesAnOwnedProjectFolder(t *testing.T) {

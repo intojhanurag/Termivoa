@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   AddBanner, askWorkerTap, guardLink, guardStartup, homeAdoption, homePreview, leaveRemoved, notificationPath, providerPath, offlineRetry, parseRoute, pathFor, peerPreviewOnLoad, PREVIEW_TAP, previewFor, sessionPath, startApp, startLike, installView,
-  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, sameScreen,
+  STRAY_RELOAD_KEY, takeStartupLinks, titleFor, newTap, providerArrival, providerTabView, sameScreen,
 } from './App';
 import { ApiError } from '../api/http';
 import type { HTTPSettingsResponse } from '../generated/protocol';
@@ -456,6 +456,14 @@ describe('provider addresses', () => {
     expect(sameScreen(at(home, 'w8:p1.a'), at(vps, 'w8:p2.b'))).toBe(false);
     expect(sameScreen({ name: 'sessions' }, at(home, 'w8:p2.b'))).toBe(false);
     expect(sameScreen(at(home, 'w8:p1.a'), { name: 'sessions' })).toBe(false);
+  });
+
+  it('goes back to the provider\'s tab: "‹ Sessions", a close the user asked for (no message), and a terminal that left (with one)', () => {
+    expect(providerTabView('herdr')).toEqual({ name: 'sessions', tab: 'herdr' });
+    expect(providerTabView('herdr', 'That terminal is gone.')).toEqual({ name: 'sessions', tab: 'herdr', message: 'That terminal is gone.' });
+    // The tab is state, not an address: Back from it never lands on a dead terminal's path.
+    expect(pathFor(providerTabView('herdr'))).toBe('/');
+    expect(sameScreen({ name: 'provider', computer: home, provider: 'herdr', target, tapped: 1 }, providerTabView('herdr'))).toBe(false);
   });
 
   it('leaves a provider terminal whose computer left the list', () => {

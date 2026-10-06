@@ -24,6 +24,8 @@ export interface ProviderSource {
   readonly info: HTTPProviderInfo;
   /** The computer answered at FEATURE_REVISION.providerManage or later: the app shows the manage actions (docs/herdr-manage.md). */
   readonly manage: boolean;
+  /** At FEATURE_REVISION.providerAgentTab or later: an agent in a new tab, and closed worktrees that open again (docs/herdr-manage.md, section 14). */
+  readonly agentTab: boolean;
 }
 
 export type ProviderStatus =
@@ -46,7 +48,8 @@ export function providerSources(entries: ReadonlyArray<ComputerEntry>): Provider
   return entries.flatMap((entry) => {
     if (entry.status.kind !== 'ok' || entry.status.settings.protocolRevision < FEATURE_REVISION.providers) return [];
     const manage = entry.status.settings.protocolRevision >= FEATURE_REVISION.providerManage;
-    return (entry.status.settings.providers ?? []).map((info) => ({ computer: entry.computer, info, manage }));
+    const agentTab = entry.status.settings.protocolRevision >= FEATURE_REVISION.providerAgentTab;
+    return (entry.status.settings.providers ?? []).map((info) => ({ computer: entry.computer, info, manage, agentTab }));
   });
 }
 

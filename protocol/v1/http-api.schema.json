@@ -205,6 +205,7 @@
       "additionalProperties": false,
       "required": ["id", "name", "state", "canCreate", "items"],
       "properties": {
+        "closed": { "description": "Revision 6. Linked worktrees of this group whose folder exists and that have no item (their workspace was closed): manage openItem opens one again. Branch names, at most 16.", "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/providerWorktreeName" } },
         "id": { "$ref": "#/$defs/providerHandle" },
         "name": { "$ref": "#/$defs/providerDisplayName" },
         "state": { "$ref": "#/$defs/providerItemState" },
@@ -284,7 +285,7 @@
       "required": ["groupId", "name"],
       "properties": {
         "groupId": { "$ref": "#/$defs/providerHandle" },
-        "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$" },
+        "name": { "$ref": "#/$defs/providerWorktreeName" },
         "agent": { "$ref": "#/$defs/providerAgentKind" },
         "prompt": { "type": "string", "minLength": 1, "maxLength": 4000, "maxUtf8Bytes": 16000, "pattern": "^[^\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F]+$" }
       }
@@ -302,9 +303,13 @@
         "problem": { "$ref": "#/$defs/providerCreateProblem" }
       }
     },
+    "providerWorktreeName": {
+      "description": "A branch and worktree name the phone may send: lowercase letters and digits joined by . _ - or /.",
+      "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$"
+    },
     "providerManageRequest": {
       "title": "HTTPProviderManageRequest",
-      "description": "POST /api/v1/providers/{provider}/manage (revision 5, docs/herdr-manage.md). closeItem ends an item's terminals and deletes no file; an item that is a main checkout cannot be closed while a linked worktree of its group is open. removeItem deletes a linked worktree's folder without force (the branch stays; files that git ignores go with the folder). newTab makes a tab in an item. closeTab ends the tab of one of an item's terminals (all terminals of that tab); the last tab of an item cannot be closed (close the item). newWorkspace makes an item in a Termivoa project's folder. startServer starts the provider's server. itemId and name are required for closeItem and removeItem (name is the item name the user confirmed: the host refuses when the item now has another name); itemId alone for newTab; itemId and targetId for closeTab; projectId for newWorkspace; none for startServer. A field that does not belong to the action is refused.",
+      "description": "POST /api/v1/providers/{provider}/manage (revision 5, docs/herdr-manage.md). closeItem ends an item's terminals and deletes no file; an item that is a main checkout cannot be closed while a linked worktree of its group is open. removeItem deletes a linked worktree's folder without force (the branch stays; files that git ignores go with the folder). newTab makes a tab in an item. closeTab ends the tab of one of an item's terminals (all terminals of that tab); the last tab of an item cannot be closed (close the item). newWorkspace makes an item in a Termivoa project's folder. startServer starts the provider's server. itemId and name are required for closeItem and removeItem (name is the item name the user confirmed: the host refuses when the item now has another name); itemId alone for newTab; itemId and targetId for closeTab; projectId for newWorkspace; none for startServer. Revision 6: newTab may carry agent, and prompt with agent; openItem takes groupId and worktree and opens a closed worktree of that group again. A field that does not belong to the action is refused.",
       "type": "object",
       "additionalProperties": false,
       "required": ["action"],
@@ -313,22 +318,28 @@
         "itemId": { "$ref": "#/$defs/providerHandle" },
         "name": { "$ref": "#/$defs/providerDisplayName" },
         "targetId": { "$ref": "#/$defs/providerTargetId" },
-        "projectId": { "$ref": "#/$defs/uuid" }
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "groupId": { "description": "Revision 6. openItem: the group whose closed worktree is opened.", "$ref": "#/$defs/providerHandle" },
+        "worktree": { "description": "Revision 6. openItem: one of that group's closed names.", "$ref": "#/$defs/providerWorktreeName" },
+        "agent": { "description": "Revision 6. newTab only: start this agent in the new tab; one of the provider's agentKinds.", "$ref": "#/$defs/providerAgentKind" },
+        "prompt": { "description": "Revision 6. newTab with agent only: the first prompt; the rules of the create request's prompt.", "type": "string", "minLength": 1, "maxLength": 4000, "maxUtf8Bytes": 16000, "pattern": "^[^\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F]+$" }
       }
     },
     "providerManageAction": {
       "title": "HTTPProviderManageAction",
       "type": "string",
-      "enum": ["closeItem", "removeItem", "newTab", "closeTab", "newWorkspace", "startServer"]
+      "enum": ["closeItem", "removeItem", "newTab", "closeTab", "newWorkspace", "startServer", "openItem"]
     },
     "providerManageResponse": {
       "title": "HTTPProviderManageResponse",
-      "description": "itemId is the item acted on or made. targetId is the new terminal of newTab and newWorkspace; it is absent when this provider version cannot open a terminal without an agent. problem is set when nothing changed: uncommitted (removeItem: the worktree has changes that are not committed).",
+      "description": "itemId is the item acted on or made. agentStarted (revision 6) is set for newTab with an agent: false when the agent did not start, and agentProblem then says why (as in the create response); the tab exists. targetId is the new terminal of newTab, newWorkspace and openItem; it is absent when this provider version cannot open a terminal without an agent. problem is set when nothing changed: uncommitted (removeItem: the worktree has changes that are not committed).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "itemId": { "$ref": "#/$defs/providerHandle" },
         "targetId": { "$ref": "#/$defs/providerTargetId" },
+        "agentStarted": { "type": "boolean" },
+        "agentProblem": { "$ref": "#/$defs/providerCreateProblem" },
         "problem": { "$ref": "#/$defs/providerManageProblem" }
       }
     },

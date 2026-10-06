@@ -145,11 +145,15 @@ In the **herdr** tab, each row has a **⋯** button. It opens a menu for that wo
 
 | Action | What it does | Before it acts |
 | --- | --- | --- |
-| **New tab** | Makes a tab in that workspace and opens its terminal. | Nothing to confirm. |
+| **New tab** | Makes a tab in that workspace and opens its terminal. Pick **Shell**, or an agent such as `claude`; for an agent you can type a **First prompt (optional)** and tap **Start**. | Nothing to confirm. |
 | **Close tab** | Ends one tab of that workspace. The menu lists the tabs. The last tab has no **Close tab**: use **Close workspace**. | Asks "Close tab 2? Its terminals end." |
 | **Close workspace** | Ends the terminals of that workspace. | Asks "Close silver-meadow? Its terminals end. Files stay." |
 | **Remove worktree** | Closes a worktree and deletes its folder. Only a worktree has this action, never the main checkout. | Asks "Remove the worktree silver-meadow? Its folder is deleted, also files that git ignores (such as .env). The branch stays." |
 | **New workspace** | A button under the list. Pick one of that computer's Termivoa projects; herdr opens a workspace in its folder and the phone opens its terminal. For a folder that is not a project yet, tap **Add a folder** in that sheet. | Nothing to confirm. |
+
+A worktree that you closed keeps its folder. It then shows under its project as a dimmed row with **CLOSED**. Tap **Open** to get its workspace back.
+
+A herdr terminal has the same **⋯** button at the right of its tabs, so you can make or close a tab, or close the workspace, without going back to the list.
 
 What Termivoa never does:
 
@@ -192,10 +196,12 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 | Control | Opening never takes control. You tap **Take control**. |
 | Where they show | herdr terminals are not in the Sessions list, the Wall or `pterm list`. |
 | After a restart | Termivoa does not keep them when it restarts. Open the row again. |
+| New agent tab | A new tab that starts an agent counts toward the same limit as making a worktree: 3 a minute for each phone. |
 | Manage | Each phone can do 30 manage actions a minute, and one at a time for each computer. A workspace has at most 32 terminals and herdr at most 64 projects in the list. |
 | Not from the phone | Force-removing a worktree, renaming, split panes, updating herdr. |
 | Platforms | macOS and Linux. Not Windows. |
 | herdr sessions | Only the default herdr session. Not named sessions. |
+| herdr versions | Termivoa tests with herdr 0.8.2. Closed worktrees and agent tabs are not yet tested with herdr 0.9.3. |
 
 ## Common questions
 

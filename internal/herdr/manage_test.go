@@ -43,7 +43,7 @@ func newManageWorld(t *testing.T, attachAny bool) *manageWorld {
 	}
 	base := string(readFixture(t, "snapshot-0.8.2.json"))
 	server.Snapshot([]byte(base))
-	for _, method := range []string{"workspace.close", "worktree.remove", "tab.create", "tab.close", "workspace.create"} {
+	for _, method := range []string{"workspace.close", "worktree.remove", "tab.create", "tab.close", "workspace.create", "worktree.open"} {
 		server.Handle(method, func(params json.RawMessage) (any, *herdrtest.Error) {
 			world.mu.Lock()
 			defer world.mu.Unlock()

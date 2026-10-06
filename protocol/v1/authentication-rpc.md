@@ -64,7 +64,7 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.providers.update` | credential + `provider` + `HTTPProviderUpdateRequest` | `HTTPProviderInfo` |
 | `gateway.providers.open` | credential + `provider` + `HTTPProviderOpenRequest` | `HTTPProviderOpenResponse` |
 | `gateway.providers.create` | credential + `provider` + `HTTPProviderCreateRequest` | `HTTPProviderCreateResponse`; sent on its own connection (up to 45 s) |
-| `gateway.providers.manage` | credential + `provider` + `HTTPProviderManageRequest` | `HTTPProviderManageResponse`; sent on its own connection (revision 5) |
+| `gateway.providers.manage` | credential + `provider` + `HTTPProviderManageRequest` | `HTTPProviderManageResponse`; sent on its own connection (revision 5; revision 6 adds `agent`, `prompt` and `openItem`) |
 
 `gateway.origin` and `gateway.computers.offer` are the only requests
 besides pairing that carry no credential: the configured origin is not a

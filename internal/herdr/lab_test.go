@@ -344,7 +344,8 @@ func (lab *lab) manage(provider *Provider) {
 			t.Fatalf("after the stop = %+v", info)
 		}
 	}
-	provider.config.PathEnv = filepath.Dir(lab.binary)
+	// git too: herdr runs it for the worktree calls of section 14 below.
+	provider.config.PathEnv = filepath.Dir(lab.binary) + ":/usr/bin:/bin"
 	began := time.Now()
 	manage(protocol.HTTPProviderManageRequest{Action: protocol.StartServer}, Project{})
 	t.Logf("startServer answered ready after %v", time.Since(began).Round(10*time.Millisecond))
@@ -378,6 +379,110 @@ func (lab *lab) manage(provider *Provider) {
 	}
 	client.write("\x02q")
 	_ = client.wait()
+
+	// Section 14, B2: a linked worktree whose workspace is closed shows as closed, and openItem opens it again.
+	manage(protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace}, Project{Folder: site, Name: "site"})
+	again := group("site", func(found protocol.HTTPProviderGroup) bool { return found.CanCreate })
+	branch, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: again.ID, Name: "again-tree"})
+	if err != nil {
+		t.Fatalf("create again-tree = %v", err)
+	}
+	group("site", func(found protocol.HTTPProviderGroup) bool { return len(found.Items) == 2 })
+	// Worktrees made by hand with git: one the phone may open, and three it may not (detached, a name
+	// outside the create rules, a folder that is gone).
+	for _, args := range [][]string{{"-b", "by-hand", "by-hand"}, {"--detach", "detached"}, {"-b", "Odd_Name", "odd"}, {"-b", "gone-tree", "gone"}} {
+		args[len(args)-1] = filepath.Join(lab.root, args[len(args)-1])
+		lab.git(append([]string{"-C", site, "worktree", "add", "-q"}, args...)...)
+	}
+	if err := os.RemoveAll(filepath.Join(lab.root, "gone")); err != nil {
+		t.Fatal(err)
+	}
+	manage(protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &branch.ItemID, Name: text("again-tree")}, Project{})
+	began = time.Now()
+	again = group("site", func(found protocol.HTTPProviderGroup) bool { return slices.Contains(found.Closed, "again-tree") })
+	t.Logf("closed %v after the close: %v", time.Since(began).Round(10*time.Millisecond), again.Closed)
+	// clean-tree was removed (its branch stays, its folder is gone): not closed, like the other three.
+	for _, name := range []string{"clean-tree", "Odd_Name", "gone-tree", "master", "main", ""} {
+		if slices.Contains(again.Closed, name) {
+			t.Fatalf("%q is in closed: %v", name, again.Closed)
+		}
+	}
+	if !slices.Contains(again.Closed, "by-hand") || !slices.IsSorted(again.Closed) {
+		t.Fatalf("closed = %v", again.Closed)
+	}
+	if err := protocol.ValidateProviderSnapshot(provider.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	open := protocol.HTTPProviderManageRequest{Action: protocol.OpenItem, GroupID: &again.ID, Worktree: text("again-tree")}
+	opened = manage(open, Project{})
+	if opened.ItemID == nil || opened.TargetID == nil {
+		t.Fatalf("openItem = %+v", opened)
+	}
+	if _, err := provider.Attach(*opened.TargetID); err != nil {
+		t.Fatalf("the opened worktree cannot open: %v", err)
+	}
+	// It is an item again (a linked one), and not closed.
+	group("site", func(found protocol.HTTPProviderGroup) bool {
+		return !slices.Contains(found.Closed, "again-tree") && slices.ContainsFunc(found.Items, func(item protocol.HTTPProviderItem) bool {
+			return item.ID == *opened.ItemID && item.Name == "again-tree" && item.Linked != nil
+		})
+	})
+	// herdr's own second open answers the open workspace (already_open) and makes none.
+	var second struct {
+		AlreadyOpen bool `json:"already_open"`
+		Workspace   struct {
+			ID string `json:"workspace_id"`
+		} `json:"workspace"`
+	}
+	if err := provider.call(ctx, manageTimeouts.call, "worktree.open",
+		map[string]any{"workspace_id": again.Items[0].ID, "branch": "again-tree", "focus": false}, &second); err != nil || !second.AlreadyOpen || second.Workspace.ID != *opened.ItemID {
+		t.Fatalf("herdr's second worktree.open = %+v %v", second, err)
+	}
+	// The phone can name only what herdr lists as closed now.
+	for _, name := range []string{"again-tree", "Odd_Name", "gone-tree", "clean-tree", "no-such"} {
+		open.Worktree = &name
+		if _, err := provider.Manage(ctx, open, Project{}); !errors.Is(err, ErrTargetMissing) {
+			t.Fatalf("openItem %q = %v", name, err)
+		}
+	}
+	open.Worktree = text("by-hand")
+	if hand := manage(open, Project{}); hand.ItemID == nil || hand.TargetID == nil {
+		t.Fatalf("openItem for a worktree made by hand = %+v", hand)
+	}
+
+	// Section 14, B1: a new tab with an agent. An agent must run in this herdr for its kind to be offered.
+	// The lab has no agent program. herdr 0.8.2 types the kind's command into the tab's shell and answers
+	// "started" at once (launch_pending); the prompt then fails (agent_not_ready): promptFailed. A herdr
+	// that fails the start answers agentFailed. Either way the tab is made and the answer has a problem.
+	pane, _, _ := strings.Cut(*opened.TargetID, ".")
+	lab.run("pane", "report-agent", pane, "--source", "lab", "--agent", "claude", "--state", "idle")
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		if info, _ := provider.Info(); slices.Contains(info.AgentKinds, "claude") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("claude is not offered")
+		}
+	}
+	agentTab := protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: opened.ItemID, Agent: text("claude"), Prompt: text("hello")}
+	for round := range 2 { // herdr takes an agent name once: the second tab needs another
+		began = time.Now()
+		tab := manage(agentTab, Project{})
+		if tab.AgentStarted == nil || tab.AgentProblem == nil || *tab.AgentStarted != (*tab.AgentProblem == protocol.PromptFailed) {
+			t.Fatalf("agent tab %d = %+v", round, tab)
+		}
+		t.Logf("agent tab %d after %v: agentStarted=%t agentProblem=%q targetId=%t", round, time.Since(began).Round(10*time.Millisecond), *tab.AgentStarted, *tab.AgentProblem, tab.TargetID != nil)
+		if tab.TargetID == nil {
+			t.Fatalf("agent tab %d has no terminal: %+v", round, tab)
+		}
+		if _, err := provider.Attach(*tab.TargetID); err != nil {
+			t.Fatalf("agent tab %d cannot open: %v", round, err)
+		}
+	}
+	agentTab.Agent = text("codex") // a start kind of herdr, but no codex runs here
+	if _, err := provider.Manage(ctx, agentTab, Project{}); !errors.Is(err, ErrKind) {
+		t.Fatalf("an agent that is not offered = %v", err)
+	}
 }
 
 // stop stops the lab's own session, as its cleanup does.

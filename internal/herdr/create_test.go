@@ -135,7 +135,7 @@ func TestCreateMakesAWorktreeAndStartsAnAgent(t *testing.T) {
 	if call := world.call("worktree.create"); call["workspace_id"] != "w1" || call["branch"] != "brave-fox" || call["focus"] != false {
 		t.Fatalf("worktree.create %v", call)
 	}
-	if call := world.call("agent.start"); call["kind"] != "claude" || call["name"] != "claude" || call["pane_id"] != "w9:p1" || call["timeout_ms"] != float64(agentReadyMs) {
+	if call := world.call("agent.start"); call["kind"] != "claude" || call["name"] != "claude-w9-p1" || call["pane_id"] != "w9:p1" || call["timeout_ms"] != float64(agentReadyMs) {
 		t.Fatalf("agent.start %v", call)
 	}
 	if call := world.call("agent.prompt"); call["target"] != "w9:p1" || call["text"] != prompt {
@@ -258,5 +258,23 @@ func TestCreateRecheckAfterTimeout(t *testing.T) {
 	response, err = provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: shopGroup, Name: "brave-fox", Agent: &agent})
 	if err != nil || response.AgentStarted || *response.Problem != protocol.AgentNotReady {
 		t.Fatalf("agent timeout = %+v %v", response, err)
+	}
+}
+
+func TestAgentNameKeepsThePane(t *testing.T) {
+	long := strings.Repeat("k", 32)
+	for _, test := range []struct{ kind, pane, want string }{
+		{"claude", "w3:p2", "claude-w3-p2"},
+		{long, "w1:p1", strings.Repeat("k", 26) + "-w1-p1"},
+		{long, "w1:p2", strings.Repeat("k", 26) + "-w1-p2"},
+	} {
+		got := agentName(test.kind, test.pane)
+		if got != test.want || len(got) > maxAgentName || strings.HasSuffix(got, "-") {
+			t.Errorf("agentName(%q, %q) = %q", test.kind, test.pane, got)
+		}
+	}
+	// Two panes whose IDs differ only at the end never share a name.
+	if a, b := agentName("claude", "workspace-0123456789abcdefghij:pane-1"), agentName("claude", "workspace-0123456789abcdefghij:pane-2"); a == b {
+		t.Fatalf("two panes share the name %q", a)
 	}
 }

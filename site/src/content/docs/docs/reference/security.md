@@ -1,7 +1,7 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted.
@@ -100,7 +100,7 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 
 | | |
 | --- | --- |
-| The phone gets from herdr | Project and worktree names, tab labels, agent kinds and state words. |
+| The phone gets from herdr | Project and worktree names, the branch names of worktrees that you closed, tab labels, agent kinds and state words. |
 | The list and the notifications never have | Terminal titles, screen text, paths or prompts. |
 | When you open a herdr terminal | The phone gets that terminal's screen, like any Termivoa session. |
 | A herdr notification has | The provider `herdr`, an opaque terminal ID, the fixed title `herdr · <project> · <worktree>` and a fixed text such as `<agent> needs you. Tap to answer.` It is encrypted to your phone, like other [notifications](/docs/guides/notifications/). |
@@ -108,7 +108,7 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 - **Same access as the Sessions list.** The herdr requests need the same pairing cookie and the same check of where a request comes from. Another computer in your list reads its herdr only through its own Termivoa.
 - **Socket and program, both yours.** Termivoa uses herdr's own socket to list, read state and create worktrees. It also runs the herdr program: once for each open terminal, and to check what that herdr version can do. It checks that the socket and the herdr program belong to you.
 - **Limits for each phone.** Open 20 per minute, create 3 per minute, settings 10 per minute, manage 30 per minute.
-- **Manage asks first and never forces.** The phone can close a herdr workspace or one of its tabs, remove a worktree, and make a tab or a workspace in one of your Termivoa projects. A removal is refused when the worktree has changes that are not committed; it does delete files that git ignores, and the app says so before you confirm. The phone sends a project, never a folder path.
+- **Manage asks first and never forces.** The phone can close a herdr workspace or one of its tabs, remove a worktree, and make a tab or a workspace in one of your Termivoa projects. A removal is refused when the worktree has changes that are not committed; it does delete files that git ignores, and the app says so before you confirm. The phone sends a project, never a folder path. It can also start a coding agent, with a first prompt that you write, in a herdr workspace that exists, and open a closed worktree again. A closed worktree is named by a branch name that herdr itself lists. Starting an agent counts toward the 3 creates a minute.
 - **Termivoa downloads nothing.** **Install herdr** opens a session with herdr's own install command typed in; it runs only when you press Enter. **Start herdr** runs the herdr program that is already on the computer, after the same checks.
 - **Opening never takes control.** It is read-only until you tap **Take control**.
 - **No takeover.** Termivoa never kicks another herdr client off a terminal.
