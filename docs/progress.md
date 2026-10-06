@@ -81,11 +81,32 @@ on their own date.
   `CHANGELOG.md`, `README.md`, `docs/architecture.md`,
   `docs/threat-model.md` (the sentences of ADR 0010 and a GitHub section),
   `docs/pending-work.md`.
-- **Commands run.** TODO(coordinator): the Go, web, protocol-drift and e2e
-  commands with their results. Docs site:
-  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`
-  (result: TODO(coordinator)).
-- **Evidence.** TODO(coordinator): `docs/evidence/github-integration/` paths.
+- **Commands run (macOS, Go 1.27.1, Node 24).**
+  - `GOTOOLCHAIN=go1.27.1 sh scripts/check`: pass (Go build, vet, tests;
+    web typecheck and 1048 vitest tests; protocol drift).
+  - `go test -race -count=3 ./internal/github/`: pass. The same tests built
+    with `CGO_ENABLED=0 GOOS=linux go test -c` pass on the Linux VPS (Ubuntu,
+    git 2.43), in a throwaway folder with a throwaway HOME, incl. the Linux
+    exclusive rename.
+  - `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`:
+    pass, all internal links valid.
+  - e2e, fake GitHub (`scripts/fakegithub`) and two computers:
+    `caffeinate -d -i node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only G`.
+    Run 6 on 5df01fa: 12 PASS, 3 SKIP, 0 FAIL. The 3 skipped checks draw the
+    Live terminal; the Mac's display was off, so Chrome made no frames. Runs
+    3 and 4 failed G6 (the clone): the e2e helper did not know the fake's
+    address in git's fixed environment (fixed in 5df01fa).
+  - Phase A (host flow) on 55040b8: `phase-a.mjs`, 32 PASS, 0 FAIL.
+- **Evidence.** `docs/evidence/github-integration/`: the design pictures
+  (`g1`–`g7`), the e2e report `e2e-phase-b-G.md` and screenshots
+  `e2e-g1-integrations.png`, `e2e-g2-code.png`, `e2e-g3-choose.png`,
+  `e2e-g3-connected.png` (demo data, fake GitHub).
+- **Reviews.** Security, correctness and phone UI on 57e785c (all "merge
+  after fixes", no blocker); a second round on the fixes found that a
+  production clone could not reach the broker (the clone's empty temp HOME;
+  fixed in ee56313 with a test that fails without the fix); a third round on
+  ee56313: merge. Findings and fixes: `docs/github-integration.md`, sections
+  16–17, and pull request #212.
 - **Not verified (owner-dependent).** The GitHub App is not registered yet,
   so no build has a client ID and no GitHub row shows outside tests. With
   the real app (design, section 12): the device and install pages in iPhone
