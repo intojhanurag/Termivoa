@@ -180,6 +180,10 @@ func (service *Service) helper() string {
 // xdgNames are the folders pterm reads to find its runtime folder on Linux.
 var xdgNames = []string{"XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"}
 
+// helperNames are the variables the clone's helper gets back from the
+// broker's environment (an e2e build adds the fake GitHub's address).
+var helperNames = xdgNames
+
 // cloneHelper is the helper for the clone itself. git runs with HOME set to
 // an empty temp folder there, and pterm finds its runtime folder from HOME
 // (macOS) or XDG_RUNTIME_DIR (Linux): so the helper gets the broker's own
@@ -187,8 +191,8 @@ var xdgNames = []string{"XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "
 // prefix: a later git pull runs in the user's own environment.
 func (service *Service) cloneHelper() string {
 	prefix := "HOME='" + service.config.Home + "' "
-	for _, name := range xdgNames {
-		if value := os.Getenv(name); value != "" {
+	for _, name := range helperNames {
+		if value := os.Getenv(name); value != "" && !strings.Contains(value, "'") {
 			prefix += name + "='" + value + "' "
 		}
 	}

@@ -14,6 +14,9 @@ func init() {
 	if base := os.Getenv("PTERM_E2E_GITHUB"); base != "" {
 		defaultOptions.web, defaultOptions.api, defaultOptions.git = base, base, base
 		defaultOptions.open = true
+		// The clone's helper runs in git's fixed environment: it learns the
+		// fake's address from the helper value, as it learns HOME.
+		helperNames = append(helperNames, "PTERM_E2E_GITHUB")
 	}
 	if client := os.Getenv("PTERM_E2E_GITHUB_CLIENT"); client != "" {
 		ClientID = client
