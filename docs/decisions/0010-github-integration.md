@@ -1,6 +1,6 @@
 # ADR 0010: GitHub login in the broker, and a phone route that sets up a repository
 
-- Status: **proposed** (2026-10-06). **DO NOT MERGE without owner review** (AGENTS.md rule 24: a stored secret, a new outbound connection, and a change to a threat-model rule).
+- Status: **accepted** (2026-10-07). The owner approved the design and its recommended choices in writing ("shipppp it, verify, implement, test, raise pr, adversarial review and ship"), including **Contents: Read and write**. Still open: the owner registers the GitHub App (design, section 14).
 - Date: 2026-10-06
 - Design: [`docs/github-integration.md`](../github-integration.md)
 

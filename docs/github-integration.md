@@ -1,6 +1,6 @@
 # GitHub: set up a repository on a computer from the phone
 
-- Status: **design, not approved** (2026-10-06). Critical under AGENTS.md rule 24 (a stored secret, a new outbound connection, a phone route that adds a project). No code until the owner approves ADR [0010](decisions/0010-github-integration.md).
+- Status: **approved** by the owner on 2026-10-07, with the recommended choices (push allowed: Contents: Read and write). Critical under AGENTS.md rule 24. ADR [0010](decisions/0010-github-integration.md).
 - Pictures (drawn in Paper, demo data): [`docs/evidence/github-integration/`](evidence/github-integration/).
 
 ## 1. What the owner asked for
