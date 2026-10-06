@@ -32,7 +32,6 @@ const (
 
 	testCooldown   = 5 * time.Second
 	deliverTimeout = time.Minute
-	maxInFlight    = 2
 	maxLabelRunes  = 60
 	// providerLabelRunes bounds each name of a provider push: 39 runes and
 	// "…" when cut, so at most 40 characters.
@@ -101,10 +100,18 @@ type NotifierConfig struct {
 // still-authorized devices. It runs in the broker, which owns devices,
 // sessions and revocation.
 type Notifier struct {
-	config   NotifierConfig
-	keys     Keys
-	inFlight chan struct{}
-	// providerInFlight is the provider pushes' own delivery slot.
+	config NotifierConfig
+	keys   Keys
+	// inFlight and providerInFlight hold one slot per delivery on its way.
+	// Each has room for two minutes of its budget, so an admitted push is
+	// never dropped because earlier ones are still on their way (several
+	// sessions, or two agents in one poll, can change together). The bound:
+	// admit lets at most the budget through per fixed minute window, and a
+	// delivery ends within deliverTimeout (one minute), so the ones alive
+	// together come from at most two windows. send never waits for a slot,
+	// so a slow push service cannot block the broker, and the channel's
+	// size caps the goroutines whatever happens.
+	inFlight         chan struct{}
 	providerInFlight chan struct{}
 
 	mu       sync.Mutex
@@ -147,9 +154,7 @@ func NewNotifier(ctx context.Context, config NotifierConfig) (*Notifier, error) 
 		return nil, err
 	}
 	return &Notifier{
-		config: config, keys: keys, inFlight: make(chan struct{}, maxInFlight),
-		// Room for two minutes of the budget: an admitted provider push is never dropped because an
-		// earlier one is still on its way (two agents can change in one poll).
+		config: config, keys: keys, inFlight: make(chan struct{}, 2*MaxPerMinute),
 		providerInFlight: make(chan struct{}, 2*ProviderMaxPerMinute), last: map[string]time.Time{},
 	}, nil
 }
@@ -178,8 +183,7 @@ func (notifier *Notifier) Unsubscribe(ctx context.Context, deviceID, endpoint st
 // Notify is the hook for the agent-state detector. It returns at once:
 // delivery runs in the background, detached from ctx cancellation. It
 // reports false when the event was dropped: invalid, coalesced (the same
-// session and kind within CoalesceWindow), over MaxPerMinute, or while
-// earlier deliveries are still in flight.
+// session and kind within CoalesceWindow) or over MaxPerMinute.
 func (notifier *Notifier) Notify(ctx context.Context, event Event) bool {
 	message, ok := eventMessage(event)
 	if !ok || !notifier.admit(string(event.Kind)+":"+event.SessionID, CoalesceWindow, &notifier.sessions, MaxPerMinute) {
@@ -190,7 +194,7 @@ func (notifier *Notifier) Notify(ctx context.Context, event Event) bool {
 
 // NotifyProvider is Notify for a provider terminal (docs/herdr-provider.md,
 // section 7), with its own per-minute budget, coalescing key
-// (provider:<target>:<kind>) and delivery slot.
+// (provider:<target>:<kind>) and delivery slots.
 func (notifier *Notifier) NotifyProvider(ctx context.Context, event ProviderEvent) bool {
 	message, ok := ProviderMessage(event)
 	if !ok || !notifier.admit("provider:"+event.Target+":"+string(event.Kind), CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) {
@@ -199,8 +203,9 @@ func (notifier *Notifier) NotifyProvider(ctx context.Context, event ProviderEven
 	return notifier.send(ctx, message, notifier.providerInFlight)
 }
 
-// send delivers in the background when a slot is free, with today's TTL and
-// urgency of waiting and done.
+// send delivers in the background, with today's TTL and urgency of waiting
+// and done. It takes a slot without waiting; the slots are sized so that an
+// admitted push finds one (see Notifier.inFlight).
 func (notifier *Notifier) send(ctx context.Context, message Message, slots chan struct{}) bool {
 	select {
 	case slots <- struct{}{}:
@@ -276,6 +281,10 @@ func (notifier *Notifier) deliver(ctx context.Context, deviceID string, message 
 	accepted := 0
 	// ponytail: sequential fan-out under one deadline; fine for a handful of phones.
 	for _, subscription := range subscriptions {
+		// Past the deadline nothing more can be sent: stop, so the slot is free on time.
+		if ctx.Err() != nil {
+			break
+		}
 		if notifier.config.Revoked(subscription.DeviceID) {
 			continue
 		}

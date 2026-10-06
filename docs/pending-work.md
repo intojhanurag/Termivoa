@@ -48,6 +48,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   open a herdr terminal in Live, buzz when blocked or finished,
   **Settings → Integrations**, new worktree with an agent. Open: the real
   device checks (Next 5).
+- Session pushes are no longer dropped while earlier deliveries are on their
+  way (#197), and a herdr card says "This phone gets no buzz yet." when its
+  buzz cannot reach this phone. Open: a real push on a real iPhone
+  (`docs/owner-verification.md`).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -117,8 +121,6 @@ In this order.
      (owner or mode) while its server runs, the list stays "ready" and every
      open fails; recheck it in the poll and say why in `pterm doctor`.
    - **Test for a herdr version change between two polls** (rediscovery).
-   - **Session pushes** can be dropped the same way provider pushes were
-     (admitted, then no free delivery slot); see the issue for it.
 
 ## Polish next
 

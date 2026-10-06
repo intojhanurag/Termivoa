@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-04
+Last updated: 2026-10-06
 
 ## Start here
 
@@ -48,6 +48,63 @@ Not yet verified (owner checklist in
 
 The dated entries below are the history log; older entries describe the state
 on their own date.
+
+### A dropped session push, and "buzz on" where no buzz can come (pull request #201, not merged)
+
+- **Why.** Issue #197, and the owner's report: "I only hear a sound, no
+  message on the screen."
+- **Verified facts on the owner's computer (2026-10-05, read only).** (1)
+  The owner's phone had no push subscription: the `push_subscriptions` table
+  of his Mac's Termivoa database had 0 rows. He used the app in an iPhone
+  Safari tab, and iPhone gives web push only to a Home Screen app, so
+  Termivoa had sent him no notification. (2) The sound came from herdr on
+  the Mac: herdr's config reference (v0.9.3,
+  `docs/next/website/src/data/config-reference.json`) has
+  `ui.sound.enabled`, default `true`, "Play sounds when agents change state
+  in background workspaces.", and `ui.toast.delivery`, default `"off"`,
+  values `off`, `herdr`, `terminal`, `system`; his `config.toml` has no
+  `[ui]` section. (3) His herdr card in **Settings → Integrations** showed
+  **Buzz when blocked** and **Buzz when finished** on, although no
+  notification could reach that phone.
+- **Task 1, #197 (host).** Reproduced first:
+  `TestSessionPushIsNotDroppedWhileEarlierOnesAreInFlight` (12 held, a minute later 12 more go out, the 25th is refused)
+  (`internal/webpush/webpush_test.go`; a push service that holds every
+  request, one subscribed phone, 12 sessions turn `waiting`) failed on
+  `main`'s code with "session push 3 was dropped while 2 were in flight".
+  Fix: `inFlight` has `2*MaxPerMinute` (24) slots, as #185 did for providers.
+  The bound holds: `admit` lets at most 12 through per fixed minute window,
+  a delivery ends within `deliverTimeout` (60 s), so the deliveries alive
+  together come from at most two windows; `send` still never waits for a
+  slot, and the channel's size caps the goroutines. The per-minute budget
+  and coalescing are as before (the test checks the 13th is refused).
+- **Task 2 (phone only).** A herdr card with a buzz switch on shows a
+  warning notice "This phone gets no buzz yet." under the switches while
+  this phone has no push subscription for that computer, with one link to
+  the Notifications section: **Turn on notifications** (off, or permission
+  not granted), **Add to Home Screen** (iPhone Safari tab), **See why** (a
+  browser without push, or on at home and not at that peer). `buzzGap` in
+  `web/src/screens/Settings.tsx`; the state is the one `NotificationSettings`
+  already has. Not shown while the state is not known, while home cannot be
+  reached (no Notifications section then), or when the card is off or both
+  buzz switches are off.
+- **Left out.** A line after **Send a test notification** that says a banner
+  may not show while the app is open: `web/src/sw.js` always calls
+  `showNotification`, and no platform source was found that says iOS or
+  Android hides the banner of a web app that is on screen. Nothing was
+  added.
+- **Docs.** Troubleshooting: "I hear a sound but see no notification" (herdr
+  keys and values quoted from the config reference; file path and
+  `herdr server reload-config` from herdr's `configuration.mdx`, v0.9.3);
+  `guides/herdr.md`; release notes; `CHANGELOG.md`; `docs/notifications.md`;
+  `docs/herdr-provider.md` section 8; `docs/pending-work.md`.
+- **Checks.** `GOTOOLCHAIN=go1.27.1`: `gofmt -l cmd internal scripts` empty;
+  `go vet ./...`; `go test -race -count=1 ./internal/webpush
+  ./internal/broker` ok. `pnpm typecheck`; `pnpm --filter
+  @phone-terminal/web exec vitest run` 937 passed (4 new); `pnpm build:web`;
+  `cd site && npx astro build` with valid links. The new vitest cases fail
+  when `buzzGap` loses its `off` case (tried). Not run: the e2e scripts
+  (headless Chrome has push and no subscription, so herdr cards there now
+  show the new notice) and a real phone (owner).
 
 ### UI consistency pass, all screens except herdr (2026-10-05, branch `polish/ui-consistency`; pull request open, not merged)
 

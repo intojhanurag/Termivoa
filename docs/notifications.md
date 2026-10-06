@@ -250,9 +250,17 @@ The broker hands each change to `Notifier.NotifyProvider`
   spaces collapsed, and is cut to 39 characters and "…" when longer.
 - **Own budget.** At most 6 per minute (`ProviderMaxPerMinute`), its own
   coalesce key `provider:<target>:<kind>` (1 minute, `CoalesceWindow`) and its
-  own delivery slot, so herdr never uses up the budget of a session's push.
+  own delivery slots, so herdr never uses up the budget of a session's push.
   Subscriptions, TTL and urgency are the same as for `waiting` and `done`.
   Viewers do not suppress it (same rule as above).
+- **This phone.** The switches are the computer's, for every phone. While one
+  is on and the app can tell that this phone has no push subscription for
+  that computer, the card says "This phone gets no buzz yet." with a link to
+  the Notifications section (`buzzGap` in `web/src/screens/Settings.tsx`,
+  from what that section already knows: `pushSupport`, `pushEnabled`, and the
+  peers that `syncPeerPush` could not subscribe). It reads the browser's own
+  state, not the host's stored copy, so it cannot see a subscription that the
+  host dropped.
 - **Service worker** (`web/src/sw.js`). It accepts a provider payload only
   with no `sessionId`, and checks `provider` and `target` by pattern. Tag
   `p:<provider>:<target>:<kind>` (a peer's tag starts with `/c/<host>`), so a
@@ -286,8 +294,11 @@ type Event struct {
 
 `Notify` returns at once and delivers in the background (detached from
 `ctx` cancellation, 60 s deadline). It returns `false` when the event is
-invalid, coalesced, over the rate limit, or dropped because earlier
-deliveries are still running. `NotifyProvider(ctx, webpush.ProviderEvent)` is
+invalid, coalesced or over the rate limit. Deliveries on their way never
+drop an admitted event: each path has delivery slots for two minutes of its
+budget (24 for sessions, 12 for providers), and a delivery ends within 60 s,
+so the ones alive together come from at most two budget windows. `Notify`
+never waits for a slot. `NotifyProvider(ctx, webpush.ProviderEvent)` is
 the same for a herdr terminal (`Provider`, `Target`, `Group`, `Item`, `Agent`,
 `Kind`, `Duration`), with the budget and key above. The host passes `Notifier.Notify` to the
 session registry as `RegistryConfig.Notify`; the same notifier is

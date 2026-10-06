@@ -4,7 +4,7 @@ import type {
   HTTPDeviceSummary, HTTPProviderInfo, HTTPProviderNotifyState, HTTPProviderUpdateRequest, HTTPSessionCreateRequest, HTTPSessionMutationResponse,
   HTTPSettingsResponse,
 } from '../generated/protocol';
-import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush } from '../push';
+import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPush, type PushSupport } from '../push';
 import type { Computer } from '../computers';
 import { checkAgain, hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
@@ -40,8 +40,34 @@ type Note = { readonly text: string; readonly error: boolean };
 /** "No notifications from vps, pi." */
 export const noPushFrom = (labels: ReadonlyArray<string>): string => `No notifications from ${labels.join(', ')}.`;
 
+/** What the Notifications section knows about this phone's push: `enabled` is undefined until the browser answered, `missing` has the labels of the peers that send none. */
+export type PushState = { readonly support: PushSupport; readonly enabled: boolean | undefined; readonly missing: ReadonlyArray<string> };
+
+/** The link of a card's "no buzz" line, by why this phone gets no buzz from that computer. All go to the Notifications section. */
+export const BUZZ_LINKS = {
+  off: 'Turn on notifications',
+  homeScreen: 'Add to Home Screen',
+  why: 'See why',
+} as const;
+
+/**
+ * Why this phone gets no buzz from a computer, or undefined when it does (or
+ * that is not known yet). `why`: a browser without push, or push is on at
+ * home and this peer still sends none (Notifications names it).
+ */
+export function buzzGap(push: PushState | undefined, computer: Pick<Computer, 'home' | 'label'>): keyof typeof BUZZ_LINKS | undefined {
+  if (push === undefined) return undefined;
+  if (push.support !== 'available') return push.support === 'needs-home-screen' ? 'homeScreen' : 'why';
+  if (push.enabled !== true) return push.enabled === false ? 'off' : undefined;
+  return !computer.home && push.missing.includes(computer.label) ? 'why' : undefined;
+}
+
 /** Push on/off for this phone on every computer, plus a test send. */
-export function NotificationSettings({ onFailure }: { readonly onFailure: (error: unknown) => string }) {
+export function NotificationSettings({ onFailure, onPush }: {
+  readonly onFailure: (error: unknown) => string;
+  /** Tells Settings what this section knows, for the Integrations cards. */
+  readonly onPush?: (state: PushState) => void;
+}) {
   const [support] = useState(pushSupport);
   // undefined while the browser is asked whether this phone is subscribed.
   const [enabled, setEnabled] = useState<boolean>();
@@ -62,6 +88,8 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
     }).then((labels) => { if (live) setMissing(labels); });
     return () => { live = false; };
   }, [support]);
+
+  useEffect(() => { onPush?.({ support, enabled, missing }); }, [onPush, support, enabled, missing]);
 
   function run(what: 'switch' | 'test', work: Promise<void>) {
     setBusy(what);
@@ -89,7 +117,7 @@ export function NotificationSettings({ onFailure }: { readonly onFailure: (error
   }));
 
   return (
-    <section id="notifications" className="group stack" aria-labelledby="push-heading">
+    <section id="notifications" className="group stack" aria-labelledby="push-heading" tabIndex={-1}>
       <h2 id="push-heading" className="caps">Notifications</h2>
       {support === 'available' ? (
         <>
@@ -214,9 +242,11 @@ export function InstallCard({ source, command, help, busy, error, onInstall, onC
 
 /** One provider on one computer: on or off, and which states buzz. Saved on that computer for every device. */
 export function IntegrationRow({
-  source, entry, settings, onFailure, onSaved, onInstall, onCheck, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body),
+  source, entry, settings, push, onFailure, onSaved, onInstall, onCheck, save = (body) => client(source.computer.origin).providerUpdate(source.info.id, body),
 }: {
   readonly source: ProviderSource;
+  /** This phone's push state: a card whose buzz is on says when no buzz can reach this phone. */
+  readonly push?: PushState | undefined;
   /** That computer's settings: the project and shell Install starts its session with. */
   readonly settings?: HTTPSettingsResponse | undefined;
   /** Install made a session: open it in Live and type `command` there, without Enter. */
@@ -275,6 +305,7 @@ export function IntegrationRow({
     }
   });
   const check = () => act('check', () => checkAgain(onCheck?.() ?? Promise.resolve(), (failure) => onFailure(failure, computer)));
+  const gap = buzzGap(push, computer);
   const value = (field: Field) => (pending?.field === field ? pending.on : field === 'enabled' ? info.enabled : info.notify.includes(field));
 
   function change(field: Field) {
@@ -336,6 +367,16 @@ export function IntegrationRow({
           {toggle('enabled', 'On')}
           {toggle('blocked', 'Buzz when blocked', !value('enabled'))}
           {toggle('done', 'Buzz when finished', !value('enabled'))}
+          {/* The switches are that computer's, for every phone: they can be on while this phone gets nothing. */}
+          {gap !== undefined && value('enabled') && (value('blocked') || value('done')) && (
+            <Notice
+              tone="warning"
+              role="status"
+              title="This phone gets no buzz yet."
+              // Focus moves with the view, so a screen reader lands on Notifications too.
+              action={<button type="button" className="link" onClick={() => { const to = document.getElementById('notifications'); to?.scrollIntoView(); to?.focus({ preventScroll: true }); }}>{BUZZ_LINKS[gap]}</button>}
+            />
+          )}
           <div role="status" className="field-note">
             {note?.error === true ? <Notice tone="danger" title={note.text} /> : <span className="muted">{pending === undefined ? note?.text ?? '' : 'Saving…'}</span>}
           </div>
@@ -346,8 +387,9 @@ export function IntegrationRow({
 }
 
 /** Settings → Integrations: only where a computer lists a provider. */
-export function IntegrationsSection({ entries, providers = [], onFailure, onCheck, onProviderReload, onInstall }: {
+export function IntegrationsSection({ entries, providers = [], push, onFailure, onCheck, onProviderReload, onInstall }: {
   readonly entries: ReadonlyArray<ComputerEntry>;
+  readonly push?: PushState | undefined;
   /** The providers' latest reads, for their state. */
   readonly providers?: ReadonlyArray<ProviderEntry> | undefined;
   readonly onFailure: (error: unknown, from?: Computer) => string;
@@ -371,6 +413,7 @@ export function IntegrationsSection({ entries, providers = [], onFailure, onChec
             source={source}
             entry={providers.find((entry) => entry.key === providerKey(source.computer.origin, source.info.id))}
             settings={settingsOf(source.computer.origin)}
+            push={push}
             onInstall={onInstall}
             {...(onCheck === undefined ? {} : { onCheck: () => onCheck(source.computer.origin) })}
             onFailure={onFailure}
@@ -417,6 +460,7 @@ export function Settings({
 }) {
   const [logoutError, setLogoutError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [push, setPush] = useState<PushState>();
   const current = settings?.device.label ?? '';
   // Follows home's label (home may answer after this screen opened) until the user types.
   const [draft, setDraft] = useState<string>();
@@ -512,9 +556,10 @@ export function Settings({
         </div>
       </section>
 
-      {settings !== undefined && <NotificationSettings onFailure={onFailure} />}
+      {settings !== undefined && <NotificationSettings onFailure={onFailure} onPush={setPush} />}
 
-      <IntegrationsSection entries={entries} providers={providers} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} onInstall={onInstall} />
+      {/* Without home there is no Notifications section to point at. */}
+      <IntegrationsSection entries={entries} providers={providers} push={settings === undefined ? undefined : push} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} onInstall={onInstall} />
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>
