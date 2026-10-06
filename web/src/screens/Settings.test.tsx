@@ -302,7 +302,7 @@ describe('Settings → Integrations', () => {
     });
 
     const card = (push: Parameters<typeof buzzGap>[0], extra = {}) => renderToStaticMarkup(
-      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'ready', ...extra }), manage: true }} push={push} onFailure={() => ''} /></ul>,
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'ready', ...extra }), manage: true, agentTab: true }} push={push} onFailure={() => ''} /></ul>,
     );
     const line = (link: string) => `<div class="notice warning" role="status"><p class="notice-title">This phone gets no buzz yet.</p><div class="notice-action"><button type="button" class="link">${link}</button></div></div>`;
 
