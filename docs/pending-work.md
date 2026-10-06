@@ -192,6 +192,12 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 ### Owner decisions
 
+- **GitHub: set up a repository on a computer from the phone** (design
+  `docs/github-integration.md`, ADR 0010; critical, rule 24). Waits for the
+  owner: approve the design, decide push (Contents: Read and write, or
+  Read-only), register the GitHub App, and accept a fresh database and a
+  new pairing on each computer. No code before that.
+
 - [ ] **iOS older than 16.4.** Multi-computer refuses it; the refusal is kept
       for now.
 - [ ] **PTY-session kill boundary.** Keep (recommended) or revert. See
