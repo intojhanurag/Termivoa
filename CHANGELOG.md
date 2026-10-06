@@ -88,7 +88,8 @@ All notable changes are documented here. The format follows
   minute for all phones together, and one per phone per 5 s as before
   (before: tests used the session budget of 12 per minute, so a phone that
   sent a test every 5 s stopped "needs you" notifications for that minute).
-  A push service that hangs no longer holds back the phones after it: one
+  Up to 3 subscriptions whose push service hangs no longer hold back the
+  phones after them: one
   delivery now sends to 4 subscriptions at once (before: one after another,
   so six hung subscriptions used the whole 60 s). At most 192 push requests
   are open at once (#202). Phone: a herdr card in **Settings →
