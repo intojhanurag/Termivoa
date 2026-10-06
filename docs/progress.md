@@ -49,6 +49,33 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### GitHub integration: design only (2026-10-06, branch `docs/github-integration-design`; draft pull request, DO NOT MERGE without owner review)
+
+- **Why.** The owner asked for a GitHub option in Settings: a repository
+  list, and one tap that sets a repository up on a chosen computer, with no
+  terminal step and no dependency on `gh`.
+- **What.** Design [github-integration.md](github-integration.md) and ADR
+  [0010](decisions/0010-github-integration.md). No code. Seven pictures
+  drawn in Paper with demo data: `docs/evidence/github-integration/`.
+- **Checked first.** `gh` and `git` on the Mac and the VPS (the Mac has
+  `gh` logged in; the VPS has `git` only). GitHub's docs for the device
+  flow of a GitHub App, token expiry and refresh, installations, and
+  revoke. The code this builds on (the Web Push client, the VAPID key
+  storage, `addProject`, the Integrations rows, the e2e build-tag files).
+- **Reviews.** Plan 1 (each computer's `gh` login): security and
+  feasibility, both "build with changes"; the owner then rejected plan 1.
+  This design: security (2 blockers, 8 should-fix) and feasibility (10
+  findings), both "approve with changes"; every finding is resolved in the
+  document, sections 15 and 16.
+- **Defect in the review work.** A reviewer ran `git credential fill` on
+  the owner's Mac and the Keychain helper printed the owner's real `gh`
+  token into that reviewer's session log. Not used, not in the repository.
+  The owner was told and advised to make a new token. Briefs now forbid
+  commands that can read a credential.
+- **Blocked on the owner.** Approval of the design; the push decision; the
+  GitHub App (client ID and slug); a fresh database and a new pairing on
+  each computer with the first pull request.
+
 ### "Needs you" inbox and its queue (2026-10-06, branch `feat/needs-you-inbox`, on top of `feat/herdr-agent-tab`; pull request work, not merged)
 
 - **Why.** The owner asked for one place on the phone that shows everything
