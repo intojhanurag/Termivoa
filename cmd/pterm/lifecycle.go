@@ -1316,6 +1316,7 @@ func runDoctorCommand(ctx context.Context, args []string, output io.Writer) erro
 		return err
 	}
 	inspectHerdr(ctx, env.herdr, output)
+	inspectGitHub(ctx, env, report, output)
 	if report.problems > 0 {
 		return fmt.Errorf("doctor found %d problem(s); `pterm setup` explains how to fix startup registration", report.problems)
 	}

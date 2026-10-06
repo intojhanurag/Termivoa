@@ -1019,6 +1019,68 @@ func TestManageProviderUsesADedicatedConnection(t *testing.T) {
 	}
 }
 
+// GitHub actions and the repository list wait on GitHub (15 s): each has its
+// own connection, and the plain state read does not wait behind them.
+func TestGitHubActionAndReposUseDedicatedConnections(t *testing.T) {
+	release := make(chan struct{})
+	repo := "octo/shop"
+	client, dials := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
+		switch request.Type {
+		case protocol.GatewayGithubAction:
+			<-release
+			var payload protocol.GatewayRPCGitHubActionPayload
+			if err := json.Unmarshal(request.Payload, &payload); err != nil || payload.Request.Action != protocol.Setup ||
+				payload.Request.Repo == nil || *payload.Request.Repo != repo {
+				t.Errorf("bad action payload %s", request.Payload)
+			}
+			return reply(t, request.RequestID, protocol.GatewayGithubActionResult,
+				protocol.HTTPGitHubResponse{App: "termivoa", State: protocol.HTTPGitHubStateReady})
+		case protocol.GatewayGithubRepos:
+			<-release
+			return reply(t, request.RequestID, protocol.GatewayGithubReposResult,
+				protocol.HTTPGitHubReposResponse{Repos: []protocol.HTTPGitHubRepo{}})
+		case protocol.GatewayGithubGet:
+			return reply(t, request.RequestID, protocol.GatewayGithubGetResult,
+				protocol.HTTPGitHubResponse{App: "termivoa", State: protocol.HTTPGitHubStateNotConnected})
+		}
+		t.Errorf("unexpected %s", request.Type)
+		return nil
+	})
+	done := make(chan error, 2)
+	go func() {
+		result, err := client.GitHubAction(context.Background(), testCredential,
+			protocol.HTTPGitHubRequest{Action: protocol.Setup, Repo: &repo})
+		if err == nil && result.State != protocol.HTTPGitHubStateReady {
+			err = errors.New("wrong action result")
+		}
+		done <- err
+	}()
+	go func() {
+		result, err := client.GitHubRepos(context.Background(), testCredential)
+		if err == nil && result.Repos == nil {
+			err = errors.New("wrong repos result")
+		}
+		done <- err
+	}()
+	for dials.Load() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if state, err := client.GitHub(ctx, testCredential); err != nil || state.State != protocol.HTTPGitHubStateNotConnected {
+		t.Fatalf("a read waited behind an action: %+v %v", state, err)
+	}
+	close(release)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if dials.Load() != 3 {
+		t.Fatalf("dials = %d, want 3", dials.Load())
+	}
+}
+
 // A create can take 45 s: it must not hold the shared connection that every
 // other request (the sessions list included) waits for.
 func TestCreateProviderUsesADedicatedConnection(t *testing.T) {

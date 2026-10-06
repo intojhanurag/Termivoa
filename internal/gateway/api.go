@@ -552,6 +552,50 @@ func (handler *gatewayHandler) providerManage(response http.ResponseWriter, requ
 	handler.respond(response, request, result, err)
 }
 
+// github answers this computer's GitHub state (GET) or runs one action
+// (POST; docs/github-integration.md).
+func (handler *gatewayHandler) github(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodGet, http.MethodPost) {
+		return
+	}
+	if request.Method == http.MethodGet {
+		credential, ok := handler.credential(response, request)
+		if !ok {
+			return
+		}
+		result, err := handler.api.GitHub(request.Context(), credential)
+		handler.respond(response, request, result, err)
+		return
+	}
+	var body protocol.HTTPGitHubRequest
+	if !handler.mutation(response, request, &body) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	if protocol.ValidateGitHubRequest(body) != nil {
+		writeError(response, http.StatusBadRequest, protocol.InvalidRequest, "invalid github request")
+		return
+	}
+	result, err := handler.api.GitHubAction(request.Context(), credential, body)
+	handler.respond(response, request, result, err)
+}
+
+// githubRepos lists the repositories the connected account can use.
+func (handler *gatewayHandler) githubRepos(response http.ResponseWriter, request *http.Request) {
+	if !allowMethod(response, request, http.MethodGet) {
+		return
+	}
+	credential, ok := handler.credential(response, request)
+	if !ok {
+		return
+	}
+	result, err := handler.api.GitHubRepos(request.Context(), credential)
+	handler.respond(response, request, result, err)
+}
+
 func (handler *gatewayHandler) respondEmpty(response http.ResponseWriter, request *http.Request, err error) {
 	if err != nil {
 		handler.respond(response, request, nil, err)

@@ -59,6 +59,9 @@ canonical envelopes in `envelope.schema.json` over one authenticated WebSocket.
 | `POST /api/v1/providers/{provider}/open` | cookie | `HTTPProviderOpenRequest` | `200 HTTPProviderOpenResponse`; see Providers |
 | `POST /api/v1/providers/{provider}/create` | cookie | `HTTPProviderCreateRequest` | `200 HTTPProviderCreateResponse`; may take up to 45 s |
 | `POST /api/v1/providers/{provider}/manage` | cookie | `HTTPProviderManageRequest` | `200 HTTPProviderManageResponse`; revision 5 (revision 6: an agent in `newTab`, `openItem`); see Providers |
+| `GET /api/v1/github` | cookie | – | `200 HTTPGitHubResponse`; revision 7; see GitHub |
+| `POST /api/v1/github` | cookie | `HTTPGitHubRequest` | `200 HTTPGitHubResponse`; revision 7; may take 15 s |
+| `GET /api/v1/github/repos` | cookie | – | `200 HTTPGitHubReposResponse`; revision 7; at most 1000 |
 | `GET /api/v1/ws` | cookie | WebSocket upgrade | canonical envelopes |
 
 `GET /api/v1/sessions` records may carry live presence computed by the broker
@@ -170,6 +173,7 @@ every build ID the packaging scripts produce already matches.
 | 4 | Providers (see that section): `GET` and `PATCH /api/v1/providers/{provider}`, `POST /api/v1/providers/{provider}/open` and `/create`; `HTTPSettingsResponse.providers`; the `HTTPProvider*` bodies; `gateway.providers.get`, `.update`, `.open`, `.create` (`authentication-rpc.md`). No new error code and no enum an older app parses, so `minRevision` stays 1. The app calls a provider route only on a computer whose `protocolRevision` is 4 or higher and that lists the provider. |
 | 5 | Manage a provider (see Providers; `docs/herdr-manage.md`): `POST /api/v1/providers/{provider}/manage` (`HTTPProviderManageRequest`, `HTTPProviderManageResponse`); `gateway.providers.manage` (`authentication-rpc.md`); the `HTTPProviderState` value `notInstalled`; `HTTPProviderInfo.canInstall` and `canStart`; `HTTPProviderItem.linked`; `HTTPSettingsResponse.providers` now lists herdr as `notInstalled` on macOS and Linux when it is not installed (before: absent). `revision.json` names the feature `providerManage: 5`. No new error code. `minRevision` stays 1: an older app drops a provider entry whose state it does not know and ignores unknown fields. The app calls `manage`, and shows what needs it, only on a computer whose `protocolRevision` is 5 or higher. |
 | 6 | An agent in a new tab, and closed worktrees (see Providers; `docs/herdr-manage.md`, section 14). No new route or RPC message: `HTTPProviderManageRequest` gets `agent` and `prompt` (for `newTab`), `groupId` and `worktree` (for the new action `openItem`); `HTTPProviderManageResponse` gets `agentStarted` and `agentProblem`; `HTTPProviderGroup` gets `closed`. `revision.json` names the feature `providerAgentTab: 6`. No new error code. `minRevision` stays 1: an older app ignores the new fields and never sends the new action or fields. The app sends them, and shows what needs them, only to a computer whose `protocolRevision` is 6 or higher; an older computer refuses the new fields as unknown (`400`). |
+| 7 | GitHub (`docs/github-integration.md`): `GET` and `POST /api/v1/github` (`HTTPGitHubRequest`, `HTTPGitHubResponse`) and `GET /api/v1/github/repos` (`HTTPGitHubReposResponse`); `HTTPSettingsResponse.github` (`HTTPGitHubInfo`, absent when the build has no GitHub app or on Windows); the `HTTPGitHub*` bodies; `gateway.github.get`, `.action`, `.repos` and `admin.github.status`, `.disconnect`, `.credential` (`authentication-rpc.md`). `revision.json` names the feature `github: 7`. No new error code. `minRevision` stays 1. The app calls the routes only on a computer whose `protocolRevision` is 7 or higher and whose settings carry `github`. |
 
 ## Computers
 
@@ -361,6 +365,23 @@ not installed on this computer") on every provider route. `manage` uses:
 
 herdr's and git's text never leaves the host; the broker log gets the action
 and herdr's error code only.
+
+## GitHub
+
+Revision 7. `POST /api/v1/github` takes `action`: `connect`, `cancel`,
+`disconnect`, `setup` (needs `repo`, as `owner/name` not ending in `.git`) or
+`stop`; `repo` with any other action is refused (`400 invalid_request`,
+"invalid github request"). Limits per device per minute:
+
+| Route | Limit |
+| --- | --- |
+| `GET /api/v1/github` | 60 |
+| `POST` with `connect` or `setup` | 3 |
+| `POST` with `cancel`, `disconnect` or `stop` | 10 |
+| `GET /api/v1/github/repos` | 10 |
+
+Over the limit the answer is `429 limit_exceeded`. The error texts are fixed
+and come from the broker.
 
 ## Pairing flow
 

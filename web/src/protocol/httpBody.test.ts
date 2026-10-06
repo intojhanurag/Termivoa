@@ -43,4 +43,15 @@ describe('parseHttpBody', () => {
     expect(() => parseHttpBody('pairPollResponse', { status: 'maybe' })).toThrow(InvalidResponseError);
     expect(() => parseHttpBody('uploadResponse', null)).toThrow(InvalidResponseError);
   });
+  it('keeps a GitHub list without its one bad repository, and checks the answers', () => {
+    const repo = (name: string, extra: object = {}) => ({ repo: `octo-demo/${name}`, private: true, fork: false, archived: false, sizeKb: 10, here: false, taken: false, ...extra });
+    const body = parseHttpBody('githubReposResponse', {
+      repos: [repo('shop-api'), repo('.ssh'), repo('x', { repo: 'https://evil.example/x' }), repo('notes', { sizeKb: -1 }), repo('pdf-editor')],
+      truncated: false,
+    });
+    expect(body.repos.map((one) => one.repo)).toEqual(['octo-demo/shop-api', 'octo-demo/pdf-editor']);
+    expect(parseHttpBody('githubResponse', { state: 'ready', app: 'termivoa', login: 'octo-demo' })).toEqual({ state: 'ready', app: 'termivoa', login: 'octo-demo' });
+    expect(() => parseHttpBody('githubResponse', { state: 'ready', app: 'evil.com/x' })).toThrow(InvalidResponseError);
+    expect(() => parseHttpBody('githubResponse', { state: 'connecting', app: 'termivoa', connect: { userCode: '<b>', expiresAt: 1 } })).toThrow(InvalidResponseError);
+  });
 });

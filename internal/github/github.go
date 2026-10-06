@@ -11,6 +11,11 @@ package github
 import (
 	"context"
 	"errors"
+	"net/http"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -45,6 +50,12 @@ type Config struct {
 	// folder name, so one profile's start-up sweep never removes the other
 	// profile's clone.
 	Profile string
+	// RuntimeDir is this broker's runtime folder. The clone passes it to
+	// `pterm github-credential` as PTERM_RUNTIME_DIR (its only way to find
+	// this broker's admin socket: git runs it with HOME set to an empty
+	// temp folder). Later git runs in the folder do not set it; pterm then
+	// finds its runtime folder as usual.
+	RuntimeDir string
 }
 
 // Project is a saved Termivoa project.
@@ -75,72 +86,171 @@ var (
 )
 
 // Service is the GitHub side of one broker. Every method is safe for
-// concurrent use. It is nil on Windows and in a build without ClientID.
+// concurrent use. It is nil on Windows and in a build without ClientID;
+// every method answers a nil Service.
 type Service struct {
-	config Config
-	deps   Deps
+	config    Config
+	deps      Deps
+	opts      options
+	home      string
+	client    *http.Client
+	freeSpace func(path string) (uint64, error)
+
+	ctx    context.Context // ends on Close
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	// tokenMu serializes every token change (refresh, login, disconnect).
+	// Order: tokenMu before mu.
+	tokenMu sync.Mutex
+
+	mu             sync.Mutex
+	account        *account
+	problem        *protocol.HTTPGitHubProblem
+	connect        *connectRun
+	setup          *setupRun
+	installKnown   bool
+	needsInstall   bool
+	installChecked time.Time
+	installRunning bool
+	cache          *reposCache
+	reposRun       *reposRun
+	origins        map[string]originEntry
+
+	gitMu     sync.Mutex
+	gitPath   string
+	gitLooked time.Time
 }
 
 // New builds the service, or returns nil, nil when the feature is off
-// (no ClientID, or Windows). It removes the temp folders of this profile
-// that a crash left (design 6.4) and reads the token file.
+// (no ClientID, or not macOS or Linux). It removes the temp folders of this
+// profile that a crash left (design 6.4) and reads the token file. It runs
+// `git --version` once (at most 2 s for each candidate).
 func New(config Config, deps Deps) (*Service, error) {
-	return nil, nil
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return nil, nil
+	}
+	return newService(config, deps, defaultOptions)
+}
+
+var errConfig = errors.New("github: Home and DataDir must be absolute folders")
+
+func newService(config Config, deps Deps, opts options) (*Service, error) {
+	if config.ClientID == "" {
+		config.ClientID = ClientID
+	}
+	if config.AppSlug == "" {
+		config.AppSlug = AppSlug
+	}
+	// The helper value quotes both paths for the shell; a path with a
+	// single quote cannot be quoted that way, so the feature is off.
+	if config.ClientID == "" || strings.Contains(config.Pterm, "'") || strings.Contains(config.RuntimeDir, "'") {
+		return nil, nil
+	}
+	if !filepath.IsAbs(config.Home) || !filepath.IsAbs(config.DataDir) {
+		return nil, errConfig
+	}
+	home, err := filepath.EvalSymlinks(config.Home)
+	if err != nil {
+		return nil, err
+	}
+	// A damaged or foreign token file reads as "not connected": the broker
+	// still starts, and the next Connect replaces the file.
+	acc, _ := loadAccount(config.DataDir)
+	ctx, cancel := context.WithCancel(context.Background())
+	service := &Service{
+		config: config, deps: deps, opts: opts, home: home,
+		client: newHTTPClient(opts), freeSpace: freeSpace,
+		ctx: ctx, cancel: cancel, account: acc, origins: map[string]originEntry{},
+	}
+	service.sweep()
+	service.gitBinary()
+	return service, nil
+}
+
+func (service *Service) now() time.Time {
+	if service.deps.Now != nil {
+		return service.deps.Now()
+	}
+	return time.Now()
+}
+
+func (service *Service) current() *account {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	return service.account
 }
 
 // Info is the settings field: the state and the login.
 func (service *Service) Info() protocol.HTTPGitHubInfo {
-	return protocol.HTTPGitHubInfo{State: protocol.HTTPGitHubStateNotConnected}
+	if service == nil {
+		return protocol.HTTPGitHubInfo{State: protocol.HTTPGitHubStateNotConnected}
+	}
+	response := service.State("")
+	return protocol.HTTPGitHubInfo{State: response.State, Login: response.Login}
 }
 
 // State is GET /api/v1/github for one device: connect only for the device
-// that started the Connect. In needsInstall it asks GitHub again in the
-// background, at most once in 5 s (design 6.1 step 5).
+// that started the Connect. In needsInstall (or before the first look) it
+// asks GitHub again in the background, at most once in 5 s (design 6.1
+// step 5). It does not block on GitHub; without git it may run
+// `git --version` (at most once in 10 s).
 func (service *Service) State(device string) protocol.HTTPGitHubResponse {
-	return protocol.HTTPGitHubResponse{State: protocol.HTTPGitHubStateNotConnected, App: service.config.AppSlug}
+	if service == nil {
+		return protocol.HTTPGitHubResponse{State: protocol.HTTPGitHubStateNotConnected}
+	}
+	hasGit := service.gitBinary() != ""
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	response := protocol.HTTPGitHubResponse{App: service.config.AppSlug}
+	if acc := service.account; acc != nil {
+		login := acc.login
+		response.Login = &login
+	}
+	if service.problem != nil {
+		problem := *service.problem
+		response.Problem = &problem
+	}
+	if run := service.setup; run != nil && (run.running || service.now().Sub(run.ended) < resultFor) {
+		view := run.view
+		response.Setup = &view
+	}
+	switch {
+	case !hasGit:
+		response.State = protocol.NoGit
+	case service.connect != nil:
+		response.State = protocol.Connecting
+		if run := service.connect; run.device == device && device != "" && run.userCode != "" {
+			response.Connect = &protocol.HTTPGitHubConnect{UserCode: run.userCode, ExpiresAt: run.expires.UnixMilli()}
+		}
+	case service.account == nil:
+		response.State = protocol.HTTPGitHubStateNotConnected
+	case service.installKnown && service.needsInstall:
+		response.State = protocol.NeedsInstall
+	default:
+		response.State = protocol.HTTPGitHubStateReady
+	}
+	if service.account != nil && (!service.installKnown || service.needsInstall) &&
+		!service.installRunning && service.now().Sub(service.installChecked) >= installRecheck {
+		service.installRunning, service.installChecked = true, service.now()
+		service.wg.Add(1)
+		go func() {
+			defer service.wg.Done()
+			service.checkInstalls(service.ctx)
+			service.mu.Lock()
+			service.installRunning = false
+			service.mu.Unlock()
+		}()
+	}
+	return response
 }
 
-// Connect starts the device flow for device, or answers the running one
-// (ErrBusy when another device started it).
-func (service *Service) Connect(ctx context.Context, device string) (protocol.HTTPGitHubResponse, error) {
-	return protocol.HTTPGitHubResponse{}, ErrNotConnected
+// Close stops the Connect poll, the list run and the set-up job and waits
+// for them. A clone that Close stops leaves no temp folder.
+func (service *Service) Close() {
+	if service == nil {
+		return
+	}
+	service.cancel()
+	service.wg.Wait()
 }
-
-// Cancel ends a Connect that is not finished. It never touches a stored login.
-func (service *Service) Cancel(device string) protocol.HTTPGitHubResponse {
-	return service.State(device)
-}
-
-// Disconnect revokes both tokens at GitHub (best effort, 10 s) and deletes
-// the token file. revoked is false when the revoke call failed.
-func (service *Service) Disconnect(ctx context.Context, device string) (response protocol.HTTPGitHubResponse, revoked bool, err error) {
-	return service.State(device), false, nil
-}
-
-// Repos is GET /api/v1/github/repos: at most 1000 rows, cached 60 s, one
-// shared run, 15 s in total, with here and taken for each row.
-func (service *Service) Repos(ctx context.Context) (protocol.HTTPGitHubReposResponse, error) {
-	return protocol.HTTPGitHubReposResponse{Repos: []protocol.HTTPGitHubRepo{}}, ErrNotConnected
-}
-
-// Setup starts the set-up of repo (owner/name) for device. Every outcome is
-// in the answer's setup field: cloning, finished (also "already here"), or
-// failed with a problem. ErrBusy when a set-up runs.
-func (service *Service) Setup(ctx context.Context, device, repo string) (protocol.HTTPGitHubResponse, error) {
-	return service.State(device), ErrNotConnected
-}
-
-// Stop stops the running set-up; its result becomes failed/stopped.
-func (service *Service) Stop(device string) protocol.HTTPGitHubResponse {
-	return service.State(device)
-}
-
-// Credential is the answer of `pterm github-credential get`: the login, a
-// fresh access token (refreshed when it has less than 5 minutes left) and
-// its expiry. Never the refresh token.
-func (service *Service) Credential(ctx context.Context) (login, token string, expires time.Time, err error) {
-	return "", "", time.Time{}, ErrNotConnected
-}
-
-// Close stops the Connect poll and the set-up job and waits for them.
-func (service *Service) Close() {}

@@ -1411,8 +1411,14 @@ export type HTTPGitHubResponse = {
     readonly connect?: HTTPGitHubConnect;
     readonly login?:   string;
     readonly problem?: HTTPGitHubProblem;
-    readonly setup?:   HTTPGitHubSetup;
-    readonly state:    HTTPGitHubState;
+    /**
+     * Only in the answer of disconnect: the login is deleted on this computer, but GitHub did
+     * not confirm the revoke; the user removes Termivoa at
+     * https://github.com/settings/applications.
+     */
+    readonly revokeFailed?: boolean;
+    readonly setup?:        HTTPGitHubSetup;
+    readonly state:         HTTPGitHubState;
 }
 
 /**

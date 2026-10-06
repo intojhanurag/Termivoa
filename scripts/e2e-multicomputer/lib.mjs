@@ -180,6 +180,8 @@ export class Stack {
       TMPDIR: join(this.dir, 'tmp'), PTERM_E2E_TAILSCALE_DIR: this.tsDir,
       // The broker's offer to home goes through the front (peerdial_e2e.go, e2e builds only).
       PTERM_E2E_FRONT: this.env.proxy, PTERM_E2E_SPKI: this.env.spki,
+      // The fake GitHub (scripts/fakegithub) for web, API and git; read only by an e2e build (internal/github).
+      ...(this.env.github ? { PTERM_E2E_GITHUB: this.env.github, PTERM_E2E_GITHUB_CLIENT: 'Iv1.e2e', PTERM_E2E_GITHUB_APP: 'termivoa-e2e' } : {}),
     };
   }
 
@@ -320,6 +322,7 @@ export class Env {
       must('go', ['build', '-o', join(env.bin, 'front'), './scripts/e2e-multicomputer'], { timeout: 600000 }),
       // The fake herdr; a stack gets it as `herdr` only through installHerdr.
       must('go', ['build', '-o', join(env.bin, 'fakeherdr'), './scripts/fakeherdr'], { timeout: 600000 }),
+      must('go', ['build', '-o', join(env.bin, 'fakegithub'), './scripts/fakegithub'], { timeout: 600000 }),
     ];
     if (production) {
       env.production = join(env.bin, 'pterm-production');
@@ -330,6 +333,7 @@ export class Env {
     for (const name of names) env.stacks[name] = new Stack(env, name);
     await Promise.all(Object.values(env.stacks).map((s) => s.ports()));
     await env.startFront();
+    await env.startGitHub();
     await Promise.all(Object.values(env.stacks).map((s) => s.start()));
     return env;
   }
@@ -358,6 +362,22 @@ export class Env {
     const [, address, spki] = /^proxy (\S+) spki (\S+)/.exec(line);
     this.proxy = address;
     this.spki = spki;
+  }
+
+  /** The fake GitHub, before the stacks start: they get its address (Stack.processEnv). */
+  async startGitHub() {
+    this.fakeGitHub = spawn(join(this.bin, 'fakegithub'), ['-port', '0', '-client', 'Iv1.e2e', '-dir', join(this.root, 'fakegithub')], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const line = await new Promise((res) => this.fakeGitHub.stdout.once('data', (d) => res(String(d))));
+    this.github = /^listening (\S+)/.exec(line)[1];
+  }
+
+  /** One test control or API call on the fake GitHub; resolves with {status, json}. */
+  async gitHub(path, { method = 'GET', token } = {}) {
+    const r = await fetch(`${this.github}${path}`, { method, headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const text = await r.text();
+    let json;
+    try { json = JSON.parse(text); } catch { /* not JSON */ }
+    return { status: r.status, json, text };
   }
 
   /** Front log entries written after mark (a line count from logMark). */
@@ -390,6 +410,7 @@ export class Env {
     await Promise.all(Object.values(this.stacks).map((s) => s.uninstallHerdr()));
     await Promise.all(Object.values(this.stacks).map((s) => s.stop()));
     this.front?.kill();
+    this.fakeGitHub?.kill();
     this.caffeinate?.kill();
     // A failed step can leave a CLI under script(1) running (pterm setup has no runtime dir).
     await run('/usr/bin/pkill', ['-f', `${this.root}/bin/`]);

@@ -65,6 +65,9 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.providers.open` | credential + `provider` + `HTTPProviderOpenRequest` | `HTTPProviderOpenResponse` |
 | `gateway.providers.create` | credential + `provider` + `HTTPProviderCreateRequest` | `HTTPProviderCreateResponse`; sent on its own connection (up to 45 s) |
 | `gateway.providers.manage` | credential + `provider` + `HTTPProviderManageRequest` | `HTTPProviderManageResponse`; sent on its own connection (revision 5; revision 6 adds `agent`, `prompt` and `openItem`) |
+| `gateway.github.get` | `GatewayRPCCredentialPayload` | `HTTPGitHubResponse` |
+| `gateway.github.action` | credential + `HTTPGitHubRequest` | `HTTPGitHubResponse`; sent on its own connection (revision 7) |
+| `gateway.github.repos` | `GatewayRPCCredentialPayload` | `HTTPGitHubReposResponse`; sent on its own connection (revision 7) |
 
 `gateway.origin` and `gateway.computers.offer` are the only requests
 besides pairing that carry no credential: the configured origin is not a
@@ -189,6 +192,9 @@ retracted.
 | `admin.profile.list` | empty | at most 64 shell profiles |
 | `admin.profile.detect` | empty | profiles after idempotent host shell discovery |
 | `admin.config.origin` | optional `origin` | the configured origin, if any |
+| `admin.github.status` | empty | optional `state`, `login`; an empty object when the build has no GitHub app |
+| `admin.github.disconnect` | empty | the status after the disconnect |
+| `admin.github.credential` | empty | `username`, `password` (the access token, never the refresh token), `expiresAt` (Unix seconds); only for `pterm github-credential`; `host_unavailable` when not connected |
 | `admin.shutdown` | empty | `terminatedSessions` (0–64) |
 | `admin.gateway.stop` | empty | empty; served only by the gateway control endpoint |
 

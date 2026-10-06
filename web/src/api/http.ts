@@ -2,6 +2,9 @@ import type {
   ErrorCode,
   HTTPDeviceRenameRequest,
   HTTPDeviceSummary,
+  HTTPGitHubReposResponse,
+  HTTPGitHubRequest,
+  HTTPGitHubResponse,
   HTTPPairPollRequest,
   HTTPPairPollResponse,
   HTTPPairRedeemRequest,
@@ -52,6 +55,8 @@ export const UPLOAD_TIMEOUT_MS = 60_000;
 export const PROVIDER_CREATE_TIMEOUT_MS = 45_000;
 /** One manage action: the host waits up to 15 s for the provider, then a few seconds for the new terminal or the started server (docs/herdr-manage.md, section 4). */
 export const PROVIDER_MANAGE_TIMEOUT_MS = 30_000;
+/** The repository list: the host reads GitHub for up to 15 s (docs/github-integration.md, 6.3). */
+export const GITHUB_REPOS_TIMEOUT_MS = 20_000;
 /** A new tab with an agent also starts the agent and sends the prompt, as a create does: create's wait. */
 export const manageTimeout = (body: Pick<HTTPProviderManageRequest, 'agent'>): number =>
   (body.agent === undefined ? PROVIDER_MANAGE_TIMEOUT_MS : PROVIDER_CREATE_TIMEOUT_MS);
@@ -228,6 +233,12 @@ export interface Client {
   providerCreate(id: string, body: HTTPProviderCreateRequest): Promise<HTTPProviderCreateResponse>;
   /** Closes, removes, makes or starts (protocolRevision 5 and later); waits up to PROVIDER_MANAGE_TIMEOUT_MS. */
   providerManage(id: string, body: HTTPProviderManageRequest): Promise<HTTPProviderManageResponse>;
+  /** GitHub on that computer (protocolRevision 7 and later): its state, this phone's code, the set-up. */
+  github(): Promise<HTTPGitHubResponse>;
+  /** Connect, cancel, disconnect, set up `owner/name`, stop. */
+  githubAction(body: HTTPGitHubRequest): Promise<HTTPGitHubResponse>;
+  /** The repositories that computer's login can read; waits up to GITHUB_REPOS_TIMEOUT_MS. */
+  githubRepos(): Promise<HTTPGitHubReposResponse>;
 }
 
 function createClient(origin: string, home: boolean): Client {
@@ -346,6 +357,9 @@ function createClient(origin: string, home: boolean): Client {
     providerUpdate: (id, body) => request('PATCH', providerPath(id), 'providerInfo', send(body)),
     providerCreate: (id, body) => request('POST', `${providerPath(id)}/create`, 'providerCreateResponse', { body, timeoutMs: PROVIDER_CREATE_TIMEOUT_MS }),
     providerManage: (id, body) => request('POST', `${providerPath(id)}/manage`, 'providerManageResponse', { body, timeoutMs: manageTimeout(body) }),
+    github: () => request('GET', '/api/v1/github', 'githubResponse', read),
+    githubAction: (body) => request('POST', '/api/v1/github', 'githubResponse', send(body)),
+    githubRepos: () => request('GET', '/api/v1/github/repos', 'githubReposResponse', { timeoutMs: GITHUB_REPOS_TIMEOUT_MS }),
   };
 }
 

@@ -382,6 +382,9 @@ func (server *ManagementServer) dispatchGateway( //nolint:gocyclo
 		protocol.GatewayProvidersCreate, protocol.GatewayProvidersManage:
 		result, err := server.dispatchProvider(ctx, request, authorize)
 		return result, nil, err
+	case protocol.GatewayGithubGet, protocol.GatewayGithubAction, protocol.GatewayGithubRepos:
+		result, err := server.dispatchGitHub(ctx, request, authorize)
+		return result, nil, err
 	default:
 		return nil, nil, errors.New("broker: unsupported gateway request")
 	}
@@ -429,6 +432,7 @@ func (server *ManagementServer) browserSettings(ctx context.Context, principal a
 	if server.providers != nil {
 		result.Providers = []protocol.HTTPProviderInfo{server.providers.settingsInfo(server.now())}
 	}
+	result.Github = server.githubInfo()
 	return result, nil
 }
 
@@ -468,6 +472,9 @@ func classifyAuthError(err error) (managementFailure, bool) {
 		return failure, true
 	}
 	if failure, ok := classifyProviderError(err); ok {
+		return failure, true
+	}
+	if failure, ok := classifyGitHubError(err); ok {
 		return failure, true
 	}
 	switch {

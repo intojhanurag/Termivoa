@@ -8,6 +8,8 @@ import { disablePush, enablePush, pushEnabled, pushSupport, syncPeerPush, testPu
 import { storedComputers, type Computer } from '../computers';
 import { checkAgain, hosted, type ComputerEntry, type HostedSession } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
+import { GitHubRow, githubSources, readyProvider } from './GitHub';
+import type { ProviderTap } from './Herdr';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE } from './hooks';
 import { NewSessionHelp } from './NewSession';
 import { StartButton } from './ProviderManage';
@@ -390,8 +392,8 @@ export function IntegrationRow({
   );
 }
 
-/** Settings → Integrations: only where a computer lists a provider. */
-export function IntegrationsSection({ entries, providers = [], push, onFailure, onCheck, onProviderReload, onInstall }: {
+/** Settings → Integrations: only where a computer lists a provider or offers GitHub. */
+export function IntegrationsSection({ entries, providers = [], push, onFailure, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened }: {
   readonly entries: ReadonlyArray<ComputerEntry>;
   readonly push?: PushState | undefined;
   /** The providers' latest reads, for their state. */
@@ -400,13 +402,18 @@ export function IntegrationsSection({ entries, providers = [], push, onFailure, 
   readonly onCheck?: (origin: string) => Promise<void>;
   readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
   readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
+  /** GitHub's New session made a session: open it in Live. */
+  readonly onOpenSession?: ((session: HostedSession) => void) | undefined;
+  /** GitHub's New workspace in herdr opened a terminal. */
+  readonly onProviderOpened?: ((tap: ProviderTap, key: string) => void) | undefined;
 }) {
   const sources = providerSources(entries);
+  const github = githubSources(entries);
   const settingsOf = (origin: string) => {
     const status = entries.find((entry) => entry.computer.origin === origin)?.status;
     return status?.kind === 'ok' ? status.settings : undefined;
   };
-  if (sources.length === 0) return null;
+  if (sources.length === 0 && github.length === 0) return null;
   return (
     <section className="group stack" aria-labelledby="integrations-heading">
       <h2 id="integrations-heading" className="caps">Integrations</h2>
@@ -429,6 +436,20 @@ export function IntegrationsSection({ entries, providers = [], push, onFailure, 
             }}
           />
         ))}
+        {github.map((source) => (
+          <GitHubRow
+            key={`${source.computer.origin} github`}
+            source={source}
+            provider={readyProvider(providers, source.computer.origin)}
+            handlers={{
+              onFailure,
+              onChanged: () => onCheck?.(source.computer.origin) ?? Promise.resolve(),
+              onOpenSession,
+              onProviderOpened,
+              onProviderReload,
+            }}
+          />
+        ))}
       </ul>
     </section>
   );
@@ -441,7 +462,7 @@ function ScrollTo({ id }: { readonly id: string }) {
 }
 
 export function Settings({
-  settings, section, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onComputersChanged,
+  settings, section, entries, providers, fontSize, onFontSize, onBack, onRenamed, onFailure, onLogout, onCheck, onProviderReload, onInstall, onOpenSession, onProviderOpened, onComputersChanged,
 }: {
   /** Home's settings; undefined while home cannot be reached (only Computers and text size then). */
   readonly settings: HTTPSettingsResponse | undefined;
@@ -460,6 +481,10 @@ export function Settings({
   readonly onProviderReload?: ((key: string) => Promise<void>) | undefined;
   /** Install herdr made a session on a computer: open it in Live with the install command typed, not run. */
   readonly onInstall?: ((session: HostedSession, command: string) => void) | undefined;
+  /** GitHub's New session made a session: open it in Live. */
+  readonly onOpenSession?: ((session: HostedSession) => void) | undefined;
+  /** GitHub's New workspace in herdr opened a terminal; `key` is the provider read's. */
+  readonly onProviderOpened?: ((tap: ProviderTap, key: string) => void) | undefined;
   readonly onComputersChanged: () => void;
 }) {
   const [logoutError, setLogoutError] = useState<string>();
@@ -563,7 +588,7 @@ export function Settings({
       {settings !== undefined && <NotificationSettings onFailure={onFailure} onPush={setPush} />}
 
       {/* Without home there is no Notifications section to point at. */}
-      <IntegrationsSection entries={entries} providers={providers} push={settings === undefined ? undefined : push} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} onInstall={onInstall} />
+      <IntegrationsSection entries={entries} providers={providers} push={settings === undefined ? undefined : push} onFailure={onFailure} onCheck={onCheck} onProviderReload={onProviderReload} onInstall={onInstall} onOpenSession={onOpenSession} onProviderOpened={onProviderOpened} />
 
       <section className="group stack" aria-labelledby="build-heading">
         <h2 id="build-heading" className="caps">Build</h2>

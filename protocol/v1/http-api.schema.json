@@ -437,7 +437,8 @@
         "app": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,33}$" },
         "connect": { "$ref": "#/$defs/githubConnect" },
         "problem": { "$ref": "#/$defs/githubProblem" },
-        "setup": { "$ref": "#/$defs/githubSetup" }
+        "setup": { "$ref": "#/$defs/githubSetup" },
+        "revokeFailed": { "description": "Only in the answer of disconnect: the login is deleted on this computer, but GitHub did not confirm the revoke; the user removes Termivoa at https://github.com/settings/applications.", "type": "boolean" }
       }
     },
     "githubAction": {

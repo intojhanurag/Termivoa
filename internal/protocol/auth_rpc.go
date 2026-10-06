@@ -66,6 +66,8 @@ var GatewayRPCResults = map[GatewayRPCMessageType]GatewayRPCMessageType{
 	GatewayProvidersGet: GatewayProvidersGetResult, GatewayProvidersUpdate: GatewayProvidersUpdateResult,
 	GatewayProvidersOpen: GatewayProvidersOpenResult, GatewayProvidersCreate: GatewayProvidersCreateResult,
 	GatewayProvidersManage: GatewayProvidersManageResult,
+	GatewayGithubGet:       GatewayGithubGetResult, GatewayGithubAction: GatewayGithubActionResult,
+	GatewayGithubRepos: GatewayGithubReposResult,
 }
 
 // AdminRPCResults maps each local administration request to its result.
@@ -79,6 +81,8 @@ var AdminRPCResults = map[AdminRPCMessageType]AdminRPCMessageType{
 	AdminDeviceRename: AdminDeviceRenameResult, AdminDeviceRevokeVia: AdminDeviceRevokeViaResult,
 	AdminComputersList: AdminComputersListResult, AdminComputersRemove: AdminComputersRemoveResult,
 	AdminPairOffer: AdminPairOfferResult, AdminPairOfferEnd: AdminPairOfferEndResult,
+	AdminGithubStatus: AdminGithubStatusResult, AdminGithubDisconnect: AdminGithubDisconnectResult,
+	AdminGithubCredential: AdminGithubCredentialResult,
 }
 
 func DecodeGatewayRPCRequest(data []byte) (GatewayRPCEnvelope, error) {
@@ -404,6 +408,9 @@ func validateGatewayRPCPayload(envelope GatewayRPCEnvelope) error { //nolint:goc
 		GatewayProvidersGetResult, GatewayProvidersUpdateResult, GatewayProvidersOpenResult, GatewayProvidersCreateResult,
 		GatewayProvidersManageResult:
 		return validateGatewayProviderPayload(envelope)
+	case GatewayGithubGet, GatewayGithubAction, GatewayGithubRepos,
+		GatewayGithubGetResult, GatewayGithubActionResult, GatewayGithubReposResult:
+		return validateGatewayGitHubPayload(envelope)
 	default:
 		return validateGatewayUploadPayload(envelope)
 	}
@@ -476,6 +483,9 @@ func validateSettings(payload HTTPSettingsResponse) error {
 		if err := ValidateProviderInfo(provider); err != nil {
 			return err
 		}
+	}
+	if payload.Github != nil {
+		return ValidateGitHubInfo(*payload.Github)
 	}
 	return nil
 }
@@ -675,6 +685,9 @@ func validateAdminRPCPayload(envelope AdminRPCEnvelope) error { //nolint:gocyclo
 			}
 		}
 		return nil
+	case AdminGithubStatus, AdminGithubDisconnect, AdminGithubCredential,
+		AdminGithubStatusResult, AdminGithubDisconnectResult, AdminGithubCredentialResult:
+		return validateAdminGitHubPayload(envelope)
 	case AdminError:
 		return validateRPCError[AdminRPCMessageType](envelope)
 	default:

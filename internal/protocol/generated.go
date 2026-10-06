@@ -1089,8 +1089,12 @@ type HTTPGitHubResponse struct {
 	Connect *HTTPGitHubConnect `json:"connect,omitempty"`
 	Login   *string            `json:"login,omitempty"`
 	Problem *HTTPGitHubProblem `json:"problem,omitempty"`
-	Setup   *HTTPGitHubSetup   `json:"setup,omitempty"`
-	State   HTTPGitHubState    `json:"state"`
+	// Only in the answer of disconnect: the login is deleted on this computer, but GitHub did
+	// not confirm the revoke; the user removes Termivoa at
+	// https://github.com/settings/applications.
+	RevokeFailed *bool            `json:"revokeFailed,omitempty"`
+	Setup        *HTTPGitHubSetup `json:"setup,omitempty"`
+	State        HTTPGitHubState  `json:"state"`
 }
 
 // The code of a Connect, only for the phone that started it. The phone opens

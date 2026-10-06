@@ -20,6 +20,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
 	"github.com/intojhanurag/phone-terminal/internal/platform"
+	"github.com/intojhanurag/phone-terminal/internal/protocol"
 )
 
 const (
@@ -32,6 +33,13 @@ var buildID = "private-dev"
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == githubCredentialMode {
+		// A clone made by a development broker names its profile in the helper line.
+		args, dev, runtimeDir := githubCredentialFlags(os.Args[2:])
+		os.Exit(runGitHubCredential(ctx, args, os.Stdin, os.Stdout, os.Stderr, func(ctx context.Context) (protocol.AdminRPCGitHubCredentialPayload, error) {
+			return brokerGitHubCredential(ctx, dev, runtimeDir)
+		}))
+	}
 	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "pterm: %v\n", err)
 		os.Exit(exitCode(err))
@@ -80,7 +88,7 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return runAttachCommand(ctx, args[1:], input, output)
 	case "new":
 		return runNewCommand(ctx, args[1:], input, output)
-	case "pair", "devices", "revoke", "computers", "project", "profile", "config":
+	case "pair", "devices", "revoke", "computers", "project", "profile", "config", "github":
 		return runAdminCommand(ctx, args[0], args[1:], input, output)
 	case "setup":
 		return runSetupCommand(ctx, args[1:], input, output)
@@ -207,7 +215,7 @@ func parseBrokerConfig(args []string) (host.BrokerConfig, error) {
 	}
 	return host.BrokerConfig{
 		DataDir: paths.DataDir, RuntimeDir: paths.RuntimeDir, HostBuild: buildID, Profile: profile,
-		Herdr: herdrConfig(),
+		Herdr: herdrConfig(), GitHub: githubConfig(),
 	}, nil
 }
 

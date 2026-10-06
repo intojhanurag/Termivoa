@@ -28,18 +28,23 @@ export function Sheet({ labelledBy, onClose, children }: {
   );
 }
 
-export function SheetHeader({ id, glyph, title, children }: {
+export function SheetHeader({ id, glyph, caps, title, children }: {
   readonly id: string;
   readonly glyph?: string;
-  readonly title: string;
+  /** One small line over the title, for example "GitHub · on mac" (shown in capitals). */
+  readonly caps?: ReactNode;
+  readonly title: ReactNode;
   readonly children?: ReactNode;
 }) {
+  const heading = (
+    <h2 id={id}>
+      {glyph !== undefined && <span className="sheet-glyph" aria-hidden="true">{glyph} </span>}
+      {title}
+    </h2>
+  );
   return (
-    <div className="sheet-header">
-      <h2 id={id}>
-        {glyph !== undefined && <span className="sheet-glyph" aria-hidden="true">{glyph} </span>}
-        {title}
-      </h2>
+    <div className={caps === undefined ? 'sheet-header' : 'sheet-header create-head'}>
+      {caps === undefined ? heading : <div className="create-title"><p className="caps">{caps}</p>{heading}</div>}
       <div className="row">{children}</div>
     </div>
   );

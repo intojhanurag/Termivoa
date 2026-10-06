@@ -1246,6 +1246,14 @@ export function App({ grant, add, peerLink }: StartupLinks) {
                 void refresh(session.computer.origin);
                 navigate(installView(session, command));
               }}
+              onOpenSession={(session) => {
+                void refresh(session.computer.origin);
+                openSession(session);
+              }}
+              onProviderOpened={(tap, key) => {
+                void providers.reload(key);
+                navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap() });
+              }}
               onComputersChanged={reloadComputers}
             />
           </Suspense>
