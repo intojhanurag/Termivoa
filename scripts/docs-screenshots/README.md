@@ -2,7 +2,7 @@
 
 Takes the phone screenshots in `site/src/assets/docs/` against an isolated dev stack with demo data only (AGENTS.md rule 23).
 
-macOS only: it uses Google Chrome and `/Users/Shared`. It writes outside the repository, to `/tmp/demo-home`, `/tmp/pterm-demo`, `/tmp/demo-chrome-*` and `/Users/Shared/code` (removed again by the clean step, and only when its own marker file is there).
+macOS only: it uses Google Chrome (`CHROME=<executable>` uses another Chrome build, such as Playwright's Chrome for Testing; one rule for every script here, from `scripts/e2e-multicomputer/lib.mjs`), `sandbox-exec` and `/Users/Shared`. It writes outside the repository, to `/tmp/demo-home`, `/tmp/pterm-demo`, `/tmp/demo-chrome-*` and `/Users/Shared/code` (removed again by the clean step, and only when its own marker file is there).
 
 1. Build a test binary with your normal `HOME`:
 
@@ -19,4 +19,6 @@ macOS only: it uses Google Chrome and `/Users/Shared`. It writes outside the rep
 5. Look at every image. Copy the ones you need to `site/src/assets/docs/`, naming phone screens `phone-<name>.webp` (`keyboard-row-crop.webp` is `key-row.webp`). The README pictures in `docs/images/` are the PNGs in `png/` scaled to 440 px wide: `sips -s format png --resampleWidth 440 png/sessions.png --out docs/images/sessions.png` (`live-terminal` → `live`, `project-buttons` → `snippets`, `pair-code` → `pair`).
 6. Clean up: `node scripts/docs-screenshots/setup.mjs clean`. It stops the dev stack that `capture.mjs` started, then removes the demo home and repositories. `capture.mjs` saves that stack's PID in `/tmp/demo-home/.capture-pid`; the clean step sends SIGINT to that PID only, waits up to 15 seconds for `pterm up --dev` to stop its own broker and gateway, and never matches processes by name, so another demo stack is left alone.
 
-`agent.js` is a neutral stand-in agent with no vendor name or logo. The script needs Google Chrome and never touches your real `pterm`.
+`agent.js` is a neutral stand-in agent with no vendor name or logo. The scripts never touch your real `pterm`.
+
+**Demo data only.** Every `pterm` these scripts start runs in the e2e harness sandbox (`sandboxed` in `scripts/e2e-multicomputer/lib.mjs`; see "Sandbox" in `scripts/e2e-multicomputer/README.md`). It hides a real herdr on this computer (its binaries and `~/.config/herdr`) and the real Tailscale CLI. A demo `HOME` alone is not enough: `pterm` looks for herdr at fixed paths such as `/opt/homebrew/bin/herdr`, so without the sandbox the app showed a **herdr** tab. `capture.mjs` has no herdr at all; after it pairs the first device it reads `GET /api/v1/settings` and stops when a provider there is not `notInstalled`. `herdr.mjs` shows only the fake herdr.
