@@ -34,7 +34,7 @@ func TestGitHubCredentialHelper(t *testing.T) {
 	for _, test := range []struct {
 		name, op, input, stdout, stderr string
 		code                            int
-		down                            bool
+		down, noBroker                  bool
 	}{
 		{name: "blank line ends", op: "get", input: github + "\nhost=evil.com\n", stdout: answer},
 		{name: "EOF ends without newline", op: "get", input: "protocol=https\nhost=github.com", stdout: answer},
@@ -46,6 +46,7 @@ func TestGitHubCredentialHelper(t *testing.T) {
 		{name: "erase silent", op: "erase", input: github},
 		{name: "unknown op silent", op: "other", input: github},
 		{name: "not connected", op: "get", input: github, down: true, code: 1, stdout: "quit=1\n", stderr: githubNotConnected + "\n"},
+		{name: "no broker", op: "get", input: github, noBroker: true, code: 1, stdout: "quit=1\n", stderr: githubNoBroker + "\n"},
 		{name: "too many lines", op: "get", input: strings.Repeat("a=b\n", 33), code: 1},
 		{name: "32 lines fit", op: "get", input: strings.Repeat("a=b\n", 30) + github, stdout: answer},
 		{name: "too many bytes", op: "get", input: "a=" + strings.Repeat("x", 64<<10) + "\n", code: 1},
@@ -56,6 +57,11 @@ func TestGitHubCredentialHelper(t *testing.T) {
 			source := ok
 			if test.down {
 				source = down
+			}
+			if test.noBroker {
+				source = func(context.Context) (protocol.AdminRPCGitHubCredentialPayload, error) {
+					return protocol.AdminRPCGitHubCredentialPayload{}, errNoBroker
+				}
 			}
 			var stdout, stderr bytes.Buffer
 			code := runGitHubCredential(context.Background(), []string{test.op}, strings.NewReader(test.input), &stdout, &stderr, source)

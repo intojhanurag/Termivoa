@@ -647,6 +647,10 @@ You disconnected GitHub on that computer, and the folder was cloned by Termivoa,
 git config --unset-all credential.https://github.com/<owner>/<name>.git.helper
 ```
 
+### git fails with "Termivoa is not running on this computer"
+
+The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, but Termivoa is stopped. Run `pterm launch` on that computer, then try again.
+
 ## Where are the logs?
 
 | System | Logs |

@@ -26,8 +26,12 @@ const (
 	gitCredentialMaxBytes = 64 << 10
 	gitCredentialMaxLines = 32
 	githubNotConnected    = "Termivoa is not connected to GitHub on this computer. Connect in Settings → Integrations."
+	githubNoBroker        = "Termivoa is not running on this computer, so git has no GitHub login here. Start it with pterm launch."
 	githubRevokeHint      = "To be sure the login is removed on GitHub too, open https://github.com/settings/applications"
 )
+
+// errNoBroker: the helper reached no broker (Termivoa is not running).
+var errNoBroker = errors.New("pterm: no broker")
 
 // githubConfig is the production github.Config: git's install paths first,
 // then PATH, the user's home and this pterm's resolved path. Nil on Windows,
@@ -165,7 +169,11 @@ func runGitHubCredential(
 	answer, err := credential(ctx)
 	if err != nil {
 		// quit=1: git asks no other helper and does not prompt for a password.
-		fmt.Fprintln(stderr, githubNotConnected)
+		if errors.Is(err, errNoBroker) {
+			fmt.Fprintln(stderr, githubNoBroker)
+		} else {
+			fmt.Fprintln(stderr, githubNotConnected)
+		}
 		fmt.Fprintln(stdout, "quit=1")
 		return 1
 	}
@@ -209,7 +217,7 @@ func brokerGitHubCredential(ctx context.Context, dev bool, flagRuntimeDir string
 	defer cancel()
 	client, err := localclient.DialAdmin(ctx, runtimeDir, buildID)
 	if err != nil {
-		return protocol.AdminRPCGitHubCredentialPayload{}, err
+		return protocol.AdminRPCGitHubCredentialPayload{}, errNoBroker
 	}
 	defer client.Close()
 	return client.GitHubCredential(ctx)

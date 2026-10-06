@@ -3,7 +3,7 @@
 // of both stacks (PTERM_E2E_GITHUB, e2e builds only). Nothing here reaches
 // github.com, and no git command here reads a real credential: each runs
 // with a demo or temp HOME and GIT_CONFIG_NOSYSTEM=1.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Browser, api, click, pairDirect, run, sandboxed, setInput, sleep, terminalText, typeLine, until } from './lib.mjs';
 
@@ -15,7 +15,25 @@ const squash = (x) => x.replace(/\s+/g, ' ').trim();
 
 /** Runs the G* steps. ctx holds the harness parts of phase-b.mjs. */
 export async function githubSteps(ctx) {
-  const { env, mac, vps, app, tool, step, check, shot, time, inApp } = ctx;
+  const { env, mac, vps, app, tool, step, check, skip, time, inApp, out } = ctx;
+  /** Chrome draws frames now (with the display off it stops: README, "Display"); Live checks need them. */
+  const framesOk = () => app.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } }, 5000).then(() => true, () => false);
+  const NO_FRAMES = 'skipped: no frames (Chrome draws nothing while the display is off), so Live cannot be read';
+  const host = new URL(env.github).host;
+  /** git in a folder on mac with the stack's own environment (no PTERM_RUNTIME_DIR): the saved helper line finds the broker. */
+  const macGit = (dir, args) => run(...sandboxed('/usr/bin/git', ['-C', dir, ...args]),
+    { env: { ...mac.processEnv, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, timeout: 60000 });
+  /** A screenshot of the app; a failure is logged with its reason (phase-b's shot hides it). */
+  const shot = async (name) => {
+    const started = Date.now();
+    try {
+      const { data } = await app.send('Page.captureScreenshot', { format: 'png' }, 20000);
+      writeFileSync(join(out, `${name}.png`), Buffer.from(data, 'base64'));
+    } catch (error) {
+      console.error(`shot ${name}: ${error.message} after ${Date.now() - started} ms`);
+    }
+  };
+  const openings = []; // what the sheet showed right after Set up a repository
   const gh = (path, method = 'GET') => env.gitHub(path, { method });
   const state = async (stack) => (await api(tool, `${stack.origin}/api/v1/github`)).json;
   const action = (stack, body) => api(tool, `${stack.origin}/api/v1/github`, 'POST', body);
@@ -88,11 +106,19 @@ export async function githubSteps(ctx) {
   /** Integrations → Set up a repository → the list (a kept set-up result opens first: Close goes back to the list). */
   const openList = async () => {
     await integrations();
+    const before = (await state(mac))?.setup;
     await cardTap('mac', 'Set up a repository');
+    await sleep(1500);
+    const first = await sheet();
+    openings.push(`${first?.text.slice(0, 90)} (setup before the tap: ${before ? `${before.repo} ${before.phase} ${before.problem ?? ''}` : 'none'})`);
+    console.log(`G list opened: ${openings.at(-1)}`);
     return until(async () => {
       const s = await sheet();
       if (s?.rows.some((r) => r.text.includes('pdf-editor'))) return s;
-      if (s && !/Set up a repository/.test(s.text) && s.buttons.some((b) => b.text === 'Close')) await sheetTap('Close');
+      if (s && !/Set up a repository/.test(s.text) && s.buttons.some((b) => b.text === 'Close')) {
+        console.log(`G list: the sheet showed "${s.text.slice(0, 120)}"; tapping Close`);
+        await sheetTap('Close');
+      }
       return false;
     }, { what: 'the repository list', timeout: 30000, every: 500 });
   };
@@ -302,6 +328,7 @@ export async function githubSteps(ctx) {
     await step('G7', 'New session opens Live in pdf-editor (the prompt shows pdf-editor)', async () => {
       const before = (await api(tool, `${mac.origin}/api/v1/sessions`)).json.sessions.map((s) => s.id);
       if (!(await sheet())?.text.includes('Ready on mac')) throw new Error('the Ready sheet is not open');
+      if (!(await framesOk())) { skip('G7', 'New session opens Live in pdf-editor', NO_FRAMES); return; }
       await sheetTap('New session');
       await liveReady(/pdf-editor %\s*$/m);
       const path = await app.eval('location.pathname');
@@ -346,18 +373,33 @@ export async function githubSteps(ctx) {
       await liveReady(/pdf-editor %\s*$/m);
     };
 
-    await step('G9', 'git pull in pdf-editor in a session on mac works through the helper', async () => {
+    await step('G9', 'git pull in ~/pdf-editor with mac\'s own environment works through the saved helper line', async () => {
+      const authsBefore = (await gitAuths()).length;
+      const started = Date.now();
+      const pull = await macGit(join(mac.home, 'pdf-editor'), ['pull']);
+      const ms = Date.now() - started;
+      const live = (await gh('/_test/tokens')).json.filter((p) => !p.accessRevoked && p.n !== harnessPair?.n).map((p) => p.n);
+      const auths = (await gitAuths()).slice(authsBefore);
+      check('G9', 'git pull in ~/pdf-editor (the stack\'s HOME, PATH and PTERM_E2E_GITHUB, no PTERM_RUNTIME_DIR: the repository\'s own helper line with --dev --runtime-dir) exits 0, and the fake saw one more login with a live access token of the broker',
+        pull.code === 0 && auths.some((a) => a.ok && live.includes(a.n)) && auths.every((a) => a.ok) && mac.processEnv.PTERM_RUNTIME_DIR === undefined,
+        `exit ${pull.code} in ${ms} ms, "${(pull.stdout + pull.stderr).trim().replaceAll(env.root, '<root>').slice(0, 120)}"; new logins ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; live broker pairs ${JSON.stringify(live)}; PTERM_E2E_GITHUB ${mac.processEnv.PTERM_E2E_GITHUB === env.github ? 'is the fake' : 'missing'}`);
+    });
+
+    await step('G9-live', 'git pull in pdf-editor in a session on mac works through the helper', async () => {
+      if (!(await framesOk())) { skip('G9-live', 'git pull in a Live session on mac', NO_FRAMES); return; }
       await pdfLive();
       const authsBefore = (await gitAuths()).length;
       // GIT_CONFIG_NOSYSTEM: the session's git never asks the owner's system helpers (Keychain) for anything.
+      await typeLine(app, 'echo "E2E-ENV=${PTERM_E2E_GITHUB:-none}"');
+      const sessionEnv = await until(async () => /E2E-ENV=(\S+)/.exec((await terminalText(app)).replace(/E2E-ENV=\$\{[^}]*\}/g, ''))?.[1], { what: 'E2E-ENV', timeout: 10000 }).catch(() => '?');
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL-EXIT=$?"');
       const exit = await until(async () => /PULL-EXIT=(\d+)/.exec(squash(await terminalText(app)))?.[1], { what: 'PULL-EXIT', timeout: 30000 });
       const screen = await terminalText(app);
       const ours = (await brokerPairs()).map((p) => p.n);
       const auths = (await gitAuths()).slice(authsBefore);
-      check('G9', 'git pull exits 0 ("Already up to date."); the fake recorded the pull authenticating with a live access token of the broker (the same pair or a refreshed one)',
+      check('G9-live', 'In Live: git pull exits 0; the fake recorded the pull authenticating with a live access token of the broker (the same pair or a refreshed one)',
         exit === '0' && auths.some((a) => a.ok && ours.includes(a.n)) && auths.every((a) => a.ok),
-        `exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
+        `session PTERM_E2E_GITHUB ${sessionEnv === env.github ? 'is the fake' : sessionEnv}; exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
     });
 
     await step('G10', 'Disconnect: the row says not connected, both tokens are revoked at GitHub, git pull then fails with the helper\'s line', async () => {
@@ -371,14 +413,27 @@ export async function githubSteps(ctx) {
       const row = await until(async () => { const c = await card('mac'); return c?.state === 'not connected' && c; }, { what: 'not connected', timeout: 20000 });
       await shot('g10-disconnected');
       const revoked = (await gh('/_test/revoked')).json ?? [];
-      const pull = await run(...sandboxed('/usr/bin/git', ['-C', join(mac.home, 'pdf-editor'), 'pull']),
-        { env: { ...mac.processEnv, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, timeout: 30000 });
+      // The broker answers and says not connected (pterm github status reaches it on the same runtime folder).
+      const status = (await mac.cli(['github', 'status']).catch((error) => ({ stdout: error.message }))).stdout.trim();
+      const pull = await macGit(join(mac.home, 'pdf-editor'), ['pull']);
+      // The helper itself, to the broker and to a runtime folder with no broker: does its answer tell the two apart?
+      const ask = async (runtimeDir) => {
+        const started = Date.now();
+        const r = await run(...sandboxed(env.pterm, ['github-credential', '--dev', '--runtime-dir', runtimeDir, 'get']),
+          { env: mac.processEnv, input: `protocol=http\nhost=${host}\n\n`, timeout: 40000 });
+        return { code: r.code, stdout: r.stdout.trim(), stderr: r.stderr.trim(), ms: Date.now() - started };
+      };
+      const toBroker = await ask(mac.runtimeDir);
+      const toNobody = await ask(join(env.root, 'no-broker'));
+      const same = toBroker.code === toNobody.code && toBroker.stdout === toNobody.stdout && toBroker.stderr === toNobody.stderr;
       check('G10', 'After Disconnect and its confirmation: the row reads "not connected" with Connect; the fake\'s revoked list has the broker\'s access and refresh token; git pull in ~/pdf-editor exits non-zero and its stderr has "Termivoa is not connected to GitHub on this computer."',
         row.buttons.includes('Connect') && !!latest && revoked.includes(latest.access) && revoked.includes(latest.refresh)
-          && pull.code !== 0 && pull.stderr.includes(NOT_CONNECTED),
-        `row ${JSON.stringify(row)}; broker pairs ${pairs.length}, the last one revoked: access ${revoked.includes(latest?.access)}, refresh ${revoked.includes(latest?.refresh)}; pull exit ${pull.code}, stderr ${JSON.stringify(pull.stderr.trim().replaceAll(env.root, '<root>').slice(0, 300))}`);
+          && pull.code !== 0 && pull.stderr.includes(NOT_CONNECTED) && status === 'GitHub: not connected'
+          && toBroker.code === 1 && toBroker.stdout === 'quit=1' && toBroker.stderr === NOT_CONNECTED.concat(' Connect in Settings → Integrations.'),
+        `row ${JSON.stringify(row)}; broker pairs ${pairs.length}, the last one revoked: access ${revoked.includes(latest?.access)}, refresh ${revoked.includes(latest?.refresh)}; pull exit ${pull.code}, stderr ${JSON.stringify(pull.stderr.trim().replaceAll(env.root, '<root>').slice(0, 300))}; pterm github status "${status}"; helper to the broker: exit ${toBroker.code}, stdout "${toBroker.stdout}", ${toBroker.ms} ms; helper to no broker: exit ${toNobody.code}, stdout "${toNobody.stdout}", ${toNobody.ms} ms; ${same ? 'the helper\'s answer is the same for both, so it alone cannot tell "not connected" from "broker unreachable"; the status line shows the broker answered' : `they differ: no broker gives stderr "${toNobody.stderr.replaceAll(env.root, '<root>')}"`}`);
       // The same in Live, as a person types it: git must not stop at a "Username for" prompt.
       try {
+      if (!(await framesOk())) { skip('G10-live', 'git pull after Disconnect in a Live session', NO_FRAMES); return; }
       await pdfLive();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL2-EXIT=$?"');
       const done = await until(async () => { const t = squash(await terminalText(app)); return (/PULL2-EXIT=\d+/.test(t) || /Username for/.test(t)) && t; }, { what: 'pull ends or prompts', timeout: 30000 }).catch(() => '');
