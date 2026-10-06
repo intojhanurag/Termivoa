@@ -88,6 +88,8 @@ on their own date.
   fail on herdr 0.8.2; `agentStarted` that does not prove the agent runs; a
   slow capability probe that sticks; an unasked "folder cannot be read"
   notice in a herdr terminal outside git; stale agent kinds in the app.
+- **Merge-gate review (2026-10-06).** No code finding; README, architecture,
+  security page and herdr guide brought up to date.
 ### UI consistency pass, all screens except herdr (2026-10-05, branch `polish/ui-consistency`; pull request open, not merged)
 
 - **Why.** The owner asked: fix the UI inconsistencies that remain, remove

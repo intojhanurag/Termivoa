@@ -1,7 +1,7 @@
 ---
 title: Termivoa + herdr
 description: Termivoa shows your computers' herdr projects on your phone, buzzes when an agent is blocked or done, opens herdr terminals, and manages workspaces.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 Termivoa shows the projects of your computers' herdr on your phone, so you can see which coding agent is blocked, open its terminal and answer it.
@@ -193,10 +193,12 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 | Control | Opening never takes control. You tap **Take control**. |
 | Where they show | herdr terminals are not in the Sessions list, the Wall or `pterm list`. |
 | After a restart | Termivoa does not keep them when it restarts. Open the row again. |
+| New agent tab | A new tab that starts an agent counts toward the same limit as making a worktree: 3 a minute for each phone. |
 | Manage | Each phone can do 30 manage actions a minute, and one at a time for each computer. A workspace has at most 32 terminals and herdr at most 64 projects in the list. |
 | Not from the phone | Force-removing a worktree, renaming, split panes, updating herdr. |
 | Platforms | macOS and Linux. Not Windows. |
 | herdr sessions | Only the default herdr session. Not named sessions. |
+| herdr versions | Termivoa tests with herdr 0.8.2. Closed worktrees and agent tabs are not yet tested with herdr 0.9.3. |
 
 ## Common questions
 
