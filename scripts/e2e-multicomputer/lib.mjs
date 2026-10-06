@@ -476,10 +476,16 @@ export class Page {
    * display Chrome makes no frames of its own, and what waits for a frame
    * waits with it: xterm draws the terminal's rows in requestAnimationFrame,
    * and a mouse move is delivered with a frame. Never fails: a reader that
-   * gets no frame reads the page as it is.
+   * gets no frame in 5 s reads the page as it is, and stderr gets one line.
+   * One capture per page at a time: while Chrome has not answered (or
+   * Browser.send has not given up on it), the next call waits for the same one.
    */
   frame() {
-    return this.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } }, 5000).catch(() => undefined);
+    this.capture ??= this.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } })
+      .catch(() => undefined).finally(() => { this.capture = undefined; });
+    let timer;
+    const late = new Promise((r) => { timer = setTimeout(() => { console.error(`frame(): no frame in 5 s on page ${this.targetId}`); r(); }, 5000); });
+    return Promise.race([this.capture, late]).finally(() => clearTimeout(timer));
   }
 
   async eval(expression) {
@@ -647,6 +653,7 @@ export async function tapTerminalText(page, needle) {
   if (!point) throw new Error(`"${needle}" is not on the terminal screen`);
   // Chrome answers a mouse move only with a frame (Page.frame).
   const moved = page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+  moved.catch(() => {}); // no unhandled rejection during frame(); `await moved` still throws
   await page.frame();
   await moved;
   await sleep(200);

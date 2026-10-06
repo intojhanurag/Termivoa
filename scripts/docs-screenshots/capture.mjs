@@ -159,7 +159,9 @@ async function capture() {
   try {
     await pair(helper, 'iPad');
     // Demo data only (AGENTS.md rule 23): stop when the stack sees a provider (herdr) of this computer.
-    const providers = await helper.evaluate(`fetch('/api/v1/settings', { credentials: 'include' }).then((r) => r.json()).then((s) => (s.providers ?? []).map((p) => p.state))`);
+    // Fails closed: a read that is not 200, or lists no provider, proves nothing.
+    const { status, providers } = await helper.evaluate(`fetch('/api/v1/settings', { credentials: 'include' }).then(async (r) => ({ status: r.status, providers: r.ok ? ((await r.json()).providers ?? []).map((p) => p.state) : [] }))`) ?? { status: 'no answer', providers: [] };
+    if (status !== 200 || providers.length === 0) throw new Error(`the demo-data check could not read the providers (GET /api/v1/settings: HTTP ${status}, ${providers.length} providers); no screenshot taken`);
     if (providers.some((state) => state !== 'notInstalled')) throw new Error(`the demo stack sees a provider of this computer (${providers}); the sandbox must hide it`);
     await newSession(helper, 'docs-site', 'git log --oneline -3');
     await newSession(helper, 'billing-api', 'git status -sb');
