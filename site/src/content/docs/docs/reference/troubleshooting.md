@@ -79,6 +79,30 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
 
+## I hear a sound but see no notification
+
+If the computer runs herdr, the sound is most likely herdr's own: herdr plays a sound when an agent in a background workspace changes state. Termivoa makes no sound on the computer.
+
+| What you notice | Where it comes from | What to do |
+| --- | --- | --- |
+| A sound on the computer when an agent in a background workspace changes state | herdr. `ui.sound.enabled` is `true` by default. | To stop it, set it to `false`. |
+| No popup on the computer | herdr. `ui.toast.delivery` is `"off"` by default. | Set it to `"herdr"`, `"terminal"` or `"system"`. |
+| No notification on the phone | Termivoa notifies a phone only after notifications are on for that phone. | See [Turn on notifications](/docs/guides/notifications/#turn-on-notifications). |
+
+The herdr settings are in `~/.config/herdr/config.toml` on the computer (macOS and Linux). Make the file if it is not there:
+
+```toml
+[ui.sound]
+enabled = false
+
+[ui.toast]
+delivery = "herdr"
+```
+
+`delivery` can be `"off"`, `"herdr"`, `"terminal"` or `"system"`. Then run `herdr server reload-config`; if nothing changes, restart herdr.
+
+**Next beta:** in **Settings → Integrations**, a herdr card with a buzz switch on says "This phone gets no buzz yet." when Termivoa can tell that this phone has no notifications from that computer. The buzz switches are for every phone, so they can be on before this phone has notifications.
+
 ## macOS blocks pterm (Gatekeeper)
 
 Download again with `gh release download`, as in [Install on macOS](/docs/install/macos/). macOS blocks the unsigned beta only when a browser downloads it.

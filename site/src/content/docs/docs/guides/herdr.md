@@ -95,6 +95,7 @@ The phone buzzes when a herdr agent is blocked or finished. Turn on notification
 - A tap opens that terminal at once.
 - herdr buzzes have their own limit, 6 per minute, so they never use up the buzzes of your normal sessions.
 - The text has only the agent and the project and worktree names, never terminal text.
+- A sound on the computer and nothing on the phone? See [I hear a sound but see no notification](/docs/reference/troubleshooting/#i-hear-a-sound-but-see-no-notification).
 
 ## How do I turn herdr off or the buzz off?
 
@@ -109,6 +110,8 @@ Open **Settings → Integrations**. It has one card for each computer that has h
 | **Buzz when finished** | Turns the finished buzz on or off. |
 
 The switches are saved on that computer, for every phone.
+
+**Next beta:** under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and Termivoa can tell that this phone has no notifications from that computer. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → Notifications**.
 
 ## How do I create a worktree?
 
@@ -195,10 +198,12 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 | Control | Opening never takes control. You tap **Take control**. |
 | Where they show | herdr terminals are not in the Sessions list, the Wall or `pterm list`. |
 | After a restart | Termivoa does not keep them when it restarts. Open the row again. |
+| New agent tab | A new tab that starts an agent counts toward the same limit as making a worktree: 3 a minute for each phone. |
 | Manage | Each phone can do 30 manage actions a minute, and one at a time for each computer. A workspace has at most 32 terminals and herdr at most 64 projects in the list. |
 | Not from the phone | Force-removing a worktree, renaming, split panes, updating herdr. |
 | Platforms | macOS and Linux. Not Windows. |
 | herdr sessions | Only the default herdr session. Not named sessions. |
+| herdr versions | Termivoa tests with herdr 0.8.2. Closed worktrees and agent tabs are not yet tested with herdr 0.9.3. |
 
 ## Common questions
 

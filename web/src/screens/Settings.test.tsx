@@ -5,7 +5,7 @@ import type { Computer } from '../computers';
 import type { HTTPSessionCreateRequest, HTTPSettingsResponse } from '../generated/protocol';
 import type { ComputerEntry, HostedSession } from './allSessions';
 import * as fixtures from './providerFixtures';
-import { InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, installAndOpen } from './Settings';
+import { BUZZ_LINKS, buzzGap, InstallCard, IntegrationRow, IntegrationsSection, integrationText, LogoutSection, notifyWith, NotificationSettings, saveDeviceName, saveSwitch, Settings, installAndOpen } from './Settings';
 import { startInstall } from './providers';
 
 const settings: HTTPSettingsResponse = {
@@ -276,6 +276,55 @@ describe('Settings → Integrations', () => {
       const old = renderToStaticMarkup(<ul><IntegrationRow source={{ computer: mac, info: info({ state: 'notRunning', canStart: true }), manage: false, agentTab: false }} onFailure={() => ''} /></ul>);
       expect(old).not.toContain('<span>Start');
       expect(old).toContain('Start it there to see its projects.');
+    });
+  });
+
+  describe('the "no buzz" line', () => {
+    const on = { support: 'available', enabled: true, missing: [] } as const;
+
+    it('knows why this phone gets no buzz from a computer', () => {
+      expect(buzzGap(undefined, mac)).toBeUndefined();
+      expect(buzzGap(on, mac)).toBeUndefined();
+      expect(buzzGap(on, vps)).toBeUndefined();
+      // Not known yet: no line that would go away a moment later.
+      expect(buzzGap({ ...on, enabled: undefined }, mac)).toBeUndefined();
+      expect(buzzGap({ ...on, enabled: false }, mac)).toBe('off');
+      expect(buzzGap({ ...on, enabled: false }, vps)).toBe('off');
+      expect(buzzGap({ support: 'needs-home-screen', enabled: undefined, missing: [] }, mac)).toBe('homeScreen');
+      expect(buzzGap({ support: 'unsupported', enabled: undefined, missing: [] }, vps)).toBe('why');
+      // On at home, not at that peer: only the peer's card says so.
+      expect(buzzGap({ ...on, missing: [vps.host] }, vps)).toBe('why');
+      expect(buzzGap({ ...on, missing: [vps.host] }, mac)).toBeUndefined();
+      // Home is never "missing".
+      expect(buzzGap({ ...on, missing: [mac.host] }, mac)).toBeUndefined();
+      // Two computers with one label: only the one whose host is missing.
+      expect(buzzGap({ ...on, missing: [vps.host] }, { ...vps, host: 'vps2.tailx.ts.net' })).toBeUndefined();
+    });
+
+    const card = (push: Parameters<typeof buzzGap>[0], extra = {}) => renderToStaticMarkup(
+      <ul><IntegrationRow source={{ computer: mac, info: info({ state: 'ready', ...extra }), manage: true, agentTab: true }} push={push} onFailure={() => ''} /></ul>,
+    );
+    const line = (link: string) => `<div class="notice warning" role="status"><p class="notice-title">This phone gets no buzz yet.</p><div class="notice-action"><button type="button" class="link">${link}</button></div></div>`;
+
+    it('shows under the buzz switches, with the link that fits', () => {
+      expect(card({ ...on, enabled: false })).toContain(line(BUZZ_LINKS.off));
+      expect(card({ support: 'needs-home-screen', enabled: undefined, missing: [] })).toContain(line('Add to Home Screen'));
+      expect(card({ support: 'unsupported', enabled: undefined, missing: [] })).toContain(line('See why'));
+      expect(card({ ...on, enabled: false })).toMatch(/Buzz when finished.*This phone gets no buzz yet\./u);
+    });
+
+    it('does not show when a buzz can reach this phone, or when the card buzzes for nothing', () => {
+      expect(card(on)).not.toContain('no buzz');
+      expect(card(undefined)).not.toContain('no buzz');
+      expect(card({ ...on, enabled: false }, { notify: [] })).not.toContain('no buzz');
+      expect(card({ ...on, enabled: false }, { enabled: false, state: 'off' })).not.toContain('no buzz');
+      expect(card({ ...on, enabled: false }, { state: 'notInstalled' })).not.toContain('no buzz');
+    });
+
+    it('reaches each card of the section', () => {
+      const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac), okEntry(vps)]} push={{ ...on, missing: [vps.host] }} onFailure={() => ''} />);
+      expect(page.match(/This phone gets no buzz yet\./gu)).toHaveLength(1);
+      expect(page).toMatch(/herdr<\/bdi> on vps.*This phone gets no buzz yet\./u);
     });
   });
 

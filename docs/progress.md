@@ -159,14 +159,14 @@ on their own date.
   0.9.3.
 - **e2e.** 10 new `H-*` checks and `H-newtab` changed. Runs before the
   review fixes: Phase A 32/32, Phase B 127/127 (48 `H-*`), `--only H`
-  52/52. **After the review fixes the e2e run is pending:** four `--only H`
-  runs stalled (15 to 21 checks passed, then no progress until the tool's
-  time limit) while the Mac's lid was closed (`AppleClamshellState = Yes`):
-  with no display the headless Chrome stops drawing, so a check that reads
-  the terminal's rows waits (a screenshot of the same page shows the text).
-  The run on the code from before the review fixes stalled the same way, so
-  it is the environment. Chrome flags against background throttling did not
-  help. To do: `--only H` and the full Phase B with the lid open.
+  52/52. After the review fixes and the rebase on #190: Phase B
+  127/127 and Phase A 32/32 (`docs/evidence/herdr-round2/phase-a.md` and
+  `phase-b.md`), run with the display kept on (`caffeinate -d`). Before
+  that, four runs stalled part-way while the display was off (the power log
+  shows it off from 18:11 to 23:49): with no display the headless Chrome
+  stops drawing and a check that reads the terminal's rows waits (issue
+  #199). An earlier line of this entry blamed a closed lid; the power log
+  shows the display.
 - **Review.** One adversarial review of both commits: no critical or high
   finding; seven findings, four fixed, three written down (design, section
   14).
@@ -178,6 +178,106 @@ on their own date.
   fail on herdr 0.8.2; `agentStarted` that does not prove the agent runs; a
   slow capability probe that sticks; an unasked "folder cannot be read"
   notice in a herdr terminal outside git; stale agent kinds in the app.
+- **Merge-gate review (2026-10-06).** No code finding; README, architecture,
+  security page and herdr guide brought up to date.
+
+### Test sends, hung push endpoints, and two computers with one label (2026-10-06, issue #202, branch `fix/push-budget-fanout` on top of pull request #201; not merged)
+
+- **Why.** Issue #202, three notes from the review of #201. Each was
+  reproduced with a failing test before the fix.
+- **1, test budget (host).** `Notifier.Test` used the session budget.
+  `TestTestSendsDoNotUseTheSessionBudget` (a test send every 5 s for one
+  minute, then 12 sessions turn `waiting`) failed on the old code with
+  "session push 1 was refused after a minute of test sends". Fix: tests have
+  their own budget, `TestMaxPerMinute` = 6 for all devices together; the 5 s
+  cooldown per device stays. `Test` now also ends within `deliverTimeout`.
+- **2, fan-out (host).** `deliver` sent one after another.
+  `TestHungEndpointsDoNotStarveALaterPhone` (3 endpoints that hang, listed
+  first, then one that answers) failed on the old code after its 5 s wait
+  with "the later phone got no push while earlier endpoints hang". Fix: 4
+  workers for each delivery (`deliverFanOut`); `deliver` waits for them.
+  `TestDeliveryFanOutIsBoundedAndEndsAtTheDeadline` (8 hung endpoints)
+  checks: at most 4 requests at once, none started after the deadline, none
+  alive when `deliver` returns. Bound on open push requests: 4 × (24 session
+  + 12 provider + 12 test deliveries) = 192. Known limit, marked `ponytail`
+  in the code: 24 hung endpoints ahead of a phone still use the whole 60 s.
+  Accepted count, pruning on 404/410 and the skip of revoked devices are the
+  same code, now inside the worker.
+- **3, the "no buzz" line (phone).** `subscribePeers`, `syncPeerPush` and
+  `testPush` (`web/src/push.ts`) returned labels. The new case in
+  `web/src/push.test.ts` (two peers with the label `vps`, one of them down)
+  failed on the old code with "expected 'why' to be undefined": the card of
+  the peer that works also had the line. Fix: they return hosts; `buzzGap`
+  matches `computer.host`; `noPushFrom` finds the label of each host in the
+  stored list, so the text "No notifications from vps." is as before.
+- **Checks.** `GOTOOLCHAIN=go1.27.1`: `gofmt -l cmd internal scripts` empty;
+  `go vet ./...`, `GOOS=windows go vet ./...`, `CGO_ENABLED=0 GOOS=linux go
+  vet ./...`; `go test -race -count=3 ./internal/webpush` ok; `go test -race
+  -count=1 ./internal/webpush ./internal/broker` ok. `pnpm install
+  --frozen-lockfile`; `pnpm typecheck`; `pnpm --filter @phone-terminal/web
+  exec vitest run` 938 passed (1 new, 1 with a new case); `pnpm build:web`;
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro
+  build` with valid links.
+- **Not run.** The e2e scripts, a real push service that hangs, and a real
+  phone (owner).
+
+### A dropped session push, and "buzz on" where no buzz can come (pull request #201, not merged)
+
+- **Why.** Issue #197, and the owner's report: "I only hear a sound, no
+  message on the screen."
+- **Verified facts on the owner's computer (2026-10-05, read only).** (1)
+  The owner's phone had no push subscription: the `push_subscriptions` table
+  of his Mac's Termivoa database had 0 rows. He used the app in an iPhone
+  Safari tab, and iPhone gives web push only to a Home Screen app, so
+  Termivoa had sent him no notification. (2) The sound came from herdr on
+  the Mac: herdr's config reference (v0.9.3,
+  `docs/next/website/src/data/config-reference.json`) has
+  `ui.sound.enabled`, default `true`, "Play sounds when agents change state
+  in background workspaces.", and `ui.toast.delivery`, default `"off"`,
+  values `off`, `herdr`, `terminal`, `system`; his `config.toml` has no
+  `[ui]` section. (3) His herdr card in **Settings → Integrations** showed
+  **Buzz when blocked** and **Buzz when finished** on, although no
+  notification could reach that phone.
+- **Task 1, #197 (host).** Reproduced first:
+  `TestSessionPushIsNotDroppedWhileEarlierOnesAreInFlight` (12 held, a minute later 12 more go out, the 25th is refused)
+  (`internal/webpush/webpush_test.go`; a push service that holds every
+  request, one subscribed phone, 12 sessions turn `waiting`) failed on
+  `main`'s code with "session push 3 was dropped while 2 were in flight".
+  Fix: `inFlight` has `2*MaxPerMinute` (24) slots, as #185 did for providers.
+  The bound holds: `admit` lets at most 12 through per fixed minute window,
+  a delivery ends within `deliverTimeout` (60 s), so the deliveries alive
+  together come from at most two windows; `send` still never waits for a
+  slot, and the channel's size caps the goroutines. The per-minute budget
+  and coalescing are as before (the test checks the 13th is refused).
+- **Task 2 (phone only).** A herdr card with a buzz switch on shows a
+  warning notice "This phone gets no buzz yet." under the switches while
+  this phone has no push subscription for that computer, with one link to
+  the Notifications section: **Turn on notifications** (off, or permission
+  not granted), **Add to Home Screen** (iPhone Safari tab), **See why** (a
+  browser without push, or on at home and not at that peer). `buzzGap` in
+  `web/src/screens/Settings.tsx`; the state is the one `NotificationSettings`
+  already has. Not shown while the state is not known, while home cannot be
+  reached (no Notifications section then), or when the card is off or both
+  buzz switches are off.
+- **Left out.** A line after **Send a test notification** that says a banner
+  may not show while the app is open: `web/src/sw.js` always calls
+  `showNotification`, and no platform source was found that says iOS or
+  Android hides the banner of a web app that is on screen. Nothing was
+  added.
+- **Docs.** Troubleshooting: "I hear a sound but see no notification" (herdr
+  keys and values quoted from the config reference; file path and
+  `herdr server reload-config` from herdr's `configuration.mdx`, v0.9.3);
+  `guides/herdr.md`; release notes; `CHANGELOG.md`; `docs/notifications.md`;
+  `docs/herdr-provider.md` section 8; `docs/pending-work.md`.
+- **Checks.** `GOTOOLCHAIN=go1.27.1`: `gofmt -l cmd internal scripts` empty;
+  `go vet ./...`; `go test -race -count=1 ./internal/webpush
+  ./internal/broker` ok. `pnpm typecheck`; `pnpm --filter
+  @phone-terminal/web exec vitest run` 937 passed (4 new); `pnpm build:web`;
+  `cd site && npx astro build` with valid links. The new vitest cases fail
+  when `buzzGap` loses its `off` case (tried). Not run: the e2e scripts
+  (headless Chrome has push and no subscription, so herdr cards there now
+  show the new notice) and a real phone (owner).
+
 ### UI consistency pass, all screens except herdr (2026-10-05, branch `polish/ui-consistency`; pull request open, not merged)
 
 - **Why.** The owner asked: fix the UI inconsistencies that remain, remove

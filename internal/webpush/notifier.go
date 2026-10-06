@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -23,17 +24,38 @@ const (
 
 	// CoalesceWindow allows one notification per session and kind.
 	CoalesceWindow = time.Minute
-	// MaxPerMinute caps session notifications, tests included.
+	// MaxPerMinute caps session notifications.
 	MaxPerMinute = 12
 	// ProviderMaxPerMinute is the separate budget of provider notifications
 	// (docs/herdr-provider.md, section 7): herdr can never use up the
 	// budget of a session's push.
 	ProviderMaxPerMinute = 6
+	// TestMaxPerMinute is the separate budget of test notifications, for all
+	// devices together: a phone that taps "Send a test notification" again
+	// and again can never use up the budget of a session's push.
+	TestMaxPerMinute = 6
 
 	testCooldown   = 5 * time.Second
 	deliverTimeout = time.Minute
-	maxInFlight    = 2
-	maxLabelRunes  = 60
+	// deliverFanOut is how many push requests one delivery has open at once,
+	// so one push endpoint that hangs holds back one worker, not the phones
+	// after it. The broker's bound on open push requests is
+	// deliverFanOut * (2*MaxPerMinute + 2*ProviderMaxPerMinute + 2*TestMaxPerMinute)
+	// = 4 * (24 + 12 + 12) = 192: every delivery ends within deliverTimeout,
+	// so the ones alive together come from at most two windows of their
+	// budget (see Notifier.inFlight), and a delivery waits for its workers
+	// before it ends. Each request is one worker goroutine (plus the HTTP
+	// transport's own) and one small POST to an
+	// allowed push service, so 192 is far under the memory and the 1024 file
+	// descriptors of a small VPS. It needs every push service to hang for two
+	// minutes while every budget is full.
+	// ponytail: a request that hangs holds its worker for the client's 10 s
+	// timeout, so 24 hung endpoints (6 rounds of 4) ahead of a phone still
+	// use the whole deadline. Give each push host its own workers if that
+	// ever happens.
+	deliverFanOut = 4
+
+	maxLabelRunes = 60
 	// providerLabelRunes bounds each name of a provider push: 39 runes and
 	// "…" when cut, so at most 40 characters.
 	providerLabelRunes = 39
@@ -101,16 +123,26 @@ type NotifierConfig struct {
 // still-authorized devices. It runs in the broker, which owns devices,
 // sessions and revocation.
 type Notifier struct {
-	config   NotifierConfig
-	keys     Keys
-	inFlight chan struct{}
-	// providerInFlight is the provider pushes' own delivery slot.
+	config NotifierConfig
+	keys   Keys
+	// inFlight and providerInFlight hold one slot per delivery on its way.
+	// Each has room for two minutes of its budget, so an admitted push is
+	// never dropped because earlier ones are still on their way (several
+	// sessions, or two agents in one poll, can change together). The bound:
+	// admit lets at most the budget through per fixed minute window, and a
+	// delivery ends within deliverTimeout (one minute), so the ones alive
+	// together come from at most two windows. send never waits for a slot,
+	// so a slow push service cannot block the broker, and the channel's
+	// size caps the deliveries (each has at most deliverFanOut workers)
+	// whatever happens.
+	inFlight         chan struct{}
 	providerInFlight chan struct{}
 
 	mu       sync.Mutex
 	last     map[string]time.Time // coalescing key -> last send
 	sessions budget
 	provider budget
+	tests    budget
 }
 
 // budget is one per-minute cap in a fixed window.
@@ -147,9 +179,7 @@ func NewNotifier(ctx context.Context, config NotifierConfig) (*Notifier, error) 
 		return nil, err
 	}
 	return &Notifier{
-		config: config, keys: keys, inFlight: make(chan struct{}, maxInFlight),
-		// Room for two minutes of the budget: an admitted provider push is never dropped because an
-		// earlier one is still on its way (two agents can change in one poll).
+		config: config, keys: keys, inFlight: make(chan struct{}, 2*MaxPerMinute),
 		providerInFlight: make(chan struct{}, 2*ProviderMaxPerMinute), last: map[string]time.Time{},
 	}, nil
 }
@@ -178,8 +208,7 @@ func (notifier *Notifier) Unsubscribe(ctx context.Context, deviceID, endpoint st
 // Notify is the hook for the agent-state detector. It returns at once:
 // delivery runs in the background, detached from ctx cancellation. It
 // reports false when the event was dropped: invalid, coalesced (the same
-// session and kind within CoalesceWindow), over MaxPerMinute, or while
-// earlier deliveries are still in flight.
+// session and kind within CoalesceWindow) or over MaxPerMinute.
 func (notifier *Notifier) Notify(ctx context.Context, event Event) bool {
 	message, ok := eventMessage(event)
 	if !ok || !notifier.admit(string(event.Kind)+":"+event.SessionID, CoalesceWindow, &notifier.sessions, MaxPerMinute) {
@@ -190,7 +219,7 @@ func (notifier *Notifier) Notify(ctx context.Context, event Event) bool {
 
 // NotifyProvider is Notify for a provider terminal (docs/herdr-provider.md,
 // section 7), with its own per-minute budget, coalescing key
-// (provider:<target>:<kind>) and delivery slot.
+// (provider:<target>:<kind>) and delivery slots.
 func (notifier *Notifier) NotifyProvider(ctx context.Context, event ProviderEvent) bool {
 	message, ok := ProviderMessage(event)
 	if !ok || !notifier.admit("provider:"+event.Target+":"+string(event.Kind), CoalesceWindow, &notifier.provider, ProviderMaxPerMinute) {
@@ -199,8 +228,9 @@ func (notifier *Notifier) NotifyProvider(ctx context.Context, event ProviderEven
 	return notifier.send(ctx, message, notifier.providerInFlight)
 }
 
-// send delivers in the background when a slot is free, with today's TTL and
-// urgency of waiting and done.
+// send delivers in the background, with today's TTL and urgency of waiting
+// and done. It takes a slot without waiting; the slots are sized so that an
+// admitted push finds one (see Notifier.inFlight).
 func (notifier *Notifier) send(ctx context.Context, message Message, slots chan struct{}) bool {
 	select {
 	case slots <- struct{}{}:
@@ -224,11 +254,14 @@ func (notifier *Notifier) send(ctx context.Context, message Message, slots chan 
 var ErrRateLimited = errors.New("webpush: notification rate limit reached")
 
 // Test sends a fixed test notification to one device's subscriptions and
-// returns how many push services accepted it.
+// returns how many push services accepted it. One per device per
+// testCooldown, and TestMaxPerMinute in total. It ends within deliverTimeout.
 func (notifier *Notifier) Test(ctx context.Context, deviceID string) (int, error) {
-	if !notifier.admit("test:"+deviceID, testCooldown, &notifier.sessions, MaxPerMinute) {
+	if !notifier.admit("test:"+deviceID, testCooldown, &notifier.tests, TestMaxPerMinute) {
 		return 0, ErrRateLimited
 	}
+	ctx, cancel := context.WithTimeout(ctx, deliverTimeout)
+	defer cancel()
 	return notifier.deliver(ctx, deviceID, Message{
 		Title: "Termivoa", Body: "Notifications are on.", Kind: kindTest,
 	}, time.Minute, UrgencyNormal)
@@ -273,25 +306,42 @@ func (notifier *Notifier) deliver(ctx context.Context, deviceID string, message 
 	if err != nil {
 		return 0, err
 	}
-	accepted := 0
-	// ponytail: sequential fan-out under one deadline; fine for a handful of phones.
+	queue := make(chan store.PushSubscription, len(subscriptions))
 	for _, subscription := range subscriptions {
-		if notifier.config.Revoked(subscription.DeviceID) {
-			continue
-		}
-		status, err := Send(ctx, notifier.config.Client, notifier.keys, Subscription{
-			Endpoint: subscription.Endpoint, P256dh: subscription.P256dh, Auth: subscription.Auth,
-		}, payload, Subject, ttl, urgency)
-		switch {
-		case err == nil && status >= 200 && status < 300:
-			accepted++
-		case err == nil && (status == http.StatusNotFound || status == http.StatusGone),
-			errors.Is(err, ErrEndpoint), errors.Is(err, ErrKey):
-			// The subscription expired or can never work: forget it.
-			_ = notifier.config.Store.DeletePushSubscription(ctx, "", subscription.Endpoint)
-		}
+		queue <- subscription
 	}
-	return accepted, nil
+	close(queue)
+	var accepted atomic.Int64
+	// At most deliverFanOut requests at once. deliver waits for its workers,
+	// and a worker ends when its request does (the request has ctx), so no
+	// goroutine is left when the slot is free.
+	var workers sync.WaitGroup
+	for range min(deliverFanOut, len(subscriptions)) {
+		workers.Go(func() {
+			for subscription := range queue {
+				// Past the deadline nothing more can be sent: stop, so the slot is free on time.
+				if ctx.Err() != nil {
+					return
+				}
+				if notifier.config.Revoked(subscription.DeviceID) {
+					continue
+				}
+				status, err := Send(ctx, notifier.config.Client, notifier.keys, Subscription{
+					Endpoint: subscription.Endpoint, P256dh: subscription.P256dh, Auth: subscription.Auth,
+				}, payload, Subject, ttl, urgency)
+				switch {
+				case err == nil && status >= 200 && status < 300:
+					accepted.Add(1)
+				case err == nil && (status == http.StatusNotFound || status == http.StatusGone),
+					errors.Is(err, ErrEndpoint), errors.Is(err, ErrKey):
+					// The subscription expired or can never work: forget it.
+					_ = notifier.config.Store.DeletePushSubscription(ctx, "", subscription.Endpoint)
+				}
+			}
+		})
+	}
+	workers.Wait()
+	return int(accepted.Load()), nil
 }
 
 // eventMessage builds the lock-screen text from names only. Terminal text

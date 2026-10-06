@@ -151,6 +151,33 @@ All notable changes are documented here. The format follows
 - Phone: the **Changes** tab of a herdr terminal outside git no longer
   stays on "loading" when you open the panel on **Files** right after the
   terminal opens and then switch to **Changes**. Host: no change.
+- Host: **Send a test notification** can no longer use up the budget of
+  session notifications. Test notifications have their own budget: 6 per
+  minute for all phones together, and one per phone per 5 s as before
+  (before: tests used the session budget of 12 per minute, so a phone that
+  sent a test every 5 s stopped "needs you" notifications for that minute).
+  Up to 3 subscriptions whose push service hangs no longer hold back the
+  phones after them: one
+  delivery now sends to 4 subscriptions at once (before: one after another,
+  so six hung subscriptions used the whole 60 s). At most 192 push requests
+  are open at once (#202). Phone: a herdr card in **Settings →
+  Integrations** shows "This phone gets no buzz yet." only for the computer
+  that sends no notifications, also when two computers have the same name
+  (before: both cards showed it).
+- Host: a session notification is no longer dropped when two deliveries are
+  still on their way (three sessions turn `waiting` together while the push
+  service is slow). Session pushes have 24 delivery slots, two minutes of
+  the budget of 12 per minute (#197; provider pushes had this fix in #185).
+  Phone: no change.
+- Phone: a herdr card in **Settings → Integrations** says "This phone gets
+  no buzz yet." under the buzz switches while a buzz switch is on and the
+  app can tell that this phone has no notifications from that computer (not
+  turned on, an iPhone
+  Safari tab, a browser without push, or on at home and not at that
+  computer). Its link (**Turn on notifications**, **Add to Home Screen** or
+  **See why**) goes to **Settings → Notifications**. Docs: troubleshooting
+  has "I hear a sound but see no notification" (with herdr, the sound is most likely herdr's own).
+  Host: no change.
 
 ## [0.1.0-beta.3] - 2026-10-04
 

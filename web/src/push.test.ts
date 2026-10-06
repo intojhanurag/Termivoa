@@ -4,6 +4,7 @@ import {
   removeStrayWorkers, shouldOfferHomeScreen, shouldOfferPush, syncHomePush, syncPeerPush, testPush, toBase64Url, workersSafe,
 } from './push';
 import { COMPUTERS_KEY, refreshComputers } from './computers';
+import { buzzGap, noPushFrom } from './screens/Settings';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
 const IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15';
@@ -90,7 +91,7 @@ const PEER_KEY = toBase64Url(PEER_KEY_BYTES.buffer);
 
 /** Home and peers that answer the push routes; `down` hosts fail, `revoked` hosts answer 401. */
 function servers({
-  down = [] as string[], revoked = [] as string[], sent = 1,
+  down = [] as string[], revoked = [] as string[], limited = [] as string[], sent = 1,
   /** Peers answer their key only after this settles (a slow or hostile peer). */
   hold = Promise.resolve() as Promise<unknown>,
   /** Home's computer list. */
@@ -103,6 +104,7 @@ function servers({
     if (pathname === '/api/v1/computers') return json(200, { computers: listed.map(({ origin, label }) => ({ origin, label })) });
     if (pathname === '/api/v1/push' && host !== 'mac.tailx.ts.net') await hold;
     if (pathname === '/api/v1/push') return json(200, { publicKey: host === 'mac.tailx.ts.net' ? PUBLIC_KEY : PEER_KEY });
+    if (pathname === '/api/v1/push/test' && limited.includes(host)) return json(429, { error: { code: 'limit_exceeded', message: 'x' } });
     if (pathname === '/api/v1/push/test') return json(200, { sent });
     return json(204);
   });
@@ -283,7 +285,7 @@ describe('push from peers', () => {
   it('keeps home and the other peers when one peer fails, and names it', async () => {
     browser({ peers: [VPS, PI] });
     const { calls } = servers({ down: ['vps.tailx.ts.net'] });
-    await expect(enabled()).resolves.toEqual({ ok: true, missing: ['vps'] });
+    await expect(enabled()).resolves.toEqual({ ok: true, missing: [VPS.host] });
     expect(calls()).toContain('POST /api/v1/push/subscribe');
     expect(calls()).toContain('POST https://pi.tailx.ts.net/api/v1/push/subscribe');
   });
@@ -312,7 +314,7 @@ describe('push from peers', () => {
       await vi.waitFor(() => expect(calls()).toContain('GET https://vps.tailx.ts.net/api/v1/push'));
       await action(store);
       release();
-      await expect(sync).resolves.toEqual(['vps']);
+      await expect(sync).resolves.toEqual([VPS.host]);
       expect(register).not.toHaveBeenCalled();
       expect(calls()).not.toContain('POST https://vps.tailx.ts.net/api/v1/push/subscribe');
     }
@@ -362,7 +364,7 @@ describe('push from peers', () => {
     const stale = fakeRegistration(peerScope(VPS.host), fakeSubscription('https://push.example/vps'));
     const { register } = browser({ subscription: on(), peers: [VPS], scoped: [stale] });
     servers({ revoked: ['vps.tailx.ts.net'] });
-    await expect(syncPeerPush()).resolves.toEqual(['vps']);
+    await expect(syncPeerPush()).resolves.toEqual([VPS.host]);
     expect(stale.unregister).toHaveBeenCalledOnce();
     expect(register).not.toHaveBeenCalled();
   });
@@ -383,16 +385,36 @@ describe('push from peers', () => {
     expect(home.unsubscribe).toHaveBeenCalledOnce();
   });
 
+  it('tells two computers with one label apart: only the one that failed has no buzz', async () => {
+    // Issue #202: the peers that failed are known by host, never by label.
+    const TWIN = { origin: 'https://vps2.tailx.ts.net', host: 'vps2.tailx.ts.net', label: 'vps' };
+    browser({ subscription: on(), peers: [VPS, TWIN] });
+    servers({ down: [TWIN.host] });
+    const missing = await syncPeerPush();
+    const push = { support: 'available', enabled: true, missing } as const;
+    expect(buzzGap(push, { ...VPS, home: false })).toBeUndefined();
+    expect(buzzGap(push, { ...TWIN, home: false })).toBe('why');
+    expect(missing).toEqual([TWIN.host]);
+    expect(noPushFrom(missing)).toBe('No notifications from vps.');
+    await expect((await testPush()).missing).resolves.toEqual([TWIN.host]);
+  });
+
+  it('a peer that only refused the test for its rate limit is not "no notifications"', async () => {
+    browser({ peers: [VPS, PI] });
+    servers({ limited: [VPS.host] });
+    await expect((await testPush()).missing).resolves.toEqual([]);
+  });
+
   it('tests every computer and names the peers that sent nothing', async () => {
     browser({ peers: [VPS, PI] });
     servers({ down: ['pi.tailx.ts.net'] });
     const first = await testPush();
     expect(first.sent).toBe(true);
-    await expect(first.missing).resolves.toEqual(['pi']);
+    await expect(first.missing).resolves.toEqual([PI.host]);
     servers({ sent: 0 });
     const second = await testPush();
     expect(second.sent).toBe(false);
-    await expect(second.missing).resolves.toEqual(['vps', 'pi']);
+    await expect(second.missing).resolves.toEqual([VPS.host, PI.host]);
   });
 
   it('does not wait for a slow peer: on, test and off answer when home has answered', async () => {
