@@ -162,10 +162,12 @@ function InboxRow({ item, multi, now, onOpen }: { readonly item: InboxItem; read
 }
 
 /** The "Needs you" tab: what waits (or one line when nothing does; another one when a computer did not answer), then, under "Finished", what is done and not looked at. */
-export function InboxList({ items, multi, now, partial = false, onOpen }: {
+export function InboxList({ items, multi, now, partial = false, loading = false, onOpen }: {
   readonly items: ReadonlyArray<InboxItem>;
   /** A computer did not answer: never say that nothing waits. */
   readonly partial?: boolean;
+  /** A computer or a provider has not answered yet: do not say that nothing waits. */
+  readonly loading?: boolean;
   /** The phone uses more than one computer: name each row's computer. */
   readonly multi: boolean;
   readonly now: number;
@@ -178,7 +180,7 @@ export function InboxList({ items, multi, now, partial = false, onOpen }: {
   );
   return (
     <section aria-label="Needs you">
-      {waiting.length === 0 && !partial && <p className="muted">{NOTHING}</p>}
+      {waiting.length === 0 && !partial && !loading && <p className="muted">{NOTHING}</p>}
       {rows(waiting)}
       {partial && <p className="muted">{NO_ANSWER}</p>}
       {finished.length > 0 && <h2 className="caps list-label">Finished</h2>}

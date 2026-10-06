@@ -616,6 +616,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   // True while a queue run is on (for the callbacks made once); and when the queue last moved (nextReady).
   const runRef = useRef(false);
   const movedAt = useRef(0);
+  // True during a Next move: it replaces the history entry, so Back from any item of a run goes to the "Needs you" tab.
+  const queueMove = useRef(false);
   const [fontSize, setFontSize] = useFontSize();
   const update = useServiceWorkerUpdate();
   useVisualViewport();
@@ -636,7 +638,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const navigate = useCallback((next: View) => {
     const path = pathFor(next);
     if (path !== window.location.pathname + window.location.search) {
-      window.history[sameScreen(viewRef.current, next) ? 'replaceState' : 'pushState'](next.name === 'preview' ? PREVIEW_TAP : null, '', path);
+      window.history[sameScreen(viewRef.current, next) || queueMove.current ? 'replaceState' : 'pushState'](next.name === 'preview' ? PREVIEW_TAP : null, '', path);
     }
     setView(next);
   }, []);
@@ -973,7 +975,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const place: Place | undefined = view.name === 'live' || view.name === 'preview' ? { session: view.session }
     : view.name === 'provider' ? { tap: { computer: view.computer, provider: view.provider, targetId: view.target } } : undefined;
   const step = queueOn ? queueNext(inboxItems(tabs, providers.entries, readViewed()), visited, place) : undefined;
-  const queue: Queue | undefined = step === undefined ? undefined : {
+  // A notification tap (an empty run) with nothing else waiting shows no control: "Inbox ›" would lead to "Nothing needs you.".
+  const queue: Queue | undefined = step === undefined || (step.left === 0 && visited?.size === 0) ? undefined : {
     left: step.left,
     onNext: () => {
       if (!nextReady(movedAt.current, Date.now())) return;
@@ -983,7 +986,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         return;
       }
       setVisited(step.visited);
+      queueMove.current = true;
       openItem(step.next);
+      queueMove.current = false;
     },
   };
   const reloadComputers = useCallback(() => setComputers(storedComputers()), []);

@@ -159,6 +159,7 @@ describe('InboxList', () => {
 
   it('with nothing finished, has no Finished label; with nothing waiting, one line, and what finished still shows', () => {
     expect(list([], false, [])).toBe('<section aria-label="Needs you"><p class="muted">Nothing needs you.</p></section>');
+    expect(renderToStaticMarkup(<InboxList items={[]} multi loading now={NOW} onOpen={() => undefined} />)).toBe('<section aria-label="Needs you"></section>');
     const waits = list([waiting(mac, 'api', '2026-10-04T09:56:00Z')], false, []);
     expect(waits).not.toContain('Finished');
     expect(waits).not.toContain(NOTHING);

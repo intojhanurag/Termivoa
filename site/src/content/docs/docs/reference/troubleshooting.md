@@ -85,7 +85,7 @@ A "done" notification needs at least 20 seconds of agent work. More in [Notifica
 
 | You opened the session with | Next shows |
 | --- | --- |
-| A tap on a notification | Yes |
+| A tap on a notification | Yes, when another item waits. With nothing else waiting, there is no row. |
 | A tap on a row in the **Needs you** tab | Yes |
 | A link, a typed address or a reload | No. This is as designed. |
 

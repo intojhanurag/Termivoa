@@ -79,6 +79,7 @@ on their own date.
   - One probe of `internal/agentstate.Parse` with the screen that the new
     e2e script draws (a temporary test, removed): it is a question only
     when the cursor is hidden, so the script hides it.
+- **Merge-gate review (2026-10-06).** Verdict: better; three fixes. A Next move replaces the history entry (Back now goes to the **Needs you** tab, as the guide says). The tab does not say "Nothing needs you." while a computer or a provider has not answered, or when a provider cannot be reached. A notification tap with nothing else waiting shows no `Inbox ›` row. `pnpm typecheck`, `pnpm test:web` (996) pass.
 - **Evidence.** `docs/evidence/needs-you-inbox/`: `inbox.png`,
   `sessions-entry.png`, `live-next.png`, `inbox-empty.png` (390×844 at 2×,
   demo data only). They are static renders of the app's own components with

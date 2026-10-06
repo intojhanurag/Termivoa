@@ -77,7 +77,9 @@ A "queue run" is the state `visited` in `App.tsx`: the set of item keys this run
 | --- | --- |
 | Where | A row under the status line of Live, and above the **Open** page of a herdr terminal: the caps label `Needs you` and one button |
 | The button | `Next · 2 left ›`. The number counts the items that still wait, were not shown in this run, and are not the one on screen. With none left: `Inbox ›` |
-| `Inbox ›` | Goes to Sessions on the **Needs you** tab. That tab says `Nothing needs you.` when nothing waits |
+| `Inbox ›` | Goes to Sessions on the **Needs you** tab. That tab says `Nothing needs you.` when nothing waits. A run from a notification tap shows no row while nothing else waits (an empty `visited` and `left` 0) |
+| History | A Next move replaces the history entry (`queueMove`), so Back from any item of a run goes to the **Needs you** tab |
+| No answer yet | The tab says `Nothing needs you.` only when every computer and every provider answered (`loading`); a provider that cannot be reached counts as `partial` |
 | A double tap | Next takes no tap for 400 ms after the queue moved (`nextReady`, `NEXT_AFTER_MS`): the button is at the same place on the next screen, so a double tap would skip an item |
 | **‹ Sessions**, **Sessions** and Back | From a terminal in a run they go to the **Needs you** tab, not to **All** or the herdr tab (`sessionsView`) |
 | The item is gone | A session that ended: "This session is gone" shows with the Next row above it. A herdr terminal that is gone (`onGone`): Sessions on the **Needs you** tab with "That terminal is gone." |
