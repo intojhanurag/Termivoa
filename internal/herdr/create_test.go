@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -49,7 +50,30 @@ func newCreateWorld(t *testing.T, server *herdrtest.Server) *createWorld {
 		record("agent.prompt", params)
 		return map[string]any{"type": "agent_prompted"}, nil
 	})
+	server.Handle("agent.get", agentGet(readyAgent))
 	return world
+}
+
+// herdr's agent record (agent.get) at three moments of a launch: the command is typed and no program shows yet,
+// the program shows and herdr does not take a prompt yet, and ready.
+const (
+	typedAgent = `{"agent":null,"agent_status":"unknown","launch_pending":true}`
+	shownAgent = `{"agent":"claude","agent_status":"unknown","launch_pending":true}`
+	readyAgent = `{"agent":"claude","agent_status":"idle","interactive_ready":true}`
+)
+
+// agentGet answers agent.get with each record in turn; the last one stays.
+func agentGet(records ...string) herdrtest.Handler {
+	var mu sync.Mutex
+	return func(json.RawMessage) (any, *herdrtest.Error) {
+		mu.Lock()
+		defer mu.Unlock()
+		record := records[0]
+		if len(records) > 1 {
+			records = records[1:]
+		}
+		return map[string]any{"type": "agent_info", "agent": json.RawMessage(record)}, nil
+	}
 }
 
 // add puts w9 (and with agent, a claude in it) into the served snapshot.
@@ -258,6 +282,100 @@ func TestCreateRecheckAfterTimeout(t *testing.T) {
 	response, err = provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: shopGroup, Name: "brave-fox", Agent: &agent})
 	if err != nil || response.AgentStarted || *response.Problem != protocol.AgentNotReady {
 		t.Fatalf("agent timeout = %+v %v", response, err)
+	}
+}
+
+// herdr answers agent.start at once with launch_pending, and refuses a prompt
+// until the agent is ready (issue 192). It also says "started" when the
+// agent's program is missing (issue 193). startAgent waits on herdr's own
+// record of the agent.
+func TestStartAgentWaitsForHerdrsRecord(t *testing.T) {
+	saved := createTimeouts
+	t.Cleanup(func() { createTimeouts = saved })
+	createTimeouts.look = 10 * time.Millisecond
+	// A case that ends by itself has a step limit it never meets, also on a loaded computer; one that
+	// ends at the step limit has a short one.
+	const never, short = time.Minute, time.Second
+	prompt := "go"
+	blocked := `{"agent":"claude","agent_status":"blocked","launch_pending":true}`
+	refuses := func(code string) herdrtest.Handler {
+		return func(json.RawMessage) (any, *herdrtest.Error) {
+			return nil, &herdrtest.Error{Code: code, Message: "agent target w9:p1"}
+		}
+	}
+	for _, test := range []struct {
+		name    string
+		limit   time.Duration
+		get     herdrtest.Handler
+		prompt  *string
+		started bool
+		problem protocol.HTTPProviderCreateProblem // "": none
+		sent    bool                               // the prompt reached herdr
+	}{
+		{"the prompt waits until herdr takes it", never, agentGet(typedAgent, shownAgent, shownAgent, readyAgent), &prompt, true, "", true},
+		{"herdr's launch limit ended for a program that shows: it takes the prompt", never, agentGet(shownAgent, `{"agent":"claude","agent_status":"unknown"}`), &prompt, true, "", true},
+		{"without a prompt, a program that shows is enough", never, agentGet(typedAgent, shownAgent), nil, true, "", false},
+		// A slow start (a heavy shell, a loaded computer): many looks pass before the program shows.
+		{"the program shows late", never, agentGet(append(slices.Repeat([]string{typedAgent}, 60), readyAgent)...), &prompt, true, "", true},
+		{"the program never shows", short, agentGet(typedAgent), &prompt, false, protocol.AgentFailed, false},
+		{"the program never shows, no prompt", short, agentGet(typedAgent), nil, false, protocol.AgentFailed, false},
+		{"herdr dropped the launch", never, refuses("agent_not_found"), &prompt, false, protocol.AgentFailed, false},
+		{"the agent waits at a question", never, agentGet(shownAgent, blocked), &prompt, false, protocol.AgentNotReady, false},
+		// No prompt was to be sent: an agent that is there is started, also at a question.
+		{"the agent waits at a question, no prompt", never, agentGet(typedAgent, blocked), nil, true, "", false},
+		{"the agent is not ready in time", short, agentGet(shownAgent), &prompt, true, protocol.PromptFailed, false},
+		// A herdr whose agent.get answers another error cannot say: started, and the prompt is tried once.
+		{"herdr has no agent.get", never, refuses("invalid_request"), nil, true, "", false},
+		{"herdr has no agent.get: the prompt is tried once", never, refuses("invalid_request"), &prompt, true, protocol.PromptFailed, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider, server, world := readyProvider(t)
+			var mu sync.Mutex
+			pending := true
+			server.Handle("agent.start", func(json.RawMessage) (any, *herdrtest.Error) {
+				world.add(true)
+				return map[string]any{"type": "agent_started", "agent": json.RawMessage(typedAgent)}, nil
+			})
+			server.Handle("agent.get", func(params json.RawMessage) (any, *herdrtest.Error) {
+				result, failure := test.get(params)
+				if failure == nil {
+					mu.Lock()
+					pending = strings.Contains(string(result.(map[string]any)["agent"].(json.RawMessage)), "launch_pending")
+					mu.Unlock()
+				}
+				return result, failure
+			})
+			sent := false
+			server.Handle("agent.prompt", func(json.RawMessage) (any, *herdrtest.Error) {
+				mu.Lock()
+				defer mu.Unlock()
+				if pending {
+					return nil, &herdrtest.Error{Code: "agent_not_ready", Message: "agent w9:p1 is not an active named agent"}
+				}
+				sent = true
+				return map[string]any{"type": "agent_prompted"}, nil
+			})
+			agent := "claude"
+			createTimeouts.agent = test.limit
+			began := time.Now()
+			response, err := provider.Create(context.Background(), protocol.HTTPProviderCreateRequest{GroupID: shopGroup, Name: "brave-fox", Agent: &agent, Prompt: test.prompt})
+			if err != nil || response.AgentStarted != test.started || (response.Problem == nil) != (test.problem == "") ||
+				response.Problem != nil && *response.Problem != test.problem {
+				t.Fatalf("create = %+v %v", response, err)
+			}
+			if err := protocol.ValidateProviderCreateResponse(response); err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if sent != test.sent {
+				t.Fatalf("prompt sent = %t", sent)
+			}
+			// Inside the step limit, and the 3 s wait for the list after it.
+			if took := time.Since(began); took > min(test.limit, 10*time.Second)+createTimeouts.refresh+time.Second {
+				t.Fatalf("took %v", took)
+			}
+		})
 	}
 }
 

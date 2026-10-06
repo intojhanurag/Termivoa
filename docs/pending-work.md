@@ -58,6 +58,12 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
     feasibility reviews, and the owner's approval before any code).
   - **Remember herdr done "seen" across visits** (today it is in memory, so
     an opened `done` item is under **Finished** again after a reload).
+- Session pushes are no longer dropped while earlier deliveries are on their
+  way (#197), and a herdr card says "This phone gets no buzz yet." when its
+  buzz cannot reach this phone. Test notifications have their own budget,
+  one delivery sends to 4 subscriptions at once, and the "no buzz" line
+  knows a computer by its host (#202). Open: a real push on a real iPhone
+  (`docs/owner-verification.md`).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -100,23 +106,25 @@ In this order.
      `docs/herdr-manage.md`): close, remove, new tab, new workspace, start,
      the install command, and **+** on every git project. Open: the real `systemd-run`
      start on a Linux computer; a peer computer's start failure shows only
-     "That computer could not do this."; force-remove and rename are not offered; on herdr 0.9.3 two
+     "That computer could not do this."; force-remove and rename are not offered; two
      workspaces at one repository's main checkout close only in herdr
-     (it wants `close_group`); the git check can leave more than one
-     waiting goroutine for a workspace on a hung mount that leaves and
-     comes back; the create route's busy text still says "another
-     worktree is being made"; `SessionMenu.tsx` Terminate has the
-     double-tap pattern that the herdr confirmations no longer have;
-     `ProviderCreate.tsx` shows its field errors muted (`error
-     hint-text`).
+     (herdr closes them only together, and a close from the phone ends
+     one workspace; the app and the host say so); the git check can leave
+     more than one waiting goroutine for a workspace on a hung mount that
+     leaves and comes back.
    - **herdr, second round (pull request open, not merged):** an agent in a
      new tab, closed worktrees with **Open**, the menu inside a herdr
-     terminal (`docs/herdr-manage.md`, section 14). Found while building
-     it, each for its own issue: a first prompt may always fail on herdr
-     0.8.2 (`agent.prompt` right after `agent.start` answers
-     `agent_not_ready`), in create too; `agentStarted: true` does not prove
-     that the agent runs; one slow `terminal attach --help` probe turns off
-     tabs without an agent until the broker restarts.
+     terminal (`docs/herdr-manage.md`, section 14). The bugs found while
+     building it (#192 to #196, #200) are fixed on `fix/herdr-bugs`
+     (`docs/herdr-manage.md`, "Fixes after the second round"). Open from
+     that work: the first prompt and the missing-program check are proven
+     with a stand-in program, not with a real agent (a real one costs
+     credits); a missing agent program is reported after about 15 s
+     (herdr's own launch limit), not sooner; the item menu's settings read
+     has only a unit test of its rule, because the web tests cannot run
+     effects; a herdr terminal outside git still sends a quiet files request and one quiet changes
+     request for the "while you were away" line (the phone cannot know that
+     the terminal has no folder).
    - **Named herdr sessions:** only the default session shows.
    - **Windows:** herdr is not supported there.
    - **herdr installed later:** the phone shows it only the next time the
@@ -135,8 +143,6 @@ In this order.
      (owner or mode) while its server runs, the list stays "ready" and every
      open fails; recheck it in the poll and say why in `pterm doctor`.
    - **Test for a herdr version change between two polls** (rediscovery).
-   - **Session pushes** can be dropped the same way provider pushes were
-     (admitted, then no free delivery slot); see the issue for it.
 
 ## Polish next
 

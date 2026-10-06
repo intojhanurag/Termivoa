@@ -414,9 +414,9 @@ button.item-menu:last-child { margin-right: -12px; }
 .menu-list .hint-text { margin: 0; padding: 8px 4px; }
 /* The item menu and its confirmation take focus from the app, never from a tap: no ring. */
 .item-menu-body:focus, .confirm:focus, .new-tab:focus { outline: none; }
-/* Cancel and the danger button, one half each: Cancel is under the left of the menu row that was tapped. */
 /* Two plain actions side by side in a sheet (Add a folder, Check again). */
 .sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Cancel and the danger button, one half each: Cancel is under the left of the menu row that was tapped. */
 .confirm-pair { flex-wrap: nowrap; }
 .confirm-pair > button { flex: 1; min-width: 0; padding: 0 10px; }
 /* An item's tabs (Close tab): a long list scrolls here, so the rows under it stay in view; a long label wraps. */

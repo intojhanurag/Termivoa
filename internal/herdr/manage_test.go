@@ -177,6 +177,24 @@ func TestManageItemActions(t *testing.T) {
 	}
 }
 
+// Two workspaces at one repository's main checkout (lab, 2026-10-06): herdr
+// 0.8.2 closes both when one is closed, and 0.9.3 refuses each and wants
+// close_group. A close ends one workspace, so herdr is not asked (issue 200).
+func TestManageDoesNotCloseAWorkspaceThatSharesItsMainCheckout(t *testing.T) {
+	world := newManageWorld(t, false)
+	tree := `"worktree":{"repo_key":"/home/demo/site/.git","repo_name":"site","checkout_path":"/home/demo/site","is_linked_worktree":false}`
+	world.server.Snapshot([]byte(`{"version":"0.9.3","protocol":20,"workspaces":[{"workspace_id":"w5","label":"site","number":1,` + tree +
+		`},{"workspace_id":"w7","label":"moved","number":2,` + tree + `}],"tabs":[],"panes":[],"layouts":[],"agents":[]}`))
+	for _, request := range []protocol.HTTPProviderManageRequest{manageRequest(protocol.CloseItem, "w5", "site"), manageRequest(protocol.CloseItem, "w7", "moved")} {
+		if _, err := world.provider.Manage(context.Background(), request, Project{}); !errors.Is(err, ErrGroupShared) {
+			t.Fatalf("close %s = %v", *request.ItemID, err)
+		}
+	}
+	if calls := world.take(); len(calls) != 0 {
+		t.Fatalf("herdr calls = %v", calls)
+	}
+}
+
 func TestManageNewTabAndWorkspaceOpenAtOnce(t *testing.T) {
 	world := newManageWorld(t, true)
 	ctx := context.Background()

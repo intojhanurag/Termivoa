@@ -88,6 +88,29 @@ A "done" notification needs at least 20 seconds of agent work. More in [Notifica
 | A tap on a notification | Yes, when another item waits. With nothing else waiting, there is no row. |
 | A tap on a row in the **Needs you** tab | Yes |
 | A link, a typed address or a reload | No. This is as designed. |
+## I hear a sound but see no notification
+
+If the computer runs herdr, the sound is most likely herdr's own: herdr plays a sound when an agent in a background workspace changes state. Termivoa makes no sound on the computer.
+
+| What you notice | Where it comes from | What to do |
+| --- | --- | --- |
+| A sound on the computer when an agent in a background workspace changes state | herdr. `ui.sound.enabled` is `true` by default. | To stop it, set it to `false`. |
+| No popup on the computer | herdr. `ui.toast.delivery` is `"off"` by default. | Set it to `"herdr"`, `"terminal"` or `"system"`. |
+| No notification on the phone | Termivoa notifies a phone only after notifications are on for that phone. | See [Turn on notifications](/docs/guides/notifications/#turn-on-notifications). |
+
+The herdr settings are in `~/.config/herdr/config.toml` on the computer (macOS and Linux). Make the file if it is not there:
+
+```toml
+[ui.sound]
+enabled = false
+
+[ui.toast]
+delivery = "herdr"
+```
+
+`delivery` can be `"off"`, `"herdr"`, `"terminal"` or `"system"`. Then run `herdr server reload-config`; if nothing changes, restart herdr.
+
+**Next beta:** in **Settings → Integrations**, a herdr card with a buzz switch on says "This phone gets no buzz yet." when Termivoa can tell that this phone has no notifications from that computer. The buzz switches are for every phone, so they can be on before this phone has notifications.
 
 ## macOS blocks pterm (Gatekeeper)
 
@@ -461,9 +484,15 @@ If the card says "Run `pterm doctor` on mac." and has no **Install herdr**, a he
 
 Termivoa started herdr's server, but it did not answer in time. Run `herdr server` in a terminal on that computer to see why. On a peer computer the app says only "That computer could not do this."; the fix is the same.
 
+### "codex is not running in herdr now."
+
+Termivoa offers an agent only while one of that kind runs in herdr on that computer. The agent you picked in **New worktree** or **New tab** left herdr before you tapped the button. The sheet goes to no agent; it never starts another agent in its place. Pick an agent that is listed, or start that agent in herdr first.
+
 ### "The tab is ready, but the agent did not start."
 
-herdr made the tab, but the agent did not come up in time. Open the tab and start the agent there. If the app says "The agent started, but your first prompt was not sent.", type the prompt in the terminal.
+herdr made the tab, but no agent showed in it within about 15 seconds (the time that herdr gives an agent to start). Open the tab and look at its terminal. If it says "command not found", that agent is not installed on the computer. Else start the agent there. The **New worktree** sheet says "The worktree is ready, but the agent did not start." for the same cause.
+
+If the app says "The agent started, but your first prompt was not sent.", the agent was not ready for input in time (about 20 seconds). Type the prompt in the terminal.
 
 ### "The list changed. Look again, then try again."
 
@@ -477,7 +506,9 @@ Termivoa never removes a worktree that has modified or new files. Open its termi
 
 A project's main checkout cannot be closed while one of its worktrees is open in herdr. Close or remove each worktree, then close the main one.
 
-On herdr 0.9 or later, two workspaces that are both at the main folder of one repository close only together. Termivoa never closes two workspaces in one tap, so close them in herdr on that computer.
+### "herdr closes the workspaces at this project's main folder only together."
+
+herdr lists two workspaces under one project, and both are at that project's main folder (herdr has its worktree record of the same repository for each). herdr does not close one of them alone: herdr 0.9.3 refuses, and herdr 0.8.2 closes both. Termivoa never closes two workspaces in one tap, so **Close workspace** is off for both. Close them in herdr on that computer. A second workspace in the same folder that herdr lists as its own project is not part of this: it closes alone (tested on herdr 0.8.2 and herdr 0.9.3).
 
 ### "herdr is not running on mac"
 

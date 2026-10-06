@@ -21,7 +21,7 @@
 // The scenario is $FAKE_HERDR_SCENARIO or <folder>/scenario.json:
 //
 //	{"version":"0.8.2","protocol":20,"attachAny":false,"noTerminal":false,"kinds":["claude"],
-//	 "agentStartDelayMs":0,"snapshot":{...herdr's session.snapshot...},
+//	 "agentStartDelayMs":0,"missing":["gemini"],"snapshot":{...herdr's session.snapshot...},
 //	 "screens":{"w1:p1":"text an attach of w1:p1 draws in place of its marker"},
 //	 "dirty":["w3"],"groupCloseRequired":false,
 //	 "closed":[{"repo_key":"/home/demo/shop/.git","branch":"old-idea"}]}
@@ -42,6 +42,15 @@
 // worktree.remove takes the worktree out for good. agent.start refuses a name
 // that another agent has (agent_name_taken), like herdr.
 //
+// agent.start answers at once with launch_pending, like herdr 0.8.2 and
+// 0.9.3: the program shows in the pane's record right away, and the agent is
+// ready "agentStartDelayMs" later (200 ms at least). Until then agent.prompt
+// answers agent_not_ready. A kind in "missing" has no program on PATH: the
+// start still answers, no program ever shows, and the record goes after the
+// start's timeout_ms. agent.get answers the pane's record. workspace.close
+// on a main checkout takes every other workspace of that repository along
+// (0.8.2), or is refused while one is open ("groupCloseRequired", 0.9.3).
+//
 // control.sock takes one JSON command per connection: {"op":"status",
 // "pane":"w1:p1","status":"blocked"}, {"op":"close","pane":"w1:p1"},
 // {"op":"hang","on":true}, {"op":"stop"}, {"op":"start"}. The server
@@ -54,6 +63,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
@@ -71,13 +81,15 @@ import (
 )
 
 type scenario struct {
-	Version           string         `json:"version"`
-	Protocol          int            `json:"protocol"`
-	AttachAny         bool           `json:"attachAny"`
-	NoTerminal        bool           `json:"noTerminal"`
-	Kinds             []string       `json:"kinds"`
-	AgentStartDelayMs int            `json:"agentStartDelayMs"`
-	Snapshot          map[string]any `json:"snapshot"`
+	Version           string   `json:"version"`
+	Protocol          int      `json:"protocol"`
+	AttachAny         bool     `json:"attachAny"`
+	NoTerminal        bool     `json:"noTerminal"`
+	Kinds             []string `json:"kinds"`
+	AgentStartDelayMs int      `json:"agentStartDelayMs"`
+	// Missing lists agent kinds whose program is not on PATH.
+	Missing  []string       `json:"missing"`
+	Snapshot map[string]any `json:"snapshot"`
 	// Screens, by pane ID, replace the marker an attach draws (docs
 	// screenshots: a demo agent screen). Lines end in \n.
 	Screens map[string]string `json:"screens"`
@@ -254,6 +266,7 @@ func serve(folder string) error {
 	server.Handle("worktree.open", live.worktreeOpen)
 	server.Handle("agent.start", live.agentStart)
 	server.Handle("agent.prompt", live.agentPrompt)
+	server.Handle("agent.get", live.agentGet)
 	server.Handle("workspace.close", live.workspaceClose)
 	server.Handle("worktree.remove", live.worktreeRemove)
 	server.Handle("tab.create", live.tabCreate)
@@ -600,22 +613,23 @@ func (live *world) closeWorkspace(id string, keep bool) {
 	}
 }
 
-// linkedOf lists the open linked-worktree workspaces of a main checkout.
-func (live *world) linkedOf(workspace map[string]any) []string {
+// groupOf lists the other open workspaces of a main checkout's repository:
+// its linked worktrees, and any other workspace at the main checkout.
+func (live *world) groupOf(workspace map[string]any) []string {
 	tree, _ := workspace["worktree"].(map[string]any)
-	var linked []string
+	var others []string
 	for _, record := range live.list("workspaces") {
 		entry, _ := record.(map[string]any)
 		other, _ := entry["worktree"].(map[string]any)
-		if tree != nil && tree["is_linked_worktree"] != true && other != nil && other["is_linked_worktree"] == true && other["repo_key"] == tree["repo_key"] {
-			linked = append(linked, fmt.Sprint(entry["workspace_id"]))
+		if tree != nil && tree["is_linked_worktree"] != true && other != nil && other["repo_key"] == tree["repo_key"] && entry["workspace_id"] != workspace["workspace_id"] {
+			others = append(others, fmt.Sprint(entry["workspace_id"]))
 		}
 	}
-	return linked
+	return others
 }
 
-// workspaceClose ends a workspace. A main checkout takes its linked
-// worktrees' workspaces along (herdr 0.8.2), or is refused (0.9.3).
+// workspaceClose ends a workspace. A main checkout takes the other
+// workspaces of its repository along (herdr 0.8.2), or is refused (0.9.3).
 func (live *world) workspaceClose(params json.RawMessage) (any, *herdrtest.Error) {
 	request, failure := decode[workspaceRequest](params)
 	if failure != nil {
@@ -627,11 +641,11 @@ func (live *world) workspaceClose(params json.RawMessage) (any, *herdrtest.Error
 	if workspace == nil {
 		return nil, &herdrtest.Error{Code: "workspace_not_found", Message: "workspace " + request.WorkspaceID + " not found"}
 	}
-	linked := live.linkedOf(workspace)
-	if len(linked) > 0 && live.scenario.GroupCloseRequired {
-		return nil, &herdrtest.Error{Code: "workspace_group_close_required", Message: "close the linked worktree workspaces first"}
+	others := live.groupOf(workspace)
+	if len(others) > 0 && live.scenario.GroupCloseRequired {
+		return nil, &herdrtest.Error{Code: "workspace_group_close_required", Message: "workspace has linked worktree workspaces; use --group (close_group=true in the API) to close the group"}
 	}
-	for _, id := range append(linked, request.WorkspaceID) {
+	for _, id := range append(others, request.WorkspaceID) {
 		live.closeWorkspace(id, true)
 	}
 	live.publish()
@@ -726,9 +740,10 @@ func (live *world) workspaceCreate(params json.RawMessage) (any, *herdrtest.Erro
 
 func (live *world) agentStart(params json.RawMessage) (any, *herdrtest.Error) {
 	request, failure := decode[struct {
-		Name   string `json:"name"`
-		Kind   string `json:"kind"`
-		PaneID string `json:"pane_id"`
+		Name      string `json:"name"`
+		Kind      string `json:"kind"`
+		PaneID    string `json:"pane_id"`
+		TimeoutMs int    `json:"timeout_ms"`
 	}](params)
 	if failure != nil {
 		return nil, failure
@@ -736,7 +751,6 @@ func (live *world) agentStart(params json.RawMessage) (any, *herdrtest.Error) {
 	if !agentName.MatchString(request.Name) {
 		return nil, &herdrtest.Error{Code: "invalid_agent_name", Message: "agent name must start with a lowercase letter"}
 	}
-	time.Sleep(time.Duration(live.scenario.AgentStartDelayMs) * time.Millisecond)
 	live.mu.Lock()
 	defer live.mu.Unlock()
 	if live.find("agents", "name", request.Name) != nil {
@@ -746,14 +760,65 @@ func (live *world) agentStart(params json.RawMessage) (any, *herdrtest.Error) {
 	if pane == nil || !slices.Contains(live.scenario.Kinds, request.Kind) {
 		return nil, &herdrtest.Error{Code: "agent_start_failed", Message: "cannot start " + request.Kind}
 	}
-	pane["agent_status"] = "idle"
-	live.scenario.Snapshot["agents"] = append(live.list("agents"), map[string]any{
+	// The command is typed into the pane's shell; nothing shows yet.
+	started := map[string]any{"name": request.Name, "pane_id": request.PaneID, "agent": nil, "agent_status": "unknown", "launch_pending": true}
+	record := map[string]any{
 		"name": request.Name, "pane_id": request.PaneID, "tab_id": pane["tab_id"], "workspace_id": pane["workspace_id"],
-		"terminal_id": pane["terminal_id"], "agent": request.Kind, "agent_status": "idle", "state_change_seq": 1,
-	})
+		"terminal_id": pane["terminal_id"], "agent": nil, "agent_status": "unknown", "launch_pending": true, "state_change_seq": 1,
+	}
+	live.scenario.Snapshot["agents"] = append(live.list("agents"), record)
+	// later changes the record, if the pane still has it.
+	later := func(after time.Duration, change func()) {
+		time.AfterFunc(after, func() {
+			live.mu.Lock()
+			defer live.mu.Unlock()
+			if live.find("agents", "name", request.Name) != nil {
+				change()
+				live.publish()
+			}
+		})
+	}
+	if slices.Contains(live.scenario.Missing, request.Kind) {
+		// "command not found": herdr drops the launch when its limit ends (30 s when the start names none).
+		limit := 30 * time.Second
+		if request.TimeoutMs > 0 {
+			limit = time.Duration(request.TimeoutMs) * time.Millisecond
+		}
+		later(limit, func() { live.remove("agents", "name", request.Name) })
+	} else {
+		record["agent"] = request.Kind // the program shows at once; it takes a prompt only when it is ready
+		later(max(time.Duration(live.scenario.AgentStartDelayMs)*time.Millisecond, 200*time.Millisecond), func() {
+			delete(record, "launch_pending")
+			record["agent_status"], record["interactive_ready"], pane["agent_status"] = "idle", true, "idle"
+		})
+	}
 	live.publish()
 	logf(live.folder, "agent.start %s %s %s", request.Kind, request.Name, request.PaneID)
-	return map[string]any{"type": "agent_started", "pane_id": request.PaneID}, nil
+	return map[string]any{"type": "agent_started", "agent": started}, nil
+}
+
+// agentOf is the agent record of a pane ID or an agent name. The caller holds mu.
+func (live *world) agentOf(target string) map[string]any {
+	if record := live.find("agents", "pane_id", target); record != nil {
+		return record
+	}
+	return live.find("agents", "name", target)
+}
+
+func (live *world) agentGet(params json.RawMessage) (any, *herdrtest.Error) {
+	request, failure := decode[struct {
+		Target string `json:"target"`
+	}](params)
+	if failure != nil {
+		return nil, failure
+	}
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	record := live.agentOf(request.Target)
+	if record == nil {
+		return nil, &herdrtest.Error{Code: "agent_not_found", Message: "agent target " + request.Target + " not found"}
+	}
+	return map[string]any{"type": "agent_info", "agent": maps.Clone(record)}, nil
 }
 
 func (live *world) agentPrompt(params json.RawMessage) (any, *herdrtest.Error) {
@@ -766,8 +831,14 @@ func (live *world) agentPrompt(params json.RawMessage) (any, *herdrtest.Error) {
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
-	if live.find("agents", "pane_id", request.Target) == nil {
-		return nil, &herdrtest.Error{Code: "agent_not_found", Message: "no agent in " + request.Target}
+	record := live.agentOf(request.Target)
+	switch {
+	case record == nil:
+		return nil, &herdrtest.Error{Code: "agent_not_found", Message: "agent target " + request.Target + " not found"}
+	case record["launch_pending"] == true:
+		return nil, &herdrtest.Error{Code: "agent_not_ready", Message: "agent " + request.Target + " is not an active named agent"}
+	case record["agent_status"] == "blocked":
+		return nil, &herdrtest.Error{Code: "agent_blocked", Message: "agent " + request.Target + " is blocked and requires interactive input"}
 	}
 	logf(live.folder, "agent.prompt %s %q", request.Target, request.Text)
 	return map[string]any{"type": "agent_prompted"}, nil

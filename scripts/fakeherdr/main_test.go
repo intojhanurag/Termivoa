@@ -353,6 +353,42 @@ func TestFakeHerdrManage(t *testing.T) {
 			if log := readLog(t, folder); !strings.Contains(log, "workspace.create shop "+repo) || !strings.Contains(log, "tab.create w2") {
 				t.Fatalf("log:\n%s", log)
 			}
+
+			// Two workspaces at one repository's main checkout, each with a worktree record (a worktree was made from each).
+			var mains []string
+			for index, name := range []string{"one", "two"} {
+				main := manage(protocol.HTTPProviderManageRequest{Action: protocol.NewWorkspace})
+				tree, err := provider.Create(ctx, protocol.HTTPProviderCreateRequest{GroupID: "ws-" + *main.ItemID, Name: name})
+				if err != nil {
+					t.Fatalf("create %s = %v", name, err)
+				}
+				waitFor(t, func() bool {
+					groups := provider.Snapshot().Groups
+					return len(groups) == 1 && len(groups[0].Items) == index+2
+				})
+				manage(protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &tree.ItemID, Name: &name})
+				mains = append(mains, *main.ItemID)
+			}
+			waitFor(t, func() bool {
+				groups := provider.Snapshot().Groups
+				return len(groups) == 1 && len(groups[0].Items) == 2 && groups[0].Items[0].Linked == nil && groups[0].Items[1].Linked == nil
+			})
+			// A close from the phone ends one workspace: the provider refuses, and herdr is not asked.
+			if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &mains[0], Name: text("shop")}, herdr.Project{}); !errors.Is(err, herdr.ErrGroupShared) {
+				t.Fatalf("close one of two workspaces at a main checkout = %v", err)
+			}
+			// herdr itself: 0.9.3 refuses each; 0.8.2 closes both.
+			code = rawCall(t, folder, "workspace.close", map[string]any{"workspace_id": mains[0]})
+			if groupCloseRequired {
+				if other := rawCall(t, folder, "workspace.close", map[string]any{"workspace_id": mains[1]}); code != "workspace_group_close_required" || other != code {
+					t.Fatalf("herdr 0.9.3 closes one of two workspaces at a main checkout = %q %q", code, other)
+				}
+			} else {
+				if code != "" {
+					t.Fatalf("herdr 0.8.2 closes a main checkout = %q", code)
+				}
+				waitFor(t, func() bool { return len(provider.Snapshot().Groups) == 0 })
+			}
 		})
 	}
 }
@@ -385,7 +421,7 @@ func TestFakeHerdrClosedWorktreesAndAgentTab(t *testing.T) {
 		t.Fatal(err)
 	}
 	scenario, _ := json.Marshal(map[string]any{
-		"attachAny": true, "kinds": []string{"claude", "codex"}, "snapshot": json.RawMessage(snapshot),
+		"attachAny": true, "kinds": []string{"claude", "codex"}, "missing": []string{"codex"}, "snapshot": json.RawMessage(snapshot),
 		"closed": []map[string]string{{"repo_key": "/home/demo/shop/.git", "branch": "old-idea"}, {"repo_key": "/home/demo/other/.git", "branch": "elsewhere"}},
 	})
 	if err := os.WriteFile(filepath.Join(folder, "scenario.json"), scenario, 0o600); err != nil {
@@ -421,6 +457,17 @@ func TestFakeHerdrClosedWorktreesAndAgentTab(t *testing.T) {
 		return found
 	}
 	group := shop(2, "old-idea")
+	// codex has no program on PATH in this scenario: herdr still says "started" (a codex runs in w3, so the kind is offered); the provider sees that no agent
+	// shows in the pane and answers agentFailed (issue 193). The tab is made.
+	began := time.Now()
+	missing, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.NewTab, ItemID: text("w1"), Agent: text("codex"), Prompt: text("fix it")}, herdr.Project{})
+	if err != nil || missing.AgentStarted == nil || *missing.AgentStarted || missing.AgentProblem == nil || *missing.AgentProblem != protocol.AgentFailed || missing.TargetID == nil {
+		t.Fatalf("an agent tab whose program is missing = %+v %v", missing, err)
+	}
+	// Known when herdr drops the launch at its own limit (the start's timeout_ms, 15 s), inside the 20 s step and the 3 s wait for the list.
+	if took := time.Since(began); took < 10*time.Second || took > 25*time.Second {
+		t.Fatalf("the missing program was reported after %v", took)
+	}
 	// Closing a linked worktree's workspace keeps the worktree: it is closed now.
 	if _, err := provider.Manage(ctx, protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: text("w3"), Name: text("silver-meadow")}, herdr.Project{}); err != nil {
 		t.Fatal(err)
@@ -482,11 +529,18 @@ func TestFakeHerdrClosedWorktreesAndAgentTab(t *testing.T) {
 			t.Fatalf("the agent tab's terminal: %v", err)
 		}
 	}
-	if code := rawCall(t, folder, "agent.start", map[string]any{"name": "claude-w1-p4", "kind": "claude", "pane_id": "w1:p2"}); code != "agent_name_taken" {
+	if code := rawCall(t, folder, "agent.start", map[string]any{"name": "claude-w1-p5", "kind": "claude", "pane_id": "w1:p2"}); code != "agent_name_taken" {
 		t.Fatalf("a taken agent name = %q", code)
 	}
+	// Like herdr, the fake answers a start at once and takes a prompt only when the agent is ready (issue 192).
+	if code := rawCall(t, folder, "agent.start", map[string]any{"name": "claude-raw", "kind": "claude", "pane_id": "w2:p1"}); code != "" {
+		t.Fatalf("agent.start = %q", code)
+	}
+	if code := rawCall(t, folder, "agent.prompt", map[string]any{"target": "w2:p1", "text": "too early"}); code != "agent_not_ready" {
+		t.Fatalf("a prompt right after the start = %q", code)
+	}
 	log := readLog(t, folder)
-	for _, want := range []string{"worktree.open w1 silver-meadow\n", "agent.start claude claude-w1-p4 w1:p4\n", "agent.start claude claude-w1-p5 w1:p5\n", `agent.prompt w1:p4 "fix it"`} {
+	for _, want := range []string{"worktree.open w1 silver-meadow\n", "agent.start codex codex-w1-p4 w1:p4\n", "agent.start claude claude-w1-p5 w1:p5\n", "agent.start claude claude-w1-p6 w1:p6\n", `agent.prompt w1:p5 "fix it"`} {
 		if !strings.Contains(log, want) {
 			t.Fatalf("the log lacks %q:\n%s", want, log)
 		}

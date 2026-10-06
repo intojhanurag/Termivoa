@@ -29,6 +29,7 @@ const (
 
 	pollEvery   = 2 * time.Second
 	lookupEvery = 30 * time.Second // binary missing, or protocol too old
+	probeMax    = 8 * time.Minute  // the longest wait before a probe that did not end is run again
 	retryEvery  = 5 * time.Second  // server not running
 	callTimeout = time.Second      // one socket call while polling
 	missLimit   = 3                // timeouts in a row before notRunning
@@ -124,7 +125,9 @@ type Provider struct {
 	discovered bool
 	misses     int
 	caps       capabilities
-	capsFor    string
+	capsFor    string        // the binary and server version that caps are for
+	probeAt    time.Time     // when to probe again; zero: the last probe ended by itself (learn)
+	probeWait  time.Duration // the wait before probeAt; it doubles
 	baseline   bool
 	// snapshotVersion is the herdr version of the last applied snapshot; a new one means herdr was updated.
 	snapshotVersion string
@@ -358,6 +361,9 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 			return pollEvery
 		}
 	}
+	if !provider.probeAt.IsZero() && !now.Before(provider.probeAt) {
+		provider.learn(ctx, now, provider.capsFor)
+	}
 	snapshot, err := provider.readSnapshot(ctx)
 	switch {
 	case err == nil:
@@ -423,6 +429,29 @@ func (provider *Provider) settle(ctx context.Context, timeout time.Duration, tar
 	}
 }
 
+// learn probes the binary for key (its path and the server's version). A
+// probe that ended by itself is kept for that key. One that did not (a slow
+// run on a loaded computer) is no answer: what it missed stays as it was
+// (nothing, the first time), and it runs again after a wait that doubles from
+// 30 s to 8 min, never on every poll or discovery. The wait starts again for
+// a new key. Poll loop only.
+func (provider *Provider) learn(ctx context.Context, now time.Time, key string) {
+	var last capabilities
+	if key == provider.capsFor {
+		last = provider.caps
+	} else {
+		provider.probeWait = 0
+	}
+	caps, ended := provider.probe(ctx, last)
+	provider.caps, provider.capsFor = caps, key
+	if ended {
+		provider.probeAt, provider.probeWait = time.Time{}, 0
+		return
+	}
+	provider.probeWait = min(max(2*provider.probeWait, lookupEvery), probeMax)
+	provider.probeAt = now.Add(provider.probeWait)
+}
+
 // discover pings the server and probes a new binary or server version once.
 func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 	pong, err := provider.ping(ctx)
@@ -436,8 +465,9 @@ func (provider *Provider) discover(ctx context.Context, now time.Time) bool {
 		provider.retryAt = now.Add(lookupEvery)
 		return false
 	}
+	// A probe of this key that did not end runs again at probeAt (step), not at each discovery.
 	if key := provider.binary + "\x00" + pong.Version; key != provider.capsFor {
-		provider.caps, provider.capsFor = provider.probe(ctx), key
+		provider.learn(ctx, now, key)
 	}
 	provider.discovered, provider.misses, provider.baseline, provider.snapshotVersion = true, 0, true, ""
 	provider.tracks, provider.since = map[string]*track{}, map[string]stateStamp{}

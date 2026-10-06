@@ -714,6 +714,88 @@ describe('Changes', () => {
     expect(connection.getStatus()).toMatchObject({ link: 'live', notice: 'git failed' });
   });
 
+  it('says nothing when the host refuses a read that nobody asked for (the away recap), and asks again on a tap', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    // A herdr terminal outside git: the host has no folder to read.
+    const refusal = { code: 'invalid_request', message: 'this herdr terminal\'s folder cannot be read' };
+    expect(connection.openChanges(true)).toBe(true);
+    const quiet = last(first, 'changes.list');
+    first.reply(quiet, 'error', refusal);
+    expect(connection.getStatus()).toMatchObject({ link: 'live', notice: undefined });
+    expect(connection.getChanges()).toBeUndefined();
+    // The user taps Changes: the refusal shows.
+    connection.openChanges();
+    const asked = last(first, 'changes.list');
+    expect(asked?.requestId).not.toBe(quiet?.requestId);
+    first.reply(asked, 'error', refusal);
+    expect(connection.getChanges()?.state).toBe('unavailable');
+    expect(connection.getStatus().notice).toBe(refusal.message);
+  });
+
+  it('keeps a quiet read quiet when the user opens Changes before its refusal comes', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    connection.openChanges(true);
+    const quiet = last(first, 'changes.list');
+    connection.openChanges();
+    const asked = last(first, 'changes.list');
+    // The quiet read's refusal says nothing and leaves the user's read alone.
+    first.reply(quiet, 'error', { code: 'invalid_request', message: 'refused' });
+    expect(connection.getStatus().notice).toBeUndefined();
+    expect(connection.getChanges()?.state).toBe('loading');
+    // The second read is the user's own: its refusal shows.
+    first.reply(asked, 'error', { code: 'invalid_request', message: 'refused' });
+    expect(connection.getStatus().notice).toBe('refused');
+    expect(connection.getChanges()?.state).toBe('unavailable');
+  });
+
+  it('says nothing when the host refuses the files root read-ahead that nobody asked for; a listing the user opened shows the refusal', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    const refusal = { code: 'invalid_request', message: 'this herdr terminal\'s folder cannot be read' };
+    // Live reads the files root ahead when the terminal opens (for tapped paths).
+    const root = connection.filesRoot();
+    first.reply(last(first, 'files.list'), 'error', refusal);
+    await expect(root).resolves.toBeUndefined();
+    expect(connection.getStatus()).toMatchObject({ link: 'live', notice: undefined });
+    // The user opens Files: that refusal shows.
+    connection.openFilesFolder('');
+    first.reply(last(first, 'files.list'), 'error', refusal);
+    expect(connection.getFiles()?.folder.state).toBe('unavailable');
+    expect(connection.getStatus().notice).toBe(refusal.message);
+    connection.dismissNotice();
+    // The read-ahead is on its way when the user opens Files: the user waits for it now, so its refusal shows.
+    connection.closeFiles();
+    void connection.filesRoot();
+    const ahead = last(first, 'files.list');
+    connection.openFilesFolder('');
+    first.reply(ahead, 'error', refusal);
+    expect(connection.getStatus().notice).toBe(refusal.message);
+  });
+
+  it('a switch to Changes while only the quiet read is on its way asks for the user, so a quiet refusal leaves no endless loading', async () => {
+    const { connection, socket } = harness();
+    const first = socket();
+    await attachLive(first);
+    expect(connection.needsChanges()).toBe(true);
+    connection.openChanges(true);
+    const quiet = last(first, 'changes.list');
+    // The panel is open on Files; the user switches to Changes (Live's switchTab).
+    expect(connection.needsChanges()).toBe(true);
+    connection.openChanges();
+    expect(connection.needsChanges()).toBe(false);
+    first.reply(quiet, 'error', { code: 'invalid_request', message: 'refused' });
+    expect(connection.getChanges()?.state).toBe('loading');
+    first.reply(last(first, 'changes.list'), 'error', { code: 'invalid_request', message: 'refused' });
+    expect(connection.getChanges()?.state).toBe('unavailable');
+    // A read that the user asked for, or a quiet one that came, is not asked again.
+    expect(connection.needsChanges()).toBe(false);
+  });
+
   it('ends loading when the socket closes and ignores replies from the old socket', async () => {
     const { connection, socket } = harness();
     const first = socket();

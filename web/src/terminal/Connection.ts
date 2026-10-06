@@ -365,6 +365,8 @@ export class Connection {
   private screenRows: TerminalRow[] = [];
   private history: HistoryState | undefined;
   private changes: ChangesState | undefined;
+  /** The list request that nobody asked for (the away recap): a refusal of it says nothing. */
+  private quietList: string | undefined;
   private write: ChangesWrite | undefined;
   private tasks: TasksView | undefined;
   /** The request ID of the latest tasks.list; only its reply counts. */
@@ -563,8 +565,13 @@ export class Connection {
     this.emit();
   }
 
-  /** Reads the uncommitted changes. Any viewer may read; no lease is needed. */
-  openChanges(): boolean {
+  /**
+   * Reads the uncommitted changes. Any viewer may read; no lease is needed.
+   * `quiet`: the user did not ask (the away recap). When the host refuses a
+   * quiet read (a herdr terminal outside git has no folder to read), no
+   * notice shows and no state stays, so a later tap on Changes asks again.
+   */
+  openChanges(quiet = false): boolean {
     if (this.status.link !== 'live') {
       return false;
     }
@@ -575,8 +582,19 @@ export class Connection {
       view: { state: 'loading', summary: undefined, file: undefined },
     };
     this.readChanges();
+    if (quiet) {
+      this.quietList = this.changes.listRequest;
+    }
     this.emit();
     return true;
+  }
+
+  /**
+   * The user looks at Changes and nothing they asked for is read or shown: no read at all, or only the quiet one
+   * still on its way (its refusal would leave no state, and nothing to show).
+   */
+  needsChanges(): boolean {
+    return this.changes === undefined || (this.changes.listRequest !== undefined && this.changes.listRequest === this.quietList);
   }
 
   /** Reads the list again, and the open file's diff; cached diffs are dropped. */
@@ -954,12 +972,19 @@ export class Connection {
           this.finishRemoval(message.requestId, { state: 'error', message: WRITE_ERRORS[code] ?? this.errorText(code, text) });
           return;
         }
-        this.failChanges(message.requestId);
-        this.failFiles(message.requestId);
-        this.failTasks(message.requestId);
-        this.failBranches(message.requestId);
-        this.handleError(message.payload.code, this.errorText(message.payload.code, message.payload.message));
-        return;
+        {
+          const quiet = message.requestId !== undefined && (message.requestId === this.quietList || this.rootReadAhead(message.requestId));
+          if (quiet && this.changes?.listRequest === message.requestId) {
+            this.changes = undefined;
+            this.emit();
+          }
+          this.failChanges(message.requestId);
+          this.failFiles(message.requestId);
+          this.failTasks(message.requestId);
+          this.failBranches(message.requestId);
+          this.handleError(message.payload.code, this.errorText(message.payload.code, message.payload.message), quiet);
+          return;
+        }
       default:
         break;
     }
@@ -1166,7 +1191,8 @@ export class Connection {
     return this.options.peer === true ? peerErrorText(code) : text;
   }
 
-  private handleError(code: string, message: string): void {
+  /** `quiet`: the refused request was not the user's, so a refusal that only has words to show says nothing. */
+  private handleError(code: string, message: string, quiet = false): void {
     switch (code) {
       case 'unauthorized':
       case 'revoked':
@@ -1200,6 +1226,9 @@ export class Connection {
         this.stop('closed', message);
         return;
       default:
+        if (quiet) {
+          return;
+        }
         this.update({
           notice: message,
           ...(this.status.control === 'acquiring' ? { control: 'observer' as const } : {}),
@@ -1497,6 +1526,17 @@ export class Connection {
     for (const resolve of waiters) {
       resolve(root);
     }
+  }
+
+  /**
+   * The request is the listing that reads the files root ahead (Live asks on attach and on each cwd change, for
+   * tapped paths) and the Files view does not wait for it: nobody asked, so its refusal says nothing (a herdr
+   * terminal outside git has no folder to read).
+   */
+  private rootReadAhead(requestId: string): boolean {
+    const request = this.filesRequest;
+    const folder = this.files?.folder;
+    return request?.id === requestId && request.kind === 'list' && !(folder?.state === 'loading' && folder.path === request.key);
   }
 
   /** Sends what the Files view waits for next, unless a files request is in flight. */

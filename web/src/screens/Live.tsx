@@ -514,7 +514,8 @@ export function Live({
     };
   }, [runtime]);
 
-  // Once live, decide from broker facts only; a recap then reads the changes once.
+  // Once live, decide from broker facts only; a recap then reads the changes once. Nobody asked for that read: quiet,
+  // so a terminal with no folder to read (a herdr terminal outside git) shows no error.
   useEffect(() => {
     if (runtime === undefined || recap.phase !== 'wait' || status.link !== 'live') {
       return;
@@ -532,7 +533,7 @@ export function Live({
     if (line === undefined) {
       setRecap({ phase: 'done' });
     } else {
-      setRecap(runtime.connection.openChanges() ? { phase: 'loading' } : { phase: 'shown', line });
+      setRecap(runtime.connection.openChanges(true) ? { phase: 'loading' } : { phase: 'shown', line });
     }
   }, [runtime, recap.phase, status.link, status.agent, before]);
 
@@ -605,7 +606,7 @@ export function Live({
   function switchTab(next: ChangesTab) {
     const connection = runtime?.connection;
     showTab(next);
-    if (next === 'changes' && connection?.getChanges() === undefined) connection?.openChanges();
+    if (next === 'changes' && connection?.needsChanges() === true) connection.openChanges();
     if (next === 'files' && connection?.getFiles() === undefined) connection?.openFilesFolder('');
   }
 

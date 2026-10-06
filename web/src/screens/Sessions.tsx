@@ -355,7 +355,7 @@ export const keptSettings = (kept: HTTPSettingsResponse | undefined, status: Com
 
 export function Sessions({
   entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onHomeScreenSteps, onReload, onRetry, onFailure, onUpdate,
-  providers = [], tab, inbox: startInbox = false, onOpenItem, onOpenTarget, onProviderRetry, onCreated, onTypeIn,
+  providers = [], tab, inbox: startInbox = false, onOpenItem, onOpenTarget, onProviderRetry, onCreated, onTypeIn, onReadSettings,
 }: {
   /** Every computer, home first, with what it answered. */
   readonly entries: ReadonlyArray<ComputerEntry>;
@@ -390,6 +390,8 @@ export function Sessions({
   readonly onCreated?: ((tap: ProviderTap, notice: string | undefined, key: string) => void) | undefined;
   /** Add a folder: a new session opens in Live with this command typed, not run. */
   readonly onTypeIn?: ((session: HostedSession, command: string) => void) | undefined;
+  /** Reads one computer's settings again, quietly: a sheet that offers agent kinds asks when it opens. */
+  readonly onReadSettings?: ((origin: string) => void) | undefined;
 }) {
   const [creating, setCreating] = useState<{ readonly entry: ProviderEntry; readonly group: HTTPProviderGroup }>();
   // The ⋯ of an item, and New workspace (docs/herdr-manage.md): one sheet at a time.
@@ -434,6 +436,9 @@ export function Sessions({
   const openTarget = onOpenTarget ?? (() => undefined);
   const retryProvider = onProviderRetry ?? (async () => undefined);
   const reloadProvider = (key: string) => retryProvider(key).catch(() => undefined);
+  // A sheet keeps the group and item of its tap; its provider entry is the latest one, so a settings read that the
+  // sheet asked for shows in it (the agent kinds).
+  const latest = (kept: ProviderEntry) => providers.find((entry) => entry.key === kept.key) ?? kept;
   // The projects New workspace lists: that computer's own, read live, so Check again shows a new one. A read that
   // fails while the sheet is open keeps the last good ones: the sheet stays, shows its own error and uses its answer.
   const statusOf = (entry: ProviderEntry) => entries.find((one) => one.computer.origin === entry.computer.origin)?.status;
@@ -565,8 +570,9 @@ export function Sessions({
 
       {creating !== undefined && onCreated !== undefined && (
         <ProviderCreateSheet
-          entry={creating.entry}
+          entry={latest(creating.entry)}
           group={creating.group}
+          onKinds={() => onReadSettings?.(creating.entry.computer.origin)}
           onCreated={(tap, notice) => onCreated(tap, notice, creating.entry.key)}
           onFailure={onFailure}
           onReload={() => { void retryProvider(creating.entry.key).catch(() => undefined); }}
@@ -576,9 +582,10 @@ export function Sessions({
 
       {menu !== undefined && onCreated !== undefined && (
         <ItemMenuSheet
-          entry={menu.entry}
+          entry={latest(menu.entry)}
           group={menu.group}
           item={menu.item}
+          onKinds={() => onReadSettings?.(menu.entry.computer.origin)}
           onOpened={(tap, notice) => onCreated(tap, notice, menu.entry.key)}
           onReload={() => reloadProvider(menu.entry.key)}
           onFailure={onFailure}

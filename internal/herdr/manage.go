@@ -21,6 +21,7 @@ import (
 var (
 	ErrRenamed      = errors.New("herdr: the item has another name now")
 	ErrGroupOpen    = errors.New("herdr: a linked worktree of this main checkout is open")
+	ErrGroupShared  = errors.New("herdr: another workspace is at this main checkout")
 	ErrNotLinked    = errors.New("herdr: the item is not a linked worktree")
 	ErrLastTab      = errors.New("herdr: the item's last tab cannot be closed")
 	ErrFull         = errors.New("herdr: the terminal or group limit is reached")
@@ -114,6 +115,11 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 			// A main checkout with an open linked worktree (or with more items than the list shows):
 			// herdr 0.8.2 would close the worktrees too; 0.9.3 refuses.
 			return response, ErrGroupOpen
+		} else if item.Linked == nil && len(group.Items) > 1 {
+			// Another workspace at the same main checkout: herdr 0.8.2 would close that one too, without
+			// a word; 0.9.3 refuses each of them and wants close_group, which is never sent (a close
+			// ends one workspace).
+			return response, ErrGroupShared
 		}
 	case protocol.NewTab:
 		if len(item.Targets) >= maxTargets {

@@ -356,6 +356,7 @@ func newAgentWorld(t *testing.T, attachAny bool) (*manageWorld, *createWorld) {
 	t.Helper()
 	world := newManageWorld(t, attachAny)
 	agents := &createWorld{server: world.server, calls: map[string]map[string]any{}}
+	world.server.Handle("agent.get", agentGet(readyAgent))
 	for _, method := range []string{"agent.start", "agent.prompt"} {
 		world.server.Handle(method, func(params json.RawMessage) (any, *herdrtest.Error) {
 			var values map[string]any
