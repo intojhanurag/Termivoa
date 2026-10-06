@@ -11,7 +11,7 @@ import { syncHomePush, syncPeerPush, workersSafe } from '../push';
 import { storage } from '../storage';
 import { scheduler } from '../terminal/scheduler';
 import {
-  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, useAllSessions, type ComputerStatus, type HostedSession,
+  cantReach, forgetSettings, homeSettings, hosted, keyOf, mergeSessions, OUT_OF_DATE, pairAgain, ReadFailure, sameSession, useAllSessions, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { ErrorBoundary, loadChunk } from './chunks';
 import { useFontSize, useServiceWorkerUpdate, useVisualViewport } from './hooks';
@@ -19,7 +19,9 @@ import { NewSession } from './NewSession';
 import { OfflineScreen } from './StateScreen';
 import { isPreviewPort, previewOrigin } from './PreviewChip';
 import type { RunFirstRequest } from './presets';
-import { GONE, type ProviderTap } from './Herdr';
+import { GONE, markOpened, type ProviderTap } from './Herdr';
+import { inboxItems, itemAt, nextReady, queueStep, type InboxItem, type Place, type Queue } from './Inbox';
+import { readViewed } from './activity';
 import { providerKey, staleSettings, unpolledOrigins, useProviders } from './providers';
 import { Sessions } from './Sessions';
 import { Setup } from './Setup';
@@ -69,8 +71,8 @@ type View =
   | { readonly name: 'boot' }
   | { readonly name: 'offline' }
   | { readonly name: 'setup'; readonly reason?: string }
-  /** `tab`: a provider tab to open on (herdr). */
-  | { readonly name: 'sessions'; readonly message?: string; readonly tab?: string }
+  /** `tab`: a provider tab to open on (herdr). `inbox`: open on the "Needs you" tab. */
+  | { readonly name: 'sessions'; readonly message?: string; readonly tab?: string; readonly inbox?: boolean }
   | { readonly name: 'wall' }
   | { readonly name: 'new'; readonly back?: View; readonly computer?: Computer }
   | { readonly name: 'live'; readonly session: HostedSession; readonly runFirst?: RunFirstRequest; readonly compose?: boolean }
@@ -239,6 +241,30 @@ export async function providerArrival(
   computer: Computer, provider: string, target: string, path: string, ask: (path: string) => Promise<boolean> = askWorkerTap,
 ): Promise<View> {
   return { name: 'provider', computer, provider, target, tapped: await ask(path) ? newTap() : 0 };
+}
+
+/** The queue (docs/needs-you-inbox.md) runs only while a terminal shows; any other screen ends it. */
+export const queueScreen = (name: View['name']): boolean => name === 'live' || name === 'provider' || name === 'preview';
+
+/** What the queue's control does from `place`: the next waiting item (and both marked as shown in this run), or back to the inbox. */
+export function queueNext(items: ReadonlyArray<InboxItem>, visited: ReadonlySet<string>, place: Place | undefined): {
+  readonly left: number; readonly next: InboxItem | undefined; readonly visited: ReadonlySet<string>;
+} {
+  const current = place === undefined ? undefined : itemAt(items, place)?.key;
+  const { next, left } = queueStep(items, visited, current);
+  return { left, next, visited: new Set([...visited, ...(current === undefined ? [] : [current]), ...(next === undefined ? [] : [next.key])]) };
+}
+
+/** Sessions from a terminal (‹ Sessions, Back, the last Next, a terminal that is gone): on the "Needs you" tab while a queue run is on. */
+export const sessionsView = (run: boolean, message?: string): Extract<View, { name: 'sessions' }> =>
+  ({ name: 'sessions', ...(run ? { inbox: true } : {}), ...(message === undefined ? {} : { message }) });
+
+/** True while `view` is still Live on `session`: a late answer about a notification tap starts the queue only then. */
+export const liveOn = (view: View, session: HostedSession): boolean => view.name === 'live' && sameSession(view.session, session);
+
+/** A session address the page arrived at: a notification tap the service worker confirms starts the queue with nothing shown yet; a link, a reload, Back or Forward starts none. */
+export async function queueOnArrival(path: string, ask: (path: string) => Promise<boolean> = askWorkerTap): Promise<ReadonlySet<string> | undefined> {
+  return await ask(path) ? new Set() : undefined;
 }
 
 /** How long the page waits for the service worker's answer about a tap. */
@@ -584,6 +610,14 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const viewRef = useRef(view);
   viewRef.current = view;
   const adding = useSyncExternalStore(subscribeAdd, currentAdd, currentAdd);
+  // The "Needs you" queue: the items this run already showed; undefined while no queue runs. Set by a tap on an
+  // inbox row or a confirmed notification tap, never by an address.
+  const [visited, setVisited] = useState<ReadonlySet<string>>();
+  // True while a queue run is on (for the callbacks made once); and when the queue last moved (nextReady).
+  const runRef = useRef(false);
+  const movedAt = useRef(0);
+  // True during a Next move: it replaces the history entry, so Back from any item of a run goes to the "Needs you" tab.
+  const queueMove = useRef(false);
   const [fontSize, setFontSize] = useFontSize();
   const update = useServiceWorkerUpdate();
   useVisualViewport();
@@ -604,7 +638,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const navigate = useCallback((next: View) => {
     const path = pathFor(next);
     if (path !== window.location.pathname + window.location.search) {
-      window.history[sameScreen(viewRef.current, next) ? 'replaceState' : 'pushState'](next.name === 'preview' ? PREVIEW_TAP : null, '', path);
+      window.history[sameScreen(viewRef.current, next) || queueMove.current ? 'replaceState' : 'pushState'](next.name === 'preview' ? PREVIEW_TAP : null, '', path);
     }
     setView(next);
   }, []);
@@ -660,7 +694,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
     || view.name === 'new' || view.name === 'settings' || view.name === 'add-computer' || view.name === 'provider';
   const all = useAllSessions(polling, computers, onHomeAuth, adding?.phase.kind === 'done' ? adding.origin : undefined);
   // Providers (herdr) are read only while Sessions, a provider terminal or Settings (Integrations) shows; their failures never reach `all`.
-  const providers = useProviders(view.name === 'sessions' || view.name === 'provider' || view.name === 'settings', all.entries);
+  // Also in a session opened in the queue: Next must know what still waits in a provider.
+  const providers = useProviders(view.name === 'sessions' || view.name === 'provider' || view.name === 'settings' || (visited !== undefined && queueScreen(view.name)), all.entries);
   // Settings are kept for the visit, and they carry what the provider can do (canStart, canInstall): when a provider's
   // own read says another state, read that computer's settings again, once per change.
   const staleProviders = staleSettings(providers.entries).join('\n');
@@ -711,7 +746,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       case 'new': setView({ name: 'new' }); return;
       case 'add-computer': setView({ name: 'add-computer' }); return;
       case 'peer-add': setView({ name: 'peer-add' }); return;
-      case 'sessions': setView({ name: 'sessions' }); return;
+      case 'sessions': setView(sessionsView(runRef.current)); return;
       case 'unknown':
         window.history.replaceState(null, '', '/');
         setView({ name: 'sessions' });
@@ -726,7 +761,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
         return;
       }
       // Opens at once only when the service worker confirms a notification tap; a link or a reload shows Open.
-      setView(await providerArrival(computer, target.provider, target.target, window.location.pathname));
+      const arrival = await providerArrival(computer, target.provider, target.target, window.location.pathname);
+      if (arrival.name === 'provider' && arrival.tapped > 0) setVisited(new Set());
+      setView(arrival);
       return;
     }
     if (computer === undefined) {
@@ -735,6 +772,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       return;
     }
     try {
+      // A confirmed notification tap starts the queue (asked while the list is read); the address alone never does.
+      const tapped = target.preview ? undefined : queueOnArrival(window.location.pathname);
       const list = await scheduler.serial(computer.origin, () => client(computer.origin).sessions());
       const found = list.sessions.find((item) => item.id === target.id);
       const port = target.preview ? previewPortParam(window.location.search) : undefined;
@@ -750,7 +789,12 @@ export function App({ grant, add, peerLink }: StartupLinks) {
       } else {
         // A bad port, no preview origin, or a peer's preview address that no tap here opened falls back to the terminal.
         if (target.preview) window.history.replaceState(null, '', pathFor({ name: 'live', session }));
-        setView({ name: 'live', session });
+        // Live shows first: the worker's answer can take up to TAP_ASK_MS. The ref is set here because the answer can come before the next render.
+        const live: View = { name: 'live', session };
+        viewRef.current = live;
+        setView(live);
+        const started = await tapped;
+        if (started !== undefined && liveOn(viewRef.current, session)) setVisited(started);
       }
     } catch (error) {
       const message = handleFailure(error, computer);
@@ -919,7 +963,37 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   const openSession = useCallback((session: HostedSession) => navigate({ name: 'live', session }), [navigate]);
   // A tap on a provider row or chip in the app: open at once.
   const openTarget = useCallback((tap: ProviderTap) => navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap() }), [navigate]);
-  const toSessions = useCallback(() => navigate({ name: 'sessions' }), [navigate]);
+  const toSessions = useCallback(() => navigate(sessionsView(runRef.current)), [navigate]);
+  const openItem = useCallback((item: InboxItem) => {
+    if (item.open.kind === 'session') {
+      openSession(item.open.session);
+      return;
+    }
+    markOpened(item.computer, item.open.item);
+    openTarget(item.open.tap);
+  }, [openSession, openTarget]);
+  const queueOn = visited !== undefined && queueScreen(view.name);
+  runRef.current = queueOn;
+  useEffect(() => { if (!queueScreen(view.name)) setVisited(undefined); }, [view.name]);
+  const place: Place | undefined = view.name === 'live' || view.name === 'preview' ? { session: view.session }
+    : view.name === 'provider' ? { tap: { computer: view.computer, provider: view.provider, targetId: view.target } } : undefined;
+  const step = queueOn ? queueNext(inboxItems(tabs, providers.entries, readViewed()), visited, place) : undefined;
+  // A notification tap (an empty run) with nothing else waiting shows no control: "Inbox ›" would lead to "Nothing needs you.".
+  const queue: Queue | undefined = step === undefined || (step.left === 0 && visited?.size === 0) ? undefined : {
+    left: step.left,
+    onNext: () => {
+      if (!nextReady(movedAt.current, Date.now())) return;
+      movedAt.current = Date.now();
+      if (step.next === undefined) {
+        navigate(sessionsView(true));
+        return;
+      }
+      setVisited(step.visited);
+      queueMove.current = true;
+      openItem(step.next);
+      queueMove.current = false;
+    },
+  };
   const reloadComputers = useCallback(() => setComputers(storedComputers()), []);
   // An add that finished in the background: its computer joins the list.
   const added = adding?.phase.kind === 'done';
@@ -1022,6 +1096,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
           {...(view.message === undefined ? {} : { message: view.message })}
           providers={providers.entries}
           tab={view.tab}
+          inbox={view.inbox}
+          onOpenItem={(item) => { movedAt.current = Date.now(); setVisited(new Set([item.key])); openItem(item); }}
           onOpenTarget={openTarget}
           onCreated={(tap, notice, key) => {
             void providers.reload(key);
@@ -1079,6 +1155,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               settings={liveStatus?.kind === 'ok' ? liveStatus.settings : view.session.computer.home ? settings : undefined}
               multi={computers.length > 1}
               fontSize={fontSize}
+              queue={queue}
               {...(view.runFirst === undefined ? {} : { runFirst: view.runFirst })}
               {...(view.compose === true ? { openComposer: true } : {})}
               {...(previewFor(view.session.computer, liveStatus, previewAt).origin === undefined ? {} : { onPreview: (port: number) => {
@@ -1119,6 +1196,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               provider={view.provider}
               targetId={view.target}
               tapped={view.tapped}
+              queue={queue}
               {...(view.notice === undefined ? {} : { notice: view.notice })}
               entry={providers.entries.find((entry) => entry.computer.origin === view.computer.origin && entry.info.id === view.provider)}
               fontSize={fontSize}
@@ -1127,7 +1205,8 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               onGone={() => {
                 // Replace the dead address, so Back does not return to it.
                 window.history.replaceState(null, '', '/');
-                setView(providerTabView(view.provider, GONE));
+                // In a queue run: back to the inbox, where the rest waits.
+                setView(queueOn ? sessionsView(true, GONE) : providerTabView(view.provider, GONE));
               }}
               onClosed={() => {
                 window.history.replaceState(null, '', '/');
@@ -1139,7 +1218,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
               }}
               onReload={providers.reload}
               onKinds={() => readSettings(view.computer.origin)}
-              onSessions={() => navigate(providerTabView(view.provider))}
+              onSessions={() => navigate(queueOn ? sessionsView(true) : providerTabView(view.provider))}
               onSettings={() => navigate({ name: 'settings' })}
               onFailure={(error) => handleFailure(error, view.computer)}
               onRevoked={(reason) => revoked(view.computer, reason)}

@@ -49,6 +49,73 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### "Needs you" inbox and its queue (2026-10-06, branch `feat/needs-you-inbox`, on top of `feat/herdr-agent-tab`; pull request work, not merged)
+
+- **Why.** The owner asked for one place on the phone that shows everything
+  that waits for him on every computer (Termivoa sessions and herdr agents),
+  so he can tap, answer and go to the next one, and for a notification tap
+  that lands on the thing to answer.
+- **What.** Design: [needs-you-inbox.md](needs-you-inbox.md). Web app only
+  (no protocol, host or database change). A **Needs you** tab in Sessions
+  (after **All**, with a count, only while something waits); the list
+  (`inboxItems`); a queue in Live and in a herdr terminal (**Next · 2 left ›**,
+  **Inbox ›** on the last one); a session notification tap now leaves the
+  one-time tap record too, so the page starts the queue (`sw.js`
+  `SESSION_PATH`, `queueOnArrival`). Android notification answer buttons are
+  a proposal only (critical, rule 24), in the design document.
+- **Commands run (this worktree, macOS, Node 24).**
+  - `pnpm install --frozen-lockfile`: done.
+  - `pnpm typecheck`: pass.
+  - `pnpm --filter @phone-terminal/web exec vitest run`: 56 files, 990
+    tests, all pass (new: `web/src/screens/Inbox.test.tsx`; "the Needs you
+    queue" in `App.test.ts`; the session tap in `sw.test.ts`).
+  - `pnpm build:web`: pass.
+  - `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx
+    astro build`: pass (28 pages, all internal links valid).
+  - `node scripts/needs-you-pictures/capture.mjs` (with `CHROME` set to
+    Playwright's Chrome for Testing): 8/8 width checks pass (four pages at
+    375 and 390 px: nothing wider than the screen).
+  - `node --check scripts/e2e-multicomputer/herdr.mjs`: pass (syntax only).
+  - One probe of `internal/agentstate.Parse` with the screen that the new
+    e2e script draws (a temporary test, removed): it is a question only
+    when the cursor is hidden, so the script hides it.
+- **Merge-gate review (2026-10-06).** Verdict: better; three fixes. A Next move replaces the history entry (Back now goes to the **Needs you** tab, as the guide says). The tab does not say "Nothing needs you." while a computer or a provider has not answered, or when a provider cannot be reached. A notification tap with nothing else waiting shows no `Inbox ›` row. `pnpm typecheck`, `pnpm test:web` (996) pass.
+- **Evidence.** `docs/evidence/needs-you-inbox/`: `inbox.png`,
+  `sessions-entry.png`, `live-next.png`, `inbox-empty.png` (390×844 at 2×,
+  demo data only). They are static renders of the app's own components with
+  the app's stylesheet (`scripts/needs-you-pictures/`), not a running app.
+  `live-next.png` is put together from Live's parts (tabs, status line, the
+  Next row, the answer card) with a drawn terminal text, because Live needs
+  a browser and a socket.
+- **Review fixes (same day).** An adversarial review found no critical or
+  high issue. Fixed: the tab does not say "Nothing needs you." while a
+  computer did not answer ("Some computers did not answer. See All.");
+  Next shows above "This session is gone", and a herdr terminal that is
+  gone goes back to the **Needs you** tab; Next takes no tap for 400 ms
+  after a move (double tap); **‹ Sessions** and Back in a run go to the
+  **Needs you** tab; Live shows before the service worker answers about
+  the tap; the filled Next is plain again on a new question. The e2e
+  script: `--only N` makes the app read mac's settings again after the
+  install; the width loops put the viewport back in a `finally`; the
+  sessions it starts end in a `finally` and each terminate must answer 200.
+- **End-to-end (after the fixes; `--no-web-build`, after `pnpm build:web`
+  and `sh scripts/embed-web.sh`).**
+  - `phase-b.mjs --only N --out /tmp/inbox-e2e-n`: 11/11 pass (B1, B2,
+    the seven `N-*`), on the first run.
+  - `phase-b.mjs --out /tmp/inbox-e2e-b`: 134/134 pass.
+  - `phase-a.mjs --out /tmp/inbox-e2e-a`: 32/32 pass.
+  - No product defect was found by these runs.
+  - Evidence: `docs/evidence/needs-you-inbox/phase-a.md`, `phase-b.md`,
+    and two real screenshots from the Phase B run (demo data):
+    `real-inbox.png`, `real-live-next.png`.
+  - Again after the fixes: `pnpm typecheck` pass; vitest 56 files, 996
+    tests, all pass; `pnpm build:web` pass; the site build pass;
+    `capture.mjs` 8/8.
+- **Not run (pending).**
+  - WebKit, `./scripts/check`, Go tests (no Go file changed).
+  - A real notification tap on an iPhone and on Android
+    ([owner-verification.md](owner-verification.md)).
+
 ### herdr bug fixes: #192 to #196 and #200 (2026-10-06, branch `fix/herdr-bugs`, on top of `feat/herdr-agent-tab`; not committed yet)
 
 - **Why.** The owner's order: fix every herdr bug; reproduce each first,
@@ -318,6 +385,7 @@ on their own date.
   the new texts); `cd site && npx astro build` with valid links. Not run:
   e2e (headless Chrome is not an iPhone Safari tab; the text is covered by
   vitest) and a real iPhone (owner).
+
 ### Add a folder in the New workspace sheet (2026-10-04, branch `feat/add-folder`)
 
 - **Why.** After #187 the owner's **New workspace** sheet listed only "Home

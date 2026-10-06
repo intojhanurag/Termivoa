@@ -8,6 +8,19 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- **Needs you** (`docs/needs-you-inbox.md`; docs: `guides/needs-you.md`).
+  Phone: a **Needs you** tab in Sessions, right after **All**, with a count
+  (`Needs you 3`), while something waits. It lists what waits for an answer
+  on every computer, the longest wait first: sessions that are waiting
+  (with the question and **Answer ›**) and herdr worktrees that are blocked;
+  then, under **Finished**, sessions with **Your turn** and herdr worktrees
+  that are done. A tap opens the item, and Live then shows
+  **Next · 2 left ›** to go to the next one that waits (**Inbox ›** on the
+  last one). Nothing moves by itself and Next sends nothing. A tap on a
+  notification opens the item with Next too. While a computer does not
+  answer, the tab says "Some computers did not answer. See All." and not
+  "Nothing needs you."; **‹ Sessions** and Back from an item go back to the
+  tab. Host: no change (no new request, no protocol change).
 - **More herdr from the phone** (`docs/herdr-manage.md`, section 14).
   Phone: **New tab** in the **⋯** menu offers **Shell** or an agent, with
   **First prompt (optional)** and **Start**; a worktree whose workspace was

@@ -22,6 +22,7 @@ import type { ChangesTab } from './Files';
 import { canTakeControl, CockpitDock, controlBadge, linkLabel, ReadOnlyDock } from './Dock';
 import { displayPath, sessionName, splitPath } from './folder';
 import { History } from './History';
+import { nextFilled, QueueNext, type Queue } from './Inbox';
 import { PreviewChip } from './PreviewChip';
 import { autoDismiss, RecapCard } from './Recap';
 import { useKeyboardOpen, websocketUrl } from './hooks';
@@ -237,7 +238,7 @@ export function ProviderEnded({ onOpenAgain, onSessions }: { readonly onOpenAgai
 }
 
 export function Live({
-  session, sessions, settings, multi = false, fontSize, runFirst, openComposer, provider,
+  session, sessions, settings, multi = false, fontSize, runFirst, openComposer, provider, queue,
   onOpen, onNew, onSessions, onSettings, onChanged, onStartNew, onStartWorktree, onRevoked, onPreview,
 }: {
   readonly session: HostedSession;
@@ -265,6 +266,8 @@ export function Live({
   readonly onPreview?: (port: number) => void;
   /** Present for a provider terminal (herdr). */
   readonly provider?: ProviderLive | undefined;
+  /** Present while a "Needs you" queue run is on: the Next control. A run starts from the inbox or a notification tap, and stays on for a session opened from the tabs here. */
+  readonly queue?: Queue | undefined;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLDivElement>(null);
@@ -301,6 +304,11 @@ export function Live({
     runtime?.connection.getStatus ?? initialStatus,
   );
   const canSend = canSendWith(status);
+  // The host accepted this phone's answer here: Next stands out until the session asks something else. Nothing moves by itself.
+  const [answeredId, setAnsweredId] = useState<string>();
+  const sentId = status.answer?.phase === 'sent' ? status.answer.questionId : undefined;
+  useEffect(() => { if (sentId !== undefined) setAnsweredId(sentId); }, [sentId]);
+  const answered = nextFilled(answeredId, status.agent?.state === 'waiting' ? status.agent.question?.id : undefined);
   const [slowLink, setSlowLink] = useState(false);
   useEffect(() => {
     setSlowLink(false);
@@ -669,7 +677,9 @@ export function Live({
   const onProviderEnded = provider?.onEnded;
   useEffect(() => { if (providerEnded) onProviderEnded?.(); }, [providerEnded, onProviderEnded]);
   if (status.link === 'lost' && provider === undefined) {
-    return <SessionLost title={session.title} where={multi ? session.computer.label : 'your computer'} onSessions={onSessions} onStartNew={onStartNew} />;
+    const lost = <SessionLost title={session.title} where={multi ? session.computer.label : 'your computer'} onSessions={onSessions} onStartNew={onStartNew} />;
+    // In a queue run the way on stays: Next goes to what still waits.
+    return queue === undefined ? lost : <><QueueNext queue={queue} />{lost}</>;
   }
 
   return (
@@ -708,6 +718,7 @@ export function Live({
             <span className={`badge-text ${badge.tone}`}>{badge.text}</span>
           </div>
           {provider !== undefined && !providerEnded && <p className="hint-text size-line">{provider.sizeLine}</p>}
+          {queue !== undefined && <QueueNext queue={queue} answered={answered} />}
         </>
       )}
 

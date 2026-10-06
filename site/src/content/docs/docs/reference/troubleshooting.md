@@ -79,6 +79,16 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
 
+## Next is not there after a notification tap
+
+**Next beta.** Reload Termivoa once after an update, then tap a new notification. The **Next** button of [Needs you](/docs/guides/needs-you/) needs the updated app to be active; right after an update the old one can still handle the tap.
+
+| You opened the session with | Next shows |
+| --- | --- |
+| A tap on a notification | Yes, when another item waits. With nothing else waiting, there is no row. |
+| A tap on a row in the **Needs you** tab | Yes |
+| A link, a typed address or a reload | No. This is as designed. |
+
 ## I hear a sound but see no notification
 
 If the computer runs herdr, the sound is most likely herdr's own: herdr plays a sound when an agent in a background workspace changes state. Termivoa makes no sound on the computer.

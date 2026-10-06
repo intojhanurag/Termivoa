@@ -460,6 +460,14 @@ projects, and the iPhone Home Screen app. Design:
       goes phone-sized. A pasted `/p/herdr/<target>` link or a reload shows the
       names and **Open** instead. Record whether it works from a closed app and
       from an open app.
+- [ ] **A notification tap on the real phone starts the queue (Next is
+      there).** Let two agents wait (two sessions, or a session and a herdr
+      agent). Tap the notification of one, on the iPhone (Home Screen app)
+      and on Android: the item opens, and the row **NEEDS YOU** with
+      **Next · 1 left ›** is under the status line. **Next** opens the other
+      one; there the button says **Inbox ›**. Then reload the page: no
+      **Next** row. Record it for a closed app and for an open app
+      ([needs-you-inbox.md](needs-you-inbox.md), section 6).
 - [ ] **Settings → Integrations.** Switch herdr **Off**: the herdr tab leaves
       this computer, open terminals end (the pane gets its size back), no push
       comes. Switch **On** again: it returns. **Buzz when blocked** and **Buzz

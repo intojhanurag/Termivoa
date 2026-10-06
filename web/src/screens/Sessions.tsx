@@ -8,6 +8,7 @@ import {
   atLeast, byChip, cantReach, checkAgain, CHECKING_MIN_MS, chipsFor, connectingText, JUST_ADDED, keyOf, OUT_OF_DATE, pairAgain, type ComputerEntry, type ComputerStatus, type HostedSession,
 } from './allSessions';
 import { sessionName } from './folder';
+import { InboxList, inboxItems, inboxTabShown, needsYouText, waitingCount, type InboxItem } from './Inbox';
 import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type ProviderTap } from './Herdr';
 import { ProviderCreateSheet } from './ProviderCreate';
 import { ItemMenuSheet, WorkspaceSheet } from './ProviderManage';
@@ -289,8 +290,8 @@ export function ComputerProblem({ entry, now, onRetry, onSettings }: {
   );
 }
 
-/** "All", the provider tabs ("herdr 2"), then one tab per computer; the pressed one shows one of them. */
-export function ComputerChips({ computers, chosen, all = true, disabled, onChoose, providers = [], provider, onProvider }: {
+/** "All", "Needs you 3" while something waits, the provider tabs ("herdr 2"), then one tab per computer; the pressed one shows one of them. */
+export function ComputerChips({ computers, chosen, all = true, disabled, onChoose, providers = [], provider, onProvider, needs, needsOpen = false, onNeeds }: {
   readonly computers: ReadonlyArray<Computer>;
   readonly chosen: string | undefined;
   /** False to pick one computer (New session): no "All" chip. */
@@ -303,8 +304,12 @@ export function ComputerChips({ computers, chosen, all = true, disabled, onChoos
   /** The provider tab that is pressed, if any. */
   readonly provider?: string | undefined;
   readonly onProvider?: (id: string) => void;
+  /** The "Needs you" tab with its count of what waits; undefined: no such tab. */
+  readonly needs?: number | undefined;
+  readonly needsOpen?: boolean;
+  readonly onNeeds?: () => void;
 }) {
-  const chips = (computers.length < 2 && providers.length > 0 && all ? [{ host: undefined, label: 'All' }] : chipsFor(computers))
+  const chips = (computers.length < 2 && (providers.length > 0 || needs !== undefined) && all ? [{ host: undefined, label: 'All' }] : chipsFor(computers))
     .filter((chip) => all || chip.host !== undefined);
   if (chips.length === 0) return null;
   const [first, ...rest] = chips;
@@ -313,7 +318,7 @@ export function ComputerChips({ computers, chosen, all = true, disabled, onChoos
       key={item.host ?? ''}
       type="button"
       className="chip"
-      aria-pressed={provider === undefined && chosen === item.host}
+      aria-pressed={provider === undefined && !needsOpen && chosen === item.host}
       disabled={item.host !== undefined && disabled?.(item.host) === true}
       onClick={() => onChoose(item.host)}
     >
@@ -322,8 +327,14 @@ export function ComputerChips({ computers, chosen, all = true, disabled, onChoos
     </button>
   );
   return (
-    <div className="chips" role="group" aria-label={providers.length > 0 ? 'Show' : 'Computers'}>
+    <div className="chips" role="group" aria-label={providers.length > 0 || needs !== undefined ? 'Show' : 'Computers'}>
       {first !== undefined && chip(first)}
+      {first?.host === undefined && needs !== undefined && (
+        <button type="button" className="chip" aria-pressed={needsOpen} onClick={onNeeds}>
+          Needs you
+          {needs > 0 && <span className="chip-count">{needs}</span>}
+        </button>
+      )}
       {first?.host === undefined && providers.map((tab) => (
         <button key={`provider:${tab.id}`} type="button" className="chip" aria-pressed={provider === tab.id} onClick={() => onProvider?.(tab.id)}>
           {tab.name}
@@ -344,7 +355,7 @@ export const keptSettings = (kept: HTTPSettingsResponse | undefined, status: Com
 
 export function Sessions({
   entries, sessions, message, offerPush: pushAllowed, onOpen, onNew, onWall, onSettings, onHomeScreenSteps, onReload, onRetry, onFailure, onUpdate,
-  providers = [], tab, onOpenTarget, onProviderRetry, onCreated, onTypeIn, onReadSettings,
+  providers = [], tab, inbox: startInbox = false, onOpenItem, onOpenTarget, onProviderRetry, onCreated, onTypeIn, onReadSettings,
 }: {
   /** Every computer, home first, with what it answered. */
   readonly entries: ReadonlyArray<ComputerEntry>;
@@ -369,6 +380,10 @@ export function Sessions({
   readonly providers?: ReadonlyArray<ProviderEntry>;
   /** The provider tab to open on (after "That terminal is gone."). */
   readonly tab?: string | undefined;
+  /** Open on the "Needs you" tab (the queue's last Next comes back here). */
+  readonly inbox?: boolean | undefined;
+  /** A tap on a "Needs you" row: open it and start the queue. Absent: no "Needs you" tab. */
+  readonly onOpenItem?: ((item: InboxItem) => void) | undefined;
   readonly onOpenTarget?: (tap: ProviderTap) => void;
   readonly onProviderRetry?: (key: string) => Promise<void>;
   /** A worktree was made with the + of a project row (milestone M2), or a tab, a workspace or a closed worktree was opened: open its terminal; `notice` says what did not start. */
@@ -385,7 +400,9 @@ export function Sessions({
   const [error, setError] = useState<string | undefined>(message);
   const tabs = providerTabs(providers);
   const [chosenProvider, setProvider] = useState<string | undefined>(tab);
-  const provider = tabs.some((item) => item.id === chosenProvider) ? chosenProvider : undefined;
+  const [inboxChosen, setInbox] = useState(startInbox);
+  const inbox = inboxChosen && onOpenItem !== undefined;
+  const provider = inbox ? undefined : tabs.some((item) => item.id === chosenProvider) ? chosenProvider : undefined;
   const [busy, setBusy] = useState(false);
   const [offerPush, setOfferPush] = useState(false);
   const [hintClosed, setHintClosed] = useState(false);
@@ -404,10 +421,13 @@ export function Sessions({
   }] as const] : [])));
   const viewed = readViewed();
   const now = Date.now();
+  // Every computer's, whatever tab or computer is chosen: the count is the same everywhere.
+  const needsYou = inboxItems(sessions, providers, viewed);
+  const needs = waitingCount(needsYou);
   const reachable = entries.every((entry) => entry.status.kind === 'ok' || entry.status.kind === 'loading' || entry.status.kind === 'connecting');
   const shownProviders = provider === undefined ? byChip(providers, chip) : providers.filter((entry) => entry.info.id === provider);
   // The provider tab says its own counts; the sessions line never depends on a provider.
-  const summary = provider !== undefined
+  const summary = inbox && needs > 0 ? needsYouText(needs) : provider !== undefined
     ? wordSummary(shownProviders) ?? `${tabs.find((item) => item.id === provider)?.name ?? provider} · nothing running`
     : multi
       ? hostSummary(sessions, `${computers.length} computers`)
@@ -453,7 +473,7 @@ export function Sessions({
         <div>
           <h1 className="display">Sessions</h1>
           <p className="host-line" role="status">
-            <span className={provider !== undefined ? (blocked === undefined ? 'dot accent' : 'dot amber') : reachable ? 'dot accent' : 'dot amber'} aria-hidden="true" />
+            <span className={inbox && needs > 0 ? 'dot amber' : provider !== undefined ? (blocked === undefined ? 'dot accent' : 'dot amber') : reachable ? 'dot accent' : 'dot amber'} aria-hidden="true" />
             {summary}
           </p>
         </div>
@@ -483,11 +503,16 @@ export function Sessions({
       <ComputerChips
         computers={computers}
         chosen={chip}
-        onChoose={(host) => { setProvider(undefined); setChip(host); }}
+        onChoose={(host) => { setInbox(false); setProvider(undefined); setChip(host); }}
         providers={tabs}
         provider={provider}
-        onProvider={(id) => { setChip(undefined); setProvider(id); }}
+        onProvider={(id) => { setInbox(false); setChip(undefined); setProvider(id); }}
+        needs={onOpenItem !== undefined && inboxTabShown(needs, inbox) ? needs : undefined}
+        needsOpen={inbox}
+        onNeeds={() => { setChip(undefined); setInbox(true); }}
       />
+
+      {inbox && onOpenItem !== undefined && <InboxList items={needsYou} multi={multi} now={now} partial={!reachable || providers.some((entry) => entry.status.kind === 'unreachable')} loading={entries.some((entry) => entry.status.kind !== 'ok') || providers.some((entry) => entry.status.kind === 'loading')} onOpen={onOpenItem} />}
 
       {provider !== undefined && (
         <ProviderTree entries={shownProviders} multi={multi} now={now} onOpen={openTarget} onCreate={onCreated === undefined ? undefined : (entry, group) => setCreating({ entry, group })} onRetry={retryProvider}
@@ -495,7 +520,7 @@ export function Sessions({
         />
       )}
 
-      {provider === undefined && help?.kind === 'ok' && (
+      {!inbox && provider === undefined && help?.kind === 'ok' && (
         <section className="card stack" aria-label="Before your first session">
           <NewSessionHelp settings={help.settings} />
           <Button className="secondary" busy={busy} busyLabel="Checking…" onClick={() => { void refresh(); }}>Check again</Button>
@@ -507,9 +532,9 @@ export function Sessions({
         <HomeScreenHint onSteps={onHomeScreenSteps} onClose={() => setHintClosed(true)} />
       )}
 
-      {provider === undefined && <ProviderSection entries={shownProviders} multi={multi} now={now} onOpen={openTarget} />}
+      {!inbox && provider === undefined && <ProviderSection entries={shownProviders} multi={multi} now={now} onOpen={openTarget} />}
 
-      {provider === undefined && (
+      {!inbox && provider === undefined && (
       <section aria-label="Your sessions">
         {sectionParts(shownProviders).length > 0 && list.length > 0 && <h2 className="caps list-label">Termivoa sessions</h2>}
         {loading && <p role="status" className="muted">Loading…</p>}

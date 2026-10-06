@@ -290,7 +290,11 @@ The broker hands each change to `Notifier.NotifyProvider`
   (memory only if the cache cannot be opened). The `/p/…` page asks the
   worker (`tap?` message); the first answer uses the record up. With a fresh
   record the page opens the terminal at once; otherwise it shows the names
-  and an **Open** button.
+  and an **Open** button. A tap on a session's notification
+  (`/sessions/<id>`, `/c/<host>/sessions/<id>`) leaves the same record: the
+  page then starts the "Needs you" queue
+  ([needs-you-inbox.md](needs-you-inbox.md), section 6). A session address
+  opens Live at once with or without the record.
 - **Not verified:** a real push on an iPhone, and that its tap opens the
   terminal at once (`docs/owner-verification.md`). Push is tested in Go only.
 
