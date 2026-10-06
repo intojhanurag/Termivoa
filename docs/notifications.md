@@ -43,9 +43,25 @@ and a same-origin path.
   library only (`crypto/ecdh`, `crypto/hkdf`, `crypto/aes`, `crypto/cipher`,
   `crypto/ecdsa`). The RFC 8291 Appendix A example is a unit test.
 - **Limits.** One notification per session and kind per 60 s, at most 12 per
-  minute in total (tests included), one test per device per 5 s. `waiting`
-  is sent with `Urgency: high` and a 5-minute TTL; `done` with `normal` and
-  2 minutes.
+  minute in total (`MaxPerMinute`). Test notifications have their own
+  budget: one per device per 5 s and at most 6 per minute for all devices
+  together (`TestMaxPerMinute`), so **Send a test notification** can never
+  use up the budget of a session's push; a test over the budget gets
+  `limit_exceeded`. The budget of 6 is for all devices, so one phone that
+  tests every 5 s can keep another phone's test waiting for the rest of that
+  minute; a peer's refusal for this limit is not shown as "No notifications
+  from …". `waiting` is sent with `Urgency: high` and a 5-minute
+  TTL; `done` with `normal` and 2 minutes.
+- **Fan-out.** One delivery sends to its subscriptions (at most 64) with 4
+  requests open at once (`deliverFanOut`), under one 60 s deadline; each
+  request has the client's 10 s timeout. So a push endpoint that hangs
+  holds one of the 4 workers for 10 s and the other phones still get their
+  push. A delivery waits for its workers before it ends, and no request
+  starts after the deadline, so no goroutine is left. The bound on open
+  push requests in the broker is 4 × (24 session + 12 provider + 12 test
+  deliveries) = 192: each kind has at most two minutes of its budget alive
+  together (see "Hook for the detector"). Known limit: 24 hung endpoints
+  ahead of a phone (6 rounds of 4 × 10 s) still use the whole deadline.
 
 ## Several computers
 
@@ -258,7 +274,8 @@ The broker hands each change to `Notifier.NotifyProvider`
   that computer, the card says "This phone gets no buzz yet." with a link to
   the Notifications section (`buzzGap` in `web/src/screens/Settings.tsx`,
   from what that section already knows: `pushSupport`, `pushEnabled`, and the
-  peers that `syncPeerPush` could not subscribe). It reads the browser's own
+  peers that `syncPeerPush` could not subscribe, by host, so two computers
+  with one label are told apart). It reads the browser's own
   state, not the host's stored copy, so it cannot see a subscription that the
   host dropped.
 - **Service worker** (`web/src/sw.js`). It accepts a provider payload only
@@ -293,7 +310,7 @@ type Event struct {
 ```
 
 `Notify` returns at once and delivers in the background (detached from
-`ctx` cancellation, 60 s deadline). It returns `false` when the event is
+`ctx` cancellation, 60 s deadline, 4 requests at once: "Fan-out" above). It returns `false` when the event is
 invalid, coalesced or over the rate limit. Deliveries on their way never
 drop an admitted event: each path has delivery slots for two minutes of its
 budget (24 for sessions, 12 for providers), and a delivery ends within 60 s,

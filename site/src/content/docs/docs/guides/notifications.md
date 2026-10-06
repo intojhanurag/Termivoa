@@ -1,7 +1,7 @@
 ---
 title: Notifications
 description: Termivoa sends a phone notification when a coding agent waits for you or finishes, with only names and status, never any terminal text.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-06
 ---
 
 Termivoa sends a notification to your phone when a coding agent waits for you or finishes.
@@ -43,6 +43,7 @@ Before `v0.1.0-beta.3`, only home sent notifications. On iPhone, notifications f
 - **Waiting:** once per new question.
 - **Done:** when an agent stops after at least 20 seconds of work. Short shell commands do not notify.
 - At most one per session and kind every 60 seconds, and 12 per minute in total.
+- **Send a test notification** has its own limit (**Next beta**): one per phone every 5 seconds and 6 per minute for all phones together. Tests never use up the 12 above.
 - Exited or lost sessions never notify.
 - They come even when the session is open on the phone.
 

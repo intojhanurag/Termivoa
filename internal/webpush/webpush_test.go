@@ -655,3 +655,152 @@ func TestSessionPushIsNotDroppedWhileEarlierOnesAreInFlight(t *testing.T) {
 	close(service.release)
 	waitFor(t, func() bool { return len(notifier.inFlight) == 0 })
 }
+
+// newTestNotifier is a notifier on a fresh store. Its clock stands still
+// until the test moves later, so subscriptions made together are listed by
+// endpoint (ListPushSubscriptions orders by time, then endpoint).
+func newTestNotifier(t *testing.T, transport http.RoundTripper, later *atomic.Int64) (*Notifier, *auth.Service) {
+	t.Helper()
+	ctx := context.Background()
+	persistence, err := store.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = persistence.Close() })
+	authority, err := auth.NewService(auth.ServiceConfig{Store: persistence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ahead of the real clock: a device is live only when it was paired before "now".
+	start := time.Now().Add(time.Minute)
+	notifier, err := NewNotifier(ctx, NotifierConfig{Store: persistence, Revoked: authority.DeviceRevoked,
+		CredentialIdle: auth.BrowserInactivityLifetime, Client: &http.Client{Transport: transport},
+		Now: func() time.Time { return start.Add(time.Duration(later.Load())) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return notifier, authority
+}
+
+// subscribeAll subscribes each endpoint, MaxDeviceSubscriptions to a device.
+func subscribeAll(t *testing.T, notifier *Notifier, authority *auth.Service, endpoints ...string) {
+	t.Helper()
+	device := ""
+	for index, endpoint := range endpoints {
+		if index%MaxDeviceSubscriptions == 0 {
+			device = pairDevice(t, authority).DeviceID
+		}
+		if err := notifier.Subscribe(context.Background(), device, newPhone(t, endpoint).subscription()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Issue #202: a phone that taps "Send a test notification" every 5 s for a
+// minute must not use up the budget of the session pushes.
+func TestTestSendsDoNotUseTheSessionBudget(t *testing.T) {
+	ctx := context.Background()
+	var later atomic.Int64
+	notifier, _ := newTestNotifier(t, nil, &later)
+	for tap := range int(time.Minute / testCooldown) {
+		later.Store(int64(time.Duration(tap) * testCooldown))
+		// The test budget holds: the first TestMaxPerMinute go out, the rest are refused.
+		// A new device for each tap: the budget is one for all devices (the 5 s cooldown is per device).
+		if _, err := notifier.Test(ctx, fmt.Sprintf("device-%d", tap)); (err == nil) != (tap < TestMaxPerMinute) || (err != nil && err != ErrRateLimited) {
+			t.Fatalf("test send %d = %v", tap+1, err)
+		}
+	}
+	for index := range MaxPerMinute {
+		event := Event{SessionID: fmt.Sprintf("11111111-2222-4333-8444-%012d", index), SessionTitle: "claude", Kind: KindWaiting}
+		if !notifier.Notify(ctx, event) {
+			t.Fatalf("session push %d was refused after a minute of test sends", index+1)
+		}
+	}
+	waitFor(t, func() bool { return len(notifier.inFlight) == 0 })
+}
+
+// hungService is a push service where an endpoint with "hung" in its address
+// holds the request until release closes or the request's context ends. The
+// other endpoints answer at once.
+type hungService struct {
+	release      chan struct{}
+	started      chan string
+	active, most atomic.Int32
+}
+
+func (service *hungService) RoundTrip(request *http.Request) (*http.Response, error) {
+	now := service.active.Add(1)
+	defer service.active.Add(-1)
+	for most := service.most.Load(); now > most && !service.most.CompareAndSwap(most, now); most = service.most.Load() {
+	}
+	service.started <- request.URL.String()
+	if strings.Contains(request.URL.Path, "hung") {
+		select {
+		case <-service.release:
+		case <-request.Context().Done():
+			return nil, request.Context().Err()
+		}
+	}
+	return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
+}
+
+// Issue #202: push endpoints that hang must not hold back a later phone.
+func TestHungEndpointsDoNotStarveALaterPhone(t *testing.T) {
+	service := &hungService{release: make(chan struct{}), started: make(chan string, MaxSubscriptions)}
+	notifier, authority := newTestNotifier(t, service, new(atomic.Int64))
+	healthy := "https://fcm.googleapis.com/fcm/send/z-healthy"
+	// One fewer than deliverFanOut hang, and they are listed first.
+	subscribeAll(t, notifier, authority, "https://fcm.googleapis.com/fcm/send/a-hung-0",
+		"https://fcm.googleapis.com/fcm/send/a-hung-1", "https://fcm.googleapis.com/fcm/send/a-hung-2", healthy)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() {
+		accepted, _ := notifier.deliver(ctx, "", Message{Title: "t", Kind: KindWaiting}, time.Minute, UrgencyHigh)
+		done <- accepted
+	}()
+	defer func() { cancel(); <-done }()
+	for reached := false; !reached; {
+		select {
+		case endpoint := <-service.started:
+			reached = endpoint == healthy
+		case <-time.After(5 * time.Second):
+			t.Fatal("the later phone got no push while earlier endpoints hang")
+		}
+	}
+	close(service.release)
+	if accepted := <-done; accepted != 4 {
+		t.Fatalf("accepted = %d, want 4", accepted)
+	}
+	done <- 0 // for the deferred read
+}
+
+// The bounds of one delivery: at most deliverFanOut requests at once, none
+// started after the deadline, and none alive when deliver returns.
+func TestDeliveryFanOutIsBoundedAndEndsAtTheDeadline(t *testing.T) {
+	service := &hungService{release: make(chan struct{}), started: make(chan string, MaxSubscriptions)}
+	notifier, authority := newTestNotifier(t, service, new(atomic.Int64))
+	var endpoints []string
+	for index := range 2 * deliverFanOut {
+		endpoints = append(endpoints, fmt.Sprintf("https://fcm.googleapis.com/fcm/send/a-hung-%d", index))
+	}
+	subscribeAll(t, notifier, authority, append(endpoints, "https://fcm.googleapis.com/fcm/send/z-healthy")...)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan int, 1)
+	go func() {
+		accepted, _ := notifier.deliver(ctx, "", Message{Title: "t", Kind: KindWaiting}, time.Minute, UrgencyHigh)
+		done <- accepted
+	}()
+	for range deliverFanOut {
+		select {
+		case <-service.started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the delivery did not open deliverFanOut requests")
+		}
+	}
+	cancel() // the deadline
+	if accepted := <-done; accepted != 0 || service.active.Load() != 0 || service.most.Load() != deliverFanOut || len(service.started) != 0 {
+		t.Fatalf("accepted %d, %d requests alive after deliver, at most %d at once, %d started after the deadline",
+			accepted, service.active.Load(), service.most.Load(), len(service.started))
+	}
+}

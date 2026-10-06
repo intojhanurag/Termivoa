@@ -50,7 +50,9 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   device checks (Next 5).
 - Session pushes are no longer dropped while earlier deliveries are on their
   way (#197), and a herdr card says "This phone gets no buzz yet." when its
-  buzz cannot reach this phone. Open: a real push on a real iPhone
+  buzz cannot reach this phone. Test notifications have their own budget,
+  one delivery sends to 4 subscriptions at once, and the "no buzz" line
+  knows a computer by its host (#202). Open: a real push on a real iPhone
   (`docs/owner-verification.md`).
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
