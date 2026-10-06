@@ -211,6 +211,26 @@ func (client *AdminClient) Shutdown(ctx context.Context) (protocol.AdminRPCShutd
 		protocol.BrokerRPCEmptyPayload{}, true, nil)
 }
 
+// GitHubStatus reads this computer's GitHub state and login. State is nil
+// when this build has no GitHub feature.
+func (client *AdminClient) GitHubStatus(ctx context.Context) (protocol.AdminRPCGitHubStatusPayload, error) {
+	return adminCall[protocol.AdminRPCGitHubStatusPayload](ctx, client, protocol.AdminGithubStatus,
+		protocol.BrokerRPCEmptyPayload{}, false, nil)
+}
+
+// GitHubDisconnect removes this computer's GitHub login and answers the new state.
+func (client *AdminClient) GitHubDisconnect(ctx context.Context) (protocol.AdminRPCGitHubStatusPayload, error) {
+	return adminCall[protocol.AdminRPCGitHubStatusPayload](ctx, client, protocol.AdminGithubDisconnect,
+		protocol.BrokerRPCEmptyPayload{}, true, nil)
+}
+
+// GitHubCredential returns the access token for git's credential helper. The
+// token is only in the result, never in an error.
+func (client *AdminClient) GitHubCredential(ctx context.Context) (protocol.AdminRPCGitHubCredentialPayload, error) {
+	return adminCall[protocol.AdminRPCGitHubCredentialPayload](ctx, client, protocol.AdminGithubCredential,
+		protocol.BrokerRPCEmptyPayload{}, false, nil)
+}
+
 // adminCall performs one serialized exchange. Correlation, the exact result
 // type, and any caller check are verified inside the exchange slot, so a
 // malformed acknowledgement closes the connection before a queued call writes.

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, client, manageTimeout } from '../api/http';
 import type { Computer } from '../computers';
-import type {
-  HTTPProviderGroup, HTTPProviderItem, HTTPProviderManageRequest, HTTPProviderManageResponse, HTTPSettingsResponse,
+import {
+  FEATURE_REVISION,
+  type HTTPProviderGroup, type HTTPProviderItem, type HTTPProviderManageRequest, type HTTPProviderManageResponse, type HTTPSettingsResponse,
 } from '../generated/protocol';
 import { checkAgain } from './allSessions';
 import type { ProviderTap } from './Herdr';
@@ -10,6 +11,10 @@ import { NewSessionHelp } from './NewSession';
 import { droppedAgent, offeredAgent, PromptField, promptProblem, startNotice } from './ProviderCreate';
 import type { ProviderEntry, ProviderSource } from './providers';
 import { Sheet } from './Sheet';
+
+/** From GitHub shows where that computer has a GitHub row (revision 7): the same gate as GitHub.tsx's githubInfo, kept here so this sheet does not load GitHub's code. */
+export const githubShown = (settings: Pick<HTTPSettingsResponse, 'protocolRevision' | 'github'>): boolean =>
+  settings.protocolRevision >= FEATURE_REVISION.github && settings.github !== undefined;
 import { Button, ConfirmPair, confirmReady, Notice } from './ui';
 
 /*
@@ -400,7 +405,7 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
 export const ADDING = 'add-folder';
 export const NO_SESSION = 'A terminal could not be opened there. Open a session on that computer and run `pterm project add <folder>`.';
 
-export function WorkspaceList({ entry, settings, busy, checking, note, onPick, onCheck, onAddFolder, onClose }: {
+export function WorkspaceList({ entry, settings, busy, checking, note, onPick, onCheck, onAddFolder, onFromGitHub, onClose }: {
   readonly entry: Pick<ProviderEntry, 'computer' | 'info'>;
   /** The settings of that computer: its projects are the ones New session lists. */
   readonly settings: HTTPSettingsResponse;
@@ -412,10 +417,13 @@ export function WorkspaceList({ entry, settings, busy, checking, note, onPick, o
   readonly onCheck: () => void;
   /** Opens a session with `pterm project add ` typed; absent: not offered. */
   readonly onAddFolder?: (() => void) | undefined;
+  /** Opens the GitHub repository list of that computer; shown only where `settings` offers GitHub (githubShown). */
+  readonly onFromGitHub?: (() => void) | undefined;
   readonly onClose: () => void;
 }) {
   const { info, computer } = entry;
   const off = busy !== undefined;
+  const fromGitHub = onFromGitHub === undefined || !githubShown(settings) ? undefined : <button type="button" className="link accent" disabled={off} onClick={onFromGitHub}>From GitHub</button>;
   return (
     <div className="stack">
       <Head id="workspace-title" caption={<><bdi>{info.name}</bdi> · on {computer.label}</>} title="New workspace" busy={off} onClose={onClose} />
@@ -424,6 +432,7 @@ export function WorkspaceList({ entry, settings, busy, checking, note, onPick, o
         <>
           <NewSessionHelp settings={settings} />
           <Button className="secondary" busy={checking} busyLabel="Checking…" onClick={onCheck}>Check again</Button>
+          {fromGitHub}
         </>
       ) : (
         <>
@@ -441,9 +450,11 @@ export function WorkspaceList({ entry, settings, busy, checking, note, onPick, o
               <div className="sheet-actions">
                 <Button className="secondary" busy={busy === ADDING} busyLabel="Opening…" disabled={off} onClick={onAddFolder}>Add a folder</Button>
                 <Button className="secondary" busy={checking} busyLabel="Checking…" disabled={off} onClick={onCheck}>Check again</Button>
+                {fromGitHub}
               </div>
             </>
           )}
+          {onAddFolder === undefined && fromGitHub}
         </>
       )}
     </div>
@@ -459,7 +470,7 @@ export async function addFolderStep(open: () => Promise<boolean>, words: (error:
   }
 }
 
-export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, onAddFolder, onFailure, onClose, manage = (body) => client(entry.computer.origin).providerManage(entry.info.id, body) }: {
+export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, onAddFolder, onFromGitHub, onFailure, onClose, manage = (body) => client(entry.computer.origin).providerManage(entry.info.id, body) }: {
   readonly entry: ProviderEntry;
   readonly settings: HTTPSettingsResponse;
   readonly onOpened: (tap: ProviderTap) => void;
@@ -469,6 +480,8 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
   readonly onCheck: () => Promise<void>;
   /** Starts a session on that computer and goes to Live with the command typed; false: it has no project or shell. */
   readonly onAddFolder?: (() => Promise<boolean>) | undefined;
+  /** Opens the GitHub repository list instead; shown only where `settings` offers GitHub. */
+  readonly onFromGitHub?: (() => void) | undefined;
   readonly onFailure: (error: unknown, from: Computer) => string;
   readonly onClose: () => void;
   readonly manage?: Manage;
@@ -509,7 +522,7 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
   return (
     <div className="sheet-backdrop">
       <Sheet labelledBy="workspace-title" onClose={close}>
-        <WorkspaceList entry={entry} settings={settings} busy={busy} checking={checking} note={note} onPick={pick} onCheck={check} onAddFolder={onAddFolder === undefined ? undefined : () => addFolder(onAddFolder)} onClose={close} />
+        <WorkspaceList entry={entry} settings={settings} busy={busy} checking={checking} note={note} onPick={pick} onCheck={check} onAddFolder={onAddFolder === undefined ? undefined : () => addFolder(onAddFolder)} onFromGitHub={onFromGitHub} onClose={close} />
       </Sheet>
     </div>
   );

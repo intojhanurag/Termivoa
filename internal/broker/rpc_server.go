@@ -23,6 +23,7 @@ import (
 
 	"github.com/intojhanurag/phone-terminal/internal/auth"
 	"github.com/intojhanurag/phone-terminal/internal/gitchanges"
+	"github.com/intojhanurag/phone-terminal/internal/github"
 	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/protocol"
@@ -74,6 +75,10 @@ type ManagementServerConfig struct {
 	// on Windows and in most tests, means no provider: no polling, no
 	// routes data, no setting.
 	Herdr *herdr.Config
+	// GitHub connects this computer to GitHub (docs/github-integration.md).
+	// Nil, or a build without the GitHub app, means no feature: no settings
+	// field, and every GitHub route is refused.
+	GitHub *github.Config
 }
 
 // ManagementServer dispatches session-management RPC after the local IPC
@@ -116,6 +121,9 @@ type ManagementServer struct {
 	// providerPush sends a provider push (Push.NotifyProvider); nil
 	// without push. A test seam.
 	providerPush func(webpush.ProviderEvent) bool
+	// github is the GitHub service (github.go); nil when the feature is off.
+	github       githubService
+	githubLimits providerLimits
 }
 
 // NewManagementServer validates that dispatch cannot accidentally cross a
@@ -173,6 +181,9 @@ func NewManagementServer(config ManagementServerConfig) (*ManagementServer, erro
 		}
 		server.providers = host
 	}
+	if config.GitHub != nil {
+		server.newGitHub(*config.GitHub)
+	}
 	if server.config.Tailnet == nil {
 		var lastRefused string
 		server.config.Tailnet = tailnet.NewMonitor(tailnet.Config{
@@ -227,6 +238,7 @@ func (server *ManagementServer) Serve(ctx context.Context, listener *ipc.BrokerL
 		<-trustDone // A sweep must not outlive Serve and the store it reads.
 	}()
 	defer server.runProviders(ctx)()
+	defer server.closeGitHub() // Its set-up job adds a project: stop it before the store closes.
 	shutdown := sync.OnceFunc(func() {
 		_ = listener.Close()
 		server.stopConnections()

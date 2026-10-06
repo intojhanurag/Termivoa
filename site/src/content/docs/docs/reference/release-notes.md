@@ -1,7 +1,7 @@
 ---
 title: Release notes
 description: Termivoa private beta release history, with the new features, fixes and known limits of each version, and what is coming in the next beta.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
@@ -10,6 +10,7 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **GitHub from the phone.** **Settings → Integrations** has a row **GitHub on mac** for each computer. Tap **Connect**, enter the code on GitHub, and choose your repositories one time. Then **Set up a repository** lists them, with search, and one tap clones a repository into `~/<name>` on that computer and adds it as a project, with progress, **Stop** and **New session**. **From GitHub** is also next to **Add a folder** in herdr's **New workspace** sheet. No `gh` is needed, only git. Termivoa never deletes or overwrites a folder: a folder of that name is **name taken**. Pull and push work in the cloned folder. `pterm github status` and `pterm github disconnect` are new. See [Set up a GitHub repository](/docs/guides/github/) and [What does GitHub change?](/docs/reference/security/#what-does-github-change)
 - **Needs you.** While an agent waits, the Sessions list has a **Needs you** tab with a count, right after **All**. It lists every session that waits and every herdr worktree that is blocked, on all your computers, the longest wait first; **Finished** work is below. Tap one to open it, answer, then tap **Next · 2 left ›** to go to the next one. A tap on a notification opens the item with **Next** too. See [Needs you](/docs/guides/needs-you/).
 - **More herdr from the phone.** **New tab** can start an agent with a first prompt. A worktree whose workspace you closed shows as **CLOSED** with **Open**. A herdr terminal has the **⋯** menu of its workspace, and **‹ Sessions** goes back to the **herdr** tab.
 - **herdr fixes.** The first prompt of a new agent now reaches it: Termivoa waits until herdr says the agent is ready. "The agent did not start" also shows when the agent is not installed on the computer. A herdr terminal outside git no longer shows "this herdr terminal's folder cannot be read" by itself. **New worktree** and **New tab** offer the agents that run in herdr now, and never start another agent than the one you picked. A slow herdr check no longer turns off tabs without an agent. Two workspaces at the main folder of one repository cannot be closed from the phone (herdr closes them only together), and the app says so.

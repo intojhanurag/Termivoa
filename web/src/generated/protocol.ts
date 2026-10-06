@@ -14,6 +14,8 @@ export type ProtocolTypes = {
     readonly adminRPCDeviceListResult:         AdminRPCDeviceListResultPayload;
     readonly adminRPCDeviceRename:             AdminRPCDeviceRenamePayload;
     readonly adminRPCDeviceRevokeResult:       AdminRPCDeviceRevokeResultPayload;
+    readonly adminRPCGitHubCredential?:        AdminRPCGitHubCredentialPayload;
+    readonly adminRPCGitHubStatus?:            AdminRPCGitHubStatusPayload;
     readonly adminRPCMessageType:              AdminRPCMessageType;
     readonly adminRPCOrigin:                   AdminRPCOriginPayload;
     readonly adminRPCPairGrant:                AdminRPCPairGrantPayload;
@@ -72,6 +74,7 @@ export type ProtocolTypes = {
     readonly gatewayRPCComputerRemove:         GatewayRPCComputerRemovePayload;
     readonly gatewayRPCCredential:             GatewayRPCCredentialPayload;
     readonly gatewayRPCDeviceRename:           GatewayRPCDeviceRenamePayload;
+    readonly gatewayRPCGitHubAction?:          GatewayRPCGitHubActionPayload;
     readonly gatewayRPCMessageType:            GatewayRPCMessageType;
     readonly gatewayRPCOriginResult:           GatewayRPCOriginResultPayload;
     readonly gatewayRPCPairPollResult:         GatewayRPCPairPollResultPayload;
@@ -106,6 +109,9 @@ export type ProtocolTypes = {
     readonly httpDeviceSummary:                HTTPDeviceSummary;
     readonly httpErrorResponse:                HTTPErrorResponse;
     readonly httpFoundComputer:                HTTPFoundComputer;
+    readonly httpGitHubReposResponse?:         HTTPGitHubReposResponse;
+    readonly httpGitHubRequest?:               HTTPGitHubRequest;
+    readonly httpGitHubResponse?:              HTTPGitHubResponse;
     readonly httpNamedOption:                  HTTPNamedOption;
     readonly httpPairPollRequest:              HTTPPairPollRequest;
     readonly httpPairPollResponse:             HTTPPairPollResponse;
@@ -256,7 +262,38 @@ export type AdminRPCDeviceRevokeResultPayload = {
     readonly deviceId:      string;
 }
 
-export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.device.revoke.via" | "admin.computers.list" | "admin.computers.remove" | "admin.pair.offer" | "admin.pair.offer.end" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.device.revoke.via.result" | "admin.computers.list.result" | "admin.computers.remove.result" | "admin.pair.offer.result" | "admin.pair.offer.end.result" | "admin.error";
+/**
+ * The answer to pterm github-credential, git's credential helper in a folder that Termivoa
+ * cloned (docs/github-integration.md, 6.6): the access token (never the refresh token), at
+ * least 5 minutes from expiry. Only a process of the same user reaches the admin channel.
+ */
+export type AdminRPCGitHubCredentialPayload = {
+    /**
+     * Unix seconds (git's password_expiry_utc).
+     */
+    readonly expiresAt: number;
+    readonly password:  string;
+    readonly username:  string;
+}
+
+/**
+ * pterm github status and disconnect (docs/github-integration.md). state is absent when
+ * this build has no GitHub app.
+ */
+export type AdminRPCGitHubStatusPayload = {
+    readonly login?: string;
+    readonly state?: HTTPGitHubState;
+}
+
+/**
+ * Revision 7. noGit: git is not on this computer. notConnected: no GitHub login here.
+ * connecting: a Connect runs (the phone that started it also gets connect). needsInstall:
+ * logged in, but the GitHub app sees no repository (the user chooses repositories on
+ * GitHub). ready: the list can be read.
+ */
+export type HTTPGitHubState = "noGit" | "notConnected" | "connecting" | "needsInstall" | "ready";
+
+export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.device.revoke.via" | "admin.computers.list" | "admin.computers.remove" | "admin.pair.offer" | "admin.pair.offer.end" | "admin.github.status" | "admin.github.disconnect" | "admin.github.credential" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.device.revoke.via.result" | "admin.computers.list.result" | "admin.computers.remove.result" | "admin.pair.offer.result" | "admin.pair.offer.end.result" | "admin.github.status.result" | "admin.github.disconnect.result" | "admin.github.credential.result" | "admin.error";
 
 /**
  * In a request, a present origin replaces the configured one and an absent origin reads it.
@@ -895,7 +932,32 @@ export type HTTPDeviceRenameRequest = {
     readonly label: string;
 }
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.providers.get" | "gateway.providers.update" | "gateway.providers.open" | "gateway.providers.create" | "gateway.providers.manage" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.providers.get.result" | "gateway.providers.update.result" | "gateway.providers.open.result" | "gateway.providers.create.result" | "gateway.providers.manage.result" | "gateway.error";
+/**
+ * POST /api/v1/github (revision 7, docs/github-integration.md). The gateway sends it on a
+ * dedicated connection: a Connect or a set-up check asks GitHub first.
+ */
+export type GatewayRPCGitHubActionPayload = {
+    readonly credential: string;
+    readonly request:    HTTPGitHubRequest;
+}
+
+/**
+ * POST /api/v1/github. repo only with setup, and setup needs it.
+ */
+export type HTTPGitHubRequest = {
+    readonly action: HTTPGitHubAction;
+    readonly repo?:  string;
+}
+
+/**
+ * connect starts a Connect (or answers the running one). cancel ends a Connect that is not
+ * finished and never touches a stored login. disconnect revokes the login at GitHub and
+ * deletes it. setup clones repo (or uses it when it is already there) and makes it a
+ * project. stop stops the running set-up.
+ */
+export type HTTPGitHubAction = "connect" | "cancel" | "disconnect" | "setup" | "stop";
+
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.providers.get" | "gateway.providers.update" | "gateway.providers.open" | "gateway.providers.create" | "gateway.providers.manage" | "gateway.github.get" | "gateway.github.action" | "gateway.github.repos" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.providers.get.result" | "gateway.providers.update.result" | "gateway.providers.open.result" | "gateway.providers.create.result" | "gateway.providers.manage.result" | "gateway.github.get.result" | "gateway.github.action.result" | "gateway.github.repos.result" | "gateway.error";
 
 /**
  * origin: the browser origin configured with admin.config.origin, absent when none is set.
@@ -1315,6 +1377,108 @@ export type HTTPErrorResponse = {
 }
 
 /**
+ * GET /api/v1/github/repos (revision 7). At most 1000 repositories, most recently pushed
+ * first; truncated when there were more.
+ */
+export type HTTPGitHubReposResponse = {
+    readonly repos:      HTTPGitHubRepo[];
+    readonly truncated?: boolean;
+}
+
+/**
+ * here: this repository is already on this computer (a project with that origin, or the
+ * folder ~/<name> with that origin). taken: another folder has its name in the home folder.
+ * pushedAt is Unix milliseconds. sizeKb is GitHub's size.
+ */
+export type HTTPGitHubRepo = {
+    readonly archived:  boolean;
+    readonly fork:      boolean;
+    readonly here:      boolean;
+    readonly private:   boolean;
+    readonly pushedAt?: number;
+    readonly repo:      string;
+    readonly sizeKb:    number;
+    readonly taken:     boolean;
+}
+
+/**
+ * GET /api/v1/github and the answer of POST /api/v1/github (revision 7,
+ * docs/github-integration.md). app is the GitHub app's slug: the phone opens
+ * https://github.com/apps/<app>/installations/new for needsInstall.
+ */
+export type HTTPGitHubResponse = {
+    readonly app:      string;
+    readonly connect?: HTTPGitHubConnect;
+    readonly login?:   string;
+    readonly problem?: HTTPGitHubProblem;
+    /**
+     * Only in the answer of disconnect: the login is deleted on this computer, but GitHub did
+     * not confirm the revoke; the user removes Termivoa at
+     * https://github.com/settings/applications.
+     */
+    readonly revokeFailed?: boolean;
+    readonly setup?:        HTTPGitHubSetup;
+    readonly state:         HTTPGitHubState;
+}
+
+/**
+ * The code of a Connect, only for the phone that started it. The phone opens
+ * https://github.com/login/device itself; no address comes from the computer.
+ */
+export type HTTPGitHubConnect = {
+    /**
+     * Unix milliseconds.
+     */
+    readonly expiresAt: number;
+    readonly userCode:  string;
+}
+
+/**
+ * Why the last Connect or the login ended. codeExpired: the code was not used in time.
+ * denied: the user tapped Cancel on GitHub. otherProgram: GitHub refused a refresh token
+ * that was not old, so something else used it (revoke Termivoa on GitHub). ended: the login
+ * was removed on GitHub or was not used for 6 months. gitHubDown: this computer cannot
+ * reach GitHub.
+ */
+export type HTTPGitHubProblem = "codeExpired" | "denied" | "otherProgram" | "ended" | "gitHubDown";
+
+/**
+ * The one set-up of this computer: running, or the last result for 10 minutes. finished
+ * with projectId: the repository is a Termivoa project. already: nothing was cloned, the
+ * repository was already there. lfs: the repository uses Git LFS and its large files were
+ * not downloaded.
+ */
+export type HTTPGitHubSetup = {
+    readonly already?: boolean;
+    /**
+     * Bytes in the clone so far.
+     */
+    readonly bytes?:     number;
+    readonly lfs?:       boolean;
+    readonly percent?:   number;
+    readonly phase:      HTTPGitHubSetupPhase;
+    readonly problem?:   HTTPGitHubSetupProblem;
+    readonly projectId?: string;
+    readonly repo:       string;
+    /**
+     * Unix milliseconds.
+     */
+    readonly startedAt?: number;
+}
+
+export type HTTPGitHubSetupPhase = "cloning" | "finished" | "failed";
+
+/**
+ * nameTaken: another folder has that name in the home folder. badName: the name starts with
+ * . or - or ends in .git. noSpace: too little free disk space. tooManyProjects: 200
+ * projects. notFound: GitHub does not have that repository under this name now.
+ * cloneFailed: git failed, or the computer restarted during the clone. stopped: the user
+ * tapped Stop. timeout: 30 minutes. gitHubDown: this computer cannot reach GitHub.
+ * notConnected: no login.
+ */
+export type HTTPGitHubSetupProblem = "nameTaken" | "badName" | "noSpace" | "tooManyProjects" | "notFound" | "cloneFailed" | "stopped" | "timeout" | "gitHubDown" | "notConnected";
+
+/**
  * A saved project or shell profile, selected by ID. Paths and executables are never sent to
  * the browser.
  */
@@ -1504,6 +1668,11 @@ export type HTTPSettingsResponse = {
     readonly brokerGeneration: string;
     readonly device:           HTTPDeviceSummary;
     /**
+     * Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no
+     * client ID) or on Windows: the app shows no GitHub row for this computer.
+     */
+    readonly github?: HTTPGitHubInfo;
+    /**
      * The Termivoa build this computer runs, as version+commit (for example
      * 0.1.0-beta.2+1a2b3c4d5e6f). A peer sends it, so it is untrusted text: ASCII letters,
      * digits and . _ + - only, shown as plain text.
@@ -1518,6 +1687,17 @@ export type HTTPSettingsResponse = {
      */
     readonly providers?:    HTTPProviderInfo[];
     readonly shellProfiles: HTTPNamedOption[];
+}
+
+/**
+ * Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no
+ * client ID) or on Windows: the app shows no GitHub row for this computer.
+ *
+ * Revision 7. The GitHub row of this computer in Settings → Integrations.
+ */
+export type HTTPGitHubInfo = {
+    readonly login?: string;
+    readonly state:  HTTPGitHubState;
 }
 
 /**
@@ -1839,7 +2019,7 @@ export type WorktreeRemovedPayload = {
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 
 /** This build's additive protocol v1 revision (protocol/v1/revision.json). */
-export const PROTOCOL_REVISION = 6;
+export const PROTOCOL_REVISION = 7;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;
 /** The revision that added each feature: call it only on a computer whose protocolRevision is at least this. */
@@ -1848,4 +2028,5 @@ export const FEATURE_REVISION = {
     providers: 4,
     providerManage: 5,
     providerAgentTab: 6,
+    github: 7,
 } as const;

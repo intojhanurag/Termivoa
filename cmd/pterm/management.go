@@ -50,6 +50,8 @@ Available commands:
   pterm profile list                 Show saved shell profiles.
   pterm profile detect               Detect host shells and save them as profiles.
   pterm config origin [<url>]        Show or set the private HTTPS pairing origin.
+  pterm github status                Show whether this computer is connected to GitHub.
+  pterm github disconnect            Remove this computer's GitHub login.
   pterm setup [--verbose]            First run: a short plan, one confirmation, startup,
                                      phone address, Tailscale Serve (asks), pairing.
                                      --verbose also shows the checks, the startup

@@ -1,10 +1,10 @@
 ---
 title: Security
 description: How Termivoa keeps your computer's terminal private over Tailscale, what it stores and does not store, and how to report a vulnerability.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
-Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted.
+Termivoa keeps your terminal reachable only from your own Tailscale devices, lets only phones you approve connect, and never saves terminal content to disk. There is no telemetry and no Termivoa cloud service; only notifications pass through your phone's push service (Apple or Google), encrypted, and a computer that you connect to GitHub talks to GitHub.
 
 ## Who can reach the page?
 
@@ -109,11 +109,39 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 - **Socket and program, both yours.** Termivoa uses herdr's own socket to list, read state and create worktrees. It also runs the herdr program: once for each open terminal, and to check what that herdr version can do. It checks that the socket and the herdr program belong to you.
 - **Limits for each phone.** Open 20 per minute, create 3 per minute, settings 10 per minute, manage 30 per minute.
 - **Manage asks first and never forces.** The phone can close a herdr workspace or one of its tabs, remove a worktree, and make a tab or a workspace in one of your Termivoa projects. A removal is refused when the worktree has changes that are not committed; it does delete files that git ignores, and the app says so before you confirm. The phone sends a project, never a folder path. It can also start a coding agent, with a first prompt that you write, in a herdr workspace that exists, and open a closed worktree again. A closed worktree is named by a branch name that herdr itself lists. Starting an agent counts toward the 3 creates a minute.
-- **Termivoa downloads nothing.** **Install herdr** opens a session with herdr's own install command typed in; it runs only when you press Enter. **Start herdr** runs the herdr program that is already on the computer, after the same checks.
+- **Termivoa downloads no program.** **Install herdr** opens a session with herdr's own install command typed in; it runs only when you press Enter. **Start herdr** runs the herdr program that is already on the computer, after the same checks.
 - **Opening never takes control.** It is read-only until you tap **Take control**.
 - **No takeover.** Termivoa never kicks another herdr client off a terminal.
 - **No herdr prefix keys.** Termivoa sends `ctrl+b` to the agent as a plain `ctrl+b`, so the phone cannot send herdr's prefix commands. If you set another prefix key in herdr's `config.toml`, a phone with control could send that key; `pterm doctor` warns about it.
 - **Off switch.** **Settings → Integrations → On** stops Termivoa from reading herdr on that computer.
+
+## What does GitHub change?
+
+:::note[Next beta]
+Not in `v0.1.0-beta.3`. See [Set up a GitHub repository](/docs/guides/github/).
+:::
+
+When you tap **Connect** in **Settings → Integrations**, that computer logs in to GitHub with the Termivoa GitHub App. Nothing changes on a computer that you do not connect.
+
+| Question | Answer |
+| --- | --- |
+| Where is the login? | On that computer only, in a file in Termivoa's data folder that only your user account can read. Each computer has its own login. It never goes to the phone, to another computer or to a log. |
+| What can it do? | Read and write the contents of the repositories that you chose on GitHub. It cannot change workflow files. |
+| How long does it work? | GitHub's access token works for 8 hours. The computer gets a new one by itself with a refresh token, which works for up to 6 months. |
+| What does the computer connect to? | `github.com` and `api.github.com`, over HTTPS. It starts when you tap **Connect**. After that, the computer also connects to get a new token, to read the list, to clone, and when git in a cloned folder asks for the login. |
+| What does it download? | Only a repository that you set up. Termivoa runs nothing from it: no hooks, no submodules, no Git LFS download. It never deletes or overwrites a folder. |
+| Who on the computer can use it? | git in a folder that Termivoa cloned, through `pterm`. Any program that runs as your user can also get the access token, or read the login file, as it can read a `gh` login. Malware that runs as your user is not covered. |
+
+- **A paired phone cannot read the login.** It can see the names of your chosen repositories (also private ones), clone one into `~/<name>`, stop a clone, and disconnect. It cannot pick a folder, delete a folder, or clone from another site. Lose your phone? Revoke it with `pterm revoke` as usual.
+- **Enter a code only when you started Connect yourself.** If someone gets you to enter a code that they started, they get access to your chosen repositories, and Termivoa cannot see it. Only GitHub's list of authorized apps shows it. This is true of every login of this kind, also `gh`.
+- **A stolen login works until you revoke it on GitHub.** Connecting again does not stop a thief. When the computer sees that another program used its login, the row says "Another program used this login. Revoke Termivoa on GitHub, then connect again."
+- **A backup of the computer holds the login.** It holds a refresh token that can work for up to 6 months. Disconnect before you give a backup away.
+
+### How do I remove Termivoa's access on GitHub?
+
+**Disconnect** in **Settings → Integrations** (or `pterm github disconnect`) removes the login at GitHub and deletes it from the computer. To be sure, or for a computer that you lost, open GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) and revoke **Termivoa**. This ends the login of every computer that you connected. Connect each computer again after that.
+
+`pterm uninstall --delete-data` deletes the login from the computer but does not remove it at GitHub. Disconnect first.
 
 ## Who can see changes, commit and push?
 
@@ -122,7 +150,7 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 - **Any paired phone can see these diffs**, including secrets in files that are not ignored. Keep secrets in ignored files such as `.env`.
 - Commit and push need **control**, which the computer checks right before git starts.
 - A commit includes only ticked files that git lists as changed, and runs your repository's own hooks.
-- Push **never forces**, uses your normal git and ssh settings, and never asks for a password on the phone.
+- Push **never forces**, uses your normal git and ssh settings, and never asks for a password on the phone. **Next beta:** in a folder that Termivoa cloned from GitHub, git uses Termivoa's GitHub login for that repository. See [What does GitHub change?](#what-does-github-change)
 
 ## What does Termivoa store?
 
@@ -131,6 +159,7 @@ A paired phone can already run any command in a Termivoa session, so herdr gives
 | Paired phones, projects, shell profiles, session names, settings | Terminal output and history |
 | Notification subscriptions | Your typing |
 | Logs | Pairing links and login secrets in clear text (only a one-way hash is kept) |
+| **Next beta:** the GitHub login of that computer, if you connected one | The GitHub login on the phone or in a log |
 
 Home also stores each phone's list of other computers (addresses and names), and a peer stores the home address and Tailscale node of each phone that uses it from there. The phone keeps the same list of computers, never their sessions.
 
@@ -157,6 +186,7 @@ With several computers, each computer sends its own notifications straight to yo
 - A preview from another computer can show false content, and in the worst case can sign the phone out of your computers. See [Can a preview from another computer harm the app?](#can-a-preview-from-another-computer-harm-the-app)
 - The app's offline copy keeps the Content Security Policy (the list of addresses the app may talk to) from the time it was saved. While home is offline, an app saved before you removed a computer may still be allowed to talk to it. The removed computer still checks the phone's own access.
 - **Next beta:** if you change herdr's prefix key from `ctrl+b`, a phone with control of a herdr terminal could send that prefix key to herdr. At worst it detaches the phone. `pterm doctor` warns about it.
+- **Next beta:** a GitHub code that someone else started, a stolen GitHub login, or a backup of a connected computer gives access to your chosen repositories until you revoke **Termivoa** on GitHub. See [What does GitHub change?](#what-does-github-change)
 - The controls have automated tests, but no independent security audit yet.
 
 ## Common questions

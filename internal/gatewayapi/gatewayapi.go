@@ -98,6 +98,13 @@ type Broker interface {
 	// ManageProvider closes or removes an item, makes a tab or a workspace,
 	// or starts the provider's server (docs/herdr-manage.md).
 	ManageProvider(ctx context.Context, credential, provider string, request protocol.HTTPProviderManageRequest) (protocol.HTTPProviderManageResponse, error)
+	// GitHub (docs/github-integration.md). GitHub answers with this
+	// computer's GitHub state. GitHubAction connects, cancels, disconnects,
+	// sets up or stops a repository; it can take up to 15 s, so it runs on
+	// its own connection, like GitHubRepos (the list of repositories).
+	GitHub(ctx context.Context, credential string) (protocol.HTTPGitHubResponse, error)
+	GitHubAction(ctx context.Context, credential string, request protocol.HTTPGitHubRequest) (protocol.HTTPGitHubResponse, error)
+	GitHubRepos(ctx context.Context, credential string) (protocol.HTTPGitHubReposResponse, error)
 	// OpenLive binds a new broker live stream to the credential. The stream
 	// starts as an observer and carries canonical envelope JSON both ways.
 	OpenLive(ctx context.Context, credential string) (LiveStream, error)

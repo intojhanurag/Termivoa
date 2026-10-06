@@ -330,6 +330,30 @@ func (broker *fakeBroker) ManageProvider(_ context.Context, credential, provider
 	return protocol.HTTPProviderManageResponse{ItemID: request.ItemID}, broker.opErr
 }
 
+func (broker *fakeBroker) GitHub(_ context.Context, credential string) (protocol.HTTPGitHubResponse, error) {
+	broker.record("github")
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPGitHubResponse{}, err
+	}
+	return protocol.HTTPGitHubResponse{App: "termivoa", State: protocol.HTTPGitHubStateNotConnected}, broker.opErr
+}
+
+func (broker *fakeBroker) GitHubAction(_ context.Context, credential string, request protocol.HTTPGitHubRequest) (protocol.HTTPGitHubResponse, error) {
+	broker.record("github-action:" + string(request.Action))
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPGitHubResponse{}, err
+	}
+	return protocol.HTTPGitHubResponse{App: "termivoa", State: protocol.HTTPGitHubStateNotConnected}, broker.opErr
+}
+
+func (broker *fakeBroker) GitHubRepos(_ context.Context, credential string) (protocol.HTTPGitHubReposResponse, error) {
+	broker.record("github-repos")
+	if err := broker.authorize(credential); err != nil {
+		return protocol.HTTPGitHubReposResponse{}, err
+	}
+	return protocol.HTTPGitHubReposResponse{Repos: []protocol.HTTPGitHubRepo{}}, broker.opErr
+}
+
 func (broker *fakeBroker) OpenLive(_ context.Context, credential string) (gatewayapi.LiveStream, error) {
 	broker.record("open")
 	if err := broker.authorize(credential); err != nil {

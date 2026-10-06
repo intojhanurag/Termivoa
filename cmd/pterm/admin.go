@@ -23,25 +23,28 @@ const adminProfileFlags = "[--dev] [--runtime-dir <directory>]"
 // Administration commands take subcommand words first; flags and positional
 // arguments may follow in any order (see parseInterspersed).
 var adminUsages = map[string]string{
-	"pair":             "pterm pair " + adminProfileFlags + " [--origin <https-origin>] [--no-qr] [--no-wait] [--via <name|https-origin> [--allow-tagged]]",
-	"pair pending":     "pterm pair pending " + adminProfileFlags,
-	"pair approve":     "pterm pair approve " + adminProfileFlags + " <pending-id>",
-	"devices":          "pterm devices " + adminProfileFlags,
-	"devices rename":   "pterm devices rename " + adminProfileFlags + " <device-id> <label>",
-	"revoke":           "pterm revoke " + adminProfileFlags + " <device-id> | --via <https-origin>",
-	"computers":        "pterm computers " + adminProfileFlags,
-	"computers remove": "pterm computers remove " + adminProfileFlags + " <https-origin>",
-	"project add":      "pterm project add " + adminProfileFlags + " [--name <name>] <path>",
-	"project list":     "pterm project list " + adminProfileFlags,
-	"profile list":     "pterm profile list " + adminProfileFlags,
-	"profile detect":   "pterm profile detect " + adminProfileFlags,
-	"config origin":    "pterm config origin " + adminProfileFlags + " [<https-origin>]",
+	"pair":              "pterm pair " + adminProfileFlags + " [--origin <https-origin>] [--no-qr] [--no-wait] [--via <name|https-origin> [--allow-tagged]]",
+	"pair pending":      "pterm pair pending " + adminProfileFlags,
+	"pair approve":      "pterm pair approve " + adminProfileFlags + " <pending-id>",
+	"devices":           "pterm devices " + adminProfileFlags,
+	"devices rename":    "pterm devices rename " + adminProfileFlags + " <device-id> <label>",
+	"revoke":            "pterm revoke " + adminProfileFlags + " <device-id> | --via <https-origin>",
+	"computers":         "pterm computers " + adminProfileFlags,
+	"computers remove":  "pterm computers remove " + adminProfileFlags + " <https-origin>",
+	"project add":       "pterm project add " + adminProfileFlags + " [--name <name>] <path>",
+	"project list":      "pterm project list " + adminProfileFlags,
+	"profile list":      "pterm profile list " + adminProfileFlags,
+	"profile detect":    "pterm profile detect " + adminProfileFlags,
+	"config origin":     "pterm config origin " + adminProfileFlags + " [<https-origin>]",
+	"github status":     "pterm github status " + adminProfileFlags,
+	"github disconnect": "pterm github disconnect " + adminProfileFlags,
 }
 
 var adminSubcommands = map[string][]string{
 	"project": {"add", "list"},
 	"profile": {"list", "detect"},
 	"config":  {"origin"},
+	"github":  {"status", "disconnect"},
 }
 
 type adminCommandConfig struct {
@@ -342,6 +345,18 @@ func runAdminCommand(ctx context.Context, command string, args []string, input *
 			origin = &config.arguments[0]
 		}
 		return cli.ConfigOrigin(ctx, client, origin, output)
+	case "github status":
+		status, err := client.GitHubStatus(ctx)
+		if err != nil {
+			return err
+		}
+		return writeGitHubStatus(status, output)
+	case "github disconnect":
+		status, err := client.GitHubDisconnect(ctx)
+		if err != nil {
+			return err
+		}
+		return writeGitHubDisconnect(status, output)
 	default:
 		return errors.New("unsupported administration command")
 	}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { Computer } from '../computers';
 import type { BrokerRPCSessionRecord, HTTPProviderGroup, HTTPProviderItem, HTTPSettingsResponse } from '../generated/protocol';
 import { dismissHomeScreenHint, dismissPushCard, enablePush, shouldOfferHomeScreen, shouldOfferPush } from '../push';
@@ -12,14 +12,18 @@ import { InboxList, inboxItems, inboxTabShown, needsYouText, waitingCount, type 
 import { firstBlocked, ProviderSection, ProviderTree, sectionParts, type ProviderTap } from './Herdr';
 import { ProviderCreateSheet } from './ProviderCreate';
 import { ItemMenuSheet, WorkspaceSheet } from './ProviderManage';
+import { ErrorBoundary, loadChunk } from './chunks';
 import { NewSessionHelp } from './NewSession';
-import { ADD_FOLDER_COMMAND, providerTabs, startInstall, wordSummary, type ProviderEntry } from './providers';
+import { ADD_FOLDER_COMMAND, providerState, providerTabs, startInstall, wordSummary, type ProviderEntry } from './providers';
 import { Button, Notice, PairVia } from './ui';
 import { WorktreeBadge } from './Worktree';
 
 type Tone = 'accent' | 'amber' | 'muted';
 
 /** Who controls the session, as the list shows it; undefined when unknown. */
+
+// The GitHub sheet (From GitHub in New workspace) loads only when it opens.
+const GitHubSheet = lazy(() => loadChunk(() => import('./GitHub')).then((module) => ({ default: module.GitHubSheet })));
 export function controllerText(session: BrokerRPCSessionRecord): { readonly text: string; readonly tone: Tone } | undefined {
   switch (session.state) {
     case 'exited':
@@ -397,6 +401,8 @@ export function Sessions({
   // The ⋯ of an item, and New workspace (docs/herdr-manage.md): one sheet at a time.
   const [menu, setMenu] = useState<{ readonly entry: ProviderEntry; readonly group: HTTPProviderGroup; readonly item: HTTPProviderItem }>();
   const [workspace, setWorkspace] = useState<ProviderEntry>();
+  // From GitHub: the repository list of that provider's computer.
+  const [github, setGitHub] = useState<ProviderEntry>();
   const [error, setError] = useState<string | undefined>(message);
   const tabs = providerTabs(providers);
   const [chosenProvider, setProvider] = useState<string | undefined>(tab);
@@ -605,9 +611,31 @@ export function Sessions({
             if (session !== undefined) onTypeIn(session, ADD_FOLDER_COMMAND);
             return session !== undefined;
           }}
+          onFromGitHub={() => { setGitHub(workspace); setWorkspace(undefined); }}
           onFailure={onFailure}
           onClose={() => setWorkspace(undefined)}
         />
+      )}
+
+      {github !== undefined && onCreated !== undefined && (
+        <ErrorBoundary>
+          <Suspense fallback={null}>
+            <GitHubSheet
+              computer={github.computer}
+              settings={keptSettings(undefined, statusOf(github))}
+              provider={providerState(latest(github)) === 'ready' ? latest(github) : undefined}
+              start="list"
+              handlers={{
+                onFailure,
+                onChanged: () => onRetry(github.computer.origin),
+                onOpenSession: onOpen,
+                onProviderOpened: (tap, key) => onCreated(tap, undefined, key),
+                onProviderReload: reloadProvider,
+              }}
+              onClose={() => setGitHub(undefined)}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {provider === undefined && canCreate && (

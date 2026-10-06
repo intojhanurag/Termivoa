@@ -8,6 +8,7 @@ import {
   Browser, Env, HERE, NODES, api, click, freePort, interactive, pageFetch, pairDirect, plain, run, setInput, sleep, tapTerminalText, terminalText, typeLine, until,
 } from './lib.mjs';
 import { herdrSteps } from './herdr.mjs';
+import { githubSteps } from './github.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
@@ -18,6 +19,11 @@ const timings = [];
 function check(id, name, pass, evidence) {
   results.push({ id, name, result: pass ? 'PASS' : 'FAIL', evidence: String(evidence) });
   console.log(`${pass ? 'PASS' : 'FAIL'} ${id} ${name}\n     ${evidence}`);
+}
+/** A check that could not run here (for example no frames with the display off): not a pass, not a failure. */
+function skip(id, name, why) {
+  results.push({ id, name, result: 'SKIP', evidence: why });
+  console.log(`SKIP ${id} ${name}\n     ${why}`);
 }
 const time = (what, ms) => { timings.push({ what, ms }); console.log(`time ${what}: ${ms} ms`); };
 
@@ -997,6 +1003,9 @@ try {
   // ---- H: herdr on the phone (docs/herdr-provider.md, section 15; herdr.mjs) ----
   await herdrSteps({ env, mac, vps, app, tool, browser, step, check, shot, time, openSessions, inApp, jarOf });
 
+  // ---- G: GitHub from the phone (docs/github-integration.md; github.mjs, the fake GitHub) ----
+  await githubSteps({ env, mac, vps, app, tool, step, check, skip, time, inApp, out });
+
   // ---- F: Found on your network (docs/found-on-network.md, section 10) ----
   // A second phone ("Found phone") paired with mac: Found leaves out what a
   // device already uses, so it starts with no computers. vps's `pterm pair
@@ -1243,5 +1252,5 @@ try {
   await found.browser?.close();
   await browser.close();
   await env.close();
-  process.exit(results.every((r) => r.result === 'PASS') ? 0 : 1);
+  process.exit(results.every((r) => r.result !== 'FAIL') ? 0 : 1);
 }

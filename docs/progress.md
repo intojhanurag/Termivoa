@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 ## Start here
 
@@ -48,6 +48,74 @@ Not yet verified (owner checklist in
 
 The dated entries below are the history log; older entries describe the state
 on their own date.
+
+### GitHub: set up a repository on a computer from the phone (2026-10-07, branch `feat/github-integration`; not merged)
+
+- **Why.** The owner approved the design ([github-integration.md](github-integration.md),
+  ADR [0010](decisions/0010-github-integration.md)) on 2026-10-07 with
+  Contents: Read and write.
+- **What.** Phone: one row for each computer in **Settings → Integrations**
+  (**Connect** with an 8-character code and **Copy code and open GitHub**,
+  **Choose on GitHub**, **Set up a repository** with search and the tags
+  "on mac" and "name taken", the clone with progress and **Stop**, "Ready
+  on mac" with **New session** and **New workspace in herdr**,
+  **Disconnect**), and **From GitHub** next to **Add a folder** in the
+  **New workspace** sheet (`web/src/screens/GitHub.tsx`). Host: the package
+  `internal/github` (device flow, token pair in `<data>/github.json` mode
+  0600, refresh, revoke, the list with `here`/`taken`, the clone job with
+  the fixed git environment, the exclusive rename and the start-up sweep),
+  `internal/broker/github.go` (routes, limits, admin messages),
+  `cmd/pterm/github.go` (`pterm github status`/`disconnect`, the
+  `pterm doctor` line, the hidden helper `pterm github-credential`); routes
+  `GET`/`POST /api/v1/github`, `GET /api/v1/github/repos`; protocol
+  revision 7; `scripts/fakegithub` and `scripts/e2e-multicomputer/github.mjs`.
+- **Changed from the design.** The token pair is a file, not a
+  `github_account` table: a schema change would have needed a fresh
+  database and a new pairing on every computer. One `POST /api/v1/github`
+  with an `action` replaces the `DELETE` routes of design section 7.
+- **Docs.** Guide `site/src/content/docs/docs/guides/github.md` (sidebar
+  **Integrations → GitHub**; anchor `#back-to-termivoa` for the app's Setup
+  URL), `reference/security.md` (new section "What does GitHub change?" and
+  the two sentences of ADR 0010), `reference/troubleshooting.md`,
+  `reference/cli.md`, `reference/release-notes.md`, the landing page,
+  `CHANGELOG.md`, `README.md`, `docs/architecture.md`,
+  `docs/threat-model.md` (the sentences of ADR 0010 and a GitHub section),
+  `docs/pending-work.md`.
+- **Commands run (macOS, Go 1.27.1, Node 24).**
+  - `GOTOOLCHAIN=go1.27.1 sh scripts/check`: pass (Go build, vet, tests;
+    web typecheck and 1048 vitest tests; protocol drift).
+  - `go test -race -count=3 ./internal/github/`: pass. The same tests built
+    with `CGO_ENABLED=0 GOOS=linux go test -c` pass on the Linux VPS (Ubuntu,
+    git 2.43), in a throwaway folder with a throwaway HOME, incl. the Linux
+    exclusive rename.
+  - `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`:
+    pass, all internal links valid.
+  - e2e, fake GitHub (`scripts/fakegithub`) and two computers:
+    `caffeinate -d -i node scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only G`.
+    Run 6 on 5df01fa: 12 PASS, 3 SKIP, 0 FAIL. The 3 skipped checks draw the
+    Live terminal; the Mac's display was off, so Chrome made no frames. Runs
+    3 and 4 failed G6 (the clone): the e2e helper did not know the fake's
+    address in git's fixed environment (fixed in 5df01fa).
+  - Phase A (host flow) on 55040b8: `phase-a.mjs`, 32 PASS, 0 FAIL.
+- **Evidence.** `docs/evidence/github-integration/`: the design pictures
+  (`g1`–`g7`), the e2e report `e2e-phase-b-G.md` and screenshots
+  `e2e-g1-integrations.png`, `e2e-g2-code.png`, `e2e-g3-choose.png`,
+  `e2e-g3-connected.png` (demo data, fake GitHub).
+- **Reviews.** Security, correctness and phone UI on 57e785c (all "merge
+  after fixes", no blocker); a second round on the fixes found that a
+  production clone could not reach the broker (the clone's empty temp HOME;
+  fixed in ee56313 with a test that fails without the fix); a third round on
+  ee56313: merge. Findings and fixes: `docs/github-integration.md`, sections
+  16–17, and pull request #212.
+- **Not verified (owner-dependent).** The GitHub App is not registered yet,
+  so no build has a client ID and no GitHub row shows outside tests. With
+  the real app (design, section 12): the device and install pages in iPhone
+  Safari and the Home Screen app; a second try with the same refresh token;
+  the git user name for a user access token; nothing stored in the
+  Keychain or `~/.git-credentials`.
+- **Blocked on the owner.** Register the GitHub App (design, section 5),
+  install it on one empty test repository, and send the client ID and the
+  slug.
 
 ### GitHub integration: design only (2026-10-06, branch `docs/github-integration-design`; draft pull request, DO NOT MERGE without owner review)
 

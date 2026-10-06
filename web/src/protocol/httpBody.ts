@@ -7,6 +7,9 @@ import type {
   HTTPDeviceSummary,
   HTTPErrorResponse,
   HTTPFoundComputer,
+  HTTPGitHubRepo,
+  HTTPGitHubReposResponse,
+  HTTPGitHubResponse,
   HTTPNamedOption,
   HTTPPairPollResponse,
   HTTPPairRedeemResponse,
@@ -60,6 +63,9 @@ export interface HttpBodies {
   readonly providerManageResponse: HTTPProviderManageResponse;
   /** One name of a group's `closed` list. */
   readonly providerWorktreeName: string;
+  readonly githubResponse: HTTPGitHubResponse;
+  readonly githubReposResponse: HTTPGitHubReposResponse;
+  readonly githubRepo: HTTPGitHubRepo;
 }
 
 export type HttpSchema = keyof HttpBodies;
@@ -74,6 +80,7 @@ const ITEMS: { readonly [Name in HttpSchema]?: ReadonlyArray<readonly [field: st
   providerSnapshotResponse: [['groups', 'providerGroup']],
   providerGroup: [['items', 'providerItem'], ['closed', 'providerWorktreeName']],
   providerItem: [['targets', 'providerTarget']],
+  githubReposResponse: [['repos', 'githubRepo']],
 };
 
 export class InvalidResponseError extends Error {

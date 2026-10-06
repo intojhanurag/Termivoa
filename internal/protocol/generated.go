@@ -14,6 +14,8 @@ type ProtocolTypes struct {
 	AdminRPCDeviceListResult         AdminRPCDeviceListResultPayload         `json:"adminRPCDeviceListResult"`
 	AdminRPCDeviceRename             AdminRPCDeviceRenamePayload             `json:"adminRPCDeviceRename"`
 	AdminRPCDeviceRevokeResult       AdminRPCDeviceRevokeResultPayload       `json:"adminRPCDeviceRevokeResult"`
+	AdminRPCGitHubCredential         *AdminRPCGitHubCredentialPayload        `json:"adminRPCGitHubCredential,omitempty"`
+	AdminRPCGitHubStatus             *AdminRPCGitHubStatusPayload            `json:"adminRPCGitHubStatus,omitempty"`
 	AdminRPCMessageType              AdminRPCMessageType                     `json:"adminRPCMessageType"`
 	AdminRPCOrigin                   AdminRPCOriginPayload                   `json:"adminRPCOrigin"`
 	AdminRPCPairGrant                AdminRPCPairGrantPayload                `json:"adminRPCPairGrant"`
@@ -72,6 +74,7 @@ type ProtocolTypes struct {
 	GatewayRPCComputerRemove         GatewayRPCComputerRemovePayload         `json:"gatewayRPCComputerRemove"`
 	GatewayRPCCredential             GatewayRPCCredentialPayload             `json:"gatewayRPCCredential"`
 	GatewayRPCDeviceRename           GatewayRPCDeviceRenamePayload           `json:"gatewayRPCDeviceRename"`
+	GatewayRPCGitHubAction           *GatewayRPCGitHubActionPayload          `json:"gatewayRPCGitHubAction,omitempty"`
 	GatewayRPCMessageType            GatewayRPCMessageType                   `json:"gatewayRPCMessageType"`
 	GatewayRPCOriginResult           GatewayRPCOriginResultPayload           `json:"gatewayRPCOriginResult"`
 	GatewayRPCPairPollResult         GatewayRPCPairPollResultPayload         `json:"gatewayRPCPairPollResult"`
@@ -106,6 +109,9 @@ type ProtocolTypes struct {
 	HTTPDeviceSummary                HTTPDeviceSummary                       `json:"httpDeviceSummary"`
 	HTTPErrorResponse                HTTPErrorResponse                       `json:"httpErrorResponse"`
 	HTTPFoundComputer                HTTPFoundComputer                       `json:"httpFoundComputer"`
+	HTTPGitHubReposResponse          *HTTPGitHubReposResponse                `json:"httpGitHubReposResponse,omitempty"`
+	HTTPGitHubRequest                *HTTPGitHubRequest                      `json:"httpGitHubRequest,omitempty"`
+	HTTPGitHubResponse               *HTTPGitHubResponse                     `json:"httpGitHubResponse,omitempty"`
 	HTTPNamedOption                  HTTPNamedOption                         `json:"httpNamedOption"`
 	HTTPPairPollRequest              HTTPPairPollRequest                     `json:"httpPairPollRequest"`
 	HTTPPairPollResponse             HTTPPairPollResponse                    `json:"httpPairPollResponse"`
@@ -235,6 +241,23 @@ type AdminRPCDeviceRenamePayload struct {
 type AdminRPCDeviceRevokeResultPayload struct {
 	ClosedStreams int64  `json:"closedStreams"`
 	DeviceID      string `json:"deviceId"`
+}
+
+// The answer to pterm github-credential, git's credential helper in a folder that Termivoa
+// cloned (docs/github-integration.md, 6.6): the access token (never the refresh token), at
+// least 5 minutes from expiry. Only a process of the same user reaches the admin channel.
+type AdminRPCGitHubCredentialPayload struct {
+	// Unix seconds (git's password_expiry_utc).
+	ExpiresAt int64  `json:"expiresAt"`
+	Password  string `json:"password"`
+	Username  string `json:"username"`
+}
+
+// pterm github status and disconnect (docs/github-integration.md). state is absent when
+// this build has no GitHub app.
+type AdminRPCGitHubStatusPayload struct {
+	Login *string          `json:"login,omitempty"`
+	State *HTTPGitHubState `json:"state,omitempty"`
 }
 
 // In a request, a present origin replaces the configured one and an absent origin reads it.
@@ -749,6 +772,19 @@ type HTTPDeviceRenameRequest struct {
 	Label string `json:"label"`
 }
 
+// POST /api/v1/github (revision 7, docs/github-integration.md). The gateway sends it on a
+// dedicated connection: a Connect or a set-up check asks GitHub first.
+type GatewayRPCGitHubActionPayload struct {
+	Credential string            `json:"credential"`
+	Request    HTTPGitHubRequest `json:"request"`
+}
+
+// POST /api/v1/github. repo only with setup, and setup needs it.
+type HTTPGitHubRequest struct {
+	Action HTTPGitHubAction `json:"action"`
+	Repo   *string          `json:"repo,omitempty"`
+}
+
 // origin: the browser origin configured with admin.config.origin, absent when none is set.
 // It is not a secret. The gateway adds it to its exact Host and Origin allow-list when it
 // is valid for the gateway's profile. boundOrigins: the union of origins of devices bound
@@ -1024,6 +1060,69 @@ type HTTPErrorResponse struct {
 	Error BrokerRPCErrorPayload `json:"error"`
 }
 
+// GET /api/v1/github/repos (revision 7). At most 1000 repositories, most recently pushed
+// first; truncated when there were more.
+type HTTPGitHubReposResponse struct {
+	Repos     []HTTPGitHubRepo `json:"repos"`
+	Truncated *bool            `json:"truncated,omitempty"`
+}
+
+// here: this repository is already on this computer (a project with that origin, or the
+// folder ~/<name> with that origin). taken: another folder has its name in the home folder.
+// pushedAt is Unix milliseconds. sizeKb is GitHub's size.
+type HTTPGitHubRepo struct {
+	Archived bool   `json:"archived"`
+	Fork     bool   `json:"fork"`
+	Here     bool   `json:"here"`
+	Private  bool   `json:"private"`
+	PushedAt *int64 `json:"pushedAt,omitempty"`
+	Repo     string `json:"repo"`
+	SizeKB   int64  `json:"sizeKb"`
+	Taken    bool   `json:"taken"`
+}
+
+// GET /api/v1/github and the answer of POST /api/v1/github (revision 7,
+// docs/github-integration.md). app is the GitHub app's slug: the phone opens
+// https://github.com/apps/<app>/installations/new for needsInstall.
+type HTTPGitHubResponse struct {
+	App     string             `json:"app"`
+	Connect *HTTPGitHubConnect `json:"connect,omitempty"`
+	Login   *string            `json:"login,omitempty"`
+	Problem *HTTPGitHubProblem `json:"problem,omitempty"`
+	// Only in the answer of disconnect: the login is deleted on this computer, but GitHub did
+	// not confirm the revoke; the user removes Termivoa at
+	// https://github.com/settings/applications.
+	RevokeFailed *bool            `json:"revokeFailed,omitempty"`
+	Setup        *HTTPGitHubSetup `json:"setup,omitempty"`
+	State        HTTPGitHubState  `json:"state"`
+}
+
+// The code of a Connect, only for the phone that started it. The phone opens
+// https://github.com/login/device itself; no address comes from the computer.
+type HTTPGitHubConnect struct {
+	// Unix milliseconds.
+	ExpiresAt int64  `json:"expiresAt"`
+	UserCode  string `json:"userCode"`
+}
+
+// The one set-up of this computer: running, or the last result for 10 minutes. finished
+// with projectId: the repository is a Termivoa project. already: nothing was cloned, the
+// repository was already there. lfs: the repository uses Git LFS and its large files were
+// not downloaded.
+type HTTPGitHubSetup struct {
+	Already *bool `json:"already,omitempty"`
+	// Bytes in the clone so far.
+	Bytes     *int64                  `json:"bytes,omitempty"`
+	LFS       *bool                   `json:"lfs,omitempty"`
+	Percent   *int64                  `json:"percent,omitempty"`
+	Phase     HTTPGitHubSetupPhase    `json:"phase"`
+	Problem   *HTTPGitHubSetupProblem `json:"problem,omitempty"`
+	ProjectID *string                 `json:"projectId,omitempty"`
+	Repo      string                  `json:"repo"`
+	// Unix milliseconds.
+	StartedAt *int64 `json:"startedAt,omitempty"`
+}
+
 // A saved project or shell profile, selected by ID. Paths and executables are never sent to
 // the browser.
 type HTTPNamedOption struct {
@@ -1172,6 +1271,9 @@ type HTTPSessionMutationResponse struct {
 type HTTPSettingsResponse struct {
 	BrokerGeneration string            `json:"brokerGeneration"`
 	Device           HTTPDeviceSummary `json:"device"`
+	// Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no
+	// client ID) or on Windows: the app shows no GitHub row for this computer.
+	Github *HTTPGitHubInfo `json:"github,omitempty"`
 	// The Termivoa build this computer runs, as version+commit (for example
 	// 0.1.0-beta.2+1a2b3c4d5e6f). A peer sends it, so it is untrusted text: ASCII letters,
 	// digits and . _ + - only, shown as plain text.
@@ -1183,6 +1285,15 @@ type HTTPSettingsResponse struct {
 	// when none is installed; the app shows a provider tab only for a computer that lists one.
 	Providers     []HTTPProviderInfo `json:"providers,omitempty"`
 	ShellProfiles []HTTPNamedOption  `json:"shellProfiles"`
+}
+
+// Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no
+// client ID) or on Windows: the app shows no GitHub row for this computer.
+//
+// Revision 7. The GitHub row of this computer in Settings → Integrations.
+type HTTPGitHubInfo struct {
+	Login *string         `json:"login,omitempty"`
+	State HTTPGitHubState `json:"state"`
 }
 
 // One provider on this computer. enabled and notify are this computer's Integrations
@@ -1531,46 +1642,66 @@ const (
 	Expired                     AdminRPCDeviceStatus = "expired"
 )
 
+// Revision 7. noGit: git is not on this computer. notConnected: no GitHub login here.
+// connecting: a Connect runs (the phone that started it also gets connect). needsInstall:
+// logged in, but the GitHub app sees no repository (the user chooses repositories on
+// GitHub). ready: the list can be read.
+type HTTPGitHubState string
+
+const (
+	Connecting                  HTTPGitHubState = "connecting"
+	HTTPGitHubStateNotConnected HTTPGitHubState = "notConnected"
+	HTTPGitHubStateReady        HTTPGitHubState = "ready"
+	NeedsInstall                HTTPGitHubState = "needsInstall"
+	NoGit                       HTTPGitHubState = "noGit"
+)
+
 type AdminRPCMessageType string
 
 const (
-	AdminComputersList         AdminRPCMessageType = "admin.computers.list"
-	AdminComputersListResult   AdminRPCMessageType = "admin.computers.list.result"
-	AdminComputersRemove       AdminRPCMessageType = "admin.computers.remove"
-	AdminComputersRemoveResult AdminRPCMessageType = "admin.computers.remove.result"
-	AdminConfigOrigin          AdminRPCMessageType = "admin.config.origin"
-	AdminConfigOriginResult    AdminRPCMessageType = "admin.config.origin.result"
-	AdminDeviceList            AdminRPCMessageType = "admin.device.list"
-	AdminDeviceListResult      AdminRPCMessageType = "admin.device.list.result"
-	AdminDeviceRename          AdminRPCMessageType = "admin.device.rename"
-	AdminDeviceRenameResult    AdminRPCMessageType = "admin.device.rename.result"
-	AdminDeviceRevoke          AdminRPCMessageType = "admin.device.revoke"
-	AdminDeviceRevokeResult    AdminRPCMessageType = "admin.device.revoke.result"
-	AdminDeviceRevokeVia       AdminRPCMessageType = "admin.device.revoke.via"
-	AdminDeviceRevokeViaResult AdminRPCMessageType = "admin.device.revoke.via.result"
-	AdminError                 AdminRPCMessageType = "admin.error"
-	AdminGatewayStop           AdminRPCMessageType = "admin.gateway.stop"
-	AdminGatewayStopResult     AdminRPCMessageType = "admin.gateway.stop.result"
-	AdminPairApprove           AdminRPCMessageType = "admin.pair.approve"
-	AdminPairApproveResult     AdminRPCMessageType = "admin.pair.approve.result"
-	AdminPairGrant             AdminRPCMessageType = "admin.pair.grant"
-	AdminPairGrantResult       AdminRPCMessageType = "admin.pair.grant.result"
-	AdminPairOffer             AdminRPCMessageType = "admin.pair.offer"
-	AdminPairOfferEnd          AdminRPCMessageType = "admin.pair.offer.end"
-	AdminPairOfferEndResult    AdminRPCMessageType = "admin.pair.offer.end.result"
-	AdminPairOfferResult       AdminRPCMessageType = "admin.pair.offer.result"
-	AdminPairPending           AdminRPCMessageType = "admin.pair.pending"
-	AdminPairPendingResult     AdminRPCMessageType = "admin.pair.pending.result"
-	AdminProfileDetect         AdminRPCMessageType = "admin.profile.detect"
-	AdminProfileDetectResult   AdminRPCMessageType = "admin.profile.detect.result"
-	AdminProfileList           AdminRPCMessageType = "admin.profile.list"
-	AdminProfileListResult     AdminRPCMessageType = "admin.profile.list.result"
-	AdminProjectAdd            AdminRPCMessageType = "admin.project.add"
-	AdminProjectAddResult      AdminRPCMessageType = "admin.project.add.result"
-	AdminProjectList           AdminRPCMessageType = "admin.project.list"
-	AdminProjectListResult     AdminRPCMessageType = "admin.project.list.result"
-	AdminShutdown              AdminRPCMessageType = "admin.shutdown"
-	AdminShutdownResult        AdminRPCMessageType = "admin.shutdown.result"
+	AdminComputersList          AdminRPCMessageType = "admin.computers.list"
+	AdminComputersListResult    AdminRPCMessageType = "admin.computers.list.result"
+	AdminComputersRemove        AdminRPCMessageType = "admin.computers.remove"
+	AdminComputersRemoveResult  AdminRPCMessageType = "admin.computers.remove.result"
+	AdminConfigOrigin           AdminRPCMessageType = "admin.config.origin"
+	AdminConfigOriginResult     AdminRPCMessageType = "admin.config.origin.result"
+	AdminDeviceList             AdminRPCMessageType = "admin.device.list"
+	AdminDeviceListResult       AdminRPCMessageType = "admin.device.list.result"
+	AdminDeviceRename           AdminRPCMessageType = "admin.device.rename"
+	AdminDeviceRenameResult     AdminRPCMessageType = "admin.device.rename.result"
+	AdminDeviceRevoke           AdminRPCMessageType = "admin.device.revoke"
+	AdminDeviceRevokeResult     AdminRPCMessageType = "admin.device.revoke.result"
+	AdminDeviceRevokeVia        AdminRPCMessageType = "admin.device.revoke.via"
+	AdminDeviceRevokeViaResult  AdminRPCMessageType = "admin.device.revoke.via.result"
+	AdminError                  AdminRPCMessageType = "admin.error"
+	AdminGatewayStop            AdminRPCMessageType = "admin.gateway.stop"
+	AdminGatewayStopResult      AdminRPCMessageType = "admin.gateway.stop.result"
+	AdminGithubCredential       AdminRPCMessageType = "admin.github.credential"
+	AdminGithubCredentialResult AdminRPCMessageType = "admin.github.credential.result"
+	AdminGithubDisconnect       AdminRPCMessageType = "admin.github.disconnect"
+	AdminGithubDisconnectResult AdminRPCMessageType = "admin.github.disconnect.result"
+	AdminGithubStatus           AdminRPCMessageType = "admin.github.status"
+	AdminGithubStatusResult     AdminRPCMessageType = "admin.github.status.result"
+	AdminPairApprove            AdminRPCMessageType = "admin.pair.approve"
+	AdminPairApproveResult      AdminRPCMessageType = "admin.pair.approve.result"
+	AdminPairGrant              AdminRPCMessageType = "admin.pair.grant"
+	AdminPairGrantResult        AdminRPCMessageType = "admin.pair.grant.result"
+	AdminPairOffer              AdminRPCMessageType = "admin.pair.offer"
+	AdminPairOfferEnd           AdminRPCMessageType = "admin.pair.offer.end"
+	AdminPairOfferEndResult     AdminRPCMessageType = "admin.pair.offer.end.result"
+	AdminPairOfferResult        AdminRPCMessageType = "admin.pair.offer.result"
+	AdminPairPending            AdminRPCMessageType = "admin.pair.pending"
+	AdminPairPendingResult      AdminRPCMessageType = "admin.pair.pending.result"
+	AdminProfileDetect          AdminRPCMessageType = "admin.profile.detect"
+	AdminProfileDetectResult    AdminRPCMessageType = "admin.profile.detect.result"
+	AdminProfileList            AdminRPCMessageType = "admin.profile.list"
+	AdminProfileListResult      AdminRPCMessageType = "admin.profile.list.result"
+	AdminProjectAdd             AdminRPCMessageType = "admin.project.add"
+	AdminProjectAddResult       AdminRPCMessageType = "admin.project.add.result"
+	AdminProjectList            AdminRPCMessageType = "admin.project.list"
+	AdminProjectListResult      AdminRPCMessageType = "admin.project.list.result"
+	AdminShutdown               AdminRPCMessageType = "admin.shutdown"
+	AdminShutdownResult         AdminRPCMessageType = "admin.shutdown.result"
 )
 
 // unreachable: no HTTP answer from home (or no usable address). busy: home answered 429
@@ -1747,6 +1878,20 @@ const (
 	HTTPComputerStatePending HTTPComputerState = "pending"
 )
 
+// connect starts a Connect (or answers the running one). cancel ends a Connect that is not
+// finished and never touches a stored login. disconnect revokes the login at GitHub and
+// deletes it. setup clones repo (or uses it when it is already there) and makes it a
+// project. stop stops the running set-up.
+type HTTPGitHubAction string
+
+const (
+	Cancel     HTTPGitHubAction = "cancel"
+	Connect    HTTPGitHubAction = "connect"
+	Disconnect HTTPGitHubAction = "disconnect"
+	Setup      HTTPGitHubAction = "setup"
+	Stop       HTTPGitHubAction = "stop"
+)
+
 type GatewayRPCMessageType string
 
 const (
@@ -1767,6 +1912,12 @@ const (
 	GatewayDeviceRename           GatewayRPCMessageType = "gateway.device.rename"
 	GatewayDeviceRenameResult     GatewayRPCMessageType = "gateway.device.rename.result"
 	GatewayError                  GatewayRPCMessageType = "gateway.error"
+	GatewayGithubAction           GatewayRPCMessageType = "gateway.github.action"
+	GatewayGithubActionResult     GatewayRPCMessageType = "gateway.github.action.result"
+	GatewayGithubGet              GatewayRPCMessageType = "gateway.github.get"
+	GatewayGithubGetResult        GatewayRPCMessageType = "gateway.github.get.result"
+	GatewayGithubRepos            GatewayRPCMessageType = "gateway.github.repos"
+	GatewayGithubReposResult      GatewayRPCMessageType = "gateway.github.repos.result"
 	GatewayLiveOpen               GatewayRPCMessageType = "gateway.live.open"
 	GatewayLiveOpenResult         GatewayRPCMessageType = "gateway.live.open.result"
 	GatewayOrigin                 GatewayRPCMessageType = "gateway.origin"
@@ -1844,6 +1995,50 @@ type HTTPProviderNotifyState string
 const (
 	Blocked HTTPProviderNotifyState = "blocked"
 	Done    HTTPProviderNotifyState = "done"
+)
+
+// Why the last Connect or the login ended. codeExpired: the code was not used in time.
+// denied: the user tapped Cancel on GitHub. otherProgram: GitHub refused a refresh token
+// that was not old, so something else used it (revoke Termivoa on GitHub). ended: the login
+// was removed on GitHub or was not used for 6 months. gitHubDown: this computer cannot
+// reach GitHub.
+type HTTPGitHubProblem string
+
+const (
+	CodeExpired                 HTTPGitHubProblem = "codeExpired"
+	Denied                      HTTPGitHubProblem = "denied"
+	Ended                       HTTPGitHubProblem = "ended"
+	HTTPGitHubProblemGitHubDown HTTPGitHubProblem = "gitHubDown"
+	OtherProgram                HTTPGitHubProblem = "otherProgram"
+)
+
+type HTTPGitHubSetupPhase string
+
+const (
+	Cloning                    HTTPGitHubSetupPhase = "cloning"
+	Finished                   HTTPGitHubSetupPhase = "finished"
+	HTTPGitHubSetupPhaseFailed HTTPGitHubSetupPhase = "failed"
+)
+
+// nameTaken: another folder has that name in the home folder. badName: the name starts with
+// . or - or ends in .git. noSpace: too little free disk space. tooManyProjects: 200
+// projects. notFound: GitHub does not have that repository under this name now.
+// cloneFailed: git failed, or the computer restarted during the clone. stopped: the user
+// tapped Stop. timeout: 30 minutes. gitHubDown: this computer cannot reach GitHub.
+// notConnected: no login.
+type HTTPGitHubSetupProblem string
+
+const (
+	BadName                            HTTPGitHubSetupProblem = "badName"
+	CloneFailed                        HTTPGitHubSetupProblem = "cloneFailed"
+	HTTPGitHubSetupProblemGitHubDown   HTTPGitHubSetupProblem = "gitHubDown"
+	HTTPGitHubSetupProblemNotConnected HTTPGitHubSetupProblem = "notConnected"
+	NameTaken                          HTTPGitHubSetupProblem = "nameTaken"
+	NoSpace                            HTTPGitHubSetupProblem = "noSpace"
+	NotFound                           HTTPGitHubSetupProblem = "notFound"
+	Stopped                            HTTPGitHubSetupProblem = "stopped"
+	Timeout                            HTTPGitHubSetupProblem = "timeout"
+	TooManyProjects                    HTTPGitHubSetupProblem = "tooManyProjects"
 )
 
 type HTTPProviderCreateProblem string
@@ -2121,6 +2316,6 @@ const (
 // ProtocolRevision is this build's additive protocol v1 revision and
 // MinProtocolRevision the oldest peer revision it supports (protocol/v1/revision.json).
 const (
-	ProtocolRevision    = 6
+	ProtocolRevision    = 7
 	MinProtocolRevision = 1
 )

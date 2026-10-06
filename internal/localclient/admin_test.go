@@ -375,3 +375,33 @@ func TestAdminClientOfferAndEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAdminClientGitHub(t *testing.T) {
+	client, serverConnection := newAdminPipe(t)
+	login, ready := "octo", protocol.HTTPGitHubStateReady
+	go func() {
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			return adminResponseJSON(t, request.RequestID, protocol.AdminGithubStatusResult,
+				protocol.AdminRPCGitHubStatusPayload{Login: &login, State: &ready})
+		})
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			return adminResponseJSON(t, request.RequestID, protocol.AdminGithubDisconnectResult, protocol.AdminRPCGitHubStatusPayload{})
+		})
+		_ = answerAdmin(t, serverConnection, func(request protocol.AdminRPCEnvelope) []byte {
+			return adminResponseJSON(t, request.RequestID, protocol.AdminError,
+				protocol.BrokerRPCErrorPayload{Code: "host_unavailable", Message: "GitHub is not connected on this computer"})
+		})
+	}()
+	ctx := context.Background()
+	status, err := client.GitHubStatus(ctx)
+	if err != nil || status.Login == nil || *status.Login != login || status.State == nil || *status.State != ready {
+		t.Fatalf("status = %+v, %v", status, err)
+	}
+	if status, err := client.GitHubDisconnect(ctx); err != nil || status.State != nil {
+		t.Fatalf("disconnect = %+v, %v", status, err)
+	}
+	var remote *RemoteError
+	if _, err := client.GitHubCredential(ctx); !errors.As(err, &remote) || remote.Code != "host_unavailable" {
+		t.Fatalf("credential = %v", err)
+	}
+}

@@ -1063,3 +1063,54 @@ button.add-computer { width: 100%; min-height: 50px; }
 .wall-paused { position: absolute; top: 6px; right: 6px; padding: 2px 6px; border-radius: 4px; background: rgb(0 0 0 / 70%); color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
 /* A confirm sheet over any screen (Live or Settings). */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 5; background: rgb(0 0 0 / 60%); }
+
+/* GitHub (docs/github-integration.md): the Settings row, Connect, the repository list and the set-up. */
+.gh-head > .primary.compact { flex-shrink: 0; margin-left: auto; }
+.gh-head > .computer-state { margin-left: auto; }
+.gh-links { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.gh-links button.link, button.link.accent { min-height: 32px; padding: 0; font-size: 15px; }
+button.link.accent { color: var(--accent); font-weight: 600; }
+a.gh-button { display: flex; align-items: center; justify-content: center; min-height: 54px; padding: 0 22px; border-radius: 999px; background: var(--text); color: var(--bg); font-size: 16px; font-weight: 600; text-decoration: none; }
+a.gh-button:active { background: var(--press); }
+a.gh-inline { color: var(--accent); font-weight: 600; text-decoration: none; }
+a.gh-inline.strong { font-size: 15px; }
+.gh-box { margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.gh-code-box { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.gh-code { margin: 0; font-family: var(--mono); font-size: 34px; font-weight: 500; letter-spacing: 0.06em; user-select: text; -webkit-user-select: text; }
+.gh-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; line-height: 20px; }
+.gh-status::before { content: ""; flex-shrink: 0; width: 7px; height: 7px; border-radius: 4px; background: var(--amber); }
+.gh-status.accent::before { background: var(--accent); }
+.gh-status.green::before { background: var(--green); }
+.gh-time { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.gh-line { margin: 0; font-size: 15px; line-height: 20px; }
+.gh-steps { display: flex; flex-direction: column; padding: 0 16px; list-style: none; }
+.gh-steps li { display: flex; align-items: center; gap: 12px; padding: 12px 0; font-weight: 600; }
+.gh-steps li + li { border-top: 1px solid var(--line); }
+.gh-steps li.done { color: var(--muted); font-weight: 400; }
+.gh-mark { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border: 1.5px solid var(--text); border-radius: 50%; font-size: 12px; }
+.gh-steps li.done .gh-mark { border-color: var(--green); background: var(--green); color: var(--bg); }
+.gh-repos { margin: 0 -16px; padding: 0; list-style: none; }
+.gh-repo { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.gh-repo:last-child { border-bottom: 1px solid var(--line); }
+.gh-repo .row-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.gh-repo-name, .gh-mono { font-family: var(--mono); overflow-wrap: anywhere; }
+.gh-repo-name { font-size: 15px; font-weight: 600; }
+.gh-repo-meta { color: var(--muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+.gh-repo.taken .gh-repo-name { color: var(--muted); }
+.gh-big { color: var(--amber); }
+.gh-slot { display: flex; flex: 0 0 auto; justify-content: flex-end; min-width: 92px; max-width: 45%; }
+button.gh-tag { max-width: 100%; min-width: 0; }
+.gh-tag-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gh-row-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0; color: var(--soft); font-size: 14px; line-height: 20px; }
+.gh-taken { color: var(--muted); font-size: 13px; white-space: nowrap; }
+button.gh-tag { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; white-space: nowrap; }
+.gh-foot { display: flex; flex-direction: column; gap: 4px; }
+.gh-foot .hint-text { margin: 0; }
+.gh-progress { display: flex; flex-direction: column; gap: 10px; }
+.gh-progress progress { width: 100%; height: 4px; border: 0; border-radius: 2px; background: var(--line); accent-color: var(--accent); appearance: none; }
+.gh-progress progress::-webkit-progress-bar { border-radius: 2px; background: var(--line); }
+.gh-progress progress::-webkit-progress-value { border-radius: 2px; background: var(--accent); }
+.gh-progress progress::-moz-progress-bar { border-radius: 2px; background: var(--accent); }
+.gh-small { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+button.gh-center { align-self: center; }
+.confirm.gh-ask { border-left-color: var(--line-strong); }

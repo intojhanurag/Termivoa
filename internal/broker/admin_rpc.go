@@ -74,6 +74,8 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		return protocol.AdminRPCShutdownResultPayload{TerminatedSessions: int64(terminated)}, err
 	case protocol.AdminGatewayStop:
 		return nil, errNotBrokerRPC
+	case protocol.AdminGithubStatus, protocol.AdminGithubDisconnect, protocol.AdminGithubCredential:
+		return server.dispatchAdminGitHub(ctx, request)
 	}
 	authority := server.config.Auth
 	if authority == nil {

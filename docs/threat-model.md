@@ -90,6 +90,10 @@ Tests must distinguish these stages; closing a WebSocket alone is not revocation
 
 No browser administrative routes are allowed for approving devices, creating
 pairing grants, registering project roots, or changing startup/network settings.
+One exception (ADR 0010): the GitHub setup route may register one project root,
+`~/<name>`, after the broker itself cloned that repository there, or after it
+checked that the folder already is that repository. The phone sends only
+`owner/name`, never a path.
 Localhost, a Tailscale header, device label, UUID, or verification code alone never
 grants browser access. Gateway IPC must not convert an unpaired request into a
 privileged desktop/CLI identity.
@@ -155,8 +159,12 @@ be inferred from Mac unit tests or cross-compilation.
 
 ## Push notifications
 
-Web Push adds the only outbound connection the broker makes on its own. See
-`docs/notifications.md`.
+Web Push adds an outbound connection the broker makes on its own. See
+`docs/notifications.md`. GitHub adds the second (see GitHub below): to
+`github.com` and `api.github.com`, starting when a user taps **Connect**;
+after that the broker also calls GitHub to refresh the token, for the
+repository list, for a clone, and when git on that computer asks for the
+login.
 
 - **SSRF.** The endpoint URL is attacker-influenced (any paired browser can
   send one). The broker accepts only `https` on port 443 to
@@ -429,10 +437,83 @@ work is refused; files that git ignores are deleted, and the confirmation
 says so); a close ends one workspace and deletes no file; a new workspace
 takes a project ID, never a path, and the folder and its owner are checked
 right before the call. `startServer` has no parameter from the phone and runs
-only a herdr binary that passed the checks of S3. The broker downloads
-nothing: **Install herdr** types herdr's install command into a normal
+only a herdr binary that passed the checks of S3. The broker downloads no
+program (it clones only a GitHub repository that the user chose; see GitHub
+below): **Install herdr** types herdr's install command into a normal
 session, and the user presses Enter. herdr's and git's text is neither sent
 nor logged (the log has the action and herdr's error code).
+
+## GitHub
+
+See [github-integration.md](github-integration.md), sections 6 and 10, and
+ADR [0010](decisions/0010-github-integration.md). What is new:
+
+- **A third-party secret in the broker.** One token pair for each computer
+  (the GitHub App's user access token, 8 hours, and its refresh token, 6
+  months, single-use) in `<data>/github.json`, mode 0600, outside SQLite.
+  It never goes to the gateway, the phone or a log; the in-memory type
+  prints `[REDACTED]`. Any process of the same user can read the file, as it
+  can the VAPID key in the database or a `gh` login file. A backup of a
+  computer holds a live refresh token for up to 6 months.
+- **The admin channel returns a secret.** `admin.github.credential` answers
+  the access token (never the refresh token) to a process of the same user
+  (the admin channel's peer check). Such a process can already pair a
+  device there. It exists for `pterm github-credential`, git's helper in a
+  folder that Termivoa cloned.
+- **Scope.** Contents read and write and Metadata read on the repositories
+  the user chose on GitHub. No Workflows permission: GitHub refuses a push
+  that changes `.github/workflows`.
+- **Routes.** `GET`/`POST /api/v1/github` and `GET /api/v1/github/repos` use
+  the same `admitAPI` and `authorize` as the session routes, with a limiter
+  keyed by device ID (read 60, list 10, connect 3, set up 3,
+  cancel/disconnect/stop 10 per minute). One Connect and one set-up at a time
+  for each computer. Errors use fixed Termivoa text, never GitHub's or
+  git's; the log has the action and a fixed problem word, no token, code,
+  git text or repository name.
+- **A paired or stolen unlocked phone.** It could already type any command.
+  New: it sees the names of the chosen repositories (also private ones),
+  and can clone one and fill the disk up to the bounds (free space 3 times
+  GitHub's size plus 1 GiB, checked before and during; 30 minutes). It
+  cannot name a folder, delete or overwrite one, or read the token.
+- **A hostile repository.** The clone runs with a fixed environment (no
+  token, a separate `HOME`, no `GIT_*` from the broker) and config: global
+  and system config off, every credential helper reset, https only,
+  `http.followRedirects=false`, no proxy, no hooks, no templates, no
+  submodules, no LFS download, `transfer.fsckObjects`. It goes into a temp
+  folder and an exclusive rename (`RENAME_EXCL`/`RENAME_NOREPLACE`) puts it
+  at `~/<name>`; nothing ever deletes the final name. A name that starts
+  with `.` or `-` is refused. Nothing from the clone runs; opening an agent
+  in it is the user's act.
+- **git's login in a cloned folder.** The clone's own config has a reset
+  line and then `!<pterm> github-credential` for that one repository's
+  address, so the user's other helpers do not store the token (Keychain,
+  `~/.git-credentials`), and the helper prints `password_expiry_utc`. A
+  folder that was already there keeps the user's login. A folder that says
+  its `origin` is that repository becomes a project by a tap; it must be a
+  real directory owned by the user in the home folder, so this gives a
+  paired phone nothing it cannot do by typing.
+- **Code phishing.** A user who enters a code that an attacker started gives
+  the attacker lasting access to the chosen repositories, with no sign in
+  Termivoa (only GitHub's list of authorized apps shows it). The sheet says
+  "Enter a code only when you started Connect yourself." True of every
+  device-flow login, also `gh`. The client ID is public and can be copied.
+- **A stolen refresh token** works until the user revokes Termivoa on
+  github.com. Reconnecting does not cut off a thief. When a refresh fails
+  with `bad_refresh_token` before the token's expiry, the row says "Another
+  program used this login. Revoke Termivoa on GitHub, then connect again."
+  with the link.
+- **Disconnect** sends both tokens to `POST /credentials/revoke` (best
+  effort, 10 s), then zeroes and deletes the file. When the revoke failed,
+  the row links to GitHub's authorized apps page. `pterm uninstall
+  --delete-data` deletes the file without a revoke.
+- **Tests never reach github.com.** The hosts are fixed in a release build;
+  only an `e2e` build (`internal/github/github_e2e.go`) points them at
+  `scripts/fakegithub`.
+
+Not verified with the real GitHub App and a real iPhone: the device page and
+the install page in iPhone Safari and the Home Screen app, a second try with
+the same refresh token after a lost answer, and that nothing reaches the
+Keychain or `~/.git-credentials` with the real app (design, section 12).
 
 ## Operational and release limits
 

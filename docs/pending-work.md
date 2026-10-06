@@ -1,6 +1,6 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-06. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-07. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
@@ -64,6 +64,30 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   one delivery sends to 4 subscriptions at once, and the "no buzz" line
   knows a computer by its host (#202). Open: a real push on a real iPhone
   (`docs/owner-verification.md`).
+- GitHub: set up a repository on a computer from the phone (ADR 0010,
+  `docs/github-integration.md`; the owner approved the design and Contents
+  read and write on 2026-10-07; branch `feat/github-integration`, not
+  merged). **Settings → Integrations** has a row for each computer:
+  **Connect** (device flow, one code for each computer), **Choose on
+  GitHub**, **Set up a repository** (list with search, "on mac", "name
+  taken"), the clone job with progress and **Stop**, "Ready on mac" with
+  **New session** and **New workspace in herdr**, **From GitHub** in the
+  **New workspace** sheet, and **Disconnect** with the revoke. The token pair
+  is a file (`github.json`), not a table, so no fresh database or new pairing
+  is needed. `pterm github status`/`disconnect`, the `pterm doctor` line,
+  the helper `pterm github-credential`; protocol revision 7; unit tests and
+  the e2e harness with `scripts/fakegithub`. Waits for the owner: the GitHub
+  App (Owner decisions). Open, with the real app (design, section 12): the
+  device page and the install page in iPhone Safari and in the Home Screen
+  app (does the app come back in the same step); a second try with the same
+  refresh token after a lost answer; the git user name that GitHub accepts
+  with a user access token; that `password_expiry_utc` and the reset line
+  keep the token out of the Keychain and `~/.git-credentials`. Follow-ups:
+  - **Errors of another computer.** A GitHub action on a peer that fails
+    shows only "That computer could not do this." (the app's behaviour for
+    every peer error), not the GitHub line.
+  - **"Update Termivoa on pi to use GitHub."** A computer below revision 7
+    shows no GitHub row and no line that says why.
 - Docs: answer-first rewrite and AI-readable docs (#118), docs rules (#72,
   #121, #133).
 
@@ -192,11 +216,13 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 ### Owner decisions
 
-- **GitHub: set up a repository on a computer from the phone** (design
-  `docs/github-integration.md`, ADR 0010; critical, rule 24). Waits for the
-  owner: approve the design, decide push (Contents: Read and write, or
-  Read-only), register the GitHub App, and accept a fresh database and a
-  new pairing on each computer. No code before that.
+- **GitHub App registration** (for GitHub, below in Done). The owner
+  registers the Termivoa GitHub App with the settings of
+  `docs/github-integration.md`, section 5 (Setup URL: the docs page
+  `/docs/guides/github/#back-to-termivoa`), installs it on one empty test
+  repository, and sends the client ID and the app's slug (both public).
+  Until they are in the build (`internal/github` `ClientID`/`AppSlug`, or
+  `-ldflags -X`), no GitHub row shows.
 
 - [ ] **iOS older than 16.4.** Multi-computer refuses it; the refusal is kept
       for now.

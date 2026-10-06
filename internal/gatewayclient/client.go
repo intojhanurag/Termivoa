@@ -456,6 +456,28 @@ func (client *Client) ManageProvider(
 		protocol.GatewayRPCProviderManagePayload{Credential: credential, Provider: provider, Request: request})
 }
 
+func (client *Client) GitHub(ctx context.Context, credential string) (protocol.HTTPGitHubResponse, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPGitHubResponse{}, err
+	}
+	return roundTrip[protocol.HTTPGitHubResponse](ctx, client, protocol.GatewayGithubGet,
+		protocol.GatewayRPCCredentialPayload{Credential: credential}, false, nil)
+}
+
+// GitHubAction runs on a dedicated connection: a GitHub call can take 15 s.
+func (client *Client) GitHubAction(
+	ctx context.Context, credential string, request protocol.HTTPGitHubRequest,
+) (protocol.HTTPGitHubResponse, error) {
+	return dedicated[protocol.HTTPGitHubResponse](ctx, client, credential, protocol.GatewayGithubAction,
+		protocol.GatewayRPCGitHubActionPayload{Credential: credential, Request: request})
+}
+
+// GitHubRepos runs on a dedicated connection, like GitHubAction.
+func (client *Client) GitHubRepos(ctx context.Context, credential string) (protocol.HTTPGitHubReposResponse, error) {
+	return dedicated[protocol.HTTPGitHubReposResponse](ctx, client, credential, protocol.GatewayGithubRepos,
+		protocol.GatewayRPCCredentialPayload{Credential: credential})
+}
+
 // dedicated sends one request on its own connection and decodes its result.
 func dedicated[Result any](
 	ctx context.Context, client *Client, credential string, requestType protocol.GatewayRPCMessageType, payload any,
