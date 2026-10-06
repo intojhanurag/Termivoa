@@ -95,6 +95,7 @@ The phone buzzes when a herdr agent is blocked or finished. Turn on notification
 - A tap opens that terminal at once.
 - herdr buzzes have their own limit, 6 per minute, so they never use up the buzzes of your normal sessions.
 - The text has only the agent and the project and worktree names, never terminal text.
+- A sound on the computer and nothing on the phone? See [I hear a sound but see no notification](/docs/reference/troubleshooting/#i-hear-a-sound-but-see-no-notification).
 
 ## How do I turn herdr off or the buzz off?
 
@@ -109,6 +110,8 @@ Open **Settings → Integrations**. It has one card for each computer that has h
 | **Buzz when finished** | Turns the finished buzz on or off. |
 
 The switches are saved on that computer, for every phone.
+
+**Next beta:** under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and Termivoa can tell that this phone has no notifications from that computer. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → Notifications**.
 
 ## How do I create a worktree?
 
