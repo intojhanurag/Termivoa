@@ -111,7 +111,8 @@
         "providers": {
           "description": "Terminal workspace providers found on this computer (for example herdr). Absent or empty when none is installed; the app shows a provider tab only for a computer that lists one.",
           "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/providerInfo" }
-        }
+        },
+        "github": { "description": "Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no client ID) or on Windows: the app shows no GitHub row for this computer.", "$ref": "#/$defs/githubInfo" }
       }
     },
     "providerState": {
@@ -352,6 +353,137 @@
       "title": "HTTPProviderCreateProblem",
       "type": "string",
       "enum": ["agentNotReady", "agentFailed", "promptFailed"]
+    },
+    "githubState": {
+      "title": "HTTPGitHubState",
+      "description": "Revision 7. noGit: git is not on this computer. notConnected: no GitHub login here. connecting: a Connect runs (the phone that started it also gets connect). needsInstall: logged in, but the GitHub app sees no repository (the user chooses repositories on GitHub). ready: the list can be read.",
+      "type": "string",
+      "enum": ["noGit", "notConnected", "connecting", "needsInstall", "ready"]
+    },
+    "githubLogin": {
+      "description": "A GitHub account name.",
+      "type": "string", "minLength": 1, "maxLength": 39, "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+    },
+    "githubRepoName": {
+      "description": "owner/name of a GitHub repository. The name never starts with . or - (such a repository is never set up); the host also refuses a name that ends in .git.",
+      "type": "string", "minLength": 3, "maxLength": 140, "pattern": "^[A-Za-z0-9_-]{1,39}/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$"
+    },
+    "githubInfo": {
+      "title": "HTTPGitHubInfo",
+      "description": "Revision 7. The GitHub row of this computer in Settings → Integrations.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "#/$defs/githubState" },
+        "login": { "$ref": "#/$defs/githubLogin" }
+      }
+    },
+    "githubConnect": {
+      "title": "HTTPGitHubConnect",
+      "description": "The code of a Connect, only for the phone that started it. The phone opens https://github.com/login/device itself; no address comes from the computer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userCode", "expiresAt"],
+      "properties": {
+        "userCode": { "type": "string", "pattern": "^[A-Z0-9]{4}-[A-Z0-9]{4}$" },
+        "expiresAt": { "description": "Unix milliseconds.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "githubProblem": {
+      "title": "HTTPGitHubProblem",
+      "description": "Why the last Connect or the login ended. codeExpired: the code was not used in time. denied: the user tapped Cancel on GitHub. otherProgram: GitHub refused a refresh token that was not old, so something else used it (revoke Termivoa on GitHub). ended: the login was removed on GitHub or was not used for 6 months. gitHubDown: this computer cannot reach GitHub.",
+      "type": "string",
+      "enum": ["codeExpired", "denied", "otherProgram", "ended", "gitHubDown"]
+    },
+    "githubSetupPhase": {
+      "title": "HTTPGitHubSetupPhase",
+      "type": "string",
+      "enum": ["cloning", "finished", "failed"]
+    },
+    "githubSetupProblem": {
+      "title": "HTTPGitHubSetupProblem",
+      "description": "nameTaken: another folder has that name in the home folder. badName: the name starts with . or - or ends in .git. noSpace: too little free disk space. tooManyProjects: 200 projects. notFound: GitHub does not have that repository under this name now. cloneFailed: git failed, or the computer restarted during the clone. stopped: the user tapped Stop. timeout: 30 minutes. gitHubDown: this computer cannot reach GitHub. notConnected: no login.",
+      "type": "string",
+      "enum": ["nameTaken", "badName", "noSpace", "tooManyProjects", "notFound", "cloneFailed", "stopped", "timeout", "gitHubDown", "notConnected"]
+    },
+    "githubSetup": {
+      "title": "HTTPGitHubSetup",
+      "description": "The one set-up of this computer: running, or the last result for 10 minutes. finished with projectId: the repository is a Termivoa project. already: nothing was cloned, the repository was already there. lfs: the repository uses Git LFS and its large files were not downloaded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "phase"],
+      "properties": {
+        "repo": { "$ref": "#/$defs/githubRepoName" },
+        "phase": { "$ref": "#/$defs/githubSetupPhase" },
+        "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "bytes": { "description": "Bytes in the clone so far.", "type": "integer", "minimum": 0 },
+        "startedAt": { "description": "Unix milliseconds.", "type": "integer", "minimum": 0 },
+        "projectId": { "$ref": "#/$defs/uuid" },
+        "already": { "type": "boolean" },
+        "lfs": { "type": "boolean" },
+        "problem": { "$ref": "#/$defs/githubSetupProblem" }
+      }
+    },
+    "githubResponse": {
+      "title": "HTTPGitHubResponse",
+      "description": "GET /api/v1/github and the answer of POST /api/v1/github (revision 7, docs/github-integration.md). app is the GitHub app's slug: the phone opens https://github.com/apps/<app>/installations/new for needsInstall.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "app"],
+      "properties": {
+        "state": { "$ref": "#/$defs/githubState" },
+        "login": { "$ref": "#/$defs/githubLogin" },
+        "app": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,33}$" },
+        "connect": { "$ref": "#/$defs/githubConnect" },
+        "problem": { "$ref": "#/$defs/githubProblem" },
+        "setup": { "$ref": "#/$defs/githubSetup" }
+      }
+    },
+    "githubAction": {
+      "title": "HTTPGitHubAction",
+      "description": "connect starts a Connect (or answers the running one). cancel ends a Connect that is not finished and never touches a stored login. disconnect revokes the login at GitHub and deletes it. setup clones repo (or uses it when it is already there) and makes it a project. stop stops the running set-up.",
+      "type": "string",
+      "enum": ["connect", "cancel", "disconnect", "setup", "stop"]
+    },
+    "githubRequest": {
+      "title": "HTTPGitHubRequest",
+      "description": "POST /api/v1/github. repo only with setup, and setup needs it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": { "$ref": "#/$defs/githubAction" },
+        "repo": { "$ref": "#/$defs/githubRepoName" }
+      }
+    },
+    "githubRepo": {
+      "title": "HTTPGitHubRepo",
+      "description": "here: this repository is already on this computer (a project with that origin, or the folder ~/<name> with that origin). taken: another folder has its name in the home folder. pushedAt is Unix milliseconds. sizeKb is GitHub's size.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "private", "fork", "archived", "sizeKb", "here", "taken"],
+      "properties": {
+        "repo": { "$ref": "#/$defs/githubRepoName" },
+        "private": { "type": "boolean" },
+        "fork": { "type": "boolean" },
+        "archived": { "type": "boolean" },
+        "sizeKb": { "type": "integer", "minimum": 0 },
+        "pushedAt": { "type": "integer", "minimum": 0 },
+        "here": { "type": "boolean" },
+        "taken": { "type": "boolean" }
+      }
+    },
+    "githubReposResponse": {
+      "title": "HTTPGitHubReposResponse",
+      "description": "GET /api/v1/github/repos (revision 7). At most 1000 repositories, most recently pushed first; truncated when there were more.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repos"],
+      "properties": {
+        "repos": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/githubRepo" } },
+        "truncated": { "type": "boolean" }
+      }
     },
     "protocolRevision": {
       "description": "Additive revision of protocol v1 (protocol/v1/revision.json). On the settings response, protocolRevision is this computer's revision and minProtocolRevision the oldest app revision it still serves. See http-api.md, Protocol revision.",

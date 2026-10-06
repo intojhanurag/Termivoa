@@ -47,6 +47,9 @@
     { "$ref": "#/$defs/providersOpenMessage" },
     { "$ref": "#/$defs/providersCreateMessage" },
     { "$ref": "#/$defs/providersManageMessage" },
+    { "$ref": "#/$defs/githubGetMessage" },
+    { "$ref": "#/$defs/githubActionMessage" },
+    { "$ref": "#/$defs/githubReposMessage" },
     { "$ref": "#/$defs/pairRedeemResultMessage" },
     { "$ref": "#/$defs/pairPollResultMessage" },
     { "$ref": "#/$defs/authCheckResultMessage" },
@@ -77,6 +80,9 @@
     { "$ref": "#/$defs/providersOpenResultMessage" },
     { "$ref": "#/$defs/providersCreateResultMessage" },
     { "$ref": "#/$defs/providersManageResultMessage" },
+    { "$ref": "#/$defs/githubGetResultMessage" },
+    { "$ref": "#/$defs/githubActionResultMessage" },
+    { "$ref": "#/$defs/githubReposResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -92,6 +98,7 @@
         "gateway.preview.check", "gateway.computers.list", "gateway.computers.add", "gateway.computers.remove",
         "gateway.computers.offer", "gateway.computers.found",
         "gateway.providers.get", "gateway.providers.update", "gateway.providers.open", "gateway.providers.create", "gateway.providers.manage",
+        "gateway.github.get", "gateway.github.action", "gateway.github.repos",
         "gateway.pair.redeem.result", "gateway.pair.poll.result", "gateway.auth.check.result",
         "gateway.auth.logout.result", "gateway.settings.result", "gateway.session.list.result",
         "gateway.session.create.result", "gateway.session.rename.result",
@@ -103,6 +110,7 @@
         "gateway.computers.offer.result", "gateway.computers.found.result",
         "gateway.providers.get.result", "gateway.providers.update.result", "gateway.providers.open.result",
         "gateway.providers.create.result", "gateway.providers.manage.result",
+        "gateway.github.get.result", "gateway.github.action.result", "gateway.github.repos.result",
         "gateway.error"
       ]
     },
@@ -354,6 +362,17 @@
         "request": { "$ref": "http-api.schema.json#/$defs/providerManageRequest" }
       }
     },
+    "githubActionPayload": {
+      "title": "GatewayRPCGitHubActionPayload",
+      "description": "POST /api/v1/github (revision 7, docs/github-integration.md). The gateway sends it on a dedicated connection: a Connect or a set-up check asks GitHub first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credential", "request"],
+      "properties": {
+        "credential": { "$ref": "http-api.schema.json#/$defs/secret" },
+        "request": { "$ref": "http-api.schema.json#/$defs/githubRequest" }
+      }
+    },
     "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
     "pairRedeemMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.redeem" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairRedeemRequest" } } },
     "pairPollMessage": { "type": "object", "properties": { "type": { "const": "gateway.pair.poll" }, "payload": { "$ref": "http-api.schema.json#/$defs/pairPollRequest" } } },
@@ -410,6 +429,12 @@
     "providersOpenMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.open" }, "payload": { "$ref": "#/$defs/providerOpenPayload" } } },
     "providersCreateMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.create" }, "payload": { "$ref": "#/$defs/providerCreatePayload" } } },
     "providersManageMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.manage" }, "payload": { "$ref": "#/$defs/providerManagePayload" } } },
+    "githubGetMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.get" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "githubActionMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.action" }, "payload": { "$ref": "#/$defs/githubActionPayload" } } },
+    "githubReposMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.repos" }, "payload": { "$ref": "#/$defs/credentialPayload" } } },
+    "githubGetResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.get.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/githubResponse" } } },
+    "githubActionResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.action.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/githubResponse" } } },
+    "githubReposResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.github.repos.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/githubReposResponse" } } },
     "providersManageResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.manage.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerManageResponse" } } },
     "providersGetResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.get.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerSnapshotResponse" } } },
     "providersUpdateResultMessage": { "type": "object", "properties": { "type": { "const": "gateway.providers.update.result" }, "payload": { "$ref": "http-api.schema.json#/$defs/providerInfo" } } },

@@ -196,6 +196,12 @@
     "gatewayRPCProviderUpdate": { "$ref": "gateway-rpc.schema.json#/$defs/providerUpdatePayload" },
     "gatewayRPCProviderOpen": { "$ref": "gateway-rpc.schema.json#/$defs/providerOpenPayload" },
     "gatewayRPCProviderCreate": { "$ref": "gateway-rpc.schema.json#/$defs/providerCreatePayload" },
-    "gatewayRPCProviderManage": { "$ref": "gateway-rpc.schema.json#/$defs/providerManagePayload" }
+    "gatewayRPCProviderManage": { "$ref": "gateway-rpc.schema.json#/$defs/providerManagePayload" },
+    "httpGitHubResponse": { "$ref": "http-api.schema.json#/$defs/githubResponse" },
+    "httpGitHubRequest": { "$ref": "http-api.schema.json#/$defs/githubRequest" },
+    "httpGitHubReposResponse": { "$ref": "http-api.schema.json#/$defs/githubReposResponse" },
+    "gatewayRPCGitHubAction": { "$ref": "gateway-rpc.schema.json#/$defs/githubActionPayload" },
+    "adminRPCGitHubStatus": { "$ref": "admin-rpc.schema.json#/$defs/githubStatusPayload" },
+    "adminRPCGitHubCredential": { "$ref": "admin-rpc.schema.json#/$defs/githubCredentialPayload" }
   }
 }

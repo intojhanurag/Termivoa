@@ -31,6 +31,9 @@
     { "$ref": "#/$defs/computersRemoveMessage" },
     { "$ref": "#/$defs/pairOfferMessage" },
     { "$ref": "#/$defs/pairOfferEndMessage" },
+    { "$ref": "#/$defs/githubStatusMessage" },
+    { "$ref": "#/$defs/githubDisconnectMessage" },
+    { "$ref": "#/$defs/githubCredentialMessage" },
     { "$ref": "#/$defs/pairGrantResultMessage" },
     { "$ref": "#/$defs/pairPendingResultMessage" },
     { "$ref": "#/$defs/pairApproveResultMessage" },
@@ -49,6 +52,9 @@
     { "$ref": "#/$defs/computersRemoveResultMessage" },
     { "$ref": "#/$defs/pairOfferResultMessage" },
     { "$ref": "#/$defs/pairOfferEndResultMessage" },
+    { "$ref": "#/$defs/githubStatusResultMessage" },
+    { "$ref": "#/$defs/githubDisconnectResultMessage" },
+    { "$ref": "#/$defs/githubCredentialResultMessage" },
     { "$ref": "#/$defs/errorMessage" }
   ],
   "$defs": {
@@ -61,12 +67,14 @@
         "admin.profile.detect", "admin.config.origin", "admin.shutdown", "admin.gateway.stop", "admin.device.rename",
         "admin.device.revoke.via", "admin.computers.list", "admin.computers.remove",
         "admin.pair.offer", "admin.pair.offer.end",
+        "admin.github.status", "admin.github.disconnect", "admin.github.credential",
         "admin.pair.grant.result", "admin.pair.pending.result", "admin.pair.approve.result",
         "admin.device.list.result", "admin.device.revoke.result", "admin.project.add.result",
         "admin.project.list.result", "admin.profile.list.result", "admin.profile.detect.result",
         "admin.config.origin.result", "admin.shutdown.result", "admin.gateway.stop.result",
         "admin.device.rename.result", "admin.device.revoke.via.result", "admin.computers.list.result",
-        "admin.computers.remove.result", "admin.pair.offer.result", "admin.pair.offer.end.result", "admin.error"
+        "admin.computers.remove.result", "admin.pair.offer.result", "admin.pair.offer.end.result",
+        "admin.github.status.result", "admin.github.disconnect.result", "admin.github.credential.result", "admin.error"
       ]
     },
     "timestamp": { "$ref": "http-api.schema.json#/$defs/timestamp" },
@@ -380,6 +388,28 @@
       "required": ["terminatedSessions"],
       "properties": { "terminatedSessions": { "type": "integer", "minimum": 0, "maximum": 64 } }
     },
+    "githubStatusPayload": {
+      "title": "AdminRPCGitHubStatusPayload",
+      "description": "pterm github status and disconnect (docs/github-integration.md). state is absent when this build has no GitHub app.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": { "$ref": "http-api.schema.json#/$defs/githubState" },
+        "login": { "$ref": "http-api.schema.json#/$defs/githubLogin" }
+      }
+    },
+    "githubCredentialPayload": {
+      "title": "AdminRPCGitHubCredentialPayload",
+      "description": "The answer to pterm github-credential, git's credential helper in a folder that Termivoa cloned (docs/github-integration.md, 6.6): the access token (never the refresh token), at least 5 minutes from expiry. Only a process of the same user reaches the admin channel.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["username", "password", "expiresAt"],
+      "properties": {
+        "username": { "$ref": "http-api.schema.json#/$defs/githubLogin" },
+        "password": { "type": "string", "minLength": 20, "maxLength": 255, "pattern": "^[A-Za-z0-9_]+$" },
+        "expiresAt": { "description": "Unix seconds (git's password_expiry_utc).", "type": "integer", "minimum": 0 }
+      }
+    },
     "emptyPayload": { "$ref": "broker-rpc.schema.json#/$defs/emptyPayload" },
     "pairGrantMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.grant" }, "payload": { "$ref": "#/$defs/pairGrantPayload" } } },
     "pairPendingMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.pending" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
@@ -417,6 +447,12 @@
     "computersRemoveResultMessage": { "type": "object", "properties": { "type": { "const": "admin.computers.remove.result" }, "payload": { "$ref": "#/$defs/computerRemoveResultPayload" } } },
     "pairOfferResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer.result" }, "payload": { "$ref": "#/$defs/pairOfferResultPayload" } } },
     "pairOfferEndResultMessage": { "type": "object", "properties": { "type": { "const": "admin.pair.offer.end.result" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "githubStatusMessage": { "type": "object", "properties": { "type": { "const": "admin.github.status" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "githubDisconnectMessage": { "type": "object", "properties": { "type": { "const": "admin.github.disconnect" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "githubCredentialMessage": { "type": "object", "properties": { "type": { "const": "admin.github.credential" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "githubStatusResultMessage": { "type": "object", "properties": { "type": { "const": "admin.github.status.result" }, "payload": { "$ref": "#/$defs/githubStatusPayload" } } },
+    "githubDisconnectResultMessage": { "type": "object", "properties": { "type": { "const": "admin.github.disconnect.result" }, "payload": { "$ref": "#/$defs/githubStatusPayload" } } },
+    "githubCredentialResultMessage": { "type": "object", "properties": { "type": { "const": "admin.github.credential.result" }, "payload": { "$ref": "#/$defs/githubCredentialPayload" } } },
     "errorMessage": { "type": "object", "properties": { "type": { "const": "admin.error" }, "payload": { "$ref": "broker-rpc.schema.json#/$defs/errorPayload" } } }
   }
 }
