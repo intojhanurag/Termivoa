@@ -66,7 +66,7 @@ export function githubSources(entries: ReadonlyArray<ComputerEntry>, kept = new 
 }
 
 /** Install git types this, not run: macOS's installer, else Debian's or Ubuntu's (the settings do not say the platform). */
-export const INSTALL_GIT = 'xcode-select --install 2>/dev/null || sudo apt-get install -y git';
+export const INSTALL_GIT = 'if [ "$(uname)" = Darwin ]; then xcode-select --install; else sudo apt-get install -y git; fi';
 /** A device code lives 15 minutes: the time left never shows more, whatever the clocks say. */
 export const CODE_MS = 15 * 60_000;
 /** Polls that the app cannot read, in a row, before the sheet says so. */

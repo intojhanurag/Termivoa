@@ -583,7 +583,7 @@ Check each cause. `pterm github status` on the computer says "GitHub: not availa
 
 ### "git is not on mac. GitHub needs it."
 
-Install git 2.31 or later on that computer, for example with Homebrew (`brew install git`) or your Linux package manager. Then tap **Check again** on the row.
+Tap **Install git** on the row. It opens a terminal on that computer with an install command typed in: Apple's developer tools on macOS, `sudo apt-get install -y git` on Linux. Press Enter there, then tap **Check again**. Termivoa needs git 2.31 or later; on another Linux, use its package manager.
 
 ### "The code ran out."
 

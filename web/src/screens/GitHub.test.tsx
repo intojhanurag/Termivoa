@@ -371,7 +371,7 @@ describe('review fixes', () => {
     const git = row({ state: 'noGit', onInstall: noop });
     expect(git).toContain('Install git');
     expect(git).toContain('Check again');
-    expect(INSTALL_GIT).toBe('xcode-select --install 2>/dev/null || sudo apt-get install -y git');
+    expect(INSTALL_GIT).toBe('if [ "$(uname)" = Darwin ]; then xcode-select --install; else sudo apt-get install -y git; fi');
     const cloning = row({ setup: setupOf({}) });
     expect(cloning).toContain('Setting up <bdi>pdf-editor</bdi>…');
     expect(cloning).toContain('>Show</button>');
