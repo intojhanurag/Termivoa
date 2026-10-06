@@ -353,6 +353,14 @@ func TestQuoteInAPathTurnsTheFeatureOff(t *testing.T) {
 	}
 }
 
+func TestQuoteInAnXDGFolderTurnsTheFeatureOff(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/run/it's")
+	config := Config{ClientID: "Iv1.x", Home: t.TempDir(), DataDir: t.TempDir(), Pterm: "/bin/pterm"}
+	if service, err := newService(config, Deps{}, defaultOptions); service != nil || err != nil {
+		t.Fatalf("%v %v", service, err)
+	}
+}
+
 func TestDevProfileWritesDevHelper(t *testing.T) {
 	fake := newFake(t)
 	fake.addFixture(t, "octo", "hello")

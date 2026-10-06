@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -147,7 +148,7 @@ func newService(config Config, deps Deps, opts options) (*Service, error) {
 	}
 	// The helper value quotes both paths for the shell; a path with a
 	// single quote cannot be quoted that way, so the feature is off.
-	if config.ClientID == "" || strings.Contains(config.Pterm, "'") || strings.Contains(config.RuntimeDir, "'") || strings.Contains(config.Home, "'") {
+	if config.ClientID == "" || strings.Contains(config.Pterm, "'") || strings.Contains(config.RuntimeDir, "'") || strings.Contains(config.Home, "'") || xdgQuote() {
 		return nil, nil
 	}
 	if !filepath.IsAbs(config.Home) || !filepath.IsAbs(config.DataDir) {
@@ -260,4 +261,16 @@ func (service *Service) Close() {
 	service.mu.Unlock()
 	service.cancel()
 	service.wg.Wait()
+}
+
+// xdgQuote is true when an XDG folder that the clone's helper gets back holds
+// a single quote: the helper value quotes it for the shell, so the feature
+// is off, as for a home folder with a quote.
+func xdgQuote() bool {
+	for _, name := range xdgNames {
+		if strings.Contains(os.Getenv(name), "'") {
+			return true
+		}
+	}
+	return false
 }
