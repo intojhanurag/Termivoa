@@ -326,7 +326,8 @@ computer lists.
   `agentProblem` when something did not work: `agentFailed` or
   `agentNotReady` (`agentStarted: false`), or `promptFailed` (the agent
   started, the prompt was not sent). These are the words and the time limits
-  of create (20 s for the start, 5 s for the prompt). The tab exists in every
+  of create (20 s for the start and the wait until herdr takes input for the
+  agent, 5 s for the prompt). The tab exists in every
   case; none of these is an error. Without `agent` both fields are absent.
   The host refuses an `agent` that is not in `agentKinds` before it makes
   the tab. `agent` or `prompt` with any other action, and `prompt` without
@@ -353,7 +354,7 @@ not installed on this computer") on every provider route. `manage` uses:
 | A bad body or a field that does not belong to the action (gateway); `removeItem` on an item that is not `linked`; `startServer` when the state is not `notRunning` or without `canStart`; `newTab` in an item with 32 terminals; `newWorkspace` with 64 groups; `newTab` with an `agent` that is not in `agentKinds` ("herdr cannot start that agent here"); `openItem` in a group with 64 items ("this project has 64 workspaces; close one first") | `invalid_request` | 400 |
 | The provider is off or not installed; an item action while not `ready`; the started server did not come up in 5 s; herdr refused or failed in another way (not `removeItem`) | `host_unavailable` | 503 |
 | The item is not in a fresh snapshot; `openItem`: the group is not in a fresh snapshot, or `worktree` is not one of its closed worktrees now ("that worktree is not there to open; look at the list and try again") | `session_missing` | 404 |
-| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open; `closeTab` on the item's last tab | `operation_conflict` | 409 |
+| The item's name is not the confirmed `name`; `closeItem` on a main checkout while a linked worktree of its group is open, or while another workspace is at the same main checkout; `closeTab` on the item's last tab | `operation_conflict` | 409 |
 | The project is unknown, or its folder is gone or not this user's | `project_missing` | 404 |
 | More than 30 per minute from this device; `newTab` with `agent` when the device used its 3 creates of this minute; another manage or create is running | `limit_exceeded` | 429 |
 | herdr refused or failed a `removeItem` in another way | `worktree_failed` ("herdr could not remove the worktree.") | 422 |

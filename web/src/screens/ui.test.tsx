@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Banner, Button, ConfirmPair, Icon, Notice } from './ui';
+import { Banner, Button, CONFIRM_AFTER_MS, ConfirmPair, confirmReady, Icon, Notice } from './ui';
 
 describe('Button', () => {
   it('is a plain button when idle', () => {
@@ -53,6 +53,13 @@ describe('Notice', () => {
 });
 
 describe('ConfirmPair', () => {
+  it('takes no confirm tap for 400 ms after it shows (a double tap on the menu)', () => {
+    expect(CONFIRM_AFTER_MS).toBe(400);
+    expect(confirmReady(1_000, 1_000)).toBe(false);
+    expect(confirmReady(1_000, 1_399)).toBe(false);
+    expect(confirmReady(1_000, 1_400)).toBe(true);
+  });
+
   it('puts the way out first and the danger button second', () => {
     expect(renderToStaticMarkup(<ConfirmPair cancel="Keep running" confirm="Terminate session" onCancel={() => undefined} onConfirm={() => undefined} />))
       .toBe('<div class="row confirm-pair"><button type="button">Keep running</button><button type="button" class="danger">Terminate session</button></div>');

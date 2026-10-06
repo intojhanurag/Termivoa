@@ -93,6 +93,64 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- herdr: the first prompt of a new agent now reaches it (#192). It was
+  refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
+  once (`launch_pending`) and takes no prompt until the agent is ready.
+  Host: after the start, the host asks herdr for the agent (`agent.get`)
+  until herdr takes input for it, then sends the prompt; the start and this
+  wait share the 20 s step limit. An agent that is not ready in time still
+  answers `promptFailed`. With no first prompt, an agent that waits at a
+  question counts as started. Phone: it waits 45 s, as before; with no
+  first prompt the notice is "The agent started and waits at a question."
+  (it does not say "Your prompt was not sent.").
+- herdr: "The worktree is ready, but the agent did not start." (or "The tab
+  is ready, …") now also shows when the agent's program is not installed
+  (#193). herdr says "started" in that case too. Host: when herdr drops
+  the launch (no program showed within herdr's own launch limit of 15 s,
+  or the program ended), the answer is `agentFailed`; a missing program is
+  reported after about 15 s. A herdr that cannot answer `agent.get` counts
+  the agent as started, as before. Phone: no change.
+- Phone: a herdr terminal outside git no longer shows "this herdr terminal's
+  folder cannot be read" right after it opens (#194). The "while you were
+  away" line read the changes by itself, and Live read the files folder
+  ahead for tapped paths; both reads are now quiet. The text shows only
+  after a tap on **Changes**. Host: no change.
+- Phone: the **New worktree** sheet and the **New tab** chooser read that
+  computer's settings again when they open, so they offer the agent kinds
+  that the computer offers now (#195). Before, a kind whose last agent had
+  left herdr was still offered, and **Start** answered "herdr cannot start
+  that agent here". A picked agent that left is never changed to another
+  agent: the sheet goes to **No agent** (the chooser: no agent picked) and
+  says, for example, "codex is not running in herdr now." Host: no change.
+- Host: a slow herdr check no longer turns off tabs without an agent until
+  the next restart (#196). A `herdr terminal attach --help` or `herdr agent
+  start --help` run that the 3 s limit stopped, or that a signal ended, is
+  no answer: it runs again after 30 s (then 1, 2, 4 and 8 minutes), never
+  on every poll; the wait starts again for another herdr version. Phone:
+  no change.
+- herdr, two workspaces at the main folder of one repository (#200): **Close
+  workspace** is off for each, with "herdr closes the workspaces at this
+  project's main folder only together. Close them in herdr on mac." Host: a
+  close of one of them answers `409 operation_conflict` with its own text,
+  and herdr is not asked. herdr 0.9.3 refuses such a close, and herdr 0.8.2
+  closed **both** workspaces for one tap; Termivoa never closes two.
+- Small herdr fixes (#200). Host: a create that waits for another herdr
+  change says "herdr is busy with another change; try again" (before:
+  "another worktree is being made; try again"). Phone: a wrong branch name
+  or prompt in **New worktree** and **New tab** shows in the error colour
+  (it was grey).
+- herdr, "busy" and the create limit. Host: a "herdr is busy with another
+  change; try again" answer no longer takes one of the phone's 3 creates a
+  minute (create and an agent tab). Phone: for that answer the **New
+  worktree** sheet now shows the computer's own words ("herdr is busy with
+  another change; try again", or "too many requests; wait a minute and try
+  again" for the limit), not "Too many new worktrees just now. Wait a
+  minute, then try again." for both. For a computer that you added it says
+  "herdr on vps is busy, or this phone asked for too many worktrees just
+  now. Wait a minute, then try again."
+- Phone: the **Changes** tab of a herdr terminal outside git no longer
+  stays on "loading" when you open the panel on **Files** right after the
+  terminal opens and then switch to **Changes**. Host: no change.
 - Host: **Send a test notification** can no longer use up the budget of
   session notifications. Test notifications have their own budget: 6 per
   minute for all phones together, and one per phone per 5 s as before

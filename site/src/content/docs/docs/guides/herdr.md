@@ -119,13 +119,13 @@ A worktree is a second folder of a git repository on its own branch. herdr makes
 
 1. In the **herdr** tab, tap **+** on a git project row.
 2. In the sheet **New worktree**, type a **Branch name**: lowercase letters and digits joined by `-`, `.`, `_` or `/`, such as `fix/login-redirect`. It can have up to 64 characters and at most 4 parts, and cannot end in `.lock`.
-3. Under **Start an agent in it**, tap an agent that already runs in this herdr (such as `claude` or `codex`), or **No agent**.
+3. Under **Start an agent in it**, tap an agent that already runs in this herdr (such as `claude` or `codex`), or **No agent**. The sheet reads the list again when it opens, so it shows the agents that run there now. If the agent you picked left herdr in the meantime, the sheet goes to **No agent** and says so, for example "codex is not running in herdr now." It never starts another agent in its place.
 4. Optional: write a **First prompt (optional)**. It cannot have control characters such as Esc.
 5. Tap **Create and start** (or **Create** with **No agent**).
 
 ![The New worktree sheet for HERDR · SHOP · ON MAC: Branch name fix-login, the note herdr makes the folder and a new branch from where shop is now., Start an agent in it with claude selected, codex and No agent, First prompt (optional) Fix the login redirect after sign-in., and the Create and start button.](../../../../assets/docs/phone-herdr-create.webp)
 
-The sheet says "herdr makes the folder and a new branch from where shop is now." It takes up to about 45 seconds. Then the new terminal opens.
+The sheet says "herdr makes the folder and a new branch from where shop is now." It takes up to about 45 seconds. Then the new terminal opens. Termivoa sends the first prompt when herdr says that the agent is ready for input.
 
 If something goes wrong, the app says why:
 
@@ -134,10 +134,12 @@ If something goes wrong, the app says why:
 | “fix-login” already exists in shop. Pick another name. | Use another branch name. |
 | shop is not in git, so it cannot have worktrees. | Use a project that is in git. |
 | herdr could not make the worktree. Nothing was opened. Try again or pick another name. | Try again, or pick another name. |
-| Too many new worktrees just now. Wait a minute, then try again. | Wait a minute. |
-| The worktree is ready, but the agent did not start. | Open the worktree and start the agent yourself. |
-| The agent started and waits at a question. Your prompt was not sent. | Answer the question, then send the prompt. |
-| The agent started, but your first prompt was not sent. | Send the prompt yourself. |
+| too many requests; wait a minute and try again | This phone asked for more than 3 new worktrees or agent tabs in a minute. Wait a minute. |
+| herdr is busy with another change; try again | Another change runs in herdr on that computer. Try again in a few seconds. |
+| herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again. | The same two causes, on a computer that you added. Wait a minute. |
+| The worktree is ready, but the agent did not start. | Open the worktree and start the agent yourself. If its terminal says "command not found", install that agent on the computer. |
+| The agent started and waits at a question. Your prompt was not sent. | Answer the question, then send the prompt. With no first prompt, the text ends after "question." |
+| The agent started, but your first prompt was not sent. | The agent was not ready in time. Send the prompt yourself. |
 
 ## How do I manage workspaces and worktrees?
 
@@ -158,7 +160,7 @@ A herdr terminal has the same **⋯** button at the right of its tabs, so you ca
 What Termivoa never does:
 
 - **It never removes work that is not committed.** The app then says "silver-meadow has changes that are not committed. Commit or discard them first." and nothing changes.
-- **It never closes two workspaces in one tap.** For a project's main checkout with open worktrees, **Close workspace** is off and says "Close its worktrees first."
+- **It never closes two workspaces in one tap.** For a project's main checkout with open worktrees, **Close workspace** is off and says "Close its worktrees first." When herdr lists two workspaces under one project and both are at that project's main folder (herdr has its worktree record of the same repository for each), it is off for both and says "herdr closes the workspaces at this project's main folder only together. Close them in herdr on mac." A second workspace in the same folder that herdr lists as its own project closes alone.
 - **It checks the name again.** If the list changed after you looked, the app says "The list changed. Look again, then try again." and nothing changes.
 
 **Remove worktree** deletes files that git ignores, such as `.env` and build output, with the folder. The branch and its commits stay.
@@ -201,7 +203,7 @@ The laptop pane takes the phone's size, and you can still type there. When you l
 | Not from the phone | Force-removing a worktree, renaming, split panes, updating herdr. |
 | Platforms | macOS and Linux. Not Windows. |
 | herdr sessions | Only the default herdr session. Not named sessions. |
-| herdr versions | Termivoa tests with herdr 0.8.2. Closed worktrees and agent tabs are not yet tested with herdr 0.9.3. |
+| herdr versions | Termivoa is tested with herdr 0.8.2 and herdr 0.9.3. |
 
 ## Common questions
 

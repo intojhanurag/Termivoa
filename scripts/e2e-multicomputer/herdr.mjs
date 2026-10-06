@@ -874,7 +874,12 @@ export async function herdrSteps(ctx) {
     await liveMarker(pane);
     time('New tab → its terminal in Live', Date.now() - started);
     await attachedSince(mac, pane, mark);
+    // Issue 194: notes is outside git, so the host has no folder for Changes. Nobody tapped Changes: Live shows no error.
+    await sleep(3000);
+    const alerts = await app.eval(`[...document.querySelectorAll('.banner[role="alert"] .banner-text')].map((e) => e.innerText.trim())`);
     await shot('h-newtab-live');
+    check('H-newtab-quiet', 'A herdr terminal outside git (the new tab of notes) shows no error that nobody asked for: 3 s after it opens, Live has no notice (before the fix: "this herdr terminal\'s folder cannot be read")',
+      alerts.length === 0, `notices in Live: ${JSON.stringify(alerts)}`);
     const tabs = mac.herdrState().tabs.filter((tab) => tab.workspace_id === id).length;
     const item = await itemOf('notes');
     newTab = { target, pane, id };
@@ -1289,6 +1294,36 @@ export async function herdrSteps(ctx) {
       `${JSON.stringify(seen)}; ${JSON.stringify(facts)}`);
     await inApp('/');
     await settle();
+  });
+
+  // Issue 195. After H-round2-fit, which needs all 5 kinds: this step takes gemini away for the rest of the run.
+  await step('H-kinds', 'The New tab chooser and the + sheet offer the agent kinds the computer offers now, not those of an old settings read', async () => {
+    await backToTab();
+    const offered = async () => (await api(tool, `${mac.origin}/api/v1/settings`)).json.providers[0].agentKinds;
+    const chooserKinds = async () => (await sheetOf(ITEM))?.chooser?.kinds.map((k) => k.text);
+    const plusKinds = () => app.eval(`[...document.querySelectorAll('.create-form .kind-chips button')].map((b) => b.innerText.trim().toLowerCase())`);
+    const before = await offered();
+    await openMenu('shop');
+    const old = (await openChooser()).kinds.map((k) => k.text);
+    await closeSheet(ITEM);
+    // The only gemini agent (lab, tab 1) leaves herdr: mac offers gemini no more. Nothing tells the app.
+    await mac.herdrControl({ op: 'close', pane: paneOf(t['lab/1']) });
+    const after = await until(async () => { const kinds = await offered(); return !kinds.includes('gemini') && kinds; }, { what: 'mac stops offering gemini', timeout: 10000 });
+    await openMenu('shop');
+    await openChooser();
+    await until(async () => (await chooserKinds())?.includes('gemini') === false, { what: 'the chooser without gemini', timeout: 10000 }).catch(() => undefined);
+    const chooser = await chooserKinds();
+    await closeSheet(ITEM);
+    await click(app, 'New worktree in shop');
+    await app.waitText('New worktree');
+    await until(async () => !(await plusKinds()).includes('gemini'), { what: 'the + sheet without gemini', timeout: 10000 }).catch(() => undefined);
+    const plus = await plusKinds();
+    await click(app, 'Close');
+    const sorted = (list) => JSON.stringify([...list].sort());
+    check('H-kinds', 'mac offers 5 kinds and the chooser shows them; the last gemini agent leaves herdr and the settings stop listing gemini; opened after that, the New tab chooser (Shell and 4 kinds) and the + sheet (4 kinds and No agent) show no gemini',
+      before.includes('gemini') && old.includes('gemini') && !after.includes('gemini') && after.length === before.length - 1
+        && chooser !== undefined && sorted(chooser) === sorted(['Shell', ...after]) && sorted(plus) === sorted([...after, 'no agent']),
+      `settings before ${JSON.stringify(before)}, after ${JSON.stringify(after)}; chooser before ${JSON.stringify(old)}, after ${JSON.stringify(chooser)}; + sheet ${JSON.stringify(plus)}`);
   });
 
   await step('H-workspace', 'New workspace lists the computer\'s Termivoa projects; a tap makes a workspace in that folder and opens it', async () => {

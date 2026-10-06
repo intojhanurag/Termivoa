@@ -667,6 +667,9 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   useEffect(() => {
     for (const line of staleProviders === '' ? [] : staleProviders.split('\n')) void all.reload(line.split(' ')[0], true).catch(() => undefined);
   }, [staleProviders, all.reload]);
+  // The agent kinds a sheet offers come from the settings, and a computer offers a kind only while an agent of it runs:
+  // the + sheet and the New tab chooser read that computer's settings again when they open (quietly; home or a peer).
+  const readSettings = useCallback((origin: string) => { void all.reload(origin, true).catch(() => undefined); }, [all.reload]);
   // A provider that is not installed is not polled: each time Settings opens, read those computers' settings (quietly), so a new install shows.
   const entriesRef = useRef(all.entries);
   entriesRef.current = all.entries;
@@ -1025,6 +1028,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
             navigate({ name: 'provider', computer: tap.computer, provider: tap.provider, target: tap.targetId, tapped: newTap(), ...(notice === undefined ? {} : { notice }) });
           }}
           onProviderRetry={providers.reload}
+          onReadSettings={readSettings}
           onTypeIn={(session, command) => navigate(installView(session, command))}
           offerPush={homeEntry?.status.kind === 'ok'}
           onOpen={openSession}
@@ -1134,6 +1138,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
                 navigate({ name: 'provider', computer: view.computer, provider: view.provider, target, tapped: newTap(), ...(notice === undefined ? {} : { notice }) });
               }}
               onReload={providers.reload}
+              onKinds={() => readSettings(view.computer.origin)}
               onSessions={() => navigate(providerTabView(view.provider))}
               onSettings={() => navigate({ name: 'settings' })}
               onFailure={(error) => handleFailure(error, view.computer)}

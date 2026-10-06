@@ -49,6 +49,96 @@ Not yet verified (owner checklist in
 The dated entries below are the history log; older entries describe the state
 on their own date.
 
+### herdr bug fixes: #192 to #196 and #200 (2026-10-06, branch `fix/herdr-bugs`, on top of `feat/herdr-agent-tab`; not committed yet)
+
+- **Why.** The owner's order: fix every herdr bug; reproduce each first,
+  test, then a pull request and an adversarial review.
+- **Reproduced first.** The lab test on the branch point, herdr 0.8.2 and
+  the 0.9.3 release binary (`PTERM_HERDR_LAB=1 GOTOOLCHAIN=go1.27.1 go test
+  ./internal/herdr -run Lab -count=1 -v`, and with
+  `PTERM_HERDR_LAB_BINARY=/tmp/herdr-093/herdr`): both log `agent tab 0
+  after 110ms: agentStarted=true agentProblem="promptFailed"` with no agent
+  program (#192, #193), and 0.9.3 logs `closeItem failed:
+  workspace_group_close_required` for both workspaces at one main checkout
+  (#200). Probes on both versions (a temp `HOME` under `/tmp`, its own
+  session, stopped and deleted after) gave the table in
+  [herdr-manage.md](herdr-manage.md), "Fixes after the second round". Each
+  new unit test was also run against the code from before the fix and
+  failed there: `TestStartAgentWaitsForHerdrsRecord` (6 of 8 cases),
+  `TestAProbeThatTimedOutIsNotKept` ("after the wait: attachAny:false, runs
+  1"), `TestManageDoesNotCloseAWorkspaceThatSharesItsMainCheckout` ("close
+  w5 = <nil>"), `TestProviderCreateRoute` ("another worktree is being made;
+  try again"), `TestProviderManageRoute`, and the two quiet-read cases of
+  `Connection.test.ts` ("expected 'refused' to be undefined").
+- **What.** Host: `startAgent` waits on herdr's `agent.get` (first prompt,
+  missing program); a probe that did not end is not kept and runs again
+  with a wait that doubles; a close of one of two workspaces at a main
+  checkout is refused with its own text; one busy text. Phone: the recap's
+  changes read is quiet; the **New worktree** sheet and the **New tab**
+  chooser read the settings again when they open; field errors in red; the
+  item menu uses the shared `ConfirmPair`; **Close workspace** is off with
+  the true cause for two workspaces at a main checkout. No protocol change,
+  no database change.
+- **Found while verifying (part of #200, item 5).** herdr 0.8.2 does not
+  "close each alone": one `workspace.close` closed both workspaces at the
+  main checkout. So the host now refuses that close on every herdr version.
+- **Lab after the fix.** Both versions pass the whole lab test (about 40 s
+  each). 0.8.2: `claude tab 0 after 4.17s: agentStarted=true
+  agentProblem=""`, `codex tab 0 after 5.2s: agentStarted=false
+  agentProblem="agentFailed"`, `the stand-in agent read: "hello
+  claude\nhello claude\n"`, `herdr closed w7; the other workspace at that
+  main checkout (w5) is still open: false`. 0.9.3: the same lines (4.47 s,
+  5.29 s) and `herdr refuses to close w7 alone
+  (workspace_group_close_required)`. The lab now also covers `tab.close`
+  (close a tab, the last tab, a tab that is gone) and opens the tab of the
+  missing program (it shows the shell's "command not found"). The agent
+  programs are stand-ins; no real agent was started.
+- **Checks.** `gofmt -l cmd internal scripts` (empty); `go vet ./...`, `go
+  vet -tags e2e ./...`, `GOOS=windows go vet ./...`, `CGO_ENABLED=0
+  GOOS=linux go vet ./...`; `go test -race -count=1 ./internal/... ./cmd/...
+  ./scripts/...`; `pnpm install --frozen-lockfile`; `pnpm typecheck`; `pnpm
+  --filter @phone-terminal/web exec vitest run` (974 tests); `pnpm
+  build:web`; `cd site && pnpm install --frozen-lockfile --ignore-workspace
+  && npx astro build` (links valid).
+- **e2e (2026-10-06, after the review fixes).** `caffeinate -d -i node
+  scripts/e2e-multicomputer/phase-b.mjs --no-web-build --only H`: first
+  run 53 pass, 1 fail: `H-newtab-quiet` (never run before) still showed
+  "this herdr terminal's folder cannot be read" in a new herdr terminal
+  outside git. A product defect: Live reads the files root ahead
+  (`files.list`) and that refusal was not quiet. Fixed in
+  `Connection.rootReadAhead`, with a unit test. Then `--only H`: 54 pass,
+  0 fail (`H-newtab-quiet` and `H-kinds` pass). Full Phase B: 129 pass, 0
+  fail. Phase A: 32 pass, 0 fail. Evidence:
+  `docs/evidence/herdr-bugs/phase-a.md`, `phase-b.md`.
+- **Open.** The first prompt and the missing-program check are proven with
+  a stand-in program, not with a real agent. A missing program is reported
+  after about 15 s (herdr's own launch limit). A herdr terminal outside git
+  still sends one quiet changes request for the recap.
+- **Review of the fixes (2026-10-06, same branch).** One adversarial
+  review: no critical or high finding. Fixed, each with a test that fails
+  without the fix ([herdr-manage.md](herdr-manage.md), "Review of the
+  fixes"): M1 the 5 s "program must show" limit is gone, herdr's own 15 s
+  launch limit decides; M2 two tests with tight real-time margins; L1 a
+  picked agent never changes to another agent ("codex is not running in
+  herdr now."); L2 **Changes** could stay on "loading"; L3 a start with no
+  prompt at a question is "started", and the notice does not name a prompt
+  that was not typed; L4 a herdr without `agent.get` no longer makes every
+  start "failed"; L5 probe edges (a run that a signal ended, the back-off
+  for a new version, a new discovery before the wait is over); L8 the item
+  menu read the settings also when the chooser closed; O1 a "busy" answer
+  no longer takes one of the device's 3 creates a minute; the **New
+  worktree** sheet no longer says "Too many new worktrees" for "busy".
+- **New lab case (`TestLabCloseBesideAMainCheckout`).** Two workspaces in
+  one repository's main folder where at most one has herdr's worktree
+  record (main with the record and a second without; neither with one;
+  the close names the one or the other). herdr 0.8.2 and herdr 0.9.3, all
+  four cases: `workspace.close` answers success, closes the named
+  workspace, and the other stays open. So the host refuses nothing more.
+  The whole lab test passes on both versions after the review fixes
+  (about 60 s each): `codex tab 0 after 15.13s: agentStarted=false
+  agentProblem="agentFailed"` (0.8.2) and `15.3s` (0.9.3); `claude tab 0
+  after 4.17s` and `4.38s`, started, prompt read.
+
 ### herdr, second round: agent tabs, closed worktrees, the menu in a terminal (2026-10-05, branch `feat/herdr-agent-tab`; pull request open, not merged)
 
 - **Why.** The owner asked for the herdr features that were still missing,

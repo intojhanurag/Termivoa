@@ -64,7 +64,7 @@ var (
 	errProviderGroup       = providerFailure{managementFailure{protocol.SessionMissing, "that project is gone"}}
 	errProviderSessions    = providerFailure{managementFailure{protocol.LimitExceeded, "4 herdr terminals are open; close one and try again"}}
 	errProviderRate        = providerFailure{managementFailure{protocol.LimitExceeded, "too many requests; wait a minute and try again"}}
-	errProviderBusy        = providerFailure{managementFailure{protocol.LimitExceeded, "another worktree is being made; try again"}}
+	errProviderBusy        = providerFailure{managementFailure{protocol.LimitExceeded, "herdr is busy with another change; try again"}}
 	errProviderKind        = providerFailure{managementFailure{protocol.InvalidRequest, "herdr cannot start that agent here"}}
 	errProviderNotGit      = providerFailure{managementFailure{protocol.NotARepository, "this project is not in a git repository"}}
 	errProviderExists      = providerFailure{managementFailure{protocol.WorktreeExists, "a worktree or branch with this name already exists"}}
@@ -78,13 +78,13 @@ var (
 	errProviderItem         = providerFailure{managementFailure{protocol.SessionMissing, "that workspace is gone"}}
 	errProviderRenamed      = providerFailure{managementFailure{protocol.OperationConflict, "that workspace changed; look at the list and try again"}}
 	errProviderGroupOpen    = providerFailure{managementFailure{protocol.OperationConflict, "close this project's worktrees first"}}
+	errProviderGroupShared  = providerFailure{managementFailure{protocol.OperationConflict, "herdr closes the workspaces at this project's main folder only together; close them in herdr on this computer"}}
 	errProviderLastTab      = providerFailure{managementFailure{protocol.OperationConflict, "this is the workspace's last tab; close the workspace"}}
 	errProviderNotLinked    = providerFailure{managementFailure{protocol.InvalidRequest, "only a linked worktree can be removed"}}
 	errProviderFull         = providerFailure{managementFailure{protocol.InvalidRequest, "herdr has 32 terminals in this workspace or 64 projects; close one first"}}
 	errProviderNotStartable = providerFailure{managementFailure{protocol.InvalidRequest, "herdr cannot be started on this computer now"}}
 	errProviderNoServer     = providerFailure{managementFailure{protocol.HostUnavailable, "herdr did not start; run `herdr server` in a terminal on this computer to see why"}}
 	errProviderProject      = providerFailure{managementFailure{protocol.ProjectMissing, "that project is gone, or its folder cannot be used"}}
-	errProviderManageBusy   = providerFailure{managementFailure{protocol.LimitExceeded, "herdr is busy with another change; try again"}}
 	errProviderManage       = providerFailure{managementFailure{protocol.HostUnavailable, "herdr did not do that; look at the list and try again"}}
 	errProviderRemove       = providerFailure{managementFailure{protocol.WorktreeFailed, "herdr could not remove the worktree."}}
 
@@ -278,6 +278,19 @@ func (limits *providerLimits) take(route, device string, perMinute int, now time
 	return true
 }
 
+// giveBack returns the unit that take gave at now: the work it was for never
+// started. It changes only the window that take counted in, so the bound of
+// a window stays exact.
+func (limits *providerLimits) giveBack(route, device string, now time.Time) {
+	limits.mu.Lock()
+	defer limits.mu.Unlock()
+	key := route + "\x00" + device
+	if window, ok := limits.windows[key]; ok && window.count > 0 && !now.Before(window.start) && now.Sub(window.start) < time.Minute {
+		window.count--
+		limits.windows[key] = window
+	}
+}
+
 // providerFor returns the host of an installed provider named id. A provider
 // that is not installed has only its settings card: every route refuses it.
 func (server *ManagementServer) providerFor(id string) (*providerHost, error) {
@@ -461,10 +474,15 @@ func (server *ManagementServer) createProvider(
 	if !host.enabled.Load() {
 		return protocol.HTTPProviderCreateResponse{}, errProviderUnavailable
 	}
-	if !host.limits.take("create", device, providerCreatesPerMinute, server.now()) {
+	taken := server.now()
+	if !host.limits.take("create", device, providerCreatesPerMinute, taken) {
 		return protocol.HTTPProviderCreateResponse{}, errProviderRate
 	}
 	response, err := host.provider.Create(ctx, request)
+	if errors.Is(err, herdr.ErrBusy) {
+		// Nothing started: "busy" does not use up one of the device's creates.
+		host.limits.giveBack("create", device, taken)
+	}
 	for herdrErr, failure := range map[error]providerFailure{
 		herdr.ErrUnavailable: errProviderUnavailable, herdr.ErrTargetMissing: errProviderGroup,
 		herdr.ErrBusy: errProviderBusy, herdr.ErrKind: errProviderKind, herdr.ErrNotGit: errProviderNotGit,
@@ -486,7 +504,7 @@ func (server *ManagementServer) createProvider(
 // project by ID, never a path; the folder is checked here, right before the
 // call, because herdr uses another folder without a word when cwd is missing.
 // A new tab with an agent is also a create: it takes one of the device's 3
-// creates a minute.
+// creates a minute, and gets it back when herdr is busy (nothing started).
 func (server *ManagementServer) manageProvider(
 	ctx context.Context, host *providerHost, device string, request protocol.HTTPProviderManageRequest,
 ) (protocol.HTTPProviderManageResponse, error) {
@@ -494,8 +512,9 @@ func (server *ManagementServer) manageProvider(
 	if !host.enabled.Load() {
 		return none, errProviderUnavailable
 	}
-	if !host.limits.take("manage", device, providerManagesPerMinute, server.now()) ||
-		request.Agent != nil && !host.limits.take("create", device, providerCreatesPerMinute, server.now()) {
+	taken := server.now()
+	if !host.limits.take("manage", device, providerManagesPerMinute, taken) ||
+		request.Agent != nil && !host.limits.take("create", device, providerCreatesPerMinute, taken) {
 		return none, errProviderRate
 	}
 	var project herdr.Project
@@ -514,14 +533,18 @@ func (server *ManagementServer) manageProvider(
 		project = herdr.Project{Folder: resolved, Name: stored.DisplayName}
 	}
 	response, err := host.provider.Manage(ctx, request, project)
+	if request.Agent != nil && errors.Is(err, herdr.ErrBusy) {
+		host.limits.giveBack("create", device, taken)
+	}
 	missing, full := errProviderItem, errProviderFull
 	if request.Action == protocol.OpenItem {
 		missing, full = errProviderClosedGone, errProviderGroupFull
 	}
 	for herdrErr, failure := range map[error]providerFailure{
 		herdr.ErrUnavailable: errProviderUnavailable, herdr.ErrTargetMissing: missing,
-		herdr.ErrBusy: errProviderManageBusy, herdr.ErrRenamed: errProviderRenamed, herdr.ErrGroupOpen: errProviderGroupOpen, herdr.ErrLastTab: errProviderLastTab,
-		herdr.ErrNotLinked: errProviderNotLinked, herdr.ErrFull: full, herdr.ErrKind: errProviderKind,
+		herdr.ErrBusy: errProviderBusy, herdr.ErrRenamed: errProviderRenamed, herdr.ErrGroupOpen: errProviderGroupOpen, herdr.ErrLastTab: errProviderLastTab,
+		herdr.ErrGroupShared: errProviderGroupShared,
+		herdr.ErrNotLinked:   errProviderNotLinked, herdr.ErrFull: full, herdr.ErrKind: errProviderKind,
 		herdr.ErrNotStartable: errProviderNotStartable, herdr.ErrNoServer: errProviderNoServer,
 	} {
 		if errors.Is(err, herdrErr) {

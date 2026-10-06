@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
+import { ApiError, PEER_REQUEST_FAILED, PROVIDER_CREATE_TIMEOUT_MS } from '../api/http';
 import type { Computer } from '../computers';
-import { branchProblem, createError, createFailure, CreateForm, createRequest, PromptField, promptProblem, startNotice, stillWorking, submitCreate } from './ProviderCreate';
+import { branchProblem, createError, createFailure, CreateForm, createRequest, droppedAgent, offeredAgent, PromptField, promptProblem, startNotice, stillWorking, submitCreate } from './ProviderCreate';
 import { group, item, mac, providerEntry, ready, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -49,7 +49,7 @@ describe('the prompt field (New worktree, and New tab of the item menu)', () => 
     expect(field('Fix the test.')).toContain('aria-invalid="false"');
     expect(field('Fix the test.')).not.toContain('role="alert"');
     expect(field('a\u001bb')).toContain('aria-invalid="true"');
-    expect(field('a\u001bb')).toContain('<p id="create-prompt-help" role="alert" class="error hint-text">Remove control characters (such as Esc) from the prompt.</p>');
+    expect(field('a\u001bb')).toContain('<p id="create-prompt-help" role="alert" class="error field-note">Remove control characters (such as Esc) from the prompt.</p>');
     expect(field('', true)).toContain('disabled=""');
   });
 });
@@ -60,18 +60,24 @@ describe('answers', () => {
     expect(say('worktree_exists')).toBe('“fix” already exists in shop. Pick another name.');
     expect(say('not_a_repository')).toBe('shop is not in git, so it cannot have worktrees.');
     expect(say('worktree_failed')).toBe('herdr could not make the worktree. Nothing was opened. Try again or pick another name.');
-    expect(say('limit_exceeded')).toBe('Too many new worktrees just now. Wait a minute, then try again.');
-    for (const code of ['worktree_exists', 'not_a_repository', 'worktree_failed', 'limit_exceeded', 'invalid_request', 'host_unavailable', 'session_missing'] as const) {
+    // The create rate or "herdr is busy": the home computer's own fixed words say which, so they show (createError).
+    expect(createFailure(new ApiError(429, 'limit_exceeded', 'herdr is busy with another change; try again'), 'fix', 'shop', 'herdr', 'mac')).toBeUndefined();
+    // A peer's words are never shown: one text that is true for both causes.
+    expect(createFailure(new ApiError(429, 'limit_exceeded', PEER_REQUEST_FAILED), 'fix', 'shop', 'herdr', 'vps'))
+      .toBe('herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again.');
+    for (const code of ['worktree_exists', 'not_a_repository', 'worktree_failed', 'invalid_request', 'host_unavailable', 'session_missing'] as const) {
       expect(say(code)).not.toContain('secret');
     }
     expect(say('network')).toBeUndefined();
   });
 
   it('a worktree without a started agent is a notice, not an error', () => {
-    expect(startNotice({ agentStarted: false, problem: 'agentFailed' })).toBe('The worktree is ready, but the agent did not start.');
-    expect(startNotice({ agentStarted: true, problem: 'promptFailed' })).toBe('The agent started, but your first prompt was not sent.');
-    expect(startNotice({ agentStarted: false, problem: 'agentNotReady' })).toMatch(/waits at a question/u);
-    expect(startNotice({ agentStarted: false })).toBeUndefined();
+    expect(startNotice({ agentStarted: false, problem: 'agentFailed' }, true)).toBe('The worktree is ready, but the agent did not start.');
+    expect(startNotice({ agentStarted: true, problem: 'promptFailed' }, true)).toBe('The agent started, but your first prompt was not sent.');
+    expect(startNotice({ agentStarted: false, problem: 'agentNotReady' }, true)).toBe('The agent started and waits at a question. Your prompt was not sent.');
+    // No prompt was sent: it does not say that one was not sent.
+    expect(startNotice({ agentStarted: false, problem: 'agentNotReady' }, false)).toBe('The agent started and waits at a question.');
+    expect(startNotice({ agentStarted: false }, true)).toBeUndefined();
   });
 });
 
@@ -85,6 +91,27 @@ describe('the + sheet (H6)', () => {
     expect(page).toContain('><bdi>No agent</bdi></button>');
     expect(page).toContain('Create and start');
     expect(page).not.toContain('disabled=""');
+  });
+
+  it('a picked agent that left with a fresh settings read never changes to another agent: no agent, and a line says so (issue 195)', () => {
+    expect(offeredAgent('codex', ['claude', 'codex'])).toBe('codex');
+    expect(offeredAgent('codex', ['claude'])).toBeUndefined();
+    expect(offeredAgent('codex', [])).toBeUndefined();
+    expect(offeredAgent(undefined, ['claude'])).toBeUndefined();
+    expect(droppedAgent('codex', ['claude'], 'herdr')).toBe('codex is not running in herdr now.');
+    expect(droppedAgent('codex', ['claude', 'codex'], 'herdr')).toBeUndefined();
+    // No agent is the user's choice: nothing to say.
+    expect(droppedAgent(undefined, ['claude'], 'herdr')).toBeUndefined();
+    const page = form({ agent: undefined, dropped: 'codex is not running in herdr now.' });
+    expect(page).toContain('<p role="status" class="hint-text">codex is not running in herdr now.</p>');
+    expect(page).toContain('role="radio" aria-checked="true"><bdi>No agent</bdi></button>');
+    expect(page).toContain('<span>Create</span>');
+    expect(form()).not.toContain('is not running in');
+  });
+
+  it('shows a field problem in the error colour, at the size of a hint (issue 200)', () => {
+    expect(form({ name: 'Bad Name' })).toContain('<p id="create-name-help" class="error field-note">');
+    expect(form({ name: '' })).toContain('<p id="create-name-help" class="hint-text">');
   });
 
   it('with no kinds from herdr offers only No agent and no prompt', () => {
