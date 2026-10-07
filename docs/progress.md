@@ -107,15 +107,19 @@ on their own date.
   fixed in ee56313 with a test that fails without the fix); a third round on
   ee56313: merge. Findings and fixes: `docs/github-integration.md`, sections
   16–17, and pull request #212.
-- **Not verified (owner-dependent).** The GitHub App is not registered yet,
-  so no build has a client ID and no GitHub row shows outside tests. With
-  the real app (design, section 12): the device and install pages in iPhone
+- **GitHub App.** Registered by the owner on 2026-10-08:
+  https://github.com/apps/termivoa, client ID `Iv23liyeBvPwxsj7GWcM`
+  (public). Checked with GitHub's public API: permissions Contents write and
+  Metadata read, no events; a device-code request answers (Device Flow on).
+  Set in `internal/github` (branch `feat/github-app-id`).
+- **Not verified yet.** With the real app (design, section 12): the device and install pages in iPhone
   Safari and the Home Screen app; a second try with the same refresh token;
   the git user name for a user access token; nothing stored in the
   Keychain or `~/.git-credentials`.
-- **Blocked on the owner.** Register the GitHub App (design, section 5),
-  install it on one empty test repository, and send the client ID and the
-  slug.
+- **Owner step left.** GitHub installs an app only after it has a private
+  key ("You must generate a private key in order to install"). The owner
+  makes one on the app page and deletes the downloaded file: Termivoa never
+  uses it.
 
 ### GitHub integration: design only (2026-10-06, branch `docs/github-integration-design`; draft pull request, DO NOT MERGE without owner review)
 

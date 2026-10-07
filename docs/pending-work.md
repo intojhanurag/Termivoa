@@ -76,8 +76,9 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   is a file (`github.json`), not a table, so no fresh database or new pairing
   is needed. `pterm github status`/`disconnect`, the `pterm doctor` line,
   the helper `pterm github-credential`; protocol revision 7; unit tests and
-  the e2e harness with `scripts/fakegithub`. Waits for the owner: the GitHub
-  App (Owner decisions). Open, with the real app (design, section 12): the
+  the e2e harness with `scripts/fakegithub`. The GitHub App is registered
+  (https://github.com/apps/termivoa) and its ID is in the build. Open, with
+  the real app (design, section 12): the
   device page and the install page in iPhone Safari and in the Home Screen
   app (does the app come back in the same step); a second try with the same
   refresh token after a lost answer; the git user name that GitHub accepts
@@ -216,13 +217,9 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 ### Owner decisions
 
-- **GitHub App registration** (for GitHub, below in Done). The owner
-  registers the Termivoa GitHub App with the settings of
-  `docs/github-integration.md`, section 5 (Setup URL: the docs page
-  `/docs/guides/github/#back-to-termivoa`), installs it on one empty test
-  repository, and sends the client ID and the app's slug (both public).
-  Until they are in the build (`internal/github` `ClientID`/`AppSlug`, or
-  `-ldflags -X`), no GitHub row shows.
+- **GitHub App private key.** The app is registered (2026-10-08). GitHub
+  installs it only after it has a private key: the owner makes one on the
+  app page once and deletes the downloaded file (Termivoa never uses it).
 
 - [ ] **iOS older than 16.4.** Multi-computer refuses it; the refusal is kept
       for now.

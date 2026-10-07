@@ -83,6 +83,9 @@ func TestTokenFileIsPrivateAndAtomic(t *testing.T) {
 }
 
 func TestNewIsOffWithoutClientID(t *testing.T) {
+	saved := ClientID
+	ClientID = "" // a build without an app; this build has one
+	t.Cleanup(func() { ClientID = saved })
 	service, err := newService(Config{Home: t.TempDir(), DataDir: t.TempDir()}, Deps{}, defaultOptions)
 	if service != nil || err != nil {
 		t.Fatalf("got %v, %v", service, err)

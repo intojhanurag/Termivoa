@@ -23,12 +23,13 @@ import (
 )
 
 // ClientID and AppSlug are the public identity of the Termivoa GitHub App.
-// Empty means this build has no app: the broker hides every GitHub route and
-// the settings field. The owner registers the app (design, section 5); its
-// two public values are then set here or with -ldflags -X.
+// Empty means a build with no app: the broker hides every GitHub route and
+// the settings field. These are the owner's app (registered 2026-10-08,
+// github.com/apps/termivoa); both values are public. -ldflags -X can
+// replace them for another app.
 var (
-	ClientID = ""
-	AppSlug  = ""
+	ClientID = "Iv23liyeBvPwxsj7GWcM"
+	AppSlug  = "termivoa"
 )
 
 // Config is built by cmd/pterm.

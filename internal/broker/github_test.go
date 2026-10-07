@@ -230,6 +230,10 @@ func TestGitHubAdmin(t *testing.T) {
 }
 
 func TestGitHubFeatureOffBuildsNoService(t *testing.T) {
+	// A build without a GitHub app (no client ID); this build has one.
+	saved := github.ClientID
+	github.ClientID = ""
+	t.Cleanup(func() { github.ClientID = saved })
 	fixture := newManagementFixture(t)
 	server, err := NewManagementServer(ManagementServerConfig{
 		Registry: fixture.registry, Store: fixture.persistence, BrokerGeneration: fixture.server.config.BrokerGeneration,
@@ -238,8 +242,7 @@ func TestGitHubFeatureOffBuildsNoService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// This build has no GitHub app (no ClientID): the service is nil.
-	if github.ClientID == "" && server.github != nil {
+	if server.github != nil {
 		t.Fatal("a build without a client ID has a GitHub service")
 	}
 	server.closeGitHub()
