@@ -325,7 +325,10 @@ func validatePayload(envelope Envelope) error { //nolint:gocyclo
 		if err := validateSnapshotIdentity(payload.SnapshotID, payload.Revision); err != nil {
 			return err
 		}
-		if len(payload.Rows) == 0 || len(payload.Rows) > MaxRows || payload.StartRow < 0 || payload.StartRow+int64(len(payload.Rows)) > MaxRows {
+		// Bound the offset before subtracting; adding an untrusted startRow
+		// to the chunk length can overflow int64 and admit an invalid chunk.
+		if len(payload.Rows) == 0 || len(payload.Rows) > MaxRows ||
+			payload.StartRow < 0 || payload.StartRow >= MaxRows || int64(len(payload.Rows)) > MaxRows-payload.StartRow {
 			return errors.New("snapshot row chunk is outside bounds")
 		}
 		return validateRows(payload.Rows, 0)

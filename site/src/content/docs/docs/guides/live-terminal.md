@@ -1,7 +1,7 @@
 ---
 title: Live terminal
 description: Read and type in a Termivoa session from your phone, with control, agent keys, snippets, history and copy, and a desktop attach on your computer.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa's live terminal is the screen of one session, where you read output and type from your phone. Open it from the Sessions list or Wall.
@@ -21,6 +21,20 @@ Termivoa never queues or resends typing. If the connection breaks while you type
 ## Switch sessions with the tabs
 
 The tab bar at the top shows your running sessions. Tap a tab to switch; each opens read-only. A dot marks new output; an amber dot means it waits for you. **+** starts a new session.
+
+## What limits apply to the terminal screen?
+
+Termivoa keeps terminal screens bounded while you read and type.
+
+| Item | Limit |
+| --- | --- |
+| Screen width | Up to 400 columns |
+| Screen height | Up to 200 rows |
+| Screen updates | Rows must stay within the allowed screen bounds |
+
+**Next beta:** the computer also rejects malformed row positions in received
+terminal screen updates. The phone already applies that limit. No setting is
+needed.
 
 ## Use the agent keys and key bar
 

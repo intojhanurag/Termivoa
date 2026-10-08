@@ -208,6 +208,13 @@ cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transpo
 Wire format: local IPC is four-byte big-endian length-prefixed JSON; the
 WebSocket uses JSON text messages. Counters travel as decimal strings.
 
+Live row bounds are enforced before coordinate arithmetic. For snapshot
+chunks, Go rejects `startRow` outside 0–199, then checks the row count against
+`MaxRows - startRow` to avoid signed addition overflow. Valid chunks may end
+exactly at 200. History offsets are already bounded before addition; patch
+indexes compare directly with validated screen dimensions. The browser's
+existing schema bounds and protocol fields/revision are unchanged (#237).
+
 Code generation: `pnpm protocol:generate` runs `scripts/generate-protocol.mjs`
 (quicktype) and writes `internal/protocol/generated.go` and
 `web/src/generated/protocol.ts`, plus the revision constants. It fails on an

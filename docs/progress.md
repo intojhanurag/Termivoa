@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -48,6 +48,32 @@ Not yet verified (owner checklist in
 
 The dated entries below are the history log; older entries describe the state
 on their own date.
+
+### Overflow-safe snapshot coordinates (#237, 2026-10-08; branch `fix/issue-237`, not merged)
+
+- **Reproduced.** Strict `DecodeHost` accepted one row starting at maximum
+  `int64`, violating the existing schema maximum of 199. The permanent
+  regression failed on three overflowing chunks before the fix.
+- **Fixed.** Check the declared start-row range before comparing the row
+  count with remaining capacity by subtraction. Legal chunks ending exactly
+  at 200 still pass. Valid wire behavior, fields and protocol revision stay
+  unchanged; this is a validation defect, not a demonstrated remote exploit.
+  Adjacent history offsets / patch indexes were audited and boundary-tested.
+  The separate direct desktop API overflow was reported under rule 21.
+- **Verified.** `go test ./internal/protocol ./internal/desktop
+  ./internal/terminal`, `go vet` and `go test -race` on the same packages
+  passed. Focused snapshot / adjacent-coordinate regressions passed.
+  With Node 24.11.0, the browser validation / snapshot assembly suites
+  passed 22 tests; web typecheck and `pnpm protocol:check` passed with no
+  generated drift. `cd site && pnpm install --frozen-lockfile
+  --ignore-workspace && npx astro build` passed with all internal links valid.
+- **Docs/evidence.** [Issue #237 evidence](evidence/issue-237/README.md)
+  records reproduction, before/after regression and actual checks. The
+  architecture, private terminal capability spec, roadmap, Unreleased,
+  README, Live terminal guide and Next beta notes are updated. The guide is
+  already in the sidebar. No new access/data, commands or failure modes.
+  Parent full integration / PR checks, real-device and native Windows gates
+  remain pending; no push/PR/merge/deployment from this task.
 
 ### GitHub: set up a repository on a computer from the phone (2026-10-07, branch `feat/github-integration`; not merged)
 

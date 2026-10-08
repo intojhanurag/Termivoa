@@ -56,6 +56,21 @@ synchronized-output boundaries. Printable cell text is rejected if it contains
 C0, DEL, C1, or escape characters. xterm input is disabled, local scrollback is
 zero, and the adapter never installs an xterm data path to the child.
 
+## Live screen row coordinates
+
+`snapshot.rows.startRow` is a zero-based integer from 0 through 199. A chunk
+contains 1 through 200 normalized rows, and its exclusive end must not exceed
+200. Go validates the declared offset range before comparing the chunk length
+with `MaxRows - startRow`; an untrusted offset is never added to a row count
+before its upper bound is established. A chunk starting at 199 with one row
+is valid; starting at 199 with two rows is not. This enforces the existing
+schema without changing protocol fields or revision.
+
+`screen.patch` row indexes are checked directly against validated screen
+dimensions. History offsets are bounded to 0 through 4999 before any row
+count addition; pages contain at most 200 rows and may not end beyond 5000.
+Snapshot assembly additionally checks against the snapshot's own row count.
+
 ## Normal history paging
 
 Normal-screen history is oldest-first and is never mixed with alternate-screen
