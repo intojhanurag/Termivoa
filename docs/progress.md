@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -2609,3 +2609,23 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## 2026-10-08 — Issue #254: optional GitHub push-date rendering
+
+- Reproduced a schema-valid `pushedAt: 8640000000000001` throwing RangeError
+  in `pushedText` and actual parsed-response RepoList SSR. New focused
+  regressions failed twice on baseline (35 passed).
+- Validate the constructed Date before ISO conversion; omit only its
+  unrenderable optional age. Repository names/metadata/actions, other valid
+  rows and existing valid-date labels remain. No #215 age-unit changes or
+  protocol/host changes were bundled.
+- Actual checks: frozen root install; focused GitHub Vitest (37 passed);
+  `pnpm typecheck`; `pnpm test:web` (57 files/1050 passed); `pnpm build:web`;
+  frozen site install and `npx astro build` (29 pages, all links valid).
+- Evidence: [issue-254 verification](evidence/issue-254/verification.md).
+  Changelog, README, architecture, GitHub design, roadmap, public feature
+  guide/release/troubleshooting updated; existing sidebar covers GitHub.
+- Local `fix/issue-254` only. Private PR, independent review/deployment and
+  owner real-phone checks remain with the coordinator. CI remains disabled
+  by explicit owner denial; no CI enablement or merge attempted. No real
+  GitHub data, credential, provider or credit used.

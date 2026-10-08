@@ -91,10 +91,12 @@ const repoOwner = (repo: string): string => repo.slice(0, repo.indexOf('/'));
 export const isBig = (repo: Pick<HTTPGitHubRepo, 'sizeKb'>): boolean => repo.sizeKb >= BIG_KB;
 export const sizeText = (kb: number): string => `${(kb / BIG_KB).toFixed(1)} GB`;
 
-/** "2 h ago", "yesterday", "just now"; undefined without a date. */
+/** "2 h ago", "yesterday", "just now"; omit absent or unrenderable dates. */
 export function pushedText(at: number | undefined, now: number): string | undefined {
   if (at === undefined) return undefined;
-  const text = age(new Date(at).toISOString(), now);
+  const date = new Date(at);
+  if (!Number.isFinite(date.getTime())) return undefined;
+  const text = age(date.toISOString(), now);
   if (text === '') return undefined;
   return text === 'now' ? 'just now' : text === 'yesterday' ? text : `${text} ago`;
 }

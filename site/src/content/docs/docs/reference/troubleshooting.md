@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -658,3 +658,7 @@ The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, b
 | macOS | `~/Library/Application Support/Phone Terminal/logs/` |
 | Linux | `~/.local/state/phone-terminal/logs/` |
 | Windows | `%LOCALAPPDATA%\Phone Terminal\logs\` |
+
+## Why does a GitHub repository have no push age?
+
+**Next beta:** Termivoa leaves out a repository's last-push age when no usable date was supplied. The row and its available actions remain. It does not mean cloning failed or that the repository is unavailable. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).

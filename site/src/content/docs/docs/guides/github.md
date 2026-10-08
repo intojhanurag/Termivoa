@@ -1,7 +1,7 @@
 ---
 title: Set up a GitHub repository
 description: Termivoa connects each of your computers to GitHub from the phone, lists your repositories, and clones one onto a computer with one tap.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Termivoa connects a computer to GitHub from your phone, shows your repositories, and clones the one you pick onto that computer, ready for a new session.
@@ -75,6 +75,16 @@ It reaches only the repositories that you chose on GitHub. It cannot change work
 | **name taken** | Another folder named `~/<name>` is on that computer: another repository, a plain folder, a file or a link | Nothing. The row says "Another folder named notes is on mac." |
 
 Two repositories with the same name from two owners cannot both be set up on one computer. The second one says **name taken**.
+
+## Why does a repository have no last-push age?
+
+**Next beta:** Termivoa omits the last-push age when GitHub has no usable date for it. The repository row still shows its name and other details.
+
+| What you see | What it means |
+| --- | --- |
+| A repository with no push age | No usable last-push date was supplied; the repository remains in the list. |
+| **Set up** or **on mac** still shows | Use the same available action; the missing age does not change whether the repository is on that computer. |
+| Other repositories show push ages | Their dates are usable, so their age labels remain. |
 
 ## What can a phone do with GitHub?
 
