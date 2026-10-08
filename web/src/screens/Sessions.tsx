@@ -395,7 +395,7 @@ export function Sessions({
   /** Add a folder: a new session opens in Live with this command typed, not run. */
   readonly onTypeIn?: ((session: HostedSession, command: string) => void) | undefined;
   /** Reads one computer's settings again, quietly: a sheet that offers agent kinds asks when it opens. */
-  readonly onReadSettings?: ((origin: string) => void) | undefined;
+  readonly onReadSettings?: ((origin: string) => void | Promise<void>) | undefined;
 }) {
   const [creating, setCreating] = useState<{ readonly entry: ProviderEntry; readonly group: HTTPProviderGroup }>();
   // The ⋯ of an item, and New workspace (docs/herdr-manage.md): one sheet at a time.

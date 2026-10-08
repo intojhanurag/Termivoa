@@ -179,7 +179,7 @@ export function ProviderScreen({
   /** Reads a provider's list again (its key). */
   readonly onReload: (key: string) => Promise<void>;
   /** Reads that computer's settings again, quietly: the ⋯ menu's New tab then offers the agent kinds of now. */
-  readonly onKinds?: (() => void) | undefined;
+  readonly onKinds?: (() => void | Promise<void>) | undefined;
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onFailure: (error: unknown) => string;

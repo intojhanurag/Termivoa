@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
 import { ADD_FOLDER_COMMAND } from './providers';
-import { SLOW, addFolderStep, NO_SESSION, CHANGED, closesTogether, closeWorktreesFirst, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, readsKinds, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
+import { SLOW, addFolderStep, NO_SESSION, CHANGED, CLOSE_CHANGED, closesTogether, closeWorktreesFirst, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
 import { group, item, mac, providerEntry, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -136,7 +136,7 @@ describe('one manage action', () => {
   it('reads the list again and says it changed when the item left or was renamed', async () => {
     for (const code of ['operation_conflict', 'session_missing'] as const) {
       const reload = vi.fn(async () => undefined);
-      await expect(manageStep(itemRequest('closeItem', linked), refuse(code, 409), reload, words)).resolves.toEqual({ kind: 'changed' });
+      await expect(manageStep(itemRequest('closeItem', linked), refuse(code, 409), reload, words)).resolves.toEqual(code === 'operation_conflict' ? { kind: 'note', note: { kind: 'error', text: CLOSE_CHANGED } } : { kind: 'changed' });
       expect(reload).toHaveBeenCalledTimes(1);
     }
     expect(CHANGED).toBe('The list changed. Look again, then try again.');
@@ -171,12 +171,6 @@ describe('one manage action', () => {
     expect(closesTogether(shop, main)).toBe(false);
     expect(closesTogether(shop, linked)).toBe(false);
     expect(closesTogether(group('ws-w5', 'notes', [main]), main)).toBe(false);
-  });
-
-  it('reads the agent kinds again when the menu opens and when the chooser opens, not when the chooser closes', () => {
-    expect(readsKinds(false, true)).toBe(true);
-    expect(readsKinds(true, false)).toBe(true);
-    expect(readsKinds(false, false)).toBe(false);
   });
 });
 
@@ -267,7 +261,7 @@ describe('the item menu', () => {
       expect(page).toContain('<span class="tab-row-name"><bdi>1</bdi></span>');
       expect(page).not.toContain('Close tab');
       expect(page).toContain('<p class="hint-text">Close the workspace to end its last tab.</p>');
-      expect(menu({ item: item('w5', 'notes', []) })).toContain('Close the workspace to end its last tab.');
+      expect(menu({ item: item('w5', 'notes', []) })).toContain('Close its worktrees first, then close this workspace to end its last tab.');
     });
 
     it('asks before a tab closes, by its label; busy says Closing…', () => {

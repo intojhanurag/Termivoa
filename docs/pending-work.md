@@ -137,6 +137,11 @@ In this order.
      one workspace; the app and the host say so); the git check can leave
      more than one waiting goroutine for a workspace on a hung mount that
      leaves and comes back.
+   - **Done locally, pending private PR gates (#210):** fresh agent-choice
+     browser regressions, agent-action waiting during the settings read, and
+     actionable stale close/last-tab guidance. See
+     [evidence](evidence/issue-210/verification.md). Owner real-phone/herdr
+     checks remain pending; this fix does not spend agent/provider credits.
    - **herdr, second round (pull request open, not merged):** an agent in a
      new tab, closed worktrees with **Open**, the menu inside a herdr
      terminal (`docs/herdr-manage.md`, section 14). The bugs found while
@@ -146,8 +151,9 @@ In this order.
      with a stand-in program, not with a real agent (a real one costs
      credits); a missing agent program is reported after about 15 s
      (herdr's own launch limit), not sooner; the item menu's settings read
-     has only a unit test of its rule, because the web tests cannot run
-     effects; a herdr terminal outside git still sends a quiet files request and one quiet changes
+     and New worktree wiring now have focused real React browser coverage
+     (#210), including home/peer origins and pending-read agent guards; a
+     herdr terminal outside git still sends a quiet files request and one quiet changes
      request for the "while you were away" line (the phone cannot know that
      the terminal has no folder).
    - **Named herdr sessions:** only the default session shows.

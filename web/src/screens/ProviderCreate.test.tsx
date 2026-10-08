@@ -82,6 +82,13 @@ describe('answers', () => {
 });
 
 describe('the + sheet (H6)', () => {
+  it('waits to create with an agent, while No agent can still create during the read', () => {
+    const waiting = form({ checkingKinds: true });
+    expect(waiting).toContain('Checking available agents…');
+    expect(waiting).toContain('<button type="submit" class="primary wide" disabled=""');
+    expect(form({ checkingKinds: true, agent: undefined })).not.toContain('<button type="submit" class="primary wide" disabled=""');
+  });
+
   it('names the place, offers herdr\'s agent kinds and No agent, and says where the branch starts', () => {
     const page = form();
     expect(page).toContain('<bdi>herdr</bdi> · <bdi>shop</bdi> · on mac');

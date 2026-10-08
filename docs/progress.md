@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -2609,3 +2609,23 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## 2026-10-08 — Issue #210: fresh agent-choice effects and close guidance
+
+- Reproduced seven of eight actual React browser scenarios failing against
+  baseline `origin/main` `08f0332`. The fixture verifies Sessions' callback
+  origins and latest provider props, beyond the old pure effect-rule test.
+- Added promise-aware agent-read ownership, pending agent submission guards,
+  fixed safe stale-close guidance and last-tab hints matching the close
+  guards. Shell/No agent remain usable; removed selections stay unselected.
+- Ran `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test:web`
+  (57 files/1048 tests), `CHROME=<installed Chromium> node
+  scripts/test-provider-kinds.mjs` (8/8 real React effect scenarios), and
+  `pnpm build:web`. Frozen site install plus `npx astro build` passed with
+  29 pages and valid links. Fixture strings were absent from web assets/maps.
+- Evidence: [issue-210 verification](evidence/issue-210/verification.md).
+  T3 preview was tried first and explicitly failed navigation; existing
+  installed Chromium was used with synthetic data, not real agents.
+- Isolated `fix/issue-210`; no #208/#214 implementation was bundled. Private
+  PR/adversarial review, required CI access, merge, docs deployment and owner
+  real-device checks remain pending with the coordinator.

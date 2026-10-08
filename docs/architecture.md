@@ -374,3 +374,20 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [progress.md](progress.md), [pending-work.md](pending-work.md),
 [owner-verification.md](owner-verification.md),
 [release-checklist.md](release-checklist.md).
+
+### How do provider sheets refresh agent choices? (#210)
+
+`useAgentKinds` owns one quiet settings-read lifetime for **New worktree**,
+and reads on item-menu open and **New tab** chooser open. `App.readSettings`
+returns `all.reload`'s promise through `Sessions` or `ProviderScreen`; the
+sheet receives the current provider entry, so the completed read updates
+its choices. Agent actions wait for that promise; **No agent** and **Shell**
+do not depend on it. Read failure settles with cached choices and normal
+host validation. Cleanup prevents an old effect from settling a new sheet;
+React development effect replay does not issue a canceled read.
+
+Close conflicts use fixed application guidance after a provider reload;
+peer detail sanitization is unchanged. Last-tab hints use the same
+worktrees-first/shared-main-folder guards as **Close workspace**. See
+[herdr-manage.md](herdr-manage.md) and the focused React browser evidence in
+[evidence/issue-210/verification.md](evidence/issue-210/verification.md).

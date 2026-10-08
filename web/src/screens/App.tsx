@@ -704,7 +704,7 @@ export function App({ grant, add, peerLink }: StartupLinks) {
   }, [staleProviders, all.reload]);
   // The agent kinds a sheet offers come from the settings, and a computer offers a kind only while an agent of it runs:
   // the + sheet and the New tab chooser read that computer's settings again when they open (quietly; home or a peer).
-  const readSettings = useCallback((origin: string) => { void all.reload(origin, true).catch(() => undefined); }, [all.reload]);
+  const readSettings = useCallback((origin: string) => all.reload(origin, true).catch(() => undefined), [all.reload]);
   // A provider that is not installed is not polled: each time Settings opens, read those computers' settings (quietly), so a new install shows.
   const entriesRef = useRef(all.entries);
   entriesRef.current = all.entries;
