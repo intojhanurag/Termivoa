@@ -6,15 +6,6 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- **Private-file permission repair (#255).** Host: validate the opened file
-  before repairing its permissions; refuse final links, shared hard links,
-  unsafe types and disallowed owners without changing their targets. Keep
-  legitimate files on the same identity, including the Windows broker lock.
-  Phone: a linked or unsafe saved login remains unavailable rather than
-  changing another file. No new command, protocol or database change.
-
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,
@@ -138,6 +129,13 @@ All notable changes are documented here. The format follows
   Safari." Host: no change.
 
 ### Fixed
+
+- **Private-file permission repair (#255).** Host: validate the opened file
+  before repairing its permissions; refuse final links, shared hard links,
+  unsafe types and disallowed owners without changing their targets. Keep
+  legitimate files on the same identity, including the Windows broker lock.
+  Phone: a linked or unsafe saved login remains unavailable rather than
+  changing another file. No new command, protocol or database change.
 
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at

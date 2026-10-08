@@ -101,8 +101,8 @@ Security repair #255 has a local implementation after its architecture-first dra
 [private-file-permissions.md](private-file-permissions.md). The current-main guard
 can change a rejected symlink target or shared hard link. Local
 adjacent checks and the independent security source review are recorded in
-progress. Final feasibility review, native Windows/Linux evidence and owner
-approval remain pending.
+progress. Pinned feasibility source/local review is GO; native Windows/Linux
+runtime evidence and owner approval remain pending.
 **DO NOT MERGE without owner review**; hosted CI is explicitly denied.
 
 1. **Gate 0 real-phone test for multi-computer** (`scripts/gate0/`). Needs the

@@ -15,6 +15,25 @@ Last updated: 2026-10-09
 
 ## Log
 
+### Private-file repair final documentation gate (#255, 2026-10-09)
+
+- Consolidated the #255 fix entry into the existing Unreleased **Fixed**
+  section; retained all older release headings and entries. Documentation-only
+  correction after checked runtime head `4a09144`; no runtime change.
+- Independent feasibility reviewer pinned `4a09144f25b5e3a4932a74233aa0a73f9b166f90`
+  and returned source/local-evidence GO: denied-open advice finding resolved;
+  Windows IPC cross-test build, cross-vet and diff check independently passed.
+  Native Windows/Linux execution and owner approval remain pending.
+- Coordinator reported the combined #255/#256/#260/#265 local gate passed:
+  all Go race tests (broker 108.5 s), Go vet, protocol generation drift, web
+  typecheck, 1,080 web tests and build, zero govulncheck findings, and static
+  macOS/Windows/Linux amd64/arm64 builds. This is aggregate branch evidence,
+  not a fresh check on this isolated branch or evidence from merged main.
+  [Evidence](evidence/issue-255/private-file-repair.md). No issues closed.
+- Draft PR #264 remains **DO NOT MERGE without owner review**; hosted CI
+  stays denied. No push, merge or deployment by this agent.
+
+
 ### Private-file repair Windows denied-open correction (#255, 2026-10-09)
 
 - Independent feasibility review found a source-level advice gap at `ac2e9b5`:

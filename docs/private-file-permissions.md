@@ -106,7 +106,7 @@ errors or evidence. Tests use isolated synthetic files and no GitHub requests.
 | Windows regression | Reparse/hard-link refusal, same-handle DACL repair, owner exception/failure, broker lock identity; safe platform/privilege skips | Native tests added and cross-compiled; native execution pending |
 | Adjacent callers | IPC/GitHub/host/upload relevant tests, race and vet | Local macOS race/vet pass; see evidence |
 | Documentation | Full rules 22/25 docs and frozen docs-site build before implementation review | Updated; frozen install and 29-page build pass |
-| Adversarial review | Independent security plus feasibility/alternatives findings and resolutions | Root security source review found no code blocker; feasibility review pending |
+| Adversarial review | Independent security plus feasibility/alternatives findings and resolutions | Root security and pinned feasibility source reviews found no code blocker; native evidence pending |
 | Owner review | Explicit approval before merge | Pending; DO NOT MERGE |
 | Hosted CI | Existing required policy | Explicitly denied; no enabling or bypass |
 
@@ -118,7 +118,7 @@ errors or evidence. Tests use isolated synthetic files and no GitHub requests.
 | Root independent security source review, 2026-10-09 | No code blocker in Unix descriptor repair, Windows same-handle ACL/recovery or original lock-handle integration | Source-reviewed; local tests pass. Native Windows recovery execution is not claimed |
 | Root review of Windows test scope | Owner-recovery advice test proves message/cause only, not a real Administrators-owner recovery state | Keep native recovery-state gate explicitly pending; native normal repair/link fixtures added and cross-compiled only |
 | Independent feasibility review of `ac2e9b5` | Initial repair open required WRITE_DAC before ownership inspection, so a read-control-accessible Administrators-owned object lost recovery advice when that open was denied | Add denial-only nonmutating, no-reparse handle inspection; preserve original cause and give advice only for the verified safe Administrators-owned object. Native OWNER_RIGHTS fixture explicitly proves denied repair / allowed inspection preconditions; compiled only |
-| Independent feasibility follow-up source review, 2026-10-09 | No new source blocker in denial-only inspection, preserved cause, no mutation fallback or fixture setup/production assertions | Native execution remains pending; reviewer will confirm final pinned head |
+| Independent feasibility follow-up review, 2026-10-09 | Pinned `4a09144f25b5e3a4932a74233aa0a73f9b166f90`: source/local-evidence GO; denied-open finding resolved | Independent Windows cross-test compile, cross-vet and diff check passed; native execution and owner approval remain pending |
 
 Windows access-right distinctions and the fixture’s OWNER_RIGHTS SID name were
 checked against Microsoft’s [standard access rights](https://learn.microsoft.com/en-us/windows/win32/secauthz/standard-access-rights),

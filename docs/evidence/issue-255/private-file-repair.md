@@ -119,3 +119,24 @@ Frozen docs-site install/build passed again (29 pages, all internal links).
 Independent feasibility follow-up source review found no new source blocker;
 final pinned confirmation, native Windows/Linux evidence, owner approval and
 hosted CI remain pending/blocked as recorded above.
+
+## Final pinned independent review and combined local gate (2026-10-09)
+
+The independent feasibility reviewer confirmed runtime head
+`4a09144f25b5e3a4932a74233aa0a73f9b166f90`: source/local-evidence GO,
+with the denied-open advice finding resolved. The reviewer independently
+passed Windows IPC test cross-compilation, Windows IPC cross-vet and diff
+checking on that pinned head. These are compilation/static evidence, not a
+native Windows run. Native Windows/Linux runtime and owner approval remain
+pending; draft PR #264 stays DO NOT MERGE and CI is explicitly denied.
+
+The coordinator also reported a combined local gate containing the #255, #256,
+#260 and #265 branch changes: `go test -race ./...` passed (broker 108.5 s),
+Go vet/protocol generation drift/web typecheck passed, 1,080 web tests and the
+web build passed, govulncheck found zero vulnerabilities, and macOS/Windows/Linux
+amd64/arm64 static builds passed. This is coordinator-reported aggregate
+evidence, not a fresh execution on this isolated branch or merged-main
+evidence. No runtime changes follow the checked #255 head; the final follow-up
+only consolidates the Unreleased Fixed heading and records review/gates.
+No issue closure, native execution, hosted CI, owner approval or deployment
+is implied by this aggregate result.

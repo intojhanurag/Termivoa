@@ -66,5 +66,6 @@ Hosted CI is explicitly denied; it must not be enabled, bypassed or treated as
 passed. Native Windows/Linux evidence remains pending until actually run.
 
 Local implementation verification and the root independent security source
-review are recorded in the design and evidence. Feasibility review and native
-Windows/Linux execution remain pending; the decision is still proposed.
+review are recorded in the design and evidence. Independent pinned feasibility
+review is source/local-evidence GO; native Windows/Linux execution and owner
+approval remain pending. The decision is still proposed.
