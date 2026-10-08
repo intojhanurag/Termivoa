@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,26 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### Soak latency samples require complete status records (#224, 2026-10-08)
+
+- Reproduced on `08f0332`, macOS arm64, Go 1.27.1, with
+  `go test -tags soak -count=1 -run '^TestObserveStatus' ./tests/soak`:
+  the parser accepted a partial timestamp as `497597h` of latency, sampled
+  an unchanged record twice and accepted a future timestamp as `-985ms`.
+  Every byte split of the printed status through the terminal emulator is
+  now covered by a regression.
+- The synthetic child writes an explicit end marker. The viewer validates
+  complete fields, session/PID/sequence consistency and timestamp order,
+  and samples each observed write once. Paused/static records and valid
+  slow-link delays remain measurable. A run with no complete measurements
+  now fails. Only the soak harness changes; no product code or protocol.
+- Passed: `go test -tags soak -race -count=20 -run '^TestObserveStatus' ./tests/soak`,
+  `go vet -tags soak ./tests/soak` and `git diff --check`. Evidence and metric
+  limits: [issue-224](evidence/issue-224/README.md). A new busy/throttled soak
+  is pending for the coordinator, without competing benchmark work. Earlier
+  soak output-to-frame tails may contain the parser defect; input RTT and
+  memory are separate metrics. Real-device and 24-hour soak gates stay open.
 
 ### Summary (2026-09-27)
 
