@@ -162,7 +162,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `internal/store` | SQLite (modernc.org/sqlite), migrations, auth, sessions, receipts, push, computers |
 | `internal/tailnet` | Reads `tailscale status --json` into immutable snapshots; safe binary lookup |
 | `internal/terminal` | Server-authoritative emulator core, frames, row patches, history |
-| `internal/webassets` | Embedded web app (`-tags webdist`) or a placeholder page |
+| `internal/webassets` | Embedded web app (`-tags webdist`) including build-time gzip sidecars for immutable assets, or a placeholder page; see [static assets](static-assets.md) |
 | `internal/webpush` | Web Push with the standard library (RFC 8291, RFC 8292 VAPID), push host allow-list |
 | `protocol/v1` | Canonical JSON Schemas and protocol docs (section 4) |
 | `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets; `ui.tsx` holds the shared icons, the busy `Button`, `Notice` and `Banner` (styles and tokens in `web/src/styles/global.css`) |
@@ -321,7 +321,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Command | What |
 | --- | --- |
 | `scripts/check` / `scripts/check.ps1` | Full local gate: protocol drift, gofmt, vet, Go tests (with `third_party`), web typecheck, tests, build |
-| `pnpm build:web` then `scripts/embed-web.sh` | Build `web/dist` and copy it for `-tags webdist` |
+| `pnpm build:web` then `scripts/embed-web.sh` | Build final `web/dist`, precompress immutable assets, and copy it for `-tags webdist` |
 | `.github/workflows/ci.yml` | protocol-generation, go-quality, go-race, web-quality, macOS and Windows integration, Linux release smoke |
 | `.github/workflows/packaging.yml` | Unsigned macOS, Linux and Windows artifacts |
 | `scripts/soak.sh` | Soak probes (build tag `soak`) |

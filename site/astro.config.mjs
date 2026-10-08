@@ -47,7 +47,7 @@ export default defineConfig({
 			sidebar: [
 				{
 					label: 'Start here',
-					items: ['docs', 'docs/quick-start', 'docs/pair-your-phone'],
+					items: ['docs', { slug: 'docs/quick-start', label: 'Quick start and downloads' }, 'docs/pair-your-phone'],
 				},
 				{
 					label: 'Install',

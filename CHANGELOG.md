@@ -6,6 +6,14 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Smaller phone downloads** (#223). Phone: first-open and update downloads
+  use gzip for immutable app assets when the browser accepts it. Host: serves
+  build-time compressed files with representation-specific validators,
+  correct HEAD and range behavior, preserving raw assets and source-map
+  exclusions. API bodies and the app document remain uncompressed.
+
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,

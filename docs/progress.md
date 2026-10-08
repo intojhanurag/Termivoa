@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,25 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### Smaller immutable phone asset downloads (#223, 2026-10-08)
+
+- Reproduced the original handler with a source overlay: a request accepting
+  gzip received 19,000 raw fixture bytes without content encoding.
+- Vite now creates gzip sidecars from final immutable asset files. A bundle
+  regression caught premature compression before Vite's preload rewrite;
+  moving compression to `closeBundle` made decoded bytes match exactly.
+  Original service-worker URLs, offline Wall behavior and source-map
+  exclusions are preserved. The gateway never compresses API bodies.
+- Passed with Go 1.27.1 / Node 24.11.0: full `scripts/check`, gateway race
+  suite and vet, bundle/offline regressions, frozen docs install/Astro build
+  with all links valid. The embedded production handler regression
+  transferred TerminalView as 132,274 gzip bytes instead of 690,359 raw
+  bytes. It verifies decoded equality, not only build size estimates.
+- Evidence: [issue-223](evidence/issue-223/README.md); internal design:
+  [static assets](static-assets.md). Independent adversarial PR review,
+  required hosted checks and merge remain pending. Physical-phone/cellular
+  and external reverse-proxy measurements remain pending.
 
 ### Summary (2026-09-27)
 

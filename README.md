@@ -24,6 +24,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 ## Features
 
+- **Smaller downloads.** First-open and update downloads use compressed app
+  assets automatically when the phone supports them; next beta.
 - **Many live sessions.** Start shells or coding agents on your computer and
   switch between them with tabs. A dot shows new output.
 - **Files.** Browse, search and read your project's files on the phone, and
