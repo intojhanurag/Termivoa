@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-09
 
 ## Start here
 
@@ -14,6 +14,33 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### Owned browser teardown (#260, 2026-10-09, `fix/issue-260`; local PR preparation)
+
+- **Reproduced.** The shared browser helper returned before a real delayed child
+  exited: the focused baseline assertion failed after about 26 ms with
+  `exitCode === null`, despite a close acknowledgement. This explains why an
+  immediate profile removal can race later browser writes.
+- **Changed.** One shared close promise observes child exit, waits up to 3 s for
+  graceful close, 1 s after TERM and 1 s after KILL, and then up to 1 s for its
+  own WebSocket close. Failure rejects. Pending CDP timers and listeners are
+  cleaned; new requests during teardown are refused. Only the owned child is
+  signaled. [Internal test design](../scripts/e2e-multicomputer/README.md#how-does-owned-browser-teardown-finish).
+- **Executed with Node 24.** `node --check scripts/e2e-multicomputer/lib.mjs`
+  and `node --check scripts/e2e-multicomputer/browser.test.mjs`: pass.
+  `CHROME='<existing Chromium executable>' node --test
+  scripts/e2e-multicomputer/browser.test.mjs`: 10 pass, 0 fail, 0 skipped,
+  about 14.6 s. Actual Chrome 151.0.7922.34 exited and its temporary profile was
+  removed immediately without retries. Real delayed-child, TERM/KILL escalation,
+  concurrent close, pending request cleanup and child/socket timeout failures
+  are covered. [Evidence](evidence/issue-260/verification.md).
+- **Scope and gates.** Test tooling only; no shipped Go runtime, protocol,
+  authentication, phone UI or public feature change. No dependencies installed.
+  Full app flows, physical devices and native Windows were not run for this
+  change. Public docs/site are unchanged, so no public feature or site-build
+  result is invented. Hosted CI remains disabled by explicit owner decision;
+  coordinating review, private PR and merge remain with the root agent.
+
 
 ### Summary (2026-09-27)
 

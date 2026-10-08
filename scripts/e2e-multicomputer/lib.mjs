@@ -18,6 +18,11 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RESERVED = new Set([8787, 8788, 8789, 8443]);
 // The longest a CDP call may stay without an answer (Browser.send).
 const CDP_TIMEOUT_MS = 60000;
+// Browser.close observes child exit, not just CDP acknowledgement or kill().
+const BROWSER_GRACE_MS = 3000;
+const BROWSER_TERM_MS = 1000;
+const BROWSER_KILL_MS = 1000;
+const BROWSER_SOCKET_MS = 1000;
 
 // Every pterm process of the harness runs in this macOS sandbox. It hides
 // the real Tailscale CLI (internal/tailnet.FindBinary checks these fixed
@@ -434,8 +439,8 @@ export class Browser {
   }
 
   constructor(chrome, ws, product) {
-    Object.assign(this, { chrome, ws, product, id: 0, pending: new Map(), listeners: [] });
-    ws.addEventListener('message', (e) => {
+    Object.assign(this, { chrome, ws, product, id: 0, pending: new Map(), listeners: [], closing: false, disconnected: false });
+    this.onMessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.id && this.pending.has(m.id)) {
         const p = this.pending.get(m.id);
@@ -445,7 +450,14 @@ export class Browser {
       } else if (m.method) {
         for (const l of this.listeners) l(m);
       }
-    });
+    };
+    this.onDisconnect = () => {
+      this.disconnected = true;
+      this.#rejectPending('Chrome connection closed');
+    };
+    ws.addEventListener('message', this.onMessage);
+    ws.addEventListener('close', this.onDisconnect);
+    ws.addEventListener('error', this.onDisconnect);
   }
 
   /**
@@ -455,6 +467,11 @@ export class Browser {
    * the call.
    */
   send(method, params = {}, sessionId, timeout = CDP_TIMEOUT_MS) {
+    if (this.closing || this.disconnected) return Promise.reject(new Error(`${method}: Chrome connection closed or closing`));
+    return this.#request(method, params, sessionId, timeout);
+  }
+
+  #request(method, params, sessionId, timeout) {
     const id = ++this.id;
     return new Promise((res, rej) => {
       const timer = setTimeout(() => {
@@ -462,8 +479,17 @@ export class Browser {
         rej(new Error(`${method}: no answer from Chrome in ${timeout} ms`));
       }, timeout);
       this.pending.set(id, { res, rej, method, timer });
-      this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+      try { this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })); }
+      catch (error) { clearTimeout(timer); this.pending.delete(id); rej(error); }
     });
+  }
+
+  #rejectPending(reason) {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.rej(new Error(`${pending.method}: ${reason}`));
+    }
+    this.pending.clear();
   }
 
   /** A new 390×844 touch page. bypassCSP lets checks send requests the app's CSP would stop first. */
@@ -482,10 +508,67 @@ export class Browser {
   /** Every cookie in the profile, HttpOnly ones included. */
   async cookies() { return (await this.send('Storage.getCookies')).cookies; }
 
-  async close() {
-    try { await Promise.race([this.send('Browser.close'), sleep(3000)]); } catch { /* already gone */ }
-    this.chrome.kill();
+  close() {
+    if (this.closePromise === undefined) {
+      this.closing = true;
+      this.closePromise = Promise.resolve().then(() => this.#shutdown());
+    }
+    return this.closePromise;
   }
+
+  async #shutdown() {
+    try {
+      if (this.chrome.exitCode !== null || this.chrome.signalCode !== null) return;
+      // A close response or socket disappearance does not prove process exit.
+      // Catch CDP failure here; only observed exit makes teardown successful.
+      if (!this.disconnected) void this.#request('Browser.close', {}, undefined, BROWSER_GRACE_MS).catch(() => undefined);
+      if (await waitForChildExit(this.chrome, BROWSER_GRACE_MS)) return;
+      this.chrome.kill('SIGTERM');
+      if (await waitForChildExit(this.chrome, BROWSER_TERM_MS)) return;
+      this.chrome.kill('SIGKILL');
+      if (!await waitForChildExit(this.chrome, BROWSER_KILL_MS)) throw new Error('Chrome child did not exit within bounded browser teardown');
+    } finally {
+      this.disconnected = true;
+      this.#rejectPending('Chrome connection closed');
+      this.listeners.length = 0;
+      this.ws.removeEventListener('message', this.onMessage);
+      this.ws.removeEventListener('close', this.onDisconnect);
+      this.ws.removeEventListener('error', this.onDisconnect);
+      await closeBrowserSocket(this.ws);
+    }
+  }
+}
+
+function waitForChildExit(child, timeout) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const finish = (didExit) => {
+      clearTimeout(timer);
+      child.removeListener('exit', onExit);
+      child.removeListener('error', onError);
+      resolve(didExit);
+    };
+    const onExit = () => finish(true);
+    const onError = () => finish(false);
+    const timer = setTimeout(() => finish(false), timeout);
+    child.once('exit', onExit);
+    child.once('error', onError);
+  });
+}
+
+function closeBrowserSocket(ws) {
+  if (ws.readyState === 3) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const finish = (error) => {
+      clearTimeout(timer);
+      ws.removeEventListener('close', onClose);
+      if (error) reject(error); else resolve();
+    };
+    const onClose = () => finish();
+    const timer = setTimeout(() => finish(new Error('Chrome WebSocket did not close within bounded browser teardown')), BROWSER_SOCKET_MS);
+    ws.addEventListener('close', onClose);
+    try { ws.close(); } catch (error) { finish(error); }
+  });
 }
 
 export class Page {
