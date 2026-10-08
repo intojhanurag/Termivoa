@@ -176,6 +176,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `web/src/generated` | Generated protocol TypeScript types |
 | `web/src/sw.js` | Service worker: precache, network-first pages, push display (home and per-peer scopes; session and herdr terminal payloads, the one-time tap record for a session's or a herdr terminal's notification tap) |
 | `web/src/storage.ts` | The one safe `localStorage`/`sessionStorage` accessor (private browsing may refuse storage) |
+| `web/src/screens/Sheet.tsx` | Shared sheet entry/cleanup focus: captures the opener before child effects, restores a connected trigger only while focus belongs to the closed sheet/body, and handles nested cleanup without overriding deliberate external focus ([sheet-focus.md](sheet-focus.md)) |
 | `third_party` | Patched copies of `ansi`, `vt`, `xpty`, `ultraviolet` ([dependency-patches.md](dependency-patches.md)) |
 | `tests` | Integration, soak, agent replay and PTY fixtures |
 | `site/` | Public docs site (Astro Starlight) and landing page in `site/public/`, deployed to Vercel |

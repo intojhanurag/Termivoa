@@ -1,11 +1,16 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-07. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
+- Shared sheet focus restoration (#214): Close, Escape and unmount return
+  focus to an available opener, including nested sheets, while preserving
+  deliberate focus elsewhere. Actual React/browser regression covers the
+  lifecycle. Design: [sheet-focus.md](sheet-focus.md). Real VoiceOver and
+  phone checks remain pending.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
   (#53, #56).

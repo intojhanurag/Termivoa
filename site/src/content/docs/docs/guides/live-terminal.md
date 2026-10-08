@@ -1,7 +1,7 @@
 ---
 title: Live terminal
 description: Read and type in a Termivoa session from your phone, with control, agent keys, snippets, history and copy, and a desktop attach on your computer.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa's live terminal is the screen of one session, where you read output and type from your phone. Open it from the Sessions list or Wall.
@@ -48,6 +48,19 @@ With the phone keyboard open, all keys fold into one scrolling row, and the term
 ## Write longer text with compose
 
 Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**, which pastes it and presses Enter. Text with more than one line asks before it sends. Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
+
+## Use sheets with a keyboard
+
+**Next beta.** Termivoa keeps your keyboard place when a sheet closes.
+
+| Action | Focus after the sheet closes |
+| --- | --- |
+| Use **Close** or Escape | Returns to the control that opened the sheet, if it is still available. |
+| Close a sheet opened inside another sheet | Returns to its control inside the previous sheet. |
+| Move focus to another control before the sheet closes | Stays on the control you chose. |
+
+If the opening control disappeared or became unavailable, pick another
+control with Tab. This focus change does not send anything to the terminal.
 
 ## Save and send snippets
 

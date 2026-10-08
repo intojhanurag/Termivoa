@@ -26,6 +26,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 - **Many live sessions.** Start shells or coding agents on your computer and
   switch between them with tabs. A dot shows new output.
+- **Keyboard navigation.** Next beta: closing a sheet returns focus to the
+  control that opened it, when that control is still available.
 - **Files.** Browse, search and read your project's files on the phone, and
   tap a path like `src/app.ts:42` in the terminal to open it there.
 - **Worktrees.** Start a task in its own folder and branch from `main` (or
