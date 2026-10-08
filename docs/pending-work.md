@@ -1,6 +1,6 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-09. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
@@ -275,8 +275,8 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 ### Safe GitHub token-file removal (#256)
 
-ADR 0013 and design-only checkpoint prepared. Hard-link corruption reproduced
-on `08f0332`; proposed unlink-only removal avoids modifying shared inodes.
-Draft PR, implementation, regression/race/platform checks, public docs,
-independent security/feasibility review and owner approval remain pending.
-CI is denied; do not enable it. #213/#255 remain separate tasks.
+ADR 0013/design-only commit `f5c685e` is open as draft PR #261. Local unlink-only
+implementation, linked/replaced-file regression tests and public docs are
+prepared. macOS GitHub race/vet and Linux/Windows test compilation pass; native
+Linux/Windows, independent security/feasibility review and explicit owner
+approval remain pending. CI is denied; do not enable or merge. #213/#255 separate.

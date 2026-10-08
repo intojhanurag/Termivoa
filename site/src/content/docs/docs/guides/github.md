@@ -1,7 +1,7 @@
 ---
 title: Set up a GitHub repository
 description: Termivoa connects each of your computers to GitHub from the phone, lists your repositories, and clones one onto a computer with one tap.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-09
 ---
 
 Termivoa connects a computer to GitHub from your phone, shows your repositories, and clones the one you pick onto that computer, ready for a new session.
@@ -100,9 +100,16 @@ When the repository and your git settings have no commit name, Termivoa sets the
 1. In **Settings → Integrations**, tap **Disconnect** on the row.
 2. The app asks: "Disconnect GitHub on mac?". Tap **Disconnect**.
 
-Termivoa removes the login at GitHub, then deletes it from the computer. When GitHub did not confirm the removal, the row shows **Also remove Termivoa on GitHub.** Tap it and remove **Termivoa** under **Authorized GitHub Apps**.
+Termivoa asks GitHub to revoke the login, then removes it from the computer. When GitHub did not accept revocation, the row shows **Also remove Termivoa on GitHub.** Tap it and remove **Termivoa** under **Authorized GitHub Apps**.
 
 On the computer you can also run `pterm github disconnect`. See the [CLI reference](/docs/reference/cli/#github).
+
+**Next beta:** removing the saved login preserves another file linked to the same stored contents. Local removal does not securely erase copies or backups.
+
+| What you need to remove | What to do |
+| --- | --- |
+| This computer's saved login | Use **Disconnect** on that computer's row. |
+| A copied login, or a login on a computer you lost | Revoke **Termivoa** in GitHub's [Authorized GitHub Apps](https://github.com/settings/applications); deleting local data does not itself end copied access. |
 
 After Disconnect, `git pull` and `git push` in a folder that Termivoa cloned fail with "Termivoa is not connected to GitHub on this computer. Connect in Settings → Integrations." Connect again to use them.
 

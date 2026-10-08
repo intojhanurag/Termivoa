@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-08
+Last updated: 2026-10-09
 
 ## Start here
 
@@ -14,6 +14,30 @@ Last updated: 2026-10-08
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### 2026-10-09 — #256: unlink-only local implementation prepared for review
+
+After design-only `f5c685e` opened as draft PR #261, local cleanup now removes
+only the fixed token filename. No inode content write or size buffer remains;
+missing succeeds and other errors propagate. Hard-link and replaced-hard-link
+tests fail before the change and pass after it with outside bytes unchanged.
+Symlink/replaced-symlink, normal/missing/damaged files, empty/nonempty
+directories, repeat removal and caller-local-error regressions pass.
+
+Passed focused `go test ./internal/github` (0.998 s), full package
+`go test -race ./internal/github -count=1 -timeout=120s` (15.351 s),
+`go vet ./internal/github`, Linux/Windows amd64 test compilation with CGO=0,
+frozen workspace install plus `pnpm protocol:check`, frozen site install and
+`npx astro build` (29 pages, valid links). A task-owned common test initially
+referenced Unix-only service fixtures; it was split by the service's build tags
+before final checks. [Evidence](evidence/issue-256/README.md) includes baseline
+and permanent red/green results, commands, limits and full22/25 doc coverage.
+
+Independent final security/feasibility review, owner approval, parent integration,
+broader gates, native Linux/Windows and real-phone evidence remain pending.
+DO NOT MERGE before owner review. CI remains denied. No owner tokens or startup
+settings touched, no remote GitHub call; #213/#255 are separate. No push/PR/
+merge/deploy by the implementing helper beyond the coordinator's draft action.
 
 ### 2026-10-08 — #256 design: remove the token name without overwriting
 

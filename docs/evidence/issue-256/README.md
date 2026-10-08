@@ -1,7 +1,9 @@
-# Issue #256 design checkpoint
+# Issue #256: remove only the saved-login filename
 
 2026-10-08; branch `fix/issue-256`, base `08f0332`; macOS arm64, Go 1.27.1.
-ADR 0013/design only. **DO NOT MERGE without owner review.**
+Design-only commit `f5c685e` opened as private draft PR #261 before runtime
+implementation. Final local verification: 2026-10-09.
+**DO NOT MERGE without owner review.**
 
 Confirmed with a temporary Go overlay: create 50 bytes of synthetic token JSON
 in a temporary outside file, `os.Link` it to `github.json`, call existing
@@ -21,7 +23,51 @@ scratch area under `issue-sweep-2026-10-08/213-security-review/`; it maps a new
 test-only package file, without changing shipped code. The historical test
 name reflects where the inherited defect was discovered; #256 owns its fix.
 
-Pending: private draft PR, implementation, permanent regression/race/vet,
-platform compilation/native checks, rule22 public docs/frozen build,
-independent security/feasibility review and explicit owner approval. CI denied;
-no hosted checks, push, PR, merge or deployment by the implementing helper.
+## What changed and what passed?
+
+`deleteAccount` now removes only the fixed stored-login name with `os.Remove`.
+No content open, overwrite, truncation, sync or size-based buffer remains.
+Missing entries succeed; other errors propagate. Unused overwrite-only flags
+were removed. Remote revocation, caller serialization and cancellation/error
+semantics are unchanged; no schema, protocol or migration. No secure-erasure
+claim and no guarantee against arbitrary same-account parent replacement or
+recreating the name after removal.
+
+| Command/gate | Actual result |
+| --- | --- |
+| `go test ./internal/github -run '^TestDeleteAccount\|^TestDisconnectReportsLocalRemovalFailure$' -count=1 -v` before runtime fix | Hardlink and replaced-hardlink cases fail by comparing outside bytes; normal/missing/invalid and caller-error cases pass. [regression-before.txt](regression-before.txt). |
+| `go test ./internal/github -run '^TestDeleteAccount\|^TestDisconnectReportsLocalRemovalFailure$\|^TestDeleteDoesNotFollowASymlink$\|^TestDisconnectRevokesAndDeletes$' -count=1 -v` | Passed, 0.998 s; [regression-after.txt](regression-after.txt). |
+| `go test -race ./internal/github -count=1 -timeout=120s` | Final full package passed, 15.351 s. Includes connect/refresh/disconnect/network and local removal tests. |
+| `go vet ./internal/github` | Passed. |
+| `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c ./internal/github -o <private-scratch-output>` | Passed. Compilation only; no Windows execution claim. |
+| `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./internal/github -o <private-scratch-output>` | Passed. Compilation only; no Linux execution claim. |
+| `pnpm install --frozen-lockfile`; `pnpm protocol:check` | Passed; generated Go/TypeScript unchanged. |
+| `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` | Passed: 29 pages, valid links, llms and Markdown copies emitted. |
+
+Permanent fixtures create real hard links/symlinks on one temporary volume,
+including replacements of an initially saved account. They verify the app
+entry is gone and the outside bytes are identical, plus normal/missing/damaged
+files, empty/nonempty directories, repeat removal and Disconnect surfacing a
+local removal error. No replacement race is invented or assumed fully solved.
+macOS symlink cases executed without skips. On Windows, a missing symlink
+privilege is reported as a skipped native gate, not success.
+
+The first task-owned common test file referenced the macOS/Linux-only fake
+Service and failed Windows compilation. It was split: caller regression uses
+the Service's existing build tags, while file-removal tests stay cross-platform.
+Final compilation and package tests above pass. No unrelated runtime change.
+
+## Documentation and pending gates
+
+ADR/design, architecture, GitHub integration design and threat model now state
+unlink-only removal and remove obsolete overwrite/erasure claims. README,
+Unreleased host/phone changelog, GitHub guide, Security and Next beta release
+notes describe removal/copy limits. Existing GitHub sidebar entry remains
+correct. No new command/failure mode/major feature: CLI, troubleshooting and
+landing pages require no change for this task.
+
+Pending: independent final security/feasibility review, explicit owner approval,
+parent integration (including separate #213/#255), broader required checks,
+native Linux/Windows and real-phone evidence. CI remains denied; no hosted
+check/merge/deployment claim. Only local commits by the implementing helper;
+the coordinator owns the draft PR and push.

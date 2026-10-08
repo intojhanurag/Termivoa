@@ -503,7 +503,10 @@ ADR [0010](decisions/0010-github-integration.md). What is new:
   program used this login. Revoke Termivoa on GitHub, then connect again."
   with the link.
 - **Disconnect** sends both tokens to `POST /credentials/revoke` (best
-  effort, 10 s), then zeroes and deletes the file. When the revoke failed,
+  effort, 10 s), then removes the saved login. Draft #256 (ADR 0013, owner
+  approval pending) removes only the filename without overwriting a shared
+  inode. This is not secure erasure: other names, copies, snapshots and
+  backups can retain bytes. When the revoke failed,
   the row links to GitHub's authorized apps page. `pterm uninstall
   --delete-data` deletes the file without a revoke.
 - **Tests never reach github.com.** The hosts are fixed in a release build;

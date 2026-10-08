@@ -1,8 +1,10 @@
 # How should Termivoa remove its saved GitHub login safely?
 
 Proposed correction for #256, [ADR 0013](decisions/0013-github-token-file-unlink.md).
-**DO NOT MERGE without owner review.** This is the design-only checkpoint;
-runtime implementation, final independent reviews and owner approval are pending.
+**DO NOT MERGE without owner review.** Design-only commit `f5c685e` was opened
+as private draft PR #261 before local runtime implementation. The unlink-only
+implementation and local regression evidence are now prepared; final independent
+reviews and owner approval remain pending.
 
 ## What was reproduced?
 
@@ -62,7 +64,12 @@ process controlling the same OS account can still manipulate owner files.
 
 ## Which review findings are resolved?
 
-None yet. ADR 0013 records the alternatives; independent review and owner
-approval remain pending. The design-only checkpoint does not claim the defect
-fixed or any implementation gate passed. #213 uninstall cleanup and #255
-private-file validation are separate tasks and will not be bundled here.
+The coordinator reviewed unlink-only alternatives before the draft opened.
+Permanent tests reproduce normal and replaced hard-link corruption before the
+fix and pass after it; other-name bytes are compared directly. Normal/missing,
+damaged file, empty/nonempty directory, symlink/replaced-symlink and caller error
+regressions pass. A first Windows compile caught a task-owned test referencing
+Unix-only service fixtures; the caller test now has the service's build tags,
+while file-removal tests remain platform-neutral. Final independent security
+and feasibility review and owner approval remain pending. #213/#255 are not
+bundled; no claim that this draft is merged or released.
