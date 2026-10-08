@@ -2609,3 +2609,31 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+
+## 2026-10-08: issue #218, slow RPC isolation
+
+- Reproduced on `08f0332` using a real private IPC broker, gateway client,
+  temporary git repository and a blocked post-checkout hook. The Sessions
+  read timed out after 250 ms behind create before the fix. After it, list,
+  authentication and new Live-open finish while the hook waits; bad auth is
+  still refused and the released create produces exactly one session.
+- Known slow exchanges now have four independent IPC slots, without an
+  admission queue; overload is refused before dialing. Cancellation and
+  shutdown interrupt active dials/exchanges, correlation remains checked,
+  and written mutations are never automatically retried. Worktree limit
+  advice covers overload without incorrectly claiming too many worktrees.
+  Design: [gateway-rpc.md](gateway-rpc.md); evidence:
+  [issue-218](evidence/issue-218/README.md).
+- Passed: full `go test ./internal/gatewayclient ./internal/gateway -count=1`,
+  selected broker/client `go test -race` availability, cancellation, shutdown,
+  correlation, recovery and origin tests (exact command in evidence),
+  `go vet ./internal/gatewayclient ./internal/broker`, frozen web install,
+  Worktree 13/13 tests, web typecheck, frozen site install and Astro build
+  (29 pages, valid links), `git diff --check`.
+- Existing broker-owned worktree calls may survive caller cancellation; this
+  fix bounds active gateway exchanges, not that pre-existing broker queue.
+  Its separate reproduction was sent to the coordinating audit workflow.
+- Pending before merge: broader coordinated checks and independent adversarial
+  review. Real phones and native Windows/Linux checks remain owner gates.
+  No protocol, trust, database, pairing or production configuration change.

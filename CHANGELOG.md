@@ -130,6 +130,13 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Host: slow session/worktree creation, termination, preview scans,
+  notification tests and herdr terminal opens use bounded independent
+  exchanges, so they no longer hold up session lists or new Live
+  authentication (#218). Phone: other sessions can be opened during a slow
+  worktree create; excess simultaneous slow actions report a limit instead
+  of claiming that the repository has too many worktrees. Authorization,
+  request correlation and uncertain-delivery rules remain in place.
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.

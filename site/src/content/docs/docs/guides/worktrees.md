@@ -1,7 +1,7 @@
 ---
 title: Worktrees
 description: Termivoa worktrees give each new task its own folder and branch from your phone, so several coding agents can work in one repository at once.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa can start a new task in a git worktree: a second folder of your repository on its own branch, with a new session in it. Two agents in two worktrees do not change each other's files. All worktrees share one history, so you commit and push as usual.
@@ -27,6 +27,18 @@ The new branch does not track a remote. A push from [Changes](/docs/guides/chang
 :::tip
 Start from `main` for a new task. To continue another task, pick its branch in **from**.
 :::
+
+## Can I use another session while Create waits?
+
+**Next beta:** Termivoa keeps the Sessions list and other session opens
+available while a slow worktree checkout or hook finishes. Creating the
+worktree still needs the computer to finish its own git operation.
+
+| What happens | What to do |
+| --- | --- |
+| **Create** takes time | Open another session while it finishes. |
+| **Termivoa reached a limit on this computer.** | Wait for pending actions to finish. If this repository has 50 worktrees, remove an unused one; if eight sessions are running, close an unused session. |
+| A creation times out or the connection breaks | Check Sessions before creating again; the computer may have completed it. |
 
 ## See your worktrees
 

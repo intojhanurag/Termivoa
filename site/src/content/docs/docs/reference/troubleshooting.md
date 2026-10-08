@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -658,3 +658,20 @@ The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, b
 | macOS | `~/Library/Application Support/Phone Terminal/logs/` |
 | Linux | `~/.local/state/phone-terminal/logs/` |
 | Windows | `%LOCALAPPDATA%\Phone Terminal\logs\` |
+
+## Why does Termivoa say too many operations are in progress?
+
+**Next beta:** Termivoa limits simultaneous slow actions on each computer.
+On home, a slow action can say **too many operations in progress; try again
+after one finishes**. Worktree creation instead says **Termivoa reached a
+limit on this computer.** Wait for a pending action to finish, then try
+again. Other computers may show **That computer could not do this.**
+The Sessions list and authentication can still answer while actions wait.
+
+| If this happens | Next step |
+| --- | --- |
+| An action says too many operations are in progress | Wait for an action to finish, then try again. |
+| A worktree creation says Termivoa reached a limit | Wait for pending actions. Also check the limits of eight live sessions and 50 worktrees per repository. |
+| A worktree creation times out or loses its connection | Check Sessions before trying another creation; the computer may have completed it. |
+
+See [Use another session while Create waits](/docs/guides/worktrees/#can-i-use-another-session-while-create-waits).

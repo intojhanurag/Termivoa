@@ -6,6 +6,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
+- Slow worktree creation no longer holds up the Sessions list or a new Live
+  connection (#218, Next beta). Known slow gateway exchanges have four
+  independent slots with fail-fast admission. A real Git post-checkout hook
+  fixture proves list, authentication and Live-open remain available.
+
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
   (#53, #56).
@@ -156,10 +161,9 @@ In this order.
      app comes to the front (settings are read again then).
    - **"‹ Sessions" in a herdr terminal** goes to the All tab, not the herdr
      tab.
-   - **Open on its own gateway connection:** the reaper holds a target's
-     open lock while it ends the attach (at most 3 s); an open of that
-     target, and gateway requests behind it, wait. Create already has its
-     own connection.
+   - ~~**Open on its own gateway connection**~~ Done (#218, Next beta).
+     The reaper may hold a target's open lock for 3 s; only that open waits,
+     while unrelated reads use the shared fast connection.
    - **A `/p/…` address of a computer below protocol revision 4** shows a
      general failure text, not "Update Termivoa on …".
    - **Create timeout text:** the sheet tells a timeout from the elapsed

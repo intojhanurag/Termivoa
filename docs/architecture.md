@@ -184,6 +184,19 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `scripts/fakeherdr` | A fake herdr binary (`server`, `status`, `terminal attach`, `agent attach`) with a control socket, for Go tests and the e2e harness. It reads only its own folder; the harness sandbox hides the real herdr |
 | `packaging/` | Unsigned macOS app/DMG, Linux binaries, Windows Inno Setup installer; signing scripts |
 
+### Gateway RPC availability
+
+Fast gateway RPC reads and authentication share one reusable serialized IPC
+connection. Known blocking operations (session create/terminate, Push Test,
+preview scans, herdr open/create/manage and GitHub actions/repository lists)
+use dedicated connections under one four-slot admission limit. Excess slow
+calls fail before dialing with `limit_exceeded`; there is no new waiting queue.
+Every exchange forwards the same credential and origin and validates its
+request, result and operation identity. Close cancels in-flight slow dials
+and closes their connections. Live and uploads keep their existing separate
+streams. See [gateway-rpc.md](gateway-rpc.md), including the distinction
+between canceled gateway exchanges and existing broker-owned worktree jobs.
+
 ## 4. Protocols
 
 All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.

@@ -149,13 +149,20 @@ describe('NewWorktreeSheet', () => {
 });
 
 describe('createProblem', () => {
+  it('does not confuse transport saturation with the repository worktree limit', () => {
+    const text = createProblem(new ApiError(429, 'limit_exceeded', 'too many operations in progress; try again after one finishes'), 'a');
+    expect(text).toContain('Wait for pending actions to finish');
+    expect(text).not.toContain('This repository has too many');
+    expect(createProblem(new ApiError(429, 'limit_exceeded', 'That computer could not do this.'), 'a')).toBe(text);
+  });
+
   it('suggests a new name when it exists and explains the other refusals', () => {
     expect(createProblem(new ApiError(409, 'worktree_exists', 'exists'), 'brave-otter'))
       .toBe('“brave-otter” already exists in this repository. Pick another name, or tap 🎲 for a new one.');
     expect(createProblem(new ApiError(409, 'not_a_repository', 'no repo'), 'a'))
       .toBe('This folder is not in a git repository. cd into a repo first.');
     expect(createProblem(new ApiError(429, 'limit_exceeded', 'too many'), 'a'))
-      .toBe('This repository has too many Termivoa worktrees. Remove one first.');
+      .toBe('Termivoa reached a limit on this computer. Wait for pending actions to finish and check the session and worktree limits before trying again.');
     expect(createProblem(new ApiError(422, 'worktree_failed', 'git worktree add failed: husky - post-checkout failed'), 'a'))
       .toBe('git worktree add failed: husky - post-checkout failed. Nothing was left behind, so you can try again.');
     expect(createProblem(new ApiError(0, 'network', 'Connection unavailable'), 'a')).toBe('Connection unavailable');
