@@ -208,6 +208,12 @@ cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transpo
 Wire format: local IPC is four-byte big-endian length-prefixed JSON; the
 WebSocket uses JSON text messages. Counters travel as decimal strings.
 
+The broker sends generated terminal payloads through `protocol.EncodeHost`,
+which shares envelope and semantic validators with strict received-message
+validation, then serializes them without decoding its own JSON. Non-terminal
+notices keep the strict wire round trip. All receiving trust boundaries keep
+`DecodeHost`/`DecodeClient`; see [terminal-delivery.md](terminal-delivery.md).
+
 Code generation: `pnpm protocol:generate` runs `scripts/generate-protocol.mjs`
 (quicktype) and writes `internal/protocol/generated.go` and
 `web/src/generated/protocol.ts`, plus the revision constants. It fails on an

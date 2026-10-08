@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,34 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### Busy-terminal message construction (#220, 2026-10-08)
+
+- **Verified defect:** strict self-decoding consumed 55.10% of broker CPU
+  samples in a three-session, 64 KiB/s/session, 30-second profile.
+- **Changed:** shared envelope/semantic validators check exact generated
+  terminal payloads before serialization; low-rate notices and every receiving
+  trust boundary retain strict JSON decoding. Required arrays and byte bounds
+  remain checked. Malformed Go text/links keep the original wire round trip
+  after JSON replacement, preserving OSC8 behavior and validating expanded
+  byte lengths. No schema, revision, data or pairing change.
+- **Measured initial optimization (before the final UTF-8 eligibility guard):**
+  with identical diagnostic overlays and heavy checks paused, broker CPU was
+  140% before and 30% after; input p95 was
+  32.39–33.98 ms before and 22.49–25.26 ms after. All three final screens
+  matched after one reconnect. An 80-column/24-row patch benchmark fell
+  from 6.54–6.68 ms / 6.42–6.44 MB allocated to 0.298–0.302 ms / 0.289–0.290 MB with the final guard.
+- **Evidence:** [issue-220](evidence/issue-220/README.md), with benchmark,
+  profile, package/vet/race and site-build logs, commands and parity tests.
+  Final-head profile stopped at 16 s on the scanner census race despite the
+  diagnostic filter; final full-soak validation remains pending.
+- **Not passed:** the original soak harness has a separate child-count
+  assertion defect (#232): a legitimate lsof scanner counts as a fourth
+  session child. Original baseline and changed-build failures are retained.
+  The measurement-only overlay excludes only confirmed lsof names and is
+  not part of this PR or a substitute for the original gate. Timestamp
+  probe correctness is the separate #224; phone/native OS/24-hour gates,
+  coordinator full checks and independent review remain pending.
 
 ### Summary (2026-09-27)
 
