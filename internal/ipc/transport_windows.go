@@ -54,7 +54,7 @@ func acquireBrokerLock(directory, filename string) (brokerLock, error) {
 	path := filepath.Join(directory, filename)
 	file, err := openPrivateWindowsFile(path, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.OPEN_ALWAYS)
 	if err != nil {
-		return nil, fmt.Errorf("ipc: open broker lock: %w", err)
+		return nil, fmt.Errorf("ipc: open broker lock: %w", privateWindowsOpenError(path, err))
 	}
 	closeOnError := true
 	defer func() {
@@ -147,25 +147,56 @@ func validatePrivateFile(path string) error {
 func securePrivateFile(path string) error {
 	file, err := openPrivateWindowsFile(path, 0, windows.OPEN_EXISTING)
 	if err != nil {
-		return err
+		return privateWindowsOpenError(path, err)
 	}
 	defer file.Close()
 	return securePrivateWindowsFile(file, path)
 }
 
 func openPrivateWindowsFile(path string, extraAccess, creation uint32) (*os.File, error) {
+	return openWindowsFileObject(path, windows.READ_CONTROL|windows.WRITE_DAC|windows.FILE_READ_ATTRIBUTES|extraAccess, creation)
+}
+
+func openWindowsFileObject(path string, access, creation uint32) (*os.File, error) {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
 	}
 	handle, err := windows.CreateFile(name,
-		windows.READ_CONTROL|windows.WRITE_DAC|windows.FILE_READ_ATTRIBUTES|extraAccess,
+		access,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, creation,
 		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
 		return nil, err
 	}
 	return os.NewFile(uintptr(handle), path), nil
+}
+
+// A failed repair open has no handle on which to inspect ownership. Use a
+// separate read-only security/attribute handle solely to select existing
+// recovery advice. Never mutate it or infer ownership when inspection fails.
+func privateWindowsOpenError(path string, openErr error) error {
+	if !errors.Is(openErr, windows.ERROR_ACCESS_DENIED) {
+		return openErr
+	}
+	file, err := openWindowsFileObject(path, windows.READ_CONTROL|windows.FILE_READ_ATTRIBUTES, windows.OPEN_EXISTING)
+	if err != nil {
+		return openErr
+	}
+	defer file.Close()
+	handle := windows.Handle(file.Fd())
+	if err := validatePrivateWindowsObject(handle); err != nil {
+		return openErr
+	}
+	descriptor, err := windows.GetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return openErr
+	}
+	owner, _, err := descriptor.Owner()
+	if err != nil || owner == nil || !owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+		return openErr
+	}
+	return windowsOwnerRecoveryError(path, openErr)
 }
 
 func validatePrivateWindowsObject(handle windows.Handle) error {

@@ -15,6 +15,30 @@ Last updated: 2026-10-09
 
 ## Log
 
+### Private-file repair Windows denied-open correction (#255, 2026-10-09)
+
+- Independent feasibility review found a source-level advice gap at `ac2e9b5`:
+  requesting WRITE_DAC before owner inspection lost the existing `icacls`
+  hint for an inspectable Administrators-owned file when that open was denied.
+- Added denial-only nonmutating inspection through a no-reparse/no-delete-share
+  READ_CONTROL/attribute handle. Only a verified regular single-linked
+  Administrators-owned object receives the existing advice; inspection refusal
+  preserves the original access-denied cause without guessing ownership.
+  Applies to private-file and Windows broker-lock initial denied opens.
+- Added native OWNER_RIGHTS fixture with explicit allowed-inspection and
+  denied-repair preconditions, production EnsurePrivateFile assertion,
+  unchanged owner/DACL and an inspection-denied state. Privileged owner-setup
+  limitations skip explicitly; production assertions fail normally. Compiled
+  only; actual Administrators-owner recovery/denial execution remains pending.
+- Focused macOS race count10 passed (IPC 1.695 s / GitHub 2.137 s); vet for
+  IPC/GitHub/host/broker passed. Windows IPC test cross-build and cross-vet
+  passed. Frozen site install/build passed again (29 pages, all internal links).
+  Independent feasibility follow-up source review found no new blocker,
+  conditional on native evidence. [Evidence](evidence/issue-255/private-file-repair.md).
+  Final pinned review, native platforms, integration and owner
+  approval remain pending. Draft PR #264 stays **DO NOT MERGE**; CI denied.
+
+
 ### Private-file repair local implementation (#255, 2026-10-09; not merged)
 
 - Parent opened critical design draft PR #264 at `3b0bdff` before local runtime

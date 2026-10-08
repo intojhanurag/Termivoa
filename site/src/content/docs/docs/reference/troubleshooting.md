@@ -673,6 +673,9 @@ or leave GitHub unavailable.
 | The problem was unexpected | Investigate the computer before reconnecting or changing permissions |
 | An ordinary owned file only has loose permissions | Termivoa normally repairs these itself; it does not copy or replace the file |
 
+If Termivoa cannot inspect ownership, it reports the access error without
+guessing who owns the file. Inspect it locally before changing permissions.
+
 Do not grant everyone access or delete the database to hide a permission error.
 No new pairing or database is needed for a normal owned file. See [How are
 private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).

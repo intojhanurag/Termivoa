@@ -24,9 +24,14 @@ It must not change a replacement target that appears under the same pathname.
 Windows recovery may change an Administrators-owned object's owner to the
 current user only under the existing exception. Request the rights needed for
 the specific operation; a bounded reopen for extra recovery rights must still
-prove the same object and revalidate it before mutation. Failure must preserve
-the existing advice to repair ownership from an elevated prompt. Other foreign
-owners remain refused even if this process could change their permissions.
+prove the same object and revalidate it before mutation. When a safe object is
+known to be Administrators-owned, failure must preserve the existing advice to
+repair ownership from an elevated prompt. On an initial repair-open denial, a
+separate nonmutating no-reparse handle requests security-read/attribute rights
+and checks type, link count and owner solely to select that advice. If this
+inspection is denied or cannot prove the safe Administrators-owned object, keep
+the original access error without inferring ownership. Other foreign owners
+remain refused even if this process could change their permissions.
 
 ## Which callers share this boundary?
 
@@ -112,4 +117,11 @@ errors or evidence. Tests use isolated synthetic files and no GitHub requests.
 | Baseline analysis | Descriptor repair alone still changes a hard-linked outside name | Require link count one before mutation and recheck afterward |
 | Root independent security source review, 2026-10-09 | No code blocker in Unix descriptor repair, Windows same-handle ACL/recovery or original lock-handle integration | Source-reviewed; local tests pass. Native Windows recovery execution is not claimed |
 | Root review of Windows test scope | Owner-recovery advice test proves message/cause only, not a real Administrators-owner recovery state | Keep native recovery-state gate explicitly pending; native normal repair/link fixtures added and cross-compiled only |
-| Feasibility and alternatives review | Pending independent final review | Keep owner gate and draft status |
+| Independent feasibility review of `ac2e9b5` | Initial repair open required WRITE_DAC before ownership inspection, so a read-control-accessible Administrators-owned object lost recovery advice when that open was denied | Add denial-only nonmutating, no-reparse handle inspection; preserve original cause and give advice only for the verified safe Administrators-owned object. Native OWNER_RIGHTS fixture explicitly proves denied repair / allowed inspection preconditions; compiled only |
+| Independent feasibility follow-up source review, 2026-10-09 | No new source blocker in denial-only inspection, preserved cause, no mutation fallback or fixture setup/production assertions | Native execution remains pending; reviewer will confirm final pinned head |
+
+Windows access-right distinctions and the fixture’s OWNER_RIGHTS SID name were
+checked against Microsoft’s [standard access rights](https://learn.microsoft.com/en-us/windows/win32/secauthz/standard-access-rights),
+[file security](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights)
+and the [SID strings](https://learn.microsoft.com/en-us/windows/win32/secauthz/sid-strings).
+The follow-up does not enable privileges or mutate an inspection handle.

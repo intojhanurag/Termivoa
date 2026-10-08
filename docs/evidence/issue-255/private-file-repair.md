@@ -82,3 +82,40 @@ Windows owner recovery still pending. Feasibility/alternatives review, owner
 approval, native Windows/Linux execution, whole integration and phone checks
 remain pending. Existing GitHub/security sidebar entries are retained; no new
 command, protocol, database or landing-page feature was introduced.
+
+## Windows denied-open advice follow-up (2026-10-09)
+
+Independent feasibility source review found a gap at `ac2e9b5`: the initial
+repair open requested WRITE_DAC and could fail before ownership inspection,
+losing the existing recovery advice for a safe Administrators-owned object
+that still permitted READ_CONTROL. The formatter-only test did not cover it.
+
+The follow-up performs bounded, nonmutating inspection only after the initial
+ACCESS_DENIED. A no-reparse, no-delete-sharing handle requests READ_CONTROL and
+file attributes; regular/nonreparse/single-link metadata and Administrators
+ownership are checked on that handle. It only wraps the original cause with
+the existing advice. Failed inspection, unsafe objects or other owners keep
+the original error; no ACL mutation or privilege enabling occurs. The same
+classification applies to a denied Windows broker-lock open.
+
+The new native fixture uses an isolated file with Administrators ownership and
+an OWNER_RIGHTS ACE, explicitly asserts security/attribute inspection succeeds
+and repair access is denied, then calls production EnsurePrivateFile. It
+requires the advice and original access-denied cause while owner/DACL remain
+unchanged. A second state denies inspection and requires the original error
+without ownership inference. A pre-held setup handle restores the synthetic
+owner/DACL at cleanup. Only controlled setup ACCESS_DENIED, PRIVILEGE_NOT_HELD
+or INVALID_OWNER limitations can skip; production assertions never skip.
+This fixture is compiled only; no native Windows result is claimed.
+
+| Follow-up command | Observed result |
+| --- | --- |
+| `go test -race -count=10 -run '^Test(PrivateFile\|TokenFileUnsafe)' ./internal/ipc ./internal/github` | PASS; 1.695 s / 2.137 s on macOS; Windows fixture excluded by platform |
+| `go vet ./internal/ipc ./internal/github ./internal/host ./internal/broker` | PASS |
+| `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c -o /dev/null ./internal/ipc` | PASS; includes final native fixture, compile only |
+| `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./internal/ipc` | PASS; cross-platform static check only |
+
+Frozen docs-site install/build passed again (29 pages, all internal links).
+Independent feasibility follow-up source review found no new source blocker;
+final pinned confirmation, native Windows/Linux evidence, owner approval and
+hosted CI remain pending/blocked as recorded above.
