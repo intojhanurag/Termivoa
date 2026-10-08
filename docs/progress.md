@@ -2636,3 +2636,8 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+Coordinator review for #260 reran all10teardown tests (14.627s, zero skips),
+including actual installedChromium immediate profile removal. Full helper
+diff reviewed with no blocker; frozen site install/Astro29pages+links pass.
+No shipped runtime or public docs change. Hosted CI remains disabled by owner.
