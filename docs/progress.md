@@ -2638,3 +2638,17 @@ commit. `git diff --check` passed and the Unreleased section has exactly one
 Fixed heading. No app/public-site content changed; previously passed web,
 focused browser and frozen site checks remain applicable. Local follow-up
 only; coordinator owns the private PR and deployment gates.
+
+## 2026-10-09: provider browser fixture copy coupling (#265)
+
+Combined #208+#210 showed4false failures from obsolete running-only words.
+A separately unit-tested current formatter now supplies the expected DOM
+guidance, preserving request/origin/selection assertions. Parent and combined
+real Chromium8-scenario runs pass; removing rendered warnings still fails
+all4affected cases, restored in finally. Frozen install/typecheck passes;
+evidence in docs/evidence/issue-265. Test-only stacked task, no shipped code.
+Hosted CI remains disabled by owner; frozen docs validation follows.
+
+Frozen site install and Astro29-page/link build passed. Independent review
+found no blocker and reran8parent browser scenarios; final parent typecheck
+and browser run after explicit nonempty guard also pass. No runtime edits.

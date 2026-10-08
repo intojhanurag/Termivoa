@@ -278,3 +278,9 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 - [ ] Security review by an outside person.
 - [ ] Signed macOS and Windows apps.
+
+## Agent-kind fixture follow-up (#265)
+
+Fixture copy coupling is corrected locally; parent and combined browser
+checks plus negative missing-DOM mutation pass. Stacked private PR/hosted
+checks and merge remain pending. No user-visible behavior changes.

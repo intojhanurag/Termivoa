@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { Sessions } from '../../src/screens/Sessions';
 import { ItemMenuSheet } from '../../src/screens/ProviderManage';
+import { droppedAgent } from '../../src/screens/ProviderCreate';
 import { ApiError } from '../../src/api/http';
 import { group, item, mac, okEntry, ready, target, vps } from '../../src/screens/providerFixtures';
 import type { ProviderEntry } from '../../src/screens/providers';
@@ -16,6 +17,13 @@ const project = () => group('g-demo', 'shop', [main()]);
 const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find((one) => (() => { const copy = one.cloneNode(true) as HTMLElement; copy.querySelectorAll('[aria-hidden="true"]').forEach((hidden) => hidden.remove()); return copy.textContent?.trim() === text; })())!;
 const click = (element: HTMLElement) => flushSync(() => element.click());
 const check = (ok: boolean, why: string) => { if (!ok) throw new Error(why); };
+// Exact wording is covered by ProviderCreate's helper tests. This effect
+// fixture checks that the current guidance is actually rendered for the
+// removed selection, independently of installed-kind copy revisions.
+function hasDroppedGuidance() {
+  const expected = droppedAgent('claude', ['codex'], 'herdr');
+  return expected !== undefined && expected.length > 0 && document.body.textContent!.includes(expected);
+}
 function input(value: string) {
   const field = document.querySelector<HTMLInputElement>('#create-name')!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value);
@@ -68,7 +76,7 @@ async function runChecks() {
       check(sent.length === 0, 'Pending read started an agent');
       await settle(['codex']);
       check(!button('No agent').disabled && button('No agent').getAttribute('aria-checked') === 'true', 'Removed choice did not become No agent');
-      check(document.body.textContent!.includes('claude is not running in herdr now.'), 'Dropped choice guidance missing');
+      check(hasDroppedGuidance(), 'Dropped choice guidance missing');
       check(![...document.querySelectorAll('button')].some((one) => one.textContent === 'claude'), 'Sheet retained stale entry');
       click(button('codex')); check(!button('Create and start').disabled, 'Fresh available agent remains blocked');
       click(button('Create and start')); await tick();
@@ -83,7 +91,7 @@ async function runChecks() {
       click(button('Start')); check(sent.length === 0, 'Pending chooser sent agent request');
       await settle(['codex']);
       check(!document.querySelector('button.primary'), 'Removed chooser selection silently became another agent');
-      check(document.body.textContent!.includes('claude is not running in herdr now.'), 'Chooser dropped guidance missing');
+      check(hasDroppedGuidance(), 'Chooser dropped guidance missing');
       click(button('codex')); check(!button('Start').disabled, 'Fresh chooser Start stays blocked');
       click(button('Cancel')); await tick(); check(reads.length === 2, 'Closing chooser re-read settings');
       await chooser(); await settle(['codex']); click(button('Start')); await tick();
