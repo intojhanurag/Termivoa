@@ -11,6 +11,14 @@ This file is the internal map of the system. The code on `main` is the source
 of truth. The specification is [implementation-plan.md](implementation-plan.md).
 User docs live in `site/src/content/docs/docs/`.
 
+Proposed stored-login cleanup (#256, owner review pending):
+[ADR 0013](decisions/0013-github-token-file-unlink.md) and
+[github-token-removal.md](github-token-removal.md) replace inode overwrite
+with removal of only the fixed token filename. This protects other hard-linked
+or replaced objects without claiming secure erasure. The runtime remains
+unchanged at this design checkpoint; independent reviews and owner approval
+are required before merge. Separate #213/#255 work is not bundled.
+
 ## 1. Big picture
 
 ```text

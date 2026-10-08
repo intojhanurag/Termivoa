@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,21 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### 2026-10-08 — #256 design: remove the token name without overwriting
+
+Reproduced the inherited hard-link corruption on `08f0332` with
+`go test -overlay <temporary-overlay.json> ./internal/github -run
+'^TestAudit213HardlinkDeleteDoesNotMutateOtherName$' -count=1 -v`: outside
+synthetic file unchanged=false (50 bytes). No owner account/network used.
+ADR 0013 compares unlink-only cleanup with link checks, overwrite and quarantine;
+the design proposes no inode writes and makes no secure-erasure claim.
+[`evidence/issue-256/README.md`](evidence/issue-256/README.md) records the gate.
+
+This checkpoint changes documentation only. Draft PR and local implementation,
+permanent tests/race/vet/platform checks, full public docs/frozen site build,
+independent security/feasibility reviews and explicit owner approval are pending.
+No CI enablement, push, PR, merge or deployment by the helper. #213/#255 separate.
 
 ### Summary (2026-09-27)
 
