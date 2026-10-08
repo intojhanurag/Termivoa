@@ -74,6 +74,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
   and start it in one tap.
 - **Composer.** Write long or multi-line text before you send it.
 - **History and copy.** Scroll back through bounded history and copy text.
+  Next beta reads byte-limited pages to completion, including styled output;
+  an incomplete read shows unavailable instead of skipping rows.
   In full-screen apps such as Claude Code, swipe on the terminal to scroll.
 - **Agent status and answer cards.** Sessions show **Working**, **Waiting** or
   **Your turn**. Answer Claude Code and Codex questions with one tap; a

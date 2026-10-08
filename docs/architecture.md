@@ -184,6 +184,16 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `scripts/fakeherdr` | A fake herdr binary (`server`, `status`, `terminal attach`, `agent attach`) with a control socket, for Go tests and the e2e harness. It reads only its own folder; the harness sandbox hides the real herdr |
 | `packaging/` | Unsigned macOS app/DMG, Linux binaries, Windows Inno Setup installer; signing scripts |
 
+### Retained history on the phone
+
+History follows each byte-limited page's contiguous cursor until `complete`,
+then appends the frozen screen. The old 25-page assumption could hide retained
+rows after styled output (#217). The phone caps one loading attempt at 5,000
+rows, 5,000 requests across restarts, 32 MiB of UTF-16 retained text, 128 MiB
+of received UTF-16 page data and 60 seconds. A failure drops the partial rows
+and shows unavailable; it never invents a continuous transcript. See
+[terminal-history.md](terminal-history.md) for token and lifetime rules.
+
 ## 4. Protocols
 
 All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.

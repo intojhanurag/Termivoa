@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -658,3 +658,18 @@ The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, b
 | macOS | `~/Library/Application Support/Phone Terminal/logs/` |
 | Linux | `~/.local/state/phone-terminal/logs/` |
 | Windows | `%LOCALAPPDATA%\Phone Terminal\logs\` |
+
+## Why does History say unavailable?
+
+**Next beta:** Termivoa says **History unavailable right now. Return to live
+and try again.** if the computer cannot finish a consistent history read,
+output keeps changing, or the read reaches its limits. A loading attempt has
+one minute. Tap **Done**, let output slow, then tap **history** again. It
+never shows missing rows as a continuous transcript.
+
+| Situation | What remains usable |
+| --- | --- |
+| History cannot finish | The live terminal, typing with control and a fresh History attempt |
+| A full-screen application is open | Its current screen; use the application's own scroll controls for older output |
+
+See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
