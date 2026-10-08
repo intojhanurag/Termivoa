@@ -47,7 +47,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one
-  snapshot of their screen, marked Paused.
+  snapshot of their screen, marked Paused. Next beta: Wall-only sessions
+  avoid preparing screen updates faster than their tiles can show them.
 - **Computer health.** Each computer's version and last answer in
   Settings, with Check again.
 - **Several computers.** Use a Mac, a Linux server and a VPS

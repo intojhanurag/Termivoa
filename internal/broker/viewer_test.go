@@ -208,8 +208,10 @@ func TestStalledViewerDisconnectsWithoutBackpressuringCanonicalState(t *testing.
 	}
 	waitForTerminalRevision(t, session, 50)
 	time.Sleep(2 * framePublishInterval)
-	if pending := len(viewer.notify); pending != 1 {
-		t.Fatalf("coalesced pending screen notifications = %d, want 1", pending)
+	// A blocked sink no longer needs repeated screen captures or wake-ups.
+	// Any pending notification must still fit the one-slot coalescing channel.
+	if pending := len(viewer.notify); pending > 1 {
+		t.Fatalf("coalesced pending screen notifications = %d, want at most 1", pending)
 	}
 	select {
 	case <-viewer.Done():
@@ -935,7 +937,7 @@ func startViewerSession(t *testing.T) (*Session, *viewerProcess) {
 	return startViewerSessionWithTerminal(t, newViewerTerminal())
 }
 
-func startViewerSessionWithTerminal(t *testing.T, core *viewerTerminal) (*Session, *viewerProcess) {
+func startViewerSessionWithTerminal(t *testing.T, core terminalRuntime) (*Session, *viewerProcess) {
 	t.Helper()
 	runtimeContext, cancel := context.WithCancel(context.Background())
 	process := newViewerProcess()

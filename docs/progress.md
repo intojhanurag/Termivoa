@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,27 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### 2026-10-08 — #221: Wall capture follows usable viewer slots
+
+Reproduced on `08f0332`: a 5 fps thumbnail caused 78 screen copies in 1.61 s;
+an unacknowledged snapshot caused 77 in 1.43 s. The actor now retains dirty
+output until the earliest ready viewer slot with a reusable timer. Blocked
+sends/acknowledgements pause publication; Live keeps its cadence. Attach,
+resize, exit and valid snapshot catch-up retain direct captures. Independent
+agent scans still copy screens. No schema or protocol change.
+
+Passed `go test ./internal/broker -count=1` (92.530 s), focused viewer/thumbnail/
+snapshot/lifecycle tests, focused broker race tests (17.370 s),
+`go vet ./internal/broker ./internal/terminal`, frozen workspace install and
+`pnpm protocol:check`, frozen site install plus `npx astro build` (29 pages,
+valid links). Real-core capture benchmark: 157,917 B at 80×24; 985,181 B at
+200×60; 6,559,095 B at 400×200. Measurements used shared development load;
+no total-host CPU or full-soak claim. Commands, raw results and doc coverage:
+[`evidence/issue-221/README.md`](evidence/issue-221/README.md).
+
+Pending: parent integration/PR review, integrated busy soak, iPhone/Android
+Wall + Live checks and Windows evidence. No push/PR/merge/deploy by the helper.
 
 ### Summary (2026-09-27)
 
