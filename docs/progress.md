@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,18 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### GitHub roadmap status corrected (2026-10-08, #225)
+
+- The current roadmap still said the GitHub integration was unmerged.
+  `gh pr view 212 --json state,mergedAt,mergeCommit,url` confirms merge
+  commit `465250c`; the same command for #229 confirms App build
+  configuration merged at `08f0332`. Both commits are in current main.
+- Updated only the current roadmap status and links. Real-phone device and
+  installation flows, refresh-token retry and credential-helper verification
+  remain open. Historical progress entries retain their original status.
+- `git diff --check` passed. Independent PR review, required hosted checks
+  and merge remain pending. No runtime, protocol or public-doc claim changes.
 
 ### Summary (2026-09-27)
 
