@@ -60,7 +60,7 @@ export default defineConfig({
 						'docs/guides/wall',
 						'docs/guides/computers',
 						'docs/guides/recap',
-						'docs/guides/live-terminal',
+						{ label: 'Live terminal and history', slug: 'docs/guides/live-terminal' },
 						'docs/guides/project-buttons',
 						'docs/guides/answer-cards',
 						'docs/guides/needs-you',

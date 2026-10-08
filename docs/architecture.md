@@ -208,6 +208,11 @@ cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transpo
 Wire format: local IPC is four-byte big-endian length-prefixed JSON; the
 WebSocket uses JSON text messages. Counters travel as decimal strings.
 
+History conversion reuses the exact row JSON length measured by row bounding.
+It admits rows using that sum, commas and generated empty-row metadata,
+without repeatedly encoding earlier rows. The 1 MiB envelope budget, 1 KiB
+reserve and all semantic validators remain unchanged. See [history.md](history.md).
+
 Code generation: `pnpm protocol:generate` runs `scripts/generate-protocol.mjs`
 (quicktype) and writes `internal/protocol/generated.go` and
 `web/src/generated/protocol.ts`, plus the revision constants. It fails on an

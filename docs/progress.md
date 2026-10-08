@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,24 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### History page CPU and allocation reduction (#219, 2026-10-08)
+
+- **Verified defect:** the page builder repeatedly encoded all preceding rows.
+  Two synthetic 80-column benchmark runs measured 131.5–132.9 ms and
+  133.3–135.2 MB allocated per page before the fix.
+- **Changed:** reuse row-bounding JSON lengths, add row delimiters, and
+  encode only small generated metadata per candidate. Existing bounds,
+  exact page cutoff, pagination and validation remain unchanged. After:
+  2.37–2.39 ms and 5.77 MB allocated per page. No schema or pairing change.
+- **Evidence:** [issue-219](evidence/issue-219/README.md), with before/after
+  benchmark output and test/build logs. Commands include the protocol suite,
+  affected-package vet/race checks, final history race tests and the frozen
+  site install plus Astro build (29 pages). Exact-budget, one-byte-over,
+  escape/style/link/clipping and completion metadata regressions pass.
+- **Pending:** coordinator full-repository check and independent review;
+  physical-phone, native Windows/Linux and 24-hour soak gates remain pending.
+  Phone page-count correctness is the separate issue #217.
 
 ### Summary (2026-09-27)
 

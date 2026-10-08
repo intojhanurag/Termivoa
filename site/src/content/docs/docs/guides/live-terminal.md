@@ -1,7 +1,7 @@
 ---
 title: Live terminal
 description: Read and type in a Termivoa session from your phone, with control, agent keys, snippets, history and copy, and a desktop attach on your computer.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa's live terminal is the screen of one session, where you read output and type from your phone. Open it from the Sessions list or Wall.
@@ -64,6 +64,10 @@ Snippets are prompts and commands you send with one tap, saved on this phone onl
 - **A normal shell:** pull down, or tap **history**.
 
 ## Copy from history
+
+| Version | Preparing History |
+| --- | --- |
+| **Next beta** | Uses less CPU and temporary memory on your computer. Tap **history** as usual; the reading and copying steps stay the same. |
 
 1. Tap **history**.
 2. Select text.
