@@ -6,16 +6,6 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- **herdr agent choices and close guidance (#210).** Phone: **New worktree**
-  and **New tab** show **Checking available agents…** and wait before starting
-  an agent while their quiet settings read runs. **No agent** and **Shell**
-  stay available. Removed choices stay unselected; close conflicts explain
-  shared main-folder workspaces without showing peer error details. Last-tab
-  guidance follows the available close action. Host: existing create/manage
-  validation and mutation behavior remain in place; no host change.
-
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,
@@ -139,6 +129,14 @@ All notable changes are documented here. The format follows
   Safari." Host: no change.
 
 ### Fixed
+
+- **herdr agent choices and close guidance (#210).** Phone: **New worktree**
+  and **New tab** show **Checking available agents…** and wait before starting
+  an agent while their quiet settings read runs. **No agent** and **Shell**
+  stay available. Removed choices stay unselected; close conflicts explain
+  shared main-folder workspaces without showing peer error details. Last-tab
+  guidance follows the available close action. Host: existing create/manage
+  validation and mutation behavior remain in place; no host change.
 
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at

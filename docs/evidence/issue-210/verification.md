@@ -73,3 +73,7 @@ pending. The successful settings read is a snapshot: a kind can disappear
 afterward and the host can still refuse it. Quiet read failure keeps cached
 choices; no mutation is automatically retried. No trust, protocol, host
 runtime, database, stored-secret or pairing change is made.
+
+A local documentation follow-up moved this fix into the existing Unreleased
+Fixed section (one heading), with `git diff --check` and explicit staged
+review. No application or docs-site page changed after the recorded checks.

@@ -2629,3 +2629,12 @@ on the owner's Mac, which ends running sessions.
 - Isolated `fix/issue-210`; no #208/#214 implementation was bundled. Private
   PR/adversarial review, required CI access, merge, docs deployment and owner
   real-device checks remain pending with the coordinator.
+
+### Issue #210 documentation correction
+
+Moved the #210 changelog bullet into the existing Unreleased **Fixed**
+section, removing the duplicate heading introduced in the initial local
+commit. `git diff --check` passed and the Unreleased section has exactly one
+Fixed heading. No app/public-site content changed; previously passed web,
+focused browser and frozen site checks remain applicable. Local follow-up
+only; coordinator owns the private PR and deployment gates.
