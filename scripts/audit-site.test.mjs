@@ -35,3 +35,8 @@ test('unsupported containers and new summary severity fail closed', () => {
   assert.throws(() => assessSiteAudit({ ...report(), metadata: { vulnerabilities: { ...report().metadata.vulnerabilities, severe: 1 } } }));
   assert.throws(() => assessSiteAudit({ ...report(), advisories: { bad: null } }));
 });
+
+test('array-like nested containers cannot hide new paths', () => {
+  assert.throws(() => assessSiteAudit(report([{ ...known, findings: { 0: known.findings[0], length: 1 } }])));
+  assert.throws(() => assessSiteAudit(report([{ ...known, findings: [{ version: '4.2.0', paths: { 0: known.findings[0].paths[0], 1: '.>new-server>http-cache-semantics', length: 1 } }] }])));
+});

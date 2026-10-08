@@ -22,7 +22,11 @@ export function assessSiteAudit(report) {
   const findings = Object.values(report.advisories);
   const blocked = [], retained = [];
   for (const finding of findings) {
-    if (!plainObject(finding)) throw new Error('site audit returned a malformed advisory');
+    if (!plainObject(finding) || !Array.isArray(finding.findings) || finding.findings.length === 0
+      || finding.findings.some(entry => !plainObject(entry) || typeof entry.version !== 'string'
+        || !Array.isArray(entry.paths) || entry.paths.length === 0 || entry.paths.some(path => typeof path !== 'string'))) {
+      throw new Error('site audit returned a malformed advisory');
+    }
     const decision = reviewed.get(finding.github_advisory_id);
     const exact = decision && finding.module_name === decision.name && finding.severity === 'high'
       && finding.patched_versions === '<0.0.0' && finding.findings?.length === 1
