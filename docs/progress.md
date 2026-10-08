@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Start here
 
@@ -14,6 +14,23 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### Fake GitHub fixture race (#216, 2026-10-08)
+
+- Reproduced on `08f0332`, macOS arm64, Go 1.27.1:
+  `go test -race -count=3 -run '^TestGitCloneNeedsALiveToken$' ./scripts/fakegithub`
+  exited 1 with `main_test.go:173` reading the authentication slice while
+  `main.go:516` appended to it.
+- The assertion now copies the final record under the fixture's mutex and
+  checks it after unlocking. Adjacent test reads occur before the HTTP
+  server starts; the control route already locks its copy. Test code only;
+  no host or phone behaviour changes.
+- Passed: the focused command with `-count=20`, the whole fixture package
+  with `go test -race -count=10 ./scripts/fakegithub`, and
+  `go vet ./scripts/fakegithub`. Evidence:
+  [issue-216](evidence/issue-216/README.md). The repository-wide race suite
+  remains pending for the coordinating merge gate; real-device and 24-hour
+  soak gates remain pending.
 
 ### Summary (2026-09-27)
 
