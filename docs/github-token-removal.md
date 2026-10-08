@@ -3,8 +3,9 @@
 Proposed correction for #256, [ADR 0013](decisions/0013-github-token-file-unlink.md).
 **DO NOT MERGE without owner review.** Design-only commit `f5c685e` was opened
 as private draft PR #261 before local runtime implementation. The unlink-only
-implementation and local regression evidence are now prepared; final independent
-reviews and owner approval remain pending.
+implementation and local regression evidence are now prepared. Independent
+security and feasibility reviews of `0da5258` found no blocker; explicit owner
+approval remains pending.
 
 ## What was reproduced?
 
@@ -19,7 +20,7 @@ This is a local file-integrity defect, not a claimed remote exploit.
 | Step | Behavior |
 | --- | --- |
 | Caller ownership | Existing broker serialization/private canonical directory; separate #213 offline cleanup holds its exclusive data lock. |
-| Local removal | Call `os.Remove(filepath.Join(dataDir, tokenFileName))` once. No token-file open, metadata inspection, byte write, truncation or size-based allocation. |
+| Local removal | Application code calls `os.Remove(filepath.Join(dataDir, tokenFileName))` once, without token-file inspection/open, content write, truncation or size-based allocation. Go's platform implementation may inspect file attributes while removing the entry. |
 | Missing entry | Success, including absence at the removal boundary. |
 | Other failure | Return the existing local error; do not silently report successful local removal. |
 | Symlink or hard link | Remove only Termivoa's entry; do not follow a final symlink or modify another name's contents. |
@@ -31,7 +32,10 @@ Normal Disconnect retains its current revocation request and token-state
 serialization. Other callers keep their existing cancellation/error behavior;
 this task adds no new context interface or best-effort fallback. A parent
 cancellation check in the separate #213 cleanup remains before local removal.
-There is no metadata/write window because removal never writes any inode.
+There is no application inspection/open/content-overwrite window because
+removal never overwrites token contents. Go's Windows implementation may
+inspect attributes and clear a read-only attribute when retrying removal;
+this is not a claim that the OS removal implementation changes no metadata.
 This is not a guarantee against every replacement race: a same-account process
 can recreate the filename after removal, and removal acts on the current entry
 rather than proving it is an earlier inspected object. Existing caller
@@ -70,6 +74,12 @@ fix and pass after it; other-name bytes are compared directly. Normal/missing,
 damaged file, empty/nonempty directory, symlink/replaced-symlink and caller error
 regressions pass. A first Windows compile caught a task-owned test referencing
 Unix-only service fixtures; the caller test now has the service's build tags,
-while file-removal tests remain platform-neutral. Final independent security
-and feasibility review and owner approval remain pending. #213/#255 are not
-bundled; no claim that this draft is merged or released.
+while file-removal tests remain platform-neutral. #213/#255 are not bundled;
+no claim that this draft is merged or released.
+
+| Independent review, 2026-10-09 | Finding and resolution |
+| --- | --- |
+| Coordinator security review, `0da5258` | No blocker: fixed-name removal avoids content writes/size allocation and the application preopen race; only absence is normalized; other-name preservation and caller errors are directly tested. Focused race tests passed, 1.689 s. |
+| History agent feasibility/alternatives review, `0da5258` | No blocker: constant application memory, existing missing/error/directory handling and unchanged Disconnect behavior; unlink is simpler and safer than overwrite/link-count/quarantine alternatives. Independent focused tests passed on macOS arm64, 0.664 s, with no skips. |
+| Feasibility wording precision | Distinguish application code from Go's platform implementation: Windows removal may inspect/adjust attributes internally without overwriting contents. Qualified above and in ADR 0013. |
+| Remaining gates | Owner approval, combined integration, native Linux/Windows, real-phone and broader required checks remain pending; CI is denied. |

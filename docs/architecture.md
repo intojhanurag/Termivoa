@@ -18,8 +18,10 @@ with removal of only the fixed token filename. The draft implementation uses
 `os.Remove` and treats absence as success, with no content open/write or
 size-based allocation. Other hard-linked names and final symlink targets are
 not overwritten; removal makes no secure-erasure or arbitrary replacement-race
-guarantee. Independent reviews and owner approval are required before merge;
-main is unchanged. Separate #213/#255 work is not bundled.
+guarantee. Independent security/feasibility reviews of `0da5258` found no
+blocker; explicit owner approval remains required before merge. Native
+Linux/Windows and combined integration remain pending; main is unchanged.
+Separate #213/#255 work is not bundled.
 
 ## 1. Big picture
 

@@ -277,6 +277,7 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 ADR 0013/design-only commit `f5c685e` is open as draft PR #261. Local unlink-only
 implementation, linked/replaced-file regression tests and public docs are
-prepared. macOS GitHub race/vet and Linux/Windows test compilation pass; native
-Linux/Windows, independent security/feasibility review and explicit owner
-approval remain pending. CI is denied; do not enable or merge. #213/#255 separate.
+prepared. macOS GitHub race/vet and Linux/Windows test compilation pass;
+independent security/feasibility reviews of `0da5258` found no blocker.
+Explicit owner approval, combined integration and native Linux/Windows remain
+pending. CI is denied; do not enable or merge. #213/#255 separate.

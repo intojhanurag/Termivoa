@@ -18,8 +18,11 @@ problem. A synthetic 50-byte fixture reproduces the hard-link corruption on
 
 Remove only the stored-login directory entry with Go's `os.Remove`. Treat
 absence as success; propagate other errors through the existing caller's
-handling. Do not inspect/open/write/sync the token inode or allocate a buffer
-from its size. A symlink is unlinked, a hard link loses only Termivoa's name,
+handling. Application code does not inspect/open/write/sync the token inode
+or allocate a buffer from its size. Go's removal implementation may inspect
+attributes; on Windows it may clear a read-only attribute when retrying.
+Neither operation overwrites token contents. A symlink is unlinked, a hard
+link loses only Termivoa's name,
 and a replaced entry's content is never overwritten. A nonempty directory
 remains an error; this is not recursive cleanup.
 
@@ -52,3 +55,11 @@ check Go's supported OS behavior, error/absence handling and alternatives.
 Record findings in the design and obtain explicit owner approval before
 merging either design or implementation (AGENTS.md rule 24). CI remains denied;
 do not enable it or claim hosted checks passed.
+
+On 2026-10-09, independent coordinator security and history-agent feasibility
+reviews of `0da5258` found no blocker, with focused race/regression tests
+passing. The feasibility review confirmed Go's Unix unlink/rmdir and Windows
+DeleteFile/RemoveDirectory implementation and qualified application-versus-OS
+metadata claims above. See the design/evidence for commands and limits.
+Explicit owner approval and native Linux/Windows execution remain pending;
+this ADR remains proposed and the draft remains DO NOT MERGE.

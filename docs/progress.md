@@ -15,6 +15,28 @@ Last updated: 2026-10-09
 
 ## Log
 
+### 2026-10-09 — #256: independent reviews recorded, owner gate still open
+
+Coordinator security and history-agent feasibility/alternatives reviews pinned
+`0da5258750bf09d6915f6c4cfd35530c90480b6b` and found no blocker. The coordinator's
+focused race gate
+`GOTOOLCHAIN=go1.27.1 go test -race ./internal/github -run '^TestDeleteAccount|^TestDisconnectReportsLocalRemovalFailure$' -count=1 -timeout=60s`
+passed, 1.689 s; the feasibility reviewer independently ran
+`go test ./internal/github -run '^TestDeleteAccount|^TestDisconnectReportsLocalRemovalFailure$|^TestDeleteDoesNotFollowASymlink$|^TestDisconnectRevokesAndDeletes$' -count=1 -v`
+on macOS arm64: passed, 0.664 s, no skips. Reviews verified fixed-name/content
+preservation, absence/error handling, unchanged caller behavior and simpler
+unlink alternatives. Go's Windows removal internals may inspect/adjust
+attributes, so the ADR/design now explicitly qualify no inspection as an
+application-code statement rather than a claim about the OS implementation.
+No runtime/public behavior changed in this documentation follow-up.
+
+[Evidence](evidence/issue-256/README.md) records reviewed head and commands.
+The coordinator pushed the implementation to existing draft PR #261; no
+approval/merge/deployment claim. Explicit owner approval, combined integration,
+broader required checks, native Linux/Windows and real-phone evidence remain
+pending. CI is denied. `git diff --check` is the documentation-only check;
+implementation race/vet/protocol/site results remain those recorded below.
+
 ### 2026-10-09 — #256: unlink-only local implementation prepared for review
 
 After design-only `f5c685e` opened as draft PR #261, local cleanup now removes

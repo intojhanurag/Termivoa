@@ -66,8 +66,24 @@ notes describe removal/copy limits. Existing GitHub sidebar entry remains
 correct. No new command/failure mode/major feature: CLI, troubleshooting and
 landing pages require no change for this task.
 
-Pending: independent final security/feasibility review, explicit owner approval,
-parent integration (including separate #213/#255), broader required checks,
+## Independent reviews (2026-10-09)
+
+Both reviews pinned implementation `0da5258750bf09d6915f6c4cfd35530c90480b6b`.
+
+| Review | Actual evidence and verdict |
+| --- | --- |
+| Coordinator security | `GOTOOLCHAIN=go1.27.1 go test -race ./internal/github -run '^TestDeleteAccount\|^TestDisconnectReportsLocalRemovalFailure$' -count=1 -timeout=60s` passed, 1.689 s. No blocker: fixed application filename, no token-content write/size allocation, only absence normalized, outside bytes and caller failure tested; remote/context/caller semantics unchanged. |
+| History-agent feasibility/alternatives | `go test ./internal/github -run '^TestDeleteAccount\|^TestDisconnectReportsLocalRemovalFailure$\|^TestDeleteDoesNotFollowASymlink$\|^TestDisconnectRevokesAndDeletes$' -count=1 -v` passed on macOS arm64, 0.664 s, no skips. No blocker: normal/missing/invalid entries and outside bytes correct; constant application memory; link-count/verified-overwrite/quarantine retain unnecessary shared-inode write risks. |
+| Platform source review | Feasibility reviewer checked Go 1.27.1 Unix unlink/rmdir and Windows DeleteFile/RemoveDirectory plus `os.Remove` documentation. Windows implementation may inspect attributes/clear read-only internally: the application does no inspection, and removal does not overwrite contents. Native Windows/Linux execution is not claimed. |
+
+Replacement fixtures replace entries before deletion; they do not prove
+arbitrary concurrent replacement protection. Existing caller behavior and
+normal Disconnect error handling remain unchanged.
+
+Pending: explicit owner approval, parent integration (including separate
+#213/#255), broader required checks,
 native Linux/Windows and real-phone evidence. CI remains denied; no hosted
 check/merge/deployment claim. Only local commits by the implementing helper;
-the coordinator owns the draft PR and push.
+the coordinator owns draft PR #261 and has pushed the implementation. This
+follow-up changes internal review documentation only; `git diff --check`
+passes, with no runtime/test/public-doc change or repeated build claim.
