@@ -374,3 +374,11 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [progress.md](progress.md), [pending-work.md](pending-work.md),
 [owner-verification.md](owner-verification.md),
 [release-checklist.md](release-checklist.md).
+
+### How does desktop attach reject invalid snapshot ranges?
+
+The direct `internal/desktop.FrameClient` row assembler checks start and count
+against declared height without overflowing addition. Invalid chunks reset
+assembly and request resync before indexing or painting. Strict transport
+validation remains separate; valid frame/protocol behavior is unchanged.
+[Desktop frame client](desktop-frame-client.md), issue #247.

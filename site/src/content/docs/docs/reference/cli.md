@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Every command and flag of pterm, the Termivoa host program, for setup, startup, pairing phones, sessions, projects, shells and dev tests.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 `pterm` is the Termivoa host program. `pterm help` (or `--help`, `-h`) prints this command list.
@@ -38,6 +38,8 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | `pterm revoke <device-id>` | Asks first, then removes a phone's access at once. |
 
 The pairing link and QR code are secret. Do not share them.
+
+**Next beta:** Termivoa desktop attach rejects invalid screen row ranges and asks for a fresh screen safely. Valid screens and controls work as before.
 
 ## Use several computers
 

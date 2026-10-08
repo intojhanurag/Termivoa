@@ -1,12 +1,14 @@
 ---
 title: Release notes
 description: Termivoa private beta release history, with the new features, fixes and known limits of each version, and what is coming in the next beta.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 ## Next beta (not released yet)
+
+- **Desktop attach:** Termivoa rejects invalid screen row ranges safely and asks for a fresh screen. Phone behavior is unchanged.
 
 New features on `main` show here until the next beta ships.
 

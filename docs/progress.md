@@ -2609,3 +2609,16 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## 2026-10-08: desktop snapshot row bounds (#247)
+
+Direct API baseline panicked at MaxInt64+1 row; subtraction-based height
+checks now reject/reset before indexing. Eight invalid boundaries plus valid
+last-row recovery pass. `go test -race ./internal/desktop ./internal/protocol
+-count=1` and vet pass; evidence under docs/evidence/issue-247. Protocol/valid
+render behavior unchanged. Native platforms and hosted checks remain pending;
+owner asked to keep CI disabled. Frozen docs validation follows.
+
+Frozen Astro29-page build/link validation passed; independent review's
+desktop/protocol race rerun passed3.165s/4.965s. The reviewer caught a missing
+Next beta entry, which is now added; final docs rebuild after that change passed (29 pages and all links).

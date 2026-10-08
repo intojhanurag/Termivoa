@@ -6,6 +6,9 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
+- Desktop snapshot row bounds (#247) corrected locally: no addition overflow;
+  direct-API recovery/race tests pass. Private PR and hosted checks pending.
+
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
   (#53, #56).
