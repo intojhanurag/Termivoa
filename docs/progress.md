@@ -2609,3 +2609,41 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## Issue #236 — worktree create admission (2026-10-08)
+
+- Branch `fix/issue-236`, base `08f0332`. The audit's original-client probe
+  retained ten canceled broker creates and ten connections behind the
+  mutex. Three new permanent regressions failed on the unmodified broker:
+  busy admission queued, pre-admission cancellation was discarded, and
+  closed callers stayed queued during shutdown.
+- Fix: one accepted worktree create with `TryLock`, zero waiting operations.
+  Check cancellation before and after acquisition; detach it only for
+  accepted durable work. Extra requests, including a concurrent duplicate,
+  receive correlated `limit_exceeded` without a new receipt. Accepted work
+  still completes after disconnect, and its later replay returns the same
+  session. The phone has fixed limit text covering busy creation and
+  capacity, with no extra host/peer error disclosure.
+- Passed: `go test ./internal/broker ./internal/gatewayclient
+  ./internal/gitchanges`; `go test -race ./internal/broker -run
+  '^(TestWorktree|TestManagementServeCancellation)' -count=1`; `go vet` on
+  those three packages. The four focused admission tests also passed,
+  including twenty closed IPC callers leaving while the active slot is
+  held, and a real Git hook proving accepted disconnect, duplicate
+  refusal, authorization, shutdown completion and exactly one replayed job.
+  After adding failure-path admission reuse, `go test -race
+  ./internal/broker -run '^TestWorktreeAdmission' -count=1 -v` passed again.
+- Passed with Node 24.11.0: `pnpm install --frozen-lockfile`;
+  `pnpm --filter @phone-terminal/web test -- src/screens/Worktree.test.tsx`
+  (the full 57-file/1,048-test suite ran); `pnpm typecheck`;
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro
+  build` (29 pages, all internal links valid). `git diff --check` passed.
+- Evidence: [issue-236/verification.md](evidence/issue-236/verification.md).
+  Architecture, [worktrees.md](worktrees.md), roadmap, README, changelog,
+  existing Worktrees guide/sidebar, Next beta notes and troubleshooting are
+  covered. No protocol, command, stored-data, pairing or trust change.
+- Pending: coordinator PR/adversarial review, required full checks, push,
+  merge and site deployment; real phones and native Windows (the real Git
+  hook fixture is POSIX-only), native Linux and 24-hour soak. No unrelated
+  issue bundled. Accepted work retains its existing Git/rollback limits;
+  shutdown has no new hard total deadline. No fresh database or pairing.

@@ -30,7 +30,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
   tap a path like `src/app.ts:42` in the terminal to open it there.
 - **Worktrees.** Start a task in its own folder and branch from `main` (or
   any branch) with one tap, with a random name you can edit, and Claude or
-  Codex already running in it.
+  Codex already running in it. Next beta: a computer creates one at a time;
+  another request gets a limit message immediately instead of waiting.
 - **herdr.** If your computer runs [herdr](https://herdr.dev), the phone shows
   its projects and worktrees with BLOCKED, DONE and WORKING, buzzes when an
   agent is blocked or finished, opens one herdr terminal in Live and makes new

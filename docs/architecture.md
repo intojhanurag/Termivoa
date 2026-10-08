@@ -91,6 +91,15 @@ SQLite, release the data lock. A gateway restart does not end sessions. A
 broker crash, logout or reboot ends sessions; they show as lost and are never
 rerun.
 
+Worktree session creation admits one active operation with
+`worktreeCreates.TryLock`, with zero queued operations (#236). Cancellation
+is checked before and immediately after admission; only admitted work uses
+`context.WithoutCancel`. Concurrent duplicates receive `limit_exceeded`
+without changing receipts; replay after completion returns the accepted
+operation's session. Disconnect and shutdown cannot accumulate create
+waiters. Shutdown still waits for the one accepted operation, including
+existing Git timeout/rollback behavior. See [worktrees.md](worktrees.md).
+
 ### Startup registration
 
 Per user, no elevation. Generated and applied by `internal/lifecycle`.
@@ -302,7 +311,7 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Changes | Diff list and file view, commit selected paths, push (never force), line comments into the composer | `internal/gitchanges`, `internal/broker/changes.go` | `web/src/screens/Changes.tsx` | [changes.md](changes.md) |
 | Project buttons | Project commands in the Snips sheet; typed into the session as input | `internal/projecttasks`, `internal/broker/tasks.go` | `web/src/screens/Snippets.tsx` | [project-tasks.md](project-tasks.md) |
 | Files | Browse, search and read project files; tap `path:line` in the terminal | `internal/projectfiles`, `internal/broker/files.go` | `web/src/screens/Files.tsx`, `web/src/terminal/pathLinks.ts` | — |
-| Worktrees | New session in `~/termivoa/worktrees/<repo>/<name>` on branch `termivoa/<name>` (`git worktree add`); remove it | `internal/broker/worktree.go`, `internal/gitchanges/worktree.go` | `web/src/screens/Worktree.tsx` | — |
+| Worktrees | New session in `~/termivoa/worktrees/<repo>/<name>` on branch `termivoa/<name>` (`git worktree add`); remove it; one active create, no waiting queue | `internal/broker/worktree.go`, `internal/gitchanges/worktree.go` | `web/src/screens/Worktree.tsx` | [worktrees.md](worktrees.md) |
 | Dev-server preview | Proxy one port that the session's own processes listen on (OS scan only); for sessions on every computer in the list: the home app frames a peer's own preview origin, after a reachability probe, with the computer's label and **untrusted page** over a peer's page | `internal/broker/devpreview.go`, `internal/ptyhost/listen.go`, `internal/gateway/preview.go`, `internal/gateway/handler.go` (`deviceConnectSources`), `internal/broker/gateway_rpc.go` (`gateway.preview.check`) | `web/src/screens/Preview.tsx`, `web/src/screens/PreviewChip.tsx`, `web/src/screens/App.tsx` (`previewFor`), `web/src/computers.ts` (`previewOriginOf`) | [preview.md](preview.md), [peer-preview.md](peer-preview.md), ADR 0006 |
 | Photo and voice | Photo upload into the project folder (controller only); dictation with the Web Speech API | `internal/broker/upload.go` | `web/src/terminal/attachments.ts`, `web/src/terminal/image.ts`, `web/src/terminal/speech.ts` | — |
 | Live folder | Current working folder from the OS or OSC 7 / OSC 9;9; display only | `internal/broker/cwd.go`, `internal/broker/cwd_hook.go`, `internal/ptyhost/cwd.go` | `web/src/screens/folder.ts` | [live-folder.md](live-folder.md) |

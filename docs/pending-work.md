@@ -1,11 +1,16 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-07. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
+- Broker worktree admission (#236): one active create and no waiting queue.
+  Closed callers do not accumulate handlers; accepted work and its receipt
+  survive disconnect. Concurrent calls get a limit response. Design:
+  [worktrees.md](worktrees.md); evidence: [issue-236](evidence/issue-236/verification.md).
+  Real-phone and native Windows checks remain pending.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
   (#53, #56).

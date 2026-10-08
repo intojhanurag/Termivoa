@@ -130,6 +130,13 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- Worktree creation (#236). Host: one create is admitted at a time without
+  a waiting queue; extra calls receive a definite limit refusal instead of
+  leaving canceled handlers behind. Accepted work still finishes and stores
+  its original receipt after disconnect, so replay cannot create it twice.
+  Phone: the limit message now explains waiting for another create or
+  removing a finished worktree, rather than always claiming there are too
+  many worktrees. No protocol, pairing or database change.
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.

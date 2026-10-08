@@ -99,8 +99,8 @@ type ManagementServer struct {
 	// changesWrites holds the session IDs with a commit or push running
 	// (changes.go): one write per session, whoever asks.
 	changesWrites sync.Map
-	// worktreeCreates runs one worktree create at a time, so a replayed
-	// operation finds the first one's receipt instead of making a second.
+	// worktreeCreates admits one worktree create with no waiting queue.
+	// Accepted work retains its receipt even if the caller disconnects.
 	worktreeCreates sync.Mutex
 	// ownOrigin caches the configured origin, so authorization never reads
 	// SQLite for it. It is refreshed whenever the origin is read or set.
@@ -475,11 +475,24 @@ func (server *ManagementServer) createSession(
 	payload protocol.BrokerRPCSessionCreateRequestPayload,
 ) (protocol.BrokerRPCSessionMutationResultPayload, error) {
 	if payload.Worktree != nil {
-		// git must not be cut short by a closed request; a replay (checked
-		// again under the lock) never makes a second worktree.
-		ctx = context.WithoutCancel(ctx)
-		server.worktreeCreates.Lock()
+		// Do not detach cancellation until admission. A blocked mutex here
+		// used to retain arbitrarily many closed callers and later run their
+		// work. Refuse concurrent requests, including duplicates, without
+		// writing a receipt; an accepted operation remains the only writer.
+		if err := ctx.Err(); err != nil {
+			return protocol.BrokerRPCSessionMutationResultPayload{}, err
+		}
+		if !server.worktreeCreates.TryLock() {
+			return protocol.BrokerRPCSessionMutationResultPayload{}, errWorktreeBusy
+		}
 		defer server.worktreeCreates.Unlock()
+		if err := ctx.Err(); err != nil {
+			return protocol.BrokerRPCSessionMutationResultPayload{}, err
+		}
+		// Once admitted, git and its durable receipt must finish despite a
+		// closed request. Replay under the same slot cannot make a second
+		// worktree. Git retains its existing execution time/output limits.
+		ctx = context.WithoutCancel(ctx)
 	}
 	replayed, found, err := server.config.Registry.ReplayCreate(
 		ctx, payload.OperationID, payload.ProjectID, payload.ShellProfileID, payload.Worktree,
@@ -725,6 +738,8 @@ func classifyManagementError(err error) managementFailure {
 		return managementFailure{protocol.GenerationChanged, "session generation changed"}
 	case errors.Is(err, ErrSessionRetired):
 		return managementFailure{protocol.SessionLost, "session process is no longer live"}
+	case errors.Is(err, errWorktreeBusy):
+		return managementFailure{protocol.LimitExceeded, "another worktree is being created on this computer; wait for it to finish, then try again"}
 	case errors.Is(err, ErrSessionLimit), errors.Is(err, ErrOperationLimit),
 		errors.Is(err, store.ErrOperationReceiptLimit):
 		return managementFailure{protocol.LimitExceeded, "broker resource limit reached"}

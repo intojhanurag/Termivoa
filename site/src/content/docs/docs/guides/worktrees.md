@@ -1,7 +1,7 @@
 ---
 title: Worktrees
 description: Termivoa worktrees give each new task its own folder and branch from your phone, so several coding agents can work in one repository at once.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa can start a new task in a git worktree: a second folder of your repository on its own branch, with a new session in it. Two agents in two worktrees do not change each other's files. All worktrees share one history, so you commit and push as usual.
@@ -45,7 +45,13 @@ If the folder has uncommitted changes, new files, or files that git ignores (suc
 
 ## What are the limits?
 
-One repository can have up to 50 worktrees in `~/termivoa/worktrees`. Remove one to make more.
+| Limit | What to do |
+| --- | --- |
+| 50 Termivoa worktrees per repository | Remove a finished worktree to make another. |
+| **Next beta:** one worktree creation at a time per computer | Wait for the current create to finish, then tap **Create** again. Extra requests receive a limit message immediately. |
+
+Closing the sheet or app after a create started can leave the computer
+finishing it. Check Sessions for that worktree before creating it again.
 
 ## Common questions
 
