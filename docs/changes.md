@@ -123,10 +123,42 @@ Safety:
   No `-c` overrides; the user's git and ssh settings apply.
 - Environment: inherited plus `GIT_TERMINAL_PROMPT=0`; stdin is the null
   device, so git never waits for input.
-- 120 s per request (hooks and remotes can be slow), then git is killed and
-  the reply is `failed`.
+- 120 s per request (hooks and remotes can be slow), then the owned process
+  boundary is killed and git is reaped before the reply is `failed`.
+  The one-second pipe wait remains; Windows Job shutdown also has a
+  one-second active-process wait. See the cancellation boundary below.
 - `failed` carries `output`: the last 2000 characters of git's stdout and
   stderr together (a hook's message, a missing `user.email`, a rejected
   push), valid UTF-8 and trimmed.
 - If `git add` ran but the commit then failed (for example a hook said no),
   the untracked files stay added, as after the same commands in a terminal.
+
+
+## How do write cancellation and worktree rollback own hooks? (#222)
+
+Every `runWrite` command uses the same small process runner for commit,
+push, worktree add/remove/prune and branch cleanup. It sets ownership before
+user code can execute. The caller's environment, identity, signing, hooks,
+git/ssh settings and null stdin are preserved; no new protocol or retry.
+
+| Platform | Ownership and completion |
+| --- | --- |
+| Unix | `Setsid` creates an isolated session/group. Context cancellation sends SIGKILL to its whole group. `Wait` reaps git; a final group kill also ends helpers left after leader exit, including ones whose output pipes were closed. Orphan reaping belongs to the OS. |
+| Windows | Create a KILL_ON_JOB_CLOSE Job, start suspended, assign before resuming the primary thread using the existing PTY startup sequence. Cancellation terminates the Job and also kills a still-unassigned suspended child. After git's Wait, terminate leftovers, poll the Job's active count for at most one second and close its handle. |
+| Failed start/assignment | Close all allocated handles; a started suspended child is killed and waited before returning an error. No unowned fallback. |
+
+A failed worktree add reaches rollback only after the write runner's cleanup.
+A failure after an already-completed git change does not undo that change:
+inspect the branch/files before manually retrying, as with a lost reply.
+Normal synchronous hooks keep running on successful writes and their output
+is still reported. Helpers deliberately launched to remain in the owned
+boundary are cleaned up when the operation ends. Unix hooks that deliberately
+start another session (for example `setsid`) escape that group; hooks are
+trusted user code, not a sandbox. No unrelated process group is signaled.
+
+Tests run real `pre-commit` and `post-checkout` hooks and assert hook/child/sleep
+PIDs are gone after cancellation; a closed-output case cannot pass merely
+because WaitDelay closed pipes. A separate controlled parent/child/grandchild
+fixture covers cancellation, deadline, failed/canceled start and preservation
+of an unrelated process on each native supported OS. Native Windows/Linux
+execution remains a release gate when only cross-compilation was performed.

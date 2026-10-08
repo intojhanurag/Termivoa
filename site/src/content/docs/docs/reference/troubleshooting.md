@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -278,6 +278,16 @@ A text that stays after **↻** on another computer: pair that computer again th
 ## Sessions end when you log out of a server
 
 Run `pterm setup` again and answer `y` to the linger question. More in [Keep sessions running on a server or VPS](/docs/install/linux/#keep-sessions-running-on-a-server-or-vps).
+
+## Why did a commit, push or worktree creation time out?
+
+Termivoa allows about two minutes for a git write. A slow hook or remote can
+exceed that. **Next beta:** git and its ordinary hook children are stopped
+before failure is reported or a failed worktree is cleaned up. Check the
+branch and files before retrying: a completed commit or push is not undone.
+Fix the hook or connection on the computer. Termivoa does not automatically
+send the write again. A program that a hook deliberately detached on macOS
+or Linux is outside this cleanup; manage it on the computer.
 
 ## Changes says "not a git repository"
 

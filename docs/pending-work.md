@@ -1,10 +1,15 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-07. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
+
+- Git write cancellation owns and terminates ordinary hook descendants before
+  returning or worktree rollback (#222). Real macOS hook/PID tests and
+  cross-platform fixture tests are added; native Linux/Windows and hosted
+  checks remain pending, as do existing owner phone gates.
 
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
