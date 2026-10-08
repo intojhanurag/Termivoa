@@ -1,2 +1,4 @@
 packages:
   - web
+overrides:
+  'source-map-js@<1.2.2': 1.2.2
