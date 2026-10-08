@@ -77,3 +77,24 @@ filesystem. No fresh database or pairing is needed.
 Full `scripts/check`, real-agent launches, real-phone owner checks, CI, PR
 review and deployment were not executed by this helper. Root owns those
 gates. No performance percentile or real-phone success is claimed.
+
+## Integration correction before PR
+
+The first commit's direct `LookAgain` coverage missed that broker
+`settingsInfo` requested it only for missing/stopped providers. Before the
+correction, `TestSettingsReadLooksForHerdrAgain` failed with "a read of a
+ready provider did not ask for fresh agent availability", and
+`TestSettingsReadRefreshesInstalledHerdrKindsWhileReady` failed after 10.22 s
+with "condition not reached" on an actual gateway settings read.
+
+The ready state now requests refresh under the existing 2 s throttle.
+Responses still return cached data immediately; the next read sees the
+completed poll. A newly installed fake pi command appears without executing
+it or waiting for the 30 s scan timer. Five race repetitions of both settings
+regressions pass (16.531 s). Prior whole-package checks above predate this
+small integration correction; focused settings checks and broker vet were
+rerun for it.
+
+Additional correction verification: `go vet ./internal/broker` and
+`go test -race -run '^Test(Settings|ProviderGet|ProviderUpdate)'
+./internal/broker` pass (7.960 s).

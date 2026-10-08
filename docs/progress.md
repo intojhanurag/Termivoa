@@ -2639,3 +2639,24 @@ on the owner's Mac, which ends running sessions.
 - Evidence: [issue-208/README.md](evidence/issue-208/README.md). Full
   `scripts/check`, real-agent launch, real-phone checks and deployment remain
   unexecuted here; the coordinating agent owns PR / merge and deployment.
+
+### Issue #208 integration correction before PR
+
+The first implementation's provider-level refresh test called `LookAgain`
+directly. Independent review of the broker found that `settingsInfo` skipped
+ready providers, so a phone settings read still missed new installations
+until the 30 s timer. A ready-state wake regression and an actual gateway
+settings regression both failed before the correction (the latter timed out
+after 10 s). The broker now refreshes ready providers under the existing
+2 s throttle, without blocking the response or executing an agent.
+
+`go test -race -count=5 -run
+'^TestSettingsRead(LooksForHerdrAgain|RefreshesInstalledHerdrKindsWhileReady)$'
+./internal/broker` passed (16.531 s). Existing public guide and design refresh
+claims are now exercised through the broker. Full prior checks above remain
+evidence for the first commit; focused settings checks and broker vet cover
+this correction. No additional production or owner gate was executed.
+
+Additional correction checks passed: `go vet ./internal/broker` and
+`go test -race -run '^Test(Settings|ProviderGet|ProviderUpdate)'
+./internal/broker` (7.960 s).
