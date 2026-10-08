@@ -9,13 +9,20 @@ const reviewed = new Map([
 
 // These are two reviewed, unpatched build-only findings, not package-wide
 // exclusions. See docs/dependencies.md for reachability and upstream evidence.
+const severities = ['info', 'low', 'moderate', 'high', 'critical'];
+const plainObject = value => value !== null && typeof value === 'object'
+  && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+
 export function assessSiteAudit(report) {
-  if (!report || report.error || !report.advisories || !report.metadata?.vulnerabilities) {
+  if (!plainObject(report) || report.error || !plainObject(report.advisories)
+    || !plainObject(report.metadata) || !plainObject(report.metadata.vulnerabilities)
+    || Object.keys(report.metadata.vulnerabilities).some(key => !severities.includes(key))) {
     throw new Error('site audit returned an error or an unsupported report');
   }
   const findings = Object.values(report.advisories);
   const blocked = [], retained = [];
   for (const finding of findings) {
+    if (!plainObject(finding)) throw new Error('site audit returned a malformed advisory');
     const decision = reviewed.get(finding.github_advisory_id);
     const exact = decision && finding.module_name === decision.name && finding.severity === 'high'
       && finding.patched_versions === '<0.0.0' && finding.findings?.length === 1
@@ -28,7 +35,7 @@ export function assessSiteAudit(report) {
   // Never accept an empty/malformed advisory list while summary counts report
   // findings. This also makes future pnpm report-format changes fail closed.
   const counts = report.metadata.vulnerabilities;
-  for (const severity of ['info', 'low', 'moderate', 'high', 'critical']) {
+  for (const severity of severities) {
     const actual = findings.filter(finding => finding.severity === severity).length;
     if (!Number.isInteger(counts[severity]) || counts[severity] !== actual) throw new Error('site audit summary does not match its advisories');
   }

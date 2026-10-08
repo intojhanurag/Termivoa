@@ -2641,9 +2641,13 @@ on the owner's Mac, which ends running sessions.
   `docs/dependencies.md`; no claim that the upstream vulnerabilities are fixed.
 - Added independent site build/audit to the existing vulnerability CI job.
   Root threshold unchanged. `node --test scripts/audit-site.test.mjs` passed
-  four fail-closed regressions; `node scripts/audit-site.mjs` passed while
+  five fail-closed regressions; `node scripts/audit-site.mjs` passed while
   printing both retained unpatched findings. New findings, paths, versions,
   available patches, audit errors or report drift block the new gate.
 - Evidence: `docs/evidence/issue-228/README.md`. Independent review, hosted
   required checks, CI-minutes permission and merge remain pending. No runtime,
   credentials, public deployment or private/public repository setting changed.
+
+- Independent #228 review reproduced two unsupported report shapes accepted by
+  the initial checker. Explicit object/severity validation and a fifth
+  regression now reject them; final reviewer verification remains pending.

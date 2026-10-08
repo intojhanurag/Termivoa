@@ -29,3 +29,9 @@ test('audit errors, report drift and inconsistent summary fail closed', () => {
     assert.throws(() => assessSiteAudit(malformed));
   }
 });
+
+test('unsupported containers and new summary severity fail closed', () => {
+  assert.throws(() => assessSiteAudit({ ...report(), advisories: [] }));
+  assert.throws(() => assessSiteAudit({ ...report(), metadata: { vulnerabilities: { ...report().metadata.vulnerabilities, severe: 1 } } }));
+  assert.throws(() => assessSiteAudit({ ...report(), advisories: { bad: null } }));
+});

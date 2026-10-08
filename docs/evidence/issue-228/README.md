@@ -12,7 +12,7 @@ No owner sessions, credentials or terminal history were used.
 | CSS parity | SHA-256 maps of all eight emitted CSS files match the source-map-only branch's original parser output exactly |
 | Raw audit after patch | Exits 1: two high, zero moderate, zero critical. No claim of zero advisories |
 | Reviewed gate | `node scripts/audit-site.mjs` exits 0 and prints both retained advisory IDs/counts; exact findings and exposure documented in dependencies.md |
-| Fail-closed regressions | `node --test scripts/audit-site.test.mjs` passes four tests: errors/report drift, new severity/ID/path/version, available patch and new moderate/high/critical findings block |
+| Fail-closed regressions | `node --test scripts/audit-site.test.mjs` passes five tests: errors/report drift, new severity/ID/path/version, available patch and new moderate/high/critical findings block |
 
 Primary advisory pages and locked dependency source were inspected directly.
 Astro's remote-image module creates its own requests and calculates cache TTLs;
@@ -29,3 +29,9 @@ ignore either package or advisory in the root workspace. Required hosted checks
 remain unexecuted because CI is manually disabled and permission to spend
 Actions minutes is pending. Independent adversarial review and merge are pending.
 No deployed site or host runtime was changed by these local checks.
+
+Independent adversarial review found that array advisory containers and unknown
+summary severity keys could pass. Both shapes were reproduced, then rejected
+by explicit plain-object/exact-severity validation. The new fifth regression
+covers those shapes and null advisory entries. No report-drift gate is claimed
+passed before that correction.
