@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -488,6 +488,15 @@ Termivoa started herdr's server, but it did not answer in time. Run `herdr serve
 ### "codex is not running in herdr now."
 
 Termivoa offers an agent only while one of that kind runs in herdr on that computer. The agent you picked in **New worktree** or **New tab** left herdr before you tapped the button. The sheet goes to no agent; it never starts another agent in its place. Pick an agent that is listed, or start that agent in herdr first.
+
+### Why does herdr say "too many requests; wait a minute and try again"?
+
+Termivoa limits repeated creates on each computer. **Next beta:** a refusal
+before creation starts keeps your allowance; an attempted create still
+counts if it fails. **New worktree** and **New tab** with an agent share
+three attempts per minute. Wait about a minute before another create. If a
+tab or worktree already exists, open it to continue rather than creating it
+again. There is also a separate limit for repeated workspace-menu actions.
 
 ### "The tab is ready, but the agent did not start."
 

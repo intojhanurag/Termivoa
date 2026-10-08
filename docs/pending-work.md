@@ -1,10 +1,14 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-07. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
+
+- herdr create quota counts pending and attempted changes, and refunds
+  preflight refusals once in their original window (#209), for **New worktree**
+  and agent **New tab**. Owner real-phone checks remain in Next 5.
 
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>

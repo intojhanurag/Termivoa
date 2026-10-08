@@ -50,7 +50,7 @@ var errorCodePattern = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProviderManageRequest, project Project) (protocol.HTTPProviderManageResponse, error) {
 	var response protocol.HTTPProviderManageResponse
 	if !provider.create.TryLock() {
-		return response, ErrBusy
+		return response, refused(ErrBusy)
 	}
 	defer provider.create.Unlock()
 	provider.mu.RLock()
@@ -60,14 +60,14 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 		return response, provider.start(current)
 	}
 	if current.state != protocol.HTTPProviderStateReady {
-		return response, ErrUnavailable
+		return response, refused(ErrUnavailable)
 	}
 	if request.Agent != nil && !slices.Contains(current.kinds, *request.Agent) {
-		return response, ErrKind
+		return response, refused(ErrKind)
 	}
 	fresh, ok := provider.readMapped(ctx)
 	if !ok {
-		return response, ErrUnavailable
+		return response, refused(ErrUnavailable)
 	}
 	var group protocol.HTTPProviderGroup
 	var item protocol.HTTPProviderItem
@@ -84,7 +84,7 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 			}
 		}
 		if !found {
-			return response, ErrTargetMissing
+			return response, refused(ErrTargetMissing)
 		}
 		response.ItemID = &item.ID
 	}
@@ -102,28 +102,28 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 	switch request.Action {
 	case protocol.CloseItem, protocol.RemoveItem:
 		if request.Name == nil || item.Name != *request.Name {
-			return response, ErrRenamed
+			return response, refused(ErrRenamed)
 		}
 		method = "workspace.close"
 		if request.Action == protocol.RemoveItem {
 			if item.Linked == nil || !*item.Linked {
-				return response, ErrNotLinked
+				return response, refused(ErrNotLinked)
 			}
 			method, params["force"] = "worktree.remove", false
 		} else if item.Linked == nil && (len(group.Items) == maxItems ||
 			slices.ContainsFunc(group.Items, func(other protocol.HTTPProviderItem) bool { return other.Linked != nil })) {
 			// A main checkout with an open linked worktree (or with more items than the list shows):
 			// herdr 0.8.2 would close the worktrees too; 0.9.3 refuses.
-			return response, ErrGroupOpen
+			return response, refused(ErrGroupOpen)
 		} else if item.Linked == nil && len(group.Items) > 1 {
 			// Another workspace at the same main checkout: herdr 0.8.2 would close that one too, without
 			// a word; 0.9.3 refuses each of them and wants close_group, which is never sent (a close
 			// ends one workspace).
-			return response, ErrGroupShared
+			return response, refused(ErrGroupShared)
 		}
 	case protocol.NewTab:
 		if len(item.Targets) >= maxTargets {
-			return response, ErrFull
+			return response, refused(ErrFull)
 		}
 		method, params["focus"] = "tab.create", false
 	case protocol.CloseTab:
@@ -138,19 +138,19 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 			}
 		}
 		if found == "" {
-			return response, ErrTargetMissing
+			return response, refused(ErrTargetMissing)
 		}
 		if len(tabs) < 2 {
-			return response, ErrLastTab
+			return response, refused(ErrLastTab)
 		}
 		method, params = "tab.close", map[string]any{"tab_id": found}
 	case protocol.NewWorkspace:
 		// A cut list hides groups: the count is then at least the limit.
 		if len(fresh.response.Groups) >= maxGroups || fresh.response.Truncated != nil {
-			return response, ErrFull
+			return response, refused(ErrFull)
 		}
 		if !filepath.IsAbs(project.Folder) { // herdr would pick a folder of its own
-			return response, ErrManage
+			return response, refused(ErrManage)
 		}
 		method = "workspace.create"
 		params = map[string]any{"cwd": project.Folder, "label": Clean(project.Name, maxNameRunes, "workspace"), "focus": false}
@@ -161,19 +161,19 @@ func (provider *Provider) Manage(ctx context.Context, request protocol.HTTPProvi
 			return request.GroupID != nil && group.ID == *request.GroupID
 		})
 		if index < 0 || request.Worktree == nil {
-			return response, ErrTargetMissing
+			return response, refused(ErrTargetMissing)
 		}
 		if len(fresh.response.Groups[index].Items) >= maxItems {
-			return response, ErrFull
+			return response, refused(ErrFull)
 		}
 		workspace := fresh.groups[*request.GroupID].workspace
 		var names []string
 		if names, err = provider.listClosed(ctx, manageTimeouts.list, workspace); err == nil && !slices.Contains(names, *request.Worktree) {
-			return response, ErrTargetMissing
+			return response, refused(ErrTargetMissing)
 		}
 		method, params = "worktree.open", map[string]any{"workspace_id": workspace, "branch": *request.Worktree, "focus": false}
 	default:
-		return response, ErrManage
+		return response, refused(ErrManage)
 	}
 	if err == nil {
 		err = provider.call(ctx, manageTimeouts.call, method, params, &made)

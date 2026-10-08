@@ -2609,3 +2609,30 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+
+## Issue #209 — create admission accounting (2026-10-08)
+
+Branch `fix/issue-209`, baseline `08f0332`. Reproduced all four cases:
+three stale-group, unavailable-kind, non-Git-group or stale-agent-tab local
+refusals made the next valid create fail with `limit_exceeded` (exit 1,
+1.763 s). A marked preflight refusal now returns its create reservation;
+an attempted mutating RPC keeps the charge regardless of its error code.
+Reservations finish once and affect only their original window. Both
+**New worktree** and agent **New tab** share this accounting. The separate
+30-manage-action budget is unchanged. No auto retry, real agent, provider
+credit, new protocol payload or host configuration change.
+
+- `go test -run '^TestProvider(PreflightRefusalsLeaveCreateQuota|AgentTabRefusalsLeaveCreateQuota)$' ./internal/broker` — PASS after fix, 1.720 s.
+- `go test -race -count=5 -run '^TestProvider(PreflightRefusalsLeaveCreateQuota|AgentTabRefusalsLeaveCreateQuota|UnavailableRefusalsLeaveCreateQuota|AttemptedFailuresKeepCreateQuota|Reservation|ConcurrentReservations)' ./internal/broker` — PASS, 9.432 s; synthetic end-to-end cases plus one-shot/concurrent/clock-reset/window tests.
+- `go test -race ./internal/herdr ./internal/broker` — PASS, 34.679 / 102.118 s.
+- `go vet ./internal/herdr ./internal/broker` and `git diff --check` — PASS.
+- `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` — PASS with Node 24.11.0, pnpm 10.33.0; 29 pages, all internal links valid.
+
+Evidence: [create admission](evidence/issue-209/create-admission.md).
+Architecture, provider and manage designs, HTTP route semantics, roadmap,
+README, Unreleased changelog and the public guide/release notes/troubleshooting
+were updated. The existing herdr sidebar entry already reaches the guide;
+there is no new page. No access/data or command change, so security and CLI
+reference pages need no change. Root owns full integration checks, private
+PR/review/merge and site deployment. Owner real-phone gates stay pending.

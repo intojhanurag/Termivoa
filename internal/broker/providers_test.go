@@ -1300,12 +1300,16 @@ func TestProviderManageAgentTabAndClosedWorktrees(t *testing.T) {
 		!strings.HasPrefix(calls[1], `agent.start {"kind":"claude","name":"claude-w1-p3","pane_id":"w1:p3"`) || calls[2] != `agent.prompt {"target":"w1:p3","text":"fix it"}` {
 		t.Fatalf("agent tab = %+v %v %v", tab, err, calls)
 	}
-	// It is also a create: 3 a minute per device, counted with the creates.
+	// It is also a create: 3 attempted changes a minute per device. A stale
+	// group is refused before a mutating RPC and does not consume a create.
 	if response := fixture.create(t, phone, protocol.HTTPProviderCreateRequest{GroupID: "gffffffffffff", Name: "a"}); gatewayErrorCode(t, response) != protocol.SessionMissing {
 		t.Fatalf("a create after one agent tab = %s", gatewayErrorMessage(t, response))
 	}
 	if response := fixture.manage(t, phone, agentTab); response.Type == protocol.GatewayError {
-		t.Fatalf("the 3rd create or agent tab = %s", gatewayErrorMessage(t, response))
+		t.Fatalf("the 2nd attempted create or agent tab = %s", gatewayErrorMessage(t, response))
+	}
+	if response := fixture.manage(t, phone, agentTab); response.Type == protocol.GatewayError {
+		t.Fatalf("the 3rd attempted create or agent tab = %s", gatewayErrorMessage(t, response))
 	}
 	calls = nil
 	response := fixture.manage(t, phone, agentTab)
