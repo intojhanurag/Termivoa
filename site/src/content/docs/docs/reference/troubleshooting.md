@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -78,6 +78,8 @@ Tap **Reload**; sessions keep running. `pterm` on the computer changed. The **up
 5. Keep the computer awake; it sends them.
 
 A "done" notification needs at least 20 seconds of agent work. More in [Notifications](/docs/guides/notifications/).
+
+**Next beta:** a temporary push-service timeout keeps your subscription for the next notification. Many stalled subscriptions no longer use up the entire send window before another phone gets an attempt. **Send a test notification** checks whether the service accepts a message now; it cannot make an unavailable service deliver it.
 
 ## Next is not there after a notification tap
 

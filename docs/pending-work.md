@@ -31,6 +31,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   Follow-up: show the last known version on a "can't reach" row.
 - Notifications from every computer. Open: the real-iPhone check of several
   scoped registrations (`docs/owner-verification.md`, Gate 0 check 5).
+- Notification delivery fairness (#207, next beta): each push request gets
+  a bounded share of the delivery window, so many hung subscriptions do not
+  consume the window before a later healthy phone gets an attempt. Transient
+  failures keep the subscription; expired ones are still removed. Fake
+  endpoint tests cover 25 and 64 subscriptions. The real-iPhone check stays open.
 - Preview for sessions on peers: ADR 0006 and `docs/peer-preview.md`
   (design #146, approved by the owner 2026-10-03); the build also closes #143
   and #144. Open: the real-phone checks (`docs/owner-verification.md`,
