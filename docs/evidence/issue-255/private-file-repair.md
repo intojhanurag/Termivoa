@@ -9,8 +9,8 @@ Temporary Unix-only Go tests called production `loadAccount` and
 `ipc.EnsurePrivateFile` with isolated synthetic files. Fixtures contained only
 `synthetic non-secret fixture`; no real login, provider or service was used.
 Each assertion required refusal without changing the outside file's 0644 mode.
-The temporary reproduction test files were removed after execution; this
-architecture-first commit contains no runtime or test-code changes.
+The temporary reproduction test files were removed after execution; the
+architecture-first commit `3b0bdff` contains no runtime or test-code changes.
 
 Command:
 
@@ -47,8 +47,38 @@ umask ambiguity. The failing result is the reproduction, not a passed gate.
 
 ## Pending gates
 
-Implementation, retained regression tests, focused race/vet, adjacent-caller
-tests, Windows/Linux runtime validation, docs-site build, both independent
-adversarial reviews and owner approval are pending. Hosted CI is explicitly
-denied. No push, PR creation, approval, merge, deployment or owner-file changes
-were performed by this agent.
+At the initial design milestone, implementation and all implementation gates
+were pending. Parent opened draft PR #264 at `3b0bdff` before local code work.
+Hosted CI remains explicitly denied. No push, PR creation, approval, merge,
+deployment or owner-file changes were performed by this agent.
+
+## Local implementation verification (2026-10-09)
+
+| Command | Observed result |
+| --- | --- |
+| `go test -race -count=10 -run '^Test(PrivateFile|TokenFileUnsafe)' ./internal/ipc ./internal/github` | PASS; IPC 1.548 s, GitHub 1.955 s |
+| `go test -race ./internal/ipc ./internal/github ./internal/host` | PASS; 2.285 s / 15.970 s / 2.474 s |
+| `go test -race -run '^Test(SaveUpload\|GatewayUpload\|UploadCommit)' ./internal/broker` | PASS; 1.889 s |
+| `go vet ./internal/ipc ./internal/github ./internal/host ./internal/broker` | PASS |
+| `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go test -c -o /dev/null ./internal/ipc` | PASS; compile only, including final Windows tests |
+| `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -c -o /dev/null ./internal/ipc` | PASS; compile only |
+| `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` | PASS; Node 24.11.0, pnpm 10.33.0; 29 pages and all internal links valid |
+
+Retained tests prove actual token loading leaves outside symlink/hard-link
+targets at 0644, valid repair keeps the same inode, unsafe directories/FIFOs
+remain unchanged, descriptor metadata rejects a synthetic foreign UID, and a
+deterministic open/rename/replace interleaving cannot redirect chmod. A link
+added after open but before validation is refused without mutation. The foreign
+UID test is metadata validation, not privileged chown of another user's file.
+
+Windows fixtures cover final symlink/hard-link refusal with unchanged owner/DACL,
+non-file refusal, explicit loose-DACL repair on the same object and a rename
+blocked while the no-delete-sharing handle is open. Symlink privilege absence
+is an explicit skip; other errors fail. The owner-recovery advice fixture proves
+message/cause preservation only. All Windows fixtures were compiled, not run.
+
+Root independent security source review found no code blocker, with native
+Windows owner recovery still pending. Feasibility/alternatives review, owner
+approval, native Windows/Linux execution, whole integration and phone checks
+remain pending. Existing GitHub/security sidebar entries are retained; no new
+command, protocol, database or landing-page feature was introduced.

@@ -3,8 +3,9 @@
 Status: **proposed — DO NOT MERGE without owner review**, 2026-10-08.
 This is the implementation design for #255 and
 [ADR 0012](decisions/0012-private-file-permission-repair.md). The current main
-guard still performs pathname-based permission repair; this draft adds no
-runtime code. Stored secrets and authentication state make this a critical
+guard still performs pathname-based permission repair. Architecture-first
+draft PR #264 was opened at `3b0bdff` before local implementation began;
+the local implementation is not merged or owner-approved. Stored secrets and authentication state make this a critical
 change under AGENTS.md rule 24.
 
 ## What does the guard guarantee?
@@ -96,15 +97,19 @@ errors or evidence. Tests use isolated synthetic files and no GitHub requests.
 | Gate | Required evidence | Current state |
 | --- | --- | --- |
 | Baseline reproduction | Actual `loadAccount` symlink and shared-helper hard-link mode assertions | Reproduced on current main; see evidence |
-| Unix regression | Symlink, hard link, directory, FIFO, foreign-owner metadata check, valid repair, descriptor validation, deterministic replacement barrier | Pending implementation |
-| Windows regression | Reparse/hard-link refusal, same-handle DACL repair, owner exception/failure, broker lock identity; safe platform/privilege skips | Pending implementation and native execution |
-| Adjacent callers | IPC/GitHub/host/upload relevant tests, race and vet | Pending |
-| Documentation | Full rules 22/25 docs and frozen docs-site build before implementation review | Pending |
-| Adversarial review | Independent security plus feasibility/alternatives findings and resolutions | Pending |
+| Unix regression | Symlink, hard link, directory, FIFO, foreign-owner metadata check, valid repair, descriptor validation, deterministic replacement barrier | Local regressions pass on macOS; native Linux pending |
+| Windows regression | Reparse/hard-link refusal, same-handle DACL repair, owner exception/failure, broker lock identity; safe platform/privilege skips | Native tests added and cross-compiled; native execution pending |
+| Adjacent callers | IPC/GitHub/host/upload relevant tests, race and vet | Local macOS race/vet pass; see evidence |
+| Documentation | Full rules 22/25 docs and frozen docs-site build before implementation review | Updated; frozen install and 29-page build pass |
+| Adversarial review | Independent security plus feasibility/alternatives findings and resolutions | Root security source review found no code blocker; feasibility review pending |
 | Owner review | Explicit approval before merge | Pending; DO NOT MERGE |
 | Hosted CI | Existing required policy | Explicitly denied; no enabling or bypass |
 
 ## Review findings and resolutions
 
-Pending independent review of this architecture-first draft. Baseline discovery
-of hard-link sharing is included in the proposed pre-mutation validation.
+| Review | Finding | Resolution |
+| --- | --- | --- |
+| Baseline analysis | Descriptor repair alone still changes a hard-linked outside name | Require link count one before mutation and recheck afterward |
+| Root independent security source review, 2026-10-09 | No code blocker in Unix descriptor repair, Windows same-handle ACL/recovery or original lock-handle integration | Source-reviewed; local tests pass. Native Windows recovery execution is not claimed |
+| Root review of Windows test scope | Owner-recovery advice test proves message/cause only, not a real Administrators-owner recovery state | Keep native recovery-state gate explicitly pending; native normal repair/link fixtures added and cross-compiled only |
+| Feasibility and alternatives review | Pending independent final review | Keep owner gate and draft status |

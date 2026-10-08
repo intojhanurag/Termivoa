@@ -367,3 +367,14 @@ Known limits found while building (in `docs/pending-work.md`):
 
 - A refusal from a computer other than home shows the app's general "That computer could not do this." (existing app behaviour for every peer error), so "GitHub is busy…" shows only for home.
 - An organisation member who is not an owner sees an empty list until an owner approves the app; the sheet offers **Choose on GitHub**.
+
+## 18. Shared private-file repair (#255)
+
+The local implementation on `fix/issue-255` uses the shared IPC guard described
+in [private-file-permissions.md](private-file-permissions.md), ADR 0012. Token
+loading refuses final symlinks and hard-linked token files before permission
+repair can change another object. Valid owned token files are tightened to
+0600 on the same open inode; the existing atomic save remains unchanged.
+The guard does not bind a later `os.ReadFile` reopen to its handle and is not
+a sandbox against a hostile process in the same account. No token format,
+network, OAuth scope or pairing change. **DO NOT MERGE without owner review.**

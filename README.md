@@ -24,6 +24,10 @@ the old working name "Phone Terminal" so existing installs keep working (see
 
 ## Features
 
+- **Private saved files.** Termivoa refuses linked or unsafe private files
+  before repairing permissions on a saved login or other private file; next
+  beta. Normal owned files keep their identity and private permissions.
+
 - **Many live sessions.** Start shells or coding agents on your computer and
   switch between them with tabs. A dot shows new output.
 - **Files.** Browse, search and read your project's files on the phone, and

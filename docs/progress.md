@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-09
 
 ## Start here
 
@@ -14,6 +14,36 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### Private-file repair local implementation (#255, 2026-10-09; not merged)
+
+- Parent opened critical design draft PR #264 at `3b0bdff` before local runtime
+  work. [ADR 0012](decisions/0012-private-file-permission-repair.md) and
+  [design](private-file-permissions.md) remain proposed and **DO NOT MERGE
+  without owner review**. No approval or CI enablement is claimed.
+- Shared IPC guard now repairs one validated object: Unix no-follow/nonblocking
+  open, owner/type/link checks before descriptor chmod, final path identity;
+  Windows handle type/reparse/link/owner checks, handle DACL repair, bounded
+  same-object Administrators recovery and no-delete sharing. The Windows
+  broker lock repairs the same opened file that it locks. Legitimate files
+  retain identity; linked/private unsafe files are refused.
+- `go test -race -count=10 -run '^Test(PrivateFile|TokenFileUnsafe)'
+  ./internal/ipc ./internal/github` passed (1.548 s / 1.955 s). Broad race
+  for IPC/GitHub/host passed (2.285 s / 15.970 s / 2.474 s); broker upload
+  race passed (1.889 s). `go vet` for those four packages passed. Windows
+  and Linux IPC cross-test builds passed with `CGO_ENABLED=0`; compile only.
+  Full commands and test scope: [evidence](evidence/issue-255/private-file-repair.md).
+- Updated internal map/design/roadmap and GitHub design, README feature list,
+  Unreleased host/phone fix, existing GitHub guide, security/troubleshooting
+  and Next beta notes. Existing sidebar entries still cover these pages;
+  no new CLI command or major landing-page feature. Frozen site install and
+  Astro build passed (29 pages; all internal links valid).
+- Root independent security source review found no code blocker, conditional
+  on test/platform evidence. Pending: independent final feasibility review,
+  native Windows/Linux execution (especially actual Administrators owner
+  recovery), whole integration, phone checks and explicit owner approval.
+  Hosted CI is explicitly denied, so no enablement, bypass, merge or deploy.
+
 
 ### Private-file permission repair architecture (#255, 2026-10-08)
 

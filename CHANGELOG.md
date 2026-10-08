@@ -6,6 +6,15 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Private-file permission repair (#255).** Host: validate the opened file
+  before repairing its permissions; refuse final links, shared hard links,
+  unsafe types and disallowed owners without changing their targets. Keep
+  legitimate files on the same identity, including the Windows broker lock.
+  Phone: a linked or unsafe saved login remains unavailable rather than
+  changing another file. No new command, protocol or database change.
+
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,

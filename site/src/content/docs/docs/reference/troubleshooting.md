@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-09
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -658,3 +658,21 @@ The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, b
 | macOS | `~/Library/Application Support/Phone Terminal/logs/` |
 | Linux | `~/.local/state/phone-terminal/logs/` |
 | Windows | `%LOCALAPPDATA%\Phone Terminal\logs\` |
+
+## Why is a private file refused?
+
+**Next beta:** Termivoa refuses a linked, shared, wrongly owned or non-file
+object where it expects a private file. An unreadable file or one that changes
+during a permission check can also be refused. The refusal may prevent startup
+or leave GitHub unavailable.
+
+| What you see | What to do |
+| --- | --- |
+| A private file is a link or shared hard link | Stop Termivoa and inspect the local file and its target before removing a link or replacing the file |
+| Ownership was changed by an elevated run on Windows | Follow the ownership-repair advice in the host error, then run Termivoa without elevation |
+| The problem was unexpected | Investigate the computer before reconnecting or changing permissions |
+| An ordinary owned file only has loose permissions | Termivoa normally repairs these itself; it does not copy or replace the file |
+
+Do not grant everyone access or delete the database to hide a permission error.
+No new pairing or database is needed for a normal owned file. See [How are
+private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).

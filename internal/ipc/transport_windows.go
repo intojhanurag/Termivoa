@@ -52,7 +52,7 @@ func prepareRuntimeDir(runtimeDir string) error {
 
 func acquireBrokerLock(directory, filename string) (brokerLock, error) {
 	path := filepath.Join(directory, filename)
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	file, err := openPrivateWindowsFile(path, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.OPEN_ALWAYS)
 	if err != nil {
 		return nil, fmt.Errorf("ipc: open broker lock: %w", err)
 	}
@@ -62,7 +62,7 @@ func acquireBrokerLock(directory, filename string) (brokerLock, error) {
 			_ = file.Close()
 		}
 	}()
-	if err := securePrivateFile(path); err != nil {
+	if err := securePrivateWindowsFile(file, path); err != nil {
 		return nil, fmt.Errorf("ipc: restrict broker lock: %w", err)
 	}
 	lock := &windowsBrokerLock{file: file}
@@ -145,10 +145,154 @@ func validatePrivateFile(path string) error {
 }
 
 func securePrivateFile(path string) error {
-	if err := applyCurrentUserACL(path, false); err != nil {
+	file, err := openPrivateWindowsFile(path, 0, windows.OPEN_EXISTING)
+	if err != nil {
 		return err
 	}
-	return validatePrivateFile(path)
+	defer file.Close()
+	return securePrivateWindowsFile(file, path)
+}
+
+func openPrivateWindowsFile(path string, extraAccess, creation uint32) (*os.File, error) {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := windows.CreateFile(name,
+		windows.READ_CONTROL|windows.WRITE_DAC|windows.FILE_READ_ATTRIBUTES|extraAccess,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, creation,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(handle), path), nil
+}
+
+func validatePrivateWindowsObject(handle windows.Handle) error {
+	typeID, err := windows.GetFileType(handle)
+	if err != nil {
+		return err
+	}
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &info); err != nil {
+		return err
+	}
+	if typeID != windows.FILE_TYPE_DISK || info.FileAttributes&(windows.FILE_ATTRIBUTE_DIRECTORY|windows.FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+		return errors.New("path is not a regular non-reparse file")
+	}
+	if info.NumberOfLinks != 1 {
+		return errors.New("private file must have exactly one hard link")
+	}
+	return nil
+}
+
+func securePrivateWindowsFile(file *os.File, path string) error {
+	handle := windows.Handle(file.Fd())
+	if err := validatePrivateWindowsObject(handle); err != nil {
+		return err
+	}
+	sid, err := currentUserSID()
+	if err != nil {
+		return err
+	}
+	descriptor, err := windows.GetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	owner, _, err := descriptor.Owner()
+	if err != nil {
+		return err
+	}
+	if owner == nil {
+		return errors.New("file has no owner")
+	}
+	securityInfo := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
+	var newOwner *windows.SID
+	if !owner.Equals(sid) {
+		if !owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+			return errors.New("file owner is not the current user")
+		}
+		// Keep the original no-delete-sharing handle open during recovery so a
+		// pathname replacement cannot redirect the second open.
+		recovery, err := openPrivateWindowsFile(path, windows.WRITE_OWNER, windows.OPEN_EXISTING)
+		if err != nil {
+			return windowsOwnerRecoveryError(path, err)
+		}
+		defer recovery.Close()
+		originalInfo, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		recoveryInfo, err := recovery.Stat()
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(originalInfo, recoveryInfo) {
+			return errors.New("private file path changed during owner recovery")
+		}
+		handle = windows.Handle(recovery.Fd())
+		if err := validatePrivateWindowsObject(handle); err != nil {
+			return err
+		}
+		// Re-read ownership on the handle that will receive the mutation.
+		descriptor, err = windows.GetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+		if err != nil {
+			return err
+		}
+		owner, _, err = descriptor.Owner()
+		if err != nil || owner == nil || (!owner.Equals(sid) && !owner.IsWellKnown(windows.WinBuiltinAdministratorsSid)) {
+			return errors.New("file owner changed during owner recovery")
+		}
+		securityInfo |= windows.OWNER_SECURITY_INFORMATION
+		newOwner = sid
+	}
+	acl, err := currentUserFileACL(sid, false)
+	if err != nil {
+		return err
+	}
+	if err := windows.SetSecurityInfo(handle, windows.SE_FILE_OBJECT, securityInfo, newOwner, nil, acl, nil); err != nil {
+		if newOwner != nil {
+			return windowsOwnerRecoveryError(path, err)
+		}
+		return err
+	}
+	if err := validatePrivateWindowsObject(handle); err != nil {
+		return err
+	}
+	descriptor, err = windows.GetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	if err := validateCurrentUserSecurityDescriptor(descriptor, sid, true); err != nil {
+		return err
+	}
+	control, _, err := descriptor.Control()
+	if err != nil {
+		return err
+	}
+	if control&windows.SE_DACL_PROTECTED == 0 {
+		return errors.New("private file DACL is not protected")
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	pathInfo, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !pathInfo.Mode().IsRegular() || !os.SameFile(info, pathInfo) {
+		return errors.New("private file path changed during permission repair")
+	}
+	return validatePrivateWindowsObject(handle)
+}
+
+func windowsOwnerRecoveryError(path string, err error) error {
+	return fmt.Errorf(
+		"%s is owned by Administrators (most likely an elevated pterm run created it) and this user cannot take it back: %w; "+
+			"from an elevated prompt run: icacls \"%s\" /setowner <your user name> /T /C, then run pterm again without elevation",
+		path, err, path,
+	)
 }
 
 // fileAllAccess is FILE_ALL_ACCESS. A specific mask, unlike GENERIC_ALL, is
@@ -179,6 +323,18 @@ func applyCurrentUserACL(path string, inherit bool) error {
 		securityInfo |= windows.OWNER_SECURITY_INFORMATION
 		newOwner = sid
 	}
+	acl, err := currentUserFileACL(sid, inherit)
+	if err != nil {
+		return err
+	}
+	err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, securityInfo, newOwner, nil, acl, nil)
+	if err != nil && newOwner != nil {
+		return windowsOwnerRecoveryError(path, err)
+	}
+	return err
+}
+
+func currentUserFileACL(sid *windows.SID, inherit bool) (*windows.ACL, error) {
 	var pinner runtime.Pinner
 	pinner.Pin(sid)
 	defer pinner.Unpin()
@@ -195,19 +351,7 @@ func applyCurrentUserACL(path string, inherit bool) error {
 			TrusteeValue: windows.TrusteeValueFromSID(sid),
 		},
 	}}
-	acl, err := windows.ACLFromEntries(entries, nil)
-	if err != nil {
-		return err
-	}
-	err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, securityInfo, newOwner, nil, acl, nil)
-	if err != nil && newOwner != nil {
-		return fmt.Errorf(
-			"%s is owned by Administrators (most likely an elevated pterm run created it) and this user cannot take it back: %w; "+
-				"from an elevated prompt run: icacls \"%s\" /setowner <your user name> /T /C, then run pterm again without elevation",
-			path, err, path,
-		)
-	}
-	return err
+	return windows.ACLFromEntries(entries, nil)
 }
 
 func validateCurrentUserACL(path string) error {

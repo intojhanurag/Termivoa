@@ -331,11 +331,12 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 
 ## 9. Key invariants
 
-Proposed security repair (#255): [ADR 0012](decisions/0012-private-file-permission-repair.md)
-and [private-file-permissions.md](private-file-permissions.md) bind private-file
-permission repair to one validated open object and reject final links and
+Local security repair (#255, not merged): [ADR 0012](decisions/0012-private-file-permission-repair.md)
+and [private-file-permissions.md](private-file-permissions.md) describe private-file
+permission repair bound to one validated open object, rejecting final links and
 shared hard links before mutation. **DO NOT MERGE without owner review**;
-the draft is not implemented and does not change current-main guarantees.
+local implementation awaits independent reviews and does not change current-main
+guarantees. Windows lock repair and locking use the same opened object.
 
 - The gateway never spawns a shell and never opens SQLite. It has no PTY or Store.
 - Only the broker writes to a PTY, through one writer per session.

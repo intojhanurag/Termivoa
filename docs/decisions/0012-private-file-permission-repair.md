@@ -2,7 +2,8 @@
 
 - Status: **proposed — DO NOT MERGE without owner review**. Architecture-first
   draft for #255 under AGENTS.md rule 24; neither implementation nor approval
-  is implied by this document.
+  is implied by this document. Draft PR #264 opened at `3b0bdff` before local
+  implementation; owner approval remains pending.
 - Date: 2026-10-08
 - Design: [Private-file permission repair](../private-file-permissions.md)
 
@@ -63,3 +64,7 @@ and caller assumptions. Record each finding and its resolution in the design.
 Owner approval is required before merging either design or implementation.
 Hosted CI is explicitly denied; it must not be enabled, bypassed or treated as
 passed. Native Windows/Linux evidence remains pending until actually run.
+
+Local implementation verification and the root independent security source
+review are recorded in the design and evidence. Feasibility review and native
+Windows/Linux execution remain pending; the decision is still proposed.
