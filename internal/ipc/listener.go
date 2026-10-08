@@ -127,6 +127,8 @@ func EnsurePrivateFile(path string) error {
 	return nil
 }
 
+const BrokerDataLockFile = "broker-data.lock"
+
 // LockBrokerDataDirectory prepares and canonically resolves a private data
 // directory, then takes a nonblocking current-user OS lock inside it. The
 // returned canonical path must be used for every later database operation.
@@ -135,7 +137,7 @@ func LockBrokerDataDirectory(path string) (string, *BrokerDataLock, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	lock, err := acquireBrokerLock(directory, "broker-data.lock")
+	lock, err := acquireBrokerLock(directory, BrokerDataLockFile)
 	if err != nil {
 		return "", nil, err
 	}

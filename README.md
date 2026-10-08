@@ -43,7 +43,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
   Integrations** with a code, see your repositories, and clone one onto a
   computer with one tap, ready for a new session. No `gh` needed, only git;
   a folder that is already there is never deleted or overwritten. Pull and
-  push work in the clone. macOS and Linux, github.com only; next beta.
+  push work in the clone. Confirmed `uninstall --delete-data` tries to revoke
+  the saved login before removing local data, with a manual GitHub hint when
+  revocation is unconfirmed. macOS and Linux, github.com only; next beta.
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one

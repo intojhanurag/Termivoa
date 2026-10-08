@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -658,3 +658,15 @@ The folder was cloned by Termivoa, and git asks Termivoa for the GitHub login, b
 | macOS | `~/Library/Application Support/Phone Terminal/logs/` |
 | Linux | `~/.local/state/phone-terminal/logs/` |
 | Windows | `%LOCALAPPDATA%\Phone Terminal\logs\` |
+
+
+## What if uninstall cannot confirm GitHub revocation?
+
+**Next beta, macOS and Linux:** Termivoa waits up to 10 seconds for the saved login's revocation. A GitHub outage or request timeout still allows the local deletion you confirmed; the output says revocation was not confirmed and links to [Authorized GitHub Apps](https://github.com/settings/applications). Revoke **Termivoa** there to end a copied login too.
+
+| Output or result | What should I do? |
+| --- | --- |
+| The data directory was retained after cleanup failed | Startup registration may already be removed, and cleanup may be partial. Ensure Termivoa is stopped and check GitHub's applications page before trying again. |
+| The command was canceled during revocation | Local deletion has not started; the saved login remains. GitHub may have received the revoke, so check its applications page. |
+| Cleanup was canceled after deletion began | Some data may already be removed. Check the remaining folder and GitHub access before retrying. |
+| An empty private data folder remains | This is expected. It contains only an ownership marker, with no database, login or other saved data. |

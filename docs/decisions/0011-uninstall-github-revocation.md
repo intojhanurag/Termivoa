@@ -19,15 +19,17 @@ confirmation that the broker stopped, acquire its existing exclusive data
 lock. The GitHub package performs one bounded best-effort revoke of the
 stored access/refresh pair using the same restricted HTTPS client and endpoint
 as Disconnect, then deletes the login locally before lifecycle deletion.
-Hold exclusive data ownership during this operation; no broker or credential
+Keep the private data directory and lock inode while deleting its other
+contents. Hold exclusive data ownership during this operation; no broker or credential
 helper may refresh or replace that pair concurrently. The CLI sees only a
 status, never token strings. No new protocol, endpoint, scopes or stored data.
 
 Dry runs, unconfirmed commands, uninstall without --delete-data and refusal
 while sessions/broker run never revoke. A failed revoke does not claim success
 or prevent the expressly requested local deletion; print the existing manual
-GitHub applications link. Local ownership/read/delete failures stop data
-removal with a fixed non-secret error. No automatic retries or new login.
+GitHub applications link. Parent cancellation stops before local deletion; a request-only timeout keeps
+the established best-effort policy. Local ownership/read/delete failures stop data
+removal with a fixed non-secret error and manual revocation hint. No automatic retries or new login.
 
 ## Which alternatives were considered?
 
@@ -47,3 +49,18 @@ consent. Independent feasibility review must check stopped/racing brokers,
 platform locks, timeout/failure behavior and the alternatives above. Record
 findings and resolutions in the design. Owner review remains required before
 merging this design or implementation (AGENTS.md rule 24).
+
+## Which feasibility findings changed the decision?
+
+The first design removed the lock namespace during RemoveAll. Independent
+review reproduced replacement-lock acquisition against a recreated directory.
+The corrected decision keeps the private empty directory and marker; this is
+necessary for safe revocation/cleanup ownership, and is disclosed before
+consent. Request-only outage and parent cancellation are distinct. A second probe found separate deletion roots could remove the same namespace
+through parent-symlink aliases. Resolve and compare all roots by filesystem
+identity before token work; skip equal/nested roots, refuse containing roots,
+and only unlink top-level symlinks. Alias/ancestor/live-lock tests pass.
+Independent security and feasibility reviews pass after corrections, including
+request-acceptance wording rather than completed remote revocation. Owner
+approval remains pending. Inherited token-file defects #255/#256 remain separate
+PRs; this change does not claim to resolve them.

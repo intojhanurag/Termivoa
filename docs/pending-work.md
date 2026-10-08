@@ -275,6 +275,7 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 ### GitHub revocation during uninstall (#213)
 
-Proposed ADR 0011 and uninstall design are prepared. Independent security and
-feasibility reviews, implementation/tests/docs and owner approval before merge
-are pending; local uninstall currently still deletes without revoking.
+ADR0011/design and draft implementation/tests/docs are prepared. Independent
+feasibility found and resolved a replacement-lock gap by keeping the private
+empty directory/marker. Final security/feasibility verification, owner approval,
+required checks and merge are pending; main still deletes without revoking.

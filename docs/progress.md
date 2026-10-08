@@ -2619,3 +2619,46 @@ cleanup after consent and broker stop, without starting a service. No runtime
 implementation, test or remote action is claimed complete. Independent
 security/feasibility reviews and explicit owner review before merge remain
 required under AGENTS.md rule24. Existing CI-minutes approval remains pending.
+
+## 2026-10-08: uninstall GitHub revocation implementation (#213)
+
+- Baseline synthetic stored-pair test with an inert injected callback failed:
+  zero revoke calls before deletion; outage hint/local-failure preservation
+  regressions failed. Consent-only cases passed.
+- Added bounded package-only offline cleanup after consent/stopped-broker
+  checks and exclusive canonical data ownership. Reuses Disconnect's
+  restricted client/endpoint; no full service constructor/background Git scan.
+- Independent feasibility found RemoveAll unlinked the held lock namespace.
+  Keep the private data directory/marker and remove all other contents;
+  live replacement-lock and symlink-target regressions pass. Existing teardown
+  assertions now verify empty ownership state. This is necessary for #213.
+- Disclose remote revocation/up-to10s/residual empty folder before consent.
+  Parent cancellation keeps local login/data; request-only outage follows
+  confirmed deletion with honest manual hint. Local failure prints partial
+  registration removal/data-retained guidance without peer/token detail.
+- Focused tests pass; full `go test -race ./cmd/pterm ./internal/github
+  ./internal/lifecycle ./internal/ipc -count=1 -timeout=180s` passes all4
+  packages (30.641s/17.183s/3.229s/2.899s). Evidence includes corrected fixture
+  defects without claiming those initial failures passed.
+- Full internal/public docs prepared; existing Uninstall/CLI/sidebar entries
+  retained. Vet/fullgate/frozen Astro link validation, final independent
+  security+feasibility reviews, explicit owner approval and hosted checks
+  remain pending. No owner token/network/startup action; native Windows/Linux
+  and real-phone evidence remain pending. Draft PR250 must not merge yet.
+
+- Final independent security and feasibility reviews found no new code blocker
+  after two ownership corrections. The second canonicalizes every deletion
+  root before token work and skips/refuses aliases/ancestors that can remove
+  the retained namespace; root and independent alias/live-lock race tests pass.
+  CLI success now reports revocation request acceptance, not proof of remote
+  completion. Inherited token-file defects #255/#256 were filed separately.
+- Full scripts/check passed Go/third-party tests, vet, protocol generation,
+  typecheck, 1048 web tests and build before final alias/wording changes; frozen
+  Astro29-page link validation passed. Final changed-code/docs checks follow.
+  Owner explicitly chose to keep CI disabled; required hosted checks remain
+  blocked. Owner review of this critical draft remains required.
+
+- Final changed-code four-package race after alias/acceptance/portability fixes
+  passed29.965s/16.376s/2.070s/3.115s; vet and frozen Astro29-page/link build
+  passed. No owner account or remote API action was used. Implementation is
+  ready for owner review; hosted checks and #255/#256 fixes remain separate.
