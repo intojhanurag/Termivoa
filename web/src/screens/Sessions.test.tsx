@@ -43,6 +43,25 @@ describe('controllerText', () => {
 
 describe('age', () => {
   const now = Date.parse('2026-09-27T12:00:00Z');
+  const day = 86_400_000;
+  it.each([
+    [60_000 - 1, 'now'], [60_000, '1 min'],
+    [3_600_000 - 1, '59 min'], [3_600_000, '1 h'],
+    [day - 1, '23 h'], [day, 'yesterday'],
+    [2 * day - 1, 'yesterday'], [2 * day, '2 d'],
+    [7 * day - 1, '6 d'], [7 * day, '1 wk'],
+    [30 * day - 1, '4 wk'], [30 * day, '1 mo'],
+    [365 * day - 1, '12 mo'], [365 * day, '1 yr'],
+    [366 * day, '1 yr'], [1095 * day, '3 yr'], [3650 * day, '10 yr'],
+  ])('formats an elapsed %i ms as %s, including unit boundaries', (elapsed, expected) => {
+    expect(age(new Date(now - elapsed).toISOString(), now)).toBe(expected);
+  });
+  it('keeps future dates at now and unknown or invalid dates out of the label', () => {
+    expect(age(new Date(now + 3 * 365 * day).toISOString(), now)).toBe('now');
+    for (const iso of [undefined, '', 'not-a-date']) expect(age(iso, now)).toBe('');
+    for (const clock of [NaN, Infinity, -Infinity]) expect(age('2026-09-27T12:00:00Z', clock)).toBe('');
+    expect(age('2026-09-27T14:00:00+02:00', now)).toBe('now');
+  });
   it('shortens elapsed time', () => {
     expect(age('2026-09-27T11:59:40Z', now)).toBe('now');
     expect(age('2026-09-27T11:25:00Z', now)).toBe('35 min');
@@ -54,6 +73,12 @@ describe('age', () => {
 });
 
 describe('SessionRow', () => {
+  it('renders an old session age in years without changing its metadata', () => {
+    const then = new Date(Date.parse('2026-09-27T12:00:00Z') - 1095 * 86_400_000).toISOString();
+    const page = row({ ...base, createdAt: then });
+    expect(page).toContain('api · zsh · 3 yr');
+    expect(page).not.toContain('1095 d');
+  });
   it('shows controller, meta, activity dot and preview line', () => {
     const html = row({ ...base, controlled: true, controllerIsYou: true, viewerCount: 1, preview: '✻ Done.' }, true);
     expect(html).toContain('class="session-row"');

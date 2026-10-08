@@ -374,3 +374,16 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [progress.md](progress.md), [pending-work.md](pending-work.md),
 [owner-verification.md](owner-verification.md),
 [release-checklist.md](release-checklist.md).
+
+### How are older timestamps displayed? (#215)
+
+`Sessions.age` formats the elapsed time shared by session metadata,
+`Sessions.ago` (computer last seen), and `GitHub.pushedText` (repository
+pushes). It retains minutes/hours/yesterday/days and adds `wk` from seven
+elapsed days, `mo` from 30, and `yr` from 365. Counts round down; month/year
+units are approximate, independent of local timezone and calendar length.
+Future timestamps clamp to `now`; missing/invalid ISO timestamps and
+non-finite clocks omit the age. Formatting is constant work with no timer,
+request, persisted setting or protocol change. See
+[GitHub design](github-integration.md#how-are-old-push-timestamps-formatted-215)
+and [verification](evidence/issue-215/verification.md).

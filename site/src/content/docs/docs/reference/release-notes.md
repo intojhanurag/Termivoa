@@ -1,7 +1,7 @@
 ---
 title: Release notes
 description: Termivoa private beta release history, with the new features, fixes and known limits of each version, and what is coming in the next beta.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
@@ -9,6 +9,8 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 ## Next beta (not released yet)
 
 New features on `main` show here until the next beta ships.
+
+- **Fixed: old timestamps are easier to read.** Repository pushes, session ages and computer last-seen labels use compact weeks, months and years, such as **3 yr ago** instead of **1095 d ago**. Months and years are approximate elapsed units. See [repository push ages](/docs/guides/github/#what-does-a-repositorys-push-age-mean).
 
 - **GitHub from the phone.** **Settings → Integrations** has a row **GitHub on mac** for each computer. Tap **Connect**, enter the code on GitHub, and choose your repositories one time. Then **Set up a repository** lists them, with search, and one tap clones a repository into `~/<name>` on that computer and adds it as a project, with progress, **Stop** and **New session**. **From GitHub** is also next to **Add a folder** in herdr's **New workspace** sheet. No `gh` is needed, only git. Termivoa never deletes or overwrites a folder: a folder of that name is **name taken**. Pull and push work in the cloned folder. `pterm github status` and `pterm github disconnect` are new. See [Set up a GitHub repository](/docs/guides/github/) and [What does GitHub change?](/docs/reference/security/#what-does-github-change)
 - **Needs you.** While an agent waits, the Sessions list has a **Needs you** tab with a count, right after **All**. It lists every session that waits and every herdr worktree that is blocked, on all your computers, the longest wait first; **Finished** work is below. Tap one to open it, answer, then tap **Next · 2 left ›** to go to the next one. A tap on a notification opens the item with **Next** too. See [Needs you](/docs/guides/needs-you/).

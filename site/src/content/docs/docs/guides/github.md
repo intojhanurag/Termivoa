@@ -1,7 +1,7 @@
 ---
 title: Set up a GitHub repository
 description: Termivoa connects each of your computers to GitHub from the phone, lists your repositories, and clones one onto a computer with one tap.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 Termivoa connects a computer to GitHub from your phone, shows your repositories, and clones the one you pick onto that computer, ready for a new session.
@@ -137,3 +137,18 @@ Yes, in a folder that Termivoa cloned, and in a folder that has your own git log
 ## Back to Termivoa
 
 Done. Go back to Termivoa.
+
+## What does a repository's push age mean?
+
+**Next beta:** Termivoa shows the elapsed time since GitHub reports the repository's last push. Old repositories use compact weeks, months and years, so a three-year-old push reads **3 yr ago**.
+
+| Label | Meaning |
+| --- | --- |
+| **just now** | Under one minute; also a future timestamp if clocks differ. |
+| **yesterday** | Between 24 and 48 hours ago. |
+| **d ago** | Whole days, until seven days. |
+| **wk ago** | Whole seven-day weeks, until 30 days. |
+| **mo ago** | Whole 30-day months, until 365 days. |
+| **yr ago** | Whole 365-day years. |
+
+Months and years are approximate elapsed units. The time is calculated when Termivoa reads the repository list; searching the list does not refresh it. A repository with no push timestamp has no age label.

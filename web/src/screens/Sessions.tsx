@@ -39,16 +39,21 @@ export function controllerText(session: BrokerRPCSessionRecord): { readonly text
   return undefined;
 }
 
-/** Short age such as "35 min", "2 h", "yesterday" or "3 d". */
+/** Short elapsed age; months and years use approximate 30- and 365-day units. */
 export function age(iso: string | undefined, now: number): string {
   const then = Date.parse(iso ?? '');
-  if (Number.isNaN(then)) return '';
+  if (!Number.isFinite(then) || !Number.isFinite(now)) return '';
   const minutes = Math.max(0, Math.floor((now - then) / 60_000));
   if (minutes < 1) return 'now';
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} h`;
-  return hours < 48 ? 'yesterday' : `${Math.floor(hours / 24)} d`;
+  if (hours < 48) return 'yesterday';
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} d`;
+  if (days < 30) return `${Math.floor(days / 7)} wk`;
+  if (days < 365) return `${Math.floor(days / 30)} mo`;
+  return `${Math.floor(days / 365)} yr`;
 }
 
 export const ended = (session: BrokerRPCSessionRecord) => session.state === 'exited' || session.state === 'lost';
