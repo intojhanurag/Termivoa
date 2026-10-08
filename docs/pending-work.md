@@ -272,3 +272,9 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 - [ ] Security review by an outside person.
 - [ ] Signed macOS and Windows apps.
+
+### GitHub revocation during uninstall (#213)
+
+Proposed ADR 0011 and uninstall design are prepared. Independent security and
+feasibility reviews, implementation/tests/docs and owner approval before merge
+are pending; local uninstall currently still deletes without revoking.

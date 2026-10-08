@@ -2609,3 +2609,13 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## 2026-10-08: uninstall GitHub revocation design (#213)
+
+Code inspection confirms `UninstallPlan` deletes the data folder and the CLI
+makes no GitHub revoke request, while Disconnect already has a bounded
+restricted-client revoke. Prepared ADR0011/design for exclusive offline
+cleanup after consent and broker stop, without starting a service. No runtime
+implementation, test or remote action is claimed complete. Independent
+security/feasibility reviews and explicit owner review before merge remain
+required under AGENTS.md rule24. Existing CI-minutes approval remains pending.

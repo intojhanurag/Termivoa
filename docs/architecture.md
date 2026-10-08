@@ -374,3 +374,12 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [progress.md](progress.md), [pending-work.md](pending-work.md),
 [owner-verification.md](owner-verification.md),
 [release-checklist.md](release-checklist.md).
+
+### Proposed uninstall cleanup (#213, owner review pending)
+
+[ADR 0011](decisions/0011-uninstall-github-revocation.md) and
+[uninstall-github.md](uninstall-github.md) propose revoking the stored GitHub
+pair before `--delete-data` discards it. This would run only after consent and
+broker shutdown under its existing exclusive data lock, using the existing
+restricted GitHub package client without starting a runtime. The CLI would
+receive only status. Design and implementation are not approved for merge.
