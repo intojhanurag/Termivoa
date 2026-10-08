@@ -15,6 +15,19 @@ Last updated: 2026-10-08
 
 ## Log
 
+### Coordinated soak status verification (#224, 2026-10-08)
+
+- `PTERM_SOAK_DURATION=30s go test -tags soak ./tests/soak -run '^TestSoakThreeBusySessions$' -count=1 -v`
+  passed: three children, one reconnect, all three final screens match,
+  and 998–1,000 complete output samples per session.
+- `PTERM_SOAK_THROTTLE_DURATION=20s go test -tags soak ./tests/soak -run '^TestSoakThrottledPhones$' -count=1 -v`
+  passed: all three viewer rates produced samples and matched final screens.
+  The 100 KiB/s viewer's valid slow tail remained visible.
+- These runs overlapped other checks and are not isolated CPU/latency
+  benchmarks. The separate intermittent helper-child assertion (#232) did
+  not occur in this run. Native platforms, real phones and 24-hour soak
+  remain pending. Details: [issue-224](evidence/issue-224/README.md).
+
 ### Soak latency samples require complete status records (#224, 2026-10-08)
 
 - Reproduced on `08f0332`, macOS arm64, Go 1.27.1, with

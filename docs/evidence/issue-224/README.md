@@ -64,7 +64,16 @@ overflow, missing markers, stale/future timestamps and inconsistent identity.
 After the fix, the valid 15 ms synthetic record is measured once; timestamp
 prefixes add no sample and do not alter PID, sequence or echo state.
 
-The coordinator will run the busy-session and throttled-phone soak separately
-to avoid competing with performance measurements in another worktree. No new
-soak performance percentiles, native Windows/Linux results, real-phone results
-or 24-hour soak are claimed by this focused verification.
+The coordinator also executed:
+
+| Command | Actual result |
+| --- | --- |
+| `PTERM_SOAK_DURATION=30s go test -tags soak ./tests/soak -run '^TestSoakThreeBusySessions$' -count=1 -v` | Pass; three child identities, one reconnect, all three final screens match; 998–1,000 valid output samples per session |
+| `PTERM_SOAK_THROTTLE_DURATION=20s go test -tags soak ./tests/soak -run '^TestSoakThrottledPhones$' -count=1 -v` | Pass; fast, 1 MiB/s and 100 KiB/s viewers have nonempty samples and all final screens match |
+
+These runs overlapped other repository checks, so their CPU/latency numbers
+are not isolated performance comparisons. The 100 KiB/s viewer retained a
+valid roughly 3.7-second tail, rather than hiding it with a latency cutoff.
+The separate intermittent scanner-child assertion defect (#232) did not
+occur in this busy run; this PR does not fix it. Native Windows/Linux,
+real-phone and 24-hour soak gates remain pending.
