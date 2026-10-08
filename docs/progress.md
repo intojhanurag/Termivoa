@@ -15,6 +15,27 @@ Last updated: 2026-10-07
 
 ## Log
 
+### Private-file permission repair architecture (#255, 2026-10-08)
+
+- Branch `fix/issue-255`, fresh base `origin/main` (`08f0332`); design-only
+  milestone. [ADR 0012](decisions/0012-private-file-permission-repair.md) and
+  [design](private-file-permissions.md) are **DO NOT MERGE without owner review**
+  under rule 24. No runtime changes or owner approval are claimed.
+- `go test -count=1 -v -run '^TestIssue255' ./internal/github ./internal/ipc`
+  with temporary synthetic reproduction tests failed as expected: a refused
+  token symlink changed its outside target from 0644 to 0600, and an accepted
+  hard link changed its shared outside inode to 0600. Temporary test files
+  were removed after the reproduction. [Evidence](evidence/issue-255/private-file-repair.md).
+- Inspected shared-guard callers and Unix/Windows owner/type/security rules.
+  Proposed repair through the validated handle, no-follow/reparse refusal,
+  single-link validation and path-identity checks; preserve Windows owner
+  recovery and legitimate-file repair. Later caller reopens and same-user
+  hostile filesystem mutations are explicitly outside the guarantee.
+- Pending: parent opens the design draft before implementation; independent
+  security and feasibility reviews; implementation/tests/full rules 22/25
+  docs/site build; native Windows/Linux verification; explicit owner approval.
+  Hosted CI is explicitly denied; no enabling, bypass, merge or deployment.
+
 ### Summary (2026-09-27)
 
 The v0 flow is complete on `main` and verified on the macOS development

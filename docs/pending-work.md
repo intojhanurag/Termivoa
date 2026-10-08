@@ -96,6 +96,13 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 In this order.
 
+Security repair #255 has an architecture-first draft:
+[ADR 0012](decisions/0012-private-file-permission-repair.md) and
+[private-file-permissions.md](private-file-permissions.md). The current guard
+can change a rejected symlink target or shared hard link. Implementation,
+independent security/feasibility reviews and owner approval remain pending.
+**DO NOT MERGE without owner review**; hosted CI is explicitly denied.
+
 1. **Gate 0 real-phone test for multi-computer** (`scripts/gate0/`). Needs the
    owner's second computer and the owner's approval for a Tailscale Serve port
    (rule 12). Port 8443 is taken by the dev-server preview, so use another
