@@ -130,6 +130,13 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- herdr agent choices before the first launch (#208). Phone: **New worktree**
+  and **New tab** offer installed coding agents even when none runs in herdr,
+  and keep an installed choice after its last agent stops. A removed choice
+  says "codex is not available in herdr now." Host: a bounded, cached Go
+  check of canonical executable presence augments herdr's start-kind
+  allowlist; no agent command is executed during discovery.
+
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.

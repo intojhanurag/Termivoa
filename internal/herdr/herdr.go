@@ -115,20 +115,22 @@ type Provider struct {
 	turns atomic.Uint64
 
 	// Owned by the poll loop (step).
-	binary     string
-	refusedAny bool // the last lookup refused a herdr binary: no install
-	gitChecks  map[string]*gitCheck
-	closed     map[string]closedTrees // by group ID (closedWorktrees)
-	closedFor  string                 // the workspace IDs those lists were asked for
-	lookupAt   time.Time
-	retryAt    time.Time
-	discovered bool
-	misses     int
-	caps       capabilities
-	capsFor    string        // the binary and server version that caps are for
-	probeAt    time.Time     // when to probe again; zero: the last probe ended by itself (learn)
-	probeWait  time.Duration // the wait before probeAt; it doubles
-	baseline   bool
+	binary         string
+	refusedAny     bool // the last lookup refused a herdr binary: no install
+	gitChecks      map[string]*gitCheck
+	closed         map[string]closedTrees // by group ID (closedWorktrees)
+	closedFor      string                 // the workspace IDs those lists were asked for
+	lookupAt       time.Time
+	retryAt        time.Time
+	discovered     bool
+	misses         int
+	caps           capabilities
+	capsFor        string          // the binary and server version that caps are for
+	probeAt        time.Time       // when to probe again; zero: the last probe ended by itself (learn)
+	probeWait      time.Duration   // the wait before probeAt; it doubles
+	available      map[string]bool // canonical agent commands found on configured PATH
+	availabilityAt time.Time       // next bounded command-presence scan
+	baseline       bool
 	// snapshotVersion is the herdr version of the last applied snapshot; a new one means herdr was updated.
 	snapshotVersion string
 	logged          string // the socket refusal last logged
@@ -334,6 +336,7 @@ func (provider *Provider) step(ctx context.Context) time.Duration {
 	now := provider.now()
 	if provider.lookNow.Swap(false) {
 		provider.lookupAt, provider.retryAt = time.Time{}, time.Time{}
+		provider.availabilityAt = time.Time{}
 	}
 	if provider.binary == "" && !now.Before(provider.lookupAt) {
 		provider.binary = provider.findBinary()
@@ -444,6 +447,7 @@ func (provider *Provider) learn(ctx context.Context, now time.Time, key string) 
 	}
 	caps, ended := provider.probe(ctx, last)
 	provider.caps, provider.capsFor = caps, key
+	provider.availabilityAt = time.Time{} // a new or completed capability probe may add start kinds
 	if ended {
 		provider.probeAt, provider.probeWait = time.Time{}, 0
 		return

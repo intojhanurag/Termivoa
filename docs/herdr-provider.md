@@ -96,7 +96,7 @@ All under `admitAPI` (exact own or bound `Origin`, CORS only for bound origins, 
 
 ### 4.2 Bodies
 
-`HTTPProviderInfo`: `id`, `name` (display, ≤32), `state` (`ready` | `notRunning` | `unsupported` | `off`), `version?`, `enabled`, `notify` (subset of `blocked`, `done`), `canCreate`, `agentKinds` (≤16; kinds herdr can start that already run in this herdr, most used first).
+`HTTPProviderInfo`: `id`, `name` (display, ≤32), `state` (`ready` | `notRunning` | `unsupported` | `off`), `version?`, `enabled`, `notify` (subset of `blocked`, `done`), `canCreate`, `agentKinds` (≤16; kinds herdr can start whose canonical command is installed on the configured PATH or that already run in this herdr, most used first).
 
 `HTTPProviderSnapshotResponse`: `provider`, `state`, `groups` (≤64), `truncated?` (item limits or the 256 KiB body budget hit: the host drops whole groups from the end, least urgent first, until it fits).
 
@@ -318,7 +318,7 @@ Trust statement: a paired phone can already run any command in a Termivoa sessio
 | H4: "<project> · silver-meadow needs you" | Fixed push format | "herdr · shop · silver-meadow" / "claude needs you. Tap to answer." |
 | H3, H1: DONE | `done` clears only when seen in the herdr UI; the phone must not move the laptop's focus | DONE stays; the phone dims a DONE row it has opened since (memory only) |
 | H6: "from main" | herdr branches from the checkout's current `HEAD` | "herdr makes the folder and a new branch from where shop is now." |
-| H6: agent chips | Kinds come from herdr's start kinds that already run there | The same chips for the owner (claude, codex, mastracode); a new user may see only **No agent** |
+| H6: agent chips | Kinds come from herdr's start kinds and command availability, with running kinds retained (issue #208) | A fresh herdr can start its first installed agent; at most 16 choices |
 
 ## 15. Tests
 
@@ -421,7 +421,7 @@ Until H2 lands, the web side tests against a stubbed `client`.
 | # | Question | Default |
 | --- | --- | --- |
 | Q1 | A custom herdr prefix (not `ctrl+b`)? | Double `0x02` only (default prefix). A custom prefix is not read from herdr's config in M1; `pterm doctor` warns when herdr's config sets `prefix` |
-| Q2 | Which agent kinds does M2 offer? | herdr's start kinds that already run in this herdr, most used first, plus **No agent** |
+| Q2 | Which agent kinds does M2 offer? | herdr's start kinds with an installed canonical command or an agent already running here, most used first, plus **No agent** (issue #208) |
 | Q3 | Named herdr sessions? | Default session only |
 | Q4 | Windows (named pipe)? | Not detected in M1 |
 | Q5 | Clear DONE when opened on the phone? | No (it would move the laptop's focus); the phone dims it locally |
@@ -561,3 +561,31 @@ Each difference and why. Everything else is built as written above.
 | S16 guard | A path counts as inside a temp folder only after every symlink is resolved (for a path that does not exist yet, its longest existing part) | A link in `/tmp` to the real home or a real herdr passed |
 
 How to run the fake herdr: `go build -o /tmp/fh/bin/herdr ./scripts/fakeherdr`, write `scenario.json` (`{"version","protocol","attachAny","noTerminal","kinds","snapshot"}`, see the package comment) into `$HOME/.config/herdr`, then `HOME=<that home> /tmp/fh/bin/herdr server`. A broker finds it with that `HOME` and the fake's folder on `PATH` (or in `BinaryPaths`). `control.sock` in the same folder changes states (`{"op":"status","pane":"w1:p1","status":"blocked"}`), closes panes, hangs or stops the server; `fake.log` records attach sizes, input and exits.
+
+## Agent choices before the first launch (issue #208, 2026-10-08)
+
+The poll loop combines the binary's `agent start --help` allowlist with two
+read-only observations: running counts in the latest snapshot, and presence
+of the canonical executable on the broker's configured PATH. A kind need not
+be running before the phone can start it. Installed kinds remain eligible
+when the last agent of that kind stops, within the 16-choice output bound. Running kinds preserve shell aliases or
+custom launchers that cannot be inferred from PATH. Nothing persists.
+
+| Bound or condition | Behavior |
+| --- | --- |
+| Help-derived kinds | At most 64 unique valid names; only those names are eligible |
+| Canonical commands | Fixed 24-kind map from herdr v0.9.3 `src/detect/mod.rs` (`interactive_agent_executable`); `cursor` means `cursor-agent`, `kiro` means `kiro-cli`; unknown future kinds require running evidence |
+| PATH scan | First 64 entries, absolute directories only, each at most 4096 bytes; stat regular files with an execute bit; no executable is launched |
+| Scan interval | Every 30 s while ready; `LookAgain` (settings refresh / **Check again**) and a capability probe invalidate the cache; HTTP reads never scan |
+| Published choices | At most 16; running count descending, then name; unchanged `HTTPProviderInfo.agentKinds` shape |
+| Launch validation | Create and manage still require a kind in the published choices before making anything; herdr remains the authority for the actual start |
+
+Executable presence does not establish login, provider credentials, a working
+agent installation, or the PATH of herdr's own pane shell. A shell-only alias
+is discovered once it runs in herdr; a command found on the broker's PATH may
+still fail in a pane with different startup settings. Existing partial-success
+responses remain accurate. No new socket methods, network surface, trust,
+authorization, stored settings, or protocol revision are introduced.
+
+Primary mapping source: [herdr v0.9.3 canonical launch commands](https://github.com/herdrdev/herdr/blob/v0.9.3/src/detect/mod.rs#L153-L185).
+Evidence: [issue #208](evidence/issue-208/README.md).

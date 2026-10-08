@@ -1299,8 +1299,8 @@ type HTTPGitHubInfo struct {
 // One provider on this computer. enabled and notify are this computer's Integrations
 // settings (all devices). canCreate is true when the provider can make a worktree and start
 // an agent (milestone M2). agentKinds lists the kinds offered by the new-worktree sheet:
-// kinds that herdr itself can start (its agent start kinds) and that already run in this
-// herdr, most used first.
+// kinds that herdr itself can start (its agent start kinds) and whose canonical command is
+// installed on the computer or that already run in this herdr, most used first.
 type HTTPProviderInfo struct {
 	AgentKinds []string `json:"agentKinds"`
 	CanCreate  bool     `json:"canCreate"`
