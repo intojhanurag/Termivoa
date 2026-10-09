@@ -1,5 +1,7 @@
 # Issue #256: remove only the saved-login filename
 
+Current owner-review status: [approved on 2026-10-09, subject to required checks](owner-approval.md). Owner-pending statements below record earlier evidence; required hosted and native gates remain pending.
+
 2026-10-08; branch `fix/issue-256`, base `08f0332`; macOS arm64, Go 1.27.1.
 Design-only commit `f5c685e` opened as private draft PR #261 before runtime
 implementation. Final local verification: 2026-10-09.

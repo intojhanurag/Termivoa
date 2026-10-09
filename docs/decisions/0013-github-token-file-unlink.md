@@ -1,6 +1,6 @@
 # ADR 0013: remove the saved GitHub login without overwriting an inode
 
-- Status: proposed, **DO NOT MERGE without owner review**.
+- Status: accepted by the owner on 2026-10-09, subject to required checks; not merged.
 - Date: 2026-10-08
 - Issue: #256
 - Design: [github-token-removal.md](../github-token-removal.md)
@@ -61,5 +61,12 @@ reviews of `0da5258` found no blocker, with focused race/regression tests
 passing. The feasibility review confirmed Go's Unix unlink/rmdir and Windows
 DeleteFile/RemoveDirectory implementation and qualified application-versus-OS
 metadata claims above. See the design/evidence for commands and limits.
-Explicit owner approval and native Linux/Windows execution remain pending;
-this ADR remains proposed and the draft remains DO NOT MERGE.
+Owner approved design and implementation on 2026-10-09, subject to required
+checks. Native Linux/Windows execution and required checks remain pending;
+this ADR is accepted, but neither design nor implementation is merged.
+
+## Owner decision (2026-10-09)
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+See [approval evidence](../evidence/issue-256/owner-approval.md).

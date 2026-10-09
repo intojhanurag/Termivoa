@@ -279,5 +279,6 @@ ADR 0013/design-only commit `f5c685e` is open as draft PR #261. Local unlink-onl
 implementation, linked/replaced-file regression tests and public docs are
 prepared. macOS GitHub race/vet and Linux/Windows test compilation pass;
 independent security/feasibility reviews of `0da5258` found no blocker.
-Explicit owner approval, combined integration and native Linux/Windows remain
-pending. CI is denied; do not enable or merge. #213/#255 separate.
+Owner approved design and implementation on 2026-10-09, subject to required
+checks. Combined local verification passed in the coordinator checkout; native
+Linux/Windows and required hosted checks remain pending. CI is denied; do not enable or merge. #213/#255 separate.

@@ -1,11 +1,11 @@
 # How should Termivoa remove its saved GitHub login safely?
 
-Proposed correction for #256, [ADR 0013](decisions/0013-github-token-file-unlink.md).
-**DO NOT MERGE without owner review.** Design-only commit `f5c685e` was opened
+Owner-approved correction for #256, not merged, [ADR 0013](decisions/0013-github-token-file-unlink.md).
+**Merge only after required checks.** Design-only commit `f5c685e` was opened
 as private draft PR #261 before local runtime implementation. The unlink-only
 implementation and local regression evidence are now prepared. Independent
-security and feasibility reviews of `0da5258` found no blocker; explicit owner
-approval remains pending.
+security and feasibility reviews of `0da5258` found no blocker; owner approved design and implementation on
+2026-10-09, subject to required checks.
 
 ## What was reproduced?
 
@@ -82,4 +82,10 @@ no claim that this draft is merged or released.
 | Coordinator security review, `0da5258` | No blocker: fixed-name removal avoids content writes/size allocation and the application preopen race; only absence is normalized; other-name preservation and caller errors are directly tested. Focused race tests passed, 1.689 s. |
 | History agent feasibility/alternatives review, `0da5258` | No blocker: constant application memory, existing missing/error/directory handling and unchanged Disconnect behavior; unlink is simpler and safer than overwrite/link-count/quarantine alternatives. Independent focused tests passed on macOS arm64, 0.664 s, with no skips. |
 | Feasibility wording precision | Distinguish application code from Go's platform implementation: Windows removal may inspect/adjust attributes internally without overwriting contents. Qualified above and in ADR 0013. |
-| Remaining gates | Owner approval, combined integration, native Linux/Windows, real-phone and broader required checks remain pending; CI is denied. |
+| Remaining gates | Owner approved design and implementation on 2026-10-09, subject to required checks. Combined local verification passed in the coordinator checkout, not this isolated branch or main. Native Linux/Windows, real-phone and required hosted checks remain pending; CI is denied. |
+
+## Owner decision (2026-10-09)
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+See [approval evidence](evidence/issue-256/owner-approval.md).
