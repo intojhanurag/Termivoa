@@ -1,5 +1,7 @@
 # Issue213: revoke saved GitHub login before deleting data
 
+Current owner-review status: [approved on 2026-10-09, subject to required checks](owner-approval.md). Owner-pending statements below record earlier evidence; required hosted and native gates remain pending.
+
 Date 2026-10-08; branch fix/issue-213, base08f0332. Design-first draft PR250,
 ADR0011. DO NOT MERGE without explicit owner review (AGENTS rule24).
 All accounts/paths are synthetic temporary fixtures; no owner token was read,

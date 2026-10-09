@@ -1,6 +1,6 @@
 # ADR 0011: revoke the stored GitHub login before deleting computer data
 
-- Status: proposed, **DO NOT MERGE without owner review**.
+- Status: accepted by the owner on 2026-10-09, subject to required checks; not merged.
 - Date: 2026-10-08
 - Issue: #213
 - Design: [uninstall-github.md](../uninstall-github.md)
@@ -47,8 +47,8 @@ Independent security review must verify single-writer ownership, token secrecy,
 fixed destination/redirect/proxy restrictions and no network action before
 consent. Independent feasibility review must check stopped/racing brokers,
 platform locks, timeout/failure behavior and the alternatives above. Record
-findings and resolutions in the design. Owner review remains required before
-merging this design or implementation (AGENTS.md rule 24).
+findings and resolutions in the design. Owner review of design and implementation was supplied on 2026-10-09,
+subject to required checks (AGENTS.md rule 24).
 
 ## Which feasibility findings changed the decision?
 
@@ -62,5 +62,11 @@ identity before token work; skip equal/nested roots, refuse containing roots,
 and only unlink top-level symlinks. Alias/ancestor/live-lock tests pass.
 Independent security and feasibility reviews pass after corrections, including
 request-acceptance wording rather than completed remote revocation. Owner
-approval remains pending. Inherited token-file defects #255/#256 remain separate
+approval was given on 2026-10-09, subject to required checks. Inherited token-file defects #255/#256 remain separate
 PRs; this change does not claim to resolve them.
+
+## Owner decision (2026-10-09)
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+See [approval evidence](../evidence/issue-213/owner-approval.md).

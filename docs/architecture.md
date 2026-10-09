@@ -375,7 +375,7 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [owner-verification.md](owner-verification.md),
 [release-checklist.md](release-checklist.md).
 
-### Proposed uninstall cleanup (#213, owner review pending)
+### Uninstall cleanup (#213, owner-approved, not merged)
 
 [ADR 0011](decisions/0011-uninstall-github-revocation.md) and
 [uninstall-github.md](uninstall-github.md) propose revoking the stored GitHub
@@ -384,4 +384,4 @@ broker shutdown under its existing exclusive data lock, using the existing
 restricted GitHub package client without starting a runtime. Keep the empty
 data directory/lock inode throughout contents removal. The CLI receives only request-acceptance/local-deletion status. Extra deletion
 roots are checked by canonical filesystem identity before token work so
-parent aliases cannot remove the held ownership namespace. Design and implementation are not approved for merge.
+parent aliases cannot remove the held ownership namespace. Owner approved the design and implementation on 2026-10-09, subject to required checks. CI stays disabled; required checks and native evidence remain pending.

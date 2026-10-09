@@ -1,7 +1,7 @@
 # How does uninstall revoke the GitHub login?
 
-Proposed correction for #213. **DO NOT MERGE without owner review**; ADR 0011
-records the decision and alternatives. Implementation and focused/race evidence are prepared; independent security and feasibility reviews pass after corrections; owner approval remains pending.
+Owner-approved correction for #213, not merged; ADR 0011
+records the decision and alternatives. Implementation and focused/race evidence are prepared; independent security and feasibility reviews pass after corrections; owner approval was given on 2026-10-09, subject to required checks.
 
 ## What is the acceptance boundary?
 
@@ -66,5 +66,11 @@ found no new implementation blocker. Security review also corrected success
 wording to report request acceptance, which is all GitHub's 202 response
 proves. Inherited private-file symlink and hard-link defects were reproduced
 and filed separately as #255 and #256 under rule21; they are not hidden here.
-Owner review remains pending. Hosted checks remain blocked: the owner
+Owner approved the design and implementation on 2026-10-09, subject to required checks. Hosted checks remain blocked: the owner
 explicitly requested keeping CI disabled, so no Actions execution is claimed.
+
+## Owner decision (2026-10-09)
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+See [approval evidence](evidence/issue-213/owner-approval.md).

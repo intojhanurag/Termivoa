@@ -277,5 +277,5 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 ADR0011/design and draft implementation/tests/docs are prepared. Independent
 feasibility found and resolved a replacement-lock gap by keeping the private
-empty directory/marker. Final security/feasibility verification, owner approval,
-required checks and merge are pending; main still deletes without revoking.
+empty directory/marker. Final security/feasibility reviews passed after corrections. Owner approved design and implementation on 2026-10-09, subject to required checks. Native evidence,
+required checks and merge remain pending; main still deletes without revoking.

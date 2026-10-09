@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-07
+Last updated: 2026-10-09
 
 ## Start here
 
@@ -14,6 +14,17 @@ Last updated: 2026-10-07
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### 2026-10-09: owner approved #213 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-213/owner-approval.md) supersedes owner-pending
+statements in earlier dated entries. Independent reviews remain recorded;
+native Windows/Linux and real-phone gates remain pending. For this internal
+documentation update, `git diff --check` passed and the staged additions were
+reviewed. Runtime, tests and public docs are unchanged; no new test run or
+hosted check success is claimed. Required GitHub checks still block merge.
 
 ### Summary (2026-09-27)
 
