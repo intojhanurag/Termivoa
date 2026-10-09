@@ -102,8 +102,9 @@ Security repair #255 has a local implementation after its architecture-first dra
 can change a rejected symlink target or shared hard link. Local
 adjacent checks and the independent security source review are recorded in
 progress. Pinned feasibility source/local review is GO; native Windows/Linux
-runtime evidence and owner approval remain pending.
-**DO NOT MERGE without owner review**; hosted CI is explicitly denied.
+runtime evidence remains pending. Owner approved design and implementation on
+2026-10-09, subject to required checks; hosted CI is explicitly denied. Required
+checks and merge remain blocked.
 
 1. **Gate 0 real-phone test for multi-computer** (`scripts/gate0/`). Needs the
    owner's second computer and the owner's approval for a Tailscale Serve port

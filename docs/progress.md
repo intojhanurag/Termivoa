@@ -15,6 +15,17 @@ Last updated: 2026-10-09
 
 ## Log
 
+### 2026-10-09: owner approved #255 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-255/owner-approval.md) supersedes owner-pending
+statements in earlier dated entries. Independent reviews remain recorded;
+native Windows/Linux and real-phone gates remain pending. For this internal
+documentation update, `git diff --check` passed and the staged additions were
+reviewed. Runtime, tests and public docs are unchanged; no new test run or
+hosted check success is claimed. Required GitHub checks still block merge.
+
 ### Private-file repair final documentation gate (#255, 2026-10-09)
 
 - Consolidated the #255 fix entry into the existing Unreleased **Fixed**

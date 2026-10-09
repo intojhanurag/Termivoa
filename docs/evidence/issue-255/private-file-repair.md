@@ -1,5 +1,7 @@
 # Issue #255: private-file repair evidence
 
+Current owner-review status: [approved on 2026-10-09, subject to required checks](owner-approval.md). Owner-pending statements below record earlier evidence; required hosted and native gates remain pending.
+
 Date: 2026-10-08. Base: `origin/main` at `08f0332`. Toolchain:
 `go version go1.27.1 darwin/arm64`.
 

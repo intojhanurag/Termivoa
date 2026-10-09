@@ -1,9 +1,9 @@
 # ADR 0012: Repair private-file permissions through the validated open object
 
-- Status: **proposed — DO NOT MERGE without owner review**. Architecture-first
-  draft for #255 under AGENTS.md rule 24; neither implementation nor approval
-  is implied by this document. Draft PR #264 opened at `3b0bdff` before local
-  implementation; owner approval remains pending.
+- Status: **accepted by the owner on 2026-10-09, subject to required checks; not merged**.
+  Architecture-first draft for #255 under AGENTS.md rule 24. Draft PR #264
+  opened at `3b0bdff` before local implementation; the owner has approved both
+  design and implementation in this conversation.
 - Date: 2026-10-08
 - Design: [Private-file permission repair](../private-file-permissions.md)
 
@@ -61,11 +61,17 @@ permission repair is outside #255. Report other defects separately.
 Independent security and feasibility/alternatives reviews must challenge
 Windows owner recovery, handle sharing, hard-link behavior, replacement races
 and caller assumptions. Record each finding and its resolution in the design.
-Owner approval is required before merging either design or implementation.
+Owner approved both design and implementation on 2026-10-09, subject to required checks.
 Hosted CI is explicitly denied; it must not be enabled, bypassed or treated as
 passed. Native Windows/Linux evidence remains pending until actually run.
 
 Local implementation verification and the root independent security source
 review are recorded in the design and evidence. Independent pinned feasibility
-review is source/local-evidence GO; native Windows/Linux execution and owner
-approval remain pending. The decision is still proposed.
+review is source/local-evidence GO; native Windows/Linux execution and required checks
+remain pending. The decision is owner-approved, not merged.
+
+## Owner decision (2026-10-09)
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+See [approval evidence](../evidence/issue-255/owner-approval.md).

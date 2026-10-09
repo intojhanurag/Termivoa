@@ -1,11 +1,11 @@
 # Private-file permission repair
 
-Status: **proposed — DO NOT MERGE without owner review**, 2026-10-08.
+Status: **owner-approved on 2026-10-09, subject to required checks; not merged**.
 This is the implementation design for #255 and
 [ADR 0012](decisions/0012-private-file-permission-repair.md). The current main
 guard still performs pathname-based permission repair. Architecture-first
 draft PR #264 was opened at `3b0bdff` before local implementation began;
-the local implementation is not merged or owner-approved. Stored secrets and authentication state make this a critical
+the local implementation is owner-approved, subject to required checks, and is not merged. Stored secrets and authentication state make this a critical
 change under AGENTS.md rule 24.
 
 ## What does the guard guarantee?
@@ -107,7 +107,7 @@ errors or evidence. Tests use isolated synthetic files and no GitHub requests.
 | Adjacent callers | IPC/GitHub/host/upload relevant tests, race and vet | Local macOS race/vet pass; see evidence |
 | Documentation | Full rules 22/25 docs and frozen docs-site build before implementation review | Updated; frozen install and 29-page build pass |
 | Adversarial review | Independent security plus feasibility/alternatives findings and resolutions | Root security and pinned feasibility source reviews found no code blocker; native evidence pending |
-| Owner review | Explicit approval before merge | Pending; DO NOT MERGE |
+| Owner review | Explicit approval before merge | Design and implementation approved on 2026-10-09, subject to required checks |
 | Hosted CI | Existing required policy | Explicitly denied; no enabling or bypass |
 
 ## Review findings and resolutions
@@ -118,10 +118,16 @@ errors or evidence. Tests use isolated synthetic files and no GitHub requests.
 | Root independent security source review, 2026-10-09 | No code blocker in Unix descriptor repair, Windows same-handle ACL/recovery or original lock-handle integration | Source-reviewed; local tests pass. Native Windows recovery execution is not claimed |
 | Root review of Windows test scope | Owner-recovery advice test proves message/cause only, not a real Administrators-owner recovery state | Keep native recovery-state gate explicitly pending; native normal repair/link fixtures added and cross-compiled only |
 | Independent feasibility review of `ac2e9b5` | Initial repair open required WRITE_DAC before ownership inspection, so a read-control-accessible Administrators-owned object lost recovery advice when that open was denied | Add denial-only nonmutating, no-reparse handle inspection; preserve original cause and give advice only for the verified safe Administrators-owned object. Native OWNER_RIGHTS fixture explicitly proves denied repair / allowed inspection preconditions; compiled only |
-| Independent feasibility follow-up review, 2026-10-09 | Pinned `4a09144f25b5e3a4932a74233aa0a73f9b166f90`: source/local-evidence GO; denied-open finding resolved | Independent Windows cross-test compile, cross-vet and diff check passed; native execution and owner approval remain pending |
+| Independent feasibility follow-up review, 2026-10-09 | Pinned `4a09144f25b5e3a4932a74233aa0a73f9b166f90`: source/local-evidence GO; denied-open finding resolved | Independent Windows cross-test compile, cross-vet and diff check passed; native execution remains pending; owner approved design and implementation on 2026-10-09, subject to required checks |
 
 Windows access-right distinctions and the fixture’s OWNER_RIGHTS SID name were
 checked against Microsoft’s [standard access rights](https://learn.microsoft.com/en-us/windows/win32/secauthz/standard-access-rights),
 [file security](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights)
 and the [SID strings](https://learn.microsoft.com/en-us/windows/win32/secauthz/sid-strings).
 The follow-up does not enable privileges or mutate an inspection handle.
+
+## Owner decision (2026-10-09)
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+See [approval evidence](evidence/issue-255/owner-approval.md).
