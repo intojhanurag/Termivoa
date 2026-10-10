@@ -401,6 +401,9 @@ One adversarial review of the branch `fix/herdr-bugs`. No critical or high findi
 | L5 | Probe edges: a run that a signal ended counted as "ended" and kept "cannot attach" for good; the back-off was not reset for another binary or version; a new discovery ran the probe before its wait was over | Only a real exit code counts; the wait starts again for a new key; only the poll loop's timer runs a probe again (`TestProbeBackOffEdges`) |
 | L8 | The item menu read the settings also when the **New tab** chooser closed | It reads when the menu opens and when the chooser opens (`readsKinds`) |
 | O1 | A "herdr is busy" answer took one of the device's 3 creates a minute, because the limiter is taken before the lock is tried | The create unit is given back when the provider answers busy, for create and for an agent tab (originally `providerLimits.giveBack`; issue #209 replaces it with the one-shot reservations below). The manage limit is as before (`TestProviderCreateRoute`) |
+
+| L8 | The item menu read the settings also when the **New tab** chooser closed | It reads when the menu opens and when the chooser opens (`useAgentKinds`) |
+| O1 | A "herdr is busy" answer took one of the device's 3 creates a minute, because the limiter is taken before the lock is tried | The create unit is given back when the provider answers busy, for create and for an agent tab (`providerLimits.giveBack`; it changes only the window that the take counted in, so the bound stays exact). The manage limit is as before (`TestProviderCreateRoute`) |
 | Rule 21, last round | The **New worktree** sheet said "Too many new worktrees just now. Wait a minute, then try again." also when herdr was busy with another change (both are `limit_exceeded`) | The home computer's own fixed words show ("herdr is busy with another change; try again" or "too many requests; wait a minute and try again"). A peer's words are never shown, so for a peer the app says what is true for both: "herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again." |
 | e2e | `H-newtab-quiet`, never run before, failed: "this herdr terminal's folder cannot be read" still showed in a new herdr terminal outside git. A product defect: the read-ahead of the files root (see row 194) | The read-ahead's refusal is quiet; a listing that the user opened still shows the host's words (`Connection.test.ts`) |
 | Docs | The site said "herdr 0.8" and "herdr 0.9", and "two workspaces at the main folder of one repository" without the exact rule | The site names herdr 0.8.2 and herdr 0.9.3, and the rule as the host has it: two workspaces that herdr lists under one project as that project's main folder (each has herdr's worktree record for the same repository). The new lab case above shows that a second workspace without the record closes alone on both versions, so the host refuses nothing more |
@@ -436,3 +439,33 @@ success must not create a new allowance for retrying ambiguous work. The
 full boundary and concurrency rules are in
 [herdr-provider.md](herdr-provider.md#create-admission-accounting-issue-209-2026-10-08).
 There is no automatic retry or new operation ID / protocol field.
+
+## How are fresh choices and close hints verified? (#210)
+
+The quiet settings callback now returns its read promise all the way from
+`App` through `Sessions` and `ProviderScreen`. `useAgentKinds` waits only
+agent actions, settles success/failure, ignores canceled effect lifetimes,
+and reads on initial sheet/menu open and chooser open, not chooser close.
+An agent disappearing from the latest `ProviderEntry` removes its selection
+without substituting another agent. **No agent** creation and **Shell** tabs
+remain usable during the read. A successful read is a snapshot, not a lock:
+the host still validates an agent that stops afterward. Failed quiet reads
+retain cached choices, and no create/manage request is retried.
+
+For `closeItem` conflicts, `manageStep` reloads then shows a fixed actionable
+note: inspect the changed list, close linked worktrees first, and close
+shared main-folder workspaces in herdr on the computer. It does not copy
+host or peer error text. Other changed/missing operations keep their
+existing behavior. The last-tab hint follows `closeWorktreesFirst` and
+`closesTogether`, so it no longer directs a user to a disabled close action.
+
+`node scripts/test-provider-kinds.mjs` runs actual React effects in installed
+Chromium, using synthetic data and intercepted mutation requests. The
+fixture covers home/peer origin routing, latest-entry changes, pending
+button/form guards, dropped choices, successful single submissions,
+chooser cancel, quiet-read failure, last-tab hints and stale close conflicts.
+These focused browser checks are separate from Vitest's SSR/helper suite.
+See [verification evidence](evidence/issue-210/verification.md). The existing
+herdr sidebar guide covers the same feature; no new navigation entry or
+CLI/security page change is needed because no command, access or stored
+information changes.

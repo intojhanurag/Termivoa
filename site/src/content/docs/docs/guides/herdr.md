@@ -253,3 +253,17 @@ No. Termivoa never takes a pane over from another herdr client. See [What does t
 ### Does this work with several computers?
 
 Yes. Each computer reads its own herdr. The **herdr** tab shows all of them in **All computers**, each computer under its own header, or one computer that you choose in the side menu. See [Use several computers](/docs/guides/computers/#how-do-i-add-a-computer) to add one.
+
+## Why does starting an agent wait for a check?
+
+**Next beta:** Termivoa checks that computer's offered agents when **New worktree** opens, when its workspace menu opens, and when **New tab** opens.
+
+| What you see | What to do |
+| --- | --- |
+| **Checking available agents…** | Wait for the check before **Create and start** or **Start**. **No agent** and **Shell** remain available. |
+| “claude is not running in herdr now.” | The selected agent is no longer offered. Choose an available agent; Termivoa does not pick another one for you. |
+| The check could not complete | The last known choices remain. A start may still be refused if that agent no longer runs. Look at herdr on the computer before trying again. |
+| **Close workspace** is off and the workspace shares the project's main folder | Close those workspaces in herdr on the computer. The last tab ends with its workspace. |
+| A close says the list changed | Inspect the list again. Close linked worktrees first; workspaces sharing the main folder must be closed in herdr on the computer. |
+
+An agent can stop after a successful check. Termivoa still checks each requested action on the computer and never retries an agent start by itself.

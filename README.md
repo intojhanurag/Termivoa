@@ -53,7 +53,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
   tab or worktree can start an installed coding agent with a first
   prompt, even before any agent runs in herdr. A closed
   worktree shows as closed with **Open**, and a herdr terminal has the same
-  **⋯** menu. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
+  **⋯** menu. Agent starts wait for the sheet's settings read; a removed
+  choice stays unselected. Last-tab guidance explains when closing must happen
+  in herdr on the computer. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
 - **GitHub.** Connect each computer to GitHub from its page in
   **Settings** with a code, see your repositories, and clone one onto a
   computer with one tap, ready for a new session. No `gh` needed, only git;

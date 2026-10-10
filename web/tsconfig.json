@@ -20,5 +20,5 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["src", "tests/sheet-focus", "vite.config.ts"]
+  "include": ["src", "tests/sheet-focus", "tests/provider-kinds", "vite.config.ts"]
 }

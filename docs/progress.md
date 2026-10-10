@@ -3455,3 +3455,32 @@ required under AGENTS.md rule24. Existing CI-minutes approval remains pending.
   PR/adversarial review, push, merge and docs deployment. CI remains disabled
   pending the owner's permission. Host tests were not rerun for web-only
   behavior; no Go/protocol changes. No new database or pairing required.
+
+## 2026-10-08 — Issue #210: fresh agent-choice effects and close guidance
+
+- Reproduced seven of eight actual React browser scenarios failing against
+  baseline `origin/main` `08f0332`. The fixture verifies Sessions' callback
+  origins and latest provider props, beyond the old pure effect-rule test.
+- Added promise-aware agent-read ownership, pending agent submission guards,
+  fixed safe stale-close guidance and last-tab hints matching the close
+  guards. Shell/No agent remain usable; removed selections stay unselected.
+- Ran `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test:web`
+  (57 files/1048 tests), `CHROME=<installed Chromium> node
+  scripts/test-provider-kinds.mjs` (8/8 real React effect scenarios), and
+  `pnpm build:web`. Frozen site install plus `npx astro build` passed with
+  29 pages and valid links. Fixture strings were absent from web assets/maps.
+- Evidence: [issue-210 verification](evidence/issue-210/verification.md).
+  T3 preview was tried first and explicitly failed navigation; existing
+  installed Chromium was used with synthetic data, not real agents.
+- Isolated `fix/issue-210`; no #208/#214 implementation was bundled. Private
+  PR/adversarial review, required CI access, merge, docs deployment and owner
+  real-device checks remain pending with the coordinator.
+
+### Issue #210 documentation correction
+
+Moved the #210 changelog bullet into the existing Unreleased **Fixed**
+section, removing the duplicate heading introduced in the initial local
+commit. `git diff --check` passed and the Unreleased section has exactly one
+Fixed heading. No app/public-site content changed; previously passed web,
+focused browser and frozen site checks remain applicable. Local follow-up
+only; coordinator owns the private PR and deployment gates.

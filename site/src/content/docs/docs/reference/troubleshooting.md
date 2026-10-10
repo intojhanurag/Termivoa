@@ -808,3 +808,11 @@ never shows missing rows as a continuous transcript.
 | A full-screen application is open | Its current screen; use the application's own scroll controls for older output |
 
 See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
+
+## Why is herdr Start or Create and start temporarily off?
+
+**Next beta:** Termivoa waits for **Checking available agents…** to finish before starting an agent. The choices update in place; a removed selection stays unselected. **Shell** and **No agent** remain available. If a check fails, last known choices remain and the computer may refuse an agent that stopped. See [herdr agent checks](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
+
+## Why can I not close a herdr workspace's last tab?
+
+**Next beta:** Termivoa closes a workspace to end its last tab. When **Close workspace** is off, close its linked worktrees first, or close workspaces sharing the project's main folder in herdr on the computer. If the list changed during a close, inspect it again before trying another action.

@@ -494,3 +494,20 @@ restricted GitHub package client without starting a runtime. Keep the empty
 data directory/lock inode throughout contents removal. The CLI receives only request-acceptance/local-deletion status. Extra deletion
 roots are checked by canonical filesystem identity before token work so
 parent aliases cannot remove the held ownership namespace. Owner approved the design and implementation on 2026-10-09, subject to required checks. CI stays disabled; required checks and native evidence remain pending.
+
+### How do provider sheets refresh agent choices? (#210)
+
+`useAgentKinds` owns one quiet settings-read lifetime for **New worktree**,
+and reads on item-menu open and **New tab** chooser open. `App.readSettings`
+returns `all.reload`'s promise through `Sessions` or `ProviderScreen`; the
+sheet receives the current provider entry, so the completed read updates
+its choices. Agent actions wait for that promise; **No agent** and **Shell**
+do not depend on it. Read failure settles with cached choices and normal
+host validation. Cleanup prevents an old effect from settling a new sheet;
+React development effect replay does not issue a canceled read.
+
+Close conflicts use fixed application guidance after a provider reload;
+peer detail sanitization is unchanged. Last-tab hints use the same
+worktrees-first/shared-main-folder guards as **Close workspace**. See
+[herdr-manage.md](herdr-manage.md) and the focused React browser evidence in
+[evidence/issue-210/verification.md](evidence/issue-210/verification.md).
