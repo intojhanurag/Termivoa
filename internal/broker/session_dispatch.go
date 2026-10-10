@@ -36,6 +36,9 @@ type sessionConnection struct {
 	tasksBusy    atomic.Bool // A tasks request is running (tasks.go).
 	branchesBusy atomic.Bool // A branches request is running (worktree.go).
 	filesBusy    atomic.Bool // A files request is running (files.go).
+	chatBusy     atomic.Bool // A chat request is running (chat.go).
+	chatSub      *chatSub    // The open chat (chat.go); dispatch goroutine only.
+	thumbnail    bool        // Attached as a read-only thumbnail.
 }
 
 // errStreamRevoked ends a browser stream after access.revoked was sent.
@@ -92,6 +95,7 @@ func (server *ManagementServer) serveSessionConnection(
 		return err
 	}
 	defer func() {
+		stream.closeChat()
 		if stream.viewer != nil {
 			_ = stream.viewer.Close()
 		}
@@ -249,6 +253,8 @@ func (stream *sessionConnection) dispatch(ctx context.Context, request protocol.
 		return stream.listBranches(ctx, request)
 	case protocol.FilesList, protocol.FilesRead, protocol.FilesSearch:
 		return stream.readFiles(ctx, request)
+	case protocol.ChatOpen, protocol.ChatRead, protocol.ChatClose:
+		return stream.chatRequest(ctx, request)
 	case protocol.WorktreeRemove:
 		return stream.removeWorktreeOfSession(ctx, request, identity)
 	case protocol.SessionDetach:
@@ -293,6 +299,7 @@ func (stream *sessionConnection) attach(ctx context.Context, request protocol.En
 		return errStreamRevoked
 	}
 	stream.session, stream.sessionID, stream.generation = session, *request.SessionID, *request.Generation
+	stream.thumbnail = payload.Thumbnail != nil
 	// Retirement, a stalled viewer, or revocation must also interrupt a peer
 	// blocked in ReadFrame. Wait for the stop signal, not Done: a superseded
 	// frame may still hold the writer until its deadline. This goroutine ends

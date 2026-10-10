@@ -20,6 +20,7 @@ type sessionWriter struct {
 	gate chan struct{}
 	mu   sync.Mutex
 	used int
+	room chan struct{} // closed when bytes are released; for SendWhenRoom
 }
 
 func newSessionWriter(conn net.Conn) *sessionWriter {
@@ -55,7 +56,41 @@ func (writer *sessionWriter) reserve(size int) error {
 func (writer *sessionWriter) release(size int) {
 	writer.mu.Lock()
 	writer.used -= size
+	if writer.room != nil {
+		close(writer.room)
+		writer.room = nil
+	}
 	writer.mu.Unlock()
+}
+
+// SendWhenRoom is Send for chat (review F4): instead of failing as a slow
+// viewer when the byte budget is full, it waits until earlier messages
+// drain or ctx ends. It never closes the connection for a full budget.
+func (writer *sessionWriter) SendWhenRoom(ctx context.Context, message []byte) error {
+	if len(message) == 0 || len(message) > protocol.MaxOutboundMessageBytes {
+		return errOutboundMessageTooLarge
+	}
+	size := len(message) + 4
+	for {
+		writer.mu.Lock()
+		if writer.used+size <= MaxViewerQueueBytes {
+			writer.used += size
+			writer.mu.Unlock()
+			break
+		}
+		if writer.room == nil {
+			writer.room = make(chan struct{})
+		}
+		room := writer.room
+		writer.mu.Unlock()
+		select {
+		case <-room:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	defer writer.release(size)
+	return writer.sendReserved(ctx, message, func() {})
 }
 
 // reservedViewerSink is paired with ViewerConfig.budget. Actor-queued notices

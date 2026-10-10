@@ -1,7 +1,7 @@
 ---
 title: Release notes
 description: Termivoa release history, from the first private betas to the free and open-source beta, with the new features, fixes and known limits of each.
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-11
 ---
 
 The latest Termivoa release is `v0.1.0-beta.4` (2026-10-10), the first free and open-source beta. The betas before it were private.
@@ -9,6 +9,8 @@ The latest Termivoa release is `v0.1.0-beta.4` (2026-10-10), the first free and 
 ## Next beta (not released yet)
 
 New features on `main` show here until the next beta ships.
+
+- **Chat view, computer side.** `pterm chat on` (with a `[y/N]` question) lets the computer read Claude Code's conversation of a session and send short, read-only parts to a phone with Chat open; `pterm chat off` or any phone turns it off. The phone screen comes in a later beta. See [What does Chat view send to the phone?](/docs/reference/security/#what-does-chat-view-send-to-the-phone) and [Chat view commands](/docs/reference/cli/#chat-view).
 
 - **Touch gestures on the terminal.** Hold and slide for arrow keys, tap to move the cursor, swipe on the line under the tabs to switch session, pinch for text size, and tap with two fingers for Esc. Turn them off in **Settings → This phone → Terminal gestures**. See [Which touch gestures does the terminal take?](/docs/guides/live-terminal/#which-touch-gestures-does-the-terminal-take)
 

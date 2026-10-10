@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, read-only sessions, missing notifications, worktrees and failed git pushes.
-lastUpdated: 2026-10-10
+lastUpdated: 2026-10-11
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -268,6 +268,10 @@ Decide if you trust what runs there as much as Termivoa. If not, move it to anot
 ```
 
 A handler on another port is a different origin, so it cannot use the Termivoa app. But when the phone opens it, the browser sends it the Termivoa cookie, and it could act as that phone. This is a warning, not a problem: setup does not refuse it, because many people serve their own tools on other ports. Termivoa's own preview port 8443 is not listed; Termivoa removes the cookie there.
+
+## `pterm doctor` says the agent's transcript format changed
+
+**Next beta.** The line `! Chat view: …; the agent's transcript format changed, so Chat shows the terminal instead` means that more than 1 in 5 of the last lines in Claude Code's conversation file were in a form Termivoa does not read. A new Claude Code version can do this. Chat then stops for that session and the terminal stays as it is. Update Termivoa when a new beta is out. Run `pterm chat off` if you do not want Chat to try again.
 
 ## `pterm doctor` says Termivoa will not run tailscale
 

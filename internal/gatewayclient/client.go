@@ -481,6 +481,15 @@ func (client *Client) ManageProvider(
 		protocol.GatewayRPCProviderManagePayload{Credential: credential, Provider: provider, Request: request})
 }
 
+// UpdateChat turns Chat view off on this computer.
+func (client *Client) UpdateChat(ctx context.Context, credential string, request protocol.HTTPChatUpdateRequest) (protocol.HTTPChatInfo, error) {
+	if err := checkCredential(credential); err != nil {
+		return protocol.HTTPChatInfo{}, err
+	}
+	return roundTrip[protocol.HTTPChatInfo](ctx, client, protocol.GatewayChatUpdate,
+		protocol.GatewayRPCChatUpdatePayload{Credential: credential, Request: request}, true, nil)
+}
+
 func (client *Client) GitHub(ctx context.Context, credential string) (protocol.HTTPGitHubResponse, error) {
 	if err := checkCredential(credential); err != nil {
 		return protocol.HTTPGitHubResponse{}, err

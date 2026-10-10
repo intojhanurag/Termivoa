@@ -220,3 +220,34 @@ Two independent reviews ran on this design: **security** (no blockers; 3 major, 
 | F11 | Cost of lsof on macOS | lsof only at bind time and when the file stops growing, not every 2 s |
 
 **v1 scope after review:** Claude Code in Termivoa sessions, macOS and Linux; binding by pid file (no `probable`); pull transport; read-only chat with the existing Composer and AnswerCard; edit counts and one hunk. **Slicing:** M1a host (protocol, `internal/transcript` with fuzz tests, hub, `pterm chat on`), M1b phone (Chat screen, docs). The owner's scripted capture with a real Claude Code (question 6) gates M1a, because format drift has no real-agent CI.
+
+## 15. Build notes (M1a, host side)
+
+M1a (branch `feat/chat-view-host`) builds the host side of section 14. Where it differs from the sections above:
+
+| Topic | As built | Why |
+| --- | --- | --- |
+| Page request name | The client asks with `chat.read {before \| after, limit}`; the host answers `chat.page` | The web validator's discriminator needs one schema per message type; it mirrors `history.read` → `history.page` |
+| Enum words | `ChatState.link`, `.reason` and `ChatTool.status` are schema patterns, with Go constants in `internal/protocol/chat.go` | As enums, quicktype renamed older generated names (`Running`, `Error`, `Off`, …) across the code |
+| Reasons | Two more: `file_refused` (the file failed a safety check) and `busy` (8 chats already followed) | Each `none` has an exact reason |
+| `chat.changed` path | One sender goroutine per viewer writes it through the stream writer, waiting for the byte budget; never through the actor's notice queue. One waits at most per viewer, spaced 250 ms | Coalescing means nothing is dropped, so `stale` is defined but not sent in M1a |
+| Cursors | A random 16-byte token the host maps to a file offset (at most 1024 per history); a new history drops them | Validation against `historyId` and issued offsets is a map lookup |
+| Masking window | The text up to the cut plus 16 KiB is masked before it is cut; a PEM block that begins there is masked to the end | Masking a whole multi-MiB tool output for a 2 KiB preview is not needed |
+| Lines over 1 MiB | Stream-scanned for `tool_use_id` and `is_error` (status `ok`, `error`, or `unknown` when several results share one `is_error`); any other long line shows `omitted` ("Large message not shown") | F5 |
+| `/clear` | Only with evidence tied to our agent (review C-2): the linked file was idle 2 s (checked at most every 10 s), the agent's own pid file was written after it, and a newer session file in the same folder is named by no pid file → `none(cleared)`; the hub then remembers that conversation so the stale pid file does not link it again. Another `claude` or `claude -p` in the same folder alone never ends a link. A pid file that names a new session links it with a new `historyId` | S2/F2 without guessing |
+| Rewind | A new prompt whose parent is not the line Poll read just before it starts a new `historyId` (review C-3; no decision right after a line over 1 MiB, whose uuid is not read). At bind the last line (within 1 MiB) gives that uuid. Pages drop lines that are not on the parent chain (walk from the newest message line, or from the older page's anchor; `logicalParentUuid` crosses a compaction) | F7 |
+| Very long lines | Poll keeps the scan state of an unfinished line over 1 MiB, so its bytes are read once across ticks (review C-1). An after page reads to `live` (always a line end) and stops after 8 MiB at a line end; a before page that would fall inside one line starts at that line. A long prompt line still opens a turn ("Message too large to show") and counts in the turn search | Paging always moves |
+| Drift window | Fed only by lines read live (Poll) and, at bind, the last 1 MiB; old lines read for a page never count (review S-8) | A phone cannot change the drift check by paging |
+| Folder limit | At most 10,000 folders in `projects/` are read; with more, the bind fails closed as `none(no_file)` | S-7 |
+| Thinking | Only "Thought for Ns" (a `status` block), from the timestamp of the line before the thinking line, 1 s to 1 h | Design section 5 |
+| Custom folder | `CLAUDE_CONFIG_DIR` is read from the environment of the `pterm __broker` process (`cmd/pterm/chat.go`); the agent's environment is never read. Under launchd or systemd a shell export does not reach the broker, so such an agent shows `unsupported`, not `custom_root` | Design rule: never read an agent's environment |
+| Process facts | `ptyhost.TreeProcesses` adds start times (macOS `kinfo_proc`, Linux `/proc/<pid>/stat` with USER_HZ 100, no overflow); a recheck allows 2 s between start times (Linux `btime` moves); the OS working folder comes from lsof (macOS) or `/proc` (Linux) at bind time only. After Chat is off no bind runs (the tail's context is cancelled and checked) | S4, F11, C-4 |
+| Masking order | Text is cleaned first (escape sequences, control, bidi and zero-width characters), then masked; a token prefix matches at the start or after any character that is not a letter or digit. Tool results with an invalid `tool_use_id` are dropped | Review S-4, S-5 |
+| Folder name | Every character other than an ASCII letter or digit becomes `-`; a long path that Claude Code shortens does not match and fails closed (`none(no_file)`) | No guessing |
+| Drift | `format_unknown` when over 20% of the last 200 lines are unknown, after at least 20 lines; `pterm doctor` and `pterm chat status` show the versions seen and the unknown share | Section 10 |
+| Commands | `pterm chat status` next to `on` and `off` | The doctor line and a quick check |
+| Close | `chat.close` has no reply; opens are limited to 10 a minute per device | Close only frees |
+
+Measured (synthetic, Apple M5, `go test -bench`, warm file cache): parse about 280 MB/s; first page of a 200 MB transcript about 7 ms with 1.7 MiB read. See [evidence/chat-view/m1a-bench.md](evidence/chat-view/m1a-bench.md).
+
+Still open before M1a merges: the owner's scripted capture with a real Claude Code (`scripts/chat-capture.sh`, question 7) to check the parser against a real transcript.

@@ -5,6 +5,8 @@
  */
 export type ProtocolTypes = {
     readonly accessRevoked:                    AccessRevokedPayload;
+    readonly adminRPCChatSet?:                 AdminRPCChatSetPayload;
+    readonly adminRPCChatStatus?:              AdminRPCChatStatusPayload;
     readonly adminRPCComputer:                 AdminRPCComputer;
     readonly adminRPCComputerListResult:       AdminRPCComputerListResultPayload;
     readonly adminRPCComputerRemove:           AdminRPCComputerRemovePayload;
@@ -58,6 +60,11 @@ export type ProtocolTypes = {
     readonly changesPush:                      ChangesPushPayload;
     readonly changesPushed:                    ChangesPushedPayload;
     readonly changesSummary:                   ChangesSummaryPayload;
+    readonly chatChanged?:                     ChatChangedPayload;
+    readonly chatOpen?:                        ChatOpenPayload;
+    readonly chatPage?:                        ChatPagePayload;
+    readonly chatRead?:                        ChatReadPayload;
+    readonly chatState?:                       ChatStatePayload;
     readonly controlChanged:                   ControlChangedPayload;
     readonly empty:                            EmptyPayload;
     readonly error:                            ErrorPayload;
@@ -69,6 +76,7 @@ export type ProtocolTypes = {
     readonly filesListed:                      FilesListedPayload;
     readonly filesRead:                        FilesReadPayload;
     readonly filesSearch:                      FilesSearchPayload;
+    readonly gatewayRPCChatUpdate?:            GatewayRPCChatUpdatePayload;
     readonly gatewayRPCComputerAdd:            GatewayRPCComputerAddPayload;
     readonly gatewayRPCComputerListResult:     GatewayRPCComputerListResultPayload;
     readonly gatewayRPCComputerRemove:         GatewayRPCComputerRemovePayload;
@@ -98,6 +106,8 @@ export type ProtocolTypes = {
     readonly historyChanged:                   HistoryChangedPayload;
     readonly historyPage:                      HistoryPagePayload;
     readonly historyRead:                      HistoryReadPayload;
+    readonly httpChatInfo?:                    HTTPChatInfo;
+    readonly httpChatUpdateRequest?:           HTTPChatUpdateRequest;
     readonly httpComputer:                     HTTPComputer;
     readonly httpComputerAddRequest:           HTTPComputerAddRequest;
     readonly httpComputerAddResponse:          HTTPComputerAddResponse;
@@ -176,6 +186,28 @@ export type ProtocolTypes = {
 
 export type AccessRevokedPayload = {
     readonly message: string;
+}
+
+/**
+ * pterm chat on|off (revision 8, docs/chat-view.md). Only the local administration channel
+ * can turn Chat view on; pterm asks y/N first. Off closes every open chat at once.
+ */
+export type AdminRPCChatSetPayload = {
+    readonly enabled: boolean;
+}
+
+/**
+ * Chat view on this computer, for pterm chat and pterm doctor. supported is false on
+ * Windows. tails: transcripts followed now (at most 8). versions: the agent versions seen
+ * in the last transcripts read (memory only, at most 8). unknownPercent: the share of
+ * transcript lines the parser did not know in the last transcript read, 0 to 100.
+ */
+export type AdminRPCChatStatusPayload = {
+    readonly enabled:        boolean;
+    readonly supported:      boolean;
+    readonly tails:          number;
+    readonly unknownPercent: number;
+    readonly versions:       string[];
 }
 
 /**
@@ -293,7 +325,7 @@ export type AdminRPCGitHubStatusPayload = {
  */
 export type HTTPGitHubState = "noGit" | "notConnected" | "connecting" | "needsInstall" | "ready";
 
-export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.device.revoke.via" | "admin.computers.list" | "admin.computers.remove" | "admin.pair.offer" | "admin.pair.offer.end" | "admin.github.status" | "admin.github.disconnect" | "admin.github.credential" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.device.revoke.via.result" | "admin.computers.list.result" | "admin.computers.remove.result" | "admin.pair.offer.result" | "admin.pair.offer.end.result" | "admin.github.status.result" | "admin.github.disconnect.result" | "admin.github.credential.result" | "admin.error";
+export type AdminRPCMessageType = "admin.pair.grant" | "admin.pair.pending" | "admin.pair.approve" | "admin.device.list" | "admin.device.revoke" | "admin.project.add" | "admin.project.list" | "admin.profile.list" | "admin.profile.detect" | "admin.config.origin" | "admin.shutdown" | "admin.gateway.stop" | "admin.device.rename" | "admin.device.revoke.via" | "admin.computers.list" | "admin.computers.remove" | "admin.pair.offer" | "admin.pair.offer.end" | "admin.github.status" | "admin.github.disconnect" | "admin.github.credential" | "admin.chat.status" | "admin.chat.set" | "admin.pair.grant.result" | "admin.pair.pending.result" | "admin.pair.approve.result" | "admin.device.list.result" | "admin.device.revoke.result" | "admin.project.add.result" | "admin.project.list.result" | "admin.profile.list.result" | "admin.profile.detect.result" | "admin.config.origin.result" | "admin.shutdown.result" | "admin.gateway.stop.result" | "admin.device.rename.result" | "admin.device.revoke.via.result" | "admin.computers.list.result" | "admin.computers.remove.result" | "admin.pair.offer.result" | "admin.pair.offer.end.result" | "admin.github.status.result" | "admin.github.disconnect.result" | "admin.github.credential.result" | "admin.chat.status.result" | "admin.chat.set.result" | "admin.error";
 
 /**
  * In a request, a present origin replaces the configured one and an absent origin reads it.
@@ -749,6 +781,129 @@ export type ChangedFile = {
 
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "untracked" | "typechange";
 
+/**
+ * New or changed blocks exist after the last page: ask with chat.read after. Coalesced: at
+ * most one is waiting per viewer, at most 4 a second. Carries no chat content.
+ */
+export type ChatChangedPayload = {
+    readonly historyId: string;
+}
+
+/**
+ * Revision 8 (docs/chat-view.md). Starts or joins the chat of the attached session: the
+ * host answers chat.state and, when linked, a chat.page with the latest blocks, at most
+ * limit turns. Read-only: any non-thumbnail viewer may ask (a thumbnail gets
+ * not_controller). Refused with limit_exceeded when a chat request of this viewer or
+ * session is running or when opens come too fast. With Chat off the host answers chat.state
+ * off and opens no file.
+ */
+export type ChatOpenPayload = {
+    readonly limit: number;
+}
+
+/**
+ * Blocks of one historyId in file order, at most 200, the whole message at most 262144
+ * bytes. before: cursor for older blocks; absent when the page starts at the beginning of
+ * the history. after: cursor for newer blocks. complete: the page reaches the current end
+ * of the history; when false, ask again with after at once.
+ */
+export type ChatPagePayload = {
+    readonly after:     string;
+    readonly before?:   string;
+    readonly blocks:    ChatBlock[];
+    readonly complete:  boolean;
+    readonly historyId: string;
+}
+
+/**
+ * One normalized chat block. id is stable for this historyId; a block whose id the client
+ * already holds replaces it (a tool result updates its call). turn is the id of the
+ * user_text that opened the turn. text: user_text and assistant_text (assistant text is
+ * markdown: render it sanitized, no raw HTML, no images), status (for example Thought for
+ * 14s), compaction and omitted. At most 16384 bytes, masked, without control characters
+ * other than tab and line feed; truncatedBytes counts the bytes cut. tool: tool_call and
+ * edit. edit: edit only. Thinking text, images, system prompts and sub-agent transcripts
+ * are never sent.
+ */
+export type ChatBlock = {
+    readonly at?:             string;
+    readonly edit?:           ChatEdit;
+    readonly id:              string;
+    readonly kind:            ChatBlockKind;
+    readonly text?:           string;
+    readonly tool?:           ChatTool;
+    readonly truncatedBytes?: number;
+    readonly turn?:           string;
+}
+
+/**
+ * A file edit by the agent. path is relative to the session's folder, or the base name when
+ * outside it. added and removed count lines. hunk is at most 40 lines (each starting with
+ * -, + or a space), masked.
+ */
+export type ChatEdit = {
+    readonly added:   number;
+    readonly hunk?:   string;
+    readonly path:    string;
+    readonly removed: number;
+}
+
+export type ChatBlockKind = "user_text" | "assistant_text" | "tool_call" | "edit" | "status" | "compaction" | "omitted";
+
+/**
+ * One tool call. name is the agent's tool name (for example Bash, Read, Edit, Task).
+ * summary is one line the host derives (the command, the path, the pattern), masked.
+ * status: running until a result is seen; unknown when the result could not be read.
+ */
+export type ChatTool = {
+    readonly name:    string;
+    readonly result?: ChatToolResult;
+    /**
+     * One of running, ok, error, unknown (a pattern, not an enum, so generated Go names stay
+     * stable).
+     */
+    readonly status:   string;
+    readonly summary?: string;
+}
+
+/**
+ * A preview of a tool's output: at most 2048 bytes and 40 lines, masked. bytes is the size
+ * of the whole output; truncated when the preview is shorter.
+ */
+export type ChatToolResult = {
+    readonly bytes:     number;
+    readonly preview:   string;
+    readonly truncated: boolean;
+}
+
+/**
+ * Asks for one chat.page after chat.open. before: older blocks than that cursor (at most
+ * limit turns). after: newer blocks than that cursor (send it after chat.changed). Exactly
+ * one of before and after. A cursor of another historyId, or one the host did not issue,
+ * gets history_changed: open again. One chat request runs per viewer and per session at a
+ * time; another gets limit_exceeded.
+ */
+export type ChatReadPayload = {
+    readonly after?:  string;
+    readonly before?: string;
+    readonly limit:   number;
+}
+
+/**
+ * The chat link of the session. Sent after chat.open and when the link changes. reason only
+ * with none. agent and historyId only with linked or ended. stale: true when chat.changed
+ * notices were dropped for this viewer; page again with after.
+ */
+export type ChatStatePayload = {
+    readonly agent?:     ChatAgent;
+    readonly historyId?: string;
+    readonly link:       string;
+    readonly reason?:    string;
+    readonly stale?:     boolean;
+}
+
+export type ChatAgent = "claude";
+
 export type ControlChangedPayload = {
     readonly controllerConnectionId: null | string;
     readonly controllerLabel?:       string;
@@ -864,6 +1019,23 @@ export type FilesSearchPayload = {
 }
 
 /**
+ * PATCH /api/v1/chat (revision 8): turns Chat view off on this computer, for all devices.
+ */
+export type GatewayRPCChatUpdatePayload = {
+    readonly credential: string;
+    readonly request:    HTTPChatUpdateRequest;
+}
+
+/**
+ * PATCH /api/v1/chat (revision 8): turns Chat view off on this computer and closes every
+ * open chat at once. Turning it on is refused here (the schema allows only false): it
+ * happens only at the computer with pterm chat on.
+ */
+export type HTTPChatUpdateRequest = {
+    readonly enabled: boolean;
+}
+
+/**
  * Adds, confirms or renames a computer in the list of the device that owns the credential.
  */
 export type GatewayRPCComputerAddPayload = {
@@ -958,7 +1130,7 @@ export type HTTPGitHubRequest = {
  */
 export type HTTPGitHubAction = "connect" | "cancel" | "disconnect" | "setup" | "stop";
 
-export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.providers.get" | "gateway.providers.update" | "gateway.providers.open" | "gateway.providers.create" | "gateway.providers.manage" | "gateway.github.get" | "gateway.github.action" | "gateway.github.repos" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.providers.get.result" | "gateway.providers.update.result" | "gateway.providers.open.result" | "gateway.providers.create.result" | "gateway.providers.manage.result" | "gateway.github.get.result" | "gateway.github.action.result" | "gateway.github.repos.result" | "gateway.error";
+export type GatewayRPCMessageType = "gateway.pair.redeem" | "gateway.pair.poll" | "gateway.auth.check" | "gateway.auth.logout" | "gateway.settings" | "gateway.session.list" | "gateway.session.create" | "gateway.session.rename" | "gateway.session.terminate" | "gateway.live.open" | "gateway.origin" | "gateway.device.rename" | "gateway.push.config" | "gateway.push.subscribe" | "gateway.push.unsubscribe" | "gateway.push.test" | "gateway.upload.begin" | "gateway.upload.chunk" | "gateway.upload.commit" | "gateway.preview.check" | "gateway.computers.list" | "gateway.computers.add" | "gateway.computers.remove" | "gateway.computers.offer" | "gateway.computers.found" | "gateway.providers.get" | "gateway.providers.update" | "gateway.providers.open" | "gateway.providers.create" | "gateway.providers.manage" | "gateway.github.get" | "gateway.github.action" | "gateway.github.repos" | "gateway.chat.update" | "gateway.pair.redeem.result" | "gateway.pair.poll.result" | "gateway.auth.check.result" | "gateway.auth.logout.result" | "gateway.settings.result" | "gateway.session.list.result" | "gateway.session.create.result" | "gateway.session.rename.result" | "gateway.session.terminate.result" | "gateway.live.open.result" | "gateway.origin.result" | "gateway.device.rename.result" | "gateway.push.config.result" | "gateway.push.subscribe.result" | "gateway.push.unsubscribe.result" | "gateway.push.test.result" | "gateway.upload.begin.result" | "gateway.upload.chunk.result" | "gateway.upload.commit.result" | "gateway.preview.check.result" | "gateway.computers.list.result" | "gateway.computers.add.result" | "gateway.computers.remove.result" | "gateway.computers.offer.result" | "gateway.computers.found.result" | "gateway.providers.get.result" | "gateway.providers.update.result" | "gateway.providers.open.result" | "gateway.providers.create.result" | "gateway.providers.manage.result" | "gateway.github.get.result" | "gateway.github.action.result" | "gateway.github.repos.result" | "gateway.chat.update.result" | "gateway.error";
 
 /**
  * origin: the browser origin configured with admin.config.origin, absent when none is set.
@@ -1323,6 +1495,17 @@ export type HistoryReadPayload = {
 }
 
 /**
+ * Revision 8. enabled: Chat view is on for this computer (all devices). Only pterm chat on,
+ * at the computer, turns it on; any paired device can turn it off with PATCH /api/v1/chat.
+ *
+ * Revision 8 (docs/chat-view.md). The Chat view switch of this computer. Absent on Windows
+ * (Chat is not supported there).
+ */
+export type HTTPChatInfo = {
+    readonly enabled: boolean;
+}
+
+/**
  * The saved entry and the peer's node as seen in this computer's own tailscale status, for
  * the app's confirm sheet.
  */
@@ -1667,7 +1850,12 @@ export type HTTPSessionMutationResponse = {
 
 export type HTTPSettingsResponse = {
     readonly brokerGeneration: string;
-    readonly device:           HTTPDeviceSummary;
+    /**
+     * Revision 8 (docs/chat-view.md). The Chat view switch of this computer. Absent on Windows
+     * (Chat is not supported there).
+     */
+    readonly chat?:  HTTPChatInfo;
+    readonly device: HTTPDeviceSummary;
     /**
      * Revision 7 (docs/github-integration.md). Absent when this build has no GitHub app (no
      * client ID) or on Windows: the app shows no GitHub row for this computer.
@@ -1841,7 +2029,7 @@ export type LeasePayload = {
     readonly lease: string;
 }
 
-export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed" | "tasks.list" | "tasks.listed" | "branches.list" | "branches.listed" | "worktree.remove" | "worktree.removed" | "files.list" | "files.listed" | "files.read" | "files.content" | "files.search" | "files.found";
+export type MessageType = "hello" | "session.attach" | "screen.resync" | "snapshot.applied" | "control.acquire" | "control.release" | "heartbeat" | "input.key" | "input.text" | "input.paste" | "input.mouse" | "input.answer" | "terminal.resize" | "history.read" | "session.detach" | "welcome" | "snapshot.begin" | "snapshot.rows" | "snapshot.end" | "screen.patch" | "history.page" | "history.changed" | "control.changed" | "input.accepted" | "input.rejected" | "session.state" | "access.revoked" | "error" | "changes.list" | "changes.file" | "changes.summary" | "changes.patch" | "changes.commit" | "changes.push" | "changes.committed" | "changes.pushed" | "tasks.list" | "tasks.listed" | "branches.list" | "branches.listed" | "worktree.remove" | "worktree.removed" | "files.list" | "files.listed" | "files.read" | "files.content" | "files.search" | "files.found" | "chat.open" | "chat.read" | "chat.close" | "chat.state" | "chat.changed" | "chat.page";
 
 export type ScreenMetadata = {
     readonly background:      Color;
@@ -2020,7 +2208,7 @@ export type WorktreeRemovedPayload = {
 export type WorktreeRemoveState = "removed" | "dirty" | "failed";
 
 /** This build's additive protocol v1 revision (protocol/v1/revision.json). */
-export const PROTOCOL_REVISION = 7;
+export const PROTOCOL_REVISION = 8;
 /** The oldest peer protocol revision this build supports. */
 export const MIN_PROTOCOL_REVISION = 1;
 /** The revision that added each feature: call it only on a computer whose protocolRevision is at least this. */
@@ -2030,4 +2218,5 @@ export const FEATURE_REVISION = {
     providerManage: 5,
     providerAgentTab: 6,
     github: 7,
+    chat: 8,
 } as const;

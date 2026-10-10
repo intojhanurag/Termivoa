@@ -40,6 +40,9 @@
     { "$ref": "#/$defs/filesListMessage" },
     { "$ref": "#/$defs/filesReadMessage" },
     { "$ref": "#/$defs/filesSearchMessage" },
+    { "$ref": "#/$defs/chatOpenMessage" },
+    { "$ref": "#/$defs/chatReadMessage" },
+    { "$ref": "#/$defs/chatCloseMessage" },
     { "$ref": "#/$defs/sessionDetachMessage" },
     { "$ref": "#/$defs/welcomeMessage" },
     { "$ref": "#/$defs/snapshotBeginMessage" },
@@ -58,6 +61,9 @@
     { "$ref": "#/$defs/filesListedMessage" },
     { "$ref": "#/$defs/filesContentMessage" },
     { "$ref": "#/$defs/filesFoundMessage" },
+    { "$ref": "#/$defs/chatStateMessage" },
+    { "$ref": "#/$defs/chatChangedMessage" },
+    { "$ref": "#/$defs/chatPageMessage" },
     { "$ref": "#/$defs/controlChangedMessage" },
     { "$ref": "#/$defs/inputAcceptedMessage" },
     { "$ref": "#/$defs/inputRejectedMessage" },
@@ -97,7 +103,8 @@
         "tasks.list", "tasks.listed", "branches.list", "branches.listed",
         "worktree.remove", "worktree.removed",
         "files.list", "files.listed", "files.read", "files.content",
-        "files.search", "files.found"
+        "files.search", "files.found",
+        "chat.open", "chat.read", "chat.close", "chat.state", "chat.changed", "chat.page"
       ]
     },
     "errorCode": {
@@ -707,6 +714,116 @@
         "truncated": { "type": "boolean" }
       }
     },
+    "chatCursor": {
+      "description": "Opaque position in one chat history, issued by the host in a chat.page. The host accepts only a cursor it issued for the current historyId.",
+      "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "chatHistoryId": {
+      "description": "Opaque identity of one chat history (one transcript file as linked). A new historyId means the client drops every block it holds and pages again.",
+      "type": "string", "pattern": "^[0-9a-f]{16}$"
+    },
+    "chatOpenPayload": {
+      "title": "ChatOpenPayload",
+      "description": "Revision 8 (docs/chat-view.md). Starts or joins the chat of the attached session: the host answers chat.state and, when linked, a chat.page with the latest blocks, at most limit turns. Read-only: any non-thumbnail viewer may ask (a thumbnail gets not_controller). Refused with limit_exceeded when a chat request of this viewer or session is running or when opens come too fast. With Chat off the host answers chat.state off and opens no file.",
+      "type": "object", "additionalProperties": false, "required": ["limit"],
+      "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 60 } }
+    },
+    "chatReadPayload": {
+      "title": "ChatReadPayload",
+      "description": "Asks for one chat.page after chat.open. before: older blocks than that cursor (at most limit turns). after: newer blocks than that cursor (send it after chat.changed). Exactly one of before and after. A cursor of another historyId, or one the host did not issue, gets history_changed: open again. One chat request runs per viewer and per session at a time; another gets limit_exceeded.",
+      "type": "object", "additionalProperties": false, "required": ["limit"],
+      "properties": {
+        "before": { "$ref": "#/$defs/chatCursor" },
+        "after": { "$ref": "#/$defs/chatCursor" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 60 }
+      }
+    },
+    "chatLink": {
+      "description": "off: Chat is turned off on this computer. unsupported: no supported agent runs in this session, or this computer cannot read one (Windows). searching: an agent runs but its transcript is not there yet. linked: the transcript is linked and verified. none: linking failed, see reason. ended: the agent exited; the last blocks can still be paged.",
+      "type": "string", "pattern": "^(off|unsupported|searching|linked|none|ended)$"
+    },
+    "chatReason": {
+      "description": "Why link is none. cleared: the agent started a new conversation (/clear) that cannot be linked exactly. several_agents: more than one agent runs in the session. custom_root: the agent's folder was moved (CLAUDE_CONFIG_DIR). no_file: no single transcript matches the agent. format_unknown: the transcript format is not one this host reads. file_refused: the transcript failed a safety check (link, several names, owner or permissions). busy: this computer already follows the most chats it allows (8).",
+      "type": "string", "pattern": "^(cleared|several_agents|custom_root|no_file|format_unknown|file_refused|busy)$"
+    },
+    "chatStatePayload": {
+      "title": "ChatStatePayload",
+      "description": "The chat link of the session. Sent after chat.open and when the link changes. reason only with none. agent and historyId only with linked or ended. stale: true when chat.changed notices were dropped for this viewer; page again with after.",
+      "type": "object", "additionalProperties": false, "required": ["link"],
+      "properties": {
+        "link": { "$ref": "#/$defs/chatLink" },
+        "reason": { "$ref": "#/$defs/chatReason" },
+        "agent": { "title": "ChatAgent", "type": "string", "enum": ["claude"] },
+        "historyId": { "$ref": "#/$defs/chatHistoryId" },
+        "stale": { "type": "boolean" }
+      }
+    },
+    "chatChangedPayload": {
+      "title": "ChatChangedPayload",
+      "description": "New or changed blocks exist after the last page: ask with chat.read after. Coalesced: at most one is waiting per viewer, at most 4 a second. Carries no chat content.",
+      "type": "object", "additionalProperties": false, "required": ["historyId"],
+      "properties": { "historyId": { "$ref": "#/$defs/chatHistoryId" } }
+    },
+    "chatBlockId": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,64}$" },
+    "chatToolResult": {
+      "title": "ChatToolResult",
+      "description": "A preview of a tool's output: at most 2048 bytes and 40 lines, masked. bytes is the size of the whole output; truncated when the preview is shorter.",
+      "type": "object", "additionalProperties": false, "required": ["preview", "bytes", "truncated"],
+      "properties": {
+        "preview": { "type": "string", "maxLength": 2048 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "chatTool": {
+      "title": "ChatTool",
+      "description": "One tool call. name is the agent's tool name (for example Bash, Read, Edit, Task). summary is one line the host derives (the command, the path, the pattern), masked. status: running until a result is seen; unknown when the result could not be read.",
+      "type": "object", "additionalProperties": false, "required": ["name", "status"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "summary": { "type": "string", "maxLength": 240 },
+        "status": { "description": "One of running, ok, error, unknown (a pattern, not an enum, so generated Go names stay stable).", "type": "string", "pattern": "^(running|ok|error|unknown)$" },
+        "result": { "$ref": "#/$defs/chatToolResult" }
+      }
+    },
+    "chatEdit": {
+      "title": "ChatEdit",
+      "description": "A file edit by the agent. path is relative to the session's folder, or the base name when outside it. added and removed count lines. hunk is at most 40 lines (each starting with -, + or a space), masked.",
+      "type": "object", "additionalProperties": false, "required": ["path", "added", "removed"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "added": { "type": "integer", "minimum": 0 },
+        "removed": { "type": "integer", "minimum": 0 },
+        "hunk": { "type": "string", "maxLength": 8192 }
+      }
+    },
+    "chatBlock": {
+      "title": "ChatBlock",
+      "description": "One normalized chat block. id is stable for this historyId; a block whose id the client already holds replaces it (a tool result updates its call). turn is the id of the user_text that opened the turn. text: user_text and assistant_text (assistant text is markdown: render it sanitized, no raw HTML, no images), status (for example Thought for 14s), compaction and omitted. At most 16384 bytes, masked, without control characters other than tab and line feed; truncatedBytes counts the bytes cut. tool: tool_call and edit. edit: edit only. Thinking text, images, system prompts and sub-agent transcripts are never sent.",
+      "type": "object", "additionalProperties": false, "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/chatBlockId" },
+        "turn": { "$ref": "#/$defs/chatBlockId" },
+        "kind": { "title": "ChatBlockKind", "type": "string", "enum": ["user_text", "assistant_text", "tool_call", "edit", "status", "compaction", "omitted"] },
+        "at": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "text": { "type": "string", "maxLength": 16384 },
+        "truncatedBytes": { "type": "integer", "minimum": 0 },
+        "tool": { "$ref": "#/$defs/chatTool" },
+        "edit": { "$ref": "#/$defs/chatEdit" }
+      }
+    },
+    "chatPagePayload": {
+      "title": "ChatPagePayload",
+      "description": "Blocks of one historyId in file order, at most 200, the whole message at most 262144 bytes. before: cursor for older blocks; absent when the page starts at the beginning of the history. after: cursor for newer blocks. complete: the page reaches the current end of the history; when false, ask again with after at once.",
+      "type": "object", "additionalProperties": false, "required": ["historyId", "blocks", "after", "complete"],
+      "properties": {
+        "historyId": { "$ref": "#/$defs/chatHistoryId" },
+        "blocks": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/chatBlock" } },
+        "before": { "$ref": "#/$defs/chatCursor" },
+        "after": { "$ref": "#/$defs/chatCursor" },
+        "complete": { "type": "boolean" }
+      }
+    },
     "historyPagePayload": {
       "title": "HistoryPagePayload",
       "type": "object", "additionalProperties": false, "required": ["historyEpoch", "historyRevision", "columns", "offset", "rows", "complete"],
@@ -809,6 +926,12 @@
     "filesListedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.listed" }, "payload": { "$ref": "#/$defs/filesListedPayload" } } },
     "filesContentMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.content" }, "payload": { "$ref": "#/$defs/filesContentPayload" } } },
     "filesFoundMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "files.found" }, "payload": { "$ref": "#/$defs/filesFoundPayload" } } },
+    "chatOpenMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "chat.open" }, "payload": { "$ref": "#/$defs/chatOpenPayload" } } },
+    "chatReadMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "chat.read" }, "payload": { "$ref": "#/$defs/chatReadPayload" } } },
+    "chatCloseMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "chat.close" }, "payload": { "$ref": "#/$defs/emptyPayload" } } },
+    "chatStateMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "chat.state" }, "payload": { "$ref": "#/$defs/chatStatePayload" } } },
+    "chatChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "chat.changed" }, "payload": { "$ref": "#/$defs/chatChangedPayload" } } },
+    "chatPageMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "chat.page" }, "payload": { "$ref": "#/$defs/chatPagePayload" } } },
     "historyChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "history.changed" }, "payload": { "$ref": "#/$defs/historyChangedPayload" } } },
     "controlChangedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "control.changed" }, "payload": { "$ref": "#/$defs/controlChangedPayload" } } },
     "inputAcceptedMessage": { "type": "object", "allOf": [{ "$ref": "#/$defs/sessionIdentity" }], "properties": { "type": { "type": "string", "const": "input.accepted" }, "payload": { "$ref": "#/$defs/inputAcceptedPayload" } } },

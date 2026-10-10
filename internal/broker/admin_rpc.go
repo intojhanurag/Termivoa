@@ -76,6 +76,8 @@ func (server *ManagementServer) dispatchAdmin(ctx context.Context, request proto
 		return nil, errNotBrokerRPC
 	case protocol.AdminGithubStatus, protocol.AdminGithubDisconnect, protocol.AdminGithubCredential:
 		return server.dispatchAdminGitHub(ctx, request)
+	case protocol.AdminChatStatus, protocol.AdminChatSet:
+		return server.dispatchAdminChat(ctx, request)
 	}
 	authority := server.config.Auth
 	if authority == nil {

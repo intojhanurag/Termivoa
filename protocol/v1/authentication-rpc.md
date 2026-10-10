@@ -68,6 +68,7 @@ never logged, persisted in plaintext, or echoed.
 | `gateway.github.get` | `GatewayRPCCredentialPayload` | `HTTPGitHubResponse` |
 | `gateway.github.action` | credential + `HTTPGitHubRequest` | `HTTPGitHubResponse`; sent on its own connection (revision 7) |
 | `gateway.github.repos` | `GatewayRPCCredentialPayload` | `HTTPGitHubReposResponse`; sent on its own connection (revision 7) |
+| `gateway.chat.update` | credential + `HTTPChatUpdateRequest` (`enabled: false` only) | `HTTPChatInfo` (revision 8) |
 
 `gateway.origin` and `gateway.computers.offer` are the only requests
 besides pairing that carry no credential: the configured origin is not a
@@ -194,6 +195,8 @@ retracted.
 | `admin.config.origin` | optional `origin` | the configured origin, if any |
 | `admin.github.status` | empty | optional `state`, `login`; an empty object when the build has no GitHub app |
 | `admin.github.disconnect` | empty | the status after the disconnect |
+| `admin.chat.status` | empty | `AdminRPCChatStatusPayload`: `enabled`, `supported`, `tails`, `versions`, `unknownPercent` (revision 8) |
+| `admin.chat.set` | `enabled` | the status after the change; the only way to turn Chat view on (`pterm chat on` asks y/N first) |
 | `admin.github.credential` | empty | `username`, `password` (the access token, never the refresh token), `expiresAt` (Unix seconds); only for `pterm github-credential`; `host_unavailable` when not connected |
 | `admin.shutdown` | empty | `terminatedSessions` (0–64) |
 | `admin.gateway.stop` | empty | empty; served only by the gateway control endpoint |
