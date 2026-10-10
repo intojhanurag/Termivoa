@@ -1,8 +1,6 @@
 # Pending work
 
 The single roadmap. Updated 2026-10-09. Latest tag: `v0.1.0-beta.3`.
-
-The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
@@ -38,7 +36,6 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   mixed-viewer, blocked-send/acknowledgement, detach/reattach, trailing/final
   frame and allocation checks passed. Follow-up: integrated busy soak and
   real-iPhone/Android Wall + Live checks; no total-host CPU claim yet.
-
 - Git write cancellation owns and terminates ordinary hook descendants before
   returning or worktree rollback (#222). Real macOS hook/PID tests and
   cross-platform fixture tests are added; native Linux/Windows and hosted
@@ -49,7 +46,6 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   survive disconnect. Concurrent calls get a limit response. Design:
   [worktrees.md](worktrees.md); evidence: [issue-236](evidence/issue-236/verification.md).
   Real-phone and native Windows checks remain pending.
-
 - Slow worktree creation no longer holds up the Sessions list or a new Live
   connection (#218, Next beta). Known slow gateway exchanges have four
   independent slots with fail-fast admission. A real Git post-checkout hook
@@ -59,7 +55,6 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   update downloads (#223). Raw representations, service-worker URLs and
   source-map exclusions remain. Real-phone/cellular and external proxy
   transfer measurements remain pending.
-
 - herdr can start its first installed coding agent from **New worktree** or
   **New tab**, and keeps installed choices after the last agent stops (#208).
   Availability is read-only and bounded; real-agent launches and owner phone
@@ -175,7 +170,6 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   Approximate 30-day months/365-day years, explicit threshold/invalid-date
   tests and rendered-row regressions. See
   [evidence](evidence/issue-215/verification.md).
-
 - **Done locally, pending private PR gates (#254):** GitHub repository rows
   render when an optional push date is outside the displayable range; only
   the age is omitted. Real parsed-response SSR regression and valid-date

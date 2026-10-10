@@ -2,12 +2,6 @@
 title: Release notes
 description: Termivoa private beta release history, with the new features, fixes and known limits of each version, and what is coming in the next beta.
 lastUpdated: 2026-10-10
-
-lastUpdated: 2026-10-08
-
-lastUpdated: 2026-10-09
-
-lastUpdated: 2026-10-08
 ---
 
 The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
@@ -20,6 +14,19 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **Fixed: an unusable GitHub push date no longer hides the repository list.** Termivoa omits only that row's last-push age. Repository names, other details and available actions still show; valid ages remain. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).
+
+- **Fixed: old timestamps are easier to read.** Repository pushes, session ages and computer last-seen labels use compact weeks, months and years, such as **3 yr ago** instead of **1095 d ago**. Months and years are approximate elapsed units. See [repository push ages](/docs/guides/github/#what-does-a-repositorys-push-age-mean).
+
+- **Fixed: herdr starts during a pending agent check.** **New worktree** and **New tab** wait before starting an agent while **Checking available agents…** shows. **No agent** and **Shell** stay available; removed choices stay unselected. Close conflicts and last-tab hints explain when workspaces must be closed in herdr on the computer. See [Why does starting an agent wait for a check?](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
+
+- **Fixed: losing your keyboard place after closing a sheet.** **Close** and Escape return focus to the control that opened the sheet, if it is still available. Closing a nested sheet returns to its own control. See [Use sheets with a keyboard](/docs/guides/live-terminal/#use-sheets-with-a-keyboard).
+- **Fixed: missing rows in History.** Colored output could make History skip
+  recent retained rows after loading 25 pages. It now reads to completion;
+  an incomplete read shows unavailable. See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
+
+- **Safer GitHub login removal.** Removing the saved login preserves another file linked to the same stored contents. Local deletion does not securely erase copies or backups. See [How do I disconnect?](/docs/guides/github/#how-do-i-disconnect).
+- **Fixed: private-file permission repair.** Termivoa refuses linked or unsafe private files before changing their permissions. Normal owned files keep their identity and private permissions. A saved GitHub login that is linked to another file is unavailable until the local file is inspected. See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).
 - **herdr create allowance.** Refusals before creation starts keep the allowance shared by **New worktree** and agent **New tab**. Attempted creates still count if they fail. See [When does a create use my allowance?](/docs/guides/herdr/#when-does-a-create-use-my-allowance).
 
 - **Start the first herdr agent.** **New worktree** and **New tab** offer supported installed agents even with none running, and keep installed choices when their last agent stops. Discovery does not run an agent. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
@@ -48,27 +55,6 @@ New features on `main` show here until the next beta ships.
 - **GitHub from the phone.** Each computer's page in **Settings** has a row **GitHub on mac**. Tap **Connect**, enter the code on GitHub, and choose your repositories one time. Then **Set up a repository** lists them, with search, and one tap clones a repository into `~/<name>` on that computer and adds it as a project, with progress, **Stop** and **New session**. **From GitHub** is also next to **Add a folder** in herdr's **New workspace** sheet. No `gh` is needed, only git. Termivoa never deletes or overwrites a folder: a folder of that name is **name taken**. Pull and push work in the cloned folder. `pterm github status` and `pterm github disconnect` are new. See [Set up a GitHub repository](/docs/guides/github/) and [What does GitHub change?](/docs/reference/security/#what-does-github-change)
 - **Needs you.** While an agent waits, the Sessions list has a **Needs you** tab with a count, after **Sessions**. It lists every session that waits and every herdr worktree that is blocked, on all your computers, the longest wait first; **Finished** work is below. Tap one to open it, answer, then tap **Next · 2 left ›** to go to the next one. A tap on a notification opens the item with **Next** too. See [Needs you](/docs/guides/needs-you/).
 - **More herdr from the phone.** **New tab** can start an agent with a first prompt. A worktree whose workspace you closed shows as **closed** with **Open**. A herdr terminal has the **⋯** menu of its workspace, and **‹ Sessions** goes back to the **herdr** tab.
-
-- **Fixed: private-file permission repair.** Termivoa refuses linked or unsafe private files before changing their permissions. Normal owned files keep their identity and private permissions. A saved GitHub login that is linked to another file is unavailable until the local file is inspected. See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked).
-
-- **Safer GitHub login removal.** Removing the saved login preserves another file linked to the same stored contents. Local deletion does not securely erase copies or backups. See [How do I disconnect?](/docs/guides/github/#how-do-i-disconnect).
-
-- **Fixed: missing rows in History.** Colored output could make History skip
-  recent retained rows after loading 25 pages. It now reads to completion;
-  an incomplete read shows unavailable. See [Copy from history](/docs/guides/live-terminal/#copy-from-history).
-
-- **Fixed: losing your keyboard place after closing a sheet.** **Close** and Escape return focus to the control that opened the sheet, if it is still available. Closing a nested sheet returns to its own control. See [Use sheets with a keyboard](/docs/guides/live-terminal/#use-sheets-with-a-keyboard).
-
-- **Fixed: herdr starts during a pending agent check.** **New worktree** and **New tab** wait before starting an agent while **Checking available agents…** shows. **No agent** and **Shell** stay available; removed choices stay unselected. Close conflicts and last-tab hints explain when workspaces must be closed in herdr on the computer. See [Why does starting an agent wait for a check?](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
-
-- **Fixed: herdr starts during a pending agent check.** **New worktree** and **New tab** wait before starting an agent while **Checking available agents…** shows. **No agent** and **Shell** stay available; removed choices stay unselected. Close conflicts and last-tab hints explain when workspaces must be closed in herdr on the computer. See [Why does starting an agent wait for a check?](/docs/guides/herdr/#why-does-starting-an-agent-wait-for-a-check).
-
-- **Fixed: old timestamps are easier to read.** Repository pushes, session ages and computer last-seen labels use compact weeks, months and years, such as **3 yr ago** instead of **1095 d ago**. Months and years are approximate elapsed units. See [repository push ages](/docs/guides/github/#what-does-a-repositorys-push-age-mean).
-
-- **Fixed: an unusable GitHub push date no longer hides the repository list.** Termivoa omits only that row's last-push age. Repository names, other details and available actions still show; valid ages remain. See [missing repository push ages](/docs/guides/github/#why-does-a-repository-have-no-last-push-age).
-- **GitHub from the phone.** **Settings → Integrations** has a row **GitHub on mac** for each computer. Tap **Connect**, enter the code on GitHub, and choose your repositories one time. Then **Set up a repository** lists them, with search, and one tap clones a repository into `~/<name>` on that computer and adds it as a project, with progress, **Stop** and **New session**. **From GitHub** is also next to **Add a folder** in herdr's **New workspace** sheet. No `gh` is needed, only git. Termivoa never deletes or overwrites a folder: a folder of that name is **name taken**. Pull and push work in the cloned folder. `pterm github status` and `pterm github disconnect` are new. See [Set up a GitHub repository](/docs/guides/github/) and [What does GitHub change?](/docs/reference/security/#what-does-github-change)
-- **Needs you.** While an agent waits, the Sessions list has a **Needs you** tab with a count, right after **All**. It lists every session that waits and every herdr worktree that is blocked, on all your computers, the longest wait first; **Finished** work is below. Tap one to open it, answer, then tap **Next · 2 left ›** to go to the next one. A tap on a notification opens the item with **Next** too. See [Needs you](/docs/guides/needs-you/).
-- **More herdr from the phone.** **New tab** can start an agent with a first prompt. A worktree whose workspace you closed shows as **CLOSED** with **Open**. A herdr terminal has the **⋯** menu of its workspace, and **‹ Sessions** goes back to the **herdr** tab.
 - **herdr fixes.** The first prompt of a new agent now reaches it: Termivoa waits until herdr says the agent is ready. "The agent did not start" also shows when the agent is not installed on the computer. A herdr terminal outside git no longer shows "this herdr terminal's folder cannot be read" by itself. **New worktree** and **New tab** offer the agents that run in herdr now, and never start another agent than the one you picked. A slow herdr check no longer turns off tabs without an agent. Two workspaces at the main folder of one repository cannot be closed from the phone (herdr closes them only together), and the app says so.
 - **Fixed: buzz switches that look on while this phone gets no buzz.** The **herdr** part of a computer's page in **Settings** now says "This phone gets no buzz yet." with a link to **Settings → Notifications**. See [I hear a sound but see no notification](/docs/reference/troubleshooting/#i-hear-a-sound-but-see-no-notification).
 - **Fixed: test notifications could stop real ones.** A phone that sent a test every 5 seconds could use up the limit of 12 notifications per minute. **Send a test notification** now has its own limit (6 per minute for all phones together). Also, up to 3 phones whose push service does not answer no longer hold back the notifications of the other phones, and with two computers of the same name, only the right herdr card says "This phone gets no buzz yet." See [When do notifications come?](/docs/guides/notifications/#when-do-notifications-come)

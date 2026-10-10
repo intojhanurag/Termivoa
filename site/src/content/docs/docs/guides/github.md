@@ -2,8 +2,6 @@
 title: Set up a GitHub repository
 description: Termivoa connects each of your computers to GitHub from the phone, lists your repositories, and clones one onto a computer with one tap.
 lastUpdated: 2026-10-10
-
-lastUpdated: 2026-10-08
 ---
 
 Termivoa connects a computer to GitHub from your phone, shows your repositories, and clones the one you pick onto that computer, ready for a new session.
