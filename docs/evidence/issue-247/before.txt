@@ -1,0 +1,21 @@
+--- FAIL: TestFrameClientSnapshotRowBoundsDoNotOverflow (0.00s)
+    --- FAIL: TestFrameClientSnapshotRowBoundsDoNotOverflow/maximum_plus_one (0.00s)
+panic: runtime error: index out of range [9223372036854775807] with length 5 [recovered, repanicked]
+
+goroutine 7 [running]:
+testing.tRunner.func1.2({0x102d9ac60, 0x4f98c70c5698})
+	<go-module-cache>/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/src/testing/testing.go:2123 +0x1a0
+testing.tRunner.func1()
+	<go-module-cache>/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/src/testing/testing.go:2126 +0x2c8
+panic({0x102d9ac60?, 0x4f98c70c5698?})
+	<go-module-cache>/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/src/runtime/panic.go:859 +0x120
+github.com/intojhanurag/phone-terminal/internal/desktop.(*FrameClient).AddSnapshotRows(0x4f98c6eec7d0, {0x102b5bd6e?, 0xff?}, {{0x102b65050, 0x1}, {0x4f98c6f96d98, 0x1, 0x1}, {0x102b5bd92, 0x24}, ...})
+	<workspace>/internal/desktop/client.go:79 +0x478
+github.com/intojhanurag/phone-terminal/internal/desktop.TestFrameClientSnapshotRowBoundsDoNotOverflow.func1(0x4f98c7092488)
+	<workspace>/internal/desktop/row_bounds_test.go:32 +0x4cc
+testing.tRunner(0x4f98c7092488, 0x4f98c6f6b410)
+	<go-module-cache>/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/src/testing/testing.go:2193 +0xc4
+created by testing.(*T).Run in goroutine 6
+	<go-module-cache>/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/src/testing/testing.go:2258 +0x3b8
+FAIL	github.com/intojhanurag/phone-terminal/internal/desktop	0.464s
+FAIL

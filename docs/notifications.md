@@ -262,7 +262,7 @@ The broker hands each change to `Notifier.NotifyProvider`
 - **Baseline.** The first snapshot after the broker starts, and the first one
   after herdr is found again (it stopped or restarted), sets states and sends
   nothing. A target that is already blocked at that time does not push.
-- **Switches.** The provider must be on, and **Settings → Integrations**
+- **Switches.** The provider must be on, and **Settings → (the computer) → herdr**
   (**Buzz when blocked**, **Buzz when finished**) must have that state on.
   They are stored per computer for all devices (`provider.herdr.notify`).
 - **Payload.** `{title, body, kind, provider, target}` and no `sessionId`
