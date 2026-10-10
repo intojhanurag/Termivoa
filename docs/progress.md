@@ -15,14 +15,13 @@ Last updated: 2026-10-10
 
 ## Log
 
-<<<<<<< HEAD
-### Chat view design (2026-10-10, branch `docs/chat-view-design`; draft, owner review)
+### Chat view design (2026-10-10, branch `docs/chat-view-design`; owner approved 2026-10-10)
 
-- Issue #285. Design `docs/chat-view.md`, ADR 0014 (proposed), Paper screens in `docs/evidence/chat-view/`. Critical under rule 24 (changes what data reaches the phone).
+- Issue #285. Design `docs/chat-view.md`, ADR 0014 (accepted), Paper screens in `docs/evidence/chat-view/`. Critical under rule 24 (changes what data reaches the phone).
 - Research read only public docs and source; no real transcript or real `~/.claude`/`~/.codex`/`~/.config` file was opened; no agent was started.
 - Independent security (no blockers, 3 major, 7 minor) and feasibility (no blockers, 6 major, 5 minor) reviews; every finding resolved in `docs/chat-view.md` section 14 (on switch only at the computer, no `probable` link, pull transport, existing AnswerCard and Composer).
-- Blocked on the owner: approval of the design and the 7 questions in section 13; a scripted capture with a real Claude Code (credits) before M1a.
-=======
+- The owner approved the design and answered yes to the 7 questions in section 13 ("Go shipppp"). Still needed: a scripted capture with a real Claude Code (credits) before M1a.
+
 ### Fix: Live terminal one row too low after a resize (2026-10-10, branch `fix/issue-287`)
 
 - **Reproduced** (issue #287). Chromium (Chrome for Testing, a throwaway
@@ -67,7 +66,6 @@ Last updated: 2026-10-10
   scripts/check` (pass); `go test -race ./internal/terminal/` (pass); site
   build (pass, all internal links valid); `gestures.mjs` (WebKit) GE1–GE8
   pass; `phase-b.mjs --no-web-build --only U` U1–U9 pass.
->>>>>>> origin/main
 
 ### Feature: touch gestures on the Live terminal (2026-10-10, branch `feat/touch-gestures`)
 
