@@ -451,3 +451,14 @@ against declared height without overflowing addition. Invalid chunks reset
 assembly and request resync before indexing or painting. Strict transport
 validation remains separate; valid frame/protocol behavior is unchanged.
 [Desktop frame client](desktop-frame-client.md), issue #247.
+
+### Uninstall cleanup (#213, owner-approved, not merged)
+
+[ADR 0011](decisions/0011-uninstall-github-revocation.md) and
+[uninstall-github.md](uninstall-github.md) propose revoking the stored GitHub
+pair before `--delete-data` discards it. The draft implementation runs only after consent and
+broker shutdown under its existing exclusive data lock, using the existing
+restricted GitHub package client without starting a runtime. Keep the empty
+data directory/lock inode throughout contents removal. The CLI receives only request-acceptance/local-deletion status. Extra deletion
+roots are checked by canonical filesystem identity before token work so
+parent aliases cannot remove the held ownership namespace. Owner approved the design and implementation on 2026-10-09, subject to required checks. CI stays disabled; required checks and native evidence remain pending.

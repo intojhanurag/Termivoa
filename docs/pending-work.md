@@ -363,3 +363,10 @@ selector-parser patched and emitted CSS unchanged. Two exact unpatched
 build-only findings remain visible with code-based reachability/upstream
 assessment in `docs/dependencies.md`. Independent adversarial review,
 required hosted checks, owner CI-minutes permission and merge remain pending.
+
+### GitHub revocation during uninstall (#213)
+
+ADR0011/design and draft implementation/tests/docs are prepared. Independent
+feasibility found and resolved a replacement-lock gap by keeping the private
+empty directory/marker. Final security/feasibility reviews passed after corrections. Owner approved design and implementation on 2026-10-09, subject to required checks. Native evidence,
+required checks and merge remain pending; main still deletes without revoking.

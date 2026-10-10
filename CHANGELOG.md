@@ -21,6 +21,13 @@ All notable changes are documented here. The format follows
   correct HEAD and range behavior, preserving raw assets and source-map
   exclusions. API bodies and the app document remain uncompressed.
 
+- Fix (host): confirmed `pterm uninstall --delete-data` on macOS/Linux tries
+  to revoke its stored GitHub pair before removing data. Request-only outages
+  show a manual-revocation hint; parent cancellation preserves the login.
+  Keep the private empty data directory/ownership marker during cleanup.
+  Phone: the GitHub Disconnect/manual-revocation guidance covers this host
+  cleanup too. No new pairing or database is required. Owner review pending.
+
 ### Added
 
 - **GitHub: set up a repository on a computer from the phone** (ADR 0010,

@@ -2,6 +2,9 @@
 title: Troubleshooting
 description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, read-only sessions, missing notifications, worktrees and failed git pushes.
 lastUpdated: 2026-10-10
+
+description: Fixes for common Termivoa problems, such as an unreachable computer, pairing errors, READ-ONLY sessions, missing notifications, worktrees and failed git pushes.
+lastUpdated: 2026-10-08
 ---
 
 Most Termivoa problems start with one check on the computer. It never prints secrets.
@@ -724,3 +727,14 @@ The Sessions list and authentication can still answer while actions wait.
 | A worktree creation times out or loses its connection | Check Sessions before trying another creation; the computer may have completed it. |
 
 See [Use another session while Create waits](/docs/guides/worktrees/#can-i-use-another-session-while-create-waits).
+
+## What if uninstall cannot confirm GitHub revocation?
+
+**Next beta, macOS and Linux:** Termivoa waits up to 10 seconds for the saved login's revocation. A GitHub outage or request timeout still allows the local deletion you confirmed; the output says revocation was not confirmed and links to [Authorized GitHub Apps](https://github.com/settings/applications). Revoke **Termivoa** there to end a copied login too.
+
+| Output or result | What should I do? |
+| --- | --- |
+| The data directory was retained after cleanup failed | Startup registration may already be removed, and cleanup may be partial. Ensure Termivoa is stopped and check GitHub's applications page before trying again. |
+| The command was canceled during revocation | Local deletion has not started; the saved login remains. GitHub may have received the revoke, so check its applications page. |
+| Cleanup was canceled after deletion began | Some data may already be removed. Check the remaining folder and GitHub access before retrying. |
+| An empty private data folder remains | This is expected. It contains only an ownership marker, with no database, login or other saved data. |

@@ -141,7 +141,7 @@ When you tap **Connect** on a computer's page in **Settings**, that computer log
 
 **Disconnect** on a computer's page in **Settings** (or `pterm github disconnect`) removes the login at GitHub and deletes it from the computer. To be sure, or for a computer that you lost, open GitHub's [Authorized GitHub Apps](https://github.com/settings/applications) and revoke **Termivoa**. This ends the login of every computer that you connected. Connect each computer again after that.
 
-`pterm uninstall --delete-data` deletes the login from the computer but does not remove it at GitHub. Disconnect first.
+**Next beta:** confirmed `pterm uninstall --delete-data` on macOS and Linux tries to revoke this computer's saved GitHub login before deleting it locally. If GitHub does not confirm revocation, Termivoa prints the [Authorized GitHub Apps](https://github.com/settings/applications) link so you can revoke manually. Canceling while revocation is running stops before local deletion. A copied login can remain usable when revocation is unconfirmed; check GitHub rather than assuming it ended.
 
 ## Who can see changes, commit and push?
 

@@ -367,3 +367,17 @@ Known limits found while building (in `docs/pending-work.md`):
 
 - A refusal from a computer other than home shows the app's general "That computer could not do this." (existing app behaviour for every peer error), so "GitHub is busy…" shows only for home.
 - An organisation member who is not an owner sees an empty list until an owner approves the app; the sheet offers **Choose on GitHub**.
+
+
+### How does confirmed uninstall revoke the saved login? (#213)
+
+Proposed/implemented in the draft owner-review branch; see
+[ADR0011](decisions/0011-uninstall-github-revocation.md) and
+[uninstall-github.md](uninstall-github.md). After consent, unregister/stop and
+exclusive data ownership, the GitHub package reads its saved pair and makes
+Disconnect's existing bounded revoke request. It neither calls New nor scans
+Git/sweeps clones/refreshes credentials. Parent cancellation preserves the
+saved pair; remote-only outage permits requested local deletion with the
+manual GitHub applications hint. The private directory and lock marker remain
+so a second broker cannot replace the lock during contents removal. No
+protocol, stored schema, scopes or pairing changes; owner approval is pending.
