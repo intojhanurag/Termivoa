@@ -6,6 +6,21 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.4] - 2026-10-10
+
+First public, free and open-source beta. The binaries are not signed.
+Updating from beta.3 keeps the database and pairings (no data change); the
+restart ends running sessions.
+
+### Changed
+
+- **Open-source beta.** Website and docs: "private beta" and invite wording
+  is gone; the landing page's **Install free** buttons open the quick start.
+  Install pages download with `curl` (no GitHub account or `gh`), with a
+  checksum check against `SHA256SUMS`; `gh release download` stays as an
+  alternative. Features of this release are no longer marked **Next beta**.
+  Phone and host: no change.
+
 ### Performance
 
 - **History uses less host CPU and memory** (#219). Host: page construction
@@ -1031,7 +1046,7 @@ which ends running sessions.
 
 First **private beta**: unsigned binaries for invited testers only, published
 as a prerelease in the private repository. Install steps are in
-[docs/install.md](docs/install.md#private-beta). Development history and
+[docs/install.md](docs/install.md#download-a-release). Development history and
 evidence are in [docs/progress.md](docs/progress.md) and
 [docs/evidence/](docs/evidence/README.md).
 

@@ -21,7 +21,7 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 | `pterm launch [--no-open]` | Starts the broker and gateway if needed, and opens the local page. While Tailscale Funnel is on for port 443 or 8443, it first prints a warning with the command that turns Funnel off. |
 | `pterm stop` | Stops only the gateway. Sessions keep running, but phones cannot connect. |
 | `pterm shutdown` | Asks first, ends all sessions, and stops the broker and gateway. |
-| `pterm uninstall [--dry-run] [--yes] [--delete-data]` | Removes startup at login. Deletes data only with `--delete-data`. **Next beta, macOS/Linux:** tries saved GitHub login revocation first; retains an empty private ownership folder. |
+| `pterm uninstall [--dry-run] [--yes] [--delete-data]` | Removes startup at login. Deletes data only with `--delete-data`. On macOS and Linux, it tries saved GitHub login revocation first; retains an empty private ownership folder. |
 | `pterm up --dev [--data-dir <dir>] [--runtime-dir <dir>] [--listen <addr>] [--preview-listen <addr>\|off]` | Development only: an isolated test copy that leaves your real setup alone. |
 
 `--dev` and `--runtime-dir <folder>` are for development tests only.
@@ -39,7 +39,7 @@ Background processes: the broker owns sessions; the gateway serves the phone pag
 
 The pairing link and QR code are secret. Do not share them.
 
-**Next beta:** Termivoa desktop attach rejects invalid screen row ranges and asks for a fresh screen safely. Valid screens and controls work as before.
+Termivoa desktop attach rejects invalid screen row ranges and asks for a fresh screen safely. Valid screens and controls work as before.
 
 ## Use several computers
 
@@ -76,13 +76,13 @@ No device uses this computer from the Termivoa app at https://mac.tailx.ts.net n
 | `! multi-computer: this computer's tailnet is unknown (is Tailscale logged out?); bound app origins cannot be checked` | This computer is not logged in to Tailscale. Log in. |
 | `! tailscale serve: other handlers share this computer's Termivoa origin https://…: …` | A problem: Tailscale Serve shares more than Termivoa on this address (port 443). Move each handler to another computer or to its own Tailscale Service hostname (another port does not help); the line prints the commands that remove them. `pterm setup` refuses until you do. |
 | `! tailscale serve (warning): other ports of this computer's host receive the Termivoa cookie, …` | A warning, not a problem: handlers on other ports of this computer get the Termivoa cookie when the phone opens them. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-warns-that-other-ports-receive-the-termivoa-cookie). |
-| `herdr: <path> <version> (protocol <n>), server running at <socket>, can make worktrees` | **Next beta.** herdr is installed and its server runs. The line says "cannot make worktrees" when herdr cannot. `herdr: <path>, server not running (<socket>)` means the server is off. These lines show only when herdr is installed and are never a problem. See [Termivoa + herdr](/docs/guides/herdr/). |
-| `! herdr: <path>, Termivoa will not use the server socket <socket>: group or others can write <folder>; run: chmod go-w <folder>` | **Next beta.** herdr runs, but another user could reach its socket, so Termivoa does not use it and the app says "herdr is not running". Run the command the line prints. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-use-the-herdr-socket). |
-| `herdr agents the phone can start: claude, codex` | **Next beta.** The agents that already run in herdr, which **New worktree** offers. |
-| `! herdr: <path> <version> (protocol <n>) is too old or unreadable; update herdr (0.8.2 or later)` | **Next beta.** Update herdr. See [Update herdr on mac](/docs/reference/troubleshooting/#update-herdr-on-mac). |
-| `! herdr: config.toml sets a prefix key other than ctrl+b; …` | **Next beta.** Termivoa doubles only `ctrl+b`, so a phone can send that other prefix key to a herdr terminal it opened. At worst it detaches the phone. Set herdr's prefix key back to `ctrl+b`. |
-| `! herdr at <path>: <reason>; Termivoa will not run it` | **Next beta.** It shows before the herdr line, or alone when no other herdr is found. Termivoa refused a herdr program, for example one that belongs to another user or sits in a folder that others can write. |
-| `GitHub: connected as <login>` or `GitHub: not connected` | **Next beta.** Whether this computer is connected to GitHub. It shows only when the broker runs and the build has GitHub, and is never a problem. See [Set up a GitHub repository](/docs/guides/github/). |
+| `herdr: <path> <version> (protocol <n>), server running at <socket>, can make worktrees` | herdr is installed and its server runs. The line says "cannot make worktrees" when herdr cannot. `herdr: <path>, server not running (<socket>)` means the server is off. These lines show only when herdr is installed and are never a problem. See [Termivoa + herdr](/docs/guides/herdr/). |
+| `! herdr: <path>, Termivoa will not use the server socket <socket>: group or others can write <folder>; run: chmod go-w <folder>` | herdr runs, but another user could reach its socket, so Termivoa does not use it and the app says "herdr is not running". Run the command the line prints. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-use-the-herdr-socket). |
+| `herdr agents the phone can start: claude, codex` | The agents that already run in herdr, which **New worktree** offers. |
+| `! herdr: <path> <version> (protocol <n>) is too old or unreadable; update herdr (0.8.2 or later)` | Update herdr. See [Update herdr on mac](/docs/reference/troubleshooting/#update-herdr-on-mac). |
+| `! herdr: config.toml sets a prefix key other than ctrl+b; …` | Termivoa doubles only `ctrl+b`, so a phone can send that other prefix key to a herdr terminal it opened. At worst it detaches the phone. Set herdr's prefix key back to `ctrl+b`. |
+| `! herdr at <path>: <reason>; Termivoa will not run it` | It shows before the herdr line, or alone when no other herdr is found. Termivoa refused a herdr program, for example one that belongs to another user or sits in a folder that others can write. |
+| `GitHub: connected as <login>` or `GitHub: not connected` | Whether this computer is connected to GitHub. It shows only when the broker runs and the build has GitHub, and is never a problem. See [Set up a GitHub repository](/docs/guides/github/). |
 | `! tailscale at <path>: …; Termivoa will not run it` | Another user could replace that Tailscale CLI, so Termivoa does not use it. See [the troubleshooting entry](/docs/reference/troubleshooting/#pterm-doctor-says-termivoa-will-not-run-tailscale). |
 
 ## Work with sessions
@@ -107,7 +107,7 @@ In `pterm attach`, Ctrl+] leaves without ending the session. With control, Ctrl+
 
 ## GitHub
 
-**Next beta.** See [Set up a GitHub repository](/docs/guides/github/). You connect a computer in the app: in **Settings**, tap the computer's card, then **Connect**. There is no command to connect.
+See [Set up a GitHub repository](/docs/guides/github/). You connect a computer in the app: in **Settings**, tap the computer's card, then **Connect**. There is no command to connect.
 
 | Command | What it does |
 | --- | --- |

@@ -1,7 +1,7 @@
 ---
 title: Project buttons
 description: Termivoa reads your project's package.json, Makefile, Cargo.toml or go.mod and shows its test, dev, build and lint commands as one-tap buttons.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-10
 ---
 
 Termivoa finds your project's own commands, such as tests or the dev server, and shows them as one-tap buttons in the Snippets sheet.
@@ -23,7 +23,7 @@ It only reads them; nothing runs until you tap an action.
 
 1. In the session, take control.
 2. Tap **snips**. **This project** is at the top.
-3. Find the command in its group: **test**, **dev**, **build**, **lint** or **other** (tap **More** for more).
+3. Find the command in its group: **test**, **dev**, **build**, **lint** or **other**. If **other** has more than 3, tap **More · N** to show the rest of **other**.
 4. Tap the command, then an action:
    - **Run in new tab** starts a new session in the same project and shell, types the command once (only if no one else has control), and opens it.
    - **Type here** types it in this session and presses Enter.

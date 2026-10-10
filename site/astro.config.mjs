@@ -26,7 +26,7 @@ export default defineConfig({
 					description:
 						'Termivoa lets you use the terminals and coding agents (Claude Code, Codex) on your computer from your phone, privately over Tailscale. No cloud service, no account.',
 					details:
-						'Status: private beta (v0.1.0-beta.3). The host program is `pterm`. Platforms: macOS on Apple silicon, Ubuntu Linux, Windows 11.',
+						'Status: free and open-source beta (v0.1.0-beta.4). The host program is `pterm`. Platforms: macOS on Apple silicon, Ubuntu Linux, Windows 11.',
 					customSets: [
 						{ label: 'Install', description: 'install guides for each platform', paths: ['docs/install/**'] },
 						{ label: 'Guides', description: 'how to use each feature', paths: ['docs/guides/**'] },

@@ -24,10 +24,9 @@ Termivoa server, no account and no telemetry. Termivoa is free and open
 source.
 
 > [!NOTE]
-> Termivoa is in beta (`v0.1.0-beta.3`, unsigned builds). The full flow is
+> Termivoa is a free, open-source beta (`v0.1.0-beta.4`, unsigned builds). The full flow is
 > tested on an Apple Silicon Mac and on Linux (containers and one Ubuntu 24.04
 > VPS). Windows support is written but not yet run on a real Windows machine.
-> Items marked **Next beta** are on `main` but not in the latest release.
 
 ## Why
 
@@ -42,7 +41,7 @@ without opening a port or trusting a cloud service.
   with tabs. Sessions keep running when the phone sleeps or loses signal.
 - **Agent status and answer cards.** See **Working**, **Waiting** or **Your
   turn**, and answer Claude Code and Codex questions with one tap.
-- **Needs you** (**Next beta**). One list of every agent that waits for you,
+- **Needs you**. One list of every agent that waits for you,
   with **Next** to go from one to the next.
 - **Notifications.** A buzz when an agent waits or finishes. Only the session
   name and status, never terminal text.
@@ -55,9 +54,9 @@ without opening a port or trusting a cloud service.
   Codex already running in it.
 - **Several computers.** Use a Mac, a Linux server and a VPS from one phone
   app, with one Sessions list.
-- **herdr** (**Next beta**). Projects, worktrees and agents from
+- **herdr**. Projects, worktrees and agents from
   [herdr](https://herdr.dev), on the phone.
-- **GitHub** (**Next beta**). Connect a computer to GitHub and clone a
+- **GitHub**. Connect a computer to GitHub and clone a
   repository onto it with one tap. No `gh` needed.
 - **Phone-first keys.** Agent keys (Esc, Ctrl+C, Shift+Tab, `y`, Enter), a
   composer for long text, snippets, project buttons and launch presets.
@@ -76,7 +75,15 @@ Every feature has a guide in the [docs](https://termivoa.com/docs/).
    the phone, signed in to the same account.
 2. Install `pterm`: [macOS](https://termivoa.com/docs/install/macos/),
    [Linux](https://termivoa.com/docs/install/linux/) or
-   [Windows](https://termivoa.com/docs/install/windows/).
+   [Windows](https://termivoa.com/docs/install/windows/). You need no
+   account. On an Apple Silicon Mac:
+
+   ```sh
+   mkdir -p ~/.local/bin
+   curl -fsSL -o ~/.local/bin/pterm https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4/pterm-darwin-arm64
+   chmod +x ~/.local/bin/pterm
+   ```
+
 3. Run setup. It checks the host, shows what it will do and asks once. It
    asks again before it runs `tailscale serve`, and it never uses Funnel.
 

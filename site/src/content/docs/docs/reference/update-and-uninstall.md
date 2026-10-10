@@ -1,7 +1,7 @@
 ---
 title: Update and uninstall
 description: Update or uninstall pterm, the Termivoa host program, by hand, undo its Tailscale Serve setting, and find the folders that hold its data.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 ---
 
 Termivoa has no automatic updater: you stop `pterm`, replace the program file, and start it again. Nothing downloads code on its own.
@@ -19,8 +19,10 @@ An update ends all sessions, so finish your work first.
 2. Download the new version to the same path, over the old file. For example, on macOS:
 
    ```sh
-   gh release download <new-version> -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm --clobber
+   curl -fsSL -o ~/.local/bin/pterm https://github.com/intojhanurag/Termivoa/releases/download/<new-version>/pterm-darwin-arm64
    ```
+
+   With `gh`: `gh release download <new-version> -R intojhanurag/Termivoa -p pterm-darwin-arm64 -O ~/.local/bin/pterm --clobber`.
 
    On [Linux](/docs/install/linux/) and [Windows](/docs/install/windows/), use the file name and folder from your install page.
 
@@ -36,7 +38,9 @@ An update ends all sessions, so finish your work first.
    pterm launch --no-open
    ```
 
-Paired phones, projects and settings stay. If the phone shows **A new version is ready**, tap **Reload**.
+Paired phones, projects and settings stay (also from beta.3 to beta.4). When the phone has the new version, **Sessions** shows an **update** button at the top, next to **Settings**. Tap it to load the new version. Your sessions keep running.
+
+If the phone shows **A new version is ready** instead, the open app tried to load code that the computer no longer has. Tap **Reload**.
 
 :::caution[From beta.2 to beta.3]
 `v0.1.0-beta.3` does not read data from older betas. After step 2, run `pterm uninstall --delete-data`, then `pterm setup`, and pair your phone again. iPhone needs iOS 16.4 or later. See the [release notes](/docs/reference/release-notes/#v010-beta3-2026-10-04--private-beta).
@@ -68,7 +72,7 @@ Uninstall refuses while a session is active, so end sessions or run `pterm shutd
    pterm uninstall --delete-data
    ```
 
-   **Next beta, macOS and Linux:** after you confirm, Termivoa tries to revoke the saved GitHub login (up to 10 seconds), then removes it locally. If revocation is unconfirmed, use the GitHub applications link printed by the command. Canceling while revocation is running stops before local deletion. The empty private data folder and ownership marker remain; paired phones, projects, settings and logs are removed. No database or login remains in that folder.
+   On macOS and Linux, after you confirm, Termivoa tries to revoke the saved GitHub login (up to 10 seconds), then removes it locally. If revocation is unconfirmed, use the GitHub applications link printed by the command. Canceling while revocation is running stops before local deletion. The empty private data folder and ownership marker remain; paired phones, projects, settings and logs are removed. No database or login remains in that folder.
 
 3. Delete the program file:
    - macOS and Linux: `rm ~/.local/bin/pterm`

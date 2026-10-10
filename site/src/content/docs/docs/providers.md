@@ -6,10 +6,6 @@ lastUpdated: 2026-10-10
 
 A provider is a terminal workspace tool on your computer, such as herdr, whose projects and coding agents Termivoa shows on your phone.
 
-:::note[Next beta]
-This page describes features that are not in `v0.1.0-beta.3` yet. Update Termivoa on the computer to the next beta to get them.
-:::
-
 ## Which providers does Termivoa support?
 
 | Provider | Needs | Computers | Guide |

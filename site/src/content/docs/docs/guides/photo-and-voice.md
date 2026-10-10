@@ -1,7 +1,7 @@
 ---
 title: Photo and voice
 description: In Termivoa, send a phone photo to Claude Code or Codex without its location data, or speak a prompt that you check before you send it.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-10
 ---
 
 Termivoa lets you send a photo to a coding agent, or speak a prompt, from your phone. Both are under **compose** when you have control of a session.
@@ -18,7 +18,7 @@ Termivoa lets you send a photo to a coding agent, or speak a prompt, from your p
 
 - The phone removes location (GPS) and other photo data (EXIF) before sending.
 - The long side is scaled down to 2048 pixels at most.
-- Only JPEG, PNG, WebP and GIF up to 5 MB are accepted.
+- The phone sends JPEG or PNG, at most 5 MB.
 - It is saved in the session's project folder, in `.termivoa/uploads/`. A `.gitignore` in `.termivoa/` keeps uploads out of git.
 
 ## Speak a prompt

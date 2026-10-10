@@ -75,6 +75,8 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   deliberate focus elsewhere. Actual React/browser regression covers the
   lifecycle. Design: [sheet-focus.md](sheet-focus.md). Real VoiceOver and
   phone checks remain pending.
+- Open-source beta docs for `v0.1.0-beta.4` (2026-10-10): install with `curl`,
+  no invite or `gh`; landing page **Install free**.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).
@@ -351,12 +353,18 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
       failures.
 - [ ] **24-hour soak test.** Sessions running for a full day; check memory
       and reconnects (`scripts/soak.sh`).
-- [ ] **Secret scan of the full git history** before it becomes public.
+- [x] **Secret scan of the full git history** before it becomes public.
+      Done 2026-10-10: pattern scan of all 664 reachable commits, no
+      secrets found.
 - [ ] **Licence audit.** Finish the notice audit in
       `THIRD_PARTY_NOTICES.md` and `docs/dependencies.md`.
-- [ ] **One-line installer.** `curl … | sh` for macOS and Linux. Needs a
-      public repo or the binaries hosted on the website.
-- [ ] **Owner makes the repo public.** Only the owner does this.
+- [ ] **One-line installer.** `curl … | sh` for macOS and Linux. Since
+      `v0.1.0-beta.4` the docs download with plain `curl` (no `gh`, no
+      account) from the public release; a single `curl | sh` script is
+      still open.
+- [x] **Owner makes the repo public.** Only the owner does this. Owner
+      decision 2026-10-10: Termivoa goes public that day as a free and
+      open-source beta (`v0.1.0-beta.4`); docs and website say so.
 
 ### Small code items
 

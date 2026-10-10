@@ -8,9 +8,7 @@ Termivoa's live terminal is the screen of one session, where you read output and
 
 ## What changes for busy terminals?
 
-| Version | Watching output |
-| --- | --- |
-| **Next beta** | Live and Wall use less CPU and temporary memory on the computer while output changes. The terminal controls and display stay the same. |
+Since `v0.1.0-beta.4`, Live, Wall and **history** use less CPU and temporary memory on the computer while output changes. The terminal controls and display stay the same.
 
 ## Take control to type
 
@@ -38,7 +36,7 @@ Termivoa keeps terminal screens bounded while you read and type.
 | Screen height | Up to 200 rows |
 | Screen updates | Rows must stay within the allowed screen bounds |
 
-**Next beta:** the computer also rejects malformed row positions in received
+The computer also rejects malformed row positions in received
 terminal screen updates. The phone already applies that limit. No setting is
 needed.
 
@@ -71,7 +69,7 @@ Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**,
 
 ## Use sheets with a keyboard
 
-**Next beta.** Termivoa keeps your keyboard place when a sheet closes.
+Termivoa keeps your keyboard place when a sheet closes.
 
 | Action | Focus after the sheet closes |
 | --- | --- |
@@ -98,16 +96,12 @@ Snippets are prompts and commands you send with one tap, saved on this phone onl
 
 ## Copy from history
 
-| Version | Preparing History |
-| --- | --- |
-| **Next beta** | Uses less CPU and temporary memory on your computer. Tap **history** as usual; the reading and copying steps stay the same. |
-
 1. Tap **history**.
 2. Select text.
 3. Tap **Copy N lines**, for example **Copy 3 lines**.
 4. Tap **Done**.
 
-**Next beta:** Termivoa loads all retained History rows even when colored
+Termivoa loads all retained History rows even when colored
 output needs more pages. It shows a complete frozen view, or says
 **History unavailable right now. Return to live and try again.**
 

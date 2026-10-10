@@ -1,7 +1,7 @@
 ---
 title: Worktrees
 description: Termivoa worktrees give each new task its own folder and branch from your phone, so several coding agents can work in one repository at once.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 ---
 
 Termivoa can start a new task in a git worktree: a second folder of your repository on its own branch, with a new session in it. Two agents in two worktrees do not change each other's files. All worktrees share one history, so you commit and push as usual.
@@ -30,7 +30,7 @@ Start from `main` for a new task. To continue another task, pick its branch in *
 
 ## What happens if creation times out?
 
-**Next beta:** Termivoa stops git's ordinary hook children before cleaning up
+Termivoa stops git's ordinary hook children before cleaning up
 a failed creation. This prevents a stopped hook from continuing to change the
 new worktree while it is removed. Check the sheet's error and your worktrees
 before trying again. Hooks are trusted programs on your computer; deliberately
@@ -38,7 +38,7 @@ detached programs on macOS or Linux are outside this cleanup.
 
 ## Can I use another session while Create waits?
 
-**Next beta:** Termivoa keeps the Sessions list and other session opens
+Termivoa keeps the Sessions list and other session opens
 available while a slow worktree checkout or hook finishes. Creating the
 worktree still needs the computer to finish its own git operation.
 
@@ -68,7 +68,7 @@ If the folder has uncommitted changes, new files, or files that git ignores (suc
 | Limit | What to do |
 | --- | --- |
 | 50 Termivoa worktrees per repository | Remove a finished worktree to make another. |
-| **Next beta:** one worktree creation at a time per computer | Wait for the current create to finish, then tap **Create** again. Extra requests receive a limit message immediately. |
+| One worktree creation at a time per computer | Wait for the current create to finish, then tap **Create** again. Extra requests receive a limit message immediately. |
 
 Closing the sheet or app after a create started can leave the computer
 finishing it. Check Sessions for that worktree before creating it again.

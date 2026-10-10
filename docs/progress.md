@@ -4,9 +4,9 @@ Last updated: 2026-10-10
 
 ## Start here
 
-- **State on 2026-10-04:** docs prepared for private beta `v0.1.0-beta.3`
-  (unsigned; everything in `git log v0.1.0-beta.2..7e347d3`); Gate 0 on real
-  phones is still open.
+- **State on 2026-10-10:** docs prepared for the free, open-source beta
+  `v0.1.0-beta.4` (unsigned; everything on `main` since `v0.1.0-beta.3`);
+  Gate 0 on real phones is still open.
 - **Read first:** [`AGENTS.md`](../AGENTS.md) →
   [`docs/architecture.md`](architecture.md) →
   [`docs/pending-work.md`](pending-work.md) (the single roadmap).
@@ -14,6 +14,30 @@ Last updated: 2026-10-10
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### Docs: open-source beta launch, `v0.1.0-beta.4` (2026-10-10, branch `docs/open-source-launch`)
+
+- Owner decision 2026-10-10: Termivoa goes public as a free, open-source
+  beta. Website, docs, README and `docs/install.md` drop the private-beta and
+  invite wording; landing-page **Install free** buttons open the quick start.
+- Install pages download with `curl` from the public release (no `gh`, no
+  account), with a `SHA256SUMS` check; `gh release download` stays as an
+  alternative. Checked: `curl` adds no `com.apple.quarantine` attribute
+  (macOS 26, `xattr -l` shows only `com.apple.provenance`). Fixed the old
+  checksum step: `shasum -c --ignore-missing` fails ("no file was verified")
+  for a binary saved as `pterm`.
+- CHANGELOG `[Unreleased]` became `[0.1.0-beta.4] - 2026-10-10`; release
+  notes have a `v0.1.0-beta.4 — open-source beta` section; every **Next
+  beta** mark in the guides is gone. Two docs reviews' findings fixed
+  (security storage claims, Settings → This phone → Notifications, update
+  pill, worktree limit message, labels).
+- Checks: `pnpm install --frozen-lockfile`; `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check` (pass); `cd site && pnpm install --frozen-lockfile
+  --ignore-workspace && npx astro build` (pass, all internal links valid).
+  Landing page screenshots at 390 px and 1280 px (not committed).
+- Pending: the release itself (tag, build, publish `v0.1.0-beta.4`), the
+  owner's visibility change, then a `curl` download check against the public
+  release URLs (they 404 while the repository is private).
 
 ### Chore: open-source polish (2026-10-10, branch `chore/open-source-polish`; not committed)
 

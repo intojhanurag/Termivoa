@@ -1,7 +1,7 @@
 ---
 title: Changes
 description: Use the Termivoa Changes view to review an agent's uncommitted edits on your phone, ask about a file or lines, then commit and push.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 ---
 
 The Termivoa **Changes** view shows what a coding agent changed in your project: the changed files and a red and green diff for each.
@@ -71,7 +71,7 @@ The commit runs your repository's own hooks, as a commit on your computer does. 
 
 ## What happens when git times out?
 
-**Next beta:** Termivoa stops git and its ordinary hook children before
+Termivoa stops git and its ordinary hook children before
 reporting a timed-out commit or push. Your repository's hooks and git settings
 still apply. This does not undo a commit or push that already finished; check
 **Changes** and the branch before trying again. Termivoa does not retry it.

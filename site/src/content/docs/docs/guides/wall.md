@@ -1,7 +1,7 @@
 ---
 title: Wall
 description: The Termivoa Wall puts all running sessions on one page as small live screens, so you can watch several coding agents and open one with a tap.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-10
 ---
 
 Termivoa shows every running session as a small live screen on one page, the Wall.
@@ -35,7 +35,7 @@ Tiles that wait for you come first, with an amber border. Working sessions come 
 
 ## Does watching the Wall use less work on the computer?
 
-**Next beta:** Termivoa prepares Wall-only screen updates at the rate the tiles can display them. The tile still reaches the newest screen after output stops.
+Termivoa prepares Wall-only screen updates at the rate the tiles can display them. The tile still reaches the newest screen after output stops.
 
 | What you open | What to expect |
 | --- | --- |

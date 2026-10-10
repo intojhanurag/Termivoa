@@ -6,10 +6,6 @@ lastUpdated: 2026-10-10
 
 Termivoa connects a computer to GitHub from your phone, shows your repositories, and clones the one you pick onto that computer, ready for a new session.
 
-:::note[Next beta]
-This page describes a feature that is not in `v0.1.0-beta.3` yet. Update Termivoa on the computer to the next beta to get it.
-:::
-
 ## What do I need?
 
 | Need | Detail |
@@ -17,7 +13,7 @@ This page describes a feature that is not in `v0.1.0-beta.3` yet. Update Termivo
 | git 2.31 or later | On that computer. Nothing else: no `gh`, no git login. |
 | macOS or Linux | Windows shows no GitHub row. |
 | A GitHub account on github.com | GitHub Enterprise is not supported. |
-| Termivoa from the next beta | On that computer. |
+| Termivoa `v0.1.0-beta.4` or later | On that computer. |
 
 ## How do I connect GitHub?
 
@@ -26,7 +22,7 @@ Each computer connects on its own. Do these steps one time for each computer.
 1. Open **Settings** and tap the computer's card, such as **mac**. Its page has a **GitHub** part with the row **GitHub on mac**. Tap **Connect**. (A card that is not connected yet shows the chip **Connect GitHub**.)
 2. The sheet shows an 8-character code. Tap **Copy code and open GitHub**. This copies the code and opens <https://github.com/login/device>.
 3. On GitHub, paste the code and authorize **Termivoa**.
-4. One time for each GitHub account: the sheet says **Choose repositories**. Tap **Choose on GitHub** and pick **All repositories** or only some. GitHub can send you to a page that says "Done. Go back to Termivoa." Go back to the app; it continues by itself.
+4. <span id="back-to-termivoa"></span>One time for each GitHub account: the sheet says **Choose repositories**. Tap **Choose on GitHub** and pick **All repositories** or only some. GitHub can then open a Termivoa docs page that says "Done. Go back to Termivoa." Go back to the app; it continues by itself.
 5. The row says **Connected** and shows your GitHub login.
 
 The code works for 15 minutes. The sheet shows the time that is left.
@@ -76,15 +72,22 @@ It reaches only the repositories that you chose on GitHub. It cannot change work
 
 Two repositories with the same name from two owners cannot both be set up on one computer. The second one says **name taken**.
 
-## Why does a repository have no last-push age?
+## What does a repository's push age mean?
 
-**Next beta:** Termivoa omits the last-push age when GitHub has no usable date for it. The repository row still shows its name and other details.
+Termivoa shows the elapsed time since GitHub reports the repository's last push. Old repositories use compact weeks, months and years, so a three-year-old push reads **3 yr ago**.
 
-| What you see | What it means |
+| Label | Meaning |
 | --- | --- |
-| A repository with no push age | No usable last-push date was supplied; the repository remains in the list. |
-| **Set up** or **on mac** still shows | Use the same available action; the missing age does not change whether the repository is on that computer. |
-| Other repositories show push ages | Their dates are usable, so their age labels remain. |
+| **just now** | Under one minute; also a future timestamp if clocks differ. |
+| **min ago** | Whole minutes, until one hour, such as **5 min ago**. |
+| **h ago** | Whole hours, until 24 hours, such as **2 h ago**. |
+| **yesterday** | Between 24 and 48 hours ago. |
+| **d ago** | Whole days, until seven days. |
+| **wk ago** | Whole seven-day weeks, until 30 days. |
+| **mo ago** | Whole 30-day months, until 365 days. |
+| **yr ago** | Whole 365-day years. |
+
+Months and years are approximate elapsed units. The time is calculated when Termivoa reads the repository list; searching the list does not refresh it. A repository with no usable push date has no age label. It stays in the list with its name, other details and the same **Set up** or **on mac** action.
 
 ## What can a phone do with GitHub?
 
@@ -114,7 +117,7 @@ Termivoa asks GitHub to revoke the login, then removes it from the computer. Whe
 
 On the computer you can also run `pterm github disconnect`. See the [CLI reference](/docs/reference/cli/#github).
 
-**Next beta:** removing the saved login preserves another file linked to the same stored contents. Local removal does not securely erase copies or backups.
+Removing the saved login preserves another file linked to the same stored contents. Local removal does not securely erase copies or backups.
 
 | What you need to remove | What to do |
 | --- | --- |
@@ -137,6 +140,20 @@ After Disconnect, `git pull` and `git push` in a folder that Termivoa cloned fai
 
 Not in this release: GitHub Enterprise, Windows, a branch choice, another folder than `~/<name>`, creating a repository, pull requests, and changes to workflow files.
 
+## Why does a saved login become unavailable?
+
+Termivoa refuses a saved login file that is linked to another
+file or has an unsafe owner or type. It repairs permissions only on a valid
+owned file. Do not make links to saved login files.
+
+| Situation | What to do |
+| --- | --- |
+| You intentionally linked a saved login file | Stop Termivoa and inspect the local file; remove the link only after checking what it points to |
+| You did not create the link or change ownership | Investigate the computer before connecting GitHub again |
+| A normal file only needs tighter permissions | Termivoa repairs its permissions without replacing the file |
+
+See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked) and [Why is a private file refused?](/docs/reference/troubleshooting/#why-is-a-private-file-refused).
+
 ## Common questions
 
 ### Do I need `gh`?
@@ -150,38 +167,3 @@ Each computer keeps its own login, and the login never moves between computers. 
 ### Does push work?
 
 Yes, in a folder that Termivoa cloned, and in a folder that has your own git login. GitHub refuses a push that changes a file in `.github/workflows`: the login does not have that permission. Push such a change from a computer with your own git login.
-
-## Back to Termivoa
-
-Done. Go back to Termivoa.
-
-## Why does a saved login become unavailable?
-
-**Next beta:** Termivoa refuses a saved login file that is linked to another
-file or has an unsafe owner or type. It repairs permissions only on a valid
-owned file. Do not make links to saved login files.
-
-| Situation | What to do |
-| --- | --- |
-| You intentionally linked a saved login file | Stop Termivoa and inspect the local file; remove the link only after checking what it points to |
-| You did not create the link or change ownership | Investigate the computer before connecting GitHub again |
-| A normal file only needs tighter permissions | Termivoa repairs its permissions without replacing the file |
-
-See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked) and [Why is a private file refused?](/docs/reference/troubleshooting/#why-is-a-private-file-refused).
-
-## What does a repository's push age mean?
-
-**Next beta:** Termivoa shows the elapsed time since GitHub reports the repository's last push. Old repositories use compact weeks, months and years, so a three-year-old push reads **3 yr ago**.
-
-| Label | Meaning |
-| --- | --- |
-| **just now** | Under one minute; also a future timestamp if clocks differ. |
-| **min ago** | Whole minutes, until one hour, such as **5 min ago**. |
-| **h ago** | Whole hours, until 24 hours, such as **2 h ago**. |
-| **yesterday** | Between 24 and 48 hours ago. |
-| **d ago** | Whole days, until seven days. |
-| **wk ago** | Whole seven-day weeks, until 30 days. |
-| **mo ago** | Whole 30-day months, until 365 days. |
-| **yr ago** | Whole 365-day years. |
-
-Months and years are approximate elapsed units. The time is calculated when Termivoa reads the repository list; searching the list does not refresh it. A repository with no push timestamp has no age label.

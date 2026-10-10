@@ -1,31 +1,43 @@
 ---
 title: Install on Linux
-description: Install the Termivoa pterm beta on Ubuntu desktop, a server, a VPS or WSL, and run it as systemd user services that need no root access.
-lastUpdated: 2026-10-04
+description: Install the free Termivoa pterm beta on Ubuntu desktop, a server, a VPS or WSL with curl, and run it as systemd user services with no root.
+lastUpdated: 2026-10-10
 ---
 
 Termivoa installs on Ubuntu (desktop, server or WSL) as one file, `pterm`, with an install script that runs `pterm setup`.
 
 :::note
-Private beta. Linux was tested in Ubuntu 24.04 containers and on one real Ubuntu 24.04 VPS (x86_64). arm64 and desktop Ubuntu are not yet tested on real hardware.
+Open-source beta (`v0.1.0-beta.4`). The binaries are not signed. Linux was tested in Ubuntu 24.04 containers and on one real Ubuntu 24.04 VPS (x86_64). arm64 and desktop Ubuntu are not yet tested on real hardware.
 :::
 
 ## Requirements
 
-- Ubuntu 22.04 or 24.04, on x86_64 or arm64.
+- Ubuntu 22.04 or 24.04, on x86_64 or arm64. Other Linux distributions are not tested.
 - [Tailscale](https://tailscale.com/download) on the computer and the phone, signed in to the same account.
-- The [GitHub CLI](https://cli.github.com/) (`gh`), signed in with `gh auth login`. You need an invite to the private repository.
+- `curl`. Ubuntu Desktop does not always have it: `sudo apt install curl`.
 - A normal user, not root. The install script refuses root.
 
-No extra packages or Node.js are needed.
+No GitHub account, Node.js or other packages are needed. [Set up a GitHub repository](/docs/guides/github/) also needs `git` on the computer.
 
 ## Install
 
-On arm64, use `pterm-linux-arm64` in both commands:
+Download the binary, the install script and the checksum file, check them, then run the script.
+On arm64, use `pterm-linux-arm64` in all three places:
 
 ```sh
-gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh
+mkdir -p ~/termivoa-download && cd ~/termivoa-download
+base=https://github.com/intojhanurag/Termivoa/releases/download/v0.1.0-beta.4
+curl -fsSL --remote-name-all $base/pterm-linux-amd64 $base/install-linux.sh $base/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
 sh install-linux.sh ./pterm-linux-amd64
+```
+
+`sha256sum` must print `OK` for both files. If a line says `FAILED`, download again and do not run the script.
+
+With the [GitHub CLI](https://cli.github.com/) (`gh`), this line replaces the `curl` line:
+
+```sh
+gh release download v0.1.0-beta.4 -R intojhanurag/Termivoa -p pterm-linux-amd64 -p install-linux.sh -p SHA256SUMS
 ```
 
 The script installs `~/.local/bin/pterm` and starts setup.
@@ -38,8 +50,6 @@ New logins have it already: your ~/.profile adds ~/.local/bin when it exists.
 ```
 
 With zsh, the last line says to add the `export` line to `~/.zshrc`. Until then, you can also type `~/.local/bin/pterm`.
-
-To check the download, get the release's `SHA256SUMS` file and run `shasum -a 256 -c SHA256SUMS --ignore-missing`.
 
 Then follow [Pair your phone](/docs/pair-your-phone/). If Termivoa is already on your phone (this is your second computer), answer `2` when setup asks "Is Termivoa already on your phone?", then pick the computer you first paired. See [Use several computers](/docs/guides/computers/).
 

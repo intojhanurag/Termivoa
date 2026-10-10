@@ -51,8 +51,9 @@ What is implemented (see [docs/threat-model.md](docs/threat-model.md) and
 [docs/architecture.md](docs/architecture.md)):
 
 - the gateway listens on loopback only; phones reach it through private
-  Tailscale Serve HTTPS. Tailscale Funnel and public tunnels are out of scope,
-  and `pterm setup` / `pterm doctor` warn when Funnel is on;
+  Tailscale Serve HTTPS. Tailscale Funnel and public tunnels are out of scope:
+  `pterm setup` and `pterm pair` refuse to run while Funnel is on for
+  Termivoa's ports (443 or 8443), and `pterm launch` and `pterm doctor` warn;
 - pairing uses a single-use, two-minute link plus owner approval after comparing
   a code; paired devices use `HttpOnly`, `SameSite=Strict` session cookies and
   can be revoked at once with `pterm revoke` (on each computer the phone uses);
