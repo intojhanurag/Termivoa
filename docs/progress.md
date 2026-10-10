@@ -33,6 +33,8 @@ Last updated: 2026-10-08
   [static assets](static-assets.md). Independent adversarial PR review,
   required hosted checks and merge remain pending. Physical-phone/cellular
   and external reverse-proxy measurements remain pending.
+- Review fix: `Content-Length` is set only on a full 200, so a 412
+  (`If-Match` mismatch) no longer declares a body it does not send.
 
 ### Summary (2026-09-27)
 

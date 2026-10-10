@@ -68,6 +68,13 @@ func TestStaticPrecompressedRepresentations(t *testing.T) {
 				t.Fatalf("conditional %s: %d", method, notModified.Code)
 			}
 		}
+		for _, header := range []http.Header{{"If-Match": {`"other"`}}, {"If-None-Match": {etag}}} {
+			header.Set("Accept-Encoding", test.accept)
+			conditional := do(handler, http.MethodGet, "/assets/large.js", "", requestOptions{header: header})
+			if (conditional.Code != 412 && conditional.Code != 304) || conditional.Header().Get("Content-Length") != "" && conditional.Header().Get("Content-Length") != strconv.Itoa(conditional.Body.Len()) {
+				t.Fatalf("conditional %v: %d, Content-Length %q, body %d", header, conditional.Code, conditional.Header().Get("Content-Length"), conditional.Body.Len())
+			}
+		}
 		head := do(handler, http.MethodHead, "/assets/large.js", "", requestOptions{header: http.Header{"Accept-Encoding": {test.accept}}})
 		if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Length") != strconv.Itoa(len(want)) || head.Header().Get("ETag") != etag {
 			t.Fatalf("HEAD: %d %v", head.Code, head.Header())

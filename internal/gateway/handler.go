@@ -566,8 +566,20 @@ func (handler *gatewayHandler) serveStatic(response http.ResponseWriter, request
 	}
 	// ServeContent cannot infer whether Content-Encoding came from a dynamic
 	// compressor. These bytes are already encoded, including on HEAD requests.
-	response.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	http.ServeContent(response, request, name, time.Time{}, bytes.NewReader(data))
+	// Set the length only on a full 200: a 412 has an empty body.
+	http.ServeContent(fullLength{response, strconv.Itoa(len(data))}, request, name, time.Time{}, bytes.NewReader(data))
+}
+
+type fullLength struct {
+	http.ResponseWriter
+	length string
+}
+
+func (writer fullLength) WriteHeader(code int) {
+	if code == http.StatusOK {
+		writer.Header().Set("Content-Length", writer.length)
+	}
+	writer.ResponseWriter.WriteHeader(code)
 }
 
 func acceptsGzip(headers []string) bool {
