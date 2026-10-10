@@ -507,8 +507,14 @@ ADR [0010](decisions/0010-github-integration.md). What is new:
   approval pending) removes only the filename without overwriting a shared
   inode. This is not secure erasure: other names, copies, snapshots and
   backups can retain bytes. When the revoke failed,
-  the row links to GitHub's authorized apps page. `pterm uninstall
-  --delete-data` deletes the file without a revoke.
+  the row links to GitHub's authorized apps page. **Next beta (#213, owner review pending):** `pterm uninstall
+  --delete-data` tries the same bounded revocation after confirmation and
+  broker shutdown under exclusive data ownership before deleting the pair.
+  Its private empty directory/lock marker remain to prevent replacement-lock
+  acquisition during cleanup. Parent cancellation preserves the pair;
+  request-only outage prints the manual revocation link and removes locally.
+  The CLI receives status only; token strings stay in the GitHub package.
+  No new destination or scope is introduced.
 - **Tests never reach github.com.** The hosts are fixed in a release build;
   only an `e2e` build (`internal/github/github_e2e.go`) points them at
   `scripts/fakegithub`.

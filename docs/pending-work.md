@@ -1,13 +1,75 @@
 # Pending work
 
 The single roadmap. Updated 2026-10-09. Latest tag: `v0.1.0-beta.3`.
+
+The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
+- Test tooling #260: owned browser teardown waits for child exit and WebSocket
+  closure within explicit bounds, clears pending CDP timers and rejects failed
+  teardown. Ten focused cases pass, including actual installed Chromium profile
+  removal without retries; [evidence](evidence/issue-260/verification.md).
+  Locally complete on `fix/issue-260`; private PR and coordinating review pending.
+
+- History page construction uses exact incremental encoded-size accounting
+  instead of repeatedly serializing a growing page (#219). Page boundaries
+  and validation stay the same; see [history.md](history.md) and
+  [benchmark evidence](evidence/issue-219/README.md).
+
+- Broker terminal-message construction avoids decoding its own JSON (#220).
+  Shared semantic validators, exact generated payload types and message
+  budgets stay enforced; see [terminal-delivery.md](terminal-delivery.md)
+  and [measurement evidence](evidence/issue-220/README.md).
+
+- Strict snapshot row coordinates (#237; branch `fix/issue-237`, not merged):
+  Go enforces the existing 0–199 start-row bound before arithmetic and keeps
+  legal chunks ending at 200. Boundary and cross-language validation checks
+  are recorded in [issue #237 evidence](evidence/issue-237/README.md).
+  Parent integration / PR checks and real-device gates remain pending.
+
+- Desktop snapshot row bounds (#247) corrected locally: no addition overflow;
+  direct-API recovery/race tests pass. Private PR and hosted checks pending.
+
+- Wall capture follows the earliest ready viewer's frame slot (#221), rather
+  than copying at Live cadence for thumbnail-only or blocked viewers. Local
+  mixed-viewer, blocked-send/acknowledgement, detach/reattach, trailing/final
+  frame and allocation checks passed. Follow-up: integrated busy soak and
+  real-iPhone/Android Wall + Live checks; no total-host CPU claim yet.
+
+- Git write cancellation owns and terminates ordinary hook descendants before
+  returning or worktree rollback (#222). Real macOS hook/PID tests and
+  cross-platform fixture tests are added; native Linux/Windows and hosted
+  checks remain pending, as do existing owner phone gates.
+
+- Broker worktree admission (#236): one active create and no waiting queue.
+  Closed callers do not accumulate handlers; accepted work and its receipt
+  survive disconnect. Concurrent calls get a limit response. Design:
+  [worktrees.md](worktrees.md); evidence: [issue-236](evidence/issue-236/verification.md).
+  Real-phone and native Windows checks remain pending.
+
+- Slow worktree creation no longer holds up the Sessions list or a new Live
+  connection (#218, Next beta). Known slow gateway exchanges have four
+  independent slots with fail-fast admission. A real Git post-checkout hook
+  fixture proves list, authentication and Live-open remain available.
+
+- Immutable phone assets use build-time gzip for smaller first-open and
+  update downloads (#223). Raw representations, service-worker URLs and
+  source-map exclusions remain. Real-phone/cellular and external proxy
+  transfer measurements remain pending.
+
+- herdr can start its first installed coding agent from **New worktree** or
+  **New tab**, and keeps installed choices after the last agent stops (#208).
+  Availability is read-only and bounded; real-agent launches and owner phone
+  checks remain in Next 5. See [herdr-provider.md](herdr-provider.md#agent-choices-before-the-first-launch-issue-208-2026-10-08).
+
+- herdr create quota counts pending and attempted changes, and refunds
+  preflight refusals once in their original window (#209), for **New worktree**
+  and agent **New tab**. Owner real-phone checks remain in Next 5.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
-  live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
+  live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).
 - Windows logic: WSL bash profile (#38), Ctrl+] at the attach startup handoff
   (#37), Scheduled Task launcher kept on `conhost --headless` with logs, normal
@@ -31,6 +93,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   Follow-up: show the last known version on a "can't reach" row.
 - Notifications from every computer. Open: the real-iPhone check of several
   scoped registrations (`docs/owner-verification.md`, Gate 0 check 5).
+- Notification delivery fairness (#207, next beta): each push request gets
+  a bounded share of the delivery window, so many hung subscriptions do not
+  consume the window before a later healthy phone gets an attempt. Transient
+  failures keep the subscription; expired ones are still removed. Fake
+  endpoint tests cover 25 and 64 subscriptions. The real-iPhone check stays open.
 - Preview for sessions on peers: ADR 0006 and `docs/peer-preview.md`
   (design #146, approved by the owner 2026-10-03); the build also closes #143
   and #144. Open: the real-phone checks (`docs/owner-verification.md`,
@@ -66,8 +133,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   (`docs/owner-verification.md`).
 - GitHub: set up a repository on a computer from the phone (ADR 0010,
   `docs/github-integration.md`; the owner approved the design and Contents
-  read and write on 2026-10-07; branch `feat/github-integration`, not
-  merged). **Settings → Integrations** has a row for each computer:
+  read and write on 2026-10-07; implementation merged in
+  [#212](https://github.com/intojhanurag/Termivoa/pull/212), registered App
+  build configuration merged in [#229](https://github.com/intojhanurag/Termivoa/pull/229)).
+  **Settings → Integrations** has a row for each computer:
   **Connect** (device flow, one code for each computer), **Choose on
   GitHub**, **Set up a repository** (list with search, "on mac", "name
   taken"), the clone job with progress and **Stop**, "Ready on mac" with
@@ -95,6 +164,16 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 ## Next
 
 In this order.
+
+Security repair #255 has a local implementation after its architecture-first draft:
+[ADR 0012](decisions/0012-private-file-permission-repair.md) and
+[private-file-permissions.md](private-file-permissions.md). The current-main guard
+can change a rejected symlink target or shared hard link. Local
+adjacent checks and the independent security source review are recorded in
+progress. Pinned feasibility source/local review is GO; native Windows/Linux
+runtime evidence remains pending. Owner approved design and implementation on
+2026-10-09, subject to required checks; hosted CI is explicitly denied. Required
+checks and merge remain blocked.
 
 1. **Gate 0 real-phone test for multi-computer** (`scripts/gate0/`). Needs the
    owner's second computer and the owner's approval for a Tailscale Serve port
@@ -156,10 +235,9 @@ In this order.
      app comes to the front (settings are read again then).
    - **"‹ Sessions" in a herdr terminal** goes to the All tab, not the herdr
      tab.
-   - **Open on its own gateway connection:** the reaper holds a target's
-     open lock while it ends the attach (at most 3 s); an open of that
-     target, and gateway requests behind it, wait. Create already has its
-     own connection.
+   - ~~**Open on its own gateway connection**~~ Done (#218, Next beta).
+     The reaper may hold a target's open lock for 3 s; only that open waits,
+     while unrelated reads use the shared fast connection.
    - **A `/p/…` address of a computer below protocol revision 4** shows a
      general failure text, not "Update Termivoa on …".
    - **Create timeout text:** the sheet tells a timeout from the elapsed
@@ -200,6 +278,20 @@ designed in Paper first and shown to the owner before any code.
    Needs a real iPhone check (a call during Scan QR).
 6. ~~**Release `v0.1.0-beta.3`**~~ Done: docs prepared for the tag
    (`docs/beta-3`); a new user gets today's features from `gh release download`.
+7. ~~**Side drawer, Settings by computer, Geist (Paper first)**~~ Done
+   (2026-10-10, `feat/ui-revamp`, [ui-revamp.md](ui-revamp.md); approved
+   by the owner): with two or more computers a side drawer replaces the
+   computer chips; Settings has a main page and one page for each computer
+   (Integrations is gone); Geist and Geist Mono are bundled. Docs and
+   screenshots follow. Follow-ups:
+   - **Swipe between computers** is not built (it can fight with scrolling
+     and with the terminal); only the drawer and the amber pill switch.
+   - **The terminal** (xterm) still uses its own mono font list, not Geist
+     Mono, on purpose: xterm measures its cells once, and a late font would
+     break the grid ([ui-revamp.md](ui-revamp.md), section 3). Revisit only
+     with a load-then-measure step.
+   - **The service worker's offline page** (`web/src/sw.js`) still uses
+     the system font.
 
 ## Later
 
@@ -272,6 +364,22 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 - [ ] Security review by an outside person.
 - [ ] Signed macOS and Windows apps.
+
+### Separate docs dependency audit (#228)
+
+Implemented on `fix/issue-228`, stacked on the source-map-js fix (#226).
+Independent frozen site install/build/audit added to vulnerability CI;
+selector-parser patched and emitted CSS unchanged. Two exact unpatched
+build-only findings remain visible with code-based reachability/upstream
+assessment in `docs/dependencies.md`. Independent adversarial review,
+required hosted checks, owner CI-minutes permission and merge remain pending.
+
+### GitHub revocation during uninstall (#213)
+
+ADR0011/design and draft implementation/tests/docs are prepared. Independent
+feasibility found and resolved a replacement-lock gap by keeping the private
+empty directory/marker. Final security/feasibility reviews passed after corrections. Owner approved design and implementation on 2026-10-09, subject to required checks. Native evidence,
+required checks and merge remain pending; main still deletes without revoking.
 
 ### Safe GitHub token-file removal (#256)
 

@@ -1,12 +1,20 @@
 ---
 title: Quick start
 description: Install Termivoa's pterm program, run setup, pair your phone with a QR code and start your first terminal session in about five minutes.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-08
 ---
 
 Termivoa takes about five minutes to set up, from install to your first session on the phone.
 
 Status: Private beta (`v0.1.0-beta.3`). You need an invite to download it.
+
+## What changes for downloads in the next beta?
+
+| When | **Next beta** |
+| --- | --- |
+| First open on the phone | Termivoa transfers compressed app files when your browser accepts them. No new setup step. |
+| Opening after an update | The new app files use the same smaller download path. |
+| Files already saved on the phone | The app uses its existing cache. |
 
 ## Before you start
 

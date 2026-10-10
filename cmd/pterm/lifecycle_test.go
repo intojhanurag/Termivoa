@@ -209,7 +209,8 @@ func TestSetupAndUninstallChangeStartupOnlyWithConsent(t *testing.T) {
 	if got := fake.mutations(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("uninstall ran %q", got)
 	}
-	for _, path := range []string{plist, data} {
+	assertOnlyOwnershipMarker(t, data)
+	for _, path := range []string{plist} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s survived uninstall --delete-data", path)
 		}
