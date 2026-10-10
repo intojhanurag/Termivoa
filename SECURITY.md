@@ -2,13 +2,23 @@
 
 ## Supported versions
 
-Termivoa is in private beta. The unsigned prereleases `v0.1.0-beta.1`, `v0.1.0-beta.2` and `v0.1.0-beta.3` are shared only with invited collaborators. There is no public release, signed installer, or security-support window yet. Report problems against the latest beta or `main`. This file will be updated with supported versions before v0.1.0 is published.
+Termivoa is in beta. Only the latest prerelease (`v0.1.0-beta.3`) and `main`
+get security fixes. There is no signed release and no longer support window
+yet. This file will list supported versions when v0.1.0 ships.
 
 ## Reporting a vulnerability
 
-Do not open a public issue containing vulnerability details, credentials, pairing data, terminal content, personal paths, or exploit material.
+Do not open a public issue, discussion or pull request containing
+vulnerability details, credentials, pairing data, terminal content, personal
+paths, or exploit material.
 
-Report vulnerabilities privately by email to **aojharaj2004@gmail.com**. Use a subject that starts with `[Termivoa security]`.
+Report vulnerabilities privately:
+
+1. **Preferred:** use GitHub's private reporting. Open the repository's
+   **Security** tab and click **Report a vulnerability**
+   ([direct link](https://github.com/intojhanurag/Termivoa/security/advisories/new)).
+2. **Or** email **aojharaj2004@gmail.com** with a subject that starts with
+   `[Termivoa security]`.
 
 What to expect (best effort; this is a one-person project):
 
@@ -25,7 +35,7 @@ Include only the minimum sanitized information needed to reproduce the issue:
 - sanitized reproduction steps or a minimal fixture;
 - whether a real credential may have been exposed.
 
-Never send real secrets, even by email. If a credential was exposed, revoke or rotate it first; deleting it from the current tree is not sufficient.
+Never send real secrets, even privately. If a credential was exposed, revoke or rotate it first; deleting it from the current tree is not sufficient.
 
 ## Security boundaries
 

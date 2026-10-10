@@ -1,41 +1,26 @@
-## Problem
+## What and why
 
-What concrete problem or milestone requirement does this change address?
+<!-- What problem does this solve? Link the issue: "Closes #123". -->
 
-## Behavior change
+## What changed
 
-Describe the user-visible and internal behavior. Call out process ownership, trust-boundary, lifecycle, or data-flow changes.
+<!-- User-visible behavior and internal changes. Call out process ownership, trust-boundary, protocol, data or install changes. -->
 
-## Validation
+## How I tested it
 
-- Commands actually run:
-- Platforms/devices actually tested:
-- Evidence path:
-- Tests not run and why:
+- Commands run:
+- Platforms or devices tested:
+- Evidence (path under `docs/evidence/`, if any):
+- Not tested, and why:
 
-## Compatibility impact
+## Checklist
 
-- [ ] No protocol, capability, persistence, or packaging impact
-- [ ] Protocol/schema or generated types changed
-- [ ] Terminal capability behavior changed
-- [ ] Database migration changed
-- [ ] Install/update/uninstall behavior changed
+- [ ] `./scripts/check` passes (and `cd site && npx astro build` if docs or the site changed).
+- [ ] Commits use [Conventional Commits](https://www.conventionalcommits.org/) (`feat(web): ...`, `fix(broker): ...`).
+- [ ] I checked `git status` and the staged diff: no credentials, `.env` files, signing material, personal paths, terminal transcripts, model logs or binaries.
+- [ ] Screenshots and fixtures use made-up demo data only (no pairing links, QR codes or real terminal content).
+- [ ] This pull request does only its task. Unrelated problems I found are filed as issues: <!-- list them -->
+- [ ] Docs are updated in this pull request: `CHANGELOG.md` (Unreleased), README feature list, `docs/progress.md`, the docs site guide and release notes, and `docs/architecture.md` / `docs/pending-work.md` when the design or roadmap changes.
+- [ ] Protocol changes start in `protocol/v1` and the generated types are regenerated (`pnpm protocol:generate`).
 
-Explain checked impacts and backward-compatibility handling.
-
-## Security and privacy
-
-- [ ] Staged files contain no credentials, `.env` data, signing material, private terminal history, personal paths, or generated binaries
-- [ ] Logging and evidence use bounded non-secret metadata only
-- [ ] Screenshots and fixtures use synthetic data only (no pairing links, QR codes or real terminal content)
-- [ ] Input/output and authorization boundaries remain explicit
-
-## Scope
-
-- [ ] This pull request does only its task. Unrelated problems found on the way are filed as issues (list them), not fixed here (AGENTS.md rule 21).
-
-## Documentation and limitations
-
-- [ ] All docs updated per AGENTS.md rule 22 (CHANGELOG, README, `docs/progress.md`, docs site guide and release notes, landing page for major features)
-
-List updated docs (README, CHANGELOG, `docs/`, `site/`), known limitations, owner-dependent blockers, and the related issue or milestone. Do not mark unexecuted validation as passed.
+<!-- Do not tick a test you did not run. -->

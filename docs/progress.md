@@ -15,6 +15,14 @@ Last updated: 2026-10-10
 
 ## Log
 
+### Chore: open-source polish (2026-10-10, branch `chore/open-source-polish`; not committed)
+
+- README rewritten (logo, badges, one hero image, Why, features, Quick start, How it works, docs table, licence, acknowledgements); CONTRIBUTING, SECURITY, new SUPPORT.md; YAML issue forms, `config.yml` and PR template refreshed.
+- Landing page: **Star** link in the header, closing section and footer (inline SVG, no script; CSP unchanged). Docs: Starlight `social` GitHub link.
+- Markdown clean-up: `docs/history.md` merged into `docs/terminal-history.md`; stale "not merged" status lines fixed in design docs and ADRs 0007, 0011, 0012, 0013; unused README images removed. THIRD_PARTY_NOTICES lists the website fonts; package.json files declare `Apache-2.0`.
+- Checks: `pnpm install --frozen-lockfile`, `GOTOOLCHAIN=go1.27.1 sh scripts/check` (pass), `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` (pass). Screenshots of the header at 390 px and 1280 px (local `site/dist`, headless Chrome); not stored in the repository.
+- Owner-dependent: enable GitHub Discussions and private vulnerability reporting; set the repository description and topics. The GitHub links 404 for visitors until the repository is public.
+
 ### Fix: CLI names the old Settings → Computers page (2026-10-10, branch `fix/cli-settings-path`)
 
 - Found by the sweep review (rule 21). `pterm pair --via` and `pterm help` now say "Settings → Found on your network"; the guide, design doc, roadmap and e2e F-offer check follow. `go test ./internal/cli/... ./cmd/pterm/...` and `scripts/check` pass.

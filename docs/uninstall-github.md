@@ -1,7 +1,8 @@
 # How does uninstall revoke the GitHub login?
 
-Owner-approved correction for #213, not merged; ADR 0011
-records the decision and alternatives. Implementation and focused/race evidence are prepared; independent security and feasibility reviews pass after corrections; owner approval was given on 2026-10-09, subject to required checks.
+Status: merged in #250 (next beta), fixing #213. ADR 0011 records the
+decision and alternatives. Independent security and feasibility reviews
+passed; the owner approved it on 2026-10-09.
 
 ## What is the acceptance boundary?
 

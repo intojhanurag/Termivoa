@@ -1,11 +1,8 @@
 # How should Termivoa remove its saved GitHub login safely?
 
-Owner-approved correction for #256, not merged, [ADR 0013](decisions/0013-github-token-file-unlink.md).
-**Merge only after required checks.** Design-only commit `f5c685e` was opened
-as private draft PR #261 before local runtime implementation. The unlink-only
-implementation and local regression evidence are now prepared. Independent
-security and feasibility reviews of `0da5258` found no blocker; owner approved design and implementation on
-2026-10-09, subject to required checks.
+Status: merged in #261 (next beta), fixing #256;
+[ADR 0013](decisions/0013-github-token-file-unlink.md). Independent security
+and feasibility reviews found no blocker; the owner approved it on 2026-10-09.
 
 ## What was reproduced?
 

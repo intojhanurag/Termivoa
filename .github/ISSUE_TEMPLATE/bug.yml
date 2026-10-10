@@ -1,24 +1,69 @@
 name: Bug report
-description: Report a reproducible defect using sanitized information
+description: Something in Termivoa does not work as the docs say
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Do not include credentials, pairing links, tokens, environment variables, private code, raw terminal transcripts, personal paths, or sensitive screenshots. Report security issues through the private route in SECURITY.md.
+        Thanks for the report. Check the [troubleshooting guide](https://termivoa.com/docs/reference/troubleshooting/) and existing issues first.
+
+        Do not include credentials, pairing links or QR codes, tokens, environment variables, private code, real terminal history, personal paths or sensitive screenshots. Report security problems privately as described in [SECURITY.md](https://github.com/intojhanurag/Termivoa/blob/main/SECURITY.md).
   - type: input
     id: version
     attributes:
-      label: Build or commit
-      description: Provide the exact version, commit SHA, or artifact identifier.
+      label: Termivoa version
+      description: The release (for example `v0.1.0-beta.3`) or commit SHA. Each computer's version is on its page in Settings.
+      placeholder: v0.1.0-beta.3
+    validations:
+      required: true
+  - type: dropdown
+    id: host-os
+    attributes:
+      label: Computer (host) OS
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux desktop
+        - Linux server or VPS
+        - WSL
+        - Windows 11
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: Phone and browser
+      description: For example "iPhone, iOS 26, Home Screen app" or "Pixel 9, Chrome 140".
+    validations:
+      required: true
+  - type: input
+    id: shell
+    attributes:
+      label: Shell or agent
+      description: For example zsh, bash, fish, PowerShell, Claude Code, Codex.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Use a throwaway project and made-up terminal content where you can.
+      placeholder: |
+        1. Run `pterm setup`
+        2. Open the session on the phone
+        3. ...
     validations:
       required: true
   - type: textarea
-    id: environment
+    id: expected
     attributes:
-      label: Sanitized environment
-      description: Host OS, architecture, browser/phone, shell, dimensions, and relevant versions.
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
     validations:
       required: true
   - type: textarea
@@ -27,31 +72,12 @@ body:
       label: pterm doctor output
       description: Paste `pterm doctor` output if relevant. It never prints secrets, but check it for host names or paths you do not want to share.
       render: text
-  - type: textarea
-    id: reproduction
-    attributes:
-      label: Reproduction steps
-      description: Use a disposable project and synthetic terminal content where possible.
-    validations:
-      required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected behavior
-    validations:
-      required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual behavior
-    validations:
-      required: true
   - type: checkboxes
     id: safety
     attributes:
       label: Safety check
       options:
-        - label: I removed secrets, private terminal history, personal paths, and confidential code.
+        - label: I removed secrets, private terminal history, personal paths and confidential code.
           required: true
-        - label: This report does not disclose a security vulnerability requiring private handling.
+        - label: This is not a security vulnerability (those go through SECURITY.md).
           required: true

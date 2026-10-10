@@ -1,6 +1,6 @@
 # ADR 0013: remove the saved GitHub login without overwriting an inode
 
-- Status: accepted by the owner on 2026-10-09, subject to required checks; not merged.
+- Status: accepted by the owner on 2026-10-09; merged in #261.
 - Date: 2026-10-08
 - Issue: #256
 - Design: [github-token-removal.md](../github-token-removal.md)

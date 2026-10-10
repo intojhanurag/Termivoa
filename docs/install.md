@@ -3,7 +3,7 @@
 > Status: **private beta** (`v0.1.0-beta.3`). The binaries are **unsigned**.
 > Signed and notarized releases need the owner's Apple Developer ID and Windows
 > code-signing identity. Nothing below has passed the release gate yet. You can
-> also build from source ([README quick start](../README.md#quick-start)) or
+> also build from source ([README: build from source](../README.md#build-from-source)) or
 > build the artifacts with [`packaging/macos`](../packaging/macos/README.md),
 > [`packaging/windows`](../packaging/windows/README.md) and
 > [`packaging/linux/build.sh`](../packaging/linux/build.sh). Linux support is

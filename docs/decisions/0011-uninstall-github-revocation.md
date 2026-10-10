@@ -1,6 +1,6 @@
 # ADR 0011: revoke the stored GitHub login before deleting computer data
 
-- Status: accepted by the owner on 2026-10-09, subject to required checks; not merged.
+- Status: accepted by the owner on 2026-10-09; merged in #250.
 - Date: 2026-10-08
 - Issue: #213
 - Design: [uninstall-github.md](../uninstall-github.md)

@@ -1,11 +1,13 @@
-# Contributing
+# Contributing to Termivoa
 
-Thanks for your interest. The project is in private beta (`v0.1.0-beta.3`,
-unsigned, for invited collaborators only), so expect changes. Please open an
-issue before large changes. [AGENTS.md](AGENTS.md) and the
-[implementation plan](docs/implementation-plan.md) describe the design rules
-that every change must keep (for example: the broker owns all PTYs, clients get
-normalized frames, input is never queued or resent).
+Thanks for your interest. Termivoa is free and open source, and it is still
+in beta (`v0.1.0-beta.3`), so expect changes. For a large change, open an
+issue first so we can agree on the shape before you write code.
+
+[AGENTS.md](AGENTS.md) holds the design rules every change must keep (for
+example: the broker owns all PTYs, clients get normalized frames, input is
+never queued or resent). Read it, and [docs/architecture.md](docs/architecture.md)
+for how the code fits together. AI coding agents must follow AGENTS.md too.
 
 ## Set up
 
@@ -44,6 +46,15 @@ To run the real stack locally without changing startup or Tailscale settings,
 use the development harness in
 [docs/install.md](docs/install.md#development-harness).
 
+End-to-end tests run two isolated dev stacks in a headless browser and never
+touch an installed `pterm` or Tailscale. See
+[scripts/e2e-multicomputer/README.md](scripts/e2e-multicomputer/README.md).
+The docs site has its own build, which fails on a broken link:
+
+```sh
+cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build
+```
+
 Platform integration and real-device tests are separate. A Linux or
 browser-emulation pass does not prove macOS, Windows, iPhone or Android
 behavior, and WSL does not replace native Windows.
@@ -77,8 +88,25 @@ behavior, and WSL does not replace native Windows.
 - Fill in the [pull request template](.github/pull_request_template.md):
   problem, behavior change, validation actually run, compatibility impact and
   limitations. Do not mark a test as passed unless you ran it.
+- Keep each pull request to its own task. If you find an unrelated bug, open
+  an issue for it instead of fixing it in the same pull request.
 - Resolve review conversations and rerun affected checks. Do not bypass CI or
   rewrite shared history.
+
+## Where docs live
+
+| What | Where |
+| --- | --- |
+| User docs (how to use it), published at termivoa.com/docs | `site/src/content/docs/docs/` |
+| Landing page | `site/public/` |
+| Internal design (how it works) | `docs/architecture.md`, `docs/*.md`, `docs/decisions/` |
+| Roadmap and progress log | `docs/pending-work.md`, `docs/progress.md` |
+| Release history | `CHANGELOG.md` (add to `Unreleased`) |
+
+A feature or user-visible fix updates the docs in the same pull request:
+`CHANGELOG.md`, the README feature list, the docs site guide and
+`docs/architecture.md` (AGENTS.md rules 22, 23 and 25). Never put internal
+package names or file paths on the public docs site.
 
 ## Tests and evidence
 

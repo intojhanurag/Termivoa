@@ -11,17 +11,16 @@ This file is the internal map of the system. The code on `main` is the source
 of truth. The specification is [implementation-plan.md](implementation-plan.md).
 User docs live in `site/src/content/docs/docs/`.
 
-Stored-login cleanup (#256, owner-approved, not merged):
+Stored-login cleanup (#256, merged in #261):
 [ADR 0013](decisions/0013-github-token-file-unlink.md) and
 [github-token-removal.md](github-token-removal.md) replace inode overwrite
-with removal of only the fixed token filename. The draft implementation uses
+with removal of only the fixed token filename. The implementation uses
 `os.Remove` and treats absence as success, with no content open/write or
 size-based allocation. Other hard-linked names and final symlink targets are
 not overwritten; removal makes no secure-erasure or arbitrary replacement-race
 guarantee. Independent security/feasibility reviews of `0da5258` found no
-blocker; owner approved design and implementation on 2026-10-09, subject to
-required checks. Combined local verification passed in the coordinator checkout.
-Native Linux/Windows and required checks remain pending; main is unchanged.
+blocker; owner approved design and implementation on 2026-10-09. Native
+Linux/Windows runs remain pending.
 Separate #213/#255 work is not bundled.
 
 ## 1. Big picture
@@ -274,7 +273,7 @@ WebSocket uses JSON text messages. Counters travel as decimal strings.
 History conversion reuses the exact row JSON length measured by row bounding.
 It admits rows using that sum, commas and generated empty-row metadata,
 without repeatedly encoding earlier rows. The 1 MiB envelope budget, 1 KiB
-reserve and all semantic validators remain unchanged. See [history.md](history.md).
+reserve and all semantic validators remain unchanged. See [terminal-history.md](terminal-history.md#how-does-the-host-build-a-history-page).
 
 The broker sends generated terminal payloads through `protocol.EncodeHost`,
 which shares envelope and semantic validators with strict received-message
@@ -413,13 +412,12 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 
 ## 9. Key invariants
 
-Local security repair (#255, not merged): [ADR 0012](decisions/0012-private-file-permission-repair.md)
+Local security repair (#255, merged in #264): [ADR 0012](decisions/0012-private-file-permission-repair.md)
 and [private-file-permissions.md](private-file-permissions.md) describe private-file
 permission repair bound to one validated open object, rejecting final links and
-shared hard links before mutation. Owner approved design and implementation on 2026-10-09, subject to required checks;
-local implementation has source/local security and pinned feasibility reviews,
-but awaits native evidence and required checks and does not change current-main
-guarantees. Windows lock repair and locking use the same opened object.
+shared hard links before mutation. Owner approved design and implementation on 2026-10-09
+after security and feasibility reviews; native-platform evidence is still
+pending. Windows lock repair and locking use the same opened object.
 
 - The gateway never spawns a shell and never opens SQLite. It has no PTY or Store.
 - Only the broker writes to a PTY, through one writer per session.
@@ -484,7 +482,7 @@ assembly and request resync before indexing or painting. Strict transport
 validation remains separate; valid frame/protocol behavior is unchanged.
 [Desktop frame client](desktop-frame-client.md), issue #247.
 
-### Uninstall cleanup (#213, owner-approved, not merged)
+### Uninstall cleanup (#213, merged in #250)
 
 [ADR 0011](decisions/0011-uninstall-github-revocation.md) and
 [uninstall-github.md](uninstall-github.md) propose revoking the stored GitHub
