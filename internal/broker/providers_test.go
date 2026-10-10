@@ -1396,10 +1396,42 @@ func TestSettingsReadLooksForHerdrAgain(t *testing.T) {
 		t.Fatal("a second read within 2 s asked again")
 	}
 	fixture.waitState(t, protocol.HTTPProviderStateReady)
-	// Ready: a read asks nothing.
+	// Ready: refresh installed-agent availability too, under the same throttle.
 	before := host.looked.Load()
-	if host.settingsInfo(time.Now().Add(time.Minute)); host.looked.Load() != before {
-		t.Fatal("a read of a ready provider asked the loop to look")
+	if host.settingsInfo(time.Now().Add(time.Minute)); host.looked.Load() == before {
+		t.Fatal("a read of a ready provider did not ask for fresh agent availability")
+	}
+}
+
+// A ready provider otherwise keeps its installed-kind scan for 30 s. Reading
+// actual gateway settings must request a fresh scan, not just return that cache.
+func TestSettingsReadRefreshesInstalledHerdrKindsWhileReady(t *testing.T) {
+	fixture := newProviderFixture(t)
+	bin := filepath.Join(fixture.config.Home, "agents")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixture.config.PathEnv = bin
+	fixture.attach(t)
+	fixture.waitState(t, protocol.HTTPProviderStateReady)
+	if info, _ := fixture.server.providers.provider.Info(); slices.Contains(info.AgentKinds, "pi") {
+		t.Fatal("absent pi already offered")
+	}
+	command := filepath.Join(bin, "pi")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\nprintf executed > \"$0.ran\"\nexit 99\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := protocol.DecodeRPCPayload[protocol.HTTPSettingsResponse](
+		fixture.gateway.gateway(t, protocol.GatewaySettings, credentialPayload(fixture.credential)))
+	if err != nil || len(settings.Providers) != 1 {
+		t.Fatalf("settings = %+v %v", settings, err)
+	}
+	waitFor(t, func() bool {
+		info, _ := fixture.server.providers.provider.Info()
+		return slices.Contains(info.AgentKinds, "pi")
+	})
+	if _, err := os.Stat(command + ".ran"); !os.IsNotExist(err) {
+		t.Fatalf("discovery executed pi: %v", err)
 	}
 }
 

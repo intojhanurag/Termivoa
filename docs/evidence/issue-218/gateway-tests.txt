@@ -1,0 +1,2 @@
+ok  	github.com/intojhanurag/phone-terminal/internal/gatewayclient	0.654s
+ok  	github.com/intojhanurag/phone-terminal/internal/gateway	2.940s

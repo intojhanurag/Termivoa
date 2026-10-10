@@ -1,0 +1,44 @@
+=== RUN   TestViewerCaptureDeadlineFollowsEligibility
+--- PASS: TestViewerCaptureDeadlineFollowsEligibility (0.00s)
+=== RUN   TestViewerSnapshotCatchupCapturesDirtyOutputOnce
+--- PASS: TestViewerSnapshotCatchupCapturesDirtyOutputOnce (0.00s)
+=== RUN   TestViewerCaptureStopsWhilePatchSinkIsBlocked
+--- PASS: TestViewerCaptureStopsWhilePatchSinkIsBlocked (1.52s)
+=== RUN   TestViewerCaptureDetachAndReattachGetsCurrentScreen
+--- PASS: TestViewerCaptureDetachAndReattachGetsCurrentScreen (1.49s)
+=== RUN   TestViewerCaptureFollowsReadyViewerRate
+=== RUN   TestViewerCaptureFollowsReadyViewerRate/none
+    viewer_capture_test.go:203: mode=none duration=1.475835792s full captures=2 captures/sec=1.4
+=== RUN   TestViewerCaptureFollowsReadyViewerRate/thumbnail
+    viewer_capture_test.go:203: mode=thumbnail duration=1.618203875s full captures=11 captures/sec=6.8
+=== RUN   TestViewerCaptureFollowsReadyViewerRate/mixed
+    viewer_capture_test.go:203: mode=mixed duration=1.64224775s full captures=78 captures/sec=47.5
+--- PASS: TestViewerCaptureFollowsReadyViewerRate (4.77s)
+    --- PASS: TestViewerCaptureFollowsReadyViewerRate/none (1.48s)
+    --- PASS: TestViewerCaptureFollowsReadyViewerRate/thumbnail (1.62s)
+    --- PASS: TestViewerCaptureFollowsReadyViewerRate/mixed (1.67s)
+=== RUN   TestViewerCaptureWaitsForSnapshotAcknowledgement
+--- PASS: TestViewerCaptureWaitsForSnapshotAcknowledgement (1.50s)
+=== RUN   TestViewerSnapshotBoundaryAndExactPatchBase
+--- PASS: TestViewerSnapshotBoundaryAndExactPatchBase (0.07s)
+=== RUN   TestViewerResyncInterruptsSnapshotAndWrongAckForcesFreshSnapshot
+--- PASS: TestViewerResyncInterruptsSnapshotAndWrongAckForcesFreshSnapshot (0.01s)
+=== RUN   TestStalledViewerDisconnectsWithoutBackpressuringCanonicalState
+--- PASS: TestStalledViewerDisconnectsWithoutBackpressuringCanonicalState (0.10s)
+=== RUN   TestFinalPublishedFrameDrainsBeforeSessionRetirement
+--- PASS: TestFinalPublishedFrameDrainsBeforeSessionRetirement (0.01s)
+=== RUN   TestNoViewerOutputProgressesAndAttachGetsCurrentSnapshot
+--- PASS: TestNoViewerOutputProgressesAndAttachGetsCurrentSnapshot (0.00s)
+=== RUN   TestThumbnailViewerIsRateLimitedAndEndsOnCanonicalScreen
+    viewer_thumbnail_test.go:125: flood=1.444470625s normal patches=75 thumbnail patches=8
+--- PASS: TestThumbnailViewerIsRateLimitedAndEndsOnCanonicalScreen (1.63s)
+=== RUN   TestThumbnailTrailingTimerPaintsFinalFrame
+--- PASS: TestThumbnailTrailingTimerPaintsFinalFrame (0.26s)
+=== RUN   TestThumbnailSkippedFrameArmsOneTrailingTimer
+--- PASS: TestThumbnailSkippedFrameArmsOneTrailingTimer (0.10s)
+=== RUN   TestThumbnailViewerCannotTakeControl
+--- PASS: TestThumbnailViewerCannotTakeControl (0.01s)
+=== RUN   TestThumbnailTimerLeavesNoGoroutines
+--- PASS: TestThumbnailTimerLeavesNoGoroutines (0.06s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/broker	11.929s

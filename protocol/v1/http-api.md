@@ -298,8 +298,12 @@ computer lists.
   device, counting pending or attempted changes; refusals before a mutating
   operation return their reservation; one at a time per computer) makes a
   worktree in a group and may
-  start an agent of one of `agentKinds` with a first prompt. It runs in the
-  broker's own context, so a phone that disconnects does not cut it short.
+  start an agent of one of `agentKinds` with a first prompt. These are herdr's
+  advertised start kinds with an installed canonical command or a currently
+  running agent, at most 16, ordered by running count then name. Discovery
+  never executes an agent; installation is a hint, not a successful-launch
+  guarantee. The create runs in the broker's own context, so a phone that
+  disconnects does not cut it short.
   An agent that does not start is not an error: `agentStarted` is `false`
   with `problem`.
 - `POST /api/v1/providers/{provider}/manage` (revision 5; at most 30 per

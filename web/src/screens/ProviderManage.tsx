@@ -351,7 +351,7 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
   const [prompt, setPrompt] = useState('');
   const { busy, running, run } = useAction<ItemBusy>();
   useReturnFocus();
-  // The kinds are from the app's last settings read, and the computer offers a kind only while an agent of it runs:
+  // The kinds are from the app's last settings read; installed commands can change:
   // read them again when the menu opens (New tab asks only when there is a kind) and when the chooser opens.
   const chooser = mode === 'newTab';
   const first = useRef(true);

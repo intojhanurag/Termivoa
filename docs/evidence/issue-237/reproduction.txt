@@ -1,0 +1,5 @@
+=== RUN   TestAuditSnapshotRowOverflow
+    audit_snapshot_overflow_test.go:12: strict DecodeHost accepted startRow=9223372036854775807 with one row; schema maximum is 199
+--- PASS: TestAuditSnapshotRowOverflow (0.00s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/protocol	0.464s

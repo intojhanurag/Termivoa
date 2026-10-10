@@ -37,7 +37,7 @@ describe('providerSources', () => {
   it('does not poll a provider that is not installed, and gives it no tab and no count', () => {
     const absent = info({ state: 'notInstalled', canInstall: true });
     const [source] = providerSources([okEntry(mac, { protocolRevision: 5, providers: [absent] })]);
-    // It stays a source (its card in Settings → Integrations), but the scheduler never gets its key.
+    // It stays a source (its card in Settings → (computer)), but the scheduler never gets its key.
     expect(source?.info.state).toBe('notInstalled');
     expect(polled({ info: absent })).toBe(false);
     expect(polled({ info: info() })).toBe(true);

@@ -1,0 +1,12 @@
+=== RUN   TestSoakThreeBusySessions
+    soak_test.go:47: config: sessions=3 rate=65536 B/s/session duration=30s reconnectEvery=20s warmUp=7.5s
+    soak_test.go:48: idle broker: t=  0.0s rss=  24.9MiB cpu=  0.02s heap=   4.3MiB goMapped=  16.9MiB goroutines=  23 children=0
+    soak_test.go:99: sample t=  0.5s rss=  54.4MiB cpu=  0.15s heap=   4.3MiB goMapped=  16.9MiB goroutines=  23 children=3
+    soak_test.go:99: sample t=  5.5s rss= 131.5MiB cpu=  1.54s heap=  62.8MiB goMapped= 120.6MiB goroutines=  68 children=3
+    soak_test.go:99: sample t= 10.8s rss= 131.7MiB cpu=  3.02s heap=  67.3MiB goMapped= 120.6MiB goroutines=  68 children=3
+    soak_test.go:99: sample t= 15.8s rss= 131.8MiB cpu=  4.45s heap=  58.2MiB goMapped= 120.6MiB goroutines=  68 children=4
+    soak_test.go:101: broker children = 4, want 3
+--- FAIL: TestSoakThreeBusySessions (16.07s)
+FAIL
+FAIL	github.com/intojhanurag/phone-terminal/tests/soak	16.694s
+FAIL

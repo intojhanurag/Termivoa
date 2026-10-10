@@ -1,7 +1,7 @@
 ---
 title: Notifications
 description: Termivoa sends a phone notification when a coding agent waits for you or finishes, with only names and status, never any terminal text.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-08
 ---
 
 Termivoa sends a notification to your phone when a coding agent waits for you or finishes.
@@ -52,6 +52,13 @@ Before `v0.1.0-beta.3`, only home sent notifications. On iPhone, notifications f
 ## How are notifications sent?
 
 The computer that runs the session, which must be awake, sends them through your phone's normal push service (Apple, Google, Mozilla or Microsoft). There is no Termivoa cloud service.
+
+**Next beta:** many other phones whose push services do not answer no longer use up the whole send window before your phone gets a delivery attempt. Delivery still depends on your phone's push service and internet connection.
+
+| Push-service result | What happens next |
+| --- | --- |
+| A request takes too long or the service cannot be reached | Termivoa keeps the subscription and tries again on a later notification. |
+| The service says the subscription has expired | Termivoa removes that subscription. Open Termivoa with notifications on to subscribe again. |
 
 ## Turn notifications off
 

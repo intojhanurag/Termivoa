@@ -1,0 +1,14 @@
+=== RUN   TestSlowRPCDoesNotBlockAuthentication
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/create
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/terminate
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/push_test
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/preview_scan
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/provider_open
+--- PASS: TestSlowRPCDoesNotBlockAuthentication (0.01s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/create (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/terminate (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/push_test (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/preview_scan (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/provider_open (0.00s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/gatewayclient	1.523s
