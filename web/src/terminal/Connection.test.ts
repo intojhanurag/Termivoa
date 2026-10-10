@@ -5,6 +5,7 @@ import {
   DELIVERY_UNCERTAIN,
   FILES_TIMEOUT_MS,
   HEARTBEAT_MS,
+  HISTORY_TIMEOUT_MS,
   RECONNECT_DELAYS_MS,
   RESUME_CHECK_MS,
   RESUME_PROBE_MS,
@@ -553,6 +554,153 @@ describe('History/Selection', () => {
 
     connection.closeHistory();
     expect(connection.getHistory()).toBeUndefined();
+  });
+
+  it('loads byte-trimmed pages past 25 without joining a partial history to the screen', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    // The real retained styled-history fixture needs 40 pages: 39 x 41,
+    // followed by 33 rows, because each wire page hits the byte budget.
+    for (let page = 0; page < 40; page++) {
+      const offset = page * 41;
+      const count = page === 39 ? 33 : 41;
+      expect(socket().sent.at(-1)).toMatchObject({ type: 'history.read', payload: { offset } });
+      socket().receive('history.page', {
+        historyEpoch: '1', historyRevision: '0', columns: 20, offset,
+        rows: Array.from({ length: count }, (_, i) => row(`line ${offset + i}`)),
+        ...(page === 39 ? {} : { nextOffset: offset + count }), complete: page === 39,
+      });
+      expect(connection.getHistory()?.state).toBe(page === 39 ? 'ready' : 'loading');
+    }
+    expect(connection.getHistory()).toMatchObject({ state: 'ready', historyRows: 1632 });
+    expect(connection.getHistory()?.lines[1631]).toBe('line 1631');
+    expect(connection.getHistory()?.lines[1632]).toBe('$ ls');
+    connection.detach();
+  });
+
+  it('loads all 5,000 retained rows even when a page contains only one row', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    for (let offset = 0; offset < 5000; offset++) {
+      socket().receive('history.page', {
+        historyEpoch: '1', historyRevision: '0', columns: 20, offset, rows: [row('old')],
+        ...(offset === 4999 ? {} : { nextOffset: offset + 1 }), complete: offset === 4999,
+      });
+    }
+    expect(connection.getHistory()).toMatchObject({ state: 'ready', historyRows: 5000 });
+    expect(socket().types().filter((type) => type === 'history.read')).toHaveLength(5000);
+    connection.detach();
+  });
+
+  it('does not reset the request budget after the history changes', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    for (let offset = 0; offset < 4998; offset++) {
+      socket().receive('history.page', {
+        historyEpoch: '1', historyRevision: '0', columns: 20, offset, rows: [row('old')],
+        nextOffset: offset + 1, complete: false,
+      });
+    }
+    socket().receive('history.changed', { historyEpoch: '1', historyRevision: '1' });
+    socket().receive('history.page', {
+      historyEpoch: '1', historyRevision: '1', columns: 20, offset: 0, rows: [row('new')],
+      nextOffset: 1, complete: false,
+    });
+    expect(connection.getHistory()).toMatchObject({ state: 'unavailable', lines: [], historyRows: 0 });
+    expect(socket().types().filter((type) => type === 'history.read')).toHaveLength(5000);
+    connection.detach();
+  });
+
+  it('refuses a cursor that skips rows instead of claiming a complete transcript', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    socket().receive('history.page', {
+      historyEpoch: '1', historyRevision: '0', columns: 20, offset: 0,
+      rows: [row('old')], nextOffset: 2, complete: false,
+    });
+    expect(connection.getHistory()).toMatchObject({ state: 'unavailable', lines: [], historyRows: 0 });
+    expect(socket().types().filter((type) => type === 'history.read')).toHaveLength(1);
+    connection.detach();
+  });
+
+  it('uses one loading deadline across restarts and ignores replies after it expires', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    await vi.advanceTimersByTimeAsync(HISTORY_TIMEOUT_MS - 1);
+    socket().receive('history.changed', { historyEpoch: '1', historyRevision: '1' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(connection.getHistory()?.state).toBe('unavailable');
+    socket().receive('history.page', {
+      historyEpoch: '1', historyRevision: '1', columns: 20, offset: 0, rows: [row('late')], complete: true,
+    });
+    expect(connection.getHistory()).toMatchObject({ state: 'unavailable', lines: [] });
+    connection.detach();
+  });
+
+  it('clears the deadline on completion, close, and reopening history', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    await vi.advanceTimersByTimeAsync(HISTORY_TIMEOUT_MS / 2);
+    connection.closeHistory();
+    connection.openHistory();
+    await vi.advanceTimersByTimeAsync(HISTORY_TIMEOUT_MS / 2);
+    expect(connection.getHistory()?.state).toBe('loading');
+    socket().receive('history.page', {
+      historyEpoch: '1', historyRevision: '0', columns: 20, offset: 0, rows: [], complete: true,
+    });
+    await vi.advanceTimersByTimeAsync(HISTORY_TIMEOUT_MS);
+    expect(connection.getHistory()?.state).toBe('ready');
+    connection.detach();
+  });
+
+  it('drops incomplete text when its memory budget is exceeded', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    const largeRow = { runs: row().runs.map((run) => ({
+      ...run, cells: run.cells.map((cell) => ({ ...cell, text: 'x'.repeat(1024) })),
+    })) };
+    // 10 rows per message remains below the 1 MiB wire bound. Text retained
+    // across valid pages eventually exceeds the phone's 32 MiB budget.
+    for (let offset = 0; offset < 1000 && connection.getHistory()?.state === 'loading'; offset += 10) {
+      socket().receive('history.page', {
+        historyEpoch: '1', historyRevision: '0', columns: 20, offset,
+        rows: Array.from({ length: 10 }, () => largeRow), nextOffset: offset + 10, complete: false,
+      });
+    }
+    expect(connection.getHistory()).toMatchObject({ state: 'unavailable', lines: [], historyRows: 0 });
+    expect(socket().types().filter((type) => type === 'history.read').length).toBeLessThan(100);
+    connection.detach();
+  });
+
+  it('bounds received page data across restarts even when flattened text is small', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    connection.openHistory();
+    const linkedRow = { runs: row('old').runs.map((run) => ({
+      ...run, cells: run.cells.map((cell) => ({ ...cell, link: `https://example.test/${'x'.repeat(2000)}` })),
+    })) };
+    let restarted = false;
+    for (let offset = 0; offset < 2000 && connection.getHistory()?.state === 'loading'; offset += 10) {
+      socket().receive('history.page', {
+        historyEpoch: '1', historyRevision: '0', columns: 20, offset,
+        rows: Array.from({ length: 10 }, () => linkedRow), nextOffset: offset + 10, complete: false,
+      });
+      if (offset === 990 && !restarted) {
+        restarted = true;
+        socket().receive('history.changed', { historyEpoch: '1', historyRevision: '0' });
+        offset = -10;
+      }
+    }
+    expect(connection.getHistory()).toMatchObject({ state: 'unavailable', lines: [], historyRows: 0 });
+    expect(socket().types().filter((type) => type === 'history.read').length).toBeLessThan(200);
+    connection.detach();
   });
 
   it('restarts from a new token after history.changed', async () => {

@@ -1,0 +1,7 @@
+=== RUN   TestAudit213HardlinkDeleteDoesNotMutateOtherName
+    audit_security_probe_test.go:20: outside target unchanged=false bytes=50
+    audit_security_probe_test.go:21: token deletion zeroed another file name outside data directory
+--- FAIL: TestAudit213HardlinkDeleteDoesNotMutateOtherName (0.01s)
+FAIL
+FAIL	github.com/intojhanurag/phone-terminal/internal/github	0.681s
+FAIL

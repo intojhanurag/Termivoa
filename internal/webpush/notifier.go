@@ -49,11 +49,11 @@ const (
 	// allowed push service, so 192 is far under the memory and the 1024 file
 	// descriptors of a small VPS. It needs every push service to hang for two
 	// minutes while every budget is full.
-	// ponytail: a request that hangs holds its worker for the client's 10 s
-	// timeout, so 24 hung endpoints (6 rounds of 4) ahead of a phone still
-	// use the whole deadline. Give each push host its own workers if that
-	// ever happens.
 	deliverFanOut = 4
+	// Each request also shares the delivery window with all queued endpoints.
+	// Half the remaining window is reserved for encryption, scheduling and
+	// cleanup, so hung endpoints do not spend all of it on earlier waves.
+	maxEndpointTimeout = 10 * time.Second
 
 	maxLabelRunes = 60
 	// providerLabelRunes bounds each name of a provider push: 39 runes and
@@ -306,6 +306,11 @@ func (notifier *Notifier) deliver(ctx context.Context, deviceID string, message 
 	if err != nil {
 		return 0, err
 	}
+	requestTimeout := maxEndpointTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		waves := (len(subscriptions) + deliverFanOut - 1) / deliverFanOut
+		requestTimeout = min(requestTimeout, time.Until(deadline)/time.Duration(2*max(1, waves)))
+	}
 	queue := make(chan store.PushSubscription, len(subscriptions))
 	for _, subscription := range subscriptions {
 		queue <- subscription
@@ -326,9 +331,11 @@ func (notifier *Notifier) deliver(ctx context.Context, deviceID string, message 
 				if notifier.config.Revoked(subscription.DeviceID) {
 					continue
 				}
-				status, err := Send(ctx, notifier.config.Client, notifier.keys, Subscription{
+				requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+				status, err := Send(requestCtx, notifier.config.Client, notifier.keys, Subscription{
 					Endpoint: subscription.Endpoint, P256dh: subscription.P256dh, Auth: subscription.Auth,
 				}, payload, Subject, ttl, urgency)
+				cancel()
 				switch {
 				case err == nil && status >= 200 && status < 300:
 					accepted.Add(1)

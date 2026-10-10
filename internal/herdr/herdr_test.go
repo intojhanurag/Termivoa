@@ -233,7 +233,7 @@ func TestParseKinds(t *testing.T) {
 	if parseKinds([]byte("no list here")) != nil {
 		t.Fatal("kinds without a list")
 	}
-	if got := agentKinds([]string{"pi", "claude", "codex", "gemini"}, map[string]int{"codex": 1, "claude": 3, "gemini": 1, "amp": 9}); !reflect.DeepEqual(got, []string{"claude", "codex", "gemini"}) {
+	if got := agentKinds([]string{"pi", "claude", "codex", "gemini"}, map[string]int{"codex": 1, "claude": 3, "gemini": 1, "amp": 9}, nil); !reflect.DeepEqual(got, []string{"claude", "codex", "gemini"}) {
 		t.Fatal(got)
 	}
 }

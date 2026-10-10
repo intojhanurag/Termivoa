@@ -365,7 +365,8 @@ func TestLinuxSetupAndUninstallUseSystemdUserUnits(t *testing.T) {
 	if got := fake.mutations(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("uninstall ran %q", got)
 	}
-	for _, path := range []string{broker, env.paths.DataDir, filepath.Dir(env.paths.LogDir)} {
+	assertOnlyOwnershipMarker(t, env.paths.DataDir)
+	for _, path := range []string{broker, filepath.Dir(env.paths.LogDir)} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s survived uninstall --delete-data", path)
 		}

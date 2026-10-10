@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/http';
 import type { HTTPProviderManageResponse } from '../generated/protocol';
 import { ADD_FOLDER_COMMAND } from './providers';
-import { SLOW, addFolderStep, NO_SESSION, CHANGED, closesTogether, closeWorktreesFirst, endsTerminal, ItemMenu, itemRequest, LAST_TAB, manageStep, NoteLine, openRequest, readsKinds, StartButton, tabChooser, WorkspaceList, type ManageNote } from './ProviderManage';
+import { SLOW, addFolderStep, NO_SESSION, CHANGED, CLOSE_CHANGED, closesTogether, closeWorktreesFirst, endsTerminal, ItemMenu, itemRequest, LAST_TAB, LAST_TAB_HINT, manageStep, NoteLine, openRequest, StartButton, tabChooser, TOGETHER_TAB_HINT, WorkspaceList, WORKTREES_FIRST_TAB_HINT, type ManageNote } from './ProviderManage';
 import { group, item, mac, providerEntry, ready, settingsWith, shopGroups, target, vps } from './providerFixtures';
 
 const noop = () => undefined;
@@ -136,7 +136,7 @@ describe('one manage action', () => {
   it('reads the list again and says it changed when the item left or was renamed', async () => {
     for (const code of ['operation_conflict', 'session_missing'] as const) {
       const reload = vi.fn(async () => undefined);
-      await expect(manageStep(itemRequest('closeItem', linked), refuse(code, 409), reload, words)).resolves.toEqual({ kind: 'changed' });
+      await expect(manageStep(itemRequest('closeItem', linked), refuse(code, 409), reload, words)).resolves.toEqual(code === 'operation_conflict' ? { kind: 'changed', text: CLOSE_CHANGED } : { kind: 'changed' });
       expect(reload).toHaveBeenCalledTimes(1);
     }
     expect(CHANGED).toBe('The list changed. Look again, then try again.');
@@ -172,12 +172,6 @@ describe('one manage action', () => {
     expect(closesTogether(shop, linked)).toBe(false);
     expect(closesTogether(group('ws-w5', 'notes', [main]), main)).toBe(false);
   });
-
-  it('reads the agent kinds again when the menu opens and when the chooser opens, not when the chooser closes', () => {
-    expect(readsKinds(false, true)).toBe(true);
-    expect(readsKinds(true, false)).toBe(true);
-    expect(readsKinds(false, false)).toBe(false);
-  });
 });
 
 describe('the item menu', () => {
@@ -211,6 +205,7 @@ describe('the item menu', () => {
     const page = menu({ group: group('g1', 'site', [site, item('w7', 'moved', [])]), item: site });
     expect(page).toContain('<button type="button" class="danger" disabled="" aria-describedby="close-first">Close workspace</button>');
     expect(page).toContain('<p id="close-first" class="hint-text"><bdi>herdr</bdi> closes the workspaces at this project&#x27;s main folder only together. Close them in <bdi>herdr</bdi> on vps.</p>');
+    expect(page).toContain(`<p class="hint-text">${TOGETHER_TAB_HINT}</p>`);
     expect(page).not.toContain('Close its worktrees first.');
   });
 
@@ -266,8 +261,9 @@ describe('the item menu', () => {
       const page = menu();
       expect(page).toContain('<span class="tab-row-name"><bdi>1</bdi></span>');
       expect(page).not.toContain('Close tab');
-      expect(page).toContain('<p class="hint-text">Close the workspace to end its last tab.</p>');
-      expect(menu({ item: item('w5', 'notes', []) })).toContain('Close the workspace to end its last tab.');
+      expect(page).toContain(`<p class="hint-text">${LAST_TAB_HINT}</p>`);
+      expect(LAST_TAB_HINT).toBe('Close the workspace to end its last tab.');
+      expect(menu({ item: item('w5', 'notes', []) })).toContain(`<p class="hint-text">${WORKTREES_FIRST_TAB_HINT}</p>`);
     });
 
     it('asks before a tab closes, by its label; busy says Closing…', () => {
@@ -298,10 +294,10 @@ describe('the item menu', () => {
     });
 
     it('says so when a fresh settings read took the picked agent away: no agent is started in its place (issue 195)', () => {
-      const page = chooser({ agent: undefined, dropped: 'codex is not running in herdr now.' });
-      expect(page).toContain('<p role="status" class="hint-text">codex is not running in herdr now.</p>');
+      const page = chooser({ agent: undefined, dropped: 'codex is not available in herdr now.' });
+      expect(page).toContain('<p role="status" class="hint-text">codex is not available in herdr now.</p>');
       expect(page).not.toContain('>Start</button>');
-      expect(chooser()).not.toContain('is not running in');
+      expect(chooser()).not.toContain('is not available in');
     });
 
     it('below revision 6, or with no agent kind, New tab is the action itself (a busy button), as before; at revision 6 it is a plain row that opens the chooser', () => {
@@ -392,6 +388,11 @@ describe('the item menu', () => {
     expect(page).not.toContain('not committed');
     expect(page.match(/<button/gu)).toHaveLength(1);
     expect(page).toContain('>Close</button>');
+    // A Close workspace conflict (issue 210): its own words, still no actions.
+    const closing = menu({ mode: 'changed', note: { kind: 'error', text: CLOSE_CHANGED } });
+    expect(closing).toContain(CLOSE_CHANGED);
+    expect(closing).not.toContain(CHANGED);
+    expect(closing.match(/<button/gu)).toHaveLength(1);
   });
 });
 

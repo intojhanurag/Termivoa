@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Termivoa sheet focus fixture</title>
+    <style>
+      body { font: 16px system-ui; margin: 24px; background: #101923; color: #eef0ed; }
+      button, input { font: inherit; margin: 8px; padding: 8px; }
+      .sheet { padding: 20px; margin: 16px 0; border: 2px solid #6bd5de; }
+      :focus { outline: 3px solid #ffca77; }
+    </style>
+  </head>
+  <body>
+    <h1>Termivoa sheet focus fixture</h1>
+    <p>Demo controls only. Open the sheet with a keyboard, then close it with Escape or Close.</p>
+    <div id="root"></div>
+    <pre id="results"></pre>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

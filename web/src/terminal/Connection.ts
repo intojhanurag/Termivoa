@@ -74,7 +74,12 @@ export const FILES_TIMEOUT_MS = 15_000;
 /** WebSocket.OPEN, without depending on the global in tests. */
 const SOCKET_OPEN = 1;
 const HISTORY_PAGE_ROWS = 200;
-const MAX_HISTORY_PAGES = 25;
+// Pages are byte-limited too: even one retained row can fill a page.
+const MAX_HISTORY_ROWS = 5_000;
+const MAX_HISTORY_REQUESTS = MAX_HISTORY_ROWS;
+const MAX_HISTORY_TEXT_BYTES = 32 * 1024 * 1024;
+const MAX_HISTORY_RECEIVED_BYTES = 128 * 1024 * 1024;
+export const HISTORY_TIMEOUT_MS = 60_000;
 // Continuous output bumps the history revision on every scrolled line.
 const MAX_HISTORY_RESTARTS = 5;
 const OPEN = 1;
@@ -296,7 +301,9 @@ interface HistoryState {
   epoch: string;
   revision: string;
   expectedOffset: number;
-  pages: number;
+  requests: number;
+  textBytes: number;
+  receivedBytes: number;
   restarts: number;
   advanced: boolean;
   history: string[];
@@ -364,6 +371,7 @@ export class Connection {
   private screen: ScreenMetadata | undefined;
   private screenRows: TerminalRow[] = [];
   private history: HistoryState | undefined;
+  private historyTimer: ReturnType<typeof setTimeout> | undefined;
   private changes: ChangesState | undefined;
   /** The list request that nobody asked for (the away recap): a refusal of it says nothing. */
   private quietList: string | undefined;
@@ -540,11 +548,14 @@ export class Connection {
     if (this.status.link !== 'live' || screen === undefined) {
       return false;
     }
+    clearTimeout(this.historyTimer);
     this.history = {
       epoch: screen.historyEpoch,
       revision: screen.historyRevision,
       expectedOffset: 0,
-      pages: 0,
+      requests: 0,
+      textBytes: 0,
+      receivedBytes: 0,
       restarts: 0,
       advanced: false,
       history: [],
@@ -554,6 +565,7 @@ export class Connection {
     if (screen.buffer === 'alternate') {
       this.finishHistory();
     } else {
+      this.historyTimer = setTimeout(() => this.failHistory(), HISTORY_TIMEOUT_MS);
       this.readHistory(0);
     }
     this.emit();
@@ -561,6 +573,8 @@ export class Connection {
   }
 
   closeHistory(): void {
+    clearTimeout(this.historyTimer);
+    this.historyTimer = undefined;
     this.history = undefined;
     this.emit();
   }
@@ -1015,7 +1029,7 @@ export class Connection {
           this.queuePatch({ generation, ...message.payload });
           return;
         case 'history.page':
-          this.handleHistoryPage(message.payload);
+          this.handleHistoryPage(message.payload, typeof data === 'string' ? data.length * 2 : 0);
           return;
         case 'history.changed':
           this.handleHistoryChanged(message.payload);
@@ -1382,16 +1396,22 @@ export class Connection {
     if (history === undefined) {
       return;
     }
+    if (history.requests >= MAX_HISTORY_REQUESTS) {
+      this.failHistory();
+      return;
+    }
+    history.requests++;
     history.expectedOffset = offset;
-    this.sendSession('history.read', {
+    const request = this.sendSession('history.read', {
       historyEpoch: history.epoch,
       historyRevision: history.revision,
       offset,
       limit: HISTORY_PAGE_ROWS,
     });
+    if (request === undefined) this.failHistory();
   }
 
-  private handleHistoryPage(page: HistoryPagePayload): void {
+  private handleHistoryPage(page: HistoryPagePayload, receivedBytes: number): void {
     const history = this.history;
     if (
       history === undefined
@@ -1402,15 +1422,32 @@ export class Connection {
     ) {
       return;
     }
-    history.history.push(...page.rows.map(rowText));
-    history.pages++;
     const next = page.nextOffset;
-    if (page.complete || next === undefined || next <= page.offset || history.pages >= MAX_HISTORY_PAGES) {
+    const rowCount = history.history.length + page.rows.length;
+    // A cursor must account for every returned row. Never splice the frozen
+    // screen after missing history, including when a local budget is reached.
+    if (rowCount > MAX_HISTORY_ROWS
+      || (page.complete && next !== undefined)
+      || (!page.complete && (page.rows.length === 0 || next !== rowCount))
+      || history.receivedBytes + receivedBytes > MAX_HISTORY_RECEIVED_BYTES) {
+      this.failHistory();
+      return;
+    }
+    const lines = page.rows.map(rowText);
+    const textBytes = lines.reduce((total, line) => total + line.length * 2, 0);
+    if (history.textBytes + textBytes > MAX_HISTORY_TEXT_BYTES) {
+      this.failHistory();
+      return;
+    }
+    history.receivedBytes += receivedBytes;
+    history.textBytes += textBytes;
+    history.history.push(...lines);
+    if (page.complete) {
       this.finishHistory();
       this.emit();
       return;
     }
-    this.readHistory(next);
+    this.readHistory(rowCount);
   }
 
   /** The history moved under us: restart from a new consistent snapshot. */
@@ -1420,17 +1457,27 @@ export class Connection {
       return;
     }
     if (++history.restarts > MAX_HISTORY_RESTARTS) {
-      history.view = { ...history.view, state: 'unavailable' };
-      this.emit();
+      this.failHistory();
       return;
     }
     history.epoch = changed.historyEpoch;
     history.revision = changed.historyRevision;
-    history.pages = 0;
+    history.textBytes = 0;
     history.advanced = false;
     history.history = [];
     history.screen = this.screenRows.map(rowText);
     this.readHistory(0);
+  }
+
+  private failHistory(): void {
+    const history = this.history;
+    if (history === undefined || history.view.state !== 'loading') return;
+    clearTimeout(this.historyTimer);
+    this.historyTimer = undefined;
+    history.history = [];
+    history.screen = [];
+    history.view = { state: 'unavailable', lines: [], historyRows: 0, newOutput: false };
+    this.emit();
   }
 
   private finishHistory(): void {
@@ -1438,6 +1485,8 @@ export class Connection {
     if (history === undefined) {
       return;
     }
+    clearTimeout(this.historyTimer);
+    this.historyTimer = undefined;
     history.view = {
       state: 'ready',
       lines: [...history.history, ...history.screen],
@@ -1736,9 +1785,7 @@ export class Connection {
     this.pendingPatch = undefined;
     this.frameScheduled = false;
     this.dropControl(undefined);
-    if (this.history?.view.state === 'loading') {
-      this.history.view = { ...this.history.view, state: 'unavailable' };
-    }
+    this.failHistory();
     // Replies to this socket's requests can no longer arrive.
     this.failChanges(undefined);
     this.failFiles(undefined);
@@ -1782,6 +1829,7 @@ export class Connection {
     this.clearProbe();
     clearTimeout(this.attachTimer);
     this.stopHeartbeat();
+    this.failHistory();
     this.dropControl(undefined);
     const socket = this.socket;
     this.socket = undefined;

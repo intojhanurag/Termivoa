@@ -1,6 +1,8 @@
 ---
 title: Set up a GitHub repository
 description: Termivoa connects each of your computers to GitHub from the phone, lists your repositories, and clones one onto a computer with one tap.
+lastUpdated: 2026-10-10
+
 lastUpdated: 2026-10-08
 ---
 
@@ -23,7 +25,7 @@ This page describes a feature that is not in `v0.1.0-beta.3` yet. Update Termivo
 
 Each computer connects on its own. Do these steps one time for each computer.
 
-1. Open **Settings → Integrations**. Each computer has a row **GitHub on mac** (with the name of that computer). Tap **Connect**.
+1. Open **Settings** and tap the computer's card, such as **mac**. Its page has a **GitHub** part with the row **GitHub on mac**. Tap **Connect**. (A card that is not connected yet shows the chip **Connect GitHub**.)
 2. The sheet shows an 8-character code. Tap **Copy code and open GitHub**. This copies the code and opens <https://github.com/login/device>.
 3. On GitHub, paste the code and authorize **Termivoa**.
 4. One time for each GitHub account: the sheet says **Choose repositories**. Tap **Choose on GitHub** and pick **All repositories** or only some. GitHub can send you to a page that says "Done. Go back to Termivoa." Go back to the app; it continues by itself.
@@ -48,7 +50,7 @@ It reaches only the repositories that you chose on GitHub. It cannot change work
 
 ## How do I put a repository on a computer?
 
-1. In **Settings → Integrations**, tap **Set up a repository** on the row of that computer. Or, in herdr's **New workspace** sheet, tap **From GitHub** next to **Add a folder**.
+1. In **Settings**, tap the computer's card, then **Set up a repository** in its **GitHub** part. Or, in herdr's **New workspace** sheet, tap **From GitHub** next to **Add a folder**.
 2. Search the list, then tap **Set up** on a repository.
 3. The sheet shows the clone with a percent and **Stop**. You can lock the phone; the computer continues.
 4. When it says **Ready on mac**, tap **New session** to open a session in the repository. When herdr runs on that computer, **New workspace in herdr** opens it in herdr.
@@ -97,14 +99,21 @@ When the repository and your git settings have no commit name, Termivoa sets the
 
 ## How do I disconnect?
 
-1. In **Settings → Integrations**, tap **Disconnect** on the row.
+1. In **Settings**, tap the computer's card, then **Disconnect** in its **GitHub** part.
 2. The app asks: "Disconnect GitHub on mac?". Tap **Disconnect**.
 
-Termivoa removes the login at GitHub, then deletes it from the computer. When GitHub did not confirm the removal, the row shows **Also remove Termivoa on GitHub.** Tap it and remove **Termivoa** under **Authorized GitHub Apps**.
+Termivoa asks GitHub to revoke the login, then removes it from the computer. When GitHub did not accept revocation, the row shows **Also remove Termivoa on GitHub.** Tap it and remove **Termivoa** under **Authorized GitHub Apps**.
 
 On the computer you can also run `pterm github disconnect`. See the [CLI reference](/docs/reference/cli/#github).
 
-After Disconnect, `git pull` and `git push` in a folder that Termivoa cloned fail with "Termivoa is not connected to GitHub on this computer. Connect in Settings → Integrations." Connect again to use them.
+**Next beta:** removing the saved login preserves another file linked to the same stored contents. Local removal does not securely erase copies or backups.
+
+| What you need to remove | What to do |
+| --- | --- |
+| This computer's saved login | Use **Disconnect** on that computer's row. |
+| A copied login, or a login on a computer you lost | Revoke **Termivoa** in GitHub's [Authorized GitHub Apps](https://github.com/settings/applications); deleting local data does not itself end copied access. |
+
+After Disconnect, `git pull` and `git push` in a folder that Termivoa cloned fail with "Termivoa is not connected to GitHub on this computer. In Termivoa, open Settings, tap this computer, then Connect." Connect again to use them: in **Settings**, tap the computer's card, then **Connect**.
 
 ## What are the limits?
 
@@ -137,6 +146,20 @@ Yes, in a folder that Termivoa cloned, and in a folder that has your own git log
 ## Back to Termivoa
 
 Done. Go back to Termivoa.
+
+## Why does a saved login become unavailable?
+
+**Next beta:** Termivoa refuses a saved login file that is linked to another
+file or has an unsafe owner or type. It repairs permissions only on a valid
+owned file. Do not make links to saved login files.
+
+| Situation | What to do |
+| --- | --- |
+| You intentionally linked a saved login file | Stop Termivoa and inspect the local file; remove the link only after checking what it points to |
+| You did not create the link or change ownership | Investigate the computer before connecting GitHub again |
+| A normal file only needs tighter permissions | Termivoa repairs its permissions without replacing the file |
+
+See [How are private saved files checked?](/docs/reference/security/#how-are-private-saved-files-checked) and [Why is a private file refused?](/docs/reference/troubleshooting/#why-is-a-private-file-refused).
 
 ## What does a repository's push age mean?
 
