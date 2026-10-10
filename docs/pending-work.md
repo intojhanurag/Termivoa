@@ -72,8 +72,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   (`docs/owner-verification.md`).
 - GitHub: set up a repository on a computer from the phone (ADR 0010,
   `docs/github-integration.md`; the owner approved the design and Contents
-  read and write on 2026-10-07; branch `feat/github-integration`, not
-  merged). **Settings → Integrations** has a row for each computer:
+  read and write on 2026-10-07; implementation merged in
+  [#212](https://github.com/intojhanurag/Termivoa/pull/212), registered App
+  build configuration merged in [#229](https://github.com/intojhanurag/Termivoa/pull/229)).
+  **Settings → Integrations** has a row for each computer:
   **Connect** (device flow, one code for each computer), **Choose on
   GitHub**, **Set up a repository** (list with search, "on mac", "name
   taken"), the clone job with progress and **Stop**, "Ready on mac" with
