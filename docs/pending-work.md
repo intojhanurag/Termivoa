@@ -380,3 +380,13 @@ ADR0011/design and draft implementation/tests/docs are prepared. Independent
 feasibility found and resolved a replacement-lock gap by keeping the private
 empty directory/marker. Final security/feasibility reviews passed after corrections. Owner approved design and implementation on 2026-10-09, subject to required checks. Native evidence,
 required checks and merge remain pending; main still deletes without revoking.
+
+### Safe GitHub token-file removal (#256)
+
+ADR 0013/design-only commit `f5c685e` is open as draft PR #261. Local unlink-only
+implementation, linked/replaced-file regression tests and public docs are
+prepared. macOS GitHub race/vet and Linux/Windows test compilation pass;
+independent security/feasibility reviews of `0da5258` found no blocker.
+Owner approved design and implementation on 2026-10-09, subject to required
+checks. Combined local verification passed in the coordinator checkout; native
+Linux/Windows and required hosted checks remain pending. CI is denied; do not enable or merge. #213/#255 separate.

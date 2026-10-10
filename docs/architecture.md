@@ -11,6 +11,19 @@ This file is the internal map of the system. The code on `main` is the source
 of truth. The specification is [implementation-plan.md](implementation-plan.md).
 User docs live in `site/src/content/docs/docs/`.
 
+Stored-login cleanup (#256, owner-approved, not merged):
+[ADR 0013](decisions/0013-github-token-file-unlink.md) and
+[github-token-removal.md](github-token-removal.md) replace inode overwrite
+with removal of only the fixed token filename. The draft implementation uses
+`os.Remove` and treats absence as success, with no content open/write or
+size-based allocation. Other hard-linked names and final symlink targets are
+not overwritten; removal makes no secure-erasure or arbitrary replacement-race
+guarantee. Independent security/feasibility reviews of `0da5258` found no
+blocker; owner approved design and implementation on 2026-10-09, subject to
+required checks. Combined local verification passed in the coordinator checkout.
+Native Linux/Windows and required checks remain pending; main is unchanged.
+Separate #213/#255 work is not bundled.
+
 ## 1. Big picture
 
 ```text

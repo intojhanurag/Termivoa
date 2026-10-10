@@ -314,6 +314,12 @@ Owner approved the design and implementation on 2026-10-09 in this conversation:
 Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
 
 [Approval evidence](evidence/issue-255/owner-approval.md) supersedes owner-pending
+
+### 2026-10-09: owner approved #256 design and implementation
+
+Owner approved the design and implementation on 2026-10-09 in this conversation: “Approve all three, subject to required checks”. Required checks remain mandatory; CI stays disabled as explicitly requested. This records the owner’s conversation decision, not a GitHub review submitted on their behalf. Nothing is merged or released.
+
+[Approval evidence](evidence/issue-256/owner-approval.md) supersedes owner-pending
 statements in earlier dated entries. Independent reviews remain recorded;
 native Windows/Linux and real-phone gates remain pending. For this internal
 documentation update, `git diff --check` passed and the staged additions were
@@ -413,6 +419,67 @@ hosted check success is claimed. Required GitHub checks still block merge.
   security and feasibility reviews; implementation/tests/full rules 22/25
   docs/site build; native Windows/Linux verification; explicit owner approval.
   Hosted CI is explicitly denied; no enabling, bypass, merge or deployment.
+
+### 2026-10-09 — #256: independent reviews recorded, owner gate still open
+
+Coordinator security and history-agent feasibility/alternatives reviews pinned
+`0da5258750bf09d6915f6c4cfd35530c90480b6b` and found no blocker. The coordinator's
+focused race gate
+`GOTOOLCHAIN=go1.27.1 go test -race ./internal/github -run '^TestDeleteAccount|^TestDisconnectReportsLocalRemovalFailure$' -count=1 -timeout=60s`
+passed, 1.689 s; the feasibility reviewer independently ran
+`go test ./internal/github -run '^TestDeleteAccount|^TestDisconnectReportsLocalRemovalFailure$|^TestDeleteDoesNotFollowASymlink$|^TestDisconnectRevokesAndDeletes$' -count=1 -v`
+on macOS arm64: passed, 0.664 s, no skips. Reviews verified fixed-name/content
+preservation, absence/error handling, unchanged caller behavior and simpler
+unlink alternatives. Go's Windows removal internals may inspect/adjust
+attributes, so the ADR/design now explicitly qualify no inspection as an
+application-code statement rather than a claim about the OS implementation.
+No runtime/public behavior changed in this documentation follow-up.
+
+[Evidence](evidence/issue-256/README.md) records reviewed head and commands.
+The coordinator pushed the implementation to existing draft PR #261; no
+approval/merge/deployment claim. Explicit owner approval, combined integration,
+broader required checks, native Linux/Windows and real-phone evidence remain
+pending. CI is denied. `git diff --check` is the documentation-only check;
+implementation race/vet/protocol/site results remain those recorded below.
+
+### 2026-10-09 — #256: unlink-only local implementation prepared for review
+
+After design-only `f5c685e` opened as draft PR #261, local cleanup now removes
+only the fixed token filename. No inode content write or size buffer remains;
+missing succeeds and other errors propagate. Hard-link and replaced-hard-link
+tests fail before the change and pass after it with outside bytes unchanged.
+Symlink/replaced-symlink, normal/missing/damaged files, empty/nonempty
+directories, repeat removal and caller-local-error regressions pass.
+
+Passed focused `go test ./internal/github` (0.998 s), full package
+`go test -race ./internal/github -count=1 -timeout=120s` (15.351 s),
+`go vet ./internal/github`, Linux/Windows amd64 test compilation with CGO=0,
+frozen workspace install plus `pnpm protocol:check`, frozen site install and
+`npx astro build` (29 pages, valid links). A task-owned common test initially
+referenced Unix-only service fixtures; it was split by the service's build tags
+before final checks. [Evidence](evidence/issue-256/README.md) includes baseline
+and permanent red/green results, commands, limits and full22/25 doc coverage.
+
+Independent final security/feasibility review, owner approval, parent integration,
+broader gates, native Linux/Windows and real-phone evidence remain pending.
+DO NOT MERGE before owner review. CI remains denied. No owner tokens or startup
+settings touched, no remote GitHub call; #213/#255 are separate. No push/PR/
+merge/deploy by the implementing helper beyond the coordinator's draft action.
+
+### 2026-10-08 — #256 design: remove the token name without overwriting
+
+Reproduced the inherited hard-link corruption on `08f0332` with
+`go test -overlay <temporary-overlay.json> ./internal/github -run
+'^TestAudit213HardlinkDeleteDoesNotMutateOtherName$' -count=1 -v`: outside
+synthetic file unchanged=false (50 bytes). No owner account/network used.
+ADR 0013 compares unlink-only cleanup with link checks, overwrite and quarantine;
+the design proposes no inode writes and makes no secure-erasure claim.
+[`evidence/issue-256/README.md`](evidence/issue-256/README.md) records the gate.
+
+This checkpoint changes documentation only. Draft PR and local implementation,
+permanent tests/race/vet/platform checks, full public docs/frozen site build,
+independent security/feasibility reviews and explicit owner approval are pending.
+No CI enablement, push, PR, merge or deployment by the helper. #213/#255 separate.
 
 ### Summary (2026-09-27)
 
