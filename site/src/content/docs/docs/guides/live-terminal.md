@@ -75,11 +75,13 @@ Termivoa's terminal takes five touch gestures. Each one also has a button, so yo
 | --- | --- | --- |
 | Hold one finger still until **← → ↑ ↓** shows, then slide | Sends arrow keys: about one per letter sideways, one per line and a half up or down. It keeps the first direction until you lift. | Yes |
 | With the keyboard open, tap a letter on the line you type | Moves the cursor there with arrow keys. | Yes |
-| Swipe sideways on the line under the tabs | Opens the session to the left or right in the tabs. | No |
+| Swipe sideways on the line under the tabs | Opens the session to the left or right in the tabs. Off in herdr terminals. | No |
 | Pinch the terminal | Changes the text size. The size shows while you pinch and applies when you lift. | No |
 | Tap with two fingers at once | Sends Esc, the same as `esc`. | Yes |
 
-A tap moves the cursor only when the keys surely land there: on the cursor's own line, over plain one-column letters, and to the right only over text in the same style as the letter before the cursor. A tap on grey suggested text, a right-side prompt or empty space just opens the keyboard. In full-screen apps such as `vim` a tap does not move the cursor.
+A tap moves the cursor only when the keys surely land there: after a shell prompt such as `$ ` or `% `, on the cursor's own line, over plain one-column letters, and to the right only over text in the same style as the letter before the cursor. A tap on grey suggested text, a right-side prompt or empty space does nothing. At a password or `[y/N]` question, and in full-screen apps such as `vim`, a tap does not move the cursor. A tab or a control character such as `^A` in the line can make the cursor land a little off.
+
+A stray two-finger touch sends Esc. If that happens to you, turn the gestures off.
 
 ### How do I turn the gestures off?
 

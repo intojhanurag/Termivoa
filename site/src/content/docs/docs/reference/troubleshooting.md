@@ -94,6 +94,7 @@ Tap to place the cursor (**Next beta**) works only when it is sure where the arr
 | Check | Why |
 | --- | --- |
 | The keyboard was already open | The first tap only opens the keyboard. |
+| The line starts with a shell prompt such as `$ ` | At a password, `[y/N]` or other question the cursor does not move. |
 | You have control (**● Control**) | A read-only phone sends no keys. |
 | You tapped the line with the cursor | The cursor never moves up or down from a tap. |
 | The text is plain letters you typed | Wide characters, emoji, grey suggested text and empty space after the line do not move it. |

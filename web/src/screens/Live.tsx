@@ -643,7 +643,11 @@ export function Live({
     if (element === null) return undefined;
     const machine = new TouchGestures(() => gestureHost.current as GestureHost);
     const points = (list: TouchList) => Array.from(list, (touch) => ({ id: touch.identifier, x: touch.clientX, y: touch.clientY }));
-    const start = (event: TouchEvent) => machine.start(points(event.touches));
+    const start = (event: TouchEvent) => {
+      // A new touch: a gesture's taken tap whose click never came must not eat this one.
+      gestureTook.current = -Infinity;
+      machine.start(points(event.touches));
+    };
     const move = (event: TouchEvent) => { if (machine.move(points(event.touches)) && event.cancelable) event.preventDefault(); };
     const end = (event: TouchEvent) => { if (machine.end(points(event.touches)) && event.cancelable) event.preventDefault(); };
     const cancel = () => machine.cancel();
@@ -881,6 +885,8 @@ export function Live({
           else if (event.deltaY < 0 && normalBuffer && area.current?.scrollTop === 0) openHistory();
         }}
       >
+        {/* Pinned to the top of the terminal, away from the cursor and prompt (usually low with the keyboard up). */}
+        {pill !== undefined && <div className="gesture-pill-anchor" aria-hidden="true"><div className="gesture-pill">{pill}</div></div>}
         <div ref={host} className="terminal-host" aria-label="Terminal display" />
         <textarea
           ref={input}
@@ -896,7 +902,6 @@ export function Live({
           rows={1}
         />
       </div>
-      {pill !== undefined && !fullPanel && <div className="gesture-pill" aria-hidden="true">{pill}</div>}
 
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />

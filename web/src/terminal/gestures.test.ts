@@ -56,9 +56,34 @@ describe('tapArrows', () => {
     expect(tapArrows(screen(5, { visible: false }), { row: 3, column: 2 }, typed)).toBe(0);
     expect(tapArrows(screen(5, { buffer: 'alternate' }), { row: 3, column: 2 }, typed)).toBe(0);
     expect(tapArrows(screen(0), { row: 3, column: 2 }, typed)).toBe(0);
-    const long = row(`${'x'.repeat(100)} `);
-    expect(tapArrows(screen(100), { row: 3, column: 19 }, long)).toBe(0);
-    expect(tapArrows(screen(100), { row: 3, column: 20 }, long)).toBe(-80);
+    const long = row(`$ ${'x'.repeat(100)} `);
+    expect(tapArrows(screen(102), { row: 3, column: 21 }, long)).toBe(0);
+    expect(tapArrows(screen(102), { row: 3, column: 22 }, long)).toBe(-80);
+  });
+
+  it('needs a shell prompt before the cursor: no arrows into a password or y/N prompt', () => {
+    const sudo = row('[sudo] password for x:       ');
+    expect(tapArrows(screen(23), { row: 3, column: 10 }, sudo)).toBe(0);
+    const confirm = row('Continue? [y/N] yes   ');
+    expect(tapArrows(screen(19), { row: 3, column: 16 }, confirm)).toBe(0);
+    const readLine = row('name: abc   ');
+    expect(tapArrows(screen(9), { row: 3, column: 6 }, readLine)).toBe(0);
+  });
+
+  it('moves only after the prompt: within the typed text, never into the prompt', () => {
+    // "user@host:~/p$ git status" with the cursor between "sta" and "tus".
+    const line = row('user@host:~/p$ git status    ');
+    expect(tapArrows(screen(22), { row: 3, column: 15 }, line)).toBe(-7);
+    expect(tapArrows(screen(22), { row: 3, column: 24 }, line)).toBe(2);
+    expect(tapArrows(screen(22), { row: 3, column: 13 }, line)).toBe(0);
+    expect(tapArrows(screen(22), { row: 3, column: 3 }, line)).toBe(0);
+    for (const mark of ['%', '#', '>', '❯', '➜']) expect(tapArrows(screen(5), { row: 3, column: 2 }, row(`${mark} abc   `))).toBe(-3);
+  });
+
+  it('stops at a right prompt after two blank cells', () => {
+    const rprompt = row('$ abc        main ');
+    expect(tapArrows(screen(3), { row: 3, column: 5 }, rprompt)).toBe(2);
+    expect(tapArrows(screen(3), { row: 3, column: 14 }, rprompt)).toBe(0);
   });
 });
 
@@ -81,8 +106,9 @@ describe('pure rules', () => {
   it('tells a two-finger tap from a slow, moving or pinching touch', () => {
     const tap = { gap: 20, duration: 150, moved: 3, scaleChange: 0.01 };
     expect(isTwoFingerTap(tap)).toBe(true);
-    expect(isTwoFingerTap({ ...tap, gap: 61 })).toBe(false);
-    expect(isTwoFingerTap({ ...tap, duration: 251 })).toBe(false);
+    expect(isTwoFingerTap({ ...tap, gap: 100, duration: 300 })).toBe(true);
+    expect(isTwoFingerTap({ ...tap, gap: 101 })).toBe(false);
+    expect(isTwoFingerTap({ ...tap, duration: 301 })).toBe(false);
     expect(isTwoFingerTap({ ...tap, moved: 10 })).toBe(false);
     expect(isTwoFingerTap({ ...tap, scaleChange: 0.05 })).toBe(false);
   });
@@ -244,6 +270,15 @@ describe('pinch and two-finger tap', () => {
     expect(h.pills.at(-1)).toBeUndefined();
   });
 
+  it('a two-finger scroll that keeps the size shows no pill', () => {
+    const h = harness();
+    h.machine.start([at(100, 100), at(200, 100, 1)]);
+    h.machine.move([at(100, 160), at(200, 160, 1)]);
+    h.machine.end([]);
+    expect(h.pills).toEqual([]);
+    expect(h.fonts).toEqual([]);
+  });
+
   it('a pinch works without control', () => {
     const h = harness({ canInput: false });
     h.machine.start([at(100, 100), at(200, 100, 1)]);
@@ -267,11 +302,11 @@ describe('pinch and two-finger tap', () => {
   it('no Esc when slow, late, read-only or under a sheet', () => {
     const slow = harness();
     slow.machine.start([at(100, 100), at(200, 100, 1)]);
-    slow.tick(300);
+    slow.tick(301);
     slow.machine.end([]);
     const late = harness();
     late.machine.start([at(100, 100)]);
-    late.tick(100);
+    late.tick(101);
     late.machine.start([at(100, 100), at(200, 100, 1)]);
     late.machine.end([]);
     const readOnly = harness({ canInput: false });

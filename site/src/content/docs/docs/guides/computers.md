@@ -181,13 +181,13 @@ When you look at one computer and another computer needs you, an amber pill with
 
 Open **Settings**. Settings has a main page and one page for each computer.
 
-![The Settings main page: under Computers (Home serves this app to your phone.) the cards mac with Home and vps, each with the chips herdr, Connect GitHub and 1 project; Found on your network with the hint to run pterm setup or pterm pair --via mac; + Add a computer; and This phone with Name iPhone, Notifications Off, Terminal text size 14 px and Build.](../../../../assets/docs/phone-settings-main.webp)
+![The Settings main page: under Computers (Home serves this app to your phone.) the cards mac with Home and vps, each with the chips herdr, Connect GitHub and 1 project; Found on your network with the hint to run pterm setup or pterm pair --via mac; + Add a computer; and This phone with Name iPhone, Notifications Off, Terminal text size 14 px, Terminal gestures switched on, and Build.](../../../../assets/docs/phone-settings-main.webp)
 
 | Main page part | What it has |
 | --- | --- |
 | **Computers** | One card for each computer, home first, with **Home** on home's card. The chips on a card show **herdr** (green dot: running), **GitHub** (green dot: connected; **Connect GitHub**: not connected; **git missing**) and the number of projects. Tap a card to open that computer's page. |
 | **Found on your network** and **+ Add a computer** | Add another computer. See [How do I add a computer?](#how-do-i-add-a-computer) |
-| **This phone** | **Name** (this phone's name in `pterm devices`), **Notifications**, **Terminal text size**, **Build** and **Log out**. |
+| **This phone** | **Name** (this phone's name in `pterm devices`), **Notifications**, **Terminal text size**, **Terminal gestures** (**Next beta**; see [touch gestures](/docs/guides/live-terminal/#which-touch-gestures-does-the-terminal-take)), **Build** and **Log out**. |
 
 A computer that cannot be reached has a dashed card with **Can't reach** and a **Check again** button.
 

@@ -234,9 +234,9 @@ try {
     `${liveClass}; tap at ${a.x.toFixed(0)},${a.y.toFixed(0)}; cell ${a.w.toFixed(1)} px wide; keys ${tapKeys.join(' ')}; output Xabc: ${placed}`);
 
   // The guard: grey (dim) text right of the cursor, like an autosuggestion. A tap on it sends nothing; a tap on "b" one ←.
-  await type("printf 'ab\\033[2mcd\\033[0m\\033[2D'; read x");
+  await type("printf '$ ab\\033[2mcd\\033[0m\\033[2D'; read x");
   await sleep(800);
-  // The row is "abcd" with the cursor on "c"; "cd" is dim.
+  // The row is "$ abcd" (a prompt, then text) with the cursor on "c"; "cd" is dim.
   const d = await charBox('abcd', 3);
   const b = await charBox('abcd', 1);
   from = await mark();
@@ -248,8 +248,20 @@ try {
   await sleep(300);
   const leftKeys = await keysSince(from);
   await page.keyboard.press('Enter');
+  // No shell prompt on the row (a y/N question read by `read`): a tap sends nothing, so no arrow lands as input.
+  await type("printf 'Continue? [y/N] '; read x");
+  await sleep(500);
+  await page.keyboard.insertText('abc');
+  await until(async () => (await terminal()).includes('[y/N] abc'), { what: 'typed answer' });
+  const answer = await charBox('[y/N] abc', 6);
+  from = await mark();
+  await page.mouse.click(answer.x, answer.y);
+  await sleep(300);
+  const answerKeys = await keysSince(from);
+  await page.keyboard.press('Enter');
   check('GE5', 'A tap on dim text right of the cursor sends nothing; a tap on the text to its left does', dimKeys.length === 0 && leftKeys.join() === 'arrow-left',
     `on the dim "d": keys [${dimKeys.join(' ')}]; on "b": keys [${leftKeys.join(' ')}]`);
+  check('GE8', 'A tap on a line without a shell prompt (Continue? [y/N]) sends nothing', answerKeys.length === 0, `keys [${answerKeys.join(' ')}]`);
 
   // G3 swipe on the status line: to the next session.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -298,5 +310,5 @@ try {
   console.log(`\n${table}`);
   await browser.close();
   await env.close();
-  process.exit(results.length === 7 && results.every((r) => r.result === 'PASS') ? 0 : 1);
+  process.exit(results.length === 8 && results.every((r) => r.result === 'PASS') ? 0 : 1);
 }

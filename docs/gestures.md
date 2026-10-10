@@ -55,7 +55,14 @@ the machine (rule 8).
 
 A gesture that took its touch prevents the default of `touchend` (no
 synthetic click) and also stamps `tookTap`; a click within 600 ms is then
-treated like a link tap in `areaClick` and does nothing.
+treated like a link tap in `areaClick` and does nothing. The next
+`touchstart` clears the stamp, so a real tap right after a gesture whose
+click never came still works.
+
+The pill sits in a zero-height sticky anchor at the top of the terminal
+area (12 px down), so it never covers the cursor or the prompt, which sit
+low while the keyboard is up. The pinch pill shows only once the size
+differs from the start size, so a two-finger scroll shows nothing.
 
 ## How is input sent?
 
@@ -79,7 +86,7 @@ input and work without control. Wall tiles have no gestures.
 | Tap to place | A plain tap with the keyboard already up, gestures on, `canInput` | one `arrow-left/right` per cell | Only when `tapArrows` agrees (below); at most 80 |
 | Swipe on the status line | One finger on `.status-line`: at least 60 px across, more than twice its vertical travel, under 500 ms, starting more than 24 px from the screen edges | Nothing; opens the tab before or after (`onOpen`) | Not on a provider screen (chips, not tabs) |
 | Pinch | Two fingers on the terminal, moved ≥ 10 px or distance changed ≥ 5 % | Nothing; sets the text size on lift | `clamp(start + round(log2(scale) × 6), 10, 24)`; one `useFontSize` update, so the PTY resizes once |
-| Two-finger tap | Second finger within 60 ms, both lift within 250 ms, each moves < 10 px, distance changes < 5 % | One `escape` | Never during pinch, trackpad or a sheet |
+| Two-finger tap | Second finger within 100 ms, both lift within 300 ms, each moves < 10 px, distance changes < 5 % | One `escape` | Never during pinch, trackpad or a sheet |
 
 A second finger, `touchcancel`, a hidden page (`visibilitychange`), a lost
 `canSend` or a cap ends the trackpad. A move before arming is a scroll and
@@ -93,13 +100,23 @@ never arms.
 - the normal screen (not the alternate one), a visible cursor, and the
   tapped row equals the frame cursor row (left and right only, never up or
   down);
+- a shell prompt on that row: the last `$ `, `% `, `# `, `> `, `❯ ` or `➜ `
+  left of the cursor (`promptEnd`), and both the cursor and the tap after
+  it. A row without one (`[sudo] password for x:`, `Continue? [y/N]`, a
+  `read` prompt) may have no line editor, where the arrows would arrive as
+  input (`ESC [ D`), so it sends nothing. Hold and slide has no such check
+  on purpose: the user steers it and sees each key land;
 - every cell between the tap and the cursor has width 1 and one code point
   (no wide character, continuation cell or joined emoji);
 - a move to the right only crosses cells styled like the cell left of the
-  cursor, and never the blank tail after the last non-blank cell. This keeps
-  grey autosuggestions (fish, zsh-autosuggestions) and a right prompt from
-  being "typed over";
+  cursor, and never past the typed text, which ends at the first run of two
+  blank cells after the prompt. This keeps grey autosuggestions (fish,
+  zsh-autosuggestions) and a right prompt (RPROMPT) from being "typed over";
 - at most 80 cells away.
+
+The cell grid is the shell's only if the line holds plain characters: a
+literal tab or a control character the shell shows as two cells (`^A`)
+can make the cursor land a little off.
 
 `TerminalView.cellAt` maps a viewport point to a frame row and column.
 xterm can show its buffer from a line other than its base after a resize
@@ -112,23 +129,28 @@ VoiceOver uses its own gestures, so these do not fire under it. Every
 gesture keeps its button: the dock arrows and `esc`, the tabs, **A−**/**A+**
 in Settings. The pill is `aria-hidden` and does not animate, so reduced
 motion needs nothing. Page zoom is blocked only on the terminal area and
-only while gestures are on; `-webkit-touch-callout: none` there keeps the
+only while gestures are on: `touch-action: pan-x pan-y` (also on Android,
+which has no `gesturestart`; scrolling stays) and `gesturestart` /
+`gesturechange` on Safari. Not with `app-scroll`, which keeps
+`touch-action: none`; `-webkit-touch-callout: none` there keeps the
 hold from opening the iOS callout.
 
 ## How is it tested?
 
 - `web/src/terminal/gestures.test.ts`: axis lock, pinch mapping and clamps,
   two-finger timing, swipe rules, every `tapArrows` refusal (wide character,
-  ZWJ, style change, blank tail, other row, hidden cursor, alternate
-  screen, row start, far tap), and the machine with a fake clock: carry and
+  ZWJ, style change, blank tail, right prompt, other row, hidden cursor,
+  alternate screen, row start, far tap, no shell prompt: sudo, y/N, `read`;
+  a tap inside the prompt), every prompt end, and the machine with a fake clock: carry and
   the 4/30/120 caps, a refused key ends the gesture, read-only never arms,
-  a scroll never arms, cancel, pinch on lift, Esc, the switch off.
+  a scroll never arms, cancel, pinch on lift, no pill on a two-finger
+  scroll, Esc, the switch off.
 - `scripts/e2e-multicomputer/gestures.mjs` (WebKit 26.4 with touch, real
   dev stack): GE1 hold and slide sends three `←` (`echo 12345` → `12X345`);
   GE2 two-finger tap sends one Esc (`cat -v` shows `^[`); GE3 pinch shows
   `20 px` and sends exactly one `terminal.resize`; GE4 a tap on `a` of
   `echo abc` gives `Xabc`; GE5 a tap on dim text right of the cursor sends
-  nothing; GE6 a status-line swipe opens the other session; GE7 with the
+  nothing; GE8 a tap on a `Continue? [y/N]` answer sends nothing; GE6 a status-line swipe opens the other session; GE7 with the
   switch off nothing fires. WebKit has `TouchEvent` but no `Touch`
   constructor, so the script sends plain events that carry the touch lists.
 
@@ -136,4 +158,6 @@ hold from opening the iOS callout.
 
 In [pending-work.md](pending-work.md): auto-repeat at the screen edge for
 the trackpad, tap to place in `vim` and other full-screen apps, and checks
-on a real iPhone (iOS Safari and the home-screen app).
+on a real iPhone (iOS Safari and the home-screen app). Also:
+`useGestures` and `useFontSize` have no `storage` listener, so a change in
+another tab of the same browser shows only after a reload.

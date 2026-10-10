@@ -44,6 +44,15 @@ Last updated: 2026-10-10
   its buffer one line above its base (`viewportY` 0, `baseY` 1), so the
   screen row under a finger is not the frame row; `TerminalView.cellAt`
   maps through both. The display shift itself is not fixed here (reported).
+- Review fixes (PR #286): tap to place needs a shell prompt (`$ `, `% `,
+  `# `, `> `, `❯ `, `➜ `) left of the cursor and moves only after it (no
+  arrows into a password or `[y/N]` answer); the typed text stops at two
+  blank cells (right prompt); two-finger tap 100 ms / 300 ms; the next
+  touch clears a taken tap; the pinch pill shows only on a size change; the
+  pill sits at the top of the terminal; `touch-action: pan-x pan-y` on the
+  terminal while gestures are on. Checks: `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check` (pass; 60 files, 1138 web tests); site build (pass).
+  `gestures.mjs` (now with GE8, a `[y/N]` answer): 8 of 8 pass; `phase-b.mjs --only U`: 13 of 13 pass; `phone-settings-main.webp` retaken (`scripts/docs-screenshots/herdr.mjs`).
 - Pending: checks on a real iPhone (iOS Safari and the home-screen app).
 
 ### AGENTS.md for a public repository (2026-10-10, branch `docs/agents-public-repo`)

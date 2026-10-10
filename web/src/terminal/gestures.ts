@@ -19,8 +19,8 @@ export const MAX_KEYS_PER_SECOND = 30;
 /** A tap moves the cursor at most this many cells. */
 export const MAX_TAP_ARROWS = 80;
 /** Two-finger tap: the second finger lands within GAP, both lift within MS of the first touch. */
-export const TWO_TAP_GAP_MS = 60;
-export const TWO_TAP_MS = 250;
+export const TWO_TAP_GAP_MS = 100;
+export const TWO_TAP_MS = 300;
 export const TWO_TAP_MOVE_PX = 10;
 export const TWO_TAP_SCALE = 0.05;
 /** Session swipe on the status line. */
@@ -95,6 +95,24 @@ function styleOf(cell: StyledCell): string {
   ].join(',');
 }
 
+/** The end of a shell prompt: one of these, then a blank cell. */
+const PROMPT_ENDS = new Set(['$', '%', '#', '>', '❯', '➜']);
+
+const blank = (cell: StyledCell | undefined) => cell === undefined || cell.getChars().trim() === '';
+
+/**
+ * The first column after the last shell prompt end ("$ ", "% ", "# ", "> ",
+ * "❯ ", "➜ ") left of `column`, or undefined. A line with none (a password
+ * prompt, "Continue? [y/N] ", `read`) may have no line editor, where arrows
+ * would arrive as input.
+ */
+export function promptEnd(cells: ReadonlyArray<StyledCell>, column: number): number | undefined {
+  for (let x = Math.min(column, cells.length) - 2; x >= 0; x--) {
+    if (PROMPT_ENDS.has(cells[x]?.getChars() ?? '') && blank(cells[x + 1])) return x + 2;
+  }
+  return undefined;
+}
+
 /** One column, one code point: an arrow press moves over exactly this cell. */
 function plain(cell: StyledCell | undefined): cell is StyledCell {
   return cell !== undefined && cell.getWidth() === 1 && [...cell.getChars()].length <= 1;
@@ -103,9 +121,11 @@ function plain(cell: StyledCell | undefined): cell is StyledCell {
 /**
  * Arrows for a tap at `tap` (0-based cell): negative is ←, positive is →, 0
  * sends nothing. Only on the cursor's own row of the normal screen with a
- * visible cursor, only over single-column, single-code-point cells. A move to
- * the right only crosses text styled like the cell left of the cursor and
- * never the blank tail, so grey autosuggestions and a right prompt stay put.
+ * visible cursor, after a shell prompt (promptEnd: both the cursor and the
+ * tap), only over single-column, single-code-point cells. A move to the right
+ * only crosses text styled like the cell left of the cursor and stops at the
+ * first run of two blank cells, so grey autosuggestions and a right prompt
+ * stay put.
  */
 export function tapArrows(
   screen: { readonly buffer: 'normal' | 'alternate'; readonly cursor: { readonly row: number; readonly column: number; readonly visible: boolean } },
@@ -116,6 +136,8 @@ export function tapArrows(
   if (screen.buffer !== 'normal' || !cursor.visible || tap.row !== cursor.row) return 0;
   const delta = tap.column - cursor.column;
   if (delta === 0 || Math.abs(delta) > MAX_TAP_ARROWS) return 0;
+  const start = promptEnd(cells, cursor.column);
+  if (start === undefined || tap.column < start || cursor.column < start) return 0;
   const from = Math.min(tap.column, cursor.column);
   const to = Math.max(tap.column, cursor.column);
   for (let x = from; x < to; x++) {
@@ -124,8 +146,11 @@ export function tapArrows(
   if (delta > 0) {
     const left = cells[cursor.column - 1];
     if (left === undefined) return 0;
-    let lastText = -1;
-    cells.forEach((cell, x) => { if (cell.getChars().trim() !== '') lastText = x; });
+    // The typed text ends before the first two blank cells after the prompt (a right prompt may follow).
+    let lastText = start - 1;
+    for (let x = start; x < cells.length && !(blank(cells[x]) && blank(cells[x + 1])); x++) {
+      if (!blank(cells[x])) lastText = x;
+    }
     if (to - 1 > lastText) return 0;
     const style = styleOf(left);
     for (let x = from; x < to; x++) {
@@ -172,7 +197,7 @@ type State =
   | { readonly kind: 'trackpad'; readonly id: number; readonly origin: TouchPoint; last: TouchPoint; axis: Axis | undefined; carry: number; sent: number; readonly times: number[] }
   | {
     readonly kind: 'two'; readonly at: number; readonly gap: number; readonly starts: ReadonlyMap<number, TouchPoint>; readonly distance: number;
-    moved: number; scaleChange: number; pinching: boolean; readonly font: number; size: number;
+    moved: number; scaleChange: number; pinching: boolean; readonly font: number; size: number; shown: boolean;
   }
   /** A gesture ended or was cancelled: ignore touches until every finger lifts. */
   | { readonly kind: 'done' };
@@ -215,7 +240,7 @@ export class TouchGestures {
       const at = state.kind === 'idle' ? now : state.at;
       this.state = {
         kind: 'two', at, gap: state.kind === 'scroll' ? Infinity : now - at, starts: new Map([[first.id, first], [second.id, second]]),
-        distance: distance(first, second), moved: 0, scaleChange: 0, pinching: false, font: host.fontSize(), size: host.fontSize(),
+        distance: distance(first, second), moved: 0, scaleChange: 0, pinching: false, font: host.fontSize(), size: host.fontSize(), shown: false,
       };
       return;
     }
@@ -283,12 +308,12 @@ export class TouchGestures {
 
   private reset(): void {
     if (this.state.kind === 'pending') this.state.stop();
-    if (this.state.kind === 'trackpad' || (this.state.kind === 'two' && this.state.pinching)) this.host().pill(undefined);
+    if (this.state.kind === 'trackpad' || (this.state.kind === 'two' && this.state.shown)) this.host().pill(undefined);
     this.state = { kind: 'idle' };
   }
 
   private finish(): void {
-    if (this.state.kind === 'trackpad' || (this.state.kind === 'two' && this.state.pinching)) this.host().pill(undefined);
+    if (this.state.kind === 'trackpad' || (this.state.kind === 'two' && this.state.shown)) this.host().pill(undefined);
     this.state = { kind: 'done' };
   }
 
@@ -348,6 +373,8 @@ export class TouchGestures {
     if (!state.pinching && (state.moved >= TWO_TAP_MOVE_PX || state.scaleChange >= TWO_TAP_SCALE)) state.pinching = true;
     if (!state.pinching) return;
     state.size = pinchFont(state.font, scale);
-    this.host().pill(`${state.size} px`);
+    // No pill until the size changes, so a two-finger scroll shows nothing.
+    if (state.size !== state.font) state.shown = true;
+    if (state.shown) this.host().pill(`${state.size} px`);
   }
 }
