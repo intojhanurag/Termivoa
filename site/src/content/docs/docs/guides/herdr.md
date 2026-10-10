@@ -113,13 +113,31 @@ The switches are saved on that computer, for every phone.
 
 **Next beta:** under the switches, "This phone gets no buzz yet." shows while a buzz switch is on and Termivoa can tell that this phone has no notifications from that computer. Its link (**Turn on notifications**, **Add to Home Screen** or **See why**) goes to **Settings → Notifications**.
 
+## Which agents can I start?
+
+**Next beta:** Termivoa offers up to 16 agent kinds that herdr supports starting,
+with kinds already running listed first. You can start an installed agent in
+**New worktree** or **New tab** without starting it manually first.
+
+| Situation | What appears |
+| --- | --- |
+| The agent command is installed and herdr supports starting it | The kind can appear even with no running agents |
+| The last agent of that kind stops | Its installed kind remains eligible for the 16 choices |
+| An agent already runs through a shell alias or custom launcher | Its supported kind can appear while it runs |
+| A command is newly installed or removed | Choices refresh within about 30 seconds; **Check again** requests a fresh check |
+| The agent is installed only through settings in herdr's shell | It may need to run once in herdr before it appears |
+
+Termivoa checks command presence without running an agent. An offered kind may
+still fail to start if herdr's shell has different settings, the installation
+is broken, or the agent needs sign-in. Open the new terminal to see the cause.
+
 ## How do I create a worktree?
 
 A worktree is a second folder of a git repository on its own branch. herdr makes it and can start an agent in it.
 
 1. In the **herdr** tab, tap **+** on a git project row.
 2. In the sheet **New worktree**, type a **Branch name**: lowercase letters and digits joined by `-`, `.`, `_` or `/`, such as `fix/login-redirect`. It can have up to 64 characters and at most 4 parts, and cannot end in `.lock`.
-3. Under **Start an agent in it**, tap an agent that already runs in this herdr (such as `claude` or `codex`), or **No agent**. The sheet reads the list again when it opens, so it shows the agents that run there now. If the agent you picked left herdr in the meantime, the sheet goes to **No agent** and says so, for example "codex is not running in herdr now." It never starts another agent in its place.
+3. Under **Start an agent in it**, tap an available agent (such as `claude` or `codex`), or **No agent**. **Next beta:** installed agents can appear before any agent runs in herdr, and stay listed after their last running agent stops. The sheet reads the choices again when it opens. If your choice is no longer available, the sheet goes to **No agent** and says, for example, "codex is not available in herdr now." It never starts another agent in its place.
 4. Optional: write a **First prompt (optional)**. It cannot have control characters such as Esc.
 5. Tap **Create and start** (or **Create** with **No agent**).
 

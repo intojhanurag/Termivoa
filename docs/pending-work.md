@@ -59,6 +59,11 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   update downloads (#223). Raw representations, service-worker URLs and
   source-map exclusions remain. Real-phone/cellular and external proxy
   transfer measurements remain pending.
+
+- herdr can start its first installed coding agent from **New worktree** or
+  **New tab**, and keeps installed choices after the last agent stops (#208).
+  Availability is read-only and bounded; real-agent launches and owner phone
+  checks remain in Next 5. See [herdr-provider.md](herdr-provider.md#agent-choices-before-the-first-launch-issue-208-2026-10-08).
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).

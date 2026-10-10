@@ -43,7 +43,8 @@ the old working name "Phone Terminal" so existing installs keep working (see
   agent is blocked or finished, opens one herdr terminal in Live and makes new
   worktrees. From the phone you can also open a tab or a workspace, close a tab or a
   workspace, remove a worktree (never one with uncommitted changes) and start
-  herdr. A new tab can start a coding agent with a first prompt, a closed
+  herdr. A new tab or worktree can start an installed coding agent with a first
+  prompt, even before any agent runs in herdr. A closed
   worktree shows as closed with **Open**, and a herdr terminal has the same
   **⋯** menu. Needs herdr 0.8.2 or later on macOS or Linux; next beta.
 - **GitHub.** Connect each computer to GitHub from its page in

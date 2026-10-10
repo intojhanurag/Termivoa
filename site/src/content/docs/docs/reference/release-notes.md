@@ -12,6 +12,8 @@ The latest Termivoa release is the private beta `v0.1.0-beta.3` (2026-10-04).
 
 New features on `main` show here until the next beta ships.
 
+- **Start the first herdr agent.** **New worktree** and **New tab** offer supported installed agents even with none running, and keep installed choices when their last agent stops. Discovery does not run an agent. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
+
 - **Smaller phone downloads.** App files transfer compressed on first open and after updates when the phone supports it. No new setup step. See [Download changes](/docs/quick-start/#what-changes-for-downloads-in-the-next-beta).
 
 - **Fixed: a slow worktree creation could hold up other sessions.** The

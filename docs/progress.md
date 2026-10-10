@@ -3089,3 +3089,54 @@ configuration were touched.
 - Pending before merge: broader coordinated checks and independent adversarial
   review. Real phones and native Windows/Linux checks remain owner gates.
   No protocol, trust, database, pairing or production configuration change.
+
+## 2026-10-08 — Issue #208: offer installed herdr agent kinds before the first launch
+
+- Confirmed on `08f0332`: the running-only filter gave an empty choices list
+  with fake installed claude/codex and no agents; fake first-agent create
+  returned `herdr: agent kind is not offered`. Both failing tests ran before
+  the fix. No real agent or provider credit was used.
+- Added bounded read-only Go command-presence discovery on the poll loop
+  (24 canonical commands, first 64 absolute PATH entries, 4096-byte entry
+  limit; help-derived allowlist at most 64 names). The cache refreshes every
+  30 s, on settings refresh, and after capability probes. Choices still cap
+  at 16 and prefer running kinds; herdr performs the actual launch.
+- Updated the architecture and both herdr designs, roadmap, README,
+  Unreleased phone/host notes, guide, Next beta release notes, troubleshooting
+  and the existing protocol field's semantic description / generated comments.
+  The existing herdr sidebar entry remains. No command, stored data, access,
+  or security guarantee changed; no new protocol field or revision.
+- Passed: `go test -race -count=5 -run
+  '^(TestInstalledKinds|TestCreateStartsFirstInstalledAgent|TestManageStartsFirstInstalledAgent)'
+  ./internal/herdr` (23.631 s); `go test -race ./internal/herdr
+  ./internal/protocol ./internal/broker` (70.789 / 5.937 / 107.036 s);
+  `go vet ./internal/herdr ./internal/protocol ./internal/broker`;
+  the 68 ProviderCreate/ProviderManage web tests; `pnpm typecheck`;
+  `pnpm build:web`; `pnpm protocol:check` (generated files match the staged
+  schema description); staged diff and addition secret / artifact review;
+  `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build`
+  (29 pages, all internal links valid).
+- Evidence: [issue-208/README.md](evidence/issue-208/README.md). Full
+  `scripts/check`, real-agent launch, real-phone checks and deployment remain
+  unexecuted here; the coordinating agent owns PR / merge and deployment.
+
+### Issue #208 integration correction before PR
+
+The first implementation's provider-level refresh test called `LookAgain`
+directly. Independent review of the broker found that `settingsInfo` skipped
+ready providers, so a phone settings read still missed new installations
+until the 30 s timer. A ready-state wake regression and an actual gateway
+settings regression both failed before the correction (the latter timed out
+after 10 s). The broker now refreshes ready providers under the existing
+2 s throttle, without blocking the response or executing an agent.
+
+`go test -race -count=5 -run
+'^TestSettingsRead(LooksForHerdrAgain|RefreshesInstalledHerdrKindsWhileReady)$'
+./internal/broker` passed (16.531 s). Existing public guide and design refresh
+claims are now exercised through the broker. Full prior checks above remain
+evidence for the first commit; focused settings checks and broker vet cover
+this correction. No additional production or owner gate was executed.
+
+Additional correction checks passed: `go vet ./internal/broker` and
+`go test -race -run '^Test(Settings|ProviderGet|ProviderUpdate)'
+./internal/broker` (7.960 s).

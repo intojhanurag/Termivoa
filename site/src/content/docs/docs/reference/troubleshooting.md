@@ -521,9 +521,13 @@ If the **herdr** part says "Run `pterm doctor` on mac." and has no **Install her
 
 Termivoa started herdr's server, but it did not answer in time. Run `herdr server` in a terminal on that computer to see why. On a peer computer the app says only "That computer could not do this."; the fix is the same.
 
-### "codex is not running in herdr now."
+### Why does "codex is not available in herdr now." appear?
 
-Termivoa offers an agent only while one of that kind runs in herdr on that computer. The agent you picked in **New worktree** or **New tab** left herdr before you tapped the button. The sheet goes to no agent; it never starts another agent in its place. Pick an agent that is listed, or start that agent in herdr first.
+**Next beta:** Termivoa offers supported agent kinds when their commands are installed or an agent of that kind runs in herdr. The picked kind is no longer available to the latest check. The **New worktree** or **New tab** sheet falls back to no agent and never starts another kind in its place. Pick a listed agent, or check its installation on that computer and tap **Check again**.
+
+### Why is an installed agent missing from herdr's choices?
+
+**Next beta:** Termivoa checks commands without starting them. An agent installed only through herdr's shell settings may be missing until it runs there once. Check that herdr supports starting that kind and that the command is installed for the computer running Termivoa, then tap **Check again**. Choices are limited to 16, with running kinds first. See [Which agents can I start?](/docs/guides/herdr/#which-agents-can-i-start).
 
 ### "The tab is ready, but the agent did not start."
 

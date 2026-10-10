@@ -404,3 +404,20 @@ One adversarial review of the branch `fix/herdr-bugs`. No critical or high findi
 | Rule 21, last round | The **New worktree** sheet said "Too many new worktrees just now. Wait a minute, then try again." also when herdr was busy with another change (both are `limit_exceeded`) | The home computer's own fixed words show ("herdr is busy with another change; try again" or "too many requests; wait a minute and try again"). A peer's words are never shown, so for a peer the app says what is true for both: "herdr on vps is busy, or this phone asked for too many worktrees just now. Wait a minute, then try again." |
 | e2e | `H-newtab-quiet`, never run before, failed: "this herdr terminal's folder cannot be read" still showed in a new herdr terminal outside git. A product defect: the read-ahead of the files root (see row 194) | The read-ahead's refusal is quiet; a listing that the user opened still shows the host's words (`Connection.test.ts`) |
 | Docs | The site said "herdr 0.8" and "herdr 0.9", and "two workspaces at the main folder of one repository" without the exact rule | The site names herdr 0.8.2 and herdr 0.9.3, and the rule as the host has it: two workspaces that herdr lists under one project as that project's main folder (each has herdr's worktree record for the same repository). The new lab case above shows that a second workspace without the record closes alone on both versions, so the host refuses nothing more |
+
+## Starting an installed kind with no running agents (issue #208)
+
+The **New tab** and **New worktree** choices now include herdr's advertised
+start kinds whose canonical commands are installed, as well as kinds already
+running. Stopping the last agent does not remove its installed kind. The
+poll-loop cache and bounds are specified in [herdr-provider.md](herdr-provider.md#agent-choices-before-the-first-launch-issue-208-2026-10-08).
+
+This supersedes the running-only selection rule recorded in the issue #195
+and L1 historical reviews above. The sheets still refresh settings when they
+open and never silently substitute another agent. A choice that becomes
+unavailable says, for example, "codex is not available in herdr now." and
+falls back to no agent. Create and newTab still check the exact offered kind
+before making anything, and launch only through herdr's existing methods.
+The broker requests a ready-state availability refresh on settings reads,
+under the existing 2 s throttle; it rescans agent commands only and keeps
+the lookup and retry timers; the response stays a nonblocking cache read.

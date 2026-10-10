@@ -172,14 +172,20 @@ func (host *providerHost) info() (protocol.HTTPProviderInfo, bool) {
 }
 
 // settingsInfo is info for the settings response. The app reads the settings
-// again for "Check again": while herdr is not installed or not running, the
+// again for "Check again": while herdr is missing, stopped or ready, the
 // read asks the poll loop to look now (at most once per 2 s), so a new
-// install or a started server shows on the next read. It never waits.
+// install, a started server or changed agent commands show on the next read.
+// A ready herdr only rescans its agent commands; its retry timers stay.
+// It never waits; ready-state refresh remains read-only discovery.
 func (host *providerHost) settingsInfo(now time.Time) protocol.HTTPProviderInfo {
 	info, _ := host.info()
-	if info.State == protocol.NotInstalled || info.State == protocol.NotRunning {
+	if info.State == protocol.NotInstalled || info.State == protocol.NotRunning || info.State == protocol.HTTPProviderStateReady {
 		if last := host.looked.Load(); now.UnixNano()-last >= int64(providerLookEvery) && host.looked.CompareAndSwap(last, now.UnixNano()) {
-			host.provider.LookAgain()
+			if info.State == protocol.HTTPProviderStateReady {
+				host.provider.RefreshAgents()
+			} else {
+				host.provider.LookAgain()
+			}
 		}
 	}
 	return info

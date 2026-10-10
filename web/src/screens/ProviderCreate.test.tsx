@@ -98,15 +98,15 @@ describe('the + sheet (H6)', () => {
     expect(offeredAgent('codex', ['claude'])).toBeUndefined();
     expect(offeredAgent('codex', [])).toBeUndefined();
     expect(offeredAgent(undefined, ['claude'])).toBeUndefined();
-    expect(droppedAgent('codex', ['claude'], 'herdr')).toBe('codex is not running in herdr now.');
+    expect(droppedAgent('codex', ['claude'], 'herdr')).toBe('codex is not available in herdr now.');
     expect(droppedAgent('codex', ['claude', 'codex'], 'herdr')).toBeUndefined();
     // No agent is the user's choice: nothing to say.
     expect(droppedAgent(undefined, ['claude'], 'herdr')).toBeUndefined();
-    const page = form({ agent: undefined, dropped: 'codex is not running in herdr now.' });
-    expect(page).toContain('<p role="status" class="hint-text">codex is not running in herdr now.</p>');
+    const page = form({ agent: undefined, dropped: 'codex is not available in herdr now.' });
+    expect(page).toContain('<p role="status" class="hint-text">codex is not available in herdr now.</p>');
     expect(page).toContain('role="radio" aria-checked="true"><bdi>No agent</bdi></button>');
     expect(page).toContain('<span>Create</span>');
-    expect(form()).not.toContain('is not running in');
+    expect(form()).not.toContain('is not available in');
   });
 
   it('shows a field problem in the error colour, at the size of a hint (issue 200)', () => {
