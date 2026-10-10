@@ -389,13 +389,6 @@ export async function githubSteps(ctx) {
       await liveReady(/pdf-editor %\s*$/m);
     };
 
-    /**
-     * A session gets no PTERM_E2E_GITHUB (the broker gives sessions their own environment), so the helper that git runs
-     * there would not take the fake's 127.0.0.1 address as GitHub and git would ask "Username for". In production the
-     * host is always github.com. The shell gets the fake's address, as the e2e build's stand-in for that fixed host.
-     */
-    const fakeHost = () => typeLine(app, `export PTERM_E2E_GITHUB='${env.github}'`);
-
     await step('G9', 'git pull in ~/pdf-editor with mac\'s own environment works through the saved helper line', async () => {
       const authsBefore = (await gitAuths()).length;
       const started = Date.now();
@@ -415,15 +408,14 @@ export async function githubSteps(ctx) {
       // GIT_CONFIG_NOSYSTEM: the session's git never asks the owner's system helpers (Keychain) for anything.
       await typeLine(app, 'echo "E2E-ENV=${PTERM_E2E_GITHUB:-none}"');
       const sessionEnv = await until(async () => /E2E-ENV=(\S+)/.exec((await terminalText(app)).replace(/E2E-ENV=\$\{[^}]*\}/g, ''))?.[1], { what: 'E2E-ENV', timeout: 10000 }).catch(() => '?');
-      await fakeHost();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL-EXIT=$?"');
       const exit = await until(async () => /PULL-EXIT=(\d+)/.exec(squash(await terminalText(app)))?.[1], { what: 'PULL-EXIT', timeout: 30000 });
       const screen = await terminalText(app);
       const ours = (await brokerPairs()).map((p) => p.n);
       const auths = (await gitAuths()).slice(authsBefore);
-      check('G9-live', 'In Live: git pull exits 0; the fake recorded the pull authenticating with a live access token of the broker (the same pair or a refreshed one)',
-        exit === '0' && auths.some((a) => a.ok && ours.includes(a.n)) && auths.every((a) => a.ok),
-        `the session had PTERM_E2E_GITHUB ${sessionEnv === env.github ? 'the fake' : sessionEnv}, so the harness exported the fake's address; exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
+      check('G9-live', 'In Live: the session inherited PTERM_E2E_GITHUB from the broker (e2e build); git pull exits 0; the fake recorded the pull authenticating with a live access token of the broker (the same pair or a refreshed one)',
+        sessionEnv === env.github && exit === '0' && auths.some((a) => a.ok && ours.includes(a.n)) && auths.every((a) => a.ok),
+        `the session had PTERM_E2E_GITHUB ${sessionEnv === env.github ? 'the fake' : sessionEnv}, as the broker gave it; exit ${exit}; auths ${auths.map((a) => `${a.user}:pair${a.n}:${a.ok ? 'ok' : 'refused'}`).join(',')}; screen ${JSON.stringify(squash(screen).slice(-160))}`);
     });
 
     await step('G10', 'Disconnect: the row says not connected, both tokens are revoked at GitHub, git pull then fails with the helper\'s line', async () => {
@@ -459,7 +451,6 @@ export async function githubSteps(ctx) {
       try {
       if (!(await framesOk())) { skip('G10-live', 'git pull after Disconnect in a Live session', NO_FRAMES); return; }
       await pdfLive();
-      await fakeHost();
       await typeLine(app, 'GIT_CONFIG_NOSYSTEM=1 git pull; echo "PULL2-EXIT=$?"');
       const done = await until(async () => { const t = squash(await terminalText(app)); return (/PULL2-EXIT=\d+/.test(t) || /Username for/.test(t)) && t; }, { what: 'pull ends or prompts', timeout: 30000 }).catch(() => '');
       const prompted = /Username for/.test(done);
