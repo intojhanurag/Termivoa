@@ -7,7 +7,7 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
 ## Done
 
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
-  live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
+  live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).
 - Windows logic: WSL bash profile (#38), Ctrl+] at the attach startup handoff
   (#37), Scheduled Task launcher kept on `conhost --headless` with logs, normal
