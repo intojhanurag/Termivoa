@@ -45,7 +45,7 @@ export function phoneGrid(width: number, height: number, fontSize: number, measu
 /** "herdr is off on mac…" or "herdr is not running on mac.", from the provider's latest state; unknown says both. */
 export function unavailableText(name: string, label: string, state: string | undefined): string {
   switch (state) {
-    case 'off': return `${name} is off on ${label}. Turn it on in Settings → Integrations.`;
+    case 'off': return `${name} is off on ${label}. Turn it on in Settings → ${label}.`;
     case 'notRunning': return `${name} is not running on ${label}.`;
     default: return `${name} is off or not running on ${label}.`;
   }
@@ -179,7 +179,7 @@ export function ProviderScreen({
   /** Reads a provider's list again (its key). */
   readonly onReload: (key: string) => Promise<void>;
   /** Reads that computer's settings again, quietly: the ⋯ menu's New tab then offers the agent kinds of now. */
-  readonly onKinds?: (() => void) | undefined;
+  readonly onKinds?: (() => void | Promise<void>) | undefined;
   readonly onSessions: () => void;
   readonly onSettings: () => void;
   readonly onFailure: (error: unknown) => string;

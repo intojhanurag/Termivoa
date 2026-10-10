@@ -1,13 +1,28 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-/** Bottom sheet over the dimmed terminal. Escape closes it; focus moves into it on open. */
+/** Bottom sheet: focus enters on open and returns to its opener on unmount. */
 export function Sheet({ labelledBy, onClose, children }: {
   readonly labelledBy: string;
   readonly onClose: () => void;
   readonly children: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
-  useEffect(() => { ref.current?.focus(); }, []);
+  // Capture before child focus/autoFocus runs during commit. Each nested
+  // sheet remembers its own opener, and re-renders do not replace it.
+  const [opener] = useState(() => globalThis.document?.activeElement);
+  useEffect(() => {
+    const sheet = ref.current;
+    sheet?.focus();
+    return () => {
+      if (!sheet || !(opener instanceof HTMLElement) || !opener.isConnected) return;
+      const active = sheet.ownerDocument.activeElement;
+      // Removal puts focus on body. Do not steal focus when navigation or
+      // another control already deliberately moved it outside this sheet.
+      if (active === sheet.ownerDocument.body || sheet.contains(active)) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, [opener]);
   return (
     <section
       ref={ref}

@@ -28,6 +28,7 @@ var (
 const branchesTimeout = 5 * time.Second
 
 var errWorktreeSource = errors.New("broker: the worktree source session is not running")
+var errWorktreeBusy = errors.New("broker: a worktree create is already accepted")
 
 // worktreeAddMessage is a failed git worktree add as one line of display
 // text of at most 512 bytes, keeping the end of what git printed.

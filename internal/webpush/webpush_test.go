@@ -774,6 +774,40 @@ func TestHungEndpointsDoNotStarveALaterPhone(t *testing.T) {
 	done <- 0 // for the deferred read
 }
 
+// Issue #207: more hung endpoints than workers must not consume the entire
+// delivery window before a later healthy endpoint has a chance.
+func TestManyHungEndpointsDoNotStarveALaterPhone(t *testing.T) {
+	for _, count := range []int{25, MaxSubscriptions} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			service := &hungService{release: make(chan struct{}), started: make(chan string, MaxSubscriptions)}
+			notifier, authority := newTestNotifier(t, service, new(atomic.Int64))
+			var endpoints []string
+			for index := range count - 1 {
+				endpoints = append(endpoints, fmt.Sprintf("https://fcm.googleapis.com/fcm/send/a-hung-%02d", index))
+			}
+			healthy := "https://fcm.googleapis.com/fcm/send/z-healthy"
+			subscribeAll(t, notifier, authority, append(endpoints, healthy)...)
+			// Scale the common window, not the endpoint's behavior: every hung
+			// service waits until canceled. Production uses a one-minute window.
+			notifier.config.Client.Timeout = time.Second / 6 // production's 10 s / 60 s ratio
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			accepted, err := notifier.deliver(ctx, "", Message{Title: "t", Kind: KindWaiting}, time.Minute, UrgencyHigh)
+			if err != nil || accepted != 1 || ctx.Err() != nil {
+				t.Fatalf("%d subscriptions: accepted=%d err=%v deadline=%v; healthy phone was starved", count, accepted, err, ctx.Err())
+			}
+			if service.active.Load() != 0 || service.most.Load() > deliverFanOut || len(service.started) != count {
+				t.Fatalf("after delivery: active=%d peak=%d attempted=%d, want all %d within %d workers",
+					service.active.Load(), service.most.Load(), len(service.started), count, deliverFanOut)
+			}
+			left, err := notifier.config.Store.ListPushSubscriptions(context.Background(), "", notifier.config.Now(), notifier.config.CredentialIdle, MaxSubscriptions)
+			if err != nil || len(left) != count {
+				t.Fatalf("temporary endpoint timeouts removed subscriptions: %d left, err=%v", len(left), err)
+			}
+		})
+	}
+}
+
 // The bounds of one delivery: at most deliverFanOut requests at once, none
 // started after the deadline, and none alive when deliver returns.
 func TestDeliveryFanOutIsBoundedAndEndsAtTheDeadline(t *testing.T) {
@@ -802,5 +836,9 @@ func TestDeliveryFanOutIsBoundedAndEndsAtTheDeadline(t *testing.T) {
 	if accepted := <-done; accepted != 0 || service.active.Load() != 0 || service.most.Load() != deliverFanOut || len(service.started) != 0 {
 		t.Fatalf("accepted %d, %d requests alive after deliver, at most %d at once, %d started after the deadline",
 			accepted, service.active.Load(), service.most.Load(), len(service.started))
+	}
+	left, err := notifier.config.Store.ListPushSubscriptions(context.Background(), "", notifier.config.Now(), notifier.config.CredentialIdle, MaxSubscriptions)
+	if err != nil || len(left) != len(endpoints)+1 {
+		t.Fatalf("delivery cancellation removed subscriptions: %d left, err=%v", len(left), err)
 	}
 }

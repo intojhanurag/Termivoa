@@ -117,7 +117,7 @@
     },
     "providerState": {
       "title": "HTTPProviderState",
-      "description": "ready: the host reads the provider. notRunning: installed, but its server does not answer. unsupported: the installed version is too old or its data cannot be read. off: turned off in Settings → Integrations on this computer. notInstalled (revision 5): the provider's program is not on this computer; it has no tab and no list, only a card in Settings → Integrations.",
+      "description": "ready: the host reads the provider. notRunning: installed, but its server does not answer. unsupported: the installed version is too old or its data cannot be read. off: turned off in Settings → (computer) on this computer. notInstalled (revision 5): the provider's program is not on this computer; it has no tab and no list, only a card in Settings → (computer).",
       "type": "string",
       "enum": ["ready", "notRunning", "unsupported", "off", "notInstalled"]
     },
@@ -152,7 +152,7 @@
     },
     "providerInfo": {
       "title": "HTTPProviderInfo",
-      "description": "One provider on this computer. enabled and notify are this computer's Integrations settings (all devices). canCreate is true when the provider can make a worktree and start an agent (milestone M2). agentKinds lists the kinds offered by the new-worktree sheet: kinds that herdr itself can start (its agent start kinds) and that already run in this herdr, most used first.",
+      "description": "One provider on this computer. enabled and notify are this computer's Integrations settings (all devices). canCreate is true when the provider can make a worktree and start an agent (milestone M2). agentKinds lists the kinds offered by the new-worktree sheet: kinds that herdr itself can start (its agent start kinds) and whose canonical command is installed on the computer or that already run in this herdr, most used first.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "name", "state", "enabled", "notify", "canCreate", "agentKinds"],
@@ -269,7 +269,7 @@
     },
     "providerUpdateRequest": {
       "title": "HTTPProviderUpdateRequest",
-      "description": "PATCH /api/v1/providers/{provider}: Settings → Integrations on this computer.",
+      "description": "PATCH /api/v1/providers/{provider}: Settings → (computer) on this computer.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
@@ -370,7 +370,7 @@
     },
     "githubInfo": {
       "title": "HTTPGitHubInfo",
-      "description": "Revision 7. The GitHub row of this computer in Settings → Integrations.",
+      "description": "Revision 7. The GitHub row of this computer in Settings → (computer).",
       "type": "object",
       "additionalProperties": false,
       "required": ["state"],

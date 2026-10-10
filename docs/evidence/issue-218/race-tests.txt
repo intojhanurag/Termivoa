@@ -1,0 +1,38 @@
+=== RUN   TestSlowRPCDoesNotBlockAuthentication
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/create
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/terminate
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/push_test
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/preview_scan
+=== RUN   TestSlowRPCDoesNotBlockAuthentication/provider_open
+--- PASS: TestSlowRPCDoesNotBlockAuthentication (0.01s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/create (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/terminate (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/push_test (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/preview_scan (0.00s)
+    --- PASS: TestSlowRPCDoesNotBlockAuthentication/provider_open (0.00s)
+=== RUN   TestSlowRPCLimitLeavesAuthenticationAvailableAndReleasesSlots
+--- PASS: TestSlowRPCLimitLeavesAuthenticationAvailableAndReleasesSlots (0.00s)
+=== RUN   TestCloseInterruptsActiveSlowRPC
+--- PASS: TestCloseInterruptsActiveSlowRPC (0.00s)
+=== RUN   TestCloseInterruptsSlowRPCDial
+--- PASS: TestCloseInterruptsSlowRPCDial (0.00s)
+=== RUN   TestMutationOperationMismatchIsUncertain
+--- PASS: TestMutationOperationMismatchIsUncertain (0.00s)
+=== RUN   TestCancellationInterruptsBlockedCall
+--- PASS: TestCancellationInterruptsBlockedCall (0.00s)
+=== RUN   TestDeadIdleConnectionRedialsOnceBeforeDelivery
+--- PASS: TestDeadIdleConnectionRedialsOnceBeforeDelivery (0.00s)
+=== RUN   TestMultiComputerMethodsForwardOrigin
+--- PASS: TestMultiComputerMethodsForwardOrigin (0.01s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/gatewayclient	1.605s
+=== RUN   TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen
+    gateway_worktree_availability_test.go:113: list completed in 10.838833ms while the git hook remained blocked
+    gateway_worktree_availability_test.go:113: authenticate completed in 4.170458ms while the git hook remained blocked
+    gateway_worktree_availability_test.go:113: live-open completed in 3.308625ms while the git hook remained blocked
+--- PASS: TestSlowWorktreeHookDoesNotBlockGatewayReadsOrLiveOpen (0.76s)
+=== RUN   TestSlowViewerReceivesCoalescedPatchesWithExactRevisions
+    viewer_coalesce_test.go:89: changes=200 fast patches=58 slow patches=11
+--- PASS: TestSlowViewerReceivesCoalescedPatchesWithExactRevisions (2.21s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/broker	4.773s

@@ -11,6 +11,19 @@ This file is the internal map of the system. The code on `main` is the source
 of truth. The specification is [implementation-plan.md](implementation-plan.md).
 User docs live in `site/src/content/docs/docs/`.
 
+Stored-login cleanup (#256, owner-approved, not merged):
+[ADR 0013](decisions/0013-github-token-file-unlink.md) and
+[github-token-removal.md](github-token-removal.md) replace inode overwrite
+with removal of only the fixed token filename. The draft implementation uses
+`os.Remove` and treats absence as success, with no content open/write or
+size-based allocation. Other hard-linked names and final symlink targets are
+not overwritten; removal makes no secure-erasure or arbitrary replacement-race
+guarantee. Independent security/feasibility reviews of `0da5258` found no
+blocker; owner approved design and implementation on 2026-10-09, subject to
+required checks. Combined local verification passed in the coordinator checkout.
+Native Linux/Windows and required checks remain pending; main is unchanged.
+Separate #213/#255 work is not bundled.
+
 ## 1. Big picture
 
 ```text
@@ -91,6 +104,15 @@ SQLite, release the data lock. A gateway restart does not end sessions. A
 broker crash, logout or reboot ends sessions; they show as lost and are never
 rerun.
 
+Worktree session creation admits one active operation with
+`worktreeCreates.TryLock`, with zero queued operations (#236). Cancellation
+is checked before and immediately after admission; only admitted work uses
+`context.WithoutCancel`. Concurrent duplicates receive `limit_exceeded`
+without changing receipts; replay after completion returns the accepted
+operation's session. Disconnect and shutdown cannot accumulate create
+waiters. Shutdown still waits for the one accepted operation, including
+existing Git timeout/rollback behavior. See [worktrees.md](worktrees.md).
+
 ### Startup registration
 
 Per user, no elevation. Generated and applied by `internal/lifecycle`.
@@ -139,16 +161,16 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `internal/agentstate` | Pure classifier: working, waiting on a question, or idle, from sanitized screen text and timing |
 | `internal/auth` | Secrets, pairing grant (2 min) and browser credential lifetimes (30 days absolute, 7 days idle) |
 | `internal/broker` | Sessions, registry, controller leases, input inbox and writer, viewers, RPC servers (management, admin, gateway), agent state, Changes, Files, tasks, worktrees, uploads, preview scans, live folder, multi-computer trust, Found on your network (`offer.go`: this computer's offer to its home and the pinned dial; `offers.go`: home's offer book and found list; `peerdial_e2e.go` is compiled only with the `e2e` tag) |
-| `internal/broker/providers.go` | The broker's side of herdr: Integrations settings (`provider.herdr.enabled`, `provider.herdr.notify` in the `settings` table), the `gateway.providers.get/open/update/create` handlers, the per-device limiter (open 20, create 3, update 10 per minute), in-memory provider sessions (`CreateProvider` in `registry.go`, at most `MaxProviderSessions` = 4, outside the 8-session limit), the reaper (10 s after the last viewer, or when the target leaves the snapshot, or when off), and herdr changes to pushes |
+| `internal/broker/providers.go` | The broker's side of herdr: Integrations settings (`provider.herdr.enabled`, `provider.herdr.notify` in the `settings` table), the `gateway.providers.get/open/update/create` handlers, the per-device limiter (open 20, create 3, update 10 per minute; create reservations are one-shot and window-specific, refunded only on a marked preflight refusal, #209; manage stays 30 attempts per minute), `settingsInfo` refreshing ready-state installed-agent discovery as well as missing/stopped servers under the existing 2 s throttle (#208), in-memory provider sessions (`CreateProvider` in `registry.go`, at most `MaxProviderSessions` = 4, outside the 8-session limit), the reaper (10 s after the last viewer, or when the target leaves the snapshot, or when off), and herdr changes to pushes |
 | `internal/cli` | User-facing local commands (pair, devices, list, attach orchestration, QR); owns no state |
 | `internal/desktop` | Desktop attach client: outer TTY modes, renderer of normalized frames, bounded input decoding |
 | `internal/gateway` | HTTP/WebSocket server, static assets, CSP, Origin/CORS, cookies, preview proxy |
 | `internal/gatewayapi` | Interface between gateway and broker (the gateway transports, the broker authorizes) |
 | `internal/gatewayclient` | Gateway's IPC client of the broker (RPC and live streams) |
-| `internal/gitchanges` | Bounded git: read changes, commit, push, worktree add/remove; never a shell, never force |
+| `internal/gitchanges` | Bounded git: read changes, commit, push, worktree add/remove; write_process owns a Unix session/group or suspended-start Windows Job, on cancel/failure kills remaining helpers and waits for git before result/rollback; a successful write leaves hook background work running (#222); never a shell, never force |
 | `internal/github` | GitHub, the only package that talks to GitHub ([github-integration.md](github-integration.md)): `client.go` (outbound HTTPS client: hosts `github.com` and `api.github.com` only, no proxy, no redirects, public addresses only, 5 s dial, 10 s a request, 1 MiB an answer), `connect.go` (device flow, cancel, Disconnect with `POST /credentials/revoke`), `token.go` (the token pair in `<data>/github.json`, a `secret` type that prints `[REDACTED]`, refresh under one lock that writes the new pair before it returns it, `Credential` for the helper), `repos.go` (installations and repositories: at most 10 installations and 1000 rows, 15 s, cached 60 s, one shared run; `here` and `taken` from one `Lstat` of `~/<name>` and `git config --file` of its `origin`), `setup.go` and `git.go` (the clone job: checks, free space, temp folder `~/.termivoa-clone-<profile>-<random>`, the fixed git environment and config, the size watch, the helper lines and commit name in the clone's config, the exclusive rename in `rename_darwin.go`/`rename_linux.go`, the start-up sweep of this profile's temp folders). `ClientID` and `AppSlug` are package variables (empty: no feature); `github_e2e.go` (build tag `e2e`) points the hosts at `scripts/fakegithub` |
 | `internal/broker/github.go` | The broker's side of GitHub: builds the `*github.Service` (a service that cannot start turns the feature off), the `gateway.github.*` handlers with the per-device limiter (read 60, list 10, connect 3, set up 3, cancel/disconnect/stop 10 per minute), fixed error texts, and the `admin.github.*` messages (status, disconnect, credential) |
-| `internal/herdr` | herdr provider, the only package that knows herdr ([herdr-provider.md](herdr-provider.md)): finds the binary (`FindBinary`, the checks of `tailnet.CheckBinary`), the socket client (`ping`, `session.snapshot`; `worktree.create`, `agent.start`, `agent.get`, `agent.prompt` for create) with the socket checks and peer credential, the 2 s poll loop that fills a cache, mapping to the generic provider wire shape, push changes (`Change`), the attach argv (`Attach`), create (`Create`), `Inspect` for doctor. `guard.go` makes a test config that names a path outside a temp folder panic. `herdrtest` is an in-process fake socket server for Go tests |
+| `internal/herdr` | herdr provider, the only package that knows herdr ([herdr-provider.md](herdr-provider.md)): finds the binary (`FindBinary`, the checks of `tailnet.CheckBinary`), the socket client (`ping`, `session.snapshot`; `worktree.create`, `agent.start`, `agent.get`, `agent.prompt` for create) with the socket checks and peer credential, the 2 s poll loop that fills a cache, a bounded read-only canonical agent-command presence scan (`availability.go`, at most 24 commands × 64 absolute PATH entries, refreshed every 30 s or on settings refresh) so fresh herdr can start an installed agent, mapping to the generic provider wire shape, push changes (`Change`), the attach argv (`Attach`), create (`Create`), preflight-only error markers (`RefusedBeforeStart`) that preserve `errors.Is` classification and distinguish attempted mutations for quota accounting, `Inspect` for doctor. `guard.go` makes a test config that names a path outside a temp folder panic. `herdrtest` is an in-process fake socket server for Go tests |
 | `internal/host` | Process bootstrap for broker and gateway, gateway control endpoint |
 | `internal/ipc` | Length-prefixed local IPC, handshake, current-user peer checks, Unix socket and Windows named pipe |
 | `internal/lifecycle` | LaunchAgent plist, systemd unit and Task XML generation; install/uninstall plans; doctor checks (Tailscale Serve) |
@@ -162,12 +184,15 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `internal/store` | SQLite (modernc.org/sqlite), migrations, auth, sessions, receipts, push, computers |
 | `internal/tailnet` | Reads `tailscale status --json` into immutable snapshots; safe binary lookup |
 | `internal/terminal` | Server-authoritative emulator core, frames, row patches, history |
-| `internal/webassets` | Embedded web app (`-tags webdist`) or a placeholder page |
+| `internal/webassets` | Embedded web app (`-tags webdist`) including build-time gzip sidecars for immutable assets, or a placeholder page; see [static assets](static-assets.md) |
 | `internal/webpush` | Web Push with the standard library (RFC 8291, RFC 8292 VAPID), push host allow-list |
 | `protocol/v1` | Canonical JSON Schemas and protocol docs (section 4) |
 | `web/src/screens` | React screens: Sessions, Live, Wall, Changes, Files, Preview, Settings, Computers, sheets; `ui.tsx` holds the shared icons, the busy `Button`, `Notice` and `Banner` (styles and tokens in `web/src/styles/global.css`) |
+| `web/src/screens/Drawer.tsx` | The side drawer ([ui-revamp.md](ui-revamp.md), section 4), only with two or more computers: `DrawerBar` (menu button, computer pill, amber pill from `amberPill`), `Drawer` (All computers, one row per computer with `stateLine` and the count from `needsByComputer`, then Needs you, Wall, Settings, + Add a computer) and `ComputerHead` (the header over each computer's part of a list in All computers). The chosen computer lives in `App.tsx` and filters Sessions, herdr and Needs you (`byChip`); `ShowTabs` in `Sessions.tsx` draws the tabs Sessions · herdr · Needs you |
+| `web/src/screens/{Settings.tsx,SettingsComputer.tsx,Computers.tsx}` | Settings by computer ([ui-revamp.md](ui-revamp.md), section 5). `Settings.tsx`: the main page (Computers cards, This phone: Name, Notifications page, Terminal text size, Build, Log out) and `ComputerPage` (the herdr `IntegrationRow`, the `GitHubRow`, This computer). `SettingsComputer.tsx`: the card (`ComputerCard`, `cardChips`), the page head, and the page in history (`SettingsPage`, `PAGE_KEY`: Back goes from a computer page or Notifications to the main page; the address stays `/settings`). `Computers.tsx` (lazy): the Computers section with Found and + Add a computer, and `ComputerActions` (Check again, Rename, Remove) |
+| `web/src/styles/fonts.css` | Geist and Geist Mono variable woff2 files (`web/src/styles/fonts/`, SIL OFL 1.1, `third_party/geist/LICENSE`), bundled with the app and served by the gateway: no external font request. `--sans` and `--mono` in `global.css` use them; the terminal (xterm) keeps its own mono font list |
 | `web/src/screens/{providers.ts,Herdr.tsx,ProviderScreen.tsx,ProviderCreate.tsx}` | herdr on the phone. `providers.ts`: one scheduler read per computer that lists a provider (own status, memory only), roll-up, count, tabs. `Herdr.tsx`: the herdr tab (projects, worktrees, state words). `ProviderScreen.tsx`: one terminal in Live (`/p/<provider>/<target>`, chips, Open, closes the stream when the page is hidden). `ProviderCreate.tsx`: the **+** sheet (new worktree and agent) |
-| `web/src/screens/GitHub.tsx` | GitHub on the phone: the row of each computer in **Settings → Integrations** (`GitHubRow`), and one sheet (`GitHubSheet`) for Connect (code, step 2), the repository list with search, and a set-up (progress, **Stop**, ready, problems), drawn from `GET /api/v1/github` and polled every 2 s while it waits. Optional repository push ages validate the JavaScript Date before ISO conversion; an unrenderable date omits only its age, without changing schema acceptance or actions. Fixed GitHub addresses only. Loaded on demand from Settings and from **From GitHub** in the **New workspace** sheet (`ProviderManage.tsx`, `Sessions.tsx`) |
+| `web/src/screens/GitHub.tsx` | GitHub on the phone: the GitHub row on each computer's page in Settings (`GitHubRow`), and one sheet (`GitHubSheet`) for Connect (code, step 2), the repository list with search, and a set-up (progress, **Stop**, ready, problems), drawn from `GET /api/v1/github` and polled every 2 s while it waits. Optional repository push ages validate the JavaScript Date before ISO conversion; an unrenderable date omits only its age, without changing schema acceptance or actions. Fixed GitHub addresses only. Loaded on demand from Settings and from **From GitHub** in the **New workspace** sheet (`ProviderManage.tsx`, `Sessions.tsx`) |
 | `web/src/screens/Inbox.tsx` | The **Needs you** tab and its queue: one list of what waits on every computer (sessions in `waiting`, herdr items in `blocked`; then **Finished**), built from the session lists and the provider lists; the **Next** control in Live. No request of its own ([needs-you-inbox.md](needs-you-inbox.md)) |
 | `web/src/terminal` | xterm display, frame renderer, snapshot assembly, input sender, composer, snippets, speech, phone-wide scheduler |
 | `web/src/protocol` | Ajv validators generated at build time (no runtime `eval`) |
@@ -176,6 +201,7 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `web/src/generated` | Generated protocol TypeScript types |
 | `web/src/sw.js` | Service worker: precache, network-first pages, push display (home and per-peer scopes; session and herdr terminal payloads, the one-time tap record for a session's or a herdr terminal's notification tap) |
 | `web/src/storage.ts` | The one safe `localStorage`/`sessionStorage` accessor (private browsing may refuse storage) |
+| `web/src/screens/Sheet.tsx` | Shared sheet entry/cleanup focus: captures the opener before child effects, restores a connected trigger only while focus belongs to the closed sheet/body, and handles nested cleanup without overriding deliberate external focus ([sheet-focus.md](sheet-focus.md)) |
 | `third_party` | Patched copies of `ansi`, `vt`, `xpty`, `ultraviolet` ([dependency-patches.md](dependency-patches.md)) |
 | `tests` | Integration, soak, agent replay and PTY fixtures |
 | `site/` | Public docs site (Astro Starlight) and landing page in `site/public/`, deployed to Vercel |
@@ -184,7 +210,44 @@ frames `https://<peer>:8443` directly; nothing is relayed through home.
 | `scripts/fakeherdr` | A fake herdr binary (`server`, `status`, `terminal attach`, `agent attach`) with a control socket, for Go tests and the e2e harness. It reads only its own folder; the harness sandbox hides the real herdr |
 | `packaging/` | Unsigned macOS app/DMG, Linux binaries, Windows Inno Setup installer; signing scripts |
 
+### Gateway RPC availability
+
+Fast gateway RPC reads and authentication share one reusable serialized IPC
+connection. Known blocking operations (session create/terminate, Push Test,
+preview scans, herdr open/create/manage and GitHub actions/repository lists)
+use dedicated connections under one four-slot admission limit. Excess slow
+calls fail before dialing with `limit_exceeded`; there is no new waiting queue.
+Every exchange forwards the same credential and origin and validates its
+request, result and operation identity. Close cancels in-flight slow dials
+and closes their connections. Live and uploads keep their existing separate
+streams. See [gateway-rpc.md](gateway-rpc.md), including the distinction
+between canceled gateway exchanges and existing broker-owned worktree jobs.
+
+### Retained history on the phone
+
+History follows each byte-limited page's contiguous cursor until `complete`,
+then appends the frozen screen. The old 25-page assumption could hide retained
+rows after styled output (#217). The phone caps one loading attempt at 5,000
+rows, 5,000 requests across restarts, 32 MiB of UTF-16 retained text, 128 MiB
+of received UTF-16 page data and 60 seconds. A failure drops the partial rows
+and shows unavailable; it never invents a continuous transcript. See
+[terminal-history.md](terminal-history.md) for token and lifetime rules.
+
 ## 4. Protocols
+
+Viewer publication is demand-driven (#221): `Session.captureAfter` retains
+the first dirty output's coalescing deadline. The actor's reusable timer runs
+at the earliest ready viewer's slot, bounded by `framePublishInterval` and
+that viewer's `nextFrameAt`. Viewers sending a frame or notice, awaiting a
+snapshot acknowledgement, or with queued notices do not request another
+scheduled capture. Dirty output stays pending until a delivery/acknowledgement
+allows capture; an unthrottled viewer keeps the normal cadence. Attach,
+resize and child exit still capture directly. A valid in-flight snapshot's
+catch-up check captures dirty output once on demand. Independent agent-state
+and explicit presence-preview captures retain their own schedules. No wire
+schema, controller/input path, byte budget or history ownership changes.
+See [multi-computer.md](multi-computer.md#performance-budget-the-phone-is-the-bottleneck)
+and [issue-221 evidence](evidence/issue-221/README.md).
 
 All schemas are JSON Schema Draft 2020-12 in `protocol/v1`.
 
@@ -207,6 +270,24 @@ cookies, revision bump rules), [local-transport.md](../protocol/v1/local-transpo
 
 Wire format: local IPC is four-byte big-endian length-prefixed JSON; the
 WebSocket uses JSON text messages. Counters travel as decimal strings.
+
+History conversion reuses the exact row JSON length measured by row bounding.
+It admits rows using that sum, commas and generated empty-row metadata,
+without repeatedly encoding earlier rows. The 1 MiB envelope budget, 1 KiB
+reserve and all semantic validators remain unchanged. See [history.md](history.md).
+
+The broker sends generated terminal payloads through `protocol.EncodeHost`,
+which shares envelope and semantic validators with strict received-message
+validation, then serializes them without decoding its own JSON. Non-terminal
+notices keep the strict wire round trip. All receiving trust boundaries keep
+`DecodeHost`/`DecodeClient`; see [terminal-delivery.md](terminal-delivery.md).
+
+Live row bounds are enforced before coordinate arithmetic. For snapshot
+chunks, Go rejects `startRow` outside 0–199, then checks the row count against
+`MaxRows - startRow` to avoid signed addition overflow. Valid chunks may end
+exactly at 200. History offsets are already bounded before addition; patch
+indexes compare directly with validated screen dimensions. The browser's
+existing schema bounds and protocol fields/revision are unchanged (#237).
 
 Code generation: `pnpm protocol:generate` runs `scripts/generate-protocol.mjs`
 (quicktype) and writes `internal/protocol/generated.go` and
@@ -297,23 +378,23 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Wall and thumbnails | Grid of all sessions; read-only thumbnail viewers: the phone asks for 5 updates/s per tile and the broker caps any request at 30/s; at most 4 live tiles under a phone-wide budget; hold and drag to arrange; a visible never-live tile beyond the limit gets one snapshot turn (`peek`), then Paused, in a 5th connection slot | `internal/broker/viewer.go` | `web/src/screens/Wall.tsx`, `web/src/terminal/scheduler.ts` | multi-computer.md |
 | Agent state and badges | Working, waiting, idle from screen; worked seconds | `internal/agentstate`, `internal/broker/agent.go` | `web/src/screens/Sessions.tsx` | [agent-state.md](agent-state.md) |
 | Answer cards | Tap an option for a detected question; broker re-parses the screen and sends its own keys | `internal/broker/agent.go` | `web/src/screens/AnswerCard.tsx` | [agent-state.md](agent-state.md) |
-| Notifications | Web Push "waiting" and "done"; no terminal text in payloads; from every paired computer (one `/sw.js` registration per peer at scope `/push/<host>/`) | `internal/webpush`, `internal/store/push.go` | `web/src/push.ts`, `web/src/sw.js` | [notifications.md](notifications.md) |
+| Notifications | Web Push "waiting" and "done"; no terminal text in payloads; from every paired computer (one `/sw.js` registration per peer at scope `/push/<host>/`); four concurrent requests per delivery, each capped by its share of the remaining one-minute window so earlier hung endpoints do not exhaust later endpoints' attempts (#207) | `internal/webpush`, `internal/store/push.go` | `web/src/push.ts`, `web/src/sw.js` | [notifications.md](notifications.md) |
 | Away recap | "While you were away" card: time away, time worked, changes | `internal/broker/agent.go` (worked seconds) | `web/src/screens/Recap.tsx`, `web/src/screens/activity.ts` | — |
 | Changes | Diff list and file view, commit selected paths, push (never force), line comments into the composer | `internal/gitchanges`, `internal/broker/changes.go` | `web/src/screens/Changes.tsx` | [changes.md](changes.md) |
 | Project buttons | Project commands in the Snips sheet; typed into the session as input | `internal/projecttasks`, `internal/broker/tasks.go` | `web/src/screens/Snippets.tsx` | [project-tasks.md](project-tasks.md) |
 | Files | Browse, search and read project files; tap `path:line` in the terminal | `internal/projectfiles`, `internal/broker/files.go` | `web/src/screens/Files.tsx`, `web/src/terminal/pathLinks.ts` | — |
-| Worktrees | New session in `~/termivoa/worktrees/<repo>/<name>` on branch `termivoa/<name>` (`git worktree add`); remove it | `internal/broker/worktree.go`, `internal/gitchanges/worktree.go` | `web/src/screens/Worktree.tsx` | — |
+| Worktrees | New session in `~/termivoa/worktrees/<repo>/<name>` on branch `termivoa/<name>` (`git worktree add`); remove it; one active create, no waiting queue | `internal/broker/worktree.go`, `internal/gitchanges/worktree.go` | `web/src/screens/Worktree.tsx` | [worktrees.md](worktrees.md) |
 | Dev-server preview | Proxy one port that the session's own processes listen on (OS scan only); for sessions on every computer in the list: the home app frames a peer's own preview origin, after a reachability probe, with the computer's label and **untrusted page** over a peer's page | `internal/broker/devpreview.go`, `internal/ptyhost/listen.go`, `internal/gateway/preview.go`, `internal/gateway/handler.go` (`deviceConnectSources`), `internal/broker/gateway_rpc.go` (`gateway.preview.check`) | `web/src/screens/Preview.tsx`, `web/src/screens/PreviewChip.tsx`, `web/src/screens/App.tsx` (`previewFor`), `web/src/computers.ts` (`previewOriginOf`) | [preview.md](preview.md), [peer-preview.md](peer-preview.md), ADR 0006 |
 | Photo and voice | Photo upload into the project folder (controller only); dictation with the Web Speech API | `internal/broker/upload.go` | `web/src/terminal/attachments.ts`, `web/src/terminal/image.ts`, `web/src/terminal/speech.ts` | — |
 | Live folder | Current working folder from the OS or OSC 7 / OSC 9;9; display only | `internal/broker/cwd.go`, `internal/broker/cwd_hook.go`, `internal/ptyhost/cwd.go` | `web/src/screens/folder.ts` | [live-folder.md](live-folder.md) |
 | Snippets, composer and keys | Saved snippets, multi-line composer with drafts in memory, key row, agent keys | — | `web/src/terminal/snippets.ts`, `web/src/terminal/composer.ts`, `web/src/screens/Composer.tsx`, `web/src/screens/Dock.tsx`, `web/src/terminal/agentKeys.ts` | — |
-| Multi-computer | One app on home talks directly to up to 8 peers; Settings → Computers shows each computer's `hostBuild` and last good read (memory only), **Check again** reads one computer through the scheduler | `internal/broker/computers.go`, `internal/store/computers.go`, `internal/tailnet`, `cmd/pterm/computers.go` | `web/src/computers.ts`, `web/src/screens/allSessions.ts`, `web/src/screens/Computers.tsx`, `web/src/screens/AddComputer.tsx`, `web/src/pairing/addComputer.ts` | [multi-computer.md](multi-computer.md), ADR 0005 |
-| Found on your network | A new computer that waits in `pterm pair --via <home>` (or setup's answer 2) at a terminal pushes its bound grant to home every 30 s for up to 10 minutes; **Settings → Computers → Found on your network** lists it with **Add**, which runs the pasted-link flow. Routes `POST /api/v1/computers/offer` (no auth) and `GET /api/v1/computers/found` (cookie, own origin); RPCs `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`; protocol revision 3 | `internal/broker/offer.go` (`offerPairing`, `endOffer`, `pushOffer`, `dialHome`, `dialPinned`), `internal/broker/offers.go` (`offerComputer`, `foundComputers`, `offerBook`), `internal/gateway/handler.go` (`admitAPI` exception), `internal/gateway/api.go` (`offerComputer`, `foundComputers`), `internal/cli/admin.go` (`offerAndWait`, `waitForPhone`, `pairingPrompt`), `cmd/pterm/lifecycle.go` (`offerPairing`, `askHome`) | `web/src/computers.ts` (`watchFound`), `web/src/screens/Computers.tsx` (`FoundBlock`), `web/src/pairing/addComputer.ts` (`foundLink`, the one retry), `web/src/screens/AddComputer.tsx` | [found-on-network.md](found-on-network.md), ADR 0007 |
-| herdr on your phone | A **herdr** tab in Sessions lists each computer's herdr projects, worktrees and agent state words; a tap opens that one real terminal in Live (an in-memory provider session that runs `herdr agent attach`, never `--takeover`); a push when an agent is blocked or finished; **Settings → Integrations** switches it per computer; **+** makes a worktree and starts an agent (on every git project: the host looks for `.git` itself). The **⋯** menu and **New workspace** manage herdr through one route, `POST /api/v1/providers/{provider}/manage` (`Provider.Manage` in `internal/herdr/manage.go`: close, remove without force, new tab, new workspace from a project ID, start `herdr server`; the confirmed name is checked on a fresh snapshot under the create lock). A computer without herdr lists it as `notInstalled`: no tab, a card with **Install herdr** that opens a session with the install command typed (`runFirst` with `typeOnly`). Revision 6 adds: `newTab` with `agent` and an optional `prompt` (the host starts the agent in the new tab's pane; it takes one of the device's 3 creates a minute), `openItem` (group ID plus a branch name that must be in a fresh `closed` list; `worktree.open`), and the `closed` list of each group (branch names of closed linked worktrees, from `worktree.list` in the poll in `internal/herdr/closed.go`: at most 16 names, at most 4 `worktree.list` calls per poll turn, 1 s each, one group at most every 10 s). The phone also gets the **⋯** menu inside a herdr terminal (`ProviderScreen.tsx`). Protocol revisions 5 and 6 ([herdr-manage.md](herdr-manage.md), section 14) | `internal/herdr`, `internal/broker/providers.go`, `internal/broker/registry.go` (`CreateProvider`), `internal/webpush` (`NotifyProvider`), `cmd/pterm/herdr.go`, `scripts/fakeherdr` | `web/src/screens/providers.ts`, `web/src/screens/Herdr.tsx`, `web/src/screens/ProviderScreen.tsx`, `web/src/screens/ProviderCreate.tsx`, `web/src/sw.js` | [herdr-provider.md](herdr-provider.md), ADR 0008 |
-| Needs you inbox | A **Needs you** tab in Sessions (after **All**, with a count, only while something waits) lists what waits for an answer on every computer: sessions in `waiting` and herdr items in `blocked`, the longest wait first, then **Finished** ("Your turn" sessions, herdr `done` not opened here). A tap opens the item and starts a queue: **Next · 2 left ›** in Live goes to the next waiting item, **Inbox ›** on the last. A notification tap starts the queue too (the service worker's one-time tap record; never the address). Navigation only: no input, no control, no new request, no protocol or host change | — | `web/src/screens/Inbox.tsx`, `web/src/screens/Sessions.tsx` (`ComputerChips`), `web/src/screens/App.tsx` (`queueNext`, `queueOnArrival`, `queueScreen`), `web/src/screens/Live.tsx`, `web/src/screens/ProviderScreen.tsx`, `web/src/sw.js` (`SESSION_PATH`) | [needs-you-inbox.md](needs-you-inbox.md) |
+| Multi-computer | One app on home talks directly to up to 8 peers; Settings shows one card for each computer; its page shows the computer's `hostBuild` and last good read (memory only), and **Check again** reads one computer through the scheduler | `internal/broker/computers.go`, `internal/store/computers.go`, `internal/tailnet`, `cmd/pterm/computers.go` | `web/src/computers.ts`, `web/src/screens/allSessions.ts`, `web/src/screens/Computers.tsx`, `web/src/screens/AddComputer.tsx`, `web/src/pairing/addComputer.ts` | [multi-computer.md](multi-computer.md), ADR 0005 |
+| Found on your network | A new computer that waits in `pterm pair --via <home>` (or setup's answer 2) at a terminal pushes its bound grant to home every 30 s for up to 10 minutes; **Settings → Found on your network** lists it with **Add**, which runs the pasted-link flow. Routes `POST /api/v1/computers/offer` (no auth) and `GET /api/v1/computers/found` (cookie, own origin); RPCs `gateway.computers.offer`/`found`, `admin.pair.offer`/`offer.end`; protocol revision 3 | `internal/broker/offer.go` (`offerPairing`, `endOffer`, `pushOffer`, `dialHome`, `dialPinned`), `internal/broker/offers.go` (`offerComputer`, `foundComputers`, `offerBook`), `internal/gateway/handler.go` (`admitAPI` exception), `internal/gateway/api.go` (`offerComputer`, `foundComputers`), `internal/cli/admin.go` (`offerAndWait`, `waitForPhone`, `pairingPrompt`), `cmd/pterm/lifecycle.go` (`offerPairing`, `askHome`) | `web/src/computers.ts` (`watchFound`), `web/src/screens/Computers.tsx` (`FoundBlock`), `web/src/pairing/addComputer.ts` (`foundLink`, the one retry), `web/src/screens/AddComputer.tsx` | [found-on-network.md](found-on-network.md), ADR 0007 |
+| herdr on your phone | A **herdr** tab in Sessions lists each computer's herdr projects, worktrees and agent state words; a tap opens that one real terminal in Live (an in-memory provider session that runs `herdr agent attach`, never `--takeover`); a push when an agent is blocked or finished; the **herdr** part of each computer's page in Settings switches it; **+** makes a worktree and starts an agent (on every git project: the host looks for `.git` itself). The **⋯** menu and **New workspace** manage herdr through one route, `POST /api/v1/providers/{provider}/manage` (`Provider.Manage` in `internal/herdr/manage.go`: close, remove without force, new tab, new workspace from a project ID, start `herdr server`; the confirmed name is checked on a fresh snapshot under the create lock). A computer without herdr lists it as `notInstalled`: no tab, a card with **Install herdr** that opens a session with the install command typed (`runFirst` with `typeOnly`). Agent choices include advertised kinds with installed canonical commands or running agents (issue #208), at most 16, running counts first. Revision 6 adds: `newTab` with `agent` and an optional `prompt` (the host starts the agent in the new tab's pane; it takes one of the device's 3 creates a minute), `openItem` (group ID plus a branch name that must be in a fresh `closed` list; `worktree.open`), and the `closed` list of each group (branch names of closed linked worktrees, from `worktree.list` in the poll in `internal/herdr/closed.go`: at most 16 names, at most 4 `worktree.list` calls per poll turn, 1 s each, one group at most every 10 s). The phone also gets the **⋯** menu inside a herdr terminal (`ProviderScreen.tsx`). Protocol revisions 5 and 6 ([herdr-manage.md](herdr-manage.md), section 14) | `internal/herdr`, `internal/broker/providers.go`, `internal/broker/registry.go` (`CreateProvider`), `internal/webpush` (`NotifyProvider`), `cmd/pterm/herdr.go`, `scripts/fakeherdr` | `web/src/screens/providers.ts`, `web/src/screens/Herdr.tsx`, `web/src/screens/ProviderScreen.tsx`, `web/src/screens/ProviderCreate.tsx`, `web/src/sw.js` | [herdr-provider.md](herdr-provider.md), ADR 0008 |
+| Needs you inbox | A **Needs you** tab in Sessions (after **Sessions** and **herdr**, with a count, only while something waits) lists what waits for an answer on the chosen computer, or on every computer in All computers: sessions in `waiting` and herdr items in `blocked`, the longest wait first, then **Finished** ("Your turn" sessions, herdr `done` not opened here). A tap opens the item and starts a queue: **Next · 2 left ›** in Live goes to the next waiting item, **Inbox ›** on the last. A notification tap starts the queue too (the service worker's one-time tap record; never the address). Navigation only: no input, no control, no new request, no protocol or host change | — | `web/src/screens/Inbox.tsx`, `web/src/screens/Sessions.tsx` (`ShowTabs`), `web/src/screens/Drawer.tsx` (`needsByComputer`), `web/src/screens/App.tsx` (`queueNext`, `queueOnArrival`, `queueScreen`), `web/src/screens/Live.tsx`, `web/src/screens/ProviderScreen.tsx`, `web/src/sw.js` (`SESSION_PATH`) | [needs-you-inbox.md](needs-you-inbox.md) |
 | Desktop attach | `pterm attach` in any terminal app; Ctrl+] detaches | `internal/desktop`, `internal/liveclient`, `internal/cli/desktop.go`, `cmd/pterm/desktop.go` | — | — |
 | Packaging | Unsigned macOS app and DMG (launcher runs `pterm launch`), Linux static binaries and installer script, Windows Inno Setup installer | `packaging/macos`, `packaging/linux`, `packaging/windows`, `scripts/install-linux.sh` | — | [install.md](install.md) |
-| GitHub | **Settings → Integrations** has one row for each computer (macOS and Linux, a build with `ClientID`, revision 7): **Connect** runs the device flow of the Termivoa GitHub App in the broker (no client secret; Contents read and write, Metadata read) and keeps one token pair for each computer in `github.json`; **Set up a repository** lists the chosen repositories with `here`/`taken`, and **Set up** runs one clone job for each computer in the broker (not in a session): into a temp folder in the home folder, then an exclusive rename to `~/<name>` and `addProject`. The phone polls the job's state. In the clone's own config, a reset line and `!<pterm> github-credential` make git use Termivoa's login for that one repository (never stored by git). **Disconnect** revokes both tokens at GitHub and deletes the file. Routes `GET`/`POST /api/v1/github`, `GET /api/v1/github/repos`; protocol revision 7; no database change | `internal/github`, `internal/broker/github.go`, `cmd/pterm/github.go`, `scripts/fakegithub` | `web/src/screens/GitHub.tsx`, `web/src/screens/Settings.tsx`, `web/src/screens/ProviderManage.tsx` (**From GitHub**), `web/src/screens/Sessions.tsx` | [github-integration.md](github-integration.md), ADR 0010 |
+| GitHub | Each computer's page in Settings has a GitHub row (macOS and Linux, a build with `ClientID`, revision 7): **Connect** runs the device flow of the Termivoa GitHub App in the broker (no client secret; Contents read and write, Metadata read) and keeps one token pair for each computer in `github.json`; **Set up a repository** lists the chosen repositories with `here`/`taken`, and **Set up** runs one clone job for each computer in the broker (not in a session): into a temp folder in the home folder, then an exclusive rename to `~/<name>` and `addProject`. The phone polls the job's state. In the clone's own config, a reset line and `!<pterm> github-credential` make git use Termivoa's login for that one repository (never stored by git). **Disconnect** revokes both tokens at GitHub and deletes the file. Routes `GET`/`POST /api/v1/github`, `GET /api/v1/github/repos`; protocol revision 7; no database change | `internal/github`, `internal/broker/github.go`, `cmd/pterm/github.go`, `scripts/fakegithub` | `web/src/screens/GitHub.tsx`, `web/src/screens/Settings.tsx`, `web/src/screens/ProviderManage.tsx` (**From GitHub**), `web/src/screens/Sessions.tsx` | [github-integration.md](github-integration.md), ADR 0010 |
 | Docs site | Astro Starlight site with `llms.txt` and per-page Markdown | `site/` | — | AGENTS.md rules 22–23 |
 
 ## 8. Build and checks
@@ -321,15 +402,24 @@ Decisions: [ADR 0002](decisions/0002-server-authoritative-terminal.md),
 | Command | What |
 | --- | --- |
 | `scripts/check` / `scripts/check.ps1` | Full local gate: protocol drift, gofmt, vet, Go tests (with `third_party`), web typecheck, tests, build |
-| `pnpm build:web` then `scripts/embed-web.sh` | Build `web/dist` and copy it for `-tags webdist` |
+| `pnpm build:web` then `scripts/embed-web.sh` | Build final `web/dist`, precompress immutable assets, and copy it for `-tags webdist` |
 | `.github/workflows/ci.yml` | protocol-generation, go-quality, go-race, web-quality, macOS and Windows integration, Linux release smoke |
 | `.github/workflows/packaging.yml` | Unsigned macOS, Linux and Windows artifacts |
 | `scripts/soak.sh` | Soak probes (build tag `soak`) |
 | `scripts/gate0`, `scripts/e2e-multicomputer` | Multi-computer cookie Gate 0 page and end-to-end harness (two computers behind an HTTPS front; also covers peer preview on `:8443`, Found on your network, herdr with the fake herdr, checks `H-*`, and GitHub with `scripts/fakegithub`, `scripts/e2e-multicomputer/github.mjs`). The harness builds `pterm` with `-tags webdist,e2e` |
+| `node --test scripts/e2e-multicomputer/browser.test.mjs` | Test-only owned Chromium teardown: observed child exit, bounded graceful/TERM/KILL waits, closed CDP socket and cleared request timers. Uses Node built-ins; actual Chromium case needs an existing executable in `CHROME`. Design and bounds: [harness README](../scripts/e2e-multicomputer/README.md#how-does-owned-browser-teardown-finish), evidence [issue #260](evidence/issue-260/verification.md) |
 | Build tag `e2e` | Test builds only. `internal/broker/peerdial_e2e.go` replaces the offer dial (`dialHome`) with a `CONNECT` through the harness front when `PTERM_E2E_FRONT` is set, checking the certificate by `PTERM_E2E_SPKI` in place of the pinned-IP guard; `cmd/pterm/lifecycle_e2e.go` makes `pterm setup` check the gateway in `PTERM_E2E_GATEWAY`; `internal/github/github_e2e.go` points the GitHub hosts at the fake in `PTERM_E2E_GITHUB` (and sets the client ID and slug from `PTERM_E2E_GITHUB_CLIENT`/`_APP`), and `cmd/pterm/github_e2e.go` lets the helper answer for that host. Production builds do not compile these files; a unit test and a harness check confirm that a production binary does not contain `PTERM_E2E` |
 | `scripts/docs-screenshots` | Demo-only screenshots for the docs site |
 
 ## 9. Key invariants
+
+Local security repair (#255, not merged): [ADR 0012](decisions/0012-private-file-permission-repair.md)
+and [private-file-permissions.md](private-file-permissions.md) describe private-file
+permission repair bound to one validated open object, rejecting final links and
+shared hard links before mutation. Owner approved design and implementation on 2026-10-09, subject to required checks;
+local implementation has source/local security and pinned feasibility reviews,
+but awaits native evidence and required checks and does not change current-main
+guarantees. Windows lock repair and locking use the same opened object.
 
 - The gateway never spawns a shell and never opens SQLite. It has no PTY or Store.
 - Only the broker writes to a PTY, through one writer per session.
@@ -374,3 +464,58 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [progress.md](progress.md), [pending-work.md](pending-work.md),
 [owner-verification.md](owner-verification.md),
 [release-checklist.md](release-checklist.md).
+
+### How are static docs dependencies checked?
+
+The docs site has a separate frozen lockfile outside the phone workspace.
+Vulnerability CI builds and audits it independently. `scripts/audit-site.mjs`
+fails closed on unknown moderate/high/critical findings and audit/report errors;
+it reports two exact unpatched build-only findings whose current input paths
+are assessed in [dependencies.md](dependencies.md). Root audit thresholds are
+unchanged. The site stays static and uses the passthrough image service; these
+reviewed dispositions do not apply to a Node runtime, external patterns or
+shared HTTP response caches. Reassess them when those facts change.
+
+### How does desktop attach reject invalid snapshot ranges?
+
+The direct `internal/desktop.FrameClient` row assembler checks start and count
+against declared height without overflowing addition. Invalid chunks reset
+assembly and request resync before indexing or painting. Strict transport
+validation remains separate; valid frame/protocol behavior is unchanged.
+[Desktop frame client](desktop-frame-client.md), issue #247.
+
+### Uninstall cleanup (#213, owner-approved, not merged)
+
+[ADR 0011](decisions/0011-uninstall-github-revocation.md) and
+[uninstall-github.md](uninstall-github.md) propose revoking the stored GitHub
+pair before `--delete-data` discards it. The draft implementation runs only after consent and
+broker shutdown under its existing exclusive data lock, using the existing
+restricted GitHub package client without starting a runtime. Keep the empty
+data directory/lock inode throughout contents removal. The CLI receives only request-acceptance/local-deletion status. Extra deletion
+roots are checked by canonical filesystem identity before token work so
+parent aliases cannot remove the held ownership namespace. Owner approved the design and implementation on 2026-10-09, subject to required checks. CI stays disabled; required checks and native evidence remain pending.
+
+### How do provider sheets refresh agent choices? (#210)
+
+`useAgentKinds` owns one quiet settings-read lifetime for **New worktree**,
+and reads on item-menu open and **New tab** chooser open. `App.readSettings`
+returns `all.reload`'s promise through `Sessions` or `ProviderScreen`; the
+sheet receives the current provider entry, so the completed read updates
+its choices. Agent actions wait for that promise; **No agent** and **Shell**
+do not depend on it. Read failure settles with cached choices and normal
+host validation. Cleanup prevents an old effect from settling a new sheet;
+React development effect replay does not issue a canceled read.
+
+Close conflicts use fixed application guidance after a provider reload;
+peer detail sanitization is unchanged. Last-tab hints use the same
+worktrees-first/shared-main-folder guards as **Close workspace**. See
+[herdr-manage.md](herdr-manage.md) and the focused React browser evidence in
+[evidence/issue-210/verification.md](evidence/issue-210/verification.md).
+
+### How do effect fixtures track current agent-choice guidance?
+
+The provider-kinds browser fixture exercises actual Sessions/chooser effects,
+origin routing and mutation gates. It requires the separately unit-tested
+current dropped-choice formatter's nonempty text in the real DOM rather than
+duplicating running-only copy. Removing rendered guidance still fails the
+four home/peer scenarios; #265 [evidence](evidence/issue-265/README.md).

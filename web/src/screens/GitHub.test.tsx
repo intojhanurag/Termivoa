@@ -7,7 +7,8 @@ import {
   BIG_KB, clock, ConnectBody, connectProblem, copyCode, DEVICE_URL, filterRepos, GitHubRowView, githubInfo, githubSources, INSTALL_GIT, installUrl, isBig,
   nextMode, pushedText, RepoList, repoMeta, setupProblem, SetupBody, sizeText, timeLeft, unreadableText, type GitHubSource, type ReposStatus,
 } from './GitHub';
-import { IntegrationsSection } from './Settings';
+import { ComputerPage } from './Settings';
+import type { ComputerEntry } from './allSessions';
 import { WorkspaceList } from './ProviderManage';
 import { info, mac, okEntry, ready, settingsWith, vps } from './providerFixtures';
 
@@ -18,6 +19,9 @@ const HOUR = 3_600_000;
 const repo = (name: string, extra: Partial<HTTPGitHubRepo> = {}): HTTPGitHubRepo => ({
   repo: `octo-demo/${name}`, private: true, fork: false, archived: false, sizeKb: 2048, pushedAt: NOW - 2 * HOUR, here: false, taken: false, ...extra,
 });
+const computerPage = (entry: ComputerEntry) => renderToStaticMarkup(
+  <ComputerPage entry={entry} onBack={noop} onFailure={() => ''} onCheck={() => Promise.resolve()} onComputersChanged={noop} onRemoved={noop} />,
+);
 const answer = (extra: Partial<HTTPGitHubResponse> = {}): HTTPGitHubResponse => ({ state: 'notConnected', app: 'termivoa', ...extra });
 
 describe('helpers', () => {
@@ -120,10 +124,10 @@ describe('the Settings row', () => {
     expect(row({ state: 'needsInstall', login: 'octo-demo' })).toContain('>Choose on GitHub</button>');
   });
 
-  it('no git: GIT MISSING in amber and Check again only (the settings do not say the platform)', () => {
+  it('no git: git missing in amber and Check again only (the settings do not say the platform)', () => {
     const page = row({ state: 'noGit' });
     expect(page).toContain('git is not on mac');
-    expect(page).toContain('<span class="computer-state amber">Git missing</span>');
+    expect(page).toContain('<span class="computer-state amber">git missing</span>');
     expect(page).toContain('Check again');
     expect(page).not.toContain('Install git');
   });
@@ -151,13 +155,12 @@ describe('the Settings row', () => {
     expect(row({ state: 'notConnected', note: { kind: 'disconnected', revokeFailed: true } })).toContain('>Also remove Termivoa on GitHub.</a>');
   });
 
-  it('Integrations shows GitHub rows also on a computer with no herdr', () => {
-    const page = renderToStaticMarkup(
-      <IntegrationsSection entries={[okEntry(mac, { protocolRevision: 7, providers: [], github: { state: 'ready', login: 'octo-demo' } })]} onFailure={() => ''} />,
-    );
-    expect(page).toContain('Integrations');
+  it('a computer page shows its GitHub row also with no herdr, and none where GitHub is not offered', () => {
+    const page = computerPage(okEntry(mac, { protocolRevision: 7, providers: [], github: { state: 'ready', login: 'octo-demo' } }));
+    expect(page).toContain('<h2 class="caps">GitHub</h2>');
     expect(page).toContain('GitHub on mac');
-    expect(renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { protocolRevision: 7, providers: [] })]} onFailure={() => ''} />)).toBe('');
+    expect(page).not.toContain('<bdi>herdr</bdi>');
+    expect(computerPage(okEntry(mac, { protocolRevision: 7, providers: [] }))).not.toContain('GitHub');
   });
 });
 
@@ -416,8 +419,8 @@ describe('review fixes', () => {
     expect(githubSources([failed], kept)).toEqual([]);
   });
 
-  it('Integrations with herdr and no GitHub shows only the herdr row', () => {
-    const page = renderToStaticMarkup(<IntegrationsSection entries={[okEntry(mac, { protocolRevision: 7, providers: [info()] })]} onFailure={() => ''} />);
+  it('a computer page with herdr and no GitHub shows only the herdr row', () => {
+    const page = computerPage(okEntry(mac, { protocolRevision: 7, providers: [info()] }));
     expect(page).toContain('<bdi>herdr</bdi> on mac');
     expect(page).not.toContain('GitHub on');
   });
