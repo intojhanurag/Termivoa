@@ -106,6 +106,28 @@ describe('FrameRenderer', () => {
     terminal.dispose();
   });
 
+  it('shows the new frame from its top row after a resize that narrows full rows (#287)', async () => {
+    const { terminal, renderer } = harness();
+    const full = (text: string, columns: number): TerminalRow => ({
+      runs: [{ column: 0, style, cells: [...text.padEnd(columns, 'x')].map((cell) => ({ text: cell, width: 1, continuation: false, contentClipped: false })) as TerminalRow['runs'][number]['cells'] }],
+    });
+    const frame = (revision: string, columns: number, rows: number) => ({
+      generation: '00000000-0000-4000-8000-000000000001',
+      revision,
+      screen: { ...metadata(), columns, rows, cursor: { ...metadata().cursor, row: rows - 1 } },
+      rows: Array.from({ length: rows }, (_, index) => full(`r${index}`, columns)),
+    });
+    // A bigger font: fewer columns. xterm would rewrap the old full rows and push one past its base.
+    await renderer.paintSnapshot(frame('1', 24, 5));
+    await renderer.paintSnapshot(frame('2', 20, 7));
+
+    const { active } = terminal.buffer;
+    expect([active.baseY, active.viewportY]).toEqual([0, 0]);
+    const shown = Array.from({ length: 7 }, (_, index) => active.getLine(active.viewportY + index)?.translateToString(true).slice(0, 2));
+    expect(shown).toEqual(['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6']);
+    terminal.dispose();
+  });
+
   it('applies a matching whole-row patch', async () => {
     const { terminal, renderer } = harness();
     const generation = '00000000-0000-4000-8000-000000000001';

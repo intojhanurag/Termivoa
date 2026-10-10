@@ -18,6 +18,13 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
+- **The Live terminal no longer draws one row too low after a resize.**
+  Phone: after a text-size change (or any resize that makes lines narrower)
+  the top row could show an old line and the newest line was hidden until
+  the next full redraw; the cursor and tap-to-place were one row off too.
+  The terminal now starts each resized picture from its top row
+  ([#287](https://github.com/intojhanurag/Termivoa/issues/287)). Host: no
+  change.
 - **`pterm` no longer calls itself a private build.** Host: `pterm` and
   `pterm help` now start with "Termivoa, free and open-source beta". Phone:
   no change.

@@ -94,6 +94,11 @@ export class FrameRenderer {
 
     return this.enqueue(async () => {
       if (this.terminal.cols !== screen.columns || this.terminal.rows !== screen.rows) {
+        // Erase first: with no scrollback, xterm's rewrap of full rows on a
+        // narrower resize can leave its base one line down (baseY 1), and the
+        // view then shows a stale top row and hides the last one (#287). The
+        // snapshot repaints every row, so the old cells are not needed.
+        await write(this.terminal, '\u001b[0m\u001b[H\u001b[2J');
         this.terminal.resize(screen.columns, screen.rows);
       }
       await this.paint(rows, screen);

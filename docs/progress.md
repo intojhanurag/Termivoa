@@ -15,6 +15,30 @@ Last updated: 2026-10-10
 
 ## Log
 
+### Fix: Live terminal one row too low after a resize (2026-10-10, branch `fix/issue-287`)
+
+- **Reproduced** (issue #287). Chromium (Chrome for Testing, a throwaway
+  page with `TerminalView` + `FrameRenderer`): frames 52×21 then 48×29 with
+  full-width rows left xterm at `viewportY 0`, `baseY 1`; the top screen row
+  showed the old `$ last`, and the frame's last row was hidden. In vitest,
+  400 random resizes gave 5 such states.
+- **Root cause.** With `scrollback: 0`, xterm rewraps the old full-width
+  rows when the column count drops; the extra lines push its base one line
+  down, and the view keeps showing from line 0. `cursorBand` and the screen
+  row under a finger both assume the base is line 0.
+- **Fix.** `FrameRenderer.paintSnapshot` erases the screen (`ESC[2J`)
+  before `terminal.resize`, so there is nothing to rewrap; the snapshot
+  repaints every row anyway. The tap-to-place workaround in
+  `TerminalView.cellAt` (mapping through `viewportY`/`baseY`) is removed.
+- **Checks.** New test in `FrameRenderer.test.ts` fails without the fix
+  (`baseY` 1) and passes with it; a 2,000-resize fuzz run (not committed)
+  had no shifted state; the Chromium page shows `line0` on top and
+  `$ last` on the last row. `GOTOOLCHAIN=go1.27.1 sh scripts/check`:
+  pass (60 files, 1139 web tests). `pnpm build:web`, site `astro build`:
+  pass. `gestures.mjs` (WebKit 2272, playwright-core 1.61.1): 8 of 8,
+  including GE4 tap to place after the GE3 pinch, without the workaround.
+  `phase-b.mjs --no-web-build --only U` (Chrome for Testing): 13 of 13.
+
 ### Feature: touch gestures on the Live terminal (2026-10-10, branch `feat/touch-gestures`)
 
 - Owner decisions: all five gestures; a per-phone **Terminal gestures**

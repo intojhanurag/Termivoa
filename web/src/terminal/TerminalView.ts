@@ -62,9 +62,7 @@ export class TerminalView {
 
   /**
    * The cell under a viewport point as a 0-based frame row and column (the
-   * frame cursor's terms), or undefined outside the grid. xterm can show its
-   * buffer from a line other than its base (viewportY ≠ baseY), so the row
-   * on screen is mapped through both.
+   * frame cursor's terms), or undefined outside the grid.
    */
   cellAt(clientX: number, clientY: number): { row: number; column: number } | undefined {
     const screen = this.screen();
@@ -72,10 +70,9 @@ export class TerminalView {
     if (screen === undefined || cell === undefined) return undefined;
     const box = screen.getBoundingClientRect();
     const column = Math.floor((clientX - box.left) / cell.width);
-    const shown = Math.floor((clientY - box.top) / cell.height);
-    if (column < 0 || column >= this.terminal.cols || shown < 0 || shown >= this.terminal.rows) return undefined;
-    const { viewportY, baseY } = this.terminal.buffer.active;
-    return { row: viewportY + shown - baseY, column };
+    const row = Math.floor((clientY - box.top) / cell.height);
+    if (column < 0 || column >= this.terminal.cols || row < 0 || row >= this.terminal.rows) return undefined;
+    return { row, column };
   }
 
   /** The cells of frame row `row` (as cellAt counts rows). */

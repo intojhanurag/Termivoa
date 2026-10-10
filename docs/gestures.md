@@ -118,10 +118,10 @@ The cell grid is the shell's only if the line holds plain characters: a
 literal tab or a control character the shell shows as two cells (`^A`)
 can make the cursor land a little off.
 
-`TerminalView.cellAt` maps a viewport point to a frame row and column.
-xterm can show its buffer from a line other than its base after a resize
-(`viewportY ≠ baseY`); the cell is mapped through both, and `rowCells`
-reads the frame row's cells from `baseY + row`.
+`TerminalView.cellAt` maps a viewport point to a frame row and column,
+and `rowCells` reads that frame row's cells. The screen row is the frame
+row: `FrameRenderer` erases the screen before each resize, so xterm never
+shows its buffer from a line other than its base (#287).
 
 ## What about accessibility?
 
