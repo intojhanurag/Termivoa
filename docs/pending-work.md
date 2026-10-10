@@ -286,3 +286,12 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 - [ ] Security review by an outside person.
 - [ ] Signed macOS and Windows apps.
+
+### Separate docs dependency audit (#228)
+
+Implemented on `fix/issue-228`, stacked on the source-map-js fix (#226).
+Independent frozen site install/build/audit added to vulnerability CI;
+selector-parser patched and emitted CSS unchanged. Two exact unpatched
+build-only findings remain visible with code-based reachability/upstream
+assessment in `docs/dependencies.md`. Independent adversarial review,
+required hosted checks, owner CI-minutes permission and merge remain pending.

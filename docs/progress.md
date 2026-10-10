@@ -2685,3 +2685,32 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## 2026-10-08: separate docs audit (#228)
+
+- Baseline independent site audit reproduced three high/one moderate findings;
+  root workspace auditing omitted the separate lockfile.
+- Stacked on #226; patched only the site postcss-nested/parser edge to 7.1.6.
+  Frozen install and `npx astro build` passed all 29 pages and link validation.
+  All eight emitted CSS files have unchanged SHA-256 digests.
+- Raw audit still exits 1 with two high/zero moderate. Read the primary
+  advisories and locked source; neither remaining unpatched input path is
+  demonstrated reachable from visitors in this static trusted-source build.
+  Exact versions/paths/status and re-review triggers are recorded in
+  `docs/dependencies.md`; no claim that the upstream vulnerabilities are fixed.
+- Added independent site build/audit to the existing vulnerability CI job.
+  Root threshold unchanged. `node --test scripts/audit-site.test.mjs` passed
+  six fail-closed regressions; `node scripts/audit-site.mjs` passed while
+  printing both retained unpatched findings. New findings, paths, versions,
+  available patches, audit errors or report drift block the new gate.
+- Evidence: `docs/evidence/issue-228/README.md`. Independent review, hosted
+  required checks, CI-minutes permission and merge remain pending. No runtime,
+  credentials, public deployment or private/public repository setting changed.
+
+- Independent #228 review reproduced two unsupported report shapes accepted by
+  the initial checker. Explicit object/severity validation and a fifth
+  regression now reject them; final reviewer verification remains pending.
+
+Independent nested-report review also reproduced array-like findings/path
+objects that could hide a new path. Explicit array/entry validation and the
+sixth regression now reject both; valid live audit output still passes.

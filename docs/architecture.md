@@ -377,3 +377,14 @@ Design docs: [agent-state.md](agent-state.md), [changes.md](changes.md),
 [progress.md](progress.md), [pending-work.md](pending-work.md),
 [owner-verification.md](owner-verification.md),
 [release-checklist.md](release-checklist.md).
+
+### How are static docs dependencies checked?
+
+The docs site has a separate frozen lockfile outside the phone workspace.
+Vulnerability CI builds and audits it independently. `scripts/audit-site.mjs`
+fails closed on unknown moderate/high/critical findings and audit/report errors;
+it reports two exact unpatched build-only findings whose current input paths
+are assessed in [dependencies.md](dependencies.md). Root audit thresholds are
+unchanged. The site stays static and uses the passthrough image service; these
+reviewed dispositions do not apply to a Node runtime, external patterns or
+shared HTTP response caches. Reassess them when those facts change.

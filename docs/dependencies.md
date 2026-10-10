@@ -52,3 +52,31 @@ site: nothing from `site/` ships in `pterm` or the phone app.
 CI pins Gitleaks 8.30.1 and govulncheck 1.8.0. Scanner results require human
 review and are not proof that the repository is free of secrets or vulnerable
 code.
+
+## How is the separate docs lockfile audited?
+
+The root workspace audit cannot see `site/pnpm-lock.yaml`. The
+`vulnerability-scan` job also installs that lockfile with `--ignore-workspace`,
+builds the static site with its link validator, and runs `scripts/audit-site.mjs`.
+The original root `pnpm audit --audit-level high` gate remains unchanged.
+The site gate fails on any new moderate/high/critical finding, audit errors,
+report drift, changed dependency paths/versions or availability of a patch for
+one of the two reviewed findings below. It prints their advisory IDs and actual
+counts on every run; it does not claim zero advisories.
+
+### Which findings remain on 2026-10-08?
+
+| Finding | Actual use and assessment | Upstream status and action |
+| --- | --- | --- |
+| [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp), `http-cache-semantics` 4.2.0, exact path `astro > http-cache-semantics` | Astro uses it in remote-image build helpers to calculate TTLs from responses to its own requests. That module never calls `satisfiesWithoutRevalidation`, the vulnerable incoming `max-stale` path. This project uses the passthrough image service and local WebP assets. The deployed output is static files, with no Node server, shared authenticated response cache or incoming cookie/header processing. No affected request path is demonstrated. | No patched version is listed in the primary advisory or current registry. Retain this exact unpatched finding visibly; review again if the version/path, advisory patch status, image service or static deployment changes. |
+| [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), `braces` 3.0.3, exact path `starlight-llms-txt > micromatch > braces` | The plugin matches local document IDs against the `include`, `exclude`, `promote`, `demote` and custom-set patterns configured by this repository. Those patterns are short literal globs; there is no visitor input or deeply nested brace pattern. CI executes repository code already; this is not a boundary allowing an unauthenticated caller to supply a pattern. No affected external input path is demonstrated. | No patched version is listed. Retain only this advisory at this exact version/path; no package-wide or root-workspace exclusion exists. Reassess if patterns can come from external data or the dependency changes. |
+| [GHSA-rj75-hqrm-r3gf](https://github.com/advisories/GHSA-rj75-hqrm-r3gf), `postcss-selector-parser` 6.1.4 | Expressive Code's `postcss-nested` parent pins the older major. The site-only edge is overridden to patched 7.1.6; the full docs build passes and all eight emitted CSS files are byte-identical to the prior parser's output. | Patched 7.1.6 is installed and its registry integrity matches the lockfile. The moderate finding disappears. The primary advisory also excludes ordinary trusted-source build use. |
+
+The separate source-map-js update belongs to #226 / PR #234; this work is
+stacked on that branch. After both patched updates, the raw site audit still
+exits 1 and reports **two high, zero moderate** findings. These two retained
+entries are a reachability assessment, not a vulnerability fix or proof of
+absence. They are limited to the static documentation build; this policy does
+not permit either package in a shipped host runtime or an untrusted request
+path. Any change to the deployment, patterns, image service or relevant
+configuration requires a fresh review of this table before merge.
