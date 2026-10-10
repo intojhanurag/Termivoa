@@ -511,3 +511,11 @@ peer detail sanitization is unchanged. Last-tab hints use the same
 worktrees-first/shared-main-folder guards as **Close workspace**. See
 [herdr-manage.md](herdr-manage.md) and the focused React browser evidence in
 [evidence/issue-210/verification.md](evidence/issue-210/verification.md).
+
+### How do effect fixtures track current agent-choice guidance?
+
+The provider-kinds browser fixture exercises actual Sessions/chooser effects,
+origin routing and mutation gates. It requires the separately unit-tested
+current dropped-choice formatter's nonempty text in the real DOM rather than
+duplicating running-only copy. Removing rendered guidance still fails the
+four home/peer scenarios; #265 [evidence](evidence/issue-265/README.md).

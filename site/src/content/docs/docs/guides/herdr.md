@@ -2,6 +2,8 @@
 title: Termivoa + herdr
 description: Termivoa shows your computers' herdr projects on your phone, buzzes when an agent is blocked or done, opens herdr terminals, and manages workspaces.
 lastUpdated: 2026-10-10
+
+lastUpdated: 2026-10-08
 ---
 
 Termivoa shows the projects of your computers' herdr on your phone, so you can see which coding agent is blocked, open its terminal and answer it.
@@ -253,6 +255,8 @@ No. Termivoa never takes a pane over from another herdr client. See [What does t
 ### Does this work with several computers?
 
 Yes. Each computer reads its own herdr. The **herdr** tab shows all of them in **All computers**, each computer under its own header, or one computer that you choose in the side menu. See [Use several computers](/docs/guides/computers/#how-do-i-add-a-computer) to add one.
+
+Yes. Each computer reads its own herdr. The **herdr** tab shows all of them, and each project says **on mac** or **on vps**. See [Use several computers](/docs/guides/computers/#how-do-i-add-a-computer) to add one.
 
 ## Why does starting an agent wait for a check?
 

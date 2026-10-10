@@ -63,7 +63,9 @@ the old working name "Phone Terminal" so existing installs keep working (see
   push work in the clone. Confirmed `uninstall --delete-data` tries to revoke
   the saved login before removing local data, with a manual GitHub hint when
   revocation is unconfirmed. Removing a saved login preserves other files that
-  share it. macOS and Linux, github.com only; next beta.
+  share it. Older push times use compact weeks, months and years, and
+  repository rows stay usable when no last-push age can be shown. macOS and
+  Linux, github.com only; next beta.
 - **Wall.** Watch all running sessions at once as small live screens, with
   waiting agents first. Tiles only watch; tap one to open it, or hold and
   drag it to arrange the Wall your way. Tiles over the live limit show one
