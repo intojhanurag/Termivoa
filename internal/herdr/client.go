@@ -269,6 +269,9 @@ func parseKinds(help []byte) []string {
 	for _, kind := range strings.Split(list, ",") {
 		if kind = strings.TrimSpace(kind); kindPattern.MatchString(kind) && !slices.Contains(kinds, kind) {
 			kinds = append(kinds, kind)
+			if len(kinds) == maxStartableKinds {
+				break
+			}
 		}
 	}
 	return kinds

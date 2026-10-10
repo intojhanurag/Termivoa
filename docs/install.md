@@ -9,7 +9,7 @@
 > [`packaging/linux/build.sh`](../packaging/linux/build.sh). Linux support is
 > written and tested in containers, but not yet on a real Linux computer. The
 > short version of this guide is the
-> [quick start](https://termivoa.vercel.app/docs/quick-start/).
+> [quick start](https://termivoa.com/docs/quick-start/).
 
 ## Private beta
 
@@ -51,7 +51,7 @@ gh release download v0.1.0-beta.3 -R intojhanurag/Termivoa -p pterm-windows-amd6
 Keep the executable where it is after setup: the startup entries point to its
 path. `SHA256SUMS` in the release lists the checksum of every file
 (`shasum -a 256 -c SHA256SUMS --ignore-missing`). Then continue with
-[Pair your phone](https://termivoa.vercel.app/docs/pair-your-phone/).
+[Pair your phone](https://termivoa.com/docs/pair-your-phone/).
 
 Termivoa runs two per-user processes from one `pterm` executable:
 

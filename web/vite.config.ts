@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import standaloneCode from 'ajv/dist/standalone';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -59,6 +60,34 @@ export function serviceWorker(template: URL = new URL('./src/sw.js', import.meta
         fileName: 'sw.js',
         source: readFileSync(template, 'utf8').replaceAll('__BUILD__', build).replaceAll('__BUNDLE__', manifest),
       });
+    },
+  };
+}
+
+/** Immutable assets only, after the worker manifest has captured original URLs. */
+export function precompressAssets(): Plugin {
+  let assetsDir = '';
+  return {
+    name: 'pterm-precompress-assets',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) {
+      assetsDir = join(resolve(config.root, config.build.outDir), 'assets');
+    },
+    // Vite may rewrite preload tokens after generateBundle. Compress the
+    // final files, and never add sidecar URLs to the worker's precache list.
+    closeBundle() {
+      if (!existsSync(assetsDir)) return;
+      for (const name of readdirSync(assetsDir, { recursive: true, encoding: 'utf8' })) {
+        if (!/\.(js|mjs|css|svg)$/u.test(name) || name.split(sep).some((part) => part.startsWith('.'))) continue;
+        const file = join(assetsDir, name);
+        if (!statSync(file).isFile()) continue;
+        const data = readFileSync(file);
+        if (data.byteLength < 1024) continue;
+        const compressed = gzipSync(data, { level: 9 });
+        if (compressed.byteLength >= data.byteLength) continue;
+        writeFileSync(`${file}.gz`, compressed);
+      }
     },
   };
 }
@@ -147,7 +176,7 @@ export function protocolValidators(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), serviceWorker(), protocolValidators()],
+  plugins: [react(), serviceWorker(), protocolValidators(), precompressAssets()],
   build: {
     sourcemap: 'hidden',
   },

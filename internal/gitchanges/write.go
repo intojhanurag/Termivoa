@@ -202,7 +202,7 @@ func runWrite(ctx context.Context, dir string, args ...string) (tail, error) {
 	cmd.WaitDelay = time.Second
 	var output tail
 	cmd.Stdout, cmd.Stderr = &output, &output
-	err := cmd.Run()
+	err := runWriteCommand(cmd)
 	return output, err
 }
 
