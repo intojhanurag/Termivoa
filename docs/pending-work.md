@@ -1,16 +1,40 @@
 # Pending work
 
-The single roadmap. Updated 2026-10-07. Latest tag: `v0.1.0-beta.3`.
+The single roadmap. Updated 2026-10-09. Latest tag: `v0.1.0-beta.3`.
+
+The single roadmap. Updated 2026-10-08. Latest tag: `v0.1.0-beta.3`.
 Ask the agent to "do pending work" to start on **Next**.
 Real-device test steps are in [owner-verification.md](owner-verification.md).
 
 ## Done
 
+- Test tooling #260: owned browser teardown waits for child exit and WebSocket
+  closure within explicit bounds, clears pending CDP timers and rejects failed
+  teardown. Ten focused cases pass, including actual installed Chromium profile
+  removal without retries; [evidence](evidence/issue-260/verification.md).
+  Locally complete on `fix/issue-260`; private PR and coordinating review pending.
+
+- History page construction uses exact incremental encoded-size accounting
+  instead of repeatedly serializing a growing page (#219). Page boundaries
+  and validation stay the same; see [history.md](history.md) and
+  [benchmark evidence](evidence/issue-219/README.md).
+
+- Broker terminal-message construction avoids decoding its own JSON (#220).
+  Shared semantic validators, exact generated payload types and message
+  budgets stay enforced; see [terminal-delivery.md](terminal-delivery.md)
+  and [measurement evidence](evidence/issue-220/README.md).
+
+- Strict snapshot row coordinates (#237; branch `fix/issue-237`, not merged):
+  Go enforces the existing 0–199 start-row bound before arithmetic and keeps
+  legal chunks ending at 200. Boundary and cross-language validation checks
+  are recorded in [issue #237 evidence](evidence/issue-237/README.md).
+  Parent integration / PR checks and real-device gates remain pending.
+
 - Desktop snapshot row bounds (#247) corrected locally: no addition overflow;
   direct-API recovery/race tests pass. Private PR and hosted checks pending.
 
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
-  live at <https://termivoa.vercel.app> and <https://termivoa.vercel.app/docs/>
+  live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).
 - Windows logic: WSL bash profile (#38), Ctrl+] at the attach startup handoff
   (#37), Scheduled Task launcher kept on `conhost --headless` with logs, normal
@@ -69,8 +93,10 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   (`docs/owner-verification.md`).
 - GitHub: set up a repository on a computer from the phone (ADR 0010,
   `docs/github-integration.md`; the owner approved the design and Contents
-  read and write on 2026-10-07; branch `feat/github-integration`, not
-  merged). **Settings → Integrations** has a row for each computer:
+  read and write on 2026-10-07; implementation merged in
+  [#212](https://github.com/intojhanurag/Termivoa/pull/212), registered App
+  build configuration merged in [#229](https://github.com/intojhanurag/Termivoa/pull/229)).
+  **Settings → Integrations** has a row for each computer:
   **Connect** (device flow, one code for each computer), **Choose on
   GitHub**, **Set up a repository** (list with search, "on mac", "name
   taken"), the clone job with progress and **Stop**, "Ready on mac" with
@@ -203,6 +229,20 @@ designed in Paper first and shown to the owner before any code.
    Needs a real iPhone check (a call during Scan QR).
 6. ~~**Release `v0.1.0-beta.3`**~~ Done: docs prepared for the tag
    (`docs/beta-3`); a new user gets today's features from `gh release download`.
+7. ~~**Side drawer, Settings by computer, Geist (Paper first)**~~ Done
+   (2026-10-10, `feat/ui-revamp`, [ui-revamp.md](ui-revamp.md); approved
+   by the owner): with two or more computers a side drawer replaces the
+   computer chips; Settings has a main page and one page for each computer
+   (Integrations is gone); Geist and Geist Mono are bundled. Docs and
+   screenshots follow. Follow-ups:
+   - **Swipe between computers** is not built (it can fight with scrolling
+     and with the terminal); only the drawer and the amber pill switch.
+   - **The terminal** (xterm) still uses its own mono font list, not Geist
+     Mono, on purpose: xterm measures its cells once, and a late font would
+     break the grid ([ui-revamp.md](ui-revamp.md), section 3). Revisit only
+     with a load-then-measure step.
+   - **The service worker's offline page** (`web/src/sw.js`) still uses
+     the system font.
 
 ## Later
 
@@ -275,3 +315,12 @@ Draft scope (honest signals only; the plan forbids labels from terminal text):
 
 - [ ] Security review by an outside person.
 - [ ] Signed macOS and Windows apps.
+
+### Separate docs dependency audit (#228)
+
+Implemented on `fix/issue-228`, stacked on the source-map-js fix (#226).
+Independent frozen site install/build/audit added to vulnerability CI;
+selector-parser patched and emitted CSS unchanged. Two exact unpatched
+build-only findings remain visible with code-based reachability/upstream
+assessment in `docs/dependencies.md`. Independent adversarial review,
+required hosted checks, owner CI-minutes permission and merge remain pending.

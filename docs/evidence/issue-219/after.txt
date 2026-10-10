@@ -1,0 +1,12 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/intojhanurag/phone-terminal/internal/protocol
+cpu: Apple M5
+BenchmarkHistoryPageFrom/80-10 	     482	   2371302 ns/op	 5768206 B/op	    2826 allocs/op
+BenchmarkHistoryPageFrom/80-10 	     507	   2394716 ns/op	 5769257 B/op	    2826 allocs/op
+BenchmarkHistoryPageFrom/200-10         	     546	   2233006 ns/op	 5176528 B/op	    1264 allocs/op
+BenchmarkHistoryPageFrom/200-10         	     543	   2224643 ns/op	 5170921 B/op	    1262 allocs/op
+BenchmarkHistoryPageFrom/400-10         	     547	   2207956 ns/op	 5324006 B/op	     690 allocs/op
+BenchmarkHistoryPageFrom/400-10         	     546	   2197639 ns/op	 5317916 B/op	     689 allocs/op
+PASS
+ok  	github.com/intojhanurag/phone-terminal/internal/protocol	7.477s

@@ -70,10 +70,10 @@ export function staleSettings(entries: ReadonlyArray<Pick<ProviderEntry, 'comput
     ? [`${entry.computer.origin} ${entry.status.snapshot.state}`] : []));
 }
 
-/** Turned off in Settings → Integrations, or not installed: the provider tab leaves that computer out. */
+/** Turned off in Settings → (computer), or not installed: the provider tab leaves that computer out. */
 export const shown = (entry: Pick<ProviderEntry, 'info' | 'status'>): boolean => !['off', 'notInstalled'].includes(providerState(entry));
 
-/** A provider that is not installed has no list to read: only its card in Settings → Integrations. */
+/** A provider that is not installed has no list to read: only its card in Settings → (computer). */
 export const polled = (source: Pick<ProviderSource, 'info'>): boolean => source.info.state !== 'notInstalled';
 
 /** The computers with a provider that is not installed: nothing polls it, so Settings reads their settings when it opens. */

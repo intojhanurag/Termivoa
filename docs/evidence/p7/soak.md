@@ -1,5 +1,12 @@
 # P7 soak, busy sessions and stalled-viewer evidence
 
+Harness update (2026-10-08, issue #232): the `children` metric now counts
+every terminal fixture from one PID/parent/argument snapshot, excluding
+scanner helpers while retaining unexpected duplicate fixtures. The original
+September measurements below used the earlier `pgrep` census. See
+[issue #232 evidence](../issue-232/README.md) for regressions and the separate
+30-second correctness run.
+
 Date: 2026-09-27. Branch `test/v0-soak`, base `f139b49`, test commit
 `362d172`. Product code was not changed.
 

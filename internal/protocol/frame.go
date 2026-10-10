@@ -42,8 +42,9 @@ func HistoryPageFrom(result terminal.HistoryReadResult) (HistoryPagePayload, err
 		Offset:          int64(result.Offset),
 		Rows:            make([]TerminalRow, 0, len(result.Rows)),
 	}
+	rowBytes := 0
 	for index, source := range result.Rows {
-		row, _, err := terminalRow(source, result.Columns)
+		row, _, encodedRowBytes, err := terminalRowWithSize(source, result.Columns)
 		if err != nil {
 			return HistoryPagePayload{}, fmt.Errorf("protocol: history row %d: %w", index, err)
 		}
@@ -55,11 +56,21 @@ func HistoryPageFrom(result terminal.HistoryReadResult) (HistoryPagePayload, err
 		} else {
 			payload.NextOffset = nil
 		}
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return HistoryPagePayload{}, fmt.Errorf("protocol: encode history page: %w", err)
+		// Row bounding already encoded this row. Add it once, including the
+		// separator, rather than encoding all previous rows again. Marshal
+		// empty-row metadata to account exactly for nextOffset digit changes,
+		// complete and the generated JSON tags without duplicating the schema.
+		rowBytes += encodedRowBytes
+		if len(payload.Rows) > 1 {
+			rowBytes++
 		}
-		if len(encoded) > maxEncodedHistoryPagePayloadBytes {
+		metadata := payload
+		metadata.Rows = []TerminalRow{}
+		encodedMetadata, err := json.Marshal(metadata)
+		if err != nil {
+			return HistoryPagePayload{}, fmt.Errorf("protocol: encode history metadata: %w", err)
+		}
+		if len(encodedMetadata)+rowBytes > maxEncodedHistoryPagePayloadBytes {
 			payload.Rows = payload.Rows[:len(payload.Rows)-1]
 			if len(payload.Rows) == 0 {
 				return HistoryPagePayload{}, fmt.Errorf("protocol: one history row exceeds outbound message budget")
@@ -221,18 +232,25 @@ func terminalRows(source []terminal.Row, columns int) ([]TerminalRow, bool, erro
 }
 
 func terminalRow(source terminal.Row, columns int) (TerminalRow, bool, error) {
+	row, clipped, _, err := terminalRowWithSize(source, columns)
+	return row, clipped, err
+}
+
+// terminalRowWithSize returns the exact JSON length measured while bounding the
+// row, so history paging can reuse it without encoding the row a second time.
+func terminalRowWithSize(source terminal.Row, columns int) (TerminalRow, bool, int, error) {
 	if len(source.Cells) != columns {
-		return TerminalRow{}, false, fmt.Errorf("has %d cells, expected %d", len(source.Cells), columns)
+		return TerminalRow{}, false, 0, fmt.Errorf("has %d cells, expected %d", len(source.Cells), columns)
 	}
 	if columns == 0 {
-		return TerminalRow{}, false, fmt.Errorf("has no cells")
+		return TerminalRow{}, false, 0, fmt.Errorf("has no cells")
 	}
 
 	runs := make([]CellRun, 0, columns)
 	for column, sourceCell := range source.Cells {
 		style, err := cellStyle(sourceCell)
 		if err != nil {
-			return TerminalRow{}, false, fmt.Errorf("cell %d: %w", column, err)
+			return TerminalRow{}, false, 0, fmt.Errorf("cell %d: %w", column, err)
 		}
 		cell := Cell{
 			Text:           sourceCell.Text,
@@ -250,14 +268,14 @@ func terminalRow(source terminal.Row, columns int) (TerminalRow, bool, error) {
 		runs[len(runs)-1].Cells = append(runs[len(runs)-1].Cells, cell)
 	}
 	row := TerminalRow{Runs: runs}
-	clipped, err := boundEncodedRow(&row)
+	clipped, encodedBytes, err := boundEncodedRow(&row)
 	if err != nil {
-		return TerminalRow{}, false, err
+		return TerminalRow{}, false, 0, err
 	}
 	if err := validateRow(row, int64(columns)); err != nil {
-		return TerminalRow{}, false, err
+		return TerminalRow{}, false, 0, err
 	}
-	return row, clipped, nil
+	return row, clipped, encodedBytes, nil
 }
 
 type rowClipCandidate struct {
@@ -270,13 +288,13 @@ type rowClipCandidate struct {
 // pathological link/text payloads that would make a row impossible to place
 // in any legal outbound message. Largest reductions are applied first so the
 // common case is allocation-only and ordinary grapheme cells are untouched.
-func boundEncodedRow(row *TerminalRow) (bool, error) {
+func boundEncodedRow(row *TerminalRow) (bool, int, error) {
 	encoded, err := json.Marshal(row)
 	if err != nil {
-		return false, fmt.Errorf("encode normalized row: %w", err)
+		return false, 0, fmt.Errorf("encode normalized row: %w", err)
 	}
 	if len(encoded) <= MaxEncodedTerminalRowBytes {
-		return false, nil
+		return false, len(encoded), nil
 	}
 
 	clipped := false
@@ -289,7 +307,7 @@ func boundEncodedRow(row *TerminalRow) (bool, error) {
 			cell := &row.Runs[candidate.run].Cells[candidate.cell]
 			before, marshalErr := json.Marshal(cell)
 			if marshalErr != nil {
-				return false, fmt.Errorf("encode normalized cell before clipping: %w", marshalErr)
+				return false, 0, fmt.Errorf("encode normalized cell before clipping: %w", marshalErr)
 			}
 			if pass == 0 {
 				cell.Link = nil
@@ -300,16 +318,16 @@ func boundEncodedRow(row *TerminalRow) (bool, error) {
 			clipped = true
 			after, marshalErr := json.Marshal(cell)
 			if marshalErr != nil {
-				return false, fmt.Errorf("encode normalized cell after clipping: %w", marshalErr)
+				return false, 0, fmt.Errorf("encode normalized cell after clipping: %w", marshalErr)
 			}
 			encodedBytes += len(after) - len(before)
 			if encodedBytes <= MaxEncodedTerminalRowBytes {
 				encoded, err = json.Marshal(row)
 				if err != nil {
-					return false, fmt.Errorf("encode clipped normalized row: %w", err)
+					return false, 0, fmt.Errorf("encode clipped normalized row: %w", err)
 				}
 				if len(encoded) <= MaxEncodedTerminalRowBytes {
-					return clipped, nil
+					return clipped, len(encoded), nil
 				}
 				encodedBytes = len(encoded)
 			}
@@ -317,9 +335,9 @@ func boundEncodedRow(row *TerminalRow) (bool, error) {
 	}
 	encoded, err = json.Marshal(row)
 	if err != nil {
-		return false, fmt.Errorf("encode fully clipped normalized row: %w", err)
+		return false, 0, fmt.Errorf("encode fully clipped normalized row: %w", err)
 	}
-	return false, fmt.Errorf("normalized row remains %d bytes after clipping (limit %d)", len(encoded), MaxEncodedTerminalRowBytes)
+	return false, 0, fmt.Errorf("normalized row remains %d bytes after clipping (limit %d)", len(encoded), MaxEncodedTerminalRowBytes)
 }
 
 func rowClipCandidates(row *TerminalRow, links bool) []rowClipCandidate {

@@ -209,7 +209,7 @@ function usePoll(on: boolean, read: () => void): void {
 type RowNote = { readonly kind: 'disconnected'; readonly revokeFailed?: boolean } | { readonly kind: 'error'; readonly text: string };
 type RowBusy = 'disconnect' | 'check' | 'install' | 'session';
 
-/** The row of one computer in Settings → Integrations. State comes from props, so each state renders on its own. */
+/** The row of one computer in Settings → (computer). State comes from props, so each state renders on its own. */
 export function GitHubRowView({
   label, state, login, mine, problem, setup, confirming = false, busy, note, help, children,
   onConnect, onContinue, onSetUp, onDisconnect, onConfirm, onCancel, onCheck, onRetry, onInstall, onShow, onNewSession,
@@ -250,7 +250,7 @@ export function GitHubRowView({
       : state === 'noGit' ? `git is not on ${label}`
         : mine === true ? 'Connecting…' : 'Connecting from another phone…';
   const word = state === 'ready' ? { text: 'Connected', tone: 'green' }
-    : state === 'noGit' ? { text: 'Git missing', tone: 'amber' }
+    : state === 'noGit' ? { text: 'git missing', tone: 'amber' }
       : state === 'needsInstall' ? { text: 'Signed in', tone: 'amber' } : undefined;
   const off = busy !== undefined;
   const name = setup === undefined ? '' : repoName(setup.repo);

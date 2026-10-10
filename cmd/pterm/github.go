@@ -25,7 +25,7 @@ const githubCredentialMode = "github-credential"
 const (
 	gitCredentialMaxBytes = 64 << 10
 	gitCredentialMaxLines = 32
-	githubNotConnected    = "Termivoa is not connected to GitHub on this computer. Connect in Settings → Integrations."
+	githubNotConnected    = "Termivoa is not connected to GitHub on this computer. In Termivoa, open Settings, tap this computer, then Connect."
 	githubNoBroker        = "Termivoa is not running on this computer, so git has no GitHub login here. Start it with pterm launch."
 	githubRevokeHint      = "To be sure the login is removed on GitHub too, open https://github.com/settings/applications"
 )
