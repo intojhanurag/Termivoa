@@ -38,12 +38,14 @@ and `touchcancel` listeners on `.terminal-area` (move and end with
 handlers; the old app-scroll and pull-to-History code runs unchanged as the
 machine's `drag` callback.
 
-`drag` gets the whole touch point. App scroll sends each wheel step at
-`TerminalView.cellAt` of that point (desktop `wheel` events use the pointer's
-`clientX`/`clientY`), and `Connection.sendWheel` clamps it to the grid. The
-host encodes that cell in the mouse report (SGR `ESC[<64;col;rowM`), so tmux
-and vim scroll the pane under the finger (#288). Outside the grid, and for
-the dock's `▲`/`▼`, the step goes at the cursor cell.
+`drag` gets the whole touch point. App scroll (`AppScroll`) takes the cell
+under the finger once, at drag start (`TerminalView.cellAt` with clamp, so a
+point just outside the grid gives the nearest cell), and sends every wheel
+step of that swipe there, even when the finger leaves the pane or the grid.
+Desktop `wheel` events use the pointer's cell. `Connection.sendWheel` clamps
+the cell to the grid. The host encodes it in the mouse report (SGR
+`ESC[<64;col;rowM`), so tmux and vim scroll the pane under the finger (#288).
+The dock's `▲`/`▼` send at the cursor cell.
 
 ```text
 idle ─1 finger─▶ pending ─moved > 8 px─▶ scroll (drag: app scroll / History pull)

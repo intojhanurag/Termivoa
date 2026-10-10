@@ -23,8 +23,13 @@ Last updated: 2026-10-10
   to the program as `ESC[<64;15;4M`, so tmux and vim pick the pane by it.
 - Fix: app scroll (swipe and desktop `wheel`) passes `TerminalView.cellAt`
   of the touch or pointer to `sendWheel`, which clamps it to the grid; the
-  dock's `▲`/`▼` and points outside the grid keep the cursor cell. No
-  protocol change (`input.mouse` already has `column` and `row`).
+  dock's `▲`/`▼` keep the cursor cell. No protocol change (`input.mouse`
+  already has `column` and `row`).
+- Review fix: a swipe takes its cell once at start (`AppScroll`, clamped
+  `cellAt`) and keeps it, so a swipe that leaves the pane or the grid
+  scrolls one pane only. New `AppScroll` and `TerminalView.cellAt` tests in
+  `Connection.test.ts` fail without it; web 1141 tests, `scripts/check` and
+  `gestures.mjs` GE1–GE8 pass again.
 - Checks: new `Connection.test.ts` case fails without the fix; `cd web &&
   npx vitest run` (60 files, 1139 tests); `GOTOOLCHAIN=go1.27.1 sh
   scripts/check` (pass); `go test -race ./internal/terminal/` (pass); site

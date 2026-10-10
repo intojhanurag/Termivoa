@@ -12,7 +12,7 @@ import { InputController, NO_MODIFIERS } from '../terminal/InputController';
 import { tapTarget, type PathLink } from '../terminal/pathLinks';
 import { runFirstCommand } from '../terminal/runFirst';
 import { scheduler } from '../terminal/scheduler';
-import { followCursor, TerminalView, wheelSteps } from '../terminal/TerminalView';
+import { AppScroll, followCursor, TerminalView } from '../terminal/TerminalView';
 import { hasNewOutput, markViewed, readViewed, readWorked, recapLine, viewedKey, type RecapFacts, type ViewedTimes } from './activity';
 import { AddComputerSheet } from './AddComputer';
 import { keyOf, sameSession, type HostedSession } from './allSessions';
@@ -284,7 +284,7 @@ export function Live({
   const initialFont = useRef(fontSize);
   const touchStart = useRef<number | undefined>(undefined);
   const touchLast = useRef<number | undefined>(undefined);
-  const wheelCarry = useRef(0);
+  const appScroller = useRef(new AppScroll());
   const [runtime, setRuntime] = useState<Runtime>();
   const [panel, setPanel] = useState<Panel>(openComposer === true ? 'composer' : 'none');
   // History and Changes replace the whole screen.
@@ -680,15 +680,10 @@ export function Live({
   // trackpad scroll becomes wheel steps. Needs control, since wheel steps are input.
   const appScroll = !normalBuffer && canSend && !keyboard;
 
-  /** Wheel steps at the cell under the finger or pointer (x, y), so tmux and vim scroll that pane. */
-  function scrollApp(travel: number, x: number, y: number) {
-    const { steps, carry } = wheelSteps(wheelCarry.current, travel);
-    wheelCarry.current = carry;
-    const cell = runtime?.view.cellAt(x, y);
-    for (let step = 0; step < Math.abs(steps); step++) {
-      runtime?.connection.sendWheel(steps > 0 ? 'wheel-up' : 'wheel-down', cell);
-    }
-  }
+  // Wheel steps go at a grid cell (the swipe's start, or the pointer), so tmux and vim scroll that pane.
+  const sendWheel = (button: 'wheel-up' | 'wheel-down', cell: { row: number; column: number } | undefined) => {
+    runtime?.connection.sendWheel(button, cell);
+  };
   const historyEnabled = status.link === 'live';
   const sheet = panel === 'composer' || panel === 'snippets' || panel === 'menu' || panel === 'worktree' || panel === 'add';
   const question = panel === 'none' ? openQuestion(status) : undefined;
@@ -704,13 +699,13 @@ export function Live({
       if (phase === 'start') {
         touchStart.current = y;
         touchLast.current = y;
-        wheelCarry.current = 0;
+        appScroller.current.start(runtime?.view.cellAt(x, y, true));
         return;
       }
       if (appScroll) {
         const last = touchLast.current;
         touchLast.current = y;
-        if (last !== undefined) scrollApp(y - last, x, y);
+        if (last !== undefined) appScroller.current.move(y - last, sendWheel);
         return;
       }
       const start = touchStart.current;
@@ -883,7 +878,7 @@ export function Live({
           }
         }}
         onWheel={(event) => {
-          if (appScroll) scrollApp(-event.deltaY, event.clientX, event.clientY);
+          if (appScroll) appScroller.current.wheel(-event.deltaY, runtime?.view.cellAt(event.clientX, event.clientY, true), sendWheel);
           else if (event.deltaY < 0 && normalBuffer && area.current?.scrollTop === 0) openHistory();
         }}
       >

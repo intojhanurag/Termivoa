@@ -64,15 +64,17 @@ export class TerminalView {
    * The cell under a viewport point as a 0-based frame row and column (the
    * frame cursor's terms), or undefined outside the grid. xterm can show its
    * buffer from a line other than its base (viewportY ≠ baseY), so the row
-   * on screen is mapped through both.
+   * on screen is mapped through both. With `clamp`, a point outside the grid
+   * gives the nearest cell.
    */
-  cellAt(clientX: number, clientY: number): { row: number; column: number } | undefined {
+  cellAt(clientX: number, clientY: number, clamp = false): { row: number; column: number } | undefined {
     const screen = this.screen();
     const cell = this.cellSize();
     if (screen === undefined || cell === undefined) return undefined;
     const box = screen.getBoundingClientRect();
-    const column = Math.floor((clientX - box.left) / cell.width);
-    const shown = Math.floor((clientY - box.top) / cell.height);
+    const fit = (value: number, size: number) => (clamp ? Math.min(Math.max(value, 0), size - 1) : value);
+    const column = fit(Math.floor((clientX - box.left) / cell.width), this.terminal.cols);
+    const shown = fit(Math.floor((clientY - box.top) / cell.height), this.terminal.rows);
     if (column < 0 || column >= this.terminal.cols || shown < 0 || shown >= this.terminal.rows) return undefined;
     const { viewportY, baseY } = this.terminal.buffer.active;
     return { row: viewportY + shown - baseY, column };
@@ -218,4 +220,36 @@ export function wheelSteps(carry: number, travel: number, step = WHEEL_STEP_PX):
   const whole = Math.trunc(total / step);
   const steps = Math.max(-MAX_WHEEL_STEPS, Math.min(MAX_WHEEL_STEPS, whole));
   return { steps, carry: whole === steps ? total - whole * step : 0 };
+}
+
+type WheelCell = { readonly row: number; readonly column: number };
+type SendWheel = (button: 'wheel-up' | 'wheel-down', cell: WheelCell | undefined) => void;
+
+/**
+ * App scroll in a full-screen app: wheel steps from swipe or wheel travel,
+ * each at one cell (#288). A swipe keeps the cell where it began, so tmux and
+ * vim scroll that one pane even when the finger leaves it or the grid.
+ */
+export class AppScroll {
+  private carry = 0;
+  private cell: WheelCell | undefined;
+
+  /** A swipe begins at `cell` (the grid cell under the finger). */
+  start(cell: WheelCell | undefined): void {
+    this.carry = 0;
+    this.cell = cell;
+  }
+
+  /** Swipe travel: steps at the start cell. */
+  move(travel: number, send: SendWheel): void {
+    const { steps, carry } = wheelSteps(this.carry, travel);
+    this.carry = carry;
+    for (let step = 0; step < Math.abs(steps); step++) send(steps > 0 ? 'wheel-up' : 'wheel-down', this.cell);
+  }
+
+  /** A desktop wheel event at the pointer's cell. */
+  wheel(travel: number, cell: WheelCell | undefined, send: SendWheel): void {
+    this.cell = cell;
+    this.move(travel, send);
+  }
 }

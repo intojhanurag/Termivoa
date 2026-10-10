@@ -17,7 +17,7 @@ import {
   type ScreenDisplay,
 } from './Connection';
 import { Scheduler } from './scheduler';
-import { fitGrid, followCursor, MAX_WHEEL_STEPS, wheelSteps } from './TerminalView';
+import { AppScroll, fitGrid, followCursor, MAX_WHEEL_STEPS, TerminalView, wheelSteps } from './TerminalView';
 import type { CellStyle, ScreenMetadata, ScreenPatch, ScreenSnapshot, TerminalRow } from './FrameRenderer';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -1462,6 +1462,40 @@ describe('Connection resume', () => {
     win.dispatchEvent(new Event('online'));
     expect(FakeSocket.all).toHaveLength(1);
     expect(connection.getStatus().link).toBe('closed');
+  });
+});
+
+describe('AppScroll', () => {
+  it('sends every step of a swipe at its start cell, even after the finger leaves the grid', () => {
+    const sent: Array<[string, unknown]> = [];
+    const send = (button: string, cell: unknown) => { sent.push([button, cell]); };
+    const scroll = new AppScroll();
+    scroll.start({ row: 3, column: 14 });
+    scroll.move(40, send);
+    scroll.move(-80, send);
+    expect(sent).toEqual([
+      ['wheel-up', { row: 3, column: 14 }],
+      ['wheel-down', { row: 3, column: 14 }],
+      ['wheel-down', { row: 3, column: 14 }],
+    ]);
+    sent.length = 0;
+    scroll.wheel(-36, { row: 1, column: 2 }, send);
+    expect(sent).toEqual([['wheel-down', { row: 1, column: 2 }]]);
+  });
+});
+
+describe('TerminalView.cellAt', () => {
+  // A 20x5 grid of 10x20 px cells at (100, 200), showing its base line.
+  const view = Object.assign(Object.create(TerminalView.prototype) as object, {
+    screen: () => ({ clientWidth: 200, clientHeight: 100, getBoundingClientRect: () => ({ left: 100, top: 200 }) }),
+    terminal: { cols: 20, rows: 5, buffer: { active: { viewportY: 0, baseY: 0 } } },
+  }) as unknown as TerminalView;
+
+  it('gives the cell under a point, and the nearest cell for a point outside only with clamp', () => {
+    expect(view.cellAt(245, 265)).toEqual({ row: 3, column: 14 });
+    expect(view.cellAt(245, 400)).toBeUndefined();
+    expect(view.cellAt(245, 400, true)).toEqual({ row: 4, column: 14 });
+    expect(view.cellAt(50, 150, true)).toEqual({ row: 0, column: 0 });
   });
 });
 
