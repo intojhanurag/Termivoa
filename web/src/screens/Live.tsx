@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
 import { lazy, Suspense, useEffect, type ComponentProps, type ComponentType, type ReactNode, useRef, useState, useSyncExternalStore } from 'react';
-import type { HTTPSettingsResponse, KeyName } from '../generated/protocol';
+import { FEATURE_REVISION, type HTTPSettingsResponse, type KeyName } from '../generated/protocol';
 import { parseAddComputerLink, type AddComputerLink } from '../pairing/addComputer';
 import { sendAgentKey } from '../terminal/agentKeys';
 import {
@@ -62,6 +62,50 @@ function lazyChangesScreen() {
 }
 let ChangesScreen = lazyChangesScreen();
 let changesLoadFailed = false;
+
+// Chat (docs/chat-view.md) loads when first shown; a failed load shows the app's update screen.
+const ChatScreen = lazy(async () => ({ default: (await loadChunk(() => import('./Chat'))).ChatScreen }));
+
+export type ViewMode = 'chat' | 'terminal';
+
+/** The changed file an edit in Chat names: the same path, or the one that ends with it (the session may sit below the repository top). */
+export function changedPath(paths: ReadonlyArray<string>, path: string): string | undefined {
+  return paths.find((item) => item === path) ?? paths.find((item) => item.endsWith(`/${path}`));
+}
+
+/** Chat or Terminal per session (keyed like drafts), while the app is open. Never stored. */
+const viewModes = new Map<string, ViewMode>();
+/** Sessions whose agent Chat cannot read: no switch after leaving the Chat screen. */
+const noChat = new Set<string>();
+
+/**
+ * The Chat | Terminal switch shows for a session of a computer that has Chat
+ * on (revision 8 and settings.chat.enabled), or while Chat is on screen, and
+ * not after the computer said it cannot read that session's agent. The host
+ * decides what has an agent: the phone's agent state counts any output as
+ * work, so it cannot tell a shell from an agent.
+ */
+export function chatOffered(settings: Pick<HTTPSettingsResponse, 'protocolRevision' | 'chat'> | undefined, facts: {
+  readonly chatShown: boolean;
+  readonly unsupported: boolean;
+  readonly provider: boolean;
+}): boolean {
+  if (settings === undefined || settings.protocolRevision < FEATURE_REVISION.chat || settings.chat === undefined || facts.provider) return false;
+  return facts.chatShown || (settings.chat.enabled && !facts.unsupported);
+}
+
+/** The segmented Chat | Terminal switch under the tabs. */
+export function ViewSwitch({ mode, onMode }: { readonly mode: ViewMode; readonly onMode: (mode: ViewMode) => void }) {
+  return (
+    <span className="view-switch" role="group" aria-label="View">
+      {(['chat', 'terminal'] as const).map((value) => (
+        <button key={value} type="button" className={mode === value ? 'active' : undefined} aria-pressed={mode === value} onClick={() => onMode(value)}>
+          {value === 'chat' ? 'Chat' : 'Terminal'}
+        </button>
+      ))}
+    </span>
+  );
+}
 
 interface Runtime {
   readonly connection: Connection;
@@ -333,7 +377,21 @@ export function Live({
   }, [status.link]);
   const draft = draftKey(session);
   const [tab, setTab] = useState<ChangesTab>(() => lastTabs.get(draft) ?? 'changes');
+  const [, setModeTick] = useState(0);
+  const setMode = (mode: ViewMode) => {
+    viewModes.set(draft, mode);
+    if (mode === 'terminal' && runtime?.connection.getChat().link === 'unsupported') noChat.add(draft);
+    setModeTick((tick) => tick + 1);
+  };
   const current = sessions?.find((item) => sameSession(item, session)) ?? session;
+  const wantChat = viewModes.get(draft) === 'chat';
+  const offered = chatOffered(settings, {
+    chatShown: wantChat,
+    unsupported: noChat.has(draft),
+    provider: provider !== undefined,
+  });
+  const chatMode = offered && wantChat;
+
   const projectName = settings?.projects.find((item) => item.id === session.projectId)?.name;
   const shellName = settings?.shellProfiles.find((item) => item.id === session.shellProfileId)?.name;
 
@@ -482,7 +540,7 @@ export function Live({
       observer.disconnect();
       clearTimeout(timer);
     };
-  }, [runtime, canSend, fontSize, fullPanel, keyboard]);
+  }, [runtime, canSend, fontSize, fullPanel, keyboard, chatMode]);
 
   // With the keyboard up the grid is taller than the view: keep the cursor row in sight.
   useEffect(() => {
@@ -623,6 +681,17 @@ export function Live({
     if (next === 'files' && connection?.getFiles() === undefined) connection?.openFilesFolder('');
   }
 
+  // Chat's Open in Changes: the edit's path is relative to the session's folder, the list's to the repository.
+  const changesFile = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const want = changesFile.current;
+    if (want === undefined || changesView === undefined || changesView.state === 'loading') return;
+    changesFile.current = undefined;
+    const files = changesView.summary?.state === 'ready' ? changesView.summary.files : [];
+    const found = changedPath(files.map((file) => file.path), want);
+    if (found !== undefined) runtime?.connection.openChangesFile(found);
+  }, [changesView, runtime]);
+
   function closeChanges() {
     runtime?.connection.closeChanges();
     runtime?.connection.closeFiles();
@@ -690,8 +759,10 @@ export function Live({
   // With the keyboard up the card folds to its pill, so typing and keys keep working.
   const cardOpen = question !== undefined && !keyboard && foldedQuestion !== question.id;
   const canInput = canSend && !sheet && !cardOpen && !fullPanel;
+  // Terminal gestures (docs/gestures.md) are off while Chat is on screen.
+  const terminalGestures = gestures && !chatMode;
   gestureHost.current = {
-    enabled: () => gestures,
+    enabled: () => terminalGestures,
     canInput: () => canInput,
     cell: () => runtime?.view.cellSize(),
     send: (key) => runtime?.connection.sendKey(key, NO_MODIFIERS) ?? false,
@@ -804,7 +875,7 @@ export function Live({
               const touch = event.changedTouches[0];
               swipe.current = undefined;
               // Provider chips are not session tabs.
-              if (!gestures || provider !== undefined || from === undefined || touch === undefined) return;
+              if (!terminalGestures || provider !== undefined || from === undefined || touch === undefined) return;
               const step = sessionSwipe(touch.clientX - from.x, touch.clientY - from.y, performance.now() - from.at, from.x, window.innerWidth);
               const tabs = liveTabs(sessions, session);
               const at = tabs.findIndex((tab) => sameSession(tab, session));
@@ -829,6 +900,7 @@ export function Live({
               ) : status.link === 'live' ? 'Connected' : linkLabel(status)}
             </span>
             {current.worktree !== undefined && <WorktreeBadge worktree={current.worktree} />}
+            {offered && <ViewSwitch mode={chatMode ? 'chat' : 'terminal'} onMode={setMode} />}
             <span className={`badge-text ${badge.tone}`}>{badge.text}</span>
           </div>
           {provider !== undefined && !providerEnded && <p className="hint-text size-line">{provider.sizeLine}</p>}
@@ -864,7 +936,7 @@ export function Live({
       <div
         ref={area}
         className={`terminal-area${sheet || cardOpen ? ' dim' : ''}${appScroll ? ' app-scroll' : ''}${gestures ? ' gestures' : ''}`}
-        hidden={fullPanel}
+        hidden={fullPanel || chatMode}
         onClick={(event) => {
           // A gesture (trackpad, pinch, two-finger tap) takes its click as a link does.
           const action = areaClick(linkTapped.current || performance.now() - gestureTook.current < TOOK_TAP_MS, sheet, canSend);
@@ -900,6 +972,24 @@ export function Live({
         />
       </div>
 
+      {chatMode && !fullPanel && runtime !== undefined && (
+        <Suspense fallback={<section className="chat chat-wait" aria-label="Chat"><p role="status" className="muted">Opening chat…</p></section>}>
+          <ChatScreen
+            connection={runtime.connection}
+            status={status}
+            enabled={settings?.chat?.enabled === true}
+            draftKey={draft}
+            bar={panel === 'none' && question === undefined}
+            onShowTerminal={() => setMode('terminal')}
+            onOpenChanges={(path) => {
+              // The host reads one changes request at a time: the file opens once the list is there.
+              changesFile.current = path;
+              openChanges('changes');
+            }}
+            onCompose={() => setPanel('composer')}
+          />
+        </Suspense>
+      )}
       {panel === 'history' && runtime !== undefined && (
         <History connection={runtime.connection} fontSize={fontSize} onReturn={closeHistory} />
       )}
@@ -928,11 +1018,11 @@ export function Live({
         </div>
       )}
 
-      {panel === 'none' && question === undefined && !keyboard && provider === undefined && (
+      {panel === 'none' && question === undefined && !keyboard && provider === undefined && !chatMode && (
         <PreviewChip previews={status.link === 'live' ? status.previews : current.previews} onOpen={onPreview} />
       )}
 
-      {!fullPanel && (
+      {!fullPanel && !chatMode && (
         <div className={sheet ? 'dock-slot covered' : 'dock-slot'}>
           {providerEnded ? (
             <ProviderEnded onOpenAgain={provider.onOpenAgain} onSessions={onSessions} />

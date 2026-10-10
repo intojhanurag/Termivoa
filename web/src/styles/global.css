@@ -1122,3 +1122,9 @@ button.gh-tag { display: inline-flex; align-items: center; gap: 6px; min-height:
 .gh-small { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 13px; }
 button.gh-center { align-self: center; }
 .confirm.gh-ask { border-left-color: var(--line-strong); }
+
+/* Chat | Terminal (docs/chat-view.md, section 9): a segmented switch in the status line. The Chat screen's own styles load with it (chat.css). */
+.view-switch { display: inline-flex; flex-shrink: 0; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.view-switch button { min-width: 0; min-height: 36px; padding: 0 12px; border: 0; color: var(--soft); font-family: var(--sans); font-size: 13px; font-weight: 500; }
+.view-switch button.active { background: var(--text); color: var(--bg); }
+.view-switch button.active:active:not(:disabled) { background: var(--press); }

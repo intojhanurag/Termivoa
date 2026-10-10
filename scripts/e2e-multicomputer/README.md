@@ -19,6 +19,7 @@ go test ./scripts/fakegithub/                              # the fake GitHub's d
 go test ./scripts/e2e-multicomputer/                       # the front's rewrite rules and the dev site
 PW=<playwright-core dir> WEBKIT=<webkit executable> node scripts/e2e-multicomputer/webkit.mjs --no-web-build
 PW=<playwright-core dir> WEBKIT=<webkit executable> node scripts/e2e-multicomputer/gestures.mjs --no-web-build  # touch gestures on Live (mac only)
+PW=<playwright-core dir> node scripts/e2e-multicomputer/chat.mjs --no-web-build  # Chat view: real host and phone, scripts/fakeagent in the temp HOME (mac only; write-to-phone latency)
 ```
 
 WebKit needs a Playwright whose WebKit build is installed, for example playwright-core 1.61.1 with `WEBKIT=~/Library/Caches/ms-playwright/webkit-2272/pw_run.sh`. The harness installs nothing.

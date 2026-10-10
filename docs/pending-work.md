@@ -11,6 +11,13 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   (Claude Code), the broker hub, `pterm chat on|off|status`, the doctor line,
   fuzz tests and benchmarks. Not merged: waits for owner review (rule 24)
   and the owner's capture with a real Claude Code (`scripts/chat-capture.sh`).
+- Chat view, phone side (M1b, [chat-view.md](chat-view.md), ADR 0014, next
+  beta): the **Chat | Terminal** switch, the pull-model `ChatStore`, the lazy
+  Chat screen (screens 1–4), the link confirm sheet and the **Chat view** row
+  (off only). Real-host e2e `scripts/e2e-multicomputer/chat.mjs` with
+  `scripts/fakeagent`: 9 of 9, latency p50 62 ms, p95 84 ms. Follow-ups: docs screenshots; "↑ N earlier
+  messages" needs a count from the host (protocol change, see the build
+  notes); Codex (M2) and herdr panes (M3).
 
 - Touch gestures on the Live terminal ([gestures.md](gestures.md), next
   beta): hold and slide for arrow keys, tap to place the cursor, swipe on the
