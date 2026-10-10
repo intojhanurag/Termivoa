@@ -1,0 +1,18 @@
+2026-10-08. Transcribed initial red run before runtime edits on 08f0332.
+Only counting tests and helper terminalRuntime signature were added.
+Command: go test ./internal/broker -run 'TestViewerCapture' -count=1 -v
+
+TestViewerCaptureFollowsReadyViewerRate/none:
+mode=none duration=1.462766667s full captures=2 captures/sec=1.4
+PASS
+TestViewerCaptureFollowsReadyViewerRate/thumbnail:
+mode=thumbnail duration=1.611799834s full captures=78 captures/sec=48.4
+full captures=78, thumbnail plus agent scan bound=13
+FAIL
+TestViewerCaptureFollowsReadyViewerRate/mixed:
+mode=mixed duration=1.632357208s full captures=78 captures/sec=47.8
+PASS
+TestViewerCaptureWaitsForSnapshotAcknowledgement:
+unacknowledged viewer copied 77 screens in 1.432416708s
+FAIL
+FAIL github.com/intojhanurag/phone-terminal/internal/broker 7.007s

@@ -51,7 +51,7 @@ export function AnswerCard({ title, question, stateSince, status, canTake, onAns
       <div className="answer-head">
         <p className="answer-asks">
           <span className="dot amber" aria-hidden="true" />
-          {`${title.toUpperCase()} ASKS${elapsed === '' ? '' : ` · ${elapsed}`}`}
+          {`${title} asks${elapsed === '' ? '' : ` · ${elapsed}`}`}
         </p>
         <button type="button" className="link" onMouseDown={keepFocus} onClick={onHide}>terminal</button>
       </div>

@@ -298,10 +298,10 @@ describe('the item menu', () => {
     });
 
     it('says so when a fresh settings read took the picked agent away: no agent is started in its place (issue 195)', () => {
-      const page = chooser({ agent: undefined, dropped: 'codex is not running in herdr now.' });
-      expect(page).toContain('<p role="status" class="hint-text">codex is not running in herdr now.</p>');
+      const page = chooser({ agent: undefined, dropped: 'codex is not available in herdr now.' });
+      expect(page).toContain('<p role="status" class="hint-text">codex is not available in herdr now.</p>');
       expect(page).not.toContain('>Start</button>');
-      expect(chooser()).not.toContain('is not running in');
+      expect(chooser()).not.toContain('is not available in');
     });
 
     it('below revision 6, or with no agent kind, New tab is the action itself (a busy button), as before; at revision 6 it is a plain row that opens the chooser', () => {

@@ -16,6 +16,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "postcss-nested@6.2.0>postcss-selector-parser": "7.1.6"
+    }
   }
 }

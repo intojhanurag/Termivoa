@@ -1,0 +1,27 @@
+=== RUN   TestSoakThreeBusySessions
+    soak_test.go:47: config: sessions=3 rate=65536 B/s/session duration=30s reconnectEvery=20s warmUp=7.5s
+    soak_test.go:48: idle broker: t=  0.0s rss=  25.6MiB cpu=  0.02s heap=   2.6MiB goMapped=  17.7MiB goroutines=  22 children=0
+    soak_test.go:99: sample t=  0.5s rss=  56.3MiB cpu=  0.16s heap=   2.6MiB goMapped=  17.7MiB goroutines=  22 children=3
+    soak_test.go:99: sample t=  5.8s rss= 132.2MiB cpu=  1.76s heap=  53.5MiB goMapped= 120.5MiB goroutines=  68 children=3
+    soak_test.go:99: sample t= 11.0s rss= 133.0MiB cpu=  3.28s heap=  92.3MiB goMapped= 124.5MiB goroutines=  68 children=3
+    soak_test.go:99: sample t= 16.2s rss= 133.0MiB cpu=  4.80s heap=  90.8MiB goMapped= 124.5MiB goroutines=  68 children=3
+    soak_test.go:99: sample t= 21.3s rss= 133.0MiB cpu=  6.25s heap=  71.4MiB goMapped= 124.5MiB goroutines=  68 children=3
+    soak_test.go:99: sample t= 26.5s rss= 133.4MiB cpu=  7.86s heap=  74.6MiB goMapped= 124.5MiB goroutines=  68 children=3
+    soak_test.go:143: final  t= 30.3s rss= 133.5MiB cpu=  9.04s heap=  91.1MiB goMapped= 124.5MiB goroutines=  68 children=3
+    soak_test.go:167: session 0 pid=27493 childOutput=0.06 MiB/s patches/s=49.8 viewerWire=6.47 MiB/s
+    soak_test.go:169: session 0 input round trip (text+Enter -> echo frame): n=91 p50=22.96ms p95=24.84ms p99=26.47ms max=26.47ms
+    soak_test.go:170: session 0 output-to-frame (child write -> patch received): n=1223 p50=15.09ms p95=16.82ms p99=18.18ms max=35.05ms
+    soak_test.go:167: session 1 pid=27494 childOutput=0.06 MiB/s patches/s=49.9 viewerWire=6.47 MiB/s
+    soak_test.go:169: session 1 input round trip (text+Enter -> echo frame): n=91 p50=15.62ms p95=25.26ms p99=27.35ms max=27.35ms
+    soak_test.go:170: session 1 output-to-frame (child write -> patch received): n=1225 p50=14.73ms p95=16.43ms p99=24.21ms max=41.68ms
+    soak_test.go:167: session 2 pid=27497 childOutput=0.06 MiB/s patches/s=49.7 viewerWire=6.45 MiB/s
+    soak_test.go:169: session 2 input round trip (text+Enter -> echo frame): n=92 p50=12.24ms p95=22.49ms p99=32.52ms max=32.52ms
+    soak_test.go:170: session 2 output-to-frame (child write -> patch received): n=1223 p50=15.06ms p95=16.9ms p99=18.79ms max=36.69ms
+    soak_test.go:192: warm   t= 11.0s rss= 133.0MiB cpu=  3.28s heap=  92.3MiB goMapped= 124.5MiB goroutines=  68 children=3
+    soak_test.go:193: summary: reconnects=1 maxRSS=133.5MiB rssGrowthAfterWarm=0.5MiB heapGrowthAfterWarm=-1.3MiB goroutines warm=68 final=68 max=68 brokerCPU=30%
+    soak_test.go:222: session 0 post-stress snapshot matches patched screen at line L000027216
+    soak_test.go:222: session 1 post-stress snapshot matches patched screen at line L000027216
+    soak_test.go:222: session 2 post-stress snapshot matches patched screen at line L000027207
+--- PASS: TestSoakThreeBusySessions (30.57s)
+PASS
+ok  	github.com/intojhanurag/phone-terminal/tests/soak	31.339s
