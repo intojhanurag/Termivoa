@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/intojhanurag/phone-terminal/internal/cli"
 	"github.com/intojhanurag/phone-terminal/internal/gateway"
+	"github.com/intojhanurag/phone-terminal/internal/github"
 	"github.com/intojhanurag/phone-terminal/internal/herdr"
 	"github.com/intojhanurag/phone-terminal/internal/ipc"
 	"github.com/intojhanurag/phone-terminal/internal/lifecycle"
@@ -55,6 +56,8 @@ type lifecycleEnv struct {
 	wsl       bool
 	// herdr is the production herdr config for doctor; nil in tests.
 	herdr *herdr.Config
+	// Test seam for offline GitHub cleanup; nil uses the production package.
+	revokeGitHub func(context.Context, string) (bool, bool, error)
 }
 
 var loadLifecycleEnv = func() (lifecycleEnv, error) {
@@ -1355,6 +1358,9 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 		fmt.Fprintln(output, "Your data (paired devices, projects, settings, logs) is kept; --delete-data removes it.")
 	} else {
 		fmt.Fprintln(output, "--delete-data permanently deletes paired devices, projects, settings and logs.")
+		if env.host.OS == "darwin" || env.host.OS == "linux" {
+			fmt.Fprintln(output, "It also tries to revoke the saved GitHub login (up to 10 seconds), then removes it locally. The empty private data directory and ownership marker are kept.")
+		}
 	}
 	if env.host.OS == "windows" && len(plan.Steps) > 0 {
 		fmt.Fprintln(output, "Then it stops the gateway and, if it has no active sessions, the broker.")
@@ -1401,6 +1407,38 @@ func runUninstallCommand(ctx context.Context, args []string, input *os.File, out
 	}
 	if err := waitFor(ctx, stopped); err != nil {
 		return err
+	}
+	// Take the same ownership as a broker before touching its stored login.
+	// This closes the gap between the read-only stopped check and cleanup.
+	if env.host.OS == "darwin" || env.host.OS == "linux" {
+		canonical, lock, err := ipc.LockBrokerDataDirectory(env.paths.DataDir)
+		if err != nil {
+			return errors.New("refusing to delete data: cannot take exclusive data ownership; ensure Termivoa is stopped, then try again")
+		}
+		defer lock.Close()
+		cleanup, err := checkedOfflineCleanup(plan.Steps[unregister:], canonical)
+		if err != nil {
+			return err
+		}
+		plan.Steps = append(plan.Steps[:unregister], cleanup...)
+		revoke := env.revokeGitHub
+		if revoke == nil {
+			revoke = github.DisconnectStoredLogin
+		}
+		found, revoked, err := revoke(ctx, canonical)
+		if err != nil {
+			fmt.Fprintln(output, "Startup registration was removed, but the data directory was retained because GitHub cleanup did not complete.")
+			fmt.Fprintln(output, githubRevokeHint)
+			return errors.New("refusing to delete data: the saved GitHub login could not be safely read or removed; the data directory was retained")
+		}
+		if found {
+			if revoked {
+				fmt.Fprintln(output, "GitHub: revocation request accepted; saved login removed locally.")
+			} else {
+				fmt.Fprintln(output, "GitHub: saved login removed locally; revocation on GitHub was not confirmed.")
+				fmt.Fprintln(output, githubRevokeHint)
+			}
+		}
 	}
 	return lifecycle.Apply(ctx, env.runner, lifecycle.Plan{Steps: plan.Steps[unregister:]}, output)
 }
@@ -1723,4 +1761,72 @@ func programLeftover(osName, executable string) string {
 		}
 	}
 	return fmt.Sprintf("The pterm program itself stays: delete %s yourself.", executable)
+}
+
+// checkedOfflineCleanup protects the lock namespace from every deletion root,
+// including cache/runtime aliases through ancestor symlinks. A top-level
+// symlink is left as an unlink-only step; RemoveAll never follows that link.
+func checkedOfflineCleanup(steps []lifecycle.Step, dataDir string) ([]lifecycle.Step, error) {
+	var result []lifecycle.Step
+	for index, step := range steps {
+		if index == 0 {
+			step.RemoveTree = dataDir
+			step.KeepDataLock = true
+			result = append(result, step)
+			continue
+		}
+		info, err := os.Lstat(step.RemoveTree)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, errors.New("refusing to delete data: a cleanup directory could not be checked")
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			result = append(result, step)
+			continue
+		}
+		canonical, err := filepath.EvalSymlinks(step.RemoveTree)
+		if err != nil {
+			return nil, errors.New("refusing to delete data: a cleanup directory could not be resolved")
+		}
+		inside, err := directoryContains(dataDir, canonical)
+		if err != nil {
+			return nil, errors.New("refusing to delete data: cleanup ownership could not be checked")
+		}
+		if inside {
+			continue
+		} // equal or nested roots are already erased safely
+		contains, err := directoryContains(canonical, dataDir)
+		if err != nil {
+			return nil, errors.New("refusing to delete data: cleanup ownership could not be checked")
+		}
+		if contains {
+			return nil, errors.New("refusing to delete data: a cleanup directory contains the protected data directory; check storage locations before retrying")
+		}
+		step.RemoveTree = canonical
+		result = append(result, step)
+	}
+	return result, nil
+}
+
+// Compare directory identities, so case-insensitive path spellings and parent
+// symlinks cannot hide equal/ancestor namespaces. All arguments already exist.
+func directoryContains(parent, child string) (bool, error) {
+	info, err := os.Stat(parent)
+	if err != nil {
+		return false, err
+	}
+	for current := child; ; current = filepath.Dir(current) {
+		candidate, err := os.Stat(current)
+		if err != nil {
+			return false, err
+		}
+		if os.SameFile(info, candidate) {
+			return true, nil
+		}
+		if filepath.Dir(current) == current {
+			return false, nil
+		}
+	}
 }

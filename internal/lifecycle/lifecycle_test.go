@@ -363,7 +363,10 @@ func TestApplyRoundTripInTemporaryHome(t *testing.T) {
 	if err := Apply(ctx, runner, plan, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{host.File(Services[0]), host.File(Services[1]), host.DataDir} {
+	if entries, err := os.ReadDir(host.DataDir); err != nil || len(entries) != 0 {
+		t.Fatalf("saved data remained: %v, %v", entries, err)
+	}
+	for _, path := range []string{host.File(Services[0]), host.File(Services[1])} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s still exists", path)
 		}

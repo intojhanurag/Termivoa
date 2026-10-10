@@ -1,6 +1,6 @@
 # Termivoa website
 
-The landing page and the docs at <https://termivoa.vercel.app>.
+The landing page and the docs at <https://termivoa.com>.
 
 - `public/` is the landing page: plain HTML and CSS, served as-is at `/`.
 - `src/content/docs/docs/` are the docs pages (Markdown), served at `/docs/` by

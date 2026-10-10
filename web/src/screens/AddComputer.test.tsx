@@ -11,8 +11,9 @@ import {
 import { ApiError } from '../api/http';
 import { atLeast, CHECKING_MIN_MS, ReadFailure, type ComputerEntry } from './allSessions';
 import {
-  answeredText, checkFailureText, computerDetail, ComputersSection, FoundBlock, healthText, onlineText, readLink, ScanView,
+  answeredText, checkFailureText, ComputerActions, ComputersSection, FoundBlock, readLink, ScanView,
 } from './Computers';
+import { ComputerHead, computerDetail, healthText, onlineText } from './SettingsComputer';
 
 const app = { origin: 'https://mac.tailx.ts.net', hostname: 'mac.tailx.ts.net' };
 const grant = 'G'.repeat(43);
@@ -246,40 +247,61 @@ describe('Settings → Computers', () => {
     { computer: vps, status: { kind: 'unreachable', lastSeen: Date.now() - 3 * 3_600_000, network: true } },
   ];
 
-  it('lists each computer as online or offline, home with the Home badge and its session count', () => {
-    expect(onlineText(entries[0] as ComputerEntry)).toEqual({ text: 'online', tone: 'green' });
-    expect(onlineText(entries[1] as ComputerEntry)).toEqual({ text: 'offline', tone: 'muted' });
+  it('lists each computer as a card: home first with the Home badge, a peer that cannot be reached dashed', () => {
+    expect(onlineText(entries[0] as ComputerEntry)).toEqual({ text: 'Online', tone: 'green' });
+    expect(onlineText(entries[1] as ComputerEntry)).toEqual({ text: 'Can\'t reach', tone: 'amber' });
     expect(computerDetail(entries[0] as ComputerEntry, Date.now())).toBe('0 sessions');
-    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onFailure={() => ''} onOpen={noop} />);
     expect(html).toContain('<span class="computer-name">mac</span><span class="home-badge">Home</span>');
-    expect(html).toContain('<span class="row-meta">0 sessions</span>');
     expect(html.match(/class="home-badge">Home</gu)).toHaveLength(1);
-    expect(html).not.toContain('this computer');
+    expect(html.indexOf('>mac<')).toBeLessThan(html.indexOf('>vps<'));
     expect(html).toContain('<p class="section-hint">Home serves this app to your phone.</p>');
     expect(computerDetail(entries[1] as ComputerEntry, Date.now())).toBe("vps · can't reach");
+    expect(html).toContain('<li class="computer-card sc-card is-unreachable dashed">');
+    expect(html).toContain('<span class="computer-state sc-word">Can&#x27;t reach</span>');
     expect(html).toContain('<span class="hint-text">Last seen 3 h ago. Is it on, and in your tailnet?</span>');
   });
 
-  it('shows no empty line under home while it is checked; a peer shows its address', () => {
+  it('shows no empty line under a computer while it is checked', () => {
     const loading: ComputerEntry[] = [{ computer: mac, status: { kind: 'loading' } }, { computer: vps, status: { kind: 'loading' } }];
     expect(computerDetail(loading[0] as ComputerEntry, Date.now())).toBe('');
-    const html = renderToStaticMarkup(<ComputersSection entries={loading} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    const html = renderToStaticMarkup(<ComputersSection entries={loading} onCheck={() => Promise.resolve()} onFailure={() => ''} onOpen={noop} />);
     expect(html).not.toContain('<span class="row-meta"></span>');
     expect(html).toContain('<span class="row-meta">vps.tailx.ts.net</span>');
-    expect(html.match(/<span class="computer-state muted">checking<\/span>/gu)).toHaveLength(2);
+    expect(html.match(/<span class="computer-state sc-word">Checking<\/span>/gu)).toHaveLength(2);
+    expect(html).not.toContain('dashed');
   });
 
-  it('offers Check again on every computer, rename and remove for peers only, and + Add a computer', () => {
-    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
-    expect(html.match(/<span>Check again<\/span><span class="off" aria-hidden="true"><svg[^]*?<\/svg>Checking…<\/span><\/span><\/button>/gu)).toHaveLength(2);
-    // One status line per row for its own result, and one for rename and remove.
-    expect(html.match(/role="status"/gu)).toHaveLength(3);
-    expect(html.match(/>Rename<\/button>/gu)).toHaveLength(1);
-    expect(html.match(/>Remove<\/button>/gu)).toHaveLength(1);
+  it('has Check again on a card that cannot be reached, and + Add a computer', () => {
+    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onFailure={() => ''} onOpen={noop} />);
+    expect(html.match(/<span>Check again<\/span><span class="off" aria-hidden="true"><svg[^]*?<\/svg>Checking…<\/span><\/span><\/button>/gu)).toHaveLength(1);
+    // One status line for the dashed card's own result, and one for rename and remove.
+    expect(html.match(/role="status"/gu)).toHaveLength(2);
+    expect(html).not.toContain('>Rename');
     expect(html).toContain('>+ Add a computer</button>');
-    expect(html).toContain('<span class="computer-state green">online</span>');
-    expect(html).toContain('<span class="computer-state muted">offline</span>');
-    expect(html).toContain('Termivoa 0.1.0-beta.2+1a2b3c4d5e6f · last seen just now');
+  });
+
+  it('opens with Add a computer open when Settings is opened at it', () => {
+    const html = renderToStaticMarkup(<ComputersSection entries={entries} adding onCheck={() => Promise.resolve()} onFailure={() => ''} onOpen={noop} />);
+    expect(html).toContain('role="group" aria-label="Add a computer"');
+    expect(html).toContain('>Scan QR</button>');
+    expect(html).toContain('>Paste link</button>');
+    expect(html).not.toContain('>+ Add a computer</button>');
+  });
+
+  it('a computer page has Projects, Check again, and Rename and Remove for peers only', () => {
+    const actions = (entry: ComputerEntry) => renderToStaticMarkup(
+      <ComputerActions entry={entry} projects={4} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} onRemoved={noop} />,
+    );
+    const home = actions(entries[0] as ComputerEntry);
+    expect(home).toContain('<h2 id="this-computer-heading" class="caps">This computer</h2>');
+    expect(home).toContain('<span>Projects</span><span class="sc-value">4</span>');
+    expect(home).toContain('<span>Check again</span>');
+    expect(home).not.toContain('Rename');
+    expect(home).not.toContain('Remove');
+    const peer = actions(entries[1] as ComputerEntry);
+    expect(peer).toContain('<span>Rename</span><span class="sc-value">vps ›</span>');
+    expect(peer).toContain('>Remove</button>');
   });
 
   it('shows the build and when the phone last read the computer, only for a computer that answered', () => {
@@ -294,14 +316,14 @@ describe('Settings → Computers', () => {
   it('shows a peer build as plain text, never as markup', () => {
     const hostile = { projects: [], shellProfiles: [], hostBuild: '<img src=x onerror=alert(1)>' } as never;
     const html = renderToStaticMarkup(
-      <ComputersSection entries={[{ computer: vps, status: { kind: 'ok', settings: hostile, sessions: [], at: 0 } }]} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />,
+      <ComputerHead entry={{ computer: vps, status: { kind: 'ok', settings: hostile, sessions: [], at: 0 } }} now={0} onBack={noop} />,
     );
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img');
   });
 
   it('shows no Found block before home answers, or when home is too old to list it', () => {
-    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    const html = renderToStaticMarkup(<ComputersSection entries={entries} onCheck={() => Promise.resolve()} onFailure={() => ''} onOpen={noop} />);
     expect(html).not.toContain('Found on your network');
     expect(FoundBlock({ found: undefined, homeName: 'mac', working: new Set(), app, onAdd: noop })).toBeNull();
   });
@@ -356,7 +378,7 @@ describe('Settings → Computers', () => {
   it('+ Add a computer names home by its machine name, not the name given on this phone (#164)', () => {
     vi.stubGlobal('location', { origin: mac.origin });
     const renamed: ComputerEntry[] = [{ ...(entries[0] as ComputerEntry), computer: { ...mac, label: 'Work laptop' } }];
-    const html = renderToStaticMarkup(<ComputersSection entries={renamed} onCheck={() => Promise.resolve()} onChanged={noop} onFailure={() => ''} />);
+    const html = renderToStaticMarkup(<ComputersSection entries={renamed} onCheck={() => Promise.resolve()} onFailure={() => ''} onOpen={noop} />);
     vi.unstubAllGlobals();
     expect(html).toContain('<code>pterm pair <span class="nowrap">--via</span> mac</code>');
     expect(html).not.toContain('--via Work laptop');

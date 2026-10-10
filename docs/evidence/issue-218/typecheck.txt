@@ -1,0 +1,2 @@
+> @phone-terminal/web@0.0.0-private typecheck <repository>/web
+> tsc --noEmit

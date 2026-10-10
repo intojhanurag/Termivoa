@@ -458,6 +458,7 @@ type Step struct {
 	Text         string // readable form of Data for dry runs
 	Remove       string // remove one file or empty directory if present
 	RemoveTree   string // remove a whole "Phone Terminal" data directory
+	KeepDataLock bool   // for offline cleanup, preserve the private directory/lock inode
 	Command      []string
 	AllowFailure bool
 }
@@ -607,7 +608,7 @@ func (h Host) UninstallPlan(statuses []Status, deleteData []string) (Plan, error
 		if base != "Phone Terminal" && base != "phone-terminal" {
 			return Plan{}, fmt.Errorf("lifecycle: refusing to delete %q: not a Termivoa data directory", path)
 		}
-		plan.Steps = append(plan.Steps, Step{RemoveTree: path})
+		plan.Steps = append(plan.Steps, Step{RemoveTree: path, KeepDataLock: path == h.DataDir && (h.OS == "darwin" || h.OS == "linux")})
 	}
 	return plan, nil
 }
@@ -641,6 +642,9 @@ func (step Step) String() string {
 	case step.Remove != "":
 		return "remove " + step.Remove
 	case step.RemoveTree != "":
+		if step.KeepDataLock {
+			return "delete saved data in " + step.RemoveTree + " (keep the empty private ownership directory)"
+		}
 		return "delete all data in " + step.RemoveTree
 	default:
 		return "run " + DisplayCommand(step.Command)
@@ -688,7 +692,11 @@ func Apply(ctx context.Context, runner Runner, plan Plan, output io.Writer) erro
 				err = nil
 			}
 		case step.RemoveTree != "":
-			err = os.RemoveAll(step.RemoveTree)
+			if step.KeepDataLock {
+				err = removeDataContents(ctx, step.RemoveTree)
+			} else {
+				err = os.RemoveAll(step.RemoveTree)
+			}
 		default:
 			var result string
 			result, err = runner.Run(ctx, step.Command[0], step.Command[1:]...)
@@ -709,4 +717,32 @@ func bounded(text string) string {
 		text = text[:512] + "..."
 	}
 	return text
+}
+
+// removeDataContents keeps the lock inode and its parent directory reachable.
+// Removing either would let a restarted broker take a replacement lock before
+// this cleanup finishes. The CLI holds the broker data lock throughout.
+func removeDataContents(ctx context.Context, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() == ipc.BrokerDataLockFile {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(filepath.Join(path, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }

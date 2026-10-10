@@ -28,7 +28,7 @@ describe('answer card', () => {
   it('shows the asker, the question, the detail as text, and one button per option for the controller', () => {
     const html = card(controller);
     expect(html).toContain('aria-labelledby="answer-question"');
-    expect(html).toMatch(/CLAUDE ASKS · 1[23]s/u);
+    expect(html).toMatch(/claude asks · 1[23]s/u);
     expect(html).toContain('<h2 id="answer-question" class="answer-question">Do you want to proceed?</h2>');
     // Terminal text is escaped, never markup.
     expect(html).toContain('<pre class="answer-detail">Bash command\n  touch &lt;x&gt;.txt</pre>');
