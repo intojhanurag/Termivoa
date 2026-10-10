@@ -76,6 +76,8 @@ This checklist prepares a reviewable v0.1.0 candidate. It does not authorize pub
 
 ## Owner handoff before visibility change
 
+Done: the owner made the repository public on 2026-10-10 (`v0.1.0-beta.4`, the first open-source beta). The items below stay as the record of that handoff.
+
 - [ ] Present the private repository name and verify it remains private.
 - [ ] Present candidate source commit, proposed tag, exact artifacts/checksums, and reproducible build instructions.
 - [ ] Present tested platform/device matrix, known limitations, unresolved blockers, and credential locations by name only.

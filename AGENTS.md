@@ -1,23 +1,38 @@
 # Agent operating rules
 
-These rules apply throughout this repository.
+These rules apply throughout this repository, to people and to AI coding agents. The repository is public and open source (Apache-2.0); contributors' agents follow the same rules.
 
-1. Before you work, read `docs/architecture.md` (how Termivoa works today) and `docs/pending-work.md` (the roadmap). `docs/implementation-plan.md` is the original v0 specification; follow it where it still applies. Preserve unrelated user work.
+## Commands
+
+| Task | Command |
+| --- | --- |
+| Install (Go 1.27.1, Node 24.11.0, pnpm 10.33.0) | `corepack enable && pnpm install --frozen-lockfile` |
+| Full check (Go, web, protocol drift) | `GOTOOLCHAIN=go1.27.1 ./scripts/check` (Windows: `./scripts/check.ps1`) |
+| One Go package | `GOTOOLCHAIN=go1.27.1 go test ./internal/broker/...` |
+| Web | `pnpm typecheck`, `pnpm test:web`, `pnpm build:web` |
+| Protocol types (after a `protocol/v1` change) | `pnpm protocol:generate` |
+| End-to-end, many computers | `scripts/e2e-multicomputer/README.md` (Phase A and Phase B) |
+| Docs site | `cd site && pnpm install --frozen-lockfile --ignore-workspace && npx astro build` |
+| Release binary with the phone app inside | `pnpm build:web && sh scripts/embed-web.sh && go build -tags webdist ./cmd/pterm` (without `-tags webdist` the binary serves no app) |
+
+## Rules
+
+1. Before you work, read `docs/architecture.md` (how Termivoa works today) and `docs/pending-work.md` (the roadmap). `docs/implementation-plan.md` is the original v0 specification and is history; where it disagrees with `docs/architecture.md`, the architecture wins. Preserve unrelated user work.
 2. Use Go for all shipped host runtime code. Node.js and pnpm are build-time tools only; do not introduce a Node runtime, Rust backend, SSH-only gateway, cloud shell, or hosted service.
-3. Keep the repository private. Never change repository visibility to public. The owner alone performs the manual private-to-public transition.
-4. Never publish code, packages, installers, images, previews, logs, or artifacts outside the approved private repository without explicit authorization.
-5. Complete milestone gates in order. Independent documentation, fixtures, and packaging preparation may proceed while owner-dependent access is pending, but do not claim blocked evidence as passed.
+3. The repository is public. Never change its visibility, settings, branch protection, collaborators, apps or webhooks; only the owner does. Everything you commit, push or post (code, issues, PR text, screenshots, logs) is public at once and cannot be taken back.
+4. Never publish releases, packages, installers, images, previews or artifacts (GitHub Releases, registries, package managers) without the owner's explicit approval for that publication. The website deploy of rule 22 is allowed only for a merge the owner approved.
+5. Do not claim a check, test or real-device result that did not run. When a step needs the owner (a device, an account, an approval), do the independent work and name the blocked step.
 6. Never change a public protocol silently. Define protocol v1 messages in `protocol/v1`, generate Go and TypeScript types, and check generation drift.
 7. The broker owns PTYs, terminal emulators, authentication state, controller leases, and SQLite. The gateway never owns or spawns a shell.
 8. Send clients normalized terminal frames, never child ANSI output. Keep terminal bytes out of React state. Do not treat emulator rendering output as a serialized checkpoint.
 9. The broker is the only application-level terminal-query responder. Broker-owned Windows ConPTY may answer DSR/CPR queries it consumes before Go vt sees them, but tests must prove exactly one response. Never send browser-, desktop-, or client-generated terminal-query responses to the child.
 10. Route all PTY input through structured, authorized messages and one broker writer. Never queue offline user input or automatically retransmit it after reconnect.
 11. Preserve strict bounds on dimensions, messages, paste, history, queues, and viewers. A slow viewer must not indefinitely backpressure the child.
-12. Ask before using missing credentials, spending provider credits, installing outside the repository, changing Tailscale or startup configuration, adding collaborators/apps/webhooks, signing, or publishing.
-13. Never request passwords, pasted private keys, or broad personal tokens. Use existing authenticated sessions first and name the minimum missing access and blocked gate.
+12. Ask before using missing credentials, spending provider credits, installing outside the repository, changing Tailscale or startup configuration, signing, or publishing (rule 3 forbids changing repository settings, collaborators, apps and webhooks).
+13. Never request passwords, pasted private keys, or broad personal tokens. Use existing authenticated sessions first and name the minimum missing access and blocked gate. Never run a command that can print a real credential: `git credential fill/approve`, `gh auth token`, `security find-*`, reading `~/.git-credentials`, `~/.config/gh`, `~/.netrc`, the Keychain, or a real broker database. Every git command in tests uses a temporary `HOME`, `GIT_CONFIG_NOSYSTEM=1` and a temporary `GIT_CONFIG_GLOBAL`. Helper-agent briefs must include this rule.
 14. Do not alter user files outside the approved workspace. Do not discard unrelated changes, rewrite shared history, force-push shared branches, disable checks, or weaken security to make a gate appear green.
 15. Before every commit, inspect status and the staged diff, stage explicit task paths, run relevant checks, and review additions for credentials, `.env` files, signing material, personal paths, terminal transcripts, model logs, and binaries.
-16. Use Conventional Commit messages and reviewable milestone branches. After the bootstrap commit, application changes reach `main` through private pull requests and required checks.
+16. Use Conventional Commit messages and reviewable milestone branches. After the bootstrap commit, application changes reach `main` through pull requests and required checks.
 17. Preserve configured Git author and commit signing. If unavailable, ask instead of inventing identity, approval, attestation, or co-authorship.
 18. Update `docs/progress.md` at every milestone with actual commands, evidence paths, defects, and owner-dependent blockers. Keep unexecuted tests pending.
 19. Store non-sensitive evidence under `docs/evidence/<milestone>/`. Never store production terminal history, credentials, or private test data.
@@ -34,14 +49,14 @@ These rules apply throughout this repository.
 
 24. Critical features need the owner's review before merge. A feature is critical when it changes authentication, pairing, trust between computers, the network surface, the protocol in a breaking way, or stored secrets (for example multi-computer). For such a feature: write the architecture first (an ADR in `docs/decisions/` and a design document) and open it as a draft pull request marked "DO NOT MERGE without owner review"; run independent adversarial reviews (at least security, and feasibility with alternatives) and record how each finding is resolved; then report to the owner in short, simple words and wait. Do not merge the design or any implementation pull request of a critical feature until the owner approves it, even when other rules allow autonomous merges. Pick the stack for performance and simplicity on evidence; a change from Go (rule 2) needs its own ADR and the owner's approval.
 
-25. Keep the architecture and the docs up to date. The internal architecture lives only in this private repository: `docs/architecture.md` (the map) and the design documents in `docs/`. Every pull request that adds a feature or improves one updates, in the same pull request:
+25. Keep the architecture and the docs up to date. The internal architecture lives in this repository for contributors: `docs/architecture.md` (the map) and the design documents in `docs/`. The docs site is for users. Every pull request that adds a feature or improves one updates, in the same pull request:
     - `docs/architecture.md` and the feature's design document (internal: how it works);
     - the docs site (rule 22; public: how to use it);
     - `docs/pending-work.md` (move the item to Done, or add new follow-ups).
 
-    Never put internal architecture (package names, internal file paths, how security checks work inside) on the public docs site. When you find a doc that is out of date or repeats another, fix it or delete it.
+    Never put internal architecture (package names, internal file paths, how security checks work inside) on the docs site; link to the repository instead. When you find a doc that is out of date or repeats another, fix it or delete it.
 
-26. There are no real users and no real data yet. Until the owner says users have arrived, do not write fallback, backward-compatibility, migration or upgrade code: change database schemas, stored data and saved app settings directly, and tell the owner when a change needs a fresh database or a new pairing. Version checks between the owner's own computers (multi-computer) are not backward compatibility; keep them.
+26. The repository is public, but the owner has not yet declared real users (beta). Until the owner says users have arrived, do not write fallback, backward-compatibility, migration or upgrade code: change database schemas, stored data and saved app settings directly, and tell the owner when a change needs a fresh database or a new pairing. Version checks between the owner's own computers (multi-computer) are not backward compatibility; keep them.
 
 When access is missing, use this format:
 
