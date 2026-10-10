@@ -470,6 +470,22 @@ func (server *ManagementServer) listSessions(
 	return result, nil
 }
 
+// replayCreate returns the durable receipt of an earlier create, if any.
+func (server *ManagementServer) replayCreate(
+	ctx context.Context,
+	payload protocol.BrokerRPCSessionCreateRequestPayload,
+) (protocol.BrokerRPCSessionMutationResultPayload, bool, error) {
+	replayed, found, err := server.config.Registry.ReplayCreate(
+		ctx, payload.OperationID, payload.ProjectID, payload.ShellProfileID, payload.Worktree,
+	)
+	if err != nil || !found {
+		return protocol.BrokerRPCSessionMutationResultPayload{}, false, err
+	}
+	return protocol.BrokerRPCSessionMutationResultPayload{
+		OperationID: payload.OperationID, Session: server.withWorktree(managementMutationSessionRecord(replayed.Snapshot)),
+	}, true, nil
+}
+
 func (server *ManagementServer) createSession(
 	ctx context.Context,
 	payload protocol.BrokerRPCSessionCreateRequestPayload,
@@ -481,6 +497,11 @@ func (server *ManagementServer) createSession(
 		// writing a receipt; an accepted operation remains the only writer.
 		if err := ctx.Err(); err != nil {
 			return protocol.BrokerRPCSessionMutationResultPayload{}, err
+		}
+		// A retry of a finished create replays its receipt even while
+		// another create holds the slot; it must not get limit_exceeded.
+		if result, found, err := server.replayCreate(ctx, payload); err != nil || found {
+			return result, err
 		}
 		if !server.worktreeCreates.TryLock() {
 			return protocol.BrokerRPCSessionMutationResultPayload{}, errWorktreeBusy
@@ -494,16 +515,8 @@ func (server *ManagementServer) createSession(
 		// worktree. Git retains its existing execution time/output limits.
 		ctx = context.WithoutCancel(ctx)
 	}
-	replayed, found, err := server.config.Registry.ReplayCreate(
-		ctx, payload.OperationID, payload.ProjectID, payload.ShellProfileID, payload.Worktree,
-	)
-	if err != nil {
-		return protocol.BrokerRPCSessionMutationResultPayload{}, err
-	}
-	if found {
-		return protocol.BrokerRPCSessionMutationResultPayload{
-			OperationID: payload.OperationID, Session: server.withWorktree(managementMutationSessionRecord(replayed.Snapshot)),
-		}, nil
+	if result, found, err := server.replayCreate(ctx, payload); err != nil || found {
+		return result, err
 	}
 	project, err := server.config.Store.GetProject(ctx, payload.ProjectID)
 	if err != nil {

@@ -22,7 +22,9 @@ admission; a caller whose mutation was fully written but whose result was
 lost still receives the gateway client's existing delivery uncertainty.
 
 Only after admission is cancellation detached with `context.WithoutCancel`.
-The broker checks `Registry.ReplayCreate` under the slot, resolves the saved
+The broker checks `Registry.ReplayCreate` before taking the slot (so a
+retry of a finished create replays even while another create runs) and
+again under the slot, resolves the saved
 project and profile, prepares the worktree, starts the session through the
 registry, and returns its receipt snapshot. Start failure rolls back the new
 worktree when no session was created. `defer Unlock` releases the slot on
