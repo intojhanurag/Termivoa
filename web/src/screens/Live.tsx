@@ -680,11 +680,13 @@ export function Live({
   // trackpad scroll becomes wheel steps. Needs control, since wheel steps are input.
   const appScroll = !normalBuffer && canSend && !keyboard;
 
-  function scrollApp(travel: number) {
+  /** Wheel steps at the cell under the finger or pointer (x, y), so tmux and vim scroll that pane. */
+  function scrollApp(travel: number, x: number, y: number) {
     const { steps, carry } = wheelSteps(wheelCarry.current, travel);
     wheelCarry.current = carry;
+    const cell = runtime?.view.cellAt(x, y);
     for (let step = 0; step < Math.abs(steps); step++) {
-      runtime?.connection.sendWheel(steps > 0 ? 'wheel-up' : 'wheel-down');
+      runtime?.connection.sendWheel(steps > 0 ? 'wheel-up' : 'wheel-down', cell);
     }
   }
   const historyEnabled = status.link === 'live';
@@ -698,7 +700,7 @@ export function Live({
     canInput: () => canInput,
     cell: () => runtime?.view.cellSize(),
     send: (key) => runtime?.connection.sendKey(key, NO_MODIFIERS) ?? false,
-    drag: (phase, y) => {
+    drag: (phase, { x, y }) => {
       if (phase === 'start') {
         touchStart.current = y;
         touchLast.current = y;
@@ -708,7 +710,7 @@ export function Live({
       if (appScroll) {
         const last = touchLast.current;
         touchLast.current = y;
-        if (last !== undefined) scrollApp(y - last);
+        if (last !== undefined) scrollApp(y - last, x, y);
         return;
       }
       const start = touchStart.current;
@@ -881,7 +883,7 @@ export function Live({
           }
         }}
         onWheel={(event) => {
-          if (appScroll) scrollApp(-event.deltaY);
+          if (appScroll) scrollApp(-event.deltaY, event.clientX, event.clientY);
           else if (event.deltaY < 0 && normalBuffer && area.current?.scrollTop === 0) openHistory();
         }}
       >

@@ -196,6 +196,20 @@ describe('Connection', () => {
     ]);
   });
 
+  it('sends a wheel step at the given cell, clamped to the grid, and at the cursor without one', async () => {
+    const { connection, socket } = harness();
+    await attachLive(socket());
+    await takeControl(connection, socket());
+    expect(connection.sendWheel('wheel-up', { row: 3, column: 14 })).toBe(true);
+    expect(connection.sendWheel('wheel-down', { row: 99, column: -4 })).toBe(true);
+    expect(connection.sendWheel('wheel-down')).toBe(true);
+    expect(socket().sent.slice(-3).map((message) => message.payload)).toMatchObject([
+      { kind: 'wheel', button: 'wheel-up', column: 14, row: 3 },
+      { kind: 'wheel', button: 'wheel-down', column: 0, row: 4 },
+      { kind: 'wheel', button: 'wheel-down', column: 0, row: 0 },
+    ]);
+  });
+
   it('reports uncertain delivery, reconnects as an observer, and never replays input or control', async () => {
     const { connection, socket } = harness();
     const first = socket();
