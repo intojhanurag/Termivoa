@@ -57,7 +57,7 @@ In a second terminal:
 ## 2. Real phone over Tailscale (the 3-step first run)
 
 The agent did not change Tailscale or startup settings on this Mac. Follow
-the [quick start](https://termivoa.vercel.app/docs/quick-start/):
+the [quick start](https://termivoa.com/docs/quick-start/):
 
 - [ ] Build and install (DMG or from source), then run `pterm setup`.
       Check the plan it prints, answer `y` once, and answer `y` to the separate
@@ -154,7 +154,7 @@ the [quick start](https://termivoa.vercel.app/docs/quick-start/):
       a photo" and no file is written.
 - [ ] **Voice** in the Home Screen app: iOS asks for microphone and speech
       permission once; words appear (unfinished words dimmed), the status
-      shows "LISTENING · 0:07", **Done · edit** adds the text and sends
+      shows "Listening · 0:07", **Done · edit** adds the text and sends
       nothing. **Cancel** drops it. Locking the phone stops listening.
 - [ ] Deny the microphone: the panel says "Microphone access is off…".
 - [ ] In a browser without the Web Speech API (for example Firefox), Voice is
@@ -310,7 +310,7 @@ then on Android Chrome.
       notifications arrive.
 - [ ] Stop Termivoa on `vps`, then open **Settings**: after some seconds
       "No notifications from vps." shows, and a test still arrives from home.
-- [ ] **Settings → Computers → Remove** `vps`, then let the agent on `vps`
+- [ ] **Settings → vps → Remove** `vps`, then let the agent on `vps`
       ask again: no notification arrives.
 - [ ] Turn the switch off: an agent on home and one on a peer both stay
       silent. Turn it on again: both notify again.
@@ -422,7 +422,7 @@ this build. Design: [found-on-network.md](found-on-network.md), section 10.
       launchd). The screen says "Sent to vps (…)".
 - [ ] **The whole add on a real iPhone Home Screen app.** On `vps` run
       `pterm pair --via mac` (or `pterm setup`, answer 2). In the app:
-      **Settings → Computers → Found on your network**, `vps`, **Add**, the
+      **Settings → Found on your network**, `vps`, **Add**, the
       **Add this computer?** sheet, **Add vps**, **Continue**. The phone shows
       a code and "If it matches, type y in the terminal on vps." The prompt
       on `vps` says "wants to add this computer (vps)" and the same code. Type `y`: `vps`
@@ -468,7 +468,7 @@ projects, and the iPhone Home Screen app. Design:
       one; there the button says **Inbox ›**. Then reload the page: no
       **Next** row. Record it for a closed app and for an open app
       ([needs-you-inbox.md](needs-you-inbox.md), section 6).
-- [ ] **Settings → Integrations.** Switch herdr **Off**: the herdr tab leaves
+- [ ] **Settings → (the computer) → herdr.** Switch herdr **Off**: the herdr tab leaves
       this computer, open terminals end (the pane gets its size back), no push
       comes. Switch **On** again: it returns. **Buzz when blocked** and **Buzz
       when finished** each stop and start their pushes, and survive a reload.
@@ -502,7 +502,7 @@ these are yours:
       that are not committed…" and nothing is removed. After a commit: it is
       removed and the branch is still there.
 - [ ] **New tab and New workspace** open their terminal at once.
-- [ ] **Install herdr on the VPS.** **Settings → Integrations → Install
+- [ ] **Install herdr on the VPS.** **Settings → vps → Install
       herdr** opens a session on the VPS with the install command typed and
       not run. Press Enter; after it ends, **Check again**, then **Start
       herdr**; the herdr tab shows the VPS.
