@@ -82,7 +82,7 @@ export const inboxTabShown = (count: number, open: boolean): boolean => count > 
 /** The one line of the "Needs you" tab while nothing waits. */
 export const NOTHING = 'Nothing needs you.';
 /** The one line of the "Needs you" tab while a computer did not answer: the list may miss what waits there. */
-export const NO_ANSWER = 'Some computers did not answer. See All.';
+export const NO_ANSWER = 'Some computers did not answer. See Sessions.';
 /** The Sessions status line on the "Needs you" tab while something waits: "1 needs you", "3 need you". */
 export const needsYouText = (count: number): string => (count === 1 ? '1 needs you' : `${count} need you`);
 
