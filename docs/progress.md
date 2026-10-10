@@ -57,6 +57,23 @@ Last updated: 2026-10-10
 - **Open.** Not tested on a real phone. Follow-ups in
   [pending-work.md](pending-work.md) (Polish next, item 7).
 
+### Website: termivoa.com and visitor counting (2026-10-10, branch `chore/site-domain-analytics`)
+
+- **What.** The owner bought `termivoa.com` (Cloudflare Registrar; DNS at
+  Cloudflare, records "DNS only"; Vercel serves the site, `www` redirects
+  with 308). Every `termivoa.vercel.app` link in the repository and the
+  site now uses `https://termivoa.com` (Astro `site`, canonical, Open Graph,
+  `robots.txt`, sitemaps, README, install docs); `termivoa.vercel.app` keeps
+  working. History entries keep the old address.
+- **Visitor counting.** Vercel Web Analytics on the landing page and the
+  docs: one script from the site's own origin (`/_vercel/insights/script.js`),
+  no cookies. The landing page's CSP now allows `script-src 'self'` and
+  `connect-src 'self'`. The security page says so (Common questions). The
+  app and the computers send nothing.
+- **Owner steps.** Enable Web Analytics in the Vercel project; change the
+  GitHub App's Homepage URL and Setup URL to `https://termivoa.com` and
+  `https://termivoa.com/docs/guides/github/`.
+
 ### Summary (2026-09-27)
 
 The v0 flow is complete on `main` and verified on the macOS development

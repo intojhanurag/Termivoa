@@ -199,6 +199,10 @@ Run `pterm devices` for its ID, then `pterm revoke <device-id>`. It loses access
 
 No. Only devices in your tailnet can.
 
+### Does this website count visitors?
+
+Yes, only this website (termivoa.com). It counts page views with Vercel Web Analytics, which sets no cookies. The Termivoa app and your computers send nothing to it.
+
 ## Report a vulnerability
 
 Do not open a public issue for a security problem.

@@ -125,7 +125,7 @@ dist/linux/pterm-linux-amd64` (or `-arm64`): it installs `~/.local/bin/pterm`
 and runs `pterm setup`. Servers, WSL and the Tailscale operator step:
 [docs/install.md](docs/install.md#linux-desktop-server-and-wsl).
 
-Then the three steps from the [quick start](https://termivoa.vercel.app/docs/quick-start/):
+Then the three steps from the [quick start](https://termivoa.com/docs/quick-start/):
 
 1. Install [Tailscale](https://tailscale.com/download) on the computer and the
    phone, signed in to the same account.
@@ -228,7 +228,7 @@ You need Go 1.27.1, Node.js 24.11.0 and pnpm 10.33.0. Run
 
 ## Documentation
 
-- [User docs](https://termivoa.vercel.app/docs/) — quick start, guides, CLI and troubleshooting
+- [User docs](https://termivoa.com/docs/) — quick start, guides, CLI and troubleshooting
 - [Install, update and uninstall](docs/install.md)
 - [Architecture](docs/architecture.md), [decision records](docs/decisions/), [multi-computer design](docs/multi-computer.md) and [preview on other computers](docs/peer-preview.md)
 - [Threat model](docs/threat-model.md) and [authentication design](docs/p4-authentication-design.md)

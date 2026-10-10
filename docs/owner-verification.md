@@ -57,7 +57,7 @@ In a second terminal:
 ## 2. Real phone over Tailscale (the 3-step first run)
 
 The agent did not change Tailscale or startup settings on this Mac. Follow
-the [quick start](https://termivoa.vercel.app/docs/quick-start/):
+the [quick start](https://termivoa.com/docs/quick-start/):
 
 - [ ] Build and install (DMG or from source), then run `pterm setup`.
       Check the plan it prints, answer `y` once, and answer `y` to the separate
