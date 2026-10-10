@@ -48,10 +48,6 @@ func TestSlowRPCDoesNotBlockAuthentication(t *testing.T) {
 			_, err := client.PushTest(ctx, testCredential)
 			return err
 		}},
-		{"preview scan", protocol.GatewayPreviewCheck, func(ctx context.Context, client *Client) error {
-			_, err := client.PreviewTarget(ctx, testCredential, testSession, 3000)
-			return err
-		}},
 		{"provider open", protocol.GatewayProvidersOpen, func(ctx context.Context, client *Client) error {
 			_, err := client.OpenProvider(ctx, testCredential, "herdr", protocol.HTTPProviderOpenRequest{TargetID: "w1:p1.term_1", Columns: 80, Rows: 24})
 			return err
@@ -210,5 +206,78 @@ func TestCloseInterruptsSlowRPCDial(t *testing.T) {
 	}
 	if dials.Load() != 1 {
 		t.Fatal("dial was retried")
+	}
+}
+
+// holdSlots starts n calls and waits until each one blocks in the broker.
+func holdSlots(t *testing.T, n int, call func(*Client) error, client *Client, entered chan struct{}) {
+	t.Helper()
+	for range n {
+		go func() { _ = call(client) }()
+	}
+	for range n {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("slow call did not enter")
+		}
+	}
+}
+
+// A dev-server page loads many modules; each proxied request checks the
+// target, so the check must not need a slow slot.
+func TestPreviewCheckWhileSlowSlotsAreFull(t *testing.T) {
+	entered, release := make(chan struct{}, maxConcurrentSlowRPC), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	client, _ := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
+		if request.Type == protocol.GatewayPreviewCheck {
+			return reply(t, request.RequestID, protocol.GatewayPreviewCheckResult, protocol.GatewayRPCPreviewTargetPayload{Host: "127.0.0.1"})
+		}
+		entered <- struct{}{}
+		<-release
+		return fixtureRefused(t, request)
+	})
+	holdSlots(t, maxConcurrentSlowRPC, func(client *Client) error {
+		_, err := client.CreateSession(context.Background(), testCredential, fixtureCreate())
+		return err
+	}, client, entered)
+	for range 3 * maxConcurrentSlowRPC {
+		if _, err := client.PreviewTarget(context.Background(), testCredential, testSession, 3000); err != nil {
+			t.Fatalf("preview check while slow slots are full = %v", err)
+		}
+	}
+}
+
+// GitHub and herdr calls have their own pool, so they cannot starve session
+// create; their own pool stays bounded.
+func TestIntegrationCallsDoNotBlockSessionCreate(t *testing.T) {
+	entered, release := make(chan struct{}, maxConcurrentIntegrationRPC), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	client, _ := pipeClient(t, func(_ int, request protocol.GatewayRPCEnvelope) []byte {
+		if request.Type == protocol.GatewaySessionCreate {
+			return reply(t, request.RequestID, protocol.GatewaySessionCreateResult,
+				protocol.HTTPSessionMutationResponse{OperationID: testOperation, Session: testRecord()})
+		}
+		entered <- struct{}{}
+		<-release
+		return fixtureRefused(t, request)
+	})
+	holdSlots(t, maxConcurrentIntegrationRPC, func(client *Client) error {
+		_, err := client.GitHubAction(context.Background(), testCredential, protocol.HTTPGitHubRequest{Action: protocol.Connect})
+		return err
+	}, client, entered)
+	item, name := "w3", "silver-meadow"
+	_, err := client.ManageProvider(context.Background(), testCredential, "herdr",
+		protocol.HTTPProviderManageRequest{Action: protocol.CloseItem, ItemID: &item, Name: &name})
+	var remote *gatewayapi.Error
+	if !errors.As(err, &remote) || remote.Code != protocol.LimitExceeded {
+		t.Fatalf("integration call beyond its bound = %v", err)
+	}
+	for range maxConcurrentSlowRPC + 1 {
+		if _, err := client.CreateSession(context.Background(), testCredential, fixtureCreate()); err != nil {
+			t.Fatalf("session create while integration slots are full = %v", err)
+		}
 	}
 }

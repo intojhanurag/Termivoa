@@ -2623,6 +2623,9 @@ on the owner's Mac, which ends running sessions.
   shutdown interrupt active dials/exchanges, correlation remains checked,
   and written mutations are never automatically retried. Worktree limit
   advice covers overload without incorrectly claiming too many worktrees.
+  Review fix: the cached preview check stays on the fast connection (a
+  module-heavy preview page got 429s), and GitHub/herdr create/manage use
+  two separate slots so they cannot block session create/terminate.
   Design: [gateway-rpc.md](gateway-rpc.md); evidence:
   [issue-218](evidence/issue-218/README.md).
 - Passed: full `go test ./internal/gatewayclient ./internal/gateway -count=1`,

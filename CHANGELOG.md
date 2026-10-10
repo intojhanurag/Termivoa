@@ -130,8 +130,8 @@ All notable changes are documented here. The format follows
 
 ### Fixed
 
-- Host: slow session/worktree creation, termination, preview scans,
-  notification tests and herdr terminal opens use bounded independent
+- Host: slow session/worktree creation, termination, notification tests
+  and herdr terminal opens use bounded independent
   exchanges, so they no longer hold up session lists or new Live
   authentication (#218). Phone: other sessions can be opened during a slow
   worktree create; excess simultaneous slow actions report a limit instead

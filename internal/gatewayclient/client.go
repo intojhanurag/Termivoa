@@ -46,17 +46,23 @@ type Config struct {
 	ClientBuild string // 1..128 bytes, sent in ipc.hello
 }
 
-const maxConcurrentSlowRPC = 4
+const (
+	maxConcurrentSlowRPC        = 4
+	maxConcurrentIntegrationRPC = 2
+)
 
 // Client keeps fast RPC exchanges on one lazily dialed connection. Blocking
 // operations use at most maxConcurrentSlowRPC independent connections so they
-// cannot hold up authentication and session reads. A connection that fails
+// cannot hold up authentication and session reads. GitHub and herdr
+// create/manage calls use their own maxConcurrentIntegrationRPC slots so they
+// cannot starve session create/terminate. A connection that fails
 // framing, validation, correlation, or cancellation is closed. Live streams
 // use their own connections.
 type Client struct {
 	dial      func(context.Context) (net.Conn, error)
 	slot      chan struct{}
 	slowSlots chan struct{}
+	extSlots  chan struct{} // GitHub and herdr create/manage
 	done      chan struct{}
 
 	mu         sync.Mutex // guards conn, operations and closed against Close
@@ -94,7 +100,8 @@ func New(config Config) (*Client, error) {
 func newClient(dial func(context.Context) (net.Conn, error)) *Client {
 	client := &Client{
 		dial: dial, slot: make(chan struct{}, 1), done: make(chan struct{}),
-		slowSlots: make(chan struct{}, maxConcurrentSlowRPC), operations: make(map[*rpcOperation]struct{}),
+		slowSlots: make(chan struct{}, maxConcurrentSlowRPC), extSlots: make(chan struct{}, maxConcurrentIntegrationRPC),
+		operations: make(map[*rpcOperation]struct{}),
 	}
 	client.slot <- struct{}{}
 	return client
@@ -504,21 +511,22 @@ func dedicated[Result any](
 	if err := checkCredential(credential); err != nil {
 		return result, err
 	}
-	return isolatedRoundTrip[Result](ctx, client, requestType, payload, true, nil)
+	return isolatedRoundTrip[Result](ctx, client, client.extSlots, requestType, payload, true, nil)
 }
 
 // slowRequest covers handlers that wait for git/processes, network delivery,
-// or OS port scans. Cached reads and authentication keep their own connection.
+// or process start. Cached reads (including the per-request preview check)
+// and authentication keep the shared connection.
 func slowRequest(requestType protocol.GatewayRPCMessageType) bool {
 	switch requestType {
 	case protocol.GatewaySessionCreate, protocol.GatewaySessionTerminate,
-		protocol.GatewayPushTest, protocol.GatewayPreviewCheck, protocol.GatewayProvidersOpen:
+		protocol.GatewayPushTest, protocol.GatewayProvidersOpen:
 		return true
 	}
 	return false
 }
 
-func isolatedRoundTrip[R any](ctx context.Context, client *Client, requestType protocol.GatewayRPCMessageType,
+func isolatedRoundTrip[R any](ctx context.Context, client *Client, slots chan struct{}, requestType protocol.GatewayRPCMessageType,
 	payload any, uncertain bool, check func(R) error,
 ) (R, error) {
 	var result R
@@ -538,11 +546,11 @@ func isolatedRoundTrip[R any](ctx context.Context, client *Client, requestType p
 	}
 	// Do not build an unbounded queue of blocked HTTP handlers or broker dials.
 	select {
-	case client.slowSlots <- struct{}{}:
+	case slots <- struct{}{}:
 	default:
 		return result, &gatewayapi.Error{Code: protocol.LimitExceeded, Message: "too many operations in progress; try again after one finishes"}
 	}
-	defer func() { <-client.slowSlots }()
+	defer func() { <-slots }()
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	operation := &rpcOperation{cancel: cancel}
@@ -625,7 +633,7 @@ func roundTrip[R any](
 	check func(R) error,
 ) (R, error) {
 	if slowRequest(requestType) {
-		return isolatedRoundTrip[R](ctx, client, requestType, payload, uncertain, check)
+		return isolatedRoundTrip[R](ctx, client, client.slowSlots, requestType, payload, uncertain, check)
 	}
 	var result R
 	if ctx == nil {
