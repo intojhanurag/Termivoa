@@ -13,7 +13,7 @@ import (
 	"github.com/intojhanurag/phone-terminal/internal/platform"
 )
 
-const commandHelp = `Termivoa private development build
+const commandHelp = `Termivoa, free and open-source beta
 
 Available commands:
   pterm list                         Show managed sessions and lifecycle state.

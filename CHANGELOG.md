@@ -6,6 +6,12 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`pterm` no longer calls itself a private build.** Host: `pterm` and
+  `pterm help` now start with "Termivoa, free and open-source beta". Phone:
+  no change.
+
 ## [0.1.0-beta.4] - 2026-10-10
 
 First public, free and open-source beta. The binaries are not signed.

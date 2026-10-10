@@ -77,7 +77,7 @@ func runWithInput(ctx context.Context, args []string, input *os.File, output io.
 		return errors.New("command context and output must not be nil")
 	}
 	if len(args) == 0 {
-		return writeCommandText(ctx, output, "Termivoa private development build\n")
+		return writeCommandText(ctx, output, "Termivoa, free and open-source beta\n")
 	}
 	switch args[0] {
 	case "help", "--help", "-h":
