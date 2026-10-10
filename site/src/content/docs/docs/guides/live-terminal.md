@@ -69,6 +69,19 @@ With the phone keyboard open, all keys fold into one scrolling row, and the term
 
 Tap **compose** for long or multi-line text. Nothing is sent until **Send ⏎**, which pastes it and presses Enter. Text with more than one line asks before it sends. Compose can also add a [photo or your voice](/docs/guides/photo-and-voice/).
 
+## Use sheets with a keyboard
+
+**Next beta.** Termivoa keeps your keyboard place when a sheet closes.
+
+| Action | Focus after the sheet closes |
+| --- | --- |
+| Use **Close** or Escape | Returns to the control that opened the sheet, if it is still available. |
+| Close a sheet opened inside another sheet | Returns to its control inside the previous sheet. |
+| Move focus to another control before the sheet closes | Stays on the control you chose. |
+
+If the opening control disappeared or became unavailable, pick another
+control with Tab. This focus change does not send anything to the terminal.
+
 ## Save and send snippets
 
 Snippets are prompts and commands you send with one tap, saved on this phone only. Tap **snips** to open the Snippets sheet.

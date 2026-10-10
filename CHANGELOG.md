@@ -255,6 +255,13 @@ All notable changes are documented here. The format follows
   An incomplete or over-budget read shows **History unavailable right now**;
   it never joins partial history to the current screen. Host: no runtime or
   protocol change; retention remains 5,000 rows and 32 MiB.
+
+- Sheet focus (#214). Phone: closing a sheet with **Close**, Escape or an
+  unmount returns keyboard focus to the control that opened it, when that
+  control remains available. Nested sheets return to their own trigger;
+  cleanup preserves focus deliberately moved elsewhere. Focus restoration
+  is shared across sheets rather than duplicated in herdr menus.
+  Host: no change; no input, protocol, pairing or database change.
 - herdr: the first prompt of a new agent now reaches it (#192). It was
   refused on every herdr (0.8.2 and 0.9.3): herdr answers `agent.start` at
   once (`launch_pending`) and takes no prompt until the agent is ready.

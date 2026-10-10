@@ -3418,3 +3418,40 @@ required under AGENTS.md rule24. Existing CI-minutes approval remains pending.
 - Pending before merge: broader coordinated repository checks and independent
   adversarial review. Owner-dependent iPhone/Android History selection and
   Copy checks remain pending. No production config, runtime or pairing changed.
+
+## Issue #214 — sheet focus restoration (2026-10-08)
+
+- Branch `fix/issue-214`, base `08f0332`. Read #214 (no comments) and
+  reproduced its user effect with actual React StrictMode and Chromium
+  151.0.7922.34: real Enter opened/focused the shared Sheet, Escape removed
+  it, and focus became `BODY`. Six of ten lifecycle tests failed on main.
+- Shared Sheet now captures its opener once before child effects and
+  restores it on cleanup if connected and focus still belongs to that
+  sheet/body. Nested sheets restore their own trigger; deliberate external
+  focus is preserved. Two duplicate provider-local restoration hooks are
+  removed so cleanup has one owner. No host, input, auth, storage, pairing
+  or protocol change; no new runtime dependency or focus trap.
+- Browser command: `CHROME=<installed-chromium-executable> node
+  scripts/test-sheet-focus.mjs`, Node 24.11.0. Both fixed runs passed the
+  real keyboard sequence (`opener`) and ten browser/effect checks for Close,
+  Escape, unmount, nested closes, removed/disabled/hidden triggers and child
+  focus. The fixture is typechecked and excluded from the production build.
+- Preferred preview status/open/snapshot/evaluate were attempted. The page
+  became `chrome-error://chromewebdata/` despite curl HTTP 200; preferred
+  environment-port navigate returned an explicit automation error. The
+  existing local Browser/CDP helper was then used, with an installed browser
+  verified read-only. All script-owned browsers/temp profiles and Vite
+  processes were cleaned up, including the initial manual preview server.
+- Passed: `pnpm install --frozen-lockfile`; `pnpm test:web` (57 files,
+  1,048 tests); `pnpm build:web`; `pnpm typecheck`; production-dist scan for
+  browser fixture strings (none, including maps); `cd site && pnpm install
+  --frozen-lockfile --ignore-workspace && npx astro build` (29 pages and all
+  internal links valid); `git diff --check`.
+- Evidence: [issue-214/verification.md](evidence/issue-214/verification.md).
+  Architecture, [sheet-focus.md](sheet-focus.md), roadmap, README, changelog,
+  existing Live terminal guide/sidebar, Next beta and troubleshooting are
+  updated. React best-practices skill review applied. No unrelated fix.
+- Pending: real VoiceOver/iPhone/Android checks; coordinator full checks,
+  PR/adversarial review, push, merge and docs deployment. CI remains disabled
+  pending the owner's permission. Host tests were not rerun for web-only
+  behavior; no Go/protocol changes. No new database or pairing required.

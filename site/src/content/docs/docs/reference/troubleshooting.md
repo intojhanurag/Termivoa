@@ -15,6 +15,14 @@ Most Termivoa problems start with one check on the computer. It never prints sec
 pterm doctor
 ```
 
+## Keyboard focus goes to the page start after closing a sheet
+
+**Next beta.** Update Termivoa and reload the app. Closing a sheet now
+returns focus to the control that opened it, if that control is still
+available. If the control disappeared or became unavailable, use Tab to
+pick another control. Focus that you moved elsewhere stays there.
+See [Use sheets with a keyboard](/docs/guides/live-terminal/#use-sheets-with-a-keyboard).
+
 ## "Can't reach your computer"
 
 1. Turn Tailscale on, on both phone and computer.

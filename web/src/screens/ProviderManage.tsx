@@ -175,12 +175,6 @@ export function useAction<Busy>() {
   return { busy, running, run };
 }
 
-/** Focus returns to the button that opened the sheet when it closes, if that button is still in the page. */
-function useReturnFocus(): void {
-  const [opener] = useState(() => globalThis.document?.activeElement);
-  useEffect(() => () => { if (opener instanceof HTMLElement && opener.isConnected) opener.focus(); }, [opener]);
-}
-
 export function NoteLine({ note, name, provider }: { readonly note: ManageNote; readonly name: string; readonly provider: string }) {
   switch (note.kind) {
     case 'uncommitted': return <Notice tone="warning" role="alert" title={<><bdi>{name}</bdi> has changes that are not committed. Commit or discard them first.</>} />;
@@ -350,7 +344,6 @@ export function ItemMenuSheet({ entry, group, item, onOpened, onReload, onKinds,
   const agent = offeredAgent(picked, entry.info.agentKinds);
   const [prompt, setPrompt] = useState('');
   const { busy, running, run } = useAction<ItemBusy>();
-  useReturnFocus();
   // The kinds are from the app's last settings read; installed commands can change:
   // read them again when the menu opens (New tab asks only when there is a kind) and when the chooser opens.
   const chooser = mode === 'newTab';
@@ -489,7 +482,6 @@ export function WorkspaceSheet({ entry, settings, onOpened, onReload, onCheck, o
   const [note, setNote] = useState<ManageNote>();
   const [checking, setChecking] = useState(false);
   const { busy, running, run } = useAction<string>();
-  useReturnFocus();
   const close = () => { if (!running.current) onClose(); };
   const words = (error: unknown) => onFailure(error, entry.computer);
 

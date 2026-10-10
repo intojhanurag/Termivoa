@@ -74,6 +74,12 @@ Real-device test steps are in [owner-verification.md](owner-verification.md).
   timeout or budget exhaustion shows unavailable. Regression covers the real
   1,632-row/40-page retained-history fixture. Physical phone selection remains
   an owner-verification gate.
+
+- Shared sheet focus restoration (#214): Close, Escape and unmount return
+  focus to an available opener, including nested sheets, while preserving
+  deliberate focus elsewhere. Actual React/browser regression covers the
+  lifecycle. Design: [sheet-focus.md](sheet-focus.md). Real VoiceOver and
+  phone checks remain pending.
 - Private betas `v0.1.0-beta.1`, `v0.1.0-beta.2` (#66) and `v0.1.0-beta.3`; website and docs
   live at <https://termivoa.com> and <https://termivoa.com/docs/>
   (#53, #56).
