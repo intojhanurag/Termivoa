@@ -37,6 +37,11 @@ This package is used by build tools, not the shipped Go host. Verification
 and remaining separate advisories are recorded in
 [issue-226 evidence](evidence/issue-226/README.md).
 
+`quicktype` 26.0.0 pins `stream-json` 3.5.0. A parent-scoped workspace
+override resolves only that dependency edge to patched 3.6.0 for
+GHSA-hqr4-qq8f-hg3x and GHSA-mjw6-4jj6-33hc. Protocol generation remains
+byte-for-byte unchanged. See [issue-227 evidence](evidence/issue-227/README.md).
+
 | Package | Version | Purpose | License check |
 | --- | --- | --- | --- |
 | `qr` | `0.7.0` (exact pin) | QR decoder for **Scan QR** in + Add a computer, on phones whose browser has no `BarcodeDetector` (iPhone). Only `decodeQR` from `qr/decode.js` and the QR tables that `decode.js` imports from `qr/index.js` (no encoder); no dependencies. Its own lazy chunk (34.8 kB, 14.3 kB gzip), fetched when the user taps **Scan QR**, never at start. Chosen over `jsqr` 1.4.0 (Apache-2.0, 130.0 kB, 47.5 kB gzip, last release 2020), measured in this build. | MIT OR Apache-2.0, checked against the locked package's `LICENSE` and `LICENSE-MIT`; contains code inspired by ZXing (Apache-2.0); distribution notice audit pending |

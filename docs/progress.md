@@ -91,6 +91,20 @@ Last updated: 2026-10-10
   hosted required checks and merge remain pending. Separate dependency
   remediation is tracked by #227 and #228.
 
+### Patched protocol-generator dependency (2026-10-08, #227)
+
+- Confirmed `quicktype` 26.0.0 pins vulnerable `stream-json` 3.5.0.
+  A parent-scoped override resolves that edge to patched 3.6.0. No shipped
+  Node runtime, protocol/schema change or audit exclusion was introduced.
+- With Node 24.11.0/pnpm 10.33.0, frozen install and the full `scripts/check`
+  passed: generation drift, Go vet/tests including vendored modules,
+  TypeScript, all 1,048 web tests and production build. Generated files
+  are unchanged. `pnpm audit --json` now reports zero moderate advisories;
+  its exit remains 1 for the unrelated source-map high advisory (#226).
+- Evidence: [issue-227](evidence/issue-227/README.md). Independent review,
+  required hosted checks and merge remain pending; physical-phone and
+  native Windows/Linux gates remain open.
+
 ### Summary (2026-09-27)
 
 The v0 flow is complete on `main` and verified on the macOS development
