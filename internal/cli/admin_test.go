@@ -875,7 +875,7 @@ func TestPairViaOfferScreen(t *testing.T) {
 		line  string
 	}{
 		"delivered": {offerReply{result: offered("")}, "Sent to mac (https://mac.tailx.ts.net).\n" +
-			"On your phone, open Termivoa → Settings → Computers and tap Add next to \"vps\".\n" + waitingLong},
+			"On your phone, open Termivoa → Settings → Found on your network and tap Add next to \"vps\".\n" + waitingLong},
 		"unreachable":  {offerReply{result: offered(protocol.Unreachable)}, "mac did not answer. Use the QR code or the link below.\n" + waiting},
 		"busy":         {offerReply{result: offered(protocol.Busy)}, "mac is busy right now. Use the QR code or the link below.\n" + waiting},
 		"not accepted": {offerReply{result: offered(protocol.NotAccepted)}, "Termivoa on mac cannot receive this yet. Update it, or use the QR code or the link below.\n" + waiting},
@@ -1205,7 +1205,7 @@ func TestPairViaEnterShowsTheLinkAfterADeliveredPush(t *testing.T) {
 	input, output, done := startTerminalWait(t, admin)
 	screen := "Adding this computer (vps) to your Termivoa app on mac.\n" +
 		"Sent to mac (https://mac.tailx.ts.net).\n" +
-		"On your phone, open Termivoa → Settings → Computers and tap Add next to \"vps\".\n" +
+		"On your phone, open Termivoa → Settings → Found on your network and tap Add next to \"vps\".\n" +
 		"Waiting for your phone (up to 10 minutes; Ctrl+C stops)…\n" +
 		"No Add button? Press Enter to show a QR code and a link.\n"
 	output.waitFor(t, screen)

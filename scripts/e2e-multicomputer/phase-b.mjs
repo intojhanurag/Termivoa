@@ -1350,7 +1350,7 @@ try {
     await sleep(300);
     const browserLog = env.logSince(mark).filter((e) => e.host === mac.host && e.path === '/api/v1/computers/offer' && e.secFetchSite);
     check('F-offer', 'vps\'s screen says "Sent to mac (https://mac.tailx.ts.net)." and "Press Enter to show a QR code and a link." with no link; mac\'s /found lists vps with a grant and the label from mac\'s status; vps\'s broker posted with no Origin, no Sec-Fetch-*, no cookie',
-      screen.includes('Sent to mac (https://mac.tailx.ts.net).') && screen.includes('On your phone, open Termivoa → Settings → Computers and tap Add next to "vps".')
+      screen.includes('Sent to mac (https://mac.tailx.ts.net).') && screen.includes('On your phone, open Termivoa → Settings → Found on your network and tap Add next to "vps".')
         && !plain(found.cli.out).includes('add-computer#grant=')
         && row.label === 'vps' && /^[A-Za-z0-9_-]{43}$/.test(row.grant) && pushed?.status === 204 && !pushed.origin && !pushed.secFetchSite && !pushed.cookie,
       `${screen.split('\n').slice(0, 3).join(' / ')}; found: ${row.label} ${row.origin} grant ${row.grant.length} chars, expires ${row.expiresAt}; vps → mac: ${pushed ? `${pushed.method} ${pushed.path} ${pushed.status} origin=${pushed.origin || '-'} sfs=${pushed.secFetchSite || '-'} cookie=${pushed.cookie}` : 'none'}`);
@@ -1364,7 +1364,7 @@ try {
       `OPTIONS ${preflight.status} CORS ${cors(preflight)}; mac page fetch ${sameOrigin.status ?? sameOrigin.error}; evil page fetch ${crossSite.error ?? crossSite.status}; ${browserLog.map((e) => `${e.method} origin=${e.origin} sfs=${e.secFetchSite} → ${e.status} ACAO=${e.acao || 'none'}`).join('; ')}`);
   });
 
-  await step('F-add', 'Settings → Computers → Found on your network: vps — Add → the same sheet → code → y on vps', async () => {
+  await step('F-add', 'Settings → Found on your network: vps — Add → the same sheet → code → y on vps', async () => {
     const started = Date.now();
     await foundSettings();
     const { block, sheet } = await addFromFound('f-add');

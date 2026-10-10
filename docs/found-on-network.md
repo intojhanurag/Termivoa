@@ -195,7 +195,7 @@ When the first offer is delivered (2026-10-03: the owner's first real add ended 
 ```
 Adding this computer (vps) to your Termivoa app on mac.
 Sent to mac (https://mac.<tailnet>.ts.net).
-On your phone, open Termivoa → Settings → Computers and tap Add next to "vps".
+On your phone, open Termivoa → Settings → Found on your network and tap Add next to "vps".
 Waiting for your phone (up to 10 minutes; Ctrl+C stops)…
 No Add button? Press Enter to show a QR code and a link.
 ```

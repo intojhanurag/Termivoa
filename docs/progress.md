@@ -15,6 +15,10 @@ Last updated: 2026-10-10
 
 ## Log
 
+### Fix: CLI names the old Settings → Computers page (2026-10-10, branch `fix/cli-settings-path`)
+
+- Found by the sweep review (rule 21). `pterm pair --via` and `pterm help` now say "Settings → Found on your network"; the guide, design doc, roadmap and e2e F-offer check follow. `go test ./internal/cli/... ./cmd/pterm/...` and `scripts/check` pass.
+
 ### Fix: side menu focus ring (2026-10-10, branch `fix/drawer-layout`)
 
 - **Defect.** On iPhone Safari, `showModal()` focused the first row (**All computers**) and `:focus-visible` drew a white 2px ring around it.
