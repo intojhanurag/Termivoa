@@ -15,12 +15,59 @@ Last updated: 2026-10-10
 
 ## Log
 
+<<<<<<< HEAD
 ### Chat view design (2026-10-10, branch `docs/chat-view-design`; draft, owner review)
 
 - Issue #285. Design `docs/chat-view.md`, ADR 0014 (proposed), Paper screens in `docs/evidence/chat-view/`. Critical under rule 24 (changes what data reaches the phone).
 - Research read only public docs and source; no real transcript or real `~/.claude`/`~/.codex`/`~/.config` file was opened; no agent was started.
 - Independent security (no blockers, 3 major, 7 minor) and feasibility (no blockers, 6 major, 5 minor) reviews; every finding resolved in `docs/chat-view.md` section 14 (on switch only at the computer, no `probable` link, pull transport, existing AnswerCard and Composer).
 - Blocked on the owner: approval of the design and the 7 questions in section 13; a scripted capture with a real Claude Code (credits) before M1a.
+=======
+### Fix: Live terminal one row too low after a resize (2026-10-10, branch `fix/issue-287`)
+
+- **Reproduced** (issue #287). Chromium (Chrome for Testing, a throwaway
+  page with `TerminalView` + `FrameRenderer`): frames 52×21 then 48×29 with
+  full-width rows left xterm at `viewportY 0`, `baseY 1`; the top screen row
+  showed the old `$ last`, and the frame's last row was hidden. In vitest,
+  400 random resizes gave 5 such states.
+- **Root cause.** With `scrollback: 0`, xterm rewraps the old full-width
+  rows when the column count drops; the extra lines push its base one line
+  down, and the view keeps showing from line 0. `cursorBand` and the screen
+  row under a finger both assume the base is line 0.
+- **Fix.** `FrameRenderer.paintSnapshot` erases the screen (`ESC[2J`)
+  before `terminal.resize`, so there is nothing to rewrap; the snapshot
+  repaints every row anyway. The tap-to-place workaround in
+  `TerminalView.cellAt` (mapping through `viewportY`/`baseY`) is removed.
+- **Checks.** New test in `FrameRenderer.test.ts` fails without the fix
+  (`baseY` 1) and passes with it; a 2,000-resize fuzz run (not committed)
+  had no shifted state; the Chromium page shows `line0` on top and
+  `$ last` on the last row. `GOTOOLCHAIN=go1.27.1 sh scripts/check`:
+  pass (60 files, 1139 web tests). `pnpm build:web`, site `astro build`:
+  pass. `gestures.mjs` (WebKit 2272, playwright-core 1.61.1): 8 of 8,
+  including GE4 tap to place after the GE3 pinch, without the workaround.
+  `phase-b.mjs --no-web-build --only U` (Chrome for Testing): 13 of 13.
+
+### Fix: wheel steps at the finger's cell (2026-10-10, branch `fix/issue-288`, issue #288)
+
+- Real: `Connection.sendWheel` sent the cursor cell, and the host encodes
+  that cell in the mouse report. New `TestStructuredWheelReportsGivenCell`
+  (`internal/terminal/core_test.go`) shows a wheel at column 14, row 3 goes
+  to the program as `ESC[<64;15;4M`, so tmux and vim pick the pane by it.
+- Fix: app scroll (swipe and desktop `wheel`) passes `TerminalView.cellAt`
+  of the touch or pointer to `sendWheel`, which clamps it to the grid; the
+  dock's `▲`/`▼` keep the cursor cell. No protocol change (`input.mouse`
+  already has `column` and `row`).
+- Review fix: a swipe takes its cell once at start (`AppScroll`, clamped
+  `cellAt`) and keeps it, so a swipe that leaves the pane or the grid
+  scrolls one pane only. New `AppScroll` and `TerminalView.cellAt` tests in
+  `Connection.test.ts` fail without it; web 1141 tests, `scripts/check` and
+  `gestures.mjs` GE1–GE8 pass again.
+- Checks: new `Connection.test.ts` case fails without the fix; `cd web &&
+  npx vitest run` (60 files, 1139 tests); `GOTOOLCHAIN=go1.27.1 sh
+  scripts/check` (pass); `go test -race ./internal/terminal/` (pass); site
+  build (pass, all internal links valid); `gestures.mjs` (WebKit) GE1–GE8
+  pass; `phase-b.mjs --no-web-build --only U` U1–U9 pass.
+>>>>>>> origin/main
 
 ### Feature: touch gestures on the Live terminal (2026-10-10, branch `feat/touch-gestures`)
 

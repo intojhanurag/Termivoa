@@ -31,9 +31,9 @@ source.
 ## Why
 
 Coding agents stop and ask: "Run the test suite?", "Allow this edit?". If you
-are not at your desk, the work waits. Termivoa puts those sessions in your
-pocket, so you can answer in one tap, check what changed, and keep going,
-without opening a port or trusting a cloud service.
+are not at your desk, the work waits. Termivoa puts those sessions on your
+phone, so you can answer, check what changed, and keep going, without
+opening a port or trusting a cloud service.
 
 ## Features
 

@@ -143,7 +143,7 @@ function harness({ enabled = true, canInput = true, refuseAfter = Infinity } = {
       sent.push(key);
       return true;
     },
-    drag: (phase, y) => { drags.push([phase, y]); },
+    drag: (phase, point) => { drags.push([phase, point.y]); },
     fontSize: () => 14,
     setFontSize: (size) => { fonts.push(size); },
     pill: (text) => { pills.push(text); },

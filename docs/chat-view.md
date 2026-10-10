@@ -1,6 +1,6 @@
 # Chat view: design
 
-- Status: **proposed, DO NOT MERGE without owner review**; reviewed (section 14) (critical under AGENTS.md rule 24). ADR [0014](decisions/0014-chat-view.md). Issue [#285](https://github.com/intojhanurag/Termivoa/issues/285).
+- Status: **accepted** (2026-10-10); reviewed (section 14). The owner approved the design and answered **yes** to all questions in section 13. (critical under AGENTS.md rule 24). ADR [0014](decisions/0014-chat-view.md). Issue [#285](https://github.com/intojhanurag/Termivoa/issues/285).
 - Pictures (Paper, demo data): [`evidence/chat-view/`](evidence/chat-view/): `design-1-working.png`, `design-2-asks-you.png`, `design-3-long-session.png`, `design-4-not-available.png`.
 - Research for this design read only public docs and source; no real transcript and nothing under the real `~/.claude`, `~/.codex` or `~/.config` was opened, and no agent was started.
 

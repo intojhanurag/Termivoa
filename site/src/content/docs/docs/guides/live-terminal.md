@@ -115,7 +115,7 @@ Snippets are prompts and commands you send with one tap, saved on this phone onl
 
 ## Scroll the terminal
 
-- **Full-screen apps** such as Claude Code, Codex, `vim` or `less`: swipe on the terminal or tap `▲`/`▼` (needs control).
+- **Full-screen apps** such as Claude Code, Codex, `vim` or `less`: swipe on the terminal or tap `▲`/`▼` (needs control). A swipe scrolls the place under your finger, so in `tmux` with split panes and mouse mode, or `vim` with splits, it scrolls that pane. `▲`/`▼` scroll where the cursor is.
 - **A normal shell:** pull down, or tap **history**.
 
 ## Copy from history

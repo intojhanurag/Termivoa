@@ -1,6 +1,6 @@
 # ADR 0014: Chat view, read from the agent's own transcript
 
-- Status: **proposed** (2026-10-10). Critical under AGENTS.md rule 24: it changes what data reaches the phone. **Do not merge the design or any implementation until the owner approves.**
+- Status: **accepted** (2026-10-10). Critical under AGENTS.md rule 24. The owner approved the design and the recommended answers to all questions in section 13 of the design in writing ("Go shipppp").
 - Date: 2026-10-10
 - Design: [`docs/chat-view.md`](../chat-view.md)
 - Issue: [#285](https://github.com/intojhanurag/Termivoa/issues/285)

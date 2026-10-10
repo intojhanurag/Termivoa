@@ -38,6 +38,15 @@ and `touchcancel` listeners on `.terminal-area` (move and end with
 handlers; the old app-scroll and pull-to-History code runs unchanged as the
 machine's `drag` callback.
 
+`drag` gets the whole touch point. App scroll (`AppScroll`) takes the cell
+under the finger once, at drag start (`TerminalView.cellAt` with clamp, so a
+point just outside the grid gives the nearest cell), and sends every wheel
+step of that swipe there, even when the finger leaves the pane or the grid.
+Desktop `wheel` events use the pointer's cell. `Connection.sendWheel` clamps
+the cell to the grid. The host encodes it in the mouse report (SGR
+`ESC[<64;col;rowM`), so tmux and vim scroll the pane under the finger (#288).
+The dock's `▲`/`▼` send at the cursor cell.
+
 ```text
 idle ─1 finger─▶ pending ─moved > 8 px─▶ scroll (drag: app scroll / History pull)
                     │
@@ -118,10 +127,10 @@ The cell grid is the shell's only if the line holds plain characters: a
 literal tab or a control character the shell shows as two cells (`^A`)
 can make the cursor land a little off.
 
-`TerminalView.cellAt` maps a viewport point to a frame row and column.
-xterm can show its buffer from a line other than its base after a resize
-(`viewportY ≠ baseY`); the cell is mapped through both, and `rowCells`
-reads the frame row's cells from `baseY + row`.
+`TerminalView.cellAt` maps a viewport point to a frame row and column,
+and `rowCells` reads that frame row's cells. The screen row is the frame
+row: `FrameRenderer` erases the screen before each resize, so xterm never
+shows its buffer from a line other than its base (#287).
 
 ## What about accessibility?
 
