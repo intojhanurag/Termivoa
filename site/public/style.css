@@ -73,10 +73,10 @@ h2 em { font-style: italic; }
 .nav nav a:hover { color: var(--signal); }
 .nav-beta { display: none; }
 .nav nav { align-items: center; }
-.nav-star { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1.5px solid var(--line-strong); border-radius: 999px; }
+.nav-star { display: inline-flex; align-items: center; padding: 8px; border: 1.5px solid var(--line-strong); border-radius: 999px; }
 .nav nav a.nav-star:hover { color: var(--text); border-color: var(--signal); }
 .nav-star .gh-icon { color: var(--signal); }
-.button.star { display: inline-flex; align-items: center; gap: 12px; }
+.button.star { display: inline-flex; align-items: center; justify-content: center; padding-left: 0; padding-right: 0; aspect-ratio: 1; }
 
 /* Device frame shared by every phone screen */
 .device {
@@ -287,11 +287,11 @@ a.provider-tile:hover, a.provider-tile:focus-visible { border-color: var(--signa
   .wordmark { font-size: 22px; }
   .nav nav { gap: 18px; }
   .nav-star { padding: 8px; }
-  .nav-star span { display: none; }
   .senses li { font-size: 22px; line-height: 32px; gap: 16px; }
   .phonetic { font-size: 20px; }
   .cta { padding-top: 40px; }
   .button { width: 100%; font-size: 20px; }
+  .button.star { width: auto; align-self: flex-start; }
   .lead { font-size: 19px; line-height: 29px; }
   .columns article { flex-basis: 100%; }
   .setup-card { padding: 28px 20px 28px; }
