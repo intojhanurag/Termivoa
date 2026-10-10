@@ -74,6 +74,23 @@ Last updated: 2026-10-10
   GitHub App's Homepage URL and Setup URL to `https://termivoa.com` and
   `https://termivoa.com/docs/guides/github/`.
 
+### Patched source-map build dependency (2026-10-08, #226)
+
+- Confirmed the root high-severity dependency gate fails for
+  `source-map-js` 1.2.1, also present in the independent website lockfile.
+- Both lockfiles now resolve the compatible patched 1.2.2. The root workspace
+  has a narrow override for versions below that release. No runtime or
+  protocol change, and no audit threshold change.
+- Passed with Node 24.11.0/pnpm 10.33.0: frozen root install,
+  `pnpm protocol:check`, `pnpm typecheck`, all 1,048 web tests,
+  `pnpm build:web`, and `pnpm audit --audit-level high` (exit 0).
+  Frozen independent website install, Astro build and all internal links
+  also passed. The independent website audit still fails for two high
+  advisories outside this issue; root retains two moderate advisories.
+- Evidence: [issue-226](evidence/issue-226/README.md). Independent PR review,
+  hosted required checks and merge remain pending. Separate dependency
+  remediation is tracked by #227 and #228.
+
 ### Summary (2026-09-27)
 
 The v0 flow is complete on `main` and verified on the macOS development
