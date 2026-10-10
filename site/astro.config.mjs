@@ -5,7 +5,7 @@ import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 
 export default defineConfig({
-	site: 'https://termivoa.vercel.app',
+	site: 'https://termivoa.com',
 	// Docs images are already small WebP files; serve them as they are (no sharp).
 	image: { service: passthroughImageService() },
 	integrations: [
@@ -39,10 +39,12 @@ export default defineConfig({
 				styleOverrides: { borderRadius: '10px' },
 			},
 			head: [
-				{ tag: 'meta', attrs: { property: 'og:image', content: 'https://termivoa.vercel.app/assets/og.png' } },
+				{ tag: 'meta', attrs: { property: 'og:image', content: 'https://termivoa.com/assets/og.png' } },
 				{ tag: 'meta', attrs: { property: 'og:image:alt', content: 'Termivoa: your terminal and coding agents on your phone, over Tailscale.' } },
 				{ tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
-				{ tag: 'meta', attrs: { name: 'twitter:image', content: 'https://termivoa.vercel.app/assets/og.png' } },
+				{ tag: 'meta', attrs: { name: 'twitter:image', content: 'https://termivoa.com/assets/og.png' } },
+				// Vercel Web Analytics: page views, no cookies; served from this site (vercel.json CSP).
+				{ tag: 'script', attrs: { defer: true, src: '/_vercel/insights/script.js' } },
 			],
 			sidebar: [
 				{

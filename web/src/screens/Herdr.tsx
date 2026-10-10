@@ -206,10 +206,12 @@ export function ProviderProblem({ entry, onRetry, onFailure }: {
 }
 
 /** The herdr tab (H3): each computer's projects, fold and unfold, worktrees with state words. */
-export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, manage }: {
+export function ProviderTree({ entries, multi, head, now, onOpen, onCreate, onRetry, manage }: {
   readonly entries: ReadonlyArray<ProviderEntry>;
-  /** The phone uses more than one computer: "ON MAC" by each project. */
+  /** The phone uses more than one computer: "New workspace on mac". */
   readonly multi: boolean;
+  /** All computers: the header over each computer's projects (label and state), so computers do not mix. */
+  readonly head?: ((entry: ProviderEntry) => ReactNode) | undefined;
   readonly now: number;
   readonly onOpen: (tap: ProviderTap) => void;
   /** Absent until the + sheet is wired; shown only where both the provider and the group can create. */
@@ -251,6 +253,7 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
         const handlers = entry.manage ? manage : undefined;
         return (
           <div key={entry.key} className="stack provider-computer">
+            {head?.(entry)}
             <ProviderProblem entry={entry} onRetry={onRetry} onFailure={handlers?.onFailure} />
             {closedNote?.key === entry.key && <div ref={noteLine}><NoteLine note={closedNote.note} name="" provider={entry.info.name} /></div>}
             {ready && groups.length === 0 && <p className="muted">No {entry.info.name} projects on {entry.computer.label}.</p>}
@@ -259,7 +262,6 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
                 {groups.map((group, index) => {
                   const name = names[index] ?? group.name;
                   const state = <StateWord word={providerWord(group.state)} text={groupWordText(group)} />;
-                  const where = multi ? <span className="group-where">on {entry.computer.label}</span> : null;
                   // A git project with only its main checkout is one row too, and keeps its +.
                   const add = onCreate !== undefined && entry.info.canCreate && group.canCreate
                     ? <AddButton name={name} onClick={() => onCreate(entry, group)} />
@@ -270,7 +272,7 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
                   if (single !== undefined) {
                     return (
                       <ItemGroupRow
-                        key={group.id} entry={entry} item={single} name={name} where={where} state={state} add={add} onOpen={onOpen}
+                        key={group.id} entry={entry} item={single} name={name} state={state} add={add} onOpen={onOpen}
                         menu={handlers === undefined ? null : <MenuButton name={name} onClick={() => handlers.onMenu(entry, group, single)} />}
                       />
                     );
@@ -288,7 +290,7 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
                           onClick={() => { folds.set(foldKey(entry.computer, group), !open); redraw(); }}
                         >
                           <span className="fold-glyph" aria-hidden="true">{open ? '▾' : '▸'}</span>
-                          <GroupTitle name={name} where={where} count={!open && group.items.length > 1 ? group.items.length : undefined} />
+                          <GroupTitle name={name} count={!open && group.items.length > 1 ? group.items.length : undefined} />
                           <span className="group-state">{state}</span>
                         </button>
                         {add}
@@ -331,15 +333,14 @@ export function ProviderTree({ entries, multi, now, onOpen, onCreate, onRetry, m
 }
 
 /**
- * A project's name and its small labels ("ON MAC", "2 WORKTREES"). The name
+ * A project's name and its small label ("2 worktrees"). The name
  * has priority: the labels wrap under it when both do not fit on one line,
  * so the name is cut only when it alone is wider than the row.
  */
-function GroupTitle({ name, where, count }: { readonly name: string; readonly where: ReactNode; readonly count?: number | undefined }) {
+function GroupTitle({ name, count }: { readonly name: string; readonly count?: number | undefined }) {
   return (
     <span className="group-title">
       <span className="group-name"><bdi>{name}</bdi></span>
-      {where}
       {count !== undefined && <span className="group-where">{count} worktrees</span>}
     </span>
   );
@@ -356,11 +357,10 @@ function AddButton({ name, onClick }: { readonly name: string; readonly onClick:
 }
 
 /** A workspace outside git, or a git project with only its main checkout: one row like a project row, that opens its terminal. */
-function ItemGroupRow({ entry, item, name, where, state, add, menu, onOpen }: {
+function ItemGroupRow({ entry, item, name, state, add, menu, onOpen }: {
   readonly entry: ProviderEntry;
   readonly item: HTTPProviderItem;
   readonly name: string;
-  readonly where: ReactNode;
   readonly state: ReactNode;
   /** The + of a git project; null outside git. */
   readonly add: ReactNode;
@@ -383,7 +383,7 @@ function ItemGroupRow({ entry, item, name, where, state, add, menu, onOpen }: {
           }}
         >
           <span className="fold-glyph" aria-hidden="true" />
-          <GroupTitle name={name} where={where} />
+          <GroupTitle name={name} />
           <span className="group-state">{state}</span>
         </button>
         {menu}

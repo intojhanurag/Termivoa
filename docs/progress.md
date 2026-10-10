@@ -1,6 +1,6 @@
 # Implementation progress
 
-Last updated: 2026-10-08
+Last updated: 2026-10-10
 
 ## Start here
 
@@ -14,6 +14,184 @@ Last updated: 2026-10-08
   state on their own date; add new entries, do not rewrite old ones.
 
 ## Log
+
+### UI revamp: side drawer, Settings by computer, Geist (2026-10-10, branch `feat/ui-revamp`; not merged)
+
+- **Why.** With two or more computers, the computer chips crowded Sessions
+  and Settings was one long page. The owner approved the designs on
+  2026-10-10 ([ui-revamp.md](ui-revamp.md); pictures in
+  [`evidence/ui-revamp/`](evidence/ui-revamp/)). Not critical under rule 24:
+  no change to authentication, pairing, trust, network surface, protocol or
+  stored secrets.
+- **What.** Phone only (commit b737be0): the side drawer (`Drawer.tsx`) with
+  All computers, each computer's state and count, Needs you, Wall, Settings,
+  + Add a computer; the amber pill; tabs Sessions · herdr · Needs you; a
+  header per computer in All computers. Settings by computer
+  (`SettingsComputer.tsx`, `Settings.tsx`, `Computers.tsx`): Computers cards
+  with chips, This phone, and one page per computer (herdr, GitHub, This
+  computer). Geist and Geist Mono bundled (`fonts.css`). Texts: "Can't
+  reach", "See Sessions.", sentence case for state words. Host: no change.
+- **Docs.** Every "Settings → Integrations", "Settings → Computers", "This
+  device", "All" tab and upper-case label in the docs site, README,
+  CHANGELOG (Unreleased), `architecture.md`, `pending-work.md` and the design
+  documents now names the new screens; `guides/computers.md` has "How do I
+  switch between computers?" and "Where are a computer's settings?";
+  release notes have a Next beta bullet. Screenshots retaken with
+  `scripts/docs-screenshots/` (demo data).
+- **Commands and evidence.** `pnpm typecheck`; `pnpm test:web` (1080
+  pass); `GOTOOLCHAIN=go1.27.1 sh scripts/check` (pass); e2e
+  `caffeinate -d -i node scripts/e2e-multicomputer/phase-b.mjs --no-web-build`
+  161 PASS, 0 FAIL, 0 SKIP (new checks U1-U9: drawer, filter, amber pill,
+  Settings levels and Back, Add a computer, Geist from the app's origin,
+  drawer close paths, New session on the chosen computer, the queue on the
+  chosen computer) and `phase-a.mjs` 32 PASS, 0 FAIL; screenshots with
+  `scripts/docs-screenshots/` (demo data); `cd site && npx astro build`
+  (pass, links valid). Design pictures in `docs/evidence/ui-revamp/`.
+- **Reviews.** One independent review (verdict: merge after fixes; no lost
+  control): the queue and the status line now follow the chosen computer,
+  the drawer is a native modal `<dialog>`, New session opens on the chosen
+  computer, the choice clears on a new pairing; small fixes in Settings.
+  The e2e run then found two host texts that named the old page
+  (`cmd/pterm/github.go`, `internal/cli/admin.go`); both now say "Settings,
+  tap the computer". Issues filed from the run: #269, #270.
+- **Open.** Not tested on a real phone. Follow-ups in
+  [pending-work.md](pending-work.md) (Polish next, item 7).
+
+### Website: termivoa.com and visitor counting (2026-10-10, branch `chore/site-domain-analytics`)
+
+- **What.** The owner bought `termivoa.com` (Cloudflare Registrar; DNS at
+  Cloudflare, records "DNS only"; Vercel serves the site, `www` redirects
+  with 308). Every `termivoa.vercel.app` link in the repository and the
+  site now uses `https://termivoa.com` (Astro `site`, canonical, Open Graph,
+  `robots.txt`, sitemaps, README, install docs); `termivoa.vercel.app` keeps
+  working. History entries keep the old address.
+- **Visitor counting.** Vercel Web Analytics on the landing page and the
+  docs: one script from the site's own origin (`/_vercel/insights/script.js`),
+  no cookies. The landing page's CSP now allows `script-src 'self'` and
+  `connect-src 'self'`. The security page says so (Common questions). The
+  app and the computers send nothing.
+- **Owner steps.** Enable Web Analytics in the Vercel project; change the
+  GitHub App's Homepage URL and Setup URL to `https://termivoa.com` and
+  `https://termivoa.com/docs/guides/github/`.
+
+### Patched source-map build dependency (2026-10-08, #226)
+
+- Confirmed the root high-severity dependency gate fails for
+  `source-map-js` 1.2.1, also present in the independent website lockfile.
+- Both lockfiles now resolve the compatible patched 1.2.2. The root workspace
+  has a narrow override for versions below that release. No runtime or
+  protocol change, and no audit threshold change.
+- Passed with Node 24.11.0/pnpm 10.33.0: frozen root install,
+  `pnpm protocol:check`, `pnpm typecheck`, all 1,048 web tests,
+  `pnpm build:web`, and `pnpm audit --audit-level high` (exit 0).
+  Frozen independent website install, Astro build and all internal links
+  also passed. The independent website audit still fails for two high
+  advisories outside this issue; root retains two moderate advisories.
+- Evidence: [issue-226](evidence/issue-226/README.md). Independent PR review,
+  hosted required checks and merge remain pending. Separate dependency
+  remediation is tracked by #227 and #228.
+
+### Patched protocol-generator dependency (2026-10-08, #227)
+
+- Confirmed `quicktype` 26.0.0 pins vulnerable `stream-json` 3.5.0.
+  A parent-scoped override resolves that edge to patched 3.6.0. No shipped
+  Node runtime, protocol/schema change or audit exclusion was introduced.
+- With Node 24.11.0/pnpm 10.33.0, frozen install and the full `scripts/check`
+  passed: generation drift, Go vet/tests including vendored modules,
+  TypeScript, all 1,048 web tests and production build. Generated files
+  are unchanged. `pnpm audit --json` now reports zero moderate advisories;
+  its exit remains 1 for the unrelated source-map high advisory (#226).
+- Evidence: [issue-227](evidence/issue-227/README.md). Independent review,
+  required hosted checks and merge remain pending; physical-phone and
+  native Windows/Linux gates remain open.
+
+### Fake GitHub fixture race (#216, 2026-10-08)
+
+- Reproduced on `08f0332`, macOS arm64, Go 1.27.1:
+  `go test -race -count=3 -run '^TestGitCloneNeedsALiveToken$' ./scripts/fakegithub`
+  exited 1 with `main_test.go:173` reading the authentication slice while
+  `main.go:516` appended to it.
+- The assertion now copies the final record under the fixture's mutex and
+  checks it after unlocking. Adjacent test reads occur before the HTTP
+  server starts; the control route already locks its copy. Test code only;
+  no host or phone behaviour changes.
+- Passed: the focused command with `-count=20`, the whole fixture package
+  with `go test -race -count=10 ./scripts/fakegithub`, and
+  `go vet ./scripts/fakegithub`. Evidence:
+  [issue-216](evidence/issue-216/README.md). The repository-wide race suite
+  remains pending for the coordinating merge gate; real-device and 24-hour
+  soak gates remain pending.
+
+### Coordinated soak status verification (#224, 2026-10-08)
+
+- `PTERM_SOAK_DURATION=30s go test -tags soak ./tests/soak -run '^TestSoakThreeBusySessions$' -count=1 -v`
+  passed: three children, one reconnect, all three final screens match,
+  and 998–1,000 complete output samples per session.
+- `PTERM_SOAK_THROTTLE_DURATION=20s go test -tags soak ./tests/soak -run '^TestSoakThrottledPhones$' -count=1 -v`
+  passed: all three viewer rates produced samples and matched final screens.
+  The 100 KiB/s viewer's valid slow tail remained visible.
+- These runs overlapped other checks and are not isolated CPU/latency
+  benchmarks. The separate intermittent helper-child assertion (#232) did
+  not occur in this run. Native platforms, real phones and 24-hour soak
+  remain pending. Details: [issue-224](evidence/issue-224/README.md).
+
+### Soak latency samples require complete status records (#224, 2026-10-08)
+
+- Reproduced on `08f0332`, macOS arm64, Go 1.27.1, with
+  `go test -tags soak -count=1 -run '^TestObserveStatus' ./tests/soak`:
+  the parser accepted a partial timestamp as `497597h` of latency, sampled
+  an unchanged record twice and accepted a future timestamp as `-985ms`.
+  Every byte split of the printed status through the terminal emulator is
+  now covered by a regression.
+- The synthetic child writes an explicit end marker. The viewer validates
+  complete fields, session/PID/sequence consistency and timestamp order,
+  and samples each observed write once. Paused/static records and valid
+  slow-link delays remain measurable. A run with no complete measurements
+  now fails. Only the soak harness changes; no product code or protocol.
+- Passed: `go test -tags soak -race -count=20 -run '^TestObserveStatus' ./tests/soak`,
+  `go vet -tags soak ./tests/soak` and `git diff --check`. Evidence and metric
+  limits: [issue-224](evidence/issue-224/README.md). A new busy/throttled soak
+  is pending for the coordinator, without competing benchmark work. Earlier
+  soak output-to-frame tails may contain the parser defect; input RTT and
+  memory are separate metrics. Real-device and 24-hour soak gates stay open.
+
+### Owned browser teardown (#260, 2026-10-09, `fix/issue-260`; local PR preparation)
+
+- **Reproduced.** The shared browser helper returned before a real delayed child
+  exited: the focused baseline assertion failed after about 26 ms with
+  `exitCode === null`, despite a close acknowledgement. This explains why an
+  immediate profile removal can race later browser writes.
+- **Changed.** One shared close promise observes child exit, waits up to 3 s for
+  graceful close, 1 s after TERM and 1 s after KILL, and then up to 1 s for its
+  own WebSocket close. Failure rejects. Pending CDP timers and listeners are
+  cleaned; new requests during teardown are refused. Only the owned child is
+  signaled. [Internal test design](../scripts/e2e-multicomputer/README.md#how-does-owned-browser-teardown-finish).
+- **Executed with Node 24.** `node --check scripts/e2e-multicomputer/lib.mjs`
+  and `node --check scripts/e2e-multicomputer/browser.test.mjs`: pass.
+  `CHROME='<existing Chromium executable>' node --test
+  scripts/e2e-multicomputer/browser.test.mjs`: 10 pass, 0 fail, 0 skipped,
+  about 14.6 s. Actual Chrome 151.0.7922.34 exited and its temporary profile was
+  removed immediately without retries. Real delayed-child, TERM/KILL escalation,
+  concurrent close, pending request cleanup and child/socket timeout failures
+  are covered. [Evidence](evidence/issue-260/verification.md).
+- **Scope and gates.** Test tooling only; no shipped Go runtime, protocol,
+  authentication, phone UI or public feature change. No dependencies installed.
+  Full app flows, physical devices and native Windows were not run for this
+  change. Public docs/site are unchanged, so no public feature or site-build
+  result is invented. Hosted CI remains disabled by explicit owner decision;
+  coordinating review, private PR and merge remain with the root agent.
+
+### GitHub roadmap status corrected (2026-10-08, #225)
+
+- The current roadmap still said the GitHub integration was unmerged.
+  `gh pr view 212 --json state,mergedAt,mergeCommit,url` confirms merge
+  commit `465250c`; the same command for #229 confirms App build
+  configuration merged at `08f0332`. Both commits are in current main.
+- Updated only the current roadmap status and links. Real-phone device and
+  installation flows, refresh-token retry and credential-helper verification
+  remain open. Historical progress entries retain their original status.
+- `git diff --check` passed. Independent PR review, required hosted checks
+  and merge remain pending. No runtime, protocol or public-doc claim changes.
 
 ### History page CPU and allocation reduction (#219, 2026-10-08)
 
@@ -66,6 +244,30 @@ Not yet verified (owner checklist in
 
 The dated entries below are the history log; older entries describe the state
 on their own date.
+
+### Soak terminal census ignores scanner helpers (#232, 2026-10-08; branch `fix/issue-232`, not merged)
+
+- **Verified defect.** During #220 measurement, the three-session soak
+  intermittently counted an `lsof` scanner as a fourth terminal. A per-PID
+  command lookup also raced helper lifetime. Neither implies an extra PTY.
+- **Fix.** Read PID, parent PID and arguments in one `ps` invocation and
+  count every direct terminal fixture by its exact argument marker. Duplicate
+  unexpected fixture PIDs still count; missing fixtures still reduce the
+  count. Existing PID identity/liveness and broker-kill checks remain intact.
+  No shipped runtime or public documentation behavior changes.
+- **Checks.** `go test -race -tags soak ./tests/soak -run
+  '^TestSoakFixtureChildCensus' -count=1 -v` and `go vet -tags soak
+  ./tests/soak` passed with Go 1.27.1. Live regressions exercise actual PTY
+  fixtures with overlapping / vanished `lsof`, duplicates and missing
+  fixtures. `PTERM_SOAK_RATE=65536 PTERM_SOAK_DURATION=30s go test -tags
+  soak ./tests/soak -run '^TestSoakThreeBusySessions$' -count=1 -v` passed:
+  three fixtures throughout, one reconnect, unchanged identities/liveness.
+- **Evidence and pending.** [Issue #232 evidence](evidence/issue-232/README.md)
+  has commands and output. The 30-second run used 64 KiB/s/session under
+  concurrent machine load; it is a correctness gate, not an isolated
+  performance comparison or a default 1 MiB/s gate. Parent integration /
+  combined soak, full tagged suite including the eight-session broker-kill
+  rerun, longer stress/24-hour soak and native Windows remain pending.
 
 ### GitHub: set up a repository on a computer from the phone (2026-10-07, branch `feat/github-integration`; not merged)
 
@@ -2627,3 +2829,36 @@ on the owner's Mac, which ends running sessions.
   `frame()` logs a timeout and keeps one capture open at a time; the
   screenshot demo guard fails closed. The cause of the one stalled run in six
   is still not found.
+
+## 2026-10-08: separate docs audit (#228)
+
+- Baseline independent site audit reproduced three high/one moderate findings;
+  root workspace auditing omitted the separate lockfile.
+- Stacked on #226; patched only the site postcss-nested/parser edge to 7.1.6.
+  Frozen install and `npx astro build` passed all 29 pages and link validation.
+  All eight emitted CSS files have unchanged SHA-256 digests.
+- Raw audit still exits 1 with two high/zero moderate. Read the primary
+  advisories and locked source; neither remaining unpatched input path is
+  demonstrated reachable from visitors in this static trusted-source build.
+  Exact versions/paths/status and re-review triggers are recorded in
+  `docs/dependencies.md`; no claim that the upstream vulnerabilities are fixed.
+- Added independent site build/audit to the existing vulnerability CI job.
+  Root threshold unchanged. `node --test scripts/audit-site.test.mjs` passed
+  six fail-closed regressions; `node scripts/audit-site.mjs` passed while
+  printing both retained unpatched findings. New findings, paths, versions,
+  available patches, audit errors or report drift block the new gate.
+- Evidence: `docs/evidence/issue-228/README.md`. Independent review, hosted
+  required checks, CI-minutes permission and merge remain pending. No runtime,
+  credentials, public deployment or private/public repository setting changed.
+
+- Independent #228 review reproduced two unsupported report shapes accepted by
+  the initial checker. Explicit object/severity validation and a fifth
+  regression now reject them; final reviewer verification remains pending.
+
+Independent nested-report review also reproduced array-like findings/path
+objects that could hide a new path. Explicit array/entry validation and the
+sixth regression now reject both; valid live audit output still passes.
+Coordinator review for #260 reran all10teardown tests (14.627s, zero skips),
+including actual installedChromium immediate profile removal. Full helper
+diff reviewed with no blocker; frozen site install/Astro29pages+links pass.
+No shipped runtime or public docs change. Hosted CI remains disabled by owner.

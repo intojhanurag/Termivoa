@@ -91,7 +91,7 @@ describe('opening', () => {
 
   it('host_unavailable for a provider that is Off says Off, not "is not running"', () => {
     const unavailable = new ApiError(503, 'host_unavailable', 'x');
-    expect(openProblem(unavailable, 'herdr', 'mac', 'off')?.text).toBe('herdr is off on mac. Turn it on in Settings → Integrations.');
+    expect(openProblem(unavailable, 'herdr', 'mac', 'off')?.text).toBe('herdr is off on mac. Turn it on in Settings → mac.');
     expect(openProblem(unavailable, 'herdr', 'mac', 'notRunning')?.text).toBe('herdr is not running on mac.');
     expect(unavailableText('herdr', 'mac', undefined)).toBe('herdr is off or not running on mac.');
   });

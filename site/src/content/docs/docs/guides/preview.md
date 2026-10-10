@@ -1,7 +1,7 @@
 ---
 title: Dev-server preview
 description: Termivoa opens a dev server from a session, such as Vite on port 5173, full screen on your phone over a private Tailscale address.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-10
 ---
 
 Termivoa opens the web page of a dev server that a session runs, full screen in the app on your phone.
@@ -48,7 +48,7 @@ Yes. With [several computers](/docs/guides/computers/), open a session on that c
 | --- | --- |
 | "Opening preview…" | The app asks that computer's preview address first. It waits at most 5 seconds. |
 | "Can't open the preview on vps. …" | Nothing answered. See [Troubleshooting](/docs/reference/troubleshooting/#cant-open-the-preview-on-vps). |
-| **vps · pair again**, **vps · can't reach** or **Update Termivoa on vps** | That computer does not accept or answer the phone now. The open preview is removed and this text shows. See [What if a computer is offline?](/docs/guides/computers/#what-if-a-computer-is-offline) |
+| **vps · pair again**, **vps · can't reach** or **Update Termivoa on vps** | That computer does not accept or answer the phone now. The open preview is removed and this text shows. See [What if a computer cannot be reached?](/docs/guides/computers/#what-if-a-computer-cannot-be-reached) |
 
 If you added the computer after you opened the app, the app reloads itself once when you first open a preview on it, then shows the preview. You do nothing.
 

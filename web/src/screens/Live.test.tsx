@@ -54,10 +54,10 @@ describe('read-only state', () => {
     expect(html).toMatch(/<button type="button" class="primary take">.*Take control<\/button>/u);
   });
 
-  it('shows CONTROL only for the controller and READ-ONLY otherwise', () => {
-    expect(controlBadge({ ...live, control: 'controller' })).toEqual({ text: '● CONTROL', tone: 'accent' });
-    expect(controlBadge(live)).toEqual({ text: 'READ-ONLY', tone: 'amber' });
-    expect(controlBadge({ ...live, sessionState: 'exited' }).text).toBe('EXITED');
+  it('shows Control only for the controller and Read-only otherwise', () => {
+    expect(controlBadge({ ...live, control: 'controller' })).toEqual({ text: '● Control', tone: 'accent' });
+    expect(controlBadge(live)).toEqual({ text: 'Read-only', tone: 'amber' });
+    expect(controlBadge({ ...live, sessionState: 'exited' }).text).toBe('Exited');
   });
 
   it('offers Take control only to a live observer of a running shell', () => {
