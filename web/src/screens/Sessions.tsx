@@ -189,7 +189,7 @@ export function PushCard({ onClose, onFailure }: {
   );
 }
 
-/** iPhone in a Safari tab: one line and the way to the steps (Settings → Notifications). Hidden for good after "Not now". */
+/** iPhone in a Safari tab: one line and the way to the steps (Settings → This phone → Notifications). Hidden for good after "Not now". */
 export function HomeScreenHint({ onSteps, onClose }: { readonly onSteps: () => void; readonly onClose: () => void }) {
   return (
     <section className="push-card" aria-labelledby="home-screen-title">
