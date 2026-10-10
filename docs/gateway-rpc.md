@@ -11,7 +11,7 @@ trust surface or public protocol.
 | --- | --- | --- |
 | Fast RPC | Authentication, pairing, cached settings/provider/GitHub status, the cached per-request preview check, session/computer lists and ordinary metadata changes | One serialized reusable connection |
 | Blocking RPC | Session create/terminate, notification test, herdr open | Fresh connection per exchange, at most four simultaneously |
-| Integration RPC | herdr create/manage, GitHub action/repository list | Fresh connection per exchange, at most two simultaneously, separate slots |
+| Integration RPC | herdr create/manage, GitHub action/repository list | Fresh connection per exchange, at most four simultaneously, separate slots |
 | Live | Authenticated live stream after `gateway.live.open` | Existing owner-controlled stream lifetime |
 | Upload | Upload begin/chunks/commit | Existing dedicated upload connection and HTTP upload bound |
 
@@ -23,8 +23,9 @@ Fast calls do not share the blocking admission slots.
 
 ## What bounds the added concurrency?
 
-One gateway client has four blocking slots and two integration slots, so
+One gateway client has four blocking slots and four integration slots, so
 GitHub and herdr calls cannot take the slots session create/terminate need.
+The GitHub state read (`GET /api/v1/github`) stays on the fast connection.
 The preview check runs on every proxied preview request and is cached for
 2 s by the broker, so it stays fast. A fifth blocking exchange receives a
 `limit_exceeded` error before any broker dial or write. There is no added

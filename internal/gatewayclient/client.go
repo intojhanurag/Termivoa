@@ -48,7 +48,7 @@ type Config struct {
 
 const (
 	maxConcurrentSlowRPC        = 4
-	maxConcurrentIntegrationRPC = 2
+	maxConcurrentIntegrationRPC = 4
 )
 
 // Client keeps fast RPC exchanges on one lazily dialed connection. Blocking
