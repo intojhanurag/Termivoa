@@ -15,6 +15,10 @@ Last updated: 2026-10-10
 
 ## Log
 
+### AGENTS.md for a public repository (2026-10-10, branch `docs/agents-public-repo`)
+
+- The owner made the repository public on 2026-10-10. Rules 1, 3, 4, 5, 16, 25 and 26 still described a private, pre-v0 project; they now describe a public open-source repository (rule numbers unchanged, because docs and PRs cite them). Rule 13 now carries the credential-safety rule that helper briefs already used. A Commands table lists install, check, test, e2e, docs and release-build commands. `docs/release-checklist.md` records the visibility change.
+
 ### Docs: open-source beta launch, `v0.1.0-beta.4` (2026-10-10, branch `docs/open-source-launch`)
 
 - Owner decision 2026-10-10: Termivoa goes public as a free, open-source
