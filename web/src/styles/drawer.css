@@ -1,0 +1,55 @@
+/* The side drawer and its bar (docs/ui-revamp.md, section 4). Fonts come from global.css. */
+
+.drawer-bar { display: flex; align-items: center; gap: 8px; min-width: 0; padding-top: 16px; }
+.drawer-bar + .screen-header { padding-top: 8px; }
+button.drawer-menu { width: 40px; height: 40px; min-height: 40px; min-width: 40px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); }
+button.drawer-pill,
+button.drawer-amber { display: inline-flex; align-items: center; gap: 8px; min-width: 0; min-height: 40px; height: 40px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); font-size: 15px; font-weight: 500; white-space: nowrap; }
+button.drawer-pill bdi { overflow: hidden; text-overflow: ellipsis; }
+.drawer-caret { color: var(--muted); font-size: 11px; }
+button.drawer-amber { margin-left: auto; height: 32px; min-height: 32px; padding: 0 12px; border-color: transparent; background: rgb(242 181 68 / 12%); color: var(--amber); font-size: 13px; }
+button.drawer-amber .drawer-count { min-width: 0; padding: 0; background: none; }
+
+/* A native modal dialog over the whole screen; the panel is its left 300px, the rest is the dimmed page (a tap there closes it). */
+.drawer { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: rgb(0 0 0 / 60%); color: var(--text); overscroll-behavior: contain; }
+.drawer::backdrop { background: transparent; }
+.drawer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: calc(min(300px, 86vw) + env(safe-area-inset-left));
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(24px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  animation: drawer-in 180ms var(--ease);
+}
+
+.drawer:focus { outline: none; }
+.drawer-panel > .caps { padding: 0 12px 4px; }
+@keyframes drawer-in { from { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) { .drawer-panel { animation: none; } }
+
+.drawer-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.drawer-foot { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
+button.drawer-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 12px; border: 0; border-radius: 12px; text-align: left; font-weight: 500; }
+button.drawer-row[aria-current="true"] { background: var(--raised); }
+.drawer-foot button.drawer-row { min-height: 44px; }
+button.drawer-add { color: var(--accent); }
+.drawer-tile { display: grid; flex-shrink: 0; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--soft); font-size: 13px; }
+.drawer-row[aria-current="true"] .drawer-tile:not(.all) { border-color: var(--text); background: var(--text); color: var(--bg); }
+:is(.is-unreachable, .is-blocked, .is-pair, .is-outdated) .drawer-tile { border-style: dashed; }
+.drawer-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.drawer-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer-state { color: var(--muted); font-size: 13px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.is-unreachable, .is-blocked) .drawer-state { color: var(--amber); }
+.is-pair .drawer-state { color: var(--red); }
+.drawer-count { flex-shrink: 0; min-width: 22px; padding: 1px 6px; border-radius: 999px; background: rgb(242 181 68 / 14%); color: var(--amber); font-size: 12px; text-align: center; }
+
+/* One computer's part of a list in All computers. */
+.computer-group { display: flex; align-items: center; gap: 8px; margin: 0; padding: 22px 0 8px; border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 600; }
+.computer-group-state { margin-left: auto; color: var(--muted); font-size: 13px; font-weight: 400; white-space: nowrap; }
+:is(.is-unreachable, .is-blocked).computer-group .computer-group-state { color: var(--amber); }
+.is-pair.computer-group .computer-group-state { color: var(--red); }

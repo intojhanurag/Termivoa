@@ -7,7 +7,7 @@ import { markOpened } from './Herdr';
 import { InboxList, inboxItems, inboxTabShown, itemAt, needsYouText, NEXT_AFTER_MS, nextFilled, nextLabel, nextReady, NO_ANSWER, NOTHING, QueueNext, queueStep, waitingCount } from './Inbox';
 import { group, item, mac, okEntry, providerEntry, ready, shopGroups, snapshot, target, vps } from './providerFixtures';
 import { providerSources } from './providers';
-import { ComputerChips, Sessions } from './Sessions';
+import { Sessions } from './Sessions';
 
 const NOW = Date.parse('2026-10-04T10:00:00Z');
 let ids = 0;
@@ -173,7 +173,7 @@ describe('InboxList while a computer did not answer', () => {
   const list = (sessions: HostedSession[]) => renderToStaticMarkup(<InboxList items={inboxItems(sessions, [], {})} multi partial now={NOW} onOpen={() => undefined} />);
 
   it('never says that nothing needs you: one short line instead, and the same line under what waits', () => {
-    expect(NO_ANSWER).toBe('Some computers did not answer. See All.');
+    expect(NO_ANSWER).toBe('Some computers did not answer. See Sessions.');
     expect(list([])).toBe(`<section aria-label="Needs you"><p class="muted">${NO_ANSWER}</p></section>`);
     const waits = list([waiting(mac, 'api', '2026-10-04T09:56:00Z')]);
     expect(waits).not.toContain(NOTHING);
@@ -216,22 +216,21 @@ describe('Sessions with the Needs you tab', () => {
   const api = waiting(mac, 'api', '2026-10-04T09:55:00Z', 'Run the test suite?');
   const TAB = /<button type="button" class="chip" aria-pressed="(true|false)">Needs you(?:<span class="chip-count">(\d+)<\/span>)?<\/button>/u;
 
-  it('has the tab with its count after All while something waits, on one computer too; the All tab stays as it was', () => {
+  it('has the tab with its count after Sessions and herdr while something waits, on one computer too; the Sessions tab stays as it was', () => {
     const page = renderToStaticMarkup(<Sessions {...base} entries={[okEntry(mac), okEntry(vps)]} sessions={[api]} providers={[ready(mac)]} />);
     expect(TAB.exec(page)?.slice(1)).toEqual(['false', '2']);
-    expect(page.indexOf('>All</button>')).toBeLessThan(page.indexOf('Needs you'));
-    expect(page.indexOf('Needs you')).toBeLessThan(page.indexOf('>herdr'));
+    expect(page.indexOf('>Sessions</button>')).toBeLessThan(page.indexOf('>herdr'));
+    expect(page.indexOf('>herdr')).toBeLessThan(page.indexOf('>Needs you'));
     expect(page).toContain('aria-label="Your sessions"');
     const one = renderToStaticMarkup(<Sessions {...base} entries={[okEntry(mac)]} sessions={[api]} />);
     expect(TAB.exec(one)?.slice(1)).toEqual(['false', '1']);
-    expect(one).toContain('aria-pressed="true">All</button>');
+    expect(one).toContain('aria-pressed="true">Sessions</button>');
   });
 
   it('has no tab while nothing waits (finished items alone do not show it), or where the app gives no way to open an item', () => {
     const done = [group('g', 'shop', [item('w9', 'lucky-valley', [target('t9', 'done')])])];
     expect(renderToStaticMarkup(<Sessions {...base} entries={[okEntry(mac), okEntry(vps)]} sessions={[turn(mac, 'docs')]} providers={[ready(mac, done)]} />)).not.toContain('Needs you');
     expect(renderToStaticMarkup(<Sessions {...base} onOpenItem={undefined} entries={[okEntry(mac)]} sessions={[api]} />)).not.toContain('Needs you');
-    expect(renderToStaticMarkup(<ComputerChips computers={[mac, vps]} chosen={undefined} onChoose={() => undefined} />)).not.toContain('Needs you');
   });
 
   it('opened on the tab: the list in place of the sessions, the count on the status line, the other tabs still there', () => {
@@ -240,7 +239,7 @@ describe('Sessions with the Needs you tab', () => {
     expect(page).toContain('<span class="dot amber" aria-hidden="true"></span>2 need you</p>');
     expect(page).toContain('<section aria-label="Needs you">');
     expect(page).not.toContain('aria-label="Your sessions"');
-    expect(page).toContain('aria-pressed="false">All</button>');
+    expect(page).toContain('aria-pressed="false">Sessions</button>');
     expect(page).toContain('aria-pressed="false">herdr');
   });
 

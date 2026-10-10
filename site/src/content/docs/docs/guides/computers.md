@@ -1,7 +1,7 @@
 ---
 title: Use several computers
 description: Termivoa can use several computers, such as a Mac, a Linux server and a VPS, from one phone app, with one Sessions list and one Wall for all of them.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-10
 ---
 
 Termivoa lets one phone app use several computers, for example a Mac, a Linux server and a VPS, with one Sessions list and one Wall.
@@ -60,9 +60,9 @@ Start a wait on the new computer, then tap **Add** next to it in the app. You ne
    Waiting for your phone (up to 10 minutes; Ctrl+C stops)…
    No Add button? Press Enter to show a QR code and a link.
    ```
-2. **On your phone**, open **Settings → Computers**. Under **Found on your network**, tap **Add** next to **vps**.
+2. **On your phone**, open **Settings**. Under **Found on your network**, below the **Computers** cards, tap **Add** next to **vps**.
 
-   ![Settings with the Computers list (mac, HOME, ONLINE) and below it FOUND ON YOUR NETWORK: vps, vps.tailx.ts.net, and an Add button.](../../../../assets/docs/phone-computers-found.webp)
+   ![Settings with the Computers card mac (Home, with the chips herdr, Connect GitHub and 1 project), below it Found on your network: vps, vps.tailx.ts.net, and an Add button, then + Add a computer and This phone.](../../../../assets/docs/phone-computers-found.webp)
 3. **Check the sheet.** **Add this computer?** shows the **Address**, **Machine** and **Owner** that home found in its Tailscale status. Tap **Add vps**, then **Continue**.
 
    ![The Add this computer? sheet with Address https://vps.tailx.ts.net, Machine vps, Owner ada@example.com, and the buttons Add vps and Cancel.](../../../../assets/docs/phone-computers-confirm.webp)
@@ -75,7 +75,7 @@ Start a wait on the new computer, then tap **Add** next to it in the app. You ne
    Approve only if your phone shows 742-172 and says "type y in the terminal on vps". [y/N]
    ```
 
-   Type `y` only if it names this computer (vps), home's address is the one your app opens, and the phone shows the same code. The app says **vps is added**, and vps says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` With a machine name longer than 12 characters it adds `Tip: give it a short name in the app: Settings → Computers → Rename.`
+   Type `y` only if it names this computer (vps), home's address is the one your app opens, and the phone shows the same code. The app says **vps is added**, and vps says `Done. vps is in your Termivoa app on mac. Open the app and tap it.` With a machine name longer than 12 characters it adds `Tip: give it a short name in the app: Settings, tap the computer, then Rename.` The app now has **Rename** on the computer's page: in **Settings**, tap the **vps** card.
 
    ![The screen Does vps show this code? with a six-digit code, the text If it matches, type y in the terminal on vps., Waiting for vps, and Codes don't match? Cancel.](../../../../assets/docs/phone-computers-code.webp)
 
@@ -85,7 +85,7 @@ You can leave the page while you approve: tap **Sessions**, or **Back to termina
 
 | **Found on your network** shows | Meaning |
 | --- | --- |
-| **vps** · `vps.tailx.ts.net` · **Add** | vps waits to be added. The app checks the list every 5 seconds while **Settings → Computers** is open. |
+| **vps** · `vps.tailx.ts.net` · **Add** | vps waits to be added. The app checks the list every 5 seconds while **Settings** is open. |
 | "To add another computer, run pterm setup on it, or pterm pair --via mac if it is already set up. It shows here while it waits." | No computer waits now. |
 | "mac cannot read its Tailscale status. Check Tailscale on mac." | Home cannot see your tailnet now. Check Tailscale on home. |
 
@@ -117,7 +117,7 @@ Then check the sheet and compare the code as in steps 3 and 4. Without a termina
 
 ## How do I scan or paste the link?
 
-In **Settings → Computers**, tap **+ Add a computer**. Termivoa shows two choices: **Scan QR** and **Paste link**.
+In **Settings**, under the **Computers** cards, tap **+ Add a computer**. With two or more computers, **+ Add a computer** in the [side menu](#how-do-i-switch-between-computers) opens the same choices. Termivoa shows two choices: **Scan QR** and **Paste link**.
 
 :::note
 **Scan QR** is not tested on a real phone yet.
@@ -145,24 +145,68 @@ The camera stops when the app reads a code, when you tap **Cancel**, and when yo
 
 ## What changes in the app?
 
-![Sessions with 2 computers · connected, the tabs All, mac and vps, and the sessions mac-2, mac-1 and vps-1, each with its computer's colour dot and name, above the button new session on….](../../../../assets/docs/phone-computers-sessions.webp)
+![Sessions with the menu button and the pill All computers on top, the line 2 computers · connected, the header mac · 2 sessions over the sessions mac-2 and mac-1, the header vps · 1 session over vps-1, and the button new session on….](../../../../assets/docs/phone-computers-sessions.webp)
 
 | Screen | With 2 or more computers |
 | --- | --- |
-| Sessions | The tabs **All**, **mac**, **vps** filter by computer. Each row has a colour dot and the computer's name. Waiting sessions come first, from all computers. |
+| Sessions | A menu button (**≡**) and a computer pill (**All computers**, or the chosen computer such as **● mac**) at the top open the [side menu](#how-do-i-switch-between-computers). In **All computers**, each computer's sessions and herdr projects are under a header with its name and state. Waiting sessions come first. |
 | New session | **❯ new session on…** and a **Computer** row pick where it runs. Projects and shells come from that computer. |
 | [Wall](/docs/guides/wall/) | Tiles from all computers. At most 4 are live at once (5 updates per second each); the rest show **Paused**. |
 | Live, [Changes](/docs/guides/changes/), [Files](/docs/guides/files/) | Work the same on every computer. |
 | [Dev-server preview](/docs/guides/preview/#can-i-preview-a-session-on-another-computer) | Works per computer. Each computer answers the preview question in `pterm setup` itself. A computer on an older Termivoa shows no **Preview ready** chip. The bar over a page from another computer shows `vps · untrusted page`. |
 | [Notifications](/docs/guides/notifications/#do-notifications-come-from-every-computer) | Every computer sends them. One switch in **Settings → Notifications** controls all. The title and text of a notification from another computer start with its name (`vps · …`) and a tap opens that session. |
 
-With one computer, the app looks the same as before.
+With one computer, there is no side menu and no computer pill.
 
-## What if a computer is offline?
+## How do I switch between computers?
+
+**Next beta.** Tap the menu button (**≡**) or the computer pill at the top of Sessions. The side menu opens from the left.
+
+![The side menu open over Sessions: under Computers, All computers (chosen), mac with 2 sessions and vps with 1 session; at the bottom Needs you, Wall, Settings and + Add a computer.](../../../../assets/docs/phone-computers-drawer.webp)
+
+| Row | What it does |
+| --- | --- |
+| **All computers** | Shows every computer. An amber number counts what needs you on all of them. |
+| A computer, such as **mac** | Shows only that computer in **Sessions**, **herdr** and **Needs you**. The row has its state, for example **2 sessions · 1 working**, **can't reach** or **pair again**, and an amber number for what needs you there. |
+| **Needs you** | Opens the **Needs you** tab for all computers, with its count. |
+| **Wall** | Opens the [Wall](/docs/guides/wall/). |
+| **Settings** | Opens [Settings](#where-are-a-computers-settings). |
+| **+ Add a computer** | Opens Settings with **Scan QR** and **Paste link**. See [How do I scan or paste the link?](#how-do-i-scan-or-paste-the-link) |
+
+To close the side menu without a choice, tap outside it or press Escape. The tabs under the title are **Sessions**, **herdr** (when a computer has [herdr](/docs/guides/herdr/)) and **Needs you** (while something waits).
+
+When you look at one computer and another computer needs you, an amber pill with that computer's name and count shows next to the computer pill. Tap it to go to that computer.
+
+## Where are a computer's settings?
+
+**Next beta.** Open **Settings**. Settings has a main page and one page for each computer.
+
+![The Settings main page: under Computers (Home serves this app to your phone.) the cards mac with Home and vps, each with the chips herdr, Connect GitHub and 1 project; Found on your network with the hint to run pterm setup or pterm pair --via mac; + Add a computer; and This phone with Name iPhone, Notifications Off, Terminal text size 14 px and Build.](../../../../assets/docs/phone-settings-main.webp)
+
+| Main page part | What it has |
+| --- | --- |
+| **Computers** | One card for each computer, home first, with **Home** on home's card. The chips on a card show **herdr** (green dot: running), **GitHub** (green dot: connected; **Connect GitHub**: not connected; **git missing**) and the number of projects. Tap a card to open that computer's page. |
+| **Found on your network** and **+ Add a computer** | Add another computer. See [How do I add a computer?](#how-do-i-add-a-computer) |
+| **This phone** | **Name** (this phone's name in `pterm devices`), **Notifications**, **Terminal text size**, **Build** and **Log out**. |
+
+A computer that cannot be reached has a dashed card with **Can't reach** and a **Check again** button.
+
+![The page of the computer mac: ‹ Settings, mac · Online · Home, mac.tailx.ts.net, Termivoa private-dev · last seen just now; under herdr the row herdr on mac 0.8.2, Running, with the switches On, Buzz when blocked and Buzz when finished turned on and the note This phone gets no buzz yet. with Add to Home Screen; under GitHub the row GitHub on mac, not connected, with Connect; then This computer.](../../../../assets/docs/phone-settings-computer.webp)
+
+| Computer page part | What it has |
+| --- | --- |
+| Top | **‹ Settings** (back to the main page), the computer's name, its state, address and Termivoa version. |
+| **herdr** | The [herdr](/docs/guides/herdr/#how-do-i-turn-herdr-off-or-the-buzz-off) switches **On**, **Buzz when blocked** and **Buzz when finished**, or **Install herdr** or **Start herdr**. |
+| **GitHub** | **Connect**, **Set up a repository** and **Disconnect**. See [GitHub](/docs/guides/github/). |
+| **This computer** | **Projects** (the count), **Check again**, **Rename** and **Remove**. Home has no **Rename** or **Remove**. |
+
+The phone's Back button goes from a computer's page to the main page.
+
+## What if a computer cannot be reached?
 
 The other computers keep working. The one that does not answer gets its own row.
 
-![Sessions with two mac sessions and the row vps · can't reach, Is it on, and in your tailnet?, with a Retry button.](../../../../assets/docs/phone-computers-offline.webp)
+![Sessions in All computers: the header mac · 2 sessions over mac-2 and mac-1, the header vps · can't reach, and the row vps · can't reach, Is it on, and in your tailnet?, with Retry.](../../../../assets/docs/phone-computers-offline.webp)
 
 | Row | Meaning | Do this |
 | --- | --- | --- |
@@ -174,20 +218,20 @@ The other computers keep working. The one that does not answer gets its own row.
 
 If a [preview](/docs/guides/preview/) of that computer is open, the preview is removed and the text shows in its place: **vps · can't reach**, **vps · pair again** or **Update Termivoa on vps**.
 
-If home is offline, the app still opens from its saved copy and reaches the peers.
+If home cannot be reached, the app still opens from its saved copy and reaches the peers.
 
 ## How do I see if a computer is healthy?
 
-Open **Settings → Computers**. Each computer shows the Termivoa version it runs and when the phone last got an answer from it.
+Open **Settings**, then tap the computer's card. Its page shows the Termivoa version it runs and when the phone last got an answer from it.
 
 | You see | Meaning |
 | --- | --- |
-| **Home** next to a name | This computer is home. Under the heading the app says **Home serves this app to your phone.** |
+| **Home** next to a name | This computer is home. Under the **Computers** heading the app says **Home serves this app to your phone.** |
 | **Termivoa 0.1.0-beta.3+1a2b3c4d5e6f · last seen just now** | The version on that computer, and how long ago it answered (**just now**, **5 min ago**, **3 h ago**). |
 | **vps · can't reach** and **Last seen 3 h ago. Is it on, and in your tailnet?** | vps does not answer now. The phone keeps the time of its last answer until you close the app. The question shows only when nothing answered at all. |
-| **Check again** | Asks that one computer now. The row says **Checking…**, then **vps answered in 0.2 s.** or why it did not. |
+| **Check again** | Asks that one computer now. The button says **Checking…**, then **vps answered in 0.2 s.** or why it did not. |
 
-**Check again** works on every computer, also on the one that says **can't reach**.
+**Check again** is on every computer's page. A computer that says **Can't reach** also has it on its card.
 
 ## How do I update the computers?
 
@@ -197,8 +241,8 @@ One at a time, in any order. The app refuses only a computer that is too old ("U
 
 | Action | Where | What happens |
 | --- | --- | --- |
-| Rename | **Settings → Computers → Rename** | Changes the name on this phone only. |
-| Remove | **Settings → Computers → Remove** | Signs this phone out of vps first; its sessions keep running. If vps cannot be reached, run `pterm revoke <device-id>` on vps. |
+| Rename | **Settings** → the computer's card → **Rename** | Changes the name on this phone only. |
+| Remove | **Settings** → the computer's card → **Remove** | Signs this phone out of vps first; its sessions keep running. If vps cannot be reached, run `pterm revoke <device-id>` on vps. |
 | Log out | **Settings → Log out** | Signs out of every computer it can reach, and names the ones it could not. Run `pterm revoke` there. |
 | Remove for every phone | On home: `pterm computers remove https://vps.tailx.ts.net` | Takes vps off every phone's list. Run `pterm revoke` on vps too. |
 
